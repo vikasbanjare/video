@@ -1,6 +1,6 @@
 # CutPilot — Product Brief & Roadmap
 
-*Owner: product/design/eng. Last updated: June 2026 (v0.8). Companion to
+*Owner: product/design/eng. Last updated: June 2026 (v0.9). Companion to
 [`RESEARCH.md`](RESEARCH.md) (market) and [`DESIGN.md`](DESIGN.md) (UI spec).*
 
 ---
@@ -54,7 +54,7 @@ already trust, with every edit still hand-tweakable.
 - **v0.7** Caption template studio (24+ templates) + built-in PNG render engine.
 - **v0.3 line** Transcript intelligence: **filler-word removal** + **TF-IDF
   keyword auto-highlight** (pure, tested).
-- **v0.8 — product polish (this release):**
+- **v0.8 — product polish:**
   - **Fonts done right:** the picker now lists **every font installed on the
     user's machine** (parsed from the OS font folders) + a curated web-font
     catalog that renders even when not installed + **Custom font…**, with a

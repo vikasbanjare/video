@@ -249,7 +249,7 @@ Distribute the `.zxp` via [aescripts](https://aescripts.com),
 [ZXP Installer](https://aescripts.com/learn/zxp-installer/), or the Adobe
 Exchange marketplace.
 
-## Known limitations (v0.8)
+## Known limitations (v0.9)
 
 - The Web Audio decoder loads the whole file into memory — use the ffmpeg
   engine for files over ~20 minutes.

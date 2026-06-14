@@ -77,7 +77,7 @@ words-per-cue, and an animation spec.
 
 ## 4. Competitor feature matrix (June 2026)
 
-| Feature | TimeBolt | AutoCut | Submagic* | Firecut | **CutPilot v0.8** |
+| Feature | TimeBolt | AutoCut | Submagic* | Firecut | **CutPilot v0.9** |
 |---|---|---|---|---|---|
 | Silence removal | ✅ | ✅ | — | ✅ | ✅ (2 engines) |
 | Preview before cut | ✅ | partial | — | ✅ | ✅ (markers + checklist) |
