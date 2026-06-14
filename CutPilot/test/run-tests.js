@@ -9,6 +9,7 @@ const CPSilence = require(path.join(__dirname, '..', 'js', 'silence.js'));
 const CPCaptions = require(path.join(__dirname, '..', 'js', 'captions.js'));
 const CPMulticam = require(path.join(__dirname, '..', 'js', 'multicam.js'));
 const CPTranscript = require(path.join(__dirname, '..', 'js', 'transcript.js'));
+const CPFonts = require(path.join(__dirname, '..', 'js', 'fonts.js'));
 
 let passed = 0, failed = 0;
 
@@ -492,6 +493,58 @@ console.log('transcript.js (keyword salience)');
   const set3 = CPTranscript.topKeywordSet(cues, { maxWords: 3 });
   assert(JSON.stringify(CPTranscript.markSalient(['The', 'DOG', 'barks'], set3)) === '[false,true,true]',
          'markSalient flags salient words case-insensitively');
+}
+
+// ------------------------------------------------- installed-font parsing ----
+console.log('fonts.js (installed-font discovery)');
+{
+  // build a minimal valid sfnt with a single 'name' table (family = nameID 1)
+  function sfntWithFamily(fam) {
+    const strBytes = fam.length * 2;
+    const nameTableLen = 6 + 12 + strBytes;
+    const buf = Buffer.alloc(28 + nameTableLen);
+    buf.writeUInt32BE(0x00010000, 0); buf.writeUInt16BE(1, 4);
+    buf.write('name', 12, 'latin1'); buf.writeUInt32BE(28, 20); buf.writeUInt32BE(nameTableLen, 24);
+    buf.writeUInt16BE(0, 28); buf.writeUInt16BE(1, 30); buf.writeUInt16BE(18, 32);
+    buf.writeUInt16BE(3, 34); buf.writeUInt16BE(1, 36); buf.writeUInt16BE(0x0409, 38);
+    buf.writeUInt16BE(1, 40); buf.writeUInt16BE(strBytes, 42); buf.writeUInt16BE(0, 44);
+    for (let i = 0; i < fam.length; i++) buf.writeUInt16BE(fam.charCodeAt(i), 46 + i * 2);
+    return buf;
+  }
+
+  const fam = CPFonts.parseFamilyNames(sfntWithFamily('Times New Roman'));
+  assert(fam.length === 1 && fam[0] === 'Times New Roman', 'parses a family name, keeping internal spaces');
+  assert(CPFonts.parseFamilyNames(Buffer.from([1, 2, 3])).length === 0, 'too-short buffer yields no names');
+  assert(CPFonts.parseFamilyNames(Buffer.alloc(40)).length === 0, 'unrecognized font header yields no names');
+
+  const win = CPFonts.systemFontDirs('win32', { WINDIR: 'C:\\Windows', LOCALAPPDATA: 'C:\\U\\L' });
+  assert(win.indexOf('C:\\Windows\\Fonts') >= 0, 'windows font dir resolved');
+  const mac = CPFonts.systemFontDirs('darwin', {}, '/Users/me');
+  assert(mac.indexOf('/System/Library/Fonts') >= 0 && mac.indexOf('/Users/me/Library/Fonts') >= 0, 'mac font dirs resolved');
+  const lin = CPFonts.systemFontDirs('linux', {}, '/home/me');
+  assert(lin.indexOf('/usr/share/fonts') >= 0 && lin.indexOf('/home/me/.fonts') >= 0, 'linux font dirs resolved');
+
+  // listInstalledFonts walks dirs (incl. subfolders) via injected fs/path
+  const fakeFs = {
+    readdirSync: function (d) {
+      if (d === '/fonts') return ['A.ttf', 'B.otf', 'note.txt', 'sub'];
+      if (d === '/fonts/sub') return ['C.ttf'];
+      return [];
+    },
+    statSync: function (p) {
+      var base = p.split('/').pop();
+      return { isDirectory: function () { return base === 'sub'; }, size: 1000 };
+    },
+    readFileSync: function (p) {
+      if (/A\.ttf$/.test(p)) return sfntWithFamily('Alpha');
+      if (/B\.otf$/.test(p)) return sfntWithFamily('Beta');
+      if (/C\.ttf$/.test(p)) return sfntWithFamily('Gamma');
+      return Buffer.alloc(0);
+    }
+  };
+  const fakePath = { join: function (a, b) { return a + '/' + b; } };
+  const found = CPFonts.listInstalledFonts(fakeFs, fakePath, { dirs: ['/fonts'] });
+  assert(found.join(',') === 'Alpha,Beta,Gamma', 'scans dirs + subfolders, parses, de-dupes, sorts');
 }
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

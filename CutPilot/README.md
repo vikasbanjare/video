@@ -161,10 +161,11 @@ Box, Clean Minimal, Neon Pop, Typewriter, Bold Yellow, Clean White, News
 Bar) to load a starting look — then tweak it.
 
 **Customize (always visible).** Full control, just like the AI caption apps:
-- **Font** — a large trending catalog (Anton, Bebas Neue, Montserrat, Poppins,
-  plus serif, mono and handwriting faces) loaded as web fonts so the chosen
-  face renders in the preview *and* the exported captions even if it isn't
-  installed, plus **✏️ Custom font…** to type any font installed on your machine
+- **Font** — lists **every font installed on your computer** (read straight
+  from your system font folders), grouped under a curated *Suggested* web-font
+  catalog (Anton, Bebas Neue, Montserrat, serif, mono, handwriting…) that
+  renders even when a face isn't installed, plus **✏️ Custom font…** to name any
+  face by hand
 - **Size**, **Position** sliders
 - **Layout** quick buttons (Top / Center / Bottom)
 - **Text**, **Highlight**, **Outline**, **Box** color swatches
@@ -205,6 +206,7 @@ premiere-plugin/
 │   ├── render.js          Built-in caption render engine (canvas → PNG)
 │   ├── multicam.js        Angle planning (pure, unit-tested)
 │   ├── transcript.js      Filler-word ranges + TF-IDF keyword salience (pure, unit-tested)
+│   ├── fonts.js           Installed-font discovery: sfnt/ttc name parsing (pure, unit-tested)
 │   └── lib/cep-bridge.js  Minimal CSInterface replacement
 ├── jsx/host.jsx           ExtendScript: razor, ripple, rebuild, multicam,
 │                          caption placement + keyframed animations, MOGRT

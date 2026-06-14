@@ -547,15 +547,45 @@
   // ----------------------------------------------------- editor controls ----
   function buildFontSelect() {
     var sel = $('c-font');
+    sel.innerHTML = '';
+    var grp = document.createElement('optgroup');
+    grp.label = 'Suggested';
     CPCaptions.FONTS.forEach(function (f) {
       var o = document.createElement('option');
       o.value = f; o.textContent = f; o.style.fontFamily = '"' + f + '", sans-serif';
-      sel.appendChild(o);
+      grp.appendChild(o);
     });
-    // last entry lets the user type any font installed on their machine
+    sel.appendChild(grp);
+    // "Custom font…" stays last so any face can still be named by hand
     var co = document.createElement('option');
     co.value = '__custom__'; co.textContent = '✏️ Custom font…';
     sel.appendChild(co);
+    loadInstalledFonts();
+  }
+
+  /* Append an optgroup listing EVERY font installed on this computer (read from
+     the OS font folders). Runs once, deferred so it never blocks first paint;
+     Node/CEP only — browser preview just shows the Suggested list. */
+  var _installedFontsLoaded = false;
+  function loadInstalledFonts() {
+    if (_installedFontsLoaded || typeof CPFonts === 'undefined' || !CPBridge.isCEP()) return;
+    _installedFontsLoaded = true;
+    setTimeout(function () {
+      var fonts = [];
+      try { fonts = CPFonts.listInstalledFonts(nodeReq('fs'), nodeReq('path'), {}); }
+      catch (e) { return; }
+      if (!fonts.length) return;
+      var sel = $('c-font');
+      var grp = document.createElement('optgroup');
+      grp.label = 'Installed on your computer (' + fonts.length + ')';
+      fonts.forEach(function (f) {
+        var o = document.createElement('option');
+        o.value = f; o.textContent = f;
+        try { o.style.fontFamily = '"' + f + '", sans-serif'; } catch (eS) {}
+        grp.appendChild(o);
+      });
+      sel.insertBefore(grp, sel.lastChild); // before the "Custom font…" entry
+    }, 50);
   }
 
   function setFontValue(font) {
