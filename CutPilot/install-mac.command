@@ -17,6 +17,13 @@ for v in 6 7 8 9 10 11 12; do
   defaults write com.adobe.CSXS.$v PlayerDebugMode 1 2>/dev/null
 done
 
+echo
+echo "  ℹ  macOS may now ask Terminal for permission to access your files"
+echo "     (Desktop / Documents / Downloads). Click OK / Allow — it only lets"
+echo "     the installer copy CutPilot into Premiere's extensions folder."
+echo "     (This installer makes no internet connections.)"
+echo
+
 # 2) copy plugin (replace any old copy)
 SRC="$(cd "$(dirname "$0")" && pwd)"
 DEST="$HOME/Library/Application Support/Adobe/CEP/extensions/CutPilot"
