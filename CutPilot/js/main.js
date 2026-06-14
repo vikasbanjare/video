@@ -709,12 +709,18 @@
   }
 
   // ----------------------------------------------------- sub-views / save ----
+  var _mogrtScanned = false;
   function showView(v) {
     $('view-templates').classList.toggle('hidden', v !== 'templates');
     $('view-editor').classList.toggle('hidden', v !== 'editor');
     var btns = document.querySelectorAll('#cap-view button');
     for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('on', btns[i].dataset.view === v);
-    if (v === 'editor') renderPreview();
+    if (v === 'editor') {
+      renderPreview();
+      // The MOGRT section is now always-visible (not in a <details>), so scan
+      // Premiere's installed templates the first time the editor opens.
+      if (CPBridge.isCEP() && !_mogrtScanned) { _mogrtScanned = true; scanInstalledMogrts(); }
+    }
     if (v === 'templates') renderTemplateGrid();
   }
 
@@ -1040,11 +1046,8 @@
 
   // ---- advanced: Premiere template / plain track ----
   function wireAltMode() {
-    // scan installed templates the first time the user expands "Other ways"
-    var det = document.querySelector('#view-editor details.advanced');
-    if (det) det.addEventListener('toggle', function () {
-      if (this.open && !state.installedMogrts.length) scanInstalledMogrts();
-    });
+    // (Installed templates are scanned lazily when the editor opens — see
+    // showView — now that the MOGRT section lives outside the <details>.)
     var subs = document.querySelectorAll('#tpl-source button');
     for (var s = 0; s < subs.length; s++) {
       subs[s].addEventListener('click', function () {
@@ -1170,11 +1173,16 @@
         return toast('Couldn\'t add this template' + why + '. Try another, or use an Animated style.', true);
       }
       if (r.textSet === 0) {
-        toast('Placed ' + r.inserted + ' graphics, but couldn\'t find a text field. ' +
-              'Fields: ' + ((r.fields && r.fields.join(', ')) || 'none') + '. Tell me one and I\'ll target it.', true);
+        toast('Placed ' + r.inserted + ' graphics, but couldn\'t fill the words. ' +
+              'Tap 🔍 Inspect to see this template\'s fields — its text field may have an ' +
+              'unusual name (' + ((r.fields && r.fields.slice(0, 4).join(', ')) || 'none found') + ').', true);
       } else {
+        var dur = (r.clamped && r.maxTemplateDur)
+          ? ' · ' + r.clamped + ' couldn\'t reach full length (template max ~' +
+            r.maxTemplateDur.toFixed(1) + 's — use an Animated style for exact timing)'
+          : '';
         toast('🎬 Added ' + r.inserted + ' template captions (' + r.textSet + ' with text)' +
-              (r.failed ? ' · ' + r.failed + ' failed' : '') + '.');
+              (r.failed ? ' · ' + r.failed + ' failed' : '') + dur + '.');
       }
     }).catch(function (e) { if (btn) btn.disabled = false; capProgress(null); toast(e.message, true); });
   }

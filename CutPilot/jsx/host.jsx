@@ -724,9 +724,21 @@ function CP_insertMogrtCaptions(argsJson) {
   try {
     var args = JSON.parse(argsJson);
     var seq = CP_activeSequence();
-    var vTrack = args.videoTrack != null ? args.videoTrack : seq.videoTracks.numTracks - 1;
+    // Place MOGRT captions on a FRESH top video track (like the image engine)
+    // so they never overwrite existing footage and are easy to find and trim.
+    var vTrack;
+    if (args.videoTrack != null) {
+      vTrack = args.videoTrack;
+    } else {
+      vTrack = seq.videoTracks.numTracks - 1;
+      try {
+        app.enableQE();
+        qe.project.getActiveSequence().addTracks(1, seq.videoTracks.numTracks, 0);
+        vTrack = seq.videoTracks.numTracks - 1;
+      } catch (eTrack) {}
+    }
     var aTrack = args.audioTrack != null ? args.audioTrack : 0;
-    var inserted = 0, textSet = 0;
+    var inserted = 0, textSet = 0, clamped = 0, maxTemplateDur = 0;
     var errors = [];
     var fieldNames = null; // captured once for diagnostics
 
@@ -735,6 +747,12 @@ function CP_insertMogrtCaptions(argsJson) {
 
     for (var i = 0; i < args.cues.length; i++) {
       var cue = args.cues[i];
+      // never let one caption overrun the start of the next one
+      var wantEnd = cue.end;
+      if (i + 1 < args.cues.length) {
+        var nextStart = args.cues[i + 1].start;
+        if (nextStart > cue.start && nextStart < wantEnd) wantEnd = nextStart;
+      }
       var clip = null;
       try {
         clip = seq.importMGT(args.mogrtPath, CP_ticksFromSeconds(cue.start), vTrack, aTrack);
@@ -745,7 +763,16 @@ function CP_insertMogrtCaptions(argsJson) {
       if (!clip) { errors.push('cue ' + i + ': importMGT returned nothing'); continue; }
       inserted++;
 
-      try { clip.end = CP_timeFromSeconds(cue.end); } catch (eEnd) {}
+      // The template's authored length: AE-based .mogrt clips can be trimmed
+      // SHORTER but not stretched longer than this, so a caption longer than
+      // the template falls short (and can't be dragged out manually either).
+      try {
+        var nat = clip.end.seconds - clip.start.seconds;
+        if (nat > maxTemplateDur) maxTemplateDur = nat;
+      } catch (eNat) {}
+
+      try { clip.end = CP_timeFromSeconds(wantEnd); } catch (eEnd) {}
+      try { if (clip.end.seconds < wantEnd - 0.05) clamped++; } catch (eChk) {}
 
       try {
         var comp = clip.getMGTComponent();
@@ -777,6 +804,8 @@ function CP_insertMogrtCaptions(argsJson) {
     return CP_ok({
       inserted: inserted,
       textSet: textSet,
+      clamped: clamped,
+      maxTemplateDur: maxTemplateDur,
       failed: args.cues.length - inserted,
       fields: fieldNames ? fieldNames.slice(0, 8) : [],
       sampleErrors: errors.slice(0, 3)

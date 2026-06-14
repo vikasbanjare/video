@@ -197,15 +197,15 @@
       <button id="btn-magic" class="hero-btn">✨ Add captions</button>
       <div id="cap-progress" class="progress hidden"></div>
 
-    <!-- ADVANCED: Premiere templates + plain track (both shown, no nesting) -->
-    <details class="advanced">
-      <summary>Other ways to caption</summary>
-
-      <div class="alt-block">
-        <div class="alt-title">🎬 Use a Premiere template (.mogrt)</div>
+      <!-- Premiere template (.mogrt): promoted out of the hidden "Other ways"
+           drawer into its own always-visible section, next to Customize. -->
+      <div class="section-label">🎬 Premiere template (.mogrt)</div>
+      <div class="alt-block" id="mogrt-section">
         <p class="hint">Use a Motion Graphics Template for the animation — CutPilot
-           adds one per caption line and types in the words. It uses the
-           <b>Words per caption</b> setting at the top of the editor.</p>
+           adds one per caption line, <b>on its own new track</b>, and types in the
+           words. It uses the <b>Words per caption</b> setting above. Custom
+           After-Effects templates keep their built-in length (they can't be
+           stretched longer); tap <b>🔍 Inspect</b> if the words don't fill in.</p>
         <div class="seg-control sub" id="tpl-source">
           <button data-src="installed" class="on">Installed in Premiere</button>
           <button data-src="file">From a file</button>
@@ -232,13 +232,15 @@
         <pre id="tpl-inspect-out" class="diag-out hidden"></pre>
       </div>
 
-      <div class="alt-block">
-        <div class="alt-title">📝 Plain caption track</div>
-        <p class="hint">A normal, editable caption track. Set the font once in
-           Essential Graphics and save it as a Track Style.</p>
-        <button id="btn-native-apply" class="hero-btn small">Add plain caption track</button>
-      </div>
-    </details>
+      <details class="advanced">
+        <summary>Plain caption track (no animation)</summary>
+        <div class="alt-block">
+          <div class="alt-title">📝 Plain caption track</div>
+          <p class="hint">A normal, editable caption track. Set the font once in
+             Essential Graphics and save it as a Track Style.</p>
+          <button id="btn-native-apply" class="hero-btn small">Add plain caption track</button>
+        </div>
+      </details>
     </div><!-- /view-editor -->
   </section>
 
