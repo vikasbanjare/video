@@ -78,6 +78,11 @@ Restart Premiere and open **Window → Extensions → CutPilot**.
    this are cut too).
 3. **Analyze selected clip** → review the list, untick silences you want to
    keep, and use **Preview as markers** to audition before cutting.
+   - Tick **✂ Also remove filler words** to additionally cut "um / uh / you
+     know / …" found in your transcript. They appear in the same checklist
+     (labeled with the word) and apply through the same engines below. The list
+     is conservative by default; an advanced option adds "like / so / actually"
+     for more aggressive trimming.
 4. Apply with one of two engines:
    - **Rebuild trimmed sequence (safe)** — builds a brand-new sequence from
      only the kept segments using fully supported APIs. Your original
@@ -161,9 +166,10 @@ Bar) to load a starting look — then tweak it.
 - **Text**, **Highlight**, **Outline**, **Box** color swatches
 - **Outline width** slider, **Box** on/off, **CAPS** on/off
 - **Words at a time** (1 = word-by-word pop, 0 = full lines)
-- **✨ Auto-highlight keywords** — automatically emphasizes the strongest
-  word, numbers, names, or call-to-action words in your chosen highlight
-  color (Smart / Longest word / Numbers / CTA / Names)
+- **✨ Auto-highlight keywords** — automatically emphasizes the important
+  words in your chosen highlight color. **Auto** ranks the words that matter
+  across your *whole* transcript (TF-IDF) and highlights those; or pick
+  Smart / Longest word / Numbers / CTA / Names to highlight per caption.
 - **Animation**: Pop, Scale, Zoom, Bounce, Slide up, Wave, Shake, Fade,
   Glitch, Karaoke, Typewriter, None
 
@@ -194,6 +200,7 @@ premiere-plugin/
 │   ├── captions.js        SRT tooling, style presets, animation planners
 │   ├── render.js          Built-in caption render engine (canvas → PNG)
 │   ├── multicam.js        Angle planning (pure, unit-tested)
+│   ├── transcript.js      Filler-word ranges + TF-IDF keyword salience (pure, unit-tested)
 │   └── lib/cep-bridge.js  Minimal CSInterface replacement
 ├── jsx/host.jsx           ExtendScript: razor, ripple, rebuild, multicam,
 │                          caption placement + keyframed animations, MOGRT

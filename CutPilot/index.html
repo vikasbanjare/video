@@ -175,6 +175,7 @@
         <div id="c-kw-mode-wrap" class="hidden">
           <label>Highlight which words
             <select id="c-kw-mode">
+              <option value="auto">✨ Auto — important words across your whole video</option>
               <option value="smart">Smart — numbers, names &amp; key words</option>
               <option value="keywords">The strongest word</option>
               <option value="numbers">Numbers</option>
@@ -267,6 +268,11 @@
             <input type="number" id="opt-minkeep" value="0.25" step="0.05" min="0">
           </label>
         </div>
+      </details>
+      <label class="check" style="margin-top:8px"><input type="checkbox" id="opt-fillers"> ✂ Also remove filler words <span class="dim">(um, uh, you know… — uses your transcript)</span></label>
+      <details class="advanced" id="opt-fillers-adv" style="display:none">
+        <summary>Filler word options</summary>
+        <label class="check"><input type="checkbox" id="opt-fillers-extra"> Also cut “like”, “so”, “actually”… <span class="dim">(more aggressive — may catch real words)</span></label>
       </details>
     </div>
 
@@ -413,6 +419,7 @@
   <script src="js/captions.js"></script>
   <script src="js/render.js"></script>
   <script src="js/multicam.js"></script>
+  <script src="js/transcript.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>

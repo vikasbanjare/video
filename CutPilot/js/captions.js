@@ -531,6 +531,15 @@
     var i, w, clean, lc;
     for (i = 0; i < words.length; i++) flags.push(false);
     if (mode === 'all') { for (i = 0; i < words.length; i++) flags[i] = true; return flags; }
+    // 'auto' (TF-IDF): highlight words present in a transcript-wide salient set
+    // precomputed by CPTranscript.topKeywordSet and passed as opts.set.
+    if (mode === 'auto') {
+      var set = opts.set || {};
+      for (i = 0; i < words.length; i++) {
+        flags[i] = !!set[String(words[i]).toLowerCase().replace(/[^a-z0-9']/g, '')];
+      }
+      return flags;
+    }
 
     var longestIdx = -1, longestLen = 0;
     for (i = 0; i < words.length; i++) {

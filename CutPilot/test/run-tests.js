@@ -8,6 +8,7 @@ const path = require('path');
 const CPSilence = require(path.join(__dirname, '..', 'js', 'silence.js'));
 const CPCaptions = require(path.join(__dirname, '..', 'js', 'captions.js'));
 const CPMulticam = require(path.join(__dirname, '..', 'js', 'multicam.js'));
+const CPTranscript = require(path.join(__dirname, '..', 'js', 'transcript.js'));
 
 let passed = 0, failed = 0;
 
@@ -232,6 +233,10 @@ console.log('captions.js (keyword engine)');
   assert(mk(['a', 'b', 'c'], { mode: 'all' }).every(Boolean), 'all mode flags everything');
   // smart always flags numbers
   assert(mk(['get', '3', 'tips'], { mode: 'smart' })[1] === true, 'smart flags numbers too');
+  // 'auto' mode: highlight words from a precomputed transcript-wide salient set
+  assert(JSON.stringify(mk(['Get', 'the', 'DOG'], { mode: 'auto', set: { dog: true } })) === '[false,false,true]',
+         'auto mode flags set words (case-insensitive)');
+  assert(mk(['nothing', 'here'], { mode: 'auto' }).every(v => v === false), 'auto mode with no set flags nothing');
 }
 
 // ------------------------------------------------- buildCaptionFrames ----
@@ -254,6 +259,10 @@ console.log('captions.js (buildCaptionFrames)');
 
   const tw = CPCaptions.buildCaptionFrames(cues, { anim: 'typewriter', uppercase: true });
   assert(tw[tw.length - 1].text === 'GET MORE VIEWS NOW', 'typewriter mode accumulates uppercased text');
+
+  const auto = CPCaptions.buildCaptionFrames(cues, { anim: 'fade', wordsPerCue: 0, keyword: { on: true, mode: 'auto', set: { views: true } } });
+  assert(auto[0].highlightSet && auto[0].highlightSet[2] === true && auto[0].highlightSet[0] === false,
+         'auto keyword: transcript-salient word "views" flagged via buildCaptionFrames');
 }
 
 // ---------------------------------------------- speaker labels + pop ----
@@ -427,6 +436,61 @@ console.log('multicam.js');
   const bs = CPMulticam.burstStarts(env, { offset: 8, minGap: 0.4 });
   assert(bs.length === 2, 'burstStarts finds two talk bursts');
   assert(close(bs[0], 1.0, 0.01) && close(bs[1], 2.6, 0.01), 'burst start times are correct');
+}
+
+// --------------------------------------------- transcript: filler removal ----
+console.log('transcript.js (filler removal)');
+{
+  // length-weighted word timing places "um" first and "uh" mid-cue
+  const r1 = CPTranscript.findFillerRanges([{ start: 0, end: 6, text: 'um I think uh it works' }]);
+  assert(r1.count === 2, 'finds two filler words (um, uh)');
+  assert(r1.ranges[0].word === 'um' && close(r1.ranges[0].start, 0, 1e-3), 'first filler is "um" at the start');
+  assert(r1.ranges[1].word === 'uh' && close(r1.ranges[1].start, 3.0, 1e-2), 'second filler "uh" lands mid-cue');
+  assert(close(r1.removed, 1.3333, 1e-2), 'removed time sums the filler spans');
+
+  // multi-word phrase "you know" is matched as one range
+  const r2 = CPTranscript.findFillerRanges([{ start: 0, end: 6, text: 'you know this is um great' }]);
+  assert(r2.count === 2, 'phrase + single filler -> two ranges');
+  assert(r2.ranges[0].word === 'you know' && close(r2.ranges[0].end, 2.1, 1e-2), 'matches the phrase "you know"');
+  assert(r2.ranges[1].word === 'um', 'still catches the trailing "um"');
+
+  // conservative by default; opts.extra opts into real-word fillers
+  const cueSo = [{ start: 0, end: 4, text: 'so I went there' }];
+  assert(CPTranscript.findFillerRanges(cueSo).count === 0, 'default list does not cut "so"');
+  const ex = CPTranscript.findFillerRanges(cueSo, { extra: true });
+  assert(ex.count === 1 && ex.ranges[0].word === 'so', 'extra:true cuts "so"');
+
+  // a cue that is nothing but a filler is removed whole; clean speech is kept
+  const whole = CPTranscript.findFillerRanges([{ start: 10, end: 10.5, text: 'Um.' }]);
+  assert(whole.count === 1 && close(whole.ranges[0].start, 10) && close(whole.ranges[0].end, 10.5), 'whole "Um." cue removed');
+  assert(CPTranscript.findFillerRanges([{ start: 0, end: 2, text: 'hello world' }]).count === 0, 'clean speech yields no cuts');
+
+  // ranges feed straight into the existing keep pipeline
+  const keeps = CPSilence.invertToKeep(r1.ranges, 6, 0);
+  assert(keeps.length >= 2 && keeps.every(k => k.end > k.start), 'filler ranges invert to keep segments');
+}
+
+// ------------------------------------------ transcript: keyword salience ----
+console.log('transcript.js (keyword salience)');
+{
+  assert(JSON.stringify(CPTranscript.tokenize("Don't stop, now!")) === '["don\'t","stop","now"]',
+         'tokenize splits on punctuation and keeps inner apostrophes');
+
+  const cues = [
+    { start: 0, end: 1, text: 'the dog runs fast' },
+    { start: 1, end: 2, text: 'a dog barks loud' },
+    { start: 2, end: 3, text: 'the cat sleeps quietly' }
+  ];
+  const scored = CPTranscript.keywordScores(cues);
+  assert(scored[0].word === 'dog', 'recurring content word "dog" scores highest');
+  assert(!scored.some(s => s.word === 'the'), 'stop words are excluded');
+
+  const set1 = CPTranscript.topKeywordSet(cues, { maxWords: 1 });
+  assert(set1.dog === true && Object.keys(set1).length === 1, 'topKeywordSet honors maxWords');
+
+  const set3 = CPTranscript.topKeywordSet(cues, { maxWords: 3 });
+  assert(JSON.stringify(CPTranscript.markSalient(['The', 'DOG', 'barks'], set3)) === '[false,true,true]',
+         'markSalient flags salient words case-insensitively');
 }
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

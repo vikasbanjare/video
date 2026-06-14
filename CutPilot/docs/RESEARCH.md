@@ -101,12 +101,13 @@ words-per-cue, and an animation spec.
 - Caption remap after cutting (`remapCuesToKeeps` is already implemented
   and tested — wire it into the UI).
 
-**v0.3 — transcript intelligence**
-- Filler-word removal: parse the transcript SRT for "um/uh/like/you know",
-  match word timings, feed the same cutting engine. (Pure extension of the
-  existing range pipeline.)
-- Keyword auto-highlight for Hormozi preset (TF-IDF over transcript picks
-  the yellow words automatically).
+**v0.3 — transcript intelligence** ✅ *shipped — see "Transcript intelligence (v0.3)" below*
+- ✅ Filler-word removal: `CPTranscript.findFillerRanges` parses the transcript
+  for "um/uh/you know/…", maps word timings, and feeds the ranges into the same
+  Smart Cut keep/cut pipeline. (Pure extension of the existing range pipeline.)
+- ✅ Keyword auto-highlight: `CPTranscript.keywordScores` ranks content words by
+  TF-IDF across the whole transcript; the caption engine's new `auto` mode
+  emphasizes them automatically — works for any preset, not just Hormozi.
 
 **v0.4 — visual energy**
 - Auto-zoom punch-ins: alternate 100%/110% scale per segment (the standard
@@ -223,6 +224,39 @@ the template's field names when it can't find a text field. The captions
 References: [FireCut Multi-track](https://firecut.ai/features/multi-track),
 [AutoPod](https://www.autopod.fm/),
 [best multicam plugins 2026](https://cutback.video/blog/best-multi-cam-editing-plugins-for-premiere-pro-users).
+
+## Transcript intelligence (v0.3)
+
+Two transcript-driven features, implemented as one new pure module
+(`js/transcript.js` → `CPTranscript`) with no DOM/CEP dependencies, so the
+cutting/highlighting decisions are unit-tested in Node like the rest.
+
+**Filler-word removal.** `findFillerRanges(cues, opts)` reconstructs per-word
+timing inside each cue (the same length-weighted interpolation as
+`explodeWords`), matches single fillers and multi-word phrases
+("you know", "i mean", "sort of"…), and returns merged cut ranges. The list is
+**conservative by default** (true disfluencies: um/uh/er/hmm/…); `opts.extra`
+opts into the riskier real-word fillers (like/so/actually/…). The ranges feed
+the *existing* Smart Cut pipeline unchanged — they're mapped into the selected
+clip's media time, merged with the detected silences, and inverted to keep
+segments by `CPSilence.invertToKeep`, so "Remove silences (safe copy)",
+"Cut in place", and "Preview as markers" all pick them up with no ExtendScript
+changes. The panel shows each filler hit (with the word) in the same toggleable
+checklist as silences.
+
+**Keyword auto-highlight (TF-IDF).** The earlier `markKeywords` only sees one
+caption frame at a time (it can flag the longest word, numbers, names, CTAs).
+v0.3 adds whole-transcript awareness: `keywordScores(cues)` treats each cue as a
+document and scores every content word by term-frequency × inverse-document-
+frequency (stop words removed), so words that recur but aren't ubiquitous rise
+to the top. `topKeywordSet` returns the top-N salient words; a new `markKeywords`
+mode `'auto'` highlights exactly those, flowing through the existing
+`buildCaptionFrames` render path. In the panel it's the first
+"Auto-highlight keywords" option ("✨ Auto — important words across your whole
+video") and applies to every preset, not just Hormozi.
+
+Both are covered by new tests in `test/run-tests.js` (filler timing/phrases/
+opt-in list; tokenizer; TF-IDF ranking; `markSalient`; the `auto` render path).
 
 ## Sources
 

@@ -697,6 +697,17 @@
     return { on: $('c-kw').checked, mode: $('c-kw-mode').value };
   }
 
+  /* Keyword options for buildCaptionFrames. The 'auto' mode scores the whole
+     transcript with TF-IDF (CPTranscript) and passes the salient word set, so
+     the engine emphasizes the words that actually matter across the video. */
+  function resolveKeyword(cues) {
+    var kw = readKeyword();
+    if (kw.on && kw.mode === 'auto' && typeof CPTranscript !== 'undefined') {
+      return { on: true, mode: 'auto', set: CPTranscript.topKeywordSet(cues, { maxWords: 14 }) };
+    }
+    return kw;
+  }
+
   // ----------------------------------------------------- sub-views / save ----
   function showView(v) {
     $('view-templates').classList.toggle('hidden', v !== 'templates');
@@ -969,7 +980,7 @@
         anim: anim,
         wordsPerCue: words,
         uppercase: overrides.uppercase,
-        keyword: readKeyword(),
+        keyword: resolveKeyword(cues),
         speaker: readSpeaker(),
         wordCues: wordCues
       });
@@ -1193,6 +1204,29 @@
       .map(function (s) { return { start: s.start, end: s.end }; });
   }
 
+  // reveal the aggressive-list option only when filler removal is on
+  $('opt-fillers').addEventListener('change', function () {
+    $('opt-fillers-adv').style.display = this.checked ? '' : 'none';
+  });
+
+  /* Filler-word cut ranges in the selected clip's MEDIA time, from the
+     transcript. Sequence time T maps to media (T − seqStart + inPoint), the
+     inverse of the silence mapping. Returns [] when disabled/unavailable. */
+  function fillerMediaRanges(clip) {
+    if (!$('opt-fillers').checked || typeof CPTranscript === 'undefined') return [];
+    var cues;
+    try { cues = readSelectedTranscript(); }
+    catch (e) { toast('Filler removal skipped — ' + e.message, true); return []; }
+    var res = CPTranscript.findFillerRanges(cues, { extra: $('opt-fillers-extra').checked, padding: 0.02 });
+    var out = [];
+    res.ranges.forEach(function (fr) {
+      var ms = Math.max((fr.start - clip.seqStart) + clip.inPoint, clip.inPoint);
+      var me = Math.min((fr.end - clip.seqStart) + clip.inPoint, clip.outPoint);
+      if (me > ms) out.push({ start: ms, end: me, kind: 'filler', word: fr.word });
+    });
+    return out;
+  }
+
   $('btn-analyze').addEventListener('click', function () {
     var opts = {
       thresholdDb: parseFloat($('opt-threshold').value),
@@ -1228,11 +1262,18 @@
       for (var i = 0; i < refined.length; i++) {
         var s = Math.max(refined[i].start, clip.inPoint);
         var e = Math.min(refined[i].end, clip.outPoint);
-        if (e > s) silencesMedia.push({ start: s, end: e });
+        if (e > s) silencesMedia.push({ start: s, end: e, kind: 'silence' });
       }
+      // fold in transcript filler-word cuts (already in media time), then sort
+      // so the combined cut list stays ordered for invertToKeep.
+      var fillers = fillerMediaRanges(clip);
+      silencesMedia = silencesMedia.concat(fillers)
+        .sort(function (a, b) { return a.start - b.start; });
+
       state.silencesSeq = silencesMedia.map(function (r) {
         return { start: clip.seqStart + (r.start - clip.inPoint),
-                 end: clip.seqStart + (r.end - clip.inPoint), keep: true };
+                 end: clip.seqStart + (r.end - clip.inPoint), keep: true,
+                 kind: r.kind, word: r.word };
       });
 
       var clipRangeSil = silencesMedia.map(function (r) {
@@ -1248,7 +1289,9 @@
 
       renderResults(clipDur);
       prog.classList.add('hidden');
-      toast('Found ' + state.silencesSeq.length + ' silences.');
+      var nFill = fillers.length;
+      toast('Found ' + (silencesMedia.length - nFill) + ' silences' +
+            (nFill ? ' + ' + nFill + ' filler cuts' : '') + '.');
     }).catch(function (e) {
       prog.classList.add('hidden');
       toast('Analyze failed: ' + e.message, true);
@@ -1257,22 +1300,24 @@
 
   function renderResults(clipDur) {
     var cut = CPSilence.totalDuration(selectedSilences());
+    var hasFiller = state.silencesSeq.some(function (s) { return s.kind === 'filler'; });
     $('stats').innerHTML =
-      'Removing <b>' + fmt(cut) + '</b> of dead air — that\'s <b>' +
-      (clipDur ? Math.round(100 * cut / clipDur) : 0) + '%</b> of your clip';
+      'Removing <b>' + fmt(cut) + '</b> of ' + (hasFiller ? 'dead air &amp; fillers' : 'dead air') +
+      ' — that\'s <b>' + (clipDur ? Math.round(100 * cut / clipDur) : 0) + '%</b> of your clip';
 
     var list = $('silence-list');
     list.innerHTML = '';
     state.silencesSeq.forEach(function (s, i) {
       var item = document.createElement('div');
-      item.className = 'seg-item';
+      item.className = 'seg-item' + (s.kind === 'filler' ? ' is-filler' : '');
       var cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.checked = s.keep;
       cb.addEventListener('change', function () { s.keep = cb.checked; renderResults(clipDur); });
       item.appendChild(cb);
       var span = document.createElement('span');
-      span.textContent = '#' + (i + 1) + '  ' + fmt(s.start) + ' → ' + fmt(s.end);
+      span.textContent = '#' + (i + 1) + '  ' + fmt(s.start) + ' → ' + fmt(s.end) +
+        (s.kind === 'filler' ? '  · “' + s.word + '”' : '');
       item.appendChild(span);
       var dur = document.createElement('span');
       dur.className = 'dur';
