@@ -134,8 +134,9 @@ console.log('captions.js (animation engine)');
 console.log('captions.js (style customizer)');
 {
   assert(CPCaptions.STYLE_PRESETS.length >= 9, '9+ style presets');
-  assert(CPCaptions.FONTS.length >= 12 && CPCaptions.FONTS.indexOf('Montserrat') >= 0,
-         'font catalog includes trending faces');
+  assert(CPCaptions.FONTS.length >= 24 && CPCaptions.FONTS.indexOf('Montserrat') >= 0 &&
+         CPCaptions.FONTS.indexOf('Bebas Neue') >= 0,
+         'expanded font catalog includes trending faces');
 
   const base = CPCaptions.getPreset('hormozi');
   const merged = CPCaptions.mergeStyle(base, {});

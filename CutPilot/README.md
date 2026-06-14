@@ -161,7 +161,11 @@ Box, Clean Minimal, Neon Pop, Typewriter, Bold Yellow, Clean White, News
 Bar) to load a starting look — then tweak it.
 
 **Customize (always visible).** Full control, just like the AI caption apps:
-- **Font** (curated trending list), **Size**, **Position** sliders
+- **Font** — a large trending catalog (Anton, Bebas Neue, Montserrat, Poppins,
+  plus serif, mono and handwriting faces) loaded as web fonts so the chosen
+  face renders in the preview *and* the exported captions even if it isn't
+  installed, plus **✏️ Custom font…** to type any font installed on your machine
+- **Size**, **Position** sliders
 - **Layout** quick buttons (Top / Center / Bottom)
 - **Text**, **Highlight**, **Outline**, **Box** color swatches
 - **Outline width** slider, **Box** on/off, **CAPS** on/off

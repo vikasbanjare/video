@@ -236,24 +236,35 @@
 
     var results = [];
     var i = 0;
-    return new Promise(function (resolve, reject) {
-      function chunk() {
-        try {
-          var stop = Math.min(i + 20, frames.length);
-          for (; i < stop; i++) {
-            drawFrame(canvas, frames[i], style);
-            var b64 = canvas.toDataURL('image/png').split(',')[1];
-            var file = pathMod.join(outDir, 'cap_' + String(10000 + i) + '.png');
-            fs.writeFileSync(file, NodeBuffer.from(b64, 'base64'));
-            results.push({ path: file, start: frames[i].start, end: frames[i].end });
-          }
-          if (opts.onProgress) opts.onProgress(i, frames.length);
-          if (i < frames.length) setTimeout(chunk, 0);
-          else resolve(results);
-        } catch (e) { reject(e); }
+    function run() {
+      return new Promise(function (resolve, reject) {
+        function chunk() {
+          try {
+            var stop = Math.min(i + 20, frames.length);
+            for (; i < stop; i++) {
+              drawFrame(canvas, frames[i], style);
+              var b64 = canvas.toDataURL('image/png').split(',')[1];
+              var file = pathMod.join(outDir, 'cap_' + String(10000 + i) + '.png');
+              fs.writeFileSync(file, NodeBuffer.from(b64, 'base64'));
+              results.push({ path: file, start: frames[i].start, end: frames[i].end });
+            }
+            if (opts.onProgress) opts.onProgress(i, frames.length);
+            if (i < frames.length) setTimeout(chunk, 0);
+            else resolve(results);
+          } catch (e) { reject(e); }
+        }
+        chunk();
+      });
+    }
+    // Make sure the chosen (possibly web-loaded) font is ready before we
+    // rasterize — otherwise the first render can fall back to a default face.
+    try {
+      if (typeof document !== 'undefined' && document.fonts && document.fonts.load) {
+        return document.fonts.load('700 ' + Math.max(8, style.size) + 'px "' + style.font + '"')
+          .then(null, function () {}).then(run);
       }
-      chunk();
-    });
+    } catch (eFonts) {}
+    return run();
   }
 
   return {

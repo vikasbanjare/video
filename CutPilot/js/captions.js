@@ -383,10 +383,20 @@
   /* Curated font list for the customizer. First fallback keeps it readable
      if the chosen face is not installed on the editing machine. */
   var FONTS = [
-    'Montserrat', 'Anton', 'Bebas Neue', 'Poppins', 'Inter', 'Oswald',
-    'Archivo Black', 'Impact', 'Arial Black', 'Roboto', 'Helvetica',
-    'Futura', 'Georgia', 'Times New Roman', 'Verdana', 'Tahoma',
-    'Bradley Hand', 'Comic Sans MS', 'JetBrains Mono', 'Courier New'
+    // Bold / display — the caption workhorses
+    'Anton', 'Bebas Neue', 'Archivo Black', 'Oswald', 'Teko', 'Fjalla One',
+    'Bangers', 'Luckiest Guy', 'Passion One', 'Alfa Slab One', 'Bungee', 'Titan One',
+    'Impact', 'Arial Black',
+    // Sans
+    'Montserrat', 'Poppins', 'Inter', 'Roboto', 'Open Sans', 'Lato', 'Raleway',
+    'Work Sans', 'Nunito', 'Rubik', 'DM Sans', 'Outfit', 'Sora', 'Barlow', 'Manrope',
+    'Helvetica', 'Verdana', 'Tahoma', 'Futura',
+    // Serif
+    'Playfair Display', 'Merriweather', 'Lora', 'Georgia', 'Times New Roman',
+    // Mono
+    'JetBrains Mono', 'Roboto Mono', 'Space Mono', 'Courier New',
+    // Handwriting / marker
+    'Caveat', 'Permanent Marker', 'Shadows Into Light', 'Pacifico', 'Bradley Hand', 'Comic Sans MS'
   ];
 
   /*

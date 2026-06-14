@@ -552,6 +552,10 @@
       o.value = f; o.textContent = f; o.style.fontFamily = '"' + f + '", sans-serif';
       sel.appendChild(o);
     });
+    // last entry lets the user type any font installed on their machine
+    var co = document.createElement('option');
+    co.value = '__custom__'; co.textContent = '✏️ Custom font…';
+    sel.appendChild(co);
   }
 
   function setFontValue(font) {
@@ -635,12 +639,22 @@
   }
 
   function wireCustomizer() {
-    var ids = ['c-font', 'c-size', 'c-pos', 'c-fill', 'c-hl', 'c-stroke', 'c-box',
+    var ids = ['c-size', 'c-pos', 'c-fill', 'c-hl', 'c-stroke', 'c-box',
                'c-strokew', 'c-box-on', 'c-upper', 'c-words', 'c-kw', 'c-kw-mode',
                'c-hl-scale', 'c-speaker'];
     ids.forEach(function (id) {
       $(id).addEventListener('input', function () { updateVals(); renderPreview(); });
       $(id).addEventListener('change', function () { updateVals(); renderPreview(); });
+    });
+    // font dropdown: the trailing "Custom font…" entry prompts for any font
+    // installed on the user's computer (renders if the system has it).
+    $('c-font').addEventListener('change', function () {
+      if (this.value === '__custom__') {
+        var f = prompt('Type the exact name of any font installed on your computer\n(e.g. "Proxima Nova", "SF Pro Display", "Gotham"):', '');
+        if (f && f.trim()) setFontValue(f.trim());
+        else setFontValue(currentPreset().font);
+      }
+      updateVals(); renderPreview();
     });
     $('c-kw').addEventListener('change', function () {
       $('c-kw-mode-wrap').classList.toggle('hidden', !this.checked);
