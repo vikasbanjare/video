@@ -131,6 +131,133 @@
     });
   }
 
+  // -------------------------------------------------- productivity: copy ----
+  function copyText(text) {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+      return true;
+    } catch (e) { return false; }
+  }
+
+  // ----------------------------------------------------------- chapters ----
+  var _chapters = null;
+  function wireChapters() {
+    var mn = $('ch-min');
+    if (mn) mn.addEventListener('input', function () { $('ch-min-val').textContent = this.value; });
+    if ($('btn-ch-build')) $('btn-ch-build').addEventListener('click', function () {
+      var cues;
+      try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
+      var minSec = parseInt($('ch-min').value, 10) || 30;
+      _chapters = CPChapters.buildChapters(cues, { minChapterSec: minSec });
+      if (!_chapters.length) return toast('Couldn\'t build chapters from that transcript.', true);
+      $('ch-out').textContent = CPChapters.formatChapters(_chapters);
+      $('ch-results').classList.remove('hidden');
+      toast(_chapters.length + ' chapters generated.');
+    });
+    if ($('btn-ch-copy')) $('btn-ch-copy').addEventListener('click', function () {
+      if (!_chapters) return;
+      var ok = copyText(CPChapters.formatChapters(_chapters));
+      toast(ok ? 'Chapters copied — paste into your description.' : 'Copy failed — select and copy manually.', !ok);
+    });
+    if ($('btn-ch-markers')) $('btn-ch-markers').addEventListener('click', function () {
+      if (!_chapters) return;
+      CPBridge.callHost('CP_addMarkers', {
+        ranges: _chapters.map(function (c) { return { start: c.start, end: c.start }; }),
+        label: 'Chapter',
+        names: _chapters.map(function (c) { return c.title; })
+      }).then(function (r) { toast('Added ' + r.created + ' chapter markers.'); })
+        .catch(function (e) { toast(e.message, true); });
+    });
+  }
+
+  // --------------------------------------------------- ⌘K command palette ----
+  var _cmd = { open: false, items: [], sel: 0 };
+  function paletteActions() {
+    function goTab(t) { return function () { var b = document.querySelector('.tab[data-tab="' + t + '"]'); if (b) b.click(); }; }
+    function clickId(id) { return function () { var e = $(id); if (e) e.click(); }; }
+    return [
+      { group: 'Go', label: 'Captions', keywords: 'subtitle text caption', run: goTab('captions') },
+      { group: 'Go', label: 'Smart Cut', keywords: 'silence pause trim', run: goTab('silence') },
+      { group: 'Go', label: 'Multicam', keywords: 'camera angle switch', run: goTab('multicam') },
+      { group: 'Go', label: 'Chapters', keywords: 'youtube timestamps markers', run: goTab('chapters') },
+      { group: 'Go', label: 'Settings', keywords: 'ffmpeg diagnostics path', run: goTab('settings') },
+      { group: 'Captions', label: 'Add captions', keywords: 'render burn animate', run: function () { goTab('captions')(); showView('editor'); clickId('btn-magic')(); } },
+      { group: 'Captions', label: 'Open template library', keywords: 'styles gallery browse', run: function () { goTab('captions')(); showView('templates'); } },
+      { group: 'Captions', label: 'Find my transcript again', keywords: 'srt vtt subtitle', run: function () { goTab('captions')(); findTranscript(); } },
+      { group: 'Smart Cut', label: 'Find the silences', keywords: 'analyze detect dead air', run: function () { goTab('silence')(); clickId('btn-analyze')(); } },
+      { group: 'Smart Cut', label: 'Remove silences (safe copy)', keywords: 'rebuild trim', run: function () { goTab('silence')(); clickId('btn-rebuild')(); } },
+      { group: 'Multicam', label: 'Build angle plan', keywords: 'cameras plan', run: function () { goTab('multicam')(); clickId('btn-mc-plan')(); } },
+      { group: 'Multicam', label: 'Apply camera switches', keywords: 'apply cut', run: function () { goTab('multicam')(); clickId('btn-mc-apply')(); } },
+      { group: 'Chapters', label: 'Generate chapters', keywords: 'youtube timestamps', run: function () { goTab('chapters')(); clickId('btn-ch-build')(); } },
+      { group: 'Settings', label: 'Run full diagnostic', keywords: 'debug help', run: function () { goTab('settings')(); clickId('btn-diag-full')(); } }
+    ];
+  }
+  function openPalette() {
+    $('cmdk').classList.remove('hidden');
+    $('cmdk-input').value = '';
+    renderPalette('');
+    setTimeout(function () { try { $('cmdk-input').focus(); } catch (e) {} }, 0);
+    _cmd.open = true;
+  }
+  function closePalette() { $('cmdk').classList.add('hidden'); _cmd.open = false; }
+  function renderPalette(q) {
+    var list = (typeof CPCommand !== 'undefined') ? CPCommand.filter(paletteActions(), q) : paletteActions();
+    _cmd.items = list.slice(0, 24); _cmd.sel = 0;
+    var ul = $('cmdk-list'); ul.innerHTML = '';
+    _cmd.items.forEach(function (a, idx) {
+      var li = document.createElement('li');
+      li.className = 'cmdk-item' + (idx === 0 ? ' on' : '');
+      var grp = document.createElement('span');
+      grp.className = 'cmdk-grp'; grp.textContent = a.group;
+      li.appendChild(grp);
+      li.appendChild(document.createTextNode(' ' + a.label));
+      li.addEventListener('click', function () { runPalette(idx); });
+      ul.appendChild(li);
+    });
+    if (!_cmd.items.length) {
+      var e = document.createElement('li'); e.className = 'cmdk-empty'; e.textContent = 'No matching command';
+      ul.appendChild(e);
+    }
+  }
+  function moveSel(d) {
+    var items = $('cmdk-list').getElementsByClassName('cmdk-item');
+    if (!items.length) return;
+    if (items[_cmd.sel]) items[_cmd.sel].classList.remove('on');
+    _cmd.sel = (_cmd.sel + d + items.length) % items.length;
+    items[_cmd.sel].classList.add('on');
+    try { items[_cmd.sel].scrollIntoView({ block: 'nearest' }); } catch (e) {}
+  }
+  function runPalette(idx) {
+    var a = _cmd.items[idx != null ? idx : _cmd.sel];
+    closePalette();
+    if (a && a.run) { try { a.run(); } catch (e) { toast(e.message, true); } }
+  }
+  function wireCommandPalette() {
+    if ($('cmdk-open')) $('cmdk-open').addEventListener('click', openPalette);
+    if ($('cmdk-input')) {
+      $('cmdk-input').addEventListener('input', function () { renderPalette(this.value); });
+      $('cmdk-input').addEventListener('keydown', function (e) {
+        if (e.key === 'ArrowDown') { e.preventDefault(); moveSel(1); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); moveSel(-1); }
+        else if (e.key === 'Enter') { e.preventDefault(); runPalette(); }
+        else if (e.key === 'Escape') { e.preventDefault(); closePalette(); }
+      });
+    }
+    if ($('cmdk')) $('cmdk').addEventListener('click', function (e) { if (e.target === this) closePalette(); });
+    document.addEventListener('keydown', function (e) {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault(); if (_cmd.open) closePalette(); else openPalette(); return;
+      }
+      if (_cmd.open) return;
+      var tag = (e.target && e.target.tagName) || '';
+      if (/INPUT|TEXTAREA|SELECT/.test(tag) || e.metaKey || e.ctrlKey || e.altKey) return;
+      var map = { '1': 'captions', '2': 'silence', '3': 'multicam', '4': 'chapters', '5': 'settings' };
+      if (map[e.key]) { var b = document.querySelector('.tab[data-tab="' + map[e.key] + '"]'); if (b) b.click(); }
+    });
+  }
+
   // --------------------------------------------------------------- boot ----
   function boot() {
     $('set-ffmpeg').value = settings.ffmpegPath || '';
@@ -142,6 +269,8 @@
     wireTranscriptBar();
     wireAltMode();
     wireSubviews();
+    wireChapters();
+    wireCommandPalette();
     buildLibrary();
     applyTemplate(currentPreset(), { silent: true });  // seeds controls + first preview
     updateSyncStat();

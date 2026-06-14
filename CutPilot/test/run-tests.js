@@ -10,6 +10,8 @@ const CPCaptions = require(path.join(__dirname, '..', 'js', 'captions.js'));
 const CPMulticam = require(path.join(__dirname, '..', 'js', 'multicam.js'));
 const CPTranscript = require(path.join(__dirname, '..', 'js', 'transcript.js'));
 const CPFonts = require(path.join(__dirname, '..', 'js', 'fonts.js'));
+const CPCommand = require(path.join(__dirname, '..', 'js', 'command.js'));
+const CPChapters = require(path.join(__dirname, '..', 'js', 'chapters.js'));
 
 let passed = 0, failed = 0;
 
@@ -562,6 +564,45 @@ console.log('fonts.js (installed-font discovery)');
          'filterFamilies matches substring (case-insensitive)');
   assert(CPFonts.filterFamilies(['Arial', 'Anton'], '').length === 2, 'empty query returns all');
   assert(CPFonts.filterFamilies(['Arial'], 'xyz').length === 0, 'no match returns empty');
+}
+
+// ------------------------------------------------- command palette ----
+console.log('command.js (⌘K palette)');
+{
+  const actions = [
+    { label: 'Add captions' }, { label: 'Find the silences' },
+    { label: 'Build angle plan', keywords: 'multicam camera' }, { label: 'Generate chapters' }
+  ];
+  const cap = CPCommand.filter(actions, 'cap');
+  assert(cap[0].label === 'Add captions', 'ranks "Add captions" first for "cap" (contiguous, word-start)');
+  assert(CPCommand.filter(actions, 'sil')[0].label === 'Find the silences', 'ranks "silences" first for "sil"');
+  assert(CPCommand.filter(actions, 'camera')[0].label === 'Build angle plan', 'matches on keywords too');
+  assert(CPCommand.filter(actions, '').length === 4, 'empty query returns all actions');
+  assert(CPCommand.score('Add captions', 'zzz') === -1, 'no subsequence -> -1');
+  assert(CPCommand.score('Add captions', 'addc') > CPCommand.score('Add captions', 'as'),
+         'closer/contiguous match scores higher');
+}
+
+// ------------------------------------------------- chapters tool ----
+console.log('chapters.js (chapter generator)');
+{
+  assert(CPChapters.formatTimecode(0) === '0:00', 'formats 0:00');
+  assert(CPChapters.formatTimecode(84) === '1:24', 'formats minutes:seconds');
+  assert(CPChapters.formatTimecode(3661) === '1:01:01', 'formats past an hour');
+
+  const cues = [
+    { start: 0, end: 12, text: 'welcome to the productivity workshop' },
+    { start: 12, end: 24, text: 'productivity tips for editors' },
+    { start: 24, end: 40, text: 'now lets talk about captions and captions styling' },
+    { start: 40, end: 60, text: 'captions captions captions help retention' }
+  ];
+  const ch = CPChapters.buildChapters(cues, { minChapterSec: 20 });
+  assert(ch.length === 2, 'splits into 2 chapters at the min length');
+  assert(ch[0].start === 0, 'first chapter starts at 0:00');
+  assert(ch[0].title === 'Productivity' && ch[1].title === 'Captions', 'labels chapters by top content word');
+  assert(ch[1].start === 24, 'second chapter starts at the hand-off');
+  assert(CPChapters.formatChapters(ch) === '0:00 Productivity\n0:24 Captions', 'formats a chapters block');
+  assert(CPChapters.buildChapters([], {}).length === 0, 'no cues -> no chapters');
 }
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

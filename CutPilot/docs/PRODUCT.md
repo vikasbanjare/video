@@ -67,6 +67,11 @@ already trust, with every edit still hand-tweakable.
     reporting; section promoted out of the hidden drawer.
   - **Release hygiene:** one version number (v0.8.0) across manifest, UI,
     installers, and docs.
+- **v0.9 — productivity + a new tool (this release):**
+  - **⌘K command palette** — fuzzy quick-action launcher (jump to any tab or
+    action by typing); **1–5** keyboard tab switching. Speed for power users.
+  - **Chapters tool** — transcript → timestamped YouTube/podcast chapters,
+    copy to description or drop as named timeline markers (pure, tested).
 
 ## 6. Roadmap (prioritized)
 

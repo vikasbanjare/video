@@ -257,7 +257,7 @@ function CP_addMarkers(argsJson) {
     for (var i = 0; i < args.ranges.length; i++) {
       var r = args.ranges[i];
       var m = seq.markers.createMarker(r.start);
-      m.name = (args.label || 'Silence') + ' ' + (i + 1);
+      m.name = (args.names && args.names[i]) ? args.names[i] : ((args.label || 'Silence') + ' ' + (i + 1));
       m.end = r.end;
       try { m.setColorByIndex(1); } catch (eColor) {}
       n++;

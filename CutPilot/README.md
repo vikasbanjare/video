@@ -18,9 +18,15 @@ most repetitive parts of talking-head and multicam editing:
    Highlight, Highlight Box, Clean Minimal, Neon Pop, Typewriter) ×
    eight animations (Pop, Bounce, Slide up, Fade, Glitch, Karaoke,
    Typewriter, None) — mix and match freely, Captions.ai-style.
+4. **Chapters** — turns your transcript into timestamped YouTube/podcast
+   chapters (copy to your description, or drop them on the timeline as markers).
 
-See [`docs/RESEARCH.md`](docs/RESEARCH.md) for the market/trend research and
-the feature roadmap behind this design.
+Power users can press **⌘K / Ctrl-K** for a command palette (jump to any
+action by typing), and **1–5** to switch tabs.
+
+See [`docs/RESEARCH.md`](docs/RESEARCH.md) for the market/trend research,
+[`docs/PRODUCT.md`](docs/PRODUCT.md) for the product brief and roadmap, and
+[`docs/DESIGN.md`](docs/DESIGN.md) for the UI spec.
 
 ---
 
@@ -209,6 +215,8 @@ premiere-plugin/
 │   ├── multicam.js        Angle planning (pure, unit-tested)
 │   ├── transcript.js      Filler-word ranges + TF-IDF keyword salience (pure, unit-tested)
 │   ├── fonts.js           Installed-font discovery: sfnt/ttc name parsing (pure, unit-tested)
+│   ├── command.js         ⌘K command-palette fuzzy matcher (pure, unit-tested)
+│   ├── chapters.js        Transcript → timestamped chapters (pure, unit-tested)
 │   └── lib/cep-bridge.js  Minimal CSInterface replacement
 ├── jsx/host.jsx           ExtendScript: razor, ripple, rebuild, multicam,
 │                          caption placement + keyframed animations, MOGRT

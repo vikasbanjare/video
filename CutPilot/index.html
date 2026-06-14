@@ -15,6 +15,7 @@
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
     <span class="ver" id="ver">v0.8.0</span>
+    <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
 
@@ -22,6 +23,7 @@
     <button class="tab active" data-tab="captions"><span>💬</span>Captions</button>
     <button class="tab" data-tab="silence"><span>⚡</span>Smart Cut</button>
     <button class="tab" data-tab="multicam"><span>🎥</span>Multicam</button>
+    <button class="tab" data-tab="chapters"><span>🔖</span>Chapters</button>
     <button class="tab" data-tab="settings"><span>⚙</span>Settings</button>
   </nav>
 
@@ -385,6 +387,28 @@
     <button id="btn-mc-apply" class="hero-btn hidden">Apply camera switches</button>
   </section>
 
+  <!-- ============================== CHAPTERS ============================ -->
+  <section id="tab-chapters" class="tab-page">
+    <div class="card">
+      <div class="step-head"><span class="step-title">🔖 Chapters</span></div>
+      <p class="hint">Turn your transcript into timestamped chapters — paste them
+         into your YouTube / podcast description, or drop them on the timeline as
+         markers. Uses the same transcript the Captions tab finds.</p>
+      <label>Minimum chapter length (s) <span class="val" id="ch-min-val">30</span>
+        <input type="range" id="ch-min" min="10" max="180" step="5" value="30">
+      </label>
+    </div>
+    <button id="btn-ch-build" class="hero-btn alt">🔖 Generate chapters</button>
+    <div id="ch-progress" class="progress hidden"></div>
+    <div id="ch-results" class="hidden">
+      <div class="card"><pre id="ch-out" class="diag-out"></pre></div>
+      <div class="row tight">
+        <button id="btn-ch-copy" class="hero-btn small" style="flex:1">⧉ Copy chapters</button>
+        <button id="btn-ch-markers" class="chip-btn">Add as markers</button>
+      </div>
+    </div>
+  </section>
+
   <!-- ============================== SETTINGS ============================= -->
   <section id="tab-settings" class="tab-page">
     <div class="card">
@@ -420,6 +444,15 @@
   <footer><div id="log" class="log"></div></footer>
   <div id="toast" class="toast hidden"></div>
 
+  <!-- ⌘K command palette -->
+  <div id="cmdk" class="cmdk hidden">
+    <div class="cmdk-box">
+      <input id="cmdk-input" type="text" autocomplete="off" placeholder="Type a command…  (captions · silence · multicam · chapters)">
+      <ul id="cmdk-list" class="cmdk-list"></ul>
+      <div class="cmdk-foot">↑ ↓ to move · ↵ to run · esc to close</div>
+    </div>
+  </div>
+
   <script src="js/lib/cep-bridge.js"></script>
   <script src="js/silence.js"></script>
   <script src="js/audio.js"></script>
@@ -428,6 +461,8 @@
   <script src="js/multicam.js"></script>
   <script src="js/transcript.js"></script>
   <script src="js/fonts.js"></script>
+  <script src="js/command.js"></script>
+  <script src="js/chapters.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>
