@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>CutPilot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header>
+    <div class="brand"><span class="logo">✦</span> CutPilot</div>
+    <span class="ver" id="ver">v0.7.0</span>
+    <div id="env-status" class="env-status">connecting…</div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="captions"><span>💬</span>Captions</button>
+    <button class="tab" data-tab="silence"><span>⚡</span>Smart Cut</button>
+    <button class="tab" data-tab="multicam"><span>🎥</span>Multicam</button>
+    <button class="tab" data-tab="settings"><span>⚙</span>Settings</button>
+  </nav>
+
+  <!-- ============================== CAPTIONS ============================= -->
+  <section id="tab-captions" class="tab-page active">
+
+    <div class="subview-switch" id="cap-view">
+      <button data-view="templates" class="on">📚 Templates</button>
+      <button data-view="editor">🎨 Editor</button>
+    </div>
+
+    <!-- ===================== TEMPLATE LIBRARY (browser) ==================== -->
+    <div id="view-templates" class="subview">
+      <div class="lib-toolbar">
+        <input type="text" id="lib-search" placeholder="🔍 Search style, color, industry…">
+        <select id="lib-sort">
+          <option value="popular">Popular</option>
+          <option value="recent">Recent</option>
+          <option value="favorites">Favorites</option>
+          <option value="az">A–Z</option>
+        </select>
+      </div>
+      <div class="niche-row">
+        <span class="dim">✨ Suggest for</span>
+        <select id="lib-niche">
+          <option value="">choose your content…</option>
+        </select>
+      </div>
+      <div class="cat-chips" id="lib-cats"></div>
+      <div class="tpl-grid" id="tpl-grid"></div>
+      <div class="row tight" style="justify-content:center">
+        <button id="btn-add-mogrt" class="chip-btn">➕ Add .mogrt file</button>
+        <button id="btn-tpl-import" class="chip-btn">⤓ Import style</button>
+      </div>
+    </div>
+
+    <!-- MOGRT action sheet -->
+    <div id="mogrt-sheet" class="mogrt-sheet hidden">
+      <div class="ms-card">
+        <div class="ms-name" id="ms-name">Template</div>
+        <p class="hint" id="ms-hint">Premiere Motion Graphics Template. Preview it on your
+           timeline, or use it to caption your whole transcript.</p>
+        <label style="font-size:11px">Words per graphic</label>
+        <div class="seg-control sub" id="ms-words">
+          <button data-w="0" class="on">Full line</button>
+          <button data-w="3">Short phrase</button>
+          <button data-w="1">One word</button>
+        </div>
+        <button id="ms-preview" class="hero-btn small alt">▶ Preview on timeline</button>
+        <button id="ms-use" class="hero-btn small">✨ Caption with this template</button>
+        <button id="ms-inspect" class="chip-btn">🔍 Inspect fields</button>
+        <pre id="ms-inspect-out" class="diag-out hidden"></pre>
+        <button id="ms-close" class="link-btn">Close</button>
+      </div>
+    </div>
+
+    <!-- ============================ EDITOR ================================= -->
+    <div id="view-editor" class="subview hidden">
+
+      <div class="editor-head">
+        <button id="btn-back-lib" class="chip-btn">‹ Library</button>
+        <span class="editor-tpl-name" id="editor-tpl-name">Hormozi Bold</span>
+        <span class="spacer"></span>
+        <button id="btn-save-tpl" class="chip-btn" title="Save as custom template">＋ Save</button>
+        <button id="btn-dup-tpl" class="chip-btn" title="Duplicate">⧉</button>
+        <button id="btn-export-tpl" class="chip-btn" title="Export to file">⤴</button>
+      </div>
+
+      <!-- LIVE PREVIEW -->
+      <div class="preview-wrap">
+        <div class="preview-frame" id="preview-frame">
+          <div class="preview-speaker hidden" id="preview-speaker"></div>
+          <div class="preview-caption" id="preview-caption">YOUR CAPTION</div>
+        </div>
+        <button id="btn-replay" class="replay-btn" title="Replay animation">▶</button>
+      </div>
+
+      <!-- PROMINENT: words per caption + audio sync -->
+      <div class="wc-bar">
+        <span class="wc-label">Words per caption</span>
+        <button class="wc-btn" id="wc-minus" type="button">−</button>
+        <b id="wc-num">1</b>
+        <button class="wc-btn" id="wc-plus" type="button">+</button>
+        <button class="chip-btn" id="wc-full" type="button">Full line</button>
+      </div>
+      <label class="check sync-line"><input type="checkbox" id="c-sync" checked> 🎯 Sync each word to the spoken audio <span id="sync-stat" class="dim"></span></label>
+      <input type="number" id="c-words" value="1" class="hidden">
+
+      <!-- TRANSCRIPT -->
+      <div class="tr-bar" id="tr-bar">
+        <span class="tr-ico" id="tr-ico">🔎</span>
+        <span class="tr-text" id="tr-text">looking for your words…</span>
+        <button class="link-btn" id="btn-tr-change">Change</button>
+      </div>
+      <div id="tr-help" class="help-box hidden">
+        <b>No transcript yet? Premiere writes one in about a minute:</b><br>
+        1 · Open <i>Window → Text</i> and click <b>Transcribe sequence</b><br>
+        2 · When done, open the <b>···</b> menu → <i>Export to SRT file</i><br>
+        3 · Save it <b>next to your video</b>, then tap <b>Find again</b>.
+        <div class="row tight">
+          <button id="btn-tr-again" class="chip-btn">↻ Find again</button>
+          <button id="btn-tr-pick" class="chip-btn">Choose a file…</button>
+        </div>
+      </div>
+
+      <!-- CUSTOMIZER -->
+      <div class="section-label">Customize</div>
+      <div class="customizer">
+        <label class="full">Font
+          <select id="c-font"></select>
+        </label>
+
+        <div class="ctrl-row">
+          <label>Size <span class="val" id="c-size-val"></span>
+            <input type="range" id="c-size" min="32" max="160" value="90">
+          </label>
+          <label>Position <span class="val" id="c-pos-val"></span>
+            <input type="range" id="c-pos" min="10" max="92" value="76">
+          </label>
+        </div>
+
+        <label>Layout
+          <div class="seg-control mini" id="c-layout">
+            <button data-pos="18">Top</button>
+            <button data-pos="50">Center</button>
+            <button data-pos="76" class="on">Bottom</button>
+          </div>
+        </label>
+
+        <div class="swatches">
+          <label class="sw">Text<input type="color" id="c-fill" value="#ffffff"></label>
+          <label class="sw">Highlight<input type="color" id="c-hl" value="#ffd400"></label>
+          <label class="sw">Outline<input type="color" id="c-stroke" value="#000000"></label>
+          <label class="sw">Box<input type="color" id="c-box" value="#ff3b6b"></label>
+        </div>
+
+        <label style="margin-top:11px">Highlight look <span class="dim">— the spoken/key word</span></label>
+        <div class="seg-control" id="c-hlstyle">
+          <button data-s="color" class="on">Colour</button>
+          <button data-s="box">Box / pill</button>
+        </div>
+
+        <div class="ctrl-row">
+          <label>Outline width <span class="val" id="c-strokew-val"></span>
+            <input type="range" id="c-strokew" min="0" max="24" value="10">
+          </label>
+          <label class="toggles">
+            <span class="check"><input type="checkbox" id="c-box-on"> Box</span>
+            <span class="check"><input type="checkbox" id="c-upper" checked> CAPS</span>
+          </label>
+        </div>
+
+        <label class="check kw-toggle"><input type="checkbox" id="c-kw"> ✨ Auto-highlight keywords</label>
+        <div id="c-kw-mode-wrap" class="hidden">
+          <label>Highlight which words
+            <select id="c-kw-mode">
+              <option value="smart">Smart — numbers, names &amp; key words</option>
+              <option value="keywords">The strongest word</option>
+              <option value="numbers">Numbers</option>
+              <option value="cta">Call-to-action words</option>
+              <option value="names">Names</option>
+            </select>
+          </label>
+          <label>Keyword pop size <span class="val" id="c-hlscale-val"></span>
+            <input type="range" id="c-hl-scale" min="100" max="170" value="100">
+          </label>
+        </div>
+
+        <label class="check kw-toggle"><input type="checkbox" id="c-speaker"> 🎙️ Show speaker names <span class="dim">(podcasts — reads "Name:" lines)</span></label>
+
+        <div class="section-label sub">Animation</div>
+        <div id="anim-rail" class="anim-rail"></div>
+      </div>
+
+      <button id="btn-magic" class="hero-btn">✨ Add captions</button>
+      <div id="cap-progress" class="progress hidden"></div>
+
+    <!-- ADVANCED: Premiere templates + plain track (both shown, no nesting) -->
+    <details class="advanced">
+      <summary>Other ways to caption</summary>
+
+      <div class="alt-block">
+        <div class="alt-title">🎬 Use a Premiere template (.mogrt)</div>
+        <p class="hint">Use a Motion Graphics Template for the animation — CutPilot
+           adds one per caption line and types in the words. It uses the
+           <b>Words per caption</b> setting at the top of the editor.</p>
+        <div class="seg-control sub" id="tpl-source">
+          <button data-src="installed" class="on">Installed in Premiere</button>
+          <button data-src="file">From a file</button>
+        </div>
+        <div id="tpl-installed">
+          <div class="row tight">
+            <select id="tpl-select"><option>scanning…</option></select>
+            <button id="btn-tpl-rescan" class="chip-btn" title="Rescan">↻</button>
+          </div>
+          <p class="hint" id="tpl-installed-hint"></p>
+        </div>
+        <div id="tpl-file" class="hidden">
+          <div class="row tight">
+            <button id="btn-tpl-pick" class="chip-btn">Choose .mogrt file…</button>
+            <span id="tpl-file-name" class="dim">none chosen</span>
+          </div>
+          <p class="hint">Tip: the template must have an editable text field. CutPilot
+             fills the first text field it finds.</p>
+        </div>
+        <div class="row tight">
+          <button id="btn-alt-apply" class="hero-btn small" style="flex:1">Add template captions</button>
+          <button id="btn-tpl-inspect" class="chip-btn" title="List this template's editable fields">🔍 Inspect</button>
+        </div>
+        <pre id="tpl-inspect-out" class="diag-out hidden"></pre>
+      </div>
+
+      <div class="alt-block">
+        <div class="alt-title">📝 Plain caption track</div>
+        <p class="hint">A normal, editable caption track. Set the font once in
+           Essential Graphics and save it as a Track Style.</p>
+        <button id="btn-native-apply" class="hero-btn small">Add plain caption track</button>
+      </div>
+    </details>
+    </div><!-- /view-editor -->
+  </section>
+
+  <!-- ============================== SMART CUT ============================ -->
+  <section id="tab-silence" class="tab-page">
+    <div class="card">
+      <div class="step-head">
+        <span class="step-num">1</span>
+        <span class="step-title">Your clip</span>
+        <span id="clip-badge" class="badge">click your clip in the timeline</span>
+      </div>
+      <p class="hint">Select the video in your timeline — CutPilot listens to it
+         and finds every pause and dead moment.</p>
+      <details class="advanced">
+        <summary>Advanced detection settings</summary>
+        <div class="grid2">
+          <label>Threshold (dB)
+            <input type="number" id="opt-threshold" value="-40" step="1" max="0" min="-90">
+          </label>
+          <label>Min pause (s)
+            <input type="number" id="opt-minsilence" value="0.6" step="0.1" min="0.1">
+          </label>
+          <label>Padding (s)
+            <input type="number" id="opt-padding" value="0.12" step="0.02" min="0">
+          </label>
+          <label>Min keep (s)
+            <input type="number" id="opt-minkeep" value="0.25" step="0.05" min="0">
+          </label>
+        </div>
+      </details>
+    </div>
+
+    <button id="btn-analyze" class="hero-btn alt">⚡ Find the silences</button>
+    <div id="analyze-progress" class="progress hidden"></div>
+
+    <div id="results" class="hidden">
+      <div class="card">
+        <div id="stats" class="stats"></div>
+        <div id="silence-list" class="seg-list"></div>
+        <div class="row tight">
+          <button id="btn-markers" class="chip-btn">Preview as markers</button>
+          <button id="btn-clear-markers" class="chip-btn">Clear markers</button>
+        </div>
+      </div>
+      <button id="btn-rebuild" class="hero-btn">✂ Remove silences (safe copy)</button>
+      <details class="advanced">
+        <summary>Cut directly in this sequence instead</summary>
+        <label class="check"><input type="checkbox" id="opt-backup" checked> Back up sequence first</label>
+        <label class="check"><input type="checkbox" id="opt-closegaps" checked> Close gaps after deleting</label>
+        <button id="btn-cut" class="danger-btn">Cut in place</button>
+      </details>
+    </div>
+  </section>
+
+  <!-- ============================== MULTICAM ============================= -->
+  <section id="tab-multicam" class="tab-page">
+    <div id="mc-ffmpeg" class="ff-banner hidden"></div>
+    <div class="card">
+      <div class="step-head">
+        <span class="step-num">1</span>
+        <span class="step-title">Cameras</span>
+      </div>
+      <p class="hint">Stack each camera on its own video track (V1, V2, …). Then
+         pick how the angle should switch — works with one mic per person, one
+         mixed track, or a single main mic.</p>
+
+      <label>How to switch angle
+        <select id="mc-source">
+          <option value="follow">🎙️ Follow the speaker — a mic per camera</option>
+          <option value="speech">🗣️ Switch on speech — one main / mixed mic</option>
+          <option value="interval">⏱️ Every few seconds</option>
+          <option value="markers">📍 At my timeline markers</option>
+          <option value="smartcut">✂️ At my Smart Cut points</option>
+        </select>
+      </label>
+
+      <label>Camera tracks
+        <input type="number" id="mc-angles" value="2" min="1" max="8">
+      </label>
+
+      <!-- one main / mixed mic -->
+      <div id="mc-main-opts" class="hidden">
+        <label>Main audio track
+          <select id="mc-main-track"><option value="0">A1</option></select>
+        </label>
+        <p class="hint">Cuts to a new camera at each new sentence / talk burst
+           on this track. Great for a single mixed podcast track.</p>
+      </div>
+
+      <!-- follow-the-speaker (FireCut-style) options -->
+      <div id="mc-speaker-opts">
+        <div class="map-label">Which mic is on each camera?</div>
+        <div id="mc-map"></div>
+        <label id="mc-center-wrap" class="hidden">Cut to the center cam every
+          <span class="val" id="mc-center-val">off</span>
+          <input type="range" id="mc-center" min="0" max="30" step="1" value="0">
+        </label>
+        <label>Min shot length (s) <span class="val" id="mc-minseg-val">1.2</span>
+          <input type="range" id="mc-minseg" min="0.5" max="5" step="0.1" value="1.2">
+        </label>
+      </div>
+
+      <!-- interval option -->
+      <label id="mc-interval-wrap" class="hidden">Seconds per angle <span class="val" id="mc-interval-val">3</span>
+        <input type="range" id="mc-interval" min="1" max="15" step="1" value="3">
+      </label>
+
+      <!-- pattern options (interval/markers/smartcut) -->
+      <div id="mc-pattern-opts" class="hidden">
+        <label>Switch every N cuts
+          <input type="number" id="mc-hold" value="1" min="1" max="10">
+        </label>
+        <label>Switching style</label>
+        <div class="seg-control" id="mc-mode">
+          <button data-mode="rotate" class="on">Rotate</button>
+          <button data-mode="pingpong">Ping-pong</button>
+          <button data-mode="random">Random</button>
+          <button data-mode="weighted">Hero cam</button>
+        </div>
+      </div>
+    </div>
+
+    <button id="btn-mc-plan" class="hero-btn alt">🎬 Build angle plan</button>
+    <div class="row tight" style="justify-content:center">
+      <button id="btn-mc-test" class="chip-btn">🔧 Test audio engine</button>
+    </div>
+    <pre id="mc-diag" class="diag-out hidden"></pre>
+    <div id="mc-progress" class="progress hidden"></div>
+    <div class="card hidden" id="mc-plan-card">
+      <div id="mc-plan-view" class="seg-list"></div>
+    </div>
+    <button id="btn-mc-apply" class="hero-btn hidden">Apply camera switches</button>
+  </section>
+
+  <!-- ============================== SETTINGS ============================= -->
+  <section id="tab-settings" class="tab-page">
+    <div class="card">
+      <div class="step-head"><span class="step-title">Performance</span></div>
+      <div id="ffmpeg-status" class="hint">checking for ffmpeg…</div>
+      <label>ffmpeg path (recommended — needed to read audio inside video files)
+        <div class="row tight">
+          <input type="text" id="set-ffmpeg" placeholder="/opt/homebrew/bin/ffmpeg">
+          <button id="btn-ffmpeg-pick" class="chip-btn">…</button>
+        </div>
+      </label>
+      <label class="check"><input type="checkbox" id="set-dropframe"> Drop-frame timecode (29.97 / 59.94)</label>
+      <button id="btn-save-settings" class="hero-btn small">Save settings</button>
+    </div>
+
+    <div class="card">
+      <div class="step-head"><span class="step-title">🔧 Diagnostics</span></div>
+      <p class="hint">Tap the one button below and send me everything it shows — it checks ffmpeg, your mics, a caption template, and the transcript all at once.</p>
+      <button id="btn-diag-full" class="hero-btn small">🩺 Run full diagnostic</button>
+      <div class="diag-grid">
+        <button class="chip-btn" data-diag="CP_getEnv">Connection</button>
+        <button class="chip-btn" data-diag="CP_getSelectedClip">Selected clip</button>
+        <button class="chip-btn" data-diag="CP_getAudioTracks">Audio tracks</button>
+        <button class="chip-btn" data-diag="CP_findInstalledMogrts">Installed templates</button>
+      </div>
+      <pre id="diag-out" class="diag-out">Results appear here.</pre>
+      <button id="btn-diag-copy" class="chip-btn">Copy results</button>
+    </div>
+
+    <p class="hint center">CutPilot v0.7.0 · smart cut · auto multicam · caption template studio</p>
+  </section>
+
+  <footer><div id="log" class="log"></div></footer>
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="js/lib/cep-bridge.js"></script>
+  <script src="js/silence.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/captions.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/multicam.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
