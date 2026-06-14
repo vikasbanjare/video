@@ -77,7 +77,7 @@ words-per-cue, and an animation spec.
 
 ## 4. Competitor feature matrix (June 2026)
 
-| Feature | TimeBolt | AutoCut | Submagic* | Firecut | **CutPilot v0.1** |
+| Feature | TimeBolt | AutoCut | Submagic* | Firecut | **CutPilot v0.8** |
 |---|---|---|---|---|---|
 | Silence removal | ✅ | ✅ | — | ✅ | ✅ (2 engines) |
 | Preview before cut | ✅ | partial | — | ✅ | ✅ (markers + checklist) |
@@ -86,7 +86,7 @@ words-per-cue, and an animation spec.
 | Animated captions | — | ✅ | ✅ | ✅ | ✅ (native + MOGRT) |
 | Word-by-word karaoke | — | ✅ | ✅ | ✅ | ✅ |
 | Auto-zoom / punch-ins | ✅ | ✅ | ✅ | ✅ | roadmap |
-| Filler-word removal ("um") | ✅ | ✅ | ✅ | ✅ | roadmap |
+| Filler-word removal ("um") | ✅ | ✅ | ✅ | ✅ | ✅ (transcript) |
 | AI B-roll / emoji / SFX | — | ✅ | ✅ | partial | roadmap |
 | Price | $97–197 | sub | sub (web) | sub | TBD |
 

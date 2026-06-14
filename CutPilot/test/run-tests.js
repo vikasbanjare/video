@@ -188,6 +188,17 @@ console.log('render.js (pure layout helpers)');
          'fontSize override wins');
   assert(CPRender.styleForFrame(preset, 1080, { uppercase: false }).uppercase === false,
          'uppercase override wins over preset');
+
+  // caption legibility checker
+  assert(Math.round(CPRender.contrastRatio('#000000', '#FFFFFF')) === 21, 'black/white contrast ratio is 21');
+  assert(CPRender.legibilityWarning({ fill: '#FFFFFF', stroke: null, strokeWidth: 0, boxColor: null, glow: null }),
+         'warns when there is no outline/box/glow');
+  assert(CPRender.legibilityWarning({ fill: '#FFFFFF', stroke: '#000000', strokeWidth: 12, boxColor: null, glow: null }) === null,
+         'white text with a black outline is legible');
+  assert(CPRender.legibilityWarning({ fill: '#FFFFFF', stroke: null, strokeWidth: 0, boxColor: '#F2F2F2', glow: null }),
+         'warns when text and box colors are too close');
+  assert(CPRender.legibilityWarning({ fill: '#111111', stroke: null, strokeWidth: 0, boxColor: '#FFE53B', glow: null }) === null,
+         'dark text on a bright box is legible');
 }
 
 // ------------------------------------------------- template library ----
@@ -545,6 +556,12 @@ console.log('fonts.js (installed-font discovery)');
   const fakePath = { join: function (a, b) { return a + '/' + b; } };
   const found = CPFonts.listInstalledFonts(fakeFs, fakePath, { dirs: ['/fonts'] });
   assert(found.join(',') === 'Alpha,Beta,Gamma', 'scans dirs + subfolders, parses, de-dupes, sorts');
+
+  // searchable picker filter
+  assert(CPFonts.filterFamilies(['Arial', 'Anton', 'Roboto'], 'a').join(',') === 'Arial,Anton',
+         'filterFamilies matches substring (case-insensitive)');
+  assert(CPFonts.filterFamilies(['Arial', 'Anton'], '').length === 2, 'empty query returns all');
+  assert(CPFonts.filterFamilies(['Arial'], 'xyz').length === 0, 'no match returns empty');
 }
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

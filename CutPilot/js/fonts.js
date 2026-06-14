@@ -163,9 +163,22 @@
     return out;
   }
 
+  /* Case-insensitive substring filter for a font-name list (powers the
+     searchable picker). Pure. */
+  function filterFamilies(names, query) {
+    query = String(query || '').trim().toLowerCase();
+    if (!query) return names.slice();
+    var out = [];
+    for (var i = 0; i < names.length; i++) {
+      if (String(names[i]).toLowerCase().indexOf(query) >= 0) out.push(names[i]);
+    }
+    return out;
+  }
+
   return {
     parseFamilyNames: parseFamilyNames,
     systemFontDirs: systemFontDirs,
-    listInstalledFonts: listInstalledFonts
+    listInstalledFonts: listInstalledFonts,
+    filterFamilies: filterFamilies
   };
 });

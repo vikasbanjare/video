@@ -424,3 +424,26 @@ footer { border-top: 1px solid var(--line); background: var(--card); max-height:
 .demo .anim-wave { animation: cp-wave 2.4s ease infinite; }
 .demo .anim-shake { animation: cp-shake 2.4s ease infinite; }
 .demo .anim-type { animation: cp-type 2.4s steps(8) infinite; overflow: hidden; white-space: nowrap; display: inline-block; }
+
+/* searchable font picker + readability warning (v0.8) */
+.font-filter {
+  width: 100%;
+  margin: 4px 0 6px;
+  padding: 7px 10px;
+  border: 1.5px solid var(--line);
+  border-radius: 9px;
+  background: var(--card2);
+  color: var(--fg);
+  font-size: 12px;
+}
+.font-filter:focus { outline: none; border-color: var(--accent); }
+.legibility-note {
+  margin: 8px 0 2px;
+  padding: 8px 11px;
+  border-radius: 9px;
+  background: rgba(229, 159, 0, 0.12);
+  border: 1px solid rgba(229, 159, 0, 0.35);
+  color: #8a5a00;
+  font-size: 11.5px;
+  line-height: 1.35;
+}

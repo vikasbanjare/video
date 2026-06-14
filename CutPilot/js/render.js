@@ -267,10 +267,51 @@
     return run();
   }
 
+  /* WCAG relative luminance of a #rrggbb color (0..1). */
+  function relativeLuminance(hex) {
+    var m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ''));
+    if (!m) return 0;
+    var n = parseInt(m[1], 16);
+    var ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(function (v) {
+      v /= 255;
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+  }
+
+  /* WCAG contrast ratio between two colors (1..21). */
+  function contrastRatio(a, b) {
+    var la = relativeLuminance(a), lb = relativeLuminance(b);
+    var hi = Math.max(la, lb), lo = Math.min(la, lb);
+    return (hi + 0.05) / (lo + 0.05);
+  }
+
+  /*
+   * Captions sit over unknown footage, so legibility comes from an outline,
+   * a box, or a glow — never from the fill color alone. Returns a short
+   * warning string when the current style would be hard to read, else null.
+   * Pure + tested.
+   */
+  function legibilityWarning(style) {
+    var hasStroke = !!style.stroke && (style.strokeWidth || 0) > 0;
+    var hasBox = !!style.boxColor;
+    var hasGlow = !!style.glow;
+    if (!hasStroke && !hasBox && !hasGlow) {
+      return 'No outline, box, or glow — captions can disappear on bright or busy footage. Add an outline.';
+    }
+    if (hasBox && contrastRatio(style.fill, style.boxColor) < 2.5) {
+      return 'Text and box colors are too close — pick a more contrasting text color.';
+    }
+    return null;
+  }
+
   return {
     wrapLines: wrapLines,
     styleForFrame: styleForFrame,
     drawFrame: drawFrame,
-    renderFrames: renderFrames
+    renderFrames: renderFrames,
+    relativeLuminance: relativeLuminance,
+    contrastRatio: contrastRatio,
+    legibilityWarning: legibilityWarning
   };
 });

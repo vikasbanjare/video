@@ -41,6 +41,8 @@
   };
 
   var settings = loadSettings();
+  var _booted = false;            // true once boot() has restored the saved look
+  var LOOK_KEY = 'cutpilot.look'; // persisted caption look (Customize state)
   function loadSettings() {
     try { return JSON.parse(localStorage.getItem('cutpilot.settings')) || {}; }
     catch (e) { return {}; }
@@ -143,6 +145,8 @@
     buildLibrary();
     applyTemplate(currentPreset(), { silent: true });  // seeds controls + first preview
     updateSyncStat();
+    restoreLook();    // re-apply the user's saved look over the default seed
+    _booted = true;   // from here on, customizer changes are persisted
 
     if (!CPBridge.isCEP()) {
       $('env-status').textContent = 'browser preview';
@@ -561,6 +565,7 @@
     co.value = '__custom__'; co.textContent = '✏️ Custom font…';
     sel.appendChild(co);
     loadInstalledFonts();
+    applyFontFilter();
   }
 
   /* Append an optgroup listing EVERY font installed on this computer (read from
@@ -585,6 +590,7 @@
         grp.appendChild(o);
       });
       sel.insertBefore(grp, sel.lastChild); // before the "Custom font…" entry
+      applyFontFilter();                    // keep any active filter applied
     }, 50);
   }
 
@@ -676,6 +682,7 @@
       $(id).addEventListener('input', function () { updateVals(); renderPreview(); });
       $(id).addEventListener('change', function () { updateVals(); renderPreview(); });
     });
+    if ($('c-font-filter')) $('c-font-filter').addEventListener('input', applyFontFilter);
     // font dropdown: the trailing "Custom font…" entry prompts for any font
     // installed on the user's computer (renders if the system has it).
     $('c-font').addEventListener('change', function () {
@@ -881,6 +888,77 @@
 
   function readSpeaker() { return { on: $('c-speaker').checked }; }
 
+  /* Searchable font picker: hide options that don't match the filter box. */
+  function applyFontFilter() {
+    var inp = $('c-font-filter'), sel = $('c-font');
+    if (!inp || !sel) return;
+    var opts = sel.getElementsByTagName('option'), names = [], i;
+    for (i = 0; i < opts.length; i++) if (opts[i].value !== '__custom__') names.push(opts[i].value);
+    var match = {};
+    (typeof CPFonts !== 'undefined' ? CPFonts.filterFamilies(names, inp.value) : names)
+      .forEach(function (n) { match[n] = 1; });
+    for (i = 0; i < opts.length; i++) {
+      opts[i].hidden = (opts[i].value !== '__custom__') && !match[opts[i].value];
+    }
+  }
+
+  /* Inline readability warning under the preview — captions over unknown
+     footage need an outline/box/glow, not just a fill color. */
+  function updateLegibilityNote(st) {
+    var ln = $('legibility-note');
+    if (!ln) return;
+    var warn = (typeof CPRender !== 'undefined' && CPRender.legibilityWarning) ? CPRender.legibilityWarning(st) : null;
+    if (warn) { ln.textContent = '⚠️ ' + warn; ln.classList.remove('hidden'); }
+    else ln.classList.add('hidden');
+  }
+
+  /* Remember the user's caption look between sessions. */
+  function saveLook() {
+    try {
+      localStorage.setItem(LOOK_KEY, JSON.stringify({
+        presetId: state.presetId, animId: state.animId,
+        font: $('c-font').value, words: $('c-words').value,
+        size: $('c-size').value, pos: $('c-pos').value,
+        fill: $('c-fill').value, hl: $('c-hl').value, stroke: $('c-stroke').value, box: $('c-box').value,
+        strokew: $('c-strokew').value, boxOn: $('c-box-on').checked, upper: $('c-upper').checked,
+        kw: $('c-kw').checked, kwMode: $('c-kw-mode').value, hlScale: $('c-hl-scale').value,
+        hlStyle: readHlStyle(), speaker: $('c-speaker').checked
+      }));
+    } catch (e) {}
+  }
+
+  function restoreLook() {
+    var look;
+    try { look = JSON.parse(localStorage.getItem(LOOK_KEY)); } catch (e) { return; }
+    if (!look) return;
+    try {
+      if (look.font && look.font !== '__custom__') setFontValue(look.font);
+      if (look.size != null) $('c-size').value = look.size;
+      if (look.pos != null) { $('c-pos').value = look.pos; setLayoutButton(look.pos); }
+      if (look.fill) $('c-fill').value = look.fill;
+      if (look.hl) $('c-hl').value = look.hl;
+      if (look.stroke) $('c-stroke').value = look.stroke;
+      if (look.box) $('c-box').value = look.box;
+      if (look.strokew != null) $('c-strokew').value = look.strokew;
+      $('c-box-on').checked = !!look.boxOn;
+      $('c-upper').checked = !!look.upper;
+      $('c-kw').checked = !!look.kw;
+      $('c-kw-mode-wrap').classList.toggle('hidden', !look.kw);
+      if (look.kwMode) $('c-kw-mode').value = look.kwMode;
+      if (look.hlScale != null) $('c-hl-scale').value = look.hlScale;
+      syncHlStyleButtons(look.hlStyle || 'color');
+      $('c-speaker').checked = !!look.speaker;
+      if (look.words != null) setWordCount(parseInt(look.words, 10) || 0);
+      if (look.animId) selectAnim(look.animId);
+      if (look.presetId) {
+        state.presetId = look.presetId;
+        var p = findTemplate(look.presetId);
+        if (p) $('editor-tpl-name').textContent = p.name;
+      }
+      updateVals(); renderPreview();
+    } catch (e) {}
+  }
+
   function fontStack(font, fallbacks) {
     return '"' + font + '", "' + (fallbacks || []).join('", "') + '", sans-serif';
   }
@@ -993,6 +1071,9 @@
         cap.classList.add('pa-' + anim);
       }
     }
+
+    updateLegibilityNote(st);
+    if (_booted) saveLook();
   }
 
   // ============================================================ ADD CAPTIONS ==

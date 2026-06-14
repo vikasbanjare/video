@@ -50,7 +50,7 @@ pill, 1.5px border; **chip** = small white pill border. **Segmented control**
 
 ## 3. Global chrome
 
-- **Header**: `✦ CutPilot` (gradient logo) · version badge pill (e.g. `v0.6.13`) ·
+- **Header**: `✦ CutPilot` (gradient logo) · version badge pill (e.g. `v0.8.0`) ·
   right-aligned env status ("Sequence 01 · 1920×1080", green when connected).
 - **Tab bar**: 4 equal pill tabs with icon over label (💬 Captions, ⚡ Smart Cut,
   🎥 Multicam, ⚙ Settings). Active tab = solid black.

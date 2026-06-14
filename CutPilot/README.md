@@ -161,12 +161,14 @@ Box, Clean Minimal, Neon Pop, Typewriter, Bold Yellow, Clean White, News
 Bar) to load a starting look — then tweak it.
 
 **Customize (always visible).** Full control, just like the AI caption apps:
-- **Font** — lists **every font installed on your computer** (read straight
-  from your system font folders), grouped under a curated *Suggested* web-font
-  catalog (Anton, Bebas Neue, Montserrat, serif, mono, handwriting…) that
-  renders even when a face isn't installed, plus **✏️ Custom font…** to name any
-  face by hand
+- **Font** — a **searchable** picker (filter box) listing **every font
+  installed on your computer** (read straight from your system font folders),
+  grouped under a curated *Suggested* web-font catalog (Anton, Bebas Neue,
+  Montserrat, serif, mono, handwriting…) that renders even when a face isn't
+  installed, plus **✏️ Custom font…** to name any face by hand
 - **Size**, **Position** sliders
+- A live **legibility check** warns if a style would be hard to read over video
+  (no outline/box/glow, or low text-vs-box contrast)
 - **Layout** quick buttons (Top / Center / Bottom)
 - **Text**, **Highlight**, **Outline**, **Box** color swatches
 - **Outline width** slider, **Box** on/off, **CAPS** on/off
@@ -239,7 +241,7 @@ Distribute the `.zxp` via [aescripts](https://aescripts.com),
 [ZXP Installer](https://aescripts.com/learn/zxp-installer/), or the Adobe
 Exchange marketplace.
 
-## Known limitations (v0.1)
+## Known limitations (v0.8)
 
 - The Web Audio decoder loads the whole file into memory — use the ffmpeg
   engine for files over ~20 minutes.
