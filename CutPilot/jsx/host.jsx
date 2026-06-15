@@ -758,6 +758,8 @@ function CP_insertMogrtCaptions(argsJson) {
 
     var KEYS = ['text', 'source', 'caption', 'title', 'subtitle', 'headline',
                 'body', 'content', 'label', 'name', 'word'];
+    var trackObj = seq.videoTracks[vTrack];
+    var sharedItem = null, reused = 0;
 
     for (var i = 0; i < args.cues.length; i++) {
       var cue = args.cues[i];
@@ -767,12 +769,26 @@ function CP_insertMogrtCaptions(argsJson) {
         var nextStart = args.cues[i + 1].start;
         if (nextStart > cue.start && nextStart < wantEnd) wantEnd = nextStart;
       }
+      // Load/conform the .mogrt ONCE, then place copies of the same project
+      // item for the rest — this stops Premiere re-running its "Loading Motion
+      // Graphics Template" step per caption (the 89% stall on heavy templates).
+      // Falls back to importMGT if the item can't be reused.
       var clip = null;
-      try {
-        clip = seq.importMGT(args.mogrtPath, CP_ticksFromSeconds(cue.start), vTrack, aTrack);
-      } catch (eImp) {
-        errors.push('cue ' + i + ': ' + eImp.message);
-        continue;
+      if (sharedItem && trackObj) {
+        try {
+          trackObj.overwriteClip(sharedItem, cue.start);
+          clip = trackObj.clips[trackObj.clips.numItems - 1];
+          if (clip) reused++;
+        } catch (eReuse) { clip = null; }
+      }
+      if (!clip) {
+        try {
+          clip = seq.importMGT(args.mogrtPath, CP_ticksFromSeconds(cue.start), vTrack, aTrack);
+          if (clip && !sharedItem) { try { sharedItem = clip.projectItem; } catch (ePI) { sharedItem = null; } }
+        } catch (eImp) {
+          errors.push('cue ' + i + ': ' + eImp.message);
+          continue;
+        }
       }
       if (!clip) { errors.push('cue ' + i + ': importMGT returned nothing'); continue; }
       inserted++;
@@ -817,6 +833,7 @@ function CP_insertMogrtCaptions(argsJson) {
     }
     return CP_ok({
       inserted: inserted,
+      reused: reused,
       textSet: textSet,
       clamped: clamped,
       maxTemplateDur: maxTemplateDur,
