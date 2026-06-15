@@ -907,8 +907,13 @@ function CP_inspectMogrt(argsJson) {
           var p = comp.properties[i];
           var val = null, type = '?';
           try { val = p.getValue(); type = typeof val; } catch (eV) {}
-          var sample = (type === 'string') ? String(val).substr(0, 40) : String(val);
-          props.push({ i: i, name: String(p.displayName), type: type, sample: sample });
+          var raw = String(val);
+          // Show the FULL value for string params (capped) so we can see the
+          // rich source-text structure — run-length fields and all — not just
+          // the first 40 chars. `rich` flags AE source-text that can't be set.
+          var rich = (type === 'string' && (raw.indexOf('capProp') !== -1 || raw.indexOf('textEditValue') !== -1));
+          var sample = (raw.length > 6000) ? (raw.substr(0, 6000) + '…[' + raw.length + ' chars total]') : raw;
+          props.push({ i: i, name: String(p.displayName), type: type, rich: rich, len: raw.length, sample: sample });
         }
       }
     } catch (eComp) {}

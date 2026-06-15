@@ -1393,10 +1393,20 @@
     out.classList.remove('hidden'); out.className = 'diag-out'; out.textContent = 'Inspecting ' + path.split(/[\\/]/).pop() + '…';
     CPBridge.callHost('CP_inspectMogrt', { path: path }).then(function (r) {
       if (!r.props || !r.props.length) { out.textContent = 'This template exposes no editable fields (count 0).'; return; }
+      var anyRich = false;
       var lines = r.props.map(function (p) {
-        return '#' + p.i + '  "' + p.name + '"  [' + p.type + ']' + (p.type === 'string' ? '  = ' + p.sample : '');
+        if (p.rich) anyRich = true;
+        var tag = p.rich ? '  ⚠️ RICH (AE source-text — not script-settable)' : '';
+        return '#' + p.i + '  "' + p.name + '"  [' + p.type + ']' + tag +
+               (p.type === 'string' ? '\n      = ' + p.sample : '');
       });
-      out.textContent = path.split(/[\\/]/).pop() + ' — ' + r.count + ' fields:\n' + lines.join('\n');
+      var foot = anyRich
+        ? '\n\n⚠️ This template uses Premiere\'s rich caption format, so its text ' +
+          'can\'t be filled by any panel without risking the project. Use ✨ Add ' +
+          'captions (Animated) for your words. (Copy this and send it to support ' +
+          'if you want this exact template investigated.)'
+        : '';
+      out.textContent = path.split(/[\\/]/).pop() + ' — ' + r.count + ' fields:\n' + lines.join('\n') + foot;
     }).catch(function (e) { out.className = 'diag-out err'; out.textContent = 'Inspect failed: ' + e.message; });
   }
 
