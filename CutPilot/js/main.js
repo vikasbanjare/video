@@ -17,6 +17,7 @@
     keepsSeq: [],
     plan: null,
     transcript: null,        // { label, path } — the one chosen transcript
+    transcriptManual: false, // true once the user picks a file by hand (auto-rescan won't override)
     presetId: 'hormozi',
     animId: 'pop',
     mcMode: 'rotate',
@@ -120,7 +121,7 @@
       // Re-check for a transcript when returning to Captions (e.g. after
       // exporting one), and refresh the preview now the frame has a size.
       if (this.dataset.tab === 'captions' && CPBridge.isCEP()) {
-        if (!state.transcript) findTranscript();
+        if (!state.transcriptManual) findTranscript();  // re-scan unless hand-picked (catches a fresh export)
         renderPreview();
       }
       if (this.dataset.tab === 'multicam' && CPBridge.isCEP()) {
@@ -322,9 +323,13 @@
     else b.classList.add('hidden');
   }
 
-  /* Find the single best transcript and confirm it in the bar. */
+  /* Find the single best transcript and confirm it in the bar.
+     An auto-scan clears the manual flag (so the focus rescan can keep it
+     fresh); only show the "looking…" placeholder when nothing's chosen yet
+     so a background rescan doesn't flicker an already-confirmed transcript. */
   function findTranscript() {
-    setTranscriptBar('', '🔎', 'looking for your words…', null);
+    state.transcriptManual = false;
+    if (!state.transcript) setTranscriptBar('', '🔎', 'looking for your words…', null);
     var found = [];
     var seen = {};
     function add(s) {
@@ -376,14 +381,18 @@
     });
   }
 
+  function pickTranscriptByHand(p) {
+    state.transcript = { label: p.split(/[\\/]/).pop(), path: p, mtime: 1e16 };
+    state.transcriptManual = true;   // auto-rescan must not override a hand pick
+    setTranscriptBar('ok', '✅', 'Using ' + state.transcript.label, 'Change');
+    $('tr-help').classList.add('hidden');
+  }
+
   function wireTranscriptBar() {
     $('btn-tr-change').addEventListener('click', function () {
       if (state.transcript) {
         var p = pickFile('Choose a caption file (.srt / .vtt)', ['srt', 'vtt']);
-        if (p) {
-          state.transcript = { label: p.split(/[\\/]/).pop(), path: p, mtime: 1e16 };
-          setTranscriptBar('ok', '✅', 'Using ' + state.transcript.label, 'Change');
-        }
+        if (p) pickTranscriptByHand(p);
       } else {
         $('tr-help').classList.toggle('hidden');
       }
@@ -391,10 +400,24 @@
     $('btn-tr-again').addEventListener('click', findTranscript);
     $('btn-tr-pick').addEventListener('click', function () {
       var p = pickFile('Choose a caption file (.srt / .vtt)', ['srt', 'vtt']);
-      if (!p) return;
-      state.transcript = { label: p.split(/[\\/]/).pop(), path: p, mtime: 1e16 };
-      setTranscriptBar('ok', '✅', 'Using ' + state.transcript.label, 'Change');
-      $('tr-help').classList.add('hidden');
+      if (p) pickTranscriptByHand(p);
+    });
+
+    // Smoother auto-detect: the moment the user exports the SRT in Premiere and
+    // returns to this panel, re-scan automatically — no "Find again" tap needed.
+    // Debounced, skips hand-picked transcripts, and won't flicker a confirmed one.
+    var _refindAt = 0;
+    function maybeRefind() {
+      if (!CPBridge.isCEP() || state.transcriptManual) return;
+      var now = Date.now();
+      if (now - _refindAt < 1500) return;
+      _refindAt = now;
+      var active = document.querySelector('.tab.active');
+      if (active && active.dataset.tab === 'captions') findTranscript();
+    }
+    window.addEventListener('focus', maybeRefind);
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden) maybeRefind();
     });
   }
 
