@@ -130,6 +130,36 @@
   }
 
   /*
+   * Regroup a transcript into captions of `perCue` words EACH, flowing ACROSS
+   * the original line boundaries (unlike explodeWords, which only splits within
+   * a line and so can never reduce the caption count). A new caption also
+   * starts when the gap to the next word exceeds opts.maxGap, so a caption
+   * never spans a long pause. Returns [{start, end, text}]. Pure + tested.
+   */
+  function regroupWords(cues, perCue, opts) {
+    opts = opts || {};
+    var per = Math.max(1, perCue || 1);
+    var maxGap = opts.maxGap != null ? opts.maxGap : 1.5;
+    var words = explodeWords(cues, { wordsPerCue: 1, uppercase: !!opts.uppercase });
+    var out = [], group = [];
+    function flush() {
+      if (!group.length) return;
+      out.push({
+        start: group[0].start,
+        end: group[group.length - 1].end,
+        text: group.map(function (w) { return w.text; }).join(' ')
+      });
+      group = [];
+    }
+    for (var i = 0; i < words.length; i++) {
+      if (group.length && (group.length >= per || (words[i].start - group[group.length - 1].end) > maxGap)) flush();
+      group.push(words[i]);
+    }
+    flush();
+    return out;
+  }
+
+  /*
    * Style presets — the catalog the panel UI shows. Each preset carries:
    *  - native:  recommended settings for Premiere's built-in caption styling
    *  - mogrt:   parameter hints applied when inserting a .mogrt per cue
@@ -768,6 +798,7 @@
     parseSRT: parseSRT,
     toSRT: toSRT,
     explodeWords: explodeWords,
+    regroupWords: regroupWords,
     remapCuesToKeeps: remapCuesToKeeps,
     STYLE_PRESETS: STYLE_PRESETS,
     TEMPLATES: TEMPLATES,

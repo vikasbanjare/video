@@ -1216,7 +1216,10 @@
   }
 
   function textCues(cues, words, upper) {
-    if (words > 0) return CPCaptions.explodeWords(cues, { wordsPerCue: words, uppercase: upper });
+    // Regroup ACROSS line boundaries so "Words per graphic = N" actually yields
+    // fewer, longer captions (explodeWords only splits within a line, so it
+    // could never reduce the count — the cause of "word count not working").
+    if (words > 0) return CPCaptions.regroupWords(cues, words, { uppercase: upper });
     if (upper) return cues.map(function (c) { return { start: c.start, end: c.end, text: c.text.toUpperCase() }; });
     return cues;
   }

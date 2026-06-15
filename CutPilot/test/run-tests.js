@@ -89,6 +89,19 @@ console.log('captions.js');
   const pairs = CPCaptions.explodeWords([cues[0]], { wordsPerCue: 2 });
   assert(pairs.length === 2 && pairs[0].text === 'Hello brave', 'wordsPerCue=2 groups words');
 
+  // regroupWords merges ACROSS line boundaries so word count reduces caption count
+  const oneWordCues = [];
+  for (let i = 0; i < 6; i++) oneWordCues.push({ start: i, end: i + 1, text: String.fromCharCode(97 + i) });
+  const rg = CPCaptions.regroupWords(oneWordCues, 3, {});
+  assert(rg.length === 2, 'regroupWords merges 6 one-word lines into 2 captions');
+  assert(rg[0].text === 'a b c' && rg[1].text === 'd e f', 'regroupWords flows words across line boundaries');
+  assert(close(rg[0].start, 0) && close(rg[0].end, 3) && close(rg[1].end, 6), 'regrouped timings span each group');
+  const rgGap = CPCaptions.regroupWords(
+    [{ start: 0, end: 1, text: 'a' }, { start: 1, end: 2, text: 'b' }, { start: 10, end: 11, text: 'c' }], 5, { maxGap: 1.5 });
+  assert(rgGap.length === 2 && rgGap[1].text === 'c', 'regroupWords breaks a caption at a long pause');
+  assert(CPCaptions.regroupWords([{ start: 0, end: 2, text: 'hello world' }], 1, { uppercase: true })[0].text === 'HELLO',
+         'regroupWords honors uppercase');
+
   // Remap: cue at 2..4 over keeps [0..3] and [5..8] → portion 2..3 stays
   const remapped = CPCaptions.remapCuesToKeeps(
     [{ start: 2, end: 4, text: 'x' }], [{ start: 0, end: 3 }, { start: 5, end: 8 }]);
