@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.4</span>
+    <span class="ver" id="ver">v0.9.5</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -214,6 +214,7 @@
            words. Set <b>Words per graphic</b> right here. Custom
            After-Effects templates keep their built-in length (they can't be
            stretched longer); tap <b>🔍 Inspect</b> if the words don't fill in.</p>
+        <p class="hint" style="color:#8a5a00">⚠️ If Premiere sticks on <b>"Loading Motion Graphics Template… 89%"</b>, that's a known Premiere bug with the template itself (often when the .mogrt contains audio, or sits in a long/deep folder path) — not CutPilot. Use <b>✨ Add captions</b> (Animated) instead, or try a different template.</p>
         <div class="wc-bar" id="mg-words" style="margin-top:8px">
           <span class="wc-label">Words per graphic</span>
           <button class="wc-btn" id="mg-wc-minus" type="button">−</button>
@@ -446,7 +447,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.4 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.5 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

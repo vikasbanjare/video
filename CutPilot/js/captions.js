@@ -764,7 +764,7 @@
       frames = framesFromWordCues(opts.wordCues, anim, wpc, kw, up);
     } else {
       var src = (wpc > 0)
-        ? explodeWords(cues, { wordsPerCue: wpc, uppercase: up })
+        ? regroupWords(cues, wpc, { uppercase: up })   // merge across lines -> N-word captions
         : cues.map(function (c) { return { start: c.start, end: c.end, text: up ? c.text.toUpperCase() : c.text }; });
       frames = src.map(function (c) {
         var words = c.text.replace(/\s+/g, ' ').trim().split(' ');

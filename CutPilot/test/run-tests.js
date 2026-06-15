@@ -291,6 +291,13 @@ console.log('captions.js (buildCaptionFrames)');
   const auto = CPCaptions.buildCaptionFrames(cues, { anim: 'fade', wordsPerCue: 0, keyword: { on: true, mode: 'auto', set: { views: true } } });
   assert(auto[0].highlightSet && auto[0].highlightSet[2] === true && auto[0].highlightSet[0] === false,
          'auto keyword: transcript-salient word "views" flagged via buildCaptionFrames');
+
+  // multi-line transcript merges across lines (regroup), reducing caption count
+  const multi = CPCaptions.buildCaptionFrames(
+    [{ start: 0, end: 1, text: 'a' }, { start: 1, end: 2, text: 'b' }, { start: 2, end: 3, text: 'c' }, { start: 3, end: 4, text: 'd' }],
+    { anim: 'pop', wordsPerCue: 2 });
+  assert(multi.length === 2 && multi[0].words.join(' ') === 'a b' && multi[1].words.join(' ') === 'c d',
+         'buildCaptionFrames merges short lines into N-word captions');
 }
 
 // ---------------------------------------------- speaker labels + pop ----
