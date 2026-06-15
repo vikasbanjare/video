@@ -625,30 +625,34 @@
   }
 
   // ----------------------------------------------- MOGRT card action sheet ----
-  function syncMsWords() {
+  /* Reflect the current words-per-caption value across every stepper mirror
+     (editor, MOGRT section, and the gallery action sheet). */
+  function refreshWordMirrors() {
     var w = parseInt($('c-words').value, 10) || 0;
-    var target = (w === 0) ? 0 : (w >= 2 ? 3 : 1);
-    var wb = document.querySelectorAll('#ms-words button');
-    for (var i = 0; i < wb.length; i++) wb[i].classList.toggle('on', parseInt(wb[i].dataset.w, 10) === target);
+    var label = (w === 0) ? '—' : String(w);
+    ['wc-num', 'ms-wc-num', 'mg-wc-num'].forEach(function (id) { var e = document.getElementById(id); if (e) e.textContent = label; });
+    ['wc-full', 'ms-wc-full', 'mg-wc-full'].forEach(function (id) { var e = document.getElementById(id); if (e) e.classList.toggle('on', w === 0); });
   }
 
   function openMogrtSheet(t) {
     state.selectedMogrt = { path: t.path, name: t.name };
     $('ms-name').textContent = t.name;
     $('ms-inspect-out').classList.add('hidden');
-    syncMsWords();
+    refreshWordMirrors();
     $('mogrt-sheet').classList.remove('hidden');
   }
 
   function wireMogrtSheet() {
-    // these buttons drive the SAME words-per-caption value as the editor stepper
-    var wb = document.querySelectorAll('#ms-words button');
-    for (var i = 0; i < wb.length; i++) {
-      wb[i].addEventListener('click', function () {
-        setWordCount(parseInt(this.dataset.w, 10) || 0);
-        syncMsWords();
-      });
-    }
+    // action-sheet stepper drives the SAME words-per-caption value (1–10)
+    if ($('ms-wc-minus')) $('ms-wc-minus').addEventListener('click', function () {
+      var w = parseInt($('c-words').value, 10) || 0; setWordCount(w <= 1 ? 1 : w - 1);
+    });
+    if ($('ms-wc-plus')) $('ms-wc-plus').addEventListener('click', function () {
+      var w = parseInt($('c-words').value, 10) || 0; setWordCount(w === 0 ? 1 : w + 1);
+    });
+    if ($('ms-wc-full')) $('ms-wc-full').addEventListener('click', function () {
+      var w = parseInt($('c-words').value, 10) || 0; setWordCount(w === 0 ? 1 : 0);
+    });
     $('ms-close').addEventListener('click', function () { $('mogrt-sheet').classList.add('hidden'); });
     $('mogrt-sheet').addEventListener('click', function (e) {
       if (e.target === this) this.classList.add('hidden'); // tap backdrop to close
@@ -868,9 +872,7 @@
   function setWordCount(w) {
     w = isNaN(w) ? 1 : Math.max(0, Math.min(10, w));
     $('c-words').value = w;
-    $('wc-num').textContent = (w === 0) ? '—' : w;
-    var full = document.getElementById('wc-full');
-    if (full) full.classList.toggle('on', w === 0);
+    refreshWordMirrors();
   }
 
   function readKeyword() {
@@ -1302,6 +1304,16 @@
   function wireAltMode() {
     // (Installed templates are scanned lazily when the editor opens — see
     // showView — now that the MOGRT section lives outside the <details>.)
+    // MOGRT-section stepper drives the SAME words-per-caption value (1–10)
+    if ($('mg-wc-minus')) $('mg-wc-minus').addEventListener('click', function () {
+      var w = parseInt($('c-words').value, 10) || 0; setWordCount(w <= 1 ? 1 : w - 1);
+    });
+    if ($('mg-wc-plus')) $('mg-wc-plus').addEventListener('click', function () {
+      var w = parseInt($('c-words').value, 10) || 0; setWordCount(w === 0 ? 1 : w + 1);
+    });
+    if ($('mg-wc-full')) $('mg-wc-full').addEventListener('click', function () {
+      var w = parseInt($('c-words').value, 10) || 0; setWordCount(w === 0 ? 1 : 0);
+    });
     var subs = document.querySelectorAll('#tpl-source button');
     for (var s = 0; s < subs.length; s++) {
       subs[s].addEventListener('click', function () {
