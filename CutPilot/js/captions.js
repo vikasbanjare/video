@@ -258,6 +258,7 @@
 
   /* The ten library categories the browser groups templates into. */
   var CATEGORIES = [
+    'Captions.ai',
     'Bold Creator', 'Minimal Professional', 'Dynamic Highlight', 'Social Growth',
     'Podcast Pro', 'Storytelling', 'Gaming Stream', 'Cinematic', 'Motivation', 'Education'
   ];
@@ -410,7 +411,29 @@
     { id: 'quotepill', name: 'Quote Pill', category: 'Cinematic', popularity: 81, layout: 'center', keyword: false,
       font: 'Playfair Display', fallbackFonts: ['Georgia', 'Times New Roman', 'serif'],
       fontSize: 62, fill: '#FFFFFF', highlight: '#FFFFFF', boxColor: '#0B1020', boxRadius: 46, stroke: null, strokeWidth: 0,
-      letterSpacing: 1, uppercase: true, wordsPerCue: 3, anim: 'fade' }
+      letterSpacing: 1, uppercase: true, wordsPerCue: 3, anim: 'fade' },
+
+    // --- Captions.ai signature styles (faithful recreations of their named
+    //     looks: Clarity / Core / Grit / Hype). The hallmark is word-by-word
+    //     reveal of a short centered phrase with the SPOKEN word emphasized —
+    //     CutPilot's 'karaoke' animation lights up + scales the active word,
+    //     and highlightStyle:'box' sits it on a colored pill. ---
+    { id: 'cap-core', name: 'Core · Captions.ai', category: 'Captions.ai', popularity: 99, layout: 'center', keyword: false,
+      font: 'Montserrat', fallbackFonts: ['Poppins', 'Inter', 'Arial'],
+      fontSize: 68, fill: '#FFFFFF', highlight: '#FFE000', highlightScale: 1.14, stroke: '#000000', strokeWidth: 6,
+      uppercase: false, wordsPerCue: 3, anim: 'karaoke' },
+    { id: 'cap-clarity', name: 'Clarity · Captions.ai', category: 'Captions.ai', popularity: 92, layout: 'center', keyword: false,
+      font: 'Inter', fallbackFonts: ['Helvetica', 'Arial'],
+      fontSize: 56, fill: '#FFFFFF', highlight: '#FFFFFF', stroke: '#000000', strokeWidth: 4,
+      uppercase: false, wordsPerCue: 4, anim: 'fade' },
+    { id: 'cap-grit', name: 'Grit · Captions.ai', category: 'Captions.ai', popularity: 96, layout: 'center', keyword: false,
+      font: 'Anton', fallbackFonts: ['Bebas Neue', 'Impact', 'Arial Black'],
+      fontSize: 86, fill: '#FFFFFF', highlight: '#FFD400', highlightScale: 1.16, stroke: '#000000', strokeWidth: 11,
+      uppercase: true, wordsPerCue: 3, anim: 'karaoke' },
+    { id: 'cap-hype', name: 'Hype · Captions.ai', category: 'Captions.ai', popularity: 95, layout: 'center', keyword: false,
+      font: 'Montserrat', fallbackFonts: ['Poppins', 'Arial Black'],
+      fontSize: 70, fill: '#FFFFFF', highlight: '#22C55E', highlightStyle: 'box', boxRadius: 16, stroke: '#000000', strokeWidth: 6,
+      uppercase: true, wordsPerCue: 3, anim: 'karaoke' }
   ];
 
   /* The full catalog the library browses (base + extras). */
