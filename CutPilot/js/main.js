@@ -1247,8 +1247,8 @@
         wordCues: wordCues
       });
 
-      if (frames.length > 1500 &&
-          !confirm(frames.length + ' caption frames will be rendered — that can take a few minutes. Continue?')) {
+      if (frames.length > 600 &&
+          !confirm(frames.length + ' caption graphics will be created. That many can be slow to render and import — Premiere may look stuck near the end of its import bar. Tip: raise "Words per caption" or pick a shorter clip for fewer graphics.\n\nContinue anyway?')) {
         $('btn-magic').disabled = false; capProgress(null); return;
       }
 
@@ -1420,8 +1420,8 @@
     try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
     var words = parseInt($('c-words').value, 10) || 0;   // the one Words-per-caption stepper
     var tcues = textCues(cues, words, $('c-upper').checked);
-    if (tcues.length > 400 &&
-        !confirm(tcues.length + ' graphics will be added (one per line). Continue?')) return;
+    if (tcues.length > 120 &&
+        !confirm(tcues.length + ' template graphics will be inserted — one per caption. MOGRTs insert slowly, so this can take a long time and Premiere may sit near the end of its import bar. Tip: raise "Words per graphic" (fewer, longer captions), or use the Animated style instead.\n\nContinue anyway?')) return;
     if (btn) btn.disabled = true;
     capProgress('Saving project…');
     ensureProjectSaved().then(function (ok) {

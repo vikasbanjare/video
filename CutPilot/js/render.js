@@ -256,15 +256,19 @@
         chunk();
       });
     }
-    // Make sure the chosen (possibly web-loaded) font is ready before we
-    // rasterize — otherwise the first render can fall back to a default face.
-    try {
-      if (typeof document !== 'undefined' && document.fonts && document.fonts.load) {
-        return document.fonts.load('700 ' + Math.max(8, style.size) + 'px "' + style.font + '"')
-          .then(null, function () {}).then(run);
-      }
-    } catch (eFonts) {}
-    return run();
+    // Wait for the chosen font, but NEVER block rendering on it: if the font
+    // can't load (e.g. an offline/blocked web font, or an unknown custom name)
+    // proceed after a short timeout so the render can't hang forever.
+    return new Promise(function (resolve) {
+      var settled = false;
+      function go() { if (!settled) { settled = true; resolve(); } }
+      try {
+        if (typeof document !== 'undefined' && document.fonts && document.fonts.load) {
+          document.fonts.load('700 ' + Math.max(8, style.size) + 'px "' + style.font + '"').then(go, go);
+        } else { go(); }
+      } catch (e) { go(); }
+      setTimeout(go, 1500);
+    }).then(run);
   }
 
   /* WCAG relative luminance of a #rrggbb color (0..1). */
