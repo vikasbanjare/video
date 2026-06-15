@@ -1442,9 +1442,9 @@
         return toast('Couldn\'t add this template' + why + '. Try another, or use an Animated style.', true);
       }
       if (r.textSet === 0) {
-        toast('Placed ' + r.inserted + ' graphics, but couldn\'t fill the words. ' +
-              'Tap 🔍 Inspect to see this template\'s fields — its text field may have an ' +
-              'unusual name (' + ((r.fields && r.fields.slice(0, 4).join(', ')) || 'none found') + ').', true);
+        toast('Placed ' + r.inserted + ' graphics, but this template\'s text can\'t be set by ' +
+              'script (it uses Premiere\'s rich caption format). Use ✨ Add captions (Animated) ' +
+              'instead — it gives the same result without touching the template.', true);
       } else {
         var dur = (r.clamped && r.maxTemplateDur)
           ? ' · ' + r.clamped + ' couldn\'t reach full length (template max ~' +

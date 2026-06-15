@@ -695,34 +695,36 @@ function CP_placeCaptionImages(argsJson) {
  * params when the template exposes them) into the graphic.
  * argsJson: { mogrtPath, cues:[{start,end,text}], videoTrack, audioTrack }
  */
-/* Try every known way to push a string into a MOGRT text property. */
+/* Safely push a string into a MOGRT text property. */
 function CP_setMgrtText(prop, text) {
-  // Newer Premiere serializes a text param as a rich JSON "source text" blob.
-  // The visible string lives in `textEditValue` (and `fontTextRunLength` must
-  // match its length); older/simple templates use a plain `text` key; some
-  // accept a plain string directly. Try each, preserving the rest of the style.
-  try {
-    var cur = prop.getValue ? prop.getValue() : null;
-    if (typeof cur === 'string' && cur.charAt(0) === '{') {
-      var obj = null;
-      try { obj = JSON.parse(cur); } catch (eP) { obj = null; }
-      if (obj) {
-        if (typeof obj.textEditValue !== 'undefined') {
-          obj.textEditValue = text;
-          if (typeof obj.fontTextRunLength !== 'undefined') obj.fontTextRunLength = text.length;
-          try { prop.setValue(JSON.stringify(obj), true); return true; } catch (eA1) {}
-          try { prop.setValue(JSON.stringify(obj)); return true; } catch (eA2) {}
-        }
-        if (typeof obj.text !== 'undefined') {
-          obj.text = text;
-          try { prop.setValue(JSON.stringify(obj), true); return true; } catch (eB1) {}
-          try { prop.setValue(JSON.stringify(obj)); return true; } catch (eB2) {}
-        }
-      }
-    }
-  } catch (eCur) {}
-  try { prop.setValue(text, true); return true; } catch (e1) {}
-  try { prop.setValue(text); return true; } catch (e2) {}
+  var cur = null;
+  try { cur = prop.getValue ? prop.getValue() : null; } catch (eCur) { cur = null; }
+
+  // Rich After-Effects "source text" params (the {"capPropFontEdit":...,
+  // "textEditValue":...} format) CANNOT be set safely from a script — writing
+  // them corrupts the clip and crashes Premiere's Text/Properties panel
+  // ("bad any cast"), and can break playback. NEVER touch them: report failure
+  // so the panel tells the user to use the Animated engine instead.
+  if (typeof cur === 'string' && (cur.indexOf('capProp') !== -1 || cur.indexOf('textEditValue') !== -1)) {
+    return false;
+  }
+
+  // Simple JSON text templates: replace only the "text" key.
+  if (typeof cur === 'string' && cur.charAt(0) === '{' && cur.indexOf('"text"') !== -1) {
+    try {
+      var obj = JSON.parse(cur);
+      obj.text = text;
+      try { prop.setValue(JSON.stringify(obj), true); return true; } catch (eJ1) {}
+      try { prop.setValue(JSON.stringify(obj)); return true; } catch (eJ2) {}
+    } catch (eP) {}
+    return false;
+  }
+
+  // True plain-string params only — never write a bare string onto a JSON blob.
+  if (cur === null || (typeof cur === 'string' && cur.charAt(0) !== '{')) {
+    try { prop.setValue(text, true); return true; } catch (e1) {}
+    try { prop.setValue(text); return true; } catch (e2) {}
+  }
   return false;
 }
 
