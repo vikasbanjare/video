@@ -700,30 +700,42 @@ function CP_setMgrtText(prop, text) {
   var cur = null;
   try { cur = prop.getValue ? prop.getValue() : null; } catch (eCur) { cur = null; }
 
-  // Rich After-Effects "source text" params (the {"capPropFontEdit":...,
-  // "textEditValue":...} format) CANNOT be set safely from a script — writing
-  // them corrupts the clip and crashes Premiere's Text/Properties panel
-  // ("bad any cast"), and can break playback. NEVER touch them: report failure
-  // so the panel tells the user to use the Animated engine instead.
-  if (typeof cur === 'string' && (cur.indexOf('capProp') !== -1 || cur.indexOf('textEditValue') !== -1)) {
+  function esc(s) { return String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"'); }
+
+  // Rich After-Effects "source text" blob ({"capPropFontEdit":...,
+  // "textEditValue":...}). Edit ONLY the text inside the RAW string — do NOT
+  // JSON.parse/stringify it, because our minimal ExtendScript JSON polyfill
+  // re-serializes the blob lossily and corrupts the clip (Premiere then throws
+  // "bad any cast"). In-place string surgery preserves every other byte.
+  if (typeof cur === 'string' && cur.indexOf('textEditValue') !== -1) {
+    var e = esc(text), changed = false;
+    var out = cur.replace(/("textEditValue"\s*:\s*")(?:[^"\\]|\\.)*(")/,
+      function (m, a, b) { changed = true; return a + e + b; });
+    // keep the single-run length consistent with the new text
+    out = out.replace(/("fontTextRunLength"\s*:\s*)\d+/, function (m, a) { return a + String(text.length); });
+    if (changed) {
+      try { prop.setValue(out, true); return true; } catch (e1) {}
+      try { prop.setValue(out); return true; } catch (e2) {}
+    }
     return false;
   }
 
-  // Simple JSON text templates: replace only the "text" key.
+  // Simple {"text":"..."} templates: swap just the text value in the raw string.
   if (typeof cur === 'string' && cur.charAt(0) === '{' && cur.indexOf('"text"') !== -1) {
-    try {
-      var obj = JSON.parse(cur);
-      obj.text = text;
-      try { prop.setValue(JSON.stringify(obj), true); return true; } catch (eJ1) {}
-      try { prop.setValue(JSON.stringify(obj)); return true; } catch (eJ2) {}
-    } catch (eP) {}
+    var e2 = esc(text), ch2 = false;
+    var o2 = cur.replace(/("text"\s*:\s*")(?:[^"\\]|\\.)*(")/,
+      function (m, a, b) { ch2 = true; return a + e2 + b; });
+    if (ch2) {
+      try { prop.setValue(o2, true); return true; } catch (e3) {}
+      try { prop.setValue(o2); return true; } catch (e4) {}
+    }
     return false;
   }
 
   // True plain-string params only — never write a bare string onto a JSON blob.
   if (cur === null || (typeof cur === 'string' && cur.charAt(0) !== '{')) {
-    try { prop.setValue(text, true); return true; } catch (e1) {}
-    try { prop.setValue(text); return true; } catch (e2) {}
+    try { prop.setValue(text, true); return true; } catch (e5) {}
+    try { prop.setValue(text); return true; } catch (e6) {}
   }
   return false;
 }
