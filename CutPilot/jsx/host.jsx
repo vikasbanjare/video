@@ -697,14 +697,28 @@ function CP_placeCaptionImages(argsJson) {
  */
 /* Try every known way to push a string into a MOGRT text property. */
 function CP_setMgrtText(prop, text) {
-  // Newer Premiere wraps source text as JSON; replace the text field if so.
+  // Newer Premiere serializes a text param as a rich JSON "source text" blob.
+  // The visible string lives in `textEditValue` (and `fontTextRunLength` must
+  // match its length); older/simple templates use a plain `text` key; some
+  // accept a plain string directly. Try each, preserving the rest of the style.
   try {
     var cur = prop.getValue ? prop.getValue() : null;
-    if (typeof cur === 'string' && cur.charAt(0) === '{' && cur.indexOf('"text"') !== -1) {
-      var obj = JSON.parse(cur);
-      obj.text = text;
-      try { prop.setValue(JSON.stringify(obj), true); return true; } catch (eJ1) {}
-      try { prop.setValue(JSON.stringify(obj)); return true; } catch (eJ2) {}
+    if (typeof cur === 'string' && cur.charAt(0) === '{') {
+      var obj = null;
+      try { obj = JSON.parse(cur); } catch (eP) { obj = null; }
+      if (obj) {
+        if (typeof obj.textEditValue !== 'undefined') {
+          obj.textEditValue = text;
+          if (typeof obj.fontTextRunLength !== 'undefined') obj.fontTextRunLength = text.length;
+          try { prop.setValue(JSON.stringify(obj), true); return true; } catch (eA1) {}
+          try { prop.setValue(JSON.stringify(obj)); return true; } catch (eA2) {}
+        }
+        if (typeof obj.text !== 'undefined') {
+          obj.text = text;
+          try { prop.setValue(JSON.stringify(obj), true); return true; } catch (eB1) {}
+          try { prop.setValue(JSON.stringify(obj)); return true; } catch (eB2) {}
+        }
+      }
     }
   } catch (eCur) {}
   try { prop.setValue(text, true); return true; } catch (e1) {}
