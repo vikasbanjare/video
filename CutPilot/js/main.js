@@ -334,8 +334,12 @@
     var pathMod = null;
     try { pathMod = nodeReq('path'); } catch (e) {}
 
-    CPBridge.callHost('CP_findProjectSrts').then(function (r) {
-      (r.items || []).forEach(function (it) { add({ label: it.name, path: it.path, mtime: 1e15 }); });
+    // Two-arg .then so a rejection from CP_findProjectSrts doesn't abort
+    // the rest of the chain (clip + project path searches still run).
+    CPBridge.callHost('CP_findProjectSrts').then(
+      function (r) { (r.items || []).forEach(function (it) { add({ label: it.name, path: it.path, mtime: 1e15 }); }); },
+      function () { /* Premiere not connected or project not open — keep searching */ }
+    ).then(function () {
       return CPBridge.callHost('CP_getSelectedClip').catch(function () { return null; });
     }).then(function (sel) {
       if (sel && sel.clip && sel.clip.mediaPath && pathMod) {
@@ -349,13 +353,22 @@
       return CPBridge.callHost('CP_getProjectInfo').catch(function () { return null; });
     }).then(function (proj) {
       if (proj && proj.path && pathMod) listCaptionFilesIn(pathMod.dirname(proj.path)).forEach(add);
+      // Also scan Desktop / Downloads / Documents — where Premiere exports SRT by default
+      try {
+        var home = nodeReq('os').homedir();
+        if (home && pathMod) {
+          ['Desktop', 'Downloads', 'Documents'].forEach(function (d) {
+            listCaptionFilesIn(pathMod.join(home, d)).forEach(add);
+          });
+        }
+      } catch (eOs) {}
       found.sort(function (a, b) { return b.mtime - a.mtime; });
       if (found.length) {
         state.transcript = found[0];
         setTranscriptBar('ok', '✅', 'Using ' + found[0].label, 'Change');
       } else {
         state.transcript = null;
-        setTranscriptBar('warn', '⚠️', 'No transcript found yet', 'Get one →');
+        setTranscriptBar('warn', '⚠️', 'No .srt found — save it next to your video or on Desktop', 'Get one →');
       }
     }).catch(function () {
       state.transcript = null;
