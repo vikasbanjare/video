@@ -695,27 +695,51 @@ function CP_placeCaptionImages(argsJson) {
  * params when the template exposes them) into the graphic.
  * argsJson: { mogrtPath, cues:[{start,end,text}], videoTrack, audioTrack }
  */
-/* Safely push a string into a MOGRT text property. */
-function CP_setMgrtText(prop, text) {
+/* Safely push a string into a MOGRT text property.
+ * `allowRich` gates the dangerous rich-source-text branch: the caller only
+ * passes true AFTER a probe write on a throwaway instance verified that this
+ * specific template accepts the edit cleanly (see CP_probeRichText). Without
+ * that proof we refuse rich writes — they can corrupt the project. */
+function CP_setMgrtText(prop, text, allowRich) {
   var cur = null;
   try { cur = prop.getValue ? prop.getValue() : null; } catch (eCur) { cur = null; }
-
-  // Rich After-Effects "source text" params (the {"capPropFontEdit":...,
-  // "textEditValue":...} format) are NOT safely settable from a script — every
-  // method we tried (JSON round-trip AND in-place edit) can corrupt the clip,
-  // crash Premiere's Text/Properties panel ("bad any cast") and even break the
-  // project. So CutPilot refuses to touch them; the panel tells the user to use
-  // the Animated engine, which never touches the template.
-  if (typeof cur === 'string' && (cur.indexOf('capProp') !== -1 || cur.indexOf('textEditValue') !== -1)) {
+  if (typeof cur !== 'string') {
+    // Plain (non-JSON) param that reads as null/other — try a bare string.
+    try { prop.setValue(text, true); return true; } catch (e0a) {}
+    try { prop.setValue(text); return true; } catch (e0b) {}
     return false;
   }
 
-  // Simple {"text":"..."} templates: swap just the text value in the raw string
-  // (no JSON re-encode, which our minimal polyfill can mangle).
-  if (typeof cur === 'string' && cur.charAt(0) === '{' && cur.indexOf('"text"') !== -1) {
-    var e = String(text).replace(/\\/g, '\\\\').replace(/"/g, '\\"'), ch = false;
+  function esc(s) {
+    return String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+                    .replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
+  }
+
+  // Rich After-Effects "source text" blob ({"capPropFontEdit":...,
+  // "textEditValue":...}). Edit ONLY the text inside the RAW string (never
+  // JSON.parse/stringify — our minimal polyfill re-serializes lossily and
+  // corrupts the clip). Crucially, every run-length field must match the NEW
+  // text length or Premiere throws "bad any cast"; update them generically
+  // (scalar AND single-run array forms). Gated behind allowRich.
+  if (cur.indexOf('textEditValue') !== -1 || cur.indexOf('capProp') !== -1) {
+    if (!allowRich) return false;
+    var n = String(text).length, e = esc(text), changed = false;
+    var out = cur.replace(/("textEditValue"\s*:\s*")(?:[^"\\]|\\.)*(")/,
+      function (m, a, b) { changed = true; return a + e + b; });
+    if (!changed) return false;
+    // keep any *RunLength field consistent with the new char count
+    out = out.replace(/("[A-Za-z]*RunLength"\s*:\s*)\[\s*\d+\s*\]/g, function (m, a) { return a + '[' + n + ']'; });
+    out = out.replace(/("[A-Za-z]*RunLength"\s*:\s*)\d+/g, function (m, a) { return a + n; });
+    try { prop.setValue(out, true); return true; } catch (e1) {}
+    try { prop.setValue(out); return true; } catch (e2) {}
+    return false;
+  }
+
+  // Simple {"text":"..."} templates: swap just the text value in the raw string.
+  if (cur.charAt(0) === '{' && cur.indexOf('"text"') !== -1) {
+    var e2v = esc(text), ch = false;
     var o2 = cur.replace(/("text"\s*:\s*")(?:[^"\\]|\\.)*(")/,
-      function (m, a, b) { ch = true; return a + e + b; });
+      function (m, a, b) { ch = true; return a + e2v + b; });
     if (ch) {
       try { prop.setValue(o2, true); return true; } catch (e3) {}
       try { prop.setValue(o2); return true; } catch (e4) {}
@@ -724,11 +748,82 @@ function CP_setMgrtText(prop, text) {
   }
 
   // True plain-string params only — never write a bare string onto a JSON blob.
-  if (cur === null || (typeof cur === 'string' && cur.charAt(0) !== '{')) {
+  if (cur.charAt(0) !== '{') {
     try { prop.setValue(text, true); return true; } catch (e5) {}
     try { prop.setValue(text); return true; } catch (e6) {}
   }
   return false;
+}
+
+/* Find the text-ish property of a MOGRT component (display-name keyword first,
+   then the first property that currently holds a string). Returns prop|null. */
+function CP_findTextProp(props, KEYS) {
+  for (var k = 0; k < KEYS.length; k++) {
+    for (var p = 0; p < props.numItems; p++) {
+      var dn = String(props[p].displayName || '').toLowerCase();
+      if (dn.indexOf(KEYS[k]) !== -1) return props[p];
+    }
+  }
+  for (var p2 = 0; p2 < props.numItems; p2++) {
+    if (CP_propIsString(props[p2])) return props[p2];
+  }
+  return null;
+}
+
+/* Remove the most-recently-added clip from a video track (best effort, QE). */
+function CP_removeLastClipOnTrack(vTrack) {
+  try {
+    app.enableQE();
+    var qt = qe.project.getActiveSequence().getVideoTrackAt(vTrack);
+    for (var k = qt.numItems - 1; k >= 0; k--) {
+      var it = qt.getItemAt(k);
+      if (it && it.type !== 'Empty') { try { it.remove(0, 0); } catch (eR) {} return; }
+    }
+  } catch (eQE) {}
+}
+
+/* PROBE: drop ONE throwaway instance, attempt the text write, read it back to
+ * confirm it stuck and still parses, then remove the instance. This is what
+ * makes rich-text captioning safe — we never write to the user's real captions
+ * unless this verified the template accepts the edit cleanly.
+ * Returns: { kind:'rich'|'simple'|'plain'|'none', richSafe:bool }. */
+function CP_probeRichText(mogrtPath, vTrack, aTrack, KEYS, sampleText) {
+  var res = { kind: 'none', richSafe: false };
+  var clip = null;
+  try {
+    clip = seqGlobalImport(mogrtPath, vTrack, aTrack);
+    if (!clip) return res;
+    var comp = clip.getMGTComponent();
+    if (!comp || !comp.properties) { CP_removeLastClipOnTrack(vTrack); return res; }
+    var prop = CP_findTextProp(comp.properties, KEYS);
+    if (!prop) { CP_removeLastClipOnTrack(vTrack); return res; }
+    var before = null; try { before = prop.getValue(); } catch (eB) {}
+    if (typeof before === 'string' && (before.indexOf('textEditValue') !== -1 || before.indexOf('capProp') !== -1)) {
+      res.kind = 'rich';
+      var probeText = String(sampleText || 'CutPilot test');
+      if (CP_setMgrtText(prop, probeText, true)) {
+        var after = null; try { after = prop.getValue(); } catch (eA) { after = null; }
+        if (typeof after === 'string' && after.indexOf('textEditValue') !== -1) {
+          try {
+            var parsed = JSON.parse(after);
+            res.richSafe = !!(parsed && String(parsed.textEditValue) === probeText);
+          } catch (eP) { res.richSafe = false; }
+        }
+      }
+    } else if (typeof before === 'string' && before.charAt(0) === '{') {
+      res.kind = 'simple';
+    } else {
+      res.kind = 'plain';
+    }
+  } catch (e) { /* fall through to cleanup */ }
+  CP_removeLastClipOnTrack(vTrack);
+  return res;
+}
+
+/* Import a MOGRT onto the active sequence at time 0 (probe helper). */
+function seqGlobalImport(mogrtPath, vTrack, aTrack) {
+  var seq = CP_activeSequence();
+  return seq.importMGT(mogrtPath, CP_ticksFromSeconds(0), vTrack, aTrack);
 }
 
 /* True if a property currently holds a plain string (likely a text param). */
@@ -763,6 +858,16 @@ function CP_insertMogrtCaptions(argsJson) {
 
     var KEYS = ['text', 'source', 'caption', 'title', 'subtitle', 'headline',
                 'body', 'content', 'label', 'name', 'word'];
+
+    // SAFETY PROBE: before captioning the real timeline, test the text write on
+    // one throwaway instance and read it back. For rich AE source-text we only
+    // enable writing if that verified clean — otherwise we place the graphics
+    // but leave the text alone (never risking the "bad any cast" corruption).
+    var probe = CP_probeRichText(args.mogrtPath, vTrack, aTrack, KEYS,
+                                 (args.cues[0] && args.cues[0].text) ? args.cues[0].text : 'CutPilot test');
+    var allowRich = (probe.kind === 'rich') ? probe.richSafe : false;
+    var richBlocked = (probe.kind === 'rich' && !probe.richSafe);
+
     var trackObj = seq.videoTracks[vTrack];
     var sharedItem = null, reused = 0;
 
@@ -822,14 +927,14 @@ function CP_insertMogrtCaptions(argsJson) {
           for (var k = 0; k < KEYS.length && !done; k++) {
             for (var pIdx = 0; pIdx < props.numItems && !done; pIdx++) {
               var dn = String(props[pIdx].displayName || '').toLowerCase();
-              if (dn.indexOf(KEYS[k]) !== -1 && CP_setMgrtText(props[pIdx], cue.text)) {
+              if (dn.indexOf(KEYS[k]) !== -1 && CP_setMgrtText(props[pIdx], cue.text, allowRich)) {
                 textSet++; done = true;
               }
             }
           }
           // 2) fallback: first property that currently holds a string
           for (var p2 = 0; p2 < props.numItems && !done; p2++) {
-            if (CP_propIsString(props[p2]) && CP_setMgrtText(props[p2], cue.text)) {
+            if (CP_propIsString(props[p2]) && CP_setMgrtText(props[p2], cue.text, allowRich)) {
               textSet++; done = true;
             }
           }
@@ -843,6 +948,8 @@ function CP_insertMogrtCaptions(argsJson) {
       clamped: clamped,
       maxTemplateDur: maxTemplateDur,
       failed: args.cues.length - inserted,
+      richBlocked: richBlocked,           // template is rich AND probe said unsafe
+      probeKind: probe.kind,              // 'rich' | 'simple' | 'plain' | 'none'
       fields: fieldNames ? fieldNames.slice(0, 8) : [],
       sampleErrors: errors.slice(0, 3)
     });

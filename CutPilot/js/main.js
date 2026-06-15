@@ -1488,16 +1488,23 @@
         return toast('Couldn\'t add this template' + why + '. Try another, or use an Animated style.', true);
       }
       if (r.textSet === 0) {
-        toast('Placed ' + r.inserted + ' graphics, but this template\'s text can\'t be set by ' +
-              'script (it uses Premiere\'s rich caption format). Use ✨ Add captions (Animated) ' +
-              'instead — it gives the same result without touching the template.', true);
+        var msg = r.richBlocked
+          ? 'Placed ' + r.inserted + ' graphics, but a safety test showed THIS template\'s ' +
+            'rich text can\'t be filled without risking your project, so CutPilot left it ' +
+            'alone. Your project was saved first — nothing is harmed. Use ✨ Add captions ' +
+            '(Animated) for the words, or send me this .mogrt and I\'ll tune it.'
+          : 'Placed ' + r.inserted + ' graphics, but this template exposes no fillable text ' +
+            'field. Use ✨ Add captions (Animated) instead.';
+        toast(msg, true);
       } else {
         var dur = (r.clamped && r.maxTemplateDur)
           ? ' · ' + r.clamped + ' couldn\'t reach full length (template max ~' +
             r.maxTemplateDur.toFixed(1) + 's — use an Animated style for exact timing)'
           : '';
+        // rich source-text was filled (and verified) — remind them it's undoable
+        var safe = (r.probeKind === 'rich') ? ' · saved first, so ⌘Z undoes it all' : '';
         toast('🎬 Added ' + r.inserted + ' template captions (' + r.textSet + ' with text)' +
-              (r.failed ? ' · ' + r.failed + ' failed' : '') + dur + '.');
+              (r.failed ? ' · ' + r.failed + ' failed' : '') + dur + safe + '.');
       }
     }).catch(function (e) { if (btn) btn.disabled = false; capProgress(null); toast(e.message, true); });
   }
