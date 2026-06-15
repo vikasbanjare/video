@@ -397,7 +397,20 @@
     { id: 'sonnet', name: 'Sonnet', category: 'Storytelling', popularity: 67, layout: 'center', keyword: false,
       font: 'Georgia', fallbackFonts: ['Times New Roman', 'serif'],
       fontSize: 48, fill: '#EFE8DF', highlight: '#CBB68B', stroke: null, strokeWidth: 0,
-      letterSpacing: 1, uppercase: false, wordsPerCue: 0, anim: 'fade' }
+      letterSpacing: 1, uppercase: false, wordsPerCue: 0, anim: 'fade' },
+
+    // --- Cinematic serif quote looks (recreated from a reference reel:
+    //     elegant Playfair serif, white ALL-CAPS, centered, short phrases.
+    //     "Monolith" = clean hero word; "Quote Pill" sits the phrase on a
+    //     dark rounded pill like the reel's highlighted lines.) ---
+    { id: 'monolith', name: 'Monolith', category: 'Cinematic', popularity: 83, layout: 'center', keyword: false,
+      font: 'Playfair Display', fallbackFonts: ['Georgia', 'Times New Roman', 'serif'],
+      fontSize: 78, fill: '#FFFFFF', highlight: '#FFFFFF', stroke: null, strokeWidth: 0,
+      letterSpacing: 1, uppercase: true, wordsPerCue: 2, anim: 'scale' },
+    { id: 'quotepill', name: 'Quote Pill', category: 'Cinematic', popularity: 81, layout: 'center', keyword: false,
+      font: 'Playfair Display', fallbackFonts: ['Georgia', 'Times New Roman', 'serif'],
+      fontSize: 62, fill: '#FFFFFF', highlight: '#FFFFFF', boxColor: '#0B1020', boxRadius: 46, stroke: null, strokeWidth: 0,
+      letterSpacing: 1, uppercase: true, wordsPerCue: 3, anim: 'fade' }
   ];
 
   /* The full catalog the library browses (base + extras). */
