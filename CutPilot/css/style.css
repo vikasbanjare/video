@@ -293,6 +293,27 @@ input[type="range"]::-webkit-slider-thumb {
 .sw input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
 .sw input[type="color"]::-webkit-color-swatch { border: none; border-radius: 6px; }
 
+/* Custom in-panel colour picker — works where the native OS colour box won't
+   open inside Premiere's CEP panel. A clickable swatch reveals a palette. */
+.cp-field { position: relative; display: inline-flex; align-items: center; gap: 6px; }
+.cp-swatch { width: 34px; height: 24px; border-radius: 7px; border: 1px solid var(--line2); cursor: pointer; padding: 0; flex: 0 0 auto; }
+.cp-swatch:hover { border-color: var(--accent, #6ea8fe); }
+.cp-pop {
+  position: absolute; top: 100%; left: 0; z-index: 80; margin-top: 5px; padding: 8px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 11px; box-shadow: var(--shadow);
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; width: max-content;
+}
+.cp-pop.hidden { display: none; }
+.cp-chip { width: 21px; height: 21px; border-radius: 5px; border: 1px solid rgba(0,0,0,.3); cursor: pointer; padding: 0; }
+.cp-chip:hover { transform: scale(1.14); }
+.mp-hex { width: 76px; font: 11px ui-monospace, "JetBrains Mono", monospace; text-transform: uppercase;
+  text-align: center; background: var(--card2); border: 1px solid var(--line); border-radius: 6px; color: inherit; padding: 3px 4px; }
+/* animated-style swatches: stack swatch over hex and fill the column */
+.sw .cp-field { display: flex; flex-direction: column; width: 100%; gap: 4px; }
+.sw .cp-swatch { width: 100%; height: 30px; border-radius: 9px; }
+.sw .cp-pop { left: 50%; transform: translateX(-50%); }
+.sw .mp-hex { width: 100%; }
+
 .anim-rail { display: flex; flex-wrap: wrap; gap: 6px; }
 .anim-chip {
   padding: 6px 13px; background: var(--card2); border: 1px solid var(--line); border-radius: 99px;

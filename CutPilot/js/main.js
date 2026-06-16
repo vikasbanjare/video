@@ -960,6 +960,7 @@
     $('c-hl-scale').value = Math.round((p.highlightScale || 1) * 100);
     $('c-speaker').checked = !!p.speaker;
     selectAnim(CPCaptions.animIdForConcept(p.anim));
+    syncColorFields();
     updateVals();
     renderPreview();
 
@@ -1003,6 +1004,14 @@
     $('c-hlscale-val').textContent = $('c-hl-scale').value + '%';
   }
 
+  /* Push the (hidden) colour-input values into their custom palette swatches,
+     so the picker UI reflects colours set programmatically (preset/look load). */
+  function syncColorFields() {
+    ['c-fill', 'c-hl', 'c-stroke', 'c-box'].forEach(function (id) {
+      var inp = $(id); if (inp && inp._cpField) inp._cpField.setDisplay(inp.value);
+    });
+  }
+
   function wireCustomizer() {
     var ids = ['c-size', 'c-pos', 'c-fill', 'c-hl', 'c-stroke', 'c-box',
                'c-strokew', 'c-box-on', 'c-upper', 'c-words', 'c-kw', 'c-kw-mode',
@@ -1010,6 +1019,15 @@
     ids.forEach(function (id) {
       $(id).addEventListener('input', function () { updateVals(); renderPreview(); });
       $(id).addEventListener('change', function () { updateVals(); renderPreview(); });
+    });
+    // Mount the custom palette pickers over the (hidden) colour inputs so colours
+    // are pickable inside Premiere's panel, where the native OS box won't open.
+    ['c-fill', 'c-hl', 'c-stroke', 'c-box'].forEach(function (id) {
+      var mount = document.querySelector('.cp-mount[data-for="' + id + '"]'), inp = $(id);
+      if (!mount || !inp || mount.firstChild) return;
+      var f = makeColorField(inp.value, function (v) { inp.value = v; inp.dispatchEvent(new Event('input')); });
+      mount.appendChild(f.el);
+      inp._cpField = f;
     });
     if ($('c-font-filter')) $('c-font-filter').addEventListener('input', applyFontFilter);
     // font dropdown: the trailing "Custom font…" entry prompts for any font
@@ -1294,6 +1312,7 @@
         var p = findTemplate(look.presetId);
         if (p) $('editor-tpl-name').textContent = p.name;
       }
+      syncColorFields();
       updateVals(); renderPreview();
     } catch (e) {}
   }
@@ -1664,16 +1683,49 @@
     num.addEventListener('input', function () { rng.value = num.value; onChange(num.value); });
     wrap.appendChild(rng); wrap.appendChild(num); row.appendChild(wrap);
   }
+  /* A clickable colour palette + hex field that works INSIDE Premiere's panel.
+     Native <input type="color"> opens the OS colour dialog, which often refuses
+     to open in CEP — so we use our own popover (pure HTML, no OS dialog).
+     Returns { el, set, get }; onChange(hex) fires on every change. */
+  var CP_PALETTE = [
+    '#FFFFFF', '#E5E7EB', '#9CA3AF', '#4B5563', '#1F2937', '#000000', '#FDE047',
+    '#FFD400', '#FFC400', '#FF9900', '#FF6B00', '#FF3B30', '#E50914', '#C0392B',
+    '#FF2D55', '#FF3B6B', '#FF4FD8', '#B14BFF', '#7C4DFF', '#4D6BFF', '#2D9CFF',
+    '#00C2FF', '#00E5C0', '#1DB954', '#39FF14', '#A3E635', '#C9A227', '#8B5E3C'
+  ];
+  var _cpOpenPop = null;
+  document.addEventListener('click', function () { if (_cpOpenPop) { _cpOpenPop.classList.add('hidden'); _cpOpenPop = null; } });
+  function makeColorField(initialHex, onChange) {
+    function norm(v) { v = String(v == null ? '' : v); if (v.charAt(0) !== '#') v = '#' + v; return /^#[0-9a-f]{6}$/i.test(v) ? v : '#ffffff'; }
+    var hex = norm(initialHex);
+    var wrap = document.createElement('span'); wrap.className = 'cp-field';
+    var sw = document.createElement('button'); sw.type = 'button'; sw.className = 'cp-swatch'; sw.style.background = hex; sw.title = 'Pick a colour';
+    var hx = document.createElement('input'); hx.type = 'text'; hx.className = 'mp-hex'; hx.value = hex; hx.maxLength = 7; hx.spellcheck = false;
+    var pop = document.createElement('div'); pop.className = 'cp-pop hidden';
+    CP_PALETTE.forEach(function (col) {
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'cp-chip'; b.style.background = col; b.title = col;
+      b.addEventListener('click', function (e) { e.stopPropagation(); set(col); pop.classList.add('hidden'); _cpOpenPop = null; });
+      pop.appendChild(b);
+    });
+    function setDisplay(v) { hex = norm(v); sw.style.background = hex; if (hx.value.toLowerCase() !== hex.toLowerCase()) hx.value = hex; }
+    function set(v) { setDisplay(v); onChange(hex); }
+    sw.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var willOpen = pop.classList.contains('hidden');
+      if (_cpOpenPop) _cpOpenPop.classList.add('hidden');
+      if (willOpen) { pop.classList.remove('hidden'); _cpOpenPop = pop; } else { _cpOpenPop = null; }
+    });
+    hx.addEventListener('click', function (e) { e.stopPropagation(); });
+    hx.addEventListener('input', function () { var v = hx.value.charAt(0) === '#' ? hx.value : '#' + hx.value; if (/^#[0-9a-f]{6}$/i.test(v)) { hex = norm(v); sw.style.background = hex; onChange(hex); } });
+    pop.addEventListener('click', function (e) { e.stopPropagation(); });
+    wrap.appendChild(sw); wrap.appendChild(hx); wrap.appendChild(pop);
+    return { el: wrap, set: set, setDisplay: setDisplay, get: function () { return hex; } };
+  }
   function mpAddColor(box, label, curHex, onChange) {
     var row = mpRow(box, label);
-    var hex = String(curHex || '#ffffff'); if (hex.charAt(0) !== '#') hex = '#' + hex;
-    if (!/^#[0-9a-f]{6}$/i.test(hex)) hex = '#ffffff';
-    var wrap = document.createElement('span'); wrap.className = 'mp-ctrl mp-color';
-    var sw = document.createElement('input'); sw.type = 'color'; sw.value = hex;
-    var hx = document.createElement('input'); hx.type = 'text'; hx.className = 'mp-hex'; hx.value = hex; hx.maxLength = 7;
-    sw.addEventListener('input', function () { hx.value = sw.value; onChange(sw.value); });
-    hx.addEventListener('input', function () { var v = hx.value.charAt(0) === '#' ? hx.value : '#' + hx.value; if (/^#[0-9a-f]{6}$/i.test(v)) { sw.value = v; onChange(v); } });
-    wrap.appendChild(sw); wrap.appendChild(hx); row.appendChild(wrap);
+    var f = makeColorField(curHex, onChange);
+    f.el.classList.add('mp-ctrl', 'mp-color');
+    row.appendChild(f.el);
   }
   function mpAddPoint(box, label, x, y, onChange) {
     var row = mpRow(box, label);
@@ -1791,12 +1843,16 @@
     var colorHexById = {}, anyColor = false;
     function applyColor(idx, hex) {
       colorHexById[idx] = hex;
-      if (enc) {
+      // DEFAULT to the unambiguous [r,g,b,a] float array so a colour can NEVER
+      // come out red/blue-swapped (the old packed-int guess is what turned warm
+      // colours blue). The R/B toggle stays as an explicit escape hatch for the
+      // rare template that only accepts a packed number in a non-RGB byte order.
+      if (state.mogrtRBSwap && enc) {
         var c = hexToRgb255(hex);
-        if (state.mogrtRBSwap) { var tmp = c[0]; c[0] = c[2]; c[2] = tmp; }
+        var tmp = c[0]; c[0] = c[2]; c[2] = tmp;
         setMogrtParam(idx, 'colornum', enc.f(c[0], c[1], c[2], 255));
       } else {
-        setMogrtParam(idx, 'color', hex);   // no calibration → native RGBA array
+        setMogrtParam(idx, 'color', hex);   // host sets [r,g,b,a] — exact colour
       }
     }
 
