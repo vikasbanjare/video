@@ -214,7 +214,7 @@
   ];
   function _modelsDir() { try { return nodeReq('path').join(nodeReq('os').homedir(), '.cutpilot', 'models'); } catch (e) { return null; } }
   function modelFileName() {
-    var q = settings.whisperQuality || 'base';
+    var q = settings.whisperQuality || 'small';
     var hasEnVariant = (q === 'tiny' || q === 'base' || q === 'small' || q === 'medium');  // large-* are multilingual only
     var enOnly = ((settings.whisperLang || 'en') === 'en') && hasEnVariant;                 // .en models are sharper for English
     return 'ggml-' + q + (enOnly ? '.en' : '') + '.bin';
@@ -224,11 +224,17 @@
   function resolveTranscribeModel() {
     var fs, path; try { fs = nodeReq('fs'); path = nodeReq('path'); } catch (e) { return Promise.reject(new Error('Node unavailable')); }
     var tryP = function (p) { try { return p && fs.existsSync(p) ? p : null; } catch (e2) { return null; } };
-    if (tryP(settings.whisperModel)) return Promise.resolve(settings.whisperModel);
-    var name = modelFileName(), os = nodeReq('os');
+    var name = modelFileName(), os = nodeReq('os');             // the model the Accuracy + Language picker wants
+    var base = function (p) { return String(p || '').split(/[\\/]/).pop(); };
+    // A manually-set model path wins ONLY when it matches the chosen accuracy/language.
+    // (The installer pre-writes base.en — that must NOT override a Pro/large pick.)
+    if (tryP(settings.whisperModel) && base(settings.whisperModel) === name) return Promise.resolve(settings.whisperModel);
     var dirs = [_modelsDir(), path.join(os.homedir(), 'Downloads'), path.join(os.homedir(), 'Documents'), os.homedir()];
     for (var i = 0; i < dirs.length; i++) { var hit = dirs[i] && tryP(path.join(dirs[i], name)); if (hit) return Promise.resolve(hit); }
-    return downloadModel(name, path.join(_modelsDir(), name));
+    return downloadModel(name, path.join(_modelsDir(), name)).catch(function (e) {
+      if (tryP(settings.whisperModel)) return settings.whisperModel;   // offline fallback so it still runs
+      throw e;
+    });
   }
   function downloadModel(name, target) {
     return new Promise(function (resolve, reject) {
@@ -2896,7 +2902,7 @@
     if (w) { el.textContent = '✅ Engine ready · will use ' + willUse + (m ? '' : ' (downloads on first use)'); }
     else { el.textContent = 'Let CutPilot make the transcript itself — install the engine below.'; }
     var note = $('set-quality-note');
-    if (note) { var q = (settings.whisperQuality || 'base'); var qo = WHISPER_QUALITIES.filter(function (x) { return x.value === q; })[0]; note.textContent = qo ? '· ' + qo.label.replace(/^[^·]*· /, '') : ''; }
+    if (note) { var q = (settings.whisperQuality || 'small'); var qo = WHISPER_QUALITIES.filter(function (x) { return x.value === q; })[0]; note.textContent = qo ? '· ' + qo.label.replace(/^[^·]*· /, '') : ''; }
   }
   /* Mount the custom Accuracy + Language dropdowns (native <select> can fail in CEP).
      They appear in BOTH the Transcribe tab and Settings; changing one syncs the
@@ -2907,7 +2913,7 @@
     function mountInto(id, kind) {
       var host = $(id); if (!host || host.firstChild) return;
       var opts = (kind === 'q') ? WHISPER_QUALITIES : WHISPER_LANGS;
-      var cur = (kind === 'q') ? (settings.whisperQuality || 'base') : (settings.whisperLang || 'en');
+      var cur = (kind === 'q') ? (settings.whisperQuality || 'small') : (settings.whisperLang || 'en');
       var dd = makeDropdown(opts, cur, function (v) {
         if (kind === 'q') settings.whisperQuality = v; else settings.whisperLang = v;
         saveSettings(); refreshWhisperStatus();
