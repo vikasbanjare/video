@@ -14,21 +14,68 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.45</span>
+    <span class="ver" id="ver">v0.9.46</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
 
   <nav class="tabs">
-    <button class="tab active" data-tab="captions"><span>💬</span>Captions</button>
+    <button class="tab active" data-tab="transcribe"><span>🎙️</span>Transcribe</button>
+    <button class="tab" data-tab="captions"><span>💬</span>Captions</button>
     <button class="tab" data-tab="silence"><span>⚡</span>Smart Cut</button>
     <button class="tab" data-tab="multicam"><span>🎥</span>Multicam</button>
     <button class="tab" data-tab="chapters"><span>🔖</span>Chapters</button>
     <button class="tab" data-tab="settings"><span>⚙</span>Settings</button>
   </nav>
 
+  <!-- ============================ TRANSCRIBE ============================ -->
+  <section id="tab-transcribe" class="tab-page active">
+    <div class="card">
+      <div class="step-head"><span class="step-num">1</span><span class="step-title">Get your words</span></div>
+      <p class="hint">Select your talking clip in the timeline, then transcribe it — CutPilot reads the audio itself (no Premiere export).</p>
+      <div class="ctrl-row">
+        <label>Accuracy<div id="tr-quality" class="dd-mount"></div></label>
+        <label>Language<div id="tr-lang" class="dd-mount"></div></label>
+      </div>
+      <div class="tr-bar" id="tr-bar">
+        <span class="tr-ico" id="tr-ico">🔎</span>
+        <span class="tr-text" id="tr-text">looking for your words…</span>
+        <button class="link-btn" id="btn-tr-change">Change</button>
+      </div>
+      <button id="btn-tr-auto-main" class="hero-btn">🎙️ Auto-transcribe this clip</button>
+      <button id="btn-tr-edit" class="hero-btn alt">✏️ Review &amp; edit the words</button>
+      <div id="tr-help" class="help-box hidden">
+        <b>✨ Easiest: let CutPilot transcribe it for you</b> — select your video
+        clip in the timeline and tap <b>Auto-transcribe</b> above (needs the
+        one-time whisper engine; set it in <i>Settings → Auto-transcribe</i>).
+        <hr style="border:none;border-top:1px solid var(--line);margin:9px 0">
+        <b>Or use Premiere's transcript</b>: <i>Window → Text</i> → <b>···</b> →
+        <i>Export to SRT file</i> next to your video, then tap <b>Find again</b>.
+        <div class="row tight">
+          <button id="btn-tr-again" class="chip-btn">↻ Find again</button>
+          <button id="btn-tr-pick" class="chip-btn">Choose a file…</button>
+        </div>
+      </div>
+      <p class="hint" id="tr-next-hint">Done? Open the <b>Captions</b> tab to style &amp; add them.</p>
+    </div>
+
+    <!-- Transcript editor: fix wording / delete junk / merge lines -->
+    <div id="tr-editor" class="tr-editor hidden">
+      <div class="tre-card">
+        <div class="tre-head">
+          <b>✏️ Review &amp; edit the words</b>
+          <span class="spacer"></span>
+          <button id="tre-cancel" class="chip-btn">Cancel</button>
+          <button id="tre-save" class="hero-btn small">Save</button>
+        </div>
+        <p class="hint">Fix any wrong word, delete a junk line (✕), or merge a line into the one above (⤴). Timings stay the same.</p>
+        <div id="tre-list" class="tre-list"></div>
+      </div>
+    </div>
+  </section>
+
   <!-- ============================== CAPTIONS ============================= -->
-  <section id="tab-captions" class="tab-page active">
+  <section id="tab-captions" class="tab-page">
 
     <div class="subview-switch" id="cap-view">
       <button data-view="templates" class="on">📚 Templates</button>
@@ -112,50 +159,8 @@
         <button id="btn-replay" class="replay-btn" title="Replay animation">▶</button>
       </div>
 
-      <!-- ░░ STEP 1 — words ░░ -->
-      <div class="step-head"><span class="step-num">1</span><span class="step-title">Get your words</span></div>
-      <div class="tr-bar" id="tr-bar">
-        <span class="tr-ico" id="tr-ico">🔎</span>
-        <span class="tr-text" id="tr-text">looking for your words…</span>
-        <button class="link-btn" id="btn-tr-change">Change</button>
-      </div>
-      <button id="btn-tr-auto-main" class="chip-btn tr-auto-btn">🎙️ Auto-transcribe this clip (no Premiere export)</button>
-      <button id="btn-tr-edit" class="chip-btn tr-auto-btn">✏️ Review &amp; edit the words</button>
-      <div id="tr-help" class="help-box hidden">
-        <b>✨ Easiest: let CutPilot transcribe it for you</b> — select your video
-        clip in the timeline and tap <b>Auto-transcribe</b> below (needs the
-        one-time whisper engine; set it in <i>Settings → Auto-transcribe</i>).
-        No Premiere transcribe, no export.
-        <div class="row tight">
-          <button id="btn-tr-auto" class="hero-btn small">✨ Auto-transcribe my clip</button>
-        </div>
-        <hr style="border:none;border-top:1px solid var(--line);margin:9px 0">
-        <b>Or use Premiere's transcript</b> (it stays locked in the project, so
-        export once): <i>Window → Text</i> → the <b>···</b> menu →
-        <i>Export to SRT file</i>, saved next to your video / named after it,
-        then tap <b>Find again</b>.
-        <div class="row tight">
-          <button id="btn-tr-again" class="chip-btn">↻ Find again</button>
-          <button id="btn-tr-pick" class="chip-btn">Choose a file…</button>
-        </div>
-      </div>
-
-      <!-- Transcript editor: fix wording / delete junk / merge lines before captioning -->
-      <div id="tr-editor" class="tr-editor hidden">
-        <div class="tre-card">
-          <div class="tre-head">
-            <b>✏️ Review &amp; edit the words</b>
-            <span class="spacer"></span>
-            <button id="tre-cancel" class="chip-btn">Cancel</button>
-            <button id="tre-save" class="hero-btn small">Save</button>
-          </div>
-          <p class="hint">Fix any wrong word, delete a junk line (✕), or merge a line into the one above (⤴). Timings stay the same.</p>
-          <div id="tre-list" class="tre-list"></div>
-        </div>
-      </div>
-
-      <!-- ░░ STEP 2 — how to caption ░░ -->
-      <div class="step-head"><span class="step-num">2</span><span class="step-title">How to caption</span></div>
+      <!-- ░░ STEP 1 — how to caption (words come from the Transcribe tab) ░░ -->
+      <div class="step-head"><span class="step-num">1</span><span class="step-title">How to caption</span></div>
       <div class="seg-control method-switch" id="cap-method">
         <button data-method="animated" class="on">🎨 Animated style</button>
         <button data-method="mogrt">🎬 Premiere template</button>
@@ -163,7 +168,7 @@
 
       <!-- ===== ANIMATED branch ===== -->
       <div id="method-animated">
-        <div class="step-head"><span class="step-num">3</span><span class="step-title">Style &amp; add</span>
+        <div class="step-head"><span class="step-num">2</span><span class="step-title">Style &amp; add</span>
           <button id="btn-browse-styles" class="chip-btn step-action">≡ Browse styles</button>
         </div>
 
@@ -255,7 +260,7 @@
 
       <!-- ===== PREMIERE TEMPLATE (.mogrt) branch ===== -->
       <div id="method-mogrt" class="hidden">
-        <div class="step-head"><span class="step-num">3</span><span class="step-title">Pick a template &amp; add</span></div>
+        <div class="step-head"><span class="step-num">2</span><span class="step-title">Pick a template &amp; add</span></div>
         <div class="alt-block" id="mogrt-section">
           <p class="hint">CutPilot drops your chosen <b>.mogrt</b> once per caption line, on its own new track, and types in the words.</p>
           <div class="seg-control sub" id="tpl-source">
@@ -530,7 +535,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.45 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.46 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

@@ -2898,19 +2898,26 @@
     var note = $('set-quality-note');
     if (note) { var q = (settings.whisperQuality || 'base'); var qo = WHISPER_QUALITIES.filter(function (x) { return x.value === q; })[0]; note.textContent = qo ? '· ' + qo.label.replace(/^[^·]*· /, '') : ''; }
   }
-  /* Mount the custom Accuracy + Language dropdowns (native <select> can fail in CEP). */
-  var _qDD = null, _langDD = null;
+  /* Mount the custom Accuracy + Language dropdowns (native <select> can fail in CEP).
+     They appear in BOTH the Transcribe tab and Settings; changing one syncs the
+     other since they share settings.whisperQuality / whisperLang. */
+  var _qDDs = [], _langDDs = [];
   function mountWhisperDropdowns() {
-    if ($('set-whisper-quality') && !_qDD && typeof makeDropdown === 'function') {
-      _qDD = makeDropdown(WHISPER_QUALITIES, settings.whisperQuality || 'base',
-        function (v) { settings.whisperQuality = v; saveSettings(); refreshWhisperStatus(); }, 'base');
-      $('set-whisper-quality').appendChild(_qDD.el);
+    if (typeof makeDropdown !== 'function') return;
+    function mountInto(id, kind) {
+      var host = $(id); if (!host || host.firstChild) return;
+      var opts = (kind === 'q') ? WHISPER_QUALITIES : WHISPER_LANGS;
+      var cur = (kind === 'q') ? (settings.whisperQuality || 'base') : (settings.whisperLang || 'en');
+      var dd = makeDropdown(opts, cur, function (v) {
+        if (kind === 'q') settings.whisperQuality = v; else settings.whisperLang = v;
+        saveSettings(); refreshWhisperStatus();
+        (kind === 'q' ? _qDDs : _langDDs).forEach(function (o) { if (o !== dd) o.set(v); });  // keep both copies in sync
+      }, kind === 'q' ? 'base' : 'English');
+      host.appendChild(dd.el);
+      (kind === 'q' ? _qDDs : _langDDs).push(dd);
     }
-    if ($('set-whisper-lang') && !_langDD && typeof makeDropdown === 'function') {
-      _langDD = makeDropdown(WHISPER_LANGS, settings.whisperLang || 'en',
-        function (v) { settings.whisperLang = v; saveSettings(); refreshWhisperStatus(); }, 'English');
-      $('set-whisper-lang').appendChild(_langDD.el);
-    }
+    mountInto('set-whisper-quality', 'q'); mountInto('tr-quality', 'q');
+    mountInto('set-whisper-lang', 'l');    mountInto('tr-lang', 'l');
   }
   if ($('btn-whisper-pick')) $('btn-whisper-pick').addEventListener('click', function () {
     var p = pickFile('Locate the whisper engine (whisper-cli / main)', []); if (p) $('set-whisper').value = p;
