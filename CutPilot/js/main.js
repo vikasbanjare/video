@@ -810,7 +810,11 @@
     updateVals();
     renderPreview();
 
-    if (!opts.silent) { trackRecent(p.id); toast('Applied "' + p.name + '". Tweak it below, then Add captions.'); }
+    if (!opts.silent) {
+      setCapMethod('animated');   // picking a style is the Animated path
+      trackRecent(p.id);
+      toast('Applied "' + p.name + '". Tweak it below, then Add captions.');
+    }
   }
 
   function setLayoutButton(pos) {
@@ -936,13 +940,19 @@
     $('view-editor').classList.toggle('hidden', v !== 'editor');
     var btns = document.querySelectorAll('#cap-view button');
     for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('on', btns[i].dataset.view === v);
-    if (v === 'editor') {
-      renderPreview();
-      // The MOGRT section is now always-visible (not in a <details>), so scan
-      // Premiere's installed templates the first time the editor opens.
-      if (CPBridge.isCEP() && !_mogrtScanned) { _mogrtScanned = true; scanInstalledMogrts(); }
-    }
+    if (v === 'editor') renderPreview();
     if (v === 'templates') renderTemplateGrid();
+  }
+
+  /* Step 2: choose Animated vs Premiere-template captioning. Shows only the
+     relevant controls so the editor isn't a wall of options. */
+  function setCapMethod(m) {
+    $('method-animated').classList.toggle('hidden', m !== 'animated');
+    $('method-mogrt').classList.toggle('hidden', m !== 'mogrt');
+    var btns = document.querySelectorAll('#cap-method button');
+    for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('on', btns[i].dataset.method === m);
+    // scan installed templates the first time the user opens the MOGRT path
+    if (m === 'mogrt' && CPBridge.isCEP() && !_mogrtScanned) { _mogrtScanned = true; scanInstalledMogrts(); }
   }
 
   function wireSubviews() {
@@ -954,6 +964,12 @@
     $('btn-save-tpl').addEventListener('click', saveAsTemplate);
     $('btn-dup-tpl').addEventListener('click', duplicateTemplate);
     $('btn-export-tpl').addEventListener('click', exportTemplate);
+    // method toggle + "browse styles"
+    var mBtns = document.querySelectorAll('#cap-method button');
+    for (var j = 0; j < mBtns.length; j++) {
+      mBtns[j].addEventListener('click', function () { setCapMethod(this.dataset.method); });
+    }
+    if ($('btn-browse-styles')) $('btn-browse-styles').addEventListener('click', function () { showView('templates'); });
   }
 
   /* Build a template object from the current customizer state. */

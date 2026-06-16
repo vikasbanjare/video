@@ -64,12 +64,17 @@ header { display: flex; align-items: center; gap: 8px; padding: 13px 16px 9px; }
   background: var(--card); border: 1px solid var(--line); border-radius: var(--r);
   padding: 14px 15px; margin-bottom: 12px; box-shadow: var(--shadow);
 }
-.step-head { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; }
+.step-head { display: flex; align-items: center; gap: 9px; margin: 16px 0 10px; }
+.step-head:first-child { margin-top: 0; }
 .step-num {
   width: 21px; height: 21px; display: inline-flex; align-items: center; justify-content: center;
   border-radius: 50%; background: var(--grad); color: #fff; font-size: 11px; font-weight: 800; flex: none;
 }
 .step-title { font-weight: 800; font-size: 14px; letter-spacing: -0.2px; }
+.step-action { margin-left: auto; }
+/* Step 2 method chooser — bigger, clearer than a plain seg-control */
+.method-switch { margin-top: 0; }
+.method-switch button { padding: 10px 4px; font-size: 12px; }
 .badge {
   margin-left: auto; font-size: 10px; font-weight: 600; color: var(--dim);
   background: var(--card2); border: 1px solid var(--line); padding: 3px 9px; border-radius: 99px;
