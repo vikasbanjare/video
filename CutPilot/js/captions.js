@@ -60,6 +60,44 @@
     return out.join('\n');
   }
 
+  /* Phonetic Devanagari -> Latin (for "Hinglish" captions: Hindi spoken, written
+     in English letters). Not linguistically perfect (no full schwa-deletion) but
+     produces the readable romanized style Indian creators use. English text and
+     punctuation pass through untouched. */
+  var _DEV_C = {
+    'क':'k','ख':'kh','ग':'g','घ':'gh','ङ':'ng','च':'ch','छ':'chh','ज':'j','झ':'jh','ञ':'ny',
+    'ट':'t','ठ':'th','ड':'d','ढ':'dh','ण':'n','त':'t','थ':'th','द':'d','ध':'dh','न':'n',
+    'प':'p','फ':'ph','ब':'b','भ':'bh','म':'m','य':'y','र':'r','ल':'l','व':'v','श':'sh','ष':'sh',
+    'स':'s','ह':'h','क़':'q','ख़':'kh','ग़':'gh','ज़':'z','ड़':'r','ढ़':'rh','फ़':'f','ळ':'l'
+  };
+  var _DEV_V = { 'अ':'a','आ':'aa','इ':'i','ई':'ee','उ':'u','ऊ':'oo','ऋ':'ri','ए':'e','ऐ':'ai','ओ':'o','औ':'au','ऑ':'o','ॐ':'om' };
+  var _DEV_M = { 'ा':'aa','ि':'i','ी':'ee','ु':'u','ू':'oo','ृ':'ri','े':'e','ै':'ai','ो':'o','ौ':'au','ॉ':'o','ॅ':'e' };
+  var _DEV_VIRAMA = '्', _DEV_ANUSVARA = 'ं', _DEV_CHANDRA = 'ँ', _DEV_VISARGA = 'ः';
+  function devanagariToLatin(input) {
+    if (!input || !/[ऀ-ॿ]/.test(input)) return input;   // no Devanagari → leave as-is
+    var chars = String(input).split(''), out = '';
+    for (var i = 0; i < chars.length; i++) {
+      var ch = chars[i], nxt = chars[i + 1];
+      if (_DEV_C[ch] != null) {
+        var base = _DEV_C[ch];
+        if (nxt === _DEV_VIRAMA) { out += base; i++; }                 // halant: bare consonant
+        else if (_DEV_M[nxt] != null) { out += base + _DEV_M[nxt]; i++; }
+        else {
+          // inherent 'a', but drop it when the consonant ends the word
+          // (Hindi schwa-deletion: आज -> "aaj" not "aaja").
+          var wordFinal = (nxt == null) || !/[ऀ-ॿ]/.test(nxt);
+          out += base + (wordFinal ? '' : 'a');
+        }
+      } else if (_DEV_V[ch] != null) { out += _DEV_V[ch]; }
+      else if (ch === _DEV_ANUSVARA || ch === _DEV_CHANDRA) { out += 'n'; }
+      else if (ch === _DEV_VISARGA) { out += 'h'; }
+      else if (ch === '।' || ch === '॥') { out += '.'; }
+      else if (ch >= '०' && ch <= '९') { out += String(ch.charCodeAt(0) - 0x0966); }
+      else { out += ch; }
+    }
+    return out;
+  }
+
   /*
    * Explode sentence-level cues into word-by-word (or N-words-per-cue) cues
    * with timing interpolated by word length. This is what turns plain
@@ -837,6 +875,7 @@
     secondsToSrtTime: secondsToSrtTime,
     parseSRT: parseSRT,
     toSRT: toSRT,
+    devanagariToLatin: devanagariToLatin,
     explodeWords: explodeWords,
     regroupWords: regroupWords,
     remapCuesToKeeps: remapCuesToKeeps,

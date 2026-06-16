@@ -77,6 +77,13 @@ console.log('captions.js');
   const roundtrip = CPCaptions.parseSRT(CPCaptions.toSRT(cues));
   assert(roundtrip.length === 2 && close(roundtrip[1].start, 4.5), 'SRT roundtrips');
 
+  // Hinglish romanization (Devanagari -> Latin)
+  assert(CPCaptions.devanagariToLatin('नमस्ते') === 'namaste', 'romanize namaste');
+  assert(CPCaptions.devanagariToLatin('मैं') === 'main', 'romanize main');
+  assert(CPCaptions.devanagariToLatin('hello दोस्तों') === 'hello doston', 'romanize keeps English, romanizes Hindi');
+  assert(CPCaptions.devanagariToLatin('आज') === 'aaj', 'word-final schwa dropped (aaj)');
+  assert(CPCaptions.devanagariToLatin('plain english') === 'plain english', 'romanize leaves pure English untouched');
+
   const words = CPCaptions.explodeWords([cues[0]], { wordsPerCue: 1, uppercase: true });
   assert(words.length === 4, 'explodes into 4 word cues');
   assert(words[0].text === 'HELLO', 'uppercase applied');

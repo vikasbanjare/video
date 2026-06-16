@@ -200,7 +200,8 @@
   ];
   var WHISPER_LANGS = [
     { value: 'en', label: 'English' }, { value: 'auto', label: 'Auto-detect' },
-    { value: 'hi', label: 'Hindi' }, { value: 'es', label: 'Spanish' },
+    { value: 'hinglish', label: 'Hinglish (Hindi in English letters)' },
+    { value: 'hi', label: 'Hindi (हिन्दी)' }, { value: 'es', label: 'Spanish' },
     { value: 'fr', label: 'French' }, { value: 'de', label: 'German' },
     { value: 'pt', label: 'Portuguese' }, { value: 'it', label: 'Italian' },
     { value: 'ru', label: 'Russian' }, { value: 'ja', label: 'Japanese' },
@@ -261,6 +262,8 @@
     var wbin = resolveWhisper();
     if (!wbin) return toast('Set the whisper engine in Settings → Auto-transcribe (brew install whisper-cpp).', true);
     var lang = settings.whisperLang || 'en';
+    var wlang = (lang === 'hinglish') ? 'hi' : lang;   // Hinglish = transcribe Hindi, romanize after
+    var romanize = (lang === 'hinglish');
     setTranscriptBar('', '🎙️', 'Preparing the speech model…', null);
     resolveTranscribeModel().then(function (model) {
     return CPBridge.callHost('CP_getTranscribeSource').then(function (res) {
@@ -288,13 +291,14 @@
       setTranscriptBar('', '🎙️', 'Extracting audio from “' + shortName + '”' + pieces + '…', null);
       return runProc(ff, ffArgs).then(function () {
         setTranscriptBar('', '🎙️', 'Transcribing (' + lang + ') — this can take a minute…', null);
-        var wArgs = ['-m', model, '-f', wav, '-osrt', '-of', outBase, '-l', lang];
+        var wArgs = ['-m', model, '-f', wav, '-osrt', '-of', outBase, '-l', wlang];
         return runProc(wbin, wArgs);
       }).then(function () {
         var srtPath = outBase + '.srt';
         if (!fs.existsSync(srtPath)) throw new Error('the engine produced no transcript');
         var rawCues = CPCaptions.parseSRT(fs.readFileSync(srtPath, 'utf8'));
         if (!rawCues.length) throw new Error('no speech detected in “' + shortName + '”');
+        if (romanize) rawCues.forEach(function (rc) { rc.text = CPCaptions.devanagariToLatin(rc.text); });
         // Map each media-time cue onto every timeline piece that shows that part,
         // converting to sequence time: seq = mediaTime - pieceIn + pieceSeqStart.
         var cues = [];
