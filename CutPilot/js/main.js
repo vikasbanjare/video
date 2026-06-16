@@ -1550,6 +1550,11 @@
   }
   function ctrlName(c) { try { return c.uiName.strDB[0].str; } catch (e) { return ''; } }
   function intToHexJS(n) { n = (Math.round(Number(n)) >>> 0) & 0xFFFFFF; var s = n.toString(16); while (s.length < 6) s = '0' + s; return '#' + s; }
+  /* type-4 colour value is [r,g,b,a] floats 0..1 → "#rrggbb". */
+  function rgbaArrayToHex(a) {
+    function h(x) { x = Math.round(Math.max(0, Math.min(1, Number(x))) * 255); var s = x.toString(16); return s.length < 2 ? '0' + s : s; }
+    try { return '#' + h(a[0]) + h(a[1]) + h(a[2]); } catch (e) { return '#ffffff'; }
+  }
   // definition.json type codes
   var MT = { SLIDER: 2, ANGLE: 3, COLOR: 4, POINT: 5, TEXT: 6, SCALE: 9, GROUP: 10 };
 
@@ -1593,10 +1598,9 @@
       if (t === MT.GROUP) { mpHeader(box, name); continue; }
 
       if (t === MT.COLOR) {
-        // current colour: inspect returns a packed int (or hex if it guessed colour)
-        var hex = (ip.kind === 'colorint') ? ip.value
-                : (typeof ip.value === 'number') ? intToHexJS(ip.value) : '#ffffff';
-        (function (idx) { mpAddColor(box, name, hex, function (v) { setMogrtParam(idx, 'colorint', v); }); })(i);
+        // colour value is the [r,g,b,a] array straight from definition.json
+        var hex = (c.value && c.value.length >= 3) ? rgbaArrayToHex(c.value) : '#ffffff';
+        (function (idx) { mpAddColor(box, name, hex, function (v) { setMogrtParam(idx, 'color', v); }); })(i);
         continue;
       }
       if (t === MT.SLIDER || t === MT.ANGLE) {
@@ -1617,7 +1621,7 @@
           if (blob && blob.capPropTextRunCount === 1) {
             mpHeader(box, 'Text style (all lines)');
             mpAddFontSelect(box, 'Font', (blob.fontEditValue && blob.fontEditValue[0]) || '', function (v) { richStyle().font = v || null; });
-            mpAddNumber(box, 'Size', (blob.fontSizeEditValue && blob.fontSizeEditValue[0]), function (v) { richStyle().size = v; });
+            mpAddSlider(box, 'Font size', (blob.fontSizeEditValue && blob.fontSizeEditValue[0]) || 100, 10, 1200, function (v) { richStyle().size = v; });
             mpAddCheck(box, 'ALL CAPS', !!(blob.fontFSAllCapsValue && blob.fontFSAllCapsValue[0]), function (v) { richStyle().caps = v; });
             mpAddCheck(box, 'Bold', !!(blob.fontFSBoldValue && blob.fontFSBoldValue[0]), function (v) { richStyle().bold = v; });
             mpAddCheck(box, 'Italic', !!(blob.fontFSItalicValue && blob.fontFSItalicValue[0]), function (v) { richStyle().italic = v; });
@@ -1650,7 +1654,7 @@
     if (editable.length) mpHeader(box, 'Template controls');
     editable.forEach(function (p) {
       if (p.kind === 'color' || p.kind === 'colorint') {
-        (function (idx, k) { mpAddColor(box, p.name, String(p.value), function (v) { setMogrtParam(idx, k, v); }); })(p.i, p.kind);
+        (function (idx) { mpAddColor(box, p.name, String(p.value), function (v) { setMogrtParam(idx, 'color', v); }); })(p.i);
       } else if (p.kind === 'number') {
         (function (idx) { mpAddNumber(box, p.name, p.value, function (v) { setMogrtParam(idx, 'number', v); }); })(p.i);
       } else if (p.kind === 'bool') {

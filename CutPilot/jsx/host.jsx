@@ -1042,10 +1042,21 @@ function CP_setMgrtParam(prop, kind, value) {
       try { prop.setValue([px, py]); return true; } catch (ep3) {}
       return false;
     }
+    if (kind === 'color' || kind === 'colorint') {
+      // MOGRT colours are natively an [r,g,b,a] array of 0..1 floats (per the
+      // template's definition.json). Set that FIRST — it's unambiguous, so no
+      // byte-order surprises. Fall back to a packed int only if the array form
+      // is rejected.
+      var rgba = CP_hexToRgba(value);
+      try { prop.setValue(rgba, true); return true; } catch (ec1) {}
+      try { prop.setValue(rgba); return true; } catch (ec2) {}
+      var pi = CP_hexToInt(value);
+      try { prop.setValue(pi, true); return true; } catch (ec3) {}
+      try { prop.setValue(pi); return true; } catch (ec4) {}
+      return false;
+    }
     var v;
-    if (kind === 'color') v = CP_hexToRgba(value);
-    else if (kind === 'colorint') v = CP_hexToInt(value);
-    else if (kind === 'number') v = parseFloat(value);
+    if (kind === 'number') v = parseFloat(value);
     else if (kind === 'bool') v = !!value;
     else if (kind === 'font') v = String(value);
     else return false;
