@@ -342,41 +342,52 @@
     var pathMod = null;
     try { pathMod = nodeReq('path'); } catch (e) {}
 
+    var clipBase = '', projBase = '';
     // Two-arg .then so a rejection from CP_findProjectSrts doesn't abort
     // the rest of the chain (clip + project path searches still run).
     CPBridge.callHost('CP_findProjectSrts').then(
-      function (r) { (r.items || []).forEach(function (it) { add({ label: it.name, path: it.path, mtime: 1e15 }); }); },
+      function (r) { (r.items || []).forEach(function (it) { add({ label: it.name, path: it.path, base: 1e14, src: 'project' }); }); },
       function () { /* Premiere not connected or project not open — keep searching */ }
     ).then(function () {
       return CPBridge.callHost('CP_getSelectedClip').catch(function () { return null; });
     }).then(function (sel) {
       if (sel && sel.clip && sel.clip.mediaPath && pathMod) {
-        var dir = pathMod.dirname(sel.clip.mediaPath);
-        var base = pathMod.basename(sel.clip.mediaPath).replace(/\.[^.]+$/, '').toLowerCase();
-        listCaptionFilesIn(dir).forEach(function (s) {
-          if (s.label.toLowerCase().indexOf(base) === 0) s.mtime += 1e14;
-          add(s);
-        });
+        clipBase = pathMod.basename(sel.clip.mediaPath).replace(/\.[^.]+$/, '').toLowerCase();
+        listCaptionFilesIn(pathMod.dirname(sel.clip.mediaPath)).forEach(function (s) { s.base = 1e14; s.src = 'clip'; add(s); });
       }
       return CPBridge.callHost('CP_getProjectInfo').catch(function () { return null; });
     }).then(function (proj) {
-      if (proj && proj.path && pathMod) listCaptionFilesIn(pathMod.dirname(proj.path)).forEach(add);
-      // Also scan Desktop / Downloads / Documents — where Premiere exports SRT by default
+      if (proj && proj.path && pathMod) {
+        projBase = pathMod.basename(proj.path).replace(/\.[^.]+$/, '').toLowerCase();
+        listCaptionFilesIn(pathMod.dirname(proj.path)).forEach(function (s) { s.base = 1e13; s.src = 'projdir'; add(s); });
+      }
+      // Loose folders (Desktop/Downloads/Documents) are noisy — collect them,
+      // but they only become auto-pickable if their NAME matches this project
+      // or clip, so we never grab a random unrelated .srt.
       try {
         var home = nodeReq('os').homedir();
-        if (home && pathMod) {
-          ['Desktop', 'Downloads', 'Documents'].forEach(function (d) {
-            listCaptionFilesIn(pathMod.join(home, d)).forEach(add);
-          });
-        }
+        if (home && pathMod) ['Desktop', 'Downloads', 'Documents'].forEach(function (d) {
+          listCaptionFilesIn(pathMod.join(home, d)).forEach(function (s) { s.base = 0; s.src = 'loose'; add(s); });
+        });
       } catch (eOs) {}
-      found.sort(function (a, b) { return b.mtime - a.mtime; });
-      if (found.length) {
-        state.transcript = found[0];
-        setTranscriptBar('ok', '✅', 'Using ' + found[0].label, 'Change');
+
+      // Relevance: a filename that matches the clip/project wins decisively;
+      // then source priority; then recency. Unmatched loose files are dropped.
+      function rel(s) {
+        var n = (s.label || '').toLowerCase();
+        return ((clipBase && n.indexOf(clipBase) !== -1) || (projBase && n.indexOf(projBase) !== -1)) ? 5e15 : 0;
+      }
+      var pick = found.filter(function (s) { return s.src !== 'loose' || rel(s) > 0; });
+      pick.forEach(function (s) { s.score = rel(s) + (s.base || 0) + Math.min(s.mtime || 0, 9e12) / 1e3; });
+      pick.sort(function (a, b) { return b.score - a.score; });
+
+      if (pick.length) {
+        state.transcript = pick[0];
+        var note = (rel(pick[0]) > 0) ? '' : ' · tap Change if wrong';
+        setTranscriptBar('ok', '✅', 'Using ' + pick[0].label + note, 'Change');
       } else {
         state.transcript = null;
-        setTranscriptBar('warn', '⚠️', 'No .srt found — save it next to your video or on Desktop', 'Get one →');
+        setTranscriptBar('warn', '⚠️', 'No transcript for this video — tap to pick / make one', 'Get one →');
       }
     }).catch(function () {
       state.transcript = null;
