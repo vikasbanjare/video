@@ -1042,6 +1042,13 @@ function CP_setMgrtParam(prop, kind, value) {
       try { prop.setValue([px, py]); return true; } catch (ep3) {}
       return false;
     }
+    if (kind === 'colornum') {
+      // panel already encoded the colour as the exact number this template uses
+      var cn = Number(value);
+      try { prop.setValue(cn, true); return true; } catch (ecn1) {}
+      try { prop.setValue(cn); return true; } catch (ecn2) {}
+      return false;
+    }
     if (kind === 'color' || kind === 'colorint') {
       // MOGRT colours are natively an [r,g,b,a] array of 0..1 floats (per the
       // template's definition.json). Set that FIRST — it's unambiguous, so no
@@ -1294,8 +1301,11 @@ function CP_inspectMogrt(argsJson) {
           // classify so the panel can render an editable control (colour/size/
           // toggle/font) for the basic params, like Essential Graphics does.
           var cls = CP_classifyMgrtProp(p);
+          // raw numeric value (when applicable) lets the panel calibrate the
+          // colour encoding by matching it to the template's known defaults.
+          var num = (type === 'number') ? val : null;
           props.push({ i: i, name: String(p.displayName), type: type, rich: rich, len: raw.length,
-                       sample: sample, kind: cls.kind, value: cls.value });
+                       sample: sample, kind: cls.kind, value: cls.value, num: num });
         }
       }
     } catch (eComp) {}

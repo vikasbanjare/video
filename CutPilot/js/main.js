@@ -35,6 +35,7 @@
     mogrtParams: [],        // colour/size/font overrides for the selected custom MOGRT
     mogrtParamsPath: null,  // which .mogrt those overrides belong to
     mogrtTextStyle: null,   // {font,size,caps,bold,italic} for a rich-text template's blob
+    mogrtRBSwap: false,     // flip red/blue when a template packs colour the other way
     // template library
     customTemplates: [],
     favs: {},
@@ -1398,13 +1399,13 @@
       var p = pickFile('Choose a Motion Graphics Template', ['mogrt']);
       if (!p) return;
       state.mogrtFile = p;
-      state.mogrtParams = []; state.mogrtTextStyle = null; state.mogrtParamsPath = null;   // new file → fresh overrides
+      state.mogrtParams = []; state.mogrtTextStyle = null; state.mogrtRBSwap = false; state.mogrtParamsPath = null;   // new file → fresh overrides
       $('tpl-params').classList.add('hidden');
       $('tpl-file-name').textContent = p.split(/[\\/]/).pop();
     });
     // switching the installed template also clears stale overrides
     if ($('tpl-select')) $('tpl-select').addEventListener('change', function () {
-      state.mogrtParams = []; state.mogrtTextStyle = null; state.mogrtParamsPath = null; $('tpl-params').classList.add('hidden');
+      state.mogrtParams = []; state.mogrtTextStyle = null; state.mogrtRBSwap = false; state.mogrtParamsPath = null; $('tpl-params').classList.add('hidden');
     });
     $('btn-alt-apply').addEventListener('click', applyMogrtTemplate);
     $('btn-native-apply').addEventListener('click', applyNative);
@@ -1566,6 +1567,38 @@
     function h(x) { x = Math.round(Math.max(0, Math.min(1, Number(x))) * 255); var s = x.toString(16); return s.length < 2 ? '0' + s : s; }
     try { return '#' + h(a[0]) + h(a[1]) + h(a[2]); } catch (e) { return '#ffffff'; }
   }
+  function hexToRgb255(hex) {
+    hex = String(hex).replace('#', '');
+    if (hex.length === 3) hex = hex.charAt(0) + hex.charAt(0) + hex.charAt(1) + hex.charAt(1) + hex.charAt(2) + hex.charAt(2);
+    return [parseInt(hex.substr(0, 2), 16) || 0, parseInt(hex.substr(2, 2), 16) || 0, parseInt(hex.substr(4, 2), 16) || 0, 255];
+  }
+  // Candidate ways a MOGRT might pack a colour into the single number Premiere
+  // reports — we pick the one that reproduces the template's known defaults.
+  var COLOR_ENCODERS = [
+    { id: 'rgb24', f: function (r, g, b, a) { return r * 65536 + g * 256 + b; } },
+    { id: 'bgr24', f: function (r, g, b, a) { return b * 65536 + g * 256 + r; } },
+    { id: 'argb32', f: function (r, g, b, a) { return a * 16777216 + r * 65536 + g * 256 + b; } },
+    { id: 'abgr32', f: function (r, g, b, a) { return a * 16777216 + b * 65536 + g * 256 + r; } },
+    { id: 'rgba32', f: function (r, g, b, a) { return r * 16777216 + g * 65536 + b * 256 + a; } },
+    { id: 'bgra32', f: function (r, g, b, a) { return b * 16777216 + g * 65536 + r * 256 + a; } }
+  ];
+  function _numEq(a, b) {
+    a = Number(a); b = Number(b);
+    if (a < 0) a += 4294967296; if (b < 0) b += 4294967296;
+    return Math.abs(a - b) <= 1.5;
+  }
+  /* Find the encoder that maps each known default RGBA to its observed number. */
+  function calibrateColorEncoder(samples) {
+    for (var k = 0; k < COLOR_ENCODERS.length; k++) {
+      var ok = true;
+      for (var s = 0; s < samples.length; s++) {
+        var c = hexToRgb255(rgbaArrayToHex(samples[s].rgba));
+        if (!_numEq(COLOR_ENCODERS[k].f(c[0], c[1], c[2], 255), samples[s].num)) { ok = false; break; }
+      }
+      if (ok) return COLOR_ENCODERS[k];
+    }
+    return null;
+  }
   // definition.json type codes
   var MT = { SLIDER: 2, ANGLE: 3, COLOR: 4, POINT: 5, TEXT: 6, SCALE: 9, GROUP: 10 };
 
@@ -1576,7 +1609,7 @@
     var box = $('tpl-params');
     if (!path) { box.classList.remove('hidden'); box.innerHTML = '<p class="hint err">Pick a template first.</p>'; return; }
     // new template → drop previous overrides
-    if (state.mogrtParamsPath !== path) { state.mogrtParams = []; state.mogrtTextStyle = null; state.mogrtParamsPath = path; }
+    if (state.mogrtParamsPath !== path) { state.mogrtParams = []; state.mogrtTextStyle = null; state.mogrtRBSwap = false; state.mogrtParamsPath = path; }
     box.classList.remove('hidden');
     box.innerHTML = '<p class="hint">Reading template…</p>';
     var defs = readMogrtDefinition(path);   // the .mogrt's own control tree (or null)
@@ -1603,15 +1636,38 @@
      style), mirroring Premiere's Essential Graphics. */
   function renderFromDefinition(box, defs, props) {
     var firstTextDone = false;
+
+    // Calibrate the colour encoding from the template's own known defaults
+    // (definition RGBA ↔ the number Premiere reports), so we set colours in the
+    // exact format this template expects instead of guessing.
+    var samples = [];
+    for (var s = 0; s < defs.length; s++) {
+      if (defs[s].type === MT.COLOR && defs[s].value && defs[s].value.length >= 3 && props[s] && typeof props[s].num === 'number') {
+        samples.push({ rgba: defs[s].value, num: props[s].num });
+      }
+    }
+    var enc = calibrateColorEncoder(samples);
+    var colorHexById = {}, anyColor = false;
+    function applyColor(idx, hex) {
+      colorHexById[idx] = hex;
+      if (enc) {
+        var c = hexToRgb255(hex);
+        if (state.mogrtRBSwap) { var tmp = c[0]; c[0] = c[2]; c[2] = tmp; }
+        setMogrtParam(idx, 'colornum', enc.f(c[0], c[1], c[2], 255));
+      } else {
+        setMogrtParam(idx, 'color', hex);   // no calibration → native RGBA array
+      }
+    }
+
     for (var i = 0; i < defs.length; i++) {
       var c = defs[i], t = c.type, name = ctrlName(c) || ('#' + i);
       var ip = props[i] || {};                       // matching inspect prop (same order) for live values
       if (t === MT.GROUP) { mpHeader(box, name); continue; }
 
       if (t === MT.COLOR) {
-        // colour value is the [r,g,b,a] array straight from definition.json
+        anyColor = true;
         var hex = (c.value && c.value.length >= 3) ? rgbaArrayToHex(c.value) : '#ffffff';
-        (function (idx) { mpAddColor(box, name, hex, function (v) { setMogrtParam(idx, 'color', v); }); })(i);
+        (function (idx) { mpAddColor(box, name, hex, function (v) { applyColor(idx, v); }); })(i);
         continue;
       }
       if (t === MT.SLIDER || t === MT.ANGLE) {
@@ -1641,6 +1697,20 @@
         continue;
       }
       // SCALE and anything else: skip (handled by the template / not safely settable)
+    }
+
+    // Escape hatch: if a Premiere build packs colours red↔blue from how we
+    // calibrated, one toggle re-applies every colour with R/B swapped.
+    if (anyColor && enc) {
+      mpAddCheck(box, '⇄ Colours look swapped? fix red/blue', !!state.mogrtRBSwap, function (v) {
+        state.mogrtRBSwap = v;
+        for (var idx in colorHexById) if (colorHexById.hasOwnProperty(idx)) applyColor(parseInt(idx, 10), colorHexById[idx]);
+        toast('Re-applied colours' + (v ? ' (R/B swapped)' : '') + ' — tap ▶ Preview to check.');
+      });
+    } else if (anyColor && !enc) {
+      var n = document.createElement('p'); n.className = 'hint';
+      n.textContent = 'Couldn\'t auto-match this template\'s colour format — colours are best set in Premiere\'s Essential Graphics if they look off.';
+      box.appendChild(n);
     }
   }
 
