@@ -199,7 +199,17 @@ function CP_getTranscribeSource() {
     var pool = selected.length ? selected : all;
     if (!pool.length) return CP_fail('No clip with audio found. Put your video or audio clip on the timeline, then try again.');
     pool.sort(function (a, b) { return b.dur - a.dur; });  // longest = most speech
-    return CP_ok({ clip: pool[0], fromSelection: selected.length > 0, candidates: all.length });
+    var main = pool[0];
+    // Every timeline piece that uses the SAME source media — so a recording cut
+    // into jump-cuts is transcribed in full and each piece mapped back to where
+    // it sits on the timeline (music/b-roll on other files are excluded).
+    var instances = [];
+    for (var k = 0; k < all.length; k++) {
+      if (all[k].mediaPath === main.mediaPath) {
+        instances.push({ inPoint: all[k].inPoint, outPoint: all[k].outPoint, seqStart: all[k].seqStart });
+      }
+    }
+    return CP_ok({ clip: main, instances: instances, fromSelection: selected.length > 0, candidates: all.length });
   } catch (e) { return CP_fail(e.message); }
 }
 

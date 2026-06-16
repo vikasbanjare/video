@@ -214,30 +214,46 @@
     CPBridge.callHost('CP_getTranscribeSource').then(function (res) {
       var clip = res.clip;
       if (!clip || !clip.mediaPath) throw new Error('Put your video or audio clip on the timeline first.');
+      // Every timeline piece that uses this recording (jump-cuts of one source).
+      var insts = (res.instances && res.instances.length) ? res.instances
+                  : [{ inPoint: clip.inPoint || 0, outPoint: clip.outPoint || 0, seqStart: clip.seqStart || 0 }];
       var os = nodeReq('os'), pathMod = nodeReq('path'), fs = nodeReq('fs');
       var stamp = Date.now();
       var wav = pathMod.join(os.tmpdir(), 'cutpilot-asr-' + stamp + '.wav');
       var outBase = pathMod.join(os.tmpdir(), 'cutpilot-asr-' + stamp);
-      var inP = clip.inPoint || 0, outP = clip.outPoint || 0, dur = (outP > inP) ? (outP - inP) : 0;
-      // -ss BEFORE -i (fast, accurate-enough seek to the clip's in-point) and
-      // -t AFTER -i (output duration counted FROM the seek point). Putting -t
-      // before -i makes some ffmpeg builds measure it from 0, which truncates a
-      // trimmed clip's tail — the cause of "captions only cover part of it".
-      var ffArgs = ['-y', '-ss', String(inP), '-i', clip.mediaPath];
+      // One extraction covering the whole used span of the source media.
+      var minIn = Infinity, maxOut = 0;
+      insts.forEach(function (it) { if (it.inPoint < minIn) minIn = it.inPoint; if (it.outPoint > maxOut) maxOut = it.outPoint; });
+      if (!isFinite(minIn)) minIn = 0;
+      var dur = (maxOut > minIn) ? (maxOut - minIn) : 0;
+      // -ss BEFORE -i (fast seek), -t AFTER -i (duration from the seek point) —
+      // the reverse truncates a trimmed clip's tail in some ffmpeg builds.
+      var ffArgs = ['-y', '-ss', String(minIn), '-i', clip.mediaPath];
       if (dur > 0) ffArgs = ffArgs.concat(['-t', String(dur)]);
       ffArgs = ffArgs.concat(['-vn', '-ac', '1', '-ar', '16000', wav]);
       var shortName = (clip.name || 'clip').replace(/\.[^.]+$/, '');
-      setTranscriptBar('', '🎙️', 'Extracting audio from “' + shortName + '”…', null);
+      var pieces = insts.length > 1 ? (' (' + insts.length + ' cuts)') : '';
+      setTranscriptBar('', '🎙️', 'Extracting audio from “' + shortName + '”' + pieces + '…', null);
       return runProc(ff, ffArgs).then(function () {
         setTranscriptBar('', '🎙️', 'Transcribing — this can take a minute…', null);
         return runProc(wbin, ['-m', model, '-f', wav, '-osrt', '-of', outBase]);
       }).then(function () {
         var srtPath = outBase + '.srt';
         if (!fs.existsSync(srtPath)) throw new Error('the engine produced no transcript');
-        var cues = CPCaptions.parseSRT(fs.readFileSync(srtPath, 'utf8'));
+        var rawCues = CPCaptions.parseSRT(fs.readFileSync(srtPath, 'utf8'));
+        if (!rawCues.length) throw new Error('no speech detected in “' + shortName + '”');
+        // Map each media-time cue onto every timeline piece that shows that part,
+        // converting to sequence time: seq = mediaTime - pieceIn + pieceSeqStart.
+        var cues = [];
+        rawCues.forEach(function (rc) {
+          var mStart = rc.start + minIn, mEnd = rc.end + minIn;
+          insts.forEach(function (it) {
+            var s = Math.max(mStart, it.inPoint), e = Math.min(mEnd, it.outPoint);
+            if (e - s > 0.05) cues.push({ start: s - it.inPoint + it.seqStart, end: e - it.inPoint + it.seqStart, text: rc.text });
+          });
+        });
         if (!cues.length) throw new Error('no speech detected in “' + shortName + '”');
-        var off = clip.seqStart || 0;                       // clip plays at seqStart → shift cues to sequence time
-        cues.forEach(function (c) { c.start += off; c.end += off; });
+        cues.sort(function (a, b) { return a.start - b.start; });
         var finalPath = pathMod.join(os.tmpdir(), 'cutpilot-transcript-' + stamp + '.srt');
         fs.writeFileSync(finalPath, CPCaptions.toSRT(cues), 'utf8');
         try { fs.unlinkSync(wav); } catch (eU) {}
@@ -247,9 +263,9 @@
         $('tr-help').classList.add('hidden');
         var span = fmt(cues[0].start) + '–' + fmt(cues[cues.length - 1].end);   // coverage, so partial transcripts are obvious
         setTranscriptBar('ok', '✅', 'Transcribed “' + shortName + '” — ' + cues.length + ' lines · ' + span, 'Change');
-        toast('✓ Transcribed “' + shortName + '” — ' + cues.length + ' lines, covering ' + span +
-              '. If that span is shorter than the clip, tell me.' +
-              (res.fromSelection ? '' : ' (Used the longest clip with audio.)'));
+        toast('✓ Transcribed “' + shortName + '”' + (insts.length > 1 ? ' (' + insts.length + ' cuts)' : '') +
+              ' — ' + cues.length + ' lines, covering ' + span + '.' +
+              (res.fromSelection ? '' : ' (Auto-picked the main clip.)'));
       });
     }).catch(function (e) {
       setTranscriptBar('warn', '⚠️', 'Auto-transcribe failed', 'Get one →');
