@@ -498,6 +498,7 @@
     });
     $('btn-tr-again').addEventListener('click', findTranscript);
     if ($('btn-tr-auto')) $('btn-tr-auto').addEventListener('click', autoTranscribe);
+    if ($('btn-tr-auto-main')) $('btn-tr-auto-main').addEventListener('click', autoTranscribe);
     $('btn-tr-pick').addEventListener('click', function () {
       var p = pickFile('Choose a caption file (.srt / .vtt)', ['srt', 'vtt']);
       if (p) pickTranscriptByHand(p);
