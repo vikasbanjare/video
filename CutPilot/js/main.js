@@ -1669,11 +1669,26 @@
     var nm = document.createElement('span'); nm.className = 'mp-name'; nm.textContent = label;
     row.appendChild(nm); box.appendChild(row); return row;
   }
-  function mpAddFontSelect(box, label, curPs, onChange) {
-    var row = mpRow(box, label);
+  /* Font choices for the MOGRT picker: the curated list PLUS every font installed
+     on this computer (cached), so the user isn't limited to ~15 faces. */
+  var _mogrtFontOpts = null;
+  function mogrtFontOptions(curPs) {
     var opts = [{ value: '', label: 'Keep (' + (curPs || 'template') + ')' }];
     POPULAR_FONTS.forEach(function (f) { opts.push({ value: f.ps, label: f.label }); });
-    var dd = makeDropdown(opts, '', onChange, 'Keep');
+    if (_mogrtFontOpts === null) {
+      _mogrtFontOpts = [];
+      try {
+        if (typeof CPFonts !== 'undefined' && CPBridge.isCEP()) {
+          var fonts = CPFonts.listInstalledFonts(nodeReq('fs'), nodeReq('path'), {}) || [];
+          for (var i = 0; i < fonts.length; i++) _mogrtFontOpts.push({ value: fonts[i], label: fonts[i] });
+        }
+      } catch (e) {}
+    }
+    return _mogrtFontOpts.length ? opts.concat(_mogrtFontOpts) : opts;
+  }
+  function mpAddFontSelect(box, label, curPs, onChange) {
+    var row = mpRow(box, label);
+    var dd = makeDropdown(mogrtFontOptions(curPs), '', onChange, 'Keep');
     dd.el.classList.add('mp-ctrl');
     row.appendChild(dd.el);
   }
@@ -1890,13 +1905,13 @@
     var colorHexById = {}, anyColor = false;
     function applyColor(idx, hex) {
       colorHexById[idx] = hex;
-      // DEFAULT to the unambiguous [r,g,b,a] float array so a colour can NEVER
-      // come out red/blue-swapped (the old packed-int guess is what turned warm
-      // colours blue). The R/B toggle stays as an explicit escape hatch for the
-      // rare template that only accepts a packed number in a non-RGB byte order.
-      if (state.mogrtRBSwap && enc) {
+      // Number-packed colour controls (most .mogrt) need the exact packing this
+      // template uses — set the calibrated number. Array-type controls (enc null)
+      // take an [r,g,b,a] float array directly. If a packed template still looks
+      // red/blue swapped, the toggle below flips it (one tap).
+      if (enc) {
         var c = hexToRgb255(hex);
-        var tmp = c[0]; c[0] = c[2]; c[2] = tmp;
+        if (state.mogrtRBSwap) { var tmp = c[0]; c[0] = c[2]; c[2] = tmp; }
         setMogrtParam(idx, 'colornum', enc.f(c[0], c[1], c[2], 255));
       } else {
         setMogrtParam(idx, 'color', hex);   // host sets [r,g,b,a] — exact colour
@@ -1943,13 +1958,17 @@
       // SCALE and anything else: skip (handled by the template / not safely settable)
     }
 
-    // Escape hatch: if a Premiere build packs colours red↔blue from how we
-    // calibrated, one toggle re-applies every colour with R/B swapped.
+    // Escape hatch: this template packs colour as a number, and some builds read
+    // it red↔blue (your warm colours show up blue). One toggle flips it.
     if (anyColor && enc) {
-      mpAddCheck(box, '⇄ Colours look swapped? fix red/blue', !!state.mogrtRBSwap, function (v) {
+      var swapWrap = document.createElement('div'); swapWrap.className = 'mp-swap';
+      var swapHint = document.createElement('p'); swapHint.className = 'hint';
+      swapHint.innerHTML = '<b>Colour coming out wrong (e.g. you pick orange, it shows blue)?</b> Turn this on:';
+      swapWrap.appendChild(swapHint); box.appendChild(swapWrap);
+      mpAddCheck(box, '⇄ Fix red/blue swap', !!state.mogrtRBSwap, function (v) {
         state.mogrtRBSwap = v;
         for (var idx in colorHexById) if (colorHexById.hasOwnProperty(idx)) applyColor(parseInt(idx, 10), colorHexById[idx]);
-        toast('Re-applied colours' + (v ? ' (R/B swapped)' : '') + ' — tap ▶ Preview to check.');
+        toast(v ? '✓ Red/blue flipped — ▶ Preview to check.' : 'Red/blue back to normal — ▶ Preview to check.');
       });
     } else if (anyColor && !enc) {
       var n = document.createElement('p'); n.className = 'hint';

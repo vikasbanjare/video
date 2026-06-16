@@ -325,6 +325,8 @@ input[type="range"]::-webkit-slider-thumb {
 .cp-dd-item { display: block; width: 100%; text-align: left; padding: 6px 9px; background: none; border: none;
   color: inherit; cursor: pointer; font-size: 12px; border-radius: 6px; white-space: nowrap; }
 .cp-dd-item:hover { background: var(--card2); }
+.mp-swap { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
+.mp-swap .hint { margin: 0 0 2px; }
 
 .anim-rail { display: flex; flex-wrap: wrap; gap: 6px; }
 .anim-chip {
