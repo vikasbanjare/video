@@ -1204,22 +1204,14 @@ function CP_insertMogrtCaptions(argsJson) {
         if (nextStart > startSec && nextStart < wantEnd) wantEnd = nextStart;
       }
 
-      // Load/conform the .mogrt ONCE, then reuse the project item (avoids the
-      // per-insert "Loading Motion Graphics Template" 89% stall on heavy files).
+      // Import a FRESH graphic for EACH caption. Reusing one shared project item
+      // is faster but every instance then shares the same text — so only the
+      // first caption kept its words and the rest showed the template default.
+      // A fresh instance per caption guarantees each gets its own text.
       var clip = null;
-      if (sharedItem && trackObj) {
-        try {
-          trackObj.overwriteClip(sharedItem, startSec);
-          clip = trackObj.clips[trackObj.clips.numItems - 1];
-          if (clip) reused++;
-        } catch (eReuse) { clip = null; }
-      }
-      if (!clip) {
-        try {
-          clip = seq.importMGT(args.mogrtPath, CP_ticksFromSeconds(startSec), vTrack, aTrack);
-          if (clip && !sharedItem) { try { sharedItem = clip.projectItem; } catch (ePI) { sharedItem = null; } }
-        } catch (eImp) { errors.push('graphic ' + g + ': ' + eImp.message); continue; }
-      }
+      try {
+        clip = seq.importMGT(args.mogrtPath, CP_ticksFromSeconds(startSec), vTrack, aTrack);
+      } catch (eImp) { errors.push('graphic ' + g + ': ' + eImp.message); continue; }
       if (!clip) { errors.push('graphic ' + g + ': importMGT returned nothing'); continue; }
       inserted++;
 
