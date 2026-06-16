@@ -281,6 +281,13 @@
       // Every timeline piece that uses this recording (jump-cuts of one source).
       var insts = (res.instances && res.instances.length) ? res.instances
                   : [{ inPoint: clip.inPoint || 0, outPoint: clip.outPoint || 0, seqStart: clip.seqStart || 0 }];
+      // Linked clips put the SAME media on a video AND an audio track → identical
+      // instances → every caption came out twice. Drop exact-duplicate ranges.
+      var _seenInst = {};
+      insts = insts.filter(function (it) {
+        var k = Math.round((it.seqStart || 0) * 100) + '|' + Math.round((it.inPoint || 0) * 100) + '|' + Math.round((it.outPoint || 0) * 100);
+        if (_seenInst[k]) return false; _seenInst[k] = 1; return true;
+      });
       var os = nodeReq('os'), pathMod = nodeReq('path'), fs = nodeReq('fs');
       var stamp = Date.now();
       var wav = pathMod.join(os.tmpdir(), 'cutpilot-asr-' + stamp + '.wav');
@@ -301,8 +308,10 @@
       setTranscriptBar('', '🎙️', 'Extracting audio from “' + shortName + '”' + pieces + '…', null);
       return runProc(ff, ffArgs).then(function () {
         setTranscriptBar('', '🎙️', 'Transcribing with ' + modelLabel + ' — this can take a minute…', null);
-        // beam search (-bs 5) decodes more carefully than greedy → more accurate.
-        var wArgs = ['-m', model, '-f', wav, '-osrt', '-of', outBase, '-l', wlang, '-bs', '5'];
+        // -bs 5: beam search (more accurate than greedy).
+        // -mc 0: don't carry prior text as context → stops the runaway repetition
+        //        loops ("ttttt", "ventventvent") whisper falls into on hard audio.
+        var wArgs = ['-m', model, '-f', wav, '-osrt', '-of', outBase, '-l', wlang, '-bs', '5', '-mc', '0'];
         return runProc(wbin, wArgs);
       }).then(function () {
         var srtPath = outBase + '.srt';
