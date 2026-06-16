@@ -214,7 +214,7 @@
   ];
   function _modelsDir() { try { return nodeReq('path').join(nodeReq('os').homedir(), '.cutpilot', 'models'); } catch (e) { return null; } }
   function modelFileName() {
-    var q = settings.whisperQuality || 'small';
+    var q = settings.whisperQuality || 'large-v3-turbo';
     var lang = settings.whisperLang || 'en';
     var hasEnVariant = (q === 'tiny' || q === 'base' || q === 'small' || q === 'medium');  // large-* are multilingual only
     var enLike = (lang === 'en' || lang === 'hinglish');     // both decode as English (Hinglish = English-phonetic)
@@ -2919,7 +2919,7 @@
     if (w) { el.textContent = '✅ Engine ready · will use ' + willUse + (m ? '' : ' (downloads on first use)'); }
     else { el.textContent = 'Let CutPilot make the transcript itself — install the engine below.'; }
     var note = $('set-quality-note');
-    if (note) { var q = (settings.whisperQuality || 'small'); var qo = WHISPER_QUALITIES.filter(function (x) { return x.value === q; })[0]; note.textContent = qo ? '· ' + qo.label.replace(/^[^·]*· /, '') : ''; }
+    if (note) { var q = (settings.whisperQuality || 'large-v3-turbo'); var qo = WHISPER_QUALITIES.filter(function (x) { return x.value === q; })[0]; note.textContent = qo ? '· ' + qo.label.replace(/^[^·]*· /, '') : ''; }
   }
   /* Mount the custom Accuracy + Language dropdowns (native <select> can fail in CEP).
      They appear in BOTH the Transcribe tab and Settings; changing one syncs the
@@ -2930,7 +2930,7 @@
     function mountInto(id, kind) {
       var host = $(id); if (!host || host.firstChild) return;
       var opts = (kind === 'q') ? WHISPER_QUALITIES : WHISPER_LANGS;
-      var cur = (kind === 'q') ? (settings.whisperQuality || 'small') : (settings.whisperLang || 'en');
+      var cur = (kind === 'q') ? (settings.whisperQuality || 'large-v3-turbo') : (settings.whisperLang || 'en');
       var dd = makeDropdown(opts, cur, function (v) {
         if (kind === 'q') settings.whisperQuality = v; else settings.whisperLang = v;
         saveSettings(); refreshWhisperStatus();
