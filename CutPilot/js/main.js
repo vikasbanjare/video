@@ -144,14 +144,27 @@
                  '/opt/homebrew/bin/main', '/usr/local/bin/whisper',
                  'C:\\whisper\\whisper-cli.exe', 'C:\\whisper\\main.exe'];
     for (var i = 0; i < cands.length; i++) if (tryPath(cands[i])) return (_whisper = cands[i]);
-    // Last resort: ask the user's LOGIN shell where it is — picks up the full
-    // PATH (incl. Homebrew) that a GUI-launched app otherwise wouldn't see.
+    // Ask the user's DEFAULT login shell (zsh on modern macOS, not bash) where
+    // it is — picks up the full Homebrew PATH a GUI app otherwise can't see.
+    var shOut = _loginShell("for c in whisper-cli whisper-cpp whisper main; do command -v \"$c\" && exit 0; done");
+    if (shOut && tryPath(shOut)) return (_whisper = shOut);
+    // Also try the Homebrew prefix directly.
+    var brew = _loginShell('brew --prefix');
+    if (brew) {
+      var bn = ['whisper-cli', 'whisper-cpp', 'whisper', 'main'];
+      for (var b = 0; b < bn.length; b++) { var bp = brew + '/bin/' + bn[b]; if (tryPath(bp)) return (_whisper = bp); }
+    }
+    return null;
+  }
+  /* Run a one-liner in the user's real login shell; return first stdout line. */
+  function _loginShell(cmd) {
     try {
       var cp = nodeReq('child_process');
-      var out = cp.execSync("/bin/bash -lc 'command -v whisper-cli || command -v whisper-cpp || command -v whisper || command -v main' 2>/dev/null",
-                            { timeout: 5000 }).toString().split('\n')[0].trim();
-      if (out && tryPath(out)) return (_whisper = out);
-    } catch (e3) {}
+      var sh = (typeof process !== 'undefined' && process.env && process.env.SHELL) ? process.env.SHELL : '/bin/zsh';
+      var out = cp.execSync(sh + ' -lc ' + JSON.stringify(cmd + ' 2>/dev/null'), { timeout: 6000 }).toString();
+      var lines = out.split('\n');
+      for (var i = 0; i < lines.length; i++) { var p = lines[i].trim(); if (p) return p; }
+    } catch (e) {}
     return null;
   }
   function resolveWhisperModel() {
@@ -2599,6 +2612,26 @@
     saveSettings();
     refreshWhisperStatus();
     toast('Auto-transcribe settings saved.');
+  });
+  /* Show exactly what CutPilot can (and can't) find — paste this to support. */
+  if ($('btn-whisper-detect')) $('btn-whisper-detect').addEventListener('click', function () {
+    var box = $('whisper-diag'); box.classList.remove('hidden'); box.textContent = 'Checking…';
+    var out = [];
+    var cp, fs; try { cp = nodeReq('child_process'); fs = nodeReq('fs'); } catch (e) { box.textContent = 'Node not available in this panel.'; return; }
+    var sh = (typeof process !== 'undefined' && process.env && process.env.SHELL) ? process.env.SHELL : '(unknown)';
+    out.push('default shell: ' + sh);
+    function run(cmd) { try { return cp.execSync((sh.indexOf('/') === 0 ? sh : '/bin/zsh') + ' -lc ' + JSON.stringify(cmd + ' 2>/dev/null'), { timeout: 6000 }).toString().trim() || '(empty)'; } catch (e) { return '(error)'; } }
+    ['/opt/homebrew/bin/whisper-cli', '/usr/local/bin/whisper-cli', '/opt/homebrew/bin/whisper-cpp', '/usr/local/bin/whisper-cpp', '/opt/homebrew/bin/main'].forEach(function (p) {
+      var ex = false; try { ex = fs.existsSync(p); } catch (e) {} out.push((ex ? '✓ ' : '✗ ') + p);
+    });
+    out.push('command -v: ' + run('for c in whisper-cli whisper-cpp whisper main; do command -v "$c" && break; done'));
+    out.push('brew --prefix: ' + run('brew --prefix'));
+    out.push('brew whisper bins: ' + run('ls -1 "$(brew --prefix 2>/dev/null)"/bin | grep -i whisper'));
+    out.push('ffmpeg: ' + (resolveFfmpeg() || 'NOT FOUND'));
+    _whisper = null;
+    out.push('→ resolveWhisper(): ' + (resolveWhisper() || 'null'));
+    out.push('→ model: ' + (resolveWhisperModel() || 'none'));
+    box.textContent = out.join('\n');
   });
 
   // ----------------------------------------------------- diagnostics ----

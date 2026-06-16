@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.28</span>
+    <span class="ver" id="ver">v0.9.29</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -477,7 +477,11 @@
           <button id="btn-whisper-model-pick" class="chip-btn">…</button>
         </div>
       </label>
-      <button id="btn-save-whisper" class="hero-btn small">Save & check</button>
+      <div class="row tight">
+        <button id="btn-save-whisper" class="hero-btn small">Save &amp; check</button>
+        <button id="btn-whisper-detect" class="chip-btn">🔍 Detect engine</button>
+      </div>
+      <pre id="whisper-diag" class="diag-out hidden"></pre>
     </div>
 
     <div class="card">
@@ -494,7 +498,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.28 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.29 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>
