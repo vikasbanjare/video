@@ -190,6 +190,10 @@ input:focus, select:focus { outline: none; border-color: var(--clay); box-shadow
 .t-cap.anim-shake { animation: cp-shake 2.6s ease infinite; }
 .t-cap.anim-fade { animation: cp-fade 2.6s ease infinite; }
 .t-cap.anim-glitch { animation: cp-glitch 2.6s linear infinite; }
+.t-cap.anim-whoosh { animation: cp-whoosh 2.6s cubic-bezier(.2,.8,.2,1) infinite; }
+.t-cap.anim-zoompunch { animation: cp-zoompunch 2.6s cubic-bezier(.2,.85,.25,1) infinite; }
+.t-cap.anim-blurdissolve { animation: cp-blurdissolve 2.6s ease infinite; }
+.t-cap.anim-glide { animation: cp-glide 2.6s cubic-bezier(.2,.8,.2,1) infinite; }
 
 /* ----------------------------------------------------- editor head --- */
 .editor-head { display: flex; align-items: center; gap: 6px; margin-bottom: 11px; }
@@ -404,6 +408,27 @@ footer { border-top: 1px solid var(--line); background: var(--card); max-height:
   0%, 100% { transform: translateX(0); } 6% { transform: translateX(-5px); } 12% { transform: translateX(5px); }
   18% { transform: translateX(-3px); } 24% { transform: translateX(0); }
 }
+/* FilmImpact-style: fast eased move + a blur that resolves (the blur shows the
+   intended look in-panel; the placed clip carries the motion + easing). */
+@keyframes cp-whoosh {
+  0% { transform: translateX(-46px); opacity: 0; filter: blur(6px); }
+  52% { transform: translateX(6px); opacity: 1; filter: blur(0); }
+  66%, 100% { transform: translateX(0); }
+}
+@keyframes cp-zoompunch {
+  0% { transform: scale(2.3); opacity: 0; filter: blur(8px); }
+  52% { transform: scale(.96); opacity: 1; filter: blur(0); }
+  66%, 100% { transform: scale(1); }
+}
+@keyframes cp-blurdissolve {
+  0% { transform: scale(1.12); opacity: 0; filter: blur(10px); }
+  70%, 100% { transform: scale(1); opacity: 1; filter: blur(0); }
+}
+@keyframes cp-glide {
+  0% { transform: translateY(26px); opacity: 0; filter: blur(5px); }
+  58% { transform: translateY(-4px); opacity: 1; filter: blur(0); }
+  74%, 100% { transform: translateY(0); }
+}
 .preview-caption.pa-pop { animation: cp-pop 2.2s ease infinite; }
 .preview-caption.pa-scale { animation: cp-scale 2.2s ease infinite; }
 .preview-caption.pa-zoom { animation: cp-zoom 2.2s ease infinite; }
@@ -413,6 +438,10 @@ footer { border-top: 1px solid var(--line); background: var(--card); max-height:
 .preview-caption.pa-shake { animation: cp-shake 2.2s ease infinite; }
 .preview-caption.pa-fade { animation: cp-fade 2.2s ease infinite; }
 .preview-caption.pa-glitch { animation: cp-glitch 2.2s linear infinite; }
+.preview-caption.pa-whoosh { animation: cp-whoosh 2.2s cubic-bezier(.2,.8,.2,1) infinite; }
+.preview-caption.pa-zoompunch { animation: cp-zoompunch 2.2s cubic-bezier(.2,.85,.25,1) infinite; }
+.preview-caption.pa-blurdissolve { animation: cp-blurdissolve 2.2s ease infinite; }
+.preview-caption.pa-glide { animation: cp-glide 2.2s cubic-bezier(.2,.8,.2,1) infinite; }
 .demo .anim-pop { animation: cp-pop 2.4s ease infinite; }
 .demo .anim-sweep { animation: cp-sweep 2.4s ease infinite; }
 .demo .anim-fade { animation: cp-fade 2.4s ease infinite; }

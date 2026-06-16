@@ -144,6 +144,12 @@ console.log('captions.js (animation engine)');
   ['scale', 'wave', 'shake'].forEach(function (id) {
     assert(CPCaptions.getAnimation(id).id === id, 'new animation present: ' + id);
   });
+  // FilmImpact-style entrances
+  ['whoosh', 'zoompunch', 'blurdissolve', 'glide'].forEach(function (id) {
+    var a = CPCaptions.getAnimation(id);
+    assert(a.id === id, 'FilmImpact animation present: ' + id);
+    assert(a.kind === 'keyframed', id + ' is a keyframed entrance');
+  });
 }
 
 // ----------------------------------------------------- style merge / fonts ----

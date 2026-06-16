@@ -574,6 +574,14 @@ function CP_setKeys(prop, baseTime, keys) {
       prop.addKey(t);
       prop.setValueAtKey(t, keys[i].v, true);
     }
+    // Best-effort smooth (Bezier) easing — what gives the FilmImpact-style
+    // glide instead of stiff linear motion. Only applied if the host exposes
+    // the interpolation enum; otherwise keys stay linear (still works).
+    if (typeof KFInterpolationType !== 'undefined' && KFInterpolationType.BEZIER != null) {
+      for (var j = 0; j < keys.length; j++) {
+        try { prop.setInterpolationTypeAtKey(baseTime + keys[j].t, KFInterpolationType.BEZIER, true); } catch (eK) {}
+      }
+    }
   } catch (e) {}
 }
 
@@ -632,6 +640,34 @@ function CP_animateClip(clip, anim) {
     CP_setKeys(opacity, base, [
       { t: 0.0, v: 0 }, { t: 0.03, v: 100 }, { t: 0.05, v: 35 }, { t: 0.08, v: 100 }
     ]);
+
+  // ---- FilmImpact-style entrances: bigger, faster, eased moves with an
+  //      overshoot-and-settle. (Premiere's stock Motion keyframes carry the
+  //      motion but not literal GPU motion blur — see the note in the panel.)
+  } else if (anim === 'whoosh') {
+    // Impact Push: fly in from the left, overshoot past centre, settle.
+    CP_setKeys(pos, base, [
+      { t: 0.0, v: [0.16, 0.5] }, { t: 0.10, v: [0.532, 0.5] }, { t: 0.17, v: [0.5, 0.5] }
+    ]);
+    CP_setKeys(opacity, base, [{ t: 0.0, v: 0 }, { t: 0.05, v: 100 }]);
+  } else if (anim === 'zoompunch') {
+    // Impact Zoom Blur: punch in from oversized, slight undershoot, settle.
+    CP_setKeys(scale, base, [
+      { t: 0.0, v: 260 }, { t: 0.10, v: 94 }, { t: 0.17, v: 100 }
+    ]);
+    CP_setKeys(opacity, base, [{ t: 0.0, v: 0 }, { t: 0.06, v: 100 }]);
+  } else if (anim === 'blurdissolve') {
+    // Impact Blur Dissolve: gentle scale settle with a slow, soft fade.
+    CP_setKeys(scale, base, [
+      { t: 0.0, v: 114 }, { t: 0.24, v: 100 }
+    ]);
+    CP_setKeys(opacity, base, [{ t: 0.0, v: 0 }, { t: 0.22, v: 100 }]);
+  } else if (anim === 'glide') {
+    // Impact Motion: smooth rise from below with overshoot up, then settle.
+    CP_setKeys(pos, base, [
+      { t: 0.0, v: [0.5, 0.62] }, { t: 0.12, v: [0.5, 0.491] }, { t: 0.2, v: [0.5, 0.5] }
+    ]);
+    CP_setKeys(opacity, base, [{ t: 0.0, v: 0 }, { t: 0.12, v: 100 }]);
   }
   // 'karaoke', 'typewriter', 'none': the frame sequence is the animation.
 }

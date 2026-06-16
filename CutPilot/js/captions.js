@@ -508,6 +508,10 @@
     { id: 'shake',      name: 'Shake',      kind: 'keyframed', demo: 'anim-shake',  description: 'Quick attention-grabbing shake' },
     { id: 'fade',       name: 'Fade',       kind: 'keyframed', demo: 'anim-fade',   description: 'Soft opacity fade-in' },
     { id: 'glitch',     name: 'Glitch',     kind: 'keyframed', demo: 'anim-glitch', description: 'Two-frame jitter + flicker on entry' },
+    { id: 'whoosh',     name: 'Whoosh',     kind: 'keyframed', demo: 'anim-whoosh', description: 'FilmImpact-style push: flies in fast with blur + overshoot' },
+    { id: 'zoompunch',  name: 'Zoom Punch', kind: 'keyframed', demo: 'anim-zoompunch', description: 'FilmImpact-style zoom blur: punches in from oversized' },
+    { id: 'blurdissolve', name: 'Blur Dissolve', kind: 'keyframed', demo: 'anim-blurdissolve', description: 'FilmImpact-style soft blur dissolve in' },
+    { id: 'glide',      name: 'Glide',      kind: 'keyframed', demo: 'anim-glide',  description: 'FilmImpact-style smooth rise with motion blur' },
     { id: 'karaoke',    name: 'Karaoke',    kind: 'framed',    demo: 'anim-sweep',  description: 'Phrase stays up, spoken word lights up' },
     { id: 'typewriter', name: 'Typewriter', kind: 'framed',    demo: 'anim-type',   description: 'Words accumulate as they are spoken' },
     { id: 'none',       name: 'None',       kind: 'keyframed', demo: '',            description: 'Hard cut, no motion' }
