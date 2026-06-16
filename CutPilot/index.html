@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.14</span>
+    <span class="ver" id="ver">v0.9.15</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -241,6 +241,7 @@
           <p class="hint">Tip: the template must have an editable text field. CutPilot
              fills the first text field it finds.</p>
         </div>
+        <label class="check" style="margin:6px 0"><input type="checkbox" id="mg-stretch"> ↔ Stretch template to fill long captions <span class="dim">(slows the animation; lets a fixed-length template reach the caption's full duration)</span></label>
         <div class="row tight">
           <button id="btn-alt-apply" class="hero-btn small" style="flex:1">Add template captions</button>
           <button id="btn-tpl-inspect" class="chip-btn" title="List this template's editable fields">🔍 Inspect</button>
@@ -452,7 +453,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.14 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.15 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

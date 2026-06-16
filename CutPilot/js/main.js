@@ -34,6 +34,7 @@
     mogrtWords: 0,   // words per MOGRT graphic (0 = full line)
     mogrtParams: [],        // colour/size/font overrides for the selected custom MOGRT
     mogrtParamsPath: null,  // which .mogrt those overrides belong to
+    mogrtFont: null,        // font to push into a rich-text template's blob
     // template library
     customTemplates: [],
     favs: {},
@@ -1370,13 +1371,13 @@
       var p = pickFile('Choose a Motion Graphics Template', ['mogrt']);
       if (!p) return;
       state.mogrtFile = p;
-      state.mogrtParams = []; state.mogrtParamsPath = null;   // new file → fresh overrides
+      state.mogrtParams = []; state.mogrtFont = null; state.mogrtParamsPath = null;   // new file → fresh overrides
       $('tpl-params').classList.add('hidden');
       $('tpl-file-name').textContent = p.split(/[\\/]/).pop();
     });
     // switching the installed template also clears stale overrides
     if ($('tpl-select')) $('tpl-select').addEventListener('change', function () {
-      state.mogrtParams = []; state.mogrtParamsPath = null; $('tpl-params').classList.add('hidden');
+      state.mogrtParams = []; state.mogrtFont = null; state.mogrtParamsPath = null; $('tpl-params').classList.add('hidden');
     });
     $('btn-alt-apply').addEventListener('click', applyMogrtTemplate);
     $('btn-native-apply').addEventListener('click', applyNative);
@@ -1438,22 +1439,37 @@
     var box = $('tpl-params');
     if (!path) { box.classList.remove('hidden'); box.innerHTML = '<p class="hint err">Pick a template first.</p>'; return; }
     // new template → drop previous overrides
-    if (state.mogrtParamsPath !== path) { state.mogrtParams = []; state.mogrtParamsPath = path; }
+    if (state.mogrtParamsPath !== path) { state.mogrtParams = []; state.mogrtFont = null; state.mogrtParamsPath = path; }
     box.classList.remove('hidden');
     box.innerHTML = '<p class="hint">Reading template…</p>';
     CPBridge.callHost('CP_inspectMogrt', { path: path }).then(function (r) {
       var editable = (r.props || []).filter(function (p) {
         return p.kind === 'color' || p.kind === 'number' || p.kind === 'bool' || p.kind === 'font';
       });
-      if (!editable.length) {
-        box.innerHTML = '<p class="hint">This template exposes no colour/size/font controls to edit. ' +
-          (r.props && r.props.length ? 'Its text uses Premiere\'s rich format — use ✨ Add captions for the words.' : '') + '</p>';
+      // rich-text templates bake the font in the source-text — offer a font
+      // dropdown that the rich writer swaps in (behind the safe probe).
+      var hasRich = (r.props || []).some(function (p) { return p.rich; });
+      if (!editable.length && !hasRich) {
+        box.innerHTML = '<p class="hint">This template exposes no colour/size/font controls to edit.</p>';
         return;
       }
       box.innerHTML = '';
       var head = document.createElement('div'); head.className = 'mp-head';
       head.textContent = '🎨 ' + path.split(/[\\/]/).pop() + ' — colours, size & font';
       box.appendChild(head);
+
+      // global font control for rich-text templates
+      if (hasRich) {
+        var frow = document.createElement('label'); frow.className = 'mp-row';
+        var fnm = document.createElement('span'); fnm.className = 'mp-name'; fnm.textContent = 'Font (template text)';
+        var fsel = document.createElement('select'); fsel.className = 'mp-ctrl';
+        var keep = document.createElement('option'); keep.value = ''; keep.textContent = 'Keep template font';
+        fsel.appendChild(keep);
+        var fonts = (typeof CPCaptions !== 'undefined' && CPCaptions.FONTS) ? CPCaptions.FONTS : [];
+        fonts.forEach(function (f) { var o = document.createElement('option'); o.value = f; o.textContent = f; if (state.mogrtFont === f) o.selected = true; fsel.appendChild(o); });
+        fsel.addEventListener('change', function () { state.mogrtFont = this.value || null; });
+        frow.appendChild(fnm); frow.appendChild(fsel); box.appendChild(frow);
+      }
       editable.forEach(function (p) {
         var ov = mogrtParamFor(p.i);
         var cur = ov ? ov.value : p.value;
@@ -1497,8 +1513,9 @@
     var sample = 'Preview';
     try { var c = readSelectedTranscript(); if (c && c[0]) sample = String(c[0].text).split(/\s+/).slice(0, 3).join(' '); } catch (e) {}
     var params = (state.mogrtParamsPath === path) ? state.mogrtParams : [];
+    var font = (state.mogrtParamsPath === path) ? state.mogrtFont : null;
     toast('Dropping a preview at the playhead…');
-    CPBridge.callHost('CP_previewMogrt', { path: path, seconds: 4, params: params, text: sample })
+    CPBridge.callHost('CP_previewMogrt', { path: path, seconds: 4, params: params, text: sample, font: font })
       .then(function (r) { toast('▶ Preview placed on V' + r.track + ' at the playhead. Scrub to see it.'); })
       .catch(function (e) { toast(e.message, true); });
   }
@@ -1570,8 +1587,11 @@
       if (!ok) { if (btn) btn.disabled = false; capProgress(null); return null; }
       capProgress('Adding ' + tcues.length + ' template graphics');
       var params = (state.mogrtParamsPath === mogrtPath) ? state.mogrtParams : [];
+      var font = (state.mogrtParamsPath === mogrtPath) ? state.mogrtFont : null;
+      var stretch = !!($('mg-stretch') && $('mg-stretch').checked);
       return CPBridge.callHost('CP_insertMogrtCaptions', {
-        mogrtPath: mogrtPath, cues: tcues, videoTrack: null, audioTrack: 0, params: params
+        mogrtPath: mogrtPath, cues: tcues, videoTrack: null, audioTrack: 0,
+        params: params, font: font, stretch: stretch
       });
     }).then(function (r) {
       if (r == null) return;
@@ -1593,12 +1613,13 @@
       } else {
         var dur = (r.clamped && r.maxTemplateDur)
           ? ' · ' + r.clamped + ' couldn\'t reach full length (template max ~' +
-            r.maxTemplateDur.toFixed(1) + 's — use an Animated style for exact timing)'
+            r.maxTemplateDur.toFixed(1) + 's — tick "Stretch to fit" or use an Animated style)'
           : '';
+        var str = r.stretched ? ' · ' + r.stretched + ' stretched to fit' : '';
         // rich source-text was filled (and verified) — remind them it's undoable
         var safe = (r.probeKind === 'rich') ? ' · saved first, so ⌘Z undoes it all' : '';
         toast('🎬 Added ' + r.inserted + ' template captions (' + r.textSet + ' with text)' +
-              (r.failed ? ' · ' + r.failed + ' failed' : '') + dur + safe + '.');
+              (r.failed ? ' · ' + r.failed + ' failed' : '') + str + dur + safe + '.');
       }
     }).catch(function (e) { if (btn) btn.disabled = false; capProgress(null); toast(e.message, true); });
   }

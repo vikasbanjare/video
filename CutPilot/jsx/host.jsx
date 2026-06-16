@@ -736,7 +736,7 @@ function CP_placeCaptionImages(argsJson) {
  * passes true AFTER a probe write on a throwaway instance verified that this
  * specific template accepts the edit cleanly (see CP_probeRichText). Without
  * that proof we refuse rich writes — they can corrupt the project. */
-function CP_setMgrtText(prop, text, allowRich) {
+function CP_setMgrtText(prop, text, allowRich, font) {
   var cur = null;
   try { cur = prop.getValue ? prop.getValue() : null; } catch (eCur) { cur = null; }
   if (typeof cur !== 'string') {
@@ -766,6 +766,13 @@ function CP_setMgrtText(prop, text, allowRich) {
     // keep any *RunLength field consistent with the new char count
     out = out.replace(/("[A-Za-z]*RunLength"\s*:\s*)\[\s*\d+\s*\]/g, function (m, a) { return a + '[' + n + ']'; });
     out = out.replace(/("[A-Za-z]*RunLength"\s*:\s*)\d+/g, function (m, a) { return a + n; });
+    // optionally swap the font name(s) baked into the blob (font length is
+    // independent of text length, so this stays length-safe). Best effort.
+    if (font) {
+      var fe = esc(String(font));
+      out = out.replace(/("fontName"\s*:\s*")(?:[^"\\]|\\.)*(")/g, function (m, a, b) { return a + fe + b; });
+      out = out.replace(/("fontEditValue"\s*:\s*")(?:[^"\\]|\\.)*(")/g, function (m, a, b) { return a + fe + b; });
+    }
     try { prop.setValue(out, true); return true; } catch (e1) {}
     try { prop.setValue(out); return true; } catch (e2) {}
     return false;
@@ -818,12 +825,30 @@ function CP_removeLastClipOnTrack(vTrack) {
   } catch (eQE) {}
 }
 
+/* Time-stretch the most-recently-placed clip on a track to `speedPct` (best
+   effort via QE). Slowing it (<100%) makes a fixed-length MOGRT last longer —
+   the only scriptable way to extend past a template's authored duration. */
+function CP_stretchLastClip(vTrack, speedPct) {
+  try {
+    app.enableQE();
+    var qt = qe.project.getActiveSequence().getVideoTrackAt(vTrack);
+    for (var k = qt.numItems - 1; k >= 0; k--) {
+      var it = qt.getItemAt(k);
+      if (!it || it.type === 'Empty') continue;
+      try { it.setSpeed(speedPct); return true; } catch (e1) {}
+      try { it.setSpeed(speedPct, '00:00:00:00', false, false, false); return true; } catch (e2) {}
+      return false;
+    }
+  } catch (eQE) {}
+  return false;
+}
+
 /* PROBE: drop ONE throwaway instance, attempt the text write, read it back to
  * confirm it stuck and still parses, then remove the instance. This is what
  * makes rich-text captioning safe — we never write to the user's real captions
  * unless this verified the template accepts the edit cleanly.
  * Returns: { kind:'rich'|'simple'|'plain'|'none', richSafe:bool }. */
-function CP_probeRichText(mogrtPath, vTrack, aTrack, KEYS, sampleText) {
+function CP_probeRichText(mogrtPath, vTrack, aTrack, KEYS, sampleText, font) {
   var res = { kind: 'none', richSafe: false };
   var clip = null;
   try {
@@ -837,7 +862,9 @@ function CP_probeRichText(mogrtPath, vTrack, aTrack, KEYS, sampleText) {
     if (typeof before === 'string' && (before.indexOf('textEditValue') !== -1 || before.indexOf('capProp') !== -1)) {
       res.kind = 'rich';
       var probeText = String(sampleText || 'CutPilot test');
-      if (CP_setMgrtText(prop, probeText, true)) {
+      // probe the SAME write the real captions will do (text + optional font),
+      // so enabling a font swap can't slip past the safety verification.
+      if (CP_setMgrtText(prop, probeText, true, font)) {
         var after = null; try { after = prop.getValue(); } catch (eA) { after = null; }
         if (typeof after === 'string' && after.indexOf('textEditValue') !== -1) {
           try {
@@ -973,12 +1000,13 @@ function CP_insertMogrtCaptions(argsJson) {
     // enable writing if that verified clean — otherwise we place the graphics
     // but leave the text alone (never risking the "bad any cast" corruption).
     var probe = CP_probeRichText(args.mogrtPath, vTrack, aTrack, KEYS,
-                                 (args.cues[0] && args.cues[0].text) ? args.cues[0].text : 'CutPilot test');
+                                 (args.cues[0] && args.cues[0].text) ? args.cues[0].text : 'CutPilot test',
+                                 args.font);
     var allowRich = (probe.kind === 'rich') ? probe.richSafe : false;
     var richBlocked = (probe.kind === 'rich' && !probe.richSafe);
 
     var trackObj = seq.videoTracks[vTrack];
-    var sharedItem = null, reused = 0;
+    var sharedItem = null, reused = 0, stretched = 0;
 
     for (var i = 0; i < args.cues.length; i++) {
       var cue = args.cues[i];
@@ -1014,14 +1042,13 @@ function CP_insertMogrtCaptions(argsJson) {
 
       // The template's authored length: AE-based .mogrt clips can be trimmed
       // SHORTER but not stretched longer than this, so a caption longer than
-      // the template falls short (and can't be dragged out manually either).
+      // the template falls short — unless we time-stretch it (args.stretch).
+      var nat = 0, clipStart = 0;
       try {
-        var nat = clip.end.seconds - clip.start.seconds;
+        clipStart = clip.start.seconds;
+        nat = clip.end.seconds - clipStart;
         if (nat > maxTemplateDur) maxTemplateDur = nat;
       } catch (eNat) {}
-
-      try { clip.end = CP_timeFromSeconds(wantEnd); } catch (eEnd) {}
-      try { if (clip.end.seconds < wantEnd - 0.05) clamped++; } catch (eChk) {}
 
       try {
         var comp = clip.getMGTComponent();
@@ -1038,25 +1065,38 @@ function CP_insertMogrtCaptions(argsJson) {
           for (var k = 0; k < KEYS.length && !done; k++) {
             for (var pIdx = 0; pIdx < props.numItems && !done; pIdx++) {
               var dn = String(props[pIdx].displayName || '').toLowerCase();
-              if (dn.indexOf(KEYS[k]) !== -1 && CP_setMgrtText(props[pIdx], cue.text, allowRich)) {
+              if (dn.indexOf(KEYS[k]) !== -1 && CP_setMgrtText(props[pIdx], cue.text, allowRich, args.font)) {
                 textSet++; done = true;
               }
             }
           }
           // 2) fallback: first property that currently holds a string
           for (var p2 = 0; p2 < props.numItems && !done; p2++) {
-            if (CP_propIsString(props[p2]) && CP_setMgrtText(props[p2], cue.text, allowRich)) {
+            if (CP_propIsString(props[p2]) && CP_setMgrtText(props[p2], cue.text, allowRich, args.font)) {
               textSet++; done = true;
             }
           }
         }
       } catch (eComp) {}
+
+      // Duration LAST (after the component edits, so time-stretch can't disturb
+      // setting text/params): stretch to fill if asked and the caption needs
+      // longer than the template's authored length; otherwise just trim.
+      var needed = wantEnd - clipStart;
+      if (args.stretch && nat > 0.01 && needed > nat + 0.05 &&
+          CP_stretchLastClip(vTrack, (nat / needed) * 100)) {
+        stretched++;
+      } else {
+        try { clip.end = CP_timeFromSeconds(wantEnd); } catch (eEnd) {}
+        try { if (clip.end.seconds < wantEnd - 0.05) clamped++; } catch (eChk) {}
+      }
     }
     return CP_ok({
       inserted: inserted,
       reused: reused,
       textSet: textSet,
       clamped: clamped,
+      stretched: stretched,
       maxTemplateDur: maxTemplateDur,
       failed: args.cues.length - inserted,
       richBlocked: richBlocked,           // template is rich AND probe said unsafe
@@ -1177,7 +1217,7 @@ function CP_previewMogrt(argsJson) {
         pParams = CP_applyMgrtParams(pcomp, args.params);
         if (args.text && pcomp.properties) {
           var ptp = CP_findTextProp(pcomp.properties, ['text', 'caption', 'title', 'subtitle', 'headline', 'body']);
-          if (ptp) CP_setMgrtText(ptp, args.text, true);
+          if (ptp) CP_setMgrtText(ptp, args.text, true, args.font);
         }
       }
     } catch (ePv) {}
