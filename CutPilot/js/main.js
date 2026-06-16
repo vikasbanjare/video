@@ -1702,9 +1702,11 @@
             r.maxTemplateDur.toFixed(1) + 's — tick "Stretch to fit" or use an Animated style)'
           : '';
         var str = r.stretched ? ' · ' + r.stretched + ' stretched to fit' : '';
+        // multi-line templates pack several caption lines into each graphic
+        var multi = (r.textCount > 1) ? ' · ' + r.textCount + ' lines per graphic' : '';
         // rich source-text was filled (and verified) — remind them it's undoable
         var safe = (r.probeKind === 'rich') ? ' · saved first, so ⌘Z undoes it all' : '';
-        toast('🎬 Added ' + r.inserted + ' template captions (' + r.textSet + ' with text)' +
+        toast('🎬 Added ' + r.inserted + ' graphics (' + r.textSet + ' with text)' + multi +
               (r.failed ? ' · ' + r.failed + ' failed' : '') + str + dur + safe + '.');
       }
     }).catch(function (e) { if (btn) btn.disabled = false; capProgress(null); toast(e.message, true); });

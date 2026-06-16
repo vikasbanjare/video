@@ -794,6 +794,20 @@ function CP_setMgrtText(prop, text, allowRich, style) {
     return false;
   }
 
+  // strDB source text ({"strDB":[{"localeString":"en_US","str":"…"}]}) — the
+  // simple multi-locale format many "Shorts" text templates use. Swap the
+  // "str" value(s); no run-length to worry about, so it's safe (not gated).
+  if (cur.indexOf('"strDB"') !== -1) {
+    var es = esc(text), chs = false;
+    var os = cur.replace(/("str"\s*:\s*")(?:[^"\\]|\\.)*(")/g,
+      function (m, a, b) { chs = true; return a + es + b; });
+    if (chs) {
+      try { prop.setValue(os, true); return true; } catch (eS1) {}
+      try { prop.setValue(os); return true; } catch (eS2) {}
+    }
+    return false;
+  }
+
   // Simple {"text":"..."} templates: swap just the text value in the raw string.
   if (cur.charAt(0) === '{' && cur.indexOf('"text"') !== -1) {
     var e2v = esc(text), ch = false;
@@ -812,6 +826,23 @@ function CP_setMgrtText(prop, text, allowRich, style) {
     try { prop.setValue(text); return true; } catch (e6) {}
   }
   return false;
+}
+
+/* All text-ish properties of a MOGRT component, in display order — the string-
+   valued params that aren't a font control. Multi-line templates (Text 01..NN)
+   return several; CutPilot fills each with a consecutive caption line. */
+function CP_textPropsOf(comp) {
+  var out = [];
+  if (!comp || !comp.properties) return out;
+  for (var i = 0; i < comp.properties.numItems; i++) {
+    var p = comp.properties[i];
+    var v = null; try { v = p.getValue(); } catch (e) { continue; }
+    if (typeof v !== 'string' || !v.length) continue;
+    var nmL = String(p.displayName || '').toLowerCase();
+    if (nmL.indexOf('font') !== -1 || nmL.indexOf('typeface') !== -1) continue; // that's a font picker, not a line
+    out.push(p);
+  }
+  return out;
 }
 
 /* Find the text-ish property of a MOGRT component (display-name keyword first,
@@ -863,15 +894,16 @@ function CP_stretchLastClip(vTrack, speedPct) {
  * confirm it stuck and still parses, then remove the instance. This is what
  * makes rich-text captioning safe — we never write to the user's real captions
  * unless this verified the template accepts the edit cleanly.
- * Returns: { kind:'rich'|'simple'|'plain'|'none', richSafe:bool }. */
+ * Returns: { kind:'rich'|'simple'|'strdb'|'plain'|'none', richSafe:bool, textCount:int }. */
 function CP_probeRichText(mogrtPath, vTrack, aTrack, KEYS, sampleText, style) {
-  var res = { kind: 'none', richSafe: false };
+  var res = { kind: 'none', richSafe: false, textCount: 0 };
   var clip = null;
   try {
     clip = seqGlobalImport(mogrtPath, vTrack, aTrack);
     if (!clip) return res;
     var comp = clip.getMGTComponent();
     if (!comp || !comp.properties) { CP_removeLastClipOnTrack(vTrack); return res; }
+    res.textCount = CP_textPropsOf(comp).length;     // how many text lines this template holds
     var prop = CP_findTextProp(comp.properties, KEYS);
     if (!prop) { CP_removeLastClipOnTrack(vTrack); return res; }
     var before = null; try { before = prop.getValue(); } catch (eB) {}
@@ -889,6 +921,8 @@ function CP_probeRichText(mogrtPath, vTrack, aTrack, KEYS, sampleText, style) {
           } catch (eP) { res.richSafe = false; }
         }
       }
+    } else if (typeof before === 'string' && before.indexOf('"strDB"') !== -1) {
+      res.kind = 'strdb';   // simple multi-locale source text — safe to fill directly
     } else if (typeof before === 'string' && before.charAt(0) === '{') {
       res.kind = 'simple';
     } else {
@@ -1048,41 +1082,45 @@ function CP_insertMogrtCaptions(argsJson) {
     var trackObj = seq.videoTracks[vTrack];
     var sharedItem = null, reused = 0, stretched = 0;
 
-    for (var i = 0; i < args.cues.length; i++) {
-      var cue = args.cues[i];
-      // never let one caption overrun the start of the next one
-      var wantEnd = cue.end;
-      if (i + 1 < args.cues.length) {
-        var nextStart = args.cues[i + 1].start;
-        if (nextStart > cue.start && nextStart < wantEnd) wantEnd = nextStart;
+    // GROUP cues into graphics. A multi-line template (Text 01..NN) holds
+    // several caption lines in ONE graphic, so we take N consecutive cues per
+    // insert; a single-text template takes one cue per insert (as before).
+    var perGraphic = (probe.textCount && probe.textCount > 1) ? probe.textCount : 1;
+    var groups = [];
+    if (perGraphic > 1) {
+      for (var gi = 0; gi < args.cues.length; gi += perGraphic) groups.push(args.cues.slice(gi, gi + perGraphic));
+    } else {
+      for (var gj = 0; gj < args.cues.length; gj++) groups.push([args.cues[gj]]);
+    }
+
+    for (var g = 0; g < groups.length; g++) {
+      var grp = groups[g];
+      var startSec = grp[0].start;
+      var wantEnd = grp[grp.length - 1].end;
+      if (g + 1 < groups.length) {                      // never overrun the next graphic
+        var nextStart = groups[g + 1][0].start;
+        if (nextStart > startSec && nextStart < wantEnd) wantEnd = nextStart;
       }
-      // Load/conform the .mogrt ONCE, then place copies of the same project
-      // item for the rest — this stops Premiere re-running its "Loading Motion
-      // Graphics Template" step per caption (the 89% stall on heavy templates).
-      // Falls back to importMGT if the item can't be reused.
+
+      // Load/conform the .mogrt ONCE, then reuse the project item (avoids the
+      // per-insert "Loading Motion Graphics Template" 89% stall on heavy files).
       var clip = null;
       if (sharedItem && trackObj) {
         try {
-          trackObj.overwriteClip(sharedItem, cue.start);
+          trackObj.overwriteClip(sharedItem, startSec);
           clip = trackObj.clips[trackObj.clips.numItems - 1];
           if (clip) reused++;
         } catch (eReuse) { clip = null; }
       }
       if (!clip) {
         try {
-          clip = seq.importMGT(args.mogrtPath, CP_ticksFromSeconds(cue.start), vTrack, aTrack);
+          clip = seq.importMGT(args.mogrtPath, CP_ticksFromSeconds(startSec), vTrack, aTrack);
           if (clip && !sharedItem) { try { sharedItem = clip.projectItem; } catch (ePI) { sharedItem = null; } }
-        } catch (eImp) {
-          errors.push('cue ' + i + ': ' + eImp.message);
-          continue;
-        }
+        } catch (eImp) { errors.push('graphic ' + g + ': ' + eImp.message); continue; }
       }
-      if (!clip) { errors.push('cue ' + i + ': importMGT returned nothing'); continue; }
+      if (!clip) { errors.push('graphic ' + g + ': importMGT returned nothing'); continue; }
       inserted++;
 
-      // The template's authored length: AE-based .mogrt clips can be trimmed
-      // SHORTER but not stretched longer than this, so a caption longer than
-      // the template falls short — unless we time-stretch it (args.stretch).
       var nat = 0, clipStart = 0;
       try {
         clipStart = clip.start.seconds;
@@ -1098,30 +1136,34 @@ function CP_insertMogrtCaptions(argsJson) {
             fieldNames = [];
             for (var fn = 0; fn < props.numItems; fn++) fieldNames.push(String(props[fn].displayName || ('#' + fn)));
           }
-          // apply the panel's colour/size/font overrides to this graphic
-          CP_applyMgrtParams(comp, args.params);
-          var done = false;
-          // 1) match by display-name keyword
-          for (var k = 0; k < KEYS.length && !done; k++) {
-            for (var pIdx = 0; pIdx < props.numItems && !done; pIdx++) {
-              var dn = String(props[pIdx].displayName || '').toLowerCase();
-              if (dn.indexOf(KEYS[k]) !== -1 && CP_setMgrtText(props[pIdx], cue.text, allowRich, args.textStyle)) {
-                textSet++; done = true;
+          CP_applyMgrtParams(comp, args.params);   // colour/size/font overrides
+
+          var tprops = CP_textPropsOf(comp);
+          if (tprops.length > 1) {
+            // multi-line: one caption line per text field, blank unused slots
+            var anySet = false;
+            for (var j = 0; j < tprops.length; j++) {
+              var txt = (j < grp.length) ? grp[j].text : '';
+              if (CP_setMgrtText(tprops[j], txt, allowRich, args.textStyle)) anySet = true;
+            }
+            if (anySet) textSet++;
+          } else {
+            // single text field: match by display-name keyword, then any string
+            var done = false;
+            for (var k = 0; k < KEYS.length && !done; k++) {
+              for (var pIdx = 0; pIdx < props.numItems && !done; pIdx++) {
+                var dn = String(props[pIdx].displayName || '').toLowerCase();
+                if (dn.indexOf(KEYS[k]) !== -1 && CP_setMgrtText(props[pIdx], grp[0].text, allowRich, args.textStyle)) { textSet++; done = true; }
               }
             }
-          }
-          // 2) fallback: first property that currently holds a string
-          for (var p2 = 0; p2 < props.numItems && !done; p2++) {
-            if (CP_propIsString(props[p2]) && CP_setMgrtText(props[p2], cue.text, allowRich, args.textStyle)) {
-              textSet++; done = true;
+            for (var p2 = 0; p2 < props.numItems && !done; p2++) {
+              if (CP_propIsString(props[p2]) && CP_setMgrtText(props[p2], grp[0].text, allowRich, args.textStyle)) { textSet++; done = true; }
             }
           }
         }
       } catch (eComp) {}
 
-      // Duration LAST (after the component edits, so time-stretch can't disturb
-      // setting text/params): stretch to fill if asked and the caption needs
-      // longer than the template's authored length; otherwise just trim.
+      // Duration LAST (so a time-stretch can't disturb the component edits).
       var needed = wantEnd - clipStart;
       if (args.stretch && nat > 0.01 && needed > nat + 0.05 &&
           CP_stretchLastClip(vTrack, (nat / needed) * 100)) {
@@ -1138,9 +1180,12 @@ function CP_insertMogrtCaptions(argsJson) {
       clamped: clamped,
       stretched: stretched,
       maxTemplateDur: maxTemplateDur,
-      failed: args.cues.length - inserted,
+      graphics: groups.length,
+      linesPerGraphic: perGraphic,
+      textCount: probe.textCount,
+      failed: groups.length - inserted,
       richBlocked: richBlocked,           // template is rich AND probe said unsafe
-      probeKind: probe.kind,              // 'rich' | 'simple' | 'plain' | 'none'
+      probeKind: probe.kind,              // 'rich' | 'simple' | 'strdb' | 'plain' | 'none'
       fields: fieldNames ? fieldNames.slice(0, 8) : [],
       sampleErrors: errors.slice(0, 3)
     });
