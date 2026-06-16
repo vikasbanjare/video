@@ -161,6 +161,48 @@ function CP_getSelectedClip() {
   } catch (e) { return CP_fail(e.message); }
 }
 
+/*
+ * Pick the best clip to transcribe. The user often has a title/graphic
+ * (.aegraphic / .mogrt) selected, which has no audio — so we skip graphics and
+ * image stills, prefer the user's selection when it contains real A/V media,
+ * and otherwise fall back to the longest A/V clip in the sequence (the main
+ * talking clip). Returns the same shape as CP_getSelectedClip.
+ */
+function CP_getTranscribeSource() {
+  try {
+    var seq = CP_activeSequence();
+    var bad = /\.(aegraphic|mogrt|prproj|psd|ai|png|jpe?g|gif|tiff?|svg|eps|bmp|webp|heic)$/i;
+    var selected = [], all = [];
+    var groups = [seq.audioTracks, seq.videoTracks]; // audio first: most likely the voice
+    for (var g = 0; g < groups.length; g++) {
+      for (var t = 0; t < groups[g].numTracks; t++) {
+        var track = groups[g][t];
+        for (var i = 0; i < track.clips.numItems; i++) {
+          var clip = track.clips[i];
+          var pItem = clip.projectItem;
+          var mp = null;
+          try { mp = pItem ? pItem.getMediaPath() : null; } catch (eMp) {}
+          if (!mp || bad.test(mp)) continue;          // skip graphics, stills, offline
+          var rec = {
+            name: clip.name, mediaPath: mp,
+            trackType: g === 0 ? 'audio' : 'video', trackIndex: t,
+            seqStart: clip.start.seconds, seqEnd: clip.end.seconds,
+            inPoint: clip.inPoint.seconds, outPoint: clip.outPoint.seconds,
+            dur: clip.end.seconds - clip.start.seconds,
+            selected: clip.isSelected()
+          };
+          all.push(rec);
+          if (rec.selected) selected.push(rec);
+        }
+      }
+    }
+    var pool = selected.length ? selected : all;
+    if (!pool.length) return CP_fail('No clip with audio found. Put your video or audio clip on the timeline, then try again.');
+    pool.sort(function (a, b) { return b.dur - a.dur; });  // longest = most speech
+    return CP_ok({ clip: pool[0], fromSelection: selected.length > 0, candidates: all.length });
+  } catch (e) { return CP_fail(e.message); }
+}
+
 function CP_getProjectInfo() {
   try {
     return CP_ok({ name: app.project.name, path: app.project.path });

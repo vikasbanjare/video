@@ -210,10 +210,10 @@
     if (!wbin) return toast('Set the whisper engine in Settings → Auto-transcribe (brew install whisper-cpp).', true);
     var model = resolveWhisperModel();
     if (!model) return toast('Pick a whisper model file in Settings (e.g. ggml-base.en.bin).', true);
-    setTranscriptBar('', '🎙️', 'Reading your clip…', null);
-    CPBridge.callHost('CP_getSelectedClip').then(function (res) {
+    setTranscriptBar('', '🎙️', 'Finding the clip with your voice…', null);
+    CPBridge.callHost('CP_getTranscribeSource').then(function (res) {
       var clip = res.clip;
-      if (!clip || !clip.mediaPath) throw new Error('Select your video/audio clip in the timeline first.');
+      if (!clip || !clip.mediaPath) throw new Error('Put your video or audio clip on the timeline first.');
       var os = nodeReq('os'), pathMod = nodeReq('path'), fs = nodeReq('fs');
       var stamp = Date.now();
       var wav = pathMod.join(os.tmpdir(), 'cutpilot-asr-' + stamp + '.wav');
@@ -222,7 +222,8 @@
       var ffArgs = ['-y', '-ss', String(inP)];
       if (dur > 0) ffArgs = ffArgs.concat(['-t', String(dur)]);
       ffArgs = ffArgs.concat(['-i', clip.mediaPath, '-vn', '-ac', '1', '-ar', '16000', wav]);
-      setTranscriptBar('', '🎙️', 'Extracting audio…', null);
+      var shortName = (clip.name || 'clip').replace(/\.[^.]+$/, '');
+      setTranscriptBar('', '🎙️', 'Extracting audio from “' + shortName + '”…', null);
       return runProc(ff, ffArgs).then(function () {
         setTranscriptBar('', '🎙️', 'Transcribing — this can take a minute…', null);
         return runProc(wbin, ['-m', model, '-f', wav, '-osrt', '-of', outBase]);
@@ -230,7 +231,7 @@
         var srtPath = outBase + '.srt';
         if (!fs.existsSync(srtPath)) throw new Error('the engine produced no transcript');
         var cues = CPCaptions.parseSRT(fs.readFileSync(srtPath, 'utf8'));
-        if (!cues.length) throw new Error('no speech detected');
+        if (!cues.length) throw new Error('no speech detected in “' + shortName + '”');
         var off = clip.seqStart || 0;                       // clip plays at seqStart → shift cues to sequence time
         cues.forEach(function (c) { c.start += off; c.end += off; });
         var finalPath = pathMod.join(os.tmpdir(), 'cutpilot-transcript-' + stamp + '.srt');
@@ -240,8 +241,9 @@
         state.transcript = { label: 'CutPilot transcript (' + cues.length + ' lines)', path: finalPath, mtime: 1e16 };
         state.transcriptManual = true;                      // it's ours — don't let auto-rescan replace it
         $('tr-help').classList.add('hidden');
-        setTranscriptBar('ok', '✅', 'Transcribed ' + cues.length + ' lines — ready', 'Change');
-        toast('✓ CutPilot transcribed your clip — ' + cues.length + ' caption lines. No Premiere export needed.');
+        setTranscriptBar('ok', '✅', 'Transcribed “' + shortName + '” — ' + cues.length + ' lines', 'Change');
+        toast('✓ CutPilot transcribed “' + shortName + '” — ' + cues.length + ' caption lines.' +
+              (res.fromSelection ? '' : ' (Used the longest clip with audio — select a clip to target a specific one.)'));
       });
     }).catch(function (e) {
       setTranscriptBar('warn', '⚠️', 'Auto-transcribe failed', 'Get one →');
