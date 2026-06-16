@@ -174,7 +174,8 @@
     // auto-find a ggml*.bin model in common spots (incl. next to the engine)
     try {
       var os = nodeReq('os'), pathMod = nodeReq('path');
-      var dirs = [pathMod.join(os.homedir(), 'Downloads'), pathMod.join(os.homedir(), 'Documents'),
+      var dirs = [pathMod.join(os.homedir(), '.cutpilot', 'models'),
+                  pathMod.join(os.homedir(), 'Downloads'), pathMod.join(os.homedir(), 'Documents'),
                   os.homedir(), '/opt/homebrew/share/whisper-cpp', '/usr/local/share/whisper-cpp'];
       if (_whisper) dirs.unshift(pathMod.dirname(_whisper), pathMod.join(pathMod.dirname(_whisper), '..', 'share', 'whisper-cpp'));
       for (var d = 0; d < dirs.length; d++) {
@@ -2613,6 +2614,49 @@
     refreshWhisperStatus();
     toast('Auto-transcribe settings saved.');
   });
+  /* One-click: install the whisper engine + a model via Homebrew, then wire
+     the paths. Streams output so any failure is visible. */
+  if ($('btn-whisper-install')) $('btn-whisper-install').addEventListener('click', function () {
+    var btn = this, box = $('whisper-diag'); box.classList.remove('hidden');
+    box.textContent = 'Setting up the engine — this can take a few minutes (don\'t close Premiere)…\n\n';
+    var cp; try { cp = nodeReq('child_process'); } catch (e) { box.textContent = 'Node not available.'; return; }
+    var os = nodeReq('os'), pathMod = nodeReq('path');
+    var modelDir = pathMod.join(os.homedir(), '.cutpilot', 'models');
+    var modelPath = pathMod.join(modelDir, 'ggml-base.en.bin');
+    var sh = (typeof process !== 'undefined' && process.env && process.env.SHELL && process.env.SHELL.charAt(0) === '/') ? process.env.SHELL : '/bin/zsh';
+    var script = [
+      'if ! command -v brew >/dev/null 2>&1; then echo "[X] Homebrew not found. Install it from https://brew.sh, then tap this again."; exit 3; fi',
+      'echo "[1/3] Installing whisper-cpp (brew)…"; brew install whisper-cpp 2>&1 | tail -8',
+      'echo "[2/3] Installing ffmpeg (brew)…"; brew install ffmpeg 2>&1 | tail -3',
+      'mkdir -p ' + JSON.stringify(modelDir),
+      'if [ ! -s ' + JSON.stringify(modelPath) + ' ]; then echo "[3/3] Downloading model ~150MB…"; curl -L --fail -o ' + JSON.stringify(modelPath) + ' https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin; else echo "[3/3] Model already present."; fi',
+      'echo "ENGINE=$(command -v whisper-cli || command -v whisper-cpp || command -v whisper || echo NONE)"',
+      'echo "DONE"'
+    ].join('\n');
+    btn.disabled = true;
+    var p;
+    try { p = cp.spawn(sh, ['-lc', script]); } catch (e2) { box.textContent += '\n[error] ' + e2.message; btn.disabled = false; return; }
+    var buf = '';
+    function append(d) { var s = d.toString(); buf += s; box.textContent += s; box.scrollTop = 1e9; }
+    if (p.stdout) p.stdout.on('data', append);
+    if (p.stderr) p.stderr.on('data', append);
+    p.on('error', function (e) { box.textContent += '\n[error] ' + e.message; btn.disabled = false; });
+    p.on('close', function () {
+      btn.disabled = false;
+      // wire whatever got installed
+      var fs = nodeReq('fs');
+      var m = buf.match(/ENGINE=(.+)/);
+      var eng = m ? m[1].trim() : '';
+      if (eng && eng !== 'NONE') { settings.whisperPath = eng; $('set-whisper').value = eng; }
+      try { if (fs.existsSync(modelPath)) { settings.whisperModel = modelPath; $('set-whisper-model').value = modelPath; } } catch (eF) {}
+      saveSettings(); _whisper = null; refreshWhisperStatus();
+      var ok = (eng && eng !== 'NONE');
+      box.textContent += ok ? '\n✅ Engine ready. Go to Captions → Auto-transcribe your clip.'
+                            : '\n⚠️ Couldn\'t confirm the engine. Copy this whole box and send it to me.';
+      toast(ok ? 'Auto-transcribe engine installed & ready.' : 'Engine setup didn\'t finish — see Settings box.', !ok);
+    });
+  });
+
   /* Show exactly what CutPilot can (and can't) find — paste this to support. */
   if ($('btn-whisper-detect')) $('btn-whisper-detect').addEventListener('click', function () {
     var box = $('whisper-diag'); box.classList.remove('hidden'); box.textContent = 'Checking…';
