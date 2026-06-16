@@ -114,6 +114,88 @@
     return prompt(title + ' — enter full file path:') || null;
   }
 
+  /* Find a whisper.cpp binary (local speech-to-text). User setting first, then
+     common Homebrew/installed locations. brew install whisper-cpp → whisper-cli. */
+  var _whisper = null;
+  function resolveWhisper() {
+    if (_whisper) return _whisper;
+    var fs; try { fs = nodeReq('fs'); } catch (e) { return settings.whisperPath || null; }
+    var tryPath = function (p) { try { return p && fs.existsSync(p); } catch (e2) { return false; } };
+    if (tryPath(settings.whisperPath)) return (_whisper = settings.whisperPath);
+    var cands = ['/opt/homebrew/bin/whisper-cli', '/usr/local/bin/whisper-cli',
+                 '/opt/homebrew/bin/whisper-cpp', '/usr/local/bin/whisper-cpp',
+                 '/opt/homebrew/bin/main', '/usr/local/bin/whisper',
+                 'C:\\whisper\\whisper-cli.exe', 'C:\\whisper\\main.exe'];
+    for (var i = 0; i < cands.length; i++) if (tryPath(cands[i])) return (_whisper = cands[i]);
+    return null;
+  }
+  function resolveWhisperModel() {
+    var fs; try { fs = nodeReq('fs'); } catch (e) { return settings.whisperModel || null; }
+    try { if (settings.whisperModel && fs.existsSync(settings.whisperModel)) return settings.whisperModel; } catch (e2) {}
+    return null;
+  }
+
+  /* Spawn a process, resolve on exit 0, collecting stderr (whisper logs there). */
+  function runProc(bin, args, onLog) {
+    return new Promise(function (resolve, reject) {
+      var cp; try { cp = nodeReq('child_process'); } catch (e) { return reject(e); }
+      var p; try { p = cp.spawn(bin, args); } catch (e2) { return reject(e2); }
+      var err = '';
+      if (p.stderr) p.stderr.on('data', function (d) { err += d.toString(); if (onLog) onLog(d.toString()); });
+      p.on('error', reject);
+      p.on('close', function (code) { code === 0 ? resolve(err) : reject(new Error('exit ' + code + (err ? ': ' + err.slice(-240) : ''))); });
+    });
+  }
+
+  /* Auto-transcribe the selected clip locally (ffmpeg → whisper.cpp → SRT) so
+     the user never needs Premiere's Transcribe/Export. Produces a sequence-time
+     transcript and loads it as the current transcript. */
+  function autoTranscribe() {
+    var ff = resolveFfmpeg();
+    if (!ff) return toast('Auto-transcribe needs ffmpeg — set it in Settings (brew install ffmpeg).', true);
+    var wbin = resolveWhisper();
+    if (!wbin) return toast('Set the whisper engine in Settings → Auto-transcribe (brew install whisper-cpp).', true);
+    var model = resolveWhisperModel();
+    if (!model) return toast('Pick a whisper model file in Settings (e.g. ggml-base.en.bin).', true);
+    setTranscriptBar('', '🎙️', 'Reading your clip…', null);
+    CPBridge.callHost('CP_getSelectedClip').then(function (res) {
+      var clip = res.clip;
+      if (!clip || !clip.mediaPath) throw new Error('Select your video/audio clip in the timeline first.');
+      var os = nodeReq('os'), pathMod = nodeReq('path'), fs = nodeReq('fs');
+      var stamp = Date.now();
+      var wav = pathMod.join(os.tmpdir(), 'cutpilot-asr-' + stamp + '.wav');
+      var outBase = pathMod.join(os.tmpdir(), 'cutpilot-asr-' + stamp);
+      var inP = clip.inPoint || 0, outP = clip.outPoint || 0, dur = (outP > inP) ? (outP - inP) : 0;
+      var ffArgs = ['-y', '-ss', String(inP)];
+      if (dur > 0) ffArgs = ffArgs.concat(['-t', String(dur)]);
+      ffArgs = ffArgs.concat(['-i', clip.mediaPath, '-vn', '-ac', '1', '-ar', '16000', wav]);
+      setTranscriptBar('', '🎙️', 'Extracting audio…', null);
+      return runProc(ff, ffArgs).then(function () {
+        setTranscriptBar('', '🎙️', 'Transcribing — this can take a minute…', null);
+        return runProc(wbin, ['-m', model, '-f', wav, '-osrt', '-of', outBase]);
+      }).then(function () {
+        var srtPath = outBase + '.srt';
+        if (!fs.existsSync(srtPath)) throw new Error('the engine produced no transcript');
+        var cues = CPCaptions.parseSRT(fs.readFileSync(srtPath, 'utf8'));
+        if (!cues.length) throw new Error('no speech detected');
+        var off = clip.seqStart || 0;                       // clip plays at seqStart → shift cues to sequence time
+        cues.forEach(function (c) { c.start += off; c.end += off; });
+        var finalPath = pathMod.join(os.tmpdir(), 'cutpilot-transcript-' + stamp + '.srt');
+        fs.writeFileSync(finalPath, CPCaptions.toSRT(cues), 'utf8');
+        try { fs.unlinkSync(wav); } catch (eU) {}
+        try { fs.unlinkSync(srtPath); } catch (eU2) {}
+        state.transcript = { label: 'CutPilot transcript (' + cues.length + ' lines)', path: finalPath, mtime: 1e16 };
+        state.transcriptManual = true;                      // it's ours — don't let auto-rescan replace it
+        $('tr-help').classList.add('hidden');
+        setTranscriptBar('ok', '✅', 'Transcribed ' + cues.length + ' lines — ready', 'Change');
+        toast('✓ CutPilot transcribed your clip — ' + cues.length + ' caption lines. No Premiere export needed.');
+      });
+    }).catch(function (e) {
+      setTranscriptBar('warn', '⚠️', 'Auto-transcribe failed', 'Get one →');
+      toast('Auto-transcribe failed: ' + e.message, true);
+    });
+  }
+
   // --------------------------------------------------------------- tabs ----
   var tabs = document.querySelectorAll('.tab');
   for (var t = 0; t < tabs.length; t++) {
@@ -267,6 +349,8 @@
   function boot() {
     $('set-ffmpeg').value = settings.ffmpegPath || '';
     $('set-dropframe').checked = !!settings.dropFrame;
+    if ($('set-whisper')) $('set-whisper').value = settings.whisperPath || '';
+    if ($('set-whisper-model')) $('set-whisper-model').value = settings.whisperModel || '';
     loadLibraryPrefs();
     buildFontSelect();
     buildAnimRail();
@@ -413,6 +497,7 @@
       }
     });
     $('btn-tr-again').addEventListener('click', findTranscript);
+    if ($('btn-tr-auto')) $('btn-tr-auto').addEventListener('click', autoTranscribe);
     $('btn-tr-pick').addEventListener('click', function () {
       var p = pickFile('Choose a caption file (.srt / .vtt)', ['srt', 'vtt']);
       if (p) pickTranscriptByHand(p);
@@ -2453,6 +2538,29 @@
     toast('Settings saved.');
   });
 
+  // ---- auto-transcribe (whisper) settings ----
+  function refreshWhisperStatus() {
+    _whisper = null;
+    var el = $('whisper-status'); if (!el) return;
+    var w = resolveWhisper(), m = resolveWhisperModel();
+    if (w && m) { el.textContent = '✅ Ready: ' + w.split(/[\\/]/).pop() + ' + ' + m.split(/[\\/]/).pop(); }
+    else if (w && !m) { el.textContent = '◐ Engine found — now pick a model (.bin) below.'; }
+    else { el.textContent = 'Let CutPilot make the transcript itself — install the engine + model below.'; }
+  }
+  if ($('btn-whisper-pick')) $('btn-whisper-pick').addEventListener('click', function () {
+    var p = pickFile('Locate the whisper engine (whisper-cli / main)', []); if (p) $('set-whisper').value = p;
+  });
+  if ($('btn-whisper-model-pick')) $('btn-whisper-model-pick').addEventListener('click', function () {
+    var p = pickFile('Locate the whisper model (.bin)', ['bin']); if (p) $('set-whisper-model').value = p;
+  });
+  if ($('btn-save-whisper')) $('btn-save-whisper').addEventListener('click', function () {
+    settings.whisperPath = $('set-whisper').value.trim();
+    settings.whisperModel = $('set-whisper-model').value.trim();
+    saveSettings();
+    refreshWhisperStatus();
+    toast('Auto-transcribe settings saved.');
+  });
+
   // ----------------------------------------------------- diagnostics ----
   var diagButtons = document.querySelectorAll('#tab-settings [data-diag]');
   for (var d = 0; d < diagButtons.length; d++) {
@@ -2536,6 +2644,7 @@
   });
 
   refreshFfmpegStatus();
+  refreshWhisperStatus();
 
   boot();
 })();
