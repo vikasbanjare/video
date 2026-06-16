@@ -840,6 +840,14 @@ function CP_setMgrtText(prop, text, allowRich, style) {
         out = out.replace(/("fontFSBoldValue"\s*:\s*)\[\s*(?:true|false)\s*\]/, function (m, a) { return a + '[' + (style.bold ? 'true' : 'false') + ']'; });
       if (style.italic != null)
         out = out.replace(/("fontFSItalicValue"\s*:\s*)\[\s*(?:true|false)\s*\]/, function (m, a) { return a + '[' + (style.italic ? 'true' : 'false') + ']'; });
+      // Text FILL colour lives in the source text too (AE stores [r,g,b] 0..1,
+      // sometimes nested per-run as [[r,g,b]]). Replace whichever form is there.
+      if (style.fill) {
+        var fcr = CP_hexToRgba(style.fill);
+        var t3 = fcr[0] + ',' + fcr[1] + ',' + fcr[2];
+        out = out.replace(/("(?:font)?[Ff]ill[Cc]olou?r(?:Edit)?Value"\s*:\s*\[\s*\[)[^\]]*(\])/g, function (m, a, b) { return a + t3 + b; });
+        out = out.replace(/("(?:font)?[Ff]ill[Cc]olou?r(?:Edit)?Value"\s*:\s*\[)(?!\s*\[)[^\]]*(\])/g, function (m, a, b) { return a + t3 + b; });
+      }
     }
     try { prop.setValue(out, true); return true; } catch (e1) {}
     try { prop.setValue(out); return true; } catch (e2) {}

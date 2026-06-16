@@ -1663,6 +1663,21 @@
 
   function richStyle() { if (!state.mogrtTextStyle) state.mogrtTextStyle = {}; return state.mogrtTextStyle; }
 
+  /* Read the current text fill colour out of an AE source-text blob so the Text
+     colour swatch starts on the template's real colour. Handles [r,g,b] and the
+     per-run nested [[r,g,b]] form, values 0..1 or 0..255. */
+  function readBlobFill(blob) {
+    try {
+      var fv = blob.fillColorEditValue || blob.fontFillColorEditValue || blob.FillColorEditValue;
+      if (!fv) return '#ffffff';
+      var t = (fv[0] != null && fv[0].length >= 3) ? fv[0] : fv;   // unwrap [[r,g,b]]
+      if (!t || t.length < 3) return '#ffffff';
+      function to255(x) { x = Number(x); if (x <= 1) x = x * 255; return Math.max(0, Math.min(255, Math.round(x))); }
+      function hx(n) { var s = to255(n).toString(16); return s.length < 2 ? '0' + s : s; }
+      return '#' + hx(t[0]) + hx(t[1]) + hx(t[2]);
+    } catch (e) { return '#ffffff'; }
+  }
+
   /* Small labelled-row control builders for the MOGRT editor. */
   function mpRow(box, label) {
     var row = document.createElement('label'); row.className = 'mp-row';
@@ -1947,6 +1962,7 @@
           if (blob && blob.capPropTextRunCount === 1) {
             mpHeader(box, 'Text style (all lines)');
             mpAddFontSelect(box, 'Font', (blob.fontEditValue && blob.fontEditValue[0]) || '', function (v) { richStyle().font = v || null; });
+            mpAddColor(box, 'Text colour', readBlobFill(blob), function (v) { richStyle().fill = v; });
             mpAddSlider(box, 'Font size', (blob.fontSizeEditValue && blob.fontSizeEditValue[0]) || 100, 10, 1200, function (v) { richStyle().size = v; });
             mpAddCheck(box, 'ALL CAPS', !!(blob.fontFSAllCapsValue && blob.fontFSAllCapsValue[0]), function (v) { richStyle().caps = v; });
             mpAddCheck(box, 'Bold', !!(blob.fontFSBoldValue && blob.fontFSBoldValue[0]), function (v) { richStyle().bold = v; });
