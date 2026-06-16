@@ -934,13 +934,26 @@ function CP_hexToRgba(hex) {
   if (isNaN(r) || isNaN(g) || isNaN(b)) return [1, 1, 1, 1];
   return [r, g, b, 1];
 }
+/* Some MOGRT colour controls read/write as a packed 24-bit int (0xRRGGBB). */
+function CP_intToHex(n) {
+  n = Math.round(Number(n)) & 0xFFFFFF;
+  var s = n.toString(16); while (s.length < 6) s = '0' + s;
+  return '#' + s;
+}
+function CP_hexToInt(hex) {
+  hex = String(hex).replace('#', '');
+  if (hex.length === 3) hex = hex.charAt(0) + hex.charAt(0) + hex.charAt(1) + hex.charAt(1) + hex.charAt(2) + hex.charAt(2);
+  var v = parseInt(hex, 16);
+  return isNaN(v) ? 0 : v;
+}
 
 /* Classify a MOGRT property so the panel can render the right control.
-   Returns { kind, value } where kind is text|color|number|bool|font|string. */
+   Returns { kind, value } where kind is text|color|colorint|number|bool|font|string. */
 function CP_classifyMgrtProp(p) {
   var val = null, t = '?';
   try { val = p.getValue(); t = typeof val; } catch (e) {}
   var name = String(p.displayName || '').toLowerCase();
+  var isColorName = (name.indexOf('color') !== -1 || name.indexOf('colour') !== -1);
   if (t === 'string') {
     if (val.indexOf('capProp') !== -1 || val.indexOf('textEditValue') !== -1 || val.charAt(0) === '{') {
       return { kind: 'text', value: '' };
@@ -948,7 +961,11 @@ function CP_classifyMgrtProp(p) {
     if (name.indexOf('font') !== -1 || name.indexOf('typeface') !== -1) return { kind: 'font', value: String(val) };
     return { kind: 'string', value: String(val) };
   }
-  if (t === 'number') return { kind: 'number', value: val };
+  if (t === 'number') {
+    // a number named "Color …" is almost always a packed colour int
+    if (isColorName) return { kind: 'colorint', value: CP_intToHex(val) };
+    return { kind: 'number', value: val };
+  }
   if (t === 'boolean') return { kind: 'bool', value: val };
   if (t === 'object' && val && typeof val.length === 'number' && typeof val[0] === 'number') {
     if (val.length >= 3) return { kind: 'color', value: CP_rgbaToHex(val) };
@@ -963,6 +980,7 @@ function CP_setMgrtParam(prop, kind, value) {
   try {
     var v;
     if (kind === 'color') v = CP_hexToRgba(value);
+    else if (kind === 'colorint') v = CP_hexToInt(value);
     else if (kind === 'number') v = parseFloat(value);
     else if (kind === 'bool') v = !!value;
     else if (kind === 'font') v = String(value);

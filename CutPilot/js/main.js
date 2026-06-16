@@ -1487,7 +1487,7 @@
     box.innerHTML = '<p class="hint">Reading template…</p>';
     CPBridge.callHost('CP_inspectMogrt', { path: path }).then(function (r) {
       var editable = (r.props || []).filter(function (p) {
-        return p.kind === 'color' || p.kind === 'number' || p.kind === 'bool' || p.kind === 'font';
+        return p.kind === 'color' || p.kind === 'colorint' || p.kind === 'number' || p.kind === 'bool' || p.kind === 'font';
       });
       // rich-text templates bake font/size/style into the source-text blob.
       var richProp = null;
@@ -1532,12 +1532,27 @@
         var row = document.createElement('label'); row.className = 'mp-row';
         var nm = document.createElement('span'); nm.className = 'mp-name'; nm.textContent = p.name;
         row.appendChild(nm);
+
+        // Colour controls (array-colour OR packed-int colour) get a swatch +
+        // a hex field, kept in sync — pick visually or type/paste a hex code.
+        if (p.kind === 'color' || p.kind === 'colorint') {
+          var kind = p.kind;
+          var hex = String(cur); if (hex.charAt(0) !== '#') hex = '#' + hex;
+          if (!/^#[0-9a-f]{6}$/i.test(hex)) hex = '#ffffff';
+          var wrap = document.createElement('span'); wrap.className = 'mp-ctrl mp-color';
+          var sw = document.createElement('input'); sw.type = 'color'; sw.value = hex;
+          var hx = document.createElement('input'); hx.type = 'text'; hx.className = 'mp-hex'; hx.value = hex; hx.maxLength = 7; hx.placeholder = '#RRGGBB';
+          sw.addEventListener('input', function () { hx.value = sw.value; setMogrtParam(p.i, kind, sw.value); });
+          hx.addEventListener('input', function () {
+            var v = hx.value.charAt(0) === '#' ? hx.value : '#' + hx.value;
+            if (/^#[0-9a-f]{6}$/i.test(v)) { sw.value = v; setMogrtParam(p.i, kind, v); }
+          });
+          wrap.appendChild(sw); wrap.appendChild(hx);
+          row.appendChild(wrap); box.appendChild(row); return;
+        }
+
         var ctrl;
-        if (p.kind === 'color') {
-          ctrl = document.createElement('input'); ctrl.type = 'color';
-          ctrl.value = /^#?[0-9a-f]{6}$/i.test(String(cur).replace('#','')) ? (String(cur).charAt(0)==='#'?cur:'#'+cur) : '#ffffff';
-          ctrl.addEventListener('input', function () { setMogrtParam(p.i, 'color', this.value); });
-        } else if (p.kind === 'number') {
+        if (p.kind === 'number') {
           ctrl = document.createElement('input'); ctrl.type = 'number'; ctrl.step = 'any'; ctrl.value = cur;
           ctrl.addEventListener('input', function () { setMogrtParam(p.i, 'number', this.value); });
         } else if (p.kind === 'bool') {
@@ -1555,7 +1570,7 @@
         box.appendChild(row);
       });
       var note = document.createElement('p'); note.className = 'hint';
-      note.textContent = 'Edit here, tap ▶ Preview to check one on the timeline, then "Add template captions" to apply to all. Size/CAPS/Bold/Italic are reliable; font applies if it\'s installed.';
+      note.textContent = 'Edit here, tap ▶ Preview to check one on the timeline, then "Add template captions" to apply to all. Size/CAPS/Bold/Italic & colours are reliable; font applies if it\'s installed.';
       box.appendChild(note);
     }).catch(function (e) { box.innerHTML = '<p class="hint err">Couldn\'t read template: ' + e.message + '</p>'; });
   }
