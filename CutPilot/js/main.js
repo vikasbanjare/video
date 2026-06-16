@@ -196,7 +196,9 @@
     { value: 'tiny', label: 'Fastest · tiny (~75MB)' },
     { value: 'base', label: 'Fast · base (~150MB)' },
     { value: 'small', label: 'Better · small (~470MB)' },
-    { value: 'medium', label: 'Best · medium (~1.5GB)' }
+    { value: 'medium', label: 'Great · medium (~1.5GB)' },
+    { value: 'large-v3-turbo', label: 'Pro · large-v3-turbo (~1.6GB, near-perfect + fast)' },
+    { value: 'large-v3', label: 'Max · large-v3 (~3GB, most accurate)' }
   ];
   var WHISPER_LANGS = [
     { value: 'en', label: 'English' }, { value: 'auto', label: 'Auto-detect' },
@@ -213,7 +215,8 @@
   function _modelsDir() { try { return nodeReq('path').join(nodeReq('os').homedir(), '.cutpilot', 'models'); } catch (e) { return null; } }
   function modelFileName() {
     var q = settings.whisperQuality || 'base';
-    var enOnly = ((settings.whisperLang || 'en') === 'en');   // .en models are English-only & sharper for English
+    var hasEnVariant = (q === 'tiny' || q === 'base' || q === 'small' || q === 'medium');  // large-* are multilingual only
+    var enOnly = ((settings.whisperLang || 'en') === 'en') && hasEnVariant;                 // .en models are sharper for English
     return 'ggml-' + q + (enOnly ? '.en' : '') + '.bin';
   }
   /* The model to transcribe with, downloading it on first use. Returns a Promise.
