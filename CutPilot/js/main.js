@@ -193,12 +193,13 @@
   // curated language list. whisper has English-only ".en" models (best for
   // English) and multilingual models (no suffix) for everything else / auto.
   var WHISPER_QUALITIES = [
-    { value: 'tiny', label: 'Fastest · tiny (~75MB)' },
-    { value: 'base', label: 'Fast · base (~150MB)' },
-    { value: 'small', label: 'Better · small (~470MB)' },
-    { value: 'medium', label: 'Great · medium (~1.5GB)' },
-    { value: 'large-v3-turbo', label: 'Pro · large-v3-turbo (~1.6GB, near-perfect + fast)' },
-    { value: 'large-v3', label: 'Max · large-v3 (~3GB, most accurate)' }
+    { value: 'cloud-groq', label: '☁️ Cloud · Groq (most accurate · free key)' },
+    { value: 'tiny', label: 'Local · Fastest · tiny (~75MB)' },
+    { value: 'base', label: 'Local · Fast · base (~150MB)' },
+    { value: 'small', label: 'Local · Better · small (~470MB)' },
+    { value: 'medium', label: 'Local · Great · medium (~1.5GB)' },
+    { value: 'large-v3-turbo', label: 'Local · Pro · large-v3-turbo (~1.6GB)' },
+    { value: 'large-v3', label: 'Local · Max · large-v3 (~3GB)' }
   ];
   var WHISPER_LANGS = [
     { value: 'en', label: 'English' }, { value: 'auto', label: 'Auto-detect' },
@@ -253,6 +254,42 @@
       });
     });
   }
+  /* Cloud transcription via Groq (OpenAI-compatible Whisper-large-v3). Uploads the
+     extracted audio and returns [{start,end,text}] cues. Used when Accuracy =
+     "☁️ Cloud · Groq". Needs a free API key (settings.groqKey). curl handles the
+     multipart upload (already a dependency). */
+  function transcribeViaGroq(wavPath, lang) {
+    return new Promise(function (resolve, reject) {
+      var key = (settings.groqKey || '').trim();
+      if (!key) return reject(new Error('Add your free Groq API key in Settings → Auto-transcribe (console.groq.com/keys).'));
+      var cp; try { cp = nodeReq('child_process'); } catch (e) { return reject(e); }
+      var args = ['-sS', '--max-time', '600', 'https://api.groq.com/openai/v1/audio/transcriptions',
+        '-H', 'Authorization: Bearer ' + key,
+        '-F', 'model=whisper-large-v3',
+        '-F', 'response_format=verbose_json',
+        '-F', 'temperature=0',
+        '-F', 'file=@' + wavPath];
+      if (lang && lang !== 'auto') args.push('-F', 'language=' + lang);
+      var p; try { p = cp.spawn('curl', args); } catch (e) { return reject(e); }
+      var out = '', err = '';
+      if (p.stdout) p.stdout.on('data', function (d) { out += d.toString(); });
+      if (p.stderr) p.stderr.on('data', function (d) { err += d.toString(); });
+      p.on('error', reject);
+      p.on('close', function (code) {
+        if (code !== 0) return reject(new Error('Cloud request failed (curl ' + code + '): ' + err.slice(-160)));
+        var j; try { j = JSON.parse(out); } catch (e) { return reject(new Error('Cloud returned unexpected data: ' + out.slice(0, 160))); }
+        if (j.error) return reject(new Error('Groq: ' + (j.error.message || JSON.stringify(j.error))));
+        var cues = [];
+        if (j.segments && j.segments.length) {
+          j.segments.forEach(function (s) { if (s.text && s.text.trim()) cues.push({ start: +s.start || 0, end: +s.end || 0, text: s.text.trim() }); });
+        } else if (j.text && j.text.trim()) {
+          cues.push({ start: 0, end: 5, text: j.text.trim() });
+        }
+        if (!cues.length) return reject(new Error('Cloud returned no speech.'));
+        resolve(cues);
+      });
+    });
+  }
   function runProc(bin, args, onLog) {
     return new Promise(function (resolve, reject) {
       var cp; try { cp = nodeReq('child_process'); } catch (e) { return reject(e); }
@@ -268,90 +305,91 @@
      the user never needs Premiere's Transcribe/Export. Produces a sequence-time
      transcript and loads it as the current transcript. */
   function autoTranscribe() {
+    var cloud = (settings.whisperQuality === 'cloud-groq');
     var ff = resolveFfmpeg();
     if (!ff) return toast('Auto-transcribe needs ffmpeg — set it in Settings (brew install ffmpeg).', true);
-    var wbin = resolveWhisper();
-    if (!wbin) return toast('Set the whisper engine in Settings → Auto-transcribe (brew install whisper-cpp).', true);
+    var wbin = null;
+    if (cloud) {
+      if (!(settings.groqKey || '').trim()) return toast('Add your free Groq API key in Settings → Auto-transcribe (console.groq.com/keys).', true);
+    } else {
+      wbin = resolveWhisper();
+      if (!wbin) return toast('Set the whisper engine in Settings → Auto-transcribe (brew install whisper-cpp).', true);
+    }
     var lang = settings.whisperLang || 'en';
-    // "Hinglish" works best the way the FIRST build did it: let an English model
-    // hear the Hindi and write it phonetically in Latin — that keeps English terms
-    // and numbers ("$120 trillion") correct. Forcing -l hi + Devanagari romanising
-    // is what mangled everything, so Hinglish now decodes as English.
+    // "Hinglish" = let an English model write the Hindi phonetically in Latin —
+    // keeps English terms and numbers ("$120 trillion") correct.
     var wlang = (lang === 'hinglish') ? 'en' : lang;
-    var romanize = false;
-    setTranscriptBar('', '🎙️', 'Preparing the speech model…', null);
-    resolveTranscribeModel().then(function (model) {
-    return CPBridge.callHost('CP_getTranscribeSource').then(function (res) {
-      var clip = res.clip;
-      if (!clip || !clip.mediaPath) throw new Error('Put your video or audio clip on the timeline first.');
-      // Every timeline piece that uses this recording (jump-cuts of one source).
-      var insts = (res.instances && res.instances.length) ? res.instances
-                  : [{ inPoint: clip.inPoint || 0, outPoint: clip.outPoint || 0, seqStart: clip.seqStart || 0 }];
-      // Linked clips put the SAME media on a video AND an audio track → identical
-      // instances → every caption came out twice. Drop exact-duplicate ranges.
-      var _seenInst = {};
-      insts = insts.filter(function (it) {
-        var k = Math.round((it.seqStart || 0) * 100) + '|' + Math.round((it.inPoint || 0) * 100) + '|' + Math.round((it.outPoint || 0) * 100);
-        if (_seenInst[k]) return false; _seenInst[k] = 1; return true;
-      });
-      var os = nodeReq('os'), pathMod = nodeReq('path'), fs = nodeReq('fs');
-      var stamp = Date.now();
-      var wav = pathMod.join(os.tmpdir(), 'cutpilot-asr-' + stamp + '.wav');
-      var outBase = pathMod.join(os.tmpdir(), 'cutpilot-asr-' + stamp);
-      // One extraction covering the whole used span of the source media.
-      var minIn = Infinity, maxOut = 0;
-      insts.forEach(function (it) { if (it.inPoint < minIn) minIn = it.inPoint; if (it.outPoint > maxOut) maxOut = it.outPoint; });
-      if (!isFinite(minIn)) minIn = 0;
-      var dur = (maxOut > minIn) ? (maxOut - minIn) : 0;
-      // -ss BEFORE -i (fast seek), -t AFTER -i (duration from the seek point) —
-      // the reverse truncates a trimmed clip's tail in some ffmpeg builds.
-      var ffArgs = ['-y', '-ss', String(minIn), '-i', clip.mediaPath];
-      if (dur > 0) ffArgs = ffArgs.concat(['-t', String(dur)]);
-      ffArgs = ffArgs.concat(['-vn', '-ac', '1', '-ar', '16000', wav]);
-      var shortName = (clip.name || 'clip').replace(/\.[^.]+$/, '');
-      var modelLabel = String(model).split(/[\\/]/).pop();        // what actually ran (catches silent base fallback)
-      var pieces = insts.length > 1 ? (' (' + insts.length + ' cuts)') : '';
-      setTranscriptBar('', '🎙️', 'Extracting audio from “' + shortName + '”' + pieces + '…', null);
-      return runProc(ff, ffArgs).then(function () {
-        setTranscriptBar('', '🎙️', 'Transcribing with ' + modelLabel + ' — this can take a minute…', null);
-        // Keep this close to the first build that worked well: plain decode, just
-        // the model + language. (Beam/-mc tweaks I tried made things worse, not better.)
-        var wArgs = ['-m', model, '-f', wav, '-osrt', '-of', outBase, '-l', wlang];
-        return runProc(wbin, wArgs);
-      }).then(function () {
-        var srtPath = outBase + '.srt';
-        if (!fs.existsSync(srtPath)) throw new Error('the engine produced no transcript');
-        var rawCues = CPCaptions.parseSRT(fs.readFileSync(srtPath, 'utf8'));
-        if (!rawCues.length) throw new Error('no speech detected in “' + shortName + '”');
-        if (romanize) rawCues.forEach(function (rc) { rc.text = CPCaptions.devanagariToLatin(rc.text); });
-        // Map each media-time cue onto every timeline piece that shows that part,
-        // converting to sequence time: seq = mediaTime - pieceIn + pieceSeqStart.
-        var cues = [];
-        rawCues.forEach(function (rc) {
-          var mStart = rc.start + minIn, mEnd = rc.end + minIn;
-          insts.forEach(function (it) {
-            var s = Math.max(mStart, it.inPoint), e = Math.min(mEnd, it.outPoint);
-            if (e - s > 0.05) cues.push({ start: s - it.inPoint + it.seqStart, end: e - it.inPoint + it.seqStart, text: rc.text });
-          });
+    var ico = cloud ? '☁️' : '🎙️';
+    setTranscriptBar('', ico, cloud ? 'Connecting to the cloud…' : 'Preparing the speech model…', null);
+    (cloud ? Promise.resolve(null) : resolveTranscribeModel()).then(function (model) {
+      var modelLabel = cloud ? 'Cloud · Groq (large-v3)' : String(model).split(/[\\/]/).pop();
+      return CPBridge.callHost('CP_getTranscribeSource').then(function (res) {
+        var clip = res.clip;
+        if (!clip || !clip.mediaPath) throw new Error('Put your video or audio clip on the timeline first.');
+        // Every timeline piece that uses this recording (jump-cuts of one source).
+        var insts = (res.instances && res.instances.length) ? res.instances
+                    : [{ inPoint: clip.inPoint || 0, outPoint: clip.outPoint || 0, seqStart: clip.seqStart || 0 }];
+        // Linked clips put the SAME media on a video AND audio track → de-dup so
+        // captions don't come out twice.
+        var _seenInst = {};
+        insts = insts.filter(function (it) {
+          var k = Math.round((it.seqStart || 0) * 100) + '|' + Math.round((it.inPoint || 0) * 100) + '|' + Math.round((it.outPoint || 0) * 100);
+          if (_seenInst[k]) return false; _seenInst[k] = 1; return true;
         });
-        if (!cues.length) throw new Error('no speech detected in “' + shortName + '”');
-        cues.sort(function (a, b) { return a.start - b.start; });
-        var finalPath = pathMod.join(os.tmpdir(), 'cutpilot-transcript-' + stamp + '.srt');
-        fs.writeFileSync(finalPath, CPCaptions.toSRT(cues), 'utf8');
-        try { fs.unlinkSync(wav); } catch (eU) {}
-        try { fs.unlinkSync(srtPath); } catch (eU2) {}
-        state.transcript = { label: 'CutPilot transcript (' + cues.length + ' lines)', path: finalPath, mtime: 1e16 };
-        state.transcriptManual = true;                      // it's ours — don't let auto-rescan replace it
-        $('tr-help').classList.add('hidden');
-        refreshMogrtSheetTr();   // keep the MOGRT sheet's status in sync
-        var span = fmt(cues[0].start) + '–' + fmt(cues[cues.length - 1].end);   // coverage, so partial transcripts are obvious
-        setTranscriptBar('ok', '✅', 'Transcribed — ' + cues.length + ' lines · ' + span + ' · ' + modelLabel, 'Change');
-        var wantModel = modelFileName();
-        var fellBack = (modelLabel !== wantModel);   // chosen model couldn't load → ran a fallback
-        toast('✓ Transcribed “' + shortName + '” — ' + cues.length + ' lines using ' + modelLabel + '.' +
-              (fellBack ? ' ⚠️ Your chosen model (' + wantModel + ') didn\'t load — check internet; it used a fallback.' : ''));
+        var os = nodeReq('os'), pathMod = nodeReq('path'), fs = nodeReq('fs');
+        var stamp = Date.now();
+        var wav = pathMod.join(os.tmpdir(), 'cutpilot-asr-' + stamp + '.wav');
+        var outBase = pathMod.join(os.tmpdir(), 'cutpilot-asr-' + stamp);
+        var minIn = Infinity, maxOut = 0;
+        insts.forEach(function (it) { if (it.inPoint < minIn) minIn = it.inPoint; if (it.outPoint > maxOut) maxOut = it.outPoint; });
+        if (!isFinite(minIn)) minIn = 0;
+        var dur = (maxOut > minIn) ? (maxOut - minIn) : 0;
+        // -ss BEFORE -i (fast seek), -t AFTER -i (duration from seek point).
+        var ffArgs = ['-y', '-ss', String(minIn), '-i', clip.mediaPath];
+        if (dur > 0) ffArgs = ffArgs.concat(['-t', String(dur)]);
+        ffArgs = ffArgs.concat(['-vn', '-ac', '1', '-ar', '16000', wav]);
+        var shortName = (clip.name || 'clip').replace(/\.[^.]+$/, '');
+        var pieces = insts.length > 1 ? (' (' + insts.length + ' cuts)') : '';
+        setTranscriptBar('', ico, 'Extracting audio from “' + shortName + '”' + pieces + '…', null);
+        return runProc(ff, ffArgs).then(function () {
+          setTranscriptBar('', ico, cloud ? 'Transcribing in the cloud (Groq)…' : ('Transcribing with ' + modelLabel + ' — this can take a minute…'), null);
+          if (cloud) return transcribeViaGroq(wav, wlang);   // → [{start,end,text}]
+          // Local whisper → SRT → cues. Plain decode (matches the build that worked).
+          return runProc(wbin, ['-m', model, '-f', wav, '-osrt', '-of', outBase, '-l', wlang]).then(function () {
+            var srtPath = outBase + '.srt';
+            if (!fs.existsSync(srtPath)) throw new Error('the engine produced no transcript');
+            var rc = CPCaptions.parseSRT(fs.readFileSync(srtPath, 'utf8'));
+            try { fs.unlinkSync(srtPath); } catch (e) {}
+            return rc;
+          });
+        }).then(function (rawCues) {
+          if (!rawCues || !rawCues.length) throw new Error('no speech detected in “' + shortName + '”');
+          // Map each (wav-relative) cue onto every timeline piece showing that part,
+          // converting to sequence time: seq = mediaTime - pieceIn + pieceSeqStart.
+          var cues = [];
+          rawCues.forEach(function (rc) {
+            var mStart = rc.start + minIn, mEnd = rc.end + minIn;
+            insts.forEach(function (it) {
+              var s = Math.max(mStart, it.inPoint), e = Math.min(mEnd, it.outPoint);
+              if (e - s > 0.05) cues.push({ start: s - it.inPoint + it.seqStart, end: e - it.inPoint + it.seqStart, text: rc.text });
+            });
+          });
+          if (!cues.length) throw new Error('no speech detected in “' + shortName + '”');
+          cues.sort(function (a, b) { return a.start - b.start; });
+          var finalPath = pathMod.join(os.tmpdir(), 'cutpilot-transcript-' + stamp + '.srt');
+          fs.writeFileSync(finalPath, CPCaptions.toSRT(cues), 'utf8');
+          try { fs.unlinkSync(wav); } catch (eU) {}
+          state.transcript = { label: 'CutPilot transcript (' + cues.length + ' lines)', path: finalPath, mtime: 1e16 };
+          state.transcriptManual = true;
+          $('tr-help').classList.add('hidden');
+          refreshMogrtSheetTr();
+          var span = fmt(cues[0].start) + '–' + fmt(cues[cues.length - 1].end);
+          setTranscriptBar('ok', '✅', 'Transcribed — ' + cues.length + ' lines · ' + span + ' · ' + modelLabel, 'Change');
+          var note = '';
+          if (!cloud) { var want = modelFileName(); if (modelLabel !== want) note = ' ⚠️ wanted ' + want + ' but it didn\'t load — used a fallback (check internet).'; }
+          toast('✓ Transcribed “' + shortName + '” — ' + cues.length + ' lines using ' + modelLabel + '.' + note);
+        });
       });
-    });
     }).catch(function (e) {
       setTranscriptBar('warn', '⚠️', 'Auto-transcribe failed', 'Get one →');
       toast('Auto-transcribe failed: ' + e.message, true);
@@ -513,6 +551,7 @@
     $('set-dropframe').checked = !!settings.dropFrame;
     if ($('set-whisper')) $('set-whisper').value = settings.whisperPath || '';
     if ($('set-whisper-model')) $('set-whisper-model').value = settings.whisperModel || '';
+    if ($('set-groq-key')) $('set-groq-key').value = settings.groqKey || '';
     loadLibraryPrefs();
     buildFontSelect();
     buildAnimRail();
@@ -2914,6 +2953,12 @@
   function refreshWhisperStatus() {
     _whisper = null;
     var el = $('whisper-status'); if (!el) return;
+    if (settings.whisperQuality === 'cloud-groq') {
+      el.textContent = (settings.groqKey || '').trim()
+        ? '☁️ Cloud (Groq) ready — most accurate.'
+        : '☁️ Cloud selected — add your free Groq API key below.';
+      return;
+    }
     var w = resolveWhisper(), m = resolveWhisperModel();
     var willUse = modelFileName();   // what accuracy+language will fetch/use
     if (w) { el.textContent = '✅ Engine ready · will use ' + willUse + (m ? '' : ' (downloads on first use)'); }
@@ -2951,9 +2996,14 @@
   if ($('btn-save-whisper')) $('btn-save-whisper').addEventListener('click', function () {
     settings.whisperPath = $('set-whisper').value.trim();
     settings.whisperModel = $('set-whisper-model').value.trim();
+    if ($('set-groq-key')) settings.groqKey = $('set-groq-key').value.trim();
     saveSettings();
     refreshWhisperStatus();
     toast('Auto-transcribe settings saved.');
+  });
+  // save the Groq key as you type too (so it persists even without "Save & check")
+  if ($('set-groq-key')) $('set-groq-key').addEventListener('change', function () {
+    settings.groqKey = this.value.trim(); saveSettings(); refreshWhisperStatus();
   });
   /* One-click: install the whisper engine + a model via Homebrew, then wire
      the paths. Streams output so any failure is visible. */
