@@ -1655,12 +1655,11 @@
   }
   function mpAddFontSelect(box, label, curPs, onChange) {
     var row = mpRow(box, label);
-    var sel = document.createElement('select'); sel.className = 'mp-ctrl';
-    var keep = document.createElement('option'); keep.value = ''; keep.textContent = 'Keep (' + (curPs || 'template') + ')';
-    sel.appendChild(keep);
-    POPULAR_FONTS.forEach(function (f) { var o = document.createElement('option'); o.value = f.ps; o.textContent = f.label; sel.appendChild(o); });
-    sel.addEventListener('change', function () { onChange(this.value); });
-    row.appendChild(sel);
+    var opts = [{ value: '', label: 'Keep (' + (curPs || 'template') + ')' }];
+    POPULAR_FONTS.forEach(function (f) { opts.push({ value: f.ps, label: f.label }); });
+    var dd = makeDropdown(opts, '', onChange, 'Keep');
+    dd.el.classList.add('mp-ctrl');
+    row.appendChild(dd.el);
   }
   function mpAddNumber(box, label, cur, onChange) {
     var row = mpRow(box, label);
@@ -1732,6 +1731,32 @@
     var f = makeColorField(curHex, onChange);
     f.el.classList.add('mp-ctrl', 'mp-color');
     row.appendChild(f.el);
+  }
+
+  /* A custom dropdown that works inside Premiere's panel where a native <select>
+     popup can refuse to open. options: [{value,label}]. */
+  function makeDropdown(options, curValue, onChange, placeholder) {
+    var wrap = document.createElement('span'); wrap.className = 'cp-dd';
+    var btn = document.createElement('button'); btn.type = 'button'; btn.className = 'cp-dd-btn';
+    var list = document.createElement('div'); list.className = 'cp-dd-list hidden';
+    var cur = curValue;
+    function labelFor(v) { for (var i = 0; i < options.length; i++) if (options[i].value === v) return options[i].label; return placeholder || String(v || ''); }
+    function refresh() { btn.textContent = labelFor(cur) + ' ▾'; }
+    options.forEach(function (o) {
+      var it = document.createElement('button'); it.type = 'button'; it.className = 'cp-dd-item'; it.textContent = o.label;
+      it.addEventListener('click', function (e) { e.stopPropagation(); cur = o.value; refresh(); list.classList.add('hidden'); _cpOpenPop = null; onChange(cur); });
+      list.appendChild(it);
+    });
+    refresh();
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var willOpen = list.classList.contains('hidden');
+      if (_cpOpenPop) _cpOpenPop.classList.add('hidden');
+      if (willOpen) { list.classList.remove('hidden'); _cpOpenPop = list; } else { _cpOpenPop = null; }
+    });
+    list.addEventListener('click', function (e) { e.stopPropagation(); });
+    wrap.appendChild(btn); wrap.appendChild(list);
+    return { el: wrap, get: function () { return cur; }, set: function (v) { cur = v; refresh(); } };
   }
   function mpAddPoint(box, label, x, y, onChange) {
     var row = mpRow(box, label);

@@ -314,6 +314,18 @@ input[type="range"]::-webkit-slider-thumb {
 .sw .cp-pop { left: 50%; transform: translateX(-50%); }
 .sw .mp-hex { width: 100%; }
 
+/* Custom dropdown (fonts etc.) — works where a native <select> popup won't. */
+.cp-dd { position: relative; display: inline-block; }
+.cp-dd-btn { max-width: 180px; padding: 5px 10px; background: var(--card2); border: 1px solid var(--line);
+  border-radius: 7px; color: inherit; cursor: pointer; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cp-dd-btn:hover { border-color: var(--accent, #6ea8fe); }
+.cp-dd-list { position: absolute; top: 100%; right: 0; z-index: 80; margin-top: 4px; max-height: 240px; overflow-y: auto;
+  min-width: 180px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); padding: 5px; }
+.cp-dd-list.hidden { display: none; }
+.cp-dd-item { display: block; width: 100%; text-align: left; padding: 6px 9px; background: none; border: none;
+  color: inherit; cursor: pointer; font-size: 12px; border-radius: 6px; white-space: nowrap; }
+.cp-dd-item:hover { background: var(--card2); }
+
 .anim-rail { display: flex; flex-wrap: wrap; gap: 6px; }
 .anim-chip {
   padding: 6px 13px; background: var(--card2); border: 1px solid var(--line); border-radius: 99px;
