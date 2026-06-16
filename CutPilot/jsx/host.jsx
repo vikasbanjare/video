@@ -736,7 +736,7 @@ function CP_placeCaptionImages(argsJson) {
  * passes true AFTER a probe write on a throwaway instance verified that this
  * specific template accepts the edit cleanly (see CP_probeRichText). Without
  * that proof we refuse rich writes — they can corrupt the project. */
-function CP_setMgrtText(prop, text, allowRich, font) {
+function CP_setMgrtText(prop, text, allowRich, style) {
   var cur = null;
   try { cur = prop.getValue ? prop.getValue() : null; } catch (eCur) { cur = null; }
   if (typeof cur !== 'string') {
@@ -766,12 +766,28 @@ function CP_setMgrtText(prop, text, allowRich, font) {
     // keep any *RunLength field consistent with the new char count
     out = out.replace(/("[A-Za-z]*RunLength"\s*:\s*)\[\s*\d+\s*\]/g, function (m, a) { return a + '[' + n + ']'; });
     out = out.replace(/("[A-Za-z]*RunLength"\s*:\s*)\d+/g, function (m, a) { return a + n; });
-    // optionally swap the font name(s) baked into the blob (font length is
-    // independent of text length, so this stays length-safe). Best effort.
-    if (font) {
-      var fe = esc(String(font));
-      out = out.replace(/("fontName"\s*:\s*")(?:[^"\\]|\\.)*(")/g, function (m, a, b) { return a + fe + b; });
-      out = out.replace(/("fontEditValue"\s*:\s*")(?:[^"\\]|\\.)*(")/g, function (m, a, b) { return a + fe + b; });
+    // Text STYLE edits (font / size / caps / bold / italic). These live in
+    // per-run arrays like "fontEditValue":["X"], so they're only safe on a
+    // SINGLE run (length-1 arrays stay consistent). Gate on run count.
+    var singleRun = /"capPropTextRunCount"\s*:\s*1\b/.test(out);
+    if (style && singleRun) {
+      if (style.font) {
+        var fe = esc(String(style.font));
+        out = out.replace(/("fontEditValue"\s*:\s*\[\s*")(?:[^"\\]|\\.)*("\s*\])/, function (m, a, b) { return a + fe + b; });
+        out = out.replace(/("fontEditValue"\s*:\s*")(?:[^"\\]|\\.)*(")/, function (m, a, b) { return a + fe + b; });
+        out = out.replace(/("fontName"\s*:\s*")(?:[^"\\]|\\.)*(")/g, function (m, a, b) { return a + fe + b; });
+      }
+      if (style.size != null && !isNaN(parseFloat(style.size))) {
+        var sz = parseFloat(style.size);
+        out = out.replace(/("fontSizeEditValue"\s*:\s*)\[\s*[\d.]+\s*\]/, function (m, a) { return a + '[' + sz + ']'; });
+        out = out.replace(/("fontSizeEditValue"\s*:\s*)[\d.]+/, function (m, a) { return a + sz; });
+      }
+      if (style.caps != null)
+        out = out.replace(/("fontFSAllCapsValue"\s*:\s*)\[\s*(?:true|false)\s*\]/, function (m, a) { return a + '[' + (style.caps ? 'true' : 'false') + ']'; });
+      if (style.bold != null)
+        out = out.replace(/("fontFSBoldValue"\s*:\s*)\[\s*(?:true|false)\s*\]/, function (m, a) { return a + '[' + (style.bold ? 'true' : 'false') + ']'; });
+      if (style.italic != null)
+        out = out.replace(/("fontFSItalicValue"\s*:\s*)\[\s*(?:true|false)\s*\]/, function (m, a) { return a + '[' + (style.italic ? 'true' : 'false') + ']'; });
     }
     try { prop.setValue(out, true); return true; } catch (e1) {}
     try { prop.setValue(out); return true; } catch (e2) {}
@@ -848,7 +864,7 @@ function CP_stretchLastClip(vTrack, speedPct) {
  * makes rich-text captioning safe — we never write to the user's real captions
  * unless this verified the template accepts the edit cleanly.
  * Returns: { kind:'rich'|'simple'|'plain'|'none', richSafe:bool }. */
-function CP_probeRichText(mogrtPath, vTrack, aTrack, KEYS, sampleText, font) {
+function CP_probeRichText(mogrtPath, vTrack, aTrack, KEYS, sampleText, style) {
   var res = { kind: 'none', richSafe: false };
   var clip = null;
   try {
@@ -862,9 +878,9 @@ function CP_probeRichText(mogrtPath, vTrack, aTrack, KEYS, sampleText, font) {
     if (typeof before === 'string' && (before.indexOf('textEditValue') !== -1 || before.indexOf('capProp') !== -1)) {
       res.kind = 'rich';
       var probeText = String(sampleText || 'CutPilot test');
-      // probe the SAME write the real captions will do (text + optional font),
-      // so enabling a font swap can't slip past the safety verification.
-      if (CP_setMgrtText(prop, probeText, true, font)) {
+      // probe the SAME write the real captions will do (text + optional style),
+      // so enabling style edits can't slip past the safety verification.
+      if (CP_setMgrtText(prop, probeText, true, style)) {
         var after = null; try { after = prop.getValue(); } catch (eA) { after = null; }
         if (typeof after === 'string' && after.indexOf('textEditValue') !== -1) {
           try {
@@ -1001,7 +1017,7 @@ function CP_insertMogrtCaptions(argsJson) {
     // but leave the text alone (never risking the "bad any cast" corruption).
     var probe = CP_probeRichText(args.mogrtPath, vTrack, aTrack, KEYS,
                                  (args.cues[0] && args.cues[0].text) ? args.cues[0].text : 'CutPilot test',
-                                 args.font);
+                                 args.textStyle);
     var allowRich = (probe.kind === 'rich') ? probe.richSafe : false;
     var richBlocked = (probe.kind === 'rich' && !probe.richSafe);
 
@@ -1065,14 +1081,14 @@ function CP_insertMogrtCaptions(argsJson) {
           for (var k = 0; k < KEYS.length && !done; k++) {
             for (var pIdx = 0; pIdx < props.numItems && !done; pIdx++) {
               var dn = String(props[pIdx].displayName || '').toLowerCase();
-              if (dn.indexOf(KEYS[k]) !== -1 && CP_setMgrtText(props[pIdx], cue.text, allowRich, args.font)) {
+              if (dn.indexOf(KEYS[k]) !== -1 && CP_setMgrtText(props[pIdx], cue.text, allowRich, args.textStyle)) {
                 textSet++; done = true;
               }
             }
           }
           // 2) fallback: first property that currently holds a string
           for (var p2 = 0; p2 < props.numItems && !done; p2++) {
-            if (CP_propIsString(props[p2]) && CP_setMgrtText(props[p2], cue.text, allowRich, args.font)) {
+            if (CP_propIsString(props[p2]) && CP_setMgrtText(props[p2], cue.text, allowRich, args.textStyle)) {
               textSet++; done = true;
             }
           }
@@ -1217,7 +1233,7 @@ function CP_previewMogrt(argsJson) {
         pParams = CP_applyMgrtParams(pcomp, args.params);
         if (args.text && pcomp.properties) {
           var ptp = CP_findTextProp(pcomp.properties, ['text', 'caption', 'title', 'subtitle', 'headline', 'body']);
-          if (ptp) CP_setMgrtText(ptp, args.text, true, args.font);
+          if (ptp) CP_setMgrtText(ptp, args.text, true, args.textStyle);
         }
       }
     } catch (ePv) {}

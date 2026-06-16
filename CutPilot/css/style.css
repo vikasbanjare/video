@@ -351,6 +351,7 @@ input[type="range"]::-webkit-slider-thumb {
 /* MOGRT param editor (colours / size / font) */
 .tpl-params { background: var(--card2); border: 1px solid var(--line); border-radius: 12px; padding: 10px; margin-bottom: 11px; }
 .tpl-params .mp-head { font-size: 11px; font-weight: 700; opacity: .85; margin-bottom: 8px; }
+.tpl-params .mp-sub { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; opacity: .55; margin: 10px 0 4px; }
 .mp-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 6px 0; }
 .mp-row .mp-name { font-size: 11px; opacity: .9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mp-row .mp-ctrl { flex: 0 0 auto; }

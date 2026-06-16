@@ -34,7 +34,7 @@
     mogrtWords: 0,   // words per MOGRT graphic (0 = full line)
     mogrtParams: [],        // colour/size/font overrides for the selected custom MOGRT
     mogrtParamsPath: null,  // which .mogrt those overrides belong to
-    mogrtFont: null,        // font to push into a rich-text template's blob
+    mogrtTextStyle: null,   // {font,size,caps,bold,italic} for a rich-text template's blob
     // template library
     customTemplates: [],
     favs: {},
@@ -1371,13 +1371,13 @@
       var p = pickFile('Choose a Motion Graphics Template', ['mogrt']);
       if (!p) return;
       state.mogrtFile = p;
-      state.mogrtParams = []; state.mogrtFont = null; state.mogrtParamsPath = null;   // new file → fresh overrides
+      state.mogrtParams = []; state.mogrtTextStyle = null; state.mogrtParamsPath = null;   // new file → fresh overrides
       $('tpl-params').classList.add('hidden');
       $('tpl-file-name').textContent = p.split(/[\\/]/).pop();
     });
     // switching the installed template also clears stale overrides
     if ($('tpl-select')) $('tpl-select').addEventListener('change', function () {
-      state.mogrtParams = []; state.mogrtFont = null; state.mogrtParamsPath = null; $('tpl-params').classList.add('hidden');
+      state.mogrtParams = []; state.mogrtTextStyle = null; state.mogrtParamsPath = null; $('tpl-params').classList.add('hidden');
     });
     $('btn-alt-apply').addEventListener('click', applyMogrtTemplate);
     $('btn-native-apply').addEventListener('click', applyNative);
@@ -1412,10 +1412,10 @@
                (p.type === 'string' ? '\n      = ' + p.sample : '');
       });
       var foot = anyRich
-        ? '\n\n⚠️ This template uses Premiere\'s rich caption format, so its text ' +
-          'can\'t be filled by any panel without risking the project. Use ✨ Add ' +
-          'captions (Animated) for your words. (Copy this and send it to support ' +
-          'if you want this exact template investigated.)'
+        ? '\n\nℹ️ This template uses Premiere\'s rich caption format. CutPilot will ' +
+          'still try to fill it — it tests the write on one throwaway copy first ' +
+          'and only proceeds if that\'s safe (your project is saved beforehand). ' +
+          'Tap 🎨 Customize to edit its font / size / style before applying.'
         : '';
       out.textContent = path.split(/[\\/]/).pop() + ' — ' + r.count + ' fields:\n' + lines.join('\n') + foot;
     }).catch(function (e) { out.className = 'diag-out err'; out.textContent = 'Inspect failed: ' + e.message; });
@@ -1432,6 +1432,49 @@
     else state.mogrtParams.push({ i: i, kind: kind, value: value });
   }
 
+  // A short, friendly font list (label + the PostScript-style name AE blobs
+  // expect). Keeps the picker simple instead of dumping 48+ faces.
+  var POPULAR_FONTS = [
+    { label: 'Montserrat', ps: 'Montserrat-Regular' }, { label: 'Montserrat Bold', ps: 'Montserrat-Bold' },
+    { label: 'Poppins', ps: 'Poppins-Regular' }, { label: 'Poppins Bold', ps: 'Poppins-Bold' },
+    { label: 'Inter', ps: 'Inter-Regular' }, { label: 'Roboto', ps: 'Roboto-Regular' },
+    { label: 'Open Sans', ps: 'OpenSans-Regular' }, { label: 'Oswald', ps: 'Oswald-Regular' },
+    { label: 'Bebas Neue', ps: 'BebasNeue-Regular' }, { label: 'Anton', ps: 'Anton-Regular' },
+    { label: 'Archivo Black', ps: 'ArchivoBlack-Regular' }, { label: 'Playfair Display', ps: 'PlayfairDisplay-Regular' },
+    { label: 'Lato', ps: 'Lato-Regular' }, { label: 'Teko', ps: 'Teko-Regular' }, { label: 'Bangers', ps: 'Bangers-Regular' }
+  ];
+
+  function richStyle() { if (!state.mogrtTextStyle) state.mogrtTextStyle = {}; return state.mogrtTextStyle; }
+
+  /* Small labelled-row control builders for the MOGRT editor. */
+  function mpRow(box, label) {
+    var row = document.createElement('label'); row.className = 'mp-row';
+    var nm = document.createElement('span'); nm.className = 'mp-name'; nm.textContent = label;
+    row.appendChild(nm); box.appendChild(row); return row;
+  }
+  function mpAddFontSelect(box, label, curPs, onChange) {
+    var row = mpRow(box, label);
+    var sel = document.createElement('select'); sel.className = 'mp-ctrl';
+    var keep = document.createElement('option'); keep.value = ''; keep.textContent = 'Keep (' + (curPs || 'template') + ')';
+    sel.appendChild(keep);
+    POPULAR_FONTS.forEach(function (f) { var o = document.createElement('option'); o.value = f.ps; o.textContent = f.label; sel.appendChild(o); });
+    sel.addEventListener('change', function () { onChange(this.value); });
+    row.appendChild(sel);
+  }
+  function mpAddNumber(box, label, cur, onChange) {
+    var row = mpRow(box, label);
+    var inp = document.createElement('input'); inp.type = 'number'; inp.step = 'any'; inp.className = 'mp-ctrl';
+    if (cur !== '' && cur != null) inp.value = cur;
+    inp.addEventListener('input', function () { onChange(this.value); });
+    row.appendChild(inp);
+  }
+  function mpAddCheck(box, label, cur, onChange) {
+    var row = mpRow(box, label);
+    var inp = document.createElement('input'); inp.type = 'checkbox'; inp.className = 'mp-ctrl'; inp.checked = !!cur;
+    inp.addEventListener('change', function () { onChange(this.checked); });
+    row.appendChild(inp);
+  }
+
   /* Build editable controls (colour / size / font / toggle) for the selected
      template — the same basic params Premiere shows in Essential Graphics. */
   function buildMogrtCustomizer() {
@@ -1439,37 +1482,50 @@
     var box = $('tpl-params');
     if (!path) { box.classList.remove('hidden'); box.innerHTML = '<p class="hint err">Pick a template first.</p>'; return; }
     // new template → drop previous overrides
-    if (state.mogrtParamsPath !== path) { state.mogrtParams = []; state.mogrtFont = null; state.mogrtParamsPath = path; }
+    if (state.mogrtParamsPath !== path) { state.mogrtParams = []; state.mogrtTextStyle = null; state.mogrtParamsPath = path; }
     box.classList.remove('hidden');
     box.innerHTML = '<p class="hint">Reading template…</p>';
     CPBridge.callHost('CP_inspectMogrt', { path: path }).then(function (r) {
       var editable = (r.props || []).filter(function (p) {
         return p.kind === 'color' || p.kind === 'number' || p.kind === 'bool' || p.kind === 'font';
       });
-      // rich-text templates bake the font in the source-text — offer a font
-      // dropdown that the rich writer swaps in (behind the safe probe).
-      var hasRich = (r.props || []).some(function (p) { return p.rich; });
-      if (!editable.length && !hasRich) {
+      // rich-text templates bake font/size/style into the source-text blob.
+      var richProp = null;
+      for (var ri = 0; ri < (r.props || []).length; ri++) if (r.props[ri].rich) { richProp = r.props[ri]; break; }
+      if (!editable.length && !richProp) {
         box.innerHTML = '<p class="hint">This template exposes no colour/size/font controls to edit.</p>';
         return;
       }
       box.innerHTML = '';
       var head = document.createElement('div'); head.className = 'mp-head';
-      head.textContent = '🎨 ' + path.split(/[\\/]/).pop() + ' — colours, size & font';
+      head.textContent = '🎨 ' + path.split(/[\\/]/).pop() + ' — edit before applying';
       box.appendChild(head);
 
-      // global font control for rich-text templates
-      if (hasRich) {
-        var frow = document.createElement('label'); frow.className = 'mp-row';
-        var fnm = document.createElement('span'); fnm.className = 'mp-name'; fnm.textContent = 'Font (template text)';
-        var fsel = document.createElement('select'); fsel.className = 'mp-ctrl';
-        var keep = document.createElement('option'); keep.value = ''; keep.textContent = 'Keep template font';
-        fsel.appendChild(keep);
-        var fonts = (typeof CPCaptions !== 'undefined' && CPCaptions.FONTS) ? CPCaptions.FONTS : [];
-        fonts.forEach(function (f) { var o = document.createElement('option'); o.value = f; o.textContent = f; if (state.mogrtFont === f) o.selected = true; fsel.appendChild(o); });
-        fsel.addEventListener('change', function () { state.mogrtFont = this.value || null; });
-        frow.appendChild(fnm); frow.appendChild(fsel); box.appendChild(frow);
+      // Text-style editor for rich templates (Font / Size / CAPS / Bold /
+      // Italic), parsed from the blob and applied via the probe-verified writer.
+      if (richProp) {
+        var blob = null; try { blob = JSON.parse(richProp.sample); } catch (eB) { blob = null; }
+        var runCount = blob && blob.capPropTextRunCount;
+        if (blob && runCount === 1) {
+          var sec = document.createElement('div'); sec.className = 'mp-sub'; sec.textContent = 'Text style';
+          box.appendChild(sec);
+          var curFont = (blob.fontEditValue && blob.fontEditValue[0]) || '';
+          var curSize = (blob.fontSizeEditValue && blob.fontSizeEditValue[0]);
+          var curCaps = !!(blob.fontFSAllCapsValue && blob.fontFSAllCapsValue[0]);
+          var curBold = !!(blob.fontFSBoldValue && blob.fontFSBoldValue[0]);
+          var curItal = !!(blob.fontFSItalicValue && blob.fontFSItalicValue[0]);
+          mpAddFontSelect(box, 'Font', curFont, function (v) { richStyle().font = v || null; });
+          mpAddNumber(box, 'Size', curSize, function (v) { richStyle().size = v; });
+          mpAddCheck(box, 'ALL CAPS', curCaps, function (v) { richStyle().caps = v; });
+          mpAddCheck(box, 'Bold', curBold, function (v) { richStyle().bold = v; });
+          mpAddCheck(box, 'Italic', curItal, function (v) { richStyle().italic = v; });
+        } else if (blob && runCount > 1) {
+          var mn = document.createElement('p'); mn.className = 'hint';
+          mn.textContent = 'This template mixes several text styles, so font/size editing isn\'t available here — your words still fill in.';
+          box.appendChild(mn);
+        }
       }
+      if (editable.length) { var sec2 = document.createElement('div'); sec2.className = 'mp-sub'; sec2.textContent = 'Template controls'; box.appendChild(sec2); }
       editable.forEach(function (p) {
         var ov = mogrtParamFor(p.i);
         var cur = ov ? ov.value : p.value;
@@ -1487,12 +1543,11 @@
         } else if (p.kind === 'bool') {
           ctrl = document.createElement('input'); ctrl.type = 'checkbox'; ctrl.checked = !!cur;
           ctrl.addEventListener('change', function () { setMogrtParam(p.i, 'bool', this.checked); });
-        } else { // font
+        } else { // font (simple curated list)
           ctrl = document.createElement('select');
-          var fonts = (typeof CPCaptions !== 'undefined' && CPCaptions.FONTS) ? CPCaptions.FONTS : [];
-          var opt0 = document.createElement('option'); opt0.value = String(cur); opt0.textContent = String(cur) + ' (current)';
+          var opt0 = document.createElement('option'); opt0.value = String(cur); opt0.textContent = 'Keep (' + String(cur) + ')';
           ctrl.appendChild(opt0);
-          fonts.forEach(function (f) { var o = document.createElement('option'); o.value = f; o.textContent = f; ctrl.appendChild(o); });
+          POPULAR_FONTS.forEach(function (f) { var o = document.createElement('option'); o.value = f.ps; o.textContent = f.label; ctrl.appendChild(o); });
           ctrl.addEventListener('change', function () { setMogrtParam(p.i, 'font', this.value); });
         }
         ctrl.className = 'mp-ctrl';
@@ -1500,7 +1555,7 @@
         box.appendChild(row);
       });
       var note = document.createElement('p'); note.className = 'hint';
-      note.textContent = 'These apply to every caption graphic when you tap "Add template captions". Tap ▶ Preview to see one on the timeline. (Font changes apply only if the template exposes a font control.)';
+      note.textContent = 'Edit here, tap ▶ Preview to check one on the timeline, then "Add template captions" to apply to all. Size/CAPS/Bold/Italic are reliable; font applies if it\'s installed.';
       box.appendChild(note);
     }).catch(function (e) { box.innerHTML = '<p class="hint err">Couldn\'t read template: ' + e.message + '</p>'; });
   }
@@ -1513,9 +1568,9 @@
     var sample = 'Preview';
     try { var c = readSelectedTranscript(); if (c && c[0]) sample = String(c[0].text).split(/\s+/).slice(0, 3).join(' '); } catch (e) {}
     var params = (state.mogrtParamsPath === path) ? state.mogrtParams : [];
-    var font = (state.mogrtParamsPath === path) ? state.mogrtFont : null;
+    var textStyle = (state.mogrtParamsPath === path) ? state.mogrtTextStyle : null;
     toast('Dropping a preview at the playhead…');
-    CPBridge.callHost('CP_previewMogrt', { path: path, seconds: 4, params: params, text: sample, font: font })
+    CPBridge.callHost('CP_previewMogrt', { path: path, seconds: 4, params: params, text: sample, textStyle: textStyle })
       .then(function (r) { toast('▶ Preview placed on V' + r.track + ' at the playhead. Scrub to see it.'); })
       .catch(function (e) { toast(e.message, true); });
   }
@@ -1587,11 +1642,11 @@
       if (!ok) { if (btn) btn.disabled = false; capProgress(null); return null; }
       capProgress('Adding ' + tcues.length + ' template graphics');
       var params = (state.mogrtParamsPath === mogrtPath) ? state.mogrtParams : [];
-      var font = (state.mogrtParamsPath === mogrtPath) ? state.mogrtFont : null;
+      var textStyle = (state.mogrtParamsPath === mogrtPath) ? state.mogrtTextStyle : null;
       var stretch = !!($('mg-stretch') && $('mg-stretch').checked);
       return CPBridge.callHost('CP_insertMogrtCaptions', {
         mogrtPath: mogrtPath, cues: tcues, videoTrack: null, audioTrack: 0,
-        params: params, font: font, stretch: stretch
+        params: params, textStyle: textStyle, stretch: stretch
       });
     }).then(function (r) {
       if (r == null) return;
