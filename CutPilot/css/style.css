@@ -374,6 +374,26 @@ input[type="range"]::-webkit-slider-thumb {
 .ms-customizer:not(:empty) { margin: 10px 0; }
 .ms-tr { font-size: 11px; color: var(--dim); margin: 2px 0 6px; }
 .ms-tr.ok { color: var(--ok, #6cc59a); }
+
+/* transcript editor (fix wording before captioning) */
+.tr-editor { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.6); backdrop-filter: blur(3px);
+  display: flex; align-items: flex-end; justify-content: center; }
+.tr-editor.hidden { display: none; }
+.tre-card { width: 100%; max-height: 90vh; display: flex; flex-direction: column; background: var(--card);
+  border-top-left-radius: 18px; border-top-right-radius: 18px; border: 1px solid var(--line);
+  padding: 14px 14px 12px; box-shadow: 0 -10px 40px rgba(0,0,0,.5); }
+.tre-head { display: flex; align-items: center; gap: 8px; }
+.tre-head .spacer { flex: 1; }
+.tre-list { overflow-y: auto; margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.tre-row { display: flex; align-items: center; gap: 6px; }
+.tre-time { flex: 0 0 auto; width: 42px; font: 10px ui-monospace, monospace; color: var(--dim); text-align: right; }
+.tre-text { flex: 1; min-width: 0; padding: 6px 8px; background: var(--card2); border: 1px solid var(--line);
+  border-radius: 7px; color: inherit; font-size: 12px; }
+.tre-btn { flex: 0 0 auto; width: 26px; height: 26px; padding: 0; background: var(--card2);
+  border: 1px solid var(--line); border-radius: 7px; color: var(--dim); cursor: pointer; font-size: 12px; }
+.tre-btn:hover:not(:disabled) { color: #fff; border-color: var(--line2); }
+.tre-btn:disabled { opacity: .3; cursor: default; }
+.tre-del:hover:not(:disabled) { color: #ff8a8a; }
 .ms-name { font-size: 15px; font-weight: 800; margin-bottom: 4px; }
 .ms-card .hero-btn { width: 100%; }
 .ms-card .link-btn { display: block; margin: 6px auto 0; }

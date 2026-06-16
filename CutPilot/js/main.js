@@ -638,6 +638,9 @@
     $('btn-tr-again').addEventListener('click', findTranscript);
     if ($('btn-tr-auto')) $('btn-tr-auto').addEventListener('click', autoTranscribe);
     if ($('btn-tr-auto-main')) $('btn-tr-auto-main').addEventListener('click', autoTranscribe);
+    if ($('btn-tr-edit')) $('btn-tr-edit').addEventListener('click', openTranscriptEditor);
+    if ($('tre-cancel')) $('tre-cancel').addEventListener('click', function () { $('tr-editor').classList.add('hidden'); });
+    if ($('tre-save')) $('tre-save').addEventListener('click', saveTranscriptEditor);
     $('btn-tr-pick').addEventListener('click', function () {
       var p = pickFile('Choose a caption file (.srt / .vtt)', ['srt', 'vtt']);
       if (p) pickTranscriptByHand(p);
@@ -667,6 +670,57 @@
     var cues = CPCaptions.parseSRT(text);
     if (!cues.length) throw new Error('No captions found inside ' + state.transcript.label);
     return cues;
+  }
+
+  // ---- transcript editor: fix wording / delete junk / merge before captioning ----
+  var _treCues = null;
+  function openTranscriptEditor() {
+    var cues;
+    try { cues = readSelectedTranscript(); }
+    catch (e) { return toast(e.message, true); }
+    _treCues = cues.map(function (c) { return { start: c.start, end: c.end, text: c.text }; });
+    renderTrEditor();
+    $('tr-editor').classList.remove('hidden');
+  }
+  function renderTrEditor() {
+    var list = $('tre-list'); if (!list) return;
+    list.innerHTML = '';
+    if (!_treCues.length) { list.innerHTML = '<p class="hint">No lines left.</p>'; return; }
+    _treCues.forEach(function (c, i) {
+      var row = document.createElement('div'); row.className = 'tre-row';
+      var t = document.createElement('span'); t.className = 'tre-time'; t.textContent = fmt(c.start);
+      var inp = document.createElement('input'); inp.className = 'tre-text'; inp.type = 'text'; inp.value = c.text;
+      inp.addEventListener('input', function () { _treCues[i].text = inp.value; });
+      var mg = document.createElement('button'); mg.type = 'button'; mg.className = 'tre-btn'; mg.textContent = '⤴'; mg.title = 'Merge into line above';
+      if (i === 0) mg.disabled = true;
+      mg.addEventListener('click', function () {
+        if (i > 0) {
+          _treCues[i - 1].text = (_treCues[i - 1].text + ' ' + _treCues[i].text).replace(/\s+/g, ' ').trim();
+          _treCues[i - 1].end = _treCues[i].end;
+          _treCues.splice(i, 1); renderTrEditor();
+        }
+      });
+      var del = document.createElement('button'); del.type = 'button'; del.className = 'tre-btn tre-del'; del.textContent = '✕'; del.title = 'Delete line';
+      del.addEventListener('click', function () { _treCues.splice(i, 1); renderTrEditor(); });
+      row.appendChild(t); row.appendChild(inp); row.appendChild(mg); row.appendChild(del);
+      list.appendChild(row);
+    });
+  }
+  function saveTranscriptEditor() {
+    if (!_treCues) return;
+    var cues = _treCues.filter(function (c) { return c.text && c.text.trim(); });
+    if (!cues.length) return toast('Every line is empty — nothing to save.', true);
+    try {
+      var fs = nodeReq('fs'), os = nodeReq('os'), pathMod = nodeReq('path');
+      var p = pathMod.join(os.tmpdir(), 'cutpilot-transcript-edited-' + Date.now() + '.srt');
+      fs.writeFileSync(p, CPCaptions.toSRT(cues), 'utf8');
+      state.transcript = { label: 'Edited transcript (' + cues.length + ' lines)', path: p, mtime: 1e16 };
+      state.transcriptManual = true;
+    } catch (e) { return toast('Couldn\'t save edits: ' + e.message, true); }
+    $('tr-editor').classList.add('hidden');
+    refreshMogrtSheetTr();
+    setTranscriptBar('ok', '✅', 'Words ready — ' + cues.length + ' lines (edited)', 'Change');
+    toast('✓ Saved your edits — ' + cues.length + ' lines. Now add captions.');
   }
 
   // ===================================================== TEMPLATE LIBRARY ====
