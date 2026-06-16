@@ -48,12 +48,29 @@
   var settings = loadSettings();
   var _booted = false;            // true once boot() has restored the saved look
   var LOOK_KEY = 'cutpilot.look'; // persisted caption look (Customize state)
+  /* Persisted settings live in BOTH localStorage and a file in the home dir.
+     The installer clears the CEP cache (to load new files), which also wipes
+     localStorage — the file copy means ffmpeg/whisper/model paths survive a
+     reinstall instead of needing to be re-entered each update. */
+  function _settingsFile() {
+    try { return nodeReq('path').join(nodeReq('os').homedir(), '.cutpilot-settings.json'); }
+    catch (e) { return null; }
+  }
   function loadSettings() {
-    try { return JSON.parse(localStorage.getItem('cutpilot.settings')) || {}; }
-    catch (e) { return {}; }
+    var s = {};
+    try { s = JSON.parse(localStorage.getItem('cutpilot.settings')) || {}; } catch (e) {}
+    try {
+      var f = _settingsFile();
+      if (f) { var fs = nodeReq('fs'); if (fs.existsSync(f)) {
+        var fileS = JSON.parse(fs.readFileSync(f, 'utf8')) || {};
+        for (var k in fileS) if (fileS.hasOwnProperty(k) && (s[k] == null || s[k] === '')) s[k] = fileS[k];
+      } }
+    } catch (e2) {}
+    return s;
   }
   function saveSettings() {
-    localStorage.setItem('cutpilot.settings', JSON.stringify(settings));
+    try { localStorage.setItem('cutpilot.settings', JSON.stringify(settings)); } catch (e) {}
+    try { var f = _settingsFile(); if (f) nodeReq('fs').writeFileSync(f, JSON.stringify(settings), 'utf8'); } catch (e2) {}
   }
 
   // ---------------------------------------------------------------- dom ----
@@ -127,11 +144,33 @@
                  '/opt/homebrew/bin/main', '/usr/local/bin/whisper',
                  'C:\\whisper\\whisper-cli.exe', 'C:\\whisper\\main.exe'];
     for (var i = 0; i < cands.length; i++) if (tryPath(cands[i])) return (_whisper = cands[i]);
+    // Last resort: ask the user's LOGIN shell where it is — picks up the full
+    // PATH (incl. Homebrew) that a GUI-launched app otherwise wouldn't see.
+    try {
+      var cp = nodeReq('child_process');
+      var out = cp.execSync("/bin/bash -lc 'command -v whisper-cli || command -v whisper-cpp || command -v whisper || command -v main' 2>/dev/null",
+                            { timeout: 5000 }).toString().split('\n')[0].trim();
+      if (out && tryPath(out)) return (_whisper = out);
+    } catch (e3) {}
     return null;
   }
   function resolveWhisperModel() {
     var fs; try { fs = nodeReq('fs'); } catch (e) { return settings.whisperModel || null; }
-    try { if (settings.whisperModel && fs.existsSync(settings.whisperModel)) return settings.whisperModel; } catch (e2) {}
+    var tryPath = function (p) { try { return p && fs.existsSync(p); } catch (e2) { return false; } };
+    if (tryPath(settings.whisperModel)) return settings.whisperModel;
+    // auto-find a ggml*.bin model in common spots (incl. next to the engine)
+    try {
+      var os = nodeReq('os'), pathMod = nodeReq('path');
+      var dirs = [pathMod.join(os.homedir(), 'Downloads'), pathMod.join(os.homedir(), 'Documents'),
+                  os.homedir(), '/opt/homebrew/share/whisper-cpp', '/usr/local/share/whisper-cpp'];
+      if (_whisper) dirs.unshift(pathMod.dirname(_whisper), pathMod.join(pathMod.dirname(_whisper), '..', 'share', 'whisper-cpp'));
+      for (var d = 0; d < dirs.length; d++) {
+        var names; try { names = fs.readdirSync(dirs[d]); } catch (eD) { continue; }
+        for (var n = 0; n < names.length; n++) {
+          if (/^ggml.*\.bin$/i.test(names[n])) return pathMod.join(dirs[d], names[n]);
+        }
+      }
+    } catch (e4) {}
     return null;
   }
 
