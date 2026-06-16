@@ -219,9 +219,13 @@
       var wav = pathMod.join(os.tmpdir(), 'cutpilot-asr-' + stamp + '.wav');
       var outBase = pathMod.join(os.tmpdir(), 'cutpilot-asr-' + stamp);
       var inP = clip.inPoint || 0, outP = clip.outPoint || 0, dur = (outP > inP) ? (outP - inP) : 0;
-      var ffArgs = ['-y', '-ss', String(inP)];
+      // -ss BEFORE -i (fast, accurate-enough seek to the clip's in-point) and
+      // -t AFTER -i (output duration counted FROM the seek point). Putting -t
+      // before -i makes some ffmpeg builds measure it from 0, which truncates a
+      // trimmed clip's tail — the cause of "captions only cover part of it".
+      var ffArgs = ['-y', '-ss', String(inP), '-i', clip.mediaPath];
       if (dur > 0) ffArgs = ffArgs.concat(['-t', String(dur)]);
-      ffArgs = ffArgs.concat(['-i', clip.mediaPath, '-vn', '-ac', '1', '-ar', '16000', wav]);
+      ffArgs = ffArgs.concat(['-vn', '-ac', '1', '-ar', '16000', wav]);
       var shortName = (clip.name || 'clip').replace(/\.[^.]+$/, '');
       setTranscriptBar('', '🎙️', 'Extracting audio from “' + shortName + '”…', null);
       return runProc(ff, ffArgs).then(function () {
@@ -241,9 +245,11 @@
         state.transcript = { label: 'CutPilot transcript (' + cues.length + ' lines)', path: finalPath, mtime: 1e16 };
         state.transcriptManual = true;                      // it's ours — don't let auto-rescan replace it
         $('tr-help').classList.add('hidden');
-        setTranscriptBar('ok', '✅', 'Transcribed “' + shortName + '” — ' + cues.length + ' lines', 'Change');
-        toast('✓ CutPilot transcribed “' + shortName + '” — ' + cues.length + ' caption lines.' +
-              (res.fromSelection ? '' : ' (Used the longest clip with audio — select a clip to target a specific one.)'));
+        var span = fmt(cues[0].start) + '–' + fmt(cues[cues.length - 1].end);   // coverage, so partial transcripts are obvious
+        setTranscriptBar('ok', '✅', 'Transcribed “' + shortName + '” — ' + cues.length + ' lines · ' + span, 'Change');
+        toast('✓ Transcribed “' + shortName + '” — ' + cues.length + ' lines, covering ' + span +
+              '. If that span is shorter than the clip, tell me.' +
+              (res.fromSelection ? '' : ' (Used the longest clip with audio.)'));
       });
     }).catch(function (e) {
       setTranscriptBar('warn', '⚠️', 'Auto-transcribe failed', 'Get one →');
