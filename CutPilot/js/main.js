@@ -32,6 +32,8 @@
     userMogrts: [],
     selectedMogrt: null,
     mogrtWords: 0,   // words per MOGRT graphic (0 = full line)
+    mogrtParams: [],        // colour/size/font overrides for the selected custom MOGRT
+    mogrtParamsPath: null,  // which .mogrt those overrides belong to
     // template library
     customTemplates: [],
     favs: {},
@@ -1368,11 +1370,19 @@
       var p = pickFile('Choose a Motion Graphics Template', ['mogrt']);
       if (!p) return;
       state.mogrtFile = p;
+      state.mogrtParams = []; state.mogrtParamsPath = null;   // new file → fresh overrides
+      $('tpl-params').classList.add('hidden');
       $('tpl-file-name').textContent = p.split(/[\\/]/).pop();
+    });
+    // switching the installed template also clears stale overrides
+    if ($('tpl-select')) $('tpl-select').addEventListener('change', function () {
+      state.mogrtParams = []; state.mogrtParamsPath = null; $('tpl-params').classList.add('hidden');
     });
     $('btn-alt-apply').addEventListener('click', applyMogrtTemplate);
     $('btn-native-apply').addEventListener('click', applyNative);
     $('btn-tpl-inspect').addEventListener('click', inspectMogrt);
+    if ($('btn-tpl-customize')) $('btn-tpl-customize').addEventListener('click', buildMogrtCustomizer);
+    if ($('btn-tpl-preview')) $('btn-tpl-preview').addEventListener('click', previewMogrtFile);
   }
 
   /* Resolve the currently-selected .mogrt path (installed dropdown or file). */
@@ -1408,6 +1418,89 @@
         : '';
       out.textContent = path.split(/[\\/]/).pop() + ' — ' + r.count + ' fields:\n' + lines.join('\n') + foot;
     }).catch(function (e) { out.className = 'diag-out err'; out.textContent = 'Inspect failed: ' + e.message; });
+  }
+
+  /* The override the user set for prop #i, or null. */
+  function mogrtParamFor(i) {
+    for (var k = 0; k < state.mogrtParams.length; k++) if (state.mogrtParams[k].i === i) return state.mogrtParams[k];
+    return null;
+  }
+  function setMogrtParam(i, kind, value) {
+    var ex = mogrtParamFor(i);
+    if (ex) ex.value = value;
+    else state.mogrtParams.push({ i: i, kind: kind, value: value });
+  }
+
+  /* Build editable controls (colour / size / font / toggle) for the selected
+     template — the same basic params Premiere shows in Essential Graphics. */
+  function buildMogrtCustomizer() {
+    var path = selectedMogrtPath();
+    var box = $('tpl-params');
+    if (!path) { box.classList.remove('hidden'); box.innerHTML = '<p class="hint err">Pick a template first.</p>'; return; }
+    // new template → drop previous overrides
+    if (state.mogrtParamsPath !== path) { state.mogrtParams = []; state.mogrtParamsPath = path; }
+    box.classList.remove('hidden');
+    box.innerHTML = '<p class="hint">Reading template…</p>';
+    CPBridge.callHost('CP_inspectMogrt', { path: path }).then(function (r) {
+      var editable = (r.props || []).filter(function (p) {
+        return p.kind === 'color' || p.kind === 'number' || p.kind === 'bool' || p.kind === 'font';
+      });
+      if (!editable.length) {
+        box.innerHTML = '<p class="hint">This template exposes no colour/size/font controls to edit. ' +
+          (r.props && r.props.length ? 'Its text uses Premiere\'s rich format — use ✨ Add captions for the words.' : '') + '</p>';
+        return;
+      }
+      box.innerHTML = '';
+      var head = document.createElement('div'); head.className = 'mp-head';
+      head.textContent = '🎨 ' + path.split(/[\\/]/).pop() + ' — colours, size & font';
+      box.appendChild(head);
+      editable.forEach(function (p) {
+        var ov = mogrtParamFor(p.i);
+        var cur = ov ? ov.value : p.value;
+        var row = document.createElement('label'); row.className = 'mp-row';
+        var nm = document.createElement('span'); nm.className = 'mp-name'; nm.textContent = p.name;
+        row.appendChild(nm);
+        var ctrl;
+        if (p.kind === 'color') {
+          ctrl = document.createElement('input'); ctrl.type = 'color';
+          ctrl.value = /^#?[0-9a-f]{6}$/i.test(String(cur).replace('#','')) ? (String(cur).charAt(0)==='#'?cur:'#'+cur) : '#ffffff';
+          ctrl.addEventListener('input', function () { setMogrtParam(p.i, 'color', this.value); });
+        } else if (p.kind === 'number') {
+          ctrl = document.createElement('input'); ctrl.type = 'number'; ctrl.step = 'any'; ctrl.value = cur;
+          ctrl.addEventListener('input', function () { setMogrtParam(p.i, 'number', this.value); });
+        } else if (p.kind === 'bool') {
+          ctrl = document.createElement('input'); ctrl.type = 'checkbox'; ctrl.checked = !!cur;
+          ctrl.addEventListener('change', function () { setMogrtParam(p.i, 'bool', this.checked); });
+        } else { // font
+          ctrl = document.createElement('select');
+          var fonts = (typeof CPCaptions !== 'undefined' && CPCaptions.FONTS) ? CPCaptions.FONTS : [];
+          var opt0 = document.createElement('option'); opt0.value = String(cur); opt0.textContent = String(cur) + ' (current)';
+          ctrl.appendChild(opt0);
+          fonts.forEach(function (f) { var o = document.createElement('option'); o.value = f; o.textContent = f; ctrl.appendChild(o); });
+          ctrl.addEventListener('change', function () { setMogrtParam(p.i, 'font', this.value); });
+        }
+        ctrl.className = 'mp-ctrl';
+        row.appendChild(ctrl);
+        box.appendChild(row);
+      });
+      var note = document.createElement('p'); note.className = 'hint';
+      note.textContent = 'These apply to every caption graphic when you tap "Add template captions". Tap ▶ Preview to see one on the timeline. (Font changes apply only if the template exposes a font control.)';
+      box.appendChild(note);
+    }).catch(function (e) { box.innerHTML = '<p class="hint err">Couldn\'t read template: ' + e.message + '</p>'; });
+  }
+
+  /* Drop one instance at the playhead with the current overrides + a sample
+     word so the user can preview colours/size/font before captioning. */
+  function previewMogrtFile() {
+    var path = selectedMogrtPath();
+    if (!path) return toast('Pick a template first.', true);
+    var sample = 'Preview';
+    try { var c = readSelectedTranscript(); if (c && c[0]) sample = String(c[0].text).split(/\s+/).slice(0, 3).join(' '); } catch (e) {}
+    var params = (state.mogrtParamsPath === path) ? state.mogrtParams : [];
+    toast('Dropping a preview at the playhead…');
+    CPBridge.callHost('CP_previewMogrt', { path: path, seconds: 4, params: params, text: sample })
+      .then(function (r) { toast('▶ Preview placed on V' + r.track + ' at the playhead. Scrub to see it.'); })
+      .catch(function (e) { toast(e.message, true); });
   }
 
   function scanInstalledMogrts() {
@@ -1476,8 +1569,9 @@
     ensureProjectSaved().then(function (ok) {
       if (!ok) { if (btn) btn.disabled = false; capProgress(null); return null; }
       capProgress('Adding ' + tcues.length + ' template graphics');
+      var params = (state.mogrtParamsPath === mogrtPath) ? state.mogrtParams : [];
       return CPBridge.callHost('CP_insertMogrtCaptions', {
-        mogrtPath: mogrtPath, cues: tcues, videoTrack: null, audioTrack: 0
+        mogrtPath: mogrtPath, cues: tcues, videoTrack: null, audioTrack: 0, params: params
       });
     }).then(function (r) {
       if (r == null) return;

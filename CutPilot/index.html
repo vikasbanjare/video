@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.13</span>
+    <span class="ver" id="ver">v0.9.14</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -245,6 +245,11 @@
           <button id="btn-alt-apply" class="hero-btn small" style="flex:1">Add template captions</button>
           <button id="btn-tpl-inspect" class="chip-btn" title="List this template's editable fields">🔍 Inspect</button>
         </div>
+        <div class="row tight">
+          <button id="btn-tpl-customize" class="chip-btn" title="Edit this template's colours, size & font">🎨 Customize</button>
+          <button id="btn-tpl-preview" class="chip-btn" title="Drop one instance at the playhead to preview">▶ Preview</button>
+        </div>
+        <div id="tpl-params" class="tpl-params hidden"></div>
         <pre id="tpl-inspect-out" class="diag-out hidden"></pre>
       </div>
 
@@ -447,7 +452,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.13 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.14 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

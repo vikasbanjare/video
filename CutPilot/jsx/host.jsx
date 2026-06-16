@@ -870,6 +870,79 @@ function CP_propIsString(prop) {
   } catch (e) { return false; }
 }
 
+// -------------------------------------------- MOGRT param editing (safe) ----
+// Unlike the rich source-text param, a MOGRT's colour / size / toggle / font
+// controls are ordinary settable parameter types (the same ones Premiere shows
+// in Essential Graphics), so the panel can expose them for editing + preview.
+
+function CP_clamp01(x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
+function CP_hex2(n) { n = Math.round(CP_clamp01(n) * 255); var s = n.toString(16); return s.length < 2 ? '0' + s : s; }
+
+/* MOGRT colour values are [r,g,b,a] floats 0..1 → "#rrggbb". */
+function CP_rgbaToHex(arr) {
+  try { return '#' + CP_hex2(arr[0]) + CP_hex2(arr[1]) + CP_hex2(arr[2]); } catch (e) { return '#ffffff'; }
+}
+function CP_hexToRgba(hex) {
+  hex = String(hex).replace('#', '');
+  if (hex.length === 3) hex = hex.charAt(0) + hex.charAt(0) + hex.charAt(1) + hex.charAt(1) + hex.charAt(2) + hex.charAt(2);
+  var r = parseInt(hex.substr(0, 2), 16) / 255;
+  var g = parseInt(hex.substr(2, 2), 16) / 255;
+  var b = parseInt(hex.substr(4, 2), 16) / 255;
+  if (isNaN(r) || isNaN(g) || isNaN(b)) return [1, 1, 1, 1];
+  return [r, g, b, 1];
+}
+
+/* Classify a MOGRT property so the panel can render the right control.
+   Returns { kind, value } where kind is text|color|number|bool|font|string. */
+function CP_classifyMgrtProp(p) {
+  var val = null, t = '?';
+  try { val = p.getValue(); t = typeof val; } catch (e) {}
+  var name = String(p.displayName || '').toLowerCase();
+  if (t === 'string') {
+    if (val.indexOf('capProp') !== -1 || val.indexOf('textEditValue') !== -1 || val.charAt(0) === '{') {
+      return { kind: 'text', value: '' };
+    }
+    if (name.indexOf('font') !== -1 || name.indexOf('typeface') !== -1) return { kind: 'font', value: String(val) };
+    return { kind: 'string', value: String(val) };
+  }
+  if (t === 'number') return { kind: 'number', value: val };
+  if (t === 'boolean') return { kind: 'bool', value: val };
+  if (t === 'object' && val && typeof val.length === 'number' && typeof val[0] === 'number') {
+    if (val.length >= 3) return { kind: 'color', value: CP_rgbaToHex(val) };
+    return { kind: 'number', value: val[0] };
+  }
+  return { kind: 'string', value: String(val) };
+}
+
+/* Apply one override to a MOGRT property (colour/size/toggle/font). Best
+   effort — never throws, returns true on success. */
+function CP_setMgrtParam(prop, kind, value) {
+  try {
+    var v;
+    if (kind === 'color') v = CP_hexToRgba(value);
+    else if (kind === 'number') v = parseFloat(value);
+    else if (kind === 'bool') v = !!value;
+    else if (kind === 'font') v = String(value);
+    else return false;
+    if (kind === 'number' && isNaN(v)) return false;
+    try { prop.setValue(v, true); return true; } catch (e1) {}
+    try { prop.setValue(v); return true; } catch (e2) {}
+  } catch (e) {}
+  return false;
+}
+
+/* Apply a list of overrides [{i, kind, value}] to a clip's MGT component. */
+function CP_applyMgrtParams(comp, params) {
+  if (!comp || !comp.properties || !params) return 0;
+  var n = 0;
+  for (var k = 0; k < params.length; k++) {
+    var pr = params[k];
+    if (pr == null || pr.i == null || pr.i < 0 || pr.i >= comp.properties.numItems) continue;
+    if (CP_setMgrtParam(comp.properties[pr.i], pr.kind, pr.value)) n++;
+  }
+  return n;
+}
+
 function CP_insertMogrtCaptions(argsJson) {
   try {
     var args = JSON.parse(argsJson);
@@ -958,6 +1031,8 @@ function CP_insertMogrtCaptions(argsJson) {
             fieldNames = [];
             for (var fn = 0; fn < props.numItems; fn++) fieldNames.push(String(props[fn].displayName || ('#' + fn)));
           }
+          // apply the panel's colour/size/font overrides to this graphic
+          CP_applyMgrtParams(comp, args.params);
           var done = false;
           // 1) match by display-name keyword
           for (var k = 0; k < KEYS.length && !done; k++) {
@@ -1056,7 +1131,11 @@ function CP_inspectMogrt(argsJson) {
           // the first 40 chars. `rich` flags AE source-text that can't be set.
           var rich = (type === 'string' && (raw.indexOf('capProp') !== -1 || raw.indexOf('textEditValue') !== -1));
           var sample = (raw.length > 6000) ? (raw.substr(0, 6000) + '…[' + raw.length + ' chars total]') : raw;
-          props.push({ i: i, name: String(p.displayName), type: type, rich: rich, len: raw.length, sample: sample });
+          // classify so the panel can render an editable control (colour/size/
+          // toggle/font) for the basic params, like Essential Graphics does.
+          var cls = CP_classifyMgrtProp(p);
+          props.push({ i: i, name: String(p.displayName), type: type, rich: rich, len: raw.length,
+                       sample: sample, kind: cls.kind, value: cls.value });
         }
       }
     } catch (eComp) {}
@@ -1090,7 +1169,19 @@ function CP_previewMogrt(argsJson) {
     var clip = seq.importMGT(args.path, CP_ticksFromSeconds(at), vTrack, 0);
     if (!clip) return CP_fail('Premiere could not place this template.');
     try { clip.end = CP_timeFromSeconds(at + (args.seconds || 4)); } catch (eE) {}
-    return CP_ok({ placedAt: at, track: vTrack + 1 });
+    // apply the panel's colour/size/font overrides + sample text to the preview
+    var pParams = 0;
+    try {
+      var pcomp = clip.getMGTComponent();
+      if (pcomp) {
+        pParams = CP_applyMgrtParams(pcomp, args.params);
+        if (args.text && pcomp.properties) {
+          var ptp = CP_findTextProp(pcomp.properties, ['text', 'caption', 'title', 'subtitle', 'headline', 'body']);
+          if (ptp) CP_setMgrtText(ptp, args.text, true);
+        }
+      }
+    } catch (ePv) {}
+    return CP_ok({ placedAt: at, track: vTrack + 1, paramsSet: pParams });
   } catch (e) { return CP_fail(e.message); }
 }
 

@@ -348,6 +348,17 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .diag-out.err { color: #ff9b96; }
 
+/* MOGRT param editor (colours / size / font) */
+.tpl-params { background: var(--card2); border: 1px solid var(--line); border-radius: 12px; padding: 10px; margin-bottom: 11px; }
+.tpl-params .mp-head { font-size: 11px; font-weight: 700; opacity: .85; margin-bottom: 8px; }
+.mp-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 6px 0; }
+.mp-row .mp-name { font-size: 11px; opacity: .9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-row .mp-ctrl { flex: 0 0 auto; }
+.mp-row input[type="color"] { width: 34px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; }
+.mp-row input[type="number"] { width: 90px; }
+.mp-row select.mp-ctrl { max-width: 160px; }
+.hint.err { color: #ff9b96; }
+
 /* results */
 .stats { font-size: 12px; margin-bottom: 9px; color: var(--dim); }
 .stats b { color: var(--ok); font-size: 13.5px; }
