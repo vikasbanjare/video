@@ -296,11 +296,13 @@
       if (dur > 0) ffArgs = ffArgs.concat(['-t', String(dur)]);
       ffArgs = ffArgs.concat(['-vn', '-ac', '1', '-ar', '16000', wav]);
       var shortName = (clip.name || 'clip').replace(/\.[^.]+$/, '');
+      var modelLabel = String(model).split(/[\\/]/).pop();        // what actually ran (catches silent base fallback)
       var pieces = insts.length > 1 ? (' (' + insts.length + ' cuts)') : '';
       setTranscriptBar('', '🎙️', 'Extracting audio from “' + shortName + '”' + pieces + '…', null);
       return runProc(ff, ffArgs).then(function () {
-        setTranscriptBar('', '🎙️', 'Transcribing (' + lang + ') — this can take a minute…', null);
-        var wArgs = ['-m', model, '-f', wav, '-osrt', '-of', outBase, '-l', wlang];
+        setTranscriptBar('', '🎙️', 'Transcribing with ' + modelLabel + ' — this can take a minute…', null);
+        // beam search (-bs 5) decodes more carefully than greedy → more accurate.
+        var wArgs = ['-m', model, '-f', wav, '-osrt', '-of', outBase, '-l', wlang, '-bs', '5'];
         return runProc(wbin, wArgs);
       }).then(function () {
         var srtPath = outBase + '.srt';
@@ -329,10 +331,11 @@
         $('tr-help').classList.add('hidden');
         refreshMogrtSheetTr();   // keep the MOGRT sheet's status in sync
         var span = fmt(cues[0].start) + '–' + fmt(cues[cues.length - 1].end);   // coverage, so partial transcripts are obvious
-        setTranscriptBar('ok', '✅', 'Transcribed “' + shortName + '” — ' + cues.length + ' lines · ' + span, 'Change');
-        toast('✓ Transcribed “' + shortName + '”' + (insts.length > 1 ? ' (' + insts.length + ' cuts)' : '') +
-              ' — ' + cues.length + ' lines, covering ' + span + '.' +
-              (res.fromSelection ? '' : ' (Auto-picked the main clip.)'));
+        setTranscriptBar('ok', '✅', 'Transcribed — ' + cues.length + ' lines · ' + span + ' · ' + modelLabel, 'Change');
+        var wantModel = modelFileName();
+        var fellBack = (modelLabel !== wantModel);   // chosen model couldn't load → ran a fallback
+        toast('✓ Transcribed “' + shortName + '” — ' + cues.length + ' lines using ' + modelLabel + '.' +
+              (fellBack ? ' ⚠️ Your chosen model (' + wantModel + ') didn\'t load — check internet; it used a fallback.' : ''));
       });
     });
     }).catch(function (e) {
