@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.37</span>
+    <span class="ver" id="ver">v0.9.38</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -37,6 +37,12 @@
 
     <!-- ===================== TEMPLATE LIBRARY (browser) ==================== -->
     <div id="view-templates" class="subview">
+      <div class="seg-control lib-mode-switch" id="lib-mode">
+        <button data-mode="styles" class="on">🎨 Caption styles</button>
+        <button data-mode="mogrt">🎬 My .mogrt files</button>
+      </div>
+      <p class="hint mode-hint" id="mogrt-mode-hint" style="display:none">Upload your own Premiere
+        Motion Graphics Templates and edit their text, colour &amp; font here. Auto-transcribe is in the editor for these too.</p>
       <div class="lib-toolbar">
         <input type="text" id="lib-search" placeholder="🔍 Search style, color, industry…">
         <select id="lib-sort">
@@ -55,7 +61,7 @@
       <div class="cat-chips" id="lib-cats"></div>
       <div class="tpl-grid" id="tpl-grid"></div>
       <div class="row tight" style="justify-content:center">
-        <button id="btn-add-mogrt" class="chip-btn">➕ Add .mogrt file</button>
+        <button id="btn-add-mogrt" class="hero-btn small">➕ Add .mogrt file</button>
         <button id="btn-tpl-import" class="chip-btn">⤓ Import style</button>
       </div>
     </div>
@@ -66,6 +72,8 @@
         <div class="ms-name" id="ms-name">Template</div>
         <p class="hint" id="ms-hint">Premiere Motion Graphics Template. Preview it on your
            timeline, or use it to caption your whole transcript.</p>
+        <div id="ms-tr" class="ms-tr"></div>
+        <button id="ms-transcribe" class="chip-btn">🎙️ Auto-transcribe my clip</button>
         <label style="font-size:11px">Words per graphic</label>
         <div class="wc-bar" id="ms-words">
           <button class="wc-btn" id="ms-wc-minus" type="button">−</button>
@@ -73,6 +81,8 @@
           <button class="wc-btn" id="ms-wc-plus" type="button">+</button>
           <button class="chip-btn" id="ms-wc-full" type="button">Full line</button>
         </div>
+        <!-- editable text colour / font / size / template colours, built on open -->
+        <div id="ms-customizer" class="ms-customizer"></div>
         <button id="ms-preview" class="hero-btn small alt">▶ Preview on timeline</button>
         <button id="ms-use" class="hero-btn small">✨ Caption with this template</button>
         <button id="ms-inspect" class="chip-btn">🔍 Inspect fields</button>
@@ -499,7 +509,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.37 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.38 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

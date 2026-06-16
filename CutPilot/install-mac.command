@@ -6,7 +6,7 @@
 
 echo
 echo "  ┌──────────────────────────────────────────────┐"
-echo "  │  Installing CutPilot v0.9.37 for Premiere Pro  │"
+echo "  │  Installing CutPilot v0.9.38 for Premiere Pro  │"
 echo "  └──────────────────────────────────────────────┘"
 echo
 echo "  ⚠  QUIT Premiere Pro completely first (Cmd+Q), then press Enter."
@@ -46,7 +46,7 @@ if [ -f "$DEST/index.html" ]; then
   echo "  Next:"
   echo "   1. Open Premiere Pro"
   echo "   2. Window ▸ Extensions ▸ CutPilot"
-  echo "   3. Check the top of the panel says  v0.9.37  — that confirms the"
+  echo "   3. Check the top of the panel says  v0.9.38  — that confirms the"
   echo "      new build loaded. If it shows an older number, fully quit"
   echo "      Premiere (Cmd+Q) and reopen."
 else

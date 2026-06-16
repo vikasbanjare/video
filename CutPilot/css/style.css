@@ -348,6 +348,9 @@ input[type="range"]::-webkit-slider-thumb {
 .seg-control button.on { background: var(--grad); color: #fff; }
 .seg-control.sub { margin: 0 0 10px; }
 .seg-control.mini { margin-top: 4px; }
+.lib-mode-switch { margin: 2px 0 10px; }
+.lib-mode-switch button { padding: 9px 2px; font-size: 12px; }
+.mode-hint { margin: 0 0 10px; }
 
 .map-label { font-size: 11px; font-weight: 700; color: var(--dim); margin: 6px 0 7px; }
 .map-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
@@ -366,7 +369,11 @@ input[type="range"]::-webkit-slider-thumb {
 .mogrt-sheet .ms-card {
   width: 100%; background: var(--card); border-top-left-radius: 18px; border-top-right-radius: 18px;
   border: 1px solid var(--line); padding: 16px 16px 14px; box-shadow: 0 -10px 40px rgba(0,0,0,.5);
+  max-height: 88vh; overflow-y: auto;
 }
+.ms-customizer:not(:empty) { margin: 10px 0; }
+.ms-tr { font-size: 11px; color: var(--dim); margin: 2px 0 6px; }
+.ms-tr.ok { color: var(--ok, #6cc59a); }
 .ms-name { font-size: 15px; font-weight: 800; margin-bottom: 4px; }
 .ms-card .hero-btn { width: 100%; }
 .ms-card .link-btn { display: block; margin: 6px auto 0; }
