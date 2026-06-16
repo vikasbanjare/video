@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.52</span>
+    <span class="ver" id="ver">v0.9.53</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -33,10 +33,8 @@
     <div class="card">
       <div class="step-head"><span class="step-num">1</span><span class="step-title">Get your words</span></div>
       <p class="hint">Select your talking clip in the timeline, then transcribe it — CutPilot reads the audio itself (no Premiere export).</p>
-      <div class="ctrl-row">
-        <label>Accuracy<div id="tr-quality" class="dd-mount"></div></label>
-        <label>Language<div id="tr-lang" class="dd-mount"></div></label>
-      </div>
+      <label class="fld-full">Accuracy / engine<div id="tr-quality" class="dd-mount"></div></label>
+      <label class="fld-full">Language<div id="tr-lang" class="dd-mount"></div></label>
       <div class="tr-bar" id="tr-bar">
         <span class="tr-ico" id="tr-ico">🔎</span>
         <span class="tr-text" id="tr-text">looking for your words…</span>
@@ -491,14 +489,12 @@
     <div class="card">
       <div class="step-head"><span class="step-title">🎙️ Auto-transcribe</span></div>
       <div id="whisper-status" class="hint">Let CutPilot make the transcript itself — no Premiere export.</div>
-      <div class="ctrl-row">
-        <label>Accuracy <span class="dim" id="set-quality-note"></span>
-          <div id="set-whisper-quality"></div>
-        </label>
-        <label>Language
-          <div id="set-whisper-lang"></div>
-        </label>
-      </div>
+      <label class="fld-full">Accuracy / engine <span class="dim" id="set-quality-note"></span>
+        <div id="set-whisper-quality" class="dd-mount"></div>
+      </label>
+      <label class="fld-full">Language
+        <div id="set-whisper-lang" class="dd-mount"></div>
+      </label>
       <p class="hint">Higher accuracy = bigger model (auto-downloads the first time you transcribe).
         Pick a language, or leave on Auto-detect.</p>
       <label>☁️ Groq API key <span class="dim">— for "Cloud" accuracy. Free at console.groq.com/keys</span>
@@ -541,7 +537,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.52 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.53 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>
