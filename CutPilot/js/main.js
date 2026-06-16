@@ -189,7 +189,58 @@
     return null;
   }
 
-  /* Spawn a process, resolve on exit 0, collecting stderr (whisper logs there). */
+  // Accuracy presets (bigger = more accurate, slower, larger download) and a
+  // curated language list. whisper has English-only ".en" models (best for
+  // English) and multilingual models (no suffix) for everything else / auto.
+  var WHISPER_QUALITIES = [
+    { value: 'tiny', label: 'Fastest · tiny (~75MB)' },
+    { value: 'base', label: 'Fast · base (~150MB)' },
+    { value: 'small', label: 'Better · small (~470MB)' },
+    { value: 'medium', label: 'Best · medium (~1.5GB)' }
+  ];
+  var WHISPER_LANGS = [
+    { value: 'en', label: 'English' }, { value: 'auto', label: 'Auto-detect' },
+    { value: 'hi', label: 'Hindi' }, { value: 'es', label: 'Spanish' },
+    { value: 'fr', label: 'French' }, { value: 'de', label: 'German' },
+    { value: 'pt', label: 'Portuguese' }, { value: 'it', label: 'Italian' },
+    { value: 'ru', label: 'Russian' }, { value: 'ja', label: 'Japanese' },
+    { value: 'zh', label: 'Chinese' }, { value: 'ar', label: 'Arabic' },
+    { value: 'ko', label: 'Korean' }, { value: 'id', label: 'Indonesian' },
+    { value: 'tr', label: 'Turkish' }, { value: 'nl', label: 'Dutch' },
+    { value: 'pl', label: 'Polish' }, { value: 'uk', label: 'Ukrainian' }
+  ];
+  function _modelsDir() { try { return nodeReq('path').join(nodeReq('os').homedir(), '.cutpilot', 'models'); } catch (e) { return null; } }
+  function modelFileName() {
+    var q = settings.whisperQuality || 'base';
+    var enOnly = ((settings.whisperLang || 'en') === 'en');   // .en models are English-only & sharper for English
+    return 'ggml-' + q + (enOnly ? '.en' : '') + '.bin';
+  }
+  /* The model to transcribe with, downloading it on first use. Returns a Promise.
+     A manually-set model path always wins (advanced override). */
+  function resolveTranscribeModel() {
+    var fs, path; try { fs = nodeReq('fs'); path = nodeReq('path'); } catch (e) { return Promise.reject(new Error('Node unavailable')); }
+    var tryP = function (p) { try { return p && fs.existsSync(p) ? p : null; } catch (e2) { return null; } };
+    if (tryP(settings.whisperModel)) return Promise.resolve(settings.whisperModel);
+    var name = modelFileName(), os = nodeReq('os');
+    var dirs = [_modelsDir(), path.join(os.homedir(), 'Downloads'), path.join(os.homedir(), 'Documents'), os.homedir()];
+    for (var i = 0; i < dirs.length; i++) { var hit = dirs[i] && tryP(path.join(dirs[i], name)); if (hit) return Promise.resolve(hit); }
+    return downloadModel(name, path.join(_modelsDir(), name));
+  }
+  function downloadModel(name, target) {
+    return new Promise(function (resolve, reject) {
+      var cp, fs, path; try { cp = nodeReq('child_process'); fs = nodeReq('fs'); path = nodeReq('path'); } catch (e) { return reject(e); }
+      try { fs.mkdirSync(path.dirname(target), { recursive: true }); } catch (e) {}
+      var url = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/' + name;
+      setTranscriptBar('', '⬇️', 'Downloading ' + name + ' — one-time, please wait…', null);
+      var p; try { p = cp.spawn('curl', ['-L', '--fail', '-o', target, url]); } catch (e) { return reject(e); }
+      p.on('error', reject);
+      p.on('close', function (code) {
+        if (code === 0) { try { if (fs.statSync(target).size > 1e6) return resolve(target); } catch (e) {} }
+        try { fs.unlinkSync(target); } catch (e) {}
+        reject(new Error('couldn\'t download model "' + name + '" — check your internet, or set a model path in Settings.'));
+      });
+    });
+  }
   function runProc(bin, args, onLog) {
     return new Promise(function (resolve, reject) {
       var cp; try { cp = nodeReq('child_process'); } catch (e) { return reject(e); }
@@ -209,10 +260,10 @@
     if (!ff) return toast('Auto-transcribe needs ffmpeg — set it in Settings (brew install ffmpeg).', true);
     var wbin = resolveWhisper();
     if (!wbin) return toast('Set the whisper engine in Settings → Auto-transcribe (brew install whisper-cpp).', true);
-    var model = resolveWhisperModel();
-    if (!model) return toast('Pick a whisper model file in Settings (e.g. ggml-base.en.bin).', true);
-    setTranscriptBar('', '🎙️', 'Finding the clip with your voice…', null);
-    CPBridge.callHost('CP_getTranscribeSource').then(function (res) {
+    var lang = settings.whisperLang || 'en';
+    setTranscriptBar('', '🎙️', 'Preparing the speech model…', null);
+    resolveTranscribeModel().then(function (model) {
+    return CPBridge.callHost('CP_getTranscribeSource').then(function (res) {
       var clip = res.clip;
       if (!clip || !clip.mediaPath) throw new Error('Put your video or audio clip on the timeline first.');
       // Every timeline piece that uses this recording (jump-cuts of one source).
@@ -236,8 +287,9 @@
       var pieces = insts.length > 1 ? (' (' + insts.length + ' cuts)') : '';
       setTranscriptBar('', '🎙️', 'Extracting audio from “' + shortName + '”' + pieces + '…', null);
       return runProc(ff, ffArgs).then(function () {
-        setTranscriptBar('', '🎙️', 'Transcribing — this can take a minute…', null);
-        return runProc(wbin, ['-m', model, '-f', wav, '-osrt', '-of', outBase]);
+        setTranscriptBar('', '🎙️', 'Transcribing (' + lang + ') — this can take a minute…', null);
+        var wArgs = ['-m', model, '-f', wav, '-osrt', '-of', outBase, '-l', lang];
+        return runProc(wbin, wArgs);
       }).then(function () {
         var srtPath = outBase + '.srt';
         if (!fs.existsSync(srtPath)) throw new Error('the engine produced no transcript');
@@ -269,6 +321,7 @@
               ' — ' + cues.length + ' lines, covering ' + span + '.' +
               (res.fromSelection ? '' : ' (Auto-picked the main clip.)'));
       });
+    });
     }).catch(function (e) {
       setTranscriptBar('warn', '⚠️', 'Auto-transcribe failed', 'Get one →');
       toast('Auto-transcribe failed: ' + e.message, true);
@@ -2778,9 +2831,25 @@
     _whisper = null;
     var el = $('whisper-status'); if (!el) return;
     var w = resolveWhisper(), m = resolveWhisperModel();
-    if (w && m) { el.textContent = '✅ Ready: ' + w.split(/[\\/]/).pop() + ' + ' + m.split(/[\\/]/).pop(); }
-    else if (w && !m) { el.textContent = '◐ Engine found — now pick a model (.bin) below.'; }
-    else { el.textContent = 'Let CutPilot make the transcript itself — install the engine + model below.'; }
+    var willUse = modelFileName();   // what accuracy+language will fetch/use
+    if (w) { el.textContent = '✅ Engine ready · will use ' + willUse + (m ? '' : ' (downloads on first use)'); }
+    else { el.textContent = 'Let CutPilot make the transcript itself — install the engine below.'; }
+    var note = $('set-quality-note');
+    if (note) { var q = (settings.whisperQuality || 'base'); var qo = WHISPER_QUALITIES.filter(function (x) { return x.value === q; })[0]; note.textContent = qo ? '· ' + qo.label.replace(/^[^·]*· /, '') : ''; }
+  }
+  /* Mount the custom Accuracy + Language dropdowns (native <select> can fail in CEP). */
+  var _qDD = null, _langDD = null;
+  function mountWhisperDropdowns() {
+    if ($('set-whisper-quality') && !_qDD && typeof makeDropdown === 'function') {
+      _qDD = makeDropdown(WHISPER_QUALITIES, settings.whisperQuality || 'base',
+        function (v) { settings.whisperQuality = v; saveSettings(); refreshWhisperStatus(); }, 'base');
+      $('set-whisper-quality').appendChild(_qDD.el);
+    }
+    if ($('set-whisper-lang') && !_langDD && typeof makeDropdown === 'function') {
+      _langDD = makeDropdown(WHISPER_LANGS, settings.whisperLang || 'en',
+        function (v) { settings.whisperLang = v; saveSettings(); refreshWhisperStatus(); }, 'English');
+      $('set-whisper-lang').appendChild(_langDD.el);
+    }
   }
   if ($('btn-whisper-pick')) $('btn-whisper-pick').addEventListener('click', function () {
     var p = pickFile('Locate the whisper engine (whisper-cli / main)', []); if (p) $('set-whisper').value = p;
@@ -2942,6 +3011,7 @@
   });
 
   refreshFfmpegStatus();
+  mountWhisperDropdowns();
   refreshWhisperStatus();
 
   boot();

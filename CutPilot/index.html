@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.39</span>
+    <span class="ver" id="ver">v0.9.40</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -471,10 +471,16 @@
     <div class="card">
       <div class="step-head"><span class="step-title">🎙️ Auto-transcribe</span></div>
       <div id="whisper-status" class="hint">Let CutPilot make the transcript itself — no Premiere export.</div>
-      <p class="hint">One-time setup (macOS): open Terminal →
-        <code>brew install whisper-cpp</code>, then download a model, e.g.
-        <code>ggml-base.en.bin</code> from huggingface.co/ggerganov/whisper.cpp,
-        and point to it below. Then use <b>✨ Auto-transcribe my clip</b> on the Captions tab.</p>
+      <div class="ctrl-row">
+        <label>Accuracy <span class="dim" id="set-quality-note"></span>
+          <div id="set-whisper-quality"></div>
+        </label>
+        <label>Language
+          <div id="set-whisper-lang"></div>
+        </label>
+      </div>
+      <p class="hint">Higher accuracy = bigger model (auto-downloads the first time you transcribe).
+        Pick a language, or leave on Auto-detect. The model below is an optional manual override.</p>
       <label>whisper engine path
         <div class="row tight">
           <input type="text" id="set-whisper" placeholder="/opt/homebrew/bin/whisper-cli">
@@ -509,7 +515,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.39 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.40 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>
