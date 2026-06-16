@@ -1033,6 +1033,15 @@ function CP_classifyMgrtProp(p) {
    effort — never throws, returns true on success. */
 function CP_setMgrtParam(prop, kind, value) {
   try {
+    if (kind === 'point') {
+      // position param — getValue returns {x,y}; try object then array forms
+      var px = (value && value.x != null) ? Number(value.x) : 0;
+      var py = (value && value.y != null) ? Number(value.y) : 0;
+      try { prop.setValue({ x: px, y: py }, true); return true; } catch (ep1) {}
+      try { prop.setValue([px, py], true); return true; } catch (ep2) {}
+      try { prop.setValue([px, py]); return true; } catch (ep3) {}
+      return false;
+    }
     var v;
     if (kind === 'color') v = CP_hexToRgba(value);
     else if (kind === 'colorint') v = CP_hexToInt(value);

@@ -365,6 +365,15 @@ input[type="range"]::-webkit-slider-thumb {
 .mp-row select.mp-ctrl { max-width: 160px; }
 .mp-color { display: inline-flex; align-items: center; gap: 6px; }
 .mp-color .mp-hex { width: 80px; font: 11px ui-monospace, "JetBrains Mono", monospace; text-transform: uppercase; }
+.mp-slider { display: inline-flex; align-items: center; gap: 6px; }
+.mp-slider input[type="range"] { width: 92px; }
+.mp-slider .mp-snum { width: 56px; }
+.mp-point { display: inline-flex; align-items: center; gap: 4px; }
+.mp-point .mp-xy { width: 56px; }
+.mp-point .mp-xylbl { font-size: 10px; opacity: .55; }
+/* let the editor's rows breathe a bit more, and align controls right */
+.mp-row { min-height: 26px; }
+.mp-row .mp-name { flex: 1 1 auto; }
 .hint.err { color: #ff9b96; }
 
 /* results */

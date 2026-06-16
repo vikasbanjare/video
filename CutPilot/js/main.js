@@ -1497,6 +1497,61 @@
     inp.addEventListener('change', function () { onChange(this.checked); });
     row.appendChild(inp);
   }
+  function mpHeader(box, label) {
+    var h = document.createElement('div'); h.className = 'mp-sub'; h.textContent = label; box.appendChild(h);
+  }
+  function mpAddSlider(box, label, cur, min, max, onChange) {
+    var row = mpRow(box, label);
+    var wrap = document.createElement('span'); wrap.className = 'mp-ctrl mp-slider';
+    var rng = document.createElement('input'); rng.type = 'range';
+    if (min != null) rng.min = min; if (max != null) rng.max = max; rng.step = 'any';
+    var num = document.createElement('input'); num.type = 'number'; num.step = 'any'; num.className = 'mp-snum';
+    if (cur != null && cur !== '') { rng.value = cur; num.value = (Math.round(Number(cur) * 100) / 100); }
+    rng.addEventListener('input', function () { num.value = (Math.round(Number(rng.value) * 100) / 100); onChange(rng.value); });
+    num.addEventListener('input', function () { rng.value = num.value; onChange(num.value); });
+    wrap.appendChild(rng); wrap.appendChild(num); row.appendChild(wrap);
+  }
+  function mpAddColor(box, label, curHex, onChange) {
+    var row = mpRow(box, label);
+    var hex = String(curHex || '#ffffff'); if (hex.charAt(0) !== '#') hex = '#' + hex;
+    if (!/^#[0-9a-f]{6}$/i.test(hex)) hex = '#ffffff';
+    var wrap = document.createElement('span'); wrap.className = 'mp-ctrl mp-color';
+    var sw = document.createElement('input'); sw.type = 'color'; sw.value = hex;
+    var hx = document.createElement('input'); hx.type = 'text'; hx.className = 'mp-hex'; hx.value = hex; hx.maxLength = 7;
+    sw.addEventListener('input', function () { hx.value = sw.value; onChange(sw.value); });
+    hx.addEventListener('input', function () { var v = hx.value.charAt(0) === '#' ? hx.value : '#' + hx.value; if (/^#[0-9a-f]{6}$/i.test(v)) { sw.value = v; onChange(v); } });
+    wrap.appendChild(sw); wrap.appendChild(hx); row.appendChild(wrap);
+  }
+  function mpAddPoint(box, label, x, y, onChange) {
+    var row = mpRow(box, label);
+    var wrap = document.createElement('span'); wrap.className = 'mp-ctrl mp-point';
+    var ix = document.createElement('input'); ix.type = 'number'; ix.step = 'any'; ix.className = 'mp-xy'; ix.value = (x != null ? x : 0); ix.title = 'X';
+    var iy = document.createElement('input'); iy.type = 'number'; iy.step = 'any'; iy.className = 'mp-xy'; iy.value = (y != null ? y : 0); iy.title = 'Y';
+    function up() { onChange({ x: parseFloat(ix.value) || 0, y: parseFloat(iy.value) || 0 }); }
+    ix.addEventListener('input', up); iy.addEventListener('input', up);
+    var lx = document.createElement('span'); lx.className = 'mp-xylbl'; lx.textContent = 'X';
+    var ly = document.createElement('span'); ly.className = 'mp-xylbl'; ly.textContent = 'Y';
+    wrap.appendChild(lx); wrap.appendChild(ix); wrap.appendChild(ly); wrap.appendChild(iy);
+    row.appendChild(wrap);
+  }
+
+  /* Read the .mogrt's own definition.json (it's a zip) for the REAL control
+     tree — types, names, ranges, groups — so the editor mirrors Premiere's
+     Essential Graphics exactly. Returns clientControls[] or null. */
+  function readMogrtDefinition(path) {
+    try {
+      if (!path || !/\.mogrt$/i.test(path)) return null;
+      var cp = nodeReq('child_process');
+      var q = '"' + String(path).replace(/(["$`\\])/g, '\\$1') + '"';
+      var buf = cp.execSync('unzip -p ' + q + ' definition.json', { maxBuffer: 64 * 1024 * 1024 });
+      var d = JSON.parse(buf.toString('utf8'));
+      return (d && d.clientControls) ? d.clientControls : null;
+    } catch (e) { return null; }
+  }
+  function ctrlName(c) { try { return c.uiName.strDB[0].str; } catch (e) { return ''; } }
+  function intToHexJS(n) { n = (Math.round(Number(n)) >>> 0) & 0xFFFFFF; var s = n.toString(16); while (s.length < 6) s = '0' + s; return '#' + s; }
+  // definition.json type codes
+  var MT = { SLIDER: 2, ANGLE: 3, COLOR: 4, POINT: 5, TEXT: 6, SCALE: 9, GROUP: 10 };
 
   /* Build editable controls (colour / size / font / toggle) for the selected
      template — the same basic params Premiere shows in Essential Graphics. */
@@ -1508,94 +1563,102 @@
     if (state.mogrtParamsPath !== path) { state.mogrtParams = []; state.mogrtTextStyle = null; state.mogrtParamsPath = path; }
     box.classList.remove('hidden');
     box.innerHTML = '<p class="hint">Reading template…</p>';
+    var defs = readMogrtDefinition(path);   // the .mogrt's own control tree (or null)
     CPBridge.callHost('CP_inspectMogrt', { path: path }).then(function (r) {
-      var editable = (r.props || []).filter(function (p) {
-        return p.kind === 'color' || p.kind === 'colorint' || p.kind === 'number' || p.kind === 'bool' || p.kind === 'font';
-      });
-      // rich-text templates bake font/size/style into the source-text blob.
-      var richProp = null;
-      for (var ri = 0; ri < (r.props || []).length; ri++) if (r.props[ri].rich) { richProp = r.props[ri]; break; }
-      if (!editable.length && !richProp) {
-        box.innerHTML = '<p class="hint">This template exposes no colour/size/font controls to edit.</p>';
-        return;
-      }
+      var props = r.props || [];
       box.innerHTML = '';
       var head = document.createElement('div'); head.className = 'mp-head';
       head.textContent = '🎨 ' + path.split(/[\\/]/).pop() + ' — edit before applying';
       box.appendChild(head);
 
-      // Text-style editor for rich templates (Font / Size / CAPS / Bold /
-      // Italic), parsed from the blob and applied via the probe-verified writer.
-      if (richProp) {
-        var blob = null; try { blob = JSON.parse(richProp.sample); } catch (eB) { blob = null; }
-        var runCount = blob && blob.capPropTextRunCount;
-        if (blob && runCount === 1) {
-          var sec = document.createElement('div'); sec.className = 'mp-sub'; sec.textContent = 'Text style';
-          box.appendChild(sec);
-          var curFont = (blob.fontEditValue && blob.fontEditValue[0]) || '';
-          var curSize = (blob.fontSizeEditValue && blob.fontSizeEditValue[0]);
-          var curCaps = !!(blob.fontFSAllCapsValue && blob.fontFSAllCapsValue[0]);
-          var curBold = !!(blob.fontFSBoldValue && blob.fontFSBoldValue[0]);
-          var curItal = !!(blob.fontFSItalicValue && blob.fontFSItalicValue[0]);
-          mpAddFontSelect(box, 'Font', curFont, function (v) { richStyle().font = v || null; });
-          mpAddNumber(box, 'Size', curSize, function (v) { richStyle().size = v; });
-          mpAddCheck(box, 'ALL CAPS', curCaps, function (v) { richStyle().caps = v; });
-          mpAddCheck(box, 'Bold', curBold, function (v) { richStyle().bold = v; });
-          mpAddCheck(box, 'Italic', curItal, function (v) { richStyle().italic = v; });
-        } else if (blob && runCount > 1) {
-          var mn = document.createElement('p'); mn.className = 'hint';
-          mn.textContent = 'This template mixes several text styles, so font/size editing isn\'t available here — your words still fill in.';
-          box.appendChild(mn);
-        }
+      if (defs && defs.length) {
+        renderFromDefinition(box, defs, props);   // exact Essential-Graphics layout
+      } else {
+        renderFromInspect(box, props);            // fallback: types guessed from values
       }
-      if (editable.length) { var sec2 = document.createElement('div'); sec2.className = 'mp-sub'; sec2.textContent = 'Template controls'; box.appendChild(sec2); }
-      editable.forEach(function (p) {
-        var ov = mogrtParamFor(p.i);
-        var cur = ov ? ov.value : p.value;
-        var row = document.createElement('label'); row.className = 'mp-row';
-        var nm = document.createElement('span'); nm.className = 'mp-name'; nm.textContent = p.name;
-        row.appendChild(nm);
-
-        // Colour controls (array-colour OR packed-int colour) get a swatch +
-        // a hex field, kept in sync — pick visually or type/paste a hex code.
-        if (p.kind === 'color' || p.kind === 'colorint') {
-          var kind = p.kind;
-          var hex = String(cur); if (hex.charAt(0) !== '#') hex = '#' + hex;
-          if (!/^#[0-9a-f]{6}$/i.test(hex)) hex = '#ffffff';
-          var wrap = document.createElement('span'); wrap.className = 'mp-ctrl mp-color';
-          var sw = document.createElement('input'); sw.type = 'color'; sw.value = hex;
-          var hx = document.createElement('input'); hx.type = 'text'; hx.className = 'mp-hex'; hx.value = hex; hx.maxLength = 7; hx.placeholder = '#RRGGBB';
-          sw.addEventListener('input', function () { hx.value = sw.value; setMogrtParam(p.i, kind, sw.value); });
-          hx.addEventListener('input', function () {
-            var v = hx.value.charAt(0) === '#' ? hx.value : '#' + hx.value;
-            if (/^#[0-9a-f]{6}$/i.test(v)) { sw.value = v; setMogrtParam(p.i, kind, v); }
-          });
-          wrap.appendChild(sw); wrap.appendChild(hx);
-          row.appendChild(wrap); box.appendChild(row); return;
-        }
-
-        var ctrl;
-        if (p.kind === 'number') {
-          ctrl = document.createElement('input'); ctrl.type = 'number'; ctrl.step = 'any'; ctrl.value = cur;
-          ctrl.addEventListener('input', function () { setMogrtParam(p.i, 'number', this.value); });
-        } else if (p.kind === 'bool') {
-          ctrl = document.createElement('input'); ctrl.type = 'checkbox'; ctrl.checked = !!cur;
-          ctrl.addEventListener('change', function () { setMogrtParam(p.i, 'bool', this.checked); });
-        } else { // font (simple curated list)
-          ctrl = document.createElement('select');
-          var opt0 = document.createElement('option'); opt0.value = String(cur); opt0.textContent = 'Keep (' + String(cur) + ')';
-          ctrl.appendChild(opt0);
-          POPULAR_FONTS.forEach(function (f) { var o = document.createElement('option'); o.value = f.ps; o.textContent = f.label; ctrl.appendChild(o); });
-          ctrl.addEventListener('change', function () { setMogrtParam(p.i, 'font', this.value); });
-        }
-        ctrl.className = 'mp-ctrl';
-        row.appendChild(ctrl);
-        box.appendChild(row);
-      });
       var note = document.createElement('p'); note.className = 'hint';
-      note.textContent = 'Edit here, tap ▶ Preview to check one on the timeline, then "Add template captions" to apply to all. Size/CAPS/Bold/Italic & colours are reliable; font applies if it\'s installed.';
+      note.textContent = 'Edit here → ▶ Preview one on the timeline → "Add template captions" applies to all. Colours, size, position & toggles are reliable; font applies if it\'s installed.';
       box.appendChild(note);
     }).catch(function (e) { box.innerHTML = '<p class="hint err">Couldn\'t read template: ' + e.message + '</p>'; });
+  }
+
+  /* Build the editor straight from the template's definition.json — groups as
+     headers, and the right control per type (colour / slider / position / text
+     style), mirroring Premiere's Essential Graphics. */
+  function renderFromDefinition(box, defs, props) {
+    var firstTextDone = false;
+    for (var i = 0; i < defs.length; i++) {
+      var c = defs[i], t = c.type, name = ctrlName(c) || ('#' + i);
+      var ip = props[i] || {};                       // matching inspect prop (same order) for live values
+      if (t === MT.GROUP) { mpHeader(box, name); continue; }
+
+      if (t === MT.COLOR) {
+        // current colour: inspect returns a packed int (or hex if it guessed colour)
+        var hex = (ip.kind === 'colorint') ? ip.value
+                : (typeof ip.value === 'number') ? intToHexJS(ip.value) : '#ffffff';
+        (function (idx) { mpAddColor(box, name, hex, function (v) { setMogrtParam(idx, 'colorint', v); }); })(i);
+        continue;
+      }
+      if (t === MT.SLIDER || t === MT.ANGLE) {
+        var cv = (typeof ip.value === 'number') ? ip.value : (c.value != null ? c.value : 0);
+        (function (idx) { mpAddSlider(box, name, cv, c.min, c.max, function (v) { setMogrtParam(idx, 'number', v); }); })(i);
+        continue;
+      }
+      if (t === MT.POINT) {
+        var pv = (c.value && c.value.x != null) ? c.value : { x: 0, y: 0 };
+        (function (idx) { mpAddPoint(box, name, pv.x, pv.y, function (v) { setMogrtParam(idx, 'point', v); }); })(i);
+        continue;
+      }
+      if (t === MT.TEXT) {
+        // one shared Text-style editor (font/size/caps), from the first text's blob
+        if (!firstTextDone) {
+          firstTextDone = true;
+          var blob = null; try { blob = JSON.parse(ip.sample); } catch (eB) { blob = null; }
+          if (blob && blob.capPropTextRunCount === 1) {
+            mpHeader(box, 'Text style (all lines)');
+            mpAddFontSelect(box, 'Font', (blob.fontEditValue && blob.fontEditValue[0]) || '', function (v) { richStyle().font = v || null; });
+            mpAddNumber(box, 'Size', (blob.fontSizeEditValue && blob.fontSizeEditValue[0]), function (v) { richStyle().size = v; });
+            mpAddCheck(box, 'ALL CAPS', !!(blob.fontFSAllCapsValue && blob.fontFSAllCapsValue[0]), function (v) { richStyle().caps = v; });
+            mpAddCheck(box, 'Bold', !!(blob.fontFSBoldValue && blob.fontFSBoldValue[0]), function (v) { richStyle().bold = v; });
+            mpAddCheck(box, 'Italic', !!(blob.fontFSItalicValue && blob.fontFSItalicValue[0]), function (v) { richStyle().italic = v; });
+          }
+        }
+        continue;
+      }
+      // SCALE and anything else: skip (handled by the template / not safely settable)
+    }
+  }
+
+  /* Fallback editor when the .mogrt can't be unzipped (e.g. no unzip on PATH):
+     guess control types from the inspected values. */
+  function renderFromInspect(box, props) {
+    var editable = props.filter(function (p) {
+      return p.kind === 'color' || p.kind === 'colorint' || p.kind === 'number' || p.kind === 'bool' || p.kind === 'font';
+    });
+    var richProp = null;
+    for (var ri = 0; ri < props.length; ri++) if (props[ri].rich) { richProp = props[ri]; break; }
+    if (!editable.length && !richProp) { box.appendChild(document.createTextNode('No editable controls found.')); return; }
+    if (richProp) {
+      var blob = null; try { blob = JSON.parse(richProp.sample); } catch (eB) { blob = null; }
+      if (blob && blob.capPropTextRunCount === 1) {
+        mpHeader(box, 'Text style');
+        mpAddFontSelect(box, 'Font', (blob.fontEditValue && blob.fontEditValue[0]) || '', function (v) { richStyle().font = v || null; });
+        mpAddNumber(box, 'Size', (blob.fontSizeEditValue && blob.fontSizeEditValue[0]), function (v) { richStyle().size = v; });
+        mpAddCheck(box, 'ALL CAPS', !!(blob.fontFSAllCapsValue && blob.fontFSAllCapsValue[0]), function (v) { richStyle().caps = v; });
+      }
+    }
+    if (editable.length) mpHeader(box, 'Template controls');
+    editable.forEach(function (p) {
+      if (p.kind === 'color' || p.kind === 'colorint') {
+        (function (idx, k) { mpAddColor(box, p.name, String(p.value), function (v) { setMogrtParam(idx, k, v); }); })(p.i, p.kind);
+      } else if (p.kind === 'number') {
+        (function (idx) { mpAddNumber(box, p.name, p.value, function (v) { setMogrtParam(idx, 'number', v); }); })(p.i);
+      } else if (p.kind === 'bool') {
+        (function (idx) { mpAddCheck(box, p.name, p.value, function (v) { setMogrtParam(idx, 'bool', v); }); })(p.i);
+      } else {
+        (function (idx) { mpAddFontSelect(box, p.name, String(p.value), function (v) { setMogrtParam(idx, 'font', v); }); })(p.i);
+      }
+    });
   }
 
   /* Drop one instance at the playhead with the current overrides + a sample
