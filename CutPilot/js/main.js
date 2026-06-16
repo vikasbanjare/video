@@ -215,8 +215,10 @@
   function _modelsDir() { try { return nodeReq('path').join(nodeReq('os').homedir(), '.cutpilot', 'models'); } catch (e) { return null; } }
   function modelFileName() {
     var q = settings.whisperQuality || 'small';
+    var lang = settings.whisperLang || 'en';
     var hasEnVariant = (q === 'tiny' || q === 'base' || q === 'small' || q === 'medium');  // large-* are multilingual only
-    var enOnly = ((settings.whisperLang || 'en') === 'en') && hasEnVariant;                 // .en models are sharper for English
+    var enLike = (lang === 'en' || lang === 'hinglish');     // both decode as English (Hinglish = English-phonetic)
+    var enOnly = enLike && hasEnVariant;                     // .en models are sharper for English
     return 'ggml-' + q + (enOnly ? '.en' : '') + '.bin';
   }
   /* The model to transcribe with, downloading it on first use. Returns a Promise.
@@ -271,8 +273,12 @@
     var wbin = resolveWhisper();
     if (!wbin) return toast('Set the whisper engine in Settings → Auto-transcribe (brew install whisper-cpp).', true);
     var lang = settings.whisperLang || 'en';
-    var wlang = (lang === 'hinglish') ? 'hi' : lang;   // Hinglish = transcribe Hindi, romanize after
-    var romanize = (lang === 'hinglish');
+    // "Hinglish" works best the way the FIRST build did it: let an English model
+    // hear the Hindi and write it phonetically in Latin — that keeps English terms
+    // and numbers ("$120 trillion") correct. Forcing -l hi + Devanagari romanising
+    // is what mangled everything, so Hinglish now decodes as English.
+    var wlang = (lang === 'hinglish') ? 'en' : lang;
+    var romanize = false;
     setTranscriptBar('', '🎙️', 'Preparing the speech model…', null);
     resolveTranscribeModel().then(function (model) {
     return CPBridge.callHost('CP_getTranscribeSource').then(function (res) {
@@ -308,10 +314,9 @@
       setTranscriptBar('', '🎙️', 'Extracting audio from “' + shortName + '”' + pieces + '…', null);
       return runProc(ff, ffArgs).then(function () {
         setTranscriptBar('', '🎙️', 'Transcribing with ' + modelLabel + ' — this can take a minute…', null);
-        // -bs 5: beam search (more accurate than greedy).
-        // -mc 0: don't carry prior text as context → stops the runaway repetition
-        //        loops ("ttttt", "ventventvent") whisper falls into on hard audio.
-        var wArgs = ['-m', model, '-f', wav, '-osrt', '-of', outBase, '-l', wlang, '-bs', '5', '-mc', '0'];
+        // Keep this close to the first build that worked well: plain decode, just
+        // the model + language. (Beam/-mc tweaks I tried made things worse, not better.)
+        var wArgs = ['-m', model, '-f', wav, '-osrt', '-of', outBase, '-l', wlang];
         return runProc(wbin, wArgs);
       }).then(function () {
         var srtPath = outBase + '.srt';
