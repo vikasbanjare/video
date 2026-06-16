@@ -1420,19 +1420,26 @@
     out.classList.remove('hidden'); out.className = 'diag-out'; out.textContent = 'Inspecting ' + path.split(/[\\/]/).pop() + '…';
     CPBridge.callHost('CP_inspectMogrt', { path: path }).then(function (r) {
       if (!r.props || !r.props.length) { out.textContent = 'This template exposes no editable fields (count 0).'; return; }
-      var anyRich = false;
+      var anyRich = false, textLines = 0;
+      var uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
       var lines = r.props.map(function (p) {
         if (p.rich) anyRich = true;
-        var tag = p.rich ? '  ⚠️ RICH (AE source-text — not script-settable)' : '';
-        return '#' + p.i + '  "' + p.name + '"  [' + p.type + ']' + tag +
-               (p.type === 'string' ? '\n      = ' + p.sample : '');
+        var isGroup = (p.type === 'string' && uuid.test(String(p.sample)));
+        var isText = (p.type === 'string' && !isGroup);
+        if (isText) textLines++;
+        var tag = isText ? '  ✏️ editable text — CutPilot fills this' : (isGroup ? '  (group)' : '');
+        var show = (p.type === 'string' && !isGroup) ? ('\n      = ' + p.sample) : '';
+        return '#' + p.i + '  "' + p.name + '"  [' + p.type + ']' + tag + show;
       });
-      var foot = anyRich
-        ? '\n\nℹ️ This template uses Premiere\'s rich caption format. CutPilot will ' +
-          'still try to fill it — it tests the write on one throwaway copy first ' +
-          'and only proceeds if that\'s safe (your project is saved beforehand). ' +
-          'Tap 🎨 Customize to edit its font / size / style before applying.'
-        : '';
+      var foot = (textLines > 1)
+        ? '\n\n✅ ' + textLines + ' text lines detected — CutPilot fills all of them, ' +
+          textLines + ' caption lines per graphic. It tests one throwaway copy first ' +
+          '(project saved beforehand) before touching your timeline. Tap 🎨 Customize ' +
+          'to edit font / size / style.'
+        : (anyRich
+          ? '\n\nℹ️ Rich caption format — CutPilot fills it after a safe test write ' +
+            '(project saved first). Tap 🎨 Customize to edit font / size / style.'
+          : '');
       out.textContent = path.split(/[\\/]/).pop() + ' — ' + r.count + ' fields:\n' + lines.join('\n') + foot;
     }).catch(function (e) { out.className = 'diag-out err'; out.textContent = 'Inspect failed: ' + e.message; });
   }

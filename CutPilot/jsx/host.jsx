@@ -828,34 +828,49 @@ function CP_setMgrtText(prop, text, allowRich, style) {
   return false;
 }
 
-/* All text-ish properties of a MOGRT component, in display order — the string-
-   valued params that aren't a font control. Multi-line templates (Text 01..NN)
-   return several; CutPilot fills each with a consecutive caption line. */
+/* A MOGRT GROUP control reports its value as a ';'-separated list of child
+   UUIDs (e.g. "1e42b26d-…;c0e7d2a9-…"). Those are containers, NOT text. */
+function CP_isUuidList(s) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(\s*;|\s*$)/i.test(String(s));
+}
+/* True if a string value is a real editable text field (source-text or plain
+   caption) rather than a group reference or a font name. */
+function CP_isTextValue(v, name) {
+  if (typeof v !== 'string' || !v.length) return false;
+  if (CP_isUuidList(v)) return false;                       // group container
+  var nmL = String(name || '').toLowerCase();
+  if (nmL.indexOf('font') !== -1 || nmL.indexOf('typeface') !== -1) return false; // font picker
+  return true;
+}
+
+/* All text-ish properties of a MOGRT component, in display order. Multi-line
+   templates (Text 01..NN) return several; CutPilot fills each with a
+   consecutive caption line. Group refs / font pickers are excluded. */
 function CP_textPropsOf(comp) {
   var out = [];
   if (!comp || !comp.properties) return out;
   for (var i = 0; i < comp.properties.numItems; i++) {
     var p = comp.properties[i];
     var v = null; try { v = p.getValue(); } catch (e) { continue; }
-    if (typeof v !== 'string' || !v.length) continue;
-    var nmL = String(p.displayName || '').toLowerCase();
-    if (nmL.indexOf('font') !== -1 || nmL.indexOf('typeface') !== -1) continue; // that's a font picker, not a line
-    out.push(p);
+    if (CP_isTextValue(v, p.displayName)) out.push(p);
   }
   return out;
 }
 
 /* Find the text-ish property of a MOGRT component (display-name keyword first,
-   then the first property that currently holds a string). Returns prop|null. */
+   then the first property holding real text). Returns prop|null. */
 function CP_findTextProp(props, KEYS) {
   for (var k = 0; k < KEYS.length; k++) {
     for (var p = 0; p < props.numItems; p++) {
       var dn = String(props[p].displayName || '').toLowerCase();
-      if (dn.indexOf(KEYS[k]) !== -1) return props[p];
+      if (dn.indexOf(KEYS[k]) === -1) continue;
+      var v = null; try { v = props[p].getValue(); } catch (eV) { v = null; }
+      if (CP_isTextValue(v, props[p].displayName)) return props[p];   // must be real text, not a group ref
     }
   }
   for (var p2 = 0; p2 < props.numItems; p2++) {
-    if (CP_propIsString(props[p2])) return props[p2];
+    var v2 = null; try { v2 = props[p2].getValue(); } catch (eV2) { v2 = null; }
+    if (CP_isTextValue(v2, props[p2].displayName)) return props[p2];
   }
   return null;
 }
