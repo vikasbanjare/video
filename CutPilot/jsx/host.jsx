@@ -953,7 +953,13 @@ function CP_classifyMgrtProp(p) {
   var val = null, t = '?';
   try { val = p.getValue(); t = typeof val; } catch (e) {}
   var name = String(p.displayName || '').toLowerCase();
-  var isColorName = (name.indexOf('color') !== -1 || name.indexOf('colour') !== -1);
+  // Treat a NUMBER as a packed colour when its name reads colour-y (color,
+  // fill, stroke, background, tint, accent, shadow, glow…) but is NOT a scalar
+  // modifier (opacity, size, width, angle…), so multiple differently-named
+  // colour controls all get a real picker instead of a number box.
+  var nameColor = /(colou?r|fill|stroke|outline|background|\bbg\b|tint|shade|accent|swatch|gradient|shadow|glow)/.test(name);
+  var nameScalar = /(opacity|alpha|size|scale|width|height|amount|angle|radius|blur|feather|position|duration|offset|spacing|tracking|leading|rotation|percent|level|count|index|weight|intensity|softness)/.test(name);
+  var isColorName = nameColor && !nameScalar;
   if (t === 'string') {
     if (val.indexOf('capProp') !== -1 || val.indexOf('textEditValue') !== -1 || val.charAt(0) === '{') {
       return { kind: 'text', value: '' };
