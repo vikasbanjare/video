@@ -426,6 +426,11 @@ input[type="range"]::-webkit-slider-thumb {
 .tre-btn:hover:not(:disabled) { color: #fff; border-color: var(--line2); }
 .tre-btn:disabled { opacity: .3; cursor: default; }
 .tre-del:hover:not(:disabled) { color: #ff8a8a; }
+.tre-gap { display: flex; align-items: center; gap: 8px; margin: 5px 0 5px 48px; padding: 6px 9px;
+  background: rgba(180,120,0,.12); border: 1px solid rgba(200,140,0,.35); border-radius: 8px;
+  font-size: 11px; color: #d9a441; }
+.tre-gap span { flex: 1 1 auto; }
+.tre-gap .tre-btn { flex: 0 0 auto; width: auto; padding: 4px 9px; color: var(--fg); }
 .ms-name { font-size: 15px; font-weight: 800; margin-bottom: 4px; }
 .ms-card .hero-btn { width: 100%; }
 .ms-card .link-btn { display: block; margin: 6px auto 0; }

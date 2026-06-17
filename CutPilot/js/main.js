@@ -828,11 +828,14 @@
     var list = $('tre-list'); if (!list) return;
     list.innerHTML = '';
     if (!_treCues.length) { list.innerHTML = '<p class="hint">No lines left.</p>'; return; }
+    _treCues.sort(function (a, b) { return a.start - b.start; });   // keep time order
     _treCues.forEach(function (c, i) {
       var row = document.createElement('div'); row.className = 'tre-row';
       var t = document.createElement('span'); t.className = 'tre-time'; t.textContent = fmt(c.start);
       var inp = document.createElement('input'); inp.className = 'tre-text'; inp.type = 'text'; inp.value = c.text;
       inp.addEventListener('input', function () { _treCues[i].text = inp.value; });
+      var add = document.createElement('button'); add.type = 'button'; add.className = 'tre-btn'; add.textContent = '＋'; add.title = 'Add a new line after this one';
+      add.addEventListener('click', function () { insertTrLine(i); });
       var mg = document.createElement('button'); mg.type = 'button'; mg.className = 'tre-btn'; mg.textContent = '⤴'; mg.title = 'Merge into line above';
       if (i === 0) mg.disabled = true;
       mg.addEventListener('click', function () {
@@ -844,9 +847,35 @@
       });
       var del = document.createElement('button'); del.type = 'button'; del.className = 'tre-btn tre-del'; del.textContent = '✕'; del.title = 'Delete line';
       del.addEventListener('click', function () { _treCues.splice(i, 1); renderTrEditor(); });
-      row.appendChild(t); row.appendChild(inp); row.appendChild(mg); row.appendChild(del);
+      row.appendChild(t); row.appendChild(inp); row.appendChild(add); row.appendChild(mg); row.appendChild(del);
       list.appendChild(row);
+      // gap banner: whisper dropped a stretch of speech here — let the user add it
+      if (i < _treCues.length - 1) {
+        var gap = _treCues[i + 1].start - c.end;
+        if (gap >= 4) {
+          var gb = document.createElement('div'); gb.className = 'tre-gap';
+          var gt = document.createElement('span'); gt.textContent = '⚠️ ~' + Math.round(gap) + 's with no words here';
+          var ga = document.createElement('button'); ga.type = 'button'; ga.className = 'tre-btn'; ga.textContent = '＋ Add missing line';
+          ga.addEventListener('click', function () { insertTrLine(i); });
+          gb.appendChild(gt); gb.appendChild(ga); list.appendChild(gb);
+        }
+      }
     });
+  }
+  /* Insert a new, empty transcript line right after index `afterIdx`, timed to
+     sit in the gap before the next line. Lets the user fill anything whisper
+     missed; they type the words and it captions at the right spot. */
+  function insertTrLine(afterIdx) {
+    var c = _treCues[afterIdx];
+    var nextStart = (afterIdx + 1 < _treCues.length) ? _treCues[afterIdx + 1].start : (c.end + 4);
+    var s = c.end, e = Math.min(nextStart, s + 4);
+    if (e <= s) e = s + 2;
+    _treCues.splice(afterIdx + 1, 0, { start: s, end: e, text: '' });
+    renderTrEditor();
+    setTimeout(function () {                       // focus the new line so they can type
+      var inputs = $('tre-list').querySelectorAll('.tre-text');
+      if (inputs[afterIdx + 1]) inputs[afterIdx + 1].focus();
+    }, 0);
   }
   function saveTranscriptEditor() {
     if (!_treCues) return;
