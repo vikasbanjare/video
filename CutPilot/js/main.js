@@ -2149,18 +2149,15 @@
     }
     var enc = calibrateColorEncoder(samples);
     var colorHexById = {}, anyColor = false;
+    function swapRB(hex) { return (/^#[0-9a-f]{6}$/i.test(hex)) ? ('#' + hex.slice(5, 7) + hex.slice(3, 5) + hex.slice(1, 3)) : hex; }
     function applyColor(idx, hex) {
       colorHexById[idx] = hex;
-      // Number-packed colour controls (most .mogrt) need the exact packing this
-      // template uses — set the calibrated number. Array-type controls (enc null)
-      // take an [r,g,b,a] float array directly. If a packed template still looks
-      // red/blue swapped, the toggle below flips it (one tap).
+      var h = state.mogrtRBSwap ? swapRB(hex) : hex;   // toggle now works for BOTH number- and array-type colours
       if (enc) {
-        var c = hexToRgb255(hex);
-        if (state.mogrtRBSwap) { var tmp = c[0]; c[0] = c[2]; c[2] = tmp; }
+        var c = hexToRgb255(h);
         setMogrtParam(idx, 'colornum', enc.f(c[0], c[1], c[2], 255));
       } else {
-        setMogrtParam(idx, 'color', hex);   // host sets [r,g,b,a] — exact colour
+        setMogrtParam(idx, 'color', h);   // host sets [r,g,b,a] — exact colour
       }
     }
 
@@ -2205,9 +2202,10 @@
       // SCALE and anything else: skip (handled by the template / not safely settable)
     }
 
-    // Escape hatch: this template packs colour as a number, and some builds read
-    // it red↔blue (your warm colours show up blue). One toggle flips it.
-    if (anyColor && enc) {
+    // Escape hatch: some Premiere builds read a template's colour red↔blue (your
+    // warm colours show up blue). One toggle flips it — available for every
+    // template that has colours, whatever format it uses.
+    if (anyColor) {
       var swapWrap = document.createElement('div'); swapWrap.className = 'mp-swap';
       var swapHint = document.createElement('p'); swapHint.className = 'hint';
       swapHint.innerHTML = '<b>Colour coming out wrong (e.g. you pick orange, it shows blue)?</b> Turn this on:';
@@ -2217,10 +2215,6 @@
         for (var idx in colorHexById) if (colorHexById.hasOwnProperty(idx)) applyColor(parseInt(idx, 10), colorHexById[idx]);
         toast(v ? '✓ Red/blue flipped — ▶ Preview to check.' : 'Red/blue back to normal — ▶ Preview to check.');
       });
-    } else if (anyColor && !enc) {
-      var n = document.createElement('p'); n.className = 'hint';
-      n.textContent = 'Couldn\'t auto-match this template\'s colour format — colours are best set in Premiere\'s Essential Graphics if they look off.';
-      box.appendChild(n);
     }
   }
 
