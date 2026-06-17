@@ -1074,18 +1074,37 @@ function CP_hexToInt(hex) {
 function CP_setColorAny(prop, hex) {
   var rgba = CP_hexToRgba(hex);                 // [r,g,b,a] 0..1
   var r = Math.round(rgba[0] * 255), g = Math.round(rgba[1] * 255), b = Math.round(rgba[2] * 255);
+  var canVerify = false;
+  try { canVerify = (typeof prop.getColorValue === 'function'); } catch (eCV) { canVerify = false; }
 
-  // 1) The documented, correct path for MOGRT colour params.
-  try { var rc = prop.setColorValue(255, r, g, b, 1); if (rc === 0 || rc == null) return true; } catch (e0) {}
-  try { prop.setColorValue(255, r, g, b, true); return true; } catch (e0b) {}
-  try { prop.setColorValue(255, r, g, b); return true; } catch (e0c) {}
+  // Read the colour back and check it really became r,g,b. getColorValue may
+  // return [a,r,g,b] OR [r,g,b,a] depending on the build — accept either, so a
+  // verified set is order-proof.
+  function ok() {
+    if (!canVerify) return false;
+    try {
+      var c = prop.getColorValue();
+      if (!c || c.length < 3) return false;
+      function n(x, y) { return Math.abs(Math.round(Number(x)) - y) <= 2; }
+      if (c.length >= 4 && n(c[1], r) && n(c[2], g) && n(c[3], b)) return true;   // [a,r,g,b]
+      if (n(c[0], r) && n(c[1], g) && n(c[2], b)) return true;                    // [r,g,b,a]
+      return false;
+    } catch (eR) { return false; }
+  }
 
-  // 2) Fallbacks: [r,g,b,a] 0..1 array, then a packed 0xRRGGBB int.
-  try { prop.setValue(rgba, true); return true; } catch (e1) {}
-  try { prop.setValue(rgba); return true; } catch (e2) {}
+  // 1) documented API: setColorValue(alpha, red, green, blue, updateUI), 0-255.
+  try { prop.setColorValue(255, r, g, b, 1); if (!canVerify || ok()) return true; } catch (e0) {}
+  try { prop.setColorValue(255, r, g, b);    if (!canVerify || ok()) return true; } catch (e0b) {}
+  // 2) fallbacks for non-AE colour params — only accept when verified.
+  try { prop.setValue(rgba, true); if (canVerify && ok()) return true; } catch (e1) {}
+  try { prop.setValue(rgba);       if (canVerify && ok()) return true; } catch (e2) {}
   var pi = r * 65536 + g * 256 + b;
-  try { prop.setValue(pi, true); return true; } catch (e3) {}
-  try { prop.setValue(pi); return true; } catch (e4) {}
+  try { prop.setValue(pi, true);   if (canVerify && ok()) return true; } catch (e3) {}
+  // 3) alternate arg order, last resort (some builds: red, green, blue, alpha).
+  try { prop.setColorValue(r, g, b, 255, 1); if (canVerify && ok()) return true; } catch (e4) {}
+  // 4) couldn't verify — best effort so a colour is at least attempted.
+  try { prop.setColorValue(255, r, g, b, 1); return true; } catch (e5) {}
+  try { prop.setValue(rgba, true); return true; } catch (e6) {}
   return false;
 }
 
@@ -1385,8 +1404,16 @@ function CP_inspectMogrt(argsJson) {
           // raw numeric value (when applicable) lets the panel calibrate the
           // colour encoding by matching it to the template's known defaults.
           var num = (type === 'number') ? val : null;
+          // Colour diagnostics (read-only): whether this param supports the real
+          // colour API, and what colour it currently reports. Lets us confirm on
+          // the user's own Premiere why a colour does/doesn't take.
+          var hasSCV = false, gcv = null;
+          try { hasSCV = (typeof p.setColorValue === 'function'); } catch (eSCV) {}
+          try { if (typeof p.getColorValue === 'function') { var cc = p.getColorValue(); gcv = (cc != null) ? String(cc) : null; } }
+          catch (eGCV) { gcv = 'err'; }
           props.push({ i: i, name: String(p.displayName), type: type, rich: rich, len: raw.length,
-                       sample: sample, kind: cls.kind, value: cls.value, num: num });
+                       sample: sample, kind: cls.kind, value: cls.value, num: num,
+                       hasSCV: hasSCV, gcv: gcv });
         }
       }
     } catch (eComp) {}

@@ -279,7 +279,16 @@
       if (p.stderr) p.stderr.on('data', function (d) { err += d.toString(); });
       p.on('error', reject);
       p.on('close', function (code) {
-        if (code !== 0) return reject(new Error('Cloud request failed (curl ' + code + '): ' + err.slice(-160)));
+        if (code !== 0) {
+          // curl 6=can't resolve host, 7=can't connect, 28=timeout, 5=proxy —
+          // i.e. no internet / blocked. Point the user at the offline engine.
+          if (code === 6 || code === 7 || code === 28 || code === 5) {
+            return reject(new Error('Cloud transcription needs internet and couldn\'t reach Groq. ' +
+              'Switch “Accuracy / engine” (Transcribe tab) from “Cloud · Groq” to a local model ' +
+              '(e.g. Base or Large v3) to transcribe offline.'));
+          }
+          return reject(new Error('Cloud request failed (curl ' + code + '): ' + err.slice(-160)));
+        }
         var j; try { j = JSON.parse(out); } catch (e) { return reject(new Error('Cloud returned unexpected data: ' + out.slice(0, 160))); }
         if (j.error) return reject(new Error('Groq: ' + (j.error.message || JSON.stringify(j.error))));
         var cues = [];
@@ -1904,6 +1913,10 @@
         var isText = (p.type === 'string' && !isGroup);
         if (isText) textLines++;
         var tag = isText ? '  ✏️ editable text — CutPilot fills this' : (isGroup ? '  (group)' : '');
+        // colour diagnostic: confirm the real colour API is available + current value
+        var isColorName = /colou?r/i.test(p.name);
+        if (isColorName) tag += '  🎨 colour · setColorValue=' + (p.hasSCV ? 'YES' : 'no') +
+                                (p.gcv != null ? ' · now=[' + p.gcv + ']' : '');
         var show = (p.type === 'string' && !isGroup) ? ('\n      = ' + p.sample) : '';
         return '#' + p.i + '  "' + p.name + '"  [' + p.type + ']' + tag + show;
       });
