@@ -196,6 +196,7 @@
   // English) and multilingual models (no suffix) for everything else / auto.
   var WHISPER_QUALITIES = [
     { value: 'cloud-groq', label: '☁️ Cloud · Groq (most accurate · free key)' },
+    { value: 'large-v3-turbo-q5_0', label: '★ Best free · large-v3-turbo (~574MB · multilingual)' },
     { value: 'tiny', label: 'Local · Fastest · tiny (~75MB)' },
     { value: 'base', label: 'Local · Fast · base (~150MB)' },
     { value: 'small', label: 'Local · Better · small (~470MB)' },
@@ -217,13 +218,13 @@
   ];
   function _modelsDir() { try { return nodeReq('path').join(nodeReq('os').homedir(), '.cutpilot', 'models'); } catch (e) { return null; } }
   function modelFileName() {
-    var q = settings.whisperQuality || 'large-v3-turbo';
+    var q = settings.whisperQuality || 'large-v3-turbo-q5_0';
     var lang = settings.whisperLang || 'en';
     var hasEnVariant = (q === 'tiny' || q === 'base' || q === 'small' || q === 'medium');  // large-* are multilingual only
-    // Hinglish (local) MUST use an English-only model: it phonetically writes Hindi
-    // in Latin and cannot translate. A multilingual large model with -l en would
-    // translate Hindi→English instead. Use the chosen .en size, or medium.en for large picks.
-    if (lang === 'hinglish') return 'ggml-' + (hasEnVariant ? q : 'medium') + '.en.bin';
+    // Hinglish needs a MULTILINGUAL model — it actually understands Hindi, so it
+    // transcribes the words (then we romanise Devanagari→Latin). The old English-
+    // only (.en) approach couldn't read Hindi at all and dropped whole stretches.
+    if (lang === 'hinglish') return 'ggml-' + q + '.bin';
     var enOnly = (lang === 'en') && hasEnVariant;            // .en models are sharper for English
     return 'ggml-' + q + (enOnly ? '.en' : '') + '.bin';
   }
@@ -377,19 +378,22 @@
     }
     var lang = settings.whisperLang || 'en';
     // HINGLISH = the real spoken words written in English letters, NOT a Hindi→English
-    // translation. Two ways to get that, both transcription (never translation):
-    //   • cloud / large model → transcribe Hindi (-l hi), then romanise Devanagari→Latin
-    //     (English words large-v3 already writes in Latin are left as-is).
-    //   • local English-ONLY model (.en) → physically can't translate; it writes the
-    //     Hindi phonetically in Latin. So -l en is safe there.
+    // translation. Always TRANSCRIPTION, never translation:
+    //   • multilingual model (cloud, or a local non-.en model) → transcribe Hindi
+    //     (-l hi), then romanise Devanagari→Latin. English words already in Latin
+    //     pass through. This actually understands Hindi, so it doesn't drop speech.
+    //   • local English-ONLY (.en) model → can't read Hindi; it writes phonetic
+    //     Latin (-l en). Weaker (drops Hindi-heavy stretches) — only a fallback.
     var wlang = lang, romanize = false;
-    if (lang === 'hinglish') {
-      if (cloud) { wlang = 'hi'; romanize = true; }
-      else { wlang = 'en'; romanize = false; }
-    }
+    if (lang === 'hinglish' && cloud) { wlang = 'hi'; romanize = true; }
     var ico = cloud ? '☁️' : '🎙️';
     setTranscriptBar('', ico, cloud ? 'Connecting to the cloud…' : 'Preparing the speech model…', null);
     (cloud ? Promise.resolve(null) : resolveTranscribeModel()).then(function (model) {
+      // local Hinglish: pick the mode that matches the model we actually resolved
+      if (!cloud && lang === 'hinglish') {
+        if (/\.en\.bin$/i.test(String(model))) { wlang = 'en'; romanize = false; }   // English-only fallback
+        else { wlang = 'hi'; romanize = true; }                                       // multilingual: transcribe + romanise
+      }
       var modelLabel = cloud ? 'Cloud · Groq (large-v3)' : String(model).split(/[\\/]/).pop();
       return CPBridge.callHost('CP_getTranscribeSource').then(function (res) {
         var clip = res.clip;
@@ -3269,7 +3273,7 @@
     if (w) { el.textContent = '✅ Engine ready · will use ' + willUse + (m ? '' : ' (downloads on first use)'); }
     else { el.textContent = 'Let CutPilot make the transcript itself — install the engine below.'; }
     var note = $('set-quality-note');
-    if (note) { var q = (settings.whisperQuality || 'large-v3-turbo'); var qo = WHISPER_QUALITIES.filter(function (x) { return x.value === q; })[0]; note.textContent = qo ? '· ' + qo.label.replace(/^[^·]*· /, '') : ''; }
+    if (note) { var q = (settings.whisperQuality || 'large-v3-turbo-q5_0'); var qo = WHISPER_QUALITIES.filter(function (x) { return x.value === q; })[0]; note.textContent = qo ? '· ' + qo.label.replace(/^[^·]*· /, '') : ''; }
   }
   /* Mount the custom Accuracy + Language dropdowns (native <select> can fail in CEP).
      They appear in BOTH the Transcribe tab and Settings; changing one syncs the
@@ -3280,7 +3284,7 @@
     function mountInto(id, kind) {
       var host = $(id); if (!host || host.firstChild) return;
       var opts = (kind === 'q') ? WHISPER_QUALITIES : WHISPER_LANGS;
-      var cur = (kind === 'q') ? (settings.whisperQuality || 'large-v3-turbo') : (settings.whisperLang || 'en');
+      var cur = (kind === 'q') ? (settings.whisperQuality || 'large-v3-turbo-q5_0') : (settings.whisperLang || 'en');
       var dd = makeDropdown(opts, cur, function (v) {
         if (kind === 'q') settings.whisperQuality = v; else settings.whisperLang = v;
         saveSettings(); refreshWhisperStatus();
@@ -3318,14 +3322,16 @@
     var cp; try { cp = nodeReq('child_process'); } catch (e) { box.textContent = 'Node not available.'; return; }
     var os = nodeReq('os'), pathMod = nodeReq('path');
     var modelDir = pathMod.join(os.homedir(), '.cutpilot', 'models');
-    var modelPath = pathMod.join(modelDir, 'ggml-base.en.bin');
+    // multilingual large-v3-turbo (q5_0, ~574MB) — understands Hindi/Hinglish, so
+    // it doesn't drop speech the way the old English-only base model did.
+    var modelPath = pathMod.join(modelDir, 'ggml-large-v3-turbo-q5_0.bin');
     var sh = (typeof process !== 'undefined' && process.env && process.env.SHELL && process.env.SHELL.charAt(0) === '/') ? process.env.SHELL : '/bin/zsh';
     var script = [
       'if ! command -v brew >/dev/null 2>&1; then echo "[X] Homebrew not found. Install it from https://brew.sh, then tap this again."; exit 3; fi',
       'echo "[1/3] Installing whisper-cpp (brew)…"; brew install whisper-cpp 2>&1 | tail -8',
       'echo "[2/3] Installing ffmpeg (brew)…"; brew install ffmpeg 2>&1 | tail -3',
       'mkdir -p ' + JSON.stringify(modelDir),
-      'if [ ! -s ' + JSON.stringify(modelPath) + ' ]; then echo "[3/3] Downloading model ~150MB…"; curl -L --fail -o ' + JSON.stringify(modelPath) + ' https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin; else echo "[3/3] Model already present."; fi',
+      'if [ ! -s ' + JSON.stringify(modelPath) + ' ]; then echo "[3/3] Downloading multilingual model ~574MB (one-time)…"; curl -L --fail -o ' + JSON.stringify(modelPath) + ' https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin; else echo "[3/3] Model already present."; fi',
       'echo "ENGINE=$(command -v whisper-cli || command -v whisper-cpp || command -v whisper || echo NONE)"',
       'echo "DONE"'
     ].join('\n');
@@ -3344,7 +3350,7 @@
       var m = buf.match(/ENGINE=(.+)/);
       var eng = m ? m[1].trim() : '';
       if (eng && eng !== 'NONE') { settings.whisperPath = eng; $('set-whisper').value = eng; }
-      try { if (fs.existsSync(modelPath)) { settings.whisperModel = modelPath; $('set-whisper-model').value = modelPath; } } catch (eF) {}
+      try { if (fs.existsSync(modelPath)) { settings.whisperModel = modelPath; settings.whisperQuality = 'large-v3-turbo-q5_0'; $('set-whisper-model').value = modelPath; } } catch (eF) {}
       saveSettings(); _whisper = null; refreshWhisperStatus();
       var ok = (eng && eng !== 'NONE');
       box.textContent += ok ? '\n✅ Engine ready. Go to Captions → Auto-transcribe your clip.'

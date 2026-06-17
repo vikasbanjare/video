@@ -92,7 +92,8 @@ echo "  ════════════════════════
 echo
 echo "  ────────────────────────────────────────────────────────────"
 echo "  Auto-caption engine (ffmpeg + whisper + speech model)."
-echo "  Needed for ✨ Auto-transcribe and Smart Cut. Downloads ~250MB."
+echo "  Needed for ✨ Auto-transcribe and Smart Cut. Downloads ~700MB"
+echo "  (ffmpeg + whisper + the multilingual speech model). One-time."
 echo "  ────────────────────────────────────────────────────────────"
 printf "  Set it up now? [Y/n] "
 read -r ANS
@@ -124,23 +125,28 @@ case "$ANS" in
 
     MODELDIR="$HOME/.cutpilot/models"
     mkdir -p "$MODELDIR"
-    if [ ! -s "$MODELDIR/ggml-base.en.bin" ]; then
-      echo "  Downloading the speech model (~150MB)…"
-      curl -L --fail -o "$MODELDIR/ggml-base.en.bin" \
-        "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin" \
+    # Best FREE model: multilingual large-v3-turbo (quantized q5_0, ~574MB). Unlike
+    # the old English-only base model, this actually understands Hindi/Hinglish and
+    # other languages, so it stops dropping speech — and it's fast.
+    MODELFILE="ggml-large-v3-turbo-q5_0.bin"
+    if [ ! -s "$MODELDIR/$MODELFILE" ]; then
+      echo "  Downloading the speech model — multilingual large-v3-turbo, ~574MB."
+      echo "  One-time; it makes transcription far more accurate (Hindi/Hinglish too)…"
+      curl -L --fail -o "$MODELDIR/$MODELFILE" \
+        "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$MODELFILE" \
         || echo "  ⚠  Model download failed — set a model later in Settings ▸ Auto-transcribe."
     fi
 
     FFMPEG="$(command -v ffmpeg 2>/dev/null)"
     WHISPER="$(command -v whisper-cli 2>/dev/null || command -v whisper-cpp 2>/dev/null)"
-    MODEL=""; [ -s "$MODELDIR/ggml-base.en.bin" ] && MODEL="$MODELDIR/ggml-base.en.bin"
-    printf '{"ffmpegPath":"%s","whisperPath":"%s","whisperModel":"%s"}\n' \
+    MODEL=""; [ -s "$MODELDIR/$MODELFILE" ] && MODEL="$MODELDIR/$MODELFILE"
+    printf '{"ffmpegPath":"%s","whisperPath":"%s","whisperModel":"%s","whisperQuality":"large-v3-turbo-q5_0"}\n' \
       "$FFMPEG" "$WHISPER" "$MODEL" > "$HOME/.cutpilot-settings.json"
     echo
     echo "  Engine status:"
     echo "    ffmpeg : ${FFMPEG:-NOT found}"
     echo "    whisper: ${WHISPER:-NOT found}"
-    echo "    model  : ${MODEL:-NOT found}"
+    echo "    model  : ${MODEL:-NOT found}  (multilingual — Hindi/Hinglish ready)"
     ;;
 esac
 
