@@ -218,8 +218,11 @@
     var q = settings.whisperQuality || 'large-v3-turbo';
     var lang = settings.whisperLang || 'en';
     var hasEnVariant = (q === 'tiny' || q === 'base' || q === 'small' || q === 'medium');  // large-* are multilingual only
-    var enLike = (lang === 'en' || lang === 'hinglish');     // both decode as English (Hinglish = English-phonetic)
-    var enOnly = enLike && hasEnVariant;                     // .en models are sharper for English
+    // Hinglish (local) MUST use an English-only model: it phonetically writes Hindi
+    // in Latin and cannot translate. A multilingual large model with -l en would
+    // translate Hindi→English instead. Use the chosen .en size, or medium.en for large picks.
+    if (lang === 'hinglish') return 'ggml-' + (hasEnVariant ? q : 'medium') + '.en.bin';
+    var enOnly = (lang === 'en') && hasEnVariant;            // .en models are sharper for English
     return 'ggml-' + q + (enOnly ? '.en' : '') + '.bin';
   }
   /* The model to transcribe with, downloading it on first use. Returns a Promise.
@@ -316,9 +319,17 @@
       if (!wbin) return toast('Set the whisper engine in Settings → Auto-transcribe (brew install whisper-cpp).', true);
     }
     var lang = settings.whisperLang || 'en';
-    // "Hinglish" = let an English model write the Hindi phonetically in Latin —
-    // keeps English terms and numbers ("$120 trillion") correct.
-    var wlang = (lang === 'hinglish') ? 'en' : lang;
+    // HINGLISH = the real spoken words written in English letters, NOT a Hindi→English
+    // translation. Two ways to get that, both transcription (never translation):
+    //   • cloud / large model → transcribe Hindi (-l hi), then romanise Devanagari→Latin
+    //     (English words large-v3 already writes in Latin are left as-is).
+    //   • local English-ONLY model (.en) → physically can't translate; it writes the
+    //     Hindi phonetically in Latin. So -l en is safe there.
+    var wlang = lang, romanize = false;
+    if (lang === 'hinglish') {
+      if (cloud) { wlang = 'hi'; romanize = true; }
+      else { wlang = 'en'; romanize = false; }
+    }
     var ico = cloud ? '☁️' : '🎙️';
     setTranscriptBar('', ico, cloud ? 'Connecting to the cloud…' : 'Preparing the speech model…', null);
     (cloud ? Promise.resolve(null) : resolveTranscribeModel()).then(function (model) {
@@ -364,6 +375,9 @@
           });
         }).then(function (rawCues) {
           if (!rawCues || !rawCues.length) throw new Error('no speech detected in “' + shortName + '”');
+          // Hinglish (cloud/Hindi path): turn the Devanagari into Latin; English
+          // words already in Latin pass through untouched.
+          if (romanize) rawCues.forEach(function (rc) { rc.text = CPCaptions.devanagariToLatin(rc.text); });
           // Map each (wav-relative) cue onto every timeline piece showing that part,
           // converting to sequence time: seq = mediaTime - pieceIn + pieceSeqStart.
           var cues = [];
