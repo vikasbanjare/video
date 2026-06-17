@@ -1188,6 +1188,84 @@ function CP_applyMgrtParams(comp, params) {
   return n;
 }
 
+/* Capture every NON-text style property of a MOGRT component — colours (via the
+   real colour API), numbers, booleans, points, and font/string params. Source
+   text, rich text and group references are skipped so each caption keeps its own
+   words. Used by "match all captions to the one I styled in Essential Graphics". */
+function CP_captureMgrtStyle(comp) {
+  var out = [];
+  if (!comp || !comp.properties) return out;
+  for (var i = 0; i < comp.properties.numItems; i++) {
+    var p = comp.properties[i];
+    var v = null; try { v = p.getValue(); } catch (e) { continue; }
+    if (typeof v === 'string' &&
+        (v.indexOf('capProp') !== -1 || v.indexOf('textEditValue') !== -1 ||
+         v.indexOf('"strDB"') !== -1 || CP_isUuidList(v))) continue;        // text / group
+    var col = null;
+    try { if (typeof p.getColorValue === 'function') { var cv = p.getColorValue(); if (cv && cv.length >= 4) col = [cv[0], cv[1], cv[2], cv[3]]; } } catch (eC) {}
+    if (col) { out.push({ i: i, kind: 'color', color: col }); continue; }
+    if (typeof v === 'number' || typeof v === 'boolean') { out.push({ i: i, kind: 'val', value: v }); continue; }
+    if (typeof v === 'object' && v && v.x != null) { out.push({ i: i, kind: 'point', x: v.x, y: v.y }); continue; }
+    if (typeof v === 'string') { out.push({ i: i, kind: 'str', value: v }); continue; }   // font names etc.
+  }
+  return out;
+}
+
+/* Apply a captured style onto a MOGRT component (best effort, never throws). */
+function CP_applyCapturedStyle(comp, style) {
+  if (!comp || !comp.properties || !style) return 0;
+  var n = 0;
+  for (var k = 0; k < style.length; k++) {
+    var s = style[k];
+    if (s.i == null || s.i < 0 || s.i >= comp.properties.numItems) continue;
+    var p = comp.properties[s.i];
+    try {
+      if (s.kind === 'color' && typeof p.setColorValue === 'function') {
+        // getColorValue is [a,r,g,b]; replicate the colour, force opaque alpha
+        p.setColorValue(255, s.color[1], s.color[2], s.color[3], 1); n++;
+      } else if (s.kind === 'point') {
+        try { p.setValue({ x: s.x, y: s.y }, true); n++; }
+        catch (e1) { try { p.setValue([s.x, s.y], true); n++; } catch (e2) {} }
+      } else if (s.kind === 'val') {
+        p.setValue(s.value, true); n++;
+      } else if (s.kind === 'str') {
+        try { p.setValue(s.value, true); n++; } catch (eS) {}
+      }
+    } catch (e) {}
+  }
+  return n;
+}
+
+/* "Match all captions to the one I styled": read the SELECTED graphic's full
+   look (as set in Premiere's own Essential Graphics) and copy it onto every other
+   MOGRT graphic on the same track. This lets the user edit natively — padding and
+   all — and propagate it everywhere, instead of relying on our rebuilt controls. */
+function CP_copyStyleSelectedToTrack() {
+  try {
+    var seq = CP_activeSequence();
+    var sel = null, selTrack = -1, selIdx = -1;
+    for (var t = 0; t < seq.videoTracks.numTracks && !sel; t++) {
+      var tr = seq.videoTracks[t];
+      for (var i = 0; i < tr.clips.numItems; i++) {
+        var isSel = false; try { isSel = tr.clips[i].isSelected(); } catch (eS) {}
+        if (isSel) { sel = tr.clips[i]; selTrack = t; selIdx = i; break; }
+      }
+    }
+    if (!sel) return CP_fail('Select one caption graphic you styled (click it on the timeline), then try again.');
+    var srcComp = null; try { srcComp = sel.getMGTComponent(); } catch (eM) {}
+    if (!srcComp || !srcComp.properties) return CP_fail('The selected clip isn\'t a Motion Graphics template — select one of CutPilot\'s caption graphics.');
+    var style = CP_captureMgrtStyle(srcComp);
+    if (!style.length) return CP_fail('Could not read any style from the selected graphic.');
+    var track = seq.videoTracks[selTrack], applied = 0;
+    for (var c = 0; c < track.clips.numItems; c++) {
+      if (c === selIdx) continue;
+      var comp = null; try { comp = track.clips[c].getMGTComponent(); } catch (eG) {}
+      if (comp && comp.properties) { if (CP_applyCapturedStyle(comp, style) > 0) applied++; }
+    }
+    return CP_ok({ applied: applied, captured: style.length, track: selTrack + 1 });
+  } catch (e) { return CP_fail(e.message); }
+}
+
 function CP_insertMogrtCaptions(argsJson) {
   try {
     var args = JSON.parse(argsJson);
@@ -1411,9 +1489,13 @@ function CP_inspectMogrt(argsJson) {
           try { hasSCV = (typeof p.setColorValue === 'function'); } catch (eSCV) {}
           try { if (typeof p.getColorValue === 'function') { var cc = p.getColorValue(); gcv = (cc != null) ? String(cc) : null; } }
           catch (eGCV) { gcv = 'err'; }
+          // capture a point/{x,y} live value so the panel's padding/position
+          // controls use Premiere's REAL scale (not the tiny definition default).
+          var point = null;
+          try { if (val && typeof val === 'object' && typeof val.length !== 'number' && val.x != null) point = { x: val.x, y: val.y }; } catch (ePt) {}
           props.push({ i: i, name: String(p.displayName), type: type, rich: rich, len: raw.length,
                        sample: sample, kind: cls.kind, value: cls.value, num: num,
-                       hasSCV: hasSCV, gcv: gcv });
+                       hasSCV: hasSCV, gcv: gcv, point: point });
         }
       }
     } catch (eComp) {}

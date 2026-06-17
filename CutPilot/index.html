@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.64</span>
+    <span class="ver" id="ver">v0.9.65</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -302,6 +302,15 @@
           <label class="check" style="margin:6px 0"><input type="checkbox" id="mg-stretch" checked> ↔ Match duration to the caption length <span class="dim">(stretches the template so longer/more-word captions last longer)</span></label>
           <button id="btn-alt-apply" class="hero-btn">🎬 Add template captions</button>
           <p class="hint" style="color:#8a5a00;margin-top:8px">⚠️ Stuck at "Loading Motion Graphics Template… 89%"? That's a Premiere bug with the template itself — try a caption style or another template.</p>
+
+          <!-- Use Premiere's OWN Essential Graphics editing, then propagate it -->
+          <div class="alt-block" id="mg-match" style="margin-top:12px">
+            <div class="alt-title">🎯 Match Premiere's own editing</div>
+            <p class="hint">Want the exact controls Premiere shows (padding & all)? Style <b>one</b> caption
+              in Premiere's <b>Essential Graphics</b> panel, click that graphic on the timeline, then tap below —
+              CutPilot copies that exact look (colour, padding, font, shadow… every property) onto every caption.</p>
+            <button id="btn-mg-copystyle" class="hero-btn small alt">🎨 Match all captions to the selected one</button>
+          </div>
         </div>
       </div>
 
@@ -544,7 +553,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.64 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.65 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

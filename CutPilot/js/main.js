@@ -2003,6 +2003,14 @@
       if (path) buildMogrtCustomizer($('tpl-params'), path);
     });
     if ($('btn-alt-apply')) $('btn-alt-apply').addEventListener('click', applyMogrtTemplate);
+    // copy the look the user set in Premiere's Essential Graphics to all captions
+    if ($('btn-mg-copystyle')) $('btn-mg-copystyle').addEventListener('click', function () {
+      capProgress('Reading the selected graphic & matching all captions…');
+      CPBridge.callHost('CP_copyStyleSelectedToTrack').then(function (r) {
+        capProgress(null);
+        toast('🎯 Matched ' + r.applied + ' caption' + (r.applied === 1 ? '' : 's') + ' to your selected graphic (' + r.captured + ' properties copied). ⌘Z undoes it.');
+      }).catch(function (e) { capProgress(null); toast(e.message, true); });
+    });
     if ($('btn-native-apply')) $('btn-native-apply').addEventListener('click', applyNative);
     if ($('btn-tpl-inspect')) $('btn-tpl-inspect').addEventListener('click', inspectMogrt);
     if ($('btn-tpl-preview')) $('btn-tpl-preview').addEventListener('click', previewMogrtFile);
@@ -2425,7 +2433,12 @@
         continue;
       }
       if (t === MT.POINT) {
-        var pv = (c.value && c.value.x != null) ? c.value : { x: 0, y: 0 };
+        var spP = savedParam(liveIdx);
+        // prefer Premiere's LIVE value (its real scale) over the tiny definition
+        // default, so editing padding/position actually moves things.
+        var pv = (spP && spP.kind === 'point') ? spP.value
+               : (ip.point && ip.point.x != null) ? ip.point
+               : (c.value && c.value.x != null) ? c.value : { x: 0, y: 0 };
         (function (idx) { mpAddPoint(box, name, pv.x, pv.y, function (v) { setMogrtParam(idx, 'point', v); }); })(liveIdx);
         continue;
       }
