@@ -18,7 +18,7 @@
     plan: null,
     transcript: null,        // { label, path } — the one chosen transcript
     transcriptManual: false, // true once the user picks a file by hand (auto-rescan won't override)
-    presetId: 'hormozi',
+    presetId: 'pro-aura',
     animId: 'pop',
     mcMode: 'rotate',
     tplSource: 'installed',  // installed | file
@@ -42,7 +42,7 @@
     customTemplates: [],
     favs: {},
     recent: [],
-    libCategory: 'All',
+    libCategory: '⭐ Premium',
     libSearch: '',
     libSort: 'popular',
     libMode: 'styles'      // 'styles' (built-in) | 'mogrt' (user .mogrt files)
@@ -953,8 +953,10 @@
       this.value = '';
     });
 
-    // category chips (caption styles only — .mogrt lives in the Editor tab now)
-    var cats = ['All', 'Favorites', 'Recent', 'My Templates'].concat(CPCaptions.CATEGORIES);
+    // category chips (caption styles only — .mogrt lives in the Editor tab now).
+    // ⭐ Premium leads; the rest follow.
+    var cats = ['⭐ Premium', 'All', 'Favorites', 'Recent', 'My Templates']
+      .concat(CPCaptions.CATEGORIES.filter(function (c) { return c !== '⭐ Premium'; }));
     var chipBox = $('lib-cats');
     cats.forEach(function (c) {
       var chip = document.createElement('button');

@@ -296,6 +296,7 @@
 
   /* The ten library categories the browser groups templates into. */
   var CATEGORIES = [
+    '⭐ Premium',
     'Captions.ai',
     'Bold Creator', 'Minimal Professional', 'Dynamic Highlight', 'Social Growth',
     'Podcast Pro', 'Storytelling', 'Gaming Stream', 'Cinematic', 'Motivation', 'Education'
@@ -474,8 +475,74 @@
       uppercase: true, wordsPerCue: 3, anim: 'karaoke' }
   ];
 
+  /* ⭐ Premium — refined, modern, "expensive"-looking styles (NOT the loud
+     bold-caps Hormozi look). Clean grotesk/serif faces, tasteful muted accents,
+     soft bars/pills, gentle fade/slide/scale. These lead the library. */
+  var PREMIUM_TEMPLATES = [
+    // Aura — airy minimal, sentence case, the premium agency/YouTube default
+    { id: 'pro-aura', name: 'Aura', category: '⭐ Premium', popularity: 100, layout: 'bottom', keyword: false,
+      font: 'Manrope', fallbackFonts: ['Inter', 'Helvetica Neue', 'Arial'],
+      fontSize: 52, fill: '#FFFFFF', highlight: '#FFFFFF', stroke: '#000000', strokeWidth: 3,
+      uppercase: false, wordsPerCue: 4, anim: 'fade' },
+    // Editorial — elegant serif, centered, calm gold accent. Brand films / docs
+    { id: 'pro-editorial', name: 'Editorial', category: '⭐ Premium', popularity: 99, layout: 'center', keyword: false,
+      font: 'Playfair Display', fallbackFonts: ['Lora', 'Georgia', 'serif'],
+      fontSize: 58, fill: '#F6F2EC', highlight: '#D9B36A', stroke: null, strokeWidth: 0, letterSpacing: 0.5,
+      uppercase: false, wordsPerCue: 4, anim: 'fade' },
+    // Frost — clean white on a soft dark rounded bar (glass-style lower third)
+    { id: 'pro-frost', name: 'Frost', category: '⭐ Premium', popularity: 98, layout: 'bottom', keyword: false,
+      font: 'Outfit', fallbackFonts: ['Inter', 'Arial'],
+      fontSize: 46, fill: '#FFFFFF', highlight: '#9FE7FF', boxColor: '#10131A', boxRadius: 14, stroke: null, strokeWidth: 0,
+      uppercase: false, wordsPerCue: 0, anim: 'slide' },
+    // Coral — clean white, one word in a tasteful coral (subtle, not garish)
+    { id: 'pro-coral', name: 'Coral', category: '⭐ Premium', popularity: 97, layout: 'bottom', keyword: true, highlightScale: 1.06,
+      font: 'Sora', fallbackFonts: ['Inter', 'Arial'],
+      fontSize: 56, fill: '#FFFFFF', highlight: '#FF6F61', stroke: '#000000', strokeWidth: 4,
+      uppercase: false, wordsPerCue: 3, anim: 'fade' },
+    // Mono — wide-tracked uppercase in a clean MEDIUM weight (cinematic, not bold)
+    { id: 'pro-mono', name: 'Mono', category: '⭐ Premium', popularity: 96, layout: 'center', keyword: false,
+      font: 'Sora', fallbackFonts: ['Outfit', 'Inter', 'Arial'],
+      fontSize: 40, fill: '#FFFFFF', highlight: '#FFFFFF', stroke: null, strokeWidth: 0, letterSpacing: 6,
+      uppercase: true, wordsPerCue: 4, anim: 'fade' },
+    // Lumin — soft karaoke: clean phrase, active word fills a soft sky accent
+    { id: 'pro-lumin', name: 'Lumin', category: '⭐ Premium', popularity: 95, layout: 'bottom', keyword: false,
+      font: 'Poppins', fallbackFonts: ['Inter', 'Arial'],
+      fontSize: 56, fill: '#FFFFFF', highlight: '#7DD3FC', stroke: '#000000', strokeWidth: 4,
+      uppercase: false, wordsPerCue: 4, anim: 'karaoke' },
+    // Lilac — active word on a soft lavender pill, rounded & modern
+    { id: 'pro-lilac', name: 'Lilac', category: '⭐ Premium', popularity: 94, layout: 'bottom', keyword: false,
+      font: 'DM Sans', fallbackFonts: ['Inter', 'Arial'],
+      fontSize: 56, fill: '#FFFFFF', highlight: '#A78BFA', highlightStyle: 'box', boxRadius: 16, stroke: '#000000', strokeWidth: 3,
+      uppercase: false, wordsPerCue: 3, anim: 'karaoke' },
+    // Noir — elegant white on a near-black slim bar, cinematic lower third
+    { id: 'pro-noir', name: 'Noir', category: '⭐ Premium', popularity: 93, layout: 'bottom', keyword: false,
+      font: 'Inter', fallbackFonts: ['Helvetica Neue', 'Arial'],
+      fontSize: 44, fill: '#FFFFFF', highlight: '#E8C77A', boxColor: '#000000', boxRadius: 4, stroke: null, strokeWidth: 0,
+      letterSpacing: 0.5, uppercase: false, wordsPerCue: 0, anim: 'fade' },
+    // Sage — calm white + sage-green keyword, understated
+    { id: 'pro-sage', name: 'Sage', category: '⭐ Premium', popularity: 92, layout: 'bottom', keyword: true, highlightScale: 1.05,
+      font: 'Manrope', fallbackFonts: ['Inter', 'Arial'],
+      fontSize: 54, fill: '#FFFFFF', highlight: '#86C7A6', stroke: '#000000', strokeWidth: 4,
+      uppercase: false, wordsPerCue: 3, anim: 'fade' },
+    // Quote — serif phrase on a soft dark pill (premium hook / quote card)
+    { id: 'pro-quote', name: 'Quote', category: '⭐ Premium', popularity: 91, layout: 'center', keyword: false,
+      font: 'Playfair Display', fallbackFonts: ['Lora', 'Georgia', 'serif'],
+      fontSize: 54, fill: '#FFFFFF', highlight: '#FFFFFF', boxColor: '#11131B', boxRadius: 40, stroke: null, strokeWidth: 0,
+      uppercase: false, wordsPerCue: 4, anim: 'scale' },
+    // Studio — clean modern, gentle slide; safe professional pick
+    { id: 'pro-studio', name: 'Studio', category: '⭐ Premium', popularity: 90, layout: 'bottom', keyword: false,
+      font: 'Inter', fallbackFonts: ['Helvetica Neue', 'Arial'],
+      fontSize: 50, fill: '#FFFFFF', highlight: '#FFFFFF', stroke: '#000000', strokeWidth: 3,
+      uppercase: false, wordsPerCue: 4, anim: 'slide' },
+    // Halo — clean white + warm gold keyword, refined energy without the caps
+    { id: 'pro-halo', name: 'Halo', category: '⭐ Premium', popularity: 89, layout: 'bottom', keyword: true, highlightScale: 1.07,
+      font: 'Outfit', fallbackFonts: ['Montserrat', 'Inter', 'Arial'],
+      fontSize: 58, fill: '#FFFFFF', highlight: '#F4C04B', stroke: '#000000', strokeWidth: 4,
+      uppercase: false, wordsPerCue: 3, anim: 'scale' }
+  ];
+
   /* The full catalog the library browses (base + extras). */
-  var TEMPLATES = STYLE_PRESETS.concat(MORE_TEMPLATES);
+  var TEMPLATES = STYLE_PRESETS.concat(PREMIUM_TEMPLATES, MORE_TEMPLATES);
 
   /* Niche → recommended template id (the "AI Caption Styling" suggester). */
   var NICHE_RECOMMEND = {
