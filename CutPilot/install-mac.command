@@ -1,52 +1,94 @@
 #!/bin/bash
-# CutPilot one-click installer for macOS.
-# Installs the panel, and (optionally) sets up the auto-caption engine
-# (ffmpeg + whisper + model) so a brand-new Mac can use everything.
+# CutPilot one-click installer for macOS (self-verifying).
+# Installs the panel, removes ALL older copies, clears the CEP cache, and prints
+# the exact version it installed so you can confirm the new build is the one that
+# loads. Also optionally sets up the auto-caption engine (ffmpeg + whisper).
 # If Gatekeeper blocks double-click: right-click -> Open.
 
+SRC="$(cd "$(dirname "$0")" && pwd)"
+# read the version straight from the files we're about to install
+SRCVER="$(grep -o 'id="ver">v[0-9.]*' "$SRC/index.html" 2>/dev/null | grep -o '[0-9][0-9.]*')"
+[ -z "$SRCVER" ] && SRCVER="?"
+
 echo
-echo "  ┌──────────────────────────────────────────────┐"
-echo "  │  Installing CutPilot v0.9.60 for Premiere Pro  │"
-echo "  └──────────────────────────────────────────────┘"
+echo "  ┌──────────────────────────────────────────────────────┐"
+echo "  │  CutPilot installer — installing version  v$SRCVER"
+echo "  └──────────────────────────────────────────────────────┘"
+echo "  Installing FROM:"
+echo "    $SRC"
+echo
+echo "  ⚠  If that folder is an OLD download, quit now and run install-mac.command"
+echo "     from the freshly-unzipped folder instead."
 echo
 echo "  ⚠  QUIT Premiere Pro completely first (Cmd+Q), then press Enter."
 read -r _
 
+# remove the 'downloaded from internet' quarantine so macOS won't block the files
+xattr -dr com.apple.quarantine "$SRC" 2>/dev/null
+
 # 1) enable unsigned panels for all CSXS versions
-for v in 6 7 8 9 10 11 12; do
+for v in 6 7 8 9 10 11 12 13; do
   defaults write com.adobe.CSXS.$v PlayerDebugMode 1 2>/dev/null
 done
 
 echo
-echo "  ℹ  macOS may ask Terminal for permission to access your files"
-echo "     (Desktop / Documents / Downloads). Click OK / Allow — it only lets"
-echo "     the installer copy CutPilot into Premiere's extensions folder."
+echo "  ℹ  macOS may ask Terminal for permission to access your files. Click OK/Allow."
 echo
 
-# 2) copy plugin (replace any old copy)
-SRC="$(cd "$(dirname "$0")" && pwd)"
-DEST="$HOME/Library/Application Support/Adobe/CEP/extensions/CutPilot"
-mkdir -p "$(dirname "$DEST")"
-rm -rf "$DEST"
-cp -R "$SRC" "$DEST"
+# 2) remove EVERY old CutPilot from all CEP extension folders (user + system),
+#    including stray "CutPilot 2" duplicates, so Premiere cannot load an old one.
+USER_EXT="$HOME/Library/Application Support/Adobe/CEP/extensions"
+SYS_EXT="/Library/Application Support/Adobe/CEP/extensions"
+mkdir -p "$USER_EXT"
+NEEDSUDO=""
+for base in "$USER_EXT" "$SYS_EXT"; do
+  [ -d "$base" ] || continue
+  for d in "$base"/CutPilot*; do
+    [ -e "$d" ] || continue
+    if rm -rf "$d" 2>/dev/null; then
+      echo "  • removed old copy: $d"
+    else
+      echo "  • NEED ADMIN to remove: $d"
+      NEEDSUDO="$NEEDSUDO \"$d\""
+    fi
+  done
+done
+if [ -n "$NEEDSUDO" ]; then
+  echo
+  echo "  ⚠  An old copy in a system folder needs admin rights to remove."
+  echo "     Run this once, then re-run this installer:"
+  echo "       sudo rm -rf$NEEDSUDO"
+  echo
+fi
 
-# 3) clear the CEP cache so Premiere reloads the new files (not the old ones)
+# 3) copy the fresh build in
+DEST="$USER_EXT/CutPilot"
+cp -R "$SRC" "$DEST"
+xattr -dr com.apple.quarantine "$DEST" 2>/dev/null
+
+# 4) clear the CEP caches so Premiere reloads new files, not cached old ones
 rm -rf "$HOME/Library/Caches/CSXS" 2>/dev/null
 rm -rf "$HOME/Library/Caches/com.adobe.cep" 2>/dev/null
-find "$HOME/Library/Application Support/Adobe" -maxdepth 3 -type d -name "CEP" 2>/dev/null | while read -r d; do
-  rm -rf "$d/cache" 2>/dev/null
-done
+find "$HOME/Library/Application Support/Adobe" -maxdepth 4 -type d -name "cache" -path "*CEP*" 2>/dev/null -exec rm -rf {} + 2>/dev/null
 
+# 5) VERIFY what actually landed in Premiere's folder
 if [ ! -f "$DEST/index.html" ]; then
-  echo "  ❌ Copy failed. Manually copy this folder to:"
-  echo "     $DEST"
+  echo "  ❌ Copy failed. Manually drag the CutPilot folder into:"
+  echo "     $USER_EXT"
   echo
   read -p "Press Enter to close..."
   exit 1
 fi
-echo "  ✅ Panel installed."
+INSTVER="$(grep -o 'id="ver">v[0-9.]*' "$DEST/index.html" 2>/dev/null | grep -o '[0-9][0-9.]*')"
+echo
+echo "  ════════════════════════════════════════════════════════"
+echo "    ✅ INSTALLED VERSION:  v${INSTVER:-?}"
+echo "       The CutPilot panel MUST show this exact number at its"
+echo "       top-left. If it shows anything else, Premiere didn't"
+echo "       fully quit — quit it (Cmd+Q) and reopen."
+echo "  ════════════════════════════════════════════════════════"
 
-# 4) OPTIONAL: set up the auto-caption engine so this Mac can transcribe + caption
+# 6) OPTIONAL: set up the auto-caption engine so this Mac can transcribe + caption
 echo
 echo "  ────────────────────────────────────────────────────────────"
 echo "  Auto-caption engine (ffmpeg + whisper + speech model)."
@@ -59,8 +101,6 @@ case "$ANS" in
     echo "  Skipped — you can do this later in CutPilot ▸ Settings ▸ Auto-transcribe."
     ;;
   *)
-    # locate (or install) Homebrew — it installs ffmpeg/whisper in a way macOS
-    # security trusts, unlike a raw binary download.
     BREW=""
     if command -v brew >/dev/null 2>&1; then BREW="$(command -v brew)"
     elif [ -x /opt/homebrew/bin/brew ]; then BREW="/opt/homebrew/bin/brew"
@@ -82,7 +122,6 @@ case "$ANS" in
       echo "     then re-run this installer (or use CutPilot ▸ Settings ▸ Auto-transcribe)."
     fi
 
-    # speech model
     MODELDIR="$HOME/.cutpilot/models"
     mkdir -p "$MODELDIR"
     if [ ! -s "$MODELDIR/ggml-base.en.bin" ]; then
@@ -92,7 +131,6 @@ case "$ANS" in
         || echo "  ⚠  Model download failed — set a model later in Settings ▸ Auto-transcribe."
     fi
 
-    # write the paths CutPilot reads, so everything is pre-filled on first launch
     FFMPEG="$(command -v ffmpeg 2>/dev/null)"
     WHISPER="$(command -v whisper-cli 2>/dev/null || command -v whisper-cpp 2>/dev/null)"
     MODEL=""; [ -s "$MODELDIR/ggml-base.en.bin" ] && MODEL="$MODELDIR/ggml-base.en.bin"
@@ -110,7 +148,7 @@ echo
 echo "  Next:"
 echo "   1. Open Premiere Pro"
 echo "   2. Window ▸ Extensions ▸ CutPilot"
-echo "   3. Check the top of the panel says  v0.9.60  (confirms the new build loaded)."
-echo "      If it shows an older number, fully quit Premiere (Cmd+Q) and reopen."
+echo "   3. The top of the panel MUST read  v$INSTVER"
+echo "      If it shows an older number: fully quit Premiere (Cmd+Q) and reopen."
 echo
 read -p "Press Enter to close..."
