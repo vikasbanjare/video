@@ -31,6 +31,7 @@
     // mogrt gallery
     userMogrts: [],
     selectedMogrt: null,
+    mogrtSelName: '',       // which saved entry (by name) is active in the Editor list
     mogrtWords: 0,   // words per MOGRT graphic (0 = full line)
     mogrtParams: [],        // colour/size/font overrides for the selected custom MOGRT
     mogrtParamsPath: null,  // which .mogrt those overrides belong to
@@ -1449,7 +1450,9 @@
     }
   }
 
-  /* The user's uploaded .mogrt templates, as a saved, re-selectable list. */
+  /* The user's uploaded .mogrt templates + their saved custom variants, as a
+     re-selectable list. A "custom" entry shares the .mogrt file but carries your
+     saved edits (colour/font/size/etc.). */
   function renderMogrtUploads() {
     var box = $('mogrt-uploads'); if (!box) return;
     box.innerHTML = '';
@@ -1460,15 +1463,18 @@
       box.appendChild(e); return;
     }
     list.forEach(function (m) {
+      var sel = (state.tplSource === 'file' && state.mogrtFile === m.path && (state.mogrtSelName || '') === (m.name || ''));
       var b = document.createElement('button');
       b.type = 'button';
-      b.className = 'mogrt-up' + ((state.tplSource === 'file' && state.mogrtFile === m.path) ? ' on' : '');
-      var ico = document.createElement('span'); ico.className = 'mu-ico'; ico.textContent = '🎬';
+      b.className = 'mogrt-up' + (sel ? ' on' : '');
+      var ico = document.createElement('span'); ico.className = 'mu-ico'; ico.textContent = m.edits ? '🎨' : '🎬';
       var nm = document.createElement('span'); nm.className = 'mu-name'; nm.textContent = m.name;
+      b.appendChild(ico); b.appendChild(nm);
+      if (m.edits) { var bd = document.createElement('span'); bd.className = 'mu-badge'; bd.textContent = 'custom'; b.appendChild(bd); }
       var x = document.createElement('span'); x.className = 'mu-x'; x.title = 'Remove'; x.textContent = '✕';
-      b.appendChild(ico); b.appendChild(nm); b.appendChild(x);
+      b.appendChild(x);
       b.addEventListener('click', function (ev) {
-        if (ev.target === x) { ev.stopPropagation(); removeUserMogrt(m.path); return; }
+        if (ev.target === x) { ev.stopPropagation(); removeUserMogrt(m.path, m.name); return; }
         selectUserMogrt(m.path, m.name);
       });
       box.appendChild(b);
@@ -1478,7 +1484,18 @@
   function selectUserMogrt(path, name) {
     state.tplSource = 'file';
     state.mogrtFile = path;
-    if (state.mogrtParamsPath !== path) {       // new template → fresh overrides
+    state.mogrtSelName = name || '';
+    // restore this exact entry's saved edits (if it's a custom), else start fresh
+    var entry = null, list = state.userMogrts || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].path === path && (list[i].name || '') === (name || '')) { entry = list[i]; break; }
+    }
+    if (entry && entry.edits) {
+      state.mogrtParams = (entry.edits.params || []).slice();
+      state.mogrtTextStyle = entry.edits.textStyle || null;
+      state.mogrtRBSwap = !!entry.edits.rbSwap;
+      state.mogrtParamsPath = path;             // keep — don't let the customizer wipe these
+    } else if (state.mogrtParamsPath !== path) {
       state.mogrtParams = []; state.mogrtTextStyle = null; state.mogrtRBSwap = false; state.mogrtParamsPath = null;
     }
     if ($('tpl-file-name')) $('tpl-file-name').textContent = name || path.split(/[\\/]/).pop();
@@ -1487,11 +1504,44 @@
     buildMogrtCustomizer($('tpl-params'), path); // show colour / font / size / text now
   }
 
-  function removeUserMogrt(path) {
-    state.userMogrts = (state.userMogrts || []).filter(function (m) { return m.path !== path; });
+  function removeUserMogrt(path, name) {
+    state.userMogrts = (state.userMogrts || []).filter(function (m) {
+      return !(m.path === path && (m.name || '') === (name || ''));
+    });
     saveUserMogrts();
-    if (state.mogrtFile === path) { state.mogrtFile = null; if ($('tpl-params')) $('tpl-params').classList.add('hidden'); }
+    if (state.mogrtFile === path && (state.mogrtSelName || '') === (name || '')) {
+      state.mogrtFile = null; state.mogrtSelName = '';
+      if ($('tpl-params')) $('tpl-params').classList.add('hidden');
+    }
     renderMogrtUploads();
+  }
+
+  /* Reset every edit on the selected template back to its built-in defaults. */
+  function resetMogrtEdits(path) {
+    state.mogrtParams = []; state.mogrtTextStyle = null; state.mogrtRBSwap = false; state.mogrtParamsPath = null;
+    buildMogrtCustomizer($('tpl-params'), path);   // rebuilds showing the defaults
+    toast('↺ Reset to the template’s original settings. ▶ Preview to check.');
+  }
+
+  /* Save the current edits as a reusable custom template in "Your templates".
+     It points at the same .mogrt file but remembers your colour/font/size/etc.,
+     and stays fully re-editable. */
+  function saveCustomMogrt(path) {
+    var base = '', list = state.userMogrts || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].path === path && (list[i].name || '') === (state.mogrtSelName || '')) { base = list[i].name; break; }
+    }
+    if (!base) base = path.split(/[\\/]/).pop().replace(/\.mogrt$/i, '');
+    var name = prompt('Save this customized template as:', base.replace(/ \(custom\)$/i, '') + ' (custom)');
+    if (!name || !name.trim()) return;
+    name = name.trim();
+    var edits = { params: (state.mogrtParams || []).slice(), textStyle: state.mogrtTextStyle || null, rbSwap: !!state.mogrtRBSwap };
+    state.userMogrts = list.filter(function (m) { return (m.name || '') !== name; });   // replace same-name
+    state.userMogrts.unshift({ name: name, path: path, edits: edits });
+    saveUserMogrts();
+    state.mogrtSelName = name;
+    renderMogrtUploads();
+    toast('Saved “' + name + '” to Your templates — selecting it restores these edits.');
   }
 
   /* Transcript status shown inside the Editor (.mogrt) section. */
@@ -2053,6 +2103,28 @@
     dd.el.classList.add('mp-ctrl');
     row.appendChild(dd.el);
   }
+  /* A labelled dropdown for a template ENUM control (e.g. "Type"). options are
+     [{value,label}]; the enum value is the 1-based menu index Premiere stores. */
+  function mpAddSelect(box, label, options, cur, onChange) {
+    var row = mpRow(box, label);
+    var dd = makeDropdown(options, cur, function (v) { onChange(Number(v)); }, label);
+    dd.el.classList.add('mp-ctrl');
+    row.appendChild(dd.el);
+  }
+  /* Pull an ENUM control's option labels out of definition.json (menucontent),
+     returning [{value:1,label},…] (1-based — how Premiere indexes the menu). */
+  function enumOptions(c) {
+    var out = [];
+    try {
+      var mc = c.menucontent || c.menuContent || [];
+      for (var i = 0; i < mc.length; i++) {
+        var lbl = '';
+        try { lbl = mc[i].strDB[0].str; } catch (eL) { lbl = 'Option ' + (i + 1); }
+        out.push({ value: i + 1, label: lbl });
+      }
+    } catch (e) {}
+    return out;
+  }
   function mpAddNumber(box, label, cur, onChange) {
     var row = mpRow(box, label);
     var inp = document.createElement('input'); inp.type = 'number'; inp.step = 'any'; inp.className = 'mp-ctrl';
@@ -2229,6 +2301,16 @@
       head.textContent = '🎨 ' + path.split(/[\\/]/).pop() + ' — edit before applying';
       box.appendChild(head);
 
+      // Reset (back to template defaults) + Save (as a reusable custom template)
+      var bar = document.createElement('div'); bar.className = 'mp-toolbar';
+      var rb = document.createElement('button'); rb.type = 'button'; rb.className = 'chip-btn';
+      rb.textContent = '↺ Reset'; rb.title = 'Reset every edit back to the template default';
+      rb.addEventListener('click', function () { resetMogrtEdits(path); });
+      var sb = document.createElement('button'); sb.type = 'button'; sb.className = 'chip-btn';
+      sb.textContent = '＋ Save as custom'; sb.title = 'Save these edits as a reusable template in “Your templates”';
+      sb.addEventListener('click', function () { saveCustomMogrt(path); });
+      bar.appendChild(rb); bar.appendChild(sb); box.appendChild(bar);
+
       if (defs && defs.length) {
         renderFromDefinition(box, defs, props);   // exact Essential-Graphics layout
       } else {
@@ -2263,6 +2345,12 @@
       var nm = normName(ctrlName(defCtrl));
       return (nm && liveByName[nm]) || props[posIdx] || null;
     }
+    // a previously-saved override for this control (so re-opening a customized
+    // template shows YOUR values, and Reset/Save round-trip correctly)
+    function savedParam(liveIdx) {
+      for (var i = 0; i < state.mogrtParams.length; i++) if (state.mogrtParams[i].i === liveIdx) return state.mogrtParams[i];
+      return null;
+    }
 
     var colorHexById = {}, anyColor = false;
     function swapRB(hex) { return (/^#[0-9a-f]{6}$/i.test(hex)) ? ('#' + hex.slice(5, 7) + hex.slice(3, 5) + hex.slice(1, 3)) : hex; }
@@ -2286,19 +2374,34 @@
 
       if (t === MT.COLOR) {
         anyColor = true;
-        var hex = (c.value && c.value.length >= 3) ? rgbaArrayToHex(c.value)
+        var spC = savedParam(liveIdx);
+        var hex = (spC && (spC.kind === 'color' || spC.kind === 'colorint')) ? spC.value
+                : (c.value && c.value.length >= 3) ? rgbaArrayToHex(c.value)
                 : (typeof ip.value === 'string' && /^#[0-9a-f]{6}$/i.test(ip.value) ? ip.value : '#ffffff');
         (function (idx) { mpAddColor(box, name, hex, function (v) { applyColor(idx, v); }); })(liveIdx);
         continue;
       }
       if (t === MT.SLIDER || t === MT.ANGLE) {
-        var cv = (typeof ip.value === 'number') ? ip.value : (c.value != null ? c.value : 0);
+        var spN = savedParam(liveIdx);
+        var cv = (spN && spN.kind === 'number') ? spN.value
+               : (typeof ip.value === 'number') ? ip.value : (c.value != null ? c.value : 0);
         (function (idx) { mpAddSlider(box, name, cv, c.min, c.max, function (v) { setMogrtParam(idx, 'number', v); }); })(liveIdx);
         continue;
       }
       if (t === MT.BOOL) {
-        var bv = (typeof ip.value === 'boolean') ? ip.value : !!c.value;
+        var spB = savedParam(liveIdx);
+        var bv = (spB && spB.kind === 'bool') ? spB.value : ((typeof ip.value === 'boolean') ? ip.value : !!c.value);
         (function (idx) { mpAddCheck(box, name, bv, function (v) { setMogrtParam(idx, 'bool', v); }); })(liveIdx);
+        continue;
+      }
+      if (t === MT.ENUM) {
+        var opts = enumOptions(c);
+        if (opts.length) {
+          var spE = savedParam(liveIdx);
+          var ev = (spE && spE.kind === 'number') ? spE.value
+                 : (typeof ip.value === 'number') ? ip.value : (typeof c.value === 'number' ? c.value : opts[0].value);
+          (function (idx) { mpAddSelect(box, name, opts, ev, function (v) { setMogrtParam(idx, 'number', v); }); })(liveIdx);
+        }
         continue;
       }
       if (t === MT.POINT) {
