@@ -1060,59 +1060,32 @@ function CP_hexToInt(hex) {
   return isNaN(v) ? 0 : v;
 }
 
-/* Loose colour-value equality (handles arrays of floats and packed numbers),
-   used to detect whether a setValue actually changed the property. */
-function CP_colorEq(a, b) {
-  if (a == null || b == null) return a === b;
-  var aArr = (typeof a === 'object' && typeof a.length === 'number');
-  var bArr = (typeof b === 'object' && typeof b.length === 'number');
-  if (aArr && bArr) {
-    if (a.length !== b.length) return false;
-    for (var i = 0; i < a.length; i++) if (Math.abs((Number(a[i]) || 0) - (Number(b[i]) || 0)) > 0.004) return false;
-    return true;
-  }
-  if (!aArr && !bArr && typeof a === 'number' && typeof b === 'number') return Math.abs(a - b) < 0.5;
-  return String(a) === String(b);
-}
+/* Set a MOGRT colour from a hex string.
 
-/* Robustly set a MOGRT colour from a hex string. These params vary wildly: some
-   read/write as an [r,g,b,a] array of 0..1 floats, others as a packed integer
-   (and the byte order isn't consistent). We hand After Effects the ARRAY first —
-   it packs to the template's own correct internal format, so the colour is exact
-   with no byte-order guessing. If the array is refused (param wants a number), we
-   try the common integer packings and READ BACK to keep whichever actually moved
-   the value, so the colour really changes instead of silently doing nothing. */
+   THE correct API (per Adobe's Premiere scripting docs) is
+   ComponentParam.setColorValue(alpha, red, green, blue, updateUI) with 0-255
+   values — NOT setValue(). For a colour param, getValue()/setValue() use an
+   internal packed number that does not round-trip (e.g. getValue() on white
+   returns 280379743338240), which is exactly why every setValue() attempt
+   silently failed. setColorValue() is the method that actually works.
+
+   We still keep setValue() array / int fallbacks for the rare param that has no
+   setColorValue (older or non-AE templates). */
 function CP_setColorAny(prop, hex) {
   var rgba = CP_hexToRgba(hex);                 // [r,g,b,a] 0..1
-  // 1) canonical AE array — the safe, exact path (works for most templates)
+  var r = Math.round(rgba[0] * 255), g = Math.round(rgba[1] * 255), b = Math.round(rgba[2] * 255);
+
+  // 1) The documented, correct path for MOGRT colour params.
+  try { var rc = prop.setColorValue(255, r, g, b, 1); if (rc === 0 || rc == null) return true; } catch (e0) {}
+  try { prop.setColorValue(255, r, g, b, true); return true; } catch (e0b) {}
+  try { prop.setColorValue(255, r, g, b); return true; } catch (e0c) {}
+
+  // 2) Fallbacks: [r,g,b,a] 0..1 array, then a packed 0xRRGGBB int.
   try { prop.setValue(rgba, true); return true; } catch (e1) {}
   try { prop.setValue(rgba); return true; } catch (e2) {}
-  try { prop.setValue([rgba[0], rgba[1], rgba[2]], true); return true; } catch (e3) {}
-
-  // 2) array refused → this control wants a NUMBER. Try packings; keep the first
-  //    that verifiably changes the value (read-back).
-  var r = Math.round(rgba[0] * 255), g = Math.round(rgba[1] * 255), b = Math.round(rgba[2] * 255);
-  var before = null; try { before = prop.getValue(); } catch (eB) { before = null; }
-  var A = 255 * 16777216;                        // 0xFF000000 (opaque alpha)
-  var nums = [
-    r * 65536 + g * 256 + b,                     // 0xRRGGBB
-    A + r * 65536 + g * 256 + b,                 // 0xAARRGGBB
-    b * 65536 + g * 256 + r,                     // 0xBBGGRR
-    A + b * 65536 + g * 256 + r                  // 0xAABBGGRR
-  ];
-  for (var k = 0; k < nums.length; k++) {
-    var n = nums[k];
-    var cands = (n > 2147483647) ? [n, n - 4294967296] : [n];  // unsigned + signed 32-bit
-    for (var j = 0; j < cands.length; j++) {
-      try {
-        prop.setValue(cands[j], true);
-        var now = null; try { now = prop.getValue(); } catch (eN) { now = null; }
-        if (now != null && !CP_colorEq(now, before)) return true;
-      } catch (eS) {}
-    }
-  }
-  // last-ditch: plain 0xRRGGBB even if we couldn't verify a change
-  try { prop.setValue(r * 65536 + g * 256 + b, true); return true; } catch (eL) {}
+  var pi = r * 65536 + g * 256 + b;
+  try { prop.setValue(pi, true); return true; } catch (e3) {}
+  try { prop.setValue(pi); return true; } catch (e4) {}
   return false;
 }
 

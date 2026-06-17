@@ -2143,45 +2143,6 @@
     function h(x) { x = Math.round(Math.max(0, Math.min(1, Number(x))) * 255); var s = x.toString(16); return s.length < 2 ? '0' + s : s; }
     try { return '#' + h(a[0]) + h(a[1]) + h(a[2]); } catch (e) { return '#ffffff'; }
   }
-  function hexToRgb255(hex) {
-    hex = String(hex).replace('#', '');
-    if (hex.length === 3) hex = hex.charAt(0) + hex.charAt(0) + hex.charAt(1) + hex.charAt(1) + hex.charAt(2) + hex.charAt(2);
-    return [parseInt(hex.substr(0, 2), 16) || 0, parseInt(hex.substr(2, 2), 16) || 0, parseInt(hex.substr(4, 2), 16) || 0, 255];
-  }
-  // Candidate ways a MOGRT might pack a colour into the single number Premiere
-  // reports — we pick the one that reproduces the template's known defaults.
-  var COLOR_ENCODERS = [
-    { id: 'rgb24', f: function (r, g, b, a) { return r * 65536 + g * 256 + b; } },
-    { id: 'bgr24', f: function (r, g, b, a) { return b * 65536 + g * 256 + r; } },
-    { id: 'argb32', f: function (r, g, b, a) { return a * 16777216 + r * 65536 + g * 256 + b; } },
-    { id: 'abgr32', f: function (r, g, b, a) { return a * 16777216 + b * 65536 + g * 256 + r; } },
-    { id: 'rgba32', f: function (r, g, b, a) { return r * 16777216 + g * 65536 + b * 256 + a; } },
-    { id: 'bgra32', f: function (r, g, b, a) { return b * 16777216 + g * 65536 + r * 256 + a; } }
-  ];
-  function _numEq(a, b) {
-    a = Number(a); b = Number(b);
-    if (a < 0) a += 4294967296; if (b < 0) b += 4294967296;
-    return Math.abs(a - b) <= 1.5;
-  }
-  /* Find the encoder that maps each known default RGBA to its observed number.
-     No samples means this template's colours are native [r,g,b,a] ARRAYS (Premiere
-     reports them as arrays, not numbers) — so there is NO packed-int format to
-     match. Return null and let the caller set the exact array (no byte-order
-     guessing). Returning an encoder here was the "everything turns blue" bug:
-     an empty loop "matched" rgb24 and we then pushed a packed int at an array
-     colour control. */
-  function calibrateColorEncoder(samples) {
-    if (!samples || !samples.length) return null;
-    for (var k = 0; k < COLOR_ENCODERS.length; k++) {
-      var ok = true;
-      for (var s = 0; s < samples.length; s++) {
-        var c = hexToRgb255(rgbaArrayToHex(samples[s].rgba));
-        if (!_numEq(COLOR_ENCODERS[k].f(c[0], c[1], c[2], 255), samples[s].num)) { ok = false; break; }
-      }
-      if (ok) return COLOR_ENCODERS[k];
-    }
-    return null;
-  }
   // definition.json type codes
   var MT = { BOOL: 1, SLIDER: 2, ANGLE: 3, COLOR: 4, POINT: 5, TEXT: 6, NOTE: 8, SCALE: 9, GROUP: 10, ENUM: 13 };
   function normName(s) { return String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim(); }
@@ -2289,7 +2250,13 @@
           if (blob && blob.capPropTextRunCount === 1) {
             mpHeader(box, 'Text style (all lines)');
             mpAddFontSelect(box, 'Font', (blob.fontEditValue && blob.fontEditValue[0]) || '', function (v) { richStyle().font = v || null; });
-            mpAddColor(box, 'Text colour', readBlobFill(blob), function (v) { richStyle().fill = v; });
+            // Only offer the blob's text colour when the blob actually carries a
+            // fill field; templates like the Subtitle_* set text colour through a
+            // dedicated "Text Color" param instead (shown below), so a blob colour
+            // row here would do nothing and confuse.
+            if (blob.fillColorEditValue || blob.fontFillColorEditValue || blob.FillColorEditValue) {
+              mpAddColor(box, 'Text colour', readBlobFill(blob), function (v) { richStyle().fill = v; });
+            }
             mpAddSlider(box, 'Font size', (blob.fontSizeEditValue && blob.fontSizeEditValue[0]) || 100, 10, 1200, function (v) { richStyle().size = v; });
             mpAddCheck(box, 'ALL CAPS', !!(blob.fontFSAllCapsValue && blob.fontFSAllCapsValue[0]), function (v) { richStyle().caps = v; });
             mpAddCheck(box, 'Bold', !!(blob.fontFSBoldValue && blob.fontFSBoldValue[0]), function (v) { richStyle().bold = v; });
