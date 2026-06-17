@@ -2070,17 +2070,41 @@
     var cur = curValue;
     function labelFor(v) { for (var i = 0; i < options.length; i++) if (options[i].value === v) return options[i].label; return placeholder || String(v || ''); }
     function refresh() { btn.textContent = labelFor(cur) + ' ▾'; }
+
+    // Long lists (e.g. every installed font) get a search box at the top so you
+    // can type to filter instead of scrolling hundreds of entries.
+    var items = [], search = null;
+    if (options.length > 8) {
+      search = document.createElement('input');
+      search.type = 'text'; search.className = 'cp-dd-search'; search.placeholder = '🔎 Search…'; search.spellcheck = false;
+      search.addEventListener('click', function (e) { e.stopPropagation(); });
+      search.addEventListener('input', function () {
+        var q = this.value.toLowerCase();
+        for (var i = 0; i < items.length; i++) {
+          items[i].el.style.display = (!q || items[i].label.toLowerCase().indexOf(q) !== -1) ? '' : 'none';
+        }
+      });
+      list.appendChild(search);
+    }
     options.forEach(function (o) {
       var it = document.createElement('button'); it.type = 'button'; it.className = 'cp-dd-item'; it.textContent = o.label;
       it.addEventListener('click', function (e) { e.stopPropagation(); cur = o.value; refresh(); list.classList.add('hidden'); _cpOpenPop = null; onChange(cur); });
       list.appendChild(it);
+      items.push({ el: it, label: o.label });
     });
     refresh();
     btn.addEventListener('click', function (e) {
       e.stopPropagation();
       var willOpen = list.classList.contains('hidden');
       if (_cpOpenPop) _cpOpenPop.classList.add('hidden');
-      if (willOpen) { list.classList.remove('hidden'); _cpOpenPop = list; } else { _cpOpenPop = null; }
+      if (willOpen) {
+        list.classList.remove('hidden'); _cpOpenPop = list;
+        if (search) {
+          search.value = '';
+          for (var i = 0; i < items.length; i++) items[i].el.style.display = '';
+          setTimeout(function () { try { search.focus(); } catch (eF) {} }, 0);
+        }
+      } else { _cpOpenPop = null; }
     });
     list.addEventListener('click', function (e) { e.stopPropagation(); });
     wrap.appendChild(btn); wrap.appendChild(list);
@@ -2215,31 +2239,16 @@
       return (nm && liveByName[nm]) || props[posIdx] || null;
     }
 
-    // Calibrate the colour encoding from the template's own known defaults
-    // (definition RGBA ↔ the number Premiere reports), pairing each colour with
-    // its live prop BY NAME. No number-colours → null → exact [r,g,b,a] path.
-    var samples = [];
-    for (var s = 0; s < defs.length; s++) {
-      if (defs[s].type === MT.COLOR && defs[s].value && defs[s].value.length >= 3) {
-        var lps = liveFor(defs[s], s);
-        if (lps && typeof lps.num === 'number') samples.push({ rgba: defs[s].value, num: lps.num });
-      }
-    }
-    var enc = calibrateColorEncoder(samples);
-
-    var colorHexById = {}, colorIsNum = {}, anyColor = false;
+    var colorHexById = {}, anyColor = false;
     function swapRB(hex) { return (/^#[0-9a-f]{6}$/i.test(hex)) ? ('#' + hex.slice(5, 7) + hex.slice(3, 5) + hex.slice(1, 3)) : hex; }
     function applyColor(liveIdx, hex) {
       colorHexById[liveIdx] = hex;
-      var h = state.mogrtRBSwap ? swapRB(hex) : hex;   // toggle works for both colour formats
-      // packed-int ONLY when Premiere reports THIS control as a number; array
-      // colours (the usual case) get the exact [r,g,b,a] — no byte-order surprise.
-      if (enc && colorIsNum[liveIdx]) {
-        var c = hexToRgb255(h);
-        setMogrtParam(liveIdx, 'colornum', enc.f(c[0], c[1], c[2], 255));
-      } else {
-        setMogrtParam(liveIdx, 'color', h);
-      }
+      // Always hand the host the exact colour. The host sets the [r,g,b,a] array
+      // first (After Effects packs it to the template's own correct format), and
+      // only falls back to numeric packings — with read-back verification — if the
+      // array is refused. This is what makes colour stick on templates whose
+      // colour params report as numbers (e.g. the Subtitle_* auto-caption ones).
+      setMogrtParam(liveIdx, 'color', state.mogrtRBSwap ? swapRB(hex) : hex);
     }
 
     for (var i = 0; i < defs.length; i++) {
@@ -2252,7 +2261,6 @@
 
       if (t === MT.COLOR) {
         anyColor = true;
-        colorIsNum[liveIdx] = (typeof ip.num === 'number');
         var hex = (c.value && c.value.length >= 3) ? rgbaArrayToHex(c.value)
                 : (typeof ip.value === 'string' && /^#[0-9a-f]{6}$/i.test(ip.value) ? ip.value : '#ffffff');
         (function (idx) { mpAddColor(box, name, hex, function (v) { applyColor(idx, v); }); })(liveIdx);
