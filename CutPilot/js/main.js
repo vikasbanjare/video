@@ -18,7 +18,7 @@
     plan: null,
     transcript: null,        // { label, path } — the one chosen transcript
     transcriptManual: false, // true once the user picks a file by hand (auto-rescan won't override)
-    presetId: 'pro-aura',
+    presetId: 'pro-frost',
     animId: 'pop',
     mcMode: 'rotate',
     tplSource: 'installed',  // installed | file

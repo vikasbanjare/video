@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.68</span>
+    <span class="ver" id="ver">v0.9.69</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -171,8 +171,8 @@
         <label class="check sync-line"><input type="checkbox" id="c-sync" checked> 🎯 Sync each word to the spoken audio <span id="sync-stat" class="dim"></span></label>
         <input type="number" id="c-words" value="1" class="hidden">
 
-        <details class="advanced" id="customize-drawer">
-          <summary>🎨 Customize look — font, colour, animation</summary>
+        <details class="advanced" id="customize-drawer" open>
+          <summary>🎨 Edit everything — font · colour · size · position · animation</summary>
           <div class="customizer">
             <label class="full">Font
               <input type="text" id="c-font-filter" class="font-filter" placeholder="🔎 Filter fonts…" autocomplete="off">
@@ -553,7 +553,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.68 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.69 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>
