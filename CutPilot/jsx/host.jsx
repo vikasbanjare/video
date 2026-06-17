@@ -894,12 +894,16 @@ function CP_isUuidList(s) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(\s*;|\s*$)/i.test(String(s));
 }
 /* True if a string value is a real editable text field (source-text or plain
-   caption) rather than a group reference or a font name. */
+   caption) rather than a group reference, a font name, or a non-caption helper
+   field (read-only mirrors, author notes, "change font only" duplicates). */
 function CP_isTextValue(v, name) {
   if (typeof v !== 'string' || !v.length) return false;
   if (CP_isUuidList(v)) return false;                       // group container
   var nmL = String(name || '').toLowerCase();
   if (nmL.indexOf('font') !== -1 || nmL.indexOf('typeface') !== -1) return false; // font picker
+  // Auto-subtitle templates expose read-only word mirrors and an author "Note"
+  // beside the real caption field — filling those garbles the graphic.
+  if (/readonly|read only|\(read|\bnote\b|instruction|change font only|\(change font|do not|don't edit|placeholder/.test(nmL)) return false;
   return true;
 }
 
@@ -1242,16 +1246,22 @@ function CP_insertMogrtCaptions(argsJson) {
             }
             if (anySet) textSet++;
           } else {
-            // single text field: match by display-name keyword, then any string
+            // single text field: match by display-name keyword, then any string —
+            // but only REAL caption fields (skip read-only mirrors / notes / fonts).
             var done = false;
             for (var k = 0; k < KEYS.length && !done; k++) {
               for (var pIdx = 0; pIdx < props.numItems && !done; pIdx++) {
                 var dn = String(props[pIdx].displayName || '').toLowerCase();
-                if (dn.indexOf(KEYS[k]) !== -1 && CP_setMgrtText(props[pIdx], grp[0].text, allowRich, args.textStyle)) { textSet++; done = true; }
+                if (dn.indexOf(KEYS[k]) === -1) continue;
+                var gv = null; try { gv = props[pIdx].getValue(); } catch (eGv) {}
+                if (CP_isTextValue(gv, props[pIdx].displayName) &&
+                    CP_setMgrtText(props[pIdx], grp[0].text, allowRich, args.textStyle)) { textSet++; done = true; }
               }
             }
             for (var p2 = 0; p2 < props.numItems && !done; p2++) {
-              if (CP_propIsString(props[p2]) && CP_setMgrtText(props[p2], grp[0].text, allowRich, args.textStyle)) { textSet++; done = true; }
+              var gv2 = null; try { gv2 = props[p2].getValue(); } catch (eGv2) {}
+              if (CP_isTextValue(gv2, props[p2].displayName) &&
+                  CP_setMgrtText(props[p2], grp[0].text, allowRich, args.textStyle)) { textSet++; done = true; }
             }
           }
         }

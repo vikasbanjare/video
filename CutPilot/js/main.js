@@ -2159,7 +2159,8 @@
     return null;
   }
   // definition.json type codes
-  var MT = { SLIDER: 2, ANGLE: 3, COLOR: 4, POINT: 5, TEXT: 6, SCALE: 9, GROUP: 10 };
+  var MT = { BOOL: 1, SLIDER: 2, ANGLE: 3, COLOR: 4, POINT: 5, TEXT: 6, NOTE: 8, SCALE: 9, GROUP: 10, ENUM: 13 };
+  function normName(s) { return String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim(); }
 
   /* Build editable controls (colour / size / font / toggle) for the selected
      template — the same basic params Premiere shows in Essential Graphics. */
@@ -2191,57 +2192,85 @@
   }
 
   /* Build the editor straight from the template's definition.json — groups as
-     headers, and the right control per type (colour / slider / position / text
-     style), mirroring Premiere's Essential Graphics. */
+     headers, and the right control per type (colour / slider / toggle / position
+     / text style), mirroring Premiere's Essential Graphics.
+
+     IMPORTANT: a control's position in definition.json is NOT necessarily its
+     index in Premiere's live component (grouped templates flatten differently —
+     group headers may be dropped, shifting every index). So we resolve each
+     control to its REAL live property BY NAME, and set that. Index is only a
+     last-resort fallback. This is what makes colour editing work on the complex
+     "auto-subtitle" templates, not just the simple ones. */
   function renderFromDefinition(box, defs, props) {
     var firstTextDone = false;
 
+    // live (Premiere) properties indexed by display name → real settable index
+    var liveByName = {};
+    for (var li = 0; li < props.length; li++) {
+      var ln = normName(props[li].name);
+      if (ln && !(ln in liveByName)) liveByName[ln] = props[li];
+    }
+    function liveFor(defCtrl, posIdx) {
+      var nm = normName(ctrlName(defCtrl));
+      return (nm && liveByName[nm]) || props[posIdx] || null;
+    }
+
     // Calibrate the colour encoding from the template's own known defaults
-    // (definition RGBA ↔ the number Premiere reports), so we set colours in the
-    // exact format this template expects instead of guessing.
+    // (definition RGBA ↔ the number Premiere reports), pairing each colour with
+    // its live prop BY NAME. No number-colours → null → exact [r,g,b,a] path.
     var samples = [];
     for (var s = 0; s < defs.length; s++) {
-      if (defs[s].type === MT.COLOR && defs[s].value && defs[s].value.length >= 3 && props[s] && typeof props[s].num === 'number') {
-        samples.push({ rgba: defs[s].value, num: props[s].num });
+      if (defs[s].type === MT.COLOR && defs[s].value && defs[s].value.length >= 3) {
+        var lps = liveFor(defs[s], s);
+        if (lps && typeof lps.num === 'number') samples.push({ rgba: defs[s].value, num: lps.num });
       }
     }
     var enc = calibrateColorEncoder(samples);
-    var colorHexById = {}, anyColor = false;
+
+    var colorHexById = {}, colorIsNum = {}, anyColor = false;
     function swapRB(hex) { return (/^#[0-9a-f]{6}$/i.test(hex)) ? ('#' + hex.slice(5, 7) + hex.slice(3, 5) + hex.slice(1, 3)) : hex; }
-    function applyColor(idx, hex) {
-      colorHexById[idx] = hex;
-      var h = state.mogrtRBSwap ? swapRB(hex) : hex;   // toggle works for BOTH number- and array-type colours
-      // Use the packed-int path ONLY for a control Premiere actually reports as a
-      // number; array-type colours (the common case) get the exact [r,g,b,a] so
-      // the colour you pick is the colour you get — no byte-order surprises.
-      var packed = enc && props[idx] && typeof props[idx].num === 'number';
-      if (packed) {
+    function applyColor(liveIdx, hex) {
+      colorHexById[liveIdx] = hex;
+      var h = state.mogrtRBSwap ? swapRB(hex) : hex;   // toggle works for both colour formats
+      // packed-int ONLY when Premiere reports THIS control as a number; array
+      // colours (the usual case) get the exact [r,g,b,a] — no byte-order surprise.
+      if (enc && colorIsNum[liveIdx]) {
         var c = hexToRgb255(h);
-        setMogrtParam(idx, 'colornum', enc.f(c[0], c[1], c[2], 255));
+        setMogrtParam(liveIdx, 'colornum', enc.f(c[0], c[1], c[2], 255));
       } else {
-        setMogrtParam(idx, 'color', h);   // host sets [r,g,b,a] — exact colour
+        setMogrtParam(liveIdx, 'color', h);
       }
     }
 
     for (var i = 0; i < defs.length; i++) {
       var c = defs[i], t = c.type, name = ctrlName(c) || ('#' + i);
-      var ip = props[i] || {};                       // matching inspect prop (same order) for live values
+      var lp = liveFor(c, i);
+      var liveIdx = lp && lp.i != null ? lp.i : i;     // REAL index to set on
+      var ip = lp || {};                                // live value for this control
+
       if (t === MT.GROUP) { mpHeader(box, name); continue; }
 
       if (t === MT.COLOR) {
         anyColor = true;
-        var hex = (c.value && c.value.length >= 3) ? rgbaArrayToHex(c.value) : '#ffffff';
-        (function (idx) { mpAddColor(box, name, hex, function (v) { applyColor(idx, v); }); })(i);
+        colorIsNum[liveIdx] = (typeof ip.num === 'number');
+        var hex = (c.value && c.value.length >= 3) ? rgbaArrayToHex(c.value)
+                : (typeof ip.value === 'string' && /^#[0-9a-f]{6}$/i.test(ip.value) ? ip.value : '#ffffff');
+        (function (idx) { mpAddColor(box, name, hex, function (v) { applyColor(idx, v); }); })(liveIdx);
         continue;
       }
       if (t === MT.SLIDER || t === MT.ANGLE) {
         var cv = (typeof ip.value === 'number') ? ip.value : (c.value != null ? c.value : 0);
-        (function (idx) { mpAddSlider(box, name, cv, c.min, c.max, function (v) { setMogrtParam(idx, 'number', v); }); })(i);
+        (function (idx) { mpAddSlider(box, name, cv, c.min, c.max, function (v) { setMogrtParam(idx, 'number', v); }); })(liveIdx);
+        continue;
+      }
+      if (t === MT.BOOL) {
+        var bv = (typeof ip.value === 'boolean') ? ip.value : !!c.value;
+        (function (idx) { mpAddCheck(box, name, bv, function (v) { setMogrtParam(idx, 'bool', v); }); })(liveIdx);
         continue;
       }
       if (t === MT.POINT) {
         var pv = (c.value && c.value.x != null) ? c.value : { x: 0, y: 0 };
-        (function (idx) { mpAddPoint(box, name, pv.x, pv.y, function (v) { setMogrtParam(idx, 'point', v); }); })(i);
+        (function (idx) { mpAddPoint(box, name, pv.x, pv.y, function (v) { setMogrtParam(idx, 'point', v); }); })(liveIdx);
         continue;
       }
       if (t === MT.TEXT) {
@@ -2261,7 +2290,8 @@
         }
         continue;
       }
-      // SCALE and anything else: skip (handled by the template / not safely settable)
+      // NOTE (read-only instructions), ENUM (animation-type picker), SCALE and
+      // anything else: skip — not safely settable as a generic control.
     }
 
     // Escape hatch: some Premiere builds read a template's colour red↔blue (your
