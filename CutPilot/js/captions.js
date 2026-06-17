@@ -479,6 +479,13 @@
      bold-caps Hormozi look). Clean grotesk/serif faces, tasteful muted accents,
      soft bars/pills, gentle fade/slide/scale. These lead the library. */
   var PREMIUM_TEMPLATES = [
+    // Spotlight — the signature Captions.ai look: clean white modern sans, soft
+    // drop-shadow (NOT a thick outline), the key word on a tasteful blue pill.
+    { id: 'pro-spotlight', name: 'Spotlight', category: '⭐ Premium', popularity: 100, layout: 'bottom', keyword: true, highlightScale: 1.04,
+      font: 'Montserrat', fallbackFonts: ['Poppins', 'Inter', 'Arial'],
+      fontSize: 62, fill: '#FFFFFF', highlight: '#2D7CFF', highlightStyle: 'box', boxRadius: 12,
+      glow: '#000000', stroke: null, strokeWidth: 0,
+      uppercase: false, wordsPerCue: 4, anim: 'karaoke' },
     // Aura — airy minimal, sentence case, the premium agency/YouTube default
     { id: 'pro-aura', name: 'Aura', category: '⭐ Premium', popularity: 100, layout: 'bottom', keyword: false,
       font: 'Manrope', fallbackFonts: ['Inter', 'Helvetica Neue', 'Arial'],
