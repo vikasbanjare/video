@@ -486,66 +486,66 @@
       fontSize: 62, fill: '#FFFFFF', highlight: '#2D7CFF', highlightStyle: 'box', boxRadius: 12,
       glow: '#000000', stroke: null, strokeWidth: 0,
       uppercase: false, wordsPerCue: 4, anim: 'karaoke' },
-    // Aura — airy minimal, sentence case, the premium agency/YouTube default
-    { id: 'pro-aura', name: 'Aura', category: '⭐ Premium', popularity: 100, layout: 'bottom', keyword: false,
-      font: 'Manrope', fallbackFonts: ['Inter', 'Helvetica Neue', 'Arial'],
-      fontSize: 52, fill: '#FFFFFF', highlight: '#FFFFFF', stroke: '#000000', strokeWidth: 3,
-      uppercase: false, wordsPerCue: 4, anim: 'fade' },
-    // Editorial — elegant serif, centered, calm gold accent. Brand films / docs
-    { id: 'pro-editorial', name: 'Editorial', category: '⭐ Premium', popularity: 99, layout: 'center', keyword: false,
-      font: 'Playfair Display', fallbackFonts: ['Lora', 'Georgia', 'serif'],
-      fontSize: 58, fill: '#F6F2EC', highlight: '#D9B36A', stroke: null, strokeWidth: 0, letterSpacing: 0.5,
-      uppercase: false, wordsPerCue: 4, anim: 'fade' },
-    // Frost — clean white on a soft dark rounded bar (glass-style lower third)
-    { id: 'pro-frost', name: 'Frost', category: '⭐ Premium', popularity: 98, layout: 'bottom', keyword: false,
-      font: 'Outfit', fallbackFonts: ['Inter', 'Arial'],
-      fontSize: 46, fill: '#FFFFFF', highlight: '#9FE7FF', boxColor: '#10131A', boxRadius: 14, stroke: null, strokeWidth: 0,
-      uppercase: false, wordsPerCue: 0, anim: 'slide' },
-    // Coral — clean white, one word in a tasteful coral (subtle, not garish)
-    { id: 'pro-coral', name: 'Coral', category: '⭐ Premium', popularity: 97, layout: 'bottom', keyword: true, highlightScale: 1.06,
-      font: 'Sora', fallbackFonts: ['Inter', 'Arial'],
-      fontSize: 56, fill: '#FFFFFF', highlight: '#FF6F61', stroke: '#000000', strokeWidth: 4,
-      uppercase: false, wordsPerCue: 3, anim: 'fade' },
-    // Mono — wide-tracked uppercase in a clean MEDIUM weight (cinematic, not bold)
-    { id: 'pro-mono', name: 'Mono', category: '⭐ Premium', popularity: 96, layout: 'center', keyword: false,
-      font: 'Sora', fallbackFonts: ['Outfit', 'Inter', 'Arial'],
-      fontSize: 40, fill: '#FFFFFF', highlight: '#FFFFFF', stroke: null, strokeWidth: 0, letterSpacing: 6,
-      uppercase: true, wordsPerCue: 4, anim: 'fade' },
-    // Lumin — soft karaoke: clean phrase, active word fills a soft sky accent
-    { id: 'pro-lumin', name: 'Lumin', category: '⭐ Premium', popularity: 95, layout: 'bottom', keyword: false,
-      font: 'Poppins', fallbackFonts: ['Inter', 'Arial'],
-      fontSize: 56, fill: '#FFFFFF', highlight: '#7DD3FC', stroke: '#000000', strokeWidth: 4,
-      uppercase: false, wordsPerCue: 4, anim: 'karaoke' },
-    // Lilac — active word on a soft lavender pill, rounded & modern
-    { id: 'pro-lilac', name: 'Lilac', category: '⭐ Premium', popularity: 94, layout: 'bottom', keyword: false,
-      font: 'DM Sans', fallbackFonts: ['Inter', 'Arial'],
-      fontSize: 56, fill: '#FFFFFF', highlight: '#A78BFA', highlightStyle: 'box', boxRadius: 16, stroke: '#000000', strokeWidth: 3,
+    // Pulse — UPPERCASE clean sans, key word on a blue pill (Captions.ai "Pulse")
+    { id: 'pro-pulse', name: 'Pulse', category: '⭐ Premium', popularity: 99, layout: 'center', keyword: true,
+      font: 'Montserrat', fallbackFonts: ['Poppins', 'Arial Black'],
+      fontSize: 66, fill: '#FFFFFF', highlight: '#3B5BFF', highlightStyle: 'box', boxRadius: 10, glow: '#000000', stroke: null, strokeWidth: 0,
+      uppercase: true, wordsPerCue: 3, anim: 'karaoke' },
+    // Thuban — key word on a yellow pill (black text auto-contrasts)
+    { id: 'pro-thuban', name: 'Thuban', category: '⭐ Premium', popularity: 98, layout: 'bottom', keyword: true,
+      font: 'Montserrat', fallbackFonts: ['Poppins', 'Arial Black'],
+      fontSize: 62, fill: '#FFFFFF', highlight: '#FFE000', highlightStyle: 'box', boxRadius: 10, glow: '#000000', stroke: null, strokeWidth: 0,
+      uppercase: true, wordsPerCue: 3, anim: 'pop' },
+    // Runway — lowercase clean, key word on a pink pill
+    { id: 'pro-runway', name: 'Runway', category: '⭐ Premium', popularity: 97, layout: 'bottom', keyword: true,
+      font: 'Poppins', fallbackFonts: ['Montserrat', 'Inter', 'Arial'],
+      fontSize: 58, fill: '#FFFFFF', highlight: '#FF2D9B', highlightStyle: 'box', boxRadius: 14, glow: '#000000', stroke: null, strokeWidth: 0,
       uppercase: false, wordsPerCue: 3, anim: 'karaoke' },
-    // Noir — elegant white on a near-black slim bar, cinematic lower third
-    { id: 'pro-noir', name: 'Noir', category: '⭐ Premium', popularity: 93, layout: 'bottom', keyword: false,
+    // Copernicus — key word on a green pill
+    { id: 'pro-copernicus', name: 'Copernicus', category: '⭐ Premium', popularity: 96, layout: 'bottom', keyword: true,
+      font: 'Montserrat', fallbackFonts: ['Poppins', 'Arial Black'],
+      fontSize: 62, fill: '#FFFFFF', highlight: '#15C47E', highlightStyle: 'box', boxRadius: 10, glow: '#000000', stroke: null, strokeWidth: 0,
+      uppercase: true, wordsPerCue: 3, anim: 'pop' },
+    // Clarity — minimal clean white, sentence case, soft shadow (Captions.ai "Clarity")
+    { id: 'pro-clarity', name: 'Clarity', category: '⭐ Premium', popularity: 95, layout: 'center', keyword: false,
       font: 'Inter', fallbackFonts: ['Helvetica Neue', 'Arial'],
-      fontSize: 44, fill: '#FFFFFF', highlight: '#E8C77A', boxColor: '#000000', boxRadius: 4, stroke: null, strokeWidth: 0,
-      letterSpacing: 0.5, uppercase: false, wordsPerCue: 0, anim: 'fade' },
-    // Sage — calm white + sage-green keyword, understated
-    { id: 'pro-sage', name: 'Sage', category: '⭐ Premium', popularity: 92, layout: 'bottom', keyword: true, highlightScale: 1.05,
-      font: 'Manrope', fallbackFonts: ['Inter', 'Arial'],
-      fontSize: 54, fill: '#FFFFFF', highlight: '#86C7A6', stroke: '#000000', strokeWidth: 4,
-      uppercase: false, wordsPerCue: 3, anim: 'fade' },
-    // Quote — serif phrase on a soft dark pill (premium hook / quote card)
-    { id: 'pro-quote', name: 'Quote', category: '⭐ Premium', popularity: 91, layout: 'center', keyword: false,
+      fontSize: 54, fill: '#FFFFFF', highlight: '#FFFFFF', glow: '#000000', stroke: null, strokeWidth: 0,
+      uppercase: false, wordsPerCue: 4, anim: 'fade' },
+    // Evo — clean white, key word pops in a soft gold (no box)
+    { id: 'pro-evo', name: 'Evo', category: '⭐ Premium', popularity: 94, layout: 'bottom', keyword: true, highlightScale: 1.05,
+      font: 'Poppins', fallbackFonts: ['Inter', 'Arial'],
+      fontSize: 60, fill: '#FFFFFF', highlight: '#FFD400', glow: '#000000', stroke: null, strokeWidth: 0,
+      uppercase: false, wordsPerCue: 4, anim: 'pop' },
+    // Nova — UPPERCASE clean, key word in coral-pink (no box)
+    { id: 'pro-nova', name: 'Nova', category: '⭐ Premium', popularity: 93, layout: 'bottom', keyword: true,
+      font: 'Montserrat', fallbackFonts: ['Poppins', 'Arial Black'],
+      fontSize: 64, fill: '#FFFFFF', highlight: '#FF3B6B', glow: '#000000', stroke: null, strokeWidth: 0,
+      uppercase: true, wordsPerCue: 3, anim: 'pop' },
+    // Andromeda — clean white on a soft dark rounded bar (lower-third, Captions.ai "Byline")
+    { id: 'pro-andromeda', name: 'Andromeda', category: '⭐ Premium', popularity: 92, layout: 'bottom', keyword: false,
+      font: 'Outfit', fallbackFonts: ['Inter', 'Arial'],
+      fontSize: 46, fill: '#FFFFFF', highlight: '#9FE7FF', boxColor: '#10131A', boxRadius: 16, stroke: null, strokeWidth: 0,
+      uppercase: false, wordsPerCue: 0, anim: 'slide' },
+    // Elevate — cinematic serif, soft gold accent (Captions.ai "Elevate")
+    { id: 'pro-elevate', name: 'Elevate', category: '⭐ Premium', popularity: 91, layout: 'center', keyword: false,
       font: 'Playfair Display', fallbackFonts: ['Lora', 'Georgia', 'serif'],
-      fontSize: 54, fill: '#FFFFFF', highlight: '#FFFFFF', boxColor: '#11131B', boxRadius: 40, stroke: null, strokeWidth: 0,
-      uppercase: false, wordsPerCue: 4, anim: 'scale' },
-    // Studio — clean modern, gentle slide; safe professional pick
-    { id: 'pro-studio', name: 'Studio', category: '⭐ Premium', popularity: 90, layout: 'bottom', keyword: false,
-      font: 'Inter', fallbackFonts: ['Helvetica Neue', 'Arial'],
-      fontSize: 50, fill: '#FFFFFF', highlight: '#FFFFFF', stroke: '#000000', strokeWidth: 3,
-      uppercase: false, wordsPerCue: 4, anim: 'slide' },
-    // Halo — clean white + warm gold keyword, refined energy without the caps
-    { id: 'pro-halo', name: 'Halo', category: '⭐ Premium', popularity: 89, layout: 'bottom', keyword: true, highlightScale: 1.07,
-      font: 'Outfit', fallbackFonts: ['Montserrat', 'Inter', 'Arial'],
-      fontSize: 58, fill: '#FFFFFF', highlight: '#F4C04B', stroke: '#000000', strokeWidth: 4,
-      uppercase: false, wordsPerCue: 3, anim: 'scale' }
+      fontSize: 60, fill: '#F6F2EC', highlight: '#E8C77A', glow: '#000000', stroke: null, strokeWidth: 0, letterSpacing: 0.5,
+      uppercase: false, wordsPerCue: 4, anim: 'fade' },
+    // Quintessence — elegant warm-gold serif, centered (Captions.ai "Quintessence")
+    { id: 'pro-quint', name: 'Quintessence', category: '⭐ Premium', popularity: 90, layout: 'center', keyword: false,
+      font: 'Playfair Display', fallbackFonts: ['Lora', 'Georgia', 'serif'],
+      fontSize: 66, fill: '#F3E9D2', highlight: '#D9B36A', glow: '#000000', stroke: null, strokeWidth: 0,
+      uppercase: false, wordsPerCue: 3, anim: 'scale' },
+    // Velocity — bold word-by-word caps with a blue accent (Captions.ai "Velocity")
+    { id: 'pro-velocity', name: 'Velocity', category: '⭐ Premium', popularity: 89, layout: 'bottom', keyword: true, highlightScale: 1.12,
+      font: 'Montserrat', fallbackFonts: ['Archivo Black', 'Arial Black'],
+      fontSize: 78, fill: '#FFFFFF', highlight: '#2D7CFF', glow: '#000000', stroke: null, strokeWidth: 0,
+      uppercase: true, wordsPerCue: 1, anim: 'pop-scale' },
+    // Neon — glowing gaming/music look (Captions.ai "Neon" / "Rocket")
+    { id: 'pro-neon', name: 'Neon', category: '⭐ Premium', popularity: 88, layout: 'center', keyword: true,
+      font: 'Bebas Neue', fallbackFonts: ['Anton', 'Impact'],
+      fontSize: 84, fill: '#FFFFFF', highlight: '#FF2D9B', glow: '#22D3FF', stroke: '#0A0A0A', strokeWidth: 3,
+      uppercase: true, wordsPerCue: 1, anim: 'glitch-in' }
   ];
 
   /* The full catalog the library browses (base + extras). */
