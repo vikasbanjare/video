@@ -313,6 +313,52 @@
     });
   }
 
+  /* whisper.cpp sometimes emits NO segment for a run of real speech (a no-speech
+     misfire), leaving a gap mid-transcript. Re-transcribe each internal gap from
+     the same WAV and merge what comes back, dropping non-speech/hallucinations.
+     Best-effort: on ANY problem the original cues are returned unchanged. Local
+     engine only. */
+  function fillWhisperGaps(rc, ctx) {
+    var gaps;
+    try { gaps = CPCaptions.findCueGaps(rc, 5.0); } catch (e) { return Promise.resolve(rc); }
+    // skip tiny pauses (<5s) and very long spans (>20s, likely real silence/music)
+    gaps = gaps.filter(function (g) { return (g.to - g.from) <= 20; }).slice(0, 6);
+    if (!gaps.length) return Promise.resolve(rc);
+    var extra = [], chain = Promise.resolve();
+    gaps.forEach(function (gp) {
+      chain = chain.then(function () {
+        var s = Math.max(0, gp.from - 0.25), d = (gp.to - gp.from) + 0.5;
+        if (d < 0.8) return;
+        if (ctx.setBar) ctx.setBar('Re-checking a quiet stretch around ' + Math.round(gp.from) + 's…');
+        var sub = ctx.pathMod.join(ctx.os.tmpdir(), 'cutpilot-gap-' + ctx.stamp + '-' + Math.round(s * 100) + '.wav');
+        var subBase = sub.replace(/\.wav$/, '');
+        return runProc(ctx.ff, ['-y', '-ss', String(s), '-i', ctx.wav, '-t', String(d), '-ac', '1', '-ar', '16000', sub])
+          .then(function () { return runProc(ctx.wbin, ['-m', ctx.model, '-f', sub, '-osrt', '-of', subBase, '-l', ctx.wlang]); })
+          .then(function () {
+            try {
+              var sp = subBase + '.srt';
+              if (ctx.fs.existsSync(sp)) {
+                CPCaptions.parseSRT(ctx.fs.readFileSync(sp, 'utf8')).forEach(function (c) {
+                  if (!CPCaptions.isLikelyNonSpeech(c.text)) {
+                    extra.push({ start: (c.start || 0) + s, end: (c.end || 0) + s, text: String(c.text).trim() });
+                  }
+                });
+                ctx.fs.unlinkSync(sp);
+              }
+            } catch (eP) {}
+            try { ctx.fs.unlinkSync(sub); } catch (eU) {}
+          })
+          .catch(function () { try { ctx.fs.unlinkSync(sub); } catch (eU2) {} });
+      });
+    });
+    return chain.then(function () {
+      if (!extra.length) return rc;
+      var all = rc.concat(extra);
+      all.sort(function (a, b) { return a.start - b.start; });
+      return all;
+    }, function () { return rc; });
+  }
+
   /* Auto-transcribe the selected clip locally (ffmpeg → whisper.cpp → SRT) so
      the user never needs Premiere's Transcribe/Export. Produces a sequence-time
      transcript and loads it as the current transcript. */
@@ -380,7 +426,12 @@
             if (!fs.existsSync(srtPath)) throw new Error('the engine produced no transcript');
             var rc = CPCaptions.parseSRT(fs.readFileSync(srtPath, 'utf8'));
             try { fs.unlinkSync(srtPath); } catch (e) {}
-            return rc;
+            // recover any mid-transcript gaps whisper dropped (best-effort)
+            var ctx = { wbin: wbin, model: model, wlang: wlang, wav: wav, ff: ff,
+                        fs: fs, os: os, pathMod: pathMod, stamp: stamp,
+                        setBar: function (m) { setTranscriptBar('', ico, m, null); } };
+            var gp; try { gp = fillWhisperGaps(rc, ctx); } catch (eGap) { gp = Promise.resolve(rc); }
+            return gp.then(function (f) { return (f && f.length) ? f : rc; }, function () { return rc; });
           });
         }).then(function (rawCues) {
           if (!rawCues || !rawCues.length) throw new Error('no speech detected in “' + shortName + '”');

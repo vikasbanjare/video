@@ -870,11 +870,39 @@
   }
 
 
+  /* Gaps (>= threshold seconds) between consecutive cues — used to find stretches
+     where the speech engine produced nothing (a "no-speech misfire"), so we can
+     re-check just those spans. Returns [{from,to}] in the cues' own time base. */
+  function findCueGaps(cues, threshold) {
+    var gaps = [];
+    if (!cues || cues.length < 2) return gaps;
+    var s = cues.slice().sort(function (a, b) { return a.start - b.start; });
+    for (var i = 0; i < s.length - 1; i++) {
+      var d = (s[i + 1].start || 0) - (s[i].end || 0);
+      if (d >= threshold) gaps.push({ from: s[i].end, to: s[i + 1].start });
+    }
+    return gaps;
+  }
+
+  /* True for transcript text that is almost certainly NOT real speech — the
+     bracketed markers and stock hallucinations whisper emits over silence/music.
+     Lets a gap re-check drop junk instead of captioning "[BLANK_AUDIO]". */
+  function isLikelyNonSpeech(text) {
+    var t = String(text == null ? '' : text).trim();
+    if (!t) return true;
+    if (/^[\[(].*[\])]$/.test(t)) return true;                                  // [BLANK_AUDIO], (music), [silence]
+    if (t.replace(/[^A-Za-z0-9ऀ-ॿ]/g, '').length <= 1) return true;   // punctuation / single char
+    if (/^(thanks for watching|thank you|please subscribe|subscribe|bye|you|okay|ok|so|the|♪+|music)\.?$/i.test(t)) return true;
+    return false;
+  }
+
   return {
     srtTimeToSeconds: srtTimeToSeconds,
     secondsToSrtTime: secondsToSrtTime,
     parseSRT: parseSRT,
     toSRT: toSRT,
+    findCueGaps: findCueGaps,
+    isLikelyNonSpeech: isLikelyNonSpeech,
     devanagariToLatin: devanagariToLatin,
     explodeWords: explodeWords,
     regroupWords: regroupWords,

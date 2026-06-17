@@ -121,6 +121,26 @@ console.log('captions.js');
 
   assert(CPCaptions.STYLE_PRESETS.length >= 6, 'at least 6 style presets');
   assert(CPCaptions.getPreset('hormozi').uppercase === true, 'hormozi preset is uppercase');
+
+  // findCueGaps: detect mid-transcript holes whisper may have dropped
+  const gapCues = [{ start: 0, end: 3, text: 'a' }, { start: 3.5, end: 6, text: 'b' },
+                   { start: 16, end: 18, text: 'c' }];
+  const g1 = CPCaptions.findCueGaps(gapCues, 5);
+  assert(g1.length === 1, 'findCueGaps finds the one >=5s gap (not the 0.5s pause)');
+  assert(close(g1[0].from, 6) && close(g1[0].to, 16), 'gap spans 6s..16s');
+  assert(CPCaptions.findCueGaps(gapCues, 5).length === 1 && CPCaptions.findCueGaps([gapCues[0]], 5).length === 0,
+         'findCueGaps returns none for <2 cues');
+  assert(CPCaptions.findCueGaps([{ start: 0, end: 5, text: 'x' }, { start: 6, end: 7, text: 'y' }], 5).length === 0,
+         'a 1s pause is not a gap at threshold 5');
+
+  // isLikelyNonSpeech: drop whisper junk so gap-fill never captions noise markers
+  assert(CPCaptions.isLikelyNonSpeech('[BLANK_AUDIO]'), 'flags [BLANK_AUDIO]');
+  assert(CPCaptions.isLikelyNonSpeech('(music)'), 'flags (music)');
+  assert(CPCaptions.isLikelyNonSpeech('  '), 'flags empty/whitespace');
+  assert(CPCaptions.isLikelyNonSpeech('.'), 'flags lone punctuation');
+  assert(CPCaptions.isLikelyNonSpeech('Thanks for watching'), 'flags stock hallucination');
+  assert(!CPCaptions.isLikelyNonSpeech('behind the Reddit account'), 'keeps real speech');
+  assert(!CPCaptions.isLikelyNonSpeech('120 trillion dollars'), 'keeps real speech with numbers');
 }
 
 // ------------------------------------------------ animation planners ----
