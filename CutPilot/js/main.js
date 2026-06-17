@@ -396,7 +396,7 @@
           state.transcript = { label: 'CutPilot transcript (' + cues.length + ' lines)', path: finalPath, mtime: 1e16 };
           state.transcriptManual = true;
           $('tr-help').classList.add('hidden');
-          refreshMogrtSheetTr();
+          refreshMogrtSheetTr(); refreshMogrtEditorTr();
           var span = fmt(cues[0].start) + '–' + fmt(cues[cues.length - 1].end);
           setTranscriptBar('ok', '✅', 'Transcribed — ' + cues.length + ' lines · ' + span + ' · ' + modelLabel, 'Change');
           var note = '';
@@ -484,8 +484,9 @@
       { group: 'Go', label: 'Multicam', keywords: 'camera angle switch', run: goTab('multicam') },
       { group: 'Go', label: 'Chapters', keywords: 'youtube timestamps markers', run: goTab('chapters') },
       { group: 'Go', label: 'Settings', keywords: 'ffmpeg diagnostics path', run: goTab('settings') },
-      { group: 'Captions', label: 'Add captions', keywords: 'render burn animate', run: function () { goTab('captions')(); showView('editor'); clickId('btn-magic')(); } },
+      { group: 'Captions', label: 'Add captions', keywords: 'render burn animate', run: function () { goTab('captions')(); showView('style'); clickId('btn-magic')(); } },
       { group: 'Captions', label: 'Open template library', keywords: 'styles gallery browse', run: function () { goTab('captions')(); showView('templates'); } },
+      { group: 'Captions', label: 'Open .mogrt Editor', keywords: 'mogrt premiere template upload', run: function () { goTab('captions')(); showView('editor'); } },
       { group: 'Captions', label: 'Find my transcript again', keywords: 'srt vtt subtitle', run: function () { goTab('captions')(); findTranscript(); } },
       { group: 'Smart Cut', label: 'Find the silences', keywords: 'analyze detect dead air', run: function () { goTab('silence')(); clickId('btn-analyze')(); } },
       { group: 'Smart Cut', label: 'Remove silences (safe copy)', keywords: 'rebuild trim', run: function () { goTab('silence')(); clickId('btn-rebuild')(); } },
@@ -689,9 +690,11 @@
         state.transcript = null;
         setTranscriptBar('warn', '⚠️', 'No transcript for this video — tap to pick / make one', 'Get one →');
       }
+      refreshMogrtSheetTr(); refreshMogrtEditorTr();
     }).catch(function () {
       state.transcript = null;
       setTranscriptBar('warn', '⚠️', 'No transcript found yet', 'Get one →');
+      refreshMogrtSheetTr(); refreshMogrtEditorTr();
     });
   }
 
@@ -700,6 +703,7 @@
     state.transcriptManual = true;   // auto-rescan must not override a hand pick
     setTranscriptBar('ok', '✅', 'Using ' + state.transcript.label, 'Change');
     $('tr-help').classList.add('hidden');
+    refreshMogrtSheetTr(); refreshMogrtEditorTr();
   }
 
   function wireTranscriptBar() {
@@ -794,7 +798,7 @@
       state.transcriptManual = true;
     } catch (e) { return toast('Couldn\'t save edits: ' + e.message, true); }
     $('tr-editor').classList.add('hidden');
-    refreshMogrtSheetTr();
+    refreshMogrtSheetTr(); refreshMogrtEditorTr();
     setTranscriptBar('ok', '✅', 'Words ready — ' + cues.length + ' lines (edited)', 'Change');
     toast('✓ Saved your edits — ' + cues.length + ' lines. Now add captions.');
   }
@@ -850,12 +854,12 @@
     });
     nsel.addEventListener('change', function () {
       var id = CPCaptions.NICHE_RECOMMEND[this.value];
-      if (id) { applyTemplate(findTemplate(id)); toast('Suggested "' + findTemplate(id).name + '" for ' + this.value + '.'); }
+      if (id) { applyTemplate(findTemplate(id)); showView('style'); toast('Suggested "' + findTemplate(id).name + '" for ' + this.value + '.'); }
       this.value = '';
     });
 
-    // category chips
-    var cats = ['All', 'Favorites', 'Recent', 'My Templates', MOGRT_CAT].concat(CPCaptions.CATEGORIES);
+    // category chips (caption styles only — .mogrt lives in the Editor tab now)
+    var cats = ['All', 'Favorites', 'Recent', 'My Templates'].concat(CPCaptions.CATEGORIES);
     var chipBox = $('lib-cats');
     cats.forEach(function (c) {
       var chip = document.createElement('button');
@@ -873,13 +877,8 @@
     $('lib-search').addEventListener('input', function () { state.libSearch = this.value.toLowerCase(); renderTemplateGrid(); });
     $('lib-sort').addEventListener('change', function () { state.libSort = this.value; renderTemplateGrid(); });
     $('btn-tpl-import').addEventListener('click', importTemplate);
-    $('btn-add-mogrt').addEventListener('click', addMogrtFile);
-    // Two clear sections: built-in caption styles vs the user's own .mogrt files.
-    var modeBtns = document.querySelectorAll('#lib-mode button');
-    for (var mb = 0; mb < modeBtns.length; mb++) {
-      modeBtns[mb].addEventListener('click', function () { state.libMode = this.dataset.mode; updateLibModeUI(); renderTemplateGrid(); });
-    }
-    updateLibModeUI();
+    // Templates tab is caption styles only; .mogrt uploads live in the Editor tab.
+    state.libMode = 'styles';
     wireMogrtSheet();
 
     // pull in Premiere's installed templates so they appear as cards
@@ -892,20 +891,6 @@
     renderTemplateGrid();
   }
 
-  /* Show the right controls for the active section. Styles mode = categories +
-     suggest; MOGRT mode = a clean "your .mogrt files" view with a big add button. */
-  function updateLibModeUI() {
-    var mogrtMode = (state.libMode === 'mogrt');
-    var btns = document.querySelectorAll('#lib-mode button');
-    for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('on', btns[i].dataset.mode === state.libMode);
-    var hide = function (id, h) { var el = $(id); if (el) el.style.display = h ? 'none' : ''; };
-    hide('lib-cats', mogrtMode);
-    var niche = document.querySelector('.niche-row'); if (niche) niche.style.display = mogrtMode ? 'none' : '';
-    var mh = $('mogrt-mode-hint'); if (mh) mh.style.display = mogrtMode ? '' : 'none';
-    hide('btn-tpl-import', mogrtMode);     // import-style only for styles
-    var add = $('btn-add-mogrt'); if (add) add.style.display = mogrtMode ? '' : 'none';
-  }
-
   function addMogrtFile() {
     var p = pickFile('Choose a Motion Graphics Template (.mogrt)', ['mogrt']);
     if (!p) return;
@@ -913,10 +898,8 @@
     state.userMogrts = (state.userMogrts || []).filter(function (m) { return m.path !== p; });
     state.userMogrts.unshift({ name: name, path: p });
     saveUserMogrts();
-    state.libMode = 'mogrt';            // land in the MOGRT section so it's visible
-    updateLibModeUI();
-    renderTemplateGrid();
-    toast('Added "' + name + '" to My .mogrt files.');
+    selectUserMogrt(p, name);           // select it + open its editor right away
+    toast('Added "' + name + '". Edit its colour / font / text below, then Add template captions.');
   }
 
   function filteredTemplates() {
@@ -1042,7 +1025,7 @@
     meta.appendChild(nm); meta.appendChild(ct);
     card.appendChild(meta);
 
-    card.addEventListener('click', function () { applyTemplate(t); showView('editor'); });
+    card.addEventListener('click', function () { applyTemplate(t); showView('style'); });
     return card;
   }
 
@@ -1359,24 +1342,103 @@
 
   // ----------------------------------------------------- sub-views / save ----
   var _mogrtScanned = false;
+  /* Two sections, chosen by the Templates / Editor tabs:
+       'templates' = the caption-STYLE grid (built-in styles only)
+       'style'     = editing one caption style (font / colour / animation) — still
+                     part of the Templates section, so that tab stays lit
+       'editor'    = the .mogrt Editor (upload + customise a Premiere template) */
   function showView(v) {
+    var inStyleEdit = (v === 'style');
+    var inMogrt = (v === 'editor');
     $('view-templates').classList.toggle('hidden', v !== 'templates');
-    $('view-editor').classList.toggle('hidden', v !== 'editor');
+    $('view-editor').classList.toggle('hidden', !(inStyleEdit || inMogrt));
+    // editing a caption style still belongs under the Templates tab
+    var lit = inMogrt ? 'editor' : 'templates';
     var btns = document.querySelectorAll('#cap-view button');
-    for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('on', btns[i].dataset.view === v);
-    if (v === 'editor') renderPreview();
+    for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('on', btns[i].dataset.view === lit);
+    if (inStyleEdit) { setCapMethod('animated'); renderPreview(); }
+    if (inMogrt) { setCapMethod('mogrt'); renderMogrtEditor(); }
     if (v === 'templates') renderTemplateGrid();
   }
 
-  /* Step 2: choose Animated vs Premiere-template captioning. Shows only the
-     relevant controls so the editor isn't a wall of options. */
+  /* Show the right controls for the active section. The Templates tab edits a
+     caption STYLE (live preview + font/colour/animation); the Editor tab edits a
+     Premiere .mogrt. There's no separate method picker — the tab decides. */
   function setCapMethod(m) {
-    $('method-animated').classList.toggle('hidden', m !== 'animated');
-    $('method-mogrt').classList.toggle('hidden', m !== 'mogrt');
-    var btns = document.querySelectorAll('#cap-method button');
-    for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('on', btns[i].dataset.method === m);
-    // scan installed templates the first time the user opens the MOGRT path
-    if (m === 'mogrt' && CPBridge.isCEP() && !_mogrtScanned) { _mogrtScanned = true; scanInstalledMogrts(); }
+    var animated = (m === 'animated');
+    $('method-animated').classList.toggle('hidden', !animated);
+    $('method-mogrt').classList.toggle('hidden', animated);
+    // preview + style-only head buttons belong to the caption-style editor only
+    if ($('cap-preview')) $('cap-preview').classList.toggle('hidden', !animated);
+    ['btn-save-tpl', 'btn-dup-tpl', 'btn-export-tpl', 'btn-back-lib'].forEach(function (id) {
+      var e = $(id); if (e) e.classList.toggle('hidden', !animated);
+    });
+    if ($('editor-tpl-name')) $('editor-tpl-name').textContent = animated ? currentPreset().name : '🎬 Premiere template (.mogrt)';
+    // scan installed templates the first time the Editor (mogrt) opens
+    if (!animated && CPBridge.isCEP() && !_mogrtScanned) { _mogrtScanned = true; scanInstalledMogrts(); }
+  }
+
+  /* Populate the Editor (.mogrt) section: saved uploads, transcript status, and
+     re-open the customiser for the chosen template. */
+  function renderMogrtEditor() {
+    renderMogrtUploads();
+    refreshMogrtEditorTr();
+    if (state.tplSource === 'file' && state.mogrtFile && $('tpl-params') &&
+        $('tpl-params').classList.contains('hidden')) {
+      buildMogrtCustomizer($('tpl-params'), state.mogrtFile);
+    }
+  }
+
+  /* The user's uploaded .mogrt templates, as a saved, re-selectable list. */
+  function renderMogrtUploads() {
+    var box = $('mogrt-uploads'); if (!box) return;
+    box.innerHTML = '';
+    var list = state.userMogrts || [];
+    if (!list.length) {
+      var e = document.createElement('p'); e.className = 'hint';
+      e.textContent = 'No templates yet — tap “➕ Add .mogrt file” to upload your Premiere template. It’s saved here for next time.';
+      box.appendChild(e); return;
+    }
+    list.forEach(function (m) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'mogrt-up' + ((state.tplSource === 'file' && state.mogrtFile === m.path) ? ' on' : '');
+      var ico = document.createElement('span'); ico.className = 'mu-ico'; ico.textContent = '🎬';
+      var nm = document.createElement('span'); nm.className = 'mu-name'; nm.textContent = m.name;
+      var x = document.createElement('span'); x.className = 'mu-x'; x.title = 'Remove'; x.textContent = '✕';
+      b.appendChild(ico); b.appendChild(nm); b.appendChild(x);
+      b.addEventListener('click', function (ev) {
+        if (ev.target === x) { ev.stopPropagation(); removeUserMogrt(m.path); return; }
+        selectUserMogrt(m.path, m.name);
+      });
+      box.appendChild(b);
+    });
+  }
+
+  function selectUserMogrt(path, name) {
+    state.tplSource = 'file';
+    state.mogrtFile = path;
+    if (state.mogrtParamsPath !== path) {       // new template → fresh overrides
+      state.mogrtParams = []; state.mogrtTextStyle = null; state.mogrtRBSwap = false; state.mogrtParamsPath = null;
+    }
+    if ($('tpl-file-name')) $('tpl-file-name').textContent = name || path.split(/[\\/]/).pop();
+    if ($('tpl-inspect-out')) $('tpl-inspect-out').classList.add('hidden');
+    renderMogrtUploads();                        // re-highlight the active one
+    buildMogrtCustomizer($('tpl-params'), path); // show colour / font / size / text now
+  }
+
+  function removeUserMogrt(path) {
+    state.userMogrts = (state.userMogrts || []).filter(function (m) { return m.path !== path; });
+    saveUserMogrts();
+    if (state.mogrtFile === path) { state.mogrtFile = null; if ($('tpl-params')) $('tpl-params').classList.add('hidden'); }
+    renderMogrtUploads();
+  }
+
+  /* Transcript status shown inside the Editor (.mogrt) section. */
+  function refreshMogrtEditorTr() {
+    var el = $('mogrt-tr'); if (!el) return;
+    if (state.transcript) { el.textContent = '✅ Words ready — ' + (state.transcript.label || 'transcript loaded'); el.className = 'ms-tr ok'; }
+    else { el.textContent = 'No words yet — tap Auto-transcribe, or use the Transcribe tab.'; el.className = 'ms-tr'; }
   }
 
   function wireSubviews() {
@@ -1797,33 +1859,22 @@
     if ($('mg-wc-full')) $('mg-wc-full').addEventListener('click', function () {
       var w = parseInt($('c-words').value, 10) || 0; setWordCount(w === 0 ? 1 : 0);
     });
-    var subs = document.querySelectorAll('#tpl-source button');
-    for (var s = 0; s < subs.length; s++) {
-      subs[s].addEventListener('click', function () {
-        document.querySelector('#tpl-source button.on').classList.remove('on');
-        this.classList.add('on');
-        state.tplSource = this.dataset.src;
-        $('tpl-installed').classList.toggle('hidden', state.tplSource !== 'installed');
-        $('tpl-file').classList.toggle('hidden', state.tplSource !== 'file');
-      });
-    }
-    $('btn-tpl-rescan').addEventListener('click', scanInstalledMogrts);
-    $('btn-tpl-pick').addEventListener('click', function () {
-      var p = pickFile('Choose a Motion Graphics Template', ['mogrt']);
-      if (!p) return;
-      state.mogrtFile = p;
-      state.mogrtParams = []; state.mogrtTextStyle = null; state.mogrtRBSwap = false; state.mogrtParamsPath = null;   // new file → fresh overrides
-      $('tpl-params').classList.add('hidden');
-      $('tpl-file-name').textContent = p.split(/[\\/]/).pop();
-    });
-    // switching the installed template also clears stale overrides
+    // Editor (.mogrt): upload list + transcribe live here
+    if ($('btn-add-mogrt')) $('btn-add-mogrt').addEventListener('click', addMogrtFile);
+    if ($('btn-mogrt-transcribe')) $('btn-mogrt-transcribe').addEventListener('click', autoTranscribe);
+    if ($('btn-tpl-rescan')) $('btn-tpl-rescan').addEventListener('click', scanInstalledMogrts);
+    // picking an installed template selects it + opens its editor (colour/font/text)
     if ($('tpl-select')) $('tpl-select').addEventListener('change', function () {
-      state.mogrtParams = []; state.mogrtTextStyle = null; state.mogrtRBSwap = false; state.mogrtParamsPath = null; $('tpl-params').classList.add('hidden');
+      state.tplSource = 'installed';
+      state.mogrtFile = null;
+      state.mogrtParams = []; state.mogrtTextStyle = null; state.mogrtRBSwap = false; state.mogrtParamsPath = null;
+      renderMogrtUploads();                       // clear any upload highlight
+      var path = selectedMogrtPath();
+      if (path) buildMogrtCustomizer($('tpl-params'), path);
     });
-    $('btn-alt-apply').addEventListener('click', applyMogrtTemplate);
-    $('btn-native-apply').addEventListener('click', applyNative);
-    $('btn-tpl-inspect').addEventListener('click', inspectMogrt);
-    if ($('btn-tpl-customize')) $('btn-tpl-customize').addEventListener('click', function () { buildMogrtCustomizer(); });
+    if ($('btn-alt-apply')) $('btn-alt-apply').addEventListener('click', applyMogrtTemplate);
+    if ($('btn-native-apply')) $('btn-native-apply').addEventListener('click', applyNative);
+    if ($('btn-tpl-inspect')) $('btn-tpl-inspect').addEventListener('click', inspectMogrt);
     if ($('btn-tpl-preview')) $('btn-tpl-preview').addEventListener('click', previewMogrtFile);
   }
 
@@ -2088,8 +2139,15 @@
     if (a < 0) a += 4294967296; if (b < 0) b += 4294967296;
     return Math.abs(a - b) <= 1.5;
   }
-  /* Find the encoder that maps each known default RGBA to its observed number. */
+  /* Find the encoder that maps each known default RGBA to its observed number.
+     No samples means this template's colours are native [r,g,b,a] ARRAYS (Premiere
+     reports them as arrays, not numbers) — so there is NO packed-int format to
+     match. Return null and let the caller set the exact array (no byte-order
+     guessing). Returning an encoder here was the "everything turns blue" bug:
+     an empty loop "matched" rgb24 and we then pushed a packed int at an array
+     colour control. */
   function calibrateColorEncoder(samples) {
+    if (!samples || !samples.length) return null;
     for (var k = 0; k < COLOR_ENCODERS.length; k++) {
       var ok = true;
       for (var s = 0; s < samples.length; s++) {
@@ -2152,8 +2210,12 @@
     function swapRB(hex) { return (/^#[0-9a-f]{6}$/i.test(hex)) ? ('#' + hex.slice(5, 7) + hex.slice(3, 5) + hex.slice(1, 3)) : hex; }
     function applyColor(idx, hex) {
       colorHexById[idx] = hex;
-      var h = state.mogrtRBSwap ? swapRB(hex) : hex;   // toggle now works for BOTH number- and array-type colours
-      if (enc) {
+      var h = state.mogrtRBSwap ? swapRB(hex) : hex;   // toggle works for BOTH number- and array-type colours
+      // Use the packed-int path ONLY for a control Premiere actually reports as a
+      // number; array-type colours (the common case) get the exact [r,g,b,a] so
+      // the colour you pick is the colour you get — no byte-order surprises.
+      var packed = enc && props[idx] && typeof props[idx].num === 'number';
+      if (packed) {
         var c = hexToRgb255(h);
         setMogrtParam(idx, 'colornum', enc.f(c[0], c[1], c[2], 255));
       } else {

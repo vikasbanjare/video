@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.55</span>
+    <span class="ver" id="ver">v0.9.56</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -76,18 +76,14 @@
   <section id="tab-captions" class="tab-page">
 
     <div class="subview-switch" id="cap-view">
-      <button data-view="templates" class="on">📚 Templates</button>
-      <button data-view="editor">🎨 Editor</button>
+      <button data-view="templates" class="on">🎨 Templates</button>
+      <button data-view="editor">🎬 Editor (.mogrt)</button>
     </div>
 
-    <!-- ===================== TEMPLATE LIBRARY (browser) ==================== -->
+    <!-- ===================== TEMPLATE LIBRARY (caption styles) ============= -->
     <div id="view-templates" class="subview">
-      <div class="seg-control lib-mode-switch" id="lib-mode">
-        <button data-mode="styles" class="on">🎨 Caption styles</button>
-        <button data-mode="mogrt">🎬 My .mogrt files</button>
-      </div>
-      <p class="hint mode-hint" id="mogrt-mode-hint" style="display:none">Upload your own Premiere
-        Motion Graphics Templates and edit their text, colour &amp; font here. Auto-transcribe is in the editor for these too.</p>
+      <p class="hint" style="margin:2px 0 8px">Pick a caption style, then tap it to edit its font,
+        colour &amp; animation. Got your own Premiere <b>.mogrt</b>? Use the <b>Editor</b> tab above.</p>
       <div class="lib-toolbar">
         <input type="text" id="lib-search" placeholder="🔍 Search style, color, industry…">
         <select id="lib-sort">
@@ -106,7 +102,6 @@
       <div class="cat-chips" id="lib-cats"></div>
       <div class="tpl-grid" id="tpl-grid"></div>
       <div class="row tight" style="justify-content:center">
-        <button id="btn-add-mogrt" class="hero-btn small">➕ Add .mogrt file</button>
         <button id="btn-tpl-import" class="chip-btn">⤓ Import style</button>
       </div>
     </div>
@@ -148,8 +143,8 @@
         <button id="btn-export-tpl" class="chip-btn" title="Export to file">⤴</button>
       </div>
 
-      <!-- LIVE PREVIEW -->
-      <div class="preview-wrap">
+      <!-- LIVE PREVIEW (caption styles only) -->
+      <div class="preview-wrap" id="cap-preview">
         <div class="preview-frame" id="preview-frame">
           <div class="preview-speaker hidden" id="preview-speaker"></div>
           <div class="preview-caption" id="preview-caption">YOUR CAPTION</div>
@@ -157,14 +152,10 @@
         <button id="btn-replay" class="replay-btn" title="Replay animation">▶</button>
       </div>
 
-      <!-- ░░ STEP 1 — how to caption (words come from the Transcribe tab) ░░ -->
-      <div class="step-head"><span class="step-num">1</span><span class="step-title">How to caption</span></div>
-      <div class="seg-control method-switch" id="cap-method">
-        <button data-method="animated" class="on">🎨 Animated style</button>
-        <button data-method="mogrt">🎬 Premiere template</button>
-      </div>
+      <!-- The two sections are chosen by the Templates / Editor tabs above, so
+           there is no separate method picker here. -->
 
-      <!-- ===== ANIMATED branch ===== -->
+      <!-- ===== ANIMATED branch (caption styles) ===== -->
       <div id="method-animated">
         <div class="step-head"><span class="step-num">2</span><span class="step-title">Style &amp; add</span>
           <button id="btn-browse-styles" class="chip-btn step-action">≡ Browse styles</button>
@@ -256,29 +247,40 @@
         <button id="btn-magic" class="hero-btn">✨ Add captions</button>
       </div>
 
-      <!-- ===== PREMIERE TEMPLATE (.mogrt) branch ===== -->
+      <!-- ===== PREMIERE TEMPLATE (.mogrt) — the Editor section ===== -->
       <div id="method-mogrt" class="hidden">
-        <div class="step-head"><span class="step-num">2</span><span class="step-title">Pick a template &amp; add</span></div>
         <div class="alt-block" id="mogrt-section">
-          <p class="hint">CutPilot drops your chosen <b>.mogrt</b> once per caption line, on its own new track, and types in the words.</p>
-          <div class="seg-control sub" id="tpl-source">
-            <button data-src="installed" class="on">Installed in Premiere</button>
-            <button data-src="file">From a file</button>
+          <p class="hint">Upload your own Premiere <b>.mogrt</b> template. CutPilot fills it with
+            your transcript — one graphic per caption line — and lets you edit its colour, font &amp; text below.</p>
+
+          <!-- words (transcript) status + transcribe, so it's reachable right here -->
+          <div id="mogrt-tr" class="ms-tr"></div>
+          <button id="btn-mogrt-transcribe" class="chip-btn">🎙️ Auto-transcribe my clip</button>
+
+          <!-- saved uploads -->
+          <div class="section-label sub" style="margin-top:10px">Your templates</div>
+          <div id="mogrt-uploads" class="mogrt-uploads"></div>
+          <div class="row tight">
+            <button id="btn-add-mogrt" class="hero-btn small">➕ Add .mogrt file</button>
           </div>
-          <div id="tpl-installed">
-            <div class="row tight">
-              <select id="tpl-select"><option>scanning…</option></select>
-              <button id="btn-tpl-rescan" class="chip-btn" title="Rescan">↻</button>
+
+          <!-- installed-in-Premiere templates (secondary) -->
+          <details class="advanced" id="mogrt-installed-wrap">
+            <summary>Or use a template already installed in Premiere</summary>
+            <div id="tpl-installed">
+              <div class="row tight">
+                <select id="tpl-select"><option>scanning…</option></select>
+                <button id="btn-tpl-rescan" class="chip-btn" title="Rescan">↻</button>
+              </div>
+              <p class="hint" id="tpl-installed-hint"></p>
             </div>
-            <p class="hint" id="tpl-installed-hint"></p>
-          </div>
-          <div id="tpl-file" class="hidden">
-            <div class="row tight">
-              <button id="btn-tpl-pick" class="chip-btn">Choose .mogrt file…</button>
-              <span id="tpl-file-name" class="dim">none chosen</span>
-            </div>
-          </div>
-          <div class="wc-bar" id="mg-words" style="margin-top:8px">
+          </details>
+          <span id="tpl-file-name" class="hidden"></span>
+
+          <!-- live editor for the chosen template (colour / font / size / text) -->
+          <div id="tpl-params" class="tpl-params hidden"></div>
+
+          <div class="wc-bar" id="mg-words" style="margin-top:10px">
             <span class="wc-label">Words per graphic</span>
             <button class="wc-btn" id="mg-wc-minus" type="button">−</button>
             <b id="mg-wc-num">1</b>
@@ -286,15 +288,13 @@
             <button class="chip-btn" id="mg-wc-full" type="button">Full line</button>
           </div>
           <div class="row tight">
-            <button id="btn-tpl-customize" class="chip-btn" title="Edit this template's colours, size & font">🎨 Customize</button>
-            <button id="btn-tpl-preview" class="chip-btn" title="Drop one instance at the playhead to preview">▶ Preview</button>
-            <button id="btn-tpl-inspect" class="chip-btn" title="List this template's editable fields">🔍 Inspect</button>
+            <button id="btn-tpl-preview" class="chip-btn" title="Drop one instance at the playhead to preview">▶ Preview on timeline</button>
+            <button id="btn-tpl-inspect" class="chip-btn" title="List this template's editable fields">🔍 Inspect fields</button>
           </div>
-          <div id="tpl-params" class="tpl-params hidden"></div>
           <pre id="tpl-inspect-out" class="diag-out hidden"></pre>
           <label class="check" style="margin:6px 0"><input type="checkbox" id="mg-stretch" checked> ↔ Match duration to the caption length <span class="dim">(stretches the template so longer/more-word captions last longer)</span></label>
           <button id="btn-alt-apply" class="hero-btn">🎬 Add template captions</button>
-          <p class="hint" style="color:#8a5a00;margin-top:8px">⚠️ Stuck at "Loading Motion Graphics Template… 89%"? That's a Premiere bug with the template itself — try Animated style or another template.</p>
+          <p class="hint" style="color:#8a5a00;margin-top:8px">⚠️ Stuck at "Loading Motion Graphics Template… 89%"? That's a Premiere bug with the template itself — try a caption style or another template.</p>
         </div>
       </div>
 
@@ -537,7 +537,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.55 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.56 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

@@ -385,6 +385,18 @@ input[type="range"]::-webkit-slider-thumb {
 .ms-tr { font-size: 11px; color: var(--dim); margin: 2px 0 6px; }
 .ms-tr.ok { color: var(--ok, #6cc59a); }
 
+/* Editor (.mogrt): saved uploads list */
+.mogrt-uploads { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 8px; }
+.mogrt-up { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  background: var(--card2); border: 1px solid var(--line); border-radius: 10px;
+  padding: 9px 10px; color: var(--fg); cursor: pointer; }
+.mogrt-up:hover { border-color: var(--accent-soft, #555); }
+.mogrt-up.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.mogrt-up .mu-ico { flex: 0 0 auto; }
+.mogrt-up .mu-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.mogrt-up .mu-x { flex: 0 0 auto; opacity: .5; font-size: 12px; padding: 0 4px; border-radius: 6px; }
+.mogrt-up .mu-x:hover { opacity: 1; background: rgba(255,80,80,.18); }
+
 /* transcript editor (fix wording before captioning) */
 .tr-editor { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.6); backdrop-filter: blur(3px);
   display: flex; align-items: flex-end; justify-content: center; }
