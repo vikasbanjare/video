@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.63</span>
+    <span class="ver" id="ver">v0.9.64</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -287,6 +287,13 @@
             <button class="wc-btn" id="mg-wc-plus" type="button">+</button>
             <button class="chip-btn" id="mg-wc-full" type="button">Full line</button>
           </div>
+          <label style="font-size:11px;margin-top:10px;display:block">Text case</label>
+          <div class="seg-control sub" id="mg-case">
+            <button data-case="as-spoken" class="on">As spoken</button>
+            <button data-case="upper">UPPER</button>
+            <button data-case="lower">lower</button>
+            <button data-case="title">Title</button>
+          </div>
           <div class="row tight">
             <button id="btn-tpl-preview" class="chip-btn" title="Drop one instance at the playhead to preview">▶ Preview on timeline</button>
             <button id="btn-tpl-inspect" class="chip-btn" title="List this template's editable fields">🔍 Inspect fields</button>
@@ -537,7 +544,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.63 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.64 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

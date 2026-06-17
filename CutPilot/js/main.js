@@ -32,6 +32,7 @@
     userMogrts: [],
     selectedMogrt: null,
     mogrtSelName: '',       // which saved entry (by name) is active in the Editor list
+    mogrtCase: 'as-spoken', // Editor text case: as-spoken | upper | lower | title
     mogrtWords: 0,   // words per MOGRT graphic (0 = full line)
     mogrtParams: [],        // colour/size/font overrides for the selected custom MOGRT
     mogrtParamsPath: null,  // which .mogrt those overrides belong to
@@ -321,9 +322,9 @@
      engine only. */
   function fillWhisperGaps(rc, ctx) {
     var gaps;
-    try { gaps = CPCaptions.findCueGaps(rc, 5.0); } catch (e) { return Promise.resolve(rc); }
-    // skip tiny pauses (<5s) and very long spans (>20s, likely real silence/music)
-    gaps = gaps.filter(function (g) { return (g.to - g.from) <= 20; }).slice(0, 6);
+    try { gaps = CPCaptions.findCueGaps(rc, 3.5); } catch (e) { return Promise.resolve(rc); }
+    // skip tiny pauses (<3.5s) and enormous spans (>45s, likely real silence/music)
+    gaps = gaps.filter(function (g) { return (g.to - g.from) <= 45; }).slice(0, 10);
     if (!gaps.length) return Promise.resolve(rc);
     var extra = [], chain = Promise.resolve();
     gaps.forEach(function (gp) {
@@ -1867,13 +1868,23 @@
     el.textContent = msg;
   }
 
-  function textCues(cues, words, upper) {
+  /* Apply a text-case mode to a string. 'as-spoken' leaves it exactly as the
+     transcript (and the template's own ALL-CAPS toggle, if any, still applies). */
+  function applyCase(text, mode) {
+    var s = String(text == null ? '' : text);
+    if (mode === 'upper' || mode === true) return s.toUpperCase();
+    if (mode === 'lower') return s.toLowerCase();
+    if (mode === 'title') return s.replace(/\S+/g, function (w) { return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(); });
+    return s;   // 'as-spoken' / false / undefined
+  }
+  function textCues(cues, words, caseMode) {
+    var mode = (caseMode === true) ? 'upper' : (caseMode === false ? 'as-spoken' : (caseMode || 'as-spoken'));
     // Regroup ACROSS line boundaries so "Words per graphic = N" actually yields
     // fewer, longer captions (explodeWords only splits within a line, so it
     // could never reduce the count — the cause of "word count not working").
-    if (words > 0) return CPCaptions.regroupWords(cues, words, { uppercase: upper });
-    if (upper) return cues.map(function (c) { return { start: c.start, end: c.end, text: c.text.toUpperCase() }; });
-    return cues;
+    var out = (words > 0) ? CPCaptions.regroupWords(cues, words, {}) : cues;
+    if (mode !== 'as-spoken') out = out.map(function (c) { return { start: c.start, end: c.end, text: applyCase(c.text, mode) }; });
+    return out;
   }
 
   // ---- main button: the animated engine ----
@@ -1972,6 +1983,15 @@
     // Editor (.mogrt): upload list + transcribe live here
     if ($('btn-add-mogrt')) $('btn-add-mogrt').addEventListener('click', addMogrtFile);
     if ($('btn-mogrt-transcribe')) $('btn-mogrt-transcribe').addEventListener('click', autoTranscribe);
+    // text-case selector (As spoken / UPPER / lower / Title) for .mogrt captions
+    var caseBtns = document.querySelectorAll('#mg-case button');
+    for (var ci = 0; ci < caseBtns.length; ci++) {
+      caseBtns[ci].addEventListener('click', function () {
+        var on = document.querySelector('#mg-case button.on'); if (on) on.classList.remove('on');
+        this.classList.add('on');
+        state.mogrtCase = this.dataset.case;
+      });
+    }
     if ($('btn-tpl-rescan')) $('btn-tpl-rescan').addEventListener('click', scanInstalledMogrts);
     // picking an installed template selects it + opens its editor (colour/font/text)
     if ($('tpl-select')) $('tpl-select').addEventListener('change', function () {
@@ -2491,6 +2511,7 @@
     if (!path) return toast('Pick a template first.', true);
     var sample = 'Preview';
     try { var c = readSelectedTranscript(); if (c && c[0]) sample = String(c[0].text).split(/\s+/).slice(0, 3).join(' '); } catch (e) {}
+    sample = applyCase(sample, state.mogrtCase || 'as-spoken');   // match the chosen text case
     var params = (state.mogrtParamsPath === path) ? state.mogrtParams : [];
     var textStyle = (state.mogrtParamsPath === path) ? state.mogrtTextStyle : null;
     toast('Dropping a preview at the playhead…');
@@ -2557,7 +2578,7 @@
     var cues;
     try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
     var words = parseInt($('c-words').value, 10) || 0;   // the one Words-per-caption stepper
-    var tcues = textCues(cues, words, $('c-upper').checked);
+    var tcues = textCues(cues, words, state.mogrtCase || 'as-spoken');   // Editor text-case control
     if (tcues.length > 120 &&
         !confirm(tcues.length + ' template graphics will be inserted — one per caption. MOGRTs insert slowly, so this can take a long time and Premiere may sit near the end of its import bar. Tip: raise "Words per graphic" (fewer, longer captions), or use the Animated style instead.\n\nContinue anyway?')) return;
     if (btn) btn.disabled = true;
