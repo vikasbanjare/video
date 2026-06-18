@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.83</span>
+    <span class="ver" id="ver">v0.9.84</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -34,6 +34,11 @@
       <div class="step-head"><span class="step-num">1</span><span class="step-title">Get your words</span></div>
       <p class="hint">Select your talking clip in the timeline, then transcribe it — CutPilot reads the audio itself (no Premiere export).</p>
       <label class="fld-full">Accuracy / engine<div id="tr-quality" class="dd-mount"></div></label>
+      <div id="tr-groq-wrap" class="groq-inline hidden">
+        <label class="fld-full">☁️ Groq API key <span class="dim">— free at console.groq.com/keys</span>
+          <input type="password" id="tr-groq-key" placeholder="gsk_…" autocomplete="off">
+        </label>
+      </div>
       <label class="fld-full">Language<div id="tr-lang" class="dd-mount"></div></label>
       <div class="tr-bar" id="tr-bar">
         <span class="tr-ico" id="tr-ico">🔎</span>
@@ -185,73 +190,101 @@
         <details class="advanced" id="customize-drawer" open>
           <summary>🎨 Edit everything — font · colour · size · position · animation</summary>
           <div class="customizer">
-            <label class="full">Font
-              <div class="dd-mount" id="c-font-mount"></div>
-              <input type="hidden" id="c-font">
-            </label>
-
-            <div class="ctrl-row">
-              <label>Size <span class="val" id="c-size-val"></span>
-                <input type="range" id="c-size" min="32" max="160" value="90">
+            <!-- ✍️ TEXT -->
+            <div class="cust-group">
+              <div class="cust-group-title">✍️ Text</div>
+              <label class="full">Font
+                <div class="dd-mount" id="c-font-mount"></div>
+                <input type="hidden" id="c-font">
               </label>
-              <label>Position <span class="val" id="c-pos-val"></span>
-                <input type="range" id="c-pos" min="10" max="92" value="76">
-              </label>
+              <div class="ctrl-row">
+                <label>Size <span class="val" id="c-size-val"></span>
+                  <input type="range" id="c-size" min="32" max="160" value="90">
+                </label>
+                <label>Letter spacing <span class="val" id="c-letter-val"></span>
+                  <input type="range" id="c-letter" min="0" max="20" value="0">
+                </label>
+              </div>
+              <label class="check"><input type="checkbox" id="c-upper" checked> ALL CAPS</label>
             </div>
 
-            <label>Layout
+            <!-- 📐 POSITION -->
+            <div class="cust-group">
+              <div class="cust-group-title">📐 Position</div>
+              <label>On screen <span class="val" id="c-pos-val"></span>
+                <input type="range" id="c-pos" min="10" max="92" value="76">
+              </label>
               <div class="seg-control mini" id="c-layout">
                 <button data-pos="18">Top</button>
                 <button data-pos="50">Center</button>
                 <button data-pos="76" class="on">Bottom</button>
               </div>
-            </label>
-
-            <div class="swatches">
-              <label class="sw">Text<span class="cp-mount" data-for="c-fill"></span><input type="hidden" id="c-fill" value="#ffffff"></label>
-              <label class="sw">Highlight<span class="cp-mount" data-for="c-hl"></span><input type="hidden" id="c-hl" value="#ffd400"></label>
-              <label class="sw">Outline<span class="cp-mount" data-for="c-stroke"></span><input type="hidden" id="c-stroke" value="#000000"></label>
-              <label class="sw">Box<span class="cp-mount" data-for="c-box"></span><input type="hidden" id="c-box" value="#ff3b6b"></label>
             </div>
 
-            <label style="margin-top:11px">Highlight look <span class="dim">— the spoken/key word</span></label>
-            <div class="seg-control" id="c-hlstyle">
-              <button data-s="color" class="on">Colour</button>
-              <button data-s="box">Box / pill</button>
+            <!-- 🎨 COLOURS -->
+            <div class="cust-group">
+              <div class="cust-group-title">🎨 Colours</div>
+              <div class="swatches">
+                <label class="sw">Text<span class="cp-mount" data-for="c-fill"></span><input type="hidden" id="c-fill" value="#ffffff"></label>
+                <label class="sw">Highlight<span class="cp-mount" data-for="c-hl"></span><input type="hidden" id="c-hl" value="#ffd400"></label>
+                <label class="sw">Outline<span class="cp-mount" data-for="c-stroke"></span><input type="hidden" id="c-stroke" value="#000000"></label>
+                <label class="sw">Box<span class="cp-mount" data-for="c-box"></span><input type="hidden" id="c-box" value="#ff3b6b"></label>
+              </div>
             </div>
 
-            <div class="ctrl-row">
+            <!-- 🖍️ WORD HIGHLIGHT -->
+            <div class="cust-group">
+              <div class="cust-group-title">🖍️ Word highlight <span class="dim">— the spoken word</span></div>
+              <div class="seg-control" id="c-hlstyle">
+                <button data-s="color" class="on">Colour</button>
+                <button data-s="box">Box / pill</button>
+              </div>
+              <label class="check kw-toggle"><input type="checkbox" id="c-kw"> ✨ Also emphasise keywords</label>
+              <div id="c-kw-mode-wrap" class="hidden">
+                <label>Highlight which words
+                  <select id="c-kw-mode">
+                    <option value="auto">✨ Auto — important words across your whole video</option>
+                    <option value="smart">Smart — numbers, names &amp; key words</option>
+                    <option value="keywords">The strongest word</option>
+                    <option value="numbers">Numbers</option>
+                    <option value="cta">Call-to-action words</option>
+                    <option value="names">Names</option>
+                  </select>
+                </label>
+                <label>Keyword pop size <span class="val" id="c-hlscale-val"></span>
+                  <input type="range" id="c-hl-scale" min="100" max="170" value="100">
+                </label>
+              </div>
+            </div>
+
+            <!-- ✨ EFFECTS -->
+            <div class="cust-group">
+              <div class="cust-group-title">✨ Effects <span class="dim">— readability over any footage</span></div>
               <label>Outline width <span class="val" id="c-strokew-val"></span>
                 <input type="range" id="c-strokew" min="0" max="24" value="10">
               </label>
-              <label class="toggles">
-                <span class="check"><input type="checkbox" id="c-box-on"> Box</span>
-                <span class="check"><input type="checkbox" id="c-upper" checked> CAPS</span>
-              </label>
+              <label class="check"><input type="checkbox" id="c-shadow-on"> 🌑 Drop shadow</label>
+              <div class="ctrl-row" id="c-shadow-row">
+                <label>Shadow colour<span class="cp-mount" data-for="c-shadow"></span><input type="hidden" id="c-shadow" value="#000000"></label>
+                <label>Shadow strength <span class="val" id="c-shadow-blur-val"></span>
+                  <input type="range" id="c-shadow-blur" min="0" max="120" value="35">
+                </label>
+              </div>
+              <label class="check"><input type="checkbox" id="c-box-on"> 🟦 Background box behind text</label>
             </div>
 
-            <label class="check kw-toggle"><input type="checkbox" id="c-kw"> ✨ Auto-highlight keywords</label>
-            <div id="c-kw-mode-wrap" class="hidden">
-              <label>Highlight which words
-                <select id="c-kw-mode">
-                  <option value="auto">✨ Auto — important words across your whole video</option>
-                  <option value="smart">Smart — numbers, names &amp; key words</option>
-                  <option value="keywords">The strongest word</option>
-                  <option value="numbers">Numbers</option>
-                  <option value="cta">Call-to-action words</option>
-                  <option value="names">Names</option>
-                </select>
-              </label>
-              <label>Keyword pop size <span class="val" id="c-hlscale-val"></span>
-                <input type="range" id="c-hl-scale" min="100" max="170" value="100">
-              </label>
+            <!-- ➕ EXTRAS -->
+            <div class="cust-group">
+              <div class="cust-group-title">➕ Extras</div>
+              <label class="check kw-toggle"><input type="checkbox" id="c-speaker"> 🎙️ Show speaker names <span class="dim">(reads "Name:" lines)</span></label>
+              <label class="check kw-toggle"><input type="checkbox" id="c-emoji"> ✨ Auto-emoji on keywords <span class="dim">(money 💰, profit 📈, AI 🤖…)</span></label>
             </div>
 
-            <label class="check kw-toggle"><input type="checkbox" id="c-speaker"> 🎙️ Show speaker names <span class="dim">(podcasts — reads "Name:" lines)</span></label>
-            <label class="check kw-toggle"><input type="checkbox" id="c-emoji"> ✨ Auto-emoji on keywords <span class="dim">(money 💰, profit 📈, AI 🤖…)</span></label>
-
-            <div class="section-label sub">Animation</div>
-            <div id="anim-rail" class="anim-rail"></div>
+            <!-- 🎬 ANIMATION -->
+            <div class="cust-group">
+              <div class="cust-group-title">🎬 Animation</div>
+              <div id="anim-rail" class="anim-rail"></div>
+            </div>
           </div>
         </details>
 
@@ -565,7 +598,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.83 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.84 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

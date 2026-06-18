@@ -591,6 +591,16 @@ footer { border-top: 1px solid var(--line); background: var(--card); max-height:
 .demo .anim-shake { animation: cp-shake 2.4s ease infinite; }
 .demo .anim-type { animation: cp-type 2.4s steps(8) infinite; overflow: hidden; white-space: nowrap; display: inline-block; }
 
+/* grouped customizer: clear sections instead of one long wall of controls */
+.cust-group { padding: 11px 0 3px; border-top: 1px solid var(--line); }
+.cust-group:first-child { border-top: none; padding-top: 2px; }
+.cust-group-title { font-size: 11px; font-weight: 800; color: var(--dim);
+  letter-spacing: .04em; text-transform: uppercase; margin: 0 0 8px; }
+
+/* inline Groq key (appears under the engine picker when Cloud is selected) */
+.groq-inline { margin: 8px 0 2px; }
+.groq-inline.hidden { display: none; }
+
 /* highlight-timing nudge: keep it compact, push the hint to its own line */
 .sync-nudge { margin-top: 8px; flex-wrap: wrap; }
 .sync-nudge #c-off-num { min-width: 56px; text-align: center; }

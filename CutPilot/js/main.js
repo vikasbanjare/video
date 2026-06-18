@@ -196,6 +196,7 @@
   // curated language list. whisper has English-only ".en" models (best for
   // English) and multilingual models (no suffix) for everything else / auto.
   var WHISPER_QUALITIES = [
+    { value: 'auto-best', label: '✨ Auto — best engine for me (recommended)' },
     { value: 'cloud-groq', label: '☁️ Cloud · Groq (most accurate · free key)' },
     { value: 'large-v3-turbo-q5_0', label: '★ Best free · large-v3-turbo (~574MB · multilingual)' },
     { value: 'tiny', label: 'Local · Fastest · tiny (~75MB)' },
@@ -218,8 +219,17 @@
     { value: 'pl', label: 'Polish' }, { value: 'uk', label: 'Ukrainian' }
   ];
   function _modelsDir() { try { return nodeReq('path').join(nodeReq('os').homedir(), '.cutpilot', 'models'); } catch (e) { return null; } }
+  /* Resolve the user's chosen accuracy to a CONCRETE engine. "Auto — best" picks
+     cloud Groq when a key is set (most accurate, fast, no download), otherwise the
+     best free local model. Everything downstream uses this, so the cache, cloud
+     check, and model file all agree. */
+  function resolveQuality() {
+    var q = settings.whisperQuality || 'auto-best';
+    if (q === 'auto-best') return (settings.groqKey || '').trim() ? 'cloud-groq' : 'large-v3-turbo-q5_0';
+    return q;
+  }
   function modelFileName() {
-    var q = settings.whisperQuality || 'large-v3-turbo-q5_0';
+    var q = resolveQuality();
     var lang = settings.whisperLang || 'en';
     var hasEnVariant = (q === 'tiny' || q === 'base' || q === 'small' || q === 'medium');  // large-* are multilingual only
     // Hinglish needs a MULTILINGUAL model — it actually understands Hindi, so it
@@ -374,8 +384,10 @@
   // cached for good.
   var _TC_VER = 'v2';
   function _tcKey(mediaPath, minIn, maxOut) {
+    // key on the RESOLVED engine + language, so changing the model (or "Auto"
+    // resolving differently) produces a new key and the clip is re-transcribed.
     var s = _TC_VER + '|' + String(mediaPath) + '|' + Math.round((minIn || 0) * 100) + '|' + Math.round((maxOut || 0) * 100) +
-            '|' + (settings.whisperQuality || '') + '|' + (settings.whisperLang || '');
+            '|' + resolveQuality() + '|' + (settings.whisperLang || '');
     var h = 0; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
     var base = String(mediaPath).split(/[\\/]/).pop().replace(/\.[^.]+$/, '').replace(/[^\w]+/g, '_').slice(0, 40);
     return base + '-' + _TC_VER + '-' + h.toString(16);
@@ -395,27 +407,38 @@
       var fs = nodeReq('fs'), p = nodeReq('path'), dir = _tcDir(); if (!dir || !mediaPath) return;
       var key = _tcKey(mediaPath, minIn, maxOut);
       fs.writeFileSync(p.join(dir, key + '.srt'), CPCaptions.toSRT(cues), 'utf8');
-      try { fs.writeFileSync(p.join(dir, key + '.json'), JSON.stringify({ words: words || null, at: Date.now() }), 'utf8'); } catch (eW) {}
+      // record the engine + language that produced it so the loose finder only
+      // auto-loads a transcript that matches the CURRENT model (else re-transcribe)
+      try { fs.writeFileSync(p.join(dir, key + '.json'), JSON.stringify({ words: words || null, q: resolveQuality(), lang: (settings.whisperLang || ''), at: Date.now() }), 'utf8'); } catch (eW) {}
     } catch (e) {}
   }
   /* Loosely find a transcript we already saved for this media file (any trim),
      so SELECTING a clip we've transcribed before auto-loads its words — the user
-     never re-transcribes the same file. Returns the most recent {srtPath,words}. */
+     never re-transcribes the same file. Only matches transcripts made with the
+     CURRENT engine + language, so changing the model means it won't reuse a stale
+     one (it'll re-transcribe instead). Returns the most recent {srtPath,words}. */
   function findCachedTranscriptForMedia(mediaPath) {
     try {
       var fs = nodeReq('fs'), p = nodeReq('path'), dir = _tcDir();
       if (!dir || !mediaPath) return null;
       var base = String(mediaPath).split(/[\\/]/).pop().replace(/\.[^.]+$/, '').replace(/[^\w]+/g, '_').slice(0, 40);
-      var best = null, bestM = -1;
+      var curQ = resolveQuality(), curLang = (settings.whisperLang || '');
+      var best = null, bestM = -1, bestWords = null;
       fs.readdirSync(dir).forEach(function (f) {
         if (f.indexOf(base + '-') !== 0 || !/\.srt$/i.test(f)) return;
         var full = p.join(dir, f);
-        try { var st = fs.statSync(full); if (!st.size) return; if ((st.mtimeMs || 0) > bestM) { bestM = st.mtimeMs || 0; best = full; } } catch (e) {}
+        try {
+          var st = fs.statSync(full); if (!st.size) return;
+          // only reuse a transcript made with the model + language selected now
+          var meta = {};
+          try { var js = full.replace(/\.srt$/i, '.json'); if (fs.existsSync(js)) meta = JSON.parse(fs.readFileSync(js, 'utf8')) || {}; } catch (eM) {}
+          if (meta.q != null && meta.q !== curQ) return;
+          if (meta.lang != null && meta.lang !== curLang) return;
+          if ((st.mtimeMs || 0) > bestM) { bestM = st.mtimeMs || 0; best = full; bestWords = meta.words || null; }
+        } catch (e) {}
       });
       if (!best) return null;
-      var words = null;
-      try { var js = best.replace(/\.srt$/i, '.json'); if (fs.existsSync(js)) words = JSON.parse(fs.readFileSync(js, 'utf8')).words || null; } catch (eJ) {}
-      return { srtPath: best, words: words, mtime: bestM };
+      return { srtPath: best, words: bestWords, mtime: bestM };
     } catch (e) { return null; }
   }
 
@@ -423,7 +446,7 @@
      the user never needs Premiere's Transcribe/Export. Produces a sequence-time
      transcript and loads it as the current transcript. */
   function autoTranscribe() {
-    var cloud = (settings.whisperQuality === 'cloud-groq');
+    var cloud = (resolveQuality() === 'cloud-groq');
     var ff = resolveFfmpeg();
     if (!ff) return toast('Auto-transcribe needs ffmpeg — set it in Settings (brew install ffmpeg).', true);
     var wbin = null;
@@ -1466,6 +1489,11 @@
     $('c-box-on').checked = !!p.boxColor;
     $('c-box').value = toHex(p.boxColor, '#ff3b6b');
     $('c-upper').checked = !!p.uppercase;
+    // shadow (the preset's soft "glow") + letter spacing
+    $('c-shadow-on').checked = !!p.glow;
+    $('c-shadow').value = toHex(p.glow, '#000000');
+    $('c-shadow-blur').value = Math.round(((p.glowBlur != null ? p.glowBlur : 0.35)) * 100);
+    if ($('c-letter')) $('c-letter').value = p.letterSpacing || 0;
     setWordCount(p.wordsPerCue);
     syncHlStyleButtons(p.highlightStyle || 'color');
     $('c-kw').checked = !!p.keyword;
@@ -1515,12 +1543,15 @@
     $('c-pos-val').textContent = $('c-pos').value + '%';
     $('c-strokew-val').textContent = $('c-strokew').value;
     $('c-hlscale-val').textContent = $('c-hl-scale').value + '%';
+    if ($('c-letter-val')) $('c-letter-val').textContent = $('c-letter').value;
+    if ($('c-shadow-blur-val')) $('c-shadow-blur-val').textContent = $('c-shadow-blur').value + '%';
+    if ($('c-shadow-row')) $('c-shadow-row').classList.toggle('hidden', !$('c-shadow-on').checked);
   }
 
   /* Push the (hidden) colour-input values into their custom palette swatches,
      so the picker UI reflects colours set programmatically (preset/look load). */
   function syncColorFields() {
-    ['c-fill', 'c-hl', 'c-stroke', 'c-box'].forEach(function (id) {
+    ['c-fill', 'c-hl', 'c-stroke', 'c-box', 'c-shadow'].forEach(function (id) {
       var inp = $(id); if (inp && inp._cpField) inp._cpField.setDisplay(inp.value);
     });
   }
@@ -1528,14 +1559,14 @@
   function wireCustomizer() {
     var ids = ['c-size', 'c-pos', 'c-fill', 'c-hl', 'c-stroke', 'c-box',
                'c-strokew', 'c-box-on', 'c-upper', 'c-words', 'c-kw', 'c-kw-mode',
-               'c-hl-scale', 'c-speaker'];
+               'c-hl-scale', 'c-speaker', 'c-letter', 'c-shadow', 'c-shadow-on', 'c-shadow-blur'];
     ids.forEach(function (id) {
       $(id).addEventListener('input', function () { updateVals(); renderPreview(); });
       $(id).addEventListener('change', function () { updateVals(); renderPreview(); });
     });
     // Mount the custom palette pickers over the (hidden) colour inputs so colours
     // are pickable inside Premiere's panel, where the native OS box won't open.
-    ['c-fill', 'c-hl', 'c-stroke', 'c-box'].forEach(function (id) {
+    ['c-fill', 'c-hl', 'c-stroke', 'c-box', 'c-shadow'].forEach(function (id) {
       var mount = document.querySelector('.cp-mount[data-for="' + id + '"]'), inp = $(id);
       if (!mount || !inp || mount.firstChild) return;
       var f = makeColorField(inp.value, function (v) { inp.value = v; inp.dispatchEvent(new Event('input')); });
@@ -1888,7 +1919,10 @@
       boxColor: $('c-box-on').checked ? $('c-box').value : null,
       highlightScale: (parseInt($('c-hl-scale').value, 10) || 100) / 100,
       highlightStyle: readHlStyle(),
-      uppercase: $('c-upper').checked
+      uppercase: $('c-upper').checked,
+      letterSpacing: parseInt($('c-letter').value, 10) || 0,
+      glow: $('c-shadow-on').checked ? $('c-shadow').value : null,
+      glowBlur: (parseInt($('c-shadow-blur').value, 10) || 0) / 100
     };
   }
 
@@ -1929,7 +1963,9 @@
         strokew: $('c-strokew').value, boxOn: $('c-box-on').checked, upper: $('c-upper').checked,
         kw: $('c-kw').checked, kwMode: $('c-kw-mode').value, hlScale: $('c-hl-scale').value,
         hlStyle: readHlStyle(), speaker: $('c-speaker').checked,
-        syncOffset: $('c-sync-offset').value
+        syncOffset: $('c-sync-offset').value,
+        letter: $('c-letter').value, shadowOn: $('c-shadow-on').checked,
+        shadow: $('c-shadow').value, shadowBlur: $('c-shadow-blur').value
       }));
     } catch (e) {}
   }
@@ -1947,6 +1983,10 @@
       if (look.stroke) $('c-stroke').value = look.stroke;
       if (look.box) $('c-box').value = look.box;
       if (look.strokew != null) $('c-strokew').value = look.strokew;
+      if (look.letter != null && $('c-letter')) $('c-letter').value = look.letter;
+      if (look.shadowOn != null) $('c-shadow-on').checked = !!look.shadowOn;
+      if (look.shadow) $('c-shadow').value = look.shadow;
+      if (look.shadowBlur != null && $('c-shadow-blur')) $('c-shadow-blur').value = look.shadowBlur;
       $('c-box-on').checked = !!look.boxOn;
       $('c-upper').checked = !!look.upper;
       $('c-kw').checked = !!look.kw;
@@ -3470,18 +3510,43 @@
   });
 
   // ---- auto-transcribe (whisper) settings ----
+  function setIfNotFocused(id, val) {
+    var el = $(id);
+    if (el && el !== document.activeElement && el.value !== val) el.value = val;
+  }
+  /* Show the Groq key box wherever Cloud is in play (inline on the Transcribe
+     tab + in Settings) and keep both key inputs mirrored to settings.groqKey, so
+     there's always a visible place to paste the key right where you pick Cloud. */
+  function syncGroqVisibility() {
+    var usingCloud = (resolveQuality() === 'cloud-groq');
+    if ($('tr-groq-wrap')) $('tr-groq-wrap').classList.toggle('hidden', !usingCloud);
+    var k = settings.groqKey || '';
+    setIfNotFocused('tr-groq-key', k);
+    setIfNotFocused('set-groq-key', k);
+  }
+  /* One place to accept the key from either input: save + mirror + refresh. */
+  function onGroqKeyInput(v) {
+    settings.groqKey = (v || '').trim();
+    saveSettings();
+    setIfNotFocused('tr-groq-key', settings.groqKey);
+    setIfNotFocused('set-groq-key', settings.groqKey);
+    refreshWhisperStatus();
+  }
   function refreshWhisperStatus() {
     _whisper = null;
+    syncGroqVisibility();                       // show the key field when Cloud is in play
     var el = $('whisper-status'); if (!el) return;
-    if (settings.whisperQuality === 'cloud-groq') {
+    var resolved = resolveQuality();
+    var autoTag = (settings.whisperQuality === 'auto-best') ? ' · ✨ Auto chose this' : '';
+    if (resolved === 'cloud-groq') {
       el.textContent = (settings.groqKey || '').trim()
-        ? '☁️ Cloud (Groq) ready — most accurate.'
-        : '☁️ Cloud selected — add your free Groq API key below.';
+        ? '☁️ Cloud (Groq) ready — most accurate.' + autoTag
+        : '☁️ Cloud selected — paste your free Groq API key in the box that just appeared.';
       return;
     }
     var w = resolveWhisper(), m = resolveWhisperModel();
     var willUse = modelFileName();   // what accuracy+language will fetch/use
-    if (w) { el.textContent = '✅ Engine ready · will use ' + willUse + (m ? '' : ' (downloads on first use)'); }
+    if (w) { el.textContent = '✅ Engine ready · will use ' + willUse + (m ? '' : ' (downloads on first use)') + autoTag; }
     else { el.textContent = 'Let CutPilot make the transcript itself — install the engine below.'; }
     var note = $('set-quality-note');
     if (note) { var q = (settings.whisperQuality || 'large-v3-turbo-q5_0'); var qo = WHISPER_QUALITIES.filter(function (x) { return x.value === q; })[0]; note.textContent = qo ? '· ' + qo.label.replace(/^[^·]*· /, '') : ''; }
@@ -3522,9 +3587,8 @@
     toast('Auto-transcribe settings saved.');
   });
   // save the Groq key as you type too (so it persists even without "Save & check")
-  if ($('set-groq-key')) $('set-groq-key').addEventListener('change', function () {
-    settings.groqKey = this.value.trim(); saveSettings(); refreshWhisperStatus();
-  });
+  if ($('set-groq-key')) $('set-groq-key').addEventListener('input', function () { onGroqKeyInput(this.value); });
+  if ($('tr-groq-key')) $('tr-groq-key').addEventListener('input', function () { onGroqKeyInput(this.value); });
   /* One-click: install the whisper engine + a model via Homebrew, then wire
      the paths. Streams output so any failure is visible. */
   if ($('btn-whisper-install')) $('btn-whisper-install').addEventListener('click', function () {

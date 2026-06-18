@@ -53,6 +53,7 @@
       boxColor: box,
       boxRadius: Math.round(((o.boxRadius != null ? o.boxRadius : preset.boxRadius) || 10) * scale),
       glow: (o.glow !== undefined) ? o.glow : (preset.glow || null),
+      glowBlur: (o.glowBlur != null) ? o.glowBlur : (preset.glowBlur != null ? preset.glowBlur : 0.35),
       letterSpacing: Math.round(((o.letterSpacing != null ? o.letterSpacing : (preset.letterSpacing || 0))) * scale),
       highlightScale: (o.highlightScale != null) ? o.highlightScale : (preset.highlightScale || 1),
       highlightStyle: o.highlightStyle || preset.highlightStyle || 'color',
@@ -225,7 +226,7 @@
 
         ctx.shadowColor = 'transparent';
         ctx.shadowBlur = 0;
-        if (style.glow && !boxed) { ctx.shadowColor = style.glow; ctx.shadowBlur = it.px * 0.35; }
+        if (style.glow && !boxed) { ctx.shadowColor = style.glow; ctx.shadowBlur = it.px * (style.glowBlur != null ? style.glowBlur : 0.35); }
         // outline (skip on boxed words — the pill already separates them)
         if (style.stroke && style.strokeWidth && !boxed) {
           ctx.strokeStyle = style.stroke;
