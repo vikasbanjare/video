@@ -1496,6 +1496,7 @@
     if ($('c-letter')) $('c-letter').value = p.letterSpacing || 0;
     if ($('c-weight')) $('c-weight').value = p.weight || 800;
     setAlignButton(p.align || 'center');
+    setLinesButton(p.maxLines != null ? p.maxLines : 2);
     setWordCount(p.wordsPerCue);
     syncHlStyleButtons(p.highlightStyle || 'color');
     $('c-kw').checked = !!p.keyword;
@@ -1601,6 +1602,11 @@
     var aln = document.querySelectorAll('#c-align button');
     for (var a = 0; a < aln.length; a++) {
       aln[a].addEventListener('click', function () { setAlignButton(this.dataset.a); renderPreview(); });
+    }
+    // lines on screen: single / double / auto
+    var lns = document.querySelectorAll('#c-lines button');
+    for (var ln = 0; ln < lns.length; ln++) {
+      lns[ln].addEventListener('click', function () { setLinesButton(parseInt(this.dataset.l, 10)); renderPreview(); });
     }
     // word-by-word highlight toggle + "all together / one by one"
     if ($('c-wordhl')) $('c-wordhl').addEventListener('change', function () { syncWordHlUI(); renderPreview(); });
@@ -1944,6 +1950,7 @@
       letterSpacing: parseInt($('c-letter').value, 10) || 0,
       weight: parseInt($('c-weight').value, 10) || 800,
       align: readAlign(),
+      maxLines: readLines(),
       glow: $('c-shadow-on').checked ? $('c-shadow').value : null,
       glowBlur: (parseInt($('c-shadow-blur').value, 10) || 0) / 100
     };
@@ -1955,6 +1962,15 @@
   function setAlignButton(a) {
     var b = document.querySelectorAll('#c-align button');
     for (var i = 0; i < b.length; i++) b[i].classList.toggle('on', b[i].dataset.a === (a || 'center'));
+  }
+  /* Lines on screen: 1 = single, 2 = double (max), 0 = auto/unlimited. */
+  function readLines() {
+    var on = document.querySelector('#c-lines button.on');
+    return on ? (parseInt(on.dataset.l, 10) || 0) : 2;
+  }
+  function setLinesButton(n) {
+    var b = document.querySelectorAll('#c-lines button');
+    for (var i = 0; i < b.length; i++) b[i].classList.toggle('on', parseInt(b[i].dataset.l, 10) === (n == null ? 2 : n));
   }
   function readReveal() {
     var on = document.querySelector('#c-reveal button.on');
@@ -2019,7 +2035,7 @@
         syncOffset: $('c-sync-offset').value,
         letter: $('c-letter').value, shadowOn: $('c-shadow-on').checked,
         shadow: $('c-shadow').value, shadowBlur: $('c-shadow-blur').value,
-        weight: $('c-weight').value, align: readAlign(),
+        weight: $('c-weight').value, align: readAlign(), maxLines: readLines(),
         wordHl: $('c-wordhl') ? $('c-wordhl').checked : true, reveal: readReveal()
       }));
     } catch (e) {}
@@ -2044,6 +2060,7 @@
       if (look.shadowBlur != null && $('c-shadow-blur')) $('c-shadow-blur').value = look.shadowBlur;
       if (look.weight != null && $('c-weight')) $('c-weight').value = look.weight;
       if (look.align) setAlignButton(look.align);
+      if (look.maxLines != null) setLinesButton(look.maxLines);
       if (look.reveal) setRevealButton(look.reveal);
       if (look.wordHl != null && $('c-wordhl')) { $('c-wordhl').checked = !!look.wordHl; syncWordHlUI(); }
       $('c-box-on').checked = !!look.boxOn;
@@ -2097,6 +2114,8 @@
     cap.style.fontSize = px + 'px';
     cap.style.color = st.fill;
     cap.style.top = Math.max(2, Math.round(st.yPct * frameH - px)) + 'px';
+    // single-line mode: keep the sample on one line so the preview matches render
+    cap.style.whiteSpace = (readLines() === 1) ? 'nowrap' : 'normal';
 
     // outline / glow
     var shadow = '';

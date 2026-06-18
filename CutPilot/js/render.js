@@ -61,6 +61,9 @@
       align: o.align || preset.align || 'center',
       uppercase: o.uppercase != null ? o.uppercase : preset.uppercase,
       yPct: o.yPct != null ? o.yPct : 0.76,
+      // 0 = unlimited (legacy wrap), 1 = force single line, 2 = max two lines.
+      // When set, the renderer shrinks the font to keep the caption within it.
+      maxLines: (o.maxLines != null) ? o.maxLines : (preset.maxLines || 0),
       maxWidthPct: 0.86,
       lineGap: 1.18
     };
@@ -135,43 +138,58 @@
     if (style.uppercase) for (var u = 0; u < words.length; u++) words[u] = words[u].toUpperCase();
 
     var base = style.size;
-    var hlSize = Math.round(base * (style.highlightScale || 1));
     function isHL(i) {
       return frame.words != null &&
         (i === frame.active || (frame.highlightSet && frame.highlightSet[i]));
     }
-
-    setFont(base);
-    var spaceW = ctx.measureText(' ').width;
-
-    // per-word metrics: highlighted words AND viral/long words get a larger font
-    // (take the bigger of the highlight scale and the dynamic word scale).
     var hlScale = style.highlightScale || 1;
-    var meta = [];
-    for (var i = 0; i < words.length; i++) {
-      var hp = isHL(i);
-      var mult = Math.max(hp ? hlScale : 1, wordScale(words[i]));
-      var px = Math.round(base * mult);
-      setFont(px);
-      meta.push({ word: words[i], px: px, hl: hp, w: ctx.measureText(words[i]).width });
+    var maxW = W * style.maxWidthPct;
+
+    // Build per-word metrics and greedy-wrap into lines at a given font scale.
+    // Highlighted AND viral/long words get a larger font (the bigger of the
+    // highlight scale and the dynamic word scale). Pure measurement — called
+    // repeatedly to shrink the caption until it fits the allowed line count.
+    function layout(fit) {
+      var eff = Math.max(8, Math.round(base * fit));
+      setFont(eff);
+      var sp = ctx.measureText(' ').width;
+      var m = [];
+      for (var k = 0; k < words.length; k++) {
+        var hpk = isHL(k);
+        var multk = Math.max(hpk ? hlScale : 1, wordScale(words[k]));
+        var pxk = Math.round(eff * multk);
+        setFont(pxk);
+        m.push({ word: words[k], px: pxk, hl: hpk, w: ctx.measureText(words[k]).width });
+      }
+      var ls = [];
+      var cur = { items: [], width: 0, height: eff };
+      for (var j = 0; j < m.length; j++) {
+        var add = m[j].w + (cur.items.length ? sp : 0);
+        if (cur.items.length && cur.width + add > maxW) {
+          ls.push(cur);
+          cur = { items: [], width: 0, height: eff };
+          add = m[j].w;
+        }
+        cur.items.push(m[j]);
+        cur.width += add;
+        cur.height = Math.max(cur.height, m[j].px);
+      }
+      if (cur.items.length) ls.push(cur);
+      return { meta: m, lines: ls, eff: eff, hlSize: Math.round(eff * hlScale), spaceW: sp };
     }
 
-    // greedy wrap into lines, tracking each line's tallest word
-    var maxW = W * style.maxWidthPct;
-    var lines = [];
-    var cur = { items: [], width: 0, height: base };
-    for (i = 0; i < meta.length; i++) {
-      var add = meta[i].w + (cur.items.length ? spaceW : 0);
-      if (cur.items.length && cur.width + add > maxW) {
-        lines.push(cur);
-        cur = { items: [], width: 0, height: base };
-        add = meta[i].w;
+    // Enforce the line limit (1 = single, 2 = double) by shrinking the font
+    // until it fits — this kills the ugly "one stray word on a 2nd line" look.
+    var lay = layout(1);
+    if (style.maxLines) {
+      var fit = 1, guard = 0;
+      while (lay.lines.length > style.maxLines && fit > 0.5 && guard < 16) {
+        fit *= 0.93; guard++;
+        lay = layout(fit);
       }
-      cur.items.push(meta[i]);
-      cur.width += add;
-      cur.height = Math.max(cur.height, meta[i].px);
     }
-    if (cur.items.length) lines.push(cur);
+    base = lay.eff;
+    var meta = lay.meta, lines = lay.lines, hlSize = lay.hlSize, spaceW = lay.spaceW;
 
     var lineStep = hlSize * style.lineGap;
     var blockH = lines.length * lineStep;

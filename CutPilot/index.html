@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.86</span>
+    <span class="ver" id="ver">v0.9.87</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -228,6 +228,13 @@
                 <button data-a="center" class="on">Center</button>
                 <button data-a="right">Right</button>
               </div>
+              <label style="margin-top:9px">Lines on screen</label>
+              <div class="seg-control mini" id="c-lines">
+                <button data-l="1">Single</button>
+                <button data-l="2" class="on">Double</button>
+                <button data-l="0">Auto</button>
+              </div>
+              <p class="hint" style="margin:4px 0 0">Single = always one line (text auto-shrinks to fit). Double = never more than two. Auto = wrap freely.</p>
             </div>
 
             <!-- 🎨 COLOURS -->
@@ -617,7 +624,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.86 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.87 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

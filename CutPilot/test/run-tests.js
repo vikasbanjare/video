@@ -269,6 +269,15 @@ console.log('render.js (pure layout helpers)');
   assert(CPRender.styleForFrame(preset, 1080, { uppercase: false }).uppercase === false,
          'uppercase override wins over preset');
 
+  // maxLines (single/double/auto): override > preset > 0 default
+  assert(CPRender.styleForFrame(preset, 1080, {}).maxLines === 0,
+         'maxLines defaults to 0 (auto/unlimited)');
+  assert(CPRender.styleForFrame(preset, 1080, { maxLines: 1 }).maxLines === 1,
+         'maxLines override (single line) wins');
+  const presetTwoLine = Object.assign({}, preset, { maxLines: 2 });
+  assert(CPRender.styleForFrame(presetTwoLine, 1080, {}).maxLines === 2,
+         'preset maxLines applies when no override');
+
   // caption legibility checker
   assert(Math.round(CPRender.contrastRatio('#000000', '#FFFFFF')) === 21, 'black/white contrast ratio is 21');
   assert(CPRender.legibilityWarning({ fill: '#FFFFFF', stroke: null, strokeWidth: 0, boxColor: null, glow: null }),
