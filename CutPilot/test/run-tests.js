@@ -456,6 +456,13 @@ console.log('captions.js (audio sync)');
   assert(rvf.length === 3 && rvf[0].words.length === 1 && rvf[2].words.length === 3, 'reveal: phrase grows word by word');
   assert(close(rvf[2].start, 1.50, 1e-6), 'reveal: newest word appears at its real spoken time');
 
+  // word-following styles must light ONLY the active word — no keyword boxes
+  // competing (that lit several words at once, e.g. "duniyaa kaa ... ikvitee").
+  const kw2 = CPCaptions.buildCaptionFrames(phrase, { anim: 'karaoke', wordsPerCue: 3, wordCues: realWords, keyword: { on: true, mode: 'smart' } });
+  assert(kw2.every(f => !f.highlightSet), 'karaoke: only the active word is lit (no keyword highlightSet)');
+  const rv2 = CPCaptions.buildCaptionFrames(phrase, { anim: 'reveal', wordsPerCue: 3, wordCues: realWords, keyword: { on: true, mode: 'smart' } });
+  assert(rv2.every(f => !f.highlightSet), 'reveal: only the active word is lit (no keyword highlightSet)');
+
   // sanitizeWordCues: never drop a word; force strictly increasing, spaced starts
   const messy = [
     { start: 1.0, end: 1.0, text: 'a' },     // zero-length

@@ -936,10 +936,11 @@
         for (j = 0; j < group.length; j++) {
           // 'reveal' GROWS the phrase one word at a time (newest = active, so it
           // pops); 'karaoke' shows the whole phrase and sweeps the active word.
+          // Only the ACTIVE (spoken) word is highlighted here — no keyword boxes,
+          // so it reads as ONE clean highlight riding the voice, not several
+          // words lit at once.
           var shown = (anim === 'reveal') ? words.slice(0, j + 1) : words;
-          var f = { start: group[j].start, end: group[j].end, words: shown, active: j };
-          if (kw && kw.on) f.highlightSet = markKeywords(shown, kw);
-          frames.push(f);
+          frames.push({ start: group[j].start, end: group[j].end, words: shown, active: j });
         }
       } else {
         var fr = { start: group[0].start, end: group[group.length - 1].end, words: words };
@@ -996,7 +997,7 @@
         for (i = 0; i < frames.length; i++) {
           f = frames[i];
           if (up) f.words = f.words.map(uc);
-          if (kw.on) f.highlightSet = markKeywords(f.words, kw);
+          // word-following styles highlight ONLY the active word (no keyword boxes)
         }
       }
     } else if (anim === 'typewriter') {
