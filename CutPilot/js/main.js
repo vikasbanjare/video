@@ -1575,7 +1575,30 @@
       setWordCount(w === 0 ? 1 : 0); renderPreview();
     });
     $('c-sync').addEventListener('change', updateSyncStat);
+    // Highlight-timing nudge: pull every word cue earlier/later (±50ms steps) so
+    // the box can be locked onto the voice when the ASR/audio timing runs a touch
+    // ahead or behind. Persisted with the rest of the look.
+    function bumpOffset(deltaMs) {
+      var ms = (parseInt($('c-sync-offset').value, 10) || 0) + deltaMs;
+      ms = Math.max(-800, Math.min(800, ms));
+      $('c-sync-offset').value = ms;
+      $('c-off-num').textContent = (ms > 0 ? '+' : '') + (ms / 1000).toFixed(2) + 's';
+      renderPreview();
+    }
+    if ($('c-off-minus')) $('c-off-minus').addEventListener('click', function () { bumpOffset(-50); });
+    if ($('c-off-plus')) $('c-off-plus').addEventListener('click', function () { bumpOffset(50); });
+    if ($('c-off-reset')) $('c-off-reset').addEventListener('click', function () { $('c-sync-offset').value = 0; bumpOffset(0); });
     $('btn-replay').addEventListener('click', renderPreview);
+  }
+
+  /* Highlight-timing nudge in seconds (positive = highlight later). */
+  function captionSyncOffset() { return (parseInt($('c-sync-offset').value, 10) || 0) / 1000; }
+  /* Shift word cues by the nudge, keeping starts non-negative and ordered. */
+  function shiftWordCues(wordCues, off) {
+    if (!wordCues || !off) return wordCues;
+    return wordCues.map(function (w) {
+      return { start: Math.max(0, w.start + off), end: Math.max(0, w.end + off), text: w.text };
+    });
   }
 
   function updateSyncStat() {
@@ -1905,7 +1928,8 @@
         fill: $('c-fill').value, hl: $('c-hl').value, stroke: $('c-stroke').value, box: $('c-box').value,
         strokew: $('c-strokew').value, boxOn: $('c-box-on').checked, upper: $('c-upper').checked,
         kw: $('c-kw').checked, kwMode: $('c-kw-mode').value, hlScale: $('c-hl-scale').value,
-        hlStyle: readHlStyle(), speaker: $('c-speaker').checked
+        hlStyle: readHlStyle(), speaker: $('c-speaker').checked,
+        syncOffset: $('c-sync-offset').value
       }));
     } catch (e) {}
   }
@@ -1931,6 +1955,11 @@
       if (look.hlScale != null) $('c-hl-scale').value = look.hlScale;
       syncHlStyleButtons(look.hlStyle || 'color');
       $('c-speaker').checked = !!look.speaker;
+      if (look.syncOffset != null && $('c-sync-offset')) {
+        var ms = parseInt(look.syncOffset, 10) || 0;
+        $('c-sync-offset').value = ms;
+        if ($('c-off-num')) $('c-off-num').textContent = (ms > 0 ? '+' : '') + (ms / 1000).toFixed(2) + 's';
+      }
       if (look.words != null) setWordCount(parseInt(look.words, 10) || 0);
       if (look.animId) selectAnim(look.animId);
       if (look.presetId) {
@@ -2109,6 +2138,7 @@
     capProgress(wantSync ? 'Listening to the audio for sync…' : 'Preparing…');
 
     getCaptionWordCues(cues, wantSync).then(function (wordCues) {
+      wordCues = shiftWordCues(wordCues, captionSyncOffset());   // apply the timing nudge
       var frames = CPCaptions.buildCaptionFrames(cues, {
         anim: anim,
         wordsPerCue: words,

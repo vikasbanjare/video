@@ -591,6 +591,11 @@ footer { border-top: 1px solid var(--line); background: var(--card); max-height:
 .demo .anim-shake { animation: cp-shake 2.4s ease infinite; }
 .demo .anim-type { animation: cp-type 2.4s steps(8) infinite; overflow: hidden; white-space: nowrap; display: inline-block; }
 
+/* highlight-timing nudge: keep it compact, push the hint to its own line */
+.sync-nudge { margin-top: 8px; flex-wrap: wrap; }
+.sync-nudge #c-off-num { min-width: 56px; text-align: center; }
+.sync-nudge .dim { flex-basis: 100%; font-size: 10px; margin-top: 2px; }
+
 /* searchable font picker + readability warning (v0.8) */
 .font-filter {
   width: 100%;
