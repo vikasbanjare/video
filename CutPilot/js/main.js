@@ -1510,11 +1510,16 @@
     $('c-speaker').checked = !!p.speaker;
     var aId = CPCaptions.animIdForConcept(p.anim);
     selectAnim(aId);
-    // word-by-word highlight reflects the template: on for karaoke/reveal styles,
-    // with "all together" (karaoke) vs "one by one" (reveal) set to match.
-    var wf = (aId === 'karaoke' || aId === 'reveal');
-    if ($('c-wordhl')) $('c-wordhl').checked = wf;
-    setRevealButton(aId === 'reveal' ? 'reveal' : 'karaoke');
+    // Word-by-word highlight is a STICKY preference, so the per-word sync works
+    // with EVERY template (using that template's own colours) — not only the
+    // word-sync presets. Word-sync templates force it on; for all others we keep
+    // whatever the user last chose (default on). Previously non-karaoke templates
+    // turned it off, which is why sync "only worked on one template".
+    if ($('c-wordhl') && (aId === 'karaoke' || aId === 'reveal')) $('c-wordhl').checked = true;
+    // "all together / one by one" follows a word-sync template; otherwise keep
+    // the user's current choice.
+    if (aId === 'reveal') setRevealButton('reveal');
+    else if (aId === 'karaoke') setRevealButton('karaoke');
     syncWordHlUI();
     syncColorFields();
     updateVals();
