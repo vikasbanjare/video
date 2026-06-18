@@ -1267,8 +1267,11 @@
     cap.className = 't-cap';
     var animId = CPCaptions.animIdForConcept(t.anim);
     var def = CPCaptions.getAnimation(animId);
-    // cards only loop the keyframed entrances; framed ones (karaoke/typewriter) just fade
-    var demo = (def.kind === 'framed') ? 'anim-fade' : (def.demo || 'anim-fade');
+    // each card loops its REAL animation so every style previews distinctly —
+    // including the framed ones (karaoke sweeps the colour across the phrase,
+    // reveal/typewriter type the words in). Previously all framed styles fell
+    // back to a plain fade, which made dozens of cards look identical.
+    var demo = def.demo || 'anim-fade';
     // a 2-word sample so keyword highlight is visible
     var w1 = t.uppercase ? 'BIG' : 'Big';
     var w2 = t.uppercase ? 'IDEA' : 'idea';
@@ -1284,6 +1287,8 @@
     if (t.boxColor) { cap.style.background = t.boxColor; cap.style.padding = '2px 8px'; cap.style.borderRadius = '6px'; }
     var kwd = cap.querySelector('.kwd');
     kwd.style.color = t.highlight || t.fill;
+    // karaoke's colour-sweep lands on this template's own highlight colour
+    if (animId === 'karaoke') cap.style.setProperty('--sweep', t.highlight || '#00e676');
     if (demo) cap.className = 't-cap ' + demo;
     thumb.appendChild(cap);
 

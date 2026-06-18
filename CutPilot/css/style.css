@@ -201,6 +201,9 @@ input:focus, select:focus { outline: none; border-color: var(--clay); box-shadow
 .t-cap.anim-zoompunch { animation: cp-zoompunch 2.6s cubic-bezier(.2,.85,.25,1) infinite; }
 .t-cap.anim-blurdissolve { animation: cp-blurdissolve 2.6s ease infinite; }
 .t-cap.anim-glide { animation: cp-glide 2.6s cubic-bezier(.2,.8,.2,1) infinite; }
+/* framed styles now preview their real motion on the card too */
+.t-cap.anim-sweep { animation: cp-sweep 2.6s ease infinite; }
+.t-cap.anim-type { animation: cp-type 2.6s steps(10) infinite; overflow: hidden; white-space: nowrap; display: inline-block; }
 
 /* ----------------------------------------------------- editor head --- */
 .editor-head { display: flex; align-items: center; gap: 6px; margin-bottom: 11px; }
