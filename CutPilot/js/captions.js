@@ -481,46 +481,46 @@
   var PREMIUM_TEMPLATES = [
     // Spotlight — the signature Captions.ai look: clean white modern sans, soft
     // drop-shadow (NOT a thick outline), the key word on a tasteful blue pill.
-    { id: 'pro-spotlight', name: 'Spotlight', category: '⭐ Premium', popularity: 100, layout: 'bottom', keyword: true, highlightScale: 1.04,
+    { id: 'pro-spotlight', name: 'Spotlight', category: '⭐ Premium', popularity: 100, layout: 'bottom', keyword: true, highlightScale: 1.1,
       font: 'Montserrat', fallbackFonts: ['Poppins', 'Inter', 'Arial'],
       fontSize: 62, fill: '#FFFFFF', highlight: '#2D7CFF', highlightStyle: 'box', boxRadius: 12,
       glow: '#000000', stroke: null, strokeWidth: 0,
-      uppercase: false, wordsPerCue: 4, anim: 'karaoke' },
+      uppercase: false, wordsPerCue: 4, anim: 'reveal' },
     // Pulse — UPPERCASE clean sans, key word on a blue pill (Captions.ai "Pulse")
-    { id: 'pro-pulse', name: 'Pulse', category: '⭐ Premium', popularity: 99, layout: 'center', keyword: true,
+    { id: 'pro-pulse', name: 'Pulse', category: '⭐ Premium', popularity: 99, layout: 'center', keyword: true, highlightScale: 1.1,
       font: 'Montserrat', fallbackFonts: ['Poppins', 'Arial Black'],
       fontSize: 66, fill: '#FFFFFF', highlight: '#3B5BFF', highlightStyle: 'box', boxRadius: 10, glow: '#000000', stroke: null, strokeWidth: 0,
-      uppercase: true, wordsPerCue: 3, anim: 'karaoke' },
+      uppercase: true, wordsPerCue: 3, anim: 'reveal' },
     // Thuban — key word on a yellow pill (black text auto-contrasts)
-    { id: 'pro-thuban', name: 'Thuban', category: '⭐ Premium', popularity: 98, layout: 'bottom', keyword: true,
+    { id: 'pro-thuban', name: 'Thuban', category: '⭐ Premium', popularity: 98, layout: 'bottom', keyword: true, highlightScale: 1.1,
       font: 'Montserrat', fallbackFonts: ['Poppins', 'Arial Black'],
       fontSize: 62, fill: '#FFFFFF', highlight: '#FFE000', highlightStyle: 'box', boxRadius: 10, glow: '#000000', stroke: null, strokeWidth: 0,
-      uppercase: true, wordsPerCue: 3, anim: 'pop' },
+      uppercase: true, wordsPerCue: 3, anim: 'reveal' },
     // Runway — lowercase clean, key word on a pink pill
-    { id: 'pro-runway', name: 'Runway', category: '⭐ Premium', popularity: 97, layout: 'bottom', keyword: true,
+    { id: 'pro-runway', name: 'Runway', category: '⭐ Premium', popularity: 97, layout: 'bottom', keyword: true, highlightScale: 1.1,
       font: 'Poppins', fallbackFonts: ['Montserrat', 'Inter', 'Arial'],
       fontSize: 58, fill: '#FFFFFF', highlight: '#FF2D9B', highlightStyle: 'box', boxRadius: 14, glow: '#000000', stroke: null, strokeWidth: 0,
-      uppercase: false, wordsPerCue: 3, anim: 'karaoke' },
+      uppercase: false, wordsPerCue: 3, anim: 'reveal' },
     // Copernicus — key word on a green pill
-    { id: 'pro-copernicus', name: 'Copernicus', category: '⭐ Premium', popularity: 96, layout: 'bottom', keyword: true,
+    { id: 'pro-copernicus', name: 'Copernicus', category: '⭐ Premium', popularity: 96, layout: 'bottom', keyword: true, highlightScale: 1.1,
       font: 'Montserrat', fallbackFonts: ['Poppins', 'Arial Black'],
       fontSize: 62, fill: '#FFFFFF', highlight: '#15C47E', highlightStyle: 'box', boxRadius: 10, glow: '#000000', stroke: null, strokeWidth: 0,
-      uppercase: true, wordsPerCue: 3, anim: 'pop' },
+      uppercase: true, wordsPerCue: 3, anim: 'reveal' },
     // Clarity — minimal clean white, sentence case, soft shadow (Captions.ai "Clarity")
     { id: 'pro-clarity', name: 'Clarity', category: '⭐ Premium', popularity: 95, layout: 'center', keyword: false,
       font: 'Inter', fallbackFonts: ['Helvetica Neue', 'Arial'],
       fontSize: 54, fill: '#FFFFFF', highlight: '#FFFFFF', glow: '#000000', stroke: null, strokeWidth: 0,
       uppercase: false, wordsPerCue: 4, anim: 'fade' },
     // Evo — clean white, key word pops in a soft gold (no box)
-    { id: 'pro-evo', name: 'Evo', category: '⭐ Premium', popularity: 94, layout: 'bottom', keyword: true, highlightScale: 1.05,
+    { id: 'pro-evo', name: 'Evo', category: '⭐ Premium', popularity: 94, layout: 'bottom', keyword: true, highlightScale: 1.1,
       font: 'Poppins', fallbackFonts: ['Inter', 'Arial'],
       fontSize: 60, fill: '#FFFFFF', highlight: '#FFD400', glow: '#000000', stroke: null, strokeWidth: 0,
-      uppercase: false, wordsPerCue: 4, anim: 'pop' },
+      uppercase: false, wordsPerCue: 4, anim: 'reveal' },
     // Nova — UPPERCASE clean, key word in coral-pink (no box)
-    { id: 'pro-nova', name: 'Nova', category: '⭐ Premium', popularity: 93, layout: 'bottom', keyword: true,
+    { id: 'pro-nova', name: 'Nova', category: '⭐ Premium', popularity: 93, layout: 'bottom', keyword: true, highlightScale: 1.1,
       font: 'Montserrat', fallbackFonts: ['Poppins', 'Arial Black'],
       fontSize: 64, fill: '#FFFFFF', highlight: '#FF3B6B', glow: '#000000', stroke: null, strokeWidth: 0,
-      uppercase: true, wordsPerCue: 3, anim: 'pop' },
+      uppercase: true, wordsPerCue: 3, anim: 'reveal' },
     // Andromeda — clean white on a soft dark rounded bar (lower-third, Captions.ai "Byline")
     { id: 'pro-andromeda', name: 'Andromeda', category: '⭐ Premium', popularity: 92, layout: 'bottom', keyword: false,
       font: 'Outfit', fallbackFonts: ['Inter', 'Arial'],
@@ -624,6 +624,7 @@
     { id: 'zoompunch',  name: 'Zoom Punch', kind: 'keyframed', demo: 'anim-zoompunch', description: 'FilmImpact-style zoom blur: punches in from oversized' },
     { id: 'blurdissolve', name: 'Blur Dissolve', kind: 'keyframed', demo: 'anim-blurdissolve', description: 'FilmImpact-style soft blur dissolve in' },
     { id: 'glide',      name: 'Glide',      kind: 'keyframed', demo: 'anim-glide',  description: 'FilmImpact-style smooth rise with motion blur' },
+    { id: 'reveal',     name: 'Word reveal', kind: 'framed',   demo: 'anim-type',   description: 'Words appear one at a time as spoken, the newest pops in (Captions.ai style)' },
     { id: 'karaoke',    name: 'Karaoke',    kind: 'framed',    demo: 'anim-sweep',  description: 'Phrase stays up, spoken word lights up' },
     { id: 'typewriter', name: 'Typewriter', kind: 'framed',    demo: 'anim-type',   description: 'Words accumulate as they are spoken' },
     { id: 'none',       name: 'None',       kind: 'keyframed', demo: '',            description: 'Hard cut, no motion' }
@@ -645,7 +646,7 @@
    * highlighted. One frame per spoken word.
    * Returns [{start, end, words:[...], active}] — render highlights words[active].
    */
-  function planKaraoke(cues, wordsPerPhrase) {
+  function planKaraoke(cues, wordsPerPhrase, accumulate) {
     var k = Math.max(2, wordsPerPhrase || 3);
     var frames = [];
     for (var c = 0; c < cues.length; c++) {
@@ -655,7 +656,9 @@
         var texts = [];
         for (var i = 0; i < phrase.length; i++) texts.push(phrase[i].text);
         for (i = 0; i < phrase.length; i++) {
-          frames.push({ start: phrase[i].start, end: phrase[i].end, words: texts, active: i });
+          // accumulate = 'reveal' (phrase grows); otherwise full phrase + sweep
+          var shown = accumulate ? texts.slice(0, i + 1) : texts;
+          frames.push({ start: phrase[i].start, end: phrase[i].end, words: shown, active: i });
         }
       }
     }
@@ -846,15 +849,19 @@
      Groups words per the chosen rhythm; karaoke highlights the active word. */
   function framesFromWordCues(wordCues, anim, wordsPerCue, kw, up) {
     function ucw(arr) { return up ? arr.map(uc) : arr; }
-    var per = (anim === 'karaoke') ? Math.max(2, wordsPerCue || 3) : Math.max(1, wordsPerCue || 1);
+    var swept = (anim === 'karaoke' || anim === 'reveal');
+    var per = swept ? Math.max(2, wordsPerCue || 3) : Math.max(1, wordsPerCue || 1);
     var frames = [], i, j;
     for (i = 0; i < wordCues.length; i += per) {
       var group = wordCues.slice(i, i + per);
       var words = ucw(group.map(function (g) { return g.text; }));
-      if (anim === 'karaoke') {
+      if (swept) {
         for (j = 0; j < group.length; j++) {
-          var f = { start: group[j].start, end: group[j].end, words: words, active: j };
-          if (kw && kw.on) f.highlightSet = markKeywords(words, kw);
+          // 'reveal' GROWS the phrase one word at a time (newest = active, so it
+          // pops); 'karaoke' shows the whole phrase and sweeps the active word.
+          var shown = (anim === 'reveal') ? words.slice(0, j + 1) : words;
+          var f = { start: group[j].start, end: group[j].end, words: shown, active: j };
+          if (kw && kw.on) f.highlightSet = markKeywords(shown, kw);
           frames.push(f);
         }
       } else {
@@ -897,11 +904,11 @@
       });
     }
 
-    if (anim === 'karaoke') {
+    if (anim === 'karaoke' || anim === 'reveal') {
       if (opts.wordCues && opts.wordCues.length) {
         frames = framesFromWordCues(opts.wordCues, anim, wpc, kw, up);
       } else {
-        frames = planKaraoke(cues, Math.max(2, wpc || 3));
+        frames = planKaraoke(cues, Math.max(2, wpc || 3), anim === 'reveal');
         for (i = 0; i < frames.length; i++) {
           f = frames[i];
           if (up) f.words = f.words.map(uc);

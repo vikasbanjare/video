@@ -141,6 +141,15 @@ console.log('captions.js');
   assert(CPCaptions.isLikelyNonSpeech('Thanks for watching'), 'flags stock hallucination');
   assert(!CPCaptions.isLikelyNonSpeech('behind the Reddit account'), 'keeps real speech');
   assert(!CPCaptions.isLikelyNonSpeech('120 trillion dollars'), 'keeps real speech with numbers');
+
+  // reveal animation: words accumulate one at a time, newest word = active (pops)
+  const rv = CPCaptions.buildCaptionFrames([{ start: 0, end: 3, text: 'one two three' }], { anim: 'reveal', wordsPerCue: 3 });
+  assert(rv.length === 3, 'reveal emits one frame per word');
+  assert(rv[0].words.length === 1 && rv[1].words.length === 2 && rv[2].words.length === 3, 'reveal grows the phrase word-by-word');
+  assert(rv[0].active === 0 && rv[2].active === 2, 'reveal marks the newest word active (it pops)');
+  // karaoke still shows the whole phrase from the first frame (sweep, not grow)
+  const ka = CPCaptions.buildCaptionFrames([{ start: 0, end: 3, text: 'one two three' }], { anim: 'karaoke', wordsPerCue: 3 });
+  assert(ka[0].words.length === 3, 'karaoke shows the full phrase from frame 1');
 }
 
 // ------------------------------------------------ animation planners ----
