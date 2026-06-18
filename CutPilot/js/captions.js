@@ -481,11 +481,11 @@
   var PREMIUM_TEMPLATES = [
     // Spotlight — the signature Captions.ai look: clean white modern sans, soft
     // drop-shadow (NOT a thick outline), the key word on a tasteful blue pill.
-    { id: 'pro-spotlight', name: 'Spotlight', category: '⭐ Premium', popularity: 100, layout: 'bottom', keyword: true, highlightScale: 1.1,
+    { id: 'pro-spotlight', name: 'Spotlight', category: '⭐ Premium', popularity: 100, layout: 'bottom', keyword: false, highlightScale: 1.1,
       font: 'Montserrat', fallbackFonts: ['Poppins', 'Inter', 'Arial'],
       fontSize: 62, fill: '#FFFFFF', highlight: '#2D7CFF', highlightStyle: 'box', boxRadius: 12,
       glow: '#000000', stroke: null, strokeWidth: 0,
-      uppercase: false, wordsPerCue: 4, anim: 'reveal' },
+      uppercase: false, wordsPerCue: 4, anim: 'karaoke' },
     // Pulse — UPPERCASE clean sans, key word on a blue pill (Captions.ai "Pulse")
     { id: 'pro-pulse', name: 'Pulse', category: '⭐ Premium', popularity: 99, layout: 'center', keyword: true, highlightScale: 1.1,
       font: 'Montserrat', fallbackFonts: ['Poppins', 'Arial Black'],

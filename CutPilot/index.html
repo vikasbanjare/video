@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.85</span>
+    <span class="ver" id="ver">v0.9.86</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -243,26 +243,20 @@
 
             <!-- 🖍️ WORD HIGHLIGHT -->
             <div class="cust-group">
-              <div class="cust-group-title">🖍️ Word highlight <span class="dim">— the spoken word</span></div>
-              <div class="seg-control" id="c-hlstyle">
-                <button data-s="color" class="on">Colour</button>
-                <button data-s="box">Box / pill</button>
-              </div>
-              <label class="check kw-toggle"><input type="checkbox" id="c-kw"> ✨ Also emphasise keywords</label>
-              <div id="c-kw-mode-wrap" class="hidden">
-                <label>Highlight which words
-                  <select id="c-kw-mode">
-                    <option value="auto">✨ Auto — important words across your whole video</option>
-                    <option value="smart">Smart — numbers, names &amp; key words</option>
-                    <option value="keywords">The strongest word</option>
-                    <option value="numbers">Numbers</option>
-                    <option value="cta">Call-to-action words</option>
-                    <option value="names">Names</option>
-                  </select>
-                </label>
-                <label>Keyword pop size <span class="val" id="c-hlscale-val"></span>
-                  <input type="range" id="c-hl-scale" min="100" max="170" value="100">
-                </label>
+              <div class="cust-group-title">🖍️ Word highlight</div>
+              <label class="check"><input type="checkbox" id="c-wordhl" checked> ✨ Highlight each word as it's spoken</label>
+              <p class="hint" style="margin:4px 0 8px">The whole line shows and the current word lights up as the person says it — word by word.</p>
+              <div id="c-wordhl-opts">
+                <label>Highlight look</label>
+                <div class="seg-control" id="c-hlstyle">
+                  <button data-s="color" class="on">Colour</button>
+                  <button data-s="box">Box / pill</button>
+                </div>
+                <label style="margin-top:9px">Words on screen</label>
+                <div class="seg-control mini" id="c-reveal">
+                  <button data-r="karaoke" class="on">All together</button>
+                  <button data-r="reveal">One by one</button>
+                </div>
               </div>
             </div>
 
@@ -287,11 +281,27 @@
               <div class="cust-group-title">➕ Extras</div>
               <label class="check kw-toggle"><input type="checkbox" id="c-speaker"> 🎙️ Show speaker names <span class="dim">(reads "Name:" lines)</span></label>
               <label class="check kw-toggle"><input type="checkbox" id="c-emoji"> ✨ Auto-emoji on keywords <span class="dim">(money 💰, profit 📈, AI 🤖…)</span></label>
+              <label class="check kw-toggle"><input type="checkbox" id="c-kw"> 🔑 Also colour key words <span class="dim">(only used when word-by-word highlight is OFF)</span></label>
+              <div id="c-kw-mode-wrap" class="hidden">
+                <label>Which words
+                  <select id="c-kw-mode">
+                    <option value="auto">✨ Auto — important words across your whole video</option>
+                    <option value="smart">Smart — numbers, names &amp; key words</option>
+                    <option value="keywords">The strongest word</option>
+                    <option value="numbers">Numbers</option>
+                    <option value="cta">Call-to-action words</option>
+                    <option value="names">Names</option>
+                  </select>
+                </label>
+                <label>Pop size <span class="val" id="c-hlscale-val"></span>
+                  <input type="range" id="c-hl-scale" min="100" max="170" value="100">
+                </label>
+              </div>
             </div>
 
-            <!-- 🎬 ANIMATION -->
-            <div class="cust-group">
-              <div class="cust-group-title">🎬 Animation</div>
+            <!-- 🎬 ANIMATION (entrance — used when word-by-word highlight is OFF) -->
+            <div class="cust-group" id="cust-anim-group">
+              <div class="cust-group-title">🎬 Entrance animation</div>
               <div id="anim-rail" class="anim-rail"></div>
             </div>
           </div>
@@ -607,7 +617,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.85 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.86 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

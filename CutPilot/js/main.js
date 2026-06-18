@@ -1502,7 +1502,14 @@
     $('c-kw-mode-wrap').classList.toggle('hidden', !p.keyword);
     $('c-hl-scale').value = Math.round((p.highlightScale || 1) * 100);
     $('c-speaker').checked = !!p.speaker;
-    selectAnim(CPCaptions.animIdForConcept(p.anim));
+    var aId = CPCaptions.animIdForConcept(p.anim);
+    selectAnim(aId);
+    // word-by-word highlight reflects the template: on for karaoke/reveal styles,
+    // with "all together" (karaoke) vs "one by one" (reveal) set to match.
+    var wf = (aId === 'karaoke' || aId === 'reveal');
+    if ($('c-wordhl')) $('c-wordhl').checked = wf;
+    setRevealButton(aId === 'reveal' ? 'reveal' : 'karaoke');
+    syncWordHlUI();
     syncColorFields();
     updateVals();
     renderPreview();
@@ -1594,6 +1601,12 @@
     var aln = document.querySelectorAll('#c-align button');
     for (var a = 0; a < aln.length; a++) {
       aln[a].addEventListener('click', function () { setAlignButton(this.dataset.a); renderPreview(); });
+    }
+    // word-by-word highlight toggle + "all together / one by one"
+    if ($('c-wordhl')) $('c-wordhl').addEventListener('change', function () { syncWordHlUI(); renderPreview(); });
+    var rev = document.querySelectorAll('#c-reveal button');
+    for (var rv = 0; rv < rev.length; rv++) {
+      rev[rv].addEventListener('click', function () { setRevealButton(this.dataset.r); renderPreview(); });
     }
     // highlight look: colour vs box/pill
     var hb = document.querySelectorAll('#c-hlstyle button');
@@ -1943,6 +1956,28 @@
     var b = document.querySelectorAll('#c-align button');
     for (var i = 0; i < b.length; i++) b[i].classList.toggle('on', b[i].dataset.a === (a || 'center'));
   }
+  function readReveal() {
+    var on = document.querySelector('#c-reveal button.on');
+    return on ? on.dataset.r : 'karaoke';
+  }
+  function setRevealButton(r) {
+    var b = document.querySelectorAll('#c-reveal button');
+    for (var i = 0; i < b.length; i++) b[i].classList.toggle('on', b[i].dataset.r === (r || 'karaoke'));
+  }
+  /* The animation actually used: when "highlight each word as spoken" is on, the
+     word sweep IS the animation (karaoke = all words together, reveal = one by
+     one); otherwise the chosen entrance animation. */
+  function currentAnim() {
+    if ($('c-wordhl') && $('c-wordhl').checked) return (readReveal() === 'reveal') ? 'reveal' : 'karaoke';
+    return state.animId;
+  }
+  /* Show the word-highlight options and hide the separate entrance-animation
+     group while word-by-word is on (so there's only one obvious thing to set). */
+  function syncWordHlUI() {
+    var on = !$('c-wordhl') || $('c-wordhl').checked;
+    if ($('c-wordhl-opts')) $('c-wordhl-opts').classList.toggle('hidden', !on);
+    if ($('cust-anim-group')) $('cust-anim-group').classList.toggle('hidden', on);
+  }
 
   function readHlStyle() {
     var on = document.querySelector('#c-hlstyle button.on');
@@ -1984,7 +2019,8 @@
         syncOffset: $('c-sync-offset').value,
         letter: $('c-letter').value, shadowOn: $('c-shadow-on').checked,
         shadow: $('c-shadow').value, shadowBlur: $('c-shadow-blur').value,
-        weight: $('c-weight').value, align: readAlign()
+        weight: $('c-weight').value, align: readAlign(),
+        wordHl: $('c-wordhl') ? $('c-wordhl').checked : true, reveal: readReveal()
       }));
     } catch (e) {}
   }
@@ -2008,6 +2044,8 @@
       if (look.shadowBlur != null && $('c-shadow-blur')) $('c-shadow-blur').value = look.shadowBlur;
       if (look.weight != null && $('c-weight')) $('c-weight').value = look.weight;
       if (look.align) setAlignButton(look.align);
+      if (look.reveal) setRevealButton(look.reveal);
+      if (look.wordHl != null && $('c-wordhl')) { $('c-wordhl').checked = !!look.wordHl; syncWordHlUI(); }
       $('c-box-on').checked = !!look.boxOn;
       $('c-upper').checked = !!look.upper;
       $('c-kw').checked = !!look.kw;
@@ -2080,7 +2118,7 @@
       cap.style.padding = '2px 6px';
     }
 
-    var anim = state.animId;
+    var anim = currentAnim();
     var words = parseInt($('c-words').value, 10) || 0;
     var caps = st.uppercase;
     var hlPct = Math.round((st.highlightScale || 1) * 100);
@@ -2119,10 +2157,13 @@
     var nShow = (words === 0) ? 6 : Math.min(words, SAMPLE_SENTENCE.length);
     var shown = SAMPLE_SENTENCE.slice(0, Math.max(1, nShow)).map(cased);
 
-    if (anim === 'karaoke') {
+    if (anim === 'karaoke' || anim === 'reveal') {
       var idx = 0;
       var paint = function () {
-        cap.innerHTML = shown.map(function (word, i) { return i === idx ? hlSpan(word) : word; }).join(' ');
+        cap.innerHTML = shown.map(function (word, i) {
+          if (anim === 'reveal' && i > idx) return '';      // grows one word at a time
+          return i === idx ? hlSpan(word) : word;
+        }).filter(function (s) { return s !== ''; }).join(' ');
         idx = (idx + 1) % shown.length;
       };
       paint();
@@ -2187,7 +2228,7 @@
     var preset = currentPreset();
     var overrides = readOverrides();
     var words = parseInt($('c-words').value, 10) || 0;
-    var anim = state.animId;
+    var anim = currentAnim();
     // karaoke/reveal ARE word-following animations: each spoken word must light
     // up as it's said, so they ALWAYS need per-word timing (the c-sync toggle
     // only governs the audio-envelope sync for the other animations).
