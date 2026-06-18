@@ -900,6 +900,28 @@
     return out;
   }
 
+  /* Clean a word-cue list so EVERY word survives placement and the highlight
+     can't skip one. Drops empties, sorts by start, and forces strictly
+     increasing starts spaced by at least minWin (≈1-2 video frames) with a
+     minimum on-screen window. Without this, two cues at the same/!ascending
+     time make Premiere's overwriteClip stomp the earlier word — so it never
+     lights up — and rapid sub-frame words vanish. Pure + tested. */
+  function sanitizeWordCues(cues, minWin) {
+    minWin = minWin || 0.06;
+    var s = [];
+    for (var i = 0; i < cues.length; i++) {
+      var c = cues[i];
+      if (!c || c.text == null || !String(c.text).length) continue;
+      s.push({ start: +c.start || 0, end: +c.end || 0, text: c.text });
+    }
+    s.sort(function (a, b) { return a.start - b.start; });
+    for (i = 0; i < s.length; i++) {
+      if (i > 0 && s[i].start < s[i - 1].start + minWin) s[i].start = s[i - 1].start + minWin;
+      if (s[i].end < s[i].start + minWin) s[i].end = s[i].start + minWin;
+    }
+    return s;
+  }
+
   /* Build frames from pre-timed word cues (used when audio alignment is on).
      Groups words per the chosen rhythm; karaoke highlights the active word. */
   function framesFromWordCues(wordCues, anim, wordsPerCue, kw, up) {
@@ -962,9 +984,13 @@
     // v1.0: opt-in auto-emoji on keywords (💰 📈 🤖 …), before words are split.
     if (opts.emoji) cues = cues.map(function (c) { return { start: c.start, end: c.end, text: enrichCaptionText(c.text) }; });
 
+    // Clean the per-word timing once so no word can be dropped/overwritten and
+    // the highlight never skips a word (see sanitizeWordCues).
+    var wordCues = (opts.wordCues && opts.wordCues.length) ? sanitizeWordCues(opts.wordCues) : null;
+
     if (anim === 'karaoke' || anim === 'reveal') {
-      if (opts.wordCues && opts.wordCues.length) {
-        frames = framesFromWordCues(opts.wordCues, anim, wpc, kw, up);
+      if (wordCues) {
+        frames = framesFromWordCues(wordCues, anim, wpc, kw, up);
       } else {
         frames = planKaraoke(cues, Math.max(2, wpc || 3), anim === 'reveal');
         for (i = 0; i < frames.length; i++) {
@@ -976,9 +1002,9 @@
     } else if (anim === 'typewriter') {
       frames = planTypewriter(cues);
       if (up) for (i = 0; i < frames.length; i++) frames[i].text = frames[i].text.toUpperCase();
-    } else if (opts.wordCues && opts.wordCues.length && wpc > 0) {
+    } else if (wordCues && wpc > 0) {
       // audio-aligned word/phrase frames (tight sync)
-      frames = framesFromWordCues(opts.wordCues, anim, wpc, kw, up);
+      frames = framesFromWordCues(wordCues, anim, wpc, kw, up);
     } else {
       var src = (wpc > 0)
         ? regroupWords(cues, wpc, { uppercase: up })   // merge across lines -> N-word captions
@@ -1068,6 +1094,7 @@
     detectOnsets: detectOnsets,
     alignPhrase: alignPhrase,
     alignCuesToAudio: alignCuesToAudio,
+    sanitizeWordCues: sanitizeWordCues,
     buildCaptionFrames: buildCaptionFrames
   };
 });

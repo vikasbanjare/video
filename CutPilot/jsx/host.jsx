@@ -768,9 +768,13 @@ function CP_placeCaptionImages(argsJson) {
         // Trim to the cue end — but NEVER let a caption linger past the next one.
         // A placed still image defaults to a multi-second duration, so without
         // this clamp many captions stay on screen at once (the "stacked wall").
+        // Clamp to the next caption's start whenever it's earlier than this end,
+        // and keep at least ~1 frame so a tightly-spaced word can't collapse to
+        // zero (which would let the next clip overwrite it — a skipped word).
         var endT = it.end;
         var nextStart = (i + 1 < args.items.length) ? args.items[i + 1].start : null;
-        if (nextStart != null && nextStart > it.start && nextStart < endT) endT = nextStart;
+        if (nextStart != null && nextStart < endT) endT = nextStart;
+        if (endT <= it.start) endT = it.start + 0.04;
         try { clip.end = CP_timeFromSeconds(endT); } catch (eEnd) {}
         placed++;
         if (args.anim && args.anim !== 'none' && args.anim !== 'karaoke' && args.anim !== 'typewriter') {

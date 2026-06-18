@@ -455,6 +455,32 @@ console.log('captions.js (audio sync)');
   const rvf = CPCaptions.buildCaptionFrames(phrase, { anim: 'reveal', wordsPerCue: 3, wordCues: realWords });
   assert(rvf.length === 3 && rvf[0].words.length === 1 && rvf[2].words.length === 3, 'reveal: phrase grows word by word');
   assert(close(rvf[2].start, 1.50, 1e-6), 'reveal: newest word appears at its real spoken time');
+
+  // sanitizeWordCues: never drop a word; force strictly increasing, spaced starts
+  const messy = [
+    { start: 1.0, end: 1.0, text: 'a' },     // zero-length
+    { start: 1.0, end: 1.2, text: 'b' },     // duplicate start (would overwrite 'a')
+    { start: 0.8, end: 1.1, text: 'c' },     // out of order (earlier)
+    { start: 5.0, end: 5.4, text: 'd' },
+    { text: '' }                              // empty -> dropped
+  ];
+  const clean = CPCaptions.sanitizeWordCues(messy, 0.06);
+  assert(clean.length === 4, 'sanitize: drops only empty cues, keeps every real word');
+  let mono = true;
+  for (let q = 1; q < clean.length; q++) if (clean[q].start < clean[q - 1].start + 0.06 - 1e-9) mono = false;
+  assert(mono, 'sanitize: starts are strictly increasing by >= minWin (no overwrite/skip)');
+  assert(clean.every(c => c.end >= c.start + 0.06 - 1e-9), 'sanitize: every word gets a visible window');
+  assert(clean.map(c => c.text).join('') === 'cabd', 'sanitize: words kept and reordered by time');
+
+  // a phrase of rapid (sub-frame) words must still yield one frame per word
+  const rapid = [];
+  for (let q = 0; q < 6; q++) rapid.push({ start: 2 + q * 0.01, end: 2 + q * 0.01 + 0.005, text: 'w' + q });
+  const rf = CPCaptions.buildCaptionFrames([{ start: 2, end: 2.1, text: 'w0 w1 w2 w3 w4 w5' }],
+    { anim: 'karaoke', wordsPerCue: 6, wordCues: rapid });
+  assert(rf.length === 6, 'rapid words: every word still gets its own active frame (none dropped)');
+  let mono2 = true;
+  for (let q = 1; q < rf.length; q++) if (rf[q].start <= rf[q - 1].start) mono2 = false;
+  assert(mono2, 'rapid words: frame starts strictly increase so placement can tile them');
 }
 
 // ------------------------------------------------------------ multicam ----
