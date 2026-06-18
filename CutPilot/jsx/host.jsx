@@ -765,8 +765,13 @@ function CP_placeCaptionImages(argsJson) {
       try {
         track.overwriteClip(pItem, it.start);
         var clip = track.clips[track.clips.numItems - 1];
-        // overwriteClip appends in time order; trim/extend to the cue.
-        try { clip.end = CP_timeFromSeconds(it.end); } catch (eEnd) {}
+        // Trim to the cue end — but NEVER let a caption linger past the next one.
+        // A placed still image defaults to a multi-second duration, so without
+        // this clamp many captions stay on screen at once (the "stacked wall").
+        var endT = it.end;
+        var nextStart = (i + 1 < args.items.length) ? args.items[i + 1].start : null;
+        if (nextStart != null && nextStart > it.start && nextStart < endT) endT = nextStart;
+        try { clip.end = CP_timeFromSeconds(endT); } catch (eEnd) {}
         placed++;
         if (args.anim && args.anim !== 'none' && args.anim !== 'karaoke' && args.anim !== 'typewriter') {
           CP_animateClip(clip, args.anim);
@@ -1384,10 +1389,15 @@ function CP_insertMogrtCaptions(argsJson) {
       } catch (eComp) {}
 
       // Duration LAST (so a time-stretch can't disturb the component edits).
+      // Fit the graphic to its slot by SPEED in either direction — speeding a
+      // long template up is the reliable way to stop these fixed-length subtitle
+      // MOGRTs (~6s each) from overlapping into a stacked wall when captions are
+      // closer together than the template's natural length.
       var needed = wantEnd - clipStart;
-      if (args.stretch && nat > 0.01 && needed > nat + 0.05 &&
+      if (args.stretch && nat > 0.05 && needed > 0.05 && Math.abs(needed - nat) > 0.05 &&
           CP_stretchLastClip(vTrack, (nat / needed) * 100)) {
         stretched++;
+        try { clip.end = CP_timeFromSeconds(wantEnd); } catch (eEnd0) {}   // belt-and-suspenders
       } else {
         try { clip.end = CP_timeFromSeconds(wantEnd); } catch (eEnd) {}
         try { if (clip.end.seconds < wantEnd - 0.05) clamped++; } catch (eChk) {}
