@@ -56,6 +56,7 @@
       letterSpacing: Math.round(((o.letterSpacing != null ? o.letterSpacing : (preset.letterSpacing || 0))) * scale),
       highlightScale: (o.highlightScale != null) ? o.highlightScale : (preset.highlightScale || 1),
       highlightStyle: o.highlightStyle || preset.highlightStyle || 'color',
+      weight: (o.weight != null) ? o.weight : (preset.weight || 800),
       uppercase: o.uppercase != null ? o.uppercase : preset.uppercase,
       yPct: o.yPct != null ? o.yPct : 0.76,
       maxWidthPct: 0.86,
@@ -121,8 +122,11 @@
     ctx.lineJoin = 'round';
     if (style.letterSpacing) { try { ctx.letterSpacing = style.letterSpacing + 'px'; } catch (eLS) {} }
 
+    // honor a per-style weight (clean styles want ~500-700, bold ones 800-900);
+    // forcing 900 on everything made even the minimal styles look heavy/cheap.
+    var fontWeight = style.weight || 800;
     function setFont(px) {
-      ctx.font = '900 ' + px + 'px "' + style.font + '", "' + style.fallbacks + '", sans-serif';
+      ctx.font = fontWeight + ' ' + px + 'px "' + style.font + '", "' + style.fallbacks + '", sans-serif';
     }
 
     var words = frame.words ? frame.words.slice() : String(frame.text).split(/\s+/);

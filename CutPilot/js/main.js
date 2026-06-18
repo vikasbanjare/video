@@ -363,6 +363,57 @@
     }, function () { return rc; });
   }
 
+  // ---- transcript cache: never re-transcribe the same clip twice ----------
+  function _tcDir() {
+    try { var p = nodeReq('path'); var d = p.join(nodeReq('os').homedir(), '.cutpilot', 'transcripts'); nodeReq('fs').mkdirSync(d, { recursive: true }); return d; }
+    catch (e) { return null; }
+  }
+  function _tcKey(mediaPath, minIn, maxOut) {
+    var s = String(mediaPath) + '|' + Math.round((minIn || 0) * 100) + '|' + Math.round((maxOut || 0) * 100) +
+            '|' + (settings.whisperQuality || '') + '|' + (settings.whisperLang || '');
+    var h = 0; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    var base = String(mediaPath).split(/[\\/]/).pop().replace(/\.[^.]+$/, '').replace(/[^\w]+/g, '_').slice(0, 40);
+    return base + '-' + h.toString(16);
+  }
+  function loadCachedTranscript(mediaPath, minIn, maxOut) {
+    try {
+      var fs = nodeReq('fs'), p = nodeReq('path'), dir = _tcDir(); if (!dir || !mediaPath) return null;
+      var key = _tcKey(mediaPath, minIn, maxOut), srt = p.join(dir, key + '.srt');
+      if (!fs.existsSync(srt) || !fs.statSync(srt).size) return null;
+      var words = null;
+      try { var js = p.join(dir, key + '.json'); if (fs.existsSync(js)) words = JSON.parse(fs.readFileSync(js, 'utf8')).words || null; } catch (eJ) {}
+      return { srtPath: srt, words: words };
+    } catch (e) { return null; }
+  }
+  function saveCachedTranscript(mediaPath, minIn, maxOut, cues, words) {
+    try {
+      var fs = nodeReq('fs'), p = nodeReq('path'), dir = _tcDir(); if (!dir || !mediaPath) return;
+      var key = _tcKey(mediaPath, minIn, maxOut);
+      fs.writeFileSync(p.join(dir, key + '.srt'), CPCaptions.toSRT(cues), 'utf8');
+      try { fs.writeFileSync(p.join(dir, key + '.json'), JSON.stringify({ words: words || null, at: Date.now() }), 'utf8'); } catch (eW) {}
+    } catch (e) {}
+  }
+  /* Loosely find a transcript we already saved for this media file (any trim),
+     so SELECTING a clip we've transcribed before auto-loads its words — the user
+     never re-transcribes the same file. Returns the most recent {srtPath,words}. */
+  function findCachedTranscriptForMedia(mediaPath) {
+    try {
+      var fs = nodeReq('fs'), p = nodeReq('path'), dir = _tcDir();
+      if (!dir || !mediaPath) return null;
+      var base = String(mediaPath).split(/[\\/]/).pop().replace(/\.[^.]+$/, '').replace(/[^\w]+/g, '_').slice(0, 40);
+      var best = null, bestM = -1;
+      fs.readdirSync(dir).forEach(function (f) {
+        if (f.indexOf(base + '-') !== 0 || !/\.srt$/i.test(f)) return;
+        var full = p.join(dir, f);
+        try { var st = fs.statSync(full); if (!st.size) return; if ((st.mtimeMs || 0) > bestM) { bestM = st.mtimeMs || 0; best = full; } } catch (e) {}
+      });
+      if (!best) return null;
+      var words = null;
+      try { var js = best.replace(/\.srt$/i, '.json'); if (fs.existsSync(js)) words = JSON.parse(fs.readFileSync(js, 'utf8')).words || null; } catch (eJ) {}
+      return { srtPath: best, words: words, mtime: bestM };
+    } catch (e) { return null; }
+  }
+
   /* Auto-transcribe the selected clip locally (ffmpeg → whisper.cpp → SRT) so
      the user never needs Premiere's Transcribe/Export. Produces a sequence-time
      transcript and loads it as the current transcript. */
@@ -399,6 +450,7 @@
       return CPBridge.callHost('CP_getTranscribeSource').then(function (res) {
         var clip = res.clip;
         if (!clip || !clip.mediaPath) throw new Error('Put your video or audio clip on the timeline first.');
+        var shortName = (clip.name || 'clip').replace(/\.[^.]+$/, '');
         // Every timeline piece that uses this recording (jump-cuts of one source).
         var insts = (res.instances && res.instances.length) ? res.instances
                     : [{ inPoint: clip.inPoint || 0, outPoint: clip.outPoint || 0, seqStart: clip.seqStart || 0 }];
@@ -418,11 +470,25 @@
         if (!isFinite(minIn)) minIn = 0;
         var dur = (maxOut > minIn) ? (maxOut - minIn) : 0;
         var asrWordLevel = false;   // true once we have real per-word timing (-ml 1)
+
+        // Already transcribed this exact clip (same media + trim + model + language)?
+        // Load the SAVED transcript instantly — no ffmpeg, no whisper, no waiting.
+        var cached = loadCachedTranscript(clip.mediaPath, minIn, maxOut);
+        if (cached) {
+          state.transcript = { label: 'Saved transcript (' + shortName + ')', path: cached.srtPath, mtime: 1e16 };
+          state.transcriptWords = cached.words || null;
+          state.transcriptManual = true;
+          $('tr-help').classList.add('hidden');
+          refreshMogrtSheetTr(); refreshMogrtEditorTr();
+          var cc = []; try { cc = CPCaptions.parseSRT(nodeReq('fs').readFileSync(cached.srtPath, 'utf8')); } catch (eR) {}
+          setTranscriptBar('ok', '✅', 'Loaded the saved transcript — no re-transcribe needed' + (cc.length ? (' (' + cc.length + ' lines)') : ''), 'Change');
+          toast('✓ Loaded the saved transcript for “' + shortName + '” — already done, so no re-transcribe.');
+          return;   // skip ffmpeg + whisper entirely
+        }
         // -ss BEFORE -i (fast seek), -t AFTER -i (duration from seek point).
         var ffArgs = ['-y', '-ss', String(minIn), '-i', clip.mediaPath];
         if (dur > 0) ffArgs = ffArgs.concat(['-t', String(dur)]);
         ffArgs = ffArgs.concat(['-vn', '-ac', '1', '-ar', '16000', wav]);
-        var shortName = (clip.name || 'clip').replace(/\.[^.]+$/, '');
         var pieces = insts.length > 1 ? (' (' + insts.length + ' cuts)') : '';
         setTranscriptBar('', ico, 'Extracting audio from “' + shortName + '”' + pieces + '…', null);
         return runProc(ff, ffArgs).then(function () {
@@ -485,6 +551,7 @@
           var finalPath = pathMod.join(os.tmpdir(), 'cutpilot-transcript-' + stamp + '.srt');
           fs.writeFileSync(finalPath, CPCaptions.toSRT(cues), 'utf8');
           try { fs.unlinkSync(wav); } catch (eU) {}
+          saveCachedTranscript(clip.mediaPath, minIn, maxOut, cues, state.transcriptWords);  // so this clip never needs re-transcribing
           state.transcript = { label: 'CutPilot transcript (' + cues.length + ' lines)', path: finalPath, mtime: 1e16 };
           state.transcriptManual = true;
           $('tr-help').classList.add('hidden');
@@ -748,6 +815,10 @@
       if (sel && sel.clip && sel.clip.mediaPath && pathMod) {
         clipBase = pathMod.basename(sel.clip.mediaPath).replace(/\.[^.]+$/, '').toLowerCase();
         listCaptionFilesIn(pathMod.dirname(sel.clip.mediaPath)).forEach(function (s) { s.base = 1e14; s.src = 'clip'; add(s); });
+        // A transcript WE already made for this exact clip is the canonical one:
+        // it wins over any external .srt and carries word-level timing.
+        var cc = findCachedTranscriptForMedia(sel.clip.mediaPath);
+        if (cc) add({ label: 'your saved transcript', path: cc.srtPath, base: 9e15, src: 'cutpilot-cache', words: cc.words, mtime: cc.mtime });
       }
       return CPBridge.callHost('CP_getProjectInfo').catch(function () { return null; });
     }).then(function (proj) {
@@ -777,8 +848,15 @@
 
       if (pick.length) {
         state.transcript = pick[0];
-        var note = (rel(pick[0]) > 0) ? '' : ' · tap Change if wrong';
-        setTranscriptBar('ok', '✅', 'Using ' + pick[0].label + note, 'Change');
+        if (pick[0].src === 'cutpilot-cache') {
+          // restore the saved word-level timing + protect it from a background rescan
+          state.transcriptWords = pick[0].words || null;
+          state.transcriptManual = true;
+          setTranscriptBar('ok', '✅', 'Using your saved transcript — already done, no re-transcribe', 'Change');
+        } else {
+          var note = (rel(pick[0]) > 0) ? '' : ' · tap Change if wrong';
+          setTranscriptBar('ok', '✅', 'Using ' + pick[0].label + note, 'Change');
+        }
       } else {
         state.transcript = null;
         setTranscriptBar('warn', '⚠️', 'No transcript for this video — tap to pick / make one', 'Get one →');
@@ -1264,28 +1342,50 @@
   }
 
   // ----------------------------------------------------- editor controls ----
-  function buildFontSelect() {
-    var sel = $('c-font');
-    sel.innerHTML = '';
-    var grp = document.createElement('optgroup');
-    grp.label = 'Suggested';
-    CPCaptions.FONTS.forEach(function (f) {
-      var o = document.createElement('option');
-      o.value = f; o.textContent = f; o.style.fontFamily = '"' + f + '", sans-serif';
-      grp.appendChild(o);
-    });
-    sel.appendChild(grp);
-    // "Custom font…" stays last so any face can still be named by hand
-    var co = document.createElement('option');
-    co.value = '__custom__'; co.textContent = '✏️ Custom font…';
-    sel.appendChild(co);
-    loadInstalledFonts();
-    applyFontFilter();
+  // The font picker is a click-to-open list (not a search-only box): clicking
+  // shows every font — Suggested first, then every font installed on this
+  // computer — each rendered in its own typeface, with a search box at the top
+  // of the list to filter as you type. The chosen value is mirrored into the
+  // hidden #c-font input that the rest of the editor reads.
+  var _fontDD = null;          // the live dropdown { el, get, set }
+  var _installedFonts = [];    // every font found on this computer (lazy)
+
+  /* All font options: Suggested faces, every installed face, then a
+     "type any font" escape hatch. Each carries its own face for preview. */
+  function fontOptionList() {
+    var seen = {}, opts = [];
+    CPCaptions.FONTS.forEach(function (f) { if (!seen[f]) { seen[f] = 1; opts.push({ value: f, label: f, font: f }); } });
+    _installedFonts.forEach(function (f) { if (!seen[f]) { seen[f] = 1; opts.push({ value: f, label: f, font: f }); } });
+    opts.push({ value: '__custom__', label: '✏️ Type any installed font…' });
+    return opts;
   }
 
-  /* Append an optgroup listing EVERY font installed on this computer (read from
-     the OS font folders). Runs once, deferred so it never blocks first paint;
-     Node/CEP only — browser preview just shows the Suggested list. */
+  /* (Re)build the font dropdown, preserving the current value. */
+  function buildFontSelect(keepValue) {
+    var mount = $('c-font-mount');
+    if (!mount) return;
+    var cur = keepValue || (_fontDD && _fontDD.get()) || CPCaptions.FONTS[0];
+    if (cur === '__custom__') cur = CPCaptions.FONTS[0];
+    mount.innerHTML = '';
+    _fontDD = makeDropdown(fontOptionList(), cur, function (v) {
+      if (v === '__custom__') {
+        var f = prompt('Type the exact name of any font installed on your computer\n(e.g. "Proxima Nova", "SF Pro Display", "Gotham"):', '');
+        var pick = (f && f.trim()) ? f.trim() : (currentPreset() ? currentPreset().font : CPCaptions.FONTS[0]);
+        setFontValue(pick);
+      } else {
+        $('c-font').value = v;
+      }
+      updateVals(); renderPreview();
+    }, 'Pick a font');
+    _fontDD.el.classList.add('cp-font-dd');
+    mount.appendChild(_fontDD.el);
+    $('c-font').value = cur;     // mirror into the hidden input everyone reads
+    loadInstalledFonts();
+  }
+
+  /* Load EVERY font installed on this computer (read from the OS font folders)
+     and fold them into the dropdown. Runs once, deferred so it never blocks
+     first paint; Node/CEP only — browser preview shows the Suggested list. */
   var _installedFontsLoaded = false;
   function loadInstalledFonts() {
     if (_installedFontsLoaded || typeof CPFonts === 'undefined' || !CPBridge.isCEP()) return;
@@ -1295,30 +1395,20 @@
       try { fonts = CPFonts.listInstalledFonts(nodeReq('fs'), nodeReq('path'), {}); }
       catch (e) { return; }
       if (!fonts.length) return;
-      var sel = $('c-font');
-      var grp = document.createElement('optgroup');
-      grp.label = 'Installed on your computer (' + fonts.length + ')';
-      fonts.forEach(function (f) {
-        var o = document.createElement('option');
-        o.value = f; o.textContent = f;
-        try { o.style.fontFamily = '"' + f + '", sans-serif'; } catch (eS) {}
-        grp.appendChild(o);
-      });
-      sel.insertBefore(grp, sel.lastChild); // before the "Custom font…" entry
-      applyFontFilter();                    // keep any active filter applied
+      _installedFonts = fonts;
+      buildFontSelect($('c-font').value);   // rebuild with the full list, keep choice
     }, 50);
   }
 
+  /* Set the active font everywhere (hidden input + dropdown button). If the
+     font isn't already an option, add it so the dropdown can display it. */
   function setFontValue(font) {
-    var sel = $('c-font');
-    var has = false;
-    for (var i = 0; i < sel.options.length; i++) if (sel.options[i].value === font) has = true;
-    if (!has) {
-      var o = document.createElement('option');
-      o.value = font; o.textContent = font;
-      sel.insertBefore(o, sel.firstChild);
-    }
-    sel.value = font;
+    if (!font) return;
+    $('c-font').value = font;
+    if (!_fontDD) return;
+    var known = CPCaptions.FONTS.indexOf(font) !== -1 || _installedFonts.indexOf(font) !== -1;
+    if (known) { _fontDD.set(font); }
+    else { _installedFonts.unshift(font); buildFontSelect(font); }
   }
 
   function toHex(c, fb) {
@@ -1419,17 +1509,7 @@
       mount.appendChild(f.el);
       inp._cpField = f;
     });
-    if ($('c-font-filter')) $('c-font-filter').addEventListener('input', applyFontFilter);
-    // font dropdown: the trailing "Custom font…" entry prompts for any font
-    // installed on the user's computer (renders if the system has it).
-    $('c-font').addEventListener('change', function () {
-      if (this.value === '__custom__') {
-        var f = prompt('Type the exact name of any font installed on your computer\n(e.g. "Proxima Nova", "SF Pro Display", "Gotham"):', '');
-        if (f && f.trim()) setFontValue(f.trim());
-        else setFontValue(currentPreset().font);
-      }
-      updateVals(); renderPreview();
-    });
+    // (font picker wires itself in buildFontSelect — click-to-open list + search)
     $('c-kw').addEventListener('change', function () {
       $('c-kw-mode-wrap').classList.toggle('hidden', !this.checked);
     });
@@ -1763,19 +1843,10 @@
 
   function readSpeaker() { return { on: $('c-speaker').checked }; }
 
-  /* Searchable font picker: hide options that don't match the filter box. */
-  function applyFontFilter() {
-    var inp = $('c-font-filter'), sel = $('c-font');
-    if (!inp || !sel) return;
-    var opts = sel.getElementsByTagName('option'), names = [], i;
-    for (i = 0; i < opts.length; i++) if (opts[i].value !== '__custom__') names.push(opts[i].value);
-    var match = {};
-    (typeof CPFonts !== 'undefined' ? CPFonts.filterFamilies(names, inp.value) : names)
-      .forEach(function (n) { match[n] = 1; });
-    for (i = 0; i < opts.length; i++) {
-      opts[i].hidden = (opts[i].value !== '__custom__') && !match[opts[i].value];
-    }
-  }
+  /* Obsolete: the font picker is now a click-to-open dropdown whose own search
+     box (makeDropdown) filters the list — no separate filter field. Kept as a
+     no-op so any older call site stays safe. */
+  function applyFontFilter() {}
 
   /* Inline readability warning under the preview — captions over unknown
      footage need an outline/box/glow, not just a fill color. */
@@ -2349,6 +2420,8 @@
     }
     options.forEach(function (o) {
       var it = document.createElement('button'); it.type = 'button'; it.className = 'cp-dd-item'; it.textContent = o.label;
+      // font pickers preview each entry in its own typeface
+      if (o.font) { try { it.style.fontFamily = '"' + o.font + '", sans-serif'; } catch (eFF) {} }
       it.addEventListener('click', function (e) { e.stopPropagation(); cur = o.value; refresh(); list.classList.add('hidden'); _cpOpenPop = null; onChange(cur); });
       list.appendChild(it);
       items.push({ el: it, label: o.label });

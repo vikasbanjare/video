@@ -691,4 +691,15 @@ console.log('chapters.js (chapter generator)');
 }
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
-process.exit(failed ? 1 : 0);
+
+// ------------------------------------------------- template audit ----
+// Validate every built-in caption template (fonts load, colours/enums valid,
+// legible over footage). Runs in its own process so a failure is loud.
+console.log('\nRunning template audit…');
+var auditOk = true;
+try {
+  require('child_process').execSync('node "' + require('path').join(__dirname, 'audit-templates.js') + '"',
+    { stdio: 'inherit' });
+} catch (e) { auditOk = false; }
+
+process.exit(failed || !auditOk ? 1 : 0);
