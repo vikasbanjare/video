@@ -58,6 +58,7 @@
       highlightScale: (o.highlightScale != null) ? o.highlightScale : (preset.highlightScale || 1),
       highlightStyle: o.highlightStyle || preset.highlightStyle || 'color',
       weight: (o.weight != null) ? o.weight : (preset.weight || 800),
+      align: o.align || preset.align || 'center',
       uppercase: o.uppercase != null ? o.uppercase : preset.uppercase,
       yPct: o.yPct != null ? o.yPct : 0.76,
       maxWidthPct: 0.86,
@@ -195,9 +196,13 @@
     // v1.0: tint the body text with this speaker's colour (multi-speaker clarity)
     var spkBody = frame.speaker ? speakerColor(frame.speaker) : null;
 
+    // horizontal alignment within the safe text column
+    var margin = (W - maxW) / 2;
     for (var li = 0; li < lines.length; li++) {
       var line = lines[li];
-      var x = (W - line.width) / 2;
+      var x = (style.align === 'left') ? margin
+            : (style.align === 'right') ? (W - margin - line.width)
+            : (W - line.width) / 2;
       var y = baseY + li * lineStep;
 
       if (style.boxColor) {
