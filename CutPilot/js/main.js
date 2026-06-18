@@ -368,12 +368,17 @@
     try { var p = nodeReq('path'); var d = p.join(nodeReq('os').homedir(), '.cutpilot', 'transcripts'); nodeReq('fs').mkdirSync(d, { recursive: true }); return d; }
     catch (e) { return null; }
   }
+  // Bump when the cached payload's meaning changes. v2 = transcripts now carry
+  // recovered word-level timing; v1 caches (lines only) are intentionally
+  // bypassed so a clip is re-transcribed ONCE to capture its word timing, then
+  // cached for good.
+  var _TC_VER = 'v2';
   function _tcKey(mediaPath, minIn, maxOut) {
-    var s = String(mediaPath) + '|' + Math.round((minIn || 0) * 100) + '|' + Math.round((maxOut || 0) * 100) +
+    var s = _TC_VER + '|' + String(mediaPath) + '|' + Math.round((minIn || 0) * 100) + '|' + Math.round((maxOut || 0) * 100) +
             '|' + (settings.whisperQuality || '') + '|' + (settings.whisperLang || '');
     var h = 0; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
     var base = String(mediaPath).split(/[\\/]/).pop().replace(/\.[^.]+$/, '').replace(/[^\w]+/g, '_').slice(0, 40);
-    return base + '-' + h.toString(16);
+    return base + '-' + _TC_VER + '-' + h.toString(16);
   }
   function loadCachedTranscript(mediaPath, minIn, maxOut) {
     try {
