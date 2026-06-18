@@ -17,6 +17,7 @@
     keepsSeq: [],
     plan: null,
     transcript: null,        // { label, path } — the one chosen transcript
+    transcriptWords: null,   // real per-word cues (whisper -ml 1) for tight highlight sync
     transcriptManual: false, // true once the user picks a file by hand (auto-rescan won't override)
     presetId: 'pro-spotlight',
     animId: 'pop',
@@ -416,6 +417,7 @@
         insts.forEach(function (it) { if (it.inPoint < minIn) minIn = it.inPoint; if (it.outPoint > maxOut) maxOut = it.outPoint; });
         if (!isFinite(minIn)) minIn = 0;
         var dur = (maxOut > minIn) ? (maxOut - minIn) : 0;
+        var asrWordLevel = false;   // true once we have real per-word timing (-ml 1)
         // -ss BEFORE -i (fast seek), -t AFTER -i (duration from seek point).
         var ffArgs = ['-y', '-ss', String(minIn), '-i', clip.mediaPath];
         if (dur > 0) ffArgs = ffArgs.concat(['-t', String(dur)]);
@@ -426,19 +428,34 @@
         return runProc(ff, ffArgs).then(function () {
           setTranscriptBar('', ico, cloud ? 'Transcribing in the cloud (Groq)…' : ('Transcribing with ' + modelLabel + ' — this can take a minute…'), null);
           if (cloud) return transcribeViaGroq(wav, wlang);   // → [{start,end,text}]
-          // Local whisper → SRT → cues. Plain decode (matches the build that worked).
-          return runProc(wbin, ['-m', model, '-f', wav, '-osrt', '-of', outBase, '-l', wlang]).then(function () {
-            var srtPath = outBase + '.srt';
-            if (!fs.existsSync(srtPath)) throw new Error('the engine produced no transcript');
-            var rc = CPCaptions.parseSRT(fs.readFileSync(srtPath, 'utf8'));
-            try { fs.unlinkSync(srtPath); } catch (e) {}
-            // recover any mid-transcript gaps whisper dropped (best-effort)
-            var ctx = { wbin: wbin, model: model, wlang: wlang, wav: wav, ff: ff,
-                        fs: fs, os: os, pathMod: pathMod, stamp: stamp,
-                        setBar: function (m) { setTranscriptBar('', ico, m, null); } };
-            var gp; try { gp = fillWhisperGaps(rc, ctx); } catch (eGap) { gp = Promise.resolve(rc); }
-            return gp.then(function (f) { return (f && f.length) ? f : rc; }, function () { return rc; });
-          });
+          var ctx = { wbin: wbin, model: model, wlang: wlang, wav: wav, ff: ff,
+                      fs: fs, os: os, pathMod: pathMod, stamp: stamp,
+                      setBar: function (m) { setTranscriptBar('', ico, m, null); } };
+          // Normal line-level decode (the quality the user is happy with).
+          function plainPass() {
+            return runProc(wbin, ['-m', model, '-f', wav, '-osrt', '-of', outBase, '-l', wlang]).then(function () {
+              var srtPath = outBase + '.srt';
+              if (!fs.existsSync(srtPath)) throw new Error('the engine produced no transcript');
+              var rc = CPCaptions.parseSRT(fs.readFileSync(srtPath, 'utf8'));
+              try { fs.unlinkSync(srtPath); } catch (e) {}
+              var gp; try { gp = fillWhisperGaps(rc, ctx); } catch (eGap) { gp = Promise.resolve(rc); }
+              return gp.then(function (f) { return (f && f.length) ? f : rc; }, function () { return rc; });
+            });
+          }
+          // WORD-LEVEL decode (-ml 1 -sow) → real per-word timing so the caption
+          // highlight follows the spoken word. Same model/words, just one word per
+          // segment. Falls back to the line pass if the build/flags don't support it.
+          return runProc(wbin, ['-m', model, '-f', wav, '-osrt', '-of', outBase, '-l', wlang, '-ml', '1', '-sow']).then(function () {
+            var sp = outBase + '.srt';
+            var w = fs.existsSync(sp) ? CPCaptions.parseSRT(fs.readFileSync(sp, 'utf8')) : [];
+            try { fs.unlinkSync(sp); } catch (e) {}
+            if (w.length >= 3) {
+              asrWordLevel = true;
+              var gpw; try { gpw = fillWhisperGaps(w, ctx); } catch (eW) { gpw = Promise.resolve(w); }
+              return gpw.then(function (f) { return (f && f.length) ? f : w; }, function () { return w; });
+            }
+            return plainPass();
+          }, function () { return plainPass(); });
         }).then(function (rawCues) {
           if (!rawCues || !rawCues.length) throw new Error('no speech detected in “' + shortName + '”');
           // Hinglish (cloud/Hindi path): turn the Devanagari into Latin; English
@@ -456,6 +473,15 @@
           });
           if (!cues.length) throw new Error('no speech detected in “' + shortName + '”');
           cues.sort(function (a, b) { return a.start - b.start; });
+          // With word-level timing, keep the per-word cues for the caption highlight
+          // (so it follows the spoken word), and regroup them into readable lines for
+          // the transcript / Review & edit / MOGRT.
+          if (asrWordLevel) {
+            state.transcriptWords = cues.slice();
+            cues = CPCaptions.regroupWords(cues, 7, { maxGap: 0.8 });
+          } else {
+            state.transcriptWords = null;   // no real word timing → sync uses the audio envelope
+          }
           var finalPath = pathMod.join(os.tmpdir(), 'cutpilot-transcript-' + stamp + '.srt');
           fs.writeFileSync(finalPath, CPCaptions.toSRT(cues), 'utf8');
           try { fs.unlinkSync(wav); } catch (eU) {}
@@ -699,6 +725,7 @@
      so a background rescan doesn't flicker an already-confirmed transcript. */
   function findTranscript() {
     state.transcriptManual = false;
+    state.transcriptWords = null;   // an auto-found external SRT has no word timing
     if (!state.transcript) setTranscriptBar('', '🔎', 'looking for your words…', null);
     var found = [];
     var seen = {};
@@ -766,6 +793,7 @@
 
   function pickTranscriptByHand(p) {
     state.transcript = { label: p.split(/[\\/]/).pop(), path: p, mtime: 1e16 };
+    state.transcriptWords = null;    // hand-picked file has no per-word timing
     state.transcriptManual = true;   // auto-rescan must not override a hand pick
     setTranscriptBar('ok', '✅', 'Using ' + state.transcript.label, 'Change');
     $('tr-help').classList.add('hidden');
@@ -918,6 +946,7 @@
       var p = pathMod.join(os.tmpdir(), 'cutpilot-transcript-edited-' + Date.now() + '.srt');
       fs.writeFileSync(p, CPCaptions.toSRT(cues), 'utf8');
       state.transcript = { label: 'Edited transcript (' + cues.length + ' lines)', path: p, mtime: 1e16 };
+      state.transcriptWords = null;    // edits change the words → fall back to envelope sync
       state.transcriptManual = true;
     } catch (e) { return toast('Couldn\'t save edits: ' + e.message, true); }
     $('tr-editor').classList.add('hidden');
@@ -2017,6 +2046,10 @@
      length-weighted timing). Uses the first audio track's envelope. */
   function getCaptionWordCues(cues, wantSync) {
     if (!wantSync) return Promise.resolve(null);
+    // Best source: whisper's real per-word timestamps captured at transcribe time
+    // (the highlight rides the actual spoken word). Only when they line up with the
+    // transcript we're captioning (cleared on edit / external file → envelope).
+    if (state.transcriptWords && state.transcriptWords.length) return Promise.resolve(state.transcriptWords.slice());
     var ff = resolveFfmpeg();
     if (!ff) return Promise.resolve(null);
     return ensureAudioTracks().then(function (tracks) {
