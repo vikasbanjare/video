@@ -42,12 +42,22 @@
     var scale = frameH / 1080;
     var strokeW = (o.strokeWidth != null) ? o.strokeWidth : (preset.strokeWidth || 0);
     var box = (o.boxColor !== undefined) ? o.boxColor : (preset.boxColor || null);
+    var fill = o.fill || preset.fill;
+    var highlight = o.highlight || preset.highlight || '#FFD400';
+    var hlScale = (o.highlightScale != null) ? o.highlightScale : (preset.highlightScale || 1);
+    // Guarantee the spoken word is always visible: if the highlight colour is the
+    // same as the body text AND there's no box behind it (several minimalist
+    // templates are monochrome by design), make the active word pop by size so
+    // word-by-word sync is never invisible on those styles.
+    if (!box && String(highlight).toLowerCase() === String(fill).toLowerCase()) {
+      hlScale = Math.max(hlScale, 1.18);
+    }
     return {
       font: o.font || preset.font,
       fallbacks: (preset.fallbackFonts || []).join('", "'),
       size: Math.round((o.fontSize || preset.fontSize) * scale),
-      fill: o.fill || preset.fill,
-      highlight: o.highlight || preset.highlight || '#FFD400',
+      fill: fill,
+      highlight: highlight,
       stroke: (o.stroke !== undefined) ? o.stroke : (preset.stroke || null),
       strokeWidth: Math.round(strokeW * scale),
       boxColor: box,
@@ -55,7 +65,7 @@
       glow: (o.glow !== undefined) ? o.glow : (preset.glow || null),
       glowBlur: (o.glowBlur != null) ? o.glowBlur : (preset.glowBlur != null ? preset.glowBlur : 0.35),
       letterSpacing: Math.round(((o.letterSpacing != null ? o.letterSpacing : (preset.letterSpacing || 0))) * scale),
-      highlightScale: (o.highlightScale != null) ? o.highlightScale : (preset.highlightScale || 1),
+      highlightScale: hlScale,
       highlightStyle: o.highlightStyle || preset.highlightStyle || 'color',
       weight: (o.weight != null) ? o.weight : (preset.weight || 800),
       align: o.align || preset.align || 'center',

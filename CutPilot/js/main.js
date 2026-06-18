@@ -1510,12 +1510,11 @@
     $('c-speaker').checked = !!p.speaker;
     var aId = CPCaptions.animIdForConcept(p.anim);
     selectAnim(aId);
-    // Word-by-word highlight is a STICKY preference, so the per-word sync works
-    // with EVERY template (using that template's own colours) — not only the
-    // word-sync presets. Word-sync templates force it on; for all others we keep
-    // whatever the user last chose (default on). Previously non-karaoke templates
-    // turned it off, which is why sync "only worked on one template".
-    if ($('c-wordhl') && (aId === 'karaoke' || aId === 'reveal')) $('c-wordhl').checked = true;
+    // Word-by-word sync is the whole point of the highlighter, so it's ON by
+    // default for EVERY template (using that template's own colours), not just
+    // the word-sync presets — that's why it used to "only work on one template".
+    // We only leave it off if the user explicitly turned it off this session.
+    if ($('c-wordhl')) $('c-wordhl').checked = !state.wordHlOff;
     // "all together / one by one" follows a word-sync template; otherwise keep
     // the user's current choice.
     if (aId === 'reveal') setRevealButton('reveal');
@@ -1619,7 +1618,10 @@
       lns[ln].addEventListener('click', function () { setLinesButton(parseInt(this.dataset.l, 10)); renderPreview(); });
     }
     // word-by-word highlight toggle + "all together / one by one"
-    if ($('c-wordhl')) $('c-wordhl').addEventListener('change', function () { syncWordHlUI(); renderPreview(); });
+    if ($('c-wordhl')) $('c-wordhl').addEventListener('change', function () {
+      state.wordHlOff = !this.checked;   // remember an explicit opt-out so templates don't re-enable it
+      syncWordHlUI(); renderPreview();
+    });
     var rev = document.querySelectorAll('#c-reveal button');
     for (var rv = 0; rv < rev.length; rv++) {
       rev[rv].addEventListener('click', function () { setRevealButton(this.dataset.r); renderPreview(); });

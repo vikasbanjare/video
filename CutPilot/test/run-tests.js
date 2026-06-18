@@ -278,6 +278,15 @@ console.log('render.js (pure layout helpers)');
   assert(CPRender.styleForFrame(presetTwoLine, 1080, {}).maxLines === 2,
          'preset maxLines applies when no override');
 
+  // word-sync visibility: an invisible highlight (same colour as the body text,
+  // no box) must pop the active word by size so sync is never invisible
+  const mono = CPRender.styleForFrame({ font: 'X', fontSize: 100, fill: '#FFFFFF', highlight: '#FFFFFF' }, 1080, {});
+  assert(mono.highlightScale >= 1.18, 'monochrome highlight bumps scale so the active word stays visible');
+  const colored = CPRender.styleForFrame({ font: 'X', fontSize: 100, fill: '#FFFFFF', highlight: '#2D7CFF', highlightScale: 1 }, 1080, {});
+  assert(colored.highlightScale === 1, 'a distinct highlight colour keeps the template scale (no forced bump)');
+  const boxedMono = CPRender.styleForFrame({ font: 'X', fontSize: 100, fill: '#FFF', highlight: '#FFF', boxColor: '#000', highlightScale: 1 }, 1080, {});
+  assert(boxedMono.highlightScale === 1, 'monochrome but boxed keeps scale — the box already separates the word');
+
   // caption legibility checker
   assert(Math.round(CPRender.contrastRatio('#000000', '#FFFFFF')) === 21, 'black/white contrast ratio is 21');
   assert(CPRender.legibilityWarning({ fill: '#FFFFFF', stroke: null, strokeWidth: 0, boxColor: null, glow: null }),
