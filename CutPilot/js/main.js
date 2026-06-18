@@ -527,40 +527,67 @@
           // Hinglish (cloud/Hindi path): turn the Devanagari into Latin; English
           // words already in Latin pass through untouched.
           if (romanize) rawCues.forEach(function (rc) { rc.text = CPCaptions.devanagariToLatin(rc.text); });
-          // Map each (wav-relative) cue onto every timeline piece showing that part,
+          // Map (wav-relative) cues onto every timeline piece showing that part,
           // converting to sequence time: seq = mediaTime - pieceIn + pieceSeqStart.
-          var cues = [];
-          rawCues.forEach(function (rc) {
-            var mStart = rc.start + minIn, mEnd = rc.end + minIn;
-            insts.forEach(function (it) {
-              var s = Math.max(mStart, it.inPoint), e = Math.min(mEnd, it.outPoint);
-              if (e - s > 0.05) cues.push({ start: s - it.inPoint + it.seqStart, end: e - it.inPoint + it.seqStart, text: rc.text });
+          function toSeq(list) {
+            var out = [];
+            list.forEach(function (rc) {
+              var mStart = rc.start + minIn, mEnd = rc.end + minIn;
+              insts.forEach(function (it) {
+                var s = Math.max(mStart, it.inPoint), e = Math.min(mEnd, it.outPoint);
+                if (e - s > 0.05) out.push({ start: s - it.inPoint + it.seqStart, end: e - it.inPoint + it.seqStart, text: rc.text });
+              });
             });
-          });
-          if (!cues.length) throw new Error('no speech detected in “' + shortName + '”');
-          cues.sort(function (a, b) { return a.start - b.start; });
-          // With word-level timing, keep the per-word cues for the caption highlight
-          // (so it follows the spoken word), and regroup them into readable lines for
-          // the transcript / Review & edit / MOGRT.
-          if (asrWordLevel) {
-            state.transcriptWords = cues.slice();
-            cues = CPCaptions.regroupWords(cues, 7, { maxGap: 0.8 });
-          } else {
-            state.transcriptWords = null;   // no real word timing → sync uses the audio envelope
+            out.sort(function (a, b) { return a.start - b.start; });
+            return out;
           }
-          var finalPath = pathMod.join(os.tmpdir(), 'cutpilot-transcript-' + stamp + '.srt');
-          fs.writeFileSync(finalPath, CPCaptions.toSRT(cues), 'utf8');
-          try { fs.unlinkSync(wav); } catch (eU) {}
-          saveCachedTranscript(clip.mediaPath, minIn, maxOut, cues, state.transcriptWords);  // so this clip never needs re-transcribing
-          state.transcript = { label: 'CutPilot transcript (' + cues.length + ' lines)', path: finalPath, mtime: 1e16 };
-          state.transcriptManual = true;
-          $('tr-help').classList.add('hidden');
-          refreshMogrtSheetTr(); refreshMogrtEditorTr();
-          var span = fmt(cues[0].start) + '–' + fmt(cues[cues.length - 1].end);
-          setTranscriptBar('ok', '✅', 'Transcribed — ' + cues.length + ' lines · ' + span + ' · ' + modelLabel, 'Change');
-          var note = '';
-          if (!cloud) { var want = modelFileName(); if (modelLabel !== want) note = ' ⚠️ wanted ' + want + ' but it didn\'t load — used a fallback (check internet).'; }
-          toast('✓ Transcribed “' + shortName + '” — ' + cues.length + ' lines using ' + modelLabel + '.' + note);
+          var cues = toSeq(rawCues);
+          if (!cues.length) throw new Error('no speech detected in “' + shortName + '”');
+
+          // Per-word timing for the highlight so it rides the SPOKEN word. Best
+          // source is whisper's own word-level pass; when that isn't available
+          // (older build, cloud, or it produced line-level only) recover word
+          // onsets from the WAV we already extracted — this works even when the
+          // audio is baked into the video with no separate timeline track, so an
+          // auto-transcribed clip ALWAYS gets word-following captions.
+          var wordsReady;
+          if (asrWordLevel) {
+            state.transcriptWords = cues.slice();                 // rawCues were single words
+            cues = CPCaptions.regroupWords(cues, 7, { maxGap: 0.8 });
+            wordsReady = Promise.resolve();
+          } else if (typeof CPAudio !== 'undefined' && CPAudio.ffmpegEnvelope && ff) {
+            setTranscriptBar('', ico, 'Aligning each word to the audio…', null);
+            wordsReady = CPAudio.ffmpegEnvelope(wav, ff, 0.1).then(function (env) {
+              try {
+                if (env && env.samples && env.samples.length) {
+                  var ww = CPCaptions.alignCuesToAudio(rawCues, env.samples, 0,
+                    { rise: 6, minSpacing: 0.08, snapWin: 0.18 });
+                  var sw = toSeq(ww);
+                  state.transcriptWords = sw.length ? sw : null;
+                } else { state.transcriptWords = null; }
+              } catch (eAl) { state.transcriptWords = null; }
+            }, function () { state.transcriptWords = null; });
+          } else {
+            state.transcriptWords = null;
+            wordsReady = Promise.resolve();
+          }
+
+          return wordsReady.then(function () {
+            var finalPath = pathMod.join(os.tmpdir(), 'cutpilot-transcript-' + stamp + '.srt');
+            fs.writeFileSync(finalPath, CPCaptions.toSRT(cues), 'utf8');
+            try { fs.unlinkSync(wav); } catch (eU) {}
+            saveCachedTranscript(clip.mediaPath, minIn, maxOut, cues, state.transcriptWords);  // so this clip never needs re-transcribing
+            state.transcript = { label: 'CutPilot transcript (' + cues.length + ' lines)', path: finalPath, mtime: 1e16 };
+            state.transcriptManual = true;
+            $('tr-help').classList.add('hidden');
+            refreshMogrtSheetTr(); refreshMogrtEditorTr();
+            var span = fmt(cues[0].start) + '–' + fmt(cues[cues.length - 1].end);
+            setTranscriptBar('ok', '✅', 'Transcribed — ' + cues.length + ' lines · ' + span + ' · ' + modelLabel, 'Change');
+            var note = '';
+            if (!cloud) { var want = modelFileName(); if (modelLabel !== want) note = ' ⚠️ wanted ' + want + ' but it didn\'t load — used a fallback (check internet).'; }
+            toast('✓ Transcribed “' + shortName + '” — ' + cues.length + ' lines using ' + modelLabel + '.' +
+                  (state.transcriptWords ? ' 🎯 Word-level highlight ready.' : '') + note);
+          });
         });
       });
     }).catch(function (e) {

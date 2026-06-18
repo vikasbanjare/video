@@ -1,6 +1,6 @@
 ========================================================
   CutPilot — Install & Setup Guide (for Premiere Pro, Mac)
-  Version 0.9.78
+  Version 0.9.79
 ========================================================
 
 CutPilot is a panel that lives inside Adobe Premiere Pro. It adds
@@ -16,7 +16,7 @@ This guide is written for first-time users. Follow it top to bottom.
 - A Mac (macOS).
 - Adobe Premiere Pro 2020 or newer.
 - An internet connection (only for the one-time engine setup).
-- The file:  CutPilot-v0.9.78.zip
+- The file:  CutPilot-v0.9.79.zip
 
 
 --------------------------------------------------------
@@ -26,7 +26,7 @@ STEP 1.  QUIT Premiere Pro completely.
          (Top menu: Premiere Pro > Quit, or press  Cmd + Q.)
          Closing the window is NOT enough — it must fully quit.
 
-STEP 2.  Double-click  CutPilot-v0.9.78.zip  to unzip it.
+STEP 2.  Double-click  CutPilot-v0.9.79.zip  to unzip it.
          You now have a folder named  CutPilot.
 
 STEP 3.  Open the CutPilot folder. Find the file:
@@ -36,7 +36,7 @@ STEP 3.  Open the CutPilot folder. Find the file:
           click "Open" to confirm. This is normal for free tools.)
 
 STEP 4.  A black Terminal window opens. It says
-             "Installing CutPilot v0.9.78..."
+             "Installing CutPilot v0.9.79..."
          Press  Enter  when it asks.
          If macOS asks for permission to your Desktop/Documents/
          Downloads, click  OK / Allow.
@@ -78,7 +78,7 @@ STEP 9.  Open Premiere Pro.
 STEP 10. Top menu:  Window  >  Extensions  >  CutPilot.
          The CutPilot panel appears.
 
-STEP 11. Check the very top of the panel — it must say  v0.9.78.
+STEP 11. Check the very top of the panel — it must say  v0.9.79.
          If it shows an older number: fully quit Premiere (Cmd + Q)
          and open it again.
 
@@ -115,7 +115,7 @@ STEP 16. Click the big caption button to add the captions to your
   Open (instead of double-click), then click Open in the dialog.
 
 * Panel still shows an OLD version  →  Quit Premiere fully (Cmd + Q),
-  reopen. The number at the top must read v0.9.78.
+  reopen. The number at the top must read v0.9.79.
 
 * "Engine status" shows whisper or ffmpeg = NOT found  →  Open the
   CutPilot panel > Settings tab > "Auto-transcribe" section >
