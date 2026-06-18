@@ -431,6 +431,30 @@ console.log('captions.js (audio sync)');
   // buildCaptionFrames consumes wordCues for tight sync
   const fr = CPCaptions.buildCaptionFrames(cues, { anim: 'pop', wordsPerCue: 1, wordCues: wc });
   assert(fr.length === 2 && close(fr[1].start, 1.2, 0.05), 'frames use audio-aligned word timing');
+
+  // KARAOKE/REVEAL: the active (highlighted) word must ride REAL per-word
+  // timing so it lights up exactly when spoken — this is the "highlight follows
+  // the word" behavior. Irregular spacing (a long middle word) proves it isn't
+  // an even split.
+  const realWords = [
+    { start: 0.00, end: 0.30, text: 'make' },
+    { start: 0.30, end: 1.50, text: 'money' },   // long word
+    { start: 1.50, end: 1.70, text: 'now' }
+  ];
+  const phrase = [{ start: 0, end: 1.7, text: 'make money now' }];
+  const kfr = CPCaptions.buildCaptionFrames(phrase, { anim: 'karaoke', wordsPerCue: 3, wordCues: realWords });
+  assert(kfr.length === 3, 'karaoke: one frame per spoken word from real word cues');
+  assert(kfr[0].active === 0 && kfr[1].active === 1 && kfr[2].active === 2,
+         'karaoke: active word advances one at a time');
+  assert(close(kfr[1].start, 0.30, 1e-6) && close(kfr[1].end, 1.50, 1e-6),
+         'karaoke: each highlight window matches the spoken word (follows speech, not an even split)');
+  assert(kfr[0].words.length === 3 && kfr[2].words.length === 3,
+         'karaoke: whole phrase stays visible while the active word sweeps');
+
+  // reveal grows the phrase, newest word active, still on real word timing
+  const rvf = CPCaptions.buildCaptionFrames(phrase, { anim: 'reveal', wordsPerCue: 3, wordCues: realWords });
+  assert(rvf.length === 3 && rvf[0].words.length === 1 && rvf[2].words.length === 3, 'reveal: phrase grows word by word');
+  assert(close(rvf[2].start, 1.50, 1e-6), 'reveal: newest word appears at its real spoken time');
 }
 
 // ------------------------------------------------------------ multicam ----

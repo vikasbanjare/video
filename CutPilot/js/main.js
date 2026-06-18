@@ -784,6 +784,7 @@
     var b = $('btn-tr-change');
     if (btn) { b.textContent = btn; b.classList.remove('hidden'); }
     else b.classList.add('hidden');
+    updateSyncStat();   // transcript changed → refresh the word-timing indicator
   }
 
   /* Find the single best transcript and confirm it in the bar.
@@ -1547,8 +1548,12 @@
 
   function updateSyncStat() {
     var el = $('sync-stat'); if (!el) return;
+    // Real whisper per-word timing beats everything and is used regardless of
+    // the toggle — tell the user it's ready so they know the highlight will
+    // ride the spoken word.
+    if (state.transcriptWords && state.transcriptWords.length) { el.textContent = '· 🎯 word-perfect timing ready'; return; }
     if (!$('c-sync').checked) { el.textContent = '(off)'; return; }
-    el.textContent = resolveFfmpeg() ? '· ready' : '· needs ffmpeg (Settings)';
+    el.textContent = resolveFfmpeg() ? '· estimates from audio' : '· needs ffmpeg (Settings)';
   }
 
   /* Single source of truth for words-per-caption; keeps the hidden input,
@@ -2061,7 +2066,12 @@
     var overrides = readOverrides();
     var words = parseInt($('c-words').value, 10) || 0;
     var anim = state.animId;
-    var wantSync = $('c-sync').checked && words !== 0;
+    // karaoke/reveal ARE word-following animations: each spoken word must light
+    // up as it's said, so they ALWAYS need per-word timing (the c-sync toggle
+    // only governs the audio-envelope sync for the other animations).
+    var wordFollow = (anim === 'karaoke' || anim === 'reveal');
+    var wantSync = wordFollow || ($('c-sync').checked && words !== 0);
+    var realWordTiming = !!(state.transcriptWords && state.transcriptWords.length);
 
     $('btn-magic').disabled = true;
     capProgress(wantSync ? 'Listening to the audio for sync…' : 'Preparing…');
@@ -2103,7 +2113,7 @@
         $('btn-magic').disabled = false;
         capProgress(null);
         toast('🎉 ' + r.placed + ' captions added on V' + r.track +
-              (wordCues ? ' · audio-synced' : '') +
+              (wordCues ? (realWordTiming ? ' · 🎯 word-synced' : ' · audio-synced') : '') +
               (r.animated ? ' · ' + CPCaptions.getAnimation(anim).name : ''));
       });
     }).catch(function (e) {
@@ -2116,11 +2126,13 @@
   /* Build audio-aligned word cues for tight sync (null = fall back to
      length-weighted timing). Uses the first audio track's envelope. */
   function getCaptionWordCues(cues, wantSync) {
-    if (!wantSync) return Promise.resolve(null);
-    // Best source: whisper's real per-word timestamps captured at transcribe time
-    // (the highlight rides the actual spoken word). Only when they line up with the
-    // transcript we're captioning (cleared on edit / external file → envelope).
+    // Best source: whisper's real per-word timestamps captured at transcribe
+    // time, so the highlight rides the ACTUAL spoken word. These are free and
+    // accurate, so use them whenever we have them — independent of the sync
+    // toggle or words-per-caption. (Cleared on transcript edit / external file,
+    // so they always match the words we're captioning.)
     if (state.transcriptWords && state.transcriptWords.length) return Promise.resolve(state.transcriptWords.slice());
+    if (!wantSync) return Promise.resolve(null);   // audio-envelope alignment is the opt-in fallback
     var ff = resolveFfmpeg();
     if (!ff) return Promise.resolve(null);
     return ensureAudioTracks().then(function (tracks) {
