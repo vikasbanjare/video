@@ -746,14 +746,34 @@ function CP_placeCaptionImages(argsJson) {
       byName[String(bin.children[i].name).toLowerCase()] = bin.children[i];
     }
 
-    // Use a fresh top video track so we never stomp existing footage.
-    var trackIndex = seq.videoTracks.numTracks - 1;
-    try {
-      app.enableQE();
-      var qseq = qe.project.getActiveSequence();
-      qseq.addTracks(1, seq.videoTracks.numTracks, 0);
+    var trackIndex;
+    if (args.replaceTrack != null && args.replaceTrack >= 1 && args.replaceTrack <= seq.videoTracks.numTracks) {
+      // Restyle "apply to all": reuse the existing caption track, but first clear
+      // only CutPilot's own caption frames (named cap_*.png) off it — so captions
+      // never stack across restyles, and any other clip the user put there is safe.
+      trackIndex = args.replaceTrack - 1;
+      try {
+        app.enableQE();
+        var qseqR = qe.project.getActiveSequence();
+        var qtR = qseqR.getVideoTrackAt(trackIndex);
+        for (var cr = qtR.numItems - 1; cr >= 0; cr--) {
+          var itR = qtR.getItemAt(cr);
+          if (!itR || itR.type === 'Empty') continue;
+          var nmR = '';
+          try { nmR = String(itR.name).toLowerCase(); } catch (eNm) {}
+          if (nmR.indexOf('cap_') === 0) { try { itR.remove(0, 0); } catch (eRem) {} }
+        }
+      } catch (eClr) {}
+    } else {
+      // Use a fresh top video track so we never stomp existing footage.
       trackIndex = seq.videoTracks.numTracks - 1;
-    } catch (eTrack) {}
+      try {
+        app.enableQE();
+        var qseq = qe.project.getActiveSequence();
+        qseq.addTracks(1, seq.videoTracks.numTracks, 0);
+        trackIndex = seq.videoTracks.numTracks - 1;
+      } catch (eTrack) {}
+    }
     var track = seq.videoTracks[trackIndex];
 
     var placed = 0, animated = 0;

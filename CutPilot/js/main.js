@@ -2247,7 +2247,38 @@
     var cues;
     try { cues = readSelectedTranscript(); }
     catch (e) { return toast(e.message, true); }
-    if (!state.env) return toast('Open a sequence in Premiere first.', true);
+    runCaptionPipeline(cues, null);
+  });
+
+  // ---- restyle EVERY placed caption at once with the current style/template ----
+  if ($('btn-cap-restyle')) $('btn-cap-restyle').addEventListener('click', function () {
+    if (!state.lastCaptionJob || !state.lastCaptionJob.cues) {
+      return toast('Add captions first — then this restyles them all at once.', true);
+    }
+    runCaptionPipeline(state.lastCaptionJob.cues, state.lastCaptionJob.track);
+  });
+
+  /* Disable both caption buttons while a render/place job is running. */
+  function setCaptionBusy(busy) {
+    if ($('btn-magic')) $('btn-magic').disabled = busy;
+    if ($('btn-cap-restyle')) $('btn-cap-restyle').disabled = busy;
+  }
+
+  /* Reveal the "apply to all" button once captions have been placed. */
+  function reflectCaptionsPlaced() {
+    var on = !!(state.lastCaptionJob && state.lastCaptionJob.cues);
+    if ($('btn-cap-restyle')) $('btn-cap-restyle').classList.toggle('hidden', !on);
+    if ($('cap-restyle-hint')) $('cap-restyle-hint').classList.toggle('hidden', !on);
+  }
+
+  /*
+   * Build → render → place captions with the CURRENTLY selected template +
+   * customizer settings. When replaceTrack (1-based) is given, the captions
+   * already on that track are restyled in place instead of stacking a new
+   * track — this powers "Apply this style to all captions".
+   */
+  function runCaptionPipeline(cues, replaceTrack) {
+    if (!state.env) { toast('Open a sequence in Premiere first.', true); return; }
 
     var preset = currentPreset();
     var overrides = readOverrides();
@@ -2260,7 +2291,7 @@
     var wantSync = wordFollow || ($('c-sync').checked && words !== 0);
     var realWordTiming = !!(state.transcriptWords && state.transcriptWords.length);
 
-    $('btn-magic').disabled = true;
+    setCaptionBusy(true);
     capProgress(wantSync ? 'Listening to the audio for sync…' : 'Preparing…');
 
     getCaptionWordCues(cues, wantSync).then(function (wordCues) {
@@ -2277,14 +2308,14 @@
 
       if (frames.length > 600 &&
           !confirm(frames.length + ' caption graphics will be created. That many can be slow to render and import — Premiere may look stuck near the end of its import bar. Tip: raise "Words per caption" or pick a shorter clip for fewer graphics.\n\nContinue anyway?')) {
-        $('btn-magic').disabled = false; capProgress(null); return;
+        setCaptionBusy(false); capProgress(null); return;
       }
 
       var outDir;
       try {
         var pm = nodeReq('path');
         outDir = pm.join(nodeReq('os').tmpdir(), 'cutpilot-frames-' + Date.now());
-      } catch (e) { $('btn-magic').disabled = false; capProgress(null); return toast('Node unavailable: ' + e.message, true); }
+      } catch (e) { setCaptionBusy(false); capProgress(null); return toast('Node unavailable: ' + e.message, true); }
 
       capProgress('Rendering 0 / ' + frames.length);
       return CPRender.renderFrames(frames, {
@@ -2295,21 +2326,27 @@
         outDir: outDir,
         onProgress: function (done, total) { capProgress('Rendering ' + done + ' / ' + total); }
       }).then(function (items) {
-        capProgress('Placing ' + items.length + ' captions in your timeline');
-        return CPBridge.callHost('CP_placeCaptionImages', { items: items, anim: anim });
+        capProgress((replaceTrack ? 'Restyling ' : 'Placing ') + items.length + ' captions in your timeline');
+        var placeArgs = { items: items, anim: anim };
+        if (replaceTrack) placeArgs.replaceTrack = replaceTrack;
+        return CPBridge.callHost('CP_placeCaptionImages', placeArgs);
       }).then(function (r) {
-        $('btn-magic').disabled = false;
+        setCaptionBusy(false);
         capProgress(null);
-        toast('🎉 ' + r.placed + ' captions added on V' + r.track +
+        // remember this job so the whole set can be restyled again with one tap
+        state.lastCaptionJob = { cues: cues, track: r.track };
+        reflectCaptionsPlaced();
+        toast((replaceTrack ? '🔄 Restyled ' : '🎉 ') + r.placed + ' captions ' +
+              (replaceTrack ? 'on V' : 'added on V') + r.track +
               (wordCues ? (realWordTiming ? ' · 🎯 word-synced' : ' · audio-synced') : '') +
               (r.animated ? ' · ' + CPCaptions.getAnimation(anim).name : ''));
       });
     }).catch(function (e) {
-      $('btn-magic').disabled = false;
+      setCaptionBusy(false);
       capProgress(null);
       toast('Captions failed: ' + e.message, true);
     });
-  });
+  }
 
   /* Build audio-aligned word cues for tight sync (null = fall back to
      length-weighted timing). Uses the first audio track's envelope. */
