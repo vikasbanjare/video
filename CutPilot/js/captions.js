@@ -545,7 +545,33 @@
     { id: 'pro-neon', name: 'Neon', category: '⭐ Premium', popularity: 88, layout: 'center', keyword: true,
       font: 'Bebas Neue', fallbackFonts: ['Anton', 'Impact'],
       fontSize: 84, fill: '#FFFFFF', highlight: '#FF2D9B', glow: '#22D3FF', stroke: '#0A0A0A', strokeWidth: 3,
-      uppercase: true, wordsPerCue: 1, anim: 'glitch-in' }
+      uppercase: true, wordsPerCue: 1, anim: 'glitch-in' },
+
+    // ---- v1.0 creator presets (word reveal + viral-word pop built in) ----
+    { id: 'v1-hormozi26', name: 'Hormozi 2026', category: '⭐ Premium', popularity: 87, layout: 'bottom', keyword: true, highlightScale: 1.12,
+      font: 'Montserrat', fallbackFonts: ['Archivo Black', 'Arial Black'],
+      fontSize: 72, fill: '#FFFFFF', highlight: '#FFE000', highlightStyle: 'box', boxRadius: 10, glow: '#000000', stroke: null, strokeWidth: 0,
+      uppercase: true, wordsPerCue: 3, anim: 'reveal' },
+    { id: 'v1-finance', name: 'Finance Pro', category: '⭐ Premium', popularity: 86, layout: 'bottom', keyword: true, highlightScale: 1.1,
+      font: 'Montserrat', fallbackFonts: ['Inter', 'Arial'],
+      fontSize: 60, fill: '#FFFFFF', highlight: '#16C784', highlightStyle: 'box', boxRadius: 10, glow: '#000000', stroke: null, strokeWidth: 0,
+      uppercase: false, wordsPerCue: 4, anim: 'reveal' },
+    { id: 'v1-podcast', name: 'Podcast Pro', category: '⭐ Premium', popularity: 85, layout: 'bottom', keyword: false, speaker: true,
+      font: 'Inter', fallbackFonts: ['Helvetica Neue', 'Arial'],
+      fontSize: 48, fill: '#FFFFFF', highlight: '#5CC8FF', boxColor: '#10131A', boxRadius: 14, stroke: null, strokeWidth: 0,
+      uppercase: false, wordsPerCue: 0, anim: 'slide' },
+    { id: 'v1-reels', name: 'Indian Reels', category: '⭐ Premium', popularity: 84, layout: 'bottom', keyword: true, highlightScale: 1.12,
+      font: 'Poppins', fallbackFonts: ['Montserrat', 'Inter', 'Arial'],
+      fontSize: 62, fill: '#FFFFFF', highlight: '#FF2D9B', highlightStyle: 'box', boxRadius: 14, glow: '#000000', stroke: null, strokeWidth: 0,
+      uppercase: false, wordsPerCue: 3, anim: 'reveal' },
+    { id: 'v1-beast', name: 'MrBeast Inspired', category: '⭐ Premium', popularity: 83, layout: 'bottom', keyword: true, highlightScale: 1.18,
+      font: 'Archivo Black', fallbackFonts: ['Montserrat', 'Arial Black'],
+      fontSize: 78, fill: '#FFFFFF', highlight: '#FF2A2A', glow: '#000000', stroke: '#000000', strokeWidth: 4,
+      uppercase: true, wordsPerCue: 1, anim: 'pop-scale' },
+    { id: 'v1-ali', name: 'Ali Abdaal Inspired', category: '⭐ Premium', popularity: 82, layout: 'bottom', keyword: false,
+      font: 'Inter', fallbackFonts: ['Helvetica Neue', 'Arial'],
+      fontSize: 50, fill: '#FFFFFF', highlight: '#FFFFFF', glow: '#000000', stroke: null, strokeWidth: 0,
+      uppercase: false, wordsPerCue: 4, anim: 'fade' }
   ];
 
   /* The full catalog the library browses (base + extras). */
@@ -713,6 +739,30 @@
 
   function _clean(w) { return String(w).replace(/[^A-Za-z0-9$%']/g, ''); }
 
+  // ---- v1.0: viral-word emphasis + emoji enrichment -----------------------
+  /* Words that should ALWAYS pop (highlighted + scaled up) — the ones that make
+     short-form hooks land. Used by markKeywords and the renderer's wordScale. */
+  var VIRAL_WORDS = {
+    secret: 1, biggest: 1, mistake: 1, profit: 1, loss: 1, million: 1, billion: 1,
+    trillion: 1, crore: 1, lakh: 1, warning: 1, never: 1, always: 1, money: 1,
+    free: 1, ai: 1, stocks: 1, growth: 1, rich: 1, viral: 1, proven: 1, huge: 1,
+    instantly: 1, guaranteed: 1, results: 1, win: 1, stop: 1, now: 1
+  };
+  /* Optional auto-emoji after a keyword (opt-in, "✨ Auto-emoji"). */
+  var EMOJI_MAP = {
+    money: '💰', cash: '💰', profit: '📈', growth: '📈', loss: '📉', stock: '📊',
+    stocks: '📊', secret: '🤫', warning: '⚠️', ai: '🤖', success: '🚀', rich: '🤑',
+    idea: '💡', time: '⏰', fire: '🔥', love: '❤️', win: '🏆', million: '💸',
+    crore: '💸', target: '🎯', up: '⬆️', down: '⬇️', best: '⭐'
+  };
+  /* Append an emoji after each word that has one (opt-in). Pure + tested. */
+  function enrichCaptionText(text) {
+    return String(text == null ? '' : text).replace(/[A-Za-z]+/g, function (m) {
+      var e = EMOJI_MAP[m.toLowerCase()];
+      return e ? m + ' ' + e : m;
+    });
+  }
+
   /*
    * Decide which words in a list to highlight.
    * opts.mode: 'smart' (numbers + CTAs + capitalized names + the longest
@@ -731,7 +781,8 @@
     if (mode === 'auto') {
       var set = opts.set || {};
       for (i = 0; i < words.length; i++) {
-        flags[i] = !!set[String(words[i]).toLowerCase().replace(/[^a-z0-9']/g, '')];
+        var key = String(words[i]).toLowerCase().replace(/[^a-z0-9']/g, '');
+        flags[i] = !!set[key] || !!VIRAL_WORDS[key];   // v1.0: viral words always pop
       }
       return flags;
     }
@@ -754,6 +805,10 @@
       }
     }
     if ((mode === 'keywords' || mode === 'smart') && longestIdx >= 0) flags[longestIdx] = true;
+    // v1.0: viral words always pop (in the general-purpose modes)
+    if (mode === 'smart' || mode === 'keywords') {
+      for (i = 0; i < words.length; i++) if (VIRAL_WORDS[_clean(words[i]).toLowerCase()]) flags[i] = true;
+    }
     return flags;
   }
 
@@ -904,6 +959,9 @@
       });
     }
 
+    // v1.0: opt-in auto-emoji on keywords (💰 📈 🤖 …), before words are split.
+    if (opts.emoji) cues = cues.map(function (c) { return { start: c.start, end: c.end, text: enrichCaptionText(c.text) }; });
+
     if (anim === 'karaoke' || anim === 'reveal') {
       if (opts.wordCues && opts.wordCues.length) {
         frames = framesFromWordCues(opts.wordCues, anim, wpc, kw, up);
@@ -984,6 +1042,9 @@
     toSRT: toSRT,
     findCueGaps: findCueGaps,
     isLikelyNonSpeech: isLikelyNonSpeech,
+    VIRAL_WORDS: VIRAL_WORDS,
+    EMOJI_MAP: EMOJI_MAP,
+    enrichCaptionText: enrichCaptionText,
     devanagariToLatin: devanagariToLatin,
     explodeWords: explodeWords,
     regroupWords: regroupWords,

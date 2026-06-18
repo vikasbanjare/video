@@ -233,7 +233,63 @@
     return flags;
   }
 
+  // ---- v1.0: hook detection + B-roll suggestions --------------------------
+  /* Phrases that tend to mark a viral hook / retention beat. */
+  var HOOK_PATTERNS = [
+    { re: /nobody (talks about|tells you)/i, label: 'Hook' },
+    { re: /this changed everything/i, label: 'Hook' },
+    { re: /\b(i|we) lost\b.*\b(lakh|crore|million|thousand|dollars?|rupees?)\b/i, label: 'Stakes' },
+    { re: /biggest mistake/i, label: 'Mistake' },
+    { re: /\bsecret\b/i, label: 'Secret' },
+    { re: /here'?s (why|how|the)/i, label: 'Payoff' },
+    { re: /the truth (is|about)/i, label: 'Truth' },
+    { re: /\bwarning\b/i, label: 'Warning' },
+    { re: /most people (don'?t|never)/i, label: 'Hook' },
+    { re: /\bin (this video|the next)\b/i, label: 'Setup' }
+  ];
+  /* Scan cues for hook phrases. Returns [{time, label, text}] for markers. */
+  function detectHooks(cues) {
+    var out = [];
+    if (!cues) return out;
+    for (var i = 0; i < cues.length; i++) {
+      var txt = String(cues[i].text || '');
+      for (var p = 0; p < HOOK_PATTERNS.length; p++) {
+        if (HOOK_PATTERNS[p].re.test(txt)) {
+          out.push({ time: cues[i].start || 0, label: HOOK_PATTERNS[p].label, text: txt.slice(0, 80) });
+          break;   // one marker per cue
+        }
+      }
+    }
+    return out;
+  }
+
+  /* Suggest B-roll search terms from the transcript: the most salient content
+     nouns/keywords (reuses TF-IDF) + any concrete multi-word phrases. Returns
+     [{term, time}] — `time` is when the term is first spoken (for placement). */
+  function extractBrollSuggestions(cues, opts) {
+    opts = opts || {};
+    var max = opts.max != null ? opts.max : 12;
+    var set = topKeywordSet(cues, { maxWords: max * 2 });
+    var firstAt = {}, order = [];
+    for (var i = 0; i < (cues || []).length; i++) {
+      var toks = tokenize(cues[i].text);
+      for (var j = 0; j < toks.length; j++) {
+        var w = toks[j];
+        if (set[w] && w.length >= 4 && firstAt[w] == null) {
+          firstAt[w] = cues[i].start || 0; order.push(w);
+        }
+      }
+    }
+    var out = [];
+    for (var k = 0; k < order.length && out.length < max; k++) {
+      out.push({ term: order[k], time: firstAt[order[k]] });
+    }
+    return out;
+  }
+
   return {
+    detectHooks: detectHooks,
+    extractBrollSuggestions: extractBrollSuggestions,
     FILLER_WORDS: FILLER_WORDS,
     FILLER_EXTRA: FILLER_EXTRA,
     FILLER_PHRASES: FILLER_PHRASES,

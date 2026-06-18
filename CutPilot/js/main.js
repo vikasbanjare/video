@@ -772,6 +772,32 @@
     refreshMogrtSheetTr(); refreshMogrtEditorTr();
   }
 
+  /* v1.0: scan the transcript for viral hook phrases and drop named markers on
+     the sequence so the user can jump to / cut around the strongest moments. */
+  function markViralHooks() {
+    var cues;
+    try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
+    if (typeof CPTranscript === 'undefined' || !CPTranscript.detectHooks) return toast('Hook detection isn\'t available.', true);
+    var hooks = CPTranscript.detectHooks(cues);
+    if (!hooks.length) return toast('No obvious hook phrases found in this transcript.');
+    if (!CPBridge.isCEP()) return toast('Open inside Premiere to add markers.', true);
+    CPBridge.callHost('CP_addHookMarkers', { markers: hooks.map(function (h) { return { time: h.time, label: h.label, comment: h.text }; }) })
+      .then(function (r) { toast('🔖 Added ' + r.added + ' hook marker' + (r.added === 1 ? '' : 's') + ' — open the timeline to see them.'); })
+      .catch(function (e) { toast(e.message, true); });
+  }
+
+  /* v1.0: suggest B-roll footage terms from the transcript (most salient nouns),
+     each with the time it's first spoken, so the user knows what to overlay where. */
+  function showBrollIdeas() {
+    var cues;
+    try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
+    if (typeof CPTranscript === 'undefined' || !CPTranscript.extractBrollSuggestions) return toast('B-roll suggestions aren\'t available.', true);
+    var ideas = CPTranscript.extractBrollSuggestions(cues, { max: 12 });
+    if (!ideas.length) return toast('No B-roll keywords found — transcribe the clip first.');
+    var list = ideas.map(function (b) { return b.term + ' (' + fmt(b.time) + ')'; }).join('  ·  ');
+    toast('💡 B-roll ideas — ' + list);
+  }
+
   function wireTranscriptBar() {
     $('btn-tr-change').addEventListener('click', function () {
       if (state.transcript) {
@@ -785,6 +811,8 @@
     if ($('btn-tr-auto')) $('btn-tr-auto').addEventListener('click', autoTranscribe);
     if ($('btn-tr-auto-main')) $('btn-tr-auto-main').addEventListener('click', autoTranscribe);
     if ($('btn-tr-edit')) $('btn-tr-edit').addEventListener('click', openTranscriptEditor);
+    if ($('btn-mark-hooks')) $('btn-mark-hooks').addEventListener('click', markViralHooks);
+    if ($('btn-broll')) $('btn-broll').addEventListener('click', showBrollIdeas);
     if ($('tre-cancel')) $('tre-cancel').addEventListener('click', function () { $('tr-editor').classList.add('hidden'); });
     if ($('tre-save')) $('tre-save').addEventListener('click', saveTranscriptEditor);
     $('btn-tr-pick').addEventListener('click', function () {
@@ -1945,6 +1973,7 @@
         uppercase: overrides.uppercase,
         keyword: resolveKeyword(cues),
         speaker: readSpeaker(),
+        emoji: !!($('c-emoji') && $('c-emoji').checked),   // v1.0 auto-emoji
         wordCues: wordCues
       });
 

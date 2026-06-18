@@ -150,6 +150,29 @@ console.log('captions.js');
   // karaoke still shows the whole phrase from the first frame (sweep, not grow)
   const ka = CPCaptions.buildCaptionFrames([{ start: 0, end: 3, text: 'one two three' }], { anim: 'karaoke', wordsPerCue: 3 });
   assert(ka[0].words.length === 3, 'karaoke shows the full phrase from frame 1');
+
+  // v1.0: auto-emoji + viral-word highlighting
+  assert(CPCaptions.enrichCaptionText('I made money') === 'I made money 💰', 'auto-emoji appends an emoji after a keyword');
+  assert(CPCaptions.enrichCaptionText('plain words here') === 'plain words here', 'auto-emoji leaves non-keywords alone');
+  const emf = CPCaptions.buildCaptionFrames([{ start: 0, end: 2, text: 'big money today' }], { emoji: true });
+  assert(emf[0].words.indexOf('💰') !== -1, 'emoji option injects the emoji as a token');
+  const vir = CPCaptions.buildCaptionFrames([{ start: 0, end: 2, text: 'the secret profit' }], { keyword: { on: true, mode: 'smart' } });
+  assert(vir[0].highlightSet && vir[0].highlightSet.filter(Boolean).length >= 1, 'viral words (secret/profit) get highlighted in smart mode');
+}
+
+console.log('transcript.js (v1.0 hooks + b-roll)');
+{
+  const cues = [
+    { start: 1, end: 3, text: 'the biggest mistake I made' },
+    { start: 3, end: 5, text: 'just some normal talk here' },
+    { start: 5, end: 7, text: 'nobody talks about this' }
+  ];
+  const hooks = CPTranscript.detectHooks(cues);
+  assert(hooks.length === 2, 'detectHooks finds the 2 hook lines (mistake + nobody-talks)');
+  assert(close(hooks[0].time, 1) && hooks[0].label === 'Mistake', 'first hook is at t=1 labeled Mistake');
+  const br = CPTranscript.extractBrollSuggestions(
+    [{ start: 0, end: 4, text: 'investing in semiconductor stocks and healthcare growth' }], { max: 5 });
+  assert(br.length >= 1 && br[0].time != null, 'b-roll suggestions returned with timestamps');
 }
 
 // ------------------------------------------------ animation planners ----

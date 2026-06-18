@@ -63,6 +63,28 @@
     };
   }
 
+  // ---- v1.0: dynamic word scaling + per-speaker colours -------------------
+  var VIRAL_WORDS = {
+    secret: 1, biggest: 1, mistake: 1, profit: 1, loss: 1, million: 1, billion: 1,
+    trillion: 1, crore: 1, lakh: 1, warning: 1, never: 1, always: 1, money: 1,
+    free: 1, ai: 1, stocks: 1, growth: 1, rich: 1, viral: 1, proven: 1, huge: 1,
+    instantly: 1, guaranteed: 1, results: 1, win: 1, stop: 1, now: 1
+  };
+  /* Extra size multiplier for a word: viral words pop biggest, long words a bit. */
+  function wordScale(word) {
+    var w = String(word).toLowerCase().replace(/[^a-z0-9']/g, '');
+    if (VIRAL_WORDS[w]) return 1.5;
+    if (w.length > 8) return 1.15;
+    return 1;
+  }
+  var SPEAKER_COLORS = ['#3B82F6', '#F97316', '#22C55E', '#E11D8F', '#A855F7'];
+  /* Stable colour per speaker name (so each speaker keeps one colour). */
+  function speakerColor(name) {
+    var s = String(name || ''), h = 0;
+    for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    return SPEAKER_COLORS[h % SPEAKER_COLORS.length];
+  }
+
   /* Pick black or white text for legibility on a given background hex. */
   function contrastColor(hex) {
     var m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '#ffd400'));
@@ -116,11 +138,14 @@
     setFont(base);
     var spaceW = ctx.measureText(' ').width;
 
-    // per-word metrics (highlighted words get the larger font)
+    // per-word metrics: highlighted words AND viral/long words get a larger font
+    // (take the bigger of the highlight scale and the dynamic word scale).
+    var hlScale = style.highlightScale || 1;
     var meta = [];
     for (var i = 0; i < words.length; i++) {
       var hp = isHL(i);
-      var px = hp ? hlSize : base;
+      var mult = Math.max(hp ? hlScale : 1, wordScale(words[i]));
+      var px = Math.round(base * mult);
       setFont(px);
       meta.push({ word: words[i], px: px, hl: hp, w: ctx.measureText(words[i]).width });
     }
@@ -158,9 +183,12 @@
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
       roundRect(ctx, sx - spx * 0.45, sy - spx, swid + spx * 0.9, spx * 1.4, spx * 0.35);
       ctx.fill();
-      ctx.fillStyle = style.highlight || '#FFD400';
+      ctx.fillStyle = speakerColor(frame.speaker) || style.highlight || '#FFD400';
       ctx.fillText(spk, sx, sy);
     }
+
+    // v1.0: tint the body text with this speaker's colour (multi-speaker clarity)
+    var spkBody = frame.speaker ? speakerColor(frame.speaker) : null;
 
     for (var li = 0; li < lines.length; li++) {
       var line = lines[li];
@@ -201,7 +229,7 @@
           ctx.strokeText(it.word, x, y);
         }
         ctx.fillStyle = boxed ? contrastColor(style.highlight)
-                              : (it.hl ? style.highlight : style.fill);
+                              : (it.hl ? style.highlight : (spkBody || style.fill));
         ctx.fillText(it.word, x, y);
         x += it.w + spaceW;
       }

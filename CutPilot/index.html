@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.72</span>
+    <span class="ver" id="ver">v0.9.73</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -42,6 +42,8 @@
       </div>
       <button id="btn-tr-auto-main" class="hero-btn">🎙️ Auto-transcribe this clip</button>
       <button id="btn-tr-edit" class="hero-btn alt">✏️ Review &amp; edit the words</button>
+      <button id="btn-mark-hooks" class="hero-btn alt small">🔖 Mark viral hooks <span class="dim">(adds timeline markers)</span></button>
+      <button id="btn-broll" class="hero-btn alt small">💡 B-roll ideas <span class="dim">(suggests footage to overlay)</span></button>
       <div id="tr-help" class="help-box hidden">
         <b>✨ Easiest: let CutPilot transcribe it for you</b> — select your video
         clip in the timeline and tap <b>Auto-transcribe</b> above (needs the
@@ -237,6 +239,7 @@
             </div>
 
             <label class="check kw-toggle"><input type="checkbox" id="c-speaker"> 🎙️ Show speaker names <span class="dim">(podcasts — reads "Name:" lines)</span></label>
+            <label class="check kw-toggle"><input type="checkbox" id="c-emoji"> ✨ Auto-emoji on keywords <span class="dim">(money 💰, profit 📈, AI 🤖…)</span></label>
 
             <div class="section-label sub">Animation</div>
             <div id="anim-rail" class="anim-rail"></div>
@@ -553,7 +556,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.72 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.73 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

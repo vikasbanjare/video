@@ -1557,3 +1557,27 @@ function CP_getMarkers() {
     return CP_ok({ times: out, end: parseFloat(seq.end) / CP_TICKS_PER_SECOND });
   } catch (e) { return CP_fail(e.message); }
 }
+
+/* v1.0: drop named sequence markers at the given times (hook detection).
+   argsJson: { markers:[{time, label, comment}] }. Returns how many were added. */
+function CP_addHookMarkers(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+    var list = args.markers || [];
+    var added = 0;
+    for (var i = 0; i < list.length; i++) {
+      var t = Number(list[i].time) || 0;
+      try {
+        var mk = seq.markers.createMarker(t);
+        if (mk) {
+          try { mk.name = String(list[i].label || 'Hook'); } catch (eN) {}
+          try { if (list[i].comment) mk.comments = String(list[i].comment); } catch (eC) {}
+          try { mk.setColorByIndex(1); } catch (eCol) {}   // red = attention (best effort)
+          added++;
+        }
+      } catch (eM) {}
+    }
+    return CP_ok({ added: added });
+  } catch (e) { return CP_fail(e.message); }
+}
