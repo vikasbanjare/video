@@ -1507,6 +1507,9 @@
     $('c-kw').checked = !!p.keyword;
     $('c-kw-mode-wrap').classList.toggle('hidden', !p.keyword);
     $('c-hl-scale').value = Math.round((p.highlightScale || 1) * 100);
+    // pro controls that track the template: spoken-word pop + box roundness
+    if ($('c-wordpop')) $('c-wordpop').value = Math.round((p.highlightScale || 1) * 100);
+    if ($('c-box-radius')) $('c-box-radius').value = (p.boxRadius != null ? p.boxRadius : 12);
     $('c-speaker').checked = !!p.speaker;
     var aId = CPCaptions.animIdForConcept(p.anim);
     selectAnim(aId);
@@ -1566,12 +1569,26 @@
     if ($('c-weight-val')) $('c-weight-val').textContent = $('c-weight').value;
     if ($('c-shadow-blur-val')) $('c-shadow-blur-val').textContent = $('c-shadow-blur').value + '%';
     if ($('c-shadow-row')) $('c-shadow-row').classList.toggle('hidden', !$('c-shadow-on').checked);
+    // pro-control value labels
+    var lbl = {
+      'c-wordpop-val': function () { return $('c-wordpop').value + '%'; },
+      'c-box-radius-val': function () { return $('c-box-radius').value; },
+      'c-box-opacity-val': function () { return $('c-box-opacity').value + '%'; },
+      'c-box-pad-val': function () { return $('c-box-pad').value + '%'; },
+      'c-shadow-dx-val': function () { return $('c-shadow-dx').value; },
+      'c-shadow-dy-val': function () { return $('c-shadow-dy').value; },
+      'c-wordspace-val': function () { return $('c-wordspace').value; },
+      'c-linegap-val': function () { return $('c-linegap').value + '%'; },
+      'c-maxwidth-val': function () { return $('c-maxwidth').value + '%'; },
+      'c-animspeed-val': function () { return $('c-animspeed').value + '%'; }
+    };
+    for (var k in lbl) { if (lbl.hasOwnProperty(k) && $(k) && $(k.replace('-val', ''))) $(k).textContent = lbl[k](); }
   }
 
   /* Push the (hidden) colour-input values into their custom palette swatches,
      so the picker UI reflects colours set programmatically (preset/look load). */
   function syncColorFields() {
-    ['c-fill', 'c-hl', 'c-stroke', 'c-box', 'c-shadow'].forEach(function (id) {
+    ['c-fill', 'c-hl', 'c-stroke', 'c-box', 'c-shadow', 'c-fill2', 'c-hl2', 'c-hl3'].forEach(function (id) {
       var inp = $(id); if (inp && inp._cpField) inp._cpField.setDisplay(inp.value);
     });
   }
@@ -1579,14 +1596,20 @@
   function wireCustomizer() {
     var ids = ['c-size', 'c-pos', 'c-fill', 'c-hl', 'c-stroke', 'c-box',
                'c-strokew', 'c-box-on', 'c-upper', 'c-words', 'c-kw', 'c-kw-mode',
-               'c-hl-scale', 'c-speaker', 'c-letter', 'c-shadow', 'c-shadow-on', 'c-shadow-blur', 'c-weight'];
+               'c-hl-scale', 'c-speaker', 'c-letter', 'c-shadow', 'c-shadow-on', 'c-shadow-blur', 'c-weight',
+               // pro controls
+               'c-wordpop', 'c-multicolor', 'c-hl2', 'c-hl3', 'c-grad', 'c-fill2',
+               'c-box-opacity', 'c-box-pad', 'c-box-radius', 'c-shadow-dx', 'c-shadow-dy',
+               'c-wordspace', 'c-linegap', 'c-maxwidth', 'c-emphasize', 'c-strippunct',
+               'c-animspeed', 'c-perword'];
     ids.forEach(function (id) {
+      if (!$(id)) return;
       $(id).addEventListener('input', function () { updateVals(); renderPreview(); });
       $(id).addEventListener('change', function () { updateVals(); renderPreview(); });
     });
     // Mount the custom palette pickers over the (hidden) colour inputs so colours
     // are pickable inside Premiere's panel, where the native OS box won't open.
-    ['c-fill', 'c-hl', 'c-stroke', 'c-box', 'c-shadow'].forEach(function (id) {
+    ['c-fill', 'c-hl', 'c-stroke', 'c-box', 'c-shadow', 'c-fill2', 'c-hl2', 'c-hl3'].forEach(function (id) {
       var mount = document.querySelector('.cp-mount[data-for="' + id + '"]'), inp = $(id);
       if (!mount || !inp || mount.firstChild) return;
       var f = makeColorField(inp.value, function (v) { inp.value = v; inp.dispatchEvent(new Event('input')); });
@@ -1606,7 +1629,7 @@
         updateVals(); renderPreview();
       });
     }
-    $('c-pos').addEventListener('input', function () { setLayoutButton(this.value); });
+    $('c-pos').addEventListener('input', function () { setLayoutButton(this.value); setSafeZoneButton(this.value); });
     // text alignment buttons
     var aln = document.querySelectorAll('#c-align button');
     for (var a = 0; a < aln.length; a++) {
@@ -1626,11 +1649,29 @@
     for (var rv = 0; rv < rev.length; rv++) {
       rev[rv].addEventListener('click', function () { setRevealButton(this.dataset.r); renderPreview(); });
     }
-    // highlight look: colour vs box/pill
+    // highlight look: colour / pill / bar / underline / marker / circle
     var hb = document.querySelectorAll('#c-hlstyle button');
     for (var h = 0; h < hb.length; h++) {
       hb[h].addEventListener('click', function () { syncHlStyleButtons(this.dataset.s); renderPreview(); });
     }
+    // social safe-zone presets push the position slider up off the app UI
+    var sz = document.querySelectorAll('#c-safezone button');
+    for (var z = 0; z < sz.length; z++) {
+      sz[z].addEventListener('click', function () {
+        $('c-pos').value = this.dataset.z;
+        setLayoutButton(this.dataset.z); setSafeZoneButton(this.dataset.z);
+        updateVals(); renderPreview();
+      });
+    }
+    // gradient-text + multi-colour reveal their colour swatches
+    if ($('c-grad')) $('c-grad').addEventListener('change', function () {
+      if ($('c-grad-opts')) $('c-grad-opts').style.display = this.checked ? '' : 'none';
+      renderPreview();
+    });
+    if ($('c-multicolor')) $('c-multicolor').addEventListener('change', function () {
+      if ($('c-multicolor-opts')) $('c-multicolor-opts').style.display = this.checked ? '' : 'none';
+      renderPreview();
+    });
     // prominent Words-per-caption stepper
     $('wc-minus').addEventListener('click', function () {
       var w = parseInt($('c-words').value, 10) || 0;
@@ -1945,8 +1986,19 @@
     } catch (e) { toast('Import failed: ' + e.message, true); }
   }
 
+  /* Read a numeric control with a fallback (defends against a missing element). */
+  function cnum(id, def) {
+    var e = $(id); if (!e) return def;
+    var v = parseInt(e.value, 10); return isNaN(v) ? def : v;
+  }
+  function cchk(id) { var e = $(id); return !!(e && e.checked); }
+
   /* Read the customizer into an overrides object for mergeStyle / render. */
   function readOverrides() {
+    var wordHlOn = cchk('c-wordhl');
+    // the "pop size" for the spoken/highlighted word — its own slider while
+    // word-by-word is on, otherwise the keyword pop-size slider.
+    var pop = wordHlOn ? cnum('c-wordpop', 100) : cnum('c-hl-scale', 100);
     return {
       font: $('c-font').value,
       fontSize: parseInt($('c-size').value, 10),
@@ -1956,7 +2008,7 @@
       stroke: $('c-stroke').value,
       strokeWidth: parseInt($('c-strokew').value, 10),
       boxColor: $('c-box-on').checked ? $('c-box').value : null,
-      highlightScale: (parseInt($('c-hl-scale').value, 10) || 100) / 100,
+      highlightScale: pop / 100,
       highlightStyle: readHlStyle(),
       uppercase: $('c-upper').checked,
       letterSpacing: parseInt($('c-letter').value, 10) || 0,
@@ -1964,7 +2016,22 @@
       align: readAlign(),
       maxLines: readLines(),
       glow: $('c-shadow-on').checked ? $('c-shadow').value : null,
-      glowBlur: (parseInt($('c-shadow-blur').value, 10) || 0) / 100
+      glowBlur: (parseInt($('c-shadow-blur').value, 10) || 0) / 100,
+      // --- premium / pro controls ---
+      fill2: cchk('c-grad') ? $('c-fill2').value : null,
+      highlightColors: cchk('c-multicolor') ? [$('c-hl').value, $('c-hl2').value, $('c-hl3').value] : null,
+      boxOpacity: cnum('c-box-opacity', 100) / 100,
+      boxPad: cnum('c-box-pad', 100) / 100,
+      boxRadius: cnum('c-box-radius', 12),
+      shadowDX: cnum('c-shadow-dx', 0),
+      shadowDY: cnum('c-shadow-dy', 0),
+      wordSpacing: cnum('c-wordspace', 0),
+      lineGap: cnum('c-linegap', 118) / 100,
+      maxWidthPct: cnum('c-maxwidth', 86) / 100,
+      emphasizeWords: cchk('c-emphasize'),
+      stripPunctuation: cchk('c-strippunct'),
+      animSpeed: cnum('c-animspeed', 100) / 100,
+      perWordEntrance: cchk('c-perword')
     };
   }
   function readAlign() {
@@ -1983,6 +2050,11 @@
   function setLinesButton(n) {
     var b = document.querySelectorAll('#c-lines button');
     for (var i = 0; i < b.length; i++) b[i].classList.toggle('on', parseInt(b[i].dataset.l, 10) === (n == null ? 2 : n));
+  }
+  /* Highlight the safe-zone preset whose position matches the slider (or "Off"). */
+  function setSafeZoneButton(pos) {
+    var b = document.querySelectorAll('#c-safezone button');
+    for (var i = 0; i < b.length; i++) b[i].classList.toggle('on', b[i].dataset.z === String(pos));
   }
   function readReveal() {
     var on = document.querySelector('#c-reveal button.on');
@@ -2108,6 +2180,12 @@
   function fontStack(font, fallbacks) {
     return '"' + font + '", "' + (fallbacks || []).join('", "') + '", sans-serif';
   }
+  function hexToRgba(hex, a) {
+    var m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '#000000'));
+    if (!m) return hex;
+    var n = parseInt(m[1], 16);
+    return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + (a == null ? 1 : a) + ')';
+  }
 
   // --------------------------------------------------------- live preview ----
   var previewTimer = null;
@@ -2144,21 +2222,37 @@
     if (st.glow) shadow = (shadow ? shadow + ', ' : '') + '0 0 ' + Math.round(px * 0.5) + 'px ' + st.glow;
     cap.style.textShadow = shadow;
 
-    // background box
+    var ov = readOverrides();
+    // background box (opacity + padding + roundness)
     if (st.boxColor) {
-      cap.style.background = st.boxColor;
+      cap.style.background = hexToRgba(st.boxColor, ov.boxOpacity);
       cap.style.borderRadius = Math.round((st.boxRadius || 10) * frameH / 1080) + 'px';
-      cap.style.padding = '2px ' + Math.round(px * 0.3) + 'px';
+      cap.style.padding = Math.round(2 * ov.boxPad) + 'px ' + Math.round(px * 0.3 * ov.boxPad) + 'px';
     } else {
       cap.style.background = 'transparent';
       cap.style.padding = '2px 6px';
+    }
+    // word spacing + max line width
+    cap.style.wordSpacing = (ov.wordSpacing ? Math.round(ov.wordSpacing * frameH / 1080) : 0) + 'px';
+    cap.style.maxWidth = Math.round(ov.maxWidthPct * 100) + '%';
+    // gradient text (premium two-tone) — best-effort preview via background-clip
+    if (ov.fill2) {
+      cap.style.color = 'transparent';
+      cap.style.background = 'transparent';
+      cap.style.backgroundImage = 'linear-gradient(' + st.fill + ',' + ov.fill2 + ')';
+      try { cap.style.webkitBackgroundClip = 'text'; cap.style.backgroundClip = 'text'; } catch (eG) {}
+    } else {
+      cap.style.backgroundImage = '';
+      try { cap.style.webkitBackgroundClip = ''; cap.style.backgroundClip = ''; } catch (eG2) {}
+      if (st.boxColor) cap.style.background = hexToRgba(st.boxColor, ov.boxOpacity);
     }
 
     var anim = currentAnim();
     var words = parseInt($('c-words').value, 10) || 0;
     var caps = st.uppercase;
     var hlPct = Math.round((st.highlightScale || 1) * 100);
-    var hlBox = readHlStyle() === 'box';
+    var hlShape = readHlStyle();
+    var hlClr = (ov.highlightColors && ov.highlightColors.length) ? ov.highlightColors[0] : st.highlight;
     function contrastHex(hex) {
       var m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '#ffd400'));
       if (!m) return '#111';
@@ -2167,11 +2261,22 @@
       return lum > 0.6 ? '#111' : '#fff';
     }
     function hlSpan(t) {
-      if (hlBox) {
-        return '<span style="background:' + st.highlight + ';color:' + contrastHex(st.highlight) +
-               ';font-size:' + hlPct + '%;padding:1px 7px;border-radius:7px">' + t + '</span>';
+      var base = 'font-size:' + hlPct + '%;';
+      if (hlShape === 'box' || hlShape === 'bar') {
+        var rad = hlShape === 'bar' ? '4px' : '7px';
+        return '<span style="' + base + 'background:' + hlClr + ';color:' + contrastHex(hlClr) +
+               ';padding:1px 7px;border-radius:' + rad + '">' + t + '</span>';
       }
-      return '<span style="color:' + st.highlight + ';font-size:' + hlPct + '%">' + t + '</span>';
+      if (hlShape === 'underline') {
+        return '<span style="' + base + 'color:' + hlClr + ';border-bottom:0.12em solid ' + hlClr + ';padding-bottom:1px">' + t + '</span>';
+      }
+      if (hlShape === 'marker') {
+        return '<span style="' + base + 'background:' + hexToRgba(hlClr, 0.42) + ';padding:0 4px;border-radius:3px">' + t + '</span>';
+      }
+      if (hlShape === 'circle') {
+        return '<span style="' + base + 'color:' + hlClr + ';border:0.08em solid ' + hlClr + ';border-radius:50%;padding:0 6px">' + t + '</span>';
+      }
+      return '<span style="' + base + 'color:' + hlClr + '">' + t + '</span>';
     }
 
     // speaker label preview
@@ -2315,6 +2420,7 @@
         keyword: resolveKeyword(cues),
         speaker: readSpeaker(),
         emoji: !!($('c-emoji') && $('c-emoji').checked),   // v1.0 auto-emoji
+        stripPunctuation: overrides.stripPunctuation,
         wordCues: wordCues
       });
 
@@ -2339,7 +2445,8 @@
         onProgress: function (done, total) { capProgress('Rendering ' + done + ' / ' + total); }
       }).then(function (items) {
         capProgress((replaceTrack ? 'Restyling ' : 'Placing ') + items.length + ' captions in your timeline');
-        var placeArgs = { items: items, anim: anim };
+        var placeArgs = { items: items, anim: anim,
+          animSpeed: overrides.animSpeed, perWordEntrance: overrides.perWordEntrance };
         if (replaceTrack) placeArgs.replaceTrack = replaceTrack;
         return CPBridge.callHost('CP_placeCaptionImages', placeArgs);
       }).then(function (r) {

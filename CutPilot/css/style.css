@@ -373,6 +373,8 @@ input[type="range"]::-webkit-slider-thumb {
 .seg-control button.on { background: var(--accent-soft); color: var(--accent-text); }
 .seg-control.sub { margin: 0 0 10px; }
 .seg-control.mini { margin-top: 4px; }
+.seg-control.wrap { flex-wrap: wrap; }
+.seg-control.wrap button { flex: 1 0 28%; }
 .lib-mode-switch { margin: 2px 0 10px; }
 .lib-mode-switch button { padding: 9px 2px; font-size: 12px; }
 .mode-hint { margin: 0 0 10px; }

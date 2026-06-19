@@ -617,12 +617,17 @@ function CP_findProperty(comp, displayName) {
   return null;
 }
 
+// Animation speed multiplier (1 = default; >1 snappier, <1 slower). Set by
+// CP_animateClip and read here so every keyframe time scales by 1/speed.
+var CP_ANIM_SPEED = 1;
+
 function CP_setKeys(prop, baseTime, keys) {
   if (!prop) return;
+  var sp = (CP_ANIM_SPEED && CP_ANIM_SPEED > 0) ? CP_ANIM_SPEED : 1;
   try {
     prop.setTimeVarying(true);
     for (var i = 0; i < keys.length; i++) {
-      var t = baseTime + keys[i].t;
+      var t = baseTime + keys[i].t / sp;
       prop.addKey(t);
       prop.setValueAtKey(t, keys[i].v, true);
     }
@@ -631,14 +636,15 @@ function CP_setKeys(prop, baseTime, keys) {
     // the interpolation enum; otherwise keys stay linear (still works).
     if (typeof KFInterpolationType !== 'undefined' && KFInterpolationType.BEZIER != null) {
       for (var j = 0; j < keys.length; j++) {
-        try { prop.setInterpolationTypeAtKey(baseTime + keys[j].t, KFInterpolationType.BEZIER, true); } catch (eK) {}
+        try { prop.setInterpolationTypeAtKey(baseTime + keys[j].t / sp, KFInterpolationType.BEZIER, true); } catch (eK) {}
       }
     }
   } catch (e) {}
 }
 
 /* Apply one of the built-in entry animations as Motion/Opacity keyframes. */
-function CP_animateClip(clip, anim) {
+function CP_animateClip(clip, anim, speed) {
+  CP_ANIM_SPEED = (speed && speed > 0) ? speed : 1;
   var base = clip.inPoint.seconds;
   var motion = CP_findComponent(clip, 'Motion');
   var opacityComp = CP_findComponent(clip, 'Opacity');
@@ -797,9 +803,18 @@ function CP_placeCaptionImages(argsJson) {
         if (endT <= it.start) endT = it.start + 0.04;
         try { clip.end = CP_timeFromSeconds(endT); } catch (eEnd) {}
         placed++;
-        if (args.anim && args.anim !== 'none' && args.anim !== 'karaoke' && args.anim !== 'typewriter') {
-          CP_animateClip(clip, args.anim);
-          animated++;
+        var spd = (args.animSpeed && args.animSpeed > 0) ? args.animSpeed : 1;
+        var wordSync = (args.anim === 'karaoke' || args.anim === 'reveal');
+        if (args.anim && args.anim !== 'none' && args.anim !== 'typewriter') {
+          if (!wordSync) {
+            // entrance animation per caption (whole-line styles)
+            CP_animateClip(clip, args.anim, spd);
+            animated++;
+          } else if (args.perWordEntrance) {
+            // each word pops in as it's spoken (cleanest with "one by one")
+            CP_animateClip(clip, 'pop', spd);
+            animated++;
+          }
         }
       } catch (ePlace) {}
     }

@@ -287,6 +287,24 @@ console.log('render.js (pure layout helpers)');
   const boxedMono = CPRender.styleForFrame({ font: 'X', fontSize: 100, fill: '#FFF', highlight: '#FFF', boxColor: '#000', highlightScale: 1 }, 1080, {});
   assert(boxedMono.highlightScale === 1, 'monochrome but boxed keeps scale — the box already separates the word');
 
+  // pro controls flow through styleForFrame (overrides win, sensible defaults)
+  const base2 = { font: 'X', fontSize: 100, fill: '#fff', highlight: '#FFD400' };
+  const proStyle = CPRender.styleForFrame(base2, 1080, {
+    fill2: '#9aa7ff', highlightColors: ['#f00', '#0f0', '#00f'], boxOpacity: 0.5,
+    boxPad: 1.5, shadowDX: 10, shadowDY: -8, wordSpacing: 12, emphasizeWords: true,
+    maxWidthPct: 0.7, lineGap: 1.4
+  });
+  assert(proStyle.fill2 === '#9aa7ff', 'styleForFrame carries gradient 2nd colour');
+  assert(proStyle.highlightColors.length === 3, 'styleForFrame carries the multi-colour palette');
+  assert(proStyle.boxOpacity === 0.5 && proStyle.boxPad === 1.5, 'styleForFrame carries box opacity + padding');
+  assert(proStyle.shadowDX === 10 && proStyle.shadowDY === -8, 'styleForFrame carries hard-shadow offset (scaled)');
+  assert(proStyle.wordSpacing === 12 && proStyle.emphasizeWords === true, 'styleForFrame carries word spacing + emphasis toggle');
+  assert(proStyle.maxWidthPct === 0.7 && proStyle.lineGap === 1.4, 'styleForFrame carries max width + line gap overrides');
+  const defStyle = CPRender.styleForFrame(base2, 1080, {});
+  assert(defStyle.fill2 === null && defStyle.boxOpacity === 1 && defStyle.boxPad === 1 &&
+         defStyle.maxWidthPct === 0.86 && defStyle.lineGap === 1.18 && defStyle.emphasizeWords === false,
+         'styleForFrame defaults keep the original look (no gradient, opaque box, 0.86 width)');
+
   // caption legibility checker
   assert(Math.round(CPRender.contrastRatio('#000000', '#FFFFFF')) === 21, 'black/white contrast ratio is 21');
   assert(CPRender.legibilityWarning({ fill: '#FFFFFF', stroke: null, strokeWidth: 0, boxColor: null, glow: null }),
@@ -367,6 +385,15 @@ console.log('captions.js (buildCaptionFrames)');
 
   const kara = CPCaptions.buildCaptionFrames(cues, { anim: 'karaoke', wordsPerCue: 2 });
   assert(kara.length === 4 && kara[0].active === 0, 'karaoke mode produces active-word frames');
+
+  // punctuation cleanup: surrounding . , ? dropped for the clean look, apostrophes kept
+  const punct = CPCaptions.buildCaptionFrames(
+    [{ start: 0, end: 2, text: "Wait, don't stop!" }],
+    { anim: 'fade', wordsPerCue: 0, stripPunctuation: true });
+  assert(punct[0].words.join(' ') === "Wait don't stop", 'stripPunctuation drops edge punctuation but keeps apostrophes');
+  const punctOff = CPCaptions.buildCaptionFrames(
+    [{ start: 0, end: 2, text: "Wait, stop!" }], { anim: 'fade', wordsPerCue: 0 });
+  assert(punctOff[0].words.join(' ') === 'Wait, stop!', 'punctuation kept when cleanup is off');
 
   const tw = CPCaptions.buildCaptionFrames(cues, { anim: 'typewriter', uppercase: true });
   assert(tw[tw.length - 1].text === 'GET MORE VIEWS NOW', 'typewriter mode accumulates uppercased text');

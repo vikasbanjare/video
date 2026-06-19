@@ -98,6 +98,14 @@
     return out;
   }
 
+  /* Strip surrounding punctuation from a word for the clean, modern caption look
+     (keeps apostrophes/hyphens inside the word, e.g. don't, well-known). */
+  function stripWordPunct(w) {
+    return String(w)
+      .replace(/^[\s"'“”‘’(\[{¿¡]+/, '')
+      .replace(/[\s"'“”‘’.,!?;:)\]}…—–]+$/, '');
+  }
+
   /*
    * Explode sentence-level cues into word-by-word (or N-words-per-cue) cues
    * with timing interpolated by word length. This is what turns plain
@@ -202,14 +210,14 @@
    *  - native:  recommended settings for Premiere's built-in caption styling
    *  - mogrt:   parameter hints applied when inserting a .mogrt per cue
    *  - anim:    the animation concept (used by MOGRT templates / docs)
-   * Based on 2026 short-form trends: word-by-word karaoke, Hormozi bold,
+   * Based on 2026 short-form trends: word-by-word karaoke, bold statement,
    * highlight-box, clean minimal, neon, typewriter.
    */
   var STYLE_PRESETS = [
     {
       id: 'hormozi',
-      name: 'Hormozi Bold',
-      description: 'ALL-CAPS word-by-word, heavy condensed sans, thick black stroke, yellow highlight on keywords. The dominant short-form style.',
+      name: 'Bold Statement',
+      description: 'Confident ALL-CAPS word-by-word in a clean heavy sans, with a crisp outline and a single accent colour on the spoken word.',
       font: 'Montserrat', weight: 900, fallbackFonts: ['Anton', 'Bebas Neue', 'Arial Black'],
       fontSize: 90, fill: '#FFFFFF', highlight: '#FFD400', stroke: '#000000', strokeWidth: 12,
       uppercase: true, wordsPerCue: 1, anim: 'pop-scale',
@@ -476,7 +484,7 @@
   ];
 
   /* ⭐ Premium — refined, modern, "expensive"-looking styles (NOT the loud
-     bold-caps Hormozi look). Clean grotesk/serif faces, tasteful muted accents,
+     bold-caps look). Clean grotesk/serif faces, tasteful muted accents,
      soft bars/pills, gentle fade/slide/scale. These lead the library. */
   var PREMIUM_TEMPLATES = [
     // Spotlight — the signature Captions.ai look: clean white modern sans, soft
@@ -548,7 +556,7 @@
       uppercase: true, wordsPerCue: 1, anim: 'glitch-in' },
 
     // ---- v1.0 creator presets (word reveal + viral-word pop built in) ----
-    { id: 'v1-hormozi26', name: 'Hormozi 2026', category: '⭐ Premium', popularity: 87, layout: 'bottom', keyword: true, highlightScale: 1.12,
+    { id: 'v1-hormozi26', name: 'Statement Pro', category: '⭐ Premium', popularity: 87, layout: 'bottom', keyword: true, highlightScale: 1.12,
       font: 'Montserrat', fallbackFonts: ['Archivo Black', 'Arial Black'],
       fontSize: 72, fill: '#FFFFFF', highlight: '#FFE000', highlightStyle: 'box', boxRadius: 10, glow: '#000000', stroke: null, strokeWidth: 0,
       uppercase: true, wordsPerCue: 3, anim: 'reveal' },
@@ -1032,6 +1040,19 @@
         }
       }
     }
+    // Clean, modern look: drop surrounding punctuation from the displayed words
+    // (the transcript/SRT keep theirs — this only affects what's drawn).
+    if (opts.stripPunctuation) {
+      for (i = 0; i < frames.length; i++) {
+        if (frames[i].words) {
+          frames[i].words = frames[i].words.map(stripWordPunct);
+        }
+        if (frames[i].text != null) {
+          frames[i].text = frames[i].text.split(/\s+/).map(stripWordPunct).join(' ').replace(/\s+/g, ' ').trim();
+        }
+      }
+    }
+
     // Keep captions on screen through the natural pauses between words/phrases:
     // word-sync places one short clip per word, so without this the caption
     // blinks off during every breath/pause ("missing in some parts"). Each frame

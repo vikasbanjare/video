@@ -67,6 +67,15 @@
       letterSpacing: Math.round(((o.letterSpacing != null ? o.letterSpacing : (preset.letterSpacing || 0))) * scale),
       highlightScale: hlScale,
       highlightStyle: o.highlightStyle || preset.highlightStyle || 'color',
+      // --- premium customization additions ---
+      fill2: (o.fill2 !== undefined) ? o.fill2 : (preset.fill2 || null),      // gradient 2nd colour (null = solid)
+      highlightColors: o.highlightColors || preset.highlightColors || null,    // cycle colours word-to-word
+      boxOpacity: (o.boxOpacity != null) ? o.boxOpacity : (preset.boxOpacity != null ? preset.boxOpacity : 1),
+      boxPad: (o.boxPad != null) ? o.boxPad : (preset.boxPad != null ? preset.boxPad : 1),  // padding multiplier
+      shadowDX: Math.round(((o.shadowDX != null ? o.shadowDX : (preset.shadowDX || 0))) * scale),
+      shadowDY: Math.round(((o.shadowDY != null ? o.shadowDY : (preset.shadowDY || 0))) * scale),
+      wordSpacing: Math.round(((o.wordSpacing != null ? o.wordSpacing : (preset.wordSpacing || 0))) * scale),
+      emphasizeWords: (o.emphasizeWords != null) ? o.emphasizeWords : (preset.emphasizeWords != null ? preset.emphasizeWords : false),
       weight: (o.weight != null) ? o.weight : (preset.weight || 800),
       align: o.align || preset.align || 'center',
       uppercase: o.uppercase != null ? o.uppercase : preset.uppercase,
@@ -74,8 +83,8 @@
       // 0 = unlimited (legacy wrap), 1 = force single line, 2 = max two lines.
       // When set, the renderer shrinks the font to keep the caption within it.
       maxLines: (o.maxLines != null) ? o.maxLines : (preset.maxLines || 0),
-      maxWidthPct: 0.86,
-      lineGap: 1.18
+      maxWidthPct: (o.maxWidthPct != null) ? o.maxWidthPct : (preset.maxWidthPct || 0.86),
+      lineGap: (o.lineGap != null) ? o.lineGap : (preset.lineGap || 1.18)
     };
   }
 
@@ -167,11 +176,13 @@
     function layout(fit) {
       var eff = Math.max(8, Math.round(base * fit));
       setFont(eff);
-      var sp = ctx.measureText(' ').width;
+      var sp = ctx.measureText(' ').width + (style.wordSpacing || 0);
       var m = [];
       for (var k = 0; k < words.length; k++) {
         var hpk = isHL(k);
-        var dyn = wordSync ? 1 : wordScale(words[k]);
+        // auto-enlarge punchy/long words only when the user opts in AND it's not
+        // a word-sync frame (where only the spoken word should stand out).
+        var dyn = (style.emphasizeWords && !wordSync) ? wordScale(words[k]) : 1;
         var multk = Math.max(hpk ? hlScale : 1, dyn);
         var pxk = Math.round(eff * multk);
         setFont(pxk);
@@ -230,8 +241,18 @@
     // v1.0: tint the body text with this speaker's colour (multi-speaker clarity)
     var spkBody = frame.speaker ? speakerColor(frame.speaker) : null;
 
+    // a vertical gradient fill for the body text (premium two-tone look), or a
+    // solid colour when no second colour is set.
+    function textFill(yTop, h, c1, c2) {
+      if (!c2) return c1;
+      var g = ctx.createLinearGradient(0, yTop, 0, yTop + h);
+      g.addColorStop(0, c1); g.addColorStop(1, c2);
+      return g;
+    }
+
     // horizontal alignment within the safe text column
     var margin = (W - maxW) / 2;
+    var mi = 0;   // running word index across the caption (drives colour cycling)
     for (var li = 0; li < lines.length; li++) {
       var line = lines[li];
       var x = (style.align === 'left') ? margin
@@ -239,42 +260,96 @@
             : (W - line.width) / 2;
       var y = baseY + li * lineStep;
 
+      // background box behind the whole line (opacity + padding configurable)
       if (style.boxColor) {
-        var padX = base * 0.32, padY = base * 0.22;
+        var padX = base * 0.32 * style.boxPad, padY = base * 0.22 * style.boxPad;
+        ctx.save();
+        ctx.globalAlpha = style.boxOpacity;
         ctx.fillStyle = style.boxColor;
         roundRect(ctx, x - padX, y - line.height - padY + line.height * 0.18,
                   line.width + padX * 2, line.height + padY * 2, style.boxRadius);
         ctx.fill();
+        ctx.restore();
       }
 
       for (var wi = 0; wi < line.items.length; wi++) {
         var it = line.items[wi];
         setFont(it.px);
-        var boxed = it.hl && style.highlightStyle === 'box';
+        // per-word highlight colour — cycle the palette word-to-word when set
+        var hlColor = style.highlight;
+        if (style.highlightColors && style.highlightColors.length) {
+          hlColor = style.highlightColors[mi % style.highlightColors.length];
+        }
+        var shape = it.hl ? (style.highlightStyle || 'color') : null;
+        var filled = (shape === 'box' || shape === 'bar');   // word sits on a solid shape
 
-        // Captions.ai signature: highlighted word sits on a rounded pill
-        if (boxed) {
-          var bpadX = it.px * 0.22, bpadY = it.px * 0.16;
-          var br = Math.min((it.px + 2 * bpadY) * 0.32, style.boxRadius || 14);
-          ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
-          ctx.fillStyle = style.highlight;
-          roundRect(ctx, x - bpadX, y - it.px + it.px * 0.16 - bpadY,
-                    it.w + bpadX * 2, it.px + bpadY * 2, br);
-          ctx.fill();
+        // highlight shape behind / around the active word
+        if (shape && shape !== 'color') {
+          ctx.save();
+          ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+          var gtop = y - it.px + it.px * 0.16;
+          if (shape === 'box') {
+            var bpadX = it.px * 0.22 * style.boxPad, bpadY = it.px * 0.16 * style.boxPad;
+            var br = Math.min((it.px + 2 * bpadY) * 0.32, style.boxRadius || 14);
+            ctx.globalAlpha = style.boxOpacity;
+            ctx.fillStyle = hlColor;
+            roundRect(ctx, x - bpadX, gtop - bpadY, it.w + bpadX * 2, it.px + bpadY * 2, br);
+            ctx.fill();
+          } else if (shape === 'bar') {
+            var qpadX = it.px * 0.16, qpadY = it.px * 0.12;
+            ctx.globalAlpha = style.boxOpacity;
+            ctx.fillStyle = hlColor;
+            roundRect(ctx, x - qpadX, gtop - qpadY, it.w + qpadX * 2, it.px + qpadY * 2, Math.round(it.px * 0.08));
+            ctx.fill();
+          } else if (shape === 'marker') {
+            ctx.globalAlpha = 0.42;            // translucent highlighter swipe
+            ctx.fillStyle = hlColor;
+            var mh = it.px * 0.62;
+            roundRect(ctx, x - it.px * 0.06, y - mh * 0.78, it.w + it.px * 0.12, mh, Math.round(mh * 0.16));
+            ctx.fill();
+          } else if (shape === 'underline') {
+            ctx.strokeStyle = hlColor;
+            ctx.lineWidth = Math.max(2, it.px * 0.09);
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(x, y + it.px * 0.16);
+            ctx.lineTo(x + it.w, y + it.px * 0.16);
+            ctx.stroke();
+          } else if (shape === 'circle') {
+            ctx.strokeStyle = hlColor;
+            ctx.lineWidth = Math.max(2, it.px * 0.06);
+            ctx.beginPath();
+            ctx.ellipse(x + it.w / 2, y - it.px * 0.3, it.w / 2 + it.px * 0.16, it.px * 0.62, 0, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+          ctx.restore();
         }
 
-        ctx.shadowColor = 'transparent';
-        ctx.shadowBlur = 0;
-        if (style.glow && !boxed) { ctx.shadowColor = style.glow; ctx.shadowBlur = it.px * (style.glowBlur != null ? style.glowBlur : 0.35); }
-        // outline (skip on boxed words — the pill already separates them)
-        if (style.stroke && style.strokeWidth && !boxed) {
+        // drop shadow (blur + optional hard offset) — skip behind solid shapes
+        ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+        if (style.glow && !filled) {
+          ctx.shadowColor = style.glow;
+          ctx.shadowBlur = it.px * (style.glowBlur != null ? style.glowBlur : 0.35);
+          ctx.shadowOffsetX = style.shadowDX; ctx.shadowOffsetY = style.shadowDY;
+        }
+        // outline (skip behind solid shapes — the shape already separates the word)
+        if (style.stroke && style.strokeWidth && !filled) {
           ctx.strokeStyle = style.stroke;
           ctx.lineWidth = style.strokeWidth;
           ctx.strokeText(it.word, x, y);
         }
-        ctx.fillStyle = boxed ? contrastColor(style.highlight)
-                              : (it.hl ? style.highlight : (spkBody || style.fill));
+        ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+        // text colour: contrast on solid shapes; the highlight colour on
+        // colour/underline/circle; otherwise the body fill (gradient if set)
+        if (filled) {
+          ctx.fillStyle = contrastColor(hlColor);
+        } else if (it.hl && (shape === 'color' || shape === 'underline' || shape === 'circle')) {
+          ctx.fillStyle = hlColor;
+        } else {
+          ctx.fillStyle = textFill(y - it.px * 0.72, it.px * 0.8, spkBody || style.fill, style.fill2);
+        }
         ctx.fillText(it.word, x, y);
+        mi++;
         x += it.w + spaceW;
       }
     }

@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.93</span>
+    <span class="ver" id="ver">v0.9.94</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -143,7 +143,7 @@
 
       <div class="editor-head">
         <button id="btn-back-lib" class="chip-btn">‹ Styles</button>
-        <span class="editor-tpl-name" id="editor-tpl-name">Hormozi Bold</span>
+        <span class="editor-tpl-name" id="editor-tpl-name">Spotlight</span>
         <span class="spacer"></span>
         <button id="btn-save-tpl" class="chip-btn" title="Save as custom template">＋ Save</button>
         <button id="btn-dup-tpl" class="chip-btn" title="Duplicate">⧉</button>
@@ -235,6 +235,13 @@
                 <button data-l="0">Auto</button>
               </div>
               <p class="hint" style="margin:4px 0 0">Single = always one line (text auto-shrinks to fit). Double = never more than two. Auto = wrap freely.</p>
+              <label style="margin-top:9px">📱 Safe zone <span class="dim">— lift above app UI</span></label>
+              <div class="seg-control mini" id="c-safezone">
+                <button data-z="76" class="on">Off</button>
+                <button data-z="64">TikTok</button>
+                <button data-z="62">Reels</button>
+                <button data-z="58">Shorts</button>
+              </div>
             </div>
 
             <!-- 🎨 COLOURS -->
@@ -255,14 +262,26 @@
               <p class="hint" style="margin:4px 0 8px">The whole line shows and the current word lights up as the person says it — word by word.</p>
               <div id="c-wordhl-opts">
                 <label>Highlight look</label>
-                <div class="seg-control" id="c-hlstyle">
+                <div class="seg-control wrap" id="c-hlstyle">
                   <button data-s="color" class="on">Colour</button>
-                  <button data-s="box">Box / pill</button>
+                  <button data-s="box">Pill</button>
+                  <button data-s="bar">Bar</button>
+                  <button data-s="underline">Underline</button>
+                  <button data-s="marker">Marker</button>
+                  <button data-s="circle">Circle</button>
                 </div>
                 <label style="margin-top:9px">Words on screen</label>
                 <div class="seg-control mini" id="c-reveal">
                   <button data-r="karaoke" class="on">All together</button>
                   <button data-r="reveal">One by one</button>
+                </div>
+                <label style="margin-top:9px">Spoken-word size <span class="val" id="c-wordpop-val"></span>
+                  <input type="range" id="c-wordpop" min="100" max="160" value="100">
+                </label>
+                <label class="check"><input type="checkbox" id="c-multicolor"> 🌈 Cycle highlight colours word-to-word</label>
+                <div class="swatches" id="c-multicolor-opts" style="display:none">
+                  <label class="sw">2nd<span class="cp-mount" data-for="c-hl2"></span><input type="hidden" id="c-hl2" value="#2D7CFF"></label>
+                  <label class="sw">3rd<span class="cp-mount" data-for="c-hl3"></span><input type="hidden" id="c-hl3" value="#22C55E"></label>
                 </div>
               </div>
             </div>
@@ -281,6 +300,56 @@
                 </label>
               </div>
               <label class="check"><input type="checkbox" id="c-box-on"> 🟦 Background box behind text</label>
+              <div class="ctrl-row" id="c-shadow-offset-row">
+                <label>Shadow offset X <span class="val" id="c-shadow-dx-val"></span>
+                  <input type="range" id="c-shadow-dx" min="-30" max="30" value="0">
+                </label>
+                <label>Shadow offset Y <span class="val" id="c-shadow-dy-val"></span>
+                  <input type="range" id="c-shadow-dy" min="-30" max="30" value="0">
+                </label>
+              </div>
+              <p class="hint" style="margin:2px 0 0">Set the offset with a low shadow strength for a clean hard / 3-D drop.</p>
+            </div>
+
+            <!-- 🎛️ PRO CONTROLS -->
+            <div class="cust-group">
+              <div class="cust-group-title">🎛️ Pro controls <span class="dim">— fine, premium polish</span></div>
+
+              <label class="check"><input type="checkbox" id="c-grad"> 🎨 Gradient text <span class="dim">(top = Text colour above)</span></label>
+              <div class="swatches" id="c-grad-opts" style="display:none">
+                <label class="sw">Gradient bottom<span class="cp-mount" data-for="c-fill2"></span><input type="hidden" id="c-fill2" value="#9aa7ff"></label>
+              </div>
+
+              <div class="ctrl-row">
+                <label>Box roundness <span class="val" id="c-box-radius-val"></span>
+                  <input type="range" id="c-box-radius" min="0" max="60" value="12">
+                </label>
+                <label>Box see-through <span class="val" id="c-box-opacity-val"></span>
+                  <input type="range" id="c-box-opacity" min="20" max="100" value="100">
+                </label>
+              </div>
+              <label>Box padding <span class="val" id="c-box-pad-val"></span>
+                <input type="range" id="c-box-pad" min="50" max="200" value="100">
+              </label>
+
+              <div class="ctrl-row">
+                <label>Word spacing <span class="val" id="c-wordspace-val"></span>
+                  <input type="range" id="c-wordspace" min="0" max="40" value="0">
+                </label>
+                <label>Line spacing <span class="val" id="c-linegap-val"></span>
+                  <input type="range" id="c-linegap" min="90" max="200" value="118">
+                </label>
+              </div>
+              <label>Max line width <span class="val" id="c-maxwidth-val"></span>
+                <input type="range" id="c-maxwidth" min="50" max="98" value="86">
+              </label>
+
+              <label style="margin-top:6px">Animation speed <span class="val" id="c-animspeed-val"></span>
+                <input type="range" id="c-animspeed" min="50" max="200" value="100">
+              </label>
+              <label class="check"><input type="checkbox" id="c-perword"> 🎬 Pop each word in as it's spoken</label>
+              <label class="check"><input type="checkbox" id="c-emphasize"> 🔠 Auto-enlarge punchy words <span class="dim">(million, secret, now…)</span></label>
+              <label class="check"><input type="checkbox" id="c-strippunct"> 🧹 Remove punctuation <span class="dim">(clean look: no . , ?)</span></label>
             </div>
 
             <!-- ➕ EXTRAS -->
@@ -626,7 +695,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.93 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.94 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>
