@@ -154,11 +154,16 @@
     }
     var hlScale = style.highlightScale || 1;
     var maxW = W * style.maxWidthPct;
+    // In word-sync frames (karaoke/reveal expose frame.active) ONLY the spoken
+    // word should stand out. The dynamic viral/long-word size boost is therefore
+    // suppressed here — otherwise words like "trillion"/"million" stay enlarged
+    // even when they're not the active word and look highlighted alongside it.
+    var wordSync = (frame.active != null);
 
     // Build per-word metrics and greedy-wrap into lines at a given font scale.
-    // Highlighted AND viral/long words get a larger font (the bigger of the
-    // highlight scale and the dynamic word scale). Pure measurement — called
-    // repeatedly to shrink the caption until it fits the allowed line count.
+    // Highlighted words get the highlight scale; non-word-sync frames also let
+    // viral/long words grow. Pure measurement — called repeatedly to shrink the
+    // caption until it fits the allowed line count.
     function layout(fit) {
       var eff = Math.max(8, Math.round(base * fit));
       setFont(eff);
@@ -166,7 +171,8 @@
       var m = [];
       for (var k = 0; k < words.length; k++) {
         var hpk = isHL(k);
-        var multk = Math.max(hpk ? hlScale : 1, wordScale(words[k]));
+        var dyn = wordSync ? 1 : wordScale(words[k]);
+        var multk = Math.max(hpk ? hlScale : 1, dyn);
         var pxk = Math.round(eff * multk);
         setFont(pxk);
         m.push({ word: words[k], px: pxk, hl: hpk, w: ctx.measureText(words[k]).width });

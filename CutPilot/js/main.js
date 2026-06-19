@@ -2074,7 +2074,12 @@
       if (look.align) setAlignButton(look.align);
       if (look.maxLines != null) setLinesButton(look.maxLines);
       if (look.reveal) setRevealButton(look.reveal);
-      if (look.wordHl != null && $('c-wordhl')) { $('c-wordhl').checked = !!look.wordHl; syncWordHlUI(); }
+      // Word-by-word sync is ON by default for every template now. We only honour
+      // a saved value if it was ON — a stale saved 'off' (from older builds that
+      // disabled it on non-karaoke templates) must NOT silently turn sync off, or
+      // captions fall back to static keyword highlighting (several words lit at
+      // once). An explicit in-session opt-out still works via state.wordHlOff.
+      if (look.wordHl === true && $('c-wordhl')) { $('c-wordhl').checked = true; syncWordHlUI(); }
       $('c-box-on').checked = !!look.boxOn;
       $('c-upper').checked = !!look.upper;
       $('c-kw').checked = !!look.kw;
