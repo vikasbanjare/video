@@ -2343,6 +2343,9 @@
     runCaptionPipeline(cues, null);
   });
 
+  // ---- native, Premiere-editable caption track (plain text, no karaoke) ----
+  if ($('btn-native-main')) $('btn-native-main').addEventListener('click', applyNative);
+
   // ---- edit the wording of captions already on the timeline ----
   if ($('btn-cap-edit')) $('btn-cap-edit').addEventListener('click', openCaptionTextEditor);
 
