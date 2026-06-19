@@ -2662,6 +2662,7 @@
     });
     if ($('btn-native-apply')) $('btn-native-apply').addEventListener('click', applyNative);
     if ($('btn-tpl-inspect')) $('btn-tpl-inspect').addEventListener('click', inspectMogrt);
+    if ($('btn-tpl-testfill')) $('btn-tpl-testfill').addEventListener('click', testMgrtFill);
     if ($('btn-tpl-preview')) $('btn-tpl-preview').addEventListener('click', previewMogrtFile);
   }
 
@@ -2709,6 +2710,36 @@
           : '');
       out.textContent = path.split(/[\\/]/).pop() + ' — ' + r.count + ' fields:\n' + lines.join('\n') + foot;
     }).catch(function (e) { out.className = 'diag-out err'; out.textContent = 'Inspect failed: ' + e.message; });
+  }
+
+  /* Round-trip diagnostic: drop one caption, write a known string, read it back,
+     and report — so we can tell "stored but not rendered" (refresh bug) from
+     "never written". Leaves the test clip at the playhead to eyeball the render. */
+  function testMgrtFill() {
+    var path = selectedMogrtPath();
+    var out = $('tpl-inspect-out');
+    if (!out) return;
+    if (!path) { out.classList.remove('hidden'); out.className = 'diag-out err'; out.textContent = 'Pick a template first.'; return; }
+    if (!state.env) { out.classList.remove('hidden'); out.className = 'diag-out err'; out.textContent = 'Open a sequence in Premiere first.'; return; }
+    out.classList.remove('hidden'); out.className = 'diag-out'; out.textContent = 'Dropping one test caption at the playhead…';
+    CPBridge.callHost('CP_testMgrtFill', { path: path }).then(function (r) {
+      if (!r.found) { out.className = 'diag-out err'; out.textContent = 'Test fill: ' + (r.note || 'no text field found') + ' (track V' + (r.track || '?') + ').'; return; }
+      var L = [];
+      L.push('🔬 Test fill — ' + path.split(/[\\/]/).pop());
+      L.push('field "' + r.fieldName + '"  ·  format: ' + r.kind);
+      L.push('wrote: ' + (r.wrote ? 'YES' : 'NO') + '  → "' + r.sample + '"');
+      L.push('read back: ' + (r.matches ? '✅ MATCHES' : '❌ differs') + (r.readBack != null ? '  "' + r.readBack + '"' : ' (none)'));
+      L.push('');
+      L.push('👉 Look at the Program monitor at the playhead (track V' + r.track + '):');
+      L.push('   • shows "' + r.sample + '"  → fill works ✅');
+      L.push('   • shows the template default → text is STORED but not re-rendered;');
+      L.push('     click the clip → click its Text field → press Enter. Updates now?');
+      L.push('');
+      L.push('— copy everything below back to me —');
+      L.push('before: ' + (r.beforeSample || ''));
+      L.push('after:  ' + (r.afterSample || ''));
+      out.className = 'diag-out'; out.textContent = L.join('\n');
+    }).catch(function (e) { out.className = 'diag-out err'; out.textContent = 'Test fill failed: ' + e.message; });
   }
 
   /* The override the user set for prop #i, or null. */

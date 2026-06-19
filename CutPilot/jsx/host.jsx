@@ -1654,6 +1654,67 @@ function CP_inspectMogrt(argsJson) {
   } catch (e) { return CP_fail(e.message); }
 }
 
+/* Round-trip diagnostic: drop ONE caption from this template at the playhead,
+ * write a known sample string, read it back, and report both — so we can tell
+ * whether Premiere STORES the new text (read-back matches) but doesn't RENDER it
+ * (a refresh problem) versus never accepting the write at all. The test clip is
+ * left on the timeline at the playhead so the user can eyeball what it renders. */
+function CP_testMgrtFill(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+    var at = 0; try { at = seq.getPlayerPosition().seconds; } catch (eP) {}
+    // fresh top track so we never disturb existing clips
+    var vTrack = seq.videoTracks.numTracks - 1;
+    try { app.enableQE(); qe.project.getActiveSequence().addTracks(1, seq.videoTracks.numTracks, 0); vTrack = seq.videoTracks.numTracks - 1; } catch (eT) {}
+
+    var SAMPLE = 'CUTPILOT TEST 12345';
+    var clip = null;
+    try { clip = seq.importMGT(args.path, CP_ticksFromSeconds(at), vTrack, 0); }
+    catch (eImp) { return CP_fail('importMGT failed: ' + eImp.message); }
+    if (!clip) return CP_fail('importMGT returned nothing.');
+
+    var comp = null; try { comp = clip.getMGTComponent(); } catch (eC) {}
+    if (!comp || !comp.properties) return CP_ok({ found: false, note: 'no MGT component on the inserted clip', track: vTrack + 1 });
+
+    var KEYS = ['text', 'source', 'caption', 'title', 'subtitle', 'headline', 'body', 'content', 'label', 'name', 'word'];
+    var prop = CP_findTextProp(comp.properties, KEYS);
+    if (!prop) return CP_ok({ found: false, note: 'no text-like property found', track: vTrack + 1 });
+
+    var before = null; try { before = String(prop.getValue()); } catch (eB) {}
+    var kind = 'plain';
+    if (before && (before.indexOf('textEditValue') !== -1 || before.indexOf('capProp') !== -1)) kind = 'rich';
+    else if (before && before.indexOf('"strDB"') !== -1) kind = 'strdb';
+    else if (before && before.charAt(0) === '{') kind = 'simple';
+
+    var wrote = CP_setMgrtText(prop, SAMPLE, true, null);
+    // same forced re-render the real fill uses
+    try { clip.disabled = true; } catch (eD1) {}
+    try { clip.disabled = false; } catch (eD2) {}
+
+    var after = null; try { after = String(prop.getValue()); } catch (eA) {}
+    // pull the text the read-back actually holds, by format
+    var readText = null, m;
+    try { if ((m = String(after).match(/"textEditValue"\s*:\s*"((?:[^"\\]|\\.)*)"/))) readText = m[1]; } catch (e1) {}
+    if (readText == null) { try { if ((m = String(after).match(/"str"\s*:\s*"((?:[^"\\]|\\.)*)"/))) readText = m[1]; } catch (e2) {} }
+    if (readText == null && after && after.charAt(0) !== '{') readText = after;
+
+    return CP_ok({
+      found: true,
+      fieldName: String(prop.displayName),
+      kind: kind,
+      wrote: !!wrote,
+      sample: SAMPLE,
+      readBack: readText,
+      matches: (readText === SAMPLE),
+      beforeSample: before ? before.substr(0, 220) : null,
+      afterSample: after ? after.substr(0, 260) : null,
+      track: vTrack + 1,
+      atSeconds: at
+    });
+  } catch (e) { return CP_fail(e.message); }
+}
+
 /*
  * Drop a single instance of a .mogrt at the playhead so the user can scrub
  * Premiere's monitor and watch the animation. argsJson: { path, seconds }
