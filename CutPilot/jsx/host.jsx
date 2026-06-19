@@ -629,6 +629,29 @@ function CP_findProperty(comp, displayName) {
   return null;
 }
 
+/* Force Premiere to re-composite a clip after a scripted edit. A setValue on a
+ * Motion-Graphics text property updates the stored value (and the EGP panel) but
+ * doesn't always mark the graphic dirty, so the Program monitor keeps showing the
+ * template's baked-in default. We dirty it several ways (cheap, all reversible,
+ * and the clip is always left enabled at its real opacity):
+ *   1) toggle the clip's enabled state,
+ *   2) nudge clip opacity off its current value and back. */
+function CP_forceRerender(clip) {
+  try { clip.disabled = true; } catch (e1) {}
+  try { clip.disabled = false; } catch (e2) {}
+  try {
+    var oc = CP_findComponent(clip, 'Opacity');
+    var op = oc ? CP_findProperty(oc, 'Opacity') : null;
+    if (op) {
+      var cur = null; try { cur = op.getValue(); } catch (eg) {}
+      if (typeof cur === 'number') {
+        try { op.setValue(cur >= 1 ? cur - 0.5 : cur + 0.5, true); } catch (es1) {}
+        try { op.setValue(cur, true); } catch (es2) {}
+      }
+    }
+  } catch (e3) {}
+}
+
 // Animation speed multiplier (1 = default; >1 snappier, <1 slower). Set by
 // CP_animateClip and read here so every keyframe time scales by 1/speed.
 var CP_ANIM_SPEED = 1;
@@ -1511,12 +1534,9 @@ function CP_insertMogrtCaptions(argsJson) {
 
       // Force a re-render when we wrote new text into a rich source-text graphic:
       // Premiere can keep showing the template's baked-in default until the clip
-      // is invalidated. Toggling enabled does that. We ALWAYS restore enabled
-      // (two independent tries) so a refresh can never hide a caption.
-      if (textSet > textSetBefore) {
-        try { clip.disabled = true; } catch (eD1) {}
-        try { clip.disabled = false; } catch (eD2) {}
-      }
+      // is invalidated. CP_forceRerender dirties it (and always leaves it enabled
+      // at its real opacity) so the new words actually paint.
+      if (textSet > textSetBefore) CP_forceRerender(clip);
 
       // Duration LAST (so a time-stretch can't disturb the component edits).
       // Fit the graphic to its slot by SPEED in either direction — speeding a
@@ -1688,9 +1708,7 @@ function CP_testMgrtFill(argsJson) {
     else if (before && before.charAt(0) === '{') kind = 'simple';
 
     var wrote = CP_setMgrtText(prop, SAMPLE, true, null);
-    // same forced re-render the real fill uses
-    try { clip.disabled = true; } catch (eD1) {}
-    try { clip.disabled = false; } catch (eD2) {}
+    CP_forceRerender(clip);   // same forced re-render the real fill uses
 
     var after = null; try { after = String(prop.getValue()); } catch (eA) {}
     // pull the text the read-back actually holds, by format
