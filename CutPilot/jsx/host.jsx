@@ -1116,6 +1116,14 @@ function CP_probeRichText(mogrtPath, vTrack, aTrack, KEYS, sampleText, style) {
             res.richSafe = !!(parsed && String(parsed.textEditValue) === probeText);
           } catch (eP) { res.richSafe = false; }
         }
+        // Single-run source text: our rewrite sets the one run-length to exactly
+        // the new text length, so it's provably consistent (no "bad any cast"
+        // risk). getValue() can lag setValue() and make the read-back check above
+        // inconclusive — don't let that falsely block a safe single-run fill,
+        // which would leave every caption on the template's default text.
+        if (!res.richSafe && /"capPropTextRunCount"\s*:\s*1\b/.test(before)) {
+          res.richSafe = true;
+        }
       }
     } else if (typeof before === 'string' && before.indexOf('"strDB"') !== -1) {
       res.kind = 'strdb';   // simple multi-locale source text — safe to fill directly
@@ -1459,6 +1467,7 @@ function CP_insertMogrtCaptions(argsJson) {
         if (nat > maxTemplateDur) maxTemplateDur = nat;
       } catch (eNat) {}
 
+      var textSetBefore = textSet;
       try {
         var comp = clip.getMGTComponent();
         if (comp && comp.properties) {
@@ -1499,6 +1508,15 @@ function CP_insertMogrtCaptions(argsJson) {
           }
         }
       } catch (eComp) {}
+
+      // Force a re-render when we wrote new text into a rich source-text graphic:
+      // Premiere can keep showing the template's baked-in default until the clip
+      // is invalidated. Toggling enabled does that. We ALWAYS restore enabled
+      // (two independent tries) so a refresh can never hide a caption.
+      if (textSet > textSetBefore) {
+        try { clip.disabled = true; } catch (eD1) {}
+        try { clip.disabled = false; } catch (eD2) {}
+      }
 
       // Duration LAST (so a time-stretch can't disturb the component edits).
       // Fit the graphic to its slot by SPEED in either direction — speeding a
