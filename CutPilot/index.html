@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.95</span>
+    <span class="ver" id="ver">v0.9.96</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -153,8 +153,9 @@
       <!-- LIVE PREVIEW (caption styles only) -->
       <div class="preview-wrap" id="cap-preview">
         <div class="preview-frame" id="preview-frame">
+          <canvas id="preview-canvas"></canvas>
           <div class="preview-speaker hidden" id="preview-speaker"></div>
-          <div class="preview-caption" id="preview-caption">YOUR CAPTION</div>
+          <div class="preview-caption hidden" id="preview-caption">YOUR CAPTION</div>
         </div>
         <button id="btn-replay" class="replay-btn" title="Replay animation">▶</button>
       </div>
@@ -735,7 +736,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.95 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.96 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

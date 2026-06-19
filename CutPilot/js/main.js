@@ -2216,141 +2216,67 @@
 
   function renderPreview() {
     if (previewTimer) { clearInterval(previewTimer); previewTimer = null; }
-    var st = CPCaptions.mergeStyle(currentPreset(), readOverrides());
-    var cap = $('preview-caption');
     var frame = $('preview-frame');
-    var frameH = frame.clientHeight || 168;
-    var px = Math.max(11, Math.round(st.fontSize * frameH / 1080));
+    var canvas = $('preview-canvas');
+    if (!canvas || !CPRender || !CPRender.drawFrame) return;
 
-    cap.style.fontFamily = fontStack(st.font, st.fallbackFonts);
-    cap.style.fontSize = px + 'px';
-    cap.style.color = st.fill;
-    cap.style.top = Math.max(2, Math.round(st.yPct * frameH - px)) + 'px';
-    // single-line mode: keep the sample on one line so the preview matches render
-    cap.style.whiteSpace = (readLines() === 1) ? 'nowrap' : 'normal';
-
-    // outline / glow
-    var shadow = '';
-    if (st.stroke && st.strokeWidth) {
-      var sw = Math.max(1, Math.round(st.strokeWidth * frameH / 1080));
-      shadow = [-sw + 'px -' + sw + 'px 0 ' + st.stroke, sw + 'px -' + sw + 'px 0 ' + st.stroke,
-                '-' + sw + 'px ' + sw + 'px 0 ' + st.stroke, sw + 'px ' + sw + 'px 0 ' + st.stroke].join(', ');
-    }
-    if (st.glow) shadow = (shadow ? shadow + ', ' : '') + '0 0 ' + Math.round(px * 0.5) + 'px ' + st.glow;
-    cap.style.textShadow = shadow;
-
+    // Render the preview with the SAME engine as the real output, so EVERY
+    // customization (shapes, gradient, spacing, shadow offset, box opacity,
+    // number/brand colours, case, censor…) reflects exactly and in real time.
+    var preset = currentPreset();
     var ov = readOverrides();
-    // background box (opacity + padding + roundness + gradient)
-    if (st.boxColor) {
-      cap.style.background = ov.boxColor2
-        ? ('linear-gradient(' + hexToRgba(st.boxColor, ov.boxOpacity) + ',' + hexToRgba(ov.boxColor2, ov.boxOpacity) + ')')
-        : hexToRgba(st.boxColor, ov.boxOpacity);
-      cap.style.borderRadius = Math.round((st.boxRadius || 10) * frameH / 1080) + 'px';
-      cap.style.padding = Math.round(2 * ov.boxPad) + 'px ' + Math.round(px * 0.3 * ov.boxPad) + 'px';
-    } else {
-      cap.style.background = 'transparent';
-      cap.style.padding = '2px 6px';
-    }
-    // word spacing + max line width
-    cap.style.wordSpacing = (ov.wordSpacing ? Math.round(ov.wordSpacing * frameH / 1080) : 0) + 'px';
-    cap.style.maxWidth = Math.round(ov.maxWidthPct * 100) + '%';
-    // gradient text (premium two-tone) — best-effort preview via background-clip
-    if (ov.fill2) {
-      cap.style.color = 'transparent';
-      cap.style.background = 'transparent';
-      cap.style.backgroundImage = 'linear-gradient(' + st.fill + ',' + ov.fill2 + ')';
-      try { cap.style.webkitBackgroundClip = 'text'; cap.style.backgroundClip = 'text'; } catch (eG) {}
-    } else {
-      cap.style.backgroundImage = '';
-      try { cap.style.webkitBackgroundClip = ''; cap.style.backgroundClip = ''; } catch (eG2) {}
-      if (st.boxColor) cap.style.background = hexToRgba(st.boxColor, ov.boxOpacity);
-    }
+    var st = CPRender.styleForFrame(preset, 1080, ov);  // for the legibility note
 
+    // Fit a canvas of the sequence's aspect ratio inside the preview box.
+    var boxW = frame.clientWidth || 300, boxH = frame.clientHeight || 168;
+    var aw = (state.env && state.env.width) || 1920, ah = (state.env && state.env.height) || 1080;
+    var ar = aw / ah, W, H;
+    if (boxW / boxH > ar) { H = boxH; W = Math.round(boxH * ar); } else { W = boxW; H = Math.round(boxW / ar); }
+    var dpr = Math.min(2, (window.devicePixelRatio || 1));
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+
+    var pStyle = CPRender.styleForFrame(preset, canvas.height, ov);
     var anim = currentAnim();
     var words = parseInt($('c-words').value, 10) || 0;
-    var caps = st.uppercase;
-    var hlPct = Math.round((st.highlightScale || 1) * 100);
-    var hlShape = readHlStyle();
-    var hlClr = (ov.highlightColors && ov.highlightColors.length) ? ov.highlightColors[0] : st.highlight;
-    function contrastHex(hex) {
-      var m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '#ffd400'));
-      if (!m) return '#111';
-      var nn = parseInt(m[1], 16);
-      var lum = (0.299 * ((nn >> 16) & 255) + 0.587 * ((nn >> 8) & 255) + 0.114 * (nn & 255)) / 255;
-      return lum > 0.6 ? '#111' : '#fff';
-    }
-    function hlSpan(t) {
-      var base = 'font-size:' + hlPct + '%;';
-      if (hlShape === 'box' || hlShape === 'bar') {
-        var rad = hlShape === 'bar' ? '4px' : '7px';
-        return '<span style="' + base + 'background:' + hlClr + ';color:' + contrastHex(hlClr) +
-               ';padding:1px 7px;border-radius:' + rad + '">' + t + '</span>';
-      }
-      if (hlShape === 'underline') {
-        return '<span style="' + base + 'color:' + hlClr + ';border-bottom:0.12em solid ' + hlClr + ';padding-bottom:1px">' + t + '</span>';
-      }
-      if (hlShape === 'marker') {
-        return '<span style="' + base + 'background:' + hexToRgba(hlClr, 0.42) + ';padding:0 4px;border-radius:3px">' + t + '</span>';
-      }
-      if (hlShape === 'circle') {
-        return '<span style="' + base + 'color:' + hlClr + ';border:0.08em solid ' + hlClr + ';border-radius:50%;padding:0 6px">' + t + '</span>';
-      }
-      return '<span style="' + base + 'color:' + hlClr + '">' + t + '</span>';
-    }
-
-    // speaker label preview
-    var spkEl = $('preview-speaker');
-    if ($('c-speaker').checked) {
-      spkEl.classList.remove('hidden');
-      spkEl.innerHTML = '<span style="color:' + st.highlight + '">HOST</span>';
-      spkEl.style.top = Math.max(2, Math.round(st.yPct * frameH - px) - 22) + 'px';
-    } else {
-      spkEl.classList.add('hidden');
-    }
-
-    // reset animation classes
-    cap.className = 'preview-caption';
-
-    // show exactly the number of words the slider selects (0 = full line)
     var kwOn = $('c-kw').checked;
-    function cased(w) {
-      var tc = ov.textCase;
-      if (caps || tc === 'upper') return w.toUpperCase();
-      if (tc === 'lower') return w.toLowerCase();
-      if (tc === 'title' || tc === 'sentence') return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
-      return w.charAt(0) + w.slice(1).toLowerCase();
+    var speaker = $('c-speaker').checked ? 'HOST' : null;
+
+    // sample words, cased + cleaned the same way the engine would
+    function prep(arr) {
+      var f = CPCaptions.buildCaptionFrames([{ start: 0, end: 2, text: arr.join(' ') }], {
+        anim: 'fade', wordsPerCue: 0, uppercase: ov.uppercase,
+        stripPunctuation: ov.stripPunctuation, textCase: ov.textCase, censor: ov.censor
+      });
+      return (f[0] && f[0].words) ? f[0].words : arr;
     }
     var nShow = (words === 0) ? 6 : Math.min(words, SAMPLE_SENTENCE.length);
-    var shown = SAMPLE_SENTENCE.slice(0, Math.max(1, nShow)).map(cased);
+    var shown = prep(SAMPLE_SENTENCE.slice(0, Math.max(1, nShow)));
+
+    function paint(frameObj) {
+      if (speaker) frameObj.speaker = speaker;
+      CPRender.drawFrame(canvas, frameObj, pStyle);
+    }
 
     if (anim === 'karaoke' || anim === 'reveal') {
       var idx = 0;
-      var paint = function () {
-        cap.innerHTML = shown.map(function (word, i) {
-          if (anim === 'reveal' && i > idx) return '';      // grows one word at a time
-          return i === idx ? hlSpan(word) : word;
-        }).filter(function (s) { return s !== ''; }).join(' ');
+      var loop = function () {
+        var w = (anim === 'reveal') ? shown.slice(0, idx + 1) : shown;
+        paint({ words: w, active: (anim === 'reveal') ? idx : idx });
         idx = (idx + 1) % shown.length;
       };
-      paint();
-      previewTimer = setInterval(paint, 520);
+      loop();
+      previewTimer = setInterval(loop, Math.max(180, Math.round(520 / (ov.animSpeed || 1))));
     } else if (anim === 'typewriter') {
       var n = 1;
-      var typ = function () {
-        cap.textContent = shown.slice(0, n).join(' ');
-        n = n >= shown.length ? 1 : n + 1;
-      };
+      var typ = function () { paint({ text: shown.slice(0, n).join(' ') }); n = n >= shown.length ? 1 : n + 1; };
       typ();
-      previewTimer = setInterval(typ, 420);
+      previewTimer = setInterval(typ, Math.max(160, Math.round(420 / (ov.animSpeed || 1))));
     } else {
-      var hi = kwOn ? longestIdx(shown) : -1;
-      cap.innerHTML = shown.map(function (word, i) {
-        return (i === hi || (shown.length === 1 && kwOn)) ? hlSpan(word) : word;
-      }).join(' ');
-      if (anim !== 'none') {
-        void cap.offsetWidth; // re-trigger the CSS animation
-        cap.classList.add('pa-' + anim);
-      }
+      // static line; highlight the longest word so the highlight style shows
+      var hset = null;
+      if (kwOn) { hset = []; hset[longestIdx(shown)] = true; }
+      paint({ words: shown, highlightSet: hset });
     }
 
     updateLegibilityNote(st);
