@@ -1032,6 +1032,66 @@
     $('tr-editor').classList.remove('hidden');
     toast('✏️ Fix any wording, then tap Save — your captions update in place.');
   }
+
+  /* Edit ONE caption — the line the playhead is parked on. Re-renders just that
+     single graphic and swaps it in place, so fixing a typo is instant instead of
+     re-rendering the whole track. This is the "edit a caption on the timeline"
+     flow: park the Premiere playhead over the caption, then tap. */
+  var _cap1Idx = -1;
+  function openOneCaptionEditor() {
+    if (!state.lastCaptionJob || !state.lastCaptionJob.cues || !state.lastCaptionJob.cues.length)
+      return toast('Add captions first, then park the playhead over one to fix it.', true);
+    capProgress('Finding the caption under the playhead…');
+    CPBridge.callHost('CP_getPlayheadSeconds').then(function (r) {
+      capProgress(null);
+      var t = (r && typeof r.seconds === 'number') ? r.seconds : 0;
+      var cues = state.lastCaptionJob.cues;
+      var idx = -1;
+      for (var i = 0; i < cues.length; i++) {
+        if (t >= cues[i].start - 1e-3 && t < cues[i].end + 1e-3) { idx = i; break; }
+      }
+      var spanning = idx !== -1;
+      if (idx === -1) {     // nothing exactly under the playhead → offer the nearest line
+        var best = Infinity;
+        for (var j = 0; j < cues.length; j++) {
+          var d = (t < cues[j].start) ? (cues[j].start - t) : (t > cues[j].end ? t - cues[j].end : 0);
+          if (d < best) { best = d; idx = j; }
+        }
+      }
+      if (idx === -1) return toast('No captions found to edit.', true);
+      _cap1Idx = idx;
+      var c = cues[idx];
+      if ($('cap1-time')) $('cap1-time').textContent = '🕒 ' + fmt(c.start) + ' – ' + fmt(c.end);
+      if ($('cap1-text')) $('cap1-text').value = c.text;
+      if ($('cap1-hint')) $('cap1-hint').textContent = spanning
+        ? 'This is the caption under your playhead. Fix the words and Save — only this one line re-renders.'
+        : 'Nothing sits exactly under the playhead, so this is the nearest caption. Move the playhead over the line you want and tap again, or just edit this one.';
+      $('cap1-editor').classList.remove('hidden');
+      if ($('cap1-text')) { $('cap1-text').focus(); $('cap1-text').select(); }
+    }).catch(function (e) { capProgress(null); toast('Couldn\'t read the playhead: ' + e.message, true); });
+  }
+  function closeOneCaptionEditor() {
+    _cap1Idx = -1;
+    if ($('cap1-editor')) $('cap1-editor').classList.add('hidden');
+  }
+  function saveOneCaption() {
+    if (_cap1Idx < 0 || !state.lastCaptionJob || !state.lastCaptionJob.cues[_cap1Idx]) return closeOneCaptionEditor();
+    var newText = (($('cap1-text') && $('cap1-text').value) || '').trim();
+    if (!newText) return toast('Type some words first, or tap Cancel.', true);
+    var cue = state.lastCaptionJob.cues[_cap1Idx];
+    if (newText === cue.text) { closeOneCaptionEditor(); return toast('No change — caption left as-is.'); }
+    cue.text = newText;            // persist the fix into the remembered job
+    saveLastCaptionJob();
+    closeOneCaptionEditor();
+    // re-render ONLY this cue and overwrite just that clip on the same track.
+    // wordCues:null keeps it instant — no whole-audio re-analysis for one line.
+    runCaptionPipeline(state.lastCaptionJob.cues, {
+      overwriteOnTrack: state.lastCaptionJob.track,
+      range: { start: cue.start, end: cue.end },
+      wordCues: null,
+      single: true
+    });
+  }
   function renderTrEditor() {
     var list = $('tre-list'); if (!list) return;
     list.innerHTML = '';
@@ -2371,6 +2431,13 @@
 
   // ---- edit the wording of captions already on the timeline ----
   if ($('btn-cap-edit')) $('btn-cap-edit').addEventListener('click', openCaptionTextEditor);
+  if ($('btn-cap-fix1')) $('btn-cap-fix1').addEventListener('click', openOneCaptionEditor);
+  if ($('cap1-save')) $('cap1-save').addEventListener('click', saveOneCaption);
+  if ($('cap1-cancel')) $('cap1-cancel').addEventListener('click', closeOneCaptionEditor);
+  if ($('cap1-text')) $('cap1-text').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); saveOneCaption(); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeOneCaptionEditor(); }
+  });
 
   // ---- restyle EVERY placed caption at once with the current style/template ----
   if ($('btn-cap-restyle')) $('btn-cap-restyle').addEventListener('click', function () {
@@ -2402,6 +2469,7 @@
   function setCaptionBusy(busy) {
     if ($('btn-magic')) $('btn-magic').disabled = busy;
     if ($('btn-cap-edit')) $('btn-cap-edit').disabled = busy;
+    if ($('btn-cap-fix1')) $('btn-cap-fix1').disabled = busy;
     if ($('btn-cap-restyle')) $('btn-cap-restyle').disabled = busy;
     if ($('btn-cap-segment')) $('btn-cap-segment').disabled = busy;
   }
@@ -2410,9 +2478,11 @@
   function reflectCaptionsPlaced() {
     var on = !!(state.lastCaptionJob && state.lastCaptionJob.cues);
     if ($('btn-cap-edit')) $('btn-cap-edit').classList.toggle('hidden', !on);
+    if ($('btn-cap-fix1')) $('btn-cap-fix1').classList.toggle('hidden', !on);
     if ($('btn-cap-restyle')) $('btn-cap-restyle').classList.toggle('hidden', !on);
     if ($('btn-cap-segment')) $('btn-cap-segment').classList.toggle('hidden', !on);
     if ($('cap-restyle-hint')) $('cap-restyle-hint').classList.toggle('hidden', !on);
+    if (!on && $('cap1-editor')) $('cap1-editor').classList.add('hidden');
   }
 
   /*
@@ -2445,11 +2515,17 @@
     var wantSync = wordFollow || ($('c-sync').checked && words !== 0);
     var realWordTiming = !!(state.transcriptWords && state.transcriptWords.length);
     var scoped = !!(replaceTrack || overwriteOnTrack);
+    var single = !!opts.single;
 
     setCaptionBusy(true);
-    capProgress(wantSync ? 'Listening to the audio for sync…' : 'Preparing…');
+    capProgress(single ? 'Updating that caption…' : (wantSync ? 'Listening to the audio for sync…' : 'Preparing…'));
 
-    getCaptionWordCues(cues, wantSync).then(function (wordCues) {
+    // A caller can hand us word timing directly (single-line fix passes null to
+    // skip the whole-audio re-analysis and stay instant); otherwise derive it.
+    var wordCuesPromise = (opts.wordCues !== undefined)
+      ? Promise.resolve(opts.wordCues)
+      : getCaptionWordCues(cues, wantSync);
+    wordCuesPromise.then(function (wordCues) {
       wordCues = shiftWordCues(wordCues, captionSyncOffset());   // apply the timing nudge
       // for a segment restyle, only keep word timing inside the range
       if (range && wordCues) wordCues = wordCues.filter(function (w) { return w.end > range.start + 1e-3 && w.start < range.end - 1e-3; });
@@ -2492,6 +2568,7 @@
           perWordEntranceStyle: overrides.perWordEntranceStyle };
         if (overwriteOnTrack) placeArgs.overwriteOnTrack = overwriteOnTrack;
         else if (replaceTrack) placeArgs.replaceTrack = replaceTrack;
+        if (single) placeArgs.exact = true;   // size each still exactly → never clobber the next caption
         return CPBridge.callHost('CP_placeCaptionImages', placeArgs);
       }).then(function (r) {
         setCaptionBusy(false);
@@ -2499,10 +2576,14 @@
         // remember the full-video job (don't let a segment restyle shrink it)
         if (!range) { state.lastCaptionJob = { cues: cues, track: r.track }; saveLastCaptionJob(); }
         reflectCaptionsPlaced();
-        toast((scoped ? (range ? '🎯 Restyled range — ' : '🔄 Restyled ') : '🎉 ') + r.placed + ' captions ' +
-              (scoped ? 'on V' : 'added on V') + r.track +
-              (wordCues ? (realWordTiming ? ' · 🎯 word-synced' : ' · audio-synced') : '') +
-              (r.animated ? ' · ' + CPCaptions.getAnimation(anim).name : ''));
+        if (single) {
+          toast('✅ Caption updated on V' + r.track + ' — text changed in place. ⌘Z / Ctrl+Z undoes it.');
+        } else {
+          toast((scoped ? (range ? '🎯 Restyled range — ' : '🔄 Restyled ') : '🎉 ') + r.placed + ' captions ' +
+                (scoped ? 'on V' : 'added on V') + r.track +
+                (wordCues ? (realWordTiming ? ' · 🎯 word-synced' : ' · audio-synced') : '') +
+                (r.animated ? ' · ' + CPCaptions.getAnimation(anim).name : ''));
+        }
       });
     }).catch(function (e) {
       setCaptionBusy(false);

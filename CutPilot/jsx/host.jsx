@@ -86,6 +86,18 @@ function CP_sequenceFps(seq) {
   return CP_TICKS_PER_SECOND / tb;
 }
 
+/* Current timeline playhead position, in seconds. Lets the panel target the one
+   caption the user parked the playhead on, for a single-line text fix. */
+function CP_getPlayheadSeconds() {
+  try {
+    var seq = CP_activeSequence();
+    var s = null;
+    try { s = seq.getPlayerPosition().seconds; } catch (eP) {}
+    if (s == null || isNaN(s)) return CP_fail('Could not read the playhead position.');
+    return CP_ok({ seconds: s });
+  } catch (e) { return CP_fail(e.message); }
+}
+
 /* Format seconds as a QE-compatible timecode string. */
 function CP_timecode(sec, fps, dropFrame) {
   var sep = dropFrame ? ';' : ':';
@@ -760,6 +772,20 @@ function CP_selectedRange() {
   } catch (e) { return CP_fail(e.message); }
 }
 
+/* Find the clip on a track whose start matches `startSec` (within ~half a frame
+   of tolerance). Needed when overwriting a clip MID-track, where the freshly
+   placed clip is not the last one by index. */
+function CP_clipAtStart(track, startSec) {
+  var best = null, bestD = 1e9;
+  for (var i = 0; i < track.clips.numItems; i++) {
+    var c = track.clips[i], s;
+    try { s = c.start.seconds; } catch (e) { continue; }
+    var d = Math.abs(s - startSec);
+    if (d < bestD) { bestD = d; best = c; }
+  }
+  return (bestD <= 0.25) ? best : null;
+}
+
 function CP_placeCaptionImages(argsJson) {
   try {
     var args = JSON.parse(argsJson);
@@ -812,6 +838,11 @@ function CP_placeCaptionImages(argsJson) {
     }
     var track = seq.videoTracks[trackIndex];
 
+    // EXACT mode (single-caption fix): size each still to its exact slot via
+    // source in/out BEFORE the overwrite, so re-rendering ONE cue mid-track can't
+    // spill past its slot and wipe the following caption. The placed clip is then
+    // located by position (not last-index, which only holds on a fresh track).
+    var exact = !!args.exact;
     var placed = 0, animated = 0;
     for (i = 0; i < args.items.length; i++) {
       var it = args.items[i];
@@ -819,8 +850,6 @@ function CP_placeCaptionImages(argsJson) {
       var pItem = byName[fileName];
       if (!pItem) continue;
       try {
-        track.overwriteClip(pItem, it.start);
-        var clip = track.clips[track.clips.numItems - 1];
         // Trim to the cue end — but NEVER let a caption linger past the next one.
         // A placed still image defaults to a multi-second duration, so without
         // this clamp many captions stay on screen at once (the "stacked wall").
@@ -831,19 +860,33 @@ function CP_placeCaptionImages(argsJson) {
         var nextStart = (i + 1 < args.items.length) ? args.items[i + 1].start : null;
         if (nextStart != null && nextStart < endT) endT = nextStart;
         if (endT <= it.start) endT = it.start + 0.04;
-        try { clip.end = CP_timeFromSeconds(endT); } catch (eEnd) {}
+        var clip = null;
+        if (exact) {
+          try { pItem.setInPoint(CP_ticksFromSeconds(0), 4); } catch (eIn) {}
+          try { pItem.setOutPoint(CP_ticksFromSeconds(endT - it.start), 4); } catch (eOut) {}
+          track.overwriteClip(pItem, it.start);
+          try { pItem.clearInPoint(4); } catch (eCi) {}
+          try { pItem.clearOutPoint(4); } catch (eCo) {}
+          clip = CP_clipAtStart(track, it.start);
+        } else {
+          track.overwriteClip(pItem, it.start);
+          clip = track.clips[track.clips.numItems - 1];
+        }
+        if (clip) { try { clip.end = CP_timeFromSeconds(endT); } catch (eEnd) {} }
         placed++;
-        var spd = (args.animSpeed && args.animSpeed > 0) ? args.animSpeed : 1;
-        var wordSync = (args.anim === 'karaoke' || args.anim === 'reveal');
-        if (args.anim && args.anim !== 'none' && args.anim !== 'typewriter') {
-          if (!wordSync) {
-            // entrance animation per caption (whole-line styles)
-            CP_animateClip(clip, args.anim, spd);
-            animated++;
-          } else if (args.perWordEntrance) {
-            // each word animates in as it's spoken (cleanest with "one by one")
-            CP_animateClip(clip, args.perWordEntranceStyle || 'pop', spd);
-            animated++;
+        if (clip) {
+          var spd = (args.animSpeed && args.animSpeed > 0) ? args.animSpeed : 1;
+          var wordSync = (args.anim === 'karaoke' || args.anim === 'reveal');
+          if (args.anim && args.anim !== 'none' && args.anim !== 'typewriter') {
+            if (!wordSync) {
+              // entrance animation per caption (whole-line styles)
+              CP_animateClip(clip, args.anim, spd);
+              animated++;
+            } else if (args.perWordEntrance) {
+              // each word animates in as it's spoken (cleanest with "one by one")
+              CP_animateClip(clip, args.perWordEntranceStyle || 'pop', spd);
+              animated++;
+            }
           }
         }
       } catch (ePlace) {}
