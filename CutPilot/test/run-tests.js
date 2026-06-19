@@ -481,6 +481,27 @@ console.log('captions.js (audio sync)');
   const rv2 = CPCaptions.buildCaptionFrames(phrase, { anim: 'reveal', wordsPerCue: 3, wordCues: realWords, keyword: { on: true, mode: 'smart' } });
   assert(rv2.every(f => !f.highlightSet), 'reveal: only the active word is lit (no keyword highlightSet)');
 
+  // GAP BRIDGING: word-sync places one short clip per word, so pauses used to
+  // blink the caption off ("missing in some parts"). Each frame is now held
+  // until the next begins, capped so a long silence still clears it.
+  const longGap = [{ start: 0.0, end: 0.5 }, { start: 5.0, end: 5.4 }]; // 4.5s pause
+  CPCaptions.fillFrameGaps(longGap, 2);
+  assert(close(longGap[0].end, 2.5, 1e-9), 'gap fill: a long pause holds the caption only up to the cap (0.5 + 2)');
+  const shortGap = [{ start: 0.0, end: 0.5 }, { start: 0.9, end: 1.2 }];  // 0.4s pause
+  CPCaptions.fillFrameGaps(shortGap, 2);
+  assert(close(shortGap[0].end, 0.9, 1e-9), 'gap fill: a short pause is bridged fully to the next caption (no blink)');
+  const contig = [{ start: 0, end: 1 }, { start: 1, end: 2 }];
+  CPCaptions.fillFrameGaps(contig, 2);
+  assert(close(contig[0].end, 1, 1e-9), 'gap fill: contiguous captions are unchanged (never overlaps)');
+  // and it flows through buildCaptionFrames for real karaoke with a mid pause
+  const pausey = CPCaptions.buildCaptionFrames(
+    [{ start: 0, end: 6, text: 'hello there' }],
+    { anim: 'karaoke', wordsPerCue: 2, wordCues: [
+      { start: 0.0, end: 0.4, text: 'hello' },
+      { start: 5.0, end: 5.5, text: 'there' }   // long pause between the two words
+    ] });
+  assert(pausey[0].end > 0.4, 'karaoke: the first word is held into the pause, not blinked off');
+
   // sanitizeWordCues: never drop a word; force strictly increasing, spaced starts
   const messy = [
     { start: 1.0, end: 1.0, text: 'a' },     // zero-length

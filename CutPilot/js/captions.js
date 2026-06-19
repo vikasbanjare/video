@@ -1032,9 +1032,29 @@
         }
       }
     }
+    // Keep captions on screen through the natural pauses between words/phrases:
+    // word-sync places one short clip per word, so without this the caption
+    // blinks off during every breath/pause ("missing in some parts"). Each frame
+    // is held until the next one starts, capped so a long silence doesn't keep a
+    // stale caption up. Never creates overlaps (end is clamped to the next start).
+    fillFrameGaps(frames, 2);
     return frames;
   }
 
+  /* Hold each frame until the next one begins so brief pauses don't blink the
+     caption off; cap the hold (maxLinger seconds) so a long silence still clears
+     it. Frames must be in start order. Pure + tested. */
+  function fillFrameGaps(frames, maxLinger) {
+    if (!frames || frames.length < 2) return frames;
+    var cap = (maxLinger == null) ? 2 : maxLinger;
+    for (var i = 0; i < frames.length - 1; i++) {
+      var nextStart = frames[i + 1].start;
+      if (nextStart > frames[i].end) {
+        frames[i].end = Math.min(nextStart, frames[i].end + cap);
+      }
+    }
+    return frames;
+  }
 
   /* Gaps (>= threshold seconds) between consecutive cues — used to find stretches
      where the speech engine produced nothing (a "no-speech misfire"), so we can
@@ -1068,6 +1088,7 @@
     parseSRT: parseSRT,
     toSRT: toSRT,
     findCueGaps: findCueGaps,
+    fillFrameGaps: fillFrameGaps,
     isLikelyNonSpeech: isLikelyNonSpeech,
     VIRAL_WORDS: VIRAL_WORDS,
     EMOJI_MAP: EMOJI_MAP,
