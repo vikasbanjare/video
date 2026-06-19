@@ -1010,13 +1010,26 @@
 
   // ---- transcript editor: fix wording / delete junk / merge before captioning ----
   var _treCues = null;
+  var _treMode = 'transcript';   // 'transcript' = edit words; 'captions' = edit placed captions
   function openTranscriptEditor() {
     var cues;
     try { cues = readSelectedTranscript(); }
     catch (e) { return toast(e.message, true); }
+    _treMode = 'transcript';
     _treCues = cues.map(function (c) { return { start: c.start, end: c.end, text: c.text }; });
     renderTrEditor();
     $('tr-editor').classList.remove('hidden');
+  }
+  /* Edit the wording of captions already on the timeline, then re-render them in
+     place. Reuses the transcript editor UI (which lives on the Transcribe tab). */
+  function openCaptionTextEditor() {
+    if (!state.lastCaptionJob || !state.lastCaptionJob.cues) return toast('Add captions first, then you can edit their text.', true);
+    _treMode = 'captions';
+    _treCues = state.lastCaptionJob.cues.map(function (c) { return { start: c.start, end: c.end, text: c.text }; });
+    var tb = document.querySelector('.tab[data-tab="transcribe"]'); if (tb) tb.click();
+    renderTrEditor();
+    $('tr-editor').classList.remove('hidden');
+    toast('✏️ Fix any wording, then tap Save — your captions update in place.');
   }
   function renderTrEditor() {
     var list = $('tre-list'); if (!list) return;
@@ -1086,6 +1099,15 @@
     $('tr-editor').classList.add('hidden');
     refreshMogrtSheetTr(); refreshMogrtEditorTr();
     setTranscriptBar('ok', '✅', 'Words ready — ' + cues.length + ' lines (edited)', 'Change');
+    // editing placed captions: update them in place with the corrected wording
+    if (_treMode === 'captions' && state.lastCaptionJob) {
+      _treMode = 'transcript';
+      state.lastCaptionJob.cues = cues;
+      var tb = document.querySelector('.tab[data-tab="captions"]'); if (tb) tb.click();
+      showView('style');
+      runCaptionPipeline(cues, { replaceTrack: state.lastCaptionJob.track });
+      return;
+    }
     toast('✓ Saved your edits — ' + cues.length + ' lines. Now add captions.');
   }
 
@@ -2321,6 +2343,9 @@
     runCaptionPipeline(cues, null);
   });
 
+  // ---- edit the wording of captions already on the timeline ----
+  if ($('btn-cap-edit')) $('btn-cap-edit').addEventListener('click', openCaptionTextEditor);
+
   // ---- restyle EVERY placed caption at once with the current style/template ----
   if ($('btn-cap-restyle')) $('btn-cap-restyle').addEventListener('click', function () {
     if (!state.lastCaptionJob || !state.lastCaptionJob.cues) {
@@ -2350,13 +2375,15 @@
   /* Disable the caption buttons while a render/place job is running. */
   function setCaptionBusy(busy) {
     if ($('btn-magic')) $('btn-magic').disabled = busy;
+    if ($('btn-cap-edit')) $('btn-cap-edit').disabled = busy;
     if ($('btn-cap-restyle')) $('btn-cap-restyle').disabled = busy;
     if ($('btn-cap-segment')) $('btn-cap-segment').disabled = busy;
   }
 
-  /* Reveal the restyle buttons once captions have been placed. */
+  /* Reveal the edit/restyle buttons once captions have been placed. */
   function reflectCaptionsPlaced() {
     var on = !!(state.lastCaptionJob && state.lastCaptionJob.cues);
+    if ($('btn-cap-edit')) $('btn-cap-edit').classList.toggle('hidden', !on);
     if ($('btn-cap-restyle')) $('btn-cap-restyle').classList.toggle('hidden', !on);
     if ($('btn-cap-segment')) $('btn-cap-segment').classList.toggle('hidden', !on);
     if ($('cap-restyle-hint')) $('cap-restyle-hint').classList.toggle('hidden', !on);
