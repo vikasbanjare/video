@@ -806,6 +806,7 @@
       state.env = env;
       $('env-status').textContent = env.sequenceName + ' · ' + env.width + '×' + env.height;
       $('env-status').className = 'env-status ok';
+      restoreLastCaptionJob();   // bring back edit/restyle buttons for this sequence
     }).catch(function (e) {
       $('env-status').textContent = e.message;
       $('env-status').className = 'env-status err';
@@ -2343,6 +2344,28 @@
     runCaptionPipeline(cues, null);
   });
 
+  /* Persist the last caption job so the edit/restyle buttons stay available even
+     after the panel/Premiere is reopened — editing is never "lost" once you've
+     generated. Keyed by sequence so it doesn't leak across projects. */
+  function saveLastCaptionJob() {
+    try {
+      if (!state.lastCaptionJob) return;
+      localStorage.setItem('cutpilot.lastcap', JSON.stringify({
+        cues: state.lastCaptionJob.cues, track: state.lastCaptionJob.track,
+        seq: (state.env && state.env.sequenceName) || ''
+      }));
+    } catch (e) {}
+  }
+  function restoreLastCaptionJob() {
+    try {
+      var j = JSON.parse(localStorage.getItem('cutpilot.lastcap') || 'null');
+      if (j && j.cues && j.cues.length && (!j.seq || !state.env || j.seq === state.env.sequenceName)) {
+        state.lastCaptionJob = { cues: j.cues, track: j.track };
+        reflectCaptionsPlaced();
+      }
+    } catch (e) {}
+  }
+
   // ---- native, Premiere-editable caption track (plain text, no karaoke) ----
   if ($('btn-native-main')) $('btn-native-main').addEventListener('click', applyNative);
 
@@ -2474,7 +2497,7 @@
         setCaptionBusy(false);
         capProgress(null);
         // remember the full-video job (don't let a segment restyle shrink it)
-        if (!range) state.lastCaptionJob = { cues: cues, track: r.track };
+        if (!range) { state.lastCaptionJob = { cues: cues, track: r.track }; saveLastCaptionJob(); }
         reflectCaptionsPlaced();
         toast((scoped ? (range ? '🎯 Restyled range — ' : '🔄 Restyled ') : '🎉 ') + r.placed + ' captions ' +
               (scoped ? 'on V' : 'added on V') + r.track +
