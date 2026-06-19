@@ -1507,9 +1507,11 @@
     $('c-kw').checked = !!p.keyword;
     $('c-kw-mode-wrap').classList.toggle('hidden', !p.keyword);
     $('c-hl-scale').value = Math.round((p.highlightScale || 1) * 100);
-    // pro controls that track the template: spoken-word pop + box roundness
+    // pro controls that track the template: spoken-word pop + box roundness + dim
     if ($('c-wordpop')) $('c-wordpop').value = Math.round((p.highlightScale || 1) * 100);
     if ($('c-box-radius')) $('c-box-radius').value = (p.boxRadius != null ? p.boxRadius : 12);
+    if ($('c-dimupcoming')) $('c-dimupcoming').checked = (p.upcomingOpacity != null && p.upcomingOpacity < 1);
+    if ($('c-box-opacity')) $('c-box-opacity').value = Math.round(((p.boxOpacity != null ? p.boxOpacity : 1)) * 100);
     $('c-speaker').checked = !!p.speaker;
     var aId = CPCaptions.animIdForConcept(p.anim);
     selectAnim(aId);
@@ -1601,7 +1603,7 @@
                'c-wordpop', 'c-multicolor', 'c-hl2', 'c-hl3', 'c-grad', 'c-fill2',
                'c-box-opacity', 'c-box-pad', 'c-box-radius', 'c-shadow-dx', 'c-shadow-dy',
                'c-wordspace', 'c-linegap', 'c-maxwidth', 'c-emphasize', 'c-strippunct',
-               'c-animspeed', 'c-perword', 'c-perword-style',
+               'c-animspeed', 'c-perword', 'c-perword-style', 'c-dimupcoming',
                // smart text + box gradient
                'c-boxgrad', 'c-box2', 'c-case', 'c-censor', 'c-numon', 'c-num',
                'c-brandon', 'c-brand', 'c-brand-words'];
@@ -2042,6 +2044,7 @@
       animSpeed: cnum('c-animspeed', 100) / 100,
       perWordEntrance: cchk('c-perword'),
       perWordEntranceStyle: ($('c-perword-style') ? $('c-perword-style').value : 'pop'),
+      upcomingOpacity: cchk('c-dimupcoming') ? 0.4 : 1,
       // --- smart text + segment ---
       boxColor2: cchk('c-boxgrad') ? $('c-box2').value : null,
       numberColor: cchk('c-numon') ? $('c-num').value : null,

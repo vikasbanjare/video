@@ -522,6 +522,21 @@
       fontSize: 62, fill: '#FFFFFF', highlight: '#2D7CFF', highlightStyle: 'box', boxRadius: 12,
       glow: '#000000', stroke: null, strokeWidth: 0,
       uppercase: false, wordsPerCue: 4, anim: 'karaoke' },
+    // Subs Light — light pill, dark text, spoken word blue, upcoming words dimmed
+    // (matches the uploaded "SUBS 1" reference exactly).
+    { id: 'pro-subs-light', name: 'Subs Light', category: '⭐ Premium', popularity: 100, layout: 'bottom', keyword: false, highlightScale: 1,
+      font: 'Montserrat', fallbackFonts: ['Poppins', 'Inter', 'Arial'],
+      fontSize: 58, fill: '#15181E', highlight: '#2D7CFF', highlightStyle: 'color',
+      boxColor: '#F1F2F4', boxRadius: 16, boxOpacity: 1, upcomingOpacity: 0.4,
+      glow: null, stroke: null, strokeWidth: 0,
+      uppercase: false, wordsPerCue: 3, anim: 'karaoke' },
+    // Clean Glow — bold white, soft glow, no box, spoken word pops (matches the
+    // uploaded "SUBS 2" reference).
+    { id: 'pro-clean-glow', name: 'Clean Glow', category: '⭐ Premium', popularity: 99, layout: 'center', keyword: false, highlightScale: 1.12,
+      font: 'Montserrat', fallbackFonts: ['Poppins', 'Inter', 'Arial Black'],
+      fontSize: 64, fill: '#FFFFFF', highlight: '#FFFFFF', highlightStyle: 'color',
+      glow: '#000000', glowBlur: 0.5, stroke: null, strokeWidth: 0, boxColor: null,
+      upcomingOpacity: 0.55, uppercase: false, wordsPerCue: 3, anim: 'karaoke' },
     // Pulse — UPPERCASE clean sans, key word on a blue pill (Captions.ai "Pulse")
     { id: 'pro-pulse', name: 'Pulse', category: '⭐ Premium', popularity: 99, layout: 'center', keyword: true, highlightScale: 1.1,
       font: 'Montserrat', fallbackFonts: ['Poppins', 'Arial Black'],

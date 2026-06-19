@@ -80,6 +80,8 @@
       numberColor: (o.numberColor !== undefined) ? o.numberColor : (preset.numberColor || null), // colour numbers/money
       brandColor: (o.brandColor !== undefined) ? o.brandColor : (preset.brandColor || null),      // colour brand keywords
       brandWords: o.brandWords || preset.brandWords || null,
+      // word-sync: fade words not yet spoken (Captions.ai 3-state look). 1 = off.
+      upcomingOpacity: (o.upcomingOpacity != null) ? o.upcomingOpacity : (preset.upcomingOpacity != null ? preset.upcomingOpacity : 1),
       weight: (o.weight != null) ? o.weight : (preset.weight || 800),
       align: o.align || preset.align || 'center',
       uppercase: o.uppercase != null ? o.uppercase : preset.uppercase,
@@ -362,6 +364,11 @@
           ctx.strokeText(it.word, x, y);
         }
         ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+        // fade words not yet spoken (3-state karaoke: past=full, current=highlight, future=dim)
+        var prevA = ctx.globalAlpha;
+        if (wordSync && style.upcomingOpacity < 1 && frame.active != null && mi > frame.active && !it.hl) {
+          ctx.globalAlpha = style.upcomingOpacity;
+        }
         // text colour: contrast on solid shapes; the highlight colour on
         // colour/underline/circle; otherwise the body fill (gradient if set)
         if (filled) {
@@ -374,6 +381,7 @@
           ctx.fillStyle = rc ? rc : textFill(y - it.px * 0.72, it.px * 0.8, spkBody || style.fill, style.fill2);
         }
         ctx.fillText(it.word, x, y);
+        ctx.globalAlpha = prevA;
         mi++;
         x += it.w + spaceW;
       }

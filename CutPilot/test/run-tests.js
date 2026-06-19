@@ -311,6 +311,9 @@ console.log('render.js (pure layout helpers)');
   assert(smart.boxColor2 === '#111', 'styleForFrame carries box gradient 2nd colour');
   assert(smart.numberColor === '#0f0' && smart.brandColor === '#f0f', 'styleForFrame carries number + brand colours');
   assert(smart.brandWords.length === 2, 'styleForFrame carries the brand keyword list');
+  assert(CPRender.styleForFrame(base2, 1080, { upcomingOpacity: 0.4 }).upcomingOpacity === 0.4,
+         'styleForFrame carries the dim-upcoming opacity (3-state karaoke)');
+  assert(CPRender.styleForFrame(base2, 1080, {}).upcomingOpacity === 1, 'dim-upcoming defaults to off (1)');
 
   // caption legibility checker
   assert(Math.round(CPRender.contrastRatio('#000000', '#FFFFFF')) === 21, 'black/white contrast ratio is 21');
