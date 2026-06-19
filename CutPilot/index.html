@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.94</span>
+    <span class="ver" id="ver">v0.9.95</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -320,6 +320,11 @@
                 <label class="sw">Gradient bottom<span class="cp-mount" data-for="c-fill2"></span><input type="hidden" id="c-fill2" value="#9aa7ff"></label>
               </div>
 
+              <label class="check"><input type="checkbox" id="c-boxgrad"> 🟦 Gradient background box</label>
+              <div class="swatches" id="c-boxgrad-opts" style="display:none">
+                <label class="sw">Box bottom<span class="cp-mount" data-for="c-box2"></span><input type="hidden" id="c-box2" value="#1b1b1b"></label>
+              </div>
+
               <div class="ctrl-row">
                 <label>Box roundness <span class="val" id="c-box-radius-val"></span>
                   <input type="range" id="c-box-radius" min="0" max="60" value="12">
@@ -347,9 +352,43 @@
               <label style="margin-top:6px">Animation speed <span class="val" id="c-animspeed-val"></span>
                 <input type="range" id="c-animspeed" min="50" max="200" value="100">
               </label>
-              <label class="check"><input type="checkbox" id="c-perword"> 🎬 Pop each word in as it's spoken</label>
+              <label class="check"><input type="checkbox" id="c-perword"> 🎬 Animate each word in as it's spoken</label>
+              <label id="c-perword-style-wrap" style="display:none">Word entrance
+                <select id="c-perword-style">
+                  <option value="pop">Pop</option>
+                  <option value="scale">Scale</option>
+                  <option value="slide">Slide up</option>
+                  <option value="bounce">Bounce</option>
+                  <option value="zoom">Zoom</option>
+                  <option value="blurdissolve">Blur in</option>
+                </select>
+              </label>
               <label class="check"><input type="checkbox" id="c-emphasize"> 🔠 Auto-enlarge punchy words <span class="dim">(million, secret, now…)</span></label>
               <label class="check"><input type="checkbox" id="c-strippunct"> 🧹 Remove punctuation <span class="dim">(clean look: no . , ?)</span></label>
+            </div>
+
+            <!-- 🎯 SMART TEXT -->
+            <div class="cust-group">
+              <div class="cust-group-title">🎯 Smart text <span class="dim">— emphasis &amp; clean-up</span></div>
+              <label>Text case
+                <select id="c-case">
+                  <option value="original">Original</option>
+                  <option value="upper">UPPERCASE</option>
+                  <option value="title">Title Case</option>
+                  <option value="sentence">Sentence case</option>
+                  <option value="lower">lowercase</option>
+                </select>
+              </label>
+              <label class="check"><input type="checkbox" id="c-censor"> 🤬 Censor profanity <span class="dim">(f***, s***)</span></label>
+              <label class="check"><input type="checkbox" id="c-numon"> 🔢 Auto-colour numbers &amp; money <span class="dim">($1M, 50%, 2026)</span></label>
+              <div class="swatches" id="c-num-opts" style="display:none">
+                <label class="sw">Number colour<span class="cp-mount" data-for="c-num"></span><input type="hidden" id="c-num" value="#22C55E"></label>
+              </div>
+              <label class="check"><input type="checkbox" id="c-brandon"> ⭐ Colour my keywords</label>
+              <div id="c-brand-opts" style="display:none">
+                <input type="text" id="c-brand-words" placeholder="comma-separated, e.g. brandname, product, free">
+                <div class="swatches"><label class="sw">Keyword colour<span class="cp-mount" data-for="c-brand"></span><input type="hidden" id="c-brand" value="#FF3B6B"></label></div>
+              </div>
             </div>
 
             <!-- ➕ EXTRAS -->
@@ -386,7 +425,8 @@
         <div id="legibility-note" class="legibility-note hidden"></div>
         <button id="btn-magic" class="hero-btn">✨ Add captions</button>
         <button id="btn-cap-restyle" class="hero-btn alt hidden">🔄 Apply this style to all captions</button>
-        <p class="hint hidden" id="cap-restyle-hint">Your captions are on the timeline. Pick or tweak any style above, then tap this to restyle them all at once.</p>
+        <button id="btn-cap-segment" class="hero-btn alt hidden">🎯 Restyle just the selected range</button>
+        <p class="hint hidden" id="cap-restyle-hint">Captions are on your timeline. <b>Apply to all</b> restyles everything; to make one section different, select that clip/range on the timeline, pick a style, then <b>Restyle selected range</b>.</p>
       </div>
 
       <!-- ===== PREMIERE TEMPLATE (.mogrt) — the Editor section ===== -->
@@ -695,7 +735,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.94 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.95 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

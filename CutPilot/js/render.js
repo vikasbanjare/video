@@ -76,6 +76,10 @@
       shadowDY: Math.round(((o.shadowDY != null ? o.shadowDY : (preset.shadowDY || 0))) * scale),
       wordSpacing: Math.round(((o.wordSpacing != null ? o.wordSpacing : (preset.wordSpacing || 0))) * scale),
       emphasizeWords: (o.emphasizeWords != null) ? o.emphasizeWords : (preset.emphasizeWords != null ? preset.emphasizeWords : false),
+      boxColor2: (o.boxColor2 !== undefined) ? o.boxColor2 : (preset.boxColor2 || null),   // box gradient 2nd colour
+      numberColor: (o.numberColor !== undefined) ? o.numberColor : (preset.numberColor || null), // colour numbers/money
+      brandColor: (o.brandColor !== undefined) ? o.brandColor : (preset.brandColor || null),      // colour brand keywords
+      brandWords: o.brandWords || preset.brandWords || null,
       weight: (o.weight != null) ? o.weight : (preset.weight || 800),
       align: o.align || preset.align || 'center',
       uppercase: o.uppercase != null ? o.uppercase : preset.uppercase,
@@ -249,6 +253,19 @@
       g.addColorStop(0, c1); g.addColorStop(1, c2);
       return g;
     }
+    // smart per-word colours: brand keywords + numbers/money/percent
+    var brandSet = {};
+    if (style.brandWords) for (var bwI = 0; bwI < style.brandWords.length; bwI++) {
+      var bw = String(style.brandWords[bwI]).toLowerCase().replace(/[^a-z0-9']/g, '');
+      if (bw) brandSet[bw] = 1;
+    }
+    function bareWord(w) { return String(w).toLowerCase().replace(/[^a-z0-9']/g, ''); }
+    function isNumberish(w) { return /\d/.test(String(w)); }   // 2026, $1M, 50%, 10x, 1,000
+    function restColorFor(word) {
+      if (style.brandColor && brandSet[bareWord(word)]) return style.brandColor;
+      if (style.numberColor && isNumberish(word)) return style.numberColor;
+      return null;   // fall back to the body fill / gradient
+    }
 
     // horizontal alignment within the safe text column
     var margin = (W - maxW) / 2;
@@ -260,14 +277,20 @@
             : (W - line.width) / 2;
       var y = baseY + li * lineStep;
 
-      // background box behind the whole line (opacity + padding configurable)
+      // background box behind the whole line (opacity + padding + gradient)
       if (style.boxColor) {
         var padX = base * 0.32 * style.boxPad, padY = base * 0.22 * style.boxPad;
+        var bxTop = y - line.height - padY + line.height * 0.18, bxH = line.height + padY * 2;
         ctx.save();
         ctx.globalAlpha = style.boxOpacity;
-        ctx.fillStyle = style.boxColor;
-        roundRect(ctx, x - padX, y - line.height - padY + line.height * 0.18,
-                  line.width + padX * 2, line.height + padY * 2, style.boxRadius);
+        if (style.boxColor2) {
+          var bg = ctx.createLinearGradient(0, bxTop, 0, bxTop + bxH);
+          bg.addColorStop(0, style.boxColor); bg.addColorStop(1, style.boxColor2);
+          ctx.fillStyle = bg;
+        } else {
+          ctx.fillStyle = style.boxColor;
+        }
+        roundRect(ctx, x - padX, bxTop, line.width + padX * 2, bxH, style.boxRadius);
         ctx.fill();
         ctx.restore();
       }
@@ -346,7 +369,9 @@
         } else if (it.hl && (shape === 'color' || shape === 'underline' || shape === 'circle')) {
           ctx.fillStyle = hlColor;
         } else {
-          ctx.fillStyle = textFill(y - it.px * 0.72, it.px * 0.8, spkBody || style.fill, style.fill2);
+          // smart colour for numbers/brand words, else the body fill (gradient if set)
+          var rc = restColorFor(it.word);
+          ctx.fillStyle = rc ? rc : textFill(y - it.px * 0.72, it.px * 0.8, spkBody || style.fill, style.fill2);
         }
         ctx.fillText(it.word, x, y);
         mi++;

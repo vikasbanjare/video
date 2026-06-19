@@ -106,6 +106,34 @@
       .replace(/[\s"'“”‘’.,!?;:)\]}…—–]+$/, '');
   }
 
+  /* Apply a display case to a word. 'title' caps each word; 'lower' lowercases;
+     'sentence' lowercases (caller caps the first word of the line). */
+  function caseWord(w, mode) {
+    var s = String(w);
+    if (mode === 'lower' || mode === 'sentence') return s.toLowerCase();
+    if (mode === 'title') return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+    return s;
+  }
+  function caseWords(words, mode) {
+    var out = words.map(function (w) { return caseWord(w, mode); });
+    if (mode === 'sentence') for (var i = 0; i < out.length; i++) {
+      if (/[a-z]/i.test(out[i])) { out[i] = out[i].charAt(0).toUpperCase() + out[i].slice(1); break; }
+    }
+    return out;
+  }
+
+  /* Light profanity censor — keep the first letter, star the rest, preserving
+     the original word's length so timing/animation is unaffected. */
+  var PROFANITY = {
+    fuck: 1, shit: 1, bitch: 1, asshole: 1, bastard: 1, dick: 1, cunt: 1,
+    pussy: 1, slut: 1, whore: 1, damn: 1, crap: 1, fucking: 1, motherfucker: 1
+  };
+  function censorWord(w) {
+    var bare = String(w).toLowerCase().replace(/[^a-z]/g, '');
+    if (!PROFANITY[bare]) return w;
+    return String(w).replace(/[A-Za-z]/g, function (ch, idx) { return idx === 0 ? ch : '*'; });
+  }
+
   /*
    * Explode sentence-level cues into word-by-word (or N-words-per-cue) cues
    * with timing interpolated by word length. This is what turns plain
@@ -1050,6 +1078,24 @@
         if (frames[i].text != null) {
           frames[i].text = frames[i].text.split(/\s+/).map(stripWordPunct).join(' ').replace(/\s+/g, ' ').trim();
         }
+      }
+    }
+
+    // Display case (Title / Sentence / lower). 'upper' is handled by the planners
+    // via opts.uppercase; 'original' leaves the words as transcribed.
+    var tc = opts.textCase;
+    if (tc && tc !== 'original' && tc !== 'upper') {
+      for (i = 0; i < frames.length; i++) {
+        if (frames[i].words) frames[i].words = caseWords(frames[i].words, tc);
+        if (frames[i].text != null) frames[i].text = caseWords(frames[i].text.split(/\s+/), tc).join(' ');
+      }
+    }
+
+    // Profanity censor (s***, f***) — preserves length so timing is unaffected.
+    if (opts.censor) {
+      for (i = 0; i < frames.length; i++) {
+        if (frames[i].words) frames[i].words = frames[i].words.map(censorWord);
+        if (frames[i].text != null) frames[i].text = frames[i].text.split(/\s+/).map(censorWord).join(' ');
       }
     }
 

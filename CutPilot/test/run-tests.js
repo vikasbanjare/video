@@ -305,6 +305,13 @@ console.log('render.js (pure layout helpers)');
          defStyle.maxWidthPct === 0.86 && defStyle.lineGap === 1.18 && defStyle.emphasizeWords === false,
          'styleForFrame defaults keep the original look (no gradient, opaque box, 0.86 width)');
 
+  // smart per-word style fields flow through styleForFrame
+  const smart = CPRender.styleForFrame(base2, 1080, {
+    boxColor2: '#111', numberColor: '#0f0', brandColor: '#f0f', brandWords: ['acme', 'free'] });
+  assert(smart.boxColor2 === '#111', 'styleForFrame carries box gradient 2nd colour');
+  assert(smart.numberColor === '#0f0' && smart.brandColor === '#f0f', 'styleForFrame carries number + brand colours');
+  assert(smart.brandWords.length === 2, 'styleForFrame carries the brand keyword list');
+
   // caption legibility checker
   assert(Math.round(CPRender.contrastRatio('#000000', '#FFFFFF')) === 21, 'black/white contrast ratio is 21');
   assert(CPRender.legibilityWarning({ fill: '#FFFFFF', stroke: null, strokeWidth: 0, boxColor: null, glow: null }),
@@ -394,6 +401,18 @@ console.log('captions.js (buildCaptionFrames)');
   const punctOff = CPCaptions.buildCaptionFrames(
     [{ start: 0, end: 2, text: "Wait, stop!" }], { anim: 'fade', wordsPerCue: 0 });
   assert(punctOff[0].words.join(' ') === 'Wait, stop!', 'punctuation kept when cleanup is off');
+
+  // text case: Title / lowercase / Sentence
+  const tcTitle = CPCaptions.buildCaptionFrames([{ start: 0, end: 2, text: 'make MORE money' }], { anim: 'fade', wordsPerCue: 0, textCase: 'title' });
+  assert(tcTitle[0].words.join(' ') === 'Make More Money', 'textCase title caps each word');
+  const tcLower = CPCaptions.buildCaptionFrames([{ start: 0, end: 2, text: 'MAKE MONEY' }], { anim: 'fade', wordsPerCue: 0, textCase: 'lower' });
+  assert(tcLower[0].words.join(' ') === 'make money', 'textCase lower lowercases all');
+  const tcSent = CPCaptions.buildCaptionFrames([{ start: 0, end: 2, text: 'MAKE money NOW' }], { anim: 'fade', wordsPerCue: 0, textCase: 'sentence' });
+  assert(tcSent[0].words.join(' ') === 'Make money now', 'textCase sentence caps only the first word');
+
+  // profanity censor keeps first letter + length
+  const cen = CPCaptions.buildCaptionFrames([{ start: 0, end: 2, text: 'this is shit' }], { anim: 'fade', wordsPerCue: 0, censor: true });
+  assert(cen[0].words.join(' ') === 'this is s***', 'censor stars profanity but keeps the first letter');
 
   const tw = CPCaptions.buildCaptionFrames(cues, { anim: 'typewriter', uppercase: true });
   assert(tw[tw.length - 1].text === 'GET MORE VIEWS NOW', 'typewriter mode accumulates uppercased text');

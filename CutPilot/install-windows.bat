@@ -4,7 +4,7 @@ REM Enables CEP debug mode, clears the CEP cache (so updates actually show),
 REM and copies the plugin into Premiere's extensions folder.
 
 echo.
-echo   Installing CutPilot v0.9.94 for Premiere Pro...
+echo   Installing CutPilot v0.9.95 for Premiere Pro...
 echo.
 echo   QUIT Premiere Pro completely first, then press any key.
 pause >nul
@@ -25,7 +25,7 @@ if exist "%DEST%\index.html" (
   echo   Installed.
   echo   1. Open Premiere Pro
   echo   2. Window ^> Extensions ^> CutPilot
-  echo   3. Check the panel top says v0.9.94 (confirms the new build loaded).
+  echo   3. Check the panel top says v0.9.95 (confirms the new build loaded).
 ) else (
   echo   Copy failed. Manually copy this folder to: %DEST%
 )

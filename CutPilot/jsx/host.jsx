@@ -735,6 +735,31 @@ function CP_animateClip(clip, anim, speed) {
  * the chosen entry animation per clip.
  * argsJson: { items:[{path,start,end}], anim }
  */
+/* Sequence-time range [start,end] covered by the currently selected timeline
+   clips (video or audio). Used by "restyle just this segment". */
+function CP_selectedRange() {
+  try {
+    var seq = CP_activeSequence();
+    var lo = null, hi = null;
+    function scan(tracks) {
+      for (var t = 0; t < tracks.numTracks; t++) {
+        var tr = tracks[t];
+        for (var i = 0; i < tr.clips.numItems; i++) {
+          var c = tr.clips[i];
+          if (c && c.isSelected && c.isSelected()) {
+            var s = c.start.seconds, e = c.end.seconds;
+            if (lo === null || s < lo) lo = s;
+            if (hi === null || e > hi) hi = e;
+          }
+        }
+      }
+    }
+    scan(seq.videoTracks); scan(seq.audioTracks);
+    if (lo === null) return CP_fail('Select the clip (or range) on the timeline you want to restyle, then try again.');
+    return CP_ok({ start: lo, end: hi });
+  } catch (e) { return CP_fail(e.message); }
+}
+
 function CP_placeCaptionImages(argsJson) {
   try {
     var args = JSON.parse(argsJson);
@@ -753,7 +778,12 @@ function CP_placeCaptionImages(argsJson) {
     }
 
     var trackIndex;
-    if (args.replaceTrack != null && args.replaceTrack >= 1 && args.replaceTrack <= seq.videoTracks.numTracks) {
+    if (args.overwriteOnTrack != null && args.overwriteOnTrack >= 1 && args.overwriteOnTrack <= seq.videoTracks.numTracks) {
+      // Segment restyle: place the new (differently styled) caption clips onto the
+      // existing caption track, overwriting the old ones only where they land —
+      // captions outside the selected range are left exactly as they were.
+      trackIndex = args.overwriteOnTrack - 1;
+    } else if (args.replaceTrack != null && args.replaceTrack >= 1 && args.replaceTrack <= seq.videoTracks.numTracks) {
       // Restyle "apply to all": reuse the existing caption track, but first clear
       // only CutPilot's own caption frames (named cap_*.png) off it — so captions
       // never stack across restyles, and any other clip the user put there is safe.
@@ -811,8 +841,8 @@ function CP_placeCaptionImages(argsJson) {
             CP_animateClip(clip, args.anim, spd);
             animated++;
           } else if (args.perWordEntrance) {
-            // each word pops in as it's spoken (cleanest with "one by one")
-            CP_animateClip(clip, 'pop', spd);
+            // each word animates in as it's spoken (cleanest with "one by one")
+            CP_animateClip(clip, args.perWordEntranceStyle || 'pop', spd);
             animated++;
           }
         }

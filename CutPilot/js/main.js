@@ -1601,7 +1601,10 @@
                'c-wordpop', 'c-multicolor', 'c-hl2', 'c-hl3', 'c-grad', 'c-fill2',
                'c-box-opacity', 'c-box-pad', 'c-box-radius', 'c-shadow-dx', 'c-shadow-dy',
                'c-wordspace', 'c-linegap', 'c-maxwidth', 'c-emphasize', 'c-strippunct',
-               'c-animspeed', 'c-perword'];
+               'c-animspeed', 'c-perword', 'c-perword-style',
+               // smart text + box gradient
+               'c-boxgrad', 'c-box2', 'c-case', 'c-censor', 'c-numon', 'c-num',
+               'c-brandon', 'c-brand', 'c-brand-words'];
     ids.forEach(function (id) {
       if (!$(id)) return;
       $(id).addEventListener('input', function () { updateVals(); renderPreview(); });
@@ -1609,7 +1612,7 @@
     });
     // Mount the custom palette pickers over the (hidden) colour inputs so colours
     // are pickable inside Premiere's panel, where the native OS box won't open.
-    ['c-fill', 'c-hl', 'c-stroke', 'c-box', 'c-shadow', 'c-fill2', 'c-hl2', 'c-hl3'].forEach(function (id) {
+    ['c-fill', 'c-hl', 'c-stroke', 'c-box', 'c-shadow', 'c-fill2', 'c-hl2', 'c-hl3', 'c-box2', 'c-num', 'c-brand'].forEach(function (id) {
       var mount = document.querySelector('.cp-mount[data-for="' + id + '"]'), inp = $(id);
       if (!mount || !inp || mount.firstChild) return;
       var f = makeColorField(inp.value, function (v) { inp.value = v; inp.dispatchEvent(new Event('input')); });
@@ -1671,6 +1674,12 @@
     if ($('c-multicolor')) $('c-multicolor').addEventListener('change', function () {
       if ($('c-multicolor-opts')) $('c-multicolor-opts').style.display = this.checked ? '' : 'none';
       renderPreview();
+    });
+    // pro / smart-text reveal-on-toggle groups
+    [['c-boxgrad', 'c-boxgrad-opts'], ['c-numon', 'c-num-opts'], ['c-brandon', 'c-brand-opts'],
+     ['c-perword', 'c-perword-style-wrap']].forEach(function (pair) {
+      var t = $(pair[0]), opt = $(pair[1]);
+      if (t && opt) t.addEventListener('change', function () { opt.style.display = this.checked ? '' : 'none'; renderPreview(); });
     });
     // prominent Words-per-caption stepper
     $('wc-minus').addEventListener('click', function () {
@@ -2010,7 +2019,7 @@
       boxColor: $('c-box-on').checked ? $('c-box').value : null,
       highlightScale: pop / 100,
       highlightStyle: readHlStyle(),
-      uppercase: $('c-upper').checked,
+      uppercase: $('c-upper').checked || ($('c-case') && $('c-case').value === 'upper'),
       letterSpacing: parseInt($('c-letter').value, 10) || 0,
       weight: parseInt($('c-weight').value, 10) || 800,
       align: readAlign(),
@@ -2031,7 +2040,15 @@
       emphasizeWords: cchk('c-emphasize'),
       stripPunctuation: cchk('c-strippunct'),
       animSpeed: cnum('c-animspeed', 100) / 100,
-      perWordEntrance: cchk('c-perword')
+      perWordEntrance: cchk('c-perword'),
+      perWordEntranceStyle: ($('c-perword-style') ? $('c-perword-style').value : 'pop'),
+      // --- smart text + segment ---
+      boxColor2: cchk('c-boxgrad') ? $('c-box2').value : null,
+      numberColor: cchk('c-numon') ? $('c-num').value : null,
+      brandColor: cchk('c-brandon') ? $('c-brand').value : null,
+      brandWords: cchk('c-brandon') ? ($('c-brand-words').value || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean) : null,
+      textCase: ($('c-case') ? $('c-case').value : 'original'),
+      censor: cchk('c-censor')
     };
   }
   function readAlign() {
@@ -2223,9 +2240,11 @@
     cap.style.textShadow = shadow;
 
     var ov = readOverrides();
-    // background box (opacity + padding + roundness)
+    // background box (opacity + padding + roundness + gradient)
     if (st.boxColor) {
-      cap.style.background = hexToRgba(st.boxColor, ov.boxOpacity);
+      cap.style.background = ov.boxColor2
+        ? ('linear-gradient(' + hexToRgba(st.boxColor, ov.boxOpacity) + ',' + hexToRgba(ov.boxColor2, ov.boxOpacity) + ')')
+        : hexToRgba(st.boxColor, ov.boxOpacity);
       cap.style.borderRadius = Math.round((st.boxRadius || 10) * frameH / 1080) + 'px';
       cap.style.padding = Math.round(2 * ov.boxPad) + 'px ' + Math.round(px * 0.3 * ov.boxPad) + 'px';
     } else {
@@ -2294,7 +2313,13 @@
 
     // show exactly the number of words the slider selects (0 = full line)
     var kwOn = $('c-kw').checked;
-    function cased(w) { return caps ? w.toUpperCase() : (w.charAt(0) + w.slice(1).toLowerCase()); }
+    function cased(w) {
+      var tc = ov.textCase;
+      if (caps || tc === 'upper') return w.toUpperCase();
+      if (tc === 'lower') return w.toLowerCase();
+      if (tc === 'title' || tc === 'sentence') return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+      return w.charAt(0) + w.slice(1).toLowerCase();
+    }
     var nShow = (words === 0) ? 6 : Math.min(words, SAMPLE_SENTENCE.length);
     var shown = SAMPLE_SENTENCE.slice(0, Math.max(1, nShow)).map(cased);
 
@@ -2372,19 +2397,39 @@
     if (!state.lastCaptionJob || !state.lastCaptionJob.cues) {
       return toast('Add captions first — then this restyles them all at once.', true);
     }
-    runCaptionPipeline(state.lastCaptionJob.cues, state.lastCaptionJob.track);
+    runCaptionPipeline(state.lastCaptionJob.cues, { replaceTrack: state.lastCaptionJob.track });
   });
 
-  /* Disable both caption buttons while a render/place job is running. */
+  // ---- restyle ONLY the captions inside the selected timeline range ----
+  if ($('btn-cap-segment')) $('btn-cap-segment').addEventListener('click', function () {
+    if (!state.lastCaptionJob || !state.lastCaptionJob.cues) {
+      return toast('Add captions first, then select a clip/range and use this.', true);
+    }
+    setCaptionBusy(true);
+    CPBridge.callHost('CP_selectedRange', {}).then(function (rng) {
+      setCaptionBusy(false);
+      runCaptionPipeline(state.lastCaptionJob.cues, {
+        overwriteOnTrack: state.lastCaptionJob.track,
+        range: { start: rng.start, end: rng.end }
+      });
+    }).catch(function (e) {
+      setCaptionBusy(false);
+      toast(e.message || 'Select a clip/range on the timeline first.', true);
+    });
+  });
+
+  /* Disable the caption buttons while a render/place job is running. */
   function setCaptionBusy(busy) {
     if ($('btn-magic')) $('btn-magic').disabled = busy;
     if ($('btn-cap-restyle')) $('btn-cap-restyle').disabled = busy;
+    if ($('btn-cap-segment')) $('btn-cap-segment').disabled = busy;
   }
 
-  /* Reveal the "apply to all" button once captions have been placed. */
+  /* Reveal the restyle buttons once captions have been placed. */
   function reflectCaptionsPlaced() {
     var on = !!(state.lastCaptionJob && state.lastCaptionJob.cues);
     if ($('btn-cap-restyle')) $('btn-cap-restyle').classList.toggle('hidden', !on);
+    if ($('btn-cap-segment')) $('btn-cap-segment').classList.toggle('hidden', !on);
     if ($('cap-restyle-hint')) $('cap-restyle-hint').classList.toggle('hidden', !on);
   }
 
@@ -2394,8 +2439,18 @@
    * already on that track are restyled in place instead of stacking a new
    * track — this powers "Apply this style to all captions".
    */
-  function runCaptionPipeline(cues, replaceTrack) {
+  function runCaptionPipeline(cues, opts) {
+    opts = opts || {};
+    var replaceTrack = opts.replaceTrack || null;
+    var overwriteOnTrack = opts.overwriteOnTrack || null;
+    var range = opts.range || null;     // {start,end} for a segment restyle
     if (!state.env) { toast('Open a sequence in Premiere first.', true); return; }
+
+    // Segment restyle: keep only the cues that fall inside the selected range.
+    if (range) {
+      cues = cues.filter(function (c) { return c.end > range.start + 1e-3 && c.start < range.end - 1e-3; });
+      if (!cues.length) { toast('No captions fall inside the selected range.', true); return; }
+    }
 
     var preset = currentPreset();
     var overrides = readOverrides();
@@ -2407,12 +2462,15 @@
     var wordFollow = (anim === 'karaoke' || anim === 'reveal');
     var wantSync = wordFollow || ($('c-sync').checked && words !== 0);
     var realWordTiming = !!(state.transcriptWords && state.transcriptWords.length);
+    var scoped = !!(replaceTrack || overwriteOnTrack);
 
     setCaptionBusy(true);
     capProgress(wantSync ? 'Listening to the audio for sync…' : 'Preparing…');
 
     getCaptionWordCues(cues, wantSync).then(function (wordCues) {
       wordCues = shiftWordCues(wordCues, captionSyncOffset());   // apply the timing nudge
+      // for a segment restyle, only keep word timing inside the range
+      if (range && wordCues) wordCues = wordCues.filter(function (w) { return w.end > range.start + 1e-3 && w.start < range.end - 1e-3; });
       var frames = CPCaptions.buildCaptionFrames(cues, {
         anim: anim,
         wordsPerCue: words,
@@ -2421,6 +2479,8 @@
         speaker: readSpeaker(),
         emoji: !!($('c-emoji') && $('c-emoji').checked),   // v1.0 auto-emoji
         stripPunctuation: overrides.stripPunctuation,
+        textCase: overrides.textCase,
+        censor: overrides.censor,
         wordCues: wordCues
       });
 
@@ -2444,19 +2504,21 @@
         outDir: outDir,
         onProgress: function (done, total) { capProgress('Rendering ' + done + ' / ' + total); }
       }).then(function (items) {
-        capProgress((replaceTrack ? 'Restyling ' : 'Placing ') + items.length + ' captions in your timeline');
+        capProgress((scoped ? 'Restyling ' : 'Placing ') + items.length + ' captions in your timeline');
         var placeArgs = { items: items, anim: anim,
-          animSpeed: overrides.animSpeed, perWordEntrance: overrides.perWordEntrance };
-        if (replaceTrack) placeArgs.replaceTrack = replaceTrack;
+          animSpeed: overrides.animSpeed, perWordEntrance: overrides.perWordEntrance,
+          perWordEntranceStyle: overrides.perWordEntranceStyle };
+        if (overwriteOnTrack) placeArgs.overwriteOnTrack = overwriteOnTrack;
+        else if (replaceTrack) placeArgs.replaceTrack = replaceTrack;
         return CPBridge.callHost('CP_placeCaptionImages', placeArgs);
       }).then(function (r) {
         setCaptionBusy(false);
         capProgress(null);
-        // remember this job so the whole set can be restyled again with one tap
-        state.lastCaptionJob = { cues: cues, track: r.track };
+        // remember the full-video job (don't let a segment restyle shrink it)
+        if (!range) state.lastCaptionJob = { cues: cues, track: r.track };
         reflectCaptionsPlaced();
-        toast((replaceTrack ? '🔄 Restyled ' : '🎉 ') + r.placed + ' captions ' +
-              (replaceTrack ? 'on V' : 'added on V') + r.track +
+        toast((scoped ? (range ? '🎯 Restyled range — ' : '🔄 Restyled ') : '🎉 ') + r.placed + ' captions ' +
+              (scoped ? 'on V' : 'added on V') + r.track +
               (wordCues ? (realWordTiming ? ' · 🎯 word-synced' : ' · audio-synced') : '') +
               (r.animated ? ' · ' + CPCaptions.getAnimation(anim).name : ''));
       });
