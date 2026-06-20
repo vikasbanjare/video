@@ -504,9 +504,21 @@
   // spawn two whisper/ffmpeg passes racing on the same temp files.
   function setTranscribing(on) {
     state.transcribing = !!on;
-    ['btn-tr-auto-main', 'ms-transcribe', 'btn-tr-auto'].forEach(function (id) {
+    ['btn-tr-auto-main', 'btn-tr-auto-ai', 'ms-transcribe', 'btn-tr-auto'].forEach(function (id) {
       var b = $(id); if (b) b.disabled = !!on;
     });
+  }
+
+  /* "Transcribe + auto-correct": same transcription, then an automatic AI
+     proofread pass (fixes misheard words like "indiyya" → "India"). Needs the
+     free Groq key for the correction step. */
+  function autoTranscribeAI() {
+    if (state.transcribing) return toast('Already transcribing — hang tight…');
+    if (!(settings.groqKey || '').trim()) {
+      return toast('“Auto-correct” needs your free Groq key (Settings → Auto-transcribe, console.groq.com/keys). Add it, or use “Transcribe (raw)”.', true);
+    }
+    state.autoFixAfter = true;     // the terminal of autoTranscribe runs the AI fix
+    autoTranscribe();
   }
 
   function autoTranscribe() {
@@ -684,8 +696,12 @@
           });
         });
       });
-    }).then(function () { setTranscribing(false); }, function (e) {
+    }).then(function () {
       setTranscribing(false);
+      // "Transcribe + auto-correct" → run the AI proofread now that words exist.
+      if (state.autoFixAfter) { state.autoFixAfter = false; if (state.transcript) cleanupTranscript(); }
+    }, function (e) {
+      setTranscribing(false); state.autoFixAfter = false;
       setTranscriptBar('warn', '⚠️', 'Auto-transcribe failed', 'Get one →');
       toast('Auto-transcribe failed: ' + e.message, true);
     });
@@ -1066,6 +1082,7 @@
     $('btn-tr-again').addEventListener('click', findTranscript);
     if ($('btn-tr-auto')) $('btn-tr-auto').addEventListener('click', autoTranscribe);
     if ($('btn-tr-auto-main')) $('btn-tr-auto-main').addEventListener('click', autoTranscribe);
+    if ($('btn-tr-auto-ai')) $('btn-tr-auto-ai').addEventListener('click', autoTranscribeAI);
     if ($('btn-tr-edit')) $('btn-tr-edit').addEventListener('click', openTranscriptEditor);
     if ($('btn-mark-hooks')) $('btn-mark-hooks').addEventListener('click', markViralHooks);
     if ($('btn-broll')) $('btn-broll').addEventListener('click', showBrollIdeas);
