@@ -1078,6 +1078,7 @@
       var parts = v.split('|'); translateTranscript(parts[0], parts[1] || parts[0]);
     });
     if ($('btn-detect-speakers')) $('btn-detect-speakers').addEventListener('click', detectSpeakers);
+    if ($('btn-fix-wording')) $('btn-fix-wording').addEventListener('click', cleanupTranscript);
     if ($('tre-cancel')) $('tre-cancel').addEventListener('click', function () { $('tr-editor').classList.add('hidden'); });
     if ($('tre-save')) $('tre-save').addEventListener('click', saveTranscriptEditor);
     $('btn-tr-pick').addEventListener('click', function () {
@@ -1178,14 +1179,51 @@
   /* Replace the active transcript with an edited set of cues (timings kept),
      writing a fresh SRT and pointing state at it. Word-level timing is dropped
      because the text changed. The previous SRT stays on disk (re-findable). */
-  function installNewTranscript(cues, label, suffix) {
+  function installNewTranscript(cues, label, suffix, keepWords) {
     var fs = nodeReq('fs'), os = nodeReq('os'), pathMod = nodeReq('path');
     var dest = pathMod.join(os.tmpdir(), 'cutpilot-' + (suffix || 'edit') + '-' + Date.now() + '.srt');
     fs.writeFileSync(dest, CPCaptions.toSRT(cues), 'utf8');
     state.transcript = { label: label, path: dest, mtime: 1e16 };
-    state.transcriptWords = null;
+    if (!keepWords) state.transcriptWords = null;   // a same-language fix keeps word timing for karaoke highlight
     state.transcriptManual = true;
     refreshMogrtSheetTr(); refreshMogrtEditorTr();
+  }
+
+  function cleanupTranscript() {
+    if (!CPBridge.isCEP()) return toast('AI fixing needs Premiere.', true);
+    if (!state.transcript) return toast('Transcribe or load a transcript first.', true);
+    if (state.aiBusy) return toast('Hang on — an AI step is already running…');
+    var cues; try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
+    if (!cues.length) return toast('The transcript is empty.', true);
+    var lines = cues.map(function (c) { return c.text; });
+    state.aiBusy = true;
+    setTranscriptBar('', '✨', 'Proofreading ' + lines.length + ' lines with AI…', null);
+    var sys = 'You are a meticulous transcription proofreader. The lines are auto-transcribed speech and may contain misheard words, ' +
+      'wrong homophones (their/there, your/you\'re), wrongly split or joined words, and missing punctuation or capitalisation. ' +
+      'Correct ONLY clear transcription errors so each line reads as what was most likely actually said. ' +
+      'Keep the SAME language as the input — do NOT translate. Preserve names, brands, slang, numbers, and the speaker\'s meaning and style; ' +
+      'do NOT paraphrase, summarise, censor, or add commentary. ' +
+      'Return JSON {"lines":[...]} with EXACTLY ' + lines.length + ' strings, one per input line, same order. Never merge, split, add, or drop lines.';
+    groqChat([{ role: 'system', content: sys }, { role: 'user', content: JSON.stringify({ lines: lines }) }], { json: true, temperature: 0 })
+      .then(function (content) {
+        var parsed; try { parsed = JSON.parse(content); } catch (e) { throw new Error('The correction came back malformed.'); }
+        var fixed = parsed.lines || parsed.corrected || parsed.result || [];
+        if (!fixed.length) throw new Error('No correction returned.');
+        var changed = 0;
+        var out = cues.map(function (c, i) {
+          var nt = (fixed[i] != null) ? String(fixed[i]) : c.text;
+          if (nt.trim() !== String(c.text).trim()) changed++;
+          return { start: c.start, end: c.end, text: nt };
+        });
+        // same language → keep word-level timing so karaoke highlight still works
+        installNewTranscript(out, 'AI-corrected (' + out.length + ' lines)', 'fixed', true);
+        setTranscriptBar('ok', '✅', 'AI fixed ' + changed + ' line' + (changed === 1 ? '' : 's') + ' — ' + out.length + ' total. Review or add captions.', 'Change');
+        var warn = (fixed.length !== lines.length) ? ' ⚠️ line count shifted — check the wording.' : '';
+        toast('✨ AI proofread your words and corrected ' + changed + ' line' + (changed === 1 ? '' : 's') +
+              '. Review in “✏️ Review & edit the words”, then add captions, translate, or export. (Tap “Change” to revert.)' + warn);
+      })
+      .catch(function (e) { setTranscriptBar('warn', '⚠️', 'AI fix failed', 'Get one →'); toast('AI fix failed: ' + e.message, true); })
+      .then(function () { state.aiBusy = false; });
   }
 
   function translateTranscript(code, name) {
@@ -1197,8 +1235,9 @@
     var lines = cues.map(function (c) { return c.text; });
     state.aiBusy = true;
     setTranscriptBar('', '🌐', 'Translating ' + lines.length + ' lines to ' + name + '…', null);
-    var sys = 'You are a professional subtitle translator. Translate every line into ' + name +
-      '. Return JSON {"lines":[...]} containing EXACTLY ' + lines.length + ' strings — one translation per input line, same order. ' +
+    var sys = 'You are a professional subtitle translator. The input lines are auto-transcribed and may contain misheard words; ' +
+      'first silently correct any obvious transcription errors, then translate the intended meaning into ' + name + '. ' +
+      'Return JSON {"lines":[...]} containing EXACTLY ' + lines.length + ' strings — one translation per input line, same order. ' +
       'Never merge, split, add, or drop lines. Keep each translation natural, concise and suitable for on-screen captions. Output ONLY the translated text, no notes.';
     groqChat([{ role: 'system', content: sys }, { role: 'user', content: JSON.stringify({ lines: lines }) }], { json: true, temperature: 0.2 })
       .then(function (content) {
