@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.117</span>
+    <span class="ver" id="ver">v0.9.118</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -49,6 +49,12 @@
       <button id="btn-tr-edit" class="hero-btn alt">✏️ Review &amp; edit the words</button>
       <button id="btn-mark-hooks" class="hero-btn alt small">🔖 Mark viral hooks <span class="dim">(adds timeline markers)</span></button>
       <button id="btn-broll" class="hero-btn alt small">💡 B-roll ideas <span class="dim">(suggests footage to overlay)</span></button>
+      <div id="tr-export-row" class="row tight hidden" style="margin-top:6px;align-items:center;gap:6px">
+        <span class="dim">⤓ Export words as</span>
+        <button id="btn-exp-srt" class="chip-btn">SRT</button>
+        <button id="btn-exp-vtt" class="chip-btn">VTT</button>
+        <button id="btn-exp-txt" class="chip-btn">TXT</button>
+      </div>
       <div id="tr-help" class="help-box hidden">
         <b>✨ Easiest: let CutPilot transcribe it for you</b> — select your video
         clip in the timeline and tap <b>Auto-transcribe</b> above (needs the
@@ -190,7 +196,7 @@
         <input type="number" id="c-sync-offset" value="0" class="hidden">
         <input type="number" id="c-words" value="1" class="hidden">
 
-        <details class="advanced" id="customize-drawer" open>
+        <details class="advanced" id="customize-drawer">
           <summary>🎨 Edit everything — font · colour · size · position · animation</summary>
           <div class="customizer">
             <!-- ✍️ TEXT -->
@@ -406,6 +412,7 @@
               <div class="check-grid" style="margin-top:11px">
                 <label class="check"><input type="checkbox" id="c-speaker"> 🎙️ Show speaker names</label>
                 <label class="check"><input type="checkbox" id="c-emoji"> ✨ Auto-emoji on keywords</label>
+                <label class="check"><input type="checkbox" id="c-censor"> 🤬 Mask swear words <span class="dim">(f**k)</span></label>
               </div>
               <label class="check kw-toggle"><input type="checkbox" id="c-kw"> 🔑 Also colour key words <span class="dim">(used when word-by-word highlight is OFF)</span></label>
               <div id="c-kw-mode-wrap" class="hidden">
@@ -772,7 +779,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.117 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.118 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

@@ -96,7 +96,12 @@
     t.textContent = msg;
     t.className = 'toast' + (isErr ? ' err' : '');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { t.classList.add('hidden'); }, 4500);
+    // Errors STAY until dismissed (multi-step failures need to be readable);
+    // success/info messages auto-hide. Click any toast to dismiss it.
+    t.style.cursor = 'pointer';
+    t.onclick = function () { t.classList.add('hidden'); };
+    if (isErr) { t.title = 'Click to dismiss'; }
+    else { t.title = ''; toastTimer = setTimeout(function () { t.classList.add('hidden'); }, 4500); }
     log(msg, isErr ? 'err' : 'ok');
   }
 
@@ -458,7 +463,17 @@
   /* Auto-transcribe the selected clip locally (ffmpeg → whisper.cpp → SRT) so
      the user never needs Premiere's Transcribe/Export. Produces a sequence-time
      transcript and loads it as the current transcript. */
+  // Lock the transcribe buttons while a job runs so an impatient double-tap can't
+  // spawn two whisper/ffmpeg passes racing on the same temp files.
+  function setTranscribing(on) {
+    state.transcribing = !!on;
+    ['btn-tr-auto-main', 'ms-transcribe', 'btn-tr-auto'].forEach(function (id) {
+      var b = $(id); if (b) b.disabled = !!on;
+    });
+  }
+
   function autoTranscribe() {
+    if (state.transcribing) return toast('Already transcribing — hang tight, this can take a minute…');
     var cloud = (resolveQuality() === 'cloud-groq');
     var ff = resolveFfmpeg();
     if (!ff) return toast('Auto-transcribe needs ffmpeg — set it in Settings (brew install ffmpeg).', true);
@@ -469,6 +484,7 @@
       wbin = resolveWhisper();
       if (!wbin) return toast('Set the whisper engine in Settings → Auto-transcribe (brew install whisper-cpp).', true);
     }
+    setTranscribing(true);   // all checks passed — commit, lock the buttons
     var lang = settings.whisperLang || 'en';
     // HINGLISH = the real spoken words written in English letters, NOT a Hindi→English
     // translation. Always TRANSCRIPTION, never translation:
@@ -631,7 +647,8 @@
           });
         });
       });
-    }).catch(function (e) {
+    }).then(function () { setTranscribing(false); }, function (e) {
+      setTranscribing(false);
       setTranscriptBar('warn', '⚠️', 'Auto-transcribe failed', 'Get one →');
       toast('Auto-transcribe failed: ' + e.message, true);
     });
@@ -645,6 +662,9 @@
       document.querySelector('.tab-page.active').classList.remove('active');
       this.classList.add('active');
       $('tab-' + this.dataset.tab).classList.add('active');
+      // Leaving Captions? Stop the live-preview animation loop so it isn't
+      // painting an off-screen canvas forever in the background.
+      if (this.dataset.tab !== 'captions' && previewTimer) { clearInterval(previewTimer); previewTimer = null; }
       // Re-check for a transcript when returning to Captions (e.g. after
       // exporting one), and refresh the preview now the frame has a size.
       if (this.dataset.tab === 'captions' && CPBridge.isCEP()) {
@@ -782,7 +802,7 @@
       if (_cmd.open) return;
       var tag = (e.target && e.target.tagName) || '';
       if (/INPUT|TEXTAREA|SELECT/.test(tag) || e.metaKey || e.ctrlKey || e.altKey) return;
-      var map = { '1': 'captions', '2': 'silence', '3': 'multicam', '4': 'chapters', '5': 'settings' };
+      var map = { '1': 'transcribe', '2': 'captions', '3': 'silence', '4': 'multicam', '5': 'chapters', '6': 'settings' };
       if (map[e.key]) { var b = document.querySelector('.tab[data-tab="' + map[e.key] + '"]'); if (b) b.click(); }
     });
   }
@@ -856,6 +876,7 @@
     var b = $('btn-tr-change');
     if (btn) { b.textContent = btn; b.classList.remove('hidden'); }
     else b.classList.add('hidden');
+    var er = $('tr-export-row'); if (er) er.classList.toggle('hidden', !state.transcript);  // export only when words exist
     updateSyncStat();   // transcript changed → refresh the word-timing indicator
 
     // One-click captions: if a caption button kicked off transcription, finish
@@ -1010,6 +1031,9 @@
     if ($('btn-tr-edit')) $('btn-tr-edit').addEventListener('click', openTranscriptEditor);
     if ($('btn-mark-hooks')) $('btn-mark-hooks').addEventListener('click', markViralHooks);
     if ($('btn-broll')) $('btn-broll').addEventListener('click', showBrollIdeas);
+    if ($('btn-exp-srt')) $('btn-exp-srt').addEventListener('click', function () { exportTranscript('srt'); });
+    if ($('btn-exp-vtt')) $('btn-exp-vtt').addEventListener('click', function () { exportTranscript('vtt'); });
+    if ($('btn-exp-txt')) $('btn-exp-txt').addEventListener('click', function () { exportTranscript('txt'); });
     if ($('tre-cancel')) $('tre-cancel').addEventListener('click', function () { $('tr-editor').classList.add('hidden'); });
     if ($('tre-save')) $('tre-save').addEventListener('click', saveTranscriptEditor);
     $('btn-tr-pick').addEventListener('click', function () {
@@ -1031,16 +1055,79 @@
     }
     window.addEventListener('focus', maybeRefind);
     document.addEventListener('visibilitychange', function () {
-      if (!document.hidden) maybeRefind();
+      // Hidden → pause the preview animation; visible again → resume it if the
+      // user is on the Captions tab.
+      if (document.hidden) { if (previewTimer) { clearInterval(previewTimer); previewTimer = null; } return; }
+      maybeRefind();
+      var active = document.querySelector('.tab.active');
+      if (active && active.dataset.tab === 'captions' && CPBridge.isCEP()) renderPreview();
     });
   }
+
+  // Opt-in profanity masking for captions ("fuck" → "f**k"). Curated to STRONG
+  // words only, matched on whole-word boundaries so "class"/"Scunthorpe"/"bass"
+  // are never touched (the classic false-positive trap). Honours common suffixes.
+  var PROFANITY = ['fuck', 'shit', 'bitch', 'asshole', 'bastard', 'dick', 'piss',
+    'cunt', 'cock', 'pussy', 'slut', 'whore', 'douche', 'bollocks', 'wanker',
+    'prick', 'twat', 'motherfucker', 'bullshit', 'jackass', 'dickhead', 'goddamn',
+    'nigger', 'faggot', 'retard'];
+  var _profRe = new RegExp('\\b(' + PROFANITY.join('|') + ')(s|es|ed|ing|er|in\'|in)?\\b', 'gi');
+  function maskWord(w) {
+    if (w.length <= 2) return w.charAt(0) + '*';
+    return w.charAt(0) + new Array(w.length - 1).join('*') + w.charAt(w.length - 1);
+  }
+  function maskProfanity(text) { return String(text).replace(_profRe, function (m) { return maskWord(m); }); }
+  function censorEnabled() { var c = $('c-censor'); return !!(c && c.checked); }
 
   function readSelectedTranscript() {
     if (!state.transcript) throw new Error('No transcript yet — tap "Get one →" for the 1-minute steps.');
     var text = nodeReq('fs').readFileSync(state.transcript.path, 'utf8');
     var cues = CPCaptions.parseSRT(text);
     if (!cues.length) throw new Error('No captions found inside ' + state.transcript.label);
+    if (censorEnabled()) cues = cues.map(function (c) { c.text = maskProfanity(c.text); return c; });
     return cues;
+  }
+
+  // ---- export the transcript as a real file (SRT / VTT / plain text) ----------
+  function cuesToVTT(cues) {
+    function ts(s) {
+      s = Math.max(0, s || 0);
+      var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60), ms = Math.round((s - Math.floor(s)) * 1000);
+      function p(n, w) { n = String(n); while (n.length < w) n = '0' + n; return n; }
+      return p(h, 2) + ':' + p(m, 2) + ':' + p(sec, 2) + '.' + p(ms, 3);
+    }
+    var out = 'WEBVTT\n\n';
+    for (var i = 0; i < cues.length; i++) out += ts(cues[i].start) + ' --> ' + ts(cues[i].end) + '\n' + cues[i].text + '\n\n';
+    return out;
+  }
+
+  function exportTranscript(kind) {
+    if (!CPBridge.isCEP()) return toast('Exporting needs Premiere (open CutPilot inside Premiere).', true);
+    if (!state.transcript) return toast('Transcribe or load a transcript first.', true);
+    var cues; try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
+    if (!cues.length) return toast('The transcript is empty.', true);
+    var fs = nodeReq('fs'), pathMod = nodeReq('path'), os = nodeReq('os');
+    var ext = (kind === 'vtt') ? 'vtt' : (kind === 'txt') ? 'txt' : 'srt';
+    var body = (ext === 'vtt') ? cuesToVTT(cues)
+             : (ext === 'txt') ? cues.map(function (c) { return c.text; }).join('\n') + '\n'
+             : CPCaptions.toSRT(cues);
+    var base = 'captions-' + new Date().toISOString().slice(0, 10);
+    var dest = null;
+    try {
+      if (window.cep && window.cep.fs && window.cep.fs.showSaveDialogEx) {
+        var r = window.cep.fs.showSaveDialogEx('Export ' + ext.toUpperCase(), '', [ext], base, null);
+        if (r && r.data) dest = r.data; else if (typeof r === 'string' && r) dest = r;
+      }
+    } catch (eD) {}
+    if (!dest) {                                   // no dialog → drop it on the Desktop (or home)
+      var dir = os.homedir();
+      try { var dk = pathMod.join(dir, 'Desktop'); if (fs.existsSync(dk)) dir = dk; } catch (eH) {}
+      dest = pathMod.join(dir, base + '.' + ext);
+    }
+    if (!new RegExp('\\.' + ext + '$', 'i').test(dest)) dest += '.' + ext;
+    try { fs.writeFileSync(dest, body, 'utf8'); }
+    catch (eW) { return toast('Couldn\'t save the file: ' + eW.message, true); }
+    toast('✅ Saved ' + ext.toUpperCase() + ' (' + cues.length + ' lines) → ' + dest);
   }
 
   // ---- transcript editor: fix wording / delete junk / merge before captioning ----
@@ -3876,7 +3963,11 @@
   $('btn-cut').addEventListener('click', function () {
     var ranges = selectedSilences();
     if (!ranges.length) return toast('Nothing selected to cut.', true);
-    if (!confirm('Cut ' + ranges.length + ' silent ranges directly in this sequence?')) return;
+    var backup = $('opt-backup').checked;
+    var msg = 'Cut ' + ranges.length + ' silent range' + (ranges.length > 1 ? 's' : '') + ' directly in this sequence?';
+    msg += backup ? '\n\n✅ A backup of the sequence will be made first.'
+                  : '\n\n⚠️ Backup is OFF — this edits your live sequence with no safety copy. Tick “Back up sequence first” if you’re unsure.';
+    if (!confirm(msg)) return;
     CPBridge.callHost('CP_razorRipple', {
       ranges: ranges,
       closeGaps: $('opt-closegaps').checked,
