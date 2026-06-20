@@ -809,6 +809,46 @@ function CP_clipAtStart(track, startSec) {
   return (bestD <= 0.25) ? best : null;
 }
 
+/* BETA: additive talking-head "punch-in" zooms. For each sequence time, find the
+   clip on videoTrack covering it and add Scale keyframes (100 → amount → hold →
+   100) in clip-local time, reusing the proven CP_setKeys path. Purely additive
+   and fully undoable — never cuts, deletes, or moves anything. */
+function CP_addZoomPunches(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+    if (!seq) return CP_fail('No active sequence.');
+    var vt = (args.videoTrack != null) ? args.videoTrack : 0;
+    if (vt < 0 || vt >= seq.videoTracks.numTracks) return CP_fail('Video track ' + (vt + 1) + ' not found.');
+    var track = seq.videoTracks[vt];
+    var times = args.times || [];
+    var amount = (args.amount != null) ? args.amount : 110;   // peak scale %
+    var hold = (args.hold != null) ? args.hold : 0.45;
+    var ramp = (args.ramp != null) ? args.ramp : 0.16;
+    CP_ANIM_SPEED = 1;
+    var applied = 0, skipped = 0;
+    for (var i = 0; i < times.length; i++) {
+      var at = times[i], clip = null;
+      for (var c = 0; c < track.clips.numItems; c++) {
+        var cc = track.clips[c], s, e;
+        try { s = cc.start.seconds; e = cc.end.seconds; } catch (eS) { continue; }
+        if (at >= s && at < e) { clip = cc; break; }
+      }
+      if (!clip) { skipped++; continue; }
+      var scale = CP_findProperty(CP_findComponent(clip, 'Motion'), 'Scale');
+      if (!scale) { skipped++; continue; }
+      var off;
+      try { off = clip.inPoint.seconds + (at - clip.start.seconds); } catch (eO) { skipped++; continue; }
+      var amt = (amount instanceof Array) ? amount[i % amount.length] : amount;
+      CP_setKeys(scale, off, [
+        { t: 0.0, v: 100 }, { t: ramp, v: amt }, { t: ramp + hold, v: amt }, { t: ramp + hold + 0.20, v: 100 }
+      ]);
+      applied++;
+    }
+    return CP_ok({ applied: applied, skipped: skipped });
+  } catch (e) { return CP_fail(e.message); }
+}
+
 function CP_placeCaptionImages(argsJson) {
   try {
     var args = JSON.parse(argsJson);

@@ -928,6 +928,7 @@
         showView('style');
         if (act === 'native') applyNative();
         else if (act === 'editstyle') applyEditableStyle();
+        else if (act === 'viral') viralEdit();
         else if (act === 'magic' && $('btn-magic')) $('btn-magic').click();
       }, 60);
     } else if (cls === 'warn' && state.pendingCaptionAction) {
@@ -2769,11 +2770,24 @@
   }
 
   // ============================================================ ADD CAPTIONS ==
-  function capProgress(msg) {
+  var _capProgTimer = null;
+  function capProgress(msg, estimateMs) {
     var el = $('cap-progress');
-    if (msg == null) { el.classList.add('hidden'); return; }
+    if (_capProgTimer) { clearInterval(_capProgTimer); _capProgTimer = null; }
+    if (msg == null) { el.classList.add('hidden'); el.classList.remove('has-bar'); el.innerHTML = ''; return; }
     el.classList.remove('hidden');
-    el.textContent = msg;
+    if (!estimateMs) { el.classList.remove('has-bar'); el.innerHTML = ''; el.textContent = msg; return; }   // plain text step
+    el.classList.add('has-bar');
+    // Time-estimated bar. Placing captions is ONE blocking import inside Premiere
+    // (no real % to read back), but the panel thread is free — so we ease the bar
+    // toward 92% over the estimate, then it clears on completion. This kills the
+    // "is it frozen?" feeling while staying honest (it never claims 100% early).
+    var start = Date.now(), est = Math.max(1500, estimateMs);
+    el.innerHTML = '<div class="cap-prog-msg"></div><div class="cap-prog-track"><div class="cap-prog-fill"></div></div>';
+    var msgEl = el.querySelector('.cap-prog-msg'), fill = el.querySelector('.cap-prog-fill');
+    msgEl.textContent = msg;
+    function tick() { var pct = Math.min(92, (Date.now() - start) / est * 100); fill.style.width = pct.toFixed(1) + '%'; }
+    tick(); _capProgTimer = setInterval(tick, 150);
   }
 
   /* Apply a text-case mode to a string. 'as-spoken' leaves it exactly as the
@@ -2851,6 +2865,7 @@
   // ---- native, Premiere-editable caption track (plain text, no karaoke) ----
   if ($('btn-native-main')) $('btn-native-main').addEventListener('click', applyNative);
   if ($('btn-editable-style')) $('btn-editable-style').addEventListener('click', applyEditableStyle);
+  if ($('btn-viral-edit')) $('btn-viral-edit').addEventListener('click', viralEdit);
 
   // ---- edit the wording of captions already on the timeline ----
   if ($('btn-cap-edit')) $('btn-cap-edit').addEventListener('click', openCaptionTextEditor);
@@ -2985,7 +3000,7 @@
         outDir: outDir,
         onProgress: function (done, total) { capProgress('Rendering ' + done + ' / ' + total); }
       }).then(function (items) {
-        capProgress((scoped ? 'Restyling ' : 'Placing ') + items.length + ' captions in your timeline');
+        capProgress((scoped ? 'Restyling ' : 'Placing ') + items.length + ' captions in your timeline…', items.length * 130);
         var placeArgs = { items: items, anim: anim,
           animSpeed: overrides.animSpeed, perWordEntrance: overrides.perWordEntrance,
           perWordEntranceStyle: overrides.perWordEntranceStyle };
@@ -3746,7 +3761,7 @@
     capProgress('Saving project…');
     ensureProjectSaved().then(function (ok) {
       if (!ok) { if (btn) btn.disabled = false; capProgress(null); return null; }
-      capProgress('Adding ' + tcues.length + ' template graphics');
+      capProgress('Adding ' + tcues.length + ' template graphics…', tcues.length * 230);
       var params = (state.mogrtParamsPath === mogrtPath) ? state.mogrtParams : [];
       var textStyle = (state.mogrtParamsPath === mogrtPath) ? state.mogrtTextStyle : null;
       var stretch = !!($('mg-stretch') && $('mg-stretch').checked);
@@ -3905,7 +3920,7 @@
       capProgress('Reading the editable template…');
       return CPBridge.callHost('CP_inspectMogrt', { path: bb.path }).then(function (r) {
         var params = mapPresetToMogrt(preset, (r && r.props) || []);
-        capProgress('Adding ' + tcues.length + ' editable, styled captions');
+        capProgress('Adding ' + tcues.length + ' editable, styled captions…', tcues.length * 230);
         return CPBridge.callHost('CP_insertMogrtCaptions', {
           mogrtPath: bb.path, cues: tcues, videoTrack: null, audioTrack: 0,
           params: params, textStyle: textStyle, stretch: false
@@ -3921,6 +3936,33 @@
       toast('✅ Added ' + r.inserted + ' EDITABLE caption clips, styled like “' + preset.name + '” — each is its ' +
             'OWN clip on the timeline, timed to your audio. Edit any in Window → Essential Graphics.');
     }).catch(function (e) { capProgress(null); toast(e.message, true); });
+  }
+
+  // ---- ONE-CLICK VIRAL EDIT: editable captions + auto zoom punch-ins (beta) ---
+  /* Orchestrates two ADDITIVE, undoable steps: (1) subtle talking-head zoom
+     punches at natural emphasis points (start of caption lines, spaced out), then
+     (2) editable captions in the current style. It never cuts/trims footage —
+     Smart Cut stays a separate, deliberate step. */
+  function viralEdit() {
+    if (!CPBridge.isCEP()) return toast('Viral Edit needs Premiere.', true);
+    if (!ensureTranscriptThen('viral')) return;
+    var cues; try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
+    if (!cues.length) return toast('No words to work with — transcribe first.', true);
+    // Emphasis points = start of caption lines, spaced ≥2.5s apart, capped so a
+    // long video doesn't get a punch on every line.
+    var times = [], last = -99;
+    for (var i = 0; i < cues.length; i++) {
+      var t = cues[i].start;
+      if (t - last >= 2.5) { times.push(t); last = t; }
+      if (times.length >= 40) break;
+    }
+    toast('⚡ Viral Edit: adding ' + times.length + ' zoom punches, then your captions…');
+    // 1) zoom punches first (fast, additive). Beta — optional; captions run regardless.
+    CPBridge.callHost('CP_addZoomPunches', { videoTrack: 0, times: times, amount: 110, hold: 0.45 })
+      .then(function (r) {
+        if (r && r.applied) toast('⚡ Added ' + r.applied + ' zoom punches (beta) to your top clip. Now placing captions… (Ctrl/Cmd+Z removes the zooms if you don\'t like them.)');
+      }, function () { /* zoom is best-effort; ignore and still caption */ })
+      .then(function () { applyEditableStyle(); });   // 2) editable captions in the current style
   }
 
   // ========================================================== SMART CUT ====
