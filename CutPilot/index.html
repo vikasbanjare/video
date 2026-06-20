@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.111</span>
+    <span class="ver" id="ver">v0.9.112</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -206,6 +206,7 @@
                   <input type="range" id="c-letter" min="0" max="20" value="0">
                 </label>
               </div>
+              <p class="hint" style="margin:5px 0 0">Size applies to your exported captions. The preview stays a fixed size so the style is always easy to see.</p>
               <label>Weight <span class="val" id="c-weight-val"></span>
                 <input type="range" id="c-weight" min="100" max="900" step="100" value="800">
               </label>
@@ -279,8 +280,10 @@
                 <label style="margin-top:9px">Spoken-word size <span class="val" id="c-wordpop-val"></span>
                   <input type="range" id="c-wordpop" min="100" max="160" value="100">
                 </label>
-                <label class="check"><input type="checkbox" id="c-dimupcoming"> 🌗 Dim words not yet spoken <span class="dim">(Captions.ai look)</span></label>
-                <label class="check"><input type="checkbox" id="c-multicolor"> 🌈 Cycle highlight colours word-to-word</label>
+                <div class="check-grid">
+                  <label class="check"><input type="checkbox" id="c-dimupcoming"> 🌗 Dim words not yet spoken</label>
+                  <label class="check"><input type="checkbox" id="c-multicolor"> 🌈 Cycle highlight colours</label>
+                </div>
                 <div class="swatches" id="c-multicolor-opts" style="display:none">
                   <label class="sw">2nd<span class="cp-mount" data-for="c-hl2"></span><input type="hidden" id="c-hl2" value="#2D7CFF"></label>
                   <label class="sw">3rd<span class="cp-mount" data-for="c-hl3"></span><input type="hidden" id="c-hl3" value="#22C55E"></label>
@@ -365,8 +368,10 @@
                   <option value="blurdissolve">Blur in</option>
                 </select>
               </label>
-              <label class="check"><input type="checkbox" id="c-emphasize"> 🔠 Auto-enlarge punchy words <span class="dim">(million, secret, now…)</span></label>
-              <label class="check"><input type="checkbox" id="c-strippunct"> 🧹 Remove punctuation <span class="dim">(clean look: no . , ?)</span></label>
+              <div class="check-grid">
+                <label class="check"><input type="checkbox" id="c-emphasize"> 🔠 Auto-enlarge punchy words</label>
+                <label class="check"><input type="checkbox" id="c-strippunct"> 🧹 Remove punctuation</label>
+              </div>
             </div>
 
             <!-- 🎯 SMART TEXT -->
@@ -396,9 +401,11 @@
             <!-- ➕ EXTRAS -->
             <div class="cust-group">
               <div class="cust-group-title">➕ Extras</div>
-              <label class="check kw-toggle"><input type="checkbox" id="c-speaker"> 🎙️ Show speaker names <span class="dim">(reads "Name:" lines)</span></label>
-              <label class="check kw-toggle"><input type="checkbox" id="c-emoji"> ✨ Auto-emoji on keywords <span class="dim">(money 💰, profit 📈, AI 🤖…)</span></label>
-              <label class="check kw-toggle"><input type="checkbox" id="c-kw"> 🔑 Also colour key words <span class="dim">(only used when word-by-word highlight is OFF)</span></label>
+              <div class="check-grid" style="margin-top:11px">
+                <label class="check"><input type="checkbox" id="c-speaker"> 🎙️ Show speaker names</label>
+                <label class="check"><input type="checkbox" id="c-emoji"> ✨ Auto-emoji on keywords</label>
+              </div>
+              <label class="check kw-toggle"><input type="checkbox" id="c-kw"> 🔑 Also colour key words <span class="dim">(used when word-by-word highlight is OFF)</span></label>
               <div id="c-kw-mode-wrap" class="hidden">
                 <label>Which words
                   <select id="c-kw-mode">
@@ -752,7 +759,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.111 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.112 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

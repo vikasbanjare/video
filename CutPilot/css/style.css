@@ -7,7 +7,7 @@
   --line: rgba(247, 225, 211, 0.10);
   --line2: rgba(247, 225, 211, 0.16);
   --fg: #f2e9e0;
-  --dim: #9c909a;
+  --dim: #b9aeb6;
   --clay: #d97757;
   --accent: #d97757;
   --accent-soft: rgba(217, 119, 87, 0.14);
@@ -85,7 +85,7 @@ header { display: flex; align-items: center; gap: 8px; padding: 13px 16px 9px; }
 .badge.ok { color: var(--ok); border-color: rgba(108,197,154,.35); background: rgba(108,197,154,.10); }
 .badge.warn { color: #e0a35a; border-color: rgba(224,163,90,.35); background: rgba(224,163,90,.10); }
 
-.hint { color: var(--dim); font-size: 11px; margin-bottom: 8px; }
+.hint { color: var(--dim); font-size: 11.5px; line-height: 1.5; margin-bottom: 8px; }
 .hint.center { text-align: center; margin-top: 6px; }
 .hint b, .help-box b, .help-box i { color: var(--fg); }
 .dim { color: var(--dim); }
@@ -104,8 +104,11 @@ input:focus, select:focus { outline: none; border-color: var(--clay); box-shadow
 .row { display: flex; gap: 8px; align-items: center; margin: 8px 0 0; }
 .row.tight { margin-top: 9px; }
 .row > input { flex: 1; }
-.check { display: flex; align-items: center; gap: 7px; color: var(--fg); font-weight: 500; margin-top: 9px; }
-.check input { accent-color: var(--clay); width: 15px; height: 15px; }
+.check { display: flex; align-items: flex-start; gap: 7px; color: var(--fg); font-weight: 500; margin-top: 8px; line-height: 1.35; }
+.check input { accent-color: var(--clay); width: 15px; height: 15px; flex: none; margin-top: 1px; }
+/* pack standalone toggles left-to-right so the panel is shorter / less scrolling */
+.check-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 14px; align-items: start; }
+.check-grid .check { margin-top: 7px; }
 .switch-row { align-self: end; margin: 0 0 6px; }
 
 /* ------------------------------------------------------------ buttons --- */
@@ -216,12 +219,12 @@ input:focus, select:focus { outline: none; border-color: var(--clay); box-shadow
    scrolling back up. (Solid bg so scrolling content doesn't show through.) */
 .preview-wrap {
   position: -webkit-sticky; position: sticky; top: 0; z-index: 6;
-  margin: 0 -14px 10px; padding: 4px 14px 8px;
+  margin: 0 -14px 8px; padding: 2px 14px 6px;
   background: var(--bg);
   box-shadow: 0 8px 10px -8px rgba(0,0,0,.65);
 }
 .preview-frame {
-  position: relative; width: 100%; height: 158px; border-radius: var(--r);
+  position: relative; width: 100%; height: 132px; border-radius: var(--r);
   background: linear-gradient(150deg, #211a26, #2c2030 55%, #34231f);
   overflow: hidden; box-shadow: inset 0 0 70px rgba(0,0,0,.55); border: 1px solid var(--line);
   display: flex; align-items: center; justify-content: center;
@@ -281,7 +284,7 @@ input:focus, select:focus { outline: none; border-color: var(--clay); box-shadow
 .anim-label { font-size: 11px; color: var(--dim); font-weight: 700; margin: 6px 0 7px; }
 
 /* --------------------------------------------------- customizer --- */
-.customizer { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; box-shadow: var(--shadow); }
+.customizer { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 12px; box-shadow: var(--shadow); }
 .customizer label.full { display: block; }
 .ctrl-row { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; margin-top: 11px; align-items: center; }
 .customizer .val { color: var(--fg); font-weight: 800; float: right; }
@@ -611,10 +614,11 @@ footer { border-top: 1px solid var(--line); background: var(--card); max-height:
 .demo .anim-type { animation: cp-type 2.4s steps(8) infinite; overflow: hidden; white-space: nowrap; display: inline-block; }
 
 /* grouped customizer: clear sections instead of one long wall of controls */
-.cust-group { padding: 11px 0 3px; border-top: 1px solid var(--line); }
+.cust-group { padding: 9px 0 2px; border-top: 1px solid var(--line); }
 .cust-group:first-child { border-top: none; padding-top: 2px; }
-.cust-group-title { font-size: 11px; font-weight: 800; color: var(--dim);
+.cust-group-title { font-size: 11.5px; font-weight: 800; color: #e6dce2;
   letter-spacing: .04em; text-transform: uppercase; margin: 0 0 8px; }
+.cust-group-title .dim { font-weight: 600; text-transform: none; letter-spacing: 0; }
 
 /* inline Groq key (appears under the engine picker when Cloud is selected) */
 .groq-inline { margin: 8px 0 2px; }

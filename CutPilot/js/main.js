@@ -2354,6 +2354,9 @@
 
   // --------------------------------------------------------- live preview ----
   var previewTimer = null;
+  // Fixed font size the live preview always renders at, so the preview reads as a
+  // STYLE reference and never shrinks when the user lowers the output Size slider.
+  var PREVIEW_REF_SIZE = 120;
   var SAMPLE = ['THIS', 'LOOKS', 'INSANE'];
   var SAMPLE_SENTENCE = ['THIS', 'IS', 'EXACTLY', 'HOW', 'YOUR', 'CAPTIONS', 'WILL', 'LOOK'];
   function longestIdx(arr) {
@@ -2384,7 +2387,14 @@
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
     canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
 
-    var pStyle = CPRender.styleForFrame(preset, canvas.height, ov);
+    // The preview is a STYLE reference, not a size preview: render the caption at
+    // a constant, readable size so lowering the "Size" slider never shrinks the
+    // preview. Size still drives the REAL exported captions (and the legibility
+    // note above, `st`, still uses the real size). The engine auto-fits this
+    // reference to the frame, so longer lines simply wrap/shrink to fit.
+    var pov = {}; for (var ko in ov) if (ov.hasOwnProperty(ko)) pov[ko] = ov[ko];
+    pov.fontSize = PREVIEW_REF_SIZE;
+    var pStyle = CPRender.styleForFrame(preset, canvas.height, pov);
     var anim = currentAnim();
     var words = parseInt($('c-words').value, 10) || 0;
     var kwOn = $('c-kw').checked;
