@@ -3361,6 +3361,32 @@
     }).catch(function (e) { if (btn) btn.disabled = false; capProgress(null); toast(e.message, true); });
   }
 
+  function weightName(w) {
+    w = +w || 400;
+    if (w >= 900) return 'Black'; if (w >= 800) return 'ExtraBold';
+    if (w >= 700) return 'Bold';  if (w >= 600) return 'SemiBold';
+    if (w >= 500) return 'Medium'; return 'Regular';
+  }
+  /* The one-time recipe to make a native Premiere caption track look like the
+     chosen template. Premiere doesn't let any script set caption styling, so we
+     hand the user the exact values to apply once (Premiere then applies to all). */
+  function templateStyleRecipe(p) {
+    if (!p) return '';
+    var L = [];
+    L.push('🎨 Make it match “' + p.name + '” — set this ONCE in Premiere:');
+    L.push('   Window → Text → Captions → click a caption → Edit caption style');
+    L.push('• Font: ' + p.font + (p.weight ? ' — ' + weightName(p.weight) + ' (' + p.weight + ')' : ''));
+    L.push('• Text colour: ' + (p.fill || '#FFFFFF'));
+    if (p.stroke && p.strokeWidth) L.push('• Edge / outline: ' + p.stroke);
+    if (p.boxColor) L.push('• Background: ' + p.boxColor + (p.boxRadius ? ' (rounded)' : ''));
+    else L.push('• Background: off (add a soft shadow if it needs legibility)');
+    if (p.uppercase) L.push('• ALL CAPS: on');
+    L.push('• Size & position: large, bottom-centre — scale/drag to taste');
+    L.push('→ then “Apply to all captions” (or save a Track Style): every line matches');
+    L.push('   and every caption stays fully editable inside Premiere.');
+    return L.join('\n');
+  }
+
   function applyNative() {
     if (!ensureTranscriptThen('native')) return;
     var cues;
@@ -3374,9 +3400,10 @@
       capProgress('Creating caption track');
       CPBridge.callHost('CP_importSrtCaptions', { srtPath: out }).then(function () {
         capProgress(null);
-        toast('✓ Caption track added (' + ncues.length + ' lines). Style it once in Essential ' +
-              'Graphics: ' + preset.font + ' ' + preset.fontSize + 'px, ' + preset.fill +
-              (preset.stroke ? ' + stroke ' + preset.stroke : ''));
+        var rec = $('native-recipe');
+        if (rec) { rec.textContent = templateStyleRecipe(preset); rec.classList.remove('hidden'); }
+        toast('✓ Editable caption track added (' + ncues.length + ' lines) — edit any line in ' +
+              'Window → Text. The style recipe for “' + preset.name + '” is shown below the buttons.');
       }).catch(function (e) { capProgress(null); toast(e.message, true); });
     } catch (e) { capProgress(null); toast(e.message, true); }
   }

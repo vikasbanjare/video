@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ExtensionManifest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                    ExtensionBundleId="com.cutpilot"
-                   ExtensionBundleVersion="0.9.105"
+                   ExtensionBundleVersion="0.9.106"
                    ExtensionBundleName="CutPilot"
                    Version="11.0">
   <ExtensionList>
-    <Extension Id="com.cutpilot.panel" Version="0.9.105"/>
+    <Extension Id="com.cutpilot.panel" Version="0.9.106"/>
   </ExtensionList>
   <ExecutionEnvironment>
     <HostList>
