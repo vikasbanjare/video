@@ -869,6 +869,7 @@
         var tb = document.querySelector('.tab[data-tab="captions"]'); if (tb) tb.click();
         showView('style');
         if (act === 'native') applyNative();
+        else if (act === 'editstyle') applyEditableStyle();
         else if (act === 'magic' && $('btn-magic')) $('btn-magic').click();
       }, 60);
     } else if (cls === 'warn' && state.pendingCaptionAction) {
@@ -2634,6 +2635,7 @@
 
   // ---- native, Premiere-editable caption track (plain text, no karaoke) ----
   if ($('btn-native-main')) $('btn-native-main').addEventListener('click', applyNative);
+  if ($('btn-editable-style')) $('btn-editable-style').addEventListener('click', applyEditableStyle);
 
   // ---- edit the wording of captions already on the timeline ----
   if ($('btn-cap-edit')) $('btn-cap-edit').addEventListener('click', openCaptionTextEditor);
@@ -3615,6 +3617,95 @@
               'Window → Text. The style recipe for “' + preset.name + '” is shown below the buttons.');
       }).catch(function (e) { capProgress(null); toast(e.message, true); });
     } catch (e) { capProgress(null); toast(e.message, true); }
+  }
+
+  // ---- EDITABLE captions for ANY style (no PNG) -----------------------------
+  /* The caption STYLES render as burned-in PNGs. To make a style editable on the
+     timeline, we place a shipped editable .mogrt (one clip per caption line) and
+     map the style's colours / font / size onto it. Result: each caption is its
+     OWN clip, timed to the audio, fully editable in Premiere's Essential Graphics
+     — the style's look (colours/font) carries over; the motion is the template's. */
+  function bundledBackbone() {
+    var list = state.bundledMogrts || [];
+    function find(sub) {
+      for (var i = 0; i < list.length; i++) if (list[i].path.toLowerCase().indexOf(sub) >= 0) return list[i];
+      return null;
+    }
+    // Subtitle 1 = word highlight + text + background + shadow → the most general
+    // backbone (every part is a named param we can drive from the style).
+    return find('subtitle_1') || find('subtitle') || list[0] || null;
+  }
+
+  /* Map a built-in style preset onto a template's NAMED colour/opacity params
+     (best-effort by name; anything unmatched keeps the template default). */
+  function mapPresetToMogrt(preset, props) {
+    var out = [];
+    if (!preset || !props || !props.length) return out;
+    var COL = ['color', 'colorint'];
+    function find(res, kinds) {
+      for (var i = 0; i < props.length; i++) {
+        var p = props[i]; if (kinds && kinds.indexOf(p.kind) < 0) continue;
+        var nm = (p.name || '').toLowerCase();
+        for (var r = 0; r < res.length; r++) if (res[r].test(nm)) return p;
+      }
+      return null;
+    }
+    function color(p, hex) { if (p && hex) out.push({ i: p.i, kind: p.kind || 'color', value: hex }); }
+    function num(p, v) { if (p && v != null) out.push({ i: p.i, kind: 'number', value: v }); }
+    color(find([/text\s*colou?r/, /word\s*colou?r/, /font\s*colou?r/], COL), preset.fill);
+    color(find([/highlight/], COL), preset.highlight || preset.fill);
+    if (preset.boxColor) {
+      color(find([/background|\bbg\b|box/], COL), preset.boxColor);
+      var bo = preset.boxOpacity; bo = (bo == null) ? 100 : (bo <= 1 ? Math.round(bo * 100) : bo);
+      num(find([/(background|\bbg\b|box).*opacit|opacit.*(background|\bbg\b|box)/], ['number']), bo);
+    } else {
+      // style has no pill → hide the template's background so the look matches
+      num(find([/(background|\bbg\b|box).*opacit|opacit.*(background|\bbg\b|box)/], ['number']), 0);
+    }
+    return out;
+  }
+
+  function applyEditableStyle() {
+    if (!CPBridge.isCEP()) return toast('Editable captions need Premiere (open CutPilot inside Premiere).', true);
+    var bb = bundledBackbone();
+    if (!bb) return toast('No editable template is available to back this up.', true);
+    if (!ensureTranscriptThen('editstyle')) return;
+    var cues;
+    try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
+    var preset = currentPreset();
+    var words = parseInt($('c-words').value, 10) || 0;
+    var caps = !!($('c-upper') && $('c-upper').checked) || !!preset.uppercase;
+    var caseMode = caps ? 'upper' : (state.mogrtCase || 'as-spoken');
+    var tcues = textCues(cues, words, caseMode);
+    if (!tcues.length) return toast('No caption lines to add.', true);
+    var textStyle = { font: preset.font, size: preset.fontSize, caps: caps,
+                      bold: (preset.weight || 800) >= 600, fill: preset.fill };
+    if (tcues.length > 120 &&
+        !confirm(tcues.length + ' editable caption clips will be inserted — one per line. ' +
+                 'MOGRTs insert slowly, so this can take a while. Tip: raise "Words per caption" for fewer, longer lines.\n\nContinue?')) return;
+
+    capProgress('Saving project…');
+    ensureProjectSaved().then(function (ok) {
+      if (!ok) { capProgress(null); return null; }
+      capProgress('Reading the editable template…');
+      return CPBridge.callHost('CP_inspectMogrt', { path: bb.path }).then(function (r) {
+        var params = mapPresetToMogrt(preset, (r && r.props) || []);
+        capProgress('Adding ' + tcues.length + ' editable, styled captions');
+        return CPBridge.callHost('CP_insertMogrtCaptions', {
+          mogrtPath: bb.path, cues: tcues, videoTrack: null, audioTrack: 0,
+          params: params, textStyle: textStyle, stretch: false
+        });
+      });
+    }).then(function (r) {
+      if (r == null) { capProgress(null); return; }
+      capProgress(null);
+      if (!r.inserted) {
+        var why = (r.sampleErrors && r.sampleErrors.length) ? ' (' + r.sampleErrors[0] + ')' : '';
+        return toast('Couldn\'t place editable captions' + why + '. Try "Add captions (burned-in)" instead.', true);
+      }
+      toast('✅ Added ' + r.inserted + ' EDITABLE caption clips, styled like “' + preset.name + '” — each is its ' +
+            'OWN clip on the timeline, timed to your audio. Edit any in Window → Essential Graphics.');
+    }).catch(function (e) { capProgress(null); toast(e.message, true); });
   }
 
   // ========================================================== SMART CUT ====
