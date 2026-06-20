@@ -497,36 +497,40 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .diag-out.err { color: #ff9b96; }
 
-/* MOGRT param editor (colours / size / font) */
-/* MOGRT property editor — styled to read like Premiere's Essential Graphics:
-   a titled panel, uppercase section dividers, and clean label-left / control-right
-   rows with hairline separators. */
-.tpl-params { background: var(--bg2); border: 1px solid var(--line2); border-radius: 12px;
-  padding: 0; margin-bottom: 11px; overflow: hidden; }
-.tpl-params .mp-head { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 800;
-  color: var(--fg); background: var(--card2); padding: 9px 12px; border-bottom: 1px solid var(--line2); }
-.tpl-params .mp-toolbar { padding: 8px 12px 2px; margin: 0; }
-.tpl-params .mp-sub { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em;
-  color: var(--accent-text); margin: 0; padding: 11px 12px 5px; border-top: 1px solid var(--line); }
-.tpl-params .mp-sub:first-of-type { border-top: none; }
-.mp-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0;
-  padding: 6px 12px; min-height: 32px; border-top: 1px solid rgba(247,225,211,.05); }
-.mp-row:hover { background: rgba(247,225,211,.025); }
-.mp-row .mp-name { flex: 1 1 auto; font-size: 11.5px; color: var(--fg); opacity: .92;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mp-row .mp-ctrl { flex: 0 0 auto; }
-.tpl-params .hint { padding: 9px 12px; margin: 0; border-top: 1px solid var(--line); }
-.mp-row input[type="color"] { width: 34px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; }
-.mp-row input[type="number"] { width: 90px; }
-.mp-row select.mp-ctrl { max-width: 160px; }
-.mp-color { display: inline-flex; align-items: center; gap: 6px; }
-.mp-color .mp-hex { width: 80px; font: 11px ui-monospace, "JetBrains Mono", monospace; text-transform: uppercase; }
-.mp-slider { display: inline-flex; align-items: center; gap: 6px; }
-.mp-slider input[type="range"] { width: 92px; }
-.mp-slider .mp-snum { width: 56px; }
-.mp-point { display: inline-flex; align-items: center; gap: 4px; }
-.mp-point .mp-xy { width: 56px; }
-.mp-point .mp-xylbl { font-size: 10px; opacity: .55; }
+/* MOGRT property editor — a TWO-COLUMN grid that reads like Premiere's Essential
+   Graphics: titled panel, full-width section dividers, and compact controls laid
+   out two-per-row (label on top, control fills the cell) so there's little
+   scrolling. Used by both the editor tab (#tpl-params) and the action sheet. */
+.tpl-params { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 0; align-items: start;
+  background: var(--bg2); border: 1px solid var(--line2); border-radius: 12px;
+  padding: 0 0 8px; margin-bottom: 11px; overflow: visible; }
+/* full-width bands span both columns */
+.tpl-params > .mp-head { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px;
+  font-size: 11.5px; font-weight: 800; color: var(--fg); background: var(--card2);
+  padding: 9px 12px; border-bottom: 1px solid var(--line2); margin-bottom: 4px;
+  border-radius: 11px 11px 0 0; }
+.tpl-params > .mp-toolbar { grid-column: 1 / -1; padding: 4px 12px 2px; margin: 0; }
+.tpl-params > .mp-sub { grid-column: 1 / -1; font-size: 10px; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--accent-text); margin: 0; padding: 10px 12px 2px;
+  border-top: 1px solid var(--line); }
+.tpl-params > .mp-sub:first-of-type { border-top: none; }
+.tpl-params > .hint { grid-column: 1 / -1; padding: 8px 12px 0; margin: 0; border-top: 1px solid var(--line); }
+/* two-per-row property cells */
+.mp-row { display: flex; flex-direction: column; align-items: stretch; gap: 3px;
+  margin: 0; padding: 5px 12px; min-height: 0; border: none; }
+.mp-row .mp-name { font-size: 11px; color: var(--fg); opacity: .92; white-space: normal;
+  line-height: 1.25; overflow: visible; }
+.mp-row .mp-ctrl { align-self: stretch; }
+.mp-row input[type="number"] { width: 100%; }
+.mp-row select.mp-ctrl { max-width: none; width: 100%; }
+.mp-color { display: flex; align-items: center; width: 100%; gap: 6px; }
+.mp-color .mp-hex { flex: 1 1 auto; width: auto; min-width: 0; font: 11px ui-monospace, "JetBrains Mono", monospace; text-transform: uppercase; }
+.mp-slider { display: flex; align-items: center; width: 100%; gap: 6px; }
+.mp-slider input[type="range"] { flex: 1 1 auto; width: auto; min-width: 0; }
+.mp-slider .mp-snum { flex: 0 0 46px; width: 46px; }
+.mp-point { display: flex; align-items: center; width: 100%; gap: 4px; }
+.mp-point .mp-xy { flex: 1 1 auto; width: auto; min-width: 0; }
+.mp-point .mp-xylbl { font-size: 10px; opacity: .55; flex: 0 0 auto; }
 .hint.err { color: #ff9b96; }
 
 /* results */

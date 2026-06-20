@@ -3232,6 +3232,7 @@
      template — the same basic params Premiere shows in Essential Graphics. */
   function buildMogrtCustomizer(box, path) {
     box = box || $('tpl-params');
+    box.classList.add('tpl-params');   // unify the editor-tab and action-sheet styling
     path = path || selectedMogrtPath();
     if (!path) { box.classList.remove('hidden'); box.innerHTML = '<p class="hint err">Pick a template first.</p>'; return; }
     // new template → drop previous overrides
