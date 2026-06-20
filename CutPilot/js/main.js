@@ -1236,7 +1236,7 @@
       var list = JSON.parse(fs.readFileSync(idxFile, 'utf8')) || [];
       state.bundledMogrts = list.map(function (m) {
         return { name: m.name, path: path.join(mdir, m.file),
-                 category: m.category || 'Templates', kind: m.kind || 'caption' };
+                 category: m.category || 'Templates', kind: m.kind || 'caption', desc: m.desc || '' };
       }).filter(function (m) { try { return fs.existsSync(m.path); } catch (e) { return false; } });
     } catch (e) { state.bundledMogrts = []; }
   }
@@ -1331,7 +1331,7 @@
     var out = [];
     (state.bundledMogrts || []).forEach(function (m) {
       out.push({ id: 'mogrt:' + m.path, name: m.name, category: MOGRT_CAT, mogrt: true,
-                 path: m.path, popularity: 90, subcat: m.category, bundled: true });
+                 path: m.path, popularity: 90, subcat: m.desc || m.category, desc: m.desc, bundled: true });
     });
     (state.folderMogrts || []).forEach(function (m) {
       out.push({ id: 'mogrt:' + m.path, name: m.name, category: MOGRT_CAT, mogrt: true,
@@ -1484,7 +1484,8 @@
       var mmeta = document.createElement('div');
       mmeta.className = 'tpl-meta';
       var mnm = document.createElement('span'); mnm.className = 'tpl-name'; mnm.textContent = t.name;
-      var mct = document.createElement('span'); mct.className = 'tpl-cat'; mct.textContent = 'Editable in Premiere';
+      var mct = document.createElement('span'); mct.className = 'tpl-cat';
+      mct.textContent = t.subcat || 'Editable in Premiere'; mct.title = t.subcat || '';
       mmeta.appendChild(mnm); mmeta.appendChild(mct);
       mc.appendChild(mmeta);
       mc.addEventListener('click', function () { openMogrtSheet(t); });
@@ -1573,6 +1574,12 @@
   function openMogrtSheet(t) {
     state.selectedMogrt = { path: t.path, name: t.name };
     $('ms-name').textContent = t.name;
+    // show THIS template's real capabilities (read from its definition.json)
+    if ($('ms-hint')) {
+      var caps = mogrtCapsSummary(t.path);
+      $('ms-hint').textContent = caps ? ('✏️ Editable in Premiere — ' + caps)
+        : 'Premiere Motion Graphics Template — stays editable in Essential Graphics.';
+    }
     $('ms-inspect-out').classList.add('hidden');
     refreshWordMirrors();
     $('mogrt-sheet').classList.remove('hidden');
@@ -3192,6 +3199,35 @@
   var MT = { BOOL: 1, SLIDER: 2, ANGLE: 3, COLOR: 4, POINT: 5, TEXT: 6, NOTE: 8, SCALE: 9, GROUP: 10, ENUM: 13 };
   function normName(s) { return String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim(); }
 
+  /* Human summary of what a .mogrt can do, read straight from its definition.json:
+     highlight style, box/shadow, text lines and its editable colours. Lets you SEE
+     each template's unique capability — works for bundled, installed or added ones. */
+  function mogrtCapsSummary(path) {
+    var defs = null; try { defs = readMogrtDefinition(path); } catch (e) {}
+    if (!defs || !defs.length) return null;
+    var colors = [], texts = 0, hasBox = false, hasShadow = false, hasGradient = false, hasHighlight = false;
+    for (var i = 0; i < defs.length; i++) {
+      var c = defs[i], t = c.type, raw = ctrlName(c) || '', nm = raw.toLowerCase();
+      if (t === MT.GROUP || /readonly|\bnote\b/.test(nm)) continue;
+      if (t === MT.COLOR) {
+        colors.push(raw.replace(/\s*colou?r\s*/i, ' ').replace(/\s+/g, ' ').trim() || raw);
+        if (/gradient/.test(nm)) hasGradient = true;
+      } else if (t === MT.TEXT) texts++;
+      if (/\bbox\b|\bbg\b|background|\bpill\b/.test(nm)) hasBox = true;
+      if (/shadow/.test(nm)) hasShadow = true;
+      if (/highlight/.test(nm)) hasHighlight = true;
+    }
+    var bits = [];
+    if (hasHighlight) bits.push(hasGradient ? 'word highlight (gradient)' : 'word highlight');
+    if (hasBox) bits.push('background box');
+    if (hasShadow) bits.push('drop shadow');
+    if (texts > 1) bits.push(texts + ' text lines');
+    var caps = bits.length ? bits.join(' · ') : 'editable text';
+    var colTxt = colors.length ? (' · 🎨 ' + colors.length + ' colour' + (colors.length > 1 ? 's' : '') +
+                 ': ' + colors.slice(0, 6).join(', ')) : '';
+    return caps + colTxt;
+  }
+
   /* Build editable controls (colour / size / font / toggle) for the selected
      template — the same basic params Premiere shows in Essential Graphics. */
   function buildMogrtCustomizer(box, path) {
@@ -3250,6 +3286,12 @@
       var ln = normName(props[li].name);
       if (ln && !(ln in liveByName)) liveByName[ln] = props[li];
     }
+    // Colour props in live order — a reliable fallback when a colour control's
+    // NAME doesn't match the live component, so multi-colour templates don't lose
+    // their 4th/5th colour to a wrong positional guess (the "can't change one of
+    // the colours" bug). Name-match still wins; this only fills the gaps.
+    var liveColors = props.filter(function (p) { return p && (p.kind === 'color' || p.kind === 'colorint'); });
+    var colorOrd = 0;
     function liveFor(defCtrl, posIdx) {
       var nm = normName(ctrlName(defCtrl));
       return (nm && liveByName[nm]) || props[posIdx] || null;
@@ -3283,10 +3325,17 @@
 
       if (t === MT.COLOR) {
         anyColor = true;
+        // resolve to a real COLOUR live prop: by name first, else the Nth colour.
+        var nmC = normName(name);
+        var byNameC = nmC ? liveByName[nmC] : null;
+        var chosenC = (byNameC && (byNameC.kind === 'color' || byNameC.kind === 'colorint'))
+                      ? byNameC : (liveColors[colorOrd] || lp);
+        colorOrd++;
+        if (chosenC && chosenC.i != null) liveIdx = chosenC.i;
         var spC = savedParam(liveIdx);
         var hex = (spC && (spC.kind === 'color' || spC.kind === 'colorint')) ? spC.value
                 : (c.value && c.value.length >= 3) ? rgbaArrayToHex(c.value)
-                : (typeof ip.value === 'string' && /^#[0-9a-f]{6}$/i.test(ip.value) ? ip.value : '#ffffff');
+                : (chosenC && typeof chosenC.value === 'string' && /^#[0-9a-f]{6}$/i.test(chosenC.value) ? chosenC.value : '#ffffff');
         (function (idx) { mpAddColor(box, name, hex, function (v) { applyColor(idx, v); }); })(liveIdx);
         continue;
       }

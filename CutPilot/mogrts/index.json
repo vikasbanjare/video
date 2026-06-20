@@ -1,13 +1,11 @@
 [
-  { "file": "Subtitle_1.mogrt",               "name": "Subtitle 1",        "category": "Subtitles",      "kind": "caption" },
-  { "file": "Subtitle_2.mogrt",               "name": "Subtitle 2",        "category": "Subtitles",      "kind": "caption" },
-  { "file": "Subtitle_3.mogrt",               "name": "Subtitle 3",        "category": "Subtitles",      "kind": "caption" },
-  { "file": "Subtitle_4.mogrt",               "name": "Subtitle 4",        "category": "Subtitles",      "kind": "caption" },
-  { "file": "Subtitle_5.mogrt",               "name": "Subtitle 5",        "category": "Subtitles",      "kind": "caption" },
-  { "file": "Text_Animation_01.mogrt",        "name": "Text Animation 01", "category": "Title Animations", "kind": "title" },
-  { "file": "Text_Animation_02.mogrt",        "name": "Text Animation 02", "category": "Title Animations", "kind": "title" },
-  { "file": "Text_Animation_03.mogrt",        "name": "Text Animation 03", "category": "Title Animations", "kind": "title" },
-  { "file": "Text_Animation_04.mogrt",        "name": "Text Animation 04", "category": "Title Animations", "kind": "title" },
-  { "file": "Text_Animation_05.mogrt",        "name": "Text Animation 05", "category": "Title Animations", "kind": "title" },
-  { "file": "Shorts_Text_Animation_01.mogrt", "name": "Shorts Text Animation 01", "category": "Title Animations", "kind": "title" }
+  { "file": "Subtitle_2.mogrt",               "name": "Clean Subtitle",    "category": "Captions", "kind": "caption", "desc": "Animated subtitle, no word highlight — clean & universal" },
+  { "file": "Subtitle_1.mogrt",               "name": "Word Highlight",    "category": "Captions", "kind": "caption", "desc": "Active word changes colour as it's spoken (+ box & shadow)" },
+  { "file": "Subtitle_3.mogrt",               "name": "Word Pop",          "category": "Captions", "kind": "caption", "desc": "Active word colours AND scales up — punchy" },
+  { "file": "Subtitle_5.mogrt",               "name": "Active-Word Box",   "category": "Captions", "kind": "caption", "desc": "A coloured pill sweeps behind the spoken word" },
+  { "file": "Subtitle_4.mogrt",               "name": "Gradient Highlight","category": "Captions", "kind": "caption", "desc": "Two-colour gradient highlight + entry animation" },
+  { "file": "Text_Animation_01.mogrt",        "name": "Solid Title",       "category": "Titles",   "kind": "title",   "desc": "Bold one-colour title reveal" },
+  { "file": "Text_Animation_03.mogrt",        "name": "Gradient Title",    "category": "Titles",   "kind": "title",   "desc": "Title with a 4-stop gradient fill" },
+  { "file": "Text_Animation_05.mogrt",        "name": "Three-Line Title",  "category": "Titles",   "kind": "title",   "desc": "Three independently-styled stacked lines" },
+  { "file": "Shorts_Text_Animation_01.mogrt", "name": "Shorts Stack",      "category": "Titles",   "kind": "title",   "desc": "Five positioned text lines for Shorts/Reels intros" }
 ]
