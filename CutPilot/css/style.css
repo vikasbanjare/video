@@ -462,6 +462,9 @@ input[type="range"]::-webkit-slider-thumb {
   border: 1px solid var(--line2); border-radius: 10px; }
 .seed-setup summary { cursor: pointer; font-size: 12px; font-weight: 700; color: var(--accent-text); }
 .seed-setup summary::-webkit-details-marker { color: var(--dim); }
+.seed-lead { color: var(--dim); font-size: 11.5px; line-height: 1.55; margin: 8px 0; }
+.seed-diy { margin-top: 10px; }
+.seed-diy summary { cursor: pointer; font-size: 11px; color: var(--dim); }
 .seed-steps { margin: 8px 0 6px; padding-left: 18px; color: var(--dim); font-size: 11.5px; line-height: 1.6; }
 .seed-steps code { background: var(--accent-soft); color: var(--accent-text); padding: 1px 5px; border-radius: 5px; font-size: 11px; }
 .hero-btn.needs-seed { background: var(--card2); color: var(--fg);

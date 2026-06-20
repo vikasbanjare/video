@@ -3424,6 +3424,51 @@
      it is code-driven, so it works for every style and every video. */
   function seedPath() { return (settings.seedMogrt || '').trim() || null; }
 
+  /* Inspect the seed ONCE (cached) so we know which property index holds Text
+     Color / Highlight / Background etc. — purpose-built subtitle .mogrts expose
+     these as named, editable params, which is what lets us restyle them. */
+  function getSeedProps(seed) {
+    if (state.seedProps && state.seedProps.path === seed) return Promise.resolve(state.seedProps.props);
+    return CPBridge.callHost('CP_inspectMogrt', { path: seed }).then(function (r) {
+      var props = (r && r.props) ? r.props : [];
+      state.seedProps = { path: seed, props: props };
+      return props;
+    }).catch(function () { return []; });
+  }
+
+  /* Map a built-in caption preset onto a template's NAMED colour params, using
+     the template's own classification (so values are encoded the way it expects).
+     Best-effort by name: anything we can't match is just left at the template's
+     default, so this never breaks a template — it only improves the match. */
+  function mapPresetToSeedParams(preset, props) {
+    var out = [];
+    if (!preset || !props || !props.length) return out;
+    var COL = ['color', 'colorint'];
+    function find(res, kinds) {
+      for (var i = 0; i < props.length; i++) {
+        var p = props[i];
+        if (kinds && kinds.indexOf(p.kind) < 0) continue;
+        var nm = (p.name || '').toLowerCase();
+        for (var r = 0; r < res.length; r++) if (res[r].test(nm)) return p;
+      }
+      return null;
+    }
+    function color(p, hex) { if (p && hex) out.push({ i: p.i, kind: p.kind, value: hex }); }
+    function num(p, v) { if (p && v != null) out.push({ i: p.i, kind: 'number', value: v }); }
+
+    color(find([/text\s*colou?r/, /word\s*colou?r/, /font\s*colou?r/], COL), preset.fill);
+    color(find([/highlight/], COL), preset.highlight || preset.fill);
+    if (preset.boxColor) {
+      color(find([/background|\bbg\b|box/], COL), preset.boxColor);
+      var bo = preset.boxOpacity; bo = (bo == null) ? 100 : (bo <= 1 ? Math.round(bo * 100) : bo);
+      num(find([/(background|\bbg\b|box).*opacit|opacit.*(background|\bbg\b|box)/], ['number']), bo);
+    } else {
+      // preset has no pill → hide the template's background so the look matches
+      num(find([/(background|\bbg\b|box).*opacit|opacit.*(background|\bbg\b|box)/], ['number']), 0);
+    }
+    return out;
+  }
+
   function refreshSeedStatus() {
     var s = $('seed-status');
     var btn = $('btn-editable-main');
@@ -3484,14 +3529,19 @@
     capProgress('Saving project…');
     ensureProjectSaved().then(function (ok) {
       if (!ok) { capProgress(null); return null; }
-      capProgress('Adding ' + tcues.length + ' editable, styled caption graphics');
-      return CPBridge.callHost('CP_insertMogrtCaptions', {
-        mogrtPath: seed, cues: tcues, videoTrack: null, audioTrack: 0,
-        // stretch:false → each clip is simply trimmed to its cue length, so the
-        // entrance-animation keyframes keep their real (snappy) timing instead
-        // of being time-remapped along with the clip.
-        params: [], textStyle: textStyle, stretch: false,
-        anim: anim, animSpeed: animSpeed
+      capProgress('Reading your seed template…');
+      return getSeedProps(seed).then(function (props) {
+        // Restyle the template's named colour params to match the chosen preset.
+        var params = mapPresetToSeedParams(preset, props);
+        capProgress('Adding ' + tcues.length + ' editable, styled caption graphics');
+        return CPBridge.callHost('CP_insertMogrtCaptions', {
+          mogrtPath: seed, cues: tcues, videoTrack: null, audioTrack: 0,
+          // stretch:false → each clip is simply trimmed to its cue length, so the
+          // entrance-animation keyframes keep their real (snappy) timing instead
+          // of being time-remapped along with the clip.
+          params: params, textStyle: textStyle, stretch: false,
+          anim: anim, animSpeed: animSpeed
+        });
       });
     }).then(function (r) {
       if (r == null) { capProgress(null); return; }
