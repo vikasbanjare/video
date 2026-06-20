@@ -334,6 +334,43 @@
       });
     });
   }
+  /* Call Groq's chat-completions API (same free key as cloud transcription) and
+     return the assistant text. Body goes via a temp file (--data-binary @file) so
+     unicode/quotes/newlines in the transcript never break shell escaping. */
+  function groqChat(messages, opts) {
+    opts = opts || {};
+    return new Promise(function (resolve, reject) {
+      var key = (settings.groqKey || '').trim();
+      if (!key) return reject(new Error('This uses your free Groq key — add it in Settings → Auto-transcribe (console.groq.com/keys).'));
+      var cp, fs, os, pathMod;
+      try { cp = nodeReq('child_process'); fs = nodeReq('fs'); os = nodeReq('os'); pathMod = nodeReq('path'); } catch (e) { return reject(e); }
+      var body = { model: opts.model || 'llama-3.3-70b-versatile',
+                   temperature: (opts.temperature != null ? opts.temperature : 0.2), messages: messages };
+      if (opts.json) body.response_format = { type: 'json_object' };
+      var tmp = pathMod.join(os.tmpdir(), 'cutpilot-groq-' + Date.now() + '.json');
+      try { fs.writeFileSync(tmp, JSON.stringify(body), 'utf8'); } catch (eW) { return reject(eW); }
+      var args = ['-sS', '--max-time', String(opts.timeout || 120), 'https://api.groq.com/openai/v1/chat/completions',
+        '-H', 'Authorization: Bearer ' + key, '-H', 'Content-Type: application/json', '--data-binary', '@' + tmp];
+      var p; try { p = cp.spawn('curl', args); } catch (eS) { try { fs.unlinkSync(tmp); } catch (e) {} return reject(eS); }
+      var out = '', err = '';
+      if (p.stdout) p.stdout.on('data', function (d) { out += d.toString(); });
+      if (p.stderr) p.stderr.on('data', function (d) { err += d.toString(); });
+      p.on('error', function (e) { try { fs.unlinkSync(tmp); } catch (eU) {} reject(e); });
+      p.on('close', function (code) {
+        try { fs.unlinkSync(tmp); } catch (eU) {}
+        if (code !== 0) {
+          if (code === 6 || code === 7 || code === 28 || code === 5) return reject(new Error('Couldn\'t reach Groq — this needs internet.'));
+          return reject(new Error('Groq request failed (curl ' + code + '): ' + err.slice(-160)));
+        }
+        var j; try { j = JSON.parse(out); } catch (e) { return reject(new Error('Groq returned unexpected data: ' + out.slice(0, 160))); }
+        if (j.error) return reject(new Error('Groq: ' + (j.error.message || JSON.stringify(j.error))));
+        var c = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+        if (!c) return reject(new Error('Groq returned no content.'));
+        resolve(c);
+      });
+    });
+  }
+
   function runProc(bin, args, onLog) {
     return new Promise(function (resolve, reject) {
       var cp; try { cp = nodeReq('child_process'); } catch (e) { return reject(e); }
@@ -876,7 +913,7 @@
     var b = $('btn-tr-change');
     if (btn) { b.textContent = btn; b.classList.remove('hidden'); }
     else b.classList.add('hidden');
-    var er = $('tr-export-row'); if (er) er.classList.toggle('hidden', !state.transcript);  // export only when words exist
+    var er = $('tr-tools'); if (er) er.classList.toggle('hidden', !state.transcript);  // export/translate/speaker only when words exist
     updateSyncStat();   // transcript changed → refresh the word-timing indicator
 
     // One-click captions: if a caption button kicked off transcription, finish
@@ -1034,6 +1071,12 @@
     if ($('btn-exp-srt')) $('btn-exp-srt').addEventListener('click', function () { exportTranscript('srt'); });
     if ($('btn-exp-vtt')) $('btn-exp-vtt').addEventListener('click', function () { exportTranscript('vtt'); });
     if ($('btn-exp-txt')) $('btn-exp-txt').addEventListener('click', function () { exportTranscript('txt'); });
+    if ($('btn-translate')) $('btn-translate').addEventListener('click', function () {
+      var v = $('tr-translate-lang') ? $('tr-translate-lang').value : '';
+      if (!v) return toast('Pick a language to translate to first.', true);
+      var parts = v.split('|'); translateTranscript(parts[0], parts[1] || parts[0]);
+    });
+    if ($('btn-detect-speakers')) $('btn-detect-speakers').addEventListener('click', detectSpeakers);
     if ($('tre-cancel')) $('tre-cancel').addEventListener('click', function () { $('tr-editor').classList.add('hidden'); });
     if ($('tre-save')) $('tre-save').addEventListener('click', saveTranscriptEditor);
     $('btn-tr-pick').addEventListener('click', function () {
@@ -1128,6 +1171,80 @@
     try { fs.writeFileSync(dest, body, 'utf8'); }
     catch (eW) { return toast('Couldn\'t save the file: ' + eW.message, true); }
     toast('✅ Saved ' + ext.toUpperCase() + ' (' + cues.length + ' lines) → ' + dest);
+  }
+
+  // ---- AI transcript actions (translate / speaker labels) via Groq -----------
+  /* Replace the active transcript with an edited set of cues (timings kept),
+     writing a fresh SRT and pointing state at it. Word-level timing is dropped
+     because the text changed. The previous SRT stays on disk (re-findable). */
+  function installNewTranscript(cues, label, suffix) {
+    var fs = nodeReq('fs'), os = nodeReq('os'), pathMod = nodeReq('path');
+    var dest = pathMod.join(os.tmpdir(), 'cutpilot-' + (suffix || 'edit') + '-' + Date.now() + '.srt');
+    fs.writeFileSync(dest, CPCaptions.toSRT(cues), 'utf8');
+    state.transcript = { label: label, path: dest, mtime: 1e16 };
+    state.transcriptWords = null;
+    state.transcriptManual = true;
+    refreshMogrtSheetTr(); refreshMogrtEditorTr();
+  }
+
+  function translateTranscript(code, name) {
+    if (!CPBridge.isCEP()) return toast('Translation needs Premiere.', true);
+    if (!state.transcript) return toast('Transcribe or load a transcript first.', true);
+    if (state.aiBusy) return toast('Hang on — an AI step is already running…');
+    var cues; try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
+    if (!cues.length) return toast('The transcript is empty.', true);
+    var lines = cues.map(function (c) { return c.text; });
+    state.aiBusy = true;
+    setTranscriptBar('', '🌐', 'Translating ' + lines.length + ' lines to ' + name + '…', null);
+    var sys = 'You are a professional subtitle translator. Translate every line into ' + name +
+      '. Return JSON {"lines":[...]} containing EXACTLY ' + lines.length + ' strings — one translation per input line, same order. ' +
+      'Never merge, split, add, or drop lines. Keep each translation natural, concise and suitable for on-screen captions. Output ONLY the translated text, no notes.';
+    groqChat([{ role: 'system', content: sys }, { role: 'user', content: JSON.stringify({ lines: lines }) }], { json: true, temperature: 0.2 })
+      .then(function (content) {
+        var parsed; try { parsed = JSON.parse(content); } catch (e) { throw new Error('Translation came back malformed.'); }
+        var tl = parsed.lines || parsed.translations || parsed.result || [];
+        if (!tl.length) throw new Error('No translation returned.');
+        var out = cues.map(function (c, i) { return { start: c.start, end: c.end, text: (tl[i] != null ? String(tl[i]) : c.text) }; });
+        installNewTranscript(out, 'Translated → ' + name + ' (' + out.length + ' lines)', 'translated-' + (code || 'xx'));
+        setTranscriptBar('ok', '✅', 'Translated to ' + name + ' — ' + out.length + ' lines. Now add captions.', 'Change');
+        var warn = (tl.length !== lines.length) ? ' ⚠️ line count shifted (' + tl.length + ' vs ' + lines.length + ') — check the wording.' : '';
+        toast('🌐 Translated to ' + name + '. The words are now in ' + name + ' — add captions or Export SRT. (Word-by-word highlight is off for translations.)' + warn);
+      })
+      .catch(function (e) { setTranscriptBar('warn', '⚠️', 'Translation failed', 'Get one →'); toast('Translate failed: ' + e.message, true); })
+      .then(function () { state.aiBusy = false; });
+  }
+
+  function detectSpeakers() {
+    if (!CPBridge.isCEP()) return toast('Speaker detection needs Premiere.', true);
+    if (!state.transcript) return toast('Transcribe or load a transcript first.', true);
+    if (state.aiBusy) return toast('Hang on — an AI step is already running…');
+    var cues; try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
+    if (!cues.length) return toast('The transcript is empty.', true);
+    var lines = cues.map(function (c) { return c.text; });
+    state.aiBusy = true;
+    setTranscriptBar('', '🗣️', 'Detecting speakers across ' + lines.length + ' lines…', null);
+    var sys = 'You label subtitle lines with who is speaking. Decide how many distinct speakers there are (usually 1–4) using conversational cues ' +
+      '(questions vs answers, pronouns, topic/turn shifts). If it is clearly one person, label every line 1. ' +
+      'Return JSON {"speakers":[...]} with EXACTLY ' + lines.length + ' integers (1-based), one per input line, same order.';
+    groqChat([{ role: 'system', content: sys }, { role: 'user', content: JSON.stringify({ lines: lines }) }], { json: true, temperature: 0 })
+      .then(function (content) {
+        var parsed; try { parsed = JSON.parse(content); } catch (e) { throw new Error('Speaker data came back malformed.'); }
+        var sp = parsed.speakers || parsed.labels || [];
+        if (!sp.length) throw new Error('No speaker labels returned.');
+        var n = 0, prev = null;
+        var out = cues.map(function (c, i) {
+          var s = parseInt(sp[i], 10) || 1; if (s > n) n = s;
+          var txt = c.text;
+          if (s !== prev) txt = 'Speaker ' + s + ': ' + txt;   // label only when the speaker changes (subtitle convention)
+          prev = s;
+          return { start: c.start, end: c.end, text: txt };
+        });
+        installNewTranscript(out, 'Speaker-labelled (' + n + ' speaker' + (n > 1 ? 's' : '') + ')', 'speakers');
+        setTranscriptBar('ok', '✅', 'Labelled ' + n + ' speaker' + (n > 1 ? 's' : '') + ' — ' + out.length + ' lines. Now add captions.', 'Change');
+        toast('🗣️ Found ' + n + ' speaker' + (n > 1 ? 's' : '') + ' (AI guess). Labels were added to the words — add captions or Export. Tap “Change” to go back if it looks off.');
+      })
+      .catch(function (e) { setTranscriptBar('warn', '⚠️', 'Speaker detection failed', 'Get one →'); toast('Speaker detection failed: ' + e.message, true); })
+      .then(function () { state.aiBusy = false; });
   }
 
   // ---- transcript editor: fix wording / delete junk / merge before captioning ----

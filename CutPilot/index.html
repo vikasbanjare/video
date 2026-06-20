@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.118</span>
+    <span class="ver" id="ver">v0.9.119</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -49,11 +49,40 @@
       <button id="btn-tr-edit" class="hero-btn alt">✏️ Review &amp; edit the words</button>
       <button id="btn-mark-hooks" class="hero-btn alt small">🔖 Mark viral hooks <span class="dim">(adds timeline markers)</span></button>
       <button id="btn-broll" class="hero-btn alt small">💡 B-roll ideas <span class="dim">(suggests footage to overlay)</span></button>
-      <div id="tr-export-row" class="row tight hidden" style="margin-top:6px;align-items:center;gap:6px">
-        <span class="dim">⤓ Export words as</span>
-        <button id="btn-exp-srt" class="chip-btn">SRT</button>
-        <button id="btn-exp-vtt" class="chip-btn">VTT</button>
-        <button id="btn-exp-txt" class="chip-btn">TXT</button>
+      <div id="tr-tools" class="hidden">
+        <div class="row tight" style="margin-top:6px;align-items:center;gap:6px;flex-wrap:wrap">
+          <span class="dim">⤓ Export words as</span>
+          <button id="btn-exp-srt" class="chip-btn">SRT</button>
+          <button id="btn-exp-vtt" class="chip-btn">VTT</button>
+          <button id="btn-exp-txt" class="chip-btn">TXT</button>
+        </div>
+        <div class="row tight" style="margin-top:6px;align-items:center;gap:6px;flex-wrap:wrap">
+          <span class="dim">🌐 Translate to</span>
+          <select id="tr-translate-lang">
+            <option value="">language…</option>
+            <option value="es|Spanish">Spanish</option>
+            <option value="fr|French">French</option>
+            <option value="de|German">German</option>
+            <option value="hi|Hindi">Hindi</option>
+            <option value="pt|Portuguese">Portuguese</option>
+            <option value="it|Italian">Italian</option>
+            <option value="ja|Japanese">Japanese</option>
+            <option value="ko|Korean">Korean</option>
+            <option value="zh|Chinese (Simplified)">Chinese</option>
+            <option value="ar|Arabic">Arabic</option>
+            <option value="ru|Russian">Russian</option>
+            <option value="id|Indonesian">Indonesian</option>
+            <option value="tr|Turkish">Turkish</option>
+            <option value="nl|Dutch">Dutch</option>
+            <option value="pl|Polish">Polish</option>
+            <option value="vi|Vietnamese">Vietnamese</option>
+            <option value="th|Thai">Thai</option>
+            <option value="en|English">English</option>
+          </select>
+          <button id="btn-translate" class="chip-btn">Go</button>
+          <button id="btn-detect-speakers" class="chip-btn">🗣️ Detect speakers (AI)</button>
+        </div>
+        <p class="hint" style="margin:4px 0 0">🌐 &amp; 🗣️ use your free <b>Groq</b> key (Settings). Translating replaces the words with the new language — your original stays cached. Speaker detection is an AI guess, best for clear back-and-forth dialogue.</p>
       </div>
       <div id="tr-help" class="help-box hidden">
         <b>✨ Easiest: let CutPilot transcribe it for you</b> — select your video
@@ -779,7 +808,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.118 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.119 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>
