@@ -1431,7 +1431,11 @@
       if (cat === 'Favorites') list = list.filter(function (t) { return state.favs[t.id]; });
       else if (cat === 'Recent') list = state.recent.map(findTemplate).filter(function (t) { return t && !t.mogrt; });
       else if (cat === 'My Templates') list = state.customTemplates.slice();
-      else if (cat !== 'All' && cat !== MOGRT_CAT) list = list.filter(function (t) { return t.category === cat; });
+      // The editable, shipped 🎬 templates are the headline feature (animated AND
+      // editable on the timeline). They used to be hidden behind the "All" chip,
+      // so a fresh open showed only burned-in PNG styles. Keep them visible in
+      // EVERY browse category alongside that category's styles.
+      else if (cat !== 'All' && cat !== MOGRT_CAT) list = list.filter(function (t) { return t.category === cat || (t.mogrt && t.bundled); });
     }
 
     if (state.libSearch) {
@@ -1443,6 +1447,13 @@
     if (state.libSort === 'popular' && cat !== 'Recent') list.sort(function (a, b) { return (b.popularity || 0) - (a.popularity || 0); });
     else if (state.libSort === 'az') list.sort(function (a, b) { return a.name < b.name ? -1 : 1; });
     else if (state.libSort === 'favorites') list.sort(function (a, b) { return (state.favs[b.id] ? 1 : 0) - (state.favs[a.id] ? 1 : 0); });
+    // Pin the editable 🎬 templates first (keeps each group's sort order) so the
+    // "animated AND editable on the timeline" option is the first thing seen.
+    if (cat !== 'Favorites' && cat !== 'Recent' && cat !== 'My Templates') {
+      var ed = [], pl = [];
+      for (var k = 0; k < list.length; k++) (list[k].mogrt ? ed : pl).push(list[k]);
+      list = ed.concat(pl);
+    }
     return list;
   }
 
