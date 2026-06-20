@@ -853,6 +853,7 @@
         var tb = document.querySelector('.tab[data-tab="captions"]'); if (tb) tb.click();
         showView('style');
         if (act === 'native') applyNative();
+        else if (act === 'editable') applyEditableTemplate();
         else if (act === 'magic' && $('btn-magic')) $('btn-magic').click();
       }, 60);
     } else if (cls === 'warn' && state.pendingCaptionAction) {
@@ -2469,6 +2470,11 @@
   // ---- native, Premiere-editable caption track (plain text, no karaoke) ----
   if ($('btn-native-main')) $('btn-native-main').addEventListener('click', applyNative);
 
+  // ---- editable + styled + animated captions (the seed-mogrt route) ----
+  if ($('btn-editable-main')) $('btn-editable-main').addEventListener('click', applyEditableTemplate);
+  if ($('btn-seed-pick')) $('btn-seed-pick').addEventListener('click', pickSeed);
+  refreshSeedStatus();
+
   // ---- edit the wording of captions already on the timeline ----
   if ($('btn-cap-edit')) $('btn-cap-edit').addEventListener('click', openCaptionTextEditor);
   if ($('btn-cap-fix1')) $('btn-cap-fix1').addEventListener('click', openOneCaptionEditor);
@@ -3406,6 +3412,101 @@
               'Window → Text. The style recipe for “' + preset.name + '” is shown below the buttons.');
       }).catch(function (e) { capProgress(null); toast(e.message, true); });
     } catch (e) { capProgress(null); toast(e.message, true); }
+  }
+
+  // ---- EDITABLE template captions (styled + animated + audio-synced) -------
+  /* The "seed" is a one-time blank text .mogrt the user exports from Premiere
+     once. CutPilot then drops one instance per caption line, fills it with the
+     words (editable in the Essential Graphics panel), styles it like the chosen
+     built-in template (font/colour/size/caps via the rich source-text path),
+     times each clip to the transcript (audio sync) and applies the entrance
+     animation. Reliable because the template FILE exists; everything on top of
+     it is code-driven, so it works for every style and every video. */
+  function seedPath() { return (settings.seedMogrt || '').trim() || null; }
+
+  function refreshSeedStatus() {
+    var s = $('seed-status');
+    var btn = $('btn-editable-main');
+    var p = seedPath();
+    if (s) {
+      if (p) { s.className = 'hint ok'; s.textContent = '✓ Seed ready: ' + p.split(/[\\/]/).pop() + ' — editable captions are armed.'; }
+      else   { s.className = 'hint';    s.textContent = 'No seed yet — do the 30-second setup above once, then this is automatic forever.'; }
+    }
+    if (btn) {
+      btn.disabled = false; // always clickable; if no seed we open the setup
+      btn.classList.toggle('needs-seed', !p);
+    }
+  }
+
+  function pickSeed() {
+    var p = pickFile('Choose your CutPilot caption seed (.mogrt)', ['mogrt']);
+    if (!p) return;
+    if (!/\.mogrt$/i.test(p)) return toast('That isn\'t a .mogrt file. Export one from Premiere first (steps above).', true);
+    settings.seedMogrt = p; saveSettings();
+    refreshSeedStatus();
+    toast('✓ Seed saved. Pick a style and tap “🖊️ Add editable captions”. This is set for every future video.');
+  }
+
+  function applyEditableTemplate() {
+    var seed = seedPath();
+    if (!seed) {
+      var box = $('seed-setup'); if (box) { box.open = true; box.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+      return toast('One-time setup first: create a seed template (≈30s, steps above), then pick it. After that this button is fully automatic.', true);
+    }
+    if (!ensureTranscriptThen('editable')) return;
+    var cues;
+    try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
+    var preset = currentPreset();
+    var words = parseInt($('c-words').value, 10) || 0;
+    var caps = !!($('c-upper') && $('c-upper').checked) || !!preset.uppercase;
+    var caseMode = caps ? 'upper' : (state.mogrtCase || 'as-spoken');
+    var tcues = textCues(cues, words, caseMode);
+    if (!tcues.length) return toast('No caption lines to add.', true);
+
+    // Style derived from the chosen built-in template. These are exactly the
+    // fields CP_setMgrtText can write into a rich source-text graphic.
+    var textStyle = {
+      font: preset.font,
+      size: preset.fontSize,
+      caps: caps,
+      bold: (preset.weight || 800) >= 600,
+      fill: preset.fill
+    };
+    // Editable text can't carry the sliding word-highlight, so karaoke/reveal
+    // become a per-chunk pop-in (still synced to audio by each cue's timing).
+    var anim = currentAnim();
+    if (anim === 'karaoke' || anim === 'reveal' || anim === 'typewriter') anim = 'pop';
+    var animSpeed = (parseInt($('c-animspeed') && $('c-animspeed').value, 10) || 100) / 100;
+
+    if (tcues.length > 120 &&
+        !confirm(tcues.length + ' editable graphics will be inserted — one per caption line. MOGRTs insert slowly, so this can take a while. Tip: raise "Words per caption" for fewer, longer lines.\n\nContinue?')) return;
+
+    capProgress('Saving project…');
+    ensureProjectSaved().then(function (ok) {
+      if (!ok) { capProgress(null); return null; }
+      capProgress('Adding ' + tcues.length + ' editable, styled caption graphics');
+      return CPBridge.callHost('CP_insertMogrtCaptions', {
+        mogrtPath: seed, cues: tcues, videoTrack: null, audioTrack: 0,
+        // stretch:false → each clip is simply trimmed to its cue length, so the
+        // entrance-animation keyframes keep their real (snappy) timing instead
+        // of being time-remapped along with the clip.
+        params: [], textStyle: textStyle, stretch: false,
+        anim: anim, animSpeed: animSpeed
+      });
+    }).then(function (r) {
+      if (r == null) { capProgress(null); return; }
+      capProgress(null);
+      if (!r.inserted) {
+        var why = (r.sampleErrors && r.sampleErrors.length) ? ' (' + r.sampleErrors[0] + ')' : '';
+        return toast('Couldn\'t place your seed template' + why + '. Re-pick it, or re-export it from Premiere (steps above).', true);
+      }
+      if (!r.textSet) {
+        return toast('Placed ' + r.inserted + ' graphics, but your seed exposes no editable text field. Re-export it: select the TEXT layer, then Graphics → Export As Motion Graphics Template (that auto-exposes the words).', true);
+      }
+      var animTxt = (anim && anim !== 'none') ? ' · ' + anim + ' animation' : '';
+      toast('✅ Added ' + r.inserted + ' EDITABLE captions styled like “' + preset.name + '” — synced to your audio' + animTxt +
+            '. Edit any line in Window → Essential Graphics (or double-click it on screen).');
+    }).catch(function (e) { capProgress(null); toast(e.message, true); });
   }
 
   // ========================================================== SMART CUT ====

@@ -1538,6 +1538,16 @@ function CP_insertMogrtCaptions(argsJson) {
       // at its real opacity) so the new words actually paint.
       if (textSet > textSetBefore) CP_forceRerender(clip);
 
+      // Entrance animation — the SAME keyframe engine the PNG path uses, applied
+      // to the editable graphic clip. This is what gives "editable template"
+      // captions their synced pop/scale/slide motion (per-word-group reveal),
+      // since the sliding-highlight karaoke can't survive as editable text.
+      // 'karaoke'/'reveal'/'typewriter'/'none' carry no clip-level entrance.
+      if (args.anim && args.anim !== 'none' && args.anim !== 'karaoke' &&
+          args.anim !== 'reveal' && args.anim !== 'typewriter') {
+        try { CP_animateClip(clip, args.anim, args.animSpeed); } catch (eAnim) {}
+      }
+
       // Duration LAST (so a time-stretch can't disturb the component edits).
       // Fit the graphic to its slot by SPEED in either direction — speeding a
       // long template up is the reliable way to stop these fixed-length subtitle

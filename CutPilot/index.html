@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.106</span>
+    <span class="ver" id="ver">v0.9.107</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -425,9 +425,25 @@
         </details>
 
         <div id="legibility-note" class="legibility-note hidden"></div>
-        <button id="btn-magic" class="hero-btn">✨ Add captions <span class="dim">(animated, this style)</span></button>
-        <button id="btn-native-main" class="hero-btn alt">📝 Add as editable captions <span class="dim">(plain text, edit in Premiere)</span></button>
-        <p class="hint" style="margin:2px 0 0">Animated = the full karaoke look (edit text/style here in CutPilot). Editable = a normal Premiere caption track you restyle in the Text panel (no per-word karaoke).</p>
+        <button id="btn-magic" class="hero-btn">✨ Add captions <span class="dim">(animated, this style — burned in)</span></button>
+        <button id="btn-editable-main" class="hero-btn">🖊️ Add editable captions <span class="dim">(this style — edit on the timeline)</span></button>
+        <button id="btn-native-main" class="hero-btn alt">📝 Add plain caption track <span class="dim">(unstyled native captions)</span></button>
+        <p class="hint" style="margin:2px 0 0"><b>Animated</b> = full karaoke look, burned in (not editable). <b>Editable</b> = styled like this template, animated &amp; audio-synced, and every word stays editable in Premiere (Essential Graphics). <b>Plain</b> = a normal unstyled caption track.</p>
+
+        <!-- One-time setup so "Editable" can carry our styling. Premiere's .mogrt
+             is a sealed format, so a tiny seed template must exist once; after
+             that everything (style, text, animation, sync) is code-driven. -->
+        <details id="seed-setup" class="seed-setup">
+          <summary>⚙️ One-time setup for editable captions (≈30 seconds, once ever)</summary>
+          <ol class="seed-steps">
+            <li>In Premiere: <b>Graphics &amp; Titles → New Layer → Text</b>. Type one placeholder word (e.g. <code>Caption</code>).</li>
+            <li>Open <b>Window → Essential Graphics → Edit</b> and give that text a baseline look — font, white fill, and an <b>outline/stroke + soft shadow</b> for legibility.</li>
+            <li>With the text clip selected: <b>Graphics &amp; Titles → Export As Motion Graphics Template…</b> → save it (name it <code>CutPilot Caption</code>). This auto-exposes the editable words.</li>
+            <li>Back here, tap <b>Pick my seed</b> and choose that <code>.mogrt</code>. Done — every future video is automatic.</li>
+          </ol>
+          <button id="btn-seed-pick" class="hero-btn small">📁 Pick my seed (.mogrt)</button>
+          <div id="seed-status" class="hint"></div>
+        </details>
         <pre id="native-recipe" class="native-recipe hidden"></pre>
         <button id="btn-cap-fix1" class="hero-btn alt hidden">✏️ Fix the caption at the playhead <span class="dim">(edit one line — updates on the timeline)</span></button>
         <button id="btn-cap-edit" class="hero-btn alt hidden">📝 Edit all caption text <span class="dim">(full list)</span></button>
@@ -752,7 +768,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.106 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.107 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

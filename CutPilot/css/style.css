@@ -457,6 +457,16 @@ input[type="range"]::-webkit-slider-thumb {
 .native-recipe { margin: 8px 0 0; padding: 10px 12px; background: var(--card2);
   border: 1px solid var(--line2); border-radius: 10px; color: var(--fg);
   font: 11.5px/1.55 ui-monospace, monospace; white-space: pre-wrap; }
+.hint.ok { color: var(--ok); }
+.seed-setup { margin: 8px 0 0; padding: 8px 12px; background: var(--card2);
+  border: 1px solid var(--line2); border-radius: 10px; }
+.seed-setup summary { cursor: pointer; font-size: 12px; font-weight: 700; color: var(--accent-text); }
+.seed-setup summary::-webkit-details-marker { color: var(--dim); }
+.seed-steps { margin: 8px 0 6px; padding-left: 18px; color: var(--dim); font-size: 11.5px; line-height: 1.6; }
+.seed-steps code { background: var(--accent-soft); color: var(--accent-text); padding: 1px 5px; border-radius: 5px; font-size: 11px; }
+.hero-btn.needs-seed { background: var(--card2); color: var(--fg);
+  border: 1px dashed var(--accent); box-shadow: none; }
+.hero-btn.needs-seed:hover { background: #2c2533; }
 .ms-name { font-size: 15px; font-weight: 800; margin-bottom: 4px; }
 .ms-card .hero-btn { width: 100%; }
 .ms-card .link-btn { display: block; margin: 6px auto 0; }
