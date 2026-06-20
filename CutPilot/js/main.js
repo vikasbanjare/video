@@ -841,6 +841,23 @@
     if (btn) { b.textContent = btn; b.classList.remove('hidden'); }
     else b.classList.add('hidden');
     updateSyncStat();   // transcript changed → refresh the word-timing indicator
+
+    // One-click captions: if a caption button kicked off transcription, finish
+    // that SAME action now that the words are ready — so the user never has to
+    // come back and guess which button to press (which led to PNG-vs-editable
+    // confusion). Cleared on failure so it can't fire stale later.
+    if (cls === 'ok' && state.pendingCaptionAction && state.transcript) {
+      var act = state.pendingCaptionAction;
+      state.pendingCaptionAction = null;
+      setTimeout(function () {
+        var tb = document.querySelector('.tab[data-tab="captions"]'); if (tb) tb.click();
+        showView('style');
+        if (act === 'native') applyNative();
+        else if (act === 'magic' && $('btn-magic')) $('btn-magic').click();
+      }, 60);
+    } else if (cls === 'warn' && state.pendingCaptionAction) {
+      state.pendingCaptionAction = null;
+    }
   }
 
   /* Find the single best transcript and confirm it in the bar.
@@ -2397,7 +2414,30 @@
   }
 
   // ---- main button: the animated engine ----
+  /* Make a caption button work in ONE click even with no transcript yet:
+     remember which action was asked for, auto-transcribe, then setTranscriptBar
+     finishes that same action. Returns true if words are already here (proceed
+     now), false if we kicked off transcription (caller should stop). */
+  function ensureTranscriptThen(action) {
+    if (state.transcript) return true;
+    if (state.pendingCaptionAction) { toast('⏳ Still getting your words — I\'ll add them automatically when ready.'); return false; }
+    var ff = resolveFfmpeg();
+    var canAuto = !!ff && ((resolveQuality() === 'cloud-groq' && (settings.groqKey || '').trim()) || !!resolveWhisper());
+    if (canAuto) {
+      state.pendingCaptionAction = action;
+      toast(action === 'native'
+        ? '📝 Getting your words first — I\'ll add the EDITABLE caption track automatically when it\'s done.'
+        : '✨ Getting your words first — I\'ll add the captions automatically when it\'s done.');
+      var tb = document.querySelector('.tab[data-tab="transcribe"]'); if (tb) tb.click();
+      autoTranscribe();
+    } else {
+      toast('First get your words: Transcribe tab → 🎙️ Auto-transcribe (or load an SRT), then tap this again.', true);
+    }
+    return false;
+  }
+
   $('btn-magic').addEventListener('click', function () {
+    if (!ensureTranscriptThen('magic')) return;
     var cues;
     try { cues = readSelectedTranscript(); }
     catch (e) { return toast(e.message, true); }
@@ -3322,6 +3362,7 @@
   }
 
   function applyNative() {
+    if (!ensureTranscriptThen('native')) return;
     var cues;
     try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
     var preset = currentPreset();
