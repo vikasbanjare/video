@@ -25,6 +25,7 @@
     tplSource: 'installed',  // installed | file
     installedMogrts: [],
     bundledMogrts: [],       // .mogrt files shipped in the panel's mogrts/ folder
+    folderMogrts: [],        // .mogrt files found in user-added folders (Settings)
     mogrtFile: null,
     // multicam
     mcAudioTracks: null,
@@ -134,6 +135,17 @@
       return null;
     }
     return prompt(title + ' — enter full file path:') || null;
+  }
+
+  /* Folder picker (showOpenDialogEx's 2nd arg = chooseDirectory). Used by the
+     "Add folder" template-folder management, mirroring Captioneer's Add Folder. */
+  function pickFolder(title) {
+    if (window.cep && window.cep.fs && window.cep.fs.showOpenDialogEx) {
+      var r = window.cep.fs.showOpenDialogEx(false, true, title, null, null);
+      if (r && r.data && r.data.length) return r.data[0];
+      return null;
+    }
+    return prompt(title + ' — enter full folder path:') || null;
   }
 
   /* Find a whisper.cpp binary (local speech-to-text). User setting first, then
@@ -792,6 +804,8 @@
     wireChapters();
     wireCommandPalette();
     loadBundledMogrts();   // shipped editable templates → into the gallery
+    scanMogrtFolders();    // user-added template folders (Settings → Add folder)
+    renderMogrtFoldersUI();
     buildLibrary();
     applyTemplate(currentPreset(), { silent: true });  // seeds controls + first preview
     updateSyncStat();
@@ -1227,6 +1241,89 @@
     } catch (e) { state.bundledMogrts = []; }
   }
 
+  /* Scan every user-added template folder (Settings → Add folder) for .mogrt
+     files and cache them in state.folderMogrts. This is Captioneer's "Add Folder":
+     point CutPilot at any folder of MOGRTs and they become editable templates.
+     Walks subfolders (people organise packs into categories), capped for safety. */
+  function scanMogrtFolders() {
+    state.folderMogrts = [];
+    if (!CPBridge.isCEP()) return;
+    var fs, path;
+    try { fs = nodeReq('fs'); path = nodeReq('path'); } catch (e) { return; }
+    var folders = settings.mogrtFolders || [];
+    var hits = [], MAX = 800;
+    function walk(dir, depth) {
+      if (depth > 5 || hits.length >= MAX) return;
+      var entries; try { entries = fs.readdirSync(dir); } catch (e) { return; }
+      for (var i = 0; i < entries.length && hits.length < MAX; i++) {
+        var full = path.join(dir, entries[i]), st;
+        try { st = fs.statSync(full); } catch (e2) { continue; }
+        if (st.isDirectory()) walk(full, depth + 1);
+        else if (/\.mogrt$/i.test(entries[i])) {
+          hits.push({ name: entries[i].replace(/\.mogrt$/i, ''), path: full,
+                      category: path.basename(dir), folder: dir });
+        }
+      }
+    }
+    for (var f = 0; f < folders.length; f++) walk(folders[f], 0);
+    state.folderMogrts = hits;
+  }
+
+  /* Render the Settings list of template folders, with a per-folder .mogrt count
+     and a Remove button. */
+  function renderMogrtFoldersUI() {
+    var box = $('mogrt-folders'); if (!box) return;
+    box.innerHTML = '';
+    var folders = settings.mogrtFolders || [];
+    if (!folders.length) {
+      var e = document.createElement('p'); e.className = 'hint';
+      e.textContent = 'No extra folders yet. Tap “Add folder…” to point CutPilot at a folder of .mogrt templates.';
+      box.appendChild(e); return;
+    }
+    folders.forEach(function (dir) {
+      var count = (state.folderMogrts || []).filter(function (m) {
+        return (m.folder || '').indexOf(dir) === 0;
+      }).length;
+      var row = document.createElement('div'); row.className = 'mogrt-folder-row';
+      var nm = document.createElement('span'); nm.className = 'mf-path';
+      nm.textContent = dir; nm.title = dir;
+      var ct = document.createElement('span'); ct.className = 'mf-count';
+      ct.textContent = count + ' template' + (count === 1 ? '' : 's');
+      var x = document.createElement('button'); x.type = 'button'; x.className = 'mf-x';
+      x.textContent = '✕'; x.title = 'Remove this folder';
+      x.addEventListener('click', function () { removeMogrtFolder(dir); });
+      row.appendChild(nm); row.appendChild(ct); row.appendChild(x);
+      box.appendChild(row);
+    });
+  }
+
+  function addMogrtFolder() {
+    var p = pickFolder('Choose a folder of .mogrt templates');
+    if (!p) return;
+    settings.mogrtFolders = (settings.mogrtFolders || []).filter(function (d) { return d !== p; });
+    settings.mogrtFolders.push(p);
+    saveSettings();
+    refreshMogrtFolders();
+    var n = (state.folderMogrts || []).filter(function (m) { return (m.folder || '').indexOf(p) === 0; }).length;
+    toast(n ? ('✓ Added folder — found ' + n + ' template' + (n === 1 ? '' : 's') + '. They\'re in the gallery now.')
+            : 'Added folder, but no .mogrt files were found inside it.', !n);
+  }
+
+  function removeMogrtFolder(dir) {
+    settings.mogrtFolders = (settings.mogrtFolders || []).filter(function (d) { return d !== dir; });
+    saveSettings();
+    refreshMogrtFolders();
+  }
+
+  /* Re-scan folders and refresh everywhere they surface: Settings list, the
+     gallery grid, and the Editor's template list. */
+  function refreshMogrtFolders() {
+    scanMogrtFolders();
+    renderMogrtFoldersUI();
+    if (typeof renderTemplateGrid === 'function') renderTemplateGrid();
+    if ($('mogrt-uploads')) renderMogrtUploads();
+  }
+
   /* MOGRT templates shown in the gallery: bundled (shipped) templates +
      installed Premiere templates + any .mogrt files the user added. Each is a
      card with mogrt:true, so it routes through the editable MOGRT pipeline. */
@@ -1235,6 +1332,10 @@
     (state.bundledMogrts || []).forEach(function (m) {
       out.push({ id: 'mogrt:' + m.path, name: m.name, category: MOGRT_CAT, mogrt: true,
                  path: m.path, popularity: 90, subcat: m.category, bundled: true });
+    });
+    (state.folderMogrts || []).forEach(function (m) {
+      out.push({ id: 'mogrt:' + m.path, name: m.name, category: MOGRT_CAT, mogrt: true,
+                 path: m.path, popularity: 80, subcat: m.category, bundled: true });
     });
     (state.installedMogrts || []).forEach(function (m) {
       out.push({ id: 'mogrt:' + m.path, name: m.name, category: MOGRT_CAT, mogrt: true,
@@ -1375,14 +1476,15 @@
       mcap.textContent = '🎬';
       mthumb.appendChild(mcap);
       var badge = document.createElement('span');
-      badge.className = 'tpl-pop';
-      badge.textContent = 'MOGRT';
+      badge.className = 'tpl-pop is-editable';
+      badge.textContent = '✏️ EDITABLE';
+      badge.title = 'Editable in Premiere’s Essential Graphics after you add it';
       mthumb.appendChild(badge);
       mc.appendChild(mthumb);
       var mmeta = document.createElement('div');
       mmeta.className = 'tpl-meta';
       var mnm = document.createElement('span'); mnm.className = 'tpl-name'; mnm.textContent = t.name;
-      var mct = document.createElement('span'); mct.className = 'tpl-cat'; mct.textContent = t.subcat || 'Premiere';
+      var mct = document.createElement('span'); mct.className = 'tpl-cat'; mct.textContent = 'Editable in Premiere';
       mmeta.appendChild(mnm); mmeta.appendChild(mct);
       mc.appendChild(mmeta);
       mc.addEventListener('click', function () { openMogrtSheet(t); });
@@ -1942,7 +2044,9 @@
   function renderMogrtUploads() {
     var box = $('mogrt-uploads'); if (!box) return;
     box.innerHTML = '';
-    var bundled = state.bundledMogrts || [];
+    // shipped templates + any found in user-added folders (Settings) — both are
+    // selectable but not removable here (folders are managed in Settings).
+    var bundled = (state.bundledMogrts || []).concat(state.folderMogrts || []);
     var list = state.userMogrts || [];
     if (!bundled.length && !list.length) {
       var e = document.createElement('p'); e.className = 'hint';
@@ -3103,7 +3207,7 @@
       var props = r.props || [];
       box.innerHTML = '';
       var head = document.createElement('div'); head.className = 'mp-head';
-      head.textContent = '🎨 ' + path.split(/[\\/]/).pop() + ' — edit before applying';
+      head.textContent = '🎬 ' + path.split(/[\\/]/).pop().replace(/\.mogrt$/i, '') + ' — Essential Graphics';
       box.appendChild(head);
 
       // Reset (back to template defaults) + Save (as a reusable custom template)
@@ -3122,7 +3226,7 @@
         renderFromInspect(box, props);            // fallback: types guessed from values
       }
       var note = document.createElement('p'); note.className = 'hint';
-      note.textContent = 'Edit here → ▶ Preview one on the timeline → "Add template captions" applies to all. Colours, size, position & toggles are reliable; font applies if it\'s installed.';
+      note.textContent = 'These are the template\'s own Essential Graphics controls — edit here, then "Add template captions". Every caption stays editable in Premiere (Window → Essential Graphics) too. Colours, size, position & toggles are reliable; font applies if it\'s installed.';
       box.appendChild(note);
     }).catch(function (e) { box.innerHTML = '<p class="hint err">Couldn\'t read template: ' + e.message + '</p>'; });
   }
@@ -4029,6 +4133,10 @@
     refreshFfmpegStatus();
     toast('Settings saved.');
   });
+
+  // ---- template (.mogrt) folder management (Captioneer-style "Add Folder") ----
+  if ($('btn-add-mogrt-folder')) $('btn-add-mogrt-folder').addEventListener('click', addMogrtFolder);
+  renderMogrtFoldersUI();
 
   // ---- auto-transcribe (whisper) settings ----
   function setIfNotFocused(id, val) {

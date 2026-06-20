@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.112</span>
+    <span class="ver" id="ver">v0.9.113</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -89,8 +89,10 @@
 
     <!-- ===================== TEMPLATE LIBRARY (caption styles) ============= -->
     <div id="view-templates" class="subview">
-      <p class="hint" style="margin:2px 0 8px">Pick a caption style, then tap it to edit its font,
-        colour &amp; animation. Got your own Premiere <b>.mogrt</b>? Use the <b>Editor</b> tab above.</p>
+      <p class="hint" style="margin:2px 0 8px"><b>✏️ Editable</b> cards (🎬) drop captions you edit right inside
+        Premiere's <b>Essential Graphics</b> — font, colour, size, position — exactly like native Premiere.
+        Plain style cards are <b>burned-in</b> (baked into the picture). Add your own template packs in
+        <b>Settings → Template folders</b>.</p>
       <div class="lib-toolbar">
         <input type="text" id="lib-search" placeholder="🔍 Search style, color, industry…">
         <select id="lib-sort">
@@ -709,6 +711,16 @@
     </div>
 
     <div class="card">
+      <div class="step-head"><span class="step-title">🎬 Template folders (.mogrt)</span></div>
+      <p class="hint">CutPilot already loads templates from Premiere's <b>Motion Graphics Templates</b> folder.
+        Add any other folders of <code>.mogrt</code> files here — your own packs, or another extension's
+        templates. They appear in the gallery and Editor as <b>editable</b> templates you caption with,
+        and stay fully editable in Premiere's Essential Graphics.</p>
+      <div id="mogrt-folders" class="mogrt-folders"></div>
+      <button id="btn-add-mogrt-folder" class="hero-btn small">📁 Add folder…</button>
+    </div>
+
+    <div class="card">
       <div class="step-head"><span class="step-title">🎙️ Auto-transcribe</span></div>
       <div id="whisper-status" class="hint">Let CutPilot make the transcript itself — no Premiere export.</div>
       <label class="fld-full">Accuracy / engine <span class="dim" id="set-quality-note"></span>
@@ -759,7 +771,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.112 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.113 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>
