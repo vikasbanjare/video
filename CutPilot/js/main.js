@@ -24,6 +24,7 @@
     mcMode: 'rotate',
     tplSource: 'installed',  // installed | file
     installedMogrts: [],
+    bundledMogrts: [],       // .mogrt files shipped in the panel's mogrts/ folder
     mogrtFile: null,
     // multicam
     mcAudioTracks: null,
@@ -790,6 +791,7 @@
     wireSubviews();
     wireChapters();
     wireCommandPalette();
+    loadBundledMogrts();   // shipped editable templates → into the gallery
     buildLibrary();
     applyTemplate(currentPreset(), { silent: true });  // seeds controls + first preview
     updateSyncStat();
@@ -1205,10 +1207,36 @@
   function saveCustom() { localStorage.setItem(LS.custom, JSON.stringify(state.customTemplates)); }
   function saveUserMogrts() { localStorage.setItem(LS.mogrts, JSON.stringify(state.userMogrts)); }
 
-  /* MOGRT templates shown in the gallery: installed Premiere templates +
-     any .mogrt files the user added. Each is a card with mogrt:true. */
+  /* Load the .mogrt templates shipped INSIDE the panel (CutPilot/mogrts/),
+     described by mogrts/index.json, resolving each to an absolute path so
+     importMGT can place them. These become editable, prebuilt caption/title
+     templates in the gallery — no per-use seed picking. CEP-only (needs fs). */
+  function loadBundledMogrts() {
+    if (!CPBridge.isCEP()) return;
+    try {
+      var fs = nodeReq('fs'), path = nodeReq('path');
+      var dir = CPBridge.getExtensionPath && CPBridge.getExtensionPath();
+      if (!dir) return;
+      var mdir = path.join(dir, 'mogrts');
+      var idxFile = path.join(mdir, 'index.json');
+      if (!fs.existsSync(idxFile)) return;
+      var list = JSON.parse(fs.readFileSync(idxFile, 'utf8')) || [];
+      state.bundledMogrts = list.map(function (m) {
+        return { name: m.name, path: path.join(mdir, m.file),
+                 category: m.category || 'Templates', kind: m.kind || 'caption' };
+      }).filter(function (m) { try { return fs.existsSync(m.path); } catch (e) { return false; } });
+    } catch (e) { state.bundledMogrts = []; }
+  }
+
+  /* MOGRT templates shown in the gallery: bundled (shipped) templates +
+     installed Premiere templates + any .mogrt files the user added. Each is a
+     card with mogrt:true, so it routes through the editable MOGRT pipeline. */
   function mogrtTemplates() {
     var out = [];
+    (state.bundledMogrts || []).forEach(function (m) {
+      out.push({ id: 'mogrt:' + m.path, name: m.name, category: MOGRT_CAT, mogrt: true,
+                 path: m.path, popularity: 90, subcat: m.category, bundled: true });
+    });
     (state.installedMogrts || []).forEach(function (m) {
       out.push({ id: 'mogrt:' + m.path, name: m.name, category: MOGRT_CAT, mogrt: true,
                  path: m.path, popularity: 55, subcat: m.category });
@@ -1293,7 +1321,10 @@
 
   function filteredTemplates() {
     var mogrtMode = (state.libMode === 'mogrt');
-    var list = allTemplates().slice().filter(function (t) { return mogrtMode ? !!t.mogrt : !t.mogrt; });
+    // Styles view shows the built-in caption styles PLUS the bundled (shipped)
+    // .mogrt templates, so prebuilt editable templates are visible right in the
+    // main gallery. Installed/user .mogrts still live in the Editor tab.
+    var list = allTemplates().slice().filter(function (t) { return mogrtMode ? !!t.mogrt : (!t.mogrt || t.bundled); });
     var cat = state.libCategory;
     if (!mogrtMode) {
       if (cat === 'Favorites') list = list.filter(function (t) { return state.favs[t.id]; });
@@ -1912,12 +1943,26 @@
   function renderMogrtUploads() {
     var box = $('mogrt-uploads'); if (!box) return;
     box.innerHTML = '';
+    var bundled = state.bundledMogrts || [];
     var list = state.userMogrts || [];
-    if (!list.length) {
+    if (!bundled.length && !list.length) {
       var e = document.createElement('p'); e.className = 'hint';
       e.textContent = 'No templates yet — tap “➕ Add .mogrt file” to upload your Premiere template. It’s saved here for next time.';
       box.appendChild(e); return;
     }
+    // bundled (shipped) templates first — selectable, not removable
+    bundled.forEach(function (m) {
+      var selB = (state.tplSource === 'file' && state.mogrtFile === m.path);
+      var bb = document.createElement('button');
+      bb.type = 'button';
+      bb.className = 'mogrt-up' + (selB ? ' on' : '');
+      var bico = document.createElement('span'); bico.className = 'mu-ico'; bico.textContent = '🎬';
+      var bnm = document.createElement('span'); bnm.className = 'mu-name'; bnm.textContent = m.name;
+      bb.appendChild(bico); bb.appendChild(bnm);
+      var bbd = document.createElement('span'); bbd.className = 'mu-badge'; bbd.textContent = 'built-in'; bb.appendChild(bbd);
+      bb.addEventListener('click', function () { selectUserMogrt(m.path, m.name); });
+      box.appendChild(bb);
+    });
     list.forEach(function (m) {
       var sel = (state.tplSource === 'file' && state.mogrtFile === m.path && (state.mogrtSelName || '') === (m.name || ''));
       var b = document.createElement('button');
