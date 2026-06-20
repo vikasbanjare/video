@@ -855,7 +855,6 @@
         var tb = document.querySelector('.tab[data-tab="captions"]'); if (tb) tb.click();
         showView('style');
         if (act === 'native') applyNative();
-        else if (act === 'editable') applyEditableTemplate();
         else if (act === 'magic' && $('btn-magic')) $('btn-magic').click();
       }, 60);
     } else if (cls === 'warn' && state.pendingCaptionAction) {
@@ -2515,11 +2514,6 @@
   // ---- native, Premiere-editable caption track (plain text, no karaoke) ----
   if ($('btn-native-main')) $('btn-native-main').addEventListener('click', applyNative);
 
-  // ---- editable + styled + animated captions (the seed-mogrt route) ----
-  if ($('btn-editable-main')) $('btn-editable-main').addEventListener('click', applyEditableTemplate);
-  if ($('btn-seed-pick')) $('btn-seed-pick').addEventListener('click', pickSeed);
-  refreshSeedStatus();
-
   // ---- edit the wording of captions already on the timeline ----
   if ($('btn-cap-edit')) $('btn-cap-edit').addEventListener('click', openCaptionTextEditor);
   if ($('btn-cap-fix1')) $('btn-cap-fix1').addEventListener('click', openOneCaptionEditor);
@@ -3457,158 +3451,6 @@
               'Window → Text. The style recipe for “' + preset.name + '” is shown below the buttons.');
       }).catch(function (e) { capProgress(null); toast(e.message, true); });
     } catch (e) { capProgress(null); toast(e.message, true); }
-  }
-
-  // ---- EDITABLE template captions (styled + animated + audio-synced) -------
-  /* The "seed" is a one-time blank text .mogrt the user exports from Premiere
-     once. CutPilot then drops one instance per caption line, fills it with the
-     words (editable in the Essential Graphics panel), styles it like the chosen
-     built-in template (font/colour/size/caps via the rich source-text path),
-     times each clip to the transcript (audio sync) and applies the entrance
-     animation. Reliable because the template FILE exists; everything on top of
-     it is code-driven, so it works for every style and every video. */
-  function seedPath() { return (settings.seedMogrt || '').trim() || null; }
-
-  /* Inspect the seed ONCE (cached) so we know which property index holds Text
-     Color / Highlight / Background etc. — purpose-built subtitle .mogrts expose
-     these as named, editable params, which is what lets us restyle them. */
-  function getSeedProps(seed) {
-    if (state.seedProps && state.seedProps.path === seed) return Promise.resolve(state.seedProps.props);
-    return CPBridge.callHost('CP_inspectMogrt', { path: seed }).then(function (r) {
-      var props = (r && r.props) ? r.props : [];
-      state.seedProps = { path: seed, props: props };
-      return props;
-    }).catch(function () { return []; });
-  }
-
-  /* Map a built-in caption preset onto a template's NAMED colour params, using
-     the template's own classification (so values are encoded the way it expects).
-     Best-effort by name: anything we can't match is just left at the template's
-     default, so this never breaks a template — it only improves the match. */
-  function mapPresetToSeedParams(preset, props) {
-    var out = [];
-    if (!preset || !props || !props.length) return out;
-    var COL = ['color', 'colorint'];
-    function find(res, kinds) {
-      for (var i = 0; i < props.length; i++) {
-        var p = props[i];
-        if (kinds && kinds.indexOf(p.kind) < 0) continue;
-        var nm = (p.name || '').toLowerCase();
-        for (var r = 0; r < res.length; r++) if (res[r].test(nm)) return p;
-      }
-      return null;
-    }
-    function color(p, hex) { if (p && hex) out.push({ i: p.i, kind: p.kind, value: hex }); }
-    function num(p, v) { if (p && v != null) out.push({ i: p.i, kind: 'number', value: v }); }
-
-    color(find([/text\s*colou?r/, /word\s*colou?r/, /font\s*colou?r/], COL), preset.fill);
-    color(find([/highlight/], COL), preset.highlight || preset.fill);
-    if (preset.boxColor) {
-      color(find([/background|\bbg\b|box/], COL), preset.boxColor);
-      var bo = preset.boxOpacity; bo = (bo == null) ? 100 : (bo <= 1 ? Math.round(bo * 100) : bo);
-      num(find([/(background|\bbg\b|box).*opacit|opacit.*(background|\bbg\b|box)/], ['number']), bo);
-    } else {
-      // preset has no pill → hide the template's background so the look matches
-      num(find([/(background|\bbg\b|box).*opacit|opacit.*(background|\bbg\b|box)/], ['number']), 0);
-    }
-    return out;
-  }
-
-  function refreshSeedStatus() {
-    var s = $('seed-status');
-    var btn = $('btn-editable-main');
-    var p = seedPath();
-    if (s) {
-      if (p) { s.className = 'hint ok'; s.textContent = '✓ Seed ready: ' + p.split(/[\\/]/).pop() + ' — editable captions are armed.'; }
-      else   { s.className = 'hint';    s.textContent = 'No seed yet — do the 30-second setup above once, then this is automatic forever.'; }
-    }
-    if (btn) {
-      btn.disabled = false; // always clickable; if no seed we open the setup
-      btn.classList.toggle('needs-seed', !p);
-    }
-  }
-
-  function pickSeed() {
-    var p = pickFile('Choose your CutPilot caption seed (.mogrt)', ['mogrt']);
-    if (!p) return;
-    if (!/\.mogrt$/i.test(p)) return toast('That isn\'t a .mogrt file. Export one from Premiere first (steps above).', true);
-    settings.seedMogrt = p; saveSettings();
-    refreshSeedStatus();
-    toast('✓ Seed saved. Pick a style and tap “🖊️ Add editable captions”. This is set for every future video.');
-  }
-
-  function applyEditableTemplate() {
-    var seed = seedPath();
-    if (!seed) {
-      var box = $('seed-setup'); if (box) { box.open = true; box.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
-      return toast('One-time setup first: create a seed template (≈30s, steps above), then pick it. After that this button is fully automatic.', true);
-    }
-    if (!ensureTranscriptThen('editable')) return;
-    var cues;
-    try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
-    var preset = currentPreset();
-    var words = parseInt($('c-words').value, 10) || 0;
-    var caps = !!($('c-upper') && $('c-upper').checked) || !!preset.uppercase;
-    var caseMode = caps ? 'upper' : (state.mogrtCase || 'as-spoken');
-    var tcues = textCues(cues, words, caseMode);
-    if (!tcues.length) return toast('No caption lines to add.', true);
-
-    // Style derived from the chosen built-in template. These are exactly the
-    // fields CP_setMgrtText can write into a rich source-text graphic.
-    var textStyle = {
-      font: preset.font,
-      size: preset.fontSize,
-      caps: caps,
-      bold: (preset.weight || 800) >= 600,
-      fill: preset.fill
-    };
-    // Editable text can't carry the sliding word-highlight, so karaoke/reveal
-    // become a per-chunk pop-in (still synced to audio by each cue's timing).
-    var anim = currentAnim();
-    if (anim === 'karaoke' || anim === 'reveal' || anim === 'typewriter') anim = 'pop';
-    var animSpeed = (parseInt($('c-animspeed') && $('c-animspeed').value, 10) || 100) / 100;
-
-    if (tcues.length > 120 &&
-        !confirm(tcues.length + ' editable graphics will be inserted — one per caption line. MOGRTs insert slowly, so this can take a while. Tip: raise "Words per caption" for fewer, longer lines.\n\nContinue?')) return;
-
-    capProgress('Saving project…');
-    ensureProjectSaved().then(function (ok) {
-      if (!ok) { capProgress(null); return null; }
-      capProgress('Reading your seed template…');
-      return getSeedProps(seed).then(function (props) {
-        // Restyle the template's named colour params to match the chosen preset.
-        var params = mapPresetToSeedParams(preset, props);
-        capProgress('Adding ' + tcues.length + ' editable, styled caption graphics');
-        return CPBridge.callHost('CP_insertMogrtCaptions', {
-          mogrtPath: seed, cues: tcues, videoTrack: null, audioTrack: 0,
-          // stretch:false → each clip is simply trimmed to its cue length, so the
-          // entrance-animation keyframes keep their real (snappy) timing instead
-          // of being time-remapped along with the clip.
-          params: params, textStyle: textStyle, stretch: false,
-          anim: anim, animSpeed: animSpeed
-        });
-      });
-    }).then(function (r) {
-      if (r == null) { capProgress(null); return; }
-      capProgress(null);
-      if (!r.inserted) {
-        var why = (r.sampleErrors && r.sampleErrors.length) ? ' (' + r.sampleErrors[0] + ')' : '';
-        return toast('Couldn\'t place your seed template' + why + '. Re-pick it, or re-export it from Premiere (steps above).', true);
-      }
-      if (!r.textSet) {
-        // The #1 cause: a hand-made Premiere text graphic stores its words as a
-        // locked "rich" source-text blob CutPilot won't force-rewrite (it could
-        // corrupt the project) — so every line keeps the placeholder. Point the
-        // user at a purpose-built subtitle .mogrt, whose Text field fills cleanly.
-        var msg = r.richBlocked
-          ? '⚠️ Placed ' + r.inserted + ' graphics, but this seed stores its words as LOCKED “rich” source text — the kind a hand-made Premiere text graphic uses. CutPilot won\'t force it (that can corrupt your project), so every line kept your placeholder. ✅ Fix: use a purpose-built SUBTITLE .mogrt as the seed (its Text field swaps cleanly) — ⚙️ setup → Pick my seed.'
-          : 'Placed ' + r.inserted + ' graphics, but this seed has no fillable text field. Use a subtitle-style .mogrt as the seed instead — ⚙️ setup → Pick my seed.';
-        return toast(msg, true);
-      }
-      var animTxt = (anim && anim !== 'none') ? ' · ' + anim + ' animation' : '';
-      toast('✅ Added ' + r.inserted + ' EDITABLE captions styled like “' + preset.name + '” — synced to your audio' + animTxt +
-            '. Edit any line in Window → Essential Graphics (or double-click it on screen).');
-    }).catch(function (e) { capProgress(null); toast(e.message, true); });
   }
 
   // ========================================================== SMART CUT ====
