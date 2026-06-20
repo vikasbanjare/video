@@ -3551,7 +3551,14 @@
         return toast('Couldn\'t place your seed template' + why + '. Re-pick it, or re-export it from Premiere (steps above).', true);
       }
       if (!r.textSet) {
-        return toast('Placed ' + r.inserted + ' graphics, but your seed exposes no editable text field. Re-export it: select the TEXT layer, then Graphics → Export As Motion Graphics Template (that auto-exposes the words).', true);
+        // The #1 cause: a hand-made Premiere text graphic stores its words as a
+        // locked "rich" source-text blob CutPilot won't force-rewrite (it could
+        // corrupt the project) — so every line keeps the placeholder. Point the
+        // user at a purpose-built subtitle .mogrt, whose Text field fills cleanly.
+        var msg = r.richBlocked
+          ? '⚠️ Placed ' + r.inserted + ' graphics, but this seed stores its words as LOCKED “rich” source text — the kind a hand-made Premiere text graphic uses. CutPilot won\'t force it (that can corrupt your project), so every line kept your placeholder. ✅ Fix: use a purpose-built SUBTITLE .mogrt as the seed (its Text field swaps cleanly) — ⚙️ setup → Pick my seed.'
+          : 'Placed ' + r.inserted + ' graphics, but this seed has no fillable text field. Use a subtitle-style .mogrt as the seed instead — ⚙️ setup → Pick my seed.';
+        return toast(msg, true);
       }
       var animTxt = (anim && anim !== 'none') ? ' · ' + anim + ' animation' : '';
       toast('✅ Added ' + r.inserted + ' EDITABLE captions styled like “' + preset.name + '” — synced to your audio' + animTxt +
