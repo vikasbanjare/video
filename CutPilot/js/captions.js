@@ -675,31 +675,27 @@
       glow: '#000000', glowBlur: 0.42, stroke: null, strokeWidth: 0, boxColor: null,
       upcomingOpacity: 0.55, uppercase: false, wordsPerCue: 4, anim: 'karaoke' },
 
-    // ---- Extracted from reference video: DIAGONAL dynamic caption. Three words
-    //      cascade top-left → centre → bottom-right; the spoken word sits in the
-    //      centre, much BIGGER, in a heavier font + vertical gradient, overlapping
-    //      the small white words above/below. Line spacing is adjustable. ----
-    // Warm yellow→orange pop
-    { id: 'pro-boldpop', name: 'Bold Pop', category: '⭐ Premium', popularity: 100, layout: 'center', keyword: false, highlightScale: 1.9,
-      font: 'Montserrat', fallbackFonts: ['Poppins', 'Inter', 'Arial'],
-      highlightFont: 'Archivo Black', highlightWeight: 900,
-      fontSize: 52, fill: '#FFFFFF', highlight: '#FFD24A', highlight2: '#FF6A00', highlightStyle: 'color',
-      stroke: '#1A1206', strokeWidth: 5, glow: '#000000', glowBlur: 0.45,
-      weight: 800, uppercase: false, stagger: true, window: 3, wordsPerLine: 1, wordsPerCue: 3, lineGap: 0.72, anim: 'karaoke' },
-    // Cool blue→light pop
-    { id: 'pro-coolpop', name: 'Cool Pop', category: '⭐ Premium', popularity: 99, layout: 'center', keyword: false, highlightScale: 1.9,
-      font: 'Montserrat', fallbackFonts: ['Poppins', 'Inter', 'Arial'],
-      highlightFont: 'Archivo Black', highlightWeight: 900,
-      fontSize: 52, fill: '#FFFFFF', highlight: '#3D74FF', highlight2: '#C2DBFF', highlightStyle: 'color',
-      stroke: '#06101A', strokeWidth: 5, glow: '#000000', glowBlur: 0.45,
-      weight: 800, uppercase: false, stagger: true, window: 3, wordsPerLine: 1, wordsPerCue: 3, lineGap: 0.72, anim: 'karaoke' },
-    // Clean all-white — spoken word pops ~2x bigger in a heavier font, soft shadow
-    { id: 'pro-cleanbold', name: 'Clean Bold', category: '⭐ Premium', popularity: 98, layout: 'center', keyword: false, highlightScale: 1.9,
-      font: 'Montserrat', fallbackFonts: ['Poppins', 'Inter', 'Arial'],
-      highlightFont: 'Archivo Black', highlightWeight: 900,
-      fontSize: 52, fill: '#FFFFFF', highlight: '#FFFFFF', highlightStyle: 'color',
-      glow: '#000000', glowBlur: 0.5, stroke: null, strokeWidth: 0, boxColor: null,
-      weight: 800, uppercase: false, stagger: true, window: 3, wordsPerLine: 1, wordsPerCue: 3, lineGap: 0.72, anim: 'karaoke' }
+    // ---- Extracted from reference video: centered MULTI-WORD caption, heavy sans,
+    //      the AUTO-DETECTED keyword pops bigger in a GLOSSY (shiny) gradient.
+    //      White words carry a subtle sheen; soft shadow for depth. ----
+    // Warm glossy orange keyword
+    { id: 'pro-boldpop', name: 'Bold Pop', category: '⭐ Premium', popularity: 100, layout: 'center', keyword: true, wordHl: false, highlightScale: 1.5,
+      font: 'Archivo Black', fallbackFonts: ['Montserrat', 'Poppins', 'Arial Black'],
+      fontSize: 62, fill: '#FFFFFF', fill2: '#D2D7DE', highlight: '#FFE45C', highlight2: '#EF6C0A', highlightStyle: 'color', glossy: true,
+      stroke: '#2A1A06', strokeWidth: 5, glow: '#000000', glowBlur: 0.5,
+      weight: 900, uppercase: false, wordsPerLine: 3, wordsPerCue: 6, lineGap: 1.04, anim: 'pop' },
+    // Cool glossy blue keyword
+    { id: 'pro-coolpop', name: 'Cool Pop', category: '⭐ Premium', popularity: 99, layout: 'center', keyword: true, wordHl: false, highlightScale: 1.5,
+      font: 'Archivo Black', fallbackFonts: ['Montserrat', 'Poppins', 'Arial Black'],
+      fontSize: 62, fill: '#FFFFFF', fill2: '#D2D7DE', highlight: '#BFE3FF', highlight2: '#1E63E6', highlightStyle: 'color', glossy: true,
+      stroke: '#06101A', strokeWidth: 5, glow: '#000000', glowBlur: 0.5,
+      weight: 900, uppercase: false, wordsPerLine: 3, wordsPerCue: 6, lineGap: 1.04, anim: 'pop' },
+    // Clean all-white — the keyword just pops bigger with a subtle sheen + shadow
+    { id: 'pro-cleanbold', name: 'Clean Bold', category: '⭐ Premium', popularity: 98, layout: 'center', keyword: true, wordHl: false, highlightScale: 1.5,
+      font: 'Archivo Black', fallbackFonts: ['Montserrat', 'Poppins', 'Arial Black'],
+      fontSize: 62, fill: '#FFFFFF', fill2: '#CED2D8', highlight: '#FFFFFF', highlightStyle: 'color',
+      glow: '#000000', glowBlur: 0.55, stroke: null, strokeWidth: 0, boxColor: null,
+      weight: 900, uppercase: false, wordsPerLine: 3, wordsPerCue: 6, lineGap: 1.04, anim: 'pop' }
   ];
 
   var TEMPLATES = STYLE_PRESETS.concat(PREMIUM_TEMPLATES, MORE_TEMPLATES, NEW_TEMPLATES);

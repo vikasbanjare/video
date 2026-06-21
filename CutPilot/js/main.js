@@ -2139,7 +2139,9 @@
     // default for EVERY template (using that template's own colours), not just
     // the word-sync presets — that's why it used to "only work on one template".
     // We only leave it off if the user explicitly turned it off this session.
-    if ($('c-wordhl')) $('c-wordhl').checked = !state.wordHlOff;
+    // most styles default to word-by-word sync; keyword-emphasis styles (p.wordHl
+    // === false) turn it OFF so the auto-detected KEYWORD is the one highlighted.
+    if ($('c-wordhl')) $('c-wordhl').checked = (p.wordHl === false) ? false : !state.wordHlOff;
     // "all together / one by one" follows a word-sync template; otherwise keep
     // the user's current choice.
     if (aId === 'reveal') setRevealButton('reveal');

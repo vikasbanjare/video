@@ -69,6 +69,7 @@
       highlightStyle: o.highlightStyle || preset.highlightStyle || 'color',
       // --- premium customization additions ---
       highlight2: (o.highlight2 !== undefined) ? o.highlight2 : (preset.highlight2 || null), // gradient 2nd colour for the highlighted word
+      glossy: (o.glossy != null) ? o.glossy : (preset.glossy || false),   // metallic sheen on the highlighted word
       fill2: (o.fill2 !== undefined) ? o.fill2 : (preset.fill2 || null),      // gradient 2nd colour (null = solid)
       highlightColors: o.highlightColors || preset.highlightColors || null,    // cycle colours word-to-word
       boxOpacity: (o.boxOpacity != null) ? o.boxOpacity : (preset.boxOpacity != null ? preset.boxOpacity : 1),
@@ -272,6 +273,12 @@
       g.addColorStop(0, c1); g.addColorStop(1, c2);
       return g;
     }
+    // glossy/metallic sheen: dark edges, bright band through the middle
+    function glossyFill(yTop, h, edge, mid) {
+      var g = ctx.createLinearGradient(0, yTop, 0, yTop + h);
+      g.addColorStop(0, edge); g.addColorStop(0.42, mid); g.addColorStop(0.58, mid); g.addColorStop(1, edge);
+      return g;
+    }
     // smart per-word colours: brand keywords + numbers/money/percent
     var brandSet = {};
     if (style.brandWords) for (var bwI = 0; bwI < style.brandWords.length; bwI++) {
@@ -399,10 +406,16 @@
         if (filled) {
           ctx.fillStyle = contrastColor(hlColor);
         } else if (it.hl && (shape === 'color' || shape === 'underline' || shape === 'circle')) {
-          // vertical gradient on the highlighted word when a 2nd colour is set
-          // (the signature "orange→deep-orange / blue→deep-blue" pop look)
-          ctx.fillStyle = (style.highlight2 && (!style.highlightColors || !style.highlightColors.length))
-            ? textFill(y - it.px * 0.72, it.px * 0.8, hlColor, style.highlight2) : hlColor;
+          // highlighted word: glossy/metallic sheen (bright band) or a 2-tone
+          // gradient when a 2nd colour is set; else solid.
+          var solo = (!style.highlightColors || !style.highlightColors.length);
+          if (solo && style.highlight2 && style.glossy) {
+            ctx.fillStyle = glossyFill(y - it.px * 0.78, it.px * 0.92, style.highlight2, hlColor);
+          } else if (solo && style.highlight2) {
+            ctx.fillStyle = textFill(y - it.px * 0.72, it.px * 0.8, hlColor, style.highlight2);
+          } else {
+            ctx.fillStyle = hlColor;
+          }
         } else {
           // smart colour for numbers/brand words, else the body fill (gradient if set)
           var rc = restColorFor(it.word);
