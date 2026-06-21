@@ -1114,6 +1114,10 @@
       var parts = v.split('|'); translateTranscript(parts[0], parts[1] || parts[0]);
     });
     if ($('btn-detect-speakers')) $('btn-detect-speakers').addEventListener('click', detectSpeakers);
+    if ($('tr-vocab')) {
+      try { $('tr-vocab').value = localStorage.getItem('cutpilot.vocab') || ''; } catch (e) {}
+      $('tr-vocab').addEventListener('change', function () { try { localStorage.setItem('cutpilot.vocab', this.value || ''); } catch (e) {} });
+    }
     if ($('btn-fix-wording')) $('btn-fix-wording').addEventListener('click', cleanupTranscript);
     if ($('tre-cancel')) $('tre-cancel').addEventListener('click', function () { $('tr-editor').classList.add('hidden'); });
     if ($('tre-save')) $('tre-save').addEventListener('click', saveTranscriptEditor);
@@ -1233,51 +1237,77 @@
     return text.slice(0, idx) + to + text.slice(idx + String(from).length);
   }
 
-  /* AI "fix wording". We DON'T let the model rewrite lines (that was dropping/
-     tidying words). Instead it returns a list of targeted corrections — {line,
-     from, to} — and we apply each as a literal in-place replacement. Every line
-     and every other word is preserved byte-for-byte; only the flagged misheard
-     words change. */
+  // Multilingual-safe tokenizer: split on whitespace, strip edge punctuation,
+  // keep unicode letters (so Hindi/Arabic/etc. words survive).
+  function tok(s) {
+    return String(s == null ? '' : s).toLowerCase().split(/\s+/)
+      .map(function (w) { return w.replace(/^[.,!?;:"'()\[\]…¿¡—–-]+|[.,!?;:"'()\[\]…¿¡—–-]+$/g, ''); })
+      .filter(Boolean);
+  }
+  // "Real" words only (length >= 2) so spaced-letter garble ("i n d i y y a")
+  // isn't treated as 7 real words that must survive.
+  function realToks(s) { return tok(s).filter(function (t) { return t.length >= 2; }); }
+  // Fraction of the ORIGINAL real words that survive in a candidate correction.
+  function wordOverlap(orig, cand) {
+    var o = realToks(orig); if (!o.length) return 1;
+    var set = {}; tok(cand).forEach(function (w) { set[w] = 1; });
+    var hit = 0; for (var i = 0; i < o.length; i++) if (set[o[i]]) hit++;
+    return hit / o.length;
+  }
+  // Optional user vocabulary (names/brands) so the AI nails recurring proper nouns.
+  function getVocab() { var el = $('tr-vocab'); return el ? (el.value || '').trim() : ''; }
+
+  /* AI proofread. The model re-reads every line and fixes misheard / garbled /
+     homophone / split-join / punctuation / capitalisation errors — far more than
+     the old find-and-replace caught. Each corrected line is then guarded by a
+     word-overlap check, so any line where the model dropped or rewrote too much
+     is rejected and the original kept: more power, without losing your words. */
   function cleanupTranscript() {
     if (!CPBridge.isCEP()) return toast('AI fixing needs Premiere.', true);
     if (!state.transcript) return toast('Transcribe or load a transcript first.', true);
     if (state.aiBusy) return toast('Hang on — an AI step is already running…');
     var cues; try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
     if (!cues.length) return toast('The transcript is empty.', true);
-    var numbered = cues.map(function (c, i) { return { line: i, text: c.text }; });
+    var lines = cues.map(function (c) { return c.text; });
+    var vocab = getVocab();
     state.aiBusy = true;
-    setTranscriptBar('', '✨', 'Checking ' + cues.length + ' lines for misheard words…', null);
-    var sys = 'You proofread auto-transcribed subtitles. Find ONLY clear transcription errors: garbled or misheard ' +
-      'words (e.g. "indiyya" → "India", "i n d i y y a" → "India"), wrong homophones used in context, and wrongly ' +
-      'split or joined words. Do NOT rephrase, shorten, expand, translate, censor, reorder, or "improve" the style — ' +
-      'leave every correct word exactly as it is, and never delete words. ' +
-      'Return JSON {"fixes":[{"line":<0-based line index>,"from":"<exact substring copied verbatim from that line>","to":"<correction>"}]}. ' +
-      '"from" must appear verbatim in that line. Omit lines that are already correct. Keep the SAME language as the input.';
-    groqChat([{ role: 'system', content: sys }, { role: 'user', content: JSON.stringify({ lines: numbered }) }], { json: true, temperature: 0 })
+    setTranscriptBar('', '✨', 'AI proofreading ' + cues.length + ' lines…', null);
+    var sys = 'You are an expert transcription proofreader. The lines below are auto-transcribed speech and often contain ' +
+      'misheard words, garbled phonetic spellings (e.g. "indiyya" → "India"; "i n d i y y a" → "India"), wrong homophones ' +
+      '(their/there/they\'re, your/you\'re, to/too), and wrongly split or joined words, plus missing punctuation and capitalisation. ' +
+      'Rewrite each line as what was most likely actually said, fixing those errors. RULES: keep the SAME language as the input; ' +
+      'do NOT translate, paraphrase, summarise, shorten, add new ideas, reorder, or censor; keep proper nouns and slang; keep ALL ' +
+      'the spoken words and only correct the wrong ones. ' +
+      (vocab ? ('IMPORTANT — these names/terms are spelled correctly; use them when a word sounds close: ' + vocab + '. ') : '') +
+      'Examples: "we live in indiyya" → "we live in India"; "i seen there new car" → "I\'ve seen their new car". ' +
+      'Return JSON {"lines":[...]} with EXACTLY ' + lines.length + ' strings, one per input line, in the same order.';
+    groqChat([{ role: 'system', content: sys }, { role: 'user', content: JSON.stringify({ lines: lines }) }], { json: true, temperature: 0 })
       .then(function (content) {
         var parsed; try { parsed = JSON.parse(content); } catch (e) { throw new Error('The correction came back malformed.'); }
-        var fixes = parsed.fixes || parsed.corrections || [];
-        var out = cues.map(function (c) { return { start: c.start, end: c.end, text: c.text }; });
-        var applied = 0, samples = [];
-        for (var k = 0; k < fixes.length; k++) {
-          var f = fixes[k]; if (!f) continue;
-          var li = parseInt(f.line, 10);
-          var from = (f.from != null) ? String(f.from) : '';
-          var to = (f.to != null) ? String(f.to) : '';
-          if (isNaN(li) || li < 0 || li >= out.length || !from || from === to) continue;
-          var after = replaceOnceCI(out[li].text, from, to);
-          if (after !== out[li].text) { out[li].text = after; applied++; if (samples.length < 3) samples.push(from.trim() + ' → ' + to.trim()); }
+        var fixed = parsed.lines || parsed.corrected || parsed.result || [];
+        if (!fixed.length) throw new Error('No correction returned.');
+        var out = [], changed = 0, rejected = 0, samples = [];
+        for (var i = 0; i < cues.length; i++) {
+          var orig = cues[i].text, corr = (fixed[i] != null) ? String(fixed[i]) : orig, keep = orig;
+          if (corr.trim() && corr.trim() !== orig.trim()) {
+            // accept short/garbly lines outright; longer lines only if most words survive
+            if (realToks(orig).length < 4 || wordOverlap(orig, corr) >= 0.5) {
+              keep = corr; changed++;
+              if (samples.length < 3) samples.push('“' + orig.trim() + '” → “' + corr.trim() + '”');
+            } else { rejected++; }
+          }
+          out.push({ start: cues[i].start, end: cues[i].end, text: keep });
         }
-        if (!applied) {
+        if (!changed) {
           state.aiBusy = false;
-          setTranscriptBar('ok', '✅', 'Checked — no misheard words found.', 'Change');
-          return toast('✨ AI checked your words — nothing needed fixing.');
+          setTranscriptBar('ok', '✅', 'Checked — the transcript already looks clean.', 'Change');
+          return toast('✨ AI checked your words — nothing needed fixing.' + (rejected ? ' (Skipped ' + rejected + ' risky rewrite' + (rejected === 1 ? '' : 's') + '.)' : ''));
         }
-        // same language, same structure → keep word-level timing for karaoke highlight
         installNewTranscript(out, 'AI-corrected (' + out.length + ' lines)', 'fixed', true);
-        setTranscriptBar('ok', '✅', 'Fixed ' + applied + ' word' + (applied === 1 ? '' : 's') + ' — all ' + out.length + ' lines kept.', 'Change');
-        toast('✨ Fixed ' + applied + ' misheard word' + (applied === 1 ? '' : 's') + ' (' + samples.join(', ') +
-              (applied > samples.length ? '…' : '') + '). Every line and all other words were kept exactly. (Tap “Change” to revert.)');
+        setTranscriptBar('ok', '✅', 'AI fixed ' + changed + ' line' + (changed === 1 ? '' : 's') + ' — all ' + out.length + ' kept.', 'Change');
+        toast('✨ AI fixed ' + changed + ' line' + (changed === 1 ? '' : 's') + '. e.g. ' + samples.join('; ') +
+              (changed > samples.length ? '…' : '') + (rejected ? (' · skipped ' + rejected + ' risky rewrite' + (rejected === 1 ? '' : 's')) : '') +
+              '. Review in “✏️ Review & edit”. (Tap “Change” to revert.)');
       })
       .catch(function (e) { setTranscriptBar('warn', '⚠️', 'AI fix failed', 'Get one →'); toast('AI fix failed: ' + e.message, true); })
       .then(function () { state.aiBusy = false; });
@@ -1290,10 +1320,12 @@
     var cues; try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
     if (!cues.length) return toast('The transcript is empty.', true);
     var lines = cues.map(function (c) { return c.text; });
+    var vocab = getVocab();
     state.aiBusy = true;
     setTranscriptBar('', '🌐', 'Translating ' + lines.length + ' lines to ' + name + '…', null);
     var sys = 'You are a professional subtitle translator. The input lines are auto-transcribed and may contain misheard words; ' +
       'first silently correct any obvious transcription errors, then translate the intended meaning into ' + name + '. ' +
+      (vocab ? ('Keep these names/terms correct (do not translate them): ' + vocab + '. ') : '') +
       'Return JSON {"lines":[...]} containing EXACTLY ' + lines.length + ' strings — one translation per input line, same order. ' +
       'Never merge, split, add, or drop lines. Keep each translation natural, concise and suitable for on-screen captions. Output ONLY the translated text, no notes.';
     groqChat([{ role: 'system', content: sys }, { role: 'user', content: JSON.stringify({ lines: lines }) }], { json: true, temperature: 0.2 })
