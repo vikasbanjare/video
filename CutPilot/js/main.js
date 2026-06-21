@@ -4516,20 +4516,34 @@
   function syncMcSource() {
     var src = $('mc-source').value;
     $('mc-speaker-opts').classList.toggle('hidden', src !== 'follow');
+    if ($('mc-transcript-opts')) $('mc-transcript-opts').classList.toggle('hidden', src !== 'transcript');
+    // director controls (lead-in / max-shot) apply to the audio-/transcript-driven modes
+    if ($('mc-director-opts')) $('mc-director-opts').classList.toggle('hidden', src !== 'follow' && src !== 'transcript');
     $('mc-main-opts').classList.toggle('hidden', src !== 'speech');
     $('mc-interval-wrap').classList.toggle('hidden', src !== 'interval');
-    // the rotate/random pattern applies to everything except follow-the-speaker
-    $('mc-pattern-opts').classList.toggle('hidden', src === 'follow');
+    // the rotate/random pattern applies to the dumb modes only
+    $('mc-pattern-opts').classList.toggle('hidden', src === 'follow' || src === 'transcript');
     if (src === 'speech') populateMainTracks();
     if (src === 'follow') renderMcMap();
     updateMcFfmpegBanner();
   }
+  /* director-control read helpers (lead-in in seconds, max-shot in seconds) */
+  function mcLeadIn() { return (parseInt($('mc-leadin') && $('mc-leadin').value, 10) || 0) / 1000; }
+  function mcMaxShot() { return parseInt($('mc-maxshot') && $('mc-maxshot').value, 10) || 0; }
   $('mc-source').addEventListener('change', syncMcSource);
   $('mc-angles').addEventListener('change', function () {
     if ($('mc-source').value === 'follow') renderMcMap();
   });
   $('mc-center').addEventListener('input', function () {
     $('mc-center-val').textContent = (parseInt(this.value, 10) || 0) === 0 ? 'off' : this.value + 's';
+  });
+  if ($('mc-leadin')) $('mc-leadin').addEventListener('input', function () {
+    var v = parseInt(this.value, 10) || 0;
+    $('mc-leadin-val').textContent = v === 0 ? 'off' : v + 'ms';
+  });
+  if ($('mc-maxshot')) $('mc-maxshot').addEventListener('input', function () {
+    var v = parseInt(this.value, 10) || 0;
+    $('mc-maxshot-val').textContent = v === 0 ? 'off' : v + 's';
   });
   syncMcSource();
 
@@ -4661,6 +4675,48 @@
     return grid;
   }
 
+  /* Shift a sequence-time dB grid by `off` seconds (auto-sync correction).
+     off>0 means the mic ran late, so we sample ahead to pull it earlier. */
+  function shiftGrid(g, off) {
+    var lag = Math.round(off / MC_STEP), out = [];
+    for (var k = 0; k < g.length; k++) { var j = k + lag; out.push((j >= 0 && j < g.length) ? g[j] : -100); }
+    return out;
+  }
+
+  /* Transcript-driven: cut on speaker turns. Uses the transcript from the
+     Transcribe tab — true per-person switching when speakers were detected,
+     otherwise alternates cameras each sentence. */
+  function mcTranscriptPlan(numAngles) {
+    var cues;
+    try { cues = state.lastCaptionJob && state.lastCaptionJob.cues; } catch (e) { cues = null; }
+    if (!cues || !cues.length) { try { cues = readSelectedTranscript(); } catch (e2) { cues = null; } }
+    if (!cues || !cues.length) {
+      return Promise.reject(new Error('No transcript found. Transcribe your clip in the Transcribe tab first (and run “Detect speakers” for per-person switching).'));
+    }
+    var dur = state.mcAudioEnd || (state.env && state.env.endSeconds) || cues[cues.length - 1].end;
+    // build a stable speaker→camera map (first speaker → V1, next new speaker → V2…)
+    var speakerOrder = {}, nextCam = 0, hasSpeakers = false;
+    cues.forEach(function (c) { if (c.speaker) hasSpeakers = true; });
+    var mapFn;
+    if (hasSpeakers) {
+      mapFn = function (sp) {
+        if (sp == null) return -1;
+        if (speakerOrder[sp] == null) { speakerOrder[sp] = nextCam % numAngles; nextCam++; }
+        return speakerOrder[sp];
+      };
+    } else {
+      // no diarization → alternate cameras each sentence
+      var idx = 0;
+      mapFn = function () { return (idx++) % numAngles; };
+    }
+    var regions = CPMulticam.speakerCuesToRegions(cues, numAngles, mapFn);
+    var minSeg = parseFloat($('mc-minseg').value) || 1.2;
+    var plan = CPMulticam.directorPlan(regions, dur, {
+      minSegment: minSeg, leadIn: mcLeadIn(), maxShot: mcMaxShot(), centerHold: Math.max(1.2, minSeg)
+    });
+    return Promise.resolve(plan);
+  }
+
   /* "Switch on speech": one main/mixed mic → cut at each talk burst. */
   function mcSpeechBurstSegments() {
     return ensureAudioTracks().then(function (tracks) {
@@ -4705,7 +4761,23 @@
         for (var a = 0; a < numAngles; a++) {
           dbGrids.push(envs[a] ? envToSeqGrid(envs[a], micFor[a], nWin) : []);
         }
-        var regions = CPMulticam.loudnessToRegions(dbGrids, MC_STEP, { gate: -50, margin: 2 });
+        // AUTO-SYNC: line every mic up to the first real mic by cross-correlating
+        // their loudness — so "who's loudest" is judged at the SAME real moment
+        // even when the angles weren't perfectly synced on the timeline.
+        if ($('mc-autosync') && $('mc-autosync').checked) {
+          var ref = -1;
+          for (var r0 = 0; r0 < numAngles; r0++) { if (dbGrids[r0] && dbGrids[r0].length) { ref = r0; break; } }
+          if (ref >= 0) {
+            var synced = 0;
+            for (var a2 = 0; a2 < numAngles; a2++) {
+              if (a2 === ref || !dbGrids[a2] || !dbGrids[a2].length) continue;
+              var off = CPMulticam.estimateOffset(dbGrids[ref], dbGrids[a2], MC_STEP, 2.5);
+              if (Math.abs(off) >= MC_STEP) { dbGrids[a2] = shiftGrid(dbGrids[a2], off); synced++; }
+            }
+            if (synced) capMcProgress('Auto-synced ' + synced + ' camera' + (synced > 1 ? 's' : '') + '…');
+          }
+        }
+        var regions = CPMulticam.loudnessToRegions(dbGrids, MC_STEP, { relGate: 6, margin: 3, stick: 2.5 });
         capMcProgress(null);
         var minSeg = parseFloat($('mc-minseg').value) || 1.2;
         return CPMulticam.directorPlan(regions, dur, {
@@ -4713,7 +4785,9 @@
           wideAngle: center,
           wideOnSilence: center >= 0,
           centerEvery: parseInt($('mc-center').value, 10) || 0,
-          centerHold: Math.max(1.2, minSeg)
+          centerHold: Math.max(1.2, minSeg),
+          leadIn: mcLeadIn(),
+          maxShot: mcMaxShot()
         });
       });
     });
@@ -4743,6 +4817,7 @@
     var src = $('mc-source').value;
     var planner;
     if (src === 'follow') planner = mcSpeakerPlan(numAngles);
+    else if (src === 'transcript') planner = mcTranscriptPlan(numAngles);
     else if (src === 'speech') planner = patternPlan(numAngles, mcSpeechBurstSegments());
     else planner = patternPlan(numAngles, mcSegments());
 

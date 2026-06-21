@@ -14,7 +14,7 @@
 <body class="theme-light">
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.145</span>
+    <span class="ver" id="ver">v0.9.146</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -664,7 +664,8 @@
       <label>How to switch angle
         <select id="mc-source">
           <option value="follow">🎙️ Follow the speaker — a mic per camera</option>
-          <option value="speech">🗣️ Switch on speech — one main / mixed mic</option>
+          <option value="transcript">🗣️ Speaker turns — from the transcript</option>
+          <option value="speech">🔊 Switch on speech — one main / mixed mic</option>
           <option value="interval">⏱️ Every few seconds</option>
           <option value="markers">📍 At my timeline markers</option>
           <option value="smartcut">✂️ At my Smart Cut points</option>
@@ -688,12 +689,31 @@
       <div id="mc-speaker-opts">
         <div class="map-label">Which mic is on each camera?</div>
         <div id="mc-map"></div>
+        <label class="check"><input type="checkbox" id="mc-autosync" checked> 🧲 Auto-sync cameras by audio <span class="dim">(align angles before deciding who's talking)</span></label>
         <label id="mc-center-wrap" class="hidden">Cut to the center cam every
           <span class="val" id="mc-center-val">off</span>
           <input type="range" id="mc-center" min="0" max="30" step="1" value="0">
         </label>
         <label>Min shot length (s) <span class="val" id="mc-minseg-val">1.2</span>
           <input type="range" id="mc-minseg" min="0.5" max="5" step="0.1" value="1.2">
+        </label>
+      </div>
+
+      <!-- transcript (speaker-turn) options -->
+      <div id="mc-transcript-opts" class="hidden">
+        <p class="hint">Cuts to a different camera each time the speaker changes,
+           using the transcript from the <b>Transcribe</b> tab. Run
+           <b>🗣️ Detect speakers</b> there first for true per-person switching;
+           otherwise it alternates cameras each sentence.</p>
+      </div>
+
+      <!-- director controls (shared by follow + transcript) -->
+      <div id="mc-director-opts" class="hidden">
+        <label>Cut lead-in <span class="dim">(land the cut just before the line)</span> <span class="val" id="mc-leadin-val">off</span>
+          <input type="range" id="mc-leadin" min="0" max="500" step="20" value="0">
+        </label>
+        <label>Max time on one camera <span class="dim">(force a cutaway)</span> <span class="val" id="mc-maxshot-val">off</span>
+          <input type="range" id="mc-maxshot" min="0" max="30" step="1" value="0">
         </label>
       </div>
 
@@ -827,7 +847,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.145 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.146 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

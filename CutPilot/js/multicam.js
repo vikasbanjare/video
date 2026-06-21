@@ -132,6 +132,8 @@
     var wide = (opts.wideAngle != null) ? opts.wideAngle : -1; // center/wide cam index, -1 = none
     var centerEvery = opts.centerEvery || 0;                   // cutaway interval (s), 0 = off
     var centerHold = opts.centerHold || Math.max(minSeg, 1.5);
+    var leadIn = opts.leadIn || 0;          // cut this many seconds BEFORE the line starts
+    var maxShot = opts.maxShot || 0;        // force a cutaway when one cam lingers past this (s), 0 = off
     var nA = speakerRegions.length;
     if (!(duration > 0) || nA === 0) return [];
 
@@ -191,6 +193,35 @@
       if (out.length && out[out.length - 1].angle === merged[i].angle) out[out.length - 1].end = merged[i].end;
       else out.push(merged[i]);
     }
+
+    // break up shots that linger too long with a brief cutaway to the wide cam
+    // (or the next angle), so a long monologue never sits on one camera forever.
+    if (maxShot > 0 && nA > 1) {
+      var split = [];
+      for (i = 0; i < out.length; i++) {
+        var sh = out[i];
+        if (sh.end - sh.start <= maxShot * 1.5) { split.push(sh); continue; }
+        var alt = (wide >= 0 && wide !== sh.angle) ? wide : ((sh.angle + 1) % nA);
+        var t0 = sh.start;
+        while (sh.end - t0 > maxShot * 1.5) {
+          split.push({ start: t0, end: t0 + maxShot, angle: sh.angle });
+          var cEnd = Math.min(sh.end, t0 + maxShot + centerHold);
+          split.push({ start: t0 + maxShot, end: cEnd, angle: alt });
+          t0 = cEnd;
+        }
+        if (sh.end - t0 > 1e-3) split.push({ start: t0, end: sh.end, angle: sh.angle });
+      }
+      out = split;
+    }
+
+    // anticipation: pull each cut a little earlier so the new angle is on screen
+    // just before the line lands (pros never cut exactly on the word).
+    if (leadIn > 0) {
+      for (i = 1; i < out.length; i++) {
+        var ns = Math.max(out[i - 1].start + 0.12, out[i].start - leadIn);
+        out[i].start = ns; out[i - 1].end = ns;
+      }
+    }
     return out;
   }
 
@@ -204,28 +235,50 @@
    */
   function loudnessToRegions(dbGrids, step, opts) {
     opts = opts || {};
-    var gate = opts.gate != null ? opts.gate : -50;
-    var margin = opts.margin != null ? opts.margin : 2;
+    // Each mic is judged against ITS OWN noise floor (so mics recorded at
+    // different gains compete fairly), must rise relGate dB above that floor to
+    // count as "talking", and must beat the runner-up by `margin` (rejects
+    // bleed). `stick` biases the CURRENT angle so a single loud blip on a
+    // neighbour mic can't cause a flicker cut (hysteresis).
+    var relGate = opts.relGate != null ? opts.relGate : 6;
+    var margin = opts.margin != null ? opts.margin : 3;
+    var stick = opts.stick != null ? opts.stick : 2.5;
+    var gate = opts.gate != null ? opts.gate : -60;   // absolute safety floor
+    var floorPct = opts.floorPct != null ? opts.floorPct : 0.4;
     var nA = dbGrids.length;
     var regions = [];
     if (!nA) return regions;
     var len = 0, a, w;
     for (a = 0; a < nA; a++) { regions.push([]); len = Math.max(len, dbGrids[a].length); }
+
+    // per-mic noise floor (percentile of that mic's own levels)
+    var floors = [];
+    for (a = 0; a < nA; a++) {
+      var vals = [];
+      for (w = 0; w < dbGrids[a].length; w++) { var dv = dbGrids[a][w]; if (dv != null && dv > -99) vals.push(dv); }
+      vals.sort(function (x, y) { return x - y; });
+      floors[a] = vals.length ? vals[Math.min(vals.length - 1, Math.floor(vals.length * floorPct))] : -100;
+    }
+
     var open = [];
     for (a = 0; a < nA; a++) open.push(-1);
+    var cur = -1;
 
     for (w = 0; w < len; w++) {
-      var best = -1, bestDb = -Infinity, second = -Infinity;
+      var best = -1, bestEff = -Infinity, secondEff = -Infinity, bestRaw = -Infinity, bestRel = 0;
       for (a = 0; a < nA; a++) {
         var d = (dbGrids[a][w] == null) ? -100 : dbGrids[a][w];
-        if (d > bestDb) { second = bestDb; bestDb = d; best = a; }
-        else if (d > second) second = d;
+        var rel = d - floors[a];
+        var eff = rel + (a === cur ? stick : 0);   // hysteresis bonus for the current cam
+        if (eff > bestEff) { secondEff = bestEff; bestEff = eff; best = a; bestRaw = d; bestRel = rel; }
+        else if (eff > secondEff) secondEff = eff;
       }
-      var active = (bestDb > gate && (bestDb - second) >= margin) ? best : -1;
+      var active = (bestRel >= relGate && bestRaw > gate && (bestEff - secondEff) >= margin) ? best : -1;
       for (a = 0; a < nA; a++) {
         if (a === active) { if (open[a] < 0) open[a] = w * step; }
         else if (open[a] >= 0) { regions[a].push({ start: open[a], end: w * step }); open[a] = -1; }
       }
+      if (active >= 0) cur = active;   // remember last clear speaker for stickiness
     }
     for (a = 0; a < nA; a++) if (open[a] >= 0) regions[a].push({ start: open[a], end: len * step });
     return regions;
@@ -262,6 +315,57 @@
     return starts;
   }
 
+  /*
+   * Audio auto-sync: estimate how far `otherDb` is shifted from `refDb` by
+   * cross-correlating the two loudness envelopes (peaks/dips line up when two
+   * cameras filmed the same sound). Returns the offset in SECONDS to add to the
+   * other camera's times so it lines up with the reference (positive = the other
+   * cam is currently early and must move later). Pure + tested.
+   */
+  function estimateOffset(refDb, otherDb, step, maxLagSec) {
+    step = step || 0.2; maxLagSec = maxLagSec || 2.5;
+    var maxLag = Math.max(1, Math.round(maxLagSec / step));
+    function prep(arr) {
+      var m = 0, n = 0, i, v;
+      for (i = 0; i < arr.length; i++) { v = arr[i]; if (v != null && v > -99) { m += v; n++; } }
+      m = n ? m / n : 0;
+      var o = [];
+      for (i = 0; i < arr.length; i++) { v = arr[i]; o.push((v == null || v < -99) ? 0 : (v - m)); }
+      return o;
+    }
+    var r = prep(refDb), o = prep(otherDb);
+    var len = Math.min(r.length, o.length);
+    if (len < 4) return 0;
+    var bestLag = 0, bestScore = -Infinity;
+    for (var lag = -maxLag; lag <= maxLag; lag++) {
+      var s = 0, cnt = 0;
+      for (var i = 0; i < len; i++) {
+        var j = i + lag;
+        if (j < 0 || j >= len) continue;
+        s += r[i] * o[j]; cnt++;
+      }
+      if (cnt > maxLag) { var score = s / cnt; if (score > bestScore) { bestScore = score; bestLag = lag; } }
+    }
+    // o[i+lag] ~ r[i]  ⇒ other is `lag` windows AHEAD ⇒ add +lag*step to its time
+    return bestLag * step;
+  }
+
+  /*
+   * Transcript-driven: turn speaker-tagged cues into per-angle speech regions
+   * for directorPlan. mapFn(speaker, index) -> angle (or -1 to skip). Pure.
+   */
+  function speakerCuesToRegions(cues, numAngles, mapFn) {
+    var regions = [];
+    for (var a = 0; a < numAngles; a++) regions.push([]);
+    for (var i = 0; i < (cues || []).length; i++) {
+      var ang = mapFn ? mapFn(cues[i].speaker, i) : (i % numAngles);
+      if (ang != null && ang >= 0 && ang < numAngles) {
+        regions[ang].push({ start: cues[i].start, end: cues[i].end });
+      }
+    }
+    return regions;
+  }
+
   /* Quick stats for the UI: how many cuts per angle. */
   function planStats(plan, numAngles) {
     var counts = [];
@@ -282,6 +386,8 @@
     directorPlan: directorPlan,
     loudnessToRegions: loudnessToRegions,
     burstStarts: burstStarts,
+    estimateOffset: estimateOffset,
+    speakerCuesToRegions: speakerCuesToRegions,
     _mulberry32: mulberry32
   };
 });

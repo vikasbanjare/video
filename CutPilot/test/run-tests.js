@@ -681,6 +681,44 @@ console.log('multicam.js');
   const bs = CPMulticam.burstStarts(env, { offset: 8, minGap: 0.4 });
   assert(bs.length === 2, 'burstStarts finds two talk bursts');
   assert(close(bs[0], 1.0, 0.01) && close(bs[1], 2.6, 0.01), 'burst start times are correct');
+
+  // per-mic normalization: a quiet mic (low gain) still wins when it's the one
+  // talking, even though a louder-gain mic's room tone is higher in absolute dB
+  const quiet = [-60, -60, -48, -48];   // this mic is quiet overall, talks in 2nd half
+  const loud = [-40, -40, -42, -42];    // this mic is loud overall (room tone), never really "talks"
+  const nreg = CPMulticam.loudnessToRegions([quiet, loud], 1, { relGate: 6, margin: 3 });
+  assert(nreg[0].length === 1, 'normalized: the quiet mic that actually rises wins its window');
+
+  // hysteresis: a 1-window blip on a neighbour mic shouldn't steal the shot.
+  // mic0 is clearly talking (rel ~30 over its quiet floor); mic1 has one window
+  // that's even louder (rel ~34) — without the stickiness bonus it would win and
+  // cause a 1-window flicker cut. The current-cam bonus must keep us on mic0.
+  const stay = [-50, -50, -20, -20, -20, -50];   // mic0 talks windows 2–4
+  const blip = [-50, -50, -50, -16, -50, -50];   // mic1: single louder blip at window 3
+  const noStick = CPMulticam.loudnessToRegions([stay, blip], 1, { relGate: 6, margin: 3, stick: 0 });
+  assert(noStick[1].length === 1, 'without hysteresis the blip would steal a window (control)');
+  const hreg = CPMulticam.loudnessToRegions([stay, blip], 1, { relGate: 6, margin: 3, stick: 2.5 });
+  assert(hreg[1].length === 0, 'hysteresis: a single-window neighbour blip does not cut away');
+
+  // audio auto-sync: recover a known offset by cross-correlation
+  const r = []; for (let i = 0; i < 40; i++) r.push(-45); for (let i = 10; i < 16; i++) r[i] = -12;
+  const o = []; for (let i = 0; i < 40; i++) o.push(-45); for (let i = 14; i < 20; i++) o[i] = -12;
+  assert(close(CPMulticam.estimateOffset(r, o, 0.2, 3), 0.8, 0.01), 'estimateOffset recovers the 0.8s shift');
+  assert(close(CPMulticam.estimateOffset(r, r, 0.2, 3), 0, 0.01), 'estimateOffset of identical envelopes is 0');
+
+  // transcript-driven: speaker turns → per-angle regions → director plan
+  const tcues = [{ start: 0, end: 2, speaker: 'A' }, { start: 2, end: 4, speaker: 'B' }, { start: 4, end: 6, speaker: 'A' }];
+  const treg = CPMulticam.speakerCuesToRegions(tcues, 2, function (s) { return s === 'A' ? 0 : 1; });
+  const tplan = CPMulticam.directorPlan(treg, 6, { minSegment: 0.5 });
+  assert(tplan.length === 3 && tplan[0].angle === 0 && tplan[1].angle === 1 && tplan[2].angle === 0, 'transcript turns cut A→B→A');
+
+  // lead-in pulls each cut earlier
+  const li = CPMulticam.directorPlan([[{ start: 0, end: 5 }], [{ start: 5, end: 10 }]], 10, { minSegment: 0.5, leadIn: 0.5 });
+  assert(close(li[1].start, 4.5, 0.05), 'leadIn pulls the cut 0.5s earlier');
+
+  // max-shot forces cutaways inside a long monologue
+  const ms = CPMulticam.directorPlan([[{ start: 0, end: 30 }], []], 30, { minSegment: 1, wideAngle: 1, maxShot: 8, centerHold: 1.5 });
+  assert(ms.length > 1, 'maxShot breaks a long single-camera monologue into cutaways');
 }
 
 // --------------------------------------------- transcript: filler removal ----
