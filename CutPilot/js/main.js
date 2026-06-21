@@ -1885,6 +1885,62 @@
     list.forEach(function (t) {
       grid.appendChild(buildTemplateCard(t));
     });
+    paintThumbs();
+  }
+
+  /* Render every gallery card's canvas with the REAL caption engine, sized to
+     the card so it's crisp. Runs after layout; re-runs once web fonts load. */
+  var _thumbFontsHooked = false;
+  function paintThumbs() {
+    if (!window.CPRender || !CPRender.drawFrame) return;
+    var canvases = document.querySelectorAll('.tpl-thumb-canvas');
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    for (var i = 0; i < canvases.length; i++) {
+      var cvs = canvases[i], t = cvs._tpl;
+      if (!t) continue;
+      var w = cvs.clientWidth || 150, h = cvs.clientHeight || 116;
+      cvs.width = Math.round(w * dpr); cvs.height = Math.round(h * dpr);
+      drawCardPreview(cvs, t);
+    }
+    // repaint once the caption fonts finish loading (canvas can't reflow itself)
+    if (!_thumbFontsHooked && document.fonts && document.fonts.ready) {
+      _thumbFontsHooked = true;
+      document.fonts.ready.then(function () { try { paintThumbs(); } catch (e) {} });
+    }
+  }
+
+  /* Draw a single representative caption frame for a template into a small
+     canvas, using the same engine as the editor preview. */
+  function drawCardPreview(canvas, t) {
+    try {
+      var sample = t.uppercase ? 'YOUR BIG IDEA HERE' : 'Your big idea here';
+      var sw = sample.split(' '), DUR = 0.4;
+      var wordCues = sw.map(function (w, i) { return { start: i * DUR, end: (i + 1) * DUR, text: w }; });
+      var animId = CPCaptions.animIdForConcept(t.anim);
+      var frames;
+      try {
+        frames = CPCaptions.buildCaptionFrames([{ start: 0, end: sw.length * DUR, text: sample }], {
+          anim: animId, wordsPerCue: (t.wordsPerCue || 4), uppercase: !!t.uppercase,
+          keyword: { on: !!t.keyword, mode: 'keywords' }, speaker: { on: false },
+          build: !!t.build, wordCues: wordCues, window: (t.window || 0)
+        });
+      } catch (eF) { frames = null; }
+      if (!frames || !frames.length) frames = [{ words: sw }];
+      // pick the frame that best shows the style: a highlight present + the most words
+      var best = frames[0], bestScore = -1;
+      for (var i = 0; i < frames.length; i++) {
+        var f = frames[i];
+        var hl = (f.active != null) || (f.highlightSet && f.highlightSet.indexOf(true) >= 0) ? 1 : 0;
+        var nw = f.words ? f.words.length : 0;
+        var score = hl * 100 + nw;
+        if (score > bestScore) { bestScore = score; best = f; }
+      }
+      // a reference size that fills the small thumb (stacked styles need less)
+      var pov = { fontSize: (t.wordsPerLine ? 96 : 132), maxWidthPct: 0.92, maxLines: (t.wordsPerLine ? 0 : 2) };
+      var style = CPRender.styleForFrame(t, canvas.height, pov);
+      style.yPct = 0.52;   // vertically centre in the thumb
+      CPRender.drawFrame(canvas, best, style);
+    } catch (e) { /* leave the gradient background showing */ }
   }
 
   function buildTemplateCard(t) {
@@ -1920,34 +1976,15 @@
 
     var thumb = document.createElement('div');
     thumb.className = 'tpl-thumb';
-    var cap = document.createElement('div');
-    cap.className = 't-cap';
-    var animId = CPCaptions.animIdForConcept(t.anim);
-    var def = CPCaptions.getAnimation(animId);
-    // each card loops its REAL animation so every style previews distinctly —
-    // including the framed ones (karaoke sweeps the colour across the phrase,
-    // reveal/typewriter type the words in). Previously all framed styles fell
-    // back to a plain fade, which made dozens of cards look identical.
-    var demo = def.demo || 'anim-fade';
-    // a 2-word sample so keyword highlight is visible
-    var w1 = t.uppercase ? 'BIG' : 'Big';
-    var w2 = t.uppercase ? 'IDEA' : 'idea';
-    cap.innerHTML = w1 + ' <span class="kwd">' + w2 + '</span>';
-    cap.style.fontFamily = '"' + t.font + '", ' + (t.fallbackFonts || []).join(', ') + ', sans-serif';
-    cap.style.color = t.fill;
-    if (t.letterSpacing) cap.style.letterSpacing = t.letterSpacing + 'px';
-    if (t.stroke && t.strokeWidth) {
-      cap.style.textShadow = '-1.5px -1.5px 0 ' + t.stroke + ',1.5px -1.5px 0 ' + t.stroke +
-        ',-1.5px 1.5px 0 ' + t.stroke + ',1.5px 1.5px 0 ' + t.stroke;
-    }
-    if (t.glow) cap.style.textShadow = '0 0 10px ' + t.glow;
-    if (t.boxColor) { cap.style.background = t.boxColor; cap.style.padding = '2px 8px'; cap.style.borderRadius = '6px'; }
-    var kwd = cap.querySelector('.kwd');
-    kwd.style.color = t.highlight || t.fill;
-    // karaoke's colour-sweep lands on this template's own highlight colour
-    if (animId === 'karaoke') cap.style.setProperty('--sweep', t.highlight || '#00e676');
-    if (demo) cap.className = 't-cap ' + demo;
-    thumb.appendChild(cap);
+    // WYSIWYG card preview: render the template with the REAL engine (same canvas
+    // pipeline as the editor) so browsing shows exactly how each style looks —
+    // gradients, glossy, two-tier, italic-serif keyword, boxes and all — without
+    // having to open it first. (paintThumbs renders these after the grid lays out
+    // and again once the web fonts have loaded.)
+    var cvs = document.createElement('canvas');
+    cvs.className = 'tpl-thumb-canvas';
+    cvs._tpl = t;
+    thumb.appendChild(cvs);
 
     var pop = document.createElement('span');
     pop.className = 'tpl-pop';

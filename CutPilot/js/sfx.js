@@ -28,77 +28,125 @@
   ];
 
   function clamp(x) { return x < -1 ? -1 : (x > 1 ? 1 : x); }
+  // gentle soft-clip (tanh-ish) — rounds peaks so nothing sounds harsh/digital
+  function soft(x) { return x < -3 ? -1 : x > 3 ? 1 : x * (27 + x * x) / (27 + 9 * x * x); }
+
+  // Raised-cosine fade in/out so the clip never starts/ends on a hard edge
+  // (those discontinuities are the #1 cause of the "clicky/cheap" sound).
+  function declick(a, sr, inMs, outMs) {
+    var fi = Math.min(a.length >> 1, Math.floor((inMs || 4) / 1000 * sr));
+    var fo = Math.min(a.length >> 1, Math.floor((outMs || 25) / 1000 * sr));
+    for (var i = 0; i < fi; i++) a[i] *= 0.5 - 0.5 * Math.cos(Math.PI * i / fi);
+    for (var j = 0; j < fo; j++) a[a.length - 1 - j] *= 0.5 - 0.5 * Math.cos(Math.PI * j / fo);
+    return a;
+  }
+  // one-pole low-pass (coef 0..1; lower = darker) — tames harsh high end
+  function lp1(a, coef) { var y = 0; for (var i = 0; i < a.length; i++) { y += coef * (a[i] - y); a[i] = y; } return a; }
+  function softAll(a) { for (var i = 0; i < a.length; i++) a[i] = soft(a[i]); return a; }
 
   // ---- individual synths: each returns a Float32-ish Array of mono samples ----
   function synth(id, sr) {
     sr = sr || SR;
-    var n, i, t, out, env, f, lp, noise;
+    var n, i, t, out, env, f, noise, ph;
 
     if (id === 'whoosh' || id === 'swoosh') {
-      var dur = 0.55; n = Math.floor(dur * sr); out = new Array(n); lp = 0;
-      var pitched = (id === 'swoosh');
+      // band-passed moving noise = smooth "air", not hissy white noise
+      var dur = 0.6; n = Math.floor(dur * sr); out = new Array(n);
+      var yHi = 0, yLo = 0; var pitched = (id === 'swoosh'); ph = 0;
       for (i = 0; i < n; i++) {
         t = i / n;
-        env = Math.sin(Math.PI * t); env *= env;          // smooth bell in/out
-        var cutoff = 0.03 + 0.28 * Math.sin(Math.PI * t); // open then close the filter
+        env = Math.sin(Math.PI * t); env *= env;                 // smooth bell
+        var cHi = 0.10 + 0.22 * Math.sin(Math.PI * t);            // upper edge opens then closes
+        var cLo = 0.015 + 0.05 * t;                               // lower edge drifts up
         noise = Math.random() * 2 - 1;
-        lp += cutoff * (noise - lp);                        // one-pole low-pass on noise
-        var tone = pitched ? 0.35 * Math.sin(2 * Math.PI * (300 + 900 * t) * (i / sr)) : 0;
-        out[i] = clamp((lp * 0.8 + tone) * env * 0.8);
+        yHi += cHi * (noise - yHi); yLo += cLo * (noise - yLo);
+        var band = yHi - yLo;                                     // band-pass → airy
+        var tone = 0;
+        if (pitched) { f = 220 + 700 * t; ph += 2 * Math.PI * f / sr; tone = 0.3 * Math.sin(ph); }
+        out[i] = (band * 1.7 + tone) * env * 0.7;
       }
-      return out;
+      return declick(softAll(out), sr, 8, 40);
     }
     if (id === 'pop') {
-      var d1 = 0.13; n = Math.floor(d1 * sr); out = new Array(n);
-      for (i = 0; i < n; i++) { t = i / sr; f = 520 * Math.pow(0.5, t * 7); env = Math.exp(-t * 34); out[i] = clamp(Math.sin(2 * Math.PI * f * t) * env * 0.85); }
-      return out;
+      // pitch-dropping body + a tiny noise transient, then darkened
+      var d1 = 0.16; n = Math.floor(d1 * sr); out = new Array(n); ph = 0;
+      for (i = 0; i < n; i++) {
+        t = i / sr; f = 440 * Math.pow(0.5, t * 5); ph += 2 * Math.PI * f / sr;
+        env = Math.exp(-t * 26);
+        var tr = (Math.random() * 2 - 1) * Math.exp(-t * 320) * 0.25;   // attack transient
+        out[i] = (Math.sin(ph) * 0.85 + tr) * env;
+      }
+      lp1(out, 0.55); return declick(softAll(out), sr, 2, 30);
     }
     if (id === 'click') {
-      var d2 = 0.035; n = Math.floor(d2 * sr); out = new Array(n);
-      for (i = 0; i < n; i++) { t = i / sr; env = Math.exp(-t * 200); out[i] = clamp(((Math.random() * 2 - 1) * 0.6 + Math.sin(2 * Math.PI * 2200 * t) * 0.4) * env); }
-      return out;
+      var d2 = 0.04; n = Math.floor(d2 * sr); out = new Array(n); var yb = 0;
+      for (i = 0; i < n; i++) {
+        t = i / sr; env = Math.exp(-t * 150);
+        noise = Math.random() * 2 - 1; yb += 0.45 * (noise - yb);       // band-ish click
+        out[i] = (yb * 0.8 + Math.sin(2 * Math.PI * 1900 * t) * 0.2) * env;
+      }
+      return declick(softAll(out), sr, 1, 12);
     }
     if (id === 'tick') {
-      var d3 = 0.045; n = Math.floor(d3 * sr); out = new Array(n);
-      for (i = 0; i < n; i++) { t = i / sr; env = Math.exp(-t * 130); out[i] = clamp(Math.sin(2 * Math.PI * 1800 * t) * env * 0.8); }
-      return out;
+      var d3 = 0.05; n = Math.floor(d3 * sr); out = new Array(n); var yt = 0;
+      for (i = 0; i < n; i++) {
+        t = i / sr; env = Math.exp(-t * 110);
+        noise = Math.random() * 2 - 1; yt += 0.6 * (noise - yt);
+        out[i] = (Math.sin(2 * Math.PI * 1600 * t) * 0.6 + yt * 0.4) * env * 0.9;
+      }
+      return declick(softAll(out), sr, 1, 14);
     }
     if (id === 'shutter') {
-      var d4 = 0.17; n = Math.floor(d4 * sr); out = new Array(n);
+      // two mechanical clicks ~60 ms apart, each band-passed + declicked
+      var d4 = 0.18; n = Math.floor(d4 * sr); out = new Array(n);
       for (i = 0; i < n; i++) out[i] = 0;
-      // two mechanical clicks ~55 ms apart
-      [0, 0.06].forEach(function (off) {
-        var s0 = Math.floor(off * sr);
-        for (var k = 0; k < Math.floor(0.03 * sr) && s0 + k < n; k++) {
-          var tt = k / sr, e = Math.exp(-tt * 180);
-          out[s0 + k] = clamp(out[s0 + k] + ((Math.random() * 2 - 1) * 0.7 + Math.sin(2 * Math.PI * 3000 * tt) * 0.3) * e);
+      [[0, 1.0], [0.06, 0.8]].forEach(function (clk) {
+        var s0 = Math.floor(clk[0] * sr), amp = clk[1], yb = 0, len = Math.floor(0.028 * sr);
+        for (var k = 0; k < len && s0 + k < n; k++) {
+          var tt = k / sr, e = Math.exp(-tt * 150);
+          var nz = Math.random() * 2 - 1; yb += 0.5 * (nz - yb);
+          // raised-cosine attack so each click is a soft "snick", not a digital spike
+          var atk = k < 24 ? (0.5 - 0.5 * Math.cos(Math.PI * k / 24)) : 1;
+          out[s0 + k] += (yb * 0.7 + Math.sin(2 * Math.PI * 2600 * tt) * 0.3) * e * atk * amp;
         }
       });
-      return out;
+      return declick(softAll(out), sr, 1, 20);
     }
     if (id === 'ding') {
-      var d5 = 0.5; n = Math.floor(d5 * sr); out = new Array(n);
+      // soft inharmonic bell: a few partials, gentle attack, long smooth decay
+      var d5 = 0.6; n = Math.floor(d5 * sr); out = new Array(n);
+      var parts = [[1, 1.0], [2.01, 0.45], [2.76, 0.2], [3.9, 0.08]], f0 = 988;
       for (i = 0; i < n; i++) {
-        t = i / sr; env = Math.exp(-t * 6);
-        out[i] = clamp((Math.sin(2 * Math.PI * 1245 * t) + 0.5 * Math.sin(2 * Math.PI * 2490 * t) + 0.25 * Math.sin(2 * Math.PI * 3735 * t)) * env * 0.5);
+        t = i / sr;
+        var atkD = (t < 0.006) ? (t / 0.006) : 1;                 // 6 ms soft attack
+        var s = 0;
+        for (var pI = 0; pI < parts.length; pI++) s += Math.sin(2 * Math.PI * f0 * parts[pI][0] * t) * parts[pI][1] * Math.exp(-t * (5 + pI * 3));
+        out[i] = s * 0.4 * atkD;
       }
-      return out;
+      return declick(softAll(out), sr, 2, 60);
     }
     if (id === 'riser') {
-      var d6 = 0.7; n = Math.floor(d6 * sr); out = new Array(n); lp = 0; var ph = 0;
+      // rising band-passed noise + a faint octave-up tone, building to the end
+      var d6 = 0.8; n = Math.floor(d6 * sr); out = new Array(n); var yH = 0, yL = 0; ph = 0;
       for (i = 0; i < n; i++) {
-        t = i / n; f = 200 + 1000 * t * t;                  // accelerating pitch climb
-        ph += 2 * Math.PI * f / sr;
-        env = t * t;                                        // builds toward the end
-        noise = Math.random() * 2 - 1; lp += 0.15 * (noise - lp);
-        out[i] = clamp((Math.sin(ph) * 0.6 + lp * 0.5) * env * 0.85);
+        t = i / n;
+        var cH = 0.05 + 0.4 * t * t;                              // brightens as it rises
+        noise = Math.random() * 2 - 1; yH += cH * (noise - yH); yL += 0.02 * (noise - yL);
+        f = 300 + 1500 * t * t; ph += 2 * Math.PI * f / sr;
+        env = t * t;                                              // swell in
+        out[i] = ((yH - yL) * 1.4 + Math.sin(ph) * 0.3) * env * 0.7;
       }
-      return out;
+      return declick(softAll(out), sr, 12, 30);
     }
     if (id === 'thud') {
-      var d7 = 0.28; n = Math.floor(d7 * sr); out = new Array(n);
-      for (i = 0; i < n; i++) { t = i / sr; f = 85 * Math.pow(0.5, t * 5); env = Math.exp(-t * 11); out[i] = clamp(Math.sin(2 * Math.PI * f * t) * env * 0.95); }
-      return out;
+      // low impact: pitch-dropping sine, soft-saturated, darkened
+      var d7 = 0.3; n = Math.floor(d7 * sr); out = new Array(n); ph = 0;
+      for (i = 0; i < n; i++) {
+        t = i / sr; f = 95 * Math.pow(0.5, t * 3.5); ph += 2 * Math.PI * f / sr;
+        env = Math.exp(-t * 9);
+        out[i] = soft(Math.sin(ph) * 1.6) * env * 0.95;
+      }
+      lp1(out, 0.4); return declick(out, sr, 3, 40);
     }
     // unknown id → a short pop so we never return empty
     return synth('pop', sr);
