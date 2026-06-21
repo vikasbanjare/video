@@ -363,10 +363,13 @@
       }
       var y = lineY[li];
 
-      // background box behind the whole line (opacity + padding + gradient)
+      // background box behind the whole line (opacity + padding + gradient).
+      // barTop/barH are remembered so an active-word box can be centred inside it.
+      var barTop = null, barH = null;
       if (style.boxColor) {
         var padX = base * 0.32 * style.boxPad, padY = base * 0.22 * style.boxPad;
         var bxTop = y - line.height - padY + line.height * 0.18, bxH = line.height + padY * 2;
+        barTop = bxTop; barH = bxH;
         ctx.save();
         ctx.globalAlpha = style.boxOpacity;
         if (style.boxColor2) {
@@ -399,11 +402,24 @@
           ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
           var gtop = y - it.px + it.px * 0.16;
           if (shape === 'box') {
-            var bpadX = it.px * 0.22 * style.boxPad, bpadY = it.px * 0.16 * style.boxPad;
-            var br = Math.min((it.px + 2 * bpadY) * 0.32, style.boxRadius || 14);
-            ctx.globalAlpha = style.boxOpacity;
+            var bpadX = it.px * 0.22 * style.boxPad;
+            var wbTop, wbH;
+            if (barH != null) {
+              // sitting inside a backing bar: make the word box clearly smaller
+              // than the bar and centre it vertically so top/bottom margins match.
+              wbH = barH * 0.70;
+              wbTop = barTop + (barH - wbH) / 2;
+            } else {
+              var bpadY = it.px * 0.16 * style.boxPad;
+              wbH = it.px + bpadY * 2;
+              wbTop = gtop - bpadY;
+            }
+            var br = Math.min(wbH * 0.32, style.boxRadius || 14);
+            // the highlight box stays solid even when the bar behind it is
+            // translucent (so the active word always pops).
+            ctx.globalAlpha = (barH != null) ? 1 : style.boxOpacity;
             ctx.fillStyle = hlColor;
-            roundRect(ctx, x - bpadX, gtop - bpadY, it.w + bpadX * 2, it.px + bpadY * 2, br);
+            roundRect(ctx, x - bpadX, wbTop, it.w + bpadX * 2, wbH, br);
             ctx.fill();
           } else if (shape === 'bar') {
             var qpadX = it.px * 0.16, qpadY = it.px * 0.12;
