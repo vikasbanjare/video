@@ -248,7 +248,7 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
   box-shadow: 0 8px 10px -8px rgba(0,0,0,.65);
 }
 .preview-frame {
-  position: relative; width: 100%; height: 150px; border-radius: var(--r);
+  position: relative; width: 100%; height: 188px; border-radius: var(--r);
   background:
     radial-gradient(80% 120% at 50% 0%, var(--accent-soft), transparent 70%),
     linear-gradient(150deg, #171b26, #20283a 55%, #1a2030);

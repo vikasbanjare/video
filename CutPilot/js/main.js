@@ -2902,7 +2902,13 @@
     // engine produces for a realistic sentence — so the preview matches the final
     // captions 1:1 (animation, word-highlight timing, grouping) and the Size
     // slider now visibly affects it.
-    var pStyle = CPRender.styleForFrame(preset, canvas.height, ov);
+    // Preview shows the STYLE big & clearly for every template (not the tiny real
+    // on-frame proportion). A large reference size makes the caption fill the
+    // preview; the real exported size is the Size slider (shown in the legibility
+    // note below the preview).
+    var pov = {}; for (var ko in ov) if (ov.hasOwnProperty(ko)) pov[ko] = ov[ko];
+    pov.fontSize = 230;
+    var pStyle = CPRender.styleForFrame(preset, canvas.height, pov);
     var anim = currentAnim();
     var words = parseInt($('c-words').value, 10) || 0;
     var speakerOn = $('c-speaker').checked;
