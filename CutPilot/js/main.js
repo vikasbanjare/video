@@ -1286,6 +1286,37 @@
      the old find-and-replace caught. Each corrected line is then guarded by a
      word-overlap check, so any line where the model dropped or rewrote too much
      is rejected and the original kept: more power, without losing your words. */
+  /* After an AI text fix, push the corrected words back onto the per-word
+     timeline so word-following captions (karaoke / reveal / Editorial) show the
+     FIXED words — not the raw misheard ones. When a line's corrected word count
+     matches its original words, exact per-word timing is kept; otherwise the
+     corrected words are spread across that line's span (approximate but right). */
+  function reflowWordTimingFromLines(lineCues, origWords) {
+    if (!origWords || !origWords.length) return null;
+    var res = [];
+    for (var i = 0; i < lineCues.length; i++) {
+      var line = lineCues[i];
+      var words = String(line.text).replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+      if (!words.length) continue;
+      var orig = [];
+      for (var k = 0; k < origWords.length; k++) {
+        var mid = (origWords[k].start + origWords[k].end) / 2;
+        if (mid >= line.start - 0.06 && mid < line.end + 0.06) orig.push(origWords[k]);
+      }
+      if (orig.length === words.length) {
+        for (var a = 0; a < words.length; a++) res.push({ start: orig[a].start, end: orig[a].end, text: words[a] });
+      } else {
+        var span = Math.max(0.3, line.end - line.start), tot = 0, t = line.start;
+        for (var b = 0; b < words.length; b++) tot += Math.max(1, words[b].length);
+        for (var c = 0; c < words.length; c++) {
+          var d = span * Math.max(1, words[c].length) / tot;
+          res.push({ start: t, end: t + d, text: words[c] }); t += d;
+        }
+      }
+    }
+    return res.length ? res : null;
+  }
+
   function cleanupTranscript() {
     if (!CPBridge.isCEP()) return toast('AI fixing needs Premiere.', true);
     if (!state.transcript) return toast('Transcribe or load a transcript first.', true);
@@ -1334,6 +1365,12 @@
           return toast('✨ AI checked your words — nothing needed fixing.' + (rejected ? ' (Skipped ' + rejected + ' risky rewrite' + (rejected === 1 ? '' : 's') + '.)' : ''));
         }
         installNewTranscript(out, 'AI-corrected (' + out.length + ' lines)', 'fixed', true);
+        // keep the word-by-word highlight in sync with the corrected text so
+        // karaoke/reveal/Editorial show the FIXED words (not the raw ones).
+        if (state.transcriptWords && state.transcriptWords.length) {
+          var rw = reflowWordTimingFromLines(out, state.transcriptWords);
+          if (rw) state.transcriptWords = rw;
+        }
         setTranscriptBar('ok', '✅', 'AI fixed ' + changed + ' line' + (changed === 1 ? '' : 's') + ' — all ' + out.length + ' kept.', 'Change');
         toast('✨ AI fixed ' + changed + ' line' + (changed === 1 ? '' : 's') + '. e.g. ' + samples.join('; ') +
               (changed > samples.length ? '…' : '') + (rejected ? (' · skipped ' + rejected + ' risky rewrite' + (rejected === 1 ? '' : 's')) : '') +
@@ -2227,6 +2264,7 @@
       'c-animspeed-val': function () { return $('c-animspeed').value + '%'; }
     };
     for (var k in lbl) { if (lbl.hasOwnProperty(k) && $(k) && $(k.replace('-val', ''))) $(k).textContent = lbl[k](); }
+    syncColorRelevance();
   }
 
   /* Push the (hidden) colour-input values into their custom palette swatches,
@@ -2235,6 +2273,22 @@
     ['c-fill', 'c-hl', 'c-stroke', 'c-box', 'c-shadow', 'c-fill2', 'c-hl2', 'c-hl3', 'c-hl2g'].forEach(function (id) {
       var inp = $(id); if (inp && inp._cpField) inp._cpField.setDisplay(inp.value);
     });
+  }
+
+  /* Only show colour swatches the CURRENT style actually uses, so a template
+     never displays an irrelevant colour (e.g. a pink "Box" on a style with no
+     box, or a black "Outline" on one with no outline). The swatch reappears the
+     moment its feature is switched on (Background box / Outline width). */
+  function syncColorRelevance() {
+    var boxOn = !!($('c-box-on') && $('c-box-on').checked);
+    var strokeOn = (parseInt($('c-strokew') && $('c-strokew').value, 10) || 0) > 0;
+    var hlStyle = readHlStyle();
+    // Highlight colour is irrelevant only when nothing is ever highlighted
+    var p = currentPreset() || {};
+    var usesHighlight = !!(p.keyword || (p.wordHl !== false) || hlStyle !== 'color' || p.highlightFont || p.highlightGlow);
+    if ($('sw-box')) $('sw-box').style.display = boxOn ? '' : 'none';
+    if ($('sw-stroke')) $('sw-stroke').style.display = strokeOn ? '' : 'none';
+    if ($('sw-hl')) $('sw-hl').style.display = usesHighlight ? '' : 'none';
   }
 
   // Two-part customizer: 🎨 Style vs ✨ Effects & Pro, switched in the same panel.
