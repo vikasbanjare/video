@@ -959,6 +959,53 @@ function CP_placeCaptionImages(argsJson) {
 }
 
 /*
+ * Place one short SFX clip at each given time on an audio track. Imports the WAV
+ * once, then overwrites a copy at every trigger time. Prefers an empty audio
+ * track (so the voice is never clobbered); adds one via QE when none is free.
+ * argsJson: { wavPath, times:[...seconds], label }
+ */
+function CP_placeSfx(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    if (!args.times || !args.times.length) return CP_fail('No SFX times given.');
+    var seq = CP_activeSequence();
+    if (!seq) return CP_fail('Open a sequence first.');
+
+    // import the WAV into a tidy bin
+    var bin = app.project.rootItem.createBin('CutPilot SFX ' + ((new Date()).getTime() % 100000));
+    app.project.importFiles([args.wavPath], true, bin, false);
+    var item = null;
+    for (var c = bin.children.numItems - 1; c >= 0; c--) {
+      var cand = bin.children[c];
+      if (cand && cand.type !== 2) { item = cand; break; }   // skip nested bins
+    }
+    if (!item) item = bin.children[bin.children.numItems - 1];
+    if (!item) return CP_fail('SFX import failed.');
+
+    // find a free audio track; otherwise add one (QE), else fall back to the last
+    function firstEmptyAudio() {
+      for (var t = seq.audioTracks.numTracks - 1; t >= 0; t--) {
+        if (seq.audioTracks[t].clips.numItems === 0) return t;
+      }
+      return -1;
+    }
+    var idx = firstEmptyAudio();
+    if (idx < 0) {
+      try { var q = CP_qeSequence(); if (q && q.addTracks) { q.addTracks(0, 0, 1); seq = CP_activeSequence(); idx = firstEmptyAudio(); } } catch (eAdd) {}
+      if (idx < 0) idx = seq.audioTracks.numTracks - 1;   // last resort
+    }
+    var track = seq.audioTracks[idx];
+    if (!track) return CP_fail('No audio track available for SFX.');
+
+    var placed = 0;
+    for (var i = 0; i < args.times.length; i++) {
+      try { track.overwriteClip(item, args.times[i]); placed++; } catch (ePl) {}
+    }
+    return CP_ok({ placed: placed, track: idx + 1, bin: bin.name });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/*
  * Insert one MOGRT per caption cue and push the cue text (and basic style
  * params when the template exposes them) into the graphic.
  * argsJson: { mogrtPath, cues:[{start,end,text}], videoTrack, audioTrack }

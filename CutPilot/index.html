@@ -14,7 +14,7 @@
 <body class="theme-light">
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.146</span>
+    <span class="ver" id="ver">v0.9.147</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -590,6 +590,34 @@
       </div>
 
       <div id="cap-progress" class="progress hidden"></div>
+
+      <!-- 🔊 SOUND FX -->
+      <details class="card sfx-card" id="sfx-card">
+        <summary><b>🔊 Sound FX</b> <span class="dim">— drop whoosh / pop / shutter synced to your captions</span></summary>
+        <div class="sfx-body">
+          <label>Effect
+            <select id="sfx-effect"></select>
+          </label>
+          <p class="hint" id="sfx-desc" style="margin:3px 0"></p>
+          <label>Play it on
+            <select id="sfx-trigger">
+              <option value="caption">Each caption</option>
+              <option value="word">Each word</option>
+              <option value="keyword">Each keyword</option>
+              <option value="number">Each number / money</option>
+              <option value="first">Just the first caption</option>
+            </select>
+          </label>
+          <label>Volume <span class="val" id="sfx-vol-val">80%</span>
+            <input type="range" id="sfx-vol" min="10" max="100" step="5" value="80">
+          </label>
+          <div class="row tight" style="gap:6px;margin-top:6px">
+            <button id="btn-sfx-preview" class="chip-btn">▶︎ Preview</button>
+            <button id="btn-sfx-add" class="hero-btn small" style="flex:1">➕ Add SFX to timeline</button>
+          </div>
+          <p class="hint" style="margin:6px 0 0">SFX land on a free audio track (your voice track is never overwritten). Built-in, royalty-free. Add captions first so there's timing to sync to.</p>
+        </div>
+      </details>
     </div><!-- /view-editor -->
   </section>
 
@@ -847,7 +875,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.146 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.147 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>
@@ -868,6 +896,7 @@
   <script src="js/captions.js"></script>
   <script src="js/render.js"></script>
   <script src="js/multicam.js"></script>
+  <script src="js/sfx.js"></script>
   <script src="js/transcript.js"></script>
   <script src="js/fonts.js"></script>
   <script src="js/command.js"></script>

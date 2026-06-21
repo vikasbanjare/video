@@ -914,6 +914,7 @@
     buildFontSelect();
     buildAnimRail();
     wireCustomizer();
+    wireSfx();
     wireTranscriptBar();
     wireAltMode();
     wireSubviews();
@@ -3295,6 +3296,90 @@
       capProgress(null);
       toast('Captions failed: ' + e.message, true);
     });
+  }
+
+  // ============================================================== SOUND FX ==
+  /* Word-level cues for SFX timing: real word timing if we have it, else an
+     even split of the caption lines. */
+  function sfxWordCues() {
+    if (state.transcriptWords && state.transcriptWords.length) return state.transcriptWords;
+    var cues = (state.lastCaptionJob && state.lastCaptionJob.cues) || null;
+    if (!cues) { try { cues = readSelectedTranscript(); } catch (e) { cues = null; } }
+    if (!cues) return [];
+    var out = [];
+    cues.forEach(function (c) {
+      var ws = String(c.text).replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+      var n = Math.max(1, ws.length), d = ((c.end - c.start) || n * 0.4) / n;
+      ws.forEach(function (w, k) { out.push({ start: c.start + k * d, end: c.start + (k + 1) * d, text: w }); });
+    });
+    return out;
+  }
+  /* The list of times (seconds) an SFX should fire for the chosen trigger. */
+  function sfxTimes(trigger) {
+    if (trigger === 'caption' || trigger === 'first') {
+      var cues = (state.lastCaptionJob && state.lastCaptionJob.cues) || null;
+      if (!cues) { try { cues = readSelectedTranscript(); } catch (e) { cues = null; } }
+      if (!cues || !cues.length) return [];
+      return trigger === 'first' ? [cues[0].start] : cues.map(function (c) { return c.start; });
+    }
+    var words = sfxWordCues();
+    if (!words.length) return [];
+    if (trigger === 'word') return words.map(function (w) { return w.start; });
+    if (trigger === 'number') return words.filter(function (w) { return /\d/.test(w.text); }).map(function (w) { return w.start; });
+    if (trigger === 'keyword') return words.filter(function (w) {
+      var c = w.text.replace(/[^a-z0-9']/gi, ''); return /\d/.test(c) || c.length >= 6;
+    }).map(function (w) { return w.start; });
+    return [];
+  }
+
+  function sfxPreview() {
+    if (typeof CPSfx === 'undefined') return;
+    var id = $('sfx-effect').value, vol = (parseInt($('sfx-vol').value, 10) || 80) / 100;
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      var ac = new AC();
+      var s = CPSfx.synth(id), sr = CPSfx.SAMPLE_RATE;
+      var buf = ac.createBuffer(1, s.length, sr), ch = buf.getChannelData(0);
+      for (var i = 0; i < s.length; i++) ch[i] = s[i] * vol;
+      var src = ac.createBufferSource(); src.buffer = buf; src.connect(ac.destination); src.start();
+    } catch (e) { toast('Preview not available here: ' + e.message, true); }
+  }
+
+  function sfxAdd() {
+    if (typeof CPSfx === 'undefined') return toast('SFX engine unavailable.', true);
+    if (!CPBridge.isCEP()) return toast('Adding SFX needs Premiere.', true);
+    var id = $('sfx-effect').value, trigger = $('sfx-trigger').value;
+    var vol = (parseInt($('sfx-vol').value, 10) || 80) / 100;
+    var times = sfxTimes(trigger);
+    if (!times.length) return toast('No timing to sync to yet — add captions (or transcribe) first.', true);
+    if (times.length > 400 && !confirm(times.length + ' SFX hits will be placed. That\'s a lot — continue?')) return;
+    var fs, os, pathMod;
+    try { fs = nodeReq('fs'); os = nodeReq('os'); pathMod = nodeReq('path'); } catch (e) { return toast('Node unavailable: ' + e.message, true); }
+    var bytes, wavPath;
+    try {
+      bytes = CPSfx.renderWav(id, { gain: vol });
+      wavPath = pathMod.join(os.tmpdir(), 'cutpilot-sfx-' + id + '-' + Date.now() + '.wav');
+      fs.writeFileSync(wavPath, Buffer.from(bytes));
+    } catch (e) { return toast('Could not create the SFX file: ' + e.message, true); }
+    toast('Placing ' + times.length + ' ' + CPSfx.getSfx(id).name + ' hit' + (times.length === 1 ? '' : 's') + '…');
+    CPBridge.callHost('CP_placeSfx', { wavPath: wavPath, times: times, label: id }).then(function (r) {
+      toast('🔊 Added ' + r.placed + ' ' + CPSfx.getSfx(id).name + ' SFX on audio track A' + r.track + '. ⌘Z / Ctrl+Z undoes it.');
+    }).catch(function (e) { toast('SFX failed: ' + e.message, true); });
+  }
+
+  function wireSfx() {
+    if (typeof CPSfx === 'undefined' || !$('sfx-effect')) return;
+    var sel = $('sfx-effect');
+    sel.innerHTML = '';
+    CPSfx.SFX.forEach(function (fx) {
+      var o = document.createElement('option'); o.value = fx.id; o.textContent = fx.emoji + ' ' + fx.name; sel.appendChild(o);
+    });
+    function showDesc() { var fx = CPSfx.getSfx(sel.value); if ($('sfx-desc')) $('sfx-desc').textContent = fx.desc || ''; }
+    showDesc();
+    sel.addEventListener('change', function () { showDesc(); sfxPreview(); });
+    if ($('sfx-vol')) $('sfx-vol').addEventListener('input', function () { $('sfx-vol-val').textContent = this.value + '%'; });
+    if ($('btn-sfx-preview')) $('btn-sfx-preview').addEventListener('click', sfxPreview);
+    if ($('btn-sfx-add')) $('btn-sfx-add').addEventListener('click', sfxAdd);
   }
 
   /* Build audio-aligned word cues for tight sync (null = fall back to

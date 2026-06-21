@@ -12,6 +12,7 @@ const CPTranscript = require(path.join(__dirname, '..', 'js', 'transcript.js'));
 const CPFonts = require(path.join(__dirname, '..', 'js', 'fonts.js'));
 const CPCommand = require(path.join(__dirname, '..', 'js', 'command.js'));
 const CPChapters = require(path.join(__dirname, '..', 'js', 'chapters.js'));
+const CPSfx = require(path.join(__dirname, '..', 'js', 'sfx.js'));
 
 let passed = 0, failed = 0;
 
@@ -719,6 +720,33 @@ console.log('multicam.js');
   // max-shot forces cutaways inside a long monologue
   const ms = CPMulticam.directorPlan([[{ start: 0, end: 30 }], []], 30, { minSegment: 1, wideAngle: 1, maxShot: 8, centerHold: 1.5 });
   assert(ms.length > 1, 'maxShot breaks a long single-camera monologue into cutaways');
+}
+
+// ------------------------------------------------------------------- sfx ----
+console.log('sfx.js');
+{
+  assert(CPSfx.SFX.length >= 6, 'SFX library has the core effects');
+  CPSfx.SFX.forEach(function (fx) {
+    const samples = CPSfx.synth(fx.id);
+    assert(samples.length > 100, fx.id + ': synth produces samples');
+    let peak = 0; for (let i = 0; i < samples.length; i++) peak = Math.max(peak, Math.abs(samples[i]));
+    assert(peak > 0.1 && peak <= 1.0, fx.id + ': audible and not clipping (peak ' + peak.toFixed(2) + ')');
+    const wav = CPSfx.renderWav(fx.id, { gain: 0.9 });
+    // valid RIFF/WAVE header + data chunk length matches the sample count
+    const tag = String.fromCharCode(wav[0], wav[1], wav[2], wav[3]) + String.fromCharCode(wav[8], wav[9], wav[10], wav[11]);
+    assert(tag === 'RIFFWAVE', fx.id + ': valid WAV header');
+    const dataLen = wav[40] | (wav[41] << 8) | (wav[42] << 16) | (wav[43] << 24);
+    assert(dataLen === samples.length * 2, fx.id + ': WAV data length matches samples');
+  });
+  // gain actually scales the output
+  const loud = CPSfx.synth('pop');
+  const quiet = CPSfx.renderWav('pop', { gain: 0.25 });
+  assert(quiet.length === 44 + loud.length * 2, 'renderWav length is header + 16-bit samples');
+  // the shutter really has two clicks (two energy bursts separated by a gap)
+  const sh = CPSfx.synth('shutter');
+  let bursts = 0, inBurst = false;
+  for (let i = 0; i < sh.length; i++) { const loudEnough = Math.abs(sh[i]) > 0.15; if (loudEnough && !inBurst) bursts++; inBurst = loudEnough ? true : (Math.abs(sh[i]) > 0.05 ? inBurst : false); }
+  assert(bursts >= 2, 'shutter has two distinct clicks');
 }
 
 // --------------------------------------------- transcript: filler removal ----
