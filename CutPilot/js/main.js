@@ -1508,20 +1508,30 @@
      importMGT can place them. These become editable, prebuilt caption/title
      templates in the gallery — no per-use seed picking. CEP-only (needs fs). */
   function loadBundledMogrts() {
+    state.bundledMogrts = state.bundledMogrts || [];
     if (!CPBridge.isCEP()) return;
     try {
       var fs = nodeReq('fs'), path = nodeReq('path');
-      var dir = CPBridge.getExtensionPath && CPBridge.getExtensionPath();
-      if (!dir) return;
-      var mdir = path.join(dir, 'mogrts');
-      var idxFile = path.join(mdir, 'index.json');
-      if (!fs.existsSync(idxFile)) return;
+      var raw = (CPBridge.getExtensionPath && CPBridge.getExtensionPath()) || '';
+      if (!raw) { state.bundledDiag = 'no extension path'; return; }
+      // CEP's getSystemPath can be URL-encoded (spaces → %20), which fs can't
+      // resolve — try the decoded path first, then the raw one.
+      var cands = [];
+      try { var d = decodeURIComponent(raw); if (d !== raw) cands.push(d); } catch (e) {}
+      cands.push(raw);
+      var idxFile = null, mdir = null;
+      for (var i = 0; i < cands.length; i++) {
+        var md = path.join(cands[i], 'mogrts'), ix = path.join(md, 'index.json');
+        try { if (fs.existsSync(ix)) { idxFile = ix; mdir = md; break; } } catch (e2) {}
+      }
+      if (!idxFile) { state.bundledDiag = 'index.json not found in ' + path.join(cands[0], 'mogrts'); return; }
       var list = JSON.parse(fs.readFileSync(idxFile, 'utf8')) || [];
       state.bundledMogrts = list.map(function (m) {
         return { name: m.name, path: path.join(mdir, m.file),
                  category: m.category || 'Templates', kind: m.kind || 'caption', desc: m.desc || '' };
-      }).filter(function (m) { try { return fs.existsSync(m.path); } catch (e) { return false; } });
-    } catch (e) { state.bundledMogrts = []; }
+      }).filter(function (m) { try { return fs.existsSync(m.path); } catch (e3) { return false; } });
+      state.bundledDiag = state.bundledMogrts.length ? ('ok:' + state.bundledMogrts.length) : ('0 files exist in ' + mdir);
+    } catch (e) { state.bundledMogrts = []; state.bundledDiag = 'error: ' + (e && e.message); }
   }
 
   /* Scan every user-added template folder (Settings → Add folder) for .mogrt
@@ -3949,9 +3959,15 @@
      OWN clip, timed to the audio, fully editable in Premiere's Essential Graphics
      — the style's look (colours/font) carries over; the motion is the template's. */
   function bundledBackbone() {
-    var list = state.bundledMogrts || [];
+    // Prefer the shipped subtitle templates, but fall back to ANY available
+    // .mogrt (user folders / installed / uploaded) so editable captions still
+    // work even if the bundled set didn't load.
+    var list = (state.bundledMogrts || []).concat(state.folderMogrts || [], state.installedMogrts || [], state.userMogrts || []);
     function find(sub) {
-      for (var i = 0; i < list.length; i++) if (list[i].path.toLowerCase().indexOf(sub) >= 0) return list[i];
+      for (var i = 0; i < list.length; i++) {
+        var p = (list[i] && list[i].path) ? String(list[i].path).toLowerCase() : '';
+        if (p.indexOf(sub) >= 0) return list[i];
+      }
       return null;
     }
     // Subtitle 1 = word highlight + text + background + shadow → the most general
@@ -3991,7 +4007,15 @@
   function applyEditableStyle() {
     if (!CPBridge.isCEP()) return toast('Editable captions need Premiere (open CutPilot inside Premiere).', true);
     var bb = bundledBackbone();
-    if (!bb) return toast('No editable template is available to back this up.', true);
+    if (!bb) { try { loadBundledMogrts(); } catch (e) {} bb = bundledBackbone(); }   // boot-timing safety: try once more
+    if (!bb) {
+      var where = '';
+      try { where = (CPBridge.getExtensionPath && CPBridge.getExtensionPath()) || ''; } catch (e) {}
+      return toast('Editable captions need a template, but none loaded' +
+        (state.bundledDiag ? ' [' + state.bundledDiag + ']' : '') +
+        '. Your install may be missing the “mogrts” folder' + (where ? ' (looked in ' + where + '\\mogrts)' : '') +
+        '. Reinstall the full CutPilot folder, or use ✨ Burned-in captions / 📝 Plain caption track from “More ways”.', true);
+    }
     if (!ensureTranscriptThen('editstyle')) return;
     var cues;
     try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }

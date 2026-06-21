@@ -47,7 +47,11 @@
 
   function getExtensionPath() {
     if (root.__adobe_cep__ && root.__adobe_cep__.getSystemPath) {
-      return root.__adobe_cep__.getSystemPath('extension');
+      var p = root.__adobe_cep__.getSystemPath('extension');
+      // getSystemPath can return a URL-encoded path (spaces as %20); decode so
+      // Node fs can resolve it. Safe no-op if there's nothing to decode.
+      try { p = decodeURIComponent(p); } catch (e) {}
+      return p;
     }
     return '';
   }
