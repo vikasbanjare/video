@@ -841,7 +841,7 @@ function CP_addZoomPunches(argsJson) {
       try { off = clip.inPoint.seconds + (at - clip.start.seconds); } catch (eO) { skipped++; continue; }
       var amt = (amount instanceof Array) ? amount[i % amount.length] : amount;
       CP_setKeys(scale, off, [
-        { t: 0.0, v: 100 }, { t: ramp, v: amt }, { t: ramp + hold, v: amt }, { t: ramp + hold + 0.20, v: 100 }
+        { t: 0.0, v: 100 }, { t: ramp, v: amt }, { t: ramp + hold, v: amt }, { t: ramp + hold + ramp, v: 100 }
       ]);
       applied++;
     }

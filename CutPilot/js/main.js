@@ -302,6 +302,8 @@
         '-H', 'Authorization: Bearer ' + key,
         '-F', 'model=whisper-large-v3',
         '-F', 'response_format=verbose_json',
+        '-F', 'timestamp_granularities[]=segment',
+        '-F', 'timestamp_granularities[]=word',
         '-F', 'temperature=0',
         '-F', 'file=@' + wavPath];
       if (lang && lang !== 'auto') args.push('-F', 'language=' + lang);
@@ -330,6 +332,17 @@
           cues.push({ start: 0, end: 5, text: j.text.trim() });
         }
         if (!cues.length) return reject(new Error('Cloud returned no speech.'));
+        // Real per-word timestamps (timestamp_granularities[]=word) → accurate
+        // highlight that rides the actual spoken word (not audio-onset guessing).
+        if (j.words && j.words.length) {
+          var wa = [];
+          j.words.forEach(function (w) {
+            var tx = (w.word != null ? w.word : w.text);
+            if (tx == null) return; tx = String(tx).trim();
+            if (tx) wa.push({ start: +w.start || 0, end: +w.end || 0, text: tx });
+          });
+          if (wa.length) cues.words = wa;
+        }
         resolve(cues);
       });
     });
@@ -576,6 +589,7 @@
         if (!isFinite(minIn)) minIn = 0;
         var dur = (maxOut > minIn) ? (maxOut - minIn) : 0;
         var asrWordLevel = false;   // true once we have real per-word timing (-ml 1)
+        var groqWords = null;       // real per-word cues from Groq (cloud path)
 
         // Already transcribed this exact clip (same media + trim + model + language)?
         // Load the SAVED transcript instantly — no ffmpeg, no whisper, no waiting.
@@ -633,6 +647,11 @@
           // Hinglish (cloud/Hindi path): turn the Devanagari into Latin; English
           // words already in Latin pass through untouched.
           if (romanize) rawCues.forEach(function (rc) { rc.text = CPCaptions.devanagariToLatin(rc.text); });
+          // Capture Groq's real per-word timestamps (attached by transcribeViaGroq).
+          if (rawCues.words && rawCues.words.length) {
+            groqWords = rawCues.words;
+            if (romanize) groqWords.forEach(function (w) { w.text = CPCaptions.devanagariToLatin(w.text); });
+          }
           // Map (wav-relative) cues onto every timeline piece showing that part,
           // converting to sequence time: seq = mediaTime - pieceIn + pieceSeqStart.
           function toSeq(list) {
@@ -660,6 +679,11 @@
           if (asrWordLevel) {
             state.transcriptWords = cues.slice();                 // rawCues were single words
             cues = CPCaptions.regroupWords(cues, 7, { maxGap: 0.8 });
+            wordsReady = Promise.resolve();
+          } else if (groqWords && groqWords.length) {
+            // REAL per-word timestamps from Groq → highlight rides the spoken word.
+            var gw = toSeq(groqWords);
+            state.transcriptWords = gw.length ? gw : null;
             wordsReady = Promise.resolve();
           } else if (typeof CPAudio !== 'undefined' && CPAudio.ffmpegEnvelope && ff) {
             setTranscriptBar('', ico, 'Aligning each word to the audio…', null);
@@ -4116,17 +4140,17 @@
     if (!ensureTranscriptThen('viral')) return;
     var cues; try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
     if (!cues.length) return toast('No words to work with — transcribe first.', true);
-    // Emphasis points = start of caption lines, spaced ≥2.5s apart, capped so a
-    // long video doesn't get a punch on every line.
-    var times = [], last = -99;
+    // Emphasis points = start of caption lines, but spaced far apart so the video
+    // gets BREATHING ROOM between zooms (a gentle punch every ~9s, not every line).
+    var times = [], last = -99, GAP = 9;
     for (var i = 0; i < cues.length; i++) {
       var t = cues[i].start;
-      if (t - last >= 2.5) { times.push(t); last = t; }
-      if (times.length >= 40) break;
+      if (t - last >= GAP) { times.push(t); last = t; }
+      if (times.length >= 12) break;
     }
-    toast('⚡ Viral Edit: adding ' + times.length + ' zoom punches, then your captions…');
-    // 1) zoom punches first (fast, additive). Beta — optional; captions run regardless.
-    CPBridge.callHost('CP_addZoomPunches', { videoTrack: 0, times: times, amount: 110, hold: 0.45 })
+    toast('⚡ Viral Edit: adding ' + times.length + ' gentle zoom' + (times.length === 1 ? '' : 's') + ', then your captions…');
+    // 1) gentle, infrequent zoom holds (additive/undoable). Beta; captions run regardless.
+    CPBridge.callHost('CP_addZoomPunches', { videoTrack: 0, times: times, amount: 108, hold: 1.1, ramp: 0.5 })
       .then(function (r) {
         if (r && r.applied) toast('⚡ Added ' + r.applied + ' zoom punches (beta) to your top clip. Now placing captions… (Ctrl/Cmd+Z removes the zooms if you don\'t like them.)');
       }, function () { /* zoom is best-effort; ignore and still caption */ })
