@@ -537,6 +537,14 @@
       fontSize: 64, fill: '#FFFFFF', highlight: '#FFFFFF', highlightStyle: 'color',
       glow: '#000000', glowBlur: 0.5, stroke: null, strokeWidth: 0, boxColor: null,
       upcomingOpacity: 0.55, uppercase: false, wordsPerCue: 3, anim: 'karaoke' },
+    // Karaoke Bar — white words on a translucent dark rounded bar; the spoken
+    // word rides in a SOLID amber box with auto-contrast (dark) text. The classic
+    // reel/explainer look (matches the uploaded m.Stock reference).
+    { id: 'pro-karaokebar', name: 'Karaoke Bar', category: '⭐ Premium', popularity: 99, layout: 'bottom', keyword: false, highlightScale: 1,
+      font: 'Montserrat', fallbackFonts: ['Poppins', 'Inter', 'Arial'],
+      fontSize: 54, fill: '#FFFFFF', highlight: '#F5A623', highlightStyle: 'box', boxRadius: 9,
+      boxColor: '#0C0D11', boxOpacity: 0.72, boxPad: 1.15,
+      glow: null, stroke: null, strokeWidth: 0, weight: 800, uppercase: false, wordsPerCue: 5, anim: 'karaoke' },
     // Pulse — UPPERCASE clean sans, key word on a blue pill (Captions.ai "Pulse")
     { id: 'pro-pulse', name: 'Pulse', category: '⭐ Premium', popularity: 99, layout: 'center', keyword: true, highlightScale: 1.1,
       font: 'Montserrat', fallbackFonts: ['Poppins', 'Arial Black'],
