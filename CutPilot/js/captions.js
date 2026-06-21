@@ -333,7 +333,7 @@
   /* The ten library categories the browser groups templates into. */
   var CATEGORIES = [
     '⭐ Premium',
-    'Captions.ai',
+    'Trending',
     'Bold Creator', 'Minimal Professional', 'Dynamic Highlight', 'Social Growth',
     'Podcast Pro', 'Storytelling', 'Gaming Stream', 'Cinematic', 'Motivation', 'Education'
   ];
@@ -454,7 +454,7 @@
       font: 'Verdana', fallbackFonts: ['Tahoma', 'Arial'],
       fontSize: 54, fill: '#FFFFFF', highlight: '#00F0FF', boxColor: '#141414', boxRadius: 4, stroke: null, strokeWidth: 0,
       letterSpacing: 1, uppercase: false, wordsPerCue: 0, anim: 'glitch' },
-    { id: 'elevate', name: 'Elevate', category: 'Cinematic', popularity: 77, layout: 'center', keyword: false,
+    { id: 'elevate', name: 'Cinema', category: 'Cinematic', popularity: 77, layout: 'center', keyword: false,
       font: 'Georgia', fallbackFonts: ['Times New Roman', 'serif'],
       fontSize: 60, fill: '#F3ECE0', highlight: '#D9B36A', stroke: null, strokeWidth: 0, glow: '#000000',
       letterSpacing: 1, uppercase: false, wordsPerCue: 0, anim: 'fade' },
@@ -488,24 +488,22 @@
       fontSize: 62, fill: '#FFFFFF', highlight: '#FFFFFF', boxColor: '#0B1020', boxRadius: 46, stroke: null, strokeWidth: 0,
       letterSpacing: 1, uppercase: true, wordsPerCue: 3, anim: 'fade' },
 
-    // --- Captions.ai signature styles (faithful recreations of their named
-    //     looks: Clarity / Core / Grit / Hype). The hallmark is word-by-word
-    //     reveal of a short centered phrase with the SPOKEN word emphasized —
-    //     CutPilot's 'karaoke' animation lights up + scales the active word,
-    //     and highlightStyle:'box' sits it on a colored pill. ---
-    { id: 'cap-core', name: 'Core · Captions.ai', category: 'Captions.ai', popularity: 99, layout: 'center', keyword: false,
+    // --- Trending creator styles: word-by-word reveal of a short centered
+    //     phrase with the SPOKEN word emphasized — 'karaoke' lights up + scales
+    //     the active word, highlightStyle:'box' sits it on a colored pill. ---
+    { id: 'cap-core', name: 'Core', category: 'Trending', popularity: 99, layout: 'center', keyword: false,
       font: 'Montserrat', fallbackFonts: ['Poppins', 'Inter', 'Arial'],
       fontSize: 68, fill: '#FFFFFF', highlight: '#FFE000', highlightScale: 1.14, stroke: '#000000', strokeWidth: 6,
       uppercase: false, wordsPerCue: 3, anim: 'karaoke' },
-    { id: 'cap-clarity', name: 'Clarity · Captions.ai', category: 'Captions.ai', popularity: 92, layout: 'center', keyword: false,
+    { id: 'cap-clarity', name: 'Crisp', category: 'Trending', popularity: 92, layout: 'center', keyword: false,
       font: 'Inter', fallbackFonts: ['Helvetica', 'Arial'],
       fontSize: 56, fill: '#FFFFFF', highlight: '#FFFFFF', stroke: '#000000', strokeWidth: 4,
       uppercase: false, wordsPerCue: 4, anim: 'fade' },
-    { id: 'cap-grit', name: 'Grit · Captions.ai', category: 'Captions.ai', popularity: 96, layout: 'center', keyword: false,
+    { id: 'cap-grit', name: 'Grit', category: 'Trending', popularity: 96, layout: 'center', keyword: false,
       font: 'Anton', fallbackFonts: ['Bebas Neue', 'Impact', 'Arial Black'],
       fontSize: 86, fill: '#FFFFFF', highlight: '#FFD400', highlightScale: 1.16, stroke: '#000000', strokeWidth: 11,
       uppercase: true, wordsPerCue: 3, anim: 'karaoke' },
-    { id: 'cap-hype', name: 'Hype · Captions.ai', category: 'Captions.ai', popularity: 95, layout: 'center', keyword: false,
+    { id: 'cap-hype', name: 'Surge', category: 'Trending', popularity: 95, layout: 'center', keyword: false,
       font: 'Montserrat', fallbackFonts: ['Poppins', 'Arial Black'],
       fontSize: 70, fill: '#FFFFFF', highlight: '#22C55E', highlightStyle: 'box', boxRadius: 16, stroke: '#000000', strokeWidth: 6,
       uppercase: true, wordsPerCue: 3, anim: 'karaoke' }
@@ -660,7 +658,7 @@
       fontSize: 56, fill: '#2A2233', highlight: '#FF5DA2', highlightStyle: 'box', boxColor: '#FFFFFF', boxRadius: 24, boxOpacity: 1,
       glow: null, stroke: null, strokeWidth: 0, upcomingOpacity: 0.5, uppercase: false, wordsPerCue: 3, anim: 'karaoke' },
     // Elegant serif, gold active — storytelling / luxury
-    { id: 'cap-editorial', name: 'Editorial', category: 'Storytelling', popularity: 90, layout: 'center', keyword: false, highlightScale: 1.06,
+    { id: 'cap-editorial', name: 'Column', category: 'Storytelling', popularity: 90, layout: 'center', keyword: false, highlightScale: 1.06,
       font: 'Playfair Display', fallbackFonts: ['Georgia', 'Merriweather', 'Times New Roman'],
       fontSize: 60, fill: '#F6F2EA', highlight: '#E7B45A', highlightStyle: 'color',
       glow: '#000000', glowBlur: 0.45, stroke: null, strokeWidth: 0, boxColor: null,
@@ -715,7 +713,7 @@
       highlight: '#FFFFFF', highlightStyle: 'color',
       highlightFont: 'Playfair Display', highlightFallbacks: 'Georgia, "Times New Roman", serif',
       highlightItalic: true, highlightWeight: 800, highlightGlow: '#FFFFFF', highlightGlowBlur: 0.4,
-      subScale: 0.62,
+      subScale: 0.62, build: true,
       glow: '#000000', glowBlur: 0.6, stroke: null, strokeWidth: 0, boxColor: null,
       weight: 700, uppercase: false, wordsPerLine: 3, wordsPerCue: 6, lineGap: 0.95, anim: 'pop' }
   ];
@@ -802,7 +800,7 @@
     { id: 'zoompunch',  name: 'Zoom Punch', kind: 'keyframed', demo: 'anim-zoompunch', description: 'FilmImpact-style zoom blur: punches in from oversized' },
     { id: 'blurdissolve', name: 'Blur Dissolve', kind: 'keyframed', demo: 'anim-blurdissolve', description: 'FilmImpact-style soft blur dissolve in' },
     { id: 'glide',      name: 'Glide',      kind: 'keyframed', demo: 'anim-glide',  description: 'FilmImpact-style smooth rise with motion blur' },
-    { id: 'reveal',     name: 'Word reveal', kind: 'framed',   demo: 'anim-type',   description: 'Words appear one at a time as spoken, the newest pops in (Captions.ai style)' },
+    { id: 'reveal',     name: 'Word reveal', kind: 'framed',   demo: 'anim-type',   description: 'Words appear one at a time as spoken, the newest pops in' },
     { id: 'karaoke',    name: 'Karaoke',    kind: 'framed',    demo: 'anim-sweep',  description: 'Phrase stays up, spoken word lights up' },
     { id: 'typewriter', name: 'Typewriter', kind: 'framed',    demo: 'anim-type',   description: 'Words accumulate as they are spoken' },
     { id: 'none',       name: 'None',       kind: 'keyframed', demo: '',            description: 'Hard cut, no motion' }
@@ -1092,7 +1090,11 @@
           // so it reads as ONE clean highlight riding the voice, not several
           // words lit at once.
           var shown = (anim === 'reveal') ? words.slice(0, j + 1) : words;
-          frames.push({ start: group[j].start, end: group[j].end, words: shown, active: j });
+          // Hold each word until the NEXT word starts (within the phrase) so the
+          // caption stays on screen continuously and the highlight advances
+          // exactly on the word boundary — no flicker/gap between words, no drift.
+          var fend = (j + 1 < group.length) ? group[j + 1].start : group[j].end;
+          frames.push({ start: group[j].start, end: fend, words: shown, active: j });
         }
       } else {
         var fr = { start: group[0].start, end: group[group.length - 1].end, words: words };
@@ -1115,10 +1117,36 @@
       words.push(wordCues[i].text);
       if (i < wordCues.length - 1) words.push(wordCues[i + 1].text);
       if (up) words = words.map(uc);
-      frames.push({ start: wordCues[i].start, end: wordCues[i].end, words: words, active: active });
+      // hold until the next word starts so the window never blanks between words
+      var wend = (i + 1 < wordCues.length) ? wordCues[i + 1].start : wordCues[i].end;
+      frames.push({ start: wordCues[i].start, end: wend, words: words, active: active });
     }
     return frames;
   }
+  /* Keyword-build frames: the phrase GROWS one word at a time (like reveal), but
+     instead of lighting the newest word, the AUTO-DETECTED keyword stays
+     emphasised (italic-serif/colour) the whole time. Used by the Editorial style
+     so the caption animates in word-by-word while the keyword reads cleanly.
+     Timing is contiguous so each new word lands exactly on the spoken word. */
+  function framesKeywordBuild(wordCues, per, kw, up) {
+    function ucw(arr) { return up ? arr.map(uc) : arr; }
+    per = Math.max(2, per || 6);
+    var frames = [], i, j;
+    for (i = 0; i < wordCues.length; i += per) {
+      var group = wordCues.slice(i, i + per);
+      var words = ucw(group.map(function (g) { return g.text; }));
+      // pick the keyword once on the WHOLE phrase so it doesn't jump as words add
+      var flags = (kw && kw.on) ? markKeywords(words, kw) : null;
+      for (j = 0; j < group.length; j++) {
+        var fend = (j + 1 < group.length) ? group[j + 1].start : group[j].end;
+        var fr = { start: group[j].start, end: fend, words: words.slice(0, j + 1) };
+        if (flags) fr.highlightSet = flags.slice(0, j + 1);
+        frames.push(fr);
+      }
+    }
+    return frames;
+  }
+
   /* Split line-cues into per-word cues with even timing (when no real word timing
      is available) so windowed/diagonal styles still work. */
   function flattenWords(cues) {
@@ -1169,7 +1197,10 @@
     // the highlight never skips a word (see sanitizeWordCues).
     var wordCues = (opts.wordCues && opts.wordCues.length) ? sanitizeWordCues(opts.wordCues) : null;
 
-    if (anim === 'karaoke' || anim === 'reveal') {
+    if (opts.build) {
+      // keyword-emphasis styles that animate in word-by-word (Editorial)
+      frames = framesKeywordBuild(wordCues || flattenWords(cues), wpc || 6, kw, up);
+    } else if (anim === 'karaoke' || anim === 'reveal') {
       if (opts.window) {
         frames = framesWindowed(wordCues || flattenWords(cues), up);
       } else if (wordCues) {
@@ -1308,6 +1339,7 @@
     enrichCaptionText: enrichCaptionText,
     devanagariToLatin: devanagariToLatin,
     explodeWords: explodeWords,
+    framesKeywordBuild: framesKeywordBuild,
     regroupWords: regroupWords,
     remapCuesToKeeps: remapCuesToKeeps,
     STYLE_PRESETS: STYLE_PRESETS,

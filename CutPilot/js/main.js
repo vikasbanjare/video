@@ -1314,8 +1314,14 @@
         for (var i = 0; i < cues.length; i++) {
           var orig = cues[i].text, corr = (fixed[i] != null) ? String(fixed[i]) : orig, keep = orig;
           if (corr.trim() && corr.trim() !== orig.trim()) {
-            // accept short/garbly lines outright; longer lines only if most words survive
-            if (realToks(orig).length < 4 || wordOverlap(orig, corr) >= 0.5) {
+            // Accept the fix when it keeps roughly the SAME number of words — that
+            // lets misheard words get corrected (substitutions) while still
+            // refusing rewrites that drop or hallucinate words. (Word OVERLAP was
+            // the old guard, but it punished the very substitutions we want, so
+            // "basic" misheard lines never got fixed.)
+            var on = realToks(orig).length, cn = realToks(corr).length;
+            var countOk = Math.abs(cn - on) <= Math.max(2, Math.round(on * 0.34));
+            if (on < 4 || countOk) {
               keep = corr; changed++;
               if (samples.length < 3) samples.push('“' + orig.trim() + '” → “' + corr.trim() + '”');
             } else { rejected++; }
@@ -2951,7 +2957,8 @@
       frames = CPCaptions.buildCaptionFrames([{ start: 0, end: sw.length * DUR, text: sample }], {
         anim: anim, wordsPerCue: (words || 4), uppercase: ov.uppercase,
         keyword: { on: $('c-kw').checked, mode: ($('c-kw-mode') ? $('c-kw-mode').value : 'auto') },
-        speaker: { on: false }, emoji: cchk('c-emoji'), wordCues: wordCues, window: (preset.window || 0)
+        speaker: { on: false }, emoji: cchk('c-emoji'), build: !!preset.build,
+        wordCues: wordCues, window: (preset.window || 0)
       });
     } catch (eF) { frames = null; }
     if (!frames || !frames.length) frames = [{ words: sw.slice(0, Math.max(1, words || 6)) }];
@@ -3179,6 +3186,7 @@
         stripPunctuation: overrides.stripPunctuation,
         textCase: overrides.textCase,
         censor: overrides.censor,
+        build: !!preset.build,                              // word-by-word keyword build (Editorial)
         wordCues: wordCues, window: (currentPreset().window || 0)
       });
 
@@ -3203,7 +3211,10 @@
         onProgress: function (done, total) { capProgress('Rendering ' + done + ' / ' + total); }
       }).then(function (items) {
         capProgress((scoped ? 'Restyling ' : 'Placing ') + items.length + ' captions in your timeline…', items.length * 130);
-        var placeArgs = { items: items, anim: anim,
+        // build styles animate in word-by-word (like reveal), so the host must NOT
+        // pop the whole growing chunk each step — treat them as word-sync.
+        var placeAnim = preset.build ? 'reveal' : anim;
+        var placeArgs = { items: items, anim: placeAnim,
           animSpeed: overrides.animSpeed, perWordEntrance: overrides.perWordEntrance,
           perWordEntranceStyle: overrides.perWordEntranceStyle };
         if (overwriteOnTrack) placeArgs.overwriteOnTrack = overwriteOnTrack;
