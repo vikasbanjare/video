@@ -14,7 +14,7 @@
 <body class="theme-light">
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.141</span>
+    <span class="ver" id="ver">v0.9.142</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -278,6 +278,8 @@
                 <label class="sw">2nd colour<span class="cp-mount" data-for="c-hl2g"></span><input type="hidden" id="c-hl2g" value="#ff6a00"></label>
               </div>
               <label class="check"><input type="checkbox" id="c-glossy"> ✨ Glossy sheen <span class="dim">(shiny metallic band)</span></label>
+              <label class="check"><input type="checkbox" id="c-hlserif"> 🅸 Keyword in italic serif <span class="dim">(elegant different font)</span></label>
+              <label class="check"><input type="checkbox" id="c-hlglow"> 🌟 Keyword glow <span class="dim">(soft shiny halo)</span></label>
             </div>
 
             <!-- 📐 POSITION -->
@@ -411,6 +413,14 @@
               <label>Max line width <span class="val" id="c-maxwidth-val"></span>
                 <input type="range" id="c-maxwidth" min="50" max="98" value="86">
               </label>
+              <div class="ctrl-row" id="c-twotier-wrap" style="display:none">
+                <label>Words on top line <span class="val" id="c-wordsperline-val"></span>
+                  <input type="range" id="c-wordsperline" min="1" max="6" value="3">
+                </label>
+                <label>2nd-line size <span class="dim">(stacked styles)</span> <span class="val" id="c-subscale-val"></span>
+                  <input type="range" id="c-subscale" min="40" max="100" value="62">
+                </label>
+              </div>
 
               <label style="margin-top:6px">Animation speed <span class="val" id="c-animspeed-val"></span>
                 <input type="range" id="c-animspeed" min="50" max="200" value="100">
@@ -817,7 +827,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.141 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.142 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

@@ -695,7 +695,21 @@
       font: 'Archivo Black', fallbackFonts: ['Montserrat', 'Poppins', 'Arial Black'],
       fontSize: 62, fill: '#FFFFFF', fill2: '#CED2D8', highlight: '#FFFFFF', highlightStyle: 'color',
       glow: '#000000', glowBlur: 0.55, stroke: null, strokeWidth: 0, boxColor: null,
-      weight: 900, uppercase: false, wordsPerLine: 3, wordsPerCue: 6, lineGap: 1.04, anim: 'pop' }
+      weight: 900, uppercase: false, wordsPerLine: 3, wordsPerCue: 6, lineGap: 1.04, anim: 'pop' },
+
+    // ---- Extracted from reference video #2: an EDITORIAL/anchor caption — a big
+    //      bold grotesque headline line over a smaller second line (two-tier), the
+    //      AUTO-DETECTED keyword set in an italic SERIF with a soft white glow, all
+    //      sitting on a soft dark shadow so it reads over any footage. ----
+    { id: 'pro-editorial', name: 'Editorial', category: '⭐ Premium', popularity: 100, layout: 'center', keyword: true, wordHl: false, highlightScale: 1.08,
+      font: 'Helvetica', fallbackFonts: ['Arial', 'Inter', 'Montserrat'],
+      fontSize: 60, fill: '#FFFFFF', fill2: '#DDE1E6',
+      highlight: '#FFFFFF', highlightStyle: 'color',
+      highlightFont: 'Playfair Display', highlightFallbacks: 'Georgia, "Times New Roman", serif',
+      highlightItalic: true, highlightWeight: 800, highlightGlow: '#FFFFFF', highlightGlowBlur: 0.4,
+      subScale: 0.62,
+      glow: '#000000', glowBlur: 0.6, stroke: null, strokeWidth: 0, boxColor: null,
+      weight: 700, uppercase: false, wordsPerLine: 3, wordsPerCue: 6, lineGap: 0.95, anim: 'pop' }
   ];
 
   var TEMPLATES = STYLE_PRESETS.concat(PREMIUM_TEMPLATES, MORE_TEMPLATES, NEW_TEMPLATES);

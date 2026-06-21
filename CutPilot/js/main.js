@@ -2137,6 +2137,13 @@
     if ($('c-hl2g')) $('c-hl2g').value = toHex(p.highlight2, '#ff6a00');
     if ($('c-hlgrad-opts')) $('c-hlgrad-opts').style.display = p.highlight2 ? '' : 'none';
     if ($('c-glossy')) $('c-glossy').checked = !!p.glossy;
+    // keyword italic-serif + glow (editorial style); two-tier stacked sizing
+    if ($('c-hlserif')) $('c-hlserif').checked = !!p.highlightFont;
+    if ($('c-hlglow')) $('c-hlglow').checked = !!p.highlightGlow;
+    var twoTier = (p.subScale != null);   // only the stacked editorial style exposes these
+    if ($('c-subscale')) $('c-subscale').value = Math.round(((p.subScale != null ? p.subScale : 0.62)) * 100);
+    if ($('c-wordsperline')) $('c-wordsperline').value = (p.wordsPerLine != null ? p.wordsPerLine : 3);
+    if ($('c-twotier-wrap')) $('c-twotier-wrap').style.display = twoTier ? '' : 'none';
     $('c-speaker').checked = !!p.speaker;
     var aId = CPCaptions.animIdForConcept(p.anim);
     selectAnim(aId);
@@ -2209,6 +2216,8 @@
       'c-wordspace-val': function () { return $('c-wordspace').value; },
       'c-linegap-val': function () { return $('c-linegap').value + '%'; },
       'c-maxwidth-val': function () { return $('c-maxwidth').value + '%'; },
+      'c-subscale-val': function () { return $('c-subscale').value + '%'; },
+      'c-wordsperline-val': function () { return $('c-wordsperline').value; },
       'c-animspeed-val': function () { return $('c-animspeed').value + '%'; }
     };
     for (var k in lbl) { if (lbl.hasOwnProperty(k) && $(k) && $(k.replace('-val', ''))) $(k).textContent = lbl[k](); }
@@ -2244,7 +2253,7 @@
                'c-hl-scale', 'c-speaker', 'c-letter', 'c-shadow', 'c-shadow-on', 'c-shadow-blur', 'c-weight',
                // pro controls
                'c-wordpop', 'c-multicolor', 'c-hl2', 'c-hl3', 'c-grad', 'c-fill2',
-               'c-hlgrad', 'c-hl2g', 'c-glossy',
+               'c-hlgrad', 'c-hl2g', 'c-glossy', 'c-hlserif', 'c-hlglow', 'c-subscale', 'c-wordsperline',
                'c-box-opacity', 'c-box-pad', 'c-box-radius', 'c-shadow-dx', 'c-shadow-dy',
                'c-wordspace', 'c-linegap', 'c-maxwidth', 'c-emphasize', 'c-strippunct',
                'c-animspeed', 'c-perword', 'c-perword-style', 'c-dimupcoming',
@@ -2683,6 +2692,16 @@
       highlightStyle: readHlStyle(),
       highlight2: cchk('c-hlgrad') ? $('c-hl2g').value : null,   // gradient 2nd colour for the highlighted word
       glossy: cchk('c-glossy'),                                  // shiny metallic sheen on the highlighted word
+      // keyword in a different (italic serif) face + a soft glow halo — authoritative
+      // so the toggles can turn a preset's own keyword font on/off.
+      highlightFont: cchk('c-hlserif') ? 'Playfair Display' : null,
+      highlightFallbacks: cchk('c-hlserif') ? 'Georgia, "Times New Roman", serif' : null,
+      highlightItalic: cchk('c-hlserif'),
+      highlightWeight: cchk('c-hlserif') ? 800 : 0,
+      highlightGlow: cchk('c-hlglow') ? '#FFFFFF' : null,
+      // two-tier "stacked" sizing — only applied to styles that define it
+      subScale: (currentPreset() && currentPreset().subScale != null) ? (cnum('c-subscale', 62) / 100) : null,
+      wordsPerLine: (currentPreset() && currentPreset().wordsPerLine != null) ? cnum('c-wordsperline', currentPreset().wordsPerLine || 0) : null,
       uppercase: $('c-upper').checked || ($('c-case') && $('c-case').value === 'upper'),
       letterSpacing: parseInt($('c-letter').value, 10) || 0,
       weight: parseInt($('c-weight').value, 10) || 800,

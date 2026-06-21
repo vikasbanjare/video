@@ -97,9 +97,19 @@
       wordsPerLine: (o.wordsPerLine != null) ? o.wordsPerLine : (preset.wordsPerLine || 0),
       // diagonal cascade (top-left → centre → bottom-right) for dynamic captions
       stagger: (o.stagger != null) ? o.stagger : (preset.stagger || false),
-      // a different (heavier) face + weight for the highlighted word
-      highlightFont: o.highlightFont || preset.highlightFont || null,
-      highlightWeight: (o.highlightWeight != null) ? o.highlightWeight : (preset.highlightWeight || 0)
+      // a different (heavier/italic) face + weight for the highlighted word.
+      // Authoritative when the override key is present (lets a UI toggle turn it
+      // off even though the preset defines one).
+      highlightFont: (o.highlightFont !== undefined) ? o.highlightFont : (preset.highlightFont || null),
+      highlightFallbacks: (o.highlightFallbacks !== undefined) ? o.highlightFallbacks : (preset.highlightFallbacks || null),
+      highlightItalic: (o.highlightItalic != null) ? o.highlightItalic : (preset.highlightItalic || false),
+      highlightWeight: (o.highlightWeight != null) ? o.highlightWeight : (preset.highlightWeight || 0),
+      // a soft glow halo around the highlighted word (the "shiny" keyword look)
+      highlightGlow: (o.highlightGlow !== undefined) ? o.highlightGlow : (preset.highlightGlow || null),
+      highlightGlowBlur: (o.highlightGlowBlur != null) ? o.highlightGlowBlur : (preset.highlightGlowBlur != null ? preset.highlightGlowBlur : 0.4),
+      // two-tier "stacked" sizing: lines after the first render at this scale
+      // (1 = off). Drives the big-headline / small-subline editorial look.
+      subScale: (o.subScale != null) ? o.subScale : (preset.subScale != null ? preset.subScale : 1)
     };
   }
 
@@ -167,11 +177,16 @@
     function setFont(px) {
       ctx.font = fontWeight + ' ' + px + 'px "' + style.font + '", "' + style.fallbacks + '", sans-serif';
     }
-    // the highlighted word can use a DIFFERENT (heavier) font + weight
+    // the highlighted word can use a DIFFERENT (heavier/italic) font + weight,
+    // with its own fallback chain (e.g. a serif keyword falls back to Georgia).
     function setFontFor(px, hl) {
       if (hl && style.highlightFont) {
         var w = style.highlightWeight || 900;
-        ctx.font = w + ' ' + px + 'px "' + style.highlightFont + '", "' + style.font + '", "' + style.fallbacks + '", sans-serif';
+        var it = style.highlightItalic ? 'italic ' : '';
+        var fb = style.highlightFallbacks
+          ? (', ' + style.highlightFallbacks)
+          : (', "' + style.font + '", "' + style.fallbacks + '", sans-serif');
+        ctx.font = it + w + ' ' + px + 'px "' + style.highlightFont + '"' + fb;
       } else { setFont(px); }
     }
 
@@ -226,6 +241,27 @@
         cur.height = Math.max(cur.height, m[j].px);
       }
       if (cur.items.length) ls.push(cur);
+      // default per-line spacing/scale (uniform unless two-tier shrinks lines 2+)
+      for (var lz = 0; lz < ls.length; lz++) { ls[lz].spaceW = sp; ls[lz].scale = 1; }
+      // two-tier "stacked" editorial look: lines after the first shrink to subScale.
+      // Re-measure those words at the smaller size so wrapping/centering stay tight.
+      var sub = style.subScale;
+      if (sub && sub < 1) {
+        for (var lr = 1; lr < ls.length; lr++) {
+          var lineR = ls[lr], lw = 0, hMax = 0;
+          for (var ir = 0; ir < lineR.items.length; ir++) {
+            var itr = lineR.items[ir];
+            itr.px = Math.max(6, Math.round(itr.px * sub));
+            setFontFor(itr.px, itr.hl);
+            itr.w = ctx.measureText(itr.word).width;
+            lw += itr.w; if (itr.px > hMax) hMax = itr.px;
+          }
+          setFont(Math.max(6, Math.round(eff * sub)));
+          lineR.spaceW = ctx.measureText(' ').width + (style.wordSpacing || 0);
+          lw += lineR.spaceW * Math.max(0, lineR.items.length - 1);
+          lineR.width = lw; lineR.height = hMax; lineR.scale = sub;
+        }
+      }
       return { meta: m, lines: ls, eff: eff, hlSize: Math.round(eff * hlScale), spaceW: sp };
     }
 
@@ -244,7 +280,23 @@
 
     var lineStep = hlSize * style.lineGap;
     var blockH = lines.length * lineStep;
-    var baseY = H * style.yPct - blockH + lineStep; // baseline of first line
+    // per-line baselines. Uniform stepping for normal styles; two-tier styles
+    // (subScale<1) use each line's own height so a big headline + small subline
+    // sit at a natural, tight distance.
+    var twoTier = (style.subScale && style.subScale < 1 && lines.length > 1);
+    var lineY = [], baseY;
+    if (twoTier) {
+      var lastY = H * style.yPct;            // bottom-anchored, same as uniform
+      lineY[lines.length - 1] = lastY;
+      for (var lb = lines.length - 2; lb >= 0; lb--) {
+        var adv = (lines[lb].height + lines[lb + 1].height) / 2 * style.lineGap;
+        lineY[lb] = lineY[lb + 1] - adv;
+      }
+      baseY = lineY[0];
+    } else {
+      baseY = H * style.yPct - blockH + lineStep; // baseline of first line
+      for (var lc = 0; lc < lines.length; lc++) lineY[lc] = baseY + lc * lineStep;
+    }
 
     // speaker label pill above the block
     if (frame.speaker) {
@@ -309,7 +361,7 @@
         x = leftX + (rightX - leftX) * frac;
         if (x < 6) x = 6; if (x + line.width > W - 6) x = W - 6 - line.width;
       }
-      var y = baseY + li * lineStep;
+      var y = lineY[li];
 
       // background box behind the whole line (opacity + padding + gradient)
       if (style.boxColor) {
@@ -329,9 +381,10 @@
         ctx.restore();
       }
 
+      var lineSpace = (line.spaceW != null) ? line.spaceW : spaceW;
       for (var wi = 0; wi < line.items.length; wi++) {
         var it = line.items[wi];
-        setFont(it.px);
+        setFontFor(it.px, it.hl);   // keyword may use a different (italic serif) face
         // per-word highlight colour — cycle the palette word-to-word when set
         var hlColor = style.highlight;
         if (style.highlightColors && style.highlightColors.length) {
@@ -401,6 +454,17 @@
         if (wordSync && style.upcomingOpacity < 1 && frame.active != null && mi > frame.active && !it.hl) {
           ctx.globalAlpha = style.upcomingOpacity;
         }
+        // soft glow halo around the highlighted keyword (the "shiny" look) —
+        // a pre-pass laid down under the crisp glyph so the halo reads clearly.
+        if (it.hl && style.highlightGlow && !filled) {
+          ctx.save();
+          ctx.shadowColor = style.highlightGlow;
+          ctx.shadowBlur = it.px * (style.highlightGlowBlur != null ? style.highlightGlowBlur : 0.45);
+          ctx.fillStyle = style.highlightGlow;
+          ctx.fillText(it.word, x, y);   // halo pass
+          ctx.fillText(it.word, x, y);   // double for intensity
+          ctx.restore();
+        }
         // text colour: contrast on solid shapes; the highlight colour on
         // colour/underline/circle; otherwise the body fill (gradient if set)
         if (filled) {
@@ -422,9 +486,10 @@
           ctx.fillStyle = rc ? rc : textFill(y - it.px * 0.72, it.px * 0.8, spkBody || style.fill, style.fill2);
         }
         ctx.fillText(it.word, x, y);
+        ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;   // clear keyword glow
         ctx.globalAlpha = prevA;
         mi++;
-        x += it.w + spaceW;
+        x += it.w + lineSpace;
       }
     }
     return canvas;
