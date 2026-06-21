@@ -673,7 +673,28 @@
       font: 'Manrope', fallbackFonts: ['Inter', 'Arial'],
       fontSize: 54, fill: '#FFFFFF', highlight: '#FFC857', highlightStyle: 'color',
       glow: '#000000', glowBlur: 0.42, stroke: null, strokeWidth: 0, boxColor: null,
-      upcomingOpacity: 0.55, uppercase: false, wordsPerCue: 4, anim: 'karaoke' }
+      upcomingOpacity: 0.55, uppercase: false, wordsPerCue: 4, anim: 'karaoke' },
+
+    // ---- Extracted from reference video: heavy white text, the spoken/key word
+    //      pops BIGGER in a vertical gradient with a dark outline + soft shadow. ----
+    // Warm orange→deep-orange pop
+    { id: 'pro-boldpop', name: 'Bold Pop', category: '⭐ Premium', popularity: 100, layout: 'center', keyword: true, highlightScale: 1.34,
+      font: 'Archivo Black', fallbackFonts: ['Montserrat', 'Poppins', 'Arial Black'],
+      fontSize: 72, fill: '#FFFFFF', highlight: '#FFC83D', highlight2: '#FF6A00', highlightStyle: 'color',
+      stroke: '#1A1206', strokeWidth: 7, glow: '#000000', glowBlur: 0.42,
+      emphasizeWords: true, weight: 900, uppercase: false, wordsPerCue: 4, anim: 'karaoke' },
+    // Cool blue→deep-blue pop
+    { id: 'pro-coolpop', name: 'Cool Pop', category: '⭐ Premium', popularity: 99, layout: 'center', keyword: true, highlightScale: 1.34,
+      font: 'Archivo Black', fallbackFonts: ['Montserrat', 'Poppins', 'Arial Black'],
+      fontSize: 72, fill: '#FFFFFF', highlight: '#8FC0FF', highlight2: '#2D5BFF', highlightStyle: 'color',
+      stroke: '#06101A', strokeWidth: 7, glow: '#000000', glowBlur: 0.42,
+      emphasizeWords: true, weight: 900, uppercase: false, wordsPerCue: 4, anim: 'karaoke' },
+    // Clean all-white — key word just pops bigger with a soft shadow
+    { id: 'pro-cleanbold', name: 'Clean Bold', category: '⭐ Premium', popularity: 98, layout: 'center', keyword: true, highlightScale: 1.3,
+      font: 'Archivo Black', fallbackFonts: ['Montserrat', 'Poppins', 'Arial Black'],
+      fontSize: 70, fill: '#FFFFFF', highlight: '#FFFFFF', highlightStyle: 'color',
+      glow: '#000000', glowBlur: 0.5, stroke: null, strokeWidth: 0, boxColor: null,
+      emphasizeWords: true, weight: 900, uppercase: false, wordsPerCue: 4, anim: 'karaoke' }
   ];
 
   var TEMPLATES = STYLE_PRESETS.concat(PREMIUM_TEMPLATES, MORE_TEMPLATES, NEW_TEMPLATES);

@@ -68,6 +68,7 @@
       highlightScale: hlScale,
       highlightStyle: o.highlightStyle || preset.highlightStyle || 'color',
       // --- premium customization additions ---
+      highlight2: (o.highlight2 !== undefined) ? o.highlight2 : (preset.highlight2 || null), // gradient 2nd colour for the highlighted word
       fill2: (o.fill2 !== undefined) ? o.fill2 : (preset.fill2 || null),      // gradient 2nd colour (null = solid)
       highlightColors: o.highlightColors || preset.highlightColors || null,    // cycle colours word-to-word
       boxOpacity: (o.boxOpacity != null) ? o.boxOpacity : (preset.boxOpacity != null ? preset.boxOpacity : 1),
@@ -374,7 +375,10 @@
         if (filled) {
           ctx.fillStyle = contrastColor(hlColor);
         } else if (it.hl && (shape === 'color' || shape === 'underline' || shape === 'circle')) {
-          ctx.fillStyle = hlColor;
+          // vertical gradient on the highlighted word when a 2nd colour is set
+          // (the signature "orange→deep-orange / blue→deep-blue" pop look)
+          ctx.fillStyle = (style.highlight2 && (!style.highlightColors || !style.highlightColors.length))
+            ? textFill(y - it.px * 0.72, it.px * 0.8, hlColor, style.highlight2) : hlColor;
         } else {
           // smart colour for numbers/brand words, else the body fill (gradient if set)
           var rc = restColorFor(it.word);
