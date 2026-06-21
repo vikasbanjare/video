@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.125</span>
+    <span class="ver" id="ver">v0.9.126</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -221,7 +221,7 @@
           <button class="chip-btn" id="wc-full" type="button">Full line</button>
         </div>
         <label class="check sync-line"><input type="checkbox" id="c-sync" checked> 🎯 Sync each word to the spoken audio <span id="sync-stat" class="dim"></span></label>
-        <div class="wc-bar sync-nudge" id="sync-nudge">
+        <div class="wc-bar sync-nudge hidden" id="sync-nudge">
           <span class="wc-label">Highlight timing</span>
           <button class="wc-btn" id="c-off-minus" type="button" title="Highlight earlier (box leads the voice)">−</button>
           <b id="c-off-num">0.00s</b>
@@ -232,8 +232,8 @@
         <input type="number" id="c-sync-offset" value="0" class="hidden">
         <input type="number" id="c-words" value="1" class="hidden">
 
-        <details class="advanced" id="customize-drawer">
-          <summary>🎨 Edit everything — font · colour · size · position · animation</summary>
+        <details class="advanced" id="customize-drawer" open>
+          <summary>🎨 Edit style — font · colour · size · position · animation</summary>
           <div class="customizer">
             <div class="seg-control cust-tabs" id="cust-tabs">
               <button type="button" data-pane="style" class="on">🎨 Style</button>
@@ -826,7 +826,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.125 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.126 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>
