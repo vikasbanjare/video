@@ -1889,8 +1889,11 @@
   }
 
   /* Render every gallery card's canvas with the REAL caption engine, sized to
-     the card so it's crisp. Runs after layout; re-runs once web fonts load. */
-  var _thumbFontsHooked = false;
+     the card's ACTUAL on-screen size so it's never stretched. Cards are often
+     built while the Captions tab is hidden (0 width); a ResizeObserver + the
+     fonts-ready hook repaint them at the right size once they're visible. */
+  var _thumbFontsHooked = false, _thumbRO = null, _thumbT = null;
+  function schedulePaintThumbs() { if (_thumbT) clearTimeout(_thumbT); _thumbT = setTimeout(paintThumbs, 50); }
   function paintThumbs() {
     if (!window.CPRender || !CPRender.drawFrame) return;
     var canvases = document.querySelectorAll('.tpl-thumb-canvas');
@@ -1898,14 +1901,28 @@
     for (var i = 0; i < canvases.length; i++) {
       var cvs = canvases[i], t = cvs._tpl;
       if (!t) continue;
-      var w = cvs.clientWidth || 150, h = cvs.clientHeight || 116;
-      cvs.width = Math.round(w * dpr); cvs.height = Math.round(h * dpr);
-      drawCardPreview(cvs, t);
+      var box = cvs.parentNode;
+      var w = cvs.clientWidth || (box && box.clientWidth) || 0;
+      var h = cvs.clientHeight || (box && box.clientHeight) || 0;
+      if (!w || !h) continue;                       // not laid out yet → skip; RO will repaint
+      var tw = Math.round(w * dpr), th = Math.round(h * dpr);
+      if (cvs.width !== tw || cvs.height !== th || !cvs._painted) {
+        cvs.width = tw; cvs.height = th;            // internal res == display size → no stretch
+        drawCardPreview(cvs, t);
+        cvs._painted = true;
+      }
+    }
+    // repaint when the grid first gets a size (hidden → visible) or the panel resizes
+    if (!_thumbRO && window.ResizeObserver) {
+      var grid = document.getElementById('tpl-grid');
+      if (grid) { _thumbRO = new ResizeObserver(schedulePaintThumbs); _thumbRO.observe(grid); }
     }
     // repaint once the caption fonts finish loading (canvas can't reflow itself)
     if (!_thumbFontsHooked && document.fonts && document.fonts.ready) {
       _thumbFontsHooked = true;
-      document.fonts.ready.then(function () { try { paintThumbs(); } catch (e) {} });
+      document.fonts.ready.then(function () {
+        try { var cs = document.querySelectorAll('.tpl-thumb-canvas'); for (var k = 0; k < cs.length; k++) cs[k]._painted = false; paintThumbs(); } catch (e) {}
+      });
     }
   }
 
