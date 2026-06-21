@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.124</span>
+    <span class="ver" id="ver">v0.9.125</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -47,9 +47,11 @@
       </div>
       <button id="btn-tr-auto-ai" class="hero-btn">✨ Transcribe + auto-correct <span class="dim">(AI fixes misheard words — recommended)</span></button>
       <button id="btn-tr-auto-main" class="hero-btn alt">🎙️ Transcribe (raw) <span class="dim">(no AI — fastest)</span></button>
-      <button id="btn-tr-edit" class="hero-btn alt">✏️ Review &amp; edit the words</button>
-      <button id="btn-mark-hooks" class="hero-btn alt small">🔖 Mark viral hooks <span class="dim">(adds timeline markers)</span></button>
-      <button id="btn-broll" class="hero-btn alt small">💡 B-roll ideas <span class="dim">(suggests footage to overlay)</span></button>
+      <div class="row tight" style="margin-top:7px;gap:6px;flex-wrap:wrap">
+        <button id="btn-tr-edit" class="chip-btn">✏️ Review &amp; edit</button>
+        <button id="btn-mark-hooks" class="chip-btn">🔖 Viral hooks</button>
+        <button id="btn-broll" class="chip-btn">💡 B-roll ideas</button>
+      </div>
       <div id="tr-tools" class="hidden">
         <div class="row tight" style="margin-top:6px;align-items:center;gap:6px;flex-wrap:wrap">
           <span class="dim">⤓ Export words as</span>
@@ -260,6 +262,17 @@
               <label class="check"><input type="checkbox" id="c-upper" checked> ALL CAPS</label>
             </div>
 
+            <!-- 🎨 COLOURS -->
+            <div class="cust-group">
+              <div class="cust-group-title">🎨 Colours</div>
+              <div class="swatches">
+                <label class="sw">Text<span class="cp-mount" data-for="c-fill"></span><input type="hidden" id="c-fill" value="#ffffff"></label>
+                <label class="sw">Highlight<span class="cp-mount" data-for="c-hl"></span><input type="hidden" id="c-hl" value="#ffd400"></label>
+                <label class="sw">Outline<span class="cp-mount" data-for="c-stroke"></span><input type="hidden" id="c-stroke" value="#000000"></label>
+                <label class="sw">Box<span class="cp-mount" data-for="c-box"></span><input type="hidden" id="c-box" value="#ff3b6b"></label>
+              </div>
+            </div>
+
             <!-- 📐 POSITION -->
             <div class="cust-group">
               <div class="cust-group-title">📐 Position</div>
@@ -290,17 +303,6 @@
                 <button data-z="64">TikTok</button>
                 <button data-z="62">Reels</button>
                 <button data-z="58">Shorts</button>
-              </div>
-            </div>
-
-            <!-- 🎨 COLOURS -->
-            <div class="cust-group">
-              <div class="cust-group-title">🎨 Colours</div>
-              <div class="swatches">
-                <label class="sw">Text<span class="cp-mount" data-for="c-fill"></span><input type="hidden" id="c-fill" value="#ffffff"></label>
-                <label class="sw">Highlight<span class="cp-mount" data-for="c-hl"></span><input type="hidden" id="c-hl" value="#ffd400"></label>
-                <label class="sw">Outline<span class="cp-mount" data-for="c-stroke"></span><input type="hidden" id="c-stroke" value="#000000"></label>
-                <label class="sw">Box<span class="cp-mount" data-for="c-box"></span><input type="hidden" id="c-box" value="#ff3b6b"></label>
               </div>
             </div>
 
@@ -482,11 +484,14 @@
         </details>
 
         <div id="legibility-note" class="legibility-note hidden"></div>
-        <button id="btn-viral-edit" class="hero-btn">⚡ One-click Viral Edit <span class="dim">(editable captions + auto zoom punches — beta)</span></button>
-        <button id="btn-editable-style" class="hero-btn alt">🖊️ Add EDITABLE captions <span class="dim">(this style — separate clip per line, edit on the timeline)</span></button>
-        <button id="btn-magic" class="hero-btn alt">✨ Add captions <span class="dim">(this style — burned in, not editable)</span></button>
-        <button id="btn-native-main" class="hero-btn alt">📝 Add plain caption track <span class="dim">(unstyled native captions)</span></button>
-        <p class="hint" style="margin:2px 0 0"><b>Editable</b> = one clip per caption on the timeline, styled like your pick (colours, font &amp; size carry over), timed to your audio, and editable in Premiere's Essential Graphics — no PNG. <b>Burned-in</b> = the exact karaoke look but baked into the picture (not editable). <b>Plain</b> = a normal unstyled caption track.</p>
+        <button id="btn-editable-style" class="hero-btn">🖊️ Add captions <span class="dim">(editable on the timeline — recommended)</span></button>
+        <details class="more-ways">
+          <summary>More ways to add ▾</summary>
+          <button id="btn-viral-edit" class="hero-btn alt">⚡ One-click Viral Edit <span class="dim">(captions + auto zoom punches — beta)</span></button>
+          <button id="btn-magic" class="hero-btn alt">✨ Burned-in captions <span class="dim">(baked into the picture, not editable)</span></button>
+          <button id="btn-native-main" class="hero-btn alt">📝 Plain caption track <span class="dim">(unstyled native captions)</span></button>
+        </details>
+        <p class="hint" style="margin:2px 0 0"><b>Editable</b> = one clip per caption, styled like your pick, timed to your audio, editable in Premiere's Essential Graphics. <b>Burned-in</b> = the exact karaoke look baked into the picture (not editable). <b>Plain</b> = a normal unstyled caption track.</p>
         <pre id="native-recipe" class="native-recipe hidden"></pre>
         <button id="btn-cap-fix1" class="hero-btn alt hidden">✏️ Fix the caption at the playhead <span class="dim">(edit one line — updates on the timeline)</span></button>
         <button id="btn-cap-edit" class="hero-btn alt hidden">📝 Edit all caption text <span class="dim">(full list)</span></button>
@@ -821,7 +826,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.124 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.125 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

@@ -375,12 +375,17 @@ input[type="range"]::-webkit-slider-thumb {
 
 /* segmented + mapping */
 .seg-control { display: flex; gap: 4px; background: var(--card2); border-radius: 12px; padding: 4px; margin-top: 10px; }
-.seg-control button { flex: 1; padding: 7px 2px; background: transparent; border: none; border-radius: 9px; color: var(--dim); font-size: 10.5px; font-weight: 700; cursor: pointer; }
+.seg-control button { flex: 1; padding: 9px 3px; background: transparent; border: none; border-radius: 9px; color: var(--dim); font-size: 11px; font-weight: 700; cursor: pointer; min-height: 34px; }
 .seg-control button.on { background: var(--accent-soft); color: var(--accent-text); }
 .seg-control.sub { margin: 0 0 10px; }
 .seg-control.mini { margin-top: 4px; }
-.seg-control.wrap { flex-wrap: wrap; }
-.seg-control.wrap button { flex: 1 0 28%; }
+.seg-control.wrap { flex-wrap: wrap; gap: 5px; }
+.seg-control.wrap button { flex: 1 0 30%; }
+/* "More ways to add" disclosure — keeps one primary button, tucks the rest */
+.more-ways { margin-top: 8px; }
+.more-ways > summary { list-style: none; cursor: pointer; color: var(--dim); font-size: 12px; font-weight: 700; padding: 5px 0; text-align: center; }
+.more-ways > summary::-webkit-details-marker { display: none; }
+.more-ways .hero-btn { margin-top: 6px; }
 .lib-mode-switch { margin: 2px 0 10px; }
 .lib-mode-switch button { padding: 9px 2px; font-size: 12px; }
 .mode-hint { margin: 0 0 10px; }
