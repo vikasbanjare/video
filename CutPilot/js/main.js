@@ -2132,6 +2132,11 @@
     if ($('c-dimupcoming')) $('c-dimupcoming').checked = (p.upcomingOpacity != null && p.upcomingOpacity < 1);
     if ($('c-box-opacity')) $('c-box-opacity').value = Math.round(((p.boxOpacity != null ? p.boxOpacity : 1)) * 100);
     if ($('c-linegap')) $('c-linegap').value = Math.round(((p.lineGap != null ? p.lineGap : 1.18)) * 100);  // so stacked/diagonal styles keep their spacing
+    // gradient + glossy highlight controls
+    if ($('c-hlgrad')) $('c-hlgrad').checked = !!p.highlight2;
+    if ($('c-hl2g')) $('c-hl2g').value = toHex(p.highlight2, '#ff6a00');
+    if ($('c-hlgrad-opts')) $('c-hlgrad-opts').style.display = p.highlight2 ? '' : 'none';
+    if ($('c-glossy')) $('c-glossy').checked = !!p.glossy;
     $('c-speaker').checked = !!p.speaker;
     var aId = CPCaptions.animIdForConcept(p.anim);
     selectAnim(aId);
@@ -2212,7 +2217,7 @@
   /* Push the (hidden) colour-input values into their custom palette swatches,
      so the picker UI reflects colours set programmatically (preset/look load). */
   function syncColorFields() {
-    ['c-fill', 'c-hl', 'c-stroke', 'c-box', 'c-shadow', 'c-fill2', 'c-hl2', 'c-hl3'].forEach(function (id) {
+    ['c-fill', 'c-hl', 'c-stroke', 'c-box', 'c-shadow', 'c-fill2', 'c-hl2', 'c-hl3', 'c-hl2g'].forEach(function (id) {
       var inp = $(id); if (inp && inp._cpField) inp._cpField.setDisplay(inp.value);
     });
   }
@@ -2239,6 +2244,7 @@
                'c-hl-scale', 'c-speaker', 'c-letter', 'c-shadow', 'c-shadow-on', 'c-shadow-blur', 'c-weight',
                // pro controls
                'c-wordpop', 'c-multicolor', 'c-hl2', 'c-hl3', 'c-grad', 'c-fill2',
+               'c-hlgrad', 'c-hl2g', 'c-glossy',
                'c-box-opacity', 'c-box-pad', 'c-box-radius', 'c-shadow-dx', 'c-shadow-dy',
                'c-wordspace', 'c-linegap', 'c-maxwidth', 'c-emphasize', 'c-strippunct',
                'c-animspeed', 'c-perword', 'c-perword-style', 'c-dimupcoming',
@@ -2252,7 +2258,7 @@
     });
     // Mount the custom palette pickers over the (hidden) colour inputs so colours
     // are pickable inside Premiere's panel, where the native OS box won't open.
-    ['c-fill', 'c-hl', 'c-stroke', 'c-box', 'c-shadow', 'c-fill2', 'c-hl2', 'c-hl3', 'c-box2', 'c-num', 'c-brand'].forEach(function (id) {
+    ['c-fill', 'c-hl', 'c-stroke', 'c-box', 'c-shadow', 'c-fill2', 'c-hl2', 'c-hl3', 'c-hl2g', 'c-box2', 'c-num', 'c-brand'].forEach(function (id) {
       var mount = document.querySelector('.cp-mount[data-for="' + id + '"]'), inp = $(id);
       if (!mount || !inp || mount.firstChild) return;
       var f = makeColorField(inp.value, function (v) { inp.value = v; inp.dispatchEvent(new Event('input')); });
@@ -2317,7 +2323,7 @@
     });
     // pro / smart-text reveal-on-toggle groups
     [['c-boxgrad', 'c-boxgrad-opts'], ['c-numon', 'c-num-opts'], ['c-brandon', 'c-brand-opts'],
-     ['c-perword', 'c-perword-style-wrap']].forEach(function (pair) {
+     ['c-hlgrad', 'c-hlgrad-opts'], ['c-perword', 'c-perword-style-wrap']].forEach(function (pair) {
       var t = $(pair[0]), opt = $(pair[1]);
       if (t && opt) t.addEventListener('change', function () { opt.style.display = this.checked ? '' : 'none'; renderPreview(); });
     });
@@ -2675,6 +2681,8 @@
       boxColor: $('c-box-on').checked ? $('c-box').value : null,
       highlightScale: pop / 100,
       highlightStyle: readHlStyle(),
+      highlight2: cchk('c-hlgrad') ? $('c-hl2g').value : null,   // gradient 2nd colour for the highlighted word
+      glossy: cchk('c-glossy'),                                  // shiny metallic sheen on the highlighted word
       uppercase: $('c-upper').checked || ($('c-case') && $('c-case').value === 'upper'),
       letterSpacing: parseInt($('c-letter').value, 10) || 0,
       weight: parseInt($('c-weight').value, 10) || 800,
