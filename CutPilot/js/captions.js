@@ -675,26 +675,31 @@
       glow: '#000000', glowBlur: 0.42, stroke: null, strokeWidth: 0, boxColor: null,
       upcomingOpacity: 0.55, uppercase: false, wordsPerCue: 4, anim: 'karaoke' },
 
-    // ---- Extracted from reference video: stacked phrase, the spoken word pops
-    //      ~2x BIGGER in a vertical gradient (small white supporting words). ----
+    // ---- Extracted from reference video: DIAGONAL dynamic caption. Three words
+    //      cascade top-left → centre → bottom-right; the spoken word sits in the
+    //      centre, much BIGGER, in a heavier font + vertical gradient, overlapping
+    //      the small white words above/below. Line spacing is adjustable. ----
     // Warm yellow→orange pop
-    { id: 'pro-boldpop', name: 'Bold Pop', category: '⭐ Premium', popularity: 100, layout: 'center', keyword: false, highlightScale: 1.95,
-      font: 'Archivo Black', fallbackFonts: ['Montserrat', 'Poppins', 'Arial Black'],
-      fontSize: 58, fill: '#FFFFFF', highlight: '#FFD24A', highlight2: '#FF6A00', highlightStyle: 'color',
-      stroke: '#1A1206', strokeWidth: 6, glow: '#000000', glowBlur: 0.42,
-      weight: 900, uppercase: false, wordsPerLine: 2, wordsPerCue: 4, lineGap: 1.05, anim: 'karaoke' },
+    { id: 'pro-boldpop', name: 'Bold Pop', category: '⭐ Premium', popularity: 100, layout: 'center', keyword: false, highlightScale: 1.9,
+      font: 'Montserrat', fallbackFonts: ['Poppins', 'Inter', 'Arial'],
+      highlightFont: 'Archivo Black', highlightWeight: 900,
+      fontSize: 52, fill: '#FFFFFF', highlight: '#FFD24A', highlight2: '#FF6A00', highlightStyle: 'color',
+      stroke: '#1A1206', strokeWidth: 5, glow: '#000000', glowBlur: 0.45,
+      weight: 800, uppercase: false, stagger: true, window: 3, wordsPerLine: 1, wordsPerCue: 3, lineGap: 0.72, anim: 'karaoke' },
     // Cool blue→light pop
-    { id: 'pro-coolpop', name: 'Cool Pop', category: '⭐ Premium', popularity: 99, layout: 'center', keyword: false, highlightScale: 1.95,
-      font: 'Archivo Black', fallbackFonts: ['Montserrat', 'Poppins', 'Arial Black'],
-      fontSize: 58, fill: '#FFFFFF', highlight: '#3D74FF', highlight2: '#C2DBFF', highlightStyle: 'color',
-      stroke: '#06101A', strokeWidth: 6, glow: '#000000', glowBlur: 0.42,
-      weight: 900, uppercase: false, wordsPerLine: 2, wordsPerCue: 4, lineGap: 1.05, anim: 'karaoke' },
-    // Clean all-white — spoken word just pops ~2x bigger with a soft shadow
-    { id: 'pro-cleanbold', name: 'Clean Bold', category: '⭐ Premium', popularity: 98, layout: 'center', keyword: false, highlightScale: 1.95,
-      font: 'Archivo Black', fallbackFonts: ['Montserrat', 'Poppins', 'Arial Black'],
-      fontSize: 58, fill: '#FFFFFF', highlight: '#FFFFFF', highlightStyle: 'color',
+    { id: 'pro-coolpop', name: 'Cool Pop', category: '⭐ Premium', popularity: 99, layout: 'center', keyword: false, highlightScale: 1.9,
+      font: 'Montserrat', fallbackFonts: ['Poppins', 'Inter', 'Arial'],
+      highlightFont: 'Archivo Black', highlightWeight: 900,
+      fontSize: 52, fill: '#FFFFFF', highlight: '#3D74FF', highlight2: '#C2DBFF', highlightStyle: 'color',
+      stroke: '#06101A', strokeWidth: 5, glow: '#000000', glowBlur: 0.45,
+      weight: 800, uppercase: false, stagger: true, window: 3, wordsPerLine: 1, wordsPerCue: 3, lineGap: 0.72, anim: 'karaoke' },
+    // Clean all-white — spoken word pops ~2x bigger in a heavier font, soft shadow
+    { id: 'pro-cleanbold', name: 'Clean Bold', category: '⭐ Premium', popularity: 98, layout: 'center', keyword: false, highlightScale: 1.9,
+      font: 'Montserrat', fallbackFonts: ['Poppins', 'Inter', 'Arial'],
+      highlightFont: 'Archivo Black', highlightWeight: 900,
+      fontSize: 52, fill: '#FFFFFF', highlight: '#FFFFFF', highlightStyle: 'color',
       glow: '#000000', glowBlur: 0.5, stroke: null, strokeWidth: 0, boxColor: null,
-      weight: 900, uppercase: false, wordsPerLine: 2, wordsPerCue: 4, lineGap: 1.05, anim: 'karaoke' }
+      weight: 800, uppercase: false, stagger: true, window: 3, wordsPerLine: 1, wordsPerCue: 3, lineGap: 0.72, anim: 'karaoke' }
   ];
 
   var TEMPLATES = STYLE_PRESETS.concat(PREMIUM_TEMPLATES, MORE_TEMPLATES, NEW_TEMPLATES);
@@ -1080,10 +1085,38 @@
     return frames;
   }
 
+  /* Windowed/diagonal frames: each frame is [prevWord, spokenWord, nextWord] with
+     the SPOKEN word active (centre) — used by the dynamic diagonal styles so the
+     highlighted word is always the middle line. */
+  function framesWindowed(wordCues, up) {
+    var frames = [];
+    for (var i = 0; i < wordCues.length; i++) {
+      var words = [], active;
+      if (i > 0) words.push(wordCues[i - 1].text);
+      active = words.length;
+      words.push(wordCues[i].text);
+      if (i < wordCues.length - 1) words.push(wordCues[i + 1].text);
+      if (up) words = words.map(uc);
+      frames.push({ start: wordCues[i].start, end: wordCues[i].end, words: words, active: active });
+    }
+    return frames;
+  }
+  /* Split line-cues into per-word cues with even timing (when no real word timing
+     is available) so windowed/diagonal styles still work. */
+  function flattenWords(cues) {
+    var out = [];
+    for (var c = 0; c < cues.length; c++) {
+      var ws = String(cues[c].text).replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+      var n = Math.max(1, ws.length), dur = ((cues[c].end - cues[c].start) || n * 0.4) / n;
+      for (var k = 0; k < ws.length; k++) out.push({ start: cues[c].start + k * dur, end: cues[c].start + (k + 1) * dur, text: ws[k] });
+    }
+    return out;
+  }
+
   /*
    * Single entry point that turns cues into render-ready frames for any
    * animation, applying words-per-cue, casing, and keyword highlighting.
-   * opts: { anim, wordsPerCue, uppercase, keyword:{on,mode} }
+   * opts: { anim, wordsPerCue, uppercase, keyword:{on,mode}, window }
    * Frame shapes:
    *   keyframed/word/line -> { start, end, words:[...], highlightSet:[bool] }
    *   karaoke             -> { start, end, words:[...], active, highlightSet }
@@ -1119,7 +1152,9 @@
     var wordCues = (opts.wordCues && opts.wordCues.length) ? sanitizeWordCues(opts.wordCues) : null;
 
     if (anim === 'karaoke' || anim === 'reveal') {
-      if (wordCues) {
+      if (opts.window) {
+        frames = framesWindowed(wordCues || flattenWords(cues), up);
+      } else if (wordCues) {
         frames = framesFromWordCues(wordCues, anim, wpc, kw, up);
       } else {
         frames = planKaraoke(cues, Math.max(2, wpc || 3), anim === 'reveal');

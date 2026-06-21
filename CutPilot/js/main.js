@@ -2131,6 +2131,7 @@
     if ($('c-box-radius')) $('c-box-radius').value = (p.boxRadius != null ? p.boxRadius : 12);
     if ($('c-dimupcoming')) $('c-dimupcoming').checked = (p.upcomingOpacity != null && p.upcomingOpacity < 1);
     if ($('c-box-opacity')) $('c-box-opacity').value = Math.round(((p.boxOpacity != null ? p.boxOpacity : 1)) * 100);
+    if ($('c-linegap')) $('c-linegap').value = Math.round(((p.lineGap != null ? p.lineGap : 1.18)) * 100);  // so stacked/diagonal styles keep their spacing
     $('c-speaker').checked = !!p.speaker;
     var aId = CPCaptions.animIdForConcept(p.anim);
     selectAnim(aId);
@@ -2921,7 +2922,7 @@
       frames = CPCaptions.buildCaptionFrames([{ start: 0, end: sw.length * DUR, text: sample }], {
         anim: anim, wordsPerCue: (words || 4), uppercase: ov.uppercase,
         keyword: { on: $('c-kw').checked, mode: ($('c-kw-mode') ? $('c-kw-mode').value : 'auto') },
-        speaker: { on: false }, emoji: cchk('c-emoji'), wordCues: wordCues
+        speaker: { on: false }, emoji: cchk('c-emoji'), wordCues: wordCues, window: (preset.window || 0)
       });
     } catch (eF) { frames = null; }
     if (!frames || !frames.length) frames = [{ words: sw.slice(0, Math.max(1, words || 6)) }];
@@ -3149,7 +3150,7 @@
         stripPunctuation: overrides.stripPunctuation,
         textCase: overrides.textCase,
         censor: overrides.censor,
-        wordCues: wordCues
+        wordCues: wordCues, window: (currentPreset().window || 0)
       });
 
       if (frames.length > 600 &&

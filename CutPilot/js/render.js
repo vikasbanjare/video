@@ -93,7 +93,12 @@
       maxWidthPct: (o.maxWidthPct != null) ? o.maxWidthPct : (preset.maxWidthPct || 0.86),
       lineGap: (o.lineGap != null) ? o.lineGap : (preset.lineGap || 1.18),
       // force N words per line (0 = off) → vertical "stacked" caption layout
-      wordsPerLine: (o.wordsPerLine != null) ? o.wordsPerLine : (preset.wordsPerLine || 0)
+      wordsPerLine: (o.wordsPerLine != null) ? o.wordsPerLine : (preset.wordsPerLine || 0),
+      // diagonal cascade (top-left → centre → bottom-right) for dynamic captions
+      stagger: (o.stagger != null) ? o.stagger : (preset.stagger || false),
+      // a different (heavier) face + weight for the highlighted word
+      highlightFont: o.highlightFont || preset.highlightFont || null,
+      highlightWeight: (o.highlightWeight != null) ? o.highlightWeight : (preset.highlightWeight || 0)
     };
   }
 
@@ -161,6 +166,13 @@
     function setFont(px) {
       ctx.font = fontWeight + ' ' + px + 'px "' + style.font + '", "' + style.fallbacks + '", sans-serif';
     }
+    // the highlighted word can use a DIFFERENT (heavier) font + weight
+    function setFontFor(px, hl) {
+      if (hl && style.highlightFont) {
+        var w = style.highlightWeight || 900;
+        ctx.font = w + ' ' + px + 'px "' + style.highlightFont + '", "' + style.font + '", "' + style.fallbacks + '", sans-serif';
+      } else { setFont(px); }
+    }
 
     var words = frame.words ? frame.words.slice() : String(frame.text).split(/\s+/);
     if (style.uppercase) for (var u = 0; u < words.length; u++) words[u] = words[u].toUpperCase();
@@ -194,7 +206,7 @@
         var dyn = (style.emphasizeWords && !wordSync) ? wordScale(words[k]) : 1;
         var multk = Math.max(hpk ? hlScale : 1, dyn);
         var pxk = Math.round(eff * multk);
-        setFont(pxk);
+        setFontFor(pxk, hpk);
         m.push({ word: words[k], px: pxk, hl: hpk, w: ctx.measureText(words[k]).width });
       }
       var ls = [];
@@ -282,6 +294,14 @@
       var x = (style.align === 'left') ? margin
             : (style.align === 'right') ? (W - margin - line.width)
             : (W - line.width) / 2;
+      // diagonal stagger: first line hugs top-left, last line bottom-right,
+      // middle line centred — the "dynamic" cascading caption look.
+      if (style.stagger && lines.length > 1) {
+        var frac = li / (lines.length - 1);                 // 0 → 1 down the stack
+        var leftX = margin, rightX = W - margin - line.width;
+        x = leftX + (rightX - leftX) * frac;
+        if (x < 6) x = 6; if (x + line.width > W - 6) x = W - 6 - line.width;
+      }
       var y = baseY + li * lineStep;
 
       // background box behind the whole line (opacity + padding + gradient)
