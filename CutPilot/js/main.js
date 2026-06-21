@@ -2898,50 +2898,38 @@
     // preview. Size still drives the REAL exported captions (and the legibility
     // note above, `st`, still uses the real size). The engine auto-fits this
     // reference to the frame, so longer lines simply wrap/shrink to fit.
-    var pov = {}; for (var ko in ov) if (ov.hasOwnProperty(ko)) pov[ko] = ov[ko];
-    pov.fontSize = PREVIEW_REF_SIZE;
-    var pStyle = CPRender.styleForFrame(preset, canvas.height, pov);
+    // WYSIWYG preview: render at the REAL size and play the EXACT frames the
+    // engine produces for a realistic sentence — so the preview matches the final
+    // captions 1:1 (animation, word-highlight timing, grouping) and the Size
+    // slider now visibly affects it.
+    var pStyle = CPRender.styleForFrame(preset, canvas.height, ov);
     var anim = currentAnim();
     var words = parseInt($('c-words').value, 10) || 0;
-    var kwOn = $('c-kw').checked;
-    var speaker = $('c-speaker').checked ? 'HOST' : null;
-
-    // sample words, cased + cleaned the same way the engine would
-    function prep(arr) {
-      var f = CPCaptions.buildCaptionFrames([{ start: 0, end: 2, text: arr.join(' ') }], {
-        anim: 'fade', wordsPerCue: 0, uppercase: ov.uppercase,
-        stripPunctuation: ov.stripPunctuation, textCase: ov.textCase, censor: ov.censor
+    var speakerOn = $('c-speaker').checked;
+    var sample = 'This is exactly how your captions will look on screen as you talk';
+    var sw = sample.split(' ');
+    var DUR = 0.42;                                   // seconds per word (preview pacing)
+    var wordCues = sw.map(function (w, i) { return { start: i * DUR, end: (i + 1) * DUR, text: w }; });
+    var frames;
+    try {
+      frames = CPCaptions.buildCaptionFrames([{ start: 0, end: sw.length * DUR, text: sample }], {
+        anim: anim, wordsPerCue: (words || 4), uppercase: ov.uppercase,
+        keyword: { on: $('c-kw').checked, mode: ($('c-kw-mode') ? $('c-kw-mode').value : 'auto') },
+        speaker: { on: false }, emoji: cchk('c-emoji'), wordCues: wordCues
       });
-      return (f[0] && f[0].words) ? f[0].words : arr;
-    }
-    var nShow = (words === 0) ? 6 : Math.min(words, SAMPLE_SENTENCE.length);
-    var shown = prep(SAMPLE_SENTENCE.slice(0, Math.max(1, nShow)));
+    } catch (eF) { frames = null; }
+    if (!frames || !frames.length) frames = [{ words: sw.slice(0, Math.max(1, words || 6)) }];
 
-    function paint(frameObj) {
-      if (speaker) frameObj.speaker = speaker;
-      CPRender.drawFrame(canvas, frameObj, pStyle);
+    var pi = 0;
+    function play() {
+      var f = frames[pi % frames.length], fo = {};
+      for (var fk in f) if (f.hasOwnProperty(fk)) fo[fk] = f[fk];
+      if (speakerOn) fo.speaker = 'Host';
+      CPRender.drawFrame(canvas, fo, pStyle);
+      pi++;
     }
-
-    if (anim === 'karaoke' || anim === 'reveal') {
-      var idx = 0;
-      var loop = function () {
-        var w = (anim === 'reveal') ? shown.slice(0, idx + 1) : shown;
-        paint({ words: w, active: (anim === 'reveal') ? idx : idx });
-        idx = (idx + 1) % shown.length;
-      };
-      loop();
-      previewTimer = setInterval(loop, Math.max(180, Math.round(520 / (ov.animSpeed || 1))));
-    } else if (anim === 'typewriter') {
-      var n = 1;
-      var typ = function () { paint({ text: shown.slice(0, n).join(' ') }); n = n >= shown.length ? 1 : n + 1; };
-      typ();
-      previewTimer = setInterval(typ, Math.max(160, Math.round(420 / (ov.animSpeed || 1))));
-    } else {
-      // static line; highlight the longest word so the highlight style shows
-      var hset = null;
-      if (kwOn) { hset = []; hset[longestIdx(shown)] = true; }
-      paint({ words: shown, highlightSet: hset });
-    }
+    play();
+    if (frames.length > 1) previewTimer = setInterval(play, Math.max(150, Math.round((DUR * 1000) / (ov.animSpeed || 1))));
 
     updateLegibilityNote(st);
     if (_booted) saveLook();

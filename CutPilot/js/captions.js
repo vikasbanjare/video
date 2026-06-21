@@ -626,12 +626,69 @@
   ];
 
   /* The full catalog the library browses (base + extras). */
-  var TEMPLATES = STYLE_PRESETS.concat(PREMIUM_TEMPLATES, MORE_TEMPLATES);
+  // ---- Fresh, distinct aesthetic styles (each a clearly different look) ----
+  var NEW_TEMPLATES = [
+    // Gradient sky text, soft glow — premium cinematic
+    { id: 'cap-aurora', name: 'Aurora', category: 'Cinematic', popularity: 96, layout: 'center', keyword: false, highlightScale: 1.12,
+      font: 'Outfit', fallbackFonts: ['Poppins', 'Inter', 'Arial'],
+      fontSize: 64, fill: '#FFFFFF', fill2: '#B9C7FF', highlight: '#7FE7FF', highlightStyle: 'color',
+      glow: '#0A1030', glowBlur: 0.5, stroke: null, strokeWidth: 0, boxColor: null,
+      upcomingOpacity: 0.55, uppercase: false, wordsPerCue: 3, anim: 'karaoke' },
+    // Comic-poster energy — Bangers, thick outline, white active word
+    { id: 'cap-motiv', name: 'Hype', category: 'Motivation', popularity: 95, layout: 'center', keyword: false, highlightScale: 1.2,
+      font: 'Bangers', fallbackFonts: ['Luckiest Guy', 'Anton', 'Impact'],
+      fontSize: 96, fill: '#FFE53B', highlight: '#FFFFFF', highlightStyle: 'color',
+      stroke: '#000000', strokeWidth: 13, glow: null, boxColor: null,
+      uppercase: true, wordsPerCue: 3, anim: 'karaoke' },
+    // Terminal mono on a dark pill — techy / gaming
+    { id: 'cap-mono', name: 'Mono', category: 'Gaming Stream', popularity: 91, layout: 'bottom', keyword: false, highlightScale: 1.05,
+      font: 'JetBrains Mono', fallbackFonts: ['Roboto Mono', 'Space Mono', 'Courier New'],
+      fontSize: 46, fill: '#E6FBFF', highlight: '#00F0FF', highlightStyle: 'color',
+      boxColor: '#0B1118', boxRadius: 8, boxOpacity: 0.92, glow: null, stroke: null, strokeWidth: 0,
+      upcomingOpacity: 0.5, uppercase: false, wordsPerCue: 4, anim: 'karaoke' },
+    // Rounded white pill, soft pink active — friendly social look
+    { id: 'cap-pastel', name: 'Pastel', category: 'Social Growth', popularity: 92, layout: 'bottom', keyword: false, highlightScale: 1.08,
+      font: 'Nunito', fallbackFonts: ['Poppins', 'Inter', 'Arial'],
+      fontSize: 56, fill: '#2A2233', highlight: '#FF5DA2', highlightStyle: 'box', boxColor: '#FFFFFF', boxRadius: 24, boxOpacity: 1,
+      glow: null, stroke: null, strokeWidth: 0, upcomingOpacity: 0.5, uppercase: false, wordsPerCue: 3, anim: 'karaoke' },
+    // Elegant serif, gold active — storytelling / luxury
+    { id: 'cap-editorial', name: 'Editorial', category: 'Storytelling', popularity: 90, layout: 'center', keyword: false, highlightScale: 1.06,
+      font: 'Playfair Display', fallbackFonts: ['Georgia', 'Merriweather', 'Times New Roman'],
+      fontSize: 60, fill: '#F6F2EA', highlight: '#E7B45A', highlightStyle: 'color',
+      glow: '#000000', glowBlur: 0.45, stroke: null, strokeWidth: 0, boxColor: null,
+      upcomingOpacity: 0.6, uppercase: false, wordsPerCue: 4, anim: 'karaoke' },
+    // Condensed news ticker, teal bar under the spoken word
+    { id: 'cap-ticker', name: 'Ticker', category: 'Education', popularity: 88, layout: 'bottom', keyword: false, highlightScale: 1.02,
+      font: 'Oswald', fallbackFonts: ['Bebas Neue', 'Inter', 'Arial'],
+      fontSize: 54, fill: '#FFFFFF', highlight: '#13C2A8', highlightStyle: 'bar', boxOpacity: 1,
+      glow: null, stroke: '#000000', strokeWidth: 5, uppercase: true, wordsPerCue: 4, anim: 'karaoke' },
+    // Crisp white subtitle card, blue active — minimal & professional
+    { id: 'cap-card', name: 'Clean Card', category: 'Minimal Professional', popularity: 93, layout: 'bottom', keyword: false, highlightScale: 1,
+      font: 'Inter', fallbackFonts: ['Helvetica', 'Arial'],
+      fontSize: 52, fill: '#11151C', highlight: '#2D7CFF', highlightStyle: 'color',
+      boxColor: '#FFFFFF', boxRadius: 12, boxOpacity: 0.96, glow: null, stroke: null, strokeWidth: 0,
+      upcomingOpacity: 0.45, uppercase: false, wordsPerCue: 4, anim: 'karaoke' },
+    // Warm clean studio caption — podcast/interview
+    { id: 'cap-studio', name: 'Studio', category: 'Podcast Pro', popularity: 90, layout: 'bottom', keyword: false, highlightScale: 1.06,
+      font: 'Manrope', fallbackFonts: ['Inter', 'Arial'],
+      fontSize: 54, fill: '#FFFFFF', highlight: '#FFC857', highlightStyle: 'color',
+      glow: '#000000', glowBlur: 0.42, stroke: null, strokeWidth: 0, boxColor: null,
+      upcomingOpacity: 0.55, uppercase: false, wordsPerCue: 4, anim: 'karaoke' }
+  ];
+
+  var TEMPLATES = STYLE_PRESETS.concat(PREMIUM_TEMPLATES, MORE_TEMPLATES, NEW_TEMPLATES);
+  // Retire near-duplicate styles that differed from a kept one only by colour or
+  // size (both editable in the customizer) — keeps the gallery curated & distinct.
+  var _RETIRED = { evo: 1, cleanwhite: 1, byline: 1, 'pro-neon': 1, rebel: 1, boldyellow: 1,
+    grind: 1, 'v1-podcast': 1, paper: 1, tvnews: 1, 'v1-finance': 1, 'pro-copernicus': 1,
+    'v1-hormozi26': 1, 'v1-reels': 1, 'pro-velocity': 1, 'pro-quint': 1, magazine: 1,
+    lumen: 1, bloom: 1, sonnet: 1 };
+  TEMPLATES = TEMPLATES.filter(function (t) { return !_RETIRED[t.id]; });
 
   /* Niche → recommended template id (the "AI Caption Styling" suggester). */
   var NICHE_RECOMMEND = {
-    Podcast: 'lift', Business: 'byline', Finance: 'minimal', Education: 'paper',
-    Fitness: 'grind', Motivation: 'boldyellow', Gaming: 'neon', Tech: 'align', Vlog: 'cleanwhite'
+    Podcast: 'lift', Business: 'stack', Finance: 'minimal', Education: 'mars',
+    Fitness: 'impact', Motivation: 'hormozi', Gaming: 'neon', Tech: 'align', Vlog: 'karaoke'
   };
   var NICHES = ['Podcast', 'Business', 'Finance', 'Education', 'Fitness', 'Motivation', 'Gaming', 'Tech', 'Vlog'];
 
