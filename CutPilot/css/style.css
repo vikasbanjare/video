@@ -647,6 +647,9 @@ footer { border-top: 1px solid var(--line); background: var(--card); max-height:
 /* grouped customizer: clear sections instead of one long wall of controls */
 .cust-group { padding: 9px 0 2px; border-top: 1px solid var(--line); }
 .cust-group:first-child { border-top: none; padding-top: 2px; }
+/* two-part customizer: first group in each pane has no divider line */
+.cust-tabs { margin: 2px 0 12px; }
+.cust-pane > .cust-group:first-child { border-top: none; padding-top: 2px; }
 .cust-group-title { font-size: 11.5px; font-weight: 800; color: #e6dce2;
   letter-spacing: .04em; text-transform: uppercase; margin: 0 0 8px; }
 .cust-group-title .dim { font-weight: 600; text-transform: none; letter-spacing: 0; }

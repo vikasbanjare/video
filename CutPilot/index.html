@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.123</span>
+    <span class="ver" id="ver">v0.9.124</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -233,6 +233,11 @@
         <details class="advanced" id="customize-drawer">
           <summary>🎨 Edit everything — font · colour · size · position · animation</summary>
           <div class="customizer">
+            <div class="seg-control cust-tabs" id="cust-tabs">
+              <button type="button" data-pane="style" class="on">🎨 Style</button>
+              <button type="button" data-pane="pro">✨ Effects &amp; Pro</button>
+            </div>
+            <div id="cust-pane-style" class="cust-pane">
             <!-- ✍️ TEXT -->
             <div class="cust-group">
               <div class="cust-group-title">✍️ Text</div>
@@ -333,6 +338,8 @@
               </div>
             </div>
 
+            </div><!-- /cust-pane-style -->
+            <div id="cust-pane-pro" class="cust-pane hidden">
             <!-- ✨ EFFECTS -->
             <div class="cust-group">
               <div class="cust-group-title">✨ Effects <span class="dim">— readability over any footage</span></div>
@@ -446,7 +453,6 @@
               <div class="check-grid" style="margin-top:11px">
                 <label class="check"><input type="checkbox" id="c-speaker"> 🎙️ Show speaker names</label>
                 <label class="check"><input type="checkbox" id="c-emoji"> ✨ Auto-emoji on keywords</label>
-                <label class="check"><input type="checkbox" id="c-censor"> 🤬 Mask swear words <span class="dim">(f**k)</span></label>
               </div>
               <label class="check kw-toggle"><input type="checkbox" id="c-kw"> 🔑 Also colour key words <span class="dim">(used when word-by-word highlight is OFF)</span></label>
               <div id="c-kw-mode-wrap" class="hidden">
@@ -471,6 +477,7 @@
               <div class="cust-group-title">🎬 Entrance animation</div>
               <div id="anim-rail" class="anim-rail"></div>
             </div>
+            </div><!-- /cust-pane-pro -->
           </div>
         </details>
 
@@ -814,7 +821,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.123 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.124 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

@@ -2129,7 +2129,23 @@
     });
   }
 
+  // Two-part customizer: 🎨 Style vs ✨ Effects & Pro, switched in the same panel.
+  function wireCustomizerTabs() {
+    var tabs = $('cust-tabs'); if (!tabs) return;
+    tabs.addEventListener('click', function (e) {
+      var b = e.target; while (b && b !== tabs && b.tagName !== 'BUTTON') b = b.parentNode;
+      if (!b || b.tagName !== 'BUTTON' || !b.getAttribute('data-pane')) return;
+      var pane = b.getAttribute('data-pane');
+      var btns = tabs.getElementsByTagName('button');
+      for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('on', btns[i] === b);
+      var ps = $('cust-pane-style'), pp = $('cust-pane-pro');
+      if (ps) ps.classList.toggle('hidden', pane !== 'style');
+      if (pp) pp.classList.toggle('hidden', pane !== 'pro');
+    });
+  }
+
   function wireCustomizer() {
+    wireCustomizerTabs();
     var ids = ['c-size', 'c-pos', 'c-fill', 'c-hl', 'c-stroke', 'c-box',
                'c-strokew', 'c-box-on', 'c-upper', 'c-words', 'c-kw', 'c-kw-mode',
                'c-hl-scale', 'c-speaker', 'c-letter', 'c-shadow', 'c-shadow-on', 'c-shadow-blur', 'c-weight',
