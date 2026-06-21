@@ -91,7 +91,9 @@
       // When set, the renderer shrinks the font to keep the caption within it.
       maxLines: (o.maxLines != null) ? o.maxLines : (preset.maxLines || 0),
       maxWidthPct: (o.maxWidthPct != null) ? o.maxWidthPct : (preset.maxWidthPct || 0.86),
-      lineGap: (o.lineGap != null) ? o.lineGap : (preset.lineGap || 1.18)
+      lineGap: (o.lineGap != null) ? o.lineGap : (preset.lineGap || 1.18),
+      // force N words per line (0 = off) → vertical "stacked" caption layout
+      wordsPerLine: (o.wordsPerLine != null) ? o.wordsPerLine : (preset.wordsPerLine || 0)
     };
   }
 
@@ -197,9 +199,11 @@
       }
       var ls = [];
       var cur = { items: [], width: 0, height: eff };
+      var wpl = style.wordsPerLine || 0;             // stacked layout: N words per line
       for (var j = 0; j < m.length; j++) {
         var add = m[j].w + (cur.items.length ? sp : 0);
-        if (cur.items.length && cur.width + add > maxW) {
+        var forceBreak = wpl && cur.items.length >= wpl;
+        if (cur.items.length && (forceBreak || cur.width + add > maxW)) {
           ls.push(cur);
           cur = { items: [], width: 0, height: eff };
           add = m[j].w;

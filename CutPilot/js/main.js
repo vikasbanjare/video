@@ -2907,7 +2907,7 @@
     // preview; the real exported size is the Size slider (shown in the legibility
     // note below the preview).
     var pov = {}; for (var ko in ov) if (ov.hasOwnProperty(ko)) pov[ko] = ov[ko];
-    pov.fontSize = 230;
+    pov.fontSize = (preset.wordsPerLine ? 140 : 230);   // stacked styles need a smaller ref to fit the frame
     var pStyle = CPRender.styleForFrame(preset, canvas.height, pov);
     var anim = currentAnim();
     var words = parseInt($('c-words').value, 10) || 0;
