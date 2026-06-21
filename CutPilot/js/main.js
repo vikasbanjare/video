@@ -4055,11 +4055,11 @@
     }).catch(function (e) { capProgress(null); toast(e.message, true); });
   }
 
-  // ---- ONE-CLICK VIRAL EDIT: editable captions + auto zoom punch-ins (beta) ---
-  /* Orchestrates two ADDITIVE, undoable steps: (1) subtle talking-head zoom
-     punches at natural emphasis points (start of caption lines, spaced out), then
-     (2) editable captions in the current style. It never cuts/trims footage —
-     Smart Cut stays a separate, deliberate step. */
+  // ---- ONE-CLICK VIRAL EDIT: the SELECTED style + auto zoom punch-ins (beta) --
+  /* Two ADDITIVE, undoable steps: (1) subtle talking-head zoom punches at natural
+     emphasis points (start of caption lines, spaced out), then (2) captions in the
+     EXACT style picked in the gallery (same engine as "Add captions"). Never
+     cuts/trims footage — Smart Cut stays a separate, deliberate step. */
   function viralEdit() {
     if (!CPBridge.isCEP()) return toast('Viral Edit needs Premiere.', true);
     if (!ensureTranscriptThen('viral')) return;
@@ -4079,7 +4079,7 @@
       .then(function (r) {
         if (r && r.applied) toast('⚡ Added ' + r.applied + ' zoom punches (beta) to your top clip. Now placing captions… (Ctrl/Cmd+Z removes the zooms if you don\'t like them.)');
       }, function () { /* zoom is best-effort; ignore and still caption */ })
-      .then(function () { applyEditableStyle(); });   // 2) editable captions in the current style
+      .then(function () { runCaptionPipeline(cues, null); });   // 2) captions in the EXACT selected style
   }
 
   // ========================================================== SMART CUT ====

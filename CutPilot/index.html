@@ -14,7 +14,7 @@
 <body>
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.127</span>
+    <span class="ver" id="ver">v0.9.128</span>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
   </header>
@@ -484,14 +484,9 @@
         </details>
 
         <div id="legibility-note" class="legibility-note hidden"></div>
-        <button id="btn-editable-style" class="hero-btn">🖊️ Add captions <span class="dim">(editable on the timeline — recommended)</span></button>
-        <details class="more-ways">
-          <summary>More ways to add ▾</summary>
-          <button id="btn-viral-edit" class="hero-btn alt">⚡ One-click Viral Edit <span class="dim">(captions + auto zoom punches — beta)</span></button>
-          <button id="btn-magic" class="hero-btn alt">✨ Burned-in captions <span class="dim">(baked into the picture, not editable)</span></button>
-          <button id="btn-native-main" class="hero-btn alt">📝 Plain caption track <span class="dim">(unstyled native captions)</span></button>
-        </details>
-        <p class="hint" style="margin:2px 0 0"><b>Editable</b> = one clip per caption, styled like your pick, timed to your audio, editable in Premiere's Essential Graphics. <b>Burned-in</b> = the exact karaoke look baked into the picture (not editable). <b>Plain</b> = a normal unstyled caption track.</p>
+        <button id="btn-magic" class="hero-btn">✨ Add captions <span class="dim">(the style you picked — added to your timeline)</span></button>
+        <button id="btn-viral-edit" class="hero-btn alt">⚡ One-click Viral Edit <span class="dim">(same style + auto zoom punches — beta)</span></button>
+        <p class="hint" style="margin:2px 0 0">Both add the exact style you picked above. <b>Viral Edit</b> also adds subtle zoom punch-ins to your top clip (Ctrl/Cmd+Z to undo them).</p>
         <pre id="native-recipe" class="native-recipe hidden"></pre>
         <button id="btn-cap-fix1" class="hero-btn alt hidden">✏️ Fix the caption at the playhead <span class="dim">(edit one line — updates on the timeline)</span></button>
         <button id="btn-cap-edit" class="hero-btn alt hidden">📝 Edit all caption text <span class="dim">(full list)</span></button>
@@ -826,7 +821,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.127 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.128 · smart cut · auto multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>
