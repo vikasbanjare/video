@@ -88,6 +88,7 @@
       align: o.align || preset.align || 'center',
       uppercase: o.uppercase != null ? o.uppercase : preset.uppercase,
       yPct: o.yPct != null ? o.yPct : 0.76,
+      vCenter: o.vCenter || preset.vCenter || false,   // center the block vertically (gallery thumbs)
       // 0 = unlimited (legacy wrap), 1 = force single line, 2 = max two lines.
       // When set, the renderer shrinks the font to keep the caption within it.
       maxLines: (o.maxLines != null) ? o.maxLines : (preset.maxLines || 0),
@@ -296,6 +297,16 @@
     } else {
       baseY = H * style.yPct - blockH + lineStep; // baseline of first line
       for (var lc = 0; lc < lines.length; lc++) lineY[lc] = baseY + lc * lineStep;
+    }
+
+    // vertically centre the whole block in the frame (gallery thumbnails) so a
+    // 1- or 2-line caption never clips off the top/bottom of a short card.
+    if (style.vCenter && lines.length) {
+      var topY = lineY[0] - lines[0].height * 0.80;
+      var botY = lineY[lines.length - 1] + lines[lines.length - 1].height * 0.20;
+      var shift = (H - (botY - topY)) / 2 - topY;
+      for (var vc = 0; vc < lineY.length; vc++) lineY[vc] += shift;
+      baseY += shift;
     }
 
     // speaker label pill above the block

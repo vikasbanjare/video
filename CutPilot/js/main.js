@@ -1952,10 +1952,17 @@
         var score = hl * 100 + nw;
         if (score > bestScore) { bestScore = score; best = f; }
       }
-      // a reference size that fills the small thumb (stacked styles need less)
-      var pov = { fontSize: (t.wordsPerLine ? 96 : 132), maxWidthPct: 0.92, maxLines: (t.wordsPerLine ? 0 : 2) };
+      // Fill the card without overflowing: cap the font so the block fits the
+      // card HEIGHT (the engine only fits WIDTH, so a too-big start clips top/
+      // bottom). Account for each style's keyword scale + line gap + line count.
+      var hlsc = Math.max(1, t.highlightScale || 1);
+      if (t.highlight && t.fill && !t.boxColor &&
+          String(t.highlight).toLowerCase() === String(t.fill).toLowerCase()) hlsc = Math.max(hlsc, 1.18); // mirror engine guard
+      var lg = (t.lineGap != null) ? t.lineGap : 1.18;
+      var estLines = t.wordsPerLine ? 3 : 2;
+      var fMax = Math.round(0.84 * 1080 / (estLines * hlsc * lg));   // height-safe maximum
+      var pov = { fontSize: fMax, maxWidthPct: 0.95, maxLines: (t.wordsPerLine ? 0 : 2), vCenter: true };
       var style = CPRender.styleForFrame(t, canvas.height, pov);
-      style.yPct = 0.52;   // vertically centre in the thumb
       CPRender.drawFrame(canvas, best, style);
     } catch (e) { /* leave the gradient background showing */ }
   }
@@ -2020,6 +2027,19 @@
       if (state.libCategory === 'Favorites') renderTemplateGrid();
     });
     thumb.appendChild(fav);
+
+    // explicit Edit button → open this style in the editor (the whole card also
+    // opens it, but the button is the obvious affordance people look for)
+    var edit = document.createElement('button');
+    edit.className = 'tpl-edit';
+    edit.innerHTML = '✏️ Edit';
+    edit.title = 'Open “' + t.name + '” in the style editor';
+    edit.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      applyTemplate(t);
+      showView('style');
+    });
+    thumb.appendChild(edit);
     card.appendChild(thumb);
 
     var meta = document.createElement('div');
