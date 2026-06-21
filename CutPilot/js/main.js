@@ -861,7 +861,26 @@
   }
 
   // --------------------------------------------------------------- boot ----
+  // ---- Light / Dark theme -------------------------------------------------
+  function applyTheme(t) {
+    t = (t === 'dark') ? 'dark' : 'light';
+    document.body.classList.remove('theme-light', 'theme-dark');
+    document.body.classList.add('theme-' + t);
+    var b = $('theme-toggle'); if (b) b.textContent = (t === 'dark') ? '☀️' : '🌙';
+    try { localStorage.setItem('cutpilot.theme', t); } catch (e) {}
+  }
+  function wireTheme() {
+    var saved = 'light';
+    try { saved = localStorage.getItem('cutpilot.theme') || 'light'; } catch (e) {}
+    applyTheme(saved);
+    var b = $('theme-toggle');
+    if (b) b.addEventListener('click', function () {
+      applyTheme(document.body.classList.contains('theme-dark') ? 'light' : 'dark');
+    });
+  }
+
   function boot() {
+    wireTheme();
     $('set-ffmpeg').value = settings.ffmpegPath || '';
     $('set-dropframe').checked = !!settings.dropFrame;
     if ($('set-whisper')) $('set-whisper').value = settings.whisperPath || '';
