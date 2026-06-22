@@ -800,8 +800,50 @@
     { id: 'btn-paper', name: 'Paper', category: '🔘 Buttons', popularity: 86, layout: 'center', keyword: false, highlightScale: 1.04,
       font: 'Inter', fallbackFonts: ['Helvetica', 'Arial'],
       fontSize: 48, fill: '#15171C', highlight: '#2D7CFF', highlightStyle: 'color',
-      boxColor: '#FFFFFF', boxRadius: 120, boxPad: 1.35, boxShadow: 'rgba(0,0,0,0.35)', boxShadowBlur: 0.45, boxShadowDY: 7, weight: 800, wordsPerCue: 3, anim: 'scale' }
+      boxColor: '#FFFFFF', boxRadius: 120, boxPad: 1.35, boxShadow: 'rgba(0,0,0,0.35)', boxShadowBlur: 0.45, boxShadowDY: 7, weight: 800, wordsPerCue: 3, anim: 'scale' },
+    // Twitter — solid sky-blue pill, white (Twitter.svg #1BA1F2)
+    { id: 'btn-twitter', name: 'Sky', category: '🔘 Buttons', popularity: 85, layout: 'center', keyword: false, highlightScale: 1.05,
+      font: 'Inter', fallbackFonts: ['Helvetica', 'Arial'],
+      fontSize: 48, fill: '#FFFFFF', highlight: '#FFFFFF', highlightStyle: 'color',
+      boxColor: '#1BA1F2', boxRadius: 120, boxPad: 1.35, weight: 700, wordsPerCue: 3, anim: 'pop' },
+    // Twitch — purple rounded button, white (Twitch.svg #9147FF)
+    { id: 'btn-twitch', name: 'Purple', category: '🔘 Buttons', popularity: 84, layout: 'center', keyword: false, highlightScale: 1.05,
+      font: 'Inter', fallbackFonts: ['Helvetica', 'Arial'],
+      fontSize: 48, fill: '#FFFFFF', highlight: '#E9DDFF', highlightStyle: 'color',
+      boxColor: '#9147FF', boxRadius: 16, boxPad: 1.3, weight: 800, wordsPerCue: 3, anim: 'pop' },
+    // Windows Classic — grey 3D bevelled button, dark text (Windows Classic.svg)
+    { id: 'btn-win', name: 'Retro Win', category: '🔘 Buttons', popularity: 83, layout: 'center', keyword: false, highlightScale: 1.04,
+      font: 'Inter', fallbackFonts: ['Tahoma', 'Arial'],
+      fontSize: 46, fill: '#111111', highlight: '#0A0AC8', highlightStyle: 'color',
+      boxColor: '#C8C8C8', boxRadius: 3, boxPad: 1.25, box3d: '#707070', box3dDepth: 6,
+      boxStroke: '#1A1A1A', boxStrokeWidth: 2, boxGloss: 0.35, weight: 700, wordsPerCue: 3, anim: 'pop' },
+    // Bios — retro terminal: deep-blue box, mono text (Bios.svg #0300E4)
+    { id: 'btn-bios', name: 'BIOS', category: '🔘 Buttons', popularity: 82, layout: 'center', keyword: false, highlightScale: 1.04,
+      font: 'Space Mono', fallbackFonts: ['JetBrains Mono', 'Courier New', 'monospace'],
+      fontSize: 44, fill: '#FFFFFF', highlight: '#5BFF8A', highlightStyle: 'color',
+      boxColor: '#0300E4', boxRadius: 2, boxPad: 1.25, boxStroke: '#6A78FF', boxStrokeWidth: 2, uppercase: true, weight: 700, wordsPerCue: 3, anim: 'pop' },
+    // Figma — blue rounded-rect chip, white (Figma.svg #18A0FB)
+    { id: 'btn-figma', name: 'Chip', category: '🔘 Buttons', popularity: 84, layout: 'center', keyword: false, highlightScale: 1.05,
+      font: 'Inter', fallbackFonts: ['Helvetica', 'Arial'],
+      fontSize: 46, fill: '#FFFFFF', highlight: '#FFFFFF', highlightStyle: 'color',
+      boxColor: '#18A0FB', boxRadius: 16, boxPad: 1.3, weight: 700, wordsPerCue: 3, anim: 'pop' },
+    // De Stijl — Mondrian: white card, thick black border, red active word (De Stijl.svg)
+    { id: 'btn-destijl', name: 'De Stijl', category: '🔘 Buttons', popularity: 83, layout: 'center', keyword: false, highlightScale: 1.08,
+      font: 'Archivo Black', fallbackFonts: ['Inter', 'Arial'],
+      fontSize: 46, fill: '#111111', highlight: '#E64043', highlightStyle: 'color',
+      boxColor: '#F1F1F1', boxRadius: 2, boxPad: 1.3, boxStroke: '#000000', boxStrokeWidth: 7, weight: 800, wordsPerCue: 3, anim: 'pop' },
+    // Google — dark grey rounded button, white (Google.svg #3D4043)
+    { id: 'btn-google', name: 'Slate', category: '🔘 Buttons', popularity: 85, layout: 'center', keyword: false, highlightScale: 1.04,
+      font: 'Inter', fallbackFonts: ['Roboto', 'Arial'],
+      fontSize: 46, fill: '#FFFFFF', highlight: '#8AB4F8', highlightStyle: 'color',
+      boxColor: '#3D4043', boxRadius: 26, boxPad: 1.3, weight: 600, wordsPerCue: 3, anim: 'scale' }
   ];
+  // A button is ONE pill on ONE line — force single-line (the renderer shrinks the
+  // font to fit) so the caption never wraps into two stacked pills.
+  BUTTON_TEMPLATES.forEach(function (bt) {
+    if (bt.maxLines == null) bt.maxLines = 1;
+    if (bt.maxWidthPct == null) bt.maxWidthPct = 0.9;
+  });
 
   var TEMPLATES = STYLE_PRESETS.concat(PREMIUM_TEMPLATES, MORE_TEMPLATES, NEW_TEMPLATES, BUTTON_TEMPLATES);
   // Retire near-duplicate styles that differed from a kept one only by colour or
