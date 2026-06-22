@@ -1704,29 +1704,40 @@ function CP_insertMogrtCaptions(argsJson) {
 function CP_getAudioTracks() {
   try {
     var seq = CP_activeSequence();
-    var out = [];
+    if (!seq) return CP_fail('No active sequence — open your timeline first.');
+    var out = [], diag = [];
     for (var t = 0; t < seq.audioTracks.numTracks; t++) {
       var track = seq.audioTracks[t];
-      var clip = null;
-      for (var i = 0; i < track.clips.numItems; i++) {
-        if (track.clips[i].projectItem) { clip = track.clips[i]; break; }
+      var nClips = (track.clips && track.clips.numItems) ? track.clips.numItems : 0;
+      var mp = null, ref = null, withItem = 0;
+      // scan EVERY clip on the track for one whose media path we can read
+      for (var i = 0; i < nClips; i++) {
+        var c = track.clips[i];
+        if (!c || !c.projectItem) continue;
+        withItem++;
+        if (!ref) ref = c;
+        var p = null;
+        try { p = c.projectItem.getMediaPath(); } catch (e1) {}
+        if (p && p.length) { mp = p; ref = c; break; }
       }
-      if (!clip) continue;
-      var mp = null;
-      try { mp = clip.projectItem.getMediaPath(); } catch (eMp) {}
+      diag.push('A' + (t + 1) + ':' + nClips + 'clip/' + withItem + 'item/' + (mp ? 'media' : 'no-media'));
+      if (!ref) continue;
       out.push({
         index: t,
         name: track.name || ('A' + (t + 1)),
         mediaPath: mp,
-        seqStart: clip.start.seconds,
-        inPoint: clip.inPoint.seconds,
-        outPoint: clip.outPoint.seconds
+        hasMedia: !!mp,
+        clips: nClips,
+        seqStart: ref.start.seconds,
+        inPoint: ref.inPoint.seconds,
+        outPoint: ref.outPoint.seconds
       });
     }
     return CP_ok({
       audioTracks: out,
       videoTracks: seq.videoTracks.numTracks,
-      end: parseFloat(seq.end) / CP_TICKS_PER_SECOND
+      end: parseFloat(seq.end) / CP_TICKS_PER_SECOND,
+      diag: 'tracks=' + seq.audioTracks.numTracks + ' [' + diag.join('  ') + ']'
     });
   } catch (e) { return CP_fail(e.message); }
 }

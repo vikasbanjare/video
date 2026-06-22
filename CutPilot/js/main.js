@@ -5075,9 +5075,11 @@
       capMcProgress(null);
       renderMcMap(); if ($('mc-source').value === 'speech') populateMainTracks();
       toast('Found ' + tracks.length + ' audio track' + (tracks.length === 1 ? '' : 's') + '.');
-    }).catch(function () {
+    }).catch(function (e) {
       capMcProgress(null); renderMcMap();
-      toast('No audio found. Open your sequence (with mics on audio tracks) and try again.', true);
+      var box = $('mc-diag');
+      if (box) { box.classList.remove('hidden'); box.className = 'diag-out err'; box.textContent = 'Audio scan:\n' + (e && e.message ? e.message : 'No audio found') + (state.mcDiag ? ('\n\n' + state.mcDiag) : ''); }
+      toast((e && e.message) ? e.message : 'No audio found.', true);
     });
   });
   $('mc-center').addEventListener('input', function () {
@@ -5099,9 +5101,17 @@
     // map permanently blank until the tab was reopened.
     if (state.mcAudioTracks && state.mcAudioTracks.length) return Promise.resolve(state.mcAudioTracks);
     return CPBridge.callHost('CP_getAudioTracks').then(function (r) {
-      var tracks = (r.audioTracks || []).filter(function (t) { return t.mediaPath; });
+      state.mcDiag = r.diag || '';
       state.mcAudioEnd = r.end || 0;
-      if (!tracks.length) { state.mcAudioTracks = null; throw new Error('No audio detected'); }
+      var tracks = (r.audioTracks || []).filter(function (t) { return t.mediaPath; });
+      if (!tracks.length) {
+        state.mcAudioTracks = null;
+        var any = (r.audioTracks || []).length;
+        var e = new Error(any
+          ? ('Found ' + any + ' audio track(s) but couldn’t read their media files. ' + (r.diag || ''))
+          : ('No audio clips on the timeline. ' + (r.diag || '')));
+        e.diag = r.diag || ''; throw e;
+      }
       state.mcAudioTracks = tracks;
       return tracks;
     }, function (e) { state.mcAudioTracks = null; throw e; });
