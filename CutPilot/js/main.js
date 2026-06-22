@@ -5388,7 +5388,27 @@
             if (synced) capMcProgress('Auto-synced ' + synced + ' camera' + (synced > 1 ? 's' : '') + '…');
           }
         }
-        var regions = CPMulticam.loudnessToRegions(dbGrids, MC_STEP, { relGate: 6, margin: 3, stick: 2.5 });
+        // COMMON-BLEED CANCELLATION (the key to reliable switching when two
+        // people sit close and both mics hear both voices): judge each mic by
+        // how far it rises ABOVE the quietest mic at that same instant. The
+        // speaker's own mic sticks out; shared bleed + room tone cancel out. Far
+        // more robust than absolute levels, whose per-mic noise floor gets
+        // polluted by bleed and hides the real talker.
+        var micCols = [];
+        for (var ai = 0; ai < numAngles; ai++) if (dbGrids[ai] && dbGrids[ai].length) micCols.push(ai);
+        var judged = dbGrids, ldOpts = { relGate: 5, margin: 1.5, stick: 1 };
+        if (micCols.length >= 2) {
+          var L = 0; micCols.forEach(function (a) { L = Math.max(L, dbGrids[a].length); });
+          judged = dbGrids.map(function (g) { return (g && g.length) ? g.slice() : g; });
+          for (var w = 0; w < L; w++) {
+            var mn = Infinity;
+            micCols.forEach(function (a) { var v = (dbGrids[a][w] == null) ? -100 : dbGrids[a][w]; if (v < mn) mn = v; });
+            micCols.forEach(function (a) { var v = (dbGrids[a][w] == null) ? -100 : dbGrids[a][w]; judged[a][w] = v - mn; });
+          }
+          // now levels are "excess over shared bleed": small gate, no absolute floor
+          ldOpts = { relGate: 3, margin: 1.5, stick: 1, floorPct: 0.2, gate: -1000 };
+        }
+        var regions = CPMulticam.loudnessToRegions(judged, MC_STEP, ldOpts);
         capMcProgress(null);
         var minSeg = parseFloat($('mc-minseg').value) || 1.2;
         return CPMulticam.directorPlan(regions, dur, {

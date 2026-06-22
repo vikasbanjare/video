@@ -667,14 +667,35 @@ function CP_findProperty(comp, displayName) {
 function CP_forceRerender(clip) {
   try { clip.disabled = true; } catch (e1) {}
   try { clip.disabled = false; } catch (e2) {}
+  // STRONGEST safe kick: re-apply each source-text property's OWN current value
+  // with updateUI=true AFTER the disable-toggle. Writing the (already-correct)
+  // string a second time while the component is freshly dirtied is what finally
+  // makes Premiere re-composite — fixes "Essential Graphics shows the words but
+  // the Program monitor stays blank" on custom rich-text MOGRTs. Moves nothing.
+  try {
+    var comp = clip.getMGTComponent ? clip.getMGTComponent() : null;
+    if (comp && comp.properties) {
+      for (var pi = 0; pi < comp.properties.numItems; pi++) {
+        var p = comp.properties[pi], v = null;
+        try { v = p.getValue(); } catch (eGV) {}
+        if (typeof v === 'string' &&
+            (v.indexOf('textEditValue') !== -1 || v.indexOf('capProp') !== -1 ||
+             v.indexOf('"strDB"') !== -1 || (v.charAt(0) === '{' && v.indexOf('"text"') !== -1))) {
+          try { p.setValue(v, true); } catch (eRW1) { try { p.setValue(v); } catch (eRW2) {} }
+        }
+      }
+    }
+  } catch (eKick) {}
   try {
     var oc = CP_findComponent(clip, 'Opacity');
     var op = oc ? CP_findProperty(oc, 'Opacity') : null;
     if (op) {
       var cur = null; try { cur = op.getValue(); } catch (eg) {}
       if (typeof cur === 'number') {
-        try { op.setValue(cur >= 1 ? cur - 0.5 : cur + 0.5, true); } catch (es1) {}
-        try { op.setValue(cur, true); } catch (es2) {}
+        // never leave a graphic invisible: a 0/blank opacity is bumped to full
+        var restore = (cur > 0.01) ? cur : 100;
+        try { op.setValue(restore >= 1 ? restore - 0.5 : restore + 0.5, true); } catch (es1) {}
+        try { op.setValue(restore, true); } catch (es2) {}
       }
     }
   } catch (e3) {}
