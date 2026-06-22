@@ -566,9 +566,20 @@ function CP_applyMulticamPlan(argsJson) {
     for (var key in bmap) if (bmap.hasOwnProperty(key)) bounds.push(bmap[key]);
     bounds.sort(function (a, b) { return a - b; });
 
-    // razor each camera track at every boundary
+    // how much of the timeline does the plan actually span? (diagnostic for the
+    // "only cuts the first clip" report)
+    var seqEnd = parseFloat(seq.end) / CP_TICKS_PER_SECOND;
+    var planStart = args.plan.length ? args.plan[0].start : 0;
+    var planEnd = args.plan.length ? args.plan[args.plan.length - 1].end : 0;
+    var piecesBefore = [];
+    for (var pb = 0; pb < n; pb++) piecesBefore.push(seq.videoTracks[pb].clips.numItems);
+
+    // razor each camera track at every boundary (QE must be enabled). razor cuts
+    // whichever clip spans that timecode, so it works across ALL clips on the
+    // track — not just the first take.
     var razored = 0;
     try {
+      try { app.enableQE(); } catch (eEn) {}
       var qseq = CP_qeSequence();
       for (var t = 0; t < n; t++) {
         var qtrack = qseq.getVideoTrackAt(t);
@@ -579,16 +590,19 @@ function CP_applyMulticamPlan(argsJson) {
       }
     } catch (eQE) {}
 
-    // toggle enable/disable per resulting piece
-    var toggled = 0;
+    // toggle enable/disable per resulting piece (re-read clips AFTER razoring)
+    var toggled = 0, piecesAfter = [], outOfPlan = 0;
     for (t = 0; t < n; t++) {
       var track = seq.videoTracks[t];
+      piecesAfter.push(track.clips.numItems);
       for (var i = 0; i < track.clips.numItems; i++) {
         var clip = track.clips[i];
         var mid = (clip.start.seconds + clip.end.seconds) / 2;
+        var matched = false;
         for (var s = 0; s < args.plan.length; s++) {
           var seg = args.plan[s];
           if (mid >= seg.start && mid < seg.end) {
+            matched = true;
             var shouldDisable = (seg.angle !== t);
             try {
               if (clip.disabled !== shouldDisable) { clip.disabled = shouldDisable; toggled++; }
@@ -596,9 +610,15 @@ function CP_applyMulticamPlan(argsJson) {
             break;
           }
         }
+        if (!matched) outOfPlan++;   // a clip the plan never reached (e.g. takes 2-3)
       }
     }
-    return CP_ok({ toggled: toggled, razored: razored, cuts: bounds.length, tracksUsed: n });
+    return CP_ok({
+      toggled: toggled, razored: razored, cuts: bounds.length, tracksUsed: n,
+      seqEnd: seqEnd, planStart: planStart, planEnd: planEnd,
+      coveredPct: seqEnd > 0 ? Math.round((planEnd / seqEnd) * 100) : 100,
+      outOfPlanClips: outOfPlan, piecesBefore: piecesBefore, piecesAfter: piecesAfter
+    });
   } catch (e) { return CP_fail(e.message); }
 }
 

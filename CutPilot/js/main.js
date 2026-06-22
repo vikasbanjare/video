@@ -5147,10 +5147,26 @@
         toast(state.mcNested
           ? 'Heads-up: V1 is a NESTED sequence. To switch the cameras inside it, double-click that clip to open the nest and run multicam there.'
           : 'Found ' + tracks.length + ' audio track' + (tracks.length === 1 ? '' : 's') + ', but only one video track — multicam needs each camera on its own track (V1, V2…).', true);
-      } else if (tracks.length < 2) {
-        toast('Found 1 audio track — fine for "Switch when anyone speaks". For "follow the speaker" you need one mic per camera.');
       } else {
-        toast('Found ' + tracks.length + ' audio tracks across ' + (state.mcVideoTracks || '?') + ' video tracks.');
+        // how far across the timeline do the mic clips actually reach? If they
+        // stop early, multicam can only cut the first take — flag it now.
+        var covEnd = 0, totalClips = 0;
+        tracks.forEach(function (t) { (t.segments || []).forEach(function (s) { covEnd = Math.max(covEnd, (s.seqStart || 0) + (s.dur || 0)); totalClips++; }); });
+        var timeline = state.mcAudioEnd || 0;
+        if (timeline > 1 && covEnd > 0 && covEnd < timeline * 0.85) {
+          var box = $('mc-diag');
+          if (box) {
+            box.classList.remove('hidden'); box.className = 'diag-out err';
+            box.textContent = 'Your mics only reach ' + fmt(covEnd) + ' of the ' + fmt(timeline) + ' timeline.\n' +
+              'Multicam can only cut where it can hear a mic, so the later takes won’t switch.\n' +
+              'Make sure each speaker’s mic clip runs the WHOLE timeline (under every take), then Detect audio again.';
+          }
+          toast('⚠️ Mics only cover ' + fmt(covEnd) + ' of ' + fmt(timeline) + ' — later takes won’t cut. See the box.', true);
+        } else if (tracks.length < 2) {
+          toast('Found 1 audio track — fine for "Switch when anyone speaks". For "follow the speaker" you need one mic per camera.');
+        } else {
+          toast('Found ' + tracks.length + ' mics across ' + totalClips + ' clip(s), covering ' + fmt(covEnd || timeline) + '.');
+        }
       }
     }).catch(function (e) {
       capMcProgress(null); renderMcMap();
@@ -5586,8 +5602,23 @@
       state.mcApplied = true;
       $('btn-mc-redo').classList.remove('hidden');
       $('mc-redo-hint').classList.remove('hidden');
-      toast('🎬 Multicam applied — ' + r.razored + ' cuts, ' + r.toggled +
-            ' angle toggles across ' + r.tracksUsed + ' tracks.');
+      // If the plan didn't reach the later clips, say so plainly + show the
+      // numbers in the diag box (this is the "only cuts the first clip" case).
+      if (r.coveredPct != null && r.coveredPct < 85) {
+        var box = $('mc-diag');
+        if (box) {
+          box.classList.remove('hidden'); box.className = 'diag-out err';
+          box.textContent = 'Only ' + r.coveredPct + '% of the timeline was covered.\n' +
+            'Plan: ' + fmt(r.planStart) + ' → ' + fmt(r.planEnd) + '  ·  timeline ends ' + fmt(r.seqEnd) + '\n' +
+            (r.outOfPlanClips ? (r.outOfPlanClips + ' clip(s) on later takes got no cut.\n') : '') +
+            'Pieces/track after cut: ' + (r.piecesAfter || []).join(', ') + '\n\n' +
+            'Fix: tap 🔄 Detect audio (reads every clip on the mic tracks), rebuild, then Apply.';
+        }
+        toast('⚠️ Multicam only covered ' + r.coveredPct + '% of the timeline (the first take). See the box for why.', true);
+      } else {
+        toast('🎬 Multicam applied — ' + r.razored + ' cuts, ' + r.toggled +
+              ' angle toggles across the full ' + fmt(r.seqEnd) + ' timeline.');
+      }
       return r;
     });
   }
@@ -5641,10 +5672,28 @@
       item.appendChild(span);
       view.appendChild(item);
     });
+    // Coverage check: does the plan span the WHOLE timeline, or only the first
+    // clip? (A podcast recorded in 3 takes = 3 clips; if analysis stops after
+    // clip 1 the switches never reach takes 2-3.) Surface it so it's obvious.
+    var planStart = state.plan.length ? state.plan[0].start : 0;
+    var planEnd = state.plan.length ? state.plan[state.plan.length - 1].end : 0;
+    var timeline = state.mcAudioEnd || (state.env && state.env.endSeconds) || planEnd;
+    var cov = document.createElement('div');
+    cov.className = 'hint'; cov.style.marginTop = '6px';
+    cov.textContent = '⏱ Covers ' + fmt(planStart) + ' → ' + fmt(planEnd) + ' of your ' + fmt(timeline) + ' timeline · ' + stats.switches + ' switches';
+    view.appendChild(cov);
+    var shortfall = (timeline > 1 && planEnd < timeline * 0.85);
+    if (shortfall) {
+      cov.className = 'hint err';
+      cov.textContent = '⚠️ Only covered ' + fmt(planStart) + ' → ' + fmt(planEnd) + ' of your ' + fmt(timeline) +
+        ' timeline — the later clips weren’t analyzed. Tap 🔄 Detect audio (it now reads every clip on the mic tracks), then rebuild.';
+    }
     $('mc-plan-card').classList.remove('hidden');
     $('btn-mc-apply').classList.remove('hidden');
     if (state.mcApplied) { $('btn-mc-redo').classList.remove('hidden'); $('mc-redo-hint').classList.remove('hidden'); }
-    toast(stats.segments + ' segments, ' + stats.switches + ' camera switches planned.');
+    toast(shortfall
+      ? ('⚠️ Plan only reaches ' + fmt(planEnd) + ' of ' + fmt(timeline) + ' — later clips not covered.')
+      : (stats.segments + ' segments, ' + stats.switches + ' switches across the full ' + fmt(timeline) + ' timeline.'), shortfall);
   }
 
   $('btn-mc-apply').addEventListener('click', function () {
