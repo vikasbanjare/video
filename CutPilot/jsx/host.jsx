@@ -388,13 +388,16 @@ function CP_deleteClipsInRange(qseq, startSec, endSec, ripple) {
       var track = groups[g].get(t);
       for (var i = track.numItems - 1; i >= 0; i--) {
         var item = track.getItemAt(i);
-        if (!item || item.type === 'Empty') continue;
+        if (!item) continue;
         var s = item.start.secs, e = item.end.secs;
+        // Ripple-remove EVERY item fully inside the span — including gaps
+        // (type 'Empty') — so each track shifts left by the same amount and
+        // audio/video stay in sync with no leftover gap. (Before, gaps were left
+        // by a non-ripple lift and only video gaps were ever closed → the
+        // stray-space + desync you saw.)
         if (s >= startSec - eps && e <= endSec + eps) {
-          try {
-            item.remove(ripple ? 1 : 0, 0);
-            removed++;
-          } catch (eRem) {}
+          var isEmpty = (item.type === 'Empty');
+          try { item.remove(ripple ? 1 : 0, 0); if (!isEmpty) removed++; } catch (eRem) {}
         }
       }
     }
@@ -402,19 +405,42 @@ function CP_deleteClipsInRange(qseq, startSec, endSec, ripple) {
   return removed;
 }
 
-/* Ripple-close remaining gaps on the timeline (QE exposes gaps as 'Empty'). */
+/* Ripple-close remaining gaps on ALL tracks (video + audio). Used as a safety
+   net; the ripple delete above already closes the spans it removes. */
 function CP_closeGaps(qseq) {
   var closed = 0;
-  for (var t = 0; t < qseq.numVideoTracks; t++) {
-    var track = qseq.getVideoTrackAt(t);
-    for (var i = track.numItems - 1; i >= 0; i--) {
-      var item = track.getItemAt(i);
-      if (item && item.type === 'Empty') {
-        try { item.remove(1, 0); closed++; } catch (e) {}
+  var groups = [
+    { count: qseq.numVideoTracks, get: function (i) { return qseq.getVideoTrackAt(i); } },
+    { count: qseq.numAudioTracks, get: function (i) { return qseq.getAudioTrackAt(i); } }
+  ];
+  for (var g = 0; g < groups.length; g++) {
+    for (var t = 0; t < groups[g].count; t++) {
+      var track = groups[g].get(t);
+      for (var i = track.numItems - 1; i >= 0; i--) {
+        var item = track.getItemAt(i);
+        if (item && item.type === 'Empty') {
+          try { item.remove(1, 0); closed++; } catch (e) {}
+        }
       }
     }
   }
   return closed;
+}
+
+/* Merge overlapping or touching ranges so the razor/ripple never double-cuts the
+   same spot (overlaps were a source of stray gaps + abrupt cuts). */
+function CP_mergeRanges(ranges) {
+  var s = (ranges || []).slice().sort(function (a, b) { return a.start - b.start; });
+  var out = [];
+  for (var i = 0; i < s.length; i++) {
+    if (s[i].end - s[i].start <= 0.02) continue;
+    if (out.length && s[i].start <= out[out.length - 1].end + 0.04) {
+      out[out.length - 1].end = Math.max(out[out.length - 1].end, s[i].end);
+    } else {
+      out.push({ start: s[i].start, end: s[i].end });
+    }
+  }
+  return out;
 }
 
 /*
@@ -431,16 +457,18 @@ function CP_razorRipple(argsJson) {
     if (args.backup) { try { seq.clone(); } catch (eB) {} }
 
     var qseq = CP_qeSequence();
-    var ranges = args.ranges.slice().sort(function (a, b) { return b.start - a.start; });
+    // Merge overlapping/adjacent ranges first so razor points are clean, then
+    // process LAST-to-FIRST so each ripple delete can't shift a not-yet-cut
+    // range's coordinates.
+    var ranges = CP_mergeRanges(args.ranges).sort(function (a, b) { return b.start - a.start; });
     var removed = 0;
     for (var i = 0; i < ranges.length; i++) {
       CP_razorAllTracksAt(qseq, ranges[i].end, fps, !!args.dropFrame);
       CP_razorAllTracksAt(qseq, ranges[i].start, fps, !!args.dropFrame);
-      removed += CP_deleteClipsInRange(qseq, ranges[i].start, ranges[i].end, false);
+      // ripple-delete the whole span on every track → gap closes, A/V stay synced
+      removed += CP_deleteClipsInRange(qseq, ranges[i].start, ranges[i].end, true);
     }
-    var closed = 0;
-    if (args.closeGaps) closed = CP_closeGaps(qseq);
-    return CP_ok({ removedClips: removed, closedGaps: closed, cuts: ranges.length });
+    return CP_ok({ removedClips: removed, closedGaps: ranges.length, cuts: ranges.length });
   } catch (e) { return CP_fail(e.message); }
 }
 
