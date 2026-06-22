@@ -5131,6 +5131,10 @@
   /* director-control read helpers (lead-in in seconds, max-shot in seconds) */
   function mcLeadIn() { return (parseInt($('mc-leadin') && $('mc-leadin').value, 10) || 0) / 1000; }
   function mcMaxShot() { return parseInt($('mc-maxshot') && $('mc-maxshot').value, 10) || 0; }
+  /* How long to hold the cutaway camera during a long-monologue break (seconds). */
+  function mcCutawayHold() { return parseInt($('mc-cutaway') && $('mc-cutaway').value, 10) || 3; }
+  /* How long to hold the wide/centre camera on each periodic cut to it (seconds). */
+  function mcCenterHold() { return parseInt($('mc-centerhold') && $('mc-centerhold').value, 10) || 2; }
   $('mc-source').addEventListener('change', syncMcSource);
   $('mc-angles').addEventListener('change', function () {
     if ($('mc-source').value === 'follow') renderMcMap();
@@ -5176,7 +5180,12 @@
     });
   });
   $('mc-center').addEventListener('input', function () {
-    $('mc-center-val').textContent = (parseInt(this.value, 10) || 0) === 0 ? 'off' : this.value + 's';
+    var v = parseInt(this.value, 10) || 0;
+    $('mc-center-val').textContent = (v === 0) ? 'off'
+      : (v < 60 ? v + 's' : (v % 60 === 0 ? (v / 60) + 'm' : (Math.floor(v / 60) + 'm ' + (v % 60) + 's')));
+  });
+  if ($('mc-centerhold')) $('mc-centerhold').addEventListener('input', function () {
+    $('mc-centerhold-val').textContent = (parseInt(this.value, 10) || 2) + 's';
   });
   if ($('mc-leadin')) $('mc-leadin').addEventListener('input', function () {
     var v = parseInt(this.value, 10) || 0;
@@ -5184,7 +5193,11 @@
   });
   if ($('mc-maxshot')) $('mc-maxshot').addEventListener('input', function () {
     var v = parseInt(this.value, 10) || 0;
-    $('mc-maxshot-val').textContent = v === 0 ? 'off' : v + 's';
+    $('mc-maxshot-val').textContent = (v === 0) ? 'off'
+      : (v < 60 ? v + 's' : (v % 60 === 0 ? (v / 60) + 'm' : (Math.floor(v / 60) + 'm ' + (v % 60) + 's')));
+  });
+  if ($('mc-cutaway')) $('mc-cutaway').addEventListener('input', function () {
+    $('mc-cutaway-val').textContent = (parseInt(this.value, 10) || 3) + 's';
   });
   syncMcSource();
 
@@ -5213,9 +5226,9 @@
   }
 
   function syncCenterCtrl() {
-    // center-cam control now lives in the (always-available) Fine-tune panel;
-    // nothing to toggle here. Kept as a no-op so callers stay safe.
-    var w = $('mc-center-wrap2'); if (w) w.style.opacity = ((state.mcMap || []).indexOf(-1) >= 0) ? '1' : '0.6';
+    // Only show the wide/centre-camera frequency controls when one of the
+    // cameras is actually mapped to "No mic (wide / cutaway)".
+    var w = $('mc-center-wrap2'); if (w) w.style.display = ((state.mcMap || []).indexOf(-1) >= 0) ? '' : 'none';
   }
 
   /* AutoPod-style setup: one row per camera — name the speaker and pick the mic
@@ -5431,7 +5444,7 @@
     var regions = CPMulticam.speakerCuesToRegions(cues, numAngles, mapFn);
     var minSeg = parseFloat($('mc-minseg').value) || 1.2;
     var plan = CPMulticam.directorPlan(regions, dur, {
-      minSegment: minSeg, leadIn: mcLeadIn(), maxShot: mcMaxShot(), centerHold: Math.max(1.2, minSeg)
+      minSegment: minSeg, leadIn: mcLeadIn(), maxShot: mcMaxShot(), centerHold: Math.max(1.2, minSeg), cutawayHold: mcCutawayHold()
     });
     return Promise.resolve(plan);
   }
@@ -5527,9 +5540,10 @@
           wideAngle: center,
           wideOnSilence: center >= 0,
           centerEvery: parseInt($('mc-center').value, 10) || 0,
-          centerHold: Math.max(1.2, minSeg),
+          centerHold: mcCenterHold(),
           leadIn: mcLeadIn(),
-          maxShot: mcMaxShot()
+          maxShot: mcMaxShot(),
+          cutawayHold: mcCutawayHold()
         });
       });
     });

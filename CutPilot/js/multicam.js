@@ -134,6 +134,7 @@
     var centerHold = opts.centerHold || Math.max(minSeg, 1.5);
     var leadIn = opts.leadIn || 0;          // cut this many seconds BEFORE the line starts
     var maxShot = opts.maxShot || 0;        // force a cutaway when one cam lingers past this (s), 0 = off
+    var cutawayHold = opts.cutawayHold || centerHold;   // how long the monologue-break cutaway holds (s)
     var nA = speakerRegions.length;
     if (!(duration > 0) || nA === 0) return [];
 
@@ -205,7 +206,7 @@
         var t0 = sh.start;
         while (sh.end - t0 > maxShot * 1.5) {
           split.push({ start: t0, end: t0 + maxShot, angle: sh.angle });
-          var cEnd = Math.min(sh.end, t0 + maxShot + centerHold);
+          var cEnd = Math.min(sh.end, t0 + maxShot + cutawayHold);
           split.push({ start: t0 + maxShot, end: cEnd, angle: alt });
           t0 = cEnd;
         }
