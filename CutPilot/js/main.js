@@ -672,16 +672,28 @@
         // Cloud upload: compress to a small 16k-mono MP3 (whisper-quality, but a
         // fraction of WAV size) so long recordings don't blow past Groq's upload
         // limit ("file too long"). Local whisper keeps the raw WAV it expects.
+        // Cloud upload: Opus @ 24k mono 16k is tiny but speech-clear (a 2-hour
+        // podcast ≈ 22 MB = one upload). MP3 48k is the fallback if a machine's
+        // ffmpeg has no Opus encoder. Local whisper keeps the raw WAV.
+        var cloudOpus = pathMod.join(os.tmpdir(), 'cutpilot-asr-' + stamp + '.ogg');
         var cloudMp3 = pathMod.join(os.tmpdir(), 'cutpilot-asr-' + stamp + '.mp3');
-        var ffArgs = ['-y', '-ss', String(minIn), '-i', clip.mediaPath];
-        if (dur > 0) ffArgs = ffArgs.concat(['-t', String(dur)]);
-        if (cloud) ffArgs = ffArgs.concat(['-vn', '-ac', '1', '-ar', '16000', '-c:a', 'libmp3lame', '-b:a', '64k', cloudMp3]);
-        else ffArgs = ffArgs.concat(['-vn', '-ac', '1', '-ar', '16000', wav]);
+        function extractArgs(extra, outFile) {
+          var a = ['-y', '-ss', String(minIn), '-i', clip.mediaPath];
+          if (dur > 0) a = a.concat(['-t', String(dur)]);
+          return a.concat(['-vn', '-ac', '1', '-ar', '16000'], extra, [outFile]);
+        }
+        var ffArgs = cloud ? extractArgs(['-c:a', 'libopus', '-b:a', '24k'], cloudOpus)
+                           : extractArgs([], wav);
         var pieces = insts.length > 1 ? (' (' + insts.length + ' cuts)') : '';
         setTranscriptBar('', ico, 'Extracting audio from “' + shortName + '”' + pieces + '…', null);
         return runProc(ff, ffArgs).then(function () {
           setTranscriptBar('', ico, cloud ? 'Transcribing in the cloud…' : ('Transcribing with ' + modelLabel + ' — this can take a minute…'), null);
-          if (cloud) return cloudTranscribe(cloudMp3, wlang, ff, dur);   // compress + chunk if long → [{start,end,text}]
+          if (cloud) {
+            var okOpus = false; try { okOpus = fs.existsSync(cloudOpus) && fs.statSync(cloudOpus).size > 2000; } catch (eO) {}
+            var prep = okOpus ? Promise.resolve(cloudOpus)
+              : runProc(ff, extractArgs(['-c:a', 'libmp3lame', '-b:a', '48k'], cloudMp3)).then(function () { return cloudMp3; });
+            return prep.then(function (ap) { return cloudTranscribe(ap, wlang, ff, dur); });
+          }
           var ctx = { wbin: wbin, model: model, wlang: wlang, wav: wav, ff: ff,
                       fs: fs, os: os, pathMod: pathMod, stamp: stamp,
                       setBar: function (m) { setTranscriptBar('', ico, m, null); } };
