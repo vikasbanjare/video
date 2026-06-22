@@ -799,6 +799,17 @@ console.log('takes.js');
   assert(CPTakes.phraseSim(['the', 'market', 'is', 'growing', 'fast'], ['the', 'market', 'is', 'really', 'growing']) > 0.6, 'reworded retake scores similar');
   assert(CPTakes.phraseSim(['the', 'market', 'is', 'growing'], ['i', 'love', 'making', 'videos']) < 0.3, 'unrelated lines score dissimilar');
 
+  // COMPLETE removal: 4 reworded takes that drift → keep ONE, remove the other 3
+  var four = CPTakes.findRepeatedTakes(mkTakes([
+    'the secret to growth is consistency over time',
+    'the secret of growth is being consistent over time',
+    'the real secret to growth is consistency every day',
+    'so the secret to growth is just consistency daily',
+    'anyway lets move on to the next topic now'
+  ]), { sim: 0.55, minRun: 3, keep: 'last' });
+  assert(four.removedWords >= 20, 'complete: collapses all 4 drifting retakes (keeps one), not just the first pair');
+  assert(!four.deletes.some(function (d) { return /move on to the next topic/.test(d.text); }), 'complete: the different closing line survives');
+
   // a clean script (all different lines) → nothing removed
   var clean = CPTakes.findRepeatedTakes(mkTakes([
     'welcome back to the channel everyone',

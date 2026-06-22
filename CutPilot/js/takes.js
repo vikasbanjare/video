@@ -87,55 +87,56 @@
     var thresh = (opts.sim != null) ? opts.sim : 0.6;
     var minRun = Math.max(2, opts.minRun || 3);
     var keep = opts.keep || 'last';
+    var win = opts.window || 6;                 // how many phrases ahead a retake can be
     var N = (words || []).length;
     if (N < minRun * 2) return { deletes: [], kept: 0, removedWords: 0 };
 
     var phrases = splitPhrases(words, opts.pauseGap);
-    // cache tokens per phrase
     var toks = phrases.map(pTokens);
     var P = phrases.length;
-    var deletes = [], removedWords = 0;
+
+    // Union-find: group phrases that are similar within a small window. This is
+    // transitive, so a drifting run of 3–4 retakes (take1≈take2≈take3, even if
+    // take1 vs take3 alone is weaker) all collapse into ONE group → complete
+    // removal, not just the first pair.
+    var parent = []; for (var x = 0; x < P; x++) parent[x] = x;
+    function find(a) { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; }
+    function uni(a, b) { parent[find(a)] = find(b); }
+    for (var a = 0; a < P; a++) {
+      if (toks[a].length < minRun) continue;
+      var hi = Math.min(P - 1, a + win);
+      for (var b = a + 1; b <= hi; b++) {
+        if (toks[b].length < Math.min(minRun, 2)) continue;
+        if (phraseSim(toks[a], toks[b]) >= thresh) uni(a, b);
+      }
+    }
+
+    var groups = {};
+    for (var g = 0; g < P; g++) { var r = find(g); (groups[r] = groups[r] || []).push(g); }
 
     function startOf(idx) { return phrases[idx][0].start; }
     function nextStart(idx) { return (idx + 1 < P) ? phrases[idx + 1][0].start : phrases[idx][phrases[idx].length - 1].end; }
 
-    var i = 0;
-    while (i < P) {
-      if (toks[i].length < minRun) { i++; continue; }
-      // grow a cluster of consecutive phrases similar to this take. Compare to the
-      // cluster's most-recent member (retakes can drift) and allow ONE short
-      // filler phrase ("um", "ok let me redo that") between attempts.
-      var cluster = [i], last = i, j = i + 1;
-      while (j < P) {
-        var s = phraseSim(toks[last], toks[j]);
-        if (s < thresh) s = Math.max(s, phraseSim(toks[i], toks[j]));
-        if (s >= thresh && toks[j].length >= Math.min(minRun, 2)) { cluster.push(j); last = j; j++; continue; }
-        // skip a single short interjection between takes
-        if (toks[j].length <= 2 && j + 1 < P && phraseSim(toks[last], toks[j + 1]) >= thresh) {
-          cluster.push(j); cluster.push(j + 1); last = j + 1; j += 2; continue;
+    var deletes = [], removedWords = 0;
+    Object.keys(groups).forEach(function (key) {
+      var grp = groups[key];
+      if (grp.length < 2) return;
+      grp.sort(function (x, y) { return x - y; });
+      var keepIdx = grp[grp.length - 1];          // default: keep the LAST attempt
+      if (keep === 'confident') {
+        var bc = -Infinity;
+        for (var ci = 0; ci < grp.length; ci++) {
+          var cf = pConf(phrases[grp[ci]]); if (cf == null) cf = -1;
+          if (cf > bc) { bc = cf; keepIdx = grp[ci]; }
         }
-        break;
       }
-      if (cluster.length > 1) {
-        // pick the keeper
-        var keepIdx = cluster[cluster.length - 1];   // default: last attempt
-        if (keep === 'confident') {
-          var bc = -Infinity;
-          for (var ci = 0; ci < cluster.length; ci++) {
-            var cf = pConf(phrases[cluster[ci]]); if (cf == null) cf = -1;
-            if (cf > bc) { bc = cf; keepIdx = cluster[ci]; }
-          }
-        }
-        for (var c2 = 0; c2 < cluster.length; c2++) {
-          var idx = cluster[c2];
-          if (idx === keepIdx) continue;
-          var st = startOf(idx), en = nextStart(idx);    // include trailing pause
-          deletes.push({ start: st, end: en, text: pText(phrases[idx]), reason: 'repeated take' });
-          removedWords += phrases[idx].length;
-        }
-        i = j;
-      } else { i++; }
-    }
+      for (var c2 = 0; c2 < grp.length; c2++) {
+        var idx = grp[c2];
+        if (idx === keepIdx) continue;
+        deletes.push({ start: startOf(idx), end: nextStart(idx), text: pText(phrases[idx]), reason: 'repeated take' });
+        removedWords += phrases[idx].length;
+      }
+    });
     return { deletes: tidyDeletes(deletes, 0.1), kept: deletes.length, removedWords: removedWords };
   }
 

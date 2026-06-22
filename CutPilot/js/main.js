@@ -4481,6 +4481,49 @@
     return attempt();
   }
 
+  /* Clip 'silence' ranges so they never overlap a spoken WORD (from the
+     transcript). Quiet speech and soft endings register as low-dB "silence" but
+     the transcript proves words are there — so we carve those word spans (± a
+     margin) out of the silence ranges, keeping that audio. Filler-word ranges
+     are untouched (they're meant to cut a word). Media time. */
+  function protectSpeechMedia(silences, clip, minSilence) {
+    var words = state.transcriptWords;
+    if (!words || !words.length) return silences;
+    var margin = 0.12, lo = clip.inPoint, hi = clip.outPoint;
+    // transcript is SEQUENCE time → convert to this clip's MEDIA time, expand, merge
+    var prot = [];
+    for (var i = 0; i < words.length; i++) {
+      var mS = words[i].start - clip.seqStart + clip.inPoint;
+      var mE = words[i].end - clip.seqStart + clip.inPoint;
+      if (mE <= lo || mS >= hi) continue;                 // word not in this clip
+      prot.push({ start: mS - margin, end: mE + margin });
+    }
+    if (!prot.length) return silences;
+    prot.sort(function (a, b) { return a.start - b.start; });
+    var mp = [];
+    prot.forEach(function (p) {
+      if (mp.length && p.start <= mp[mp.length - 1].end) mp[mp.length - 1].end = Math.max(mp[mp.length - 1].end, p.end);
+      else mp.push({ start: p.start, end: p.end });
+    });
+    var minLen = Math.max(0.2, (minSilence || 0.6) * 0.6);
+    var out = [];
+    silences.forEach(function (s) {
+      var segs = [{ start: s.start, end: s.end }];
+      mp.forEach(function (p) {
+        var ns = [];
+        segs.forEach(function (seg) {
+          if (p.end <= seg.start || p.start >= seg.end) { ns.push(seg); return; }   // no overlap
+          if (p.start > seg.start) ns.push({ start: seg.start, end: p.start });      // keep left
+          if (p.end < seg.end) ns.push({ start: p.end, end: seg.end });              // keep right
+          // the overlap (a word) is removed from the silence range → protected
+        });
+        segs = ns;
+      });
+      segs.forEach(function (seg) { if (seg.end - seg.start >= minLen) out.push({ start: seg.start, end: seg.end, kind: 'silence' }); });
+    });
+    return out;
+  }
+
   $('btn-analyze').addEventListener('click', function () {
     var opts = {
       thresholdDb: parseFloat($('opt-threshold').value),
@@ -4513,6 +4556,11 @@
         var e = Math.min(refined[i].end, clip.outPoint);
         if (e > s) silencesMedia.push({ start: s, end: e, kind: 'silence' });
       }
+      // PROTECT SPEECH: never cut a stretch that has spoken WORDS in it, even if
+      // it's quiet (a soft trailing-off ending reads as low-dB "silence" but the
+      // transcript proves there are words there). Clip silence ranges around the
+      // transcript words so quiet speech / endings survive.
+      silencesMedia = protectSpeechMedia(silencesMedia, clip, opts.minSilence);
       // fold in transcript filler-word cuts (already in media time), then sort
       // so the combined cut list stays ordered for invertToKeep.
       var fillers = fillerMediaRanges(clip);
