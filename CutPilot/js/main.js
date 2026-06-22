@@ -825,6 +825,12 @@
       // Re-check for a transcript when returning to Captions (e.g. after
       // exporting one), and refresh the preview now the frame has a size.
       if (this.dataset.tab === 'captions' && CPBridge.isCEP()) {
+        // refresh the active-sequence info (it may have been opened/switched
+        // after boot) so Add captions never wrongly says "Open a sequence first"
+        CPBridge.callHost('CP_getEnv').then(function (env) {
+          state.env = env;
+          var el = $('env-status'); if (el) { el.textContent = env.sequenceName + ' · ' + env.width + '×' + env.height; el.className = 'env-status ok'; }
+        }).catch(function () {});
         if (!state.transcriptManual) findTranscript();  // re-scan unless hand-picked (catches a fresh export)
         renderPreview();
       }
@@ -835,6 +841,21 @@
       }
     });
   }
+
+  // Tap the sequence indicator to re-detect the active sequence on demand
+  // (handy if you opened the timeline after the panel, and a quick manual retry).
+  if ($('env-status')) $('env-status').addEventListener('click', function () {
+    if (!CPBridge.isCEP()) return;
+    var el = this; el.textContent = 'checking sequence…'; el.className = 'env-status';
+    CPBridge.callHost('CP_getEnv').then(function (env) {
+      state.env = env;
+      el.textContent = env.sequenceName + ' · ' + env.width + '×' + env.height; el.className = 'env-status ok';
+      toast('Found sequence: ' + env.sequenceName);
+    }).catch(function () {
+      el.textContent = 'no active sequence'; el.className = 'env-status err';
+      toast('No active sequence — open your timeline and click it once.', true);
+    });
+  });
 
   // -------------------------------------------------- productivity: copy ----
   function copyText(text) {
@@ -3450,7 +3471,25 @@
     var replaceTrack = opts.replaceTrack || null;
     var overwriteOnTrack = opts.overwriteOnTrack || null;
     var range = opts.range || null;     // {start,end} for a segment restyle
-    if (!state.env) { toast('Open a sequence in Premiere first.', true); return; }
+    // The sequence may have been opened/changed AFTER the panel loaded (state.env
+    // is captured at boot). Don't trust the stale value — if it's missing, fetch
+    // it live and retry once, so "Open a sequence first" never shows when one IS
+    // open. Only give up if Premiere truly reports no active sequence.
+    if (!state.env) {
+      if (!opts._envRetried && CPBridge.isCEP()) {
+        CPBridge.callHost('CP_getEnv').then(function (env) {
+          state.env = env;
+          try { $('env-status').textContent = env.sequenceName + ' · ' + env.width + '×' + env.height; $('env-status').className = 'env-status ok'; } catch (eS) {}
+          opts._envRetried = true;
+          runCaptionPipeline(cues, opts);
+        }).catch(function () {
+          toast('Open a sequence in the timeline, click it once, then tap Add again.', true);
+        });
+        return;
+      }
+      toast('Open a sequence in the timeline, click it once, then tap Add again.', true);
+      return;
+    }
 
     // Segment restyle: keep only the cues that fall inside the selected range.
     if (range) {
