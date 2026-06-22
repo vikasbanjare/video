@@ -398,6 +398,10 @@
       var lineSpace = (line.spaceW != null) ? line.spaceW : spaceW;
       for (var wi = 0; wi < line.items.length; wi++) {
         var it = line.items[wi];
+        // progressive reveal (frame.reveal = N): words past N are still LAID OUT
+        // (so the line never re-centres / shifts) but not drawn — a clean
+        // word-by-word reveal in stable positions, no jitter.
+        if (frame.reveal != null && mi >= frame.reveal) { x += it.w + lineSpace; mi++; continue; }
         setFontFor(it.px, it.hl);   // keyword may use a different (italic serif) face
         // per-word highlight colour — cycle the palette word-to-word when set
         var hlColor = style.highlight;

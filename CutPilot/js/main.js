@@ -1952,6 +1952,9 @@
         var score = hl * 100 + nw;
         if (score > bestScore) { bestScore = score; best = f; }
       }
+      // the card is a static thumbnail — always show the FULL phrase (reveal/build
+      // frames only draw part of it), so a card never shows a single lonely word
+      if (best.reveal != null) { var bb = {}; for (var bk in best) if (best.hasOwnProperty(bk)) bb[bk] = best[bk]; bb.reveal = null; best = bb; }
       // Fill the card without overflowing: cap the font so the block fits the
       // card HEIGHT (the engine only fits WIDTH, so a too-big start clips top/
       // bottom). Account for each style's keyword scale + line gap + line count.

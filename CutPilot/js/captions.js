@@ -1131,16 +1131,25 @@
   function framesKeywordBuild(wordCues, per, kw, up) {
     function ucw(arr) { return up ? arr.map(uc) : arr; }
     per = Math.max(2, per || 6);
-    var frames = [], i, j;
-    for (i = 0; i < wordCues.length; i += per) {
-      var group = wordCues.slice(i, i + per);
+    var frames = [], i = 0;
+    while (i < wordCues.length) {
+      // accumulate up to `per` words, but END EARLY at sentence punctuation so a
+      // caption never resets mid-sentence (the old fixed-N grouping did, which
+      // looked like the phrase randomly restarting).
+      var group = [];
+      while (group.length < per && i < wordCues.length) {
+        group.push(wordCues[i]); i++;
+        if (/[.!?]["')\]]?$/.test(group[group.length - 1].text)) break;
+      }
       var words = ucw(group.map(function (g) { return g.text; }));
-      // pick the keyword once on the WHOLE phrase so it doesn't jump as words add
+      // pick the keyword once on the WHOLE phrase so it's stable as words appear
       var flags = (kw && kw.on) ? markKeywords(words, kw) : null;
-      for (j = 0; j < group.length; j++) {
+      for (var j = 0; j < group.length; j++) {
         var fend = (j + 1 < group.length) ? group[j + 1].start : group[j].end;
-        var fr = { start: group[j].start, end: fend, words: words.slice(0, j + 1) };
-        if (flags) fr.highlightSet = flags.slice(0, j + 1);
+        // words = the FULL phrase every frame (stable layout); `reveal` grows so
+        // each word appears in its final spot — no recentering, no re-pop.
+        var fr = { start: group[j].start, end: fend, words: words, reveal: j + 1 };
+        if (flags) fr.highlightSet = flags;
         frames.push(fr);
       }
     }
