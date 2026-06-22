@@ -54,6 +54,13 @@
   var settings = loadSettings();
   var _booted = false;            // true once boot() has restored the saved look
   var LOOK_KEY = 'cutpilot.look'; // persisted caption look (Customize state)
+
+  // ---- build-injected config (build-protected.js replaces these for trial /
+  //      white-label builds; 0 / '' in source so the dev build is unchanged) ----
+  var TRIAL_DAYS_MS = 0;  /*@@CP_TRIAL@@*/   // trial length in ms from FIRST run (0 = never)
+  var BUNDLED_KEY = '';   /*@@CP_KEY@@*/     // shared cloud key baked into the build
+  var WHITE_LABEL = false; /*@@CP_WL@@*/     // hide the underlying engine/model names
+  var KEY_BUNDLED = !!BUNDLED_KEY;
   /* Persisted settings live in BOTH localStorage and a file in the home dir.
      The installer clears the CEP cache (to load new files), which also wipes
      localStorage — the file copy means ffmpeg/whisper/model paths survive a
@@ -72,6 +79,7 @@
         for (var k in fileS) if (fileS.hasOwnProperty(k) && (s[k] == null || s[k] === '')) s[k] = fileS[k];
       } }
     } catch (e2) {}
+    if (BUNDLED_KEY && !(s.groqKey || '').trim()) s.groqKey = BUNDLED_KEY;   // shared key for trial copies
     return s;
   }
   function saveSettings() {
@@ -224,6 +232,9 @@
     { value: 'large-v3-turbo', label: 'Local · Pro · large-v3-turbo (~1.6GB)' },
     { value: 'large-v3', label: 'Local · Max · large-v3 (~3GB)' }
   ];
+  // white-label builds hide the underlying engine/model names: show ONE generic
+  // cloud option (the bundled key makes it work out of the box).
+  if (WHITE_LABEL) WHISPER_QUALITIES = [{ value: 'cloud-groq', label: '✨ CutPilot Cloud — best accuracy' }];
   var WHISPER_LANGS = [
     { value: 'en', label: 'English' }, { value: 'auto', label: 'Auto-detect' },
     { value: 'hinglish', label: 'Hinglish (Hindi in English letters)' },
@@ -919,7 +930,72 @@
     });
   }
 
+  /* Trial kill-switch: a build can bake in a hard expiry. We compare the clock
+     to the expiry AND to the latest time we've ever recorded (persisted in the
+     home dir + localStorage), so rolling the system clock back doesn't extend
+     the trial. Returns true when the copy should be locked. */
+  function _trialFile() {
+    try { return nodeReq('path').join(nodeReq('os').homedir(), '.cutpilot', '.cpx'); }
+    catch (e) { return null; }
+  }
+  // trial state {f:firstRunMs, s:maxSeenMs}, persisted in the home dir AND
+  // localStorage; we read both and take the strongest signal so deleting one
+  // doesn't reset the clock.
+  function _trialState() {
+    var states = [];
+    function parse(v) { try { var o = JSON.parse(v); if (o && (o.f || o.s)) states.push(o); } catch (e) {} }
+    try { parse(localStorage.getItem('cutpilot.x')); } catch (e) {}
+    try { var fs = nodeReq('fs'), f = _trialFile(); if (f && fs.existsSync(f)) parse(fs.readFileSync(f, 'utf8')); } catch (e2) {}
+    var first = 0, seen = 0;
+    states.forEach(function (o) {
+      if (o.f && (!first || o.f < first)) first = o.f;     // earliest first-run we've seen
+      if (o.s && o.s > seen) seen = o.s;                   // latest time we've seen
+    });
+    return { f: first, s: seen };
+  }
+  function _trialWrite(st) {
+    var v = JSON.stringify({ f: st.f, s: st.s });
+    try { localStorage.setItem('cutpilot.x', v); } catch (e) {}
+    try {
+      var fs = nodeReq('fs'), p = nodeReq('path'), f = _trialFile();
+      if (f) { var d = p.dirname(f); if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); fs.writeFileSync(f, v, 'utf8'); }
+    } catch (e2) {}
+  }
+  function trialExpired() {
+    if (!TRIAL_DAYS_MS) return false;                  // dev / full build
+    var now = Date.now(), st = _trialState();
+    if (!st.f) st.f = now;                              // first ever launch starts the clock
+    if (st.s && now < st.s - 6 * 3600 * 1000) return true;   // clock rolled back > 6h → tamper
+    st.s = Math.max(now, st.s || 0, st.f);
+    _trialWrite(st);
+    return now > st.f + TRIAL_DAYS_MS;
+  }
+  function trialDaysLeft() {
+    if (!TRIAL_DAYS_MS) return null;
+    var st = _trialState(); var first = st.f || Date.now();
+    return Math.max(0, Math.ceil((first + TRIAL_DAYS_MS - Date.now()) / 86400000));
+  }
+  function showTrialLock() {
+    try { if (previewTimer) { clearInterval(previewTimer); previewTimer = null; } } catch (e) {}
+    var ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#0d0f14;color:#e7ecf3;' +
+      'display:flex;align-items:center;justify-content:center;text-align:center;' +
+      'font-family:Hanken Grotesk,system-ui,sans-serif;padding:28px';
+    ov.innerHTML = '<div style="max-width:340px"><div style="font-size:46px">⏳</div>' +
+      '<h2 style="margin:10px 0 6px">Evaluation period ended</h2>' +
+      '<p style="opacity:.78;line-height:1.5">This evaluation copy has expired. Please contact the sender to continue using it.</p></div>';
+    document.body.appendChild(ov);
+  }
+
   function boot() {
+    if (trialExpired()) { showTrialLock(); return; }   // locked: never wires any controls
+    if (TRIAL_DAYS_MS) { var _dl = trialDaysLeft(); if ($('ver')) $('ver').textContent = 'Trial · ' + _dl + 'd left'; }
+    // a bundled (shared) key is hidden from the tester — don't show the key fields
+    if (KEY_BUNDLED) {
+      ['tr-groq-wrap', 'set-groq-key'].forEach(function (id) {
+        var el = $(id); if (el) { var row = el.closest ? el.closest('label,div') : el; if (row) row.style.display = 'none'; }
+      });
+    }
     wireTheme();
     $('set-ffmpeg').value = settings.ffmpegPath || '';
     $('set-dropframe').checked = !!settings.dropFrame;
