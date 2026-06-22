@@ -5322,6 +5322,33 @@
   $('mc-interval').addEventListener('input', function () { $('mc-interval-val').textContent = this.value; });
   $('mc-minseg').addEventListener('input', function () { $('mc-minseg-val').textContent = this.value; });
 
+  /* Low / Medium / High "how often to cut" — one simple control that presets the
+     (hidden) Fine-tune sliders, so the default multicam UI is just: map mics +
+     pick a pace. Power users can still open Fine-tune to hand-adjust afterward. */
+  var MC_PACE = {
+    low:    { minseg: 2.4, maxshot: 300, cutaway: 2, leadin: 0,   hint: '🐢 Calm — long, steady shots; only the occasional cut to the other person.' },
+    medium: { minseg: 1.4, maxshot: 120, cutaway: 3, leadin: 0,   hint: '⚖️ Balanced — natural conversation pace, with the odd cutaway during long talking.' },
+    high:   { minseg: 0.7, maxshot: 45,  cutaway: 2, leadin: 120, hint: '⚡ Snappy — cuts quickly and punches to the other person often.' }
+  };
+  function applyMcPace(pace) {
+    var p = MC_PACE[pace] || MC_PACE.medium;
+    state.mcPace = MC_PACE[pace] ? pace : 'medium';
+    if ($('mc-minseg')) $('mc-minseg').value = p.minseg;
+    if ($('mc-maxshot')) $('mc-maxshot').value = p.maxshot;
+    if ($('mc-cutaway')) $('mc-cutaway').value = p.cutaway;
+    if ($('mc-leadin')) $('mc-leadin').value = p.leadin;
+    var btns = document.querySelectorAll('#mc-pace button');
+    for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('on', btns[i].dataset.pace === state.mcPace);
+    if ($('mc-pace-hint')) $('mc-pace-hint').textContent = p.hint;
+    // refresh the Fine-tune slider value labels to match
+    ['mc-minseg', 'mc-maxshot', 'mc-cutaway', 'mc-leadin'].forEach(function (id) { var el = $(id); if (el) el.dispatchEvent(new Event('input')); });
+  }
+  (function wireMcPace() {
+    var btns = document.querySelectorAll('#mc-pace button');
+    for (var i = 0; i < btns.length; i++) btns[i].addEventListener('click', function () { applyMcPace(this.dataset.pace); });
+    applyMcPace('medium');   // sensible default
+  })();
+
   /* Resolve switch-point segments for the pattern sources (not speaker).
      Returns a Promise of [{start,end}]. */
   function mcSegments() {

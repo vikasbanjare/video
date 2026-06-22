@@ -14,7 +14,7 @@
 <body class="theme-light">
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.171</span>
+    <span class="ver" id="ver">v0.9.172</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -786,33 +786,15 @@
       <div id="mc-speaker-opts">
         <div class="map-label">Camera → speaker → mic <button id="btn-mc-rescan" class="chip-btn" style="float:right">🔄 Detect audio</button></div>
         <div id="mc-map"></div>
-        <p class="hint" style="margin:4px 0 0">Pair each camera with the mic on that person. Names are optional — they just make the cut list readable.</p>
-        <label class="check"><input type="checkbox" id="mc-autosync"> 🧲 Auto-sync cameras by audio <span class="dim">(ONLY if angles are out of sync — leave OFF for separate mics)</span></label>
-        <label>Min shot length (s) <span class="dim">(don't cut faster than this)</span> <span class="val" id="mc-minseg-val">1.2</span>
-          <input type="range" id="mc-minseg" min="0.5" max="5" step="0.1" value="1.2">
-        </label>
+        <p class="hint" style="margin:4px 0 8px">Pair each camera with the mic on that person. When that mic talks, its camera shows.</p>
 
-        <!-- Long-monologue cutaways: when one person talks for a long stretch,
-             periodically cut to the other camera for a few seconds. -->
-        <div class="map-label" style="margin-top:10px">🔁 Long-monologue cutaways</div>
-        <p class="hint" style="margin:0 0 6px">If one person talks for ages, briefly cut to the other camera so it isn't a static shot.</p>
-        <label>Cut away if one camera holds longer than <span class="val" id="mc-maxshot-val">off</span>
-          <input type="range" id="mc-maxshot" min="0" max="600" step="15" value="0">
-        </label>
-        <label>Cutaway length <span class="dim">(how long to hold the other camera)</span> <span class="val" id="mc-cutaway-val">3s</span>
-          <input type="range" id="mc-cutaway" min="1" max="10" step="1" value="3">
-        </label>
-
-        <!-- center/wide-cam frequency — only shown when a camera is set to
-             "No mic (wide / cutaway)" in the mapping above -->
-        <div id="mc-center-wrap2" style="display:none">
-          <label>📹 Cut to the wide / centre camera every <span class="val" id="mc-center-val">off</span>
-            <input type="range" id="mc-center" min="0" max="600" step="15" value="0">
-          </label>
-          <label>Hold the wide camera for <span class="val" id="mc-centerhold-val">2s</span>
-            <input type="range" id="mc-centerhold" min="1" max="10" step="1" value="2">
-          </label>
+        <label>How often should it change camera?</label>
+        <div class="seg-control" id="mc-pace">
+          <button data-pace="low">🐢 Low</button>
+          <button data-pace="medium" class="on">⚖️ Medium</button>
+          <button data-pace="high">⚡ High</button>
         </div>
+        <p class="hint" id="mc-pace-hint" style="margin:5px 0 0">Balanced — natural conversation pace, with the odd cutaway during long talking.</p>
       </div>
 
       <!-- transcript (speaker-turn) options -->
@@ -823,12 +805,32 @@
            otherwise it alternates cameras each sentence.</p>
       </div>
 
-      <!-- director controls (shared by follow + transcript) — tucked away -->
+      <!-- director controls (shared by follow + transcript) — tucked away.
+           Low/Medium/High preset these; open only to hand-tune. -->
       <details id="mc-director-opts" class="advanced hidden">
         <summary>⚙ Fine-tune (optional)</summary>
+        <label class="check"><input type="checkbox" id="mc-autosync"> 🧲 Auto-sync cameras by audio <span class="dim">(ONLY if angles are out of sync — leave OFF for separate mics)</span></label>
+        <label>Min shot length (s) <span class="dim">(don't cut faster than this)</span> <span class="val" id="mc-minseg-val">1.4</span>
+          <input type="range" id="mc-minseg" min="0.5" max="5" step="0.1" value="1.4">
+        </label>
+        <label>Cut away during a long monologue, every <span class="val" id="mc-maxshot-val">2m</span>
+          <input type="range" id="mc-maxshot" min="0" max="600" step="15" value="120">
+        </label>
+        <label>Cutaway length <span class="dim">(hold the other camera)</span> <span class="val" id="mc-cutaway-val">3s</span>
+          <input type="range" id="mc-cutaway" min="1" max="10" step="1" value="3">
+        </label>
         <label>Cut lead-in <span class="dim">(land the cut just before the line)</span> <span class="val" id="mc-leadin-val">off</span>
           <input type="range" id="mc-leadin" min="0" max="500" step="20" value="0">
         </label>
+        <!-- center/wide-cam frequency — only shown when a camera is "No mic (wide / cutaway)" -->
+        <div id="mc-center-wrap2" style="display:none">
+          <label>📹 Cut to the wide / centre camera every <span class="val" id="mc-center-val">off</span>
+            <input type="range" id="mc-center" min="0" max="600" step="15" value="0">
+          </label>
+          <label>Hold the wide camera for <span class="val" id="mc-centerhold-val">2s</span>
+            <input type="range" id="mc-centerhold" min="1" max="10" step="1" value="2">
+          </label>
+        </div>
       </details>
 
       <!-- interval option -->
@@ -964,7 +966,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.171 · auto-edit · multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.172 · auto-edit · multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>
