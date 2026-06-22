@@ -1710,7 +1710,11 @@ function CP_getAudioTracks() {
       var track = seq.audioTracks[t];
       var nClips = (track.clips && track.clips.numItems) ? track.clips.numItems : 0;
       var mp = null, ref = null, withItem = 0;
-      // scan EVERY clip on the track for one whose media path we can read
+      // Walk EVERY clip on the track. We keep the first readable clip as the
+      // legacy single-clip reference, AND collect ALL clips with media into
+      // `segments` so the analyzer can cover the WHOLE timeline (multiple
+      // takes / a multi-clip track) instead of just the first clip.
+      var segments = [];
       for (var i = 0; i < nClips; i++) {
         var c = track.clips[i];
         if (!c || !c.projectItem) continue;
@@ -1718,9 +1722,18 @@ function CP_getAudioTracks() {
         if (!ref) ref = c;
         var p = null;
         try { p = c.projectItem.getMediaPath(); } catch (e1) {}
-        if (p && p.length) { mp = p; ref = c; break; }
+        if (p && p.length) {
+          if (!mp) { mp = p; ref = c; }
+          var sStart = 0, sIn = 0, sEnd = 0;
+          try { sStart = c.start.seconds; } catch (eS) {}
+          try { sIn = c.inPoint.seconds; } catch (eI) {}
+          try { sEnd = c.end.seconds; } catch (eE) {}
+          if (segments.length < 200) {
+            segments.push({ mediaPath: p, seqStart: sStart, inPoint: sIn, dur: Math.max(0, sEnd - sStart) });
+          }
+        }
       }
-      diag.push('A' + (t + 1) + ':' + nClips + 'clip/' + withItem + 'item/' + (mp ? 'media' : 'no-media'));
+      diag.push('A' + (t + 1) + ':' + nClips + 'clip/' + withItem + 'item/' + segments.length + 'media');
       if (!ref) continue;
       out.push({
         index: t,
@@ -1728,14 +1741,27 @@ function CP_getAudioTracks() {
         mediaPath: mp,
         hasMedia: !!mp,
         clips: nClips,
+        segments: segments,             // ALL media clips on this track (seq time)
         seqStart: ref.start.seconds,
         inPoint: ref.inPoint.seconds,
         outPoint: ref.outPoint.seconds
       });
     }
+    // Is the FIRST video clip a nested sequence? Multicam can't switch angles
+    // that live inside a single nested clip, so the panel warns about this.
+    var nestedOnV1 = false;
+    try {
+      var v0 = seq.videoTracks[0];
+      if (v0 && v0.clips && v0.clips.numItems) {
+        var vc = v0.clips[0];
+        // a nested sequence's projectItem reports isSequence() === true
+        if (vc && vc.projectItem && typeof vc.projectItem.isSequence === 'function' && vc.projectItem.isSequence()) nestedOnV1 = true;
+      }
+    } catch (eN) {}
     return CP_ok({
       audioTracks: out,
       videoTracks: seq.videoTracks.numTracks,
+      nestedOnV1: nestedOnV1,
       end: parseFloat(seq.end) / CP_TICKS_PER_SECOND,
       diag: 'tracks=' + seq.audioTracks.numTracks + ' [' + diag.join('  ') + ']'
     });

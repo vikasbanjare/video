@@ -5074,7 +5074,15 @@
     ensureAudioTracks().then(function (tracks) {
       capMcProgress(null);
       renderMcMap(); if ($('mc-source').value === 'speech') populateMainTracks();
-      toast('Found ' + tracks.length + ' audio track' + (tracks.length === 1 ? '' : 's') + '.');
+      if (state.mcNested || (state.mcVideoTracks && state.mcVideoTracks < 2)) {
+        toast(state.mcNested
+          ? 'Heads-up: V1 is a NESTED sequence. To switch the cameras inside it, double-click that clip to open the nest and run multicam there.'
+          : 'Found ' + tracks.length + ' audio track' + (tracks.length === 1 ? '' : 's') + ', but only one video track — multicam needs each camera on its own track (V1, V2…).', true);
+      } else if (tracks.length < 2) {
+        toast('Found 1 audio track — fine for "Switch when anyone speaks". For "follow the speaker" you need one mic per camera.');
+      } else {
+        toast('Found ' + tracks.length + ' audio tracks across ' + (state.mcVideoTracks || '?') + ' video tracks.');
+      }
     }).catch(function (e) {
       capMcProgress(null); renderMcMap();
       var box = $('mc-diag');
@@ -5104,6 +5112,7 @@
       state.mcDiag = r.diag || '';
       state.mcAudioEnd = r.end || 0;
       state.mcVideoTracks = r.videoTracks || 0;
+      state.mcNested = !!r.nestedOnV1;
       var tracks = (r.audioTracks || []).filter(function (t) { return t.mediaPath; });
       if (!tracks.length) {
         state.mcAudioTracks = null;
@@ -5236,6 +5245,44 @@
     return grid;
   }
 
+  /* Build a mic's loudness on the SEQUENCE-time grid, covering the WHOLE
+     timeline — every clip on that audio track, not just the first one. This is
+     what lets multicam cut the entire sequence (multiple takes / a multi-clip
+     mic track) instead of stopping after the first clip.
+       • single clip  → fast path (one ffmpeg pass + envToSeqGrid)
+       • many clips    → ffmpeg each unique media file once, then drop each
+                         clip's slice onto the shared grid at its sequence start. */
+  function micSeqGrid(track, nWindows) {
+    var segs = (track.segments && track.segments.length) ? track.segments : null;
+    if (!segs || segs.length <= 1) {
+      return micEnvelope(track).then(function (env) { return envToSeqGrid(env, track, nWindows); });
+    }
+    // gather the unique media files across this track's clips (one ffmpeg each)
+    var uniq = {}, order = [];
+    segs.forEach(function (s) { if (!(s.mediaPath in uniq)) { uniq[s.mediaPath] = null; order.push(s.mediaPath); } });
+    var ff = resolveFfmpeg();
+    if (!ff) return Promise.reject(new Error('ffmpeg is required to read audio — install it (brew install ffmpeg) and re-check in Settings.'));
+    return order.reduce(function (chain, mp) {
+      return chain.then(function () {
+        return CPAudio.ffmpegEnvelope(mp, ff, MC_STEP).then(function (env) { uniq[mp] = env.samples || []; });
+      });
+    }, Promise.resolve()).then(function () {
+      var grid = new Array(nWindows);
+      for (var k = 0; k < nWindows; k++) grid[k] = -100;
+      segs.forEach(function (s) {
+        var samples = uniq[s.mediaPath] || [];
+        var w0 = Math.max(0, Math.round(s.seqStart / MC_STEP));
+        var w1 = Math.min(nWindows, Math.round((s.seqStart + s.dur) / MC_STEP));
+        for (var k = w0; k < w1; k++) {
+          var mediaT = (k - w0) * MC_STEP + (s.inPoint || 0);   // seq → this clip's media time
+          var idx = Math.round(mediaT / MC_STEP);
+          if (idx >= 0 && idx < samples.length) grid[k] = samples[idx].db;
+        }
+      });
+      return grid;
+    });
+  }
+
   /* Shift a sequence-time dB grid by `off` seconds (auto-sync correction).
      off>0 means the mic ran late, so we sample ahead to pull it earlier. */
   function shiftGrid(g, off) {
@@ -5285,11 +5332,14 @@
       var track = tracks[idx] || tracks[0];
       var dur = state.mcAudioEnd || (state.env && state.env.endSeconds) || 0;
       capMcProgress('Listening to ' + (track.name || 'the main track') + '…');
-      return micEnvelope(track).then(function (env) {
+      // build the loudness across the WHOLE timeline (all clips on this track),
+      // already on sequence time, so talk bursts are found end-to-end.
+      var nWin = Math.ceil(dur / MC_STEP);
+      return micSeqGrid(track, nWin).then(function (grid) {
         capMcProgress(null);
-        var starts = CPMulticam.burstStarts(env.samples, { offset: 8, minGap: 0.6 })
-          .map(function (mt) { return mt - (track.inPoint || 0); })   // media → sequence time
-          .filter(function (t) { return t > 0.3 && t < dur; });
+        var seqSamples = grid.map(function (db, k) { return { t: k * MC_STEP, db: db }; });
+        var starts = CPMulticam.burstStarts(seqSamples, { offset: 8, minGap: 0.6 })
+          .filter(function (t) { return t > 0.3 && t < dur; });   // already sequence time
         var segs = CPMulticam.segmentsFromBoundaries(starts, dur);
         if (segs.length < 2) throw new Error('Couldn\'t hear distinct talk bursts on that track. Try the "Every few seconds" mode.');
         return segs;
@@ -5314,13 +5364,13 @@
       if (micCount < 1) throw new Error('Assign at least one camera to a mic (V1 → A1, …).');
 
       capMcProgress('Listening to ' + micCount + ' mic' + (micCount > 1 ? 's' : '') + '…');
-      var jobs = micFor.map(function (t) { return t ? micEnvelope(t) : Promise.resolve(null); });
-      return Promise.all(jobs).then(function (envs) {
+      var nWin = Math.ceil(dur / MC_STEP);
+      var jobs = micFor.map(function (t) { return t ? micSeqGrid(t, nWin) : Promise.resolve(null); });
+      return Promise.all(jobs).then(function (grids) {
         capMcProgress('Working out who is talking…');
-        var nWin = Math.ceil(dur / MC_STEP);
         var dbGrids = [];
         for (var a = 0; a < numAngles; a++) {
-          dbGrids.push(envs[a] ? envToSeqGrid(envs[a], micFor[a], nWin) : []);
+          dbGrids.push(grids[a] ? grids[a] : []);
         }
         // AUTO-SYNC: line every mic up to the first real mic by cross-correlating
         // their loudness — so "who's loudest" is judged at the SAME real moment
@@ -5373,32 +5423,85 @@
     });
   }
 
-  $('btn-mc-plan').addEventListener('click', function () {
+  /* Build the cut plan from whatever switch mode is selected. Returns a Promise
+     of the plan and stashes it in state.plan. Shared by Auto-multicam, Apply
+     and the one-click Redo button so they always use the SAME current settings. */
+  function buildMcPlan() {
     var numAngles = parseInt($('mc-angles').value, 10);
     var src = $('mc-source').value;
-    // Multicam switches between camera clips that sit on SEPARATE video tracks.
-    // If the angles are nested into one clip (or all on a single track), there's
-    // nothing to switch between — warn instead of silently doing one angle.
-    if (state.mcVideoTracks && state.mcVideoTracks < 2) {
-      return toast('Multicam needs each camera on its OWN video track (V1, V2, V3…). Your sequence has one video track — if you nested the cameras into one clip, un-nest them (or lay each angle on its own track) and tap 🔄 Detect audio again.', true);
-    }
-    var planner;
-    if (src === 'follow') planner = mcSpeakerPlan(numAngles);
-    else if (src === 'transcript') planner = mcTranscriptPlan(numAngles);
-    else if (src === 'speech') planner = patternPlan(numAngles, mcSpeechBurstSegments());
-    else planner = patternPlan(numAngles, mcSegments());
-
-    planner.then(function (plan) {
-      if (!plan || !plan.length) return toast('No camera switches were produced.', true);
+    return ensureAudioTracks().catch(function () { return null; }).then(function (tracks) {
+      // Multicam switches between camera clips on SEPARATE video tracks. If the
+      // angles are nested into one clip (or all on a single track), there's
+      // nothing to switch between — say so in plain steps instead of doing one angle.
+      if (state.mcVideoTracks && state.mcVideoTracks < 2) {
+        throw new Error(state.mcNested
+          ? 'The clip on V1 is a NESTED sequence — multicam can\'t switch the cameras hidden inside it. Double-click that clip to open the nest (your cameras are on V1, V2, V3 in there), then run multicam on THAT timeline.'
+          : 'Multicam needs each camera on its OWN video track (V1, V2, V3…). This sequence has just one video track. Stack each camera on its own track (or open your nested clip), tap 🔄 Detect audio, and try again.');
+      }
+      // "Follow the speaker" needs one mic PER person. If only a single audio
+      // track exists (e.g. one mixed mic, or a nest's combined audio), quietly
+      // do the next best thing — switch cameras on each talk burst — instead of
+      // dead-ending on "assign a mic".
+      if (src === 'follow' && tracks && tracks.length < 2) {
+        toast('Only one audio track found — switching cameras on each talk burst instead (one-mic mode).');
+        return patternPlan(numAngles, mcSpeechBurstSegments());
+      }
+      if (src === 'follow') return mcSpeakerPlan(numAngles);
+      if (src === 'transcript') return mcTranscriptPlan(numAngles);
+      if (src === 'speech') return patternPlan(numAngles, mcSpeechBurstSegments());
+      return patternPlan(numAngles, mcSegments());
+    }).then(function (plan) {
+      if (!plan || !plan.length) throw new Error('No camera switches were produced.');
       state.plan = plan;
-      renderMcPlan(numAngles);
-    }).catch(function (e) {
-      capMcProgress(null);
-      toast(e.message, true);
-      var box = $('mc-diag');
-      box.classList.remove('hidden'); box.className = 'diag-out err';
-      box.textContent = 'Build failed:\n' + e.message + '\n\nTap "Test audio engine" to check ffmpeg.';
+      return plan;
     });
+  }
+
+  /* Push the current plan into Premiere (razor + angle toggles). Promise of the
+     host result. */
+  function applyMcPlan() {
+    if (!state.plan) return Promise.reject(new Error('Build the plan first.'));
+    capMcProgress('Applying camera switches…');
+    return CPBridge.callHost('CP_applyMulticamPlan', {
+      plan: state.plan,
+      numAngles: parseInt($('mc-angles').value, 10),
+      dropFrame: !!settings.dropFrame
+    }).then(function (r) {
+      capMcProgress(null);
+      state.mcApplied = true;
+      $('btn-mc-redo').classList.remove('hidden');
+      $('mc-redo-hint').classList.remove('hidden');
+      toast('🎬 Multicam applied — ' + r.razored + ' cuts, ' + r.toggled +
+            ' angle toggles across ' + r.tracksUsed + ' tracks.');
+      return r;
+    });
+  }
+
+  function mcBuildFailed(e) {
+    capMcProgress(null);
+    toast(e.message, true);
+    var box = $('mc-diag');
+    box.classList.remove('hidden'); box.className = 'diag-out err';
+    box.textContent = 'Build failed:\n' + e.message + '\n\nTap "Test audio engine" to check ffmpeg.';
+  }
+
+  $('btn-mc-plan').addEventListener('click', function () {
+    buildMcPlan().then(function () {
+      renderMcPlan(parseInt($('mc-angles').value, 10));
+    }).catch(mcBuildFailed);
+  });
+
+  // One-click "redo": rebuild the plan from the current controls AND apply it,
+  // so the user can re-run the entire multicam in a single tap (no clicking
+  // through Plan → Apply again). Used after a first apply / after an Undo.
+  $('btn-mc-redo').addEventListener('click', function () {
+    capMcProgress('Redoing all the cuts…');
+    buildMcPlan().then(function () {
+      renderMcPlan(parseInt($('mc-angles').value, 10));
+      // apply errors are handled here so they don't fall through to the build
+      // diagnostic box (which would be misleading for a Premiere-side failure)
+      return applyMcPlan().catch(function (e) { capMcProgress(null); toast('Multicam failed: ' + e.message, true); });
+    }).catch(mcBuildFailed);
   });
 
   $('btn-mc-test').addEventListener('click', testAudioEngine);
@@ -5421,19 +5524,12 @@
     });
     $('mc-plan-card').classList.remove('hidden');
     $('btn-mc-apply').classList.remove('hidden');
+    if (state.mcApplied) { $('btn-mc-redo').classList.remove('hidden'); $('mc-redo-hint').classList.remove('hidden'); }
     toast(stats.segments + ' segments, ' + stats.switches + ' camera switches planned.');
   }
 
   $('btn-mc-apply').addEventListener('click', function () {
-    if (!state.plan) return;
-    CPBridge.callHost('CP_applyMulticamPlan', {
-      plan: state.plan,
-      numAngles: parseInt($('mc-angles').value, 10),
-      dropFrame: !!settings.dropFrame
-    }).then(function (r) {
-      toast('🎬 Multicam applied — ' + r.razored + ' cuts, ' + r.toggled +
-            ' angle toggles across ' + r.tracksUsed + ' tracks.');
-    }).catch(function (e) { toast('Multicam failed: ' + e.message, true); });
+    applyMcPlan().catch(function (e) { capMcProgress(null); toast('Multicam failed: ' + e.message, true); });
   });
 
   // =========================================================== SETTINGS ====
