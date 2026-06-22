@@ -14,7 +14,7 @@
 <body class="theme-light">
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.160</span>
+    <span class="ver" id="ver">v0.9.161</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -736,14 +736,11 @@
          tell it which mic belongs to each camera, and click <b>Auto multicam</b> —
          it cuts to whoever's talking. That's it.</p>
 
-      <label>How to switch
+      <label>How should it switch cameras?
         <select id="mc-source">
-          <option value="follow">🎙️ Follow the speaker (a mic per camera) — recommended</option>
-          <option value="transcript">🗣️ Speaker turns — from the transcript</option>
-          <option value="speech">🔊 On speech — one mixed mic</option>
-          <option value="interval">⏱️ Every few seconds</option>
-          <option value="markers">📍 At my markers</option>
-          <option value="smartcut">✂️ At my Smart Cut points</option>
+          <option value="follow">🎙️ Switch to whoever is talking — best (needs a mic per camera)</option>
+          <option value="speech">🔊 Switch when anyone speaks — one mic for everyone</option>
+          <option value="interval">⏱️ Just change camera every few seconds</option>
         </select>
       </label>
 
@@ -762,7 +759,7 @@
 
       <!-- follow-the-speaker (FireCut-style) options -->
       <div id="mc-speaker-opts">
-        <div class="map-label">Which mic is on each camera?</div>
+        <div class="map-label">Which mic is on each camera? <button id="btn-mc-rescan" class="chip-btn" style="float:right">🔄 Detect audio</button></div>
         <div id="mc-map"></div>
         <label class="check"><input type="checkbox" id="mc-autosync" checked> 🧲 Auto-sync cameras by audio <span class="dim">(align angles first — recommended)</span></label>
         <label>Min shot length (s) <span class="dim">(don't cut faster than this)</span> <span class="val" id="mc-minseg-val">1.2</span>
@@ -923,7 +920,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.160 · auto-edit · multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.161 · auto-edit · multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

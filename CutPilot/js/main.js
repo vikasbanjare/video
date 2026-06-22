@@ -5051,8 +5051,10 @@
     if ($('mc-director-opts')) $('mc-director-opts').classList.toggle('hidden', src !== 'follow' && src !== 'transcript');
     $('mc-main-opts').classList.toggle('hidden', src !== 'speech');
     $('mc-interval-wrap').classList.toggle('hidden', src !== 'interval');
-    // the rotate/random pattern applies to the dumb modes only
-    $('mc-pattern-opts').classList.toggle('hidden', src === 'follow' || src === 'transcript');
+    // keep the rotate/ping-pong/hero pattern hidden — it just cycles cameras in
+    // order by default (the simple, expected behaviour). Power users can still
+    // reach it via the command palette if needed.
+    $('mc-pattern-opts').classList.add('hidden');
     if (src === 'speech') populateMainTracks();
     if (src === 'follow') renderMcMap();
     updateMcFfmpegBanner();
@@ -5063,6 +5065,20 @@
   $('mc-source').addEventListener('change', syncMcSource);
   $('mc-angles').addEventListener('change', function () {
     if ($('mc-source').value === 'follow') renderMcMap();
+  });
+  // re-scan the timeline's audio tracks on demand (sequence may have opened
+  // after the tab, or audio was just added)
+  if ($('btn-mc-rescan')) $('btn-mc-rescan').addEventListener('click', function () {
+    state.mcAudioTracks = null; _mainTracksLoaded = false;
+    capMcProgress('Detecting audio tracks…');
+    ensureAudioTracks().then(function (tracks) {
+      capMcProgress(null);
+      renderMcMap(); if ($('mc-source').value === 'speech') populateMainTracks();
+      toast('Found ' + tracks.length + ' audio track' + (tracks.length === 1 ? '' : 's') + '.');
+    }).catch(function () {
+      capMcProgress(null); renderMcMap();
+      toast('No audio found. Open your sequence (with mics on audio tracks) and try again.', true);
+    });
   });
   $('mc-center').addEventListener('input', function () {
     $('mc-center-val').textContent = (parseInt(this.value, 10) || 0) === 0 ? 'off' : this.value + 's';
@@ -5079,13 +5095,16 @@
 
   // cache the timeline's audio tracks (the per-speaker mics)
   function ensureAudioTracks() {
-    if (state.mcAudioTracks) return Promise.resolve(state.mcAudioTracks);
+    // only reuse a NON-empty result — caching an empty array was leaving the mic
+    // map permanently blank until the tab was reopened.
+    if (state.mcAudioTracks && state.mcAudioTracks.length) return Promise.resolve(state.mcAudioTracks);
     return CPBridge.callHost('CP_getAudioTracks').then(function (r) {
-      state.mcAudioTracks = (r.audioTracks || []).filter(function (t) { return t.mediaPath; });
+      var tracks = (r.audioTracks || []).filter(function (t) { return t.mediaPath; });
       state.mcAudioEnd = r.end || 0;
-      if (!state.mcAudioTracks.length) throw new Error('No audio on the timeline.');
-      return state.mcAudioTracks;
-    });
+      if (!tracks.length) { state.mcAudioTracks = null; throw new Error('No audio detected'); }
+      state.mcAudioTracks = tracks;
+      return tracks;
+    }, function (e) { state.mcAudioTracks = null; throw e; });
   }
 
   function syncCenterCtrl() {
@@ -5136,7 +5155,7 @@
       syncCenterCtrl();
     }).catch(function (e) {
       $('mc-map').innerHTML = '<p class="hint">' +
-        (CPBridge.isCEP() ? 'No audio tracks found yet. Add your audio, then reopen this tab.' :
+        (CPBridge.isCEP() ? 'No audio detected. Make sure your sequence is open with each mic on an audio track, then tap <b>🔄 Detect audio</b> above.' :
          'Open inside Premiere to map your mics.') + '</p>';
     });
   }
