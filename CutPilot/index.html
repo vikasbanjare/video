@@ -14,7 +14,7 @@
 <body class="theme-light">
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.165</span>
+    <span class="ver" id="ver">v0.9.166</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -401,6 +401,30 @@
               <label>Box padding <span class="val" id="c-box-pad-val"></span>
                 <input type="range" id="c-box-pad" min="50" max="200" value="100">
               </label>
+
+              <!-- Button-pack box effects: border / neon glow / 3D depth / gloss -->
+              <div class="btn-fx">
+                <label class="check"><input type="checkbox" id="c-boxstroke-on"> ⬜ Border</label>
+                <div class="swatches" id="c-boxstroke-opts" style="display:none">
+                  <label class="sw">Colour<span class="cp-mount" data-for="c-boxstroke"></span><input type="hidden" id="c-boxstroke" value="#14FF8E"></label>
+                  <label>Width <span class="val" id="c-boxstrokew-val"></span>
+                    <input type="range" id="c-boxstrokew" min="0" max="14" value="4">
+                  </label>
+                </div>
+                <label class="check"><input type="checkbox" id="c-boxglow-on"> 💡 Neon glow (box)</label>
+                <div class="swatches" id="c-boxglow-opts" style="display:none">
+                  <label class="sw">Glow<span class="cp-mount" data-for="c-boxglow"></span><input type="hidden" id="c-boxglow" value="#14FF8E"></label>
+                </div>
+                <div class="ctrl-row">
+                  <label>3D depth <span class="dim">(0 = flat)</span> <span class="val" id="c-box3d-depth-val"></span>
+                    <input type="range" id="c-box3d-depth" min="0" max="24" value="0">
+                  </label>
+                  <label class="sw">3D edge<span class="cp-mount" data-for="c-box3d"></span><input type="hidden" id="c-box3d" value="#2C7000"></label>
+                </div>
+                <label>Glossy sheen <span class="dim">(0 = matte)</span> <span class="val" id="c-boxgloss-val"></span>
+                  <input type="range" id="c-boxgloss" min="0" max="100" value="0">
+                </label>
+              </div>
 
               <div class="ctrl-row">
                 <label>Word spacing <span class="val" id="c-wordspace-val"></span>
@@ -922,7 +946,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.165 · auto-edit · multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.166 · auto-edit · multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

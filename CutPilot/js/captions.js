@@ -333,6 +333,7 @@
   /* The ten library categories the browser groups templates into. */
   var CATEGORIES = [
     '⭐ Premium',
+    '🔘 Buttons',
     'Trending',
     'Bold Creator', 'Minimal Professional', 'Dynamic Highlight', 'Social Growth',
     'Podcast Pro', 'Storytelling', 'Gaming Stream', 'Cinematic', 'Motivation', 'Education'
@@ -718,7 +719,91 @@
       weight: 700, uppercase: false, wordsPerLine: 3, wordsPerCue: 6, lineGap: 0.95, anim: 'pop' }
   ];
 
-  var TEMPLATES = STYLE_PRESETS.concat(PREMIUM_TEMPLATES, MORE_TEMPLATES, NEW_TEMPLATES);
+  /* "Buttons" pack — caption pills recreated from the user's SVG button set
+     (uiverse-style). Each carries exact colours/gradients/borders/glow/3D from
+     the source SVG, and every one is fully editable in the customizer
+     (colours, gradient stops, border, glow, gloss, 3D depth, corner radius,
+     font, animation). Box-level styling is driven by render.js's new
+     boxStroke / boxGlow / box3d / boxGloss / boxShadow / boxStops props. */
+  var BUTTON_TEMPLATES = [
+    // Neon — glowing border + text on a near-black pill (Neon.svg #14FF8E)
+    { id: 'btn-neon', name: 'Neon', category: '🔘 Buttons', popularity: 97, layout: 'center', keyword: false, highlightScale: 1.06,
+      font: 'Space Mono', fallbackFonts: ['JetBrains Mono', 'Roboto Mono', 'monospace'],
+      fontSize: 54, fill: '#14FF8E', highlight: '#A8FFD2', highlightStyle: 'color',
+      boxColor: '#0A0A0A', boxRadius: 18, boxPad: 1.2, boxStroke: '#14FF8E', boxStrokeWidth: 4,
+      boxGlow: '#14FF8E', boxGlowBlur: 0.8, glow: '#14FF8E', glowBlur: 0.45,
+      uppercase: false, weight: 700, wordsPerCue: 3, anim: 'pop' },
+    // Spotify — solid green pill, white uppercase (Spotify.svg)
+    { id: 'btn-spotify', name: 'Spotify', category: '🔘 Buttons', popularity: 95, layout: 'center', keyword: false, highlightScale: 1.05,
+      font: 'Inter', fallbackFonts: ['Helvetica', 'Arial'],
+      fontSize: 46, fill: '#FFFFFF', highlight: '#FFFFFF', highlightStyle: 'color',
+      boxColor: '#1DB954', boxRadius: 120, boxPad: 1.4, letterSpacing: 3, uppercase: true, weight: 700, wordsPerCue: 3, anim: 'pop' },
+    // Pop 3D — Duolingo-style extruded green button (darkened for caption contrast)
+    { id: 'btn-pop3d', name: 'Pop 3D', category: '🔘 Buttons', popularity: 96, layout: 'center', keyword: false, highlightScale: 1.06,
+      font: 'Nunito', fallbackFonts: ['Inter', 'Arial'],
+      fontSize: 50, fill: '#FFFFFF', highlight: '#EAFFD0', highlightStyle: 'color',
+      boxColor: '#3FA000', boxRadius: 120, boxPad: 1.35, box3d: '#2C7000', box3dDepth: 11,
+      letterSpacing: 1, uppercase: true, weight: 800, wordsPerCue: 3, anim: 'pop' },
+    // 3D Red — red face, dark-red extruded edge, black border (3D Red.svg)
+    { id: 'btn-3dred', name: '3D Red', category: '🔘 Buttons', popularity: 90, layout: 'center', keyword: false, highlightScale: 1.06,
+      font: 'Nunito', fallbackFonts: ['Inter', 'Arial'],
+      fontSize: 50, fill: '#7A1E1E', highlight: '#FFFFFF', highlightStyle: 'color',
+      boxColor: '#FF6666', boxRadius: 120, boxPad: 1.35, box3d: '#8B2626', box3dDepth: 11,
+      boxStroke: '#000000', boxStrokeWidth: 3, weight: 800, wordsPerCue: 3, anim: 'pop' },
+    // Neomorphism — soft peach pill, soft drop shadow, dark text (Neomorphism.svg)
+    { id: 'btn-neo', name: 'Neo', category: '🔘 Buttons', popularity: 92, layout: 'center', keyword: false, highlightScale: 1.04,
+      font: 'Nunito', fallbackFonts: ['Inter', 'Arial'],
+      fontSize: 48, fill: '#6B4A33', highlight: '#3F2A1C', highlightStyle: 'color',
+      boxColor: '#F2C4A3', boxColor2: '#E5A878', boxGradient: 'v', boxRadius: 120, boxPad: 1.35,
+      boxShadow: 'rgba(120,95,75,0.55)', boxShadowBlur: 0.55, boxShadowDY: 9, weight: 700, wordsPerCue: 3, anim: 'scale' },
+    // Aura — 8-stop pastel horizontal gradient, black border, dark text (Your Stack.svg)
+    { id: 'btn-aura', name: 'Aura', category: '🔘 Buttons', popularity: 94, layout: 'center', keyword: false, highlightScale: 1.05,
+      font: 'Inter', fallbackFonts: ['Helvetica', 'Arial'],
+      fontSize: 50, fill: '#111111', highlight: '#111111', highlightStyle: 'color',
+      boxColor: '#F4C5C1', boxStops: [[0, '#FCF1B2'], [0.229, '#F4C5C1'], [0.406, '#EEC2EA'], [0.588, '#C0C8F9'], [0.75, '#C9F2FC'], [1, '#E7FCC5']],
+      boxGradient: 'h', boxRadius: 120, boxPad: 1.35, boxStroke: '#000000', boxStrokeWidth: 4, weight: 800, wordsPerCue: 3, anim: 'pop' },
+    // Candy — glossy pink pill, white script italic + top sheen (Candy Crush.svg)
+    { id: 'btn-candy', name: 'Candy', category: '🔘 Buttons', popularity: 93, layout: 'center', keyword: false, highlightScale: 1.06,
+      font: 'Pacifico', fallbackFonts: ['Caveat', 'Inter'],
+      fontSize: 54, fill: '#FFFFFF', highlight: '#FFFFFF', highlightStyle: 'color',
+      boxColor: '#F75BA2', boxColor2: '#D73F6E', boxGradient: 'v', boxGloss: 0.9, boxRadius: 120, boxPad: 1.35,
+      boxStroke: '#E0367E', boxStrokeWidth: 2, weight: 700, wordsPerCue: 2, anim: 'pop' },
+    // Gold Gloss — Paypal glossy gold, navy bold italic (Paypal.svg)
+    { id: 'btn-gold', name: 'Gold Gloss', category: '🔘 Buttons', popularity: 91, layout: 'center', keyword: false, highlightScale: 1.05,
+      font: 'Inter', fallbackFonts: ['Helvetica', 'Arial'],
+      fontSize: 50, fill: '#1B3661', highlight: '#1B3661', highlightStyle: 'color', highlightItalic: true,
+      boxColor: '#F9BC5C', boxColor2: '#F9A92A', boxGradient: 'v', boxGloss: 0.85, boxRadius: 120, boxPad: 1.35, weight: 800, wordsPerCue: 3, anim: 'pop' },
+    // Glass — dark frosted pill, white text, light hairline border (glassmorphism)
+    { id: 'btn-glass', name: 'Glass', category: '🔘 Buttons', popularity: 90, layout: 'center', keyword: false, highlightScale: 1.05,
+      font: 'Inter', fallbackFonts: ['Helvetica', 'Arial'],
+      fontSize: 50, fill: '#FFFFFF', highlight: '#FFFFFF', highlightStyle: 'color',
+      boxColor: '#15171C', boxOpacity: 0.4, boxRadius: 120, boxPad: 1.35,
+      boxStroke: '#FFFFFF', boxStrokeWidth: 2, boxGlow: '#FFFFFF', boxGlowBlur: 0.3, weight: 700, wordsPerCue: 3, anim: 'scale' },
+    // Outline — transparent pill, coloured border + matching text
+    { id: 'btn-outline', name: 'Outline', category: '🔘 Buttons', popularity: 89, layout: 'center', keyword: false, highlightScale: 1.05,
+      font: 'Inter', fallbackFonts: ['Helvetica', 'Arial'],
+      fontSize: 50, fill: '#FFD23F', highlight: '#FFFFFF', highlightStyle: 'color',
+      boxColor: null, boxRadius: 120, boxPad: 1.35, boxStroke: '#FFD23F', boxStrokeWidth: 4,
+      glow: '#000000', glowBlur: 0.3, weight: 800, wordsPerCue: 3, anim: 'pop' },
+    // Pixel — Minecraft dirt block, pixel mono font, hard text shadow (Minecraft.svg)
+    { id: 'btn-pixel', name: 'Pixel', category: '🔘 Buttons', popularity: 88, layout: 'center', keyword: false, highlightScale: 1.04,
+      font: 'Space Mono', fallbackFonts: ['Roboto Mono', 'Courier New', 'monospace'],
+      fontSize: 46, fill: '#FFFFFF', highlight: '#7CF03F', highlightStyle: 'color',
+      boxColor: '#6B4423', boxRadius: 2, boxPad: 1.25, boxStroke: '#1C1208', boxStrokeWidth: 6,
+      shadowDX: 3, shadowDY: 3, uppercase: true, weight: 700, wordsPerCue: 3, anim: 'pop' },
+    // Basic Blue — solid blue gradient pill, white (Basic Blue.svg)
+    { id: 'btn-blue', name: 'Basic Blue', category: '🔘 Buttons', popularity: 87, layout: 'center', keyword: false, highlightScale: 1.05,
+      font: 'Inter', fallbackFonts: ['Helvetica', 'Arial'],
+      fontSize: 48, fill: '#FFFFFF', highlight: '#FFFFFF', highlightStyle: 'color',
+      boxColor: '#4363F8', boxColor2: '#2748E1', boxGradient: 'v', boxRadius: 120, boxPad: 1.35, weight: 700, wordsPerCue: 3, anim: 'pop' },
+    // Paper — clean white pill, dark text, soft drop shadow (Paper / MacOS)
+    { id: 'btn-paper', name: 'Paper', category: '🔘 Buttons', popularity: 86, layout: 'center', keyword: false, highlightScale: 1.04,
+      font: 'Inter', fallbackFonts: ['Helvetica', 'Arial'],
+      fontSize: 48, fill: '#15171C', highlight: '#2D7CFF', highlightStyle: 'color',
+      boxColor: '#FFFFFF', boxRadius: 120, boxPad: 1.35, boxShadow: 'rgba(0,0,0,0.35)', boxShadowBlur: 0.45, boxShadowDY: 7, weight: 800, wordsPerCue: 3, anim: 'scale' }
+  ];
+
+  var TEMPLATES = STYLE_PRESETS.concat(PREMIUM_TEMPLATES, MORE_TEMPLATES, NEW_TEMPLATES, BUTTON_TEMPLATES);
   // Retire near-duplicate styles that differed from a kept one only by colour or
   // size (both editable in the customizer) — keeps the gallery curated & distinct.
   var _RETIRED = { evo: 1, cleanwhite: 1, byline: 1, 'pro-neon': 1, rebel: 1, boldyellow: 1,

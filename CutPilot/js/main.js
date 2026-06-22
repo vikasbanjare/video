@@ -2398,6 +2398,15 @@
     if ($('c-dimupcoming')) $('c-dimupcoming').checked = (p.upcomingOpacity != null && p.upcomingOpacity < 1);
     if ($('c-box-opacity')) $('c-box-opacity').value = Math.round(((p.boxOpacity != null ? p.boxOpacity : 1)) * 100);
     if ($('c-linegap')) $('c-linegap').value = Math.round(((p.lineGap != null ? p.lineGap : 1.18)) * 100);  // so stacked/diagonal styles keep their spacing
+    // button-pack box effects (border / neon glow / 3D depth / gloss)
+    if ($('c-boxstroke-on')) { $('c-boxstroke-on').checked = !!p.boxStroke; $('c-boxstroke').value = toHex(p.boxStroke, '#14FF8E'); }
+    if ($('c-boxstrokew')) $('c-boxstrokew').value = (p.boxStrokeWidth != null ? p.boxStrokeWidth : 4);
+    if ($('c-boxstroke-opts')) $('c-boxstroke-opts').style.display = p.boxStroke ? '' : 'none';
+    if ($('c-boxglow-on')) { $('c-boxglow-on').checked = !!p.boxGlow; $('c-boxglow').value = toHex(p.boxGlow, '#14FF8E'); }
+    if ($('c-boxglow-opts')) $('c-boxglow-opts').style.display = p.boxGlow ? '' : 'none';
+    if ($('c-box3d-depth')) $('c-box3d-depth').value = (p.box3dDepth != null ? p.box3dDepth : 0);
+    if ($('c-box3d')) $('c-box3d').value = toHex(p.box3d, '#2C7000');
+    if ($('c-boxgloss')) $('c-boxgloss').value = Math.round(((p.boxGloss != null ? p.boxGloss : 0)) * 100);
     // gradient + glossy highlight controls
     if ($('c-hlgrad')) $('c-hlgrad').checked = !!p.highlight2;
     if ($('c-hl2g')) $('c-hl2g').value = toHex(p.highlight2, '#ff6a00');
@@ -2484,7 +2493,10 @@
       'c-maxwidth-val': function () { return $('c-maxwidth').value + '%'; },
       'c-subscale-val': function () { return $('c-subscale').value + '%'; },
       'c-wordsperline-val': function () { return $('c-wordsperline').value; },
-      'c-animspeed-val': function () { return $('c-animspeed').value + '%'; }
+      'c-animspeed-val': function () { return $('c-animspeed').value + '%'; },
+      'c-boxstrokew-val': function () { return $('c-boxstrokew').value; },
+      'c-box3d-depth-val': function () { return $('c-box3d-depth').value; },
+      'c-boxgloss-val': function () { return $('c-boxgloss').value + '%'; }
     };
     for (var k in lbl) { if (lbl.hasOwnProperty(k) && $(k) && $(k.replace('-val', ''))) $(k).textContent = lbl[k](); }
     syncColorRelevance();
@@ -2493,7 +2505,8 @@
   /* Push the (hidden) colour-input values into their custom palette swatches,
      so the picker UI reflects colours set programmatically (preset/look load). */
   function syncColorFields() {
-    ['c-fill', 'c-hl', 'c-stroke', 'c-box', 'c-shadow', 'c-fill2', 'c-hl2', 'c-hl3', 'c-hl2g'].forEach(function (id) {
+    ['c-fill', 'c-hl', 'c-stroke', 'c-box', 'c-shadow', 'c-fill2', 'c-hl2', 'c-hl3', 'c-hl2g',
+     'c-box2', 'c-boxstroke', 'c-boxglow', 'c-box3d'].forEach(function (id) {
       var inp = $(id); if (inp && inp._cpField) inp._cpField.setDisplay(inp.value);
     });
   }
@@ -2542,7 +2555,10 @@
                'c-animspeed', 'c-perword', 'c-perword-style', 'c-dimupcoming',
                // smart text + box gradient
                'c-boxgrad', 'c-box2', 'c-case', 'c-censor', 'c-numon', 'c-num',
-               'c-brandon', 'c-brand', 'c-brand-words'];
+               'c-brandon', 'c-brand', 'c-brand-words',
+               // button-pack box effects
+               'c-boxstroke-on', 'c-boxstroke', 'c-boxstrokew', 'c-boxglow-on', 'c-boxglow',
+               'c-box3d-depth', 'c-box3d', 'c-boxgloss'];
     ids.forEach(function (id) {
       if (!$(id)) return;
       $(id).addEventListener('input', function () { updateVals(); renderPreview(); });
@@ -2550,7 +2566,8 @@
     });
     // Mount the custom palette pickers over the (hidden) colour inputs so colours
     // are pickable inside Premiere's panel, where the native OS box won't open.
-    ['c-fill', 'c-hl', 'c-stroke', 'c-box', 'c-shadow', 'c-fill2', 'c-hl2', 'c-hl3', 'c-hl2g', 'c-box2', 'c-num', 'c-brand'].forEach(function (id) {
+    ['c-fill', 'c-hl', 'c-stroke', 'c-box', 'c-shadow', 'c-fill2', 'c-hl2', 'c-hl3', 'c-hl2g', 'c-box2', 'c-num', 'c-brand',
+     'c-boxstroke', 'c-boxglow', 'c-box3d'].forEach(function (id) {
       var mount = document.querySelector('.cp-mount[data-for="' + id + '"]'), inp = $(id);
       if (!mount || !inp || mount.firstChild) return;
       var f = makeColorField(inp.value, function (v) { inp.value = v; inp.dispatchEvent(new Event('input')); });
@@ -2615,7 +2632,8 @@
     });
     // pro / smart-text reveal-on-toggle groups
     [['c-boxgrad', 'c-boxgrad-opts'], ['c-numon', 'c-num-opts'], ['c-brandon', 'c-brand-opts'],
-     ['c-hlgrad', 'c-hlgrad-opts'], ['c-perword', 'c-perword-style-wrap']].forEach(function (pair) {
+     ['c-hlgrad', 'c-hlgrad-opts'], ['c-perword', 'c-perword-style-wrap'],
+     ['c-boxstroke-on', 'c-boxstroke-opts'], ['c-boxglow-on', 'c-boxglow-opts']].forEach(function (pair) {
       var t = $(pair[0]), opt = $(pair[1]);
       if (t && opt) t.addEventListener('change', function () { opt.style.display = this.checked ? '' : 'none'; renderPreview(); });
     });
@@ -2887,9 +2905,14 @@
       font: o.font, fallbackFonts: currentPreset().fallbackFonts || [],
       fontSize: o.fontSize, fill: o.fill, highlight: o.highlight,
       stroke: o.strokeWidth ? o.stroke : null, strokeWidth: o.strokeWidth,
-      boxColor: o.boxColor, boxRadius: currentPreset().boxRadius || 10,
-      glow: currentPreset().glow || null,
-      letterSpacing: currentPreset().letterSpacing || 0,
+      boxColor: o.boxColor, boxRadius: o.boxRadius != null ? o.boxRadius : (currentPreset().boxRadius || 10),
+      boxColor2: o.boxColor2, boxOpacity: o.boxOpacity, boxPad: o.boxPad,
+      // button-pack box effects so a saved/duplicated button keeps its look
+      boxStroke: o.boxStroke, boxStrokeWidth: o.boxStrokeWidth, boxGlow: o.boxGlow,
+      box3d: o.box3d, box3dDepth: o.box3dDepth, boxGloss: o.boxGloss,
+      boxGradient: currentPreset().boxGradient || 'v', boxStops: currentPreset().boxStops || null,
+      glow: o.glow || currentPreset().glow || null,
+      letterSpacing: o.letterSpacing || currentPreset().letterSpacing || 0,
       highlightScale: o.highlightScale,
       uppercase: o.uppercase,
       layout: o.yPct <= 0.3 ? 'top' : o.yPct >= 0.66 ? 'bottom' : 'center',
@@ -3009,6 +3032,13 @@
       perWordEntrance: cchk('c-perword'),
       perWordEntranceStyle: ($('c-perword-style') ? $('c-perword-style').value : 'pop'),
       upcomingOpacity: cchk('c-dimupcoming') ? 0.4 : 1,
+      // --- button-pack box effects (border / neon glow / 3D / gloss) ---
+      boxStroke: cchk('c-boxstroke-on') ? $('c-boxstroke').value : null,
+      boxStrokeWidth: cnum('c-boxstrokew', 4),
+      boxGlow: cchk('c-boxglow-on') ? $('c-boxglow').value : null,
+      box3d: (cnum('c-box3d-depth', 0) > 0) ? $('c-box3d').value : null,
+      box3dDepth: cnum('c-box3d-depth', 0),
+      boxGloss: cnum('c-boxgloss', 0) / 100,
       // --- smart text + segment ---
       boxColor2: cchk('c-boxgrad') ? $('c-box2').value : null,
       numberColor: cchk('c-numon') ? $('c-num').value : null,

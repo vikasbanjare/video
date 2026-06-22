@@ -110,7 +110,20 @@
       highlightGlowBlur: (o.highlightGlowBlur != null) ? o.highlightGlowBlur : (preset.highlightGlowBlur != null ? preset.highlightGlowBlur : 0.4),
       // two-tier "stacked" sizing: lines after the first render at this scale
       // (1 = off). Drives the big-headline / small-subline editorial look.
-      subScale: (o.subScale != null) ? o.subScale : (preset.subScale != null ? preset.subScale : 1)
+      subScale: (o.subScale != null) ? o.subScale : (preset.subScale != null ? preset.subScale : 1),
+      // ---- "Buttons" pack: full box styling (border / glow / 3D / gloss / shadow) ----
+      boxStroke: (o.boxStroke !== undefined) ? o.boxStroke : (preset.boxStroke || null),     // box border colour
+      boxStrokeWidth: Math.round(((o.boxStrokeWidth != null ? o.boxStrokeWidth : (preset.boxStrokeWidth || 0))) * scale),
+      boxGlow: (o.boxGlow !== undefined) ? o.boxGlow : (preset.boxGlow || null),             // neon glow colour around the box
+      boxGlowBlur: (o.boxGlowBlur != null) ? o.boxGlowBlur : (preset.boxGlowBlur != null ? preset.boxGlowBlur : 0.6),
+      box3d: (o.box3d !== undefined) ? o.box3d : (preset.box3d || null),                     // extruded bottom-edge colour
+      box3dDepth: Math.round(((o.box3dDepth != null ? o.box3dDepth : (preset.box3dDepth || 0))) * scale),
+      boxGloss: (o.boxGloss != null) ? o.boxGloss : (preset.boxGloss || 0),                  // 0..1 glossy top sheen
+      boxShadow: (o.boxShadow !== undefined) ? o.boxShadow : (preset.boxShadow || null),     // drop-shadow colour under the box
+      boxShadowBlur: (o.boxShadowBlur != null) ? o.boxShadowBlur : (preset.boxShadowBlur != null ? preset.boxShadowBlur : 0.5),
+      boxShadowDY: Math.round(((o.boxShadowDY != null ? o.boxShadowDY : (preset.boxShadowDY != null ? preset.boxShadowDY : 0))) * scale),
+      boxGradient: o.boxGradient || preset.boxGradient || 'v',   // 'v' vertical | 'h' horizontal
+      boxStops: o.boxStops || preset.boxStops || null            // [[offset,'#hex'],…] multi-stop fill
     };
   }
 
@@ -147,6 +160,9 @@
   }
 
   function roundRect(ctx, x, y, w, h, r) {
+    // clamp the radius so a large "pill" radius can't overshoot into a pinched
+    // leaf shape (arcTo crosses over when r > half the smaller side).
+    r = Math.max(0, Math.min(r, w / 2, h / 2));
     ctx.beginPath();
     ctx.moveTo(x + r, y);
     ctx.arcTo(x + w, y, x + w, y + h, r);
@@ -377,21 +393,81 @@
       // background box behind the whole line (opacity + padding + gradient).
       // barTop/barH are remembered so an active-word box can be centred inside it.
       var barTop = null, barH = null;
-      if (style.boxColor) {
+      if (style.boxColor || style.boxStroke || style.boxGlow) {
         var padX = base * 0.32 * style.boxPad, padY = base * 0.22 * style.boxPad;
         var bxTop = y - line.height - padY + line.height * 0.18, bxH = line.height + padY * 2;
+        var bxLeft = x - padX, bxW = line.width + padX * 2;
         barTop = bxTop; barH = bxH;
         ctx.save();
-        ctx.globalAlpha = style.boxOpacity;
-        if (style.boxColor2) {
-          var bg = ctx.createLinearGradient(0, bxTop, 0, bxTop + bxH);
-          bg.addColorStop(0, style.boxColor); bg.addColorStop(1, style.boxColor2);
-          ctx.fillStyle = bg;
-        } else {
-          ctx.fillStyle = style.boxColor;
+
+        // fill style: multi-stop > 2-stop gradient > solid. Direction h/v.
+        function boxFill() {
+          if (style.boxStops && style.boxStops.length) {
+            var horiz = style.boxGradient === 'h';
+            var gg = ctx.createLinearGradient(horiz ? bxLeft : 0, horiz ? 0 : bxTop,
+                                              horiz ? bxLeft + bxW : 0, horiz ? 0 : bxTop + bxH);
+            for (var si = 0; si < style.boxStops.length; si++) gg.addColorStop(style.boxStops[si][0], style.boxStops[si][1]);
+            return gg;
+          }
+          if (style.boxColor2) {
+            var horiz2 = style.boxGradient === 'h';
+            var g2 = ctx.createLinearGradient(horiz2 ? bxLeft : 0, horiz2 ? 0 : bxTop,
+                                              horiz2 ? bxLeft + bxW : 0, horiz2 ? 0 : bxTop + bxH);
+            g2.addColorStop(0, style.boxColor); g2.addColorStop(1, style.boxColor2);
+            return g2;
+          }
+          return style.boxColor || 'rgba(0,0,0,0)';
         }
-        roundRect(ctx, x - padX, bxTop, line.width + padX * 2, bxH, style.boxRadius);
-        ctx.fill();
+
+        // 1) 3D extruded bottom edge (drawn behind the face, offset down)
+        if (style.box3d && style.box3dDepth > 0) {
+          ctx.fillStyle = style.box3d;
+          roundRect(ctx, bxLeft, bxTop + style.box3dDepth, bxW, bxH, style.boxRadius);
+          ctx.fill();
+        }
+        // 2) soft drop shadow under the box (neomorphism / paper / floating pill)
+        if (style.boxShadow) {
+          ctx.save();
+          ctx.shadowColor = style.boxShadow;
+          ctx.shadowBlur = bxH * style.boxShadowBlur;
+          ctx.shadowOffsetY = style.boxShadowDY || Math.round(bxH * 0.12);
+          ctx.fillStyle = style.boxColor || style.boxShadow;
+          roundRect(ctx, bxLeft, bxTop, bxW, bxH, style.boxRadius); ctx.fill();
+          ctx.restore();
+        }
+        // 3) neon glow: emanate the box colour/stroke colour outward
+        if (style.boxGlow) {
+          ctx.save();
+          ctx.shadowColor = style.boxGlow; ctx.shadowBlur = bxH * style.boxGlowBlur;
+          ctx.fillStyle = style.boxColor || 'rgba(0,0,0,0.001)';
+          roundRect(ctx, bxLeft, bxTop, bxW, bxH, style.boxRadius); ctx.fill();
+          if (style.boxStroke) { ctx.lineWidth = Math.max(2, style.boxStrokeWidth); ctx.strokeStyle = style.boxStroke; ctx.stroke(); ctx.stroke(); }
+          ctx.restore();
+        }
+        // 4) the face fill (boxOpacity dims ONLY the fill, so borders stay crisp)
+        if (style.boxColor) {
+          ctx.save();
+          ctx.globalAlpha = style.boxOpacity;
+          ctx.fillStyle = boxFill();
+          roundRect(ctx, bxLeft, bxTop, bxW, bxH, style.boxRadius);
+          ctx.fill();
+          ctx.restore();
+        }
+        // 5) glossy top sheen (Candy / Paypal / Windows): bright band fading down
+        if (style.boxGloss > 0) {
+          var sg = ctx.createLinearGradient(0, bxTop, 0, bxTop + bxH * 0.55);
+          sg.addColorStop(0, 'rgba(255,255,255,' + (0.75 * style.boxGloss) + ')');
+          sg.addColorStop(1, 'rgba(255,255,255,0)');
+          ctx.fillStyle = sg;
+          roundRect(ctx, bxLeft + bxW * 0.03, bxTop + bxH * 0.06, bxW * 0.94, bxH * 0.46, style.boxRadius * 0.8);
+          ctx.fill();
+        }
+        // 6) crisp border on top
+        if (style.boxStroke && style.boxStrokeWidth > 0) {
+          ctx.lineWidth = style.boxStrokeWidth; ctx.strokeStyle = style.boxStroke;
+          roundRect(ctx, bxLeft, bxTop, bxW, bxH, style.boxRadius);
+          ctx.stroke();
+        }
         ctx.restore();
       }
 
@@ -614,10 +690,13 @@
    * Pure + tested.
    */
   function legibilityWarning(style) {
-    var hasStroke = !!style.stroke && (style.strokeWidth || 0) > 0;
+    var hasStroke = (!!style.stroke && (style.strokeWidth || 0) > 0) ||
+                    (!!style.boxStroke && (style.boxStrokeWidth || 0) > 0);
     var hasBox = !!style.boxColor;
-    var hasGlow = !!style.glow;
-    if (!hasStroke && !hasBox && !hasGlow) {
+    var hasGlow = !!style.glow || !!style.boxGlow;
+    // a bordered / glowing / extruded pill is its own legible backing
+    var hasBacking = hasBox || hasStroke || hasGlow || !!style.box3d;
+    if (!hasBacking) {
       return 'No outline, box, or glow — captions can disappear on bright or busy footage. Add an outline.';
     }
     if (hasBox && contrastRatio(style.fill, style.boxColor) < 2.5) {

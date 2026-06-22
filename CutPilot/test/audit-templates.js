@@ -58,7 +58,8 @@ C.TEMPLATES.forEach(function (t) {
   // enums
   if (t.anim && !ANIM[C.animIdForConcept(t.anim)]) fail(id, 'anim "' + t.anim + '" does not resolve to a known animation');
   if (t.category && !CATS[t.category]) fail(id, 'category "' + t.category + '" not in CATEGORIES');
-  if (t.highlightStyle && t.highlightStyle !== 'color' && t.highlightStyle !== 'box') fail(id, 'highlightStyle "' + t.highlightStyle + '" invalid');
+  // the renderer supports these active-word shapes (see render.js draw loop)
+  if (t.highlightStyle && ['color', 'box', 'bar', 'marker', 'underline', 'circle'].indexOf(t.highlightStyle) === -1) fail(id, 'highlightStyle "' + t.highlightStyle + '" invalid');
   if (t.layout && ['top', 'center', 'bottom'].indexOf(t.layout) === -1) fail(id, 'layout "' + t.layout + '" invalid');
 
   // legibility over unknown footage: resolve to a concrete style and check it
