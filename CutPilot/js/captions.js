@@ -937,29 +937,60 @@
       return flags;
     }
 
-    var longestIdx = -1, longestLen = 0;
+    var set = opts.set || null;
+    var bestIdx = -1, bestScore = 0;
     for (i = 0; i < words.length; i++) {
       w = words[i]; clean = _clean(w); lc = clean.toLowerCase();
       var hasNum = /\d/.test(w);
       var isCta = !!CTA_WORDS[lc];
-      var isName = /^[A-Z][a-z]{2,}$/.test(clean) && i > 0;
-      var isContent = clean.length >= 4 && !STOP_WORDS[lc];
+      var isName = /^[A-Z][a-z]{2,}$/.test(clean) && i > 0;   // capitalised mid-sentence ≈ proper noun
 
-      if (mode === 'numbers' && hasNum) flags[i] = true;
-      else if (mode === 'cta' && isCta) flags[i] = true;
-      else if (mode === 'names' && isName) flags[i] = true;
-      else if (mode === 'keywords' && isContent && clean.length > longestLen) { longestLen = clean.length; longestIdx = i; }
-      else if (mode === 'smart') {
-        if (hasNum || isCta || isName) flags[i] = true;
-        else if (isContent && clean.length > longestLen) { longestLen = clean.length; longestIdx = i; }
+      if (mode === 'numbers') { if (hasNum) flags[i] = true; continue; }
+      if (mode === 'cta') { if (isCta) flags[i] = true; continue; }
+      if (mode === 'names') { if (isName) flags[i] = true; continue; }
+
+      // 'keywords' / 'smart': score each word for salience and pick the BEST one
+      // (not merely the longest), so the highlight lands on a meaningful word.
+      var sc = wordSalienceScore(w, i, set);
+      if (sc > bestScore) { bestScore = sc; bestIdx = i; }
+    }
+    if ((mode === 'keywords' || mode === 'smart') && bestIdx >= 0) flags[bestIdx] = true;
+    // 'smart' also always pops numbers/money and viral power-words (they're worth
+    // highlighting even when they aren't the single most salient word).
+    if (mode === 'smart') {
+      for (i = 0; i < words.length; i++) {
+        var c2 = _clean(words[i]).toLowerCase();
+        if (/\d/.test(words[i]) || VIRAL_WORDS[c2]) flags[i] = true;
       }
     }
-    if ((mode === 'keywords' || mode === 'smart') && longestIdx >= 0) flags[longestIdx] = true;
-    // v1.0: viral words always pop (in the general-purpose modes)
-    if (mode === 'smart' || mode === 'keywords') {
-      for (i = 0; i < words.length; i++) if (VIRAL_WORDS[_clean(words[i]).toLowerCase()]) flags[i] = true;
-    }
     return flags;
+  }
+
+  /* Filler / low-value words that should never be picked as the keyword. */
+  var FILLER_WORDS = {
+    um: 1, uh: 1, er: 1, ah: 1, hmm: 1, like: 1, well: 1, okay: 1, ok: 1, yeah: 1,
+    yep: 1, kinda: 1, sorta: 1, basically: 1, literally: 1, actually: 1, really: 1,
+    just: 1, very: 1, stuff: 1, things: 1, thing: 1, gonna: 1, wanna: 1, gotta: 1,
+    today: 1, also: 1, then: 1, there: 1, here: 1, this: 1, that: 1, these: 1, those: 1
+  };
+  /*
+   * Salience score for a single word (0 = never a keyword). Favours nouns/proper
+   * nouns, numbers/money, named CTAs/power-words and TF-IDF-salient words; longer
+   * content words rank higher; stop/filler words score 0. Pure + tested.
+   */
+  function wordSalienceScore(w, i, set) {
+    var clean = _clean(w), lc = clean.toLowerCase();
+    if (!clean) return 0;
+    var hasNum = /\d/.test(w);
+    if (!hasNum && (clean.length < 3 || STOP_WORDS[lc] || FILLER_WORDS[lc])) return 0;
+    var s = 1;
+    s += Math.min(4, Math.max(0, clean.length - 3) * 0.5);     // length (capped)
+    if (hasNum) s += 3.5;                                       // 2026, $4, 50%, 10x
+    if (/^[A-Z][a-z]{2,}/.test(clean) && i > 0) s += 2.5;       // proper noun
+    if (CTA_WORDS[lc]) s += 2;
+    if (VIRAL_WORDS[lc]) s += 2.5;
+    if (set && set[lc]) s += 3;                                 // salient across the whole transcript
+    return s;
   }
 
   /*
@@ -1366,6 +1397,7 @@
     planKaraoke: planKaraoke,
     planTypewriter: planTypewriter,
     markKeywords: markKeywords,
+    wordSalienceScore: wordSalienceScore,
     extractSpeaker: extractSpeaker,
     detectOnsets: detectOnsets,
     alignPhrase: alignPhrase,

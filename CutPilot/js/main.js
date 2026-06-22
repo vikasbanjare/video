@@ -335,11 +335,27 @@
         // Real per-word timestamps (timestamp_granularities[]=word) → accurate
         // highlight that rides the actual spoken word (not audio-onset guessing).
         if (j.words && j.words.length) {
+          // per-word confidence: use the word's own probability when present,
+          // else map the containing segment's avg_logprob (≈ exp) to 0..1.
+          var segs = j.segments || [];
+          var segConf = function (t) {
+            for (var si = 0; si < segs.length; si++) {
+              if (t >= segs[si].start - 0.02 && t <= segs[si].end + 0.02) {
+                var lp = segs[si].avg_logprob;
+                return (lp != null) ? Math.max(0, Math.min(1, Math.exp(lp))) : null;
+              }
+            }
+            return null;
+          };
           var wa = [];
           j.words.forEach(function (w) {
             var tx = (w.word != null ? w.word : w.text);
             if (tx == null) return; tx = String(tx).trim();
-            if (tx) wa.push({ start: +w.start || 0, end: +w.end || 0, text: tx });
+            if (!tx) return;
+            var st = +w.start || 0;
+            var conf = (w.probability != null) ? +w.probability
+                     : (w.confidence != null) ? +w.confidence : segConf(st);
+            wa.push({ start: st, end: +w.end || 0, text: tx, conf: conf });
           });
           if (wa.length) cues.words = wa;
         }
@@ -660,7 +676,7 @@
               var mStart = rc.start + minIn, mEnd = rc.end + minIn;
               insts.forEach(function (it) {
                 var s = Math.max(mStart, it.inPoint), e = Math.min(mEnd, it.outPoint);
-                if (e - s > 0.05) out.push({ start: s - it.inPoint + it.seqStart, end: e - it.inPoint + it.seqStart, text: rc.text });
+                if (e - s > 0.05) out.push({ start: s - it.inPoint + it.seqStart, end: e - it.inPoint + it.seqStart, text: rc.text, conf: rc.conf });
               });
             });
             out.sort(function (a, b) { return a.start - b.start; });
@@ -1938,7 +1954,7 @@
       try {
         frames = CPCaptions.buildCaptionFrames([{ start: 0, end: sw.length * DUR, text: sample }], {
           anim: animId, wordsPerCue: (t.wordsPerCue || 4), uppercase: !!t.uppercase,
-          keyword: { on: !!t.keyword, mode: 'keywords' }, speaker: { on: false },
+          keyword: { on: !!t.keyword, mode: 'smart' }, speaker: { on: false },   // same picker as export → card = output
           build: !!t.build, wordCues: wordCues, window: (t.window || 0)
         });
       } catch (eF) { frames = null; }
@@ -4594,6 +4610,8 @@
 
   $('btn-cut').addEventListener('click', function () {
     var ranges = selectedSilences();
+    // protect word edges when we have word timing (snap cut bounds to words)
+    ranges = snapRangesToWords(ranges, state.transcriptWords);
     if (!ranges.length) return toast('Nothing selected to cut.', true);
     var backup = $('opt-backup').checked;
     var msg = 'Cut ' + ranges.length + ' silent range' + (ranges.length > 1 ? 's' : '') + ' directly in this sequence?';
@@ -4623,6 +4641,25 @@
       if ($('ae-takes')) $('ae-takes').classList.toggle('hidden', ae !== 'takes');
     });
   })();
+
+  /* Snap cut ranges so an edge never lands in the MIDDLE of a spoken word: if a
+     word straddles the cut start, pull the start to that word's end; if one
+     straddles the cut end, push the end to that word's start. Sequence time. */
+  function snapRangesToWords(ranges, words, win) {
+    if (!words || !words.length) return ranges;
+    win = win || 0.3;
+    var out = [];
+    ranges.forEach(function (r) {
+      var s = r.start, e = r.end;
+      for (var i = 0; i < words.length; i++) {
+        var w = words[i];
+        if (w.start < s - 0.001 && w.end > s + 0.02 && (s - w.start) < win) s = Math.max(s, w.end);
+        if (w.start < e - 0.02 && w.end > e + 0.001 && (w.end - e) < win) e = Math.min(e, w.start);
+      }
+      if (e - s > 0.04) out.push({ start: s, end: e });
+    });
+    return out;
+  }
 
   // ---- Auto-Edit: remove repeated takes (uses the transcript) ----
   state.takeDeletes = [];
@@ -4674,6 +4711,7 @@
     var dels = state.takeDeletes || [];
     if (!dels.length) return toast('Nothing to remove.', true);
     var ranges = dels.map(function (d) { return { start: d.start, end: d.end }; });
+    ranges = snapRangesToWords(ranges, state.transcriptWords);   // keep edges off mid-word
     var backup = safeCopy ? true : ($('tk-backup') ? $('tk-backup').checked : true);
     var msg = 'Remove ' + ranges.length + ' repeated take' + (ranges.length > 1 ? 's' : '') + ' (ripple-delete)?' +
       (backup ? '\n\n✅ A backup of the sequence is made first.' : '\n\n⚠️ Backup is OFF — edits your live sequence.');

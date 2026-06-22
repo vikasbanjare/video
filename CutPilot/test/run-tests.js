@@ -750,6 +750,27 @@ console.log('sfx.js');
   assert(bursts >= 2, 'shutter has two distinct clicks');
 }
 
+// ------------------------------------------ captions: keyword salience ----
+console.log('captions.js — smarter keyword pick');
+{
+  function pick(sentence) {
+    var ws = sentence.split(' '), f = CPCaptions.markKeywords(ws, { mode: 'keywords' });
+    for (var i = 0; i < ws.length; i++) if (f[i]) return ws[i].replace(/[^A-Za-z0-9']/g, '');
+    return null;
+  }
+  assert(pick('Today I want to show you the secret') === 'secret', 'picks the salient word, not "Today"/longest filler');
+  assert(pick('we live in India and love cricket') === 'India', 'prefers a proper noun (India)');
+  assert(pick('um so like basically it was really good') === 'good', 'ignores filler words');
+  // numbers score highly
+  var nf = CPCaptions.markKeywords('it costs 5000 rupees'.split(' '), { mode: 'smart' });
+  assert(nf[2] === true, 'smart mode always pops a number');
+  // scorer: stop/filler words score 0, content words > 0
+  assert(CPCaptions.wordSalienceScore('the', 1, null) === 0, 'stop word scores 0');
+  assert(CPCaptions.wordSalienceScore('today', 1, null) === 0, 'filler "today" scores 0');
+  assert(CPCaptions.wordSalienceScore('strategy', 2, null) > 0, 'content word scores > 0');
+  assert(CPCaptions.wordSalienceScore('India', 2, null) > CPCaptions.wordSalienceScore('place', 2, null), 'proper noun beats a plain noun of similar length');
+}
+
 // ------------------------------------------------ takes: retake cleanup ----
 console.log('takes.js');
 {
