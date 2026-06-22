@@ -1,10 +1,11 @@
 /*
- * CutPilot — repeated-take / bad-take cleanup.
- * Works on the transcript word stream (which CutPilot already produces) to find
- * places where the speaker RESTARTED a phrase — false starts and retakes — and
- * returns the time ranges of the worse takes to ripple-delete, keeping the best
- * (by default the last/most-complete attempt, optionally the most confident).
- * Pure (no DOM/Node) so it's unit-tested and runs anywhere.
+ * CutPilot — repeated-take / bad-take cleanup (fuzzy).
+ * Real retakes are rarely word-for-word identical — the speaker rephrases a
+ * little (5–15% different). So instead of exact matching we split the transcript
+ * into PHRASES (by pauses / sentence punctuation) and cluster consecutive
+ * phrases that are SIMILAR (token LCS ratio ≥ threshold), then keep the best
+ * take (last, or most confident) and return the others' time ranges to ripple-
+ * delete. Pure (no DOM/Node) so it's unit-tested and runs anywhere.
  */
 (function (root, factory) {
   var lib = factory();
@@ -27,81 +28,125 @@
     return out;
   }
 
+  /* Longest-common-subsequence length of two token arrays (order-aware, tolerant
+     of insertions/deletions/substitutions — exactly how retakes differ). */
+  function lcsLen(a, b) {
+    var n = a.length, m = b.length;
+    if (!n || !m) return 0;
+    var prev = new Array(m + 1), cur = new Array(m + 1), i, j;
+    for (j = 0; j <= m; j++) prev[j] = 0;
+    for (i = 1; i <= n; i++) {
+      cur[0] = 0;
+      for (j = 1; j <= m; j++) {
+        cur[j] = (a[i - 1] === b[j - 1]) ? prev[j - 1] + 1 : Math.max(prev[j], cur[j - 1]);
+      }
+      var t = prev; prev = cur; cur = t;
+    }
+    return prev[m];
+  }
+
+  /* Similarity of two phrases (0..1): LCS over normalized tokens / longer length.
+     Two retakes of the same line score ~0.85–0.95; unrelated lines score < ~0.4. */
+  function phraseSim(A, B) {
+    if (!A.length || !B.length) return 0;
+    return lcsLen(A, B) / Math.max(A.length, B.length);
+  }
+
+  function pTokens(p) { var a = []; for (var i = 0; i < p.length; i++) { var n = norm(p[i].text); if (n) a.push(n); } return a; }
+  function pText(p) { var s = []; for (var i = 0; i < p.length; i++) s.push(p[i].text); return s.join(' '); }
+  function pConf(p) { var s = 0, c = 0; for (var i = 0; i < p.length; i++) { if (p[i].conf != null) { s += p[i].conf; c++; } } return c ? s / c : null; }
+
+  /* Split a word stream into phrases at pauses (gap in word timing) or sentence
+     punctuation — each phrase is one candidate "take". */
+  function splitPhrases(words, pauseGap) {
+    pauseGap = (pauseGap != null) ? pauseGap : 0.45;
+    var phrases = [], cur = [words[0]];
+    for (var k = 1; k < words.length; k++) {
+      var gap = words[k].start - words[k - 1].end;
+      var endsSentence = /[.!?]["')\]]?$/.test(words[k - 1].text);
+      if (gap > pauseGap || endsSentence) { if (cur.length) phrases.push(cur); cur = []; }
+      cur.push(words[k]);
+    }
+    if (cur.length) phrases.push(cur);
+    return phrases;
+  }
+
   /*
-   * Find repeated takes in a word stream.
-   *   words: [{start,end,text, conf?}]  (conf optional 0..1, higher = better)
-   *   opts.minRun   minimum matching words to count as a retake (default 3)
-   *   opts.maxGap   filler words allowed between the two takes (default 3)
-   *   opts.keep     'last' (default — usually the good take) | 'confident'
+   * Find repeated takes (fuzzy).
+   *   words: [{start,end,text, conf?}]
+   *   opts.sim     similarity 0..1 to call two phrases the same take (default .6)
+   *   opts.minRun  min words a take must have to be considered (default 3)
+   *   opts.keep    'last' (default) | 'confident'
+   *   opts.pauseGap pause (s) that separates takes (default .45)
    * Returns { deletes:[{start,end,text,reason}], kept:n, removedWords:n }.
-   * A delete range covers the WORSE take, from its first word to the start of the
-   * kept take (so the kept take and everything after it survive).
+   * Each delete spans a worse take INCLUDING its trailing pause (up to the next
+   * phrase) so ripple-deleting it leaves no dangling silence.
    */
   function findRepeatedTakes(words, opts) {
     opts = opts || {};
+    var thresh = (opts.sim != null) ? opts.sim : 0.6;
     var minRun = Math.max(2, opts.minRun || 3);
-    var maxGap = (opts.maxGap != null) ? opts.maxGap : 3;
     var keep = opts.keep || 'last';
     var N = (words || []).length;
     if (N < minRun * 2) return { deletes: [], kept: 0, removedWords: 0 };
 
-    var nw = new Array(N);
-    for (var x = 0; x < N; x++) nw[x] = norm(words[x].text);
+    var phrases = splitPhrases(words, opts.pauseGap);
+    // cache tokens per phrase
+    var toks = phrases.map(pTokens);
+    var P = phrases.length;
+    var deletes = [], removedWords = 0;
 
-    function eq(a, b, L) {           // words[a..a+L-1] === words[b..b+L-1] (normalized, ignoring empties)
-      for (var t = 0; t < L; t++) { if (!nw[a + t] || nw[a + t] !== nw[b + t]) return false; }
-      return true;
-    }
-    function avgConf(a, L) {
-      var s = 0, c = 0; for (var t = 0; t < L; t++) { var cf = words[a + t].conf; if (cf != null) { s += cf; c++; } }
-      return c ? s / c : null;
-    }
+    function startOf(idx) { return phrases[idx][0].start; }
+    function nextStart(idx) { return (idx + 1 < P) ? phrases[idx + 1][0].start : phrases[idx][phrases[idx].length - 1].end; }
 
-    var deletes = [], removedWords = 0, i = 0;
-    while (i < N) {
-      var bestL = 0, bestJ = -1;
-      // longest repeat first; the second take may start right after (gap 0) or
-      // after a few filler words (gap 1..maxGap)
-      var maxL = Math.floor((N - i) / 2);
-      for (var L = maxL; L >= minRun && !bestL; L--) {
-        for (var gap = 0; gap <= maxGap; gap++) {
-          var j = i + L + gap;
-          if (j + L > N) continue;
-          if (eq(i, j, L)) { bestL = L; bestJ = j; break; }
+    var i = 0;
+    while (i < P) {
+      if (toks[i].length < minRun) { i++; continue; }
+      // grow a cluster of consecutive phrases similar to this take. Compare to the
+      // cluster's most-recent member (retakes can drift) and allow ONE short
+      // filler phrase ("um", "ok let me redo that") between attempts.
+      var cluster = [i], last = i, j = i + 1;
+      while (j < P) {
+        var s = phraseSim(toks[last], toks[j]);
+        if (s < thresh) s = Math.max(s, phraseSim(toks[i], toks[j]));
+        if (s >= thresh && toks[j].length >= Math.min(minRun, 2)) { cluster.push(j); last = j; j++; continue; }
+        // skip a single short interjection between takes
+        if (toks[j].length <= 2 && j + 1 < P && phraseSim(toks[last], toks[j + 1]) >= thresh) {
+          cluster.push(j); cluster.push(j + 1); last = j + 1; j += 2; continue;
         }
+        break;
       }
-      if (bestL) {
-        var firstStart = words[i].start, secondStart = words[bestJ].start;
-        var drop = { start: firstStart, end: secondStart, text: sliceText(words, i, bestL), reason: 'repeated phrase' };
-        // 'confident' mode: if the FIRST take scores clearly higher, keep it and
-        // drop the second instead (rare, but respects confidence when available).
+      if (cluster.length > 1) {
+        // pick the keeper
+        var keepIdx = cluster[cluster.length - 1];   // default: last attempt
         if (keep === 'confident') {
-          var c1 = avgConf(i, bestL), c2 = avgConf(bestJ, bestL);
-          if (c1 != null && c2 != null && c1 > c2 + 0.05) {
-            var thirdStart = (bestJ + bestL < N) ? words[bestJ + bestL].start : words[bestJ + bestL - 1].end;
-            drop = { start: secondStart, end: thirdStart, text: sliceText(words, bestJ, bestL), reason: 'lower-confidence retake' };
-            deletes.push(drop); removedWords += bestL; i = i + bestL; continue;
+          var bc = -Infinity;
+          for (var ci = 0; ci < cluster.length; ci++) {
+            var cf = pConf(phrases[cluster[ci]]); if (cf == null) cf = -1;
+            if (cf > bc) { bc = cf; keepIdx = cluster[ci]; }
           }
         }
-        deletes.push(drop); removedWords += bestL;
-        i = bestJ;                  // continue scanning from the kept take
+        for (var c2 = 0; c2 < cluster.length; c2++) {
+          var idx = cluster[c2];
+          if (idx === keepIdx) continue;
+          var st = startOf(idx), en = nextStart(idx);    // include trailing pause
+          deletes.push({ start: st, end: en, text: pText(phrases[idx]), reason: 'repeated take' });
+          removedWords += phrases[idx].length;
+        }
+        i = j;
       } else { i++; }
     }
-    return { deletes: deletes, kept: deletes.length, removedWords: removedWords };
+    return { deletes: tidyDeletes(deletes, 0.1), kept: deletes.length, removedWords: removedWords };
   }
 
-  function sliceText(words, a, L) {
-    var s = []; for (var t = 0; t < L; t++) s.push(words[a + t].text); return s.join(' ');
-  }
-
-  /* Merge delete ranges that touch/overlap, and drop anything shorter than min. */
+  /* Merge delete ranges that touch/overlap, drop anything shorter than min. */
   function tidyDeletes(deletes, minLen) {
     minLen = minLen || 0.08;
     var s = deletes.slice().sort(function (a, b) { return a.start - b.start; });
     var out = [];
     for (var i = 0; i < s.length; i++) {
       if (s[i].end - s[i].start < minLen) continue;
-      if (out.length && s[i].start <= out[out.length - 1].end + 0.02) {
+      if (out.length && s[i].start <= out[out.length - 1].end + 0.05) {
         out[out.length - 1].end = Math.max(out[out.length - 1].end, s[i].end);
         out[out.length - 1].text += ' / ' + s[i].text;
       } else { out.push({ start: s[i].start, end: s[i].end, text: s[i].text, reason: s[i].reason }); }
@@ -109,5 +154,8 @@
     return out;
   }
 
-  return { findRepeatedTakes: findRepeatedTakes, flatten: flatten, tidyDeletes: tidyDeletes, _norm: norm };
+  return {
+    findRepeatedTakes: findRepeatedTakes, flatten: flatten, tidyDeletes: tidyDeletes,
+    phraseSim: phraseSim, lcsLen: lcsLen, splitPhrases: splitPhrases, _norm: norm
+  };
 });

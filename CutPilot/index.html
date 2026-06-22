@@ -14,7 +14,7 @@
 <body class="theme-light">
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.154</span>
+    <span class="ver" id="ver">v0.9.155</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -693,11 +693,11 @@
            take and ripple-deletes the earlier ones. Transcribe your clip first
            (Transcribe tab) — word timing makes the cuts tight.</p>
         <div class="grid2">
-          <label>Min repeated words <span class="dim">(to count as a retake)</span>
+          <label>Min words in a take <span class="dim">(ignore tiny phrases)</span>
             <input type="number" id="tk-minrun" value="3" min="2" max="8" step="1">
           </label>
-          <label>Filler words allowed between <span class="dim">(um, uh…)</span>
-            <input type="number" id="tk-maxgap" value="3" min="0" max="6" step="1">
+          <label>Match sensitivity <span class="val" id="tk-sim-val">60%</span> <span class="dim">(lower = catches reworded retakes)</span>
+            <input type="range" id="tk-sim" min="40" max="90" step="5" value="60">
           </label>
         </div>
         <label class="fld-full" style="margin-top:6px">Keep which take?
@@ -922,7 +922,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.154 · auto-edit · multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.155 · auto-edit · multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

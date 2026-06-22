@@ -774,28 +774,45 @@ console.log('captions.js — smarter keyword pick');
 // ------------------------------------------------ takes: retake cleanup ----
 console.log('takes.js');
 {
-  function mkWords(text, conf) {
-    var ws = text.split(' '), out = [], t = 0;
-    ws.forEach(function (w) { out.push({ start: +t.toFixed(2), end: +(t + 0.3).toFixed(2), text: w, conf: conf }); t += 0.32; });
+  // build a word stream from phrases separated by a 0.6s pause (so they split
+  // into takes); each word ~0.3s
+  function mkTakes(phrases) {
+    var out = [], t = 0;
+    phrases.forEach(function (ph) {
+      ph.split(' ').forEach(function (w) { out.push({ start: +t.toFixed(2), end: +(t + 0.28).toFixed(2), text: w }); t += 0.3; });
+      t += 0.6;
+    });
     return out;
   }
-  // false start: "Today I want to" said twice → drop the first
-  var r1 = CPTakes.findRepeatedTakes(mkWords('Today I want to Today I want to show you'), { minRun: 3, maxGap: 2 });
-  assert(r1.deletes.length === 1, 'detects one repeated take');
-  assert(close(r1.deletes[0].start, 0, 0.01), 'deletes the FIRST (worse) take, keeping the later one');
-  assert(close(r1.deletes[0].end, mkWords('Today I want to Today').slice(-1)[0].start, 0.01) || r1.deletes[0].end > 1, 'delete ends at the kept take start');
+  // FUZZY: three retakes that differ 5–15% → keep the last, remove the earlier two
+  var r1 = CPTakes.findRepeatedTakes(mkTakes([
+    'so the most important thing about investing is patience',
+    'so the most important part about investing is your patience',
+    'the most important thing about investing is patience really',
+    'and that is why I started this whole channel'
+  ]), { sim: 0.6, minRun: 3, keep: 'last' });
+  var removed = r1.deletes.reduce(function (a, d) { return a + (d.end - d.start); }, 0);
+  assert(r1.deletes.length >= 1 && removed > 4, 'fuzzy: clusters 3 reworded retakes and removes the earlier ones');
+  assert(!/started this whole channel/.test(r1.deletes.map(function (d) { return d.text; }).join(' ')), 'fuzzy: does NOT remove the genuinely different sentence');
 
-  // a clean sentence has nothing to remove
-  assert(CPTakes.findRepeatedTakes(mkWords('this is a clean sentence with no retakes')).deletes.length === 0, 'clean text → no deletes');
+  // similarity scores: retakes high, unrelated low
+  assert(CPTakes.phraseSim(['the', 'market', 'is', 'growing', 'fast'], ['the', 'market', 'is', 'really', 'growing']) > 0.6, 'reworded retake scores similar');
+  assert(CPTakes.phraseSim(['the', 'market', 'is', 'growing'], ['i', 'love', 'making', 'videos']) < 0.3, 'unrelated lines score dissimilar');
 
-  // tolerates filler words between takes ("um")
-  var r3 = CPTakes.findRepeatedTakes(mkWords('the market is um the market is growing'), { minRun: 3, maxGap: 2 });
-  assert(r3.deletes.length === 1 && /the market is/.test(r3.deletes[0].text), 'detects a retake across a filler word');
+  // a clean script (all different lines) → nothing removed
+  var clean = CPTakes.findRepeatedTakes(mkTakes([
+    'welcome back to the channel everyone',
+    'today we are talking about money',
+    'lets get straight into the first point'
+  ]), { sim: 0.6, minRun: 3 });
+  assert(clean.deletes.length === 0, 'clean script → no false deletes');
 
-  // confidence mode keeps the more confident take
-  var lowThenHigh = mkWords('we sell it', 0.4).concat(mkWords('we sell it cheap', 0.9));
-  var rc = CPTakes.findRepeatedTakes(lowThenHigh, { minRun: 3, maxGap: 1, keep: 'last' });
-  assert(rc.deletes.length === 1, 'confidence/last mode still finds the repeat');
+  // confidence mode keeps the most-confident attempt
+  function withConf(words, c) { return words.map(function (w) { w.conf = c; return w; }); }
+  var a = withConf(mkTakes(['we sell it cheap and fast']), 0.4);
+  var b = withConf(mkTakes(['we sell it cheap and quick']), 0.95);
+  var rc = CPTakes.findRepeatedTakes(a.concat(b.map(function (w) { return { start: w.start + 10, end: w.end + 10, text: w.text, conf: w.conf }; })), { sim: 0.55, minRun: 3, keep: 'confident' });
+  assert(rc.deletes.length >= 1 && rc.deletes[0].start < 5, 'confidence mode drops the low-confidence (earlier) take');
 
   // tidyDeletes merges adjacent ranges and drops tiny ones
   var tidy = CPTakes.tidyDeletes([{ start: 0, end: 1, text: 'a' }, { start: 1.01, end: 2, text: 'b' }, { start: 5, end: 5.02, text: 'tiny' }], 0.08);

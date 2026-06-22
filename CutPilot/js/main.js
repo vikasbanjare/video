@@ -4692,6 +4692,7 @@
     });
     $('btn-takes-apply').classList.remove('hidden');
   }
+  if ($('tk-sim')) $('tk-sim').addEventListener('input', function () { $('tk-sim-val').textContent = this.value + '%'; });
   if ($('btn-takes-find')) $('btn-takes-find').addEventListener('click', function () {
     var words = takesGetWords();
     if (!words || words.length < 6) return toast('Transcribe your clip first (Transcribe tab) — I need the words to find retakes.', true);
@@ -4699,7 +4700,7 @@
     setTimeout(function () {
       var res = CPTakes.findRepeatedTakes(words, {
         minRun: parseInt($('tk-minrun').value, 10) || 3,
-        maxGap: parseInt($('tk-maxgap').value, 10) || 3,
+        sim: (parseInt($('tk-sim').value, 10) || 60) / 100,
         keep: $('tk-keep').value
       });
       state.takeDeletes = CPTakes.tidyDeletes(res.deletes, 0.1);
