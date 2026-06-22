@@ -5202,20 +5202,39 @@
     var w = $('mc-center-wrap2'); if (w) w.style.opacity = ((state.mcMap || []).indexOf(-1) >= 0) ? '1' : '0.6';
   }
 
-  /* Render a "V1 mic: [A1 ▾]" row per camera so the user maps mics manually. */
+  /* AutoPod-style setup: one row per camera — name the speaker and pick the mic
+     that's on them. "When this mic is talking, show this camera." */
   function renderMcMap() {
     ensureAudioTracks().then(function (tracks) {
       var n = parseInt($('mc-angles').value, 10) || 2;
       var box = $('mc-map');
       box.innerHTML = '';
       state.mcMap = state.mcMap || [];
+      state.mcSpeakers = state.mcSpeakers || [];
       for (var i = 0; i < n; i++) {
         var row = document.createElement('div');
         row.className = 'map-row';
+
         var lab = document.createElement('span');
         lab.className = 'map-cam';
-        lab.textContent = 'V' + (i + 1);
+        lab.textContent = '🎥 V' + (i + 1);
         row.appendChild(lab);
+
+        // speaker name (optional but makes the plan readable — "Aarav", "Maya"…)
+        var name = document.createElement('input');
+        name.type = 'text';
+        name.className = 'map-name';
+        name.placeholder = 'Speaker ' + (i + 1);
+        name.value = state.mcSpeakers[i] || '';
+        name.dataset.angle = String(i);
+        name.style.cssText = 'flex:1;min-width:54px;font-size:11.5px;padding:3px 6px';
+        name.addEventListener('input', function () { state.mcSpeakers[parseInt(this.dataset.angle, 10)] = this.value; });
+        row.appendChild(name);
+
+        var micLab = document.createElement('span');
+        micLab.className = 'dim'; micLab.textContent = '🎙️';
+        micLab.style.cssText = 'margin:0 2px';
+        row.appendChild(micLab);
 
         var sel = document.createElement('select');
         sel.dataset.angle = String(i);
@@ -5227,7 +5246,7 @@
         });
         var oc = document.createElement('option');
         oc.value = '-1';
-        oc.textContent = 'Center / wide (no mic)';
+        oc.textContent = 'No mic (wide / cutaway)';
         sel.appendChild(oc);
 
         var def = (state.mcMap[i] != null) ? state.mcMap[i] : (i < tracks.length ? i : -1);
@@ -5241,12 +5260,19 @@
         box.appendChild(row);
       }
       state.mcMap.length = n;
+      state.mcSpeakers.length = n;
       syncCenterCtrl();
     }).catch(function (e) {
       $('mc-map').innerHTML = '<p class="hint">' +
         (CPBridge.isCEP() ? 'No audio detected. Make sure your sequence is open with each mic on an audio track, then tap <b>🔄 Detect audio</b> above.' :
          'Open inside Premiere to map your mics.') + '</p>';
     });
+  }
+
+  /* Friendly label for a camera angle: the speaker's name if set, else "V1". */
+  function mcAngleName(angle) {
+    var nm = state.mcSpeakers && state.mcSpeakers[angle];
+    return (nm && nm.trim()) ? nm.trim() : ('V' + (angle + 1));
   }
 
   var _mainTracksLoaded = false;
@@ -5607,7 +5633,11 @@
       chip.textContent = 'V' + (p.angle + 1);
       item.appendChild(chip);
       var span = document.createElement('span');
-      span.textContent = '#' + (i + 1) + '  ' + fmt(p.start) + ' → ' + fmt(p.end);
+      // show the speaker's name (if set) so the cut list reads like AutoPod's:
+      // "Aarav  0:00 → 0:05"
+      var who = mcAngleName(p.angle);
+      var lead = (who === ('V' + (p.angle + 1))) ? '' : (who + '  ');
+      span.textContent = '#' + (i + 1) + '  ' + lead + fmt(p.start) + ' → ' + fmt(p.end);
       item.appendChild(span);
       view.appendChild(item);
     });

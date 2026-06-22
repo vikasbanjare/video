@@ -14,7 +14,7 @@
 <body class="theme-light">
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.168</span>
+    <span class="ver" id="ver">v0.9.169</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -757,8 +757,9 @@
         <span class="step-title">Auto multicam</span>
       </div>
       <p class="hint">Like AutoPod: stack each camera on its own track (V1, V2…),
-         tell it which mic belongs to each camera, and click <b>Auto multicam</b> —
-         it cuts to whoever's talking. That's it.</p>
+         name each speaker and pick the mic that's on them, then click
+         <b>Auto multicam</b> — when that mic is talking, its camera is shown.
+         No nesting — each angle on its own video track.</p>
 
       <label>How should it switch cameras?
         <select id="mc-source">
@@ -783,8 +784,9 @@
 
       <!-- follow-the-speaker (FireCut-style) options -->
       <div id="mc-speaker-opts">
-        <div class="map-label">Which mic is on each camera? <button id="btn-mc-rescan" class="chip-btn" style="float:right">🔄 Detect audio</button></div>
+        <div class="map-label">Camera → speaker → mic <button id="btn-mc-rescan" class="chip-btn" style="float:right">🔄 Detect audio</button></div>
         <div id="mc-map"></div>
+        <p class="hint" style="margin:4px 0 0">Pair each camera with the mic on that person. Names are optional — they just make the cut list readable.</p>
         <label class="check"><input type="checkbox" id="mc-autosync"> 🧲 Auto-sync cameras by audio <span class="dim">(ONLY if angles are out of sync — leave OFF for separate mics)</span></label>
         <label>Min shot length (s) <span class="dim">(don't cut faster than this)</span> <span class="val" id="mc-minseg-val">1.2</span>
           <input type="range" id="mc-minseg" min="0.5" max="5" step="0.1" value="1.2">
@@ -946,7 +948,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.168 · auto-edit · multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.169 · auto-edit · multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>
