@@ -14,7 +14,7 @@
 <body class="theme-light">
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.158</span>
+    <span class="ver" id="ver">v0.9.159</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -730,19 +730,19 @@
     <div class="card">
       <div class="step-head">
         <span class="step-num">1</span>
-        <span class="step-title">Cameras</span>
+        <span class="step-title">Auto multicam</span>
       </div>
-      <p class="hint">Stack each camera on its own video track (V1, V2, …). Then
-         pick how the angle should switch — works with one mic per person, one
-         mixed track, or a single main mic.</p>
+      <p class="hint">Like AutoPod: stack each camera on its own track (V1, V2…),
+         tell it which mic belongs to each camera, and click <b>Auto multicam</b> —
+         it cuts to whoever's talking. That's it.</p>
 
-      <label>How to switch angle
+      <label>How to switch
         <select id="mc-source">
-          <option value="follow">🎙️ Follow the speaker — a mic per camera</option>
+          <option value="follow">🎙️ Follow the speaker (a mic per camera) — recommended</option>
           <option value="transcript">🗣️ Speaker turns — from the transcript</option>
-          <option value="speech">🔊 Switch on speech — one main / mixed mic</option>
+          <option value="speech">🔊 On speech — one mixed mic</option>
           <option value="interval">⏱️ Every few seconds</option>
-          <option value="markers">📍 At my timeline markers</option>
+          <option value="markers">📍 At my markers</option>
           <option value="smartcut">✂️ At my Smart Cut points</option>
         </select>
       </label>
@@ -764,12 +764,8 @@
       <div id="mc-speaker-opts">
         <div class="map-label">Which mic is on each camera?</div>
         <div id="mc-map"></div>
-        <label class="check"><input type="checkbox" id="mc-autosync" checked> 🧲 Auto-sync cameras by audio <span class="dim">(align angles before deciding who's talking)</span></label>
-        <label id="mc-center-wrap" class="hidden">Cut to the center cam every
-          <span class="val" id="mc-center-val">off</span>
-          <input type="range" id="mc-center" min="0" max="30" step="1" value="0">
-        </label>
-        <label>Min shot length (s) <span class="val" id="mc-minseg-val">1.2</span>
+        <label class="check"><input type="checkbox" id="mc-autosync" checked> 🧲 Auto-sync cameras by audio <span class="dim">(align angles first — recommended)</span></label>
+        <label>Min shot length (s) <span class="dim">(don't cut faster than this)</span> <span class="val" id="mc-minseg-val">1.2</span>
           <input type="range" id="mc-minseg" min="0.5" max="5" step="0.1" value="1.2">
         </label>
       </div>
@@ -782,15 +778,19 @@
            otherwise it alternates cameras each sentence.</p>
       </div>
 
-      <!-- director controls (shared by follow + transcript) -->
-      <div id="mc-director-opts" class="hidden">
+      <!-- director controls (shared by follow + transcript) — tucked away -->
+      <details id="mc-director-opts" class="advanced hidden">
+        <summary>⚙ Fine-tune (optional)</summary>
         <label>Cut lead-in <span class="dim">(land the cut just before the line)</span> <span class="val" id="mc-leadin-val">off</span>
           <input type="range" id="mc-leadin" min="0" max="500" step="20" value="0">
         </label>
         <label>Max time on one camera <span class="dim">(force a cutaway)</span> <span class="val" id="mc-maxshot-val">off</span>
           <input type="range" id="mc-maxshot" min="0" max="30" step="1" value="0">
         </label>
-      </div>
+        <label id="mc-center-wrap2">Cut to a wide/center cam every <span class="val" id="mc-center-val">off</span>
+          <input type="range" id="mc-center" min="0" max="30" step="1" value="0">
+        </label>
+      </details>
 
       <!-- interval option -->
       <label id="mc-interval-wrap" class="hidden">Seconds per angle <span class="val" id="mc-interval-val">3</span>
@@ -812,7 +812,8 @@
       </div>
     </div>
 
-    <button id="btn-mc-plan" class="hero-btn alt">🎬 Build angle plan</button>
+    <button id="btn-mc-plan" class="hero-btn">🎬 Auto multicam</button>
+    <p class="hint center" style="margin-top:4px">Builds the cut plan — review it, then <b>Apply</b>.</p>
     <div class="row tight" style="justify-content:center">
       <button id="btn-mc-test" class="chip-btn">🔧 Test audio engine</button>
     </div>
@@ -922,7 +923,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.158 · auto-edit · multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.159 · auto-edit · multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

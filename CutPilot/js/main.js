@@ -374,6 +374,42 @@
       });
     });
   }
+  /* Cloud transcription that never fails on long files: if the (already
+     compressed) audio is still over the upload limit, split it into time chunks,
+     transcribe each, offset their timestamps, and merge. */
+  function cloudTranscribe(audioPath, lang, ff, durSec) {
+    var fs, os, pathMod;
+    try { fs = nodeReq('fs'); os = nodeReq('os'); pathMod = nodeReq('path'); } catch (e) { return transcribeViaGroq(audioPath, lang); }
+    var size = 0; try { size = fs.statSync(audioPath).size; } catch (e2) {}
+    var LIMIT = 23 * 1024 * 1024;
+    if (size <= LIMIT || !ff || !durSec || durSec <= 0) return transcribeViaGroq(audioPath, lang);
+    var chunks = Math.ceil(size / LIMIT), chunkDur = Math.ceil(durSec / chunks);
+    var all = [], allWords = [];
+    var seq = Promise.resolve();
+    for (var i = 0; i < chunks; i++) {
+      (function (idx) {
+        var startT = idx * chunkDur;
+        var part = pathMod.join(os.tmpdir(), 'cutpilot-asr-part' + idx + '-' + Date.now() + '.mp3');
+        seq = seq.then(function () {
+          return runProc(ff, ['-y', '-ss', String(startT), '-t', String(chunkDur), '-i', audioPath, '-ac', '1', '-ar', '16000', '-c:a', 'libmp3lame', '-b:a', '64k', part])
+            .then(function () { return transcribeViaGroq(part, lang); })
+            .then(function (cues) {
+              cues.forEach(function (c) { c.start += startT; c.end += startT; });
+              if (cues.words) cues.words.forEach(function (w) { w.start += startT; w.end += startT; });
+              all = all.concat(cues); if (cues.words) allWords = allWords.concat(cues.words);
+              try { fs.unlinkSync(part); } catch (eU) {}
+              setTranscriptBar('', '☁️', 'Transcribing in the cloud… (' + all.length + ' lines)', null);
+            });
+        });
+      })(i);
+    }
+    return seq.then(function () {
+      all.sort(function (a, b) { return a.start - b.start; });
+      if (allWords.length) { allWords.sort(function (a, b) { return a.start - b.start; }); all.words = allWords; }
+      if (!all.length) throw new Error('Cloud returned no speech.');
+      return all;
+    });
+  }
   /* Call Groq's chat-completions API (same free key as cloud transcription) and
      return the assistant text. Body goes via a temp file (--data-binary @file) so
      unicode/quotes/newlines in the transcript never break shell escaping. */
@@ -633,14 +669,19 @@
           return;   // skip ffmpeg + whisper entirely
         }
         // -ss BEFORE -i (fast seek), -t AFTER -i (duration from seek point).
+        // Cloud upload: compress to a small 16k-mono MP3 (whisper-quality, but a
+        // fraction of WAV size) so long recordings don't blow past Groq's upload
+        // limit ("file too long"). Local whisper keeps the raw WAV it expects.
+        var cloudMp3 = pathMod.join(os.tmpdir(), 'cutpilot-asr-' + stamp + '.mp3');
         var ffArgs = ['-y', '-ss', String(minIn), '-i', clip.mediaPath];
         if (dur > 0) ffArgs = ffArgs.concat(['-t', String(dur)]);
-        ffArgs = ffArgs.concat(['-vn', '-ac', '1', '-ar', '16000', wav]);
+        if (cloud) ffArgs = ffArgs.concat(['-vn', '-ac', '1', '-ar', '16000', '-c:a', 'libmp3lame', '-b:a', '64k', cloudMp3]);
+        else ffArgs = ffArgs.concat(['-vn', '-ac', '1', '-ar', '16000', wav]);
         var pieces = insts.length > 1 ? (' (' + insts.length + ' cuts)') : '';
         setTranscriptBar('', ico, 'Extracting audio from “' + shortName + '”' + pieces + '…', null);
         return runProc(ff, ffArgs).then(function () {
-          setTranscriptBar('', ico, cloud ? 'Transcribing in the cloud (Groq)…' : ('Transcribing with ' + modelLabel + ' — this can take a minute…'), null);
-          if (cloud) return transcribeViaGroq(wav, wlang);   // → [{start,end,text}]
+          setTranscriptBar('', ico, cloud ? 'Transcribing in the cloud…' : ('Transcribing with ' + modelLabel + ' — this can take a minute…'), null);
+          if (cloud) return cloudTranscribe(cloudMp3, wlang, ff, dur);   // compress + chunk if long → [{start,end,text}]
           var ctx = { wbin: wbin, model: model, wlang: wlang, wav: wav, ff: ff,
                       fs: fs, os: os, pathMod: pathMod, stamp: stamp,
                       setBar: function (m) { setTranscriptBar('', ico, m, null); } };
@@ -5036,8 +5077,9 @@
   }
 
   function syncCenterCtrl() {
-    var has = (state.mcMap || []).indexOf(-1) >= 0;
-    $('mc-center-wrap').classList.toggle('hidden', !has);
+    // center-cam control now lives in the (always-available) Fine-tune panel;
+    // nothing to toggle here. Kept as a no-op so callers stay safe.
+    var w = $('mc-center-wrap2'); if (w) w.style.opacity = ((state.mcMap || []).indexOf(-1) >= 0) ? '1' : '0.6';
   }
 
   /* Render a "V1 mic: [A1 ▾]" row per camera so the user maps mics manually. */
