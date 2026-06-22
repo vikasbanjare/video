@@ -5103,6 +5103,7 @@
     return CPBridge.callHost('CP_getAudioTracks').then(function (r) {
       state.mcDiag = r.diag || '';
       state.mcAudioEnd = r.end || 0;
+      state.mcVideoTracks = r.videoTracks || 0;
       var tracks = (r.audioTracks || []).filter(function (t) { return t.mediaPath; });
       if (!tracks.length) {
         state.mcAudioTracks = null;
@@ -5375,6 +5376,12 @@
   $('btn-mc-plan').addEventListener('click', function () {
     var numAngles = parseInt($('mc-angles').value, 10);
     var src = $('mc-source').value;
+    // Multicam switches between camera clips that sit on SEPARATE video tracks.
+    // If the angles are nested into one clip (or all on a single track), there's
+    // nothing to switch between — warn instead of silently doing one angle.
+    if (state.mcVideoTracks && state.mcVideoTracks < 2) {
+      return toast('Multicam needs each camera on its OWN video track (V1, V2, V3…). Your sequence has one video track — if you nested the cameras into one clip, un-nest them (or lay each angle on its own track) and tap 🔄 Detect audio again.', true);
+    }
     var planner;
     if (src === 'follow') planner = mcSpeakerPlan(numAngles);
     else if (src === 'transcript') planner = mcTranscriptPlan(numAngles);
