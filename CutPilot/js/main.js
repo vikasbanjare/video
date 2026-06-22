@@ -4624,7 +4624,10 @@
       backup: $('opt-backup').checked,
       dropFrame: !!settings.dropFrame
     }).then(function (r) {
-      toast('Cut done — removed ' + r.removedClips + ' pieces, closed ' + r.closedGaps + ' gaps.');
+      rippleTranscriptByRanges(ranges);   // keep transcript aligned to the trimmed timeline
+      // the on-screen silence list is now stale (timeline moved) — clear it
+      state.silencesSeq = []; if ($('results')) $('results').classList.add('hidden');
+      toast('Cut done — removed ' + r.removedClips + ' pieces. Transcript auto-synced — go straight to “Remove repeated takes” or captions, no re-transcribe needed.');
     }).catch(function (e) { toast('Cut failed: ' + e.message, true); });
   });
 
@@ -4659,6 +4662,45 @@
       if (e - s > 0.04) out.push({ start: s, end: e });
     });
     return out;
+  }
+
+  /* After an in-place ripple cut, shift the transcript to match the edited
+     timeline so you NEVER have to re-transcribe between steps: words inside a
+     removed range are dropped, words after it slide left by the removed time.
+     Keeps state.transcriptWords + the caption-job cues in sync for the next
+     operation (another cut, or captions). */
+  function rippleTranscriptByRanges(ranges) {
+    if (!ranges || !ranges.length) return 0;
+    var merged = ranges.slice().filter(function (r) { return r.end > r.start; })
+      .sort(function (a, b) { return a.start - b.start; });
+    if (!merged.length) return 0;
+    function remap(items) {
+      if (!items || !items.length) return items;
+      var out = [];
+      for (var k = 0; k < items.length; k++) {
+        var it = items[k], mid = (it.start + it.end) / 2, inside = false, shift = 0;
+        for (var i = 0; i < merged.length; i++) {
+          var r = merged[i];
+          if (mid >= r.start - 0.001 && mid < r.end + 0.001) { inside = true; break; }
+          if (r.end <= it.start + 0.001) shift += (r.end - r.start);
+        }
+        if (inside) continue;                       // word/line was cut out
+        var o = { start: Math.max(0, it.start - shift), end: Math.max(0, it.end - shift), text: it.text };
+        if (it.conf != null) o.conf = it.conf;
+        if (it.speaker != null) o.speaker = it.speaker;
+        out.push(o);
+      }
+      return out;
+    }
+    var dropped = 0;
+    if (state.transcriptWords && state.transcriptWords.length) {
+      var before = state.transcriptWords.length;
+      state.transcriptWords = remap(state.transcriptWords);
+      dropped = before - state.transcriptWords.length;
+    }
+    if (state.lastCaptionJob && state.lastCaptionJob.cues) state.lastCaptionJob.cues = remap(state.lastCaptionJob.cues);
+    if (typeof _treCues !== 'undefined' && _treCues && _treCues.length) _treCues = remap(_treCues);
+    return dropped;
   }
 
   // ---- Auto-Edit: remove repeated takes (uses the transcript) ----
@@ -4719,8 +4761,11 @@
     if (!confirm(msg)) return;
     CPBridge.callHost('CP_razorRipple', { ranges: ranges, closeGaps: true, backup: backup, dropFrame: !!settings.dropFrame })
       .then(function (r) {
+        rippleTranscriptByRanges(ranges);   // keep the transcript in sync — no re-transcribe
+        state.takeDeletes = [];             // these are gone now
+        if ($('takes-results')) $('takes-results').classList.add('hidden');
         toast('🎬 Removed ' + (r.removedClips != null ? r.removedClips : ranges.length) + ' take piece' +
-              ((r.removedClips || ranges.length) === 1 ? '' : 's') + ', closed ' + (r.closedGaps || 0) + ' gaps. ⌘Z / Ctrl+Z undoes it.');
+              ((r.removedClips || ranges.length) === 1 ? '' : 's') + '. Transcript auto-synced — run any other Auto-Edit step or add captions, no re-transcribe needed. ⌘Z / Ctrl+Z undoes it.');
       }).catch(function (e) { toast('Take cut failed: ' + e.message, true); });
   }
   if ($('btn-takes-apply')) $('btn-takes-apply').addEventListener('click', function () { applyTakes(true); });
