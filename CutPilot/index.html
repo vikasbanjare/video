@@ -14,7 +14,7 @@
 <body class="theme-light">
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.151</span>
+    <span class="ver" id="ver">v0.9.152</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -23,7 +23,7 @@
   <nav class="tabs">
     <button class="tab active" data-tab="transcribe"><span>🎙️</span>Transcribe</button>
     <button class="tab" data-tab="captions"><span>💬</span>Captions</button>
-    <button class="tab" data-tab="silence"><span>⚡</span>Smart Cut</button>
+    <button class="tab" data-tab="silence"><span>✂️</span>Auto-Edit</button>
     <button class="tab" data-tab="multicam"><span>🎥</span>Multicam</button>
     <button class="tab" data-tab="chapters"><span>🔖</span>Chapters</button>
     <button class="tab" data-tab="settings"><span>⚙</span>Settings</button>
@@ -621,8 +621,15 @@
     </div><!-- /view-editor -->
   </section>
 
-  <!-- ============================== SMART CUT ============================ -->
+  <!-- ============================== AUTO-EDIT ============================ -->
   <section id="tab-silence" class="tab-page">
+    <div class="subview-switch" id="ae-switch">
+      <button data-ae="silence" class="on">✂️ Remove silences</button>
+      <button data-ae="takes">🔁 Remove repeated takes</button>
+    </div>
+
+    <!-- ---- FUNCTION 1: remove silences ---- -->
+    <div id="ae-silence">
     <div class="card">
       <div class="step-head">
         <span class="step-num">1</span>
@@ -675,6 +682,46 @@
         <button id="btn-cut" class="danger-btn">Cut in place</button>
       </details>
     </div>
+    </div><!-- /ae-silence -->
+
+    <!-- ---- FUNCTION 2: remove repeated takes ---- -->
+    <div id="ae-takes" class="hidden">
+      <div class="card">
+        <div class="step-head"><span class="step-title">🔁 Remove repeated takes</span></div>
+        <p class="hint">Did a few retakes of the same line? CutPilot reads your
+           transcript, finds where you <b>restarted a phrase</b>, keeps the best
+           take and ripple-deletes the earlier ones. Transcribe your clip first
+           (Transcribe tab) — word timing makes the cuts tight.</p>
+        <div class="grid2">
+          <label>Min repeated words <span class="dim">(to count as a retake)</span>
+            <input type="number" id="tk-minrun" value="3" min="2" max="8" step="1">
+          </label>
+          <label>Filler words allowed between <span class="dim">(um, uh…)</span>
+            <input type="number" id="tk-maxgap" value="3" min="0" max="6" step="1">
+          </label>
+        </div>
+        <label class="fld-full" style="margin-top:6px">Keep which take?
+          <select id="tk-keep">
+            <option value="last">The last attempt (usually the good one)</option>
+            <option value="confident">The most confident attempt</option>
+          </select>
+        </label>
+      </div>
+      <button id="btn-takes-find" class="hero-btn alt">🔎 Find repeated takes</button>
+      <div id="takes-progress" class="progress hidden"></div>
+      <div id="takes-results" class="hidden">
+        <div class="card">
+          <div id="takes-stats" class="stats"></div>
+          <div id="takes-list" class="seg-list"></div>
+        </div>
+        <button id="btn-takes-apply" class="hero-btn">✂ Remove the worse takes (safe copy)</button>
+        <details class="advanced">
+          <summary>Cut directly in this sequence instead</summary>
+          <label class="check"><input type="checkbox" id="tk-backup" checked> Back up sequence first</label>
+          <button id="btn-takes-cut" class="danger-btn">Cut takes in place</button>
+        </details>
+      </div>
+    </div><!-- /ae-takes -->
   </section>
 
   <!-- ============================== MULTICAM ============================= -->
@@ -875,7 +922,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.151 · smart cut · auto multicam · captions · chapters</p>
+    <p class="hint center">CutPilot v0.9.152 · auto-edit · multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>
@@ -897,6 +944,7 @@
   <script src="js/render.js"></script>
   <script src="js/multicam.js"></script>
   <script src="js/sfx.js"></script>
+  <script src="js/takes.js"></script>
   <script src="js/transcript.js"></script>
   <script src="js/fonts.js"></script>
   <script src="js/command.js"></script>

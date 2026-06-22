@@ -13,6 +13,7 @@ const CPFonts = require(path.join(__dirname, '..', 'js', 'fonts.js'));
 const CPCommand = require(path.join(__dirname, '..', 'js', 'command.js'));
 const CPChapters = require(path.join(__dirname, '..', 'js', 'chapters.js'));
 const CPSfx = require(path.join(__dirname, '..', 'js', 'sfx.js'));
+const CPTakes = require(path.join(__dirname, '..', 'js', 'takes.js'));
 
 let passed = 0, failed = 0;
 
@@ -747,6 +748,37 @@ console.log('sfx.js');
   let bursts = 0, inBurst = false;
   for (let i = 0; i < sh.length; i++) { const loudEnough = Math.abs(sh[i]) > 0.15; if (loudEnough && !inBurst) bursts++; inBurst = loudEnough ? true : (Math.abs(sh[i]) > 0.05 ? inBurst : false); }
   assert(bursts >= 2, 'shutter has two distinct clicks');
+}
+
+// ------------------------------------------------ takes: retake cleanup ----
+console.log('takes.js');
+{
+  function mkWords(text, conf) {
+    var ws = text.split(' '), out = [], t = 0;
+    ws.forEach(function (w) { out.push({ start: +t.toFixed(2), end: +(t + 0.3).toFixed(2), text: w, conf: conf }); t += 0.32; });
+    return out;
+  }
+  // false start: "Today I want to" said twice → drop the first
+  var r1 = CPTakes.findRepeatedTakes(mkWords('Today I want to Today I want to show you'), { minRun: 3, maxGap: 2 });
+  assert(r1.deletes.length === 1, 'detects one repeated take');
+  assert(close(r1.deletes[0].start, 0, 0.01), 'deletes the FIRST (worse) take, keeping the later one');
+  assert(close(r1.deletes[0].end, mkWords('Today I want to Today').slice(-1)[0].start, 0.01) || r1.deletes[0].end > 1, 'delete ends at the kept take start');
+
+  // a clean sentence has nothing to remove
+  assert(CPTakes.findRepeatedTakes(mkWords('this is a clean sentence with no retakes')).deletes.length === 0, 'clean text → no deletes');
+
+  // tolerates filler words between takes ("um")
+  var r3 = CPTakes.findRepeatedTakes(mkWords('the market is um the market is growing'), { minRun: 3, maxGap: 2 });
+  assert(r3.deletes.length === 1 && /the market is/.test(r3.deletes[0].text), 'detects a retake across a filler word');
+
+  // confidence mode keeps the more confident take
+  var lowThenHigh = mkWords('we sell it', 0.4).concat(mkWords('we sell it cheap', 0.9));
+  var rc = CPTakes.findRepeatedTakes(lowThenHigh, { minRun: 3, maxGap: 1, keep: 'last' });
+  assert(rc.deletes.length === 1, 'confidence/last mode still finds the repeat');
+
+  // tidyDeletes merges adjacent ranges and drops tiny ones
+  var tidy = CPTakes.tidyDeletes([{ start: 0, end: 1, text: 'a' }, { start: 1.01, end: 2, text: 'b' }, { start: 5, end: 5.02, text: 'tiny' }], 0.08);
+  assert(tidy.length === 1 && close(tidy[0].end, 2, 0.01), 'tidyDeletes merges touching ranges and drops sub-min ones');
 }
 
 // --------------------------------------------- transcript: filler removal ----

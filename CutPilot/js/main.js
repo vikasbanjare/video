@@ -804,7 +804,7 @@
     function clickId(id) { return function () { var e = $(id); if (e) e.click(); }; }
     return [
       { group: 'Go', label: 'Captions', keywords: 'subtitle text caption', run: goTab('captions') },
-      { group: 'Go', label: 'Smart Cut', keywords: 'silence pause trim', run: goTab('silence') },
+      { group: 'Go', label: 'Auto-Edit', keywords: 'silence pause trim takes retakes', run: goTab('silence') },
       { group: 'Go', label: 'Multicam', keywords: 'camera angle switch', run: goTab('multicam') },
       { group: 'Go', label: 'Chapters', keywords: 'youtube timestamps markers', run: goTab('chapters') },
       { group: 'Go', label: 'Settings', keywords: 'ffmpeg diagnostics path', run: goTab('settings') },
@@ -812,8 +812,8 @@
       { group: 'Captions', label: 'Open template library', keywords: 'styles gallery browse', run: function () { goTab('captions')(); showView('templates'); } },
       { group: 'Captions', label: 'Open .mogrt Editor', keywords: 'mogrt premiere template upload', run: function () { goTab('captions')(); showView('editor'); } },
       { group: 'Captions', label: 'Find my transcript again', keywords: 'srt vtt subtitle', run: function () { goTab('captions')(); findTranscript(); } },
-      { group: 'Smart Cut', label: 'Find the silences', keywords: 'analyze detect dead air', run: function () { goTab('silence')(); clickId('btn-analyze')(); } },
-      { group: 'Smart Cut', label: 'Remove silences (safe copy)', keywords: 'rebuild trim', run: function () { goTab('silence')(); clickId('btn-rebuild')(); } },
+      { group: 'Auto-Edit', label: 'Find the silences', keywords: 'analyze detect dead air', run: function () { goTab('silence')(); clickId('btn-analyze')(); } },
+      { group: 'Auto-Edit', label: 'Remove silences (safe copy)', keywords: 'rebuild trim', run: function () { goTab('silence')(); clickId('btn-rebuild')(); } },
       { group: 'Multicam', label: 'Build angle plan', keywords: 'cameras plan', run: function () { goTab('multicam')(); clickId('btn-mc-plan')(); } },
       { group: 'Multicam', label: 'Apply camera switches', keywords: 'apply cut', run: function () { goTab('multicam')(); clickId('btn-mc-apply')(); } },
       { group: 'Chapters', label: 'Generate chapters', keywords: 'youtube timestamps', run: function () { goTab('chapters')(); clickId('btn-ch-build')(); } },
@@ -4437,6 +4437,34 @@
     return out;
   }
 
+  /* Detect silences at a threshold; if NOTHING is found, automatically retry at
+     progressively more lenient thresholds (louder room tone needs a higher
+     gate). This fixes "finds no silences" on quiet-but-not-silent rooms. */
+  function detectSilencesRobust(clip, ff, opts) {
+    var thresholds = [opts.thresholdDb, opts.thresholdDb + 8, opts.thresholdDb + 16];
+    var idx = 0, prog = $('analyze-progress');
+    function attempt() {
+      var thr = thresholds[idx];
+      var p = ff
+        ? CPAudio.ffmpegDetect(clip.mediaPath, ff, thr, Math.min(opts.minSilence, 0.3), CPSilence)
+        : CPAudio.webAudioDetect(clip.mediaPath, { thresholdDb: thr }, CPSilence);
+      return p.then(function (det) {
+        var refined = CPSilence.refineSilences(det.silences, {
+          minSilence: opts.minSilence, padding: opts.padding,
+          totalDuration: det.duration || clip.outPoint
+        });
+        if (!refined.length && idx < thresholds.length - 1) {
+          idx++;
+          if (prog) prog.textContent = 'No pauses at ' + thr + 'dB — trying ' + thresholds[idx] + 'dB…';
+          return attempt();
+        }
+        det._usedThreshold = thr;
+        return det;
+      });
+    }
+    return attempt();
+  }
+
   $('btn-analyze').addEventListener('click', function () {
     var opts = {
       thresholdDb: parseFloat($('opt-threshold').value),
@@ -4453,12 +4481,7 @@
       $('clip-badge').textContent = res.clip.name;
       $('clip-badge').className = 'badge ok';
       prog.textContent = 'Listening for silences';
-      var ff = resolveFfmpeg();
-      if (ff) {
-        return CPAudio.ffmpegDetect(state.clip.mediaPath, ff,
-                                     opts.thresholdDb, Math.min(opts.minSilence, 0.3), CPSilence);
-      }
-      return CPAudio.webAudioDetect(state.clip.mediaPath, { thresholdDb: opts.thresholdDb }, CPSilence);
+      return detectSilencesRobust(state.clip, resolveFfmpeg(), opts);
     }).then(function (det) {
       var clip = state.clip;
       var mediaDuration = det.duration || clip.outPoint;
@@ -4500,8 +4523,15 @@
       renderResults(clipDur);
       prog.classList.add('hidden');
       var nFill = fillers.length;
-      toast('Found ' + (silencesMedia.length - nFill) + ' silences' +
-            (nFill ? ' + ' + nFill + ' filler cuts' : '') + '.');
+      var nSil = silencesMedia.length - nFill;
+      if (nSil === 0 && nFill === 0) {
+        toast('No pauses found — even after easing the threshold. Your room tone may be loud: raise “Threshold (dB)” toward −25 in Advanced, or lower “Min pause”. ' +
+              (resolveFfmpeg() ? '' : '(Also: ffmpeg isn’t set up — Settings → ffmpeg path — needed to read audio inside video files.)'), true);
+      } else {
+        toast('Found ' + nSil + ' silence' + (nSil === 1 ? '' : 's') +
+              (det._usedThreshold != null && det._usedThreshold !== opts.thresholdDb ? ' (auto-eased to ' + det._usedThreshold + 'dB)' : '') +
+              (nFill ? ' + ' + nFill + ' filler cuts' : '') + '.');
+      }
     }).catch(function (e) {
       prog.classList.add('hidden');
       toast('Analyze failed: ' + e.message, true);
@@ -4579,6 +4609,83 @@
       toast('Cut done — removed ' + r.removedClips + ' pieces, closed ' + r.closedGaps + ' gaps.');
     }).catch(function (e) { toast('Cut failed: ' + e.message, true); });
   });
+
+  // ---- Auto-Edit: switch between the two functions (silence / takes) ----
+  (function () {
+    var sw = $('ae-switch'); if (!sw) return;
+    sw.addEventListener('click', function (e) {
+      var b = e.target; while (b && b !== sw && b.tagName !== 'BUTTON') b = b.parentNode;
+      if (!b || b.tagName !== 'BUTTON' || !b.getAttribute('data-ae')) return;
+      var ae = b.getAttribute('data-ae');
+      var btns = sw.getElementsByTagName('button');
+      for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('on', btns[i] === b);
+      if ($('ae-silence')) $('ae-silence').classList.toggle('hidden', ae !== 'silence');
+      if ($('ae-takes')) $('ae-takes').classList.toggle('hidden', ae !== 'takes');
+    });
+  })();
+
+  // ---- Auto-Edit: remove repeated takes (uses the transcript) ----
+  state.takeDeletes = [];
+  function takesGetWords() {
+    if (state.transcriptWords && state.transcriptWords.length) return state.transcriptWords.slice();
+    var cues = (state.lastCaptionJob && state.lastCaptionJob.cues) || null;
+    if (!cues) { try { cues = readSelectedTranscript(); } catch (e) { cues = null; } }
+    return (cues && cues.length) ? CPTakes.flatten(cues) : null;
+  }
+  function renderTakes(dels) {
+    var stats = $('takes-stats'), list = $('takes-list');
+    $('takes-results').classList.remove('hidden');
+    list.innerHTML = '';
+    if (!dels.length) {
+      stats.textContent = 'No repeated takes found — the transcript reads clean. (Tip: lower “Min repeated words” to catch shorter restarts.)';
+      $('btn-takes-apply').classList.add('hidden');
+      return;
+    }
+    var total = dels.reduce(function (a, d) { return a + (d.end - d.start); }, 0);
+    stats.innerHTML = 'Found <b>' + dels.length + '</b> repeated take' + (dels.length > 1 ? 's' : '') +
+      ' — about <b>' + total.toFixed(1) + 's</b> to remove. Review, then apply.';
+    dels.forEach(function (d, i) {
+      var item = document.createElement('div'); item.className = 'seg-item';
+      var chip = document.createElement('span'); chip.className = 'angle-chip'; chip.textContent = '✂'; item.appendChild(chip);
+      var span = document.createElement('span');
+      var txt = d.text.length > 44 ? d.text.slice(0, 44) + '…' : d.text;
+      span.textContent = '#' + (i + 1) + '  ' + fmt(d.start) + '→' + fmt(d.end) + '  “' + txt + '”';
+      item.appendChild(span);
+      list.appendChild(item);
+    });
+    $('btn-takes-apply').classList.remove('hidden');
+  }
+  if ($('btn-takes-find')) $('btn-takes-find').addEventListener('click', function () {
+    var words = takesGetWords();
+    if (!words || words.length < 6) return toast('Transcribe your clip first (Transcribe tab) — I need the words to find retakes.', true);
+    var prog = $('takes-progress'); prog.classList.remove('hidden'); prog.textContent = 'Scanning the transcript for retakes…';
+    setTimeout(function () {
+      var res = CPTakes.findRepeatedTakes(words, {
+        minRun: parseInt($('tk-minrun').value, 10) || 3,
+        maxGap: parseInt($('tk-maxgap').value, 10) || 3,
+        keep: $('tk-keep').value
+      });
+      state.takeDeletes = CPTakes.tidyDeletes(res.deletes, 0.1);
+      prog.classList.add('hidden');
+      renderTakes(state.takeDeletes);
+    }, 30);
+  });
+  function applyTakes(safeCopy) {
+    var dels = state.takeDeletes || [];
+    if (!dels.length) return toast('Nothing to remove.', true);
+    var ranges = dels.map(function (d) { return { start: d.start, end: d.end }; });
+    var backup = safeCopy ? true : ($('tk-backup') ? $('tk-backup').checked : true);
+    var msg = 'Remove ' + ranges.length + ' repeated take' + (ranges.length > 1 ? 's' : '') + ' (ripple-delete)?' +
+      (backup ? '\n\n✅ A backup of the sequence is made first.' : '\n\n⚠️ Backup is OFF — edits your live sequence.');
+    if (!confirm(msg)) return;
+    CPBridge.callHost('CP_razorRipple', { ranges: ranges, closeGaps: true, backup: backup, dropFrame: !!settings.dropFrame })
+      .then(function (r) {
+        toast('🎬 Removed ' + (r.removedClips != null ? r.removedClips : ranges.length) + ' take piece' +
+              ((r.removedClips || ranges.length) === 1 ? '' : 's') + ', closed ' + (r.closedGaps || 0) + ' gaps. ⌘Z / Ctrl+Z undoes it.');
+      }).catch(function (e) { toast('Take cut failed: ' + e.message, true); });
+  }
+  if ($('btn-takes-apply')) $('btn-takes-apply').addEventListener('click', function () { applyTakes(true); });
+  if ($('btn-takes-cut')) $('btn-takes-cut').addEventListener('click', function () { applyTakes(false); });
 
   // =========================================================== MULTICAM ====
   var mcButtons = document.querySelectorAll('#mc-mode button');
