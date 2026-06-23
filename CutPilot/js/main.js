@@ -141,8 +141,10 @@
     try {
       var os = nodeReq('os'), home = os.homedir();
       if (home) {
+        bundled.push(home + '/.cutpilot/bin/ffmpeg');   // auto-installed by the panel (first run)
         bundled.push(home + '/Library/Application Support/Adobe/CEP/extensions/CutPilot/bin/ffmpeg');     // macOS
         bundled.push(home + '/Library/Application Support/Adobe/CEP/extensions/com.cutpilot.panel/bin/ffmpeg');
+        bundled.push(home + '\\.cutpilot\\bin\\ffmpeg.exe');   // Windows auto-installed
       }
       if (process.env && process.env.APPDATA) {
         bundled.push(process.env.APPDATA + '\\Adobe\\CEP\\extensions\\CutPilot\\bin\\ffmpeg.exe');         // Windows
@@ -155,6 +157,72 @@
     for (var i = 0; i < cands.length; i++) if (tryPath(cands[i])) return (_ffmpeg = cands[i]);
     return null;  // not found — re-probe next call (picks up a fresh install)
   }
+
+  /* ---- one-time, in-app ffmpeg setup (no Terminal) -----------------------
+     The shipped panel is tiny; the first time a feature needs ffmpeg we fetch
+     a static build for this OS/CPU straight from GitHub into ~/.cutpilot/bin
+     and remember it. Cloud transcription needs internet anyway, so this is the
+     same connection. Returns a Promise of the ffmpeg path. */
+  function ffmpegDownloadUrl() {
+    var base = 'https://github.com/eugeneware/ffmpeg-static/releases/download/b6.0/';
+    var p = (typeof process !== 'undefined' && process.platform) || 'darwin';
+    var a = (typeof process !== 'undefined' && process.arch) || 'x64';
+    if (p === 'win32') return base + 'ffmpeg-win32-x64';
+    if (p === 'darwin') return base + (a === 'arm64' ? 'ffmpeg-darwin-arm64' : 'ffmpeg-darwin-x64');
+    return base + (a === 'arm64' ? 'ffmpeg-linux-arm64' : 'ffmpeg-linux-x64');
+  }
+  function _downloadTo(url, dest, onPct) {
+    return new Promise(function (resolve, reject) {
+      var https, fs;
+      try { https = nodeReq('https'); fs = nodeReq('fs'); } catch (e) { return reject(new Error('no network module')); }
+      function get(u, n) {
+        if (n > 6) return reject(new Error('too many redirects'));
+        https.get(u, { headers: { 'User-Agent': 'CutPilot' } }, function (res) {
+          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) { res.resume(); return get(res.headers.location, n + 1); }
+          if (res.statusCode !== 200) { res.resume(); return reject(new Error('HTTP ' + res.statusCode)); }
+          var total = parseInt(res.headers['content-length'] || '0', 10), got = 0, f = fs.createWriteStream(dest);
+          res.on('data', function (c) { got += c.length; if (onPct && total) onPct(got / total); });
+          res.pipe(f);
+          f.on('finish', function () { f.close(function () { resolve(); }); });
+          f.on('error', function (e) { reject(e); });
+        }).on('error', function (e) { reject(e); });
+      }
+      get(url, 0);
+    });
+  }
+  var _ffmpegSetup = null;
+  function ensureFfmpeg() {
+    var have = resolveFfmpeg();
+    if (have) return Promise.resolve(have);
+    if (_ffmpegSetup) return _ffmpegSetup;       // a download already in flight
+    var fs, path, os;
+    try { fs = nodeReq('fs'); path = nodeReq('path'); os = nodeReq('os'); }
+    catch (e) { return Promise.reject(new Error('Open inside Premiere to set up the audio tool.')); }
+    var dir = path.join(os.homedir(), '.cutpilot', 'bin');
+    var dest = path.join(dir, (process.platform === 'win32') ? 'ffmpeg.exe' : 'ffmpeg');
+    try { if (fs.existsSync(dest)) { settings.ffmpegPath = dest; saveSettings(); _ffmpeg = dest; return Promise.resolve(dest); } } catch (e0) {}
+    _ffmpegSetup = new Promise(function (resolve, reject) {
+      try { fs.mkdirSync(dir, { recursive: true }); } catch (eD) {}
+      setTranscriptBar('', '⬇️', 'First-time setup: downloading the audio tool…', null);
+      toast('One-time setup: downloading the audio engine (~50MB). This only happens once.');
+      _downloadTo(ffmpegDownloadUrl(), dest + '.part', function (pct) {
+        setTranscriptBar('', '⬇️', 'Setting up the audio tool… ' + Math.round(pct * 100) + '%', null);
+      }).then(function () {
+        try { fs.renameSync(dest + '.part', dest); } catch (eR) { return reject(eR); }
+        try { if (process.platform !== 'win32') fs.chmodSync(dest, 0o755); } catch (eC) {}
+        settings.ffmpegPath = dest; saveSettings(); _ffmpeg = null;
+        _ffmpegSetup = null;
+        toast('✅ Audio engine ready.');
+        resolve(resolveFfmpeg() || dest);
+      }).catch(function (e) {
+        try { fs.unlinkSync(dest + '.part'); } catch (eU) {}
+        _ffmpegSetup = null;
+        reject(e);
+      });
+    });
+    return _ffmpegSetup;
+  }
+
 
   function pickFile(title, exts) {
     if (window.cep && window.cep.fs && window.cep.fs.showOpenDialogEx) {
@@ -616,7 +684,11 @@
     if (state.transcribing) return toast('Already transcribing — hang tight, this can take a minute…');
     var cloud = (resolveQuality() === 'cloud-groq');
     var ff = resolveFfmpeg();
-    if (!ff) return toast('Auto-transcribe needs ffmpeg — set it in Settings (brew install ffmpeg).', true);
+    if (!ff) {
+      // no ffmpeg yet → fetch it once (no Terminal), then start transcribing
+      return ensureFfmpeg().then(function () { autoTranscribe(); })
+        .catch(function (e) { toast('Couldn’t set up the audio tool automatically (' + (e && e.message ? e.message : 'download failed') + '). You can set its path in Settings → ffmpeg.', true); });
+    }
     var wbin = null;
     if (cloud) {
       if (!(settings.groqKey || '').trim()) return toast('Add your free Groq API key in Settings → Auto-transcribe (console.groq.com/keys).', true);
@@ -5620,6 +5692,10 @@
   function buildMcPlan() {
     var numAngles = parseInt($('mc-angles').value, 10);
     var src = $('mc-source').value;
+    // follow/speech analyse audio → need ffmpeg; fetch it once if missing.
+    var needFf = (src === 'follow' || src === 'speech');
+    var pre = (needFf && !resolveFfmpeg() && CPBridge.isCEP()) ? ensureFfmpeg().then(function () {}) : Promise.resolve();
+    return pre.then(function () {
     return ensureAudioTracks().catch(function () { return null; }).then(function (tracks) {
       // Multicam switches between camera clips on SEPARATE video tracks. If the
       // angles are nested into one clip (or all on a single track), there's
@@ -5645,6 +5721,7 @@
       if (!plan || !plan.length) throw new Error('No camera switches were produced.');
       state.plan = plan;
       return plan;
+    });
     });
   }
 
