@@ -27,3 +27,5 @@ CutPilot-zxp-kit/
 CutPilot-Install/
 # One-download setup (no-terminal installers + trial build w/ bundled key)
 CutPilot-Setup/
+CutPilot-Setup-Mac/
+CutPilot-Setup-Windows/
