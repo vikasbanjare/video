@@ -2418,6 +2418,18 @@
       var w = parseInt($('c-words').value, 10) || 0; setWordCount(w === 0 ? 1 : 0);
     });
     if ($('ms-transcribe')) $('ms-transcribe').addEventListener('click', autoTranscribe);
+    // Animation-speed presets — how a long template fits a shorter caption:
+    // Natural (100% = real pace, trim), Balanced (≤200%), Fit all (squeeze in).
+    if ($('ms-speed')) {
+      var spdBtns = $('ms-speed').querySelectorAll('button');
+      for (var si = 0; si < spdBtns.length; si++) {
+        spdBtns[si].addEventListener('click', function () {
+          state.mogrtMaxSpeed = parseInt(this.dataset.spd, 10) || 200;
+          var on = $('ms-speed').querySelector('button.on'); if (on) on.classList.remove('on');
+          this.classList.add('on');
+        });
+      }
+    }
     function closeMogrtSheet() { $('mogrt-sheet').classList.add('hidden'); }
     $('ms-close').addEventListener('click', closeMogrtSheet);
     // back / ✕ at the top → return to the template gallery (which sits behind the
@@ -4584,9 +4596,10 @@
       var params = (state.mogrtParamsPath === mogrtPath) ? state.mogrtParams : [];
       var textStyle = (state.mogrtParamsPath === mogrtPath) ? state.mogrtTextStyle : null;
       var stretch = !!($('mg-stretch') && $('mg-stretch').checked);
+      var maxSpeed = state.mogrtMaxSpeed || 200;   // Animation-speed choice (action sheet)
       return CPBridge.callHost('CP_insertMogrtCaptions', {
         mogrtPath: mogrtPath, cues: tcues, videoTrack: null, audioTrack: 0,
-        params: params, textStyle: textStyle, stretch: stretch
+        params: params, textStyle: textStyle, stretch: stretch, maxSpeed: maxSpeed
       });
     }).then(function (r) {
       if (r == null) return;

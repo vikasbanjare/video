@@ -192,6 +192,13 @@
           <button class="wc-btn" id="ms-wc-plus" type="button">+</button>
           <button class="chip-btn" id="ms-wc-full" type="button">Full line</button>
         </div>
+        <label style="font-size:11px;margin-top:8px;display:block">Animation speed</label>
+        <div class="seg-control sub" id="ms-speed">
+          <button data-spd="100" type="button">🐢 Natural</button>
+          <button data-spd="200" type="button" class="on">⚖️ Balanced</button>
+          <button data-spd="100000" type="button">⚡ Fit all</button>
+        </div>
+        <p class="hint" id="ms-speed-hint" style="font-size:10px;margin:3px 0 0">When a caption is shorter than the template's animation, <b>Natural</b> plays it at its real pace (the caption shows the start of the animation); <b>Fit all</b> squeezes the whole animation in (can look very fast).</p>
         <!-- editable text colour / font / size / template colours, built on open -->
         <div id="ms-customizer" class="ms-customizer"></div>
         <button id="ms-preview" class="hero-btn small alt">▶ Preview on timeline</button>

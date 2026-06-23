@@ -1705,21 +1705,36 @@ function CP_insertMogrtCaptions(argsJson) {
       }
 
       // Duration LAST (so a time-stretch can't disturb the component edits).
-      // Fit the graphic to its slot. TRIMMING already keeps a clip from overrunning
-      // the next caption (wantEnd is clamped above), so we only SPEED-fit within a
-      // sane cap. Some templates have a very long built-in animation; cramming all
-      // of it into a 1–2s caption purely by speed meant a >100000% speed — the whole
-      // reveal flashed past in under a frame and NOTHING was visible on screen.
-      // Cap the speed so the animation stays visible, then trim/extend to the slot.
-      var needed = wantEnd - clipStart;
-      var MAX_SPEED = (args.maxSpeed && args.maxSpeed > 0) ? args.maxSpeed : 200;   // % — never faster than this
+      // Fit the graphic to its caption. The problem: a template animation may be ~5s
+      // while the spoken word is ~1.5s. Cramming the whole animation into the word by
+      // SPEED meant >100000% — it flashed by invisibly. So args.maxSpeed picks how a
+      // template LONGER than the word behaves (set from the panel's Animation-speed
+      // control); we also let the clip run into any GAP before the next caption rather
+      // than always trimming to the word, so the animation is actually watchable:
+      //   100  Natural  – real pace; clip runs its full length up to the next caption.
+      //   200  Balanced – up to 2× so a long animation finishes sooner.
+      //   huge Fit all  – squeeze the whole animation into the word (can be very fast).
+      // wordEnd = the spoken word's end; nextStart = where the next caption begins
+      // (we never overlap it). Templates shorter than the word just hold to wordEnd.
+      var wordEnd = wantEnd;
+      var nextStart = (g + 1 < groups.length) ? groups[g + 1][0].start : (wordEnd + nat + 3600);
+      var MAX_SPEED = (args.maxSpeed && args.maxSpeed > 0) ? args.maxSpeed : 200;
+      var needed = wordEnd - clipStart;
+      var endSec = wordEnd;
       if (args.stretch && nat > 0.05 && needed > 0.05 && nat > needed + 0.05) {
-        var pct = (nat / needed) * 100;
-        if (pct > MAX_SPEED) pct = MAX_SPEED;                 // don't speed past the cap → reveal stays visible
+        var fitPct = (nat / needed) * 100;                  // speed to exactly fill the word (>100)
+        var pct = (fitPct <= MAX_SPEED) ? fitPct : MAX_SPEED;
+        if (fitPct <= MAX_SPEED) {
+          endSec = wordEnd;                                 // animation fits within the cap → fill the word
+        } else {
+          endSec = clipStart + nat / (pct / 100);           // capped speed → play the (sped) animation…
+          if (endSec > nextStart) endSec = nextStart;       // …but never into the next caption
+          if (endSec < wordEnd) endSec = wordEnd;           // …and at least cover the spoken word
+        }
         if ((pct < 99 || pct > 101) && CP_stretchLastClip(vTrack, pct)) stretched++;
       }
-      try { clip.end = CP_timeFromSeconds(wantEnd); } catch (eEnd) {}   // trim/extend to exactly fill the slot
-      try { if (clip.end.seconds < wantEnd - 0.05) clamped++; } catch (eChk) {}
+      try { clip.end = CP_timeFromSeconds(endSec); } catch (eEnd) {}
+      try { if (endSec < wordEnd - 0.05) clamped++; } catch (eChk) {}
     }
     return CP_ok({
       inserted: inserted,
