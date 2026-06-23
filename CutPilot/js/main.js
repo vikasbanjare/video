@@ -58,6 +58,7 @@
   // ---- build-injected config (build-protected.js replaces these for trial /
   //      white-label builds; 0 / '' in source so the dev build is unchanged) ----
   var TRIAL_DAYS_MS = 0;  /*@@CP_TRIAL@@*/   // trial length in ms from FIRST run (0 = never)
+  var HARD_EXPIRY = 0;    /*@@CP_EXPIRY@@*/  // absolute kill-date (ms epoch); can't be reset by deleting files
   var BUNDLED_KEY = '';   /*@@CP_KEY@@*/     // shared cloud key baked into the build
   var WHITE_LABEL = false; /*@@CP_WL@@*/     // hide the underlying engine/model names
   var KEY_BUNDLED = !!BUNDLED_KEY;
@@ -1036,8 +1037,12 @@
     } catch (e2) {}
   }
   function trialExpired() {
-    if (!TRIAL_DAYS_MS) return false;                  // dev / full build
+    if (!TRIAL_DAYS_MS && !HARD_EXPIRY) return false;  // dev / full build
     var now = Date.now(), st = _trialState();
+    // ABSOLUTE kill-date baked into the build — deleting the saved trial files
+    // can't get past this, because it isn't derived from any saved state.
+    if (HARD_EXPIRY && now > HARD_EXPIRY) return true;
+    if (!TRIAL_DAYS_MS) { st.s = Math.max(now, st.s || 0); _trialWrite(st); return false; }
     if (!st.f) st.f = now;                              // first ever launch starts the clock
     if (st.s && now < st.s - 6 * 3600 * 1000) return true;   // clock rolled back > 6h → tamper
     st.s = Math.max(now, st.s || 0, st.f);
