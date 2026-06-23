@@ -6216,6 +6216,22 @@
     var path = pickFile('Locate the ffmpeg binary', []);
     if (path) $('set-ffmpeg').value = path;
   });
+  // Explicit one-tap audio-engine setup (so a fresh install can fetch ffmpeg —
+  // and retry — from a visible button, not only silently on first transcribe).
+  if ($('btn-ffmpeg-setup')) $('btn-ffmpeg-setup').addEventListener('click', function () {
+    var btn = this, st = $('ffmpeg-status');
+    btn.disabled = true;
+    if (st) st.textContent = '⬇️ Downloading the audio engine (~50MB) — one time…';
+    ensureFfmpeg().then(function (p) {
+      if (st) st.textContent = '✅ Audio engine ready.';
+      try { $('set-ffmpeg').value = p || settings.ffmpegPath || ''; } catch (e) {}
+      refreshFfmpegStatus(); toast('✅ Audio engine ready.');
+    }, function (e) {
+      var m = (e && e.message) ? e.message : 'Download failed — check internet.';
+      if (st) st.textContent = '⚠️ ' + m;
+      toast(m, true);
+    }).then(function () { btn.disabled = false; });
+  });
 
   $('btn-save-settings').addEventListener('click', function () {
     settings.ffmpegPath = $('set-ffmpeg').value.trim();
