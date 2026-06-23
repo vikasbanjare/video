@@ -25,3 +25,5 @@ CutPilot-protected/
 CutPilot-zxp-kit/
 # No-signing install package (staging dir for the white-label build + bundled key)
 CutPilot-Install/
+# One-download setup (no-terminal installers + trial build w/ bundled key)
+CutPilot-Setup/
