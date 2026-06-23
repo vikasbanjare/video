@@ -209,6 +209,17 @@
     });
   }
   var _ffmpegSetup = null;
+  /* Download via curl (follows redirects, honours system proxy) — the same tool
+     the cloud APIs already use, so it works in CEP where Node's https can be
+     flaky. Returns a Promise. */
+  function _curlDownload(url, dest) {
+    return new Promise(function (resolve, reject) {
+      var cp; try { cp = nodeReq('child_process'); } catch (e) { return reject(e); }
+      var p; try { p = cp.spawn('curl', ['-L', '--fail', '--max-time', '900', '-o', dest, url]); } catch (e2) { return reject(e2); }
+      p.on('error', reject);
+      p.on('close', function (code) { code === 0 ? resolve() : reject(new Error('curl ' + code)); });
+    });
+  }
   function ensureFfmpeg() {
     var have = resolveFfmpeg();
     if (have) return Promise.resolve(have);
@@ -221,21 +232,27 @@
     try { if (fs.existsSync(dest)) { settings.ffmpegPath = dest; saveSettings(); _ffmpeg = dest; return Promise.resolve(dest); } } catch (e0) {}
     _ffmpegSetup = new Promise(function (resolve, reject) {
       try { fs.mkdirSync(dir, { recursive: true }); } catch (eD) {}
-      setTranscriptBar('', '⬇️', 'First-time setup: downloading the audio tool…', null);
+      setTranscriptBar('', '⬇️', 'First-time setup: downloading the audio tool (~50MB)…', null);
       toast('One-time setup: downloading the audio engine (~50MB). This only happens once.');
-      _downloadTo(ffmpegDownloadUrl(), dest + '.part', function (pct) {
-        setTranscriptBar('', '⬇️', 'Setting up the audio tool… ' + Math.round(pct * 100) + '%', null);
-      }).then(function () {
-        try { fs.renameSync(dest + '.part', dest); } catch (eR) { return reject(eR); }
+      var url = ffmpegDownloadUrl(), part = dest + '.part';
+      var nodePct = function (pct) { setTranscriptBar('', '⬇️', 'Setting up the audio tool… ' + Math.round(pct * 100) + '%', null); };
+      function finish() {
+        var big = false; try { big = fs.statSync(part).size > 1e6; } catch (eS) {}
+        if (!big) return fail(new Error('download was empty'));
+        try { fs.renameSync(part, dest); } catch (eR) { return fail(eR); }
         try { if (process.platform !== 'win32') fs.chmodSync(dest, 0o755); } catch (eC) {}
-        settings.ffmpegPath = dest; saveSettings(); _ffmpeg = null;
+        settings.ffmpegPath = dest; saveSettings(); _ffmpeg = null; _ffmpegSetup = null;
+        toast('✅ Audio engine ready.'); resolve(resolveFfmpeg() || dest);
+      }
+      function fail(e) {
+        try { fs.unlinkSync(part); } catch (eU) {}
         _ffmpegSetup = null;
-        toast('✅ Audio engine ready.');
-        resolve(resolveFfmpeg() || dest);
-      }).catch(function (e) {
-        try { fs.unlinkSync(dest + '.part'); } catch (eU) {}
-        _ffmpegSetup = null;
-        reject(e);
+        reject(new Error('Couldn\'t download the audio tool (' + (e && e.message ? e.message : 'network error') +
+          '). Check the internet connection, or in Settings → ffmpeg set the path to an ffmpeg you download from ffmpeg.org.'));
+      }
+      // curl first (robust in CEP), then Node https as a fallback.
+      _curlDownload(url, part).then(finish, function () {
+        _downloadTo(url, part, nodePct).then(finish, fail);
       });
     });
     return _ffmpegSetup;
