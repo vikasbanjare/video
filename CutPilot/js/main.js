@@ -59,6 +59,7 @@
   var TRIAL_DAYS_MS = 0;  /*@@CP_TRIAL@@*/   // trial length in ms from FIRST run (0 = never)
   var HARD_EXPIRY = 0;    /*@@CP_EXPIRY@@*/  // absolute kill-date (ms epoch); can't be reset by deleting files
   var BUNDLED_KEY = '';   /*@@CP_KEY@@*/     // shared cloud key baked into the build
+  var BUNDLED_SARVAM_KEY = ''; /*@@CP_SARVAM@@*/  // shared Sarvam (Swara) key baked into the build
   var WHITE_LABEL = false; /*@@CP_WL@@*/     // hide the underlying engine/model names
   var KEY_BUNDLED = !!BUNDLED_KEY;
 
@@ -84,6 +85,7 @@
       } }
     } catch (e2) {}
     if (BUNDLED_KEY && !(s.groqKey || '').trim()) s.groqKey = BUNDLED_KEY;   // shared key for trial copies
+    if (BUNDLED_SARVAM_KEY && !(s.sarvamKey || '').trim()) s.sarvamKey = BUNDLED_SARVAM_KEY;   // shared Swara key
     return s;
   }
   function saveSettings() {
@@ -96,6 +98,12 @@
   function cpKey() {
     var k = (settings && settings.groqKey || '').trim();
     return k || (BUNDLED_KEY || '').trim();
+  }
+  /* The effective Sarvam (Swara) key — the user's own, else the build's bundled
+     one. Used for Indian-language transcription via Sarvam AI. */
+  function cpSarvamKey() {
+    var k = (settings && settings.sarvamKey || '').trim();
+    return k || (BUNDLED_SARVAM_KEY || '').trim();
   }
 
   // ---------------------------------------------------------------- dom ----
@@ -317,6 +325,7 @@
   var WHISPER_QUALITIES = [
     { value: 'auto-best', label: '✨ Auto — best engine for me (recommended)' },
     { value: 'cloud-groq', label: '☁️ Cloud · Groq (most accurate · free key)' },
+    { value: 'cloud-swara', label: '🇮🇳 Swara · Sarvam AI (Indian languages)' },
     { value: 'large-v3-turbo-q5_0', label: '★ Best free · large-v3-turbo (~574MB · multilingual)' },
     { value: 'tiny', label: 'Local · Fastest · tiny (~75MB)' },
     { value: 'base', label: 'Local · Fast · base (~150MB)' },
@@ -327,7 +336,10 @@
   ];
   // white-label builds hide the underlying engine/model names: show ONE generic
   // cloud option (the bundled key makes it work out of the box).
-  if (WHITE_LABEL) WHISPER_QUALITIES = [{ value: 'cloud-groq', label: '✨ CutPilot Cloud — best accuracy' }];
+  if (WHITE_LABEL) WHISPER_QUALITIES = [
+    { value: 'cloud-groq', label: '✨ CutPilot Cloud — best accuracy' },
+    { value: 'cloud-swara', label: '🇮🇳 Swara — Indian languages' }
+  ];
   var WHISPER_LANGS = [
     { value: 'en', label: 'English' }, { value: 'auto', label: 'Auto-detect' },
     { value: 'hinglish', label: 'Hinglish (Hindi in English letters)' },
@@ -339,6 +351,22 @@
     { value: 'ko', label: 'Korean' }, { value: 'id', label: 'Indonesian' },
     { value: 'tr', label: 'Turkish' }, { value: 'nl', label: 'Dutch' },
     { value: 'pl', label: 'Polish' }, { value: 'uk', label: 'Ukrainian' }
+  ];
+  // Swara (Sarvam AI) languages — BCP-47 codes. Shown when the Swara engine is
+  // picked; Sarvam handles code-mixing (Hinglish/Tanglish) within these.
+  var SWARA_LANGS = [
+    { value: 'hi-IN', label: 'हिंदी (Hindi)' }, { value: 'ta-IN', label: 'தமிழ் (Tamil)' },
+    { value: 'te-IN', label: 'తెలుగు (Telugu)' }, { value: 'bn-IN', label: 'বাংলা (Bengali)' },
+    { value: 'mr-IN', label: 'मराठी (Marathi)' }, { value: 'gu-IN', label: 'ગુજરાતી (Gujarati)' },
+    { value: 'kn-IN', label: 'ಕನ್ನಡ (Kannada)' }, { value: 'ml-IN', label: 'മലയാളം (Malayalam)' },
+    { value: 'pa-IN', label: 'ਪੰਜਾਬੀ (Punjabi)' }, { value: 'od-IN', label: 'ଓଡ଼ିଆ (Odia)' },
+    { value: 'as-IN', label: 'অসমীয়া (Assamese)' }, { value: 'ur-IN', label: 'اردو (Urdu)' },
+    { value: 'kok-IN', label: 'कोंकणी (Konkani)' }, { value: 'mai-IN', label: 'मैथिली (Maithili)' },
+    { value: 'sat-IN', label: 'ᱥᱟᱱᱛᱟᱲᱤ (Santali)' }, { value: 'brx-IN', label: 'डोगरी (Dogri)' },
+    { value: 'ksb-IN', label: 'कश्मीरी (Kashmiri)' }, { value: 'mni-IN', label: 'মণিপুরী (Manipuri)' },
+    { value: 'si-IN', label: 'සිංහල (Sinhala)' }, { value: 'ne-IN', label: 'नेपाली (Nepali)' },
+    { value: 'en-IN', label: 'English (Indian)' }, { value: 'en-US', label: 'English (US)' },
+    { value: 'en-GB', label: 'English (UK)' }
   ];
   function _modelsDir() { try { return nodeReq('path').join(nodeReq('os').homedir(), '.cutpilot', 'models'); } catch (e) { return null; } }
   /* Resolve the user's chosen accuracy to a CONCRETE engine. "Auto — best" picks
@@ -503,6 +531,93 @@
       return all;
     });
   }
+  /* Swara (Sarvam AI) transcription for Indian languages. Uploads one audio file
+     to Sarvam's speech-to-text endpoint and returns [{start,end,text}] cues with a
+     real per-word .words array when Sarvam provides timestamps. Defensive about the
+     response shape (transcript / timestamps{words,start_time_seconds,…} / words[]).
+     Key from cpSarvamKey(); curl does the multipart upload (already a dependency). */
+  function transcribeViaSwara(wavPath, langCode) {
+    return new Promise(function (resolve, reject) {
+      var key = cpSarvamKey();
+      if (!key) return reject(new Error('Add your Swara (Sarvam AI) key in Settings → Auto-transcribe.'));
+      var cp; try { cp = nodeReq('child_process'); } catch (e) { return reject(e); }
+      var args = ['-sS', '--max-time', '600', 'https://api.sarvam.ai/speech-to-text',
+        '-H', 'api-subscription-key: ' + key,
+        '-F', 'model=saarika:v2.5',
+        '-F', 'with_timestamps=true',
+        '-F', 'file=@' + wavPath];
+      if (langCode && langCode !== 'unknown') args.push('-F', 'language_code=' + langCode);
+      var p; try { p = cp.spawn('curl', args); } catch (e) { return reject(e); }
+      var out = '', err = '';
+      if (p.stdout) p.stdout.on('data', function (d) { out += d.toString(); });
+      if (p.stderr) p.stderr.on('data', function (d) { err += d.toString(); });
+      p.on('error', reject);
+      p.on('close', function (code) {
+        if (code !== 0) {
+          if (code === 6 || code === 7 || code === 28 || code === 5) {
+            return reject(new Error('Swara needs internet and couldn\'t reach Sarvam. ' +
+              'Switch “Accuracy / engine” to a local model to transcribe offline.'));
+          }
+          return reject(new Error('Swara request failed (curl ' + code + '): ' + err.slice(-160)));
+        }
+        var j; try { j = JSON.parse(out); } catch (e) { return reject(new Error('Swara returned unexpected data: ' + out.slice(0, 160))); }
+        if (j.error) return reject(new Error('Swara: ' + (j.error.message || JSON.stringify(j.error))));
+        var text = String(j.transcript != null ? j.transcript : (j.text != null ? j.text : '')).trim();
+        var words = [];
+        function pushWord(tx, st, en) { tx = String(tx == null ? '' : tx).trim(); if (tx) words.push({ start: +st || 0, end: +en || 0, text: tx, conf: null }); }
+        if (j.timestamps && j.timestamps.words && j.timestamps.words.length) {
+          var T = j.timestamps, ws = T.words, ss = T.start_time_seconds || T.start || [], es = T.end_time_seconds || T.end || [];
+          for (var i = 0; i < ws.length; i++) pushWord(ws[i], ss[i], es[i]);
+        } else if (j.words && j.words.length) {
+          j.words.forEach(function (w) { pushWord(w.word != null ? w.word : w.value, w.start_timestamp != null ? w.start_timestamp : w.start, w.end_timestamp != null ? w.end_timestamp : w.end); });
+        }
+        var cues = [];
+        if (text || words.length) cues.push({ start: words.length ? words[0].start : 0, end: words.length ? words[words.length - 1].end : 5, text: text || words.map(function (w) { return w.text; }).join(' ') });
+        if (!cues.length) return reject(new Error('Swara returned no speech.'));
+        if (words.length) cues.words = words;
+        resolve(cues);
+      });
+    });
+  }
+  /* Sarvam's sync endpoint is for short audio, so split long files into time
+     chunks, transcribe each, offset the timestamps, and rebuild clean line cues
+     from the merged words (sentence-aware) so captions read naturally. */
+  function swaraTranscribe(audioPath, lang, ff, durSec) {
+    var fs, os, pathMod;
+    try { fs = nodeReq('fs'); os = nodeReq('os'); pathMod = nodeReq('path'); } catch (e) { return transcribeViaSwara(audioPath, lang); }
+    var CHUNK = 28;                                   // seconds per request (Sarvam sync limit ~30s)
+    if (!ff || !durSec || durSec <= CHUNK + 2) return transcribeViaSwara(audioPath, lang);
+    var chunks = Math.ceil(durSec / CHUNK), allWords = [], allText = [];
+    var seq = Promise.resolve();
+    for (var i = 0; i < chunks; i++) {
+      (function (idx) {
+        var startT = idx * CHUNK;
+        var part = pathMod.join(os.tmpdir(), 'cutpilot-swara-' + idx + '-' + Date.now() + '.wav');
+        seq = seq.then(function () {
+          return runProc(ff, ['-y', '-ss', String(startT), '-t', String(CHUNK), '-i', audioPath, '-ac', '1', '-ar', '16000', part])
+            .then(function () { return transcribeViaSwara(part, lang); })
+            .then(function (cues) {
+              if (cues.words) cues.words.forEach(function (w) { w.start += startT; w.end += startT; allWords.push(w); });
+              cues.forEach(function (c) { if (c.text) allText.push(c.text); });
+              try { fs.unlinkSync(part); } catch (eU) {}
+              setTranscriptBar('', '🇮🇳', 'Transcribing with Swara… (' + (idx + 1) + '/' + chunks + ')', null);
+            }, function (e) { try { fs.unlinkSync(part); } catch (_e) {} throw e; });
+        });
+      })(i);
+    }
+    return seq.then(function () {
+      var cues;
+      if (allWords.length) {
+        allWords.sort(function (a, b) { return a.start - b.start; });
+        var oneWord = allWords.map(function (w) { return { start: w.start, end: w.end, text: w.text }; });
+        cues = CPCaptions.regroupWords(oneWord, 12, { maxGap: 0.7, sentenceBreak: true });
+        cues.words = allWords;
+      } else if (allText.length) {
+        cues = [{ start: 0, end: durSec || 5, text: allText.join(' ') }];
+      } else { throw new Error('Swara returned no speech.'); }
+      return cues;
+    });
+  }
   /* Call Groq's chat-completions API (same free key as cloud transcription) and
      return the assistant text. Body goes via a temp file (--data-binary @file) so
      unicode/quotes/newlines in the transcript never break shell escaping. */
@@ -611,7 +726,7 @@
     // key on the RESOLVED engine + language, so changing the model (or "Auto"
     // resolving differently) produces a new key and the clip is re-transcribed.
     var s = _TC_VER + '|' + String(mediaPath) + '|' + Math.round((minIn || 0) * 100) + '|' + Math.round((maxOut || 0) * 100) +
-            '|' + resolveQuality() + '|' + (settings.whisperLang || '');
+            '|' + resolveQuality() + '|' + (settings.whisperLang || '') + '|' + (settings.sarvamLang || '');
     var h = 0; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
     var base = String(mediaPath).split(/[\\/]/).pop().replace(/\.[^.]+$/, '').replace(/[^\w]+/g, '_').slice(0, 40);
     return base + '-' + _TC_VER + '-' + h.toString(16);
@@ -693,6 +808,8 @@
   function autoTranscribe() {
     if (state.transcribing) return toast('Already transcribing — hang tight, this can take a minute…');
     var cloud = (resolveQuality() === 'cloud-groq');
+    var swara = (resolveQuality() === 'cloud-swara');     // Sarvam AI (Indian languages)
+    var useCloud = cloud || swara;                         // both upload audio to a cloud API
     var ff = resolveFfmpeg();
     if (!ff) {
       // no ffmpeg yet → fetch it once (no Terminal), then start transcribing
@@ -702,12 +819,14 @@
     var wbin = null;
     if (cloud) {
       if (!cpKey()) return toast('Add your free Groq API key in Settings → Auto-transcribe (console.groq.com/keys).', true);
+    } else if (swara) {
+      if (!cpSarvamKey()) return toast('Add your Swara (Sarvam AI) key in Settings → Auto-transcribe to use Indian-language transcription.', true);
     } else {
       wbin = resolveWhisper();
       if (!wbin) return toast('Set the whisper engine in Settings → Auto-transcribe (brew install whisper-cpp).', true);
     }
     setTranscribing(true);   // all checks passed — commit, lock the buttons
-    var lang = settings.whisperLang || 'en';
+    var lang = swara ? (settings.sarvamLang || 'hi-IN') : (settings.whisperLang || 'en');
     // HINGLISH = the real spoken words written in English letters, NOT a Hindi→English
     // translation. Always TRANSCRIPTION, never translation:
     //   • multilingual model (cloud, or a local non-.en model) → transcribe Hindi
@@ -717,9 +836,9 @@
     //     Latin (-l en). Weaker (drops Hindi-heavy stretches) — only a fallback.
     var wlang = lang, romanize = false;
     if (lang === 'hinglish' && cloud) { wlang = 'hi'; romanize = true; }
-    var ico = cloud ? '☁️' : '🎙️';
-    setTranscriptBar('', ico, cloud ? 'Connecting to the cloud…' : 'Preparing the speech model…', null);
-    (cloud ? Promise.resolve(null) : resolveTranscribeModel()).then(function (model) {
+    var ico = swara ? '🇮🇳' : cloud ? '☁️' : '🎙️';
+    setTranscriptBar('', ico, useCloud ? 'Connecting to the cloud…' : 'Preparing the speech model…', null);
+    (useCloud ? Promise.resolve(null) : resolveTranscribeModel()).then(function (model) {
       // local Hinglish: pick the mode that matches the model we actually resolved
       if (!cloud && lang === 'hinglish') {
         if (/\.en\.bin$/i.test(String(model))) { wlang = 'en'; romanize = false; }   // English-only fallback
@@ -779,12 +898,16 @@
           if (dur > 0) a = a.concat(['-t', String(dur)]);
           return a.concat(['-vn', '-ac', '1', '-ar', '16000'], extra, [outFile]);
         }
-        var ffArgs = cloud ? extractArgs(['-c:a', 'libopus', '-b:a', '24k'], cloudOpus)
-                           : extractArgs([], wav);
+        var ffArgs = cloud  ? extractArgs(['-c:a', 'libopus', '-b:a', '24k'], cloudOpus)
+                   : swara  ? extractArgs(['-c:a', 'libmp3lame', '-b:a', '64k'], cloudMp3)
+                            : extractArgs([], wav);
         var pieces = insts.length > 1 ? (' (' + insts.length + ' cuts)') : '';
         setTranscriptBar('', ico, 'Extracting audio from “' + shortName + '”' + pieces + '…', null);
         return runProc(ff, ffArgs).then(function () {
-          setTranscriptBar('', ico, cloud ? 'Transcribing in the cloud…' : ('Transcribing with ' + modelLabel + ' — this can take a minute…'), null);
+          setTranscriptBar('', ico, useCloud ? 'Transcribing in the cloud…' : ('Transcribing with ' + modelLabel + ' — this can take a minute…'), null);
+          if (swara) {
+            return swaraTranscribe(cloudMp3, wlang, ff, dur);   // Sarvam AI (Indian languages)
+          }
           if (cloud) {
             var okOpus = false; try { okOpus = fs.existsSync(cloudOpus) && fs.statSync(cloudOpus).size > 2000; } catch (eO) {}
             var prep = okOpus ? Promise.resolve(cloudOpus)
@@ -3567,7 +3690,7 @@
     if (state.transcript) return true;
     if (state.pendingCaptionAction) { toast('⏳ Still getting your words — I\'ll add them automatically when ready.'); return false; }
     var ff = resolveFfmpeg();
-    var canAuto = !!ff && ((resolveQuality() === 'cloud-groq' && cpKey()) || !!resolveWhisper());
+    var canAuto = !!ff && ((resolveQuality() === 'cloud-groq' && cpKey()) || (resolveQuality() === 'cloud-swara' && cpSarvamKey()) || !!resolveWhisper());
     if (canAuto) {
       state.pendingCaptionAction = action;
       toast(action === 'native'
@@ -5997,11 +6120,17 @@
      tab + in Settings) and keep both key inputs mirrored to settings.groqKey, so
      there's always a visible place to paste the key right where you pick Cloud. */
   function syncGroqVisibility() {
-    var usingCloud = (resolveQuality() === 'cloud-groq');
+    var resolved = resolveQuality();
+    var usingCloud = (resolved === 'cloud-groq');
+    var usingSwara = (resolved === 'cloud-swara');
     if ($('tr-groq-wrap')) $('tr-groq-wrap').classList.toggle('hidden', !usingCloud);
+    if ($('tr-swara-wrap')) $('tr-swara-wrap').classList.toggle('hidden', !usingSwara);
+    // Swara picks its own Indian language, so hide the generic whisper/Groq language row
+    if ($('tr-lang-row')) $('tr-lang-row').classList.toggle('hidden', usingSwara);
     var k = settings.groqKey || '';
     setIfNotFocused('tr-groq-key', k);
     setIfNotFocused('set-groq-key', k);
+    setIfNotFocused('tr-swara-key', settings.sarvamKey || '');
   }
   /* One place to accept the key from either input: save + mirror + refresh. */
   function onGroqKeyInput(v) {
@@ -6021,6 +6150,12 @@
       el.textContent = (settings.groqKey || '').trim()
         ? '☁️ Cloud (Groq) ready — most accurate.' + autoTag
         : '☁️ Cloud selected — paste your free Groq API key in the box that just appeared.';
+      return;
+    }
+    if (resolved === 'cloud-swara') {
+      el.textContent = cpSarvamKey()
+        ? '🇮🇳 Swara (Sarvam AI) ready — pick your Indian language above.' + autoTag
+        : '🇮🇳 Swara selected — paste your Sarvam key in the box that just appeared.';
       return;
     }
     var w = resolveWhisper(), m = resolveWhisperModel();
@@ -6068,6 +6203,20 @@
   // save the Groq key as you type too (so it persists even without "Save & check")
   if ($('set-groq-key')) $('set-groq-key').addEventListener('input', function () { onGroqKeyInput(this.value); });
   if ($('tr-groq-key')) $('tr-groq-key').addEventListener('input', function () { onGroqKeyInput(this.value); });
+  // Swara (Sarvam AI): fill the Indian-language picker + persist key/language.
+  (function wireSwara() {
+    var sel = $('tr-swara-lang');
+    if (sel && !sel.firstChild) {
+      for (var i = 0; i < SWARA_LANGS.length; i++) {
+        var o = document.createElement('option'); o.value = SWARA_LANGS[i].value; o.textContent = SWARA_LANGS[i].label; sel.appendChild(o);
+      }
+      sel.value = settings.sarvamLang || 'hi-IN';
+      sel.addEventListener('change', function () { settings.sarvamLang = this.value; saveSettings(); refreshWhisperStatus(); });
+    }
+    if ($('tr-swara-key')) $('tr-swara-key').addEventListener('input', function () {
+      settings.sarvamKey = (this.value || '').trim(); saveSettings(); refreshWhisperStatus();
+    });
+  })();
   /* One-click: install the whisper engine + a model via Homebrew, then wire
      the paths. Streams output so any failure is visible. */
   if ($('btn-whisper-install')) $('btn-whisper-install').addEventListener('click', function () {

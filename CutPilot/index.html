@@ -14,7 +14,7 @@
 <body class="theme-light">
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.184</span>
+    <span class="ver" id="ver">v0.9.185</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -40,7 +40,15 @@
           <input type="password" id="tr-groq-key" placeholder="gsk_…" autocomplete="off">
         </label>
       </div>
-      <label class="fld-full">Language<div id="tr-lang" class="dd-mount"></div></label>
+      <div id="tr-swara-wrap" class="groq-inline hidden">
+        <label class="fld-full">🇮🇳 Swara (Sarvam AI) key <span class="dim">— for Indian languages</span>
+          <input type="password" id="tr-swara-key" placeholder="Sarvam subscription key…" autocomplete="off">
+        </label>
+        <label class="fld-full">Indian language
+          <select id="tr-swara-lang"></select>
+        </label>
+      </div>
+      <label class="fld-full" id="tr-lang-row">Language<div id="tr-lang" class="dd-mount"></div></label>
       <div class="tr-bar" id="tr-bar">
         <span class="tr-ico" id="tr-ico">🔎</span>
         <span class="tr-text" id="tr-text">looking for your words…</span>
@@ -991,7 +999,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center" id="ver-foot">CutPilot v0.9.184 · auto-edit · multicam · captions · chapters</p>
+    <p class="hint center" id="ver-foot">CutPilot v0.9.185 · auto-edit · multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>
