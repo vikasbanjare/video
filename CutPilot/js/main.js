@@ -51,17 +51,20 @@
     libMode: 'styles'      // 'styles' (built-in) | 'mogrt' (user .mogrt files)
   };
 
-  var settings = loadSettings();
-  var _booted = false;            // true once boot() has restored the saved look
-  var LOOK_KEY = 'cutpilot.look'; // persisted caption look (Customize state)
-
   // ---- build-injected config (build-protected.js replaces these for trial /
   //      white-label builds; 0 / '' in source so the dev build is unchanged) ----
+  // MUST be declared BEFORE loadSettings() runs — loadSettings copies BUNDLED_KEY
+  // into settings.groqKey, so if this ran after, a fresh install never picked up
+  // the bundled key (and "Auto-correct" wrongly asked for one).
   var TRIAL_DAYS_MS = 0;  /*@@CP_TRIAL@@*/   // trial length in ms from FIRST run (0 = never)
   var HARD_EXPIRY = 0;    /*@@CP_EXPIRY@@*/  // absolute kill-date (ms epoch); can't be reset by deleting files
   var BUNDLED_KEY = '';   /*@@CP_KEY@@*/     // shared cloud key baked into the build
   var WHITE_LABEL = false; /*@@CP_WL@@*/     // hide the underlying engine/model names
   var KEY_BUNDLED = !!BUNDLED_KEY;
+
+  var settings = loadSettings();
+  var _booted = false;            // true once boot() has restored the saved look
+  var LOOK_KEY = 'cutpilot.look'; // persisted caption look (Customize state)
   /* Persisted settings live in BOTH localStorage and a file in the home dir.
      The installer clears the CEP cache (to load new files), which also wipes
      localStorage — the file copy means ffmpeg/whisper/model paths survive a
@@ -86,6 +89,13 @@
   function saveSettings() {
     try { localStorage.setItem('cutpilot.settings', JSON.stringify(settings)); } catch (e) {}
     try { var f = _settingsFile(); if (f) nodeReq('fs').writeFileSync(f, JSON.stringify(settings), 'utf8'); } catch (e2) {}
+  }
+  /* The effective cloud key: the user's own key if set, else the build's bundled
+     key. Always use this for checks/requests so a bundled-key build never asks
+     the user for one (and can't regress on init-order). */
+  function cpKey() {
+    var k = (settings && settings.groqKey || '').trim();
+    return k || (BUNDLED_KEY || '').trim();
   }
 
   // ---------------------------------------------------------------- dom ----
@@ -337,7 +347,7 @@
      check, and model file all agree. */
   function resolveQuality() {
     var q = settings.whisperQuality || 'auto-best';
-    if (q === 'auto-best') return (settings.groqKey || '').trim() ? 'cloud-groq' : 'large-v3-turbo-q5_0';
+    if (q === 'auto-best') return cpKey() ? 'cloud-groq' : 'large-v3-turbo-q5_0';
     return q;
   }
   function modelFileName() {
@@ -389,7 +399,7 @@
      multipart upload (already a dependency). */
   function transcribeViaGroq(wavPath, lang) {
     return new Promise(function (resolve, reject) {
-      var key = (settings.groqKey || '').trim();
+      var key = cpKey();
       if (!key) return reject(new Error('Add your free Groq API key in Settings → Auto-transcribe (console.groq.com/keys).'));
       var cp; try { cp = nodeReq('child_process'); } catch (e) { return reject(e); }
       var args = ['-sS', '--max-time', '600', 'https://api.groq.com/openai/v1/audio/transcriptions',
@@ -499,7 +509,7 @@
   function groqChat(messages, opts) {
     opts = opts || {};
     return new Promise(function (resolve, reject) {
-      var key = (settings.groqKey || '').trim();
+      var key = cpKey();
       if (!key) return reject(new Error('This uses your free Groq key — add it in Settings → Auto-transcribe (console.groq.com/keys).'));
       var cp, fs, os, pathMod;
       try { cp = nodeReq('child_process'); fs = nodeReq('fs'); os = nodeReq('os'); pathMod = nodeReq('path'); } catch (e) { return reject(e); }
@@ -673,7 +683,7 @@
      free Groq key for the correction step. */
   function autoTranscribeAI() {
     if (state.transcribing) return toast('Already transcribing — hang tight…');
-    if (!(settings.groqKey || '').trim()) {
+    if (!cpKey()) {
       return toast('“Auto-correct” needs your free Groq key (Settings → Auto-transcribe, console.groq.com/keys). Add it, or use “Transcribe (raw)”.', true);
     }
     state.autoFixAfter = true;     // the terminal of autoTranscribe runs the AI fix
@@ -691,7 +701,7 @@
     }
     var wbin = null;
     if (cloud) {
-      if (!(settings.groqKey || '').trim()) return toast('Add your free Groq API key in Settings → Auto-transcribe (console.groq.com/keys).', true);
+      if (!cpKey()) return toast('Add your free Groq API key in Settings → Auto-transcribe (console.groq.com/keys).', true);
     } else {
       wbin = resolveWhisper();
       if (!wbin) return toast('Set the whisper engine in Settings → Auto-transcribe (brew install whisper-cpp).', true);
@@ -3446,7 +3456,7 @@
     if (state.transcript) return true;
     if (state.pendingCaptionAction) { toast('⏳ Still getting your words — I\'ll add them automatically when ready.'); return false; }
     var ff = resolveFfmpeg();
-    var canAuto = !!ff && ((resolveQuality() === 'cloud-groq' && (settings.groqKey || '').trim()) || !!resolveWhisper());
+    var canAuto = !!ff && ((resolveQuality() === 'cloud-groq' && cpKey()) || !!resolveWhisper());
     if (canAuto) {
       state.pendingCaptionAction = action;
       toast(action === 'native'
