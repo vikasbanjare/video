@@ -355,6 +355,9 @@
   // Swara (Sarvam AI) languages — BCP-47 codes. Shown when the Swara engine is
   // picked; Sarvam handles code-mixing (Hinglish/Tanglish) within these.
   var SWARA_LANGS = [
+    { value: 'unknown', label: '✨ Auto-detect language (recommended)' },
+    { value: 'translate-en', label: '🌐 → Translate to English (any language)' },
+    { value: 'hinglish', label: 'Hinglish (Hindi in English letters)' },
     { value: 'hi-IN', label: 'हिंदी (Hindi)' }, { value: 'ta-IN', label: 'தமிழ் (Tamil)' },
     { value: 'te-IN', label: 'తెలుగు (Telugu)' }, { value: 'bn-IN', label: 'বাংলা (Bengali)' },
     { value: 'mr-IN', label: 'मराठी (Marathi)' }, { value: 'gu-IN', label: 'ગુજરાતી (Gujarati)' },
@@ -541,12 +544,20 @@
       var key = cpSarvamKey();
       if (!key) return reject(new Error('Add your Indian Voices key in Settings → Auto-transcribe.'));
       var cp; try { cp = nodeReq('child_process'); } catch (e) { return reject(e); }
-      var args = ['-sS', '--max-time', '600', 'https://api.sarvam.ai/speech-to-text',
+      // 'translate-en' uses Sarvam's speech-to-text-TRANSLATE endpoint: it auto-detects
+      // any Indian language and returns the text in ENGLISH (so Hindi/Tamil → English).
+      // Everything else is plain speech-to-text in the chosen (or auto-detected) language.
+      var translate = (langCode === 'translate-en');
+      var url = translate ? 'https://api.sarvam.ai/speech-to-text-translate' : 'https://api.sarvam.ai/speech-to-text';
+      var model = translate ? 'saaras:v2.5' : 'saarika:v2.5';
+      var args = ['-sS', '--max-time', '600', url,
         '-H', 'api-subscription-key: ' + key,
-        '-F', 'model=saarika:v2.5',
+        '-F', 'model=' + model,
         '-F', 'with_timestamps=true',
         '-F', 'file=@' + wavPath];
-      if (langCode && langCode !== 'unknown') args.push('-F', 'language_code=' + langCode);
+      // language_code only for plain STT and only when a specific language is chosen
+      // ('unknown' = auto-detect → omit it; 'hinglish' is mapped to hi-IN upstream).
+      if (!translate && langCode && langCode !== 'unknown' && langCode !== 'hinglish') args.push('-F', 'language_code=' + langCode);
       var p; try { p = cp.spawn('curl', args); } catch (e) { return reject(e); }
       var out = '', err = '';
       if (p.stdout) p.stdout.on('data', function (d) { out += d.toString(); });
@@ -587,18 +598,20 @@
     try { fs = nodeReq('fs'); os = nodeReq('os'); pathMod = nodeReq('path'); } catch (e) { return transcribeViaSwara(audioPath, lang); }
     var CHUNK = 28;                                   // seconds per request (Sarvam sync limit ~30s)
     if (!ff || !durSec || durSec <= CHUNK + 2) return transcribeViaSwara(audioPath, lang);
-    var chunks = Math.ceil(durSec / CHUNK), allWords = [], allText = [];
+    var chunks = Math.ceil(durSec / CHUNK), allWords = [], allCues = [];
     var seq = Promise.resolve();
     for (var i = 0; i < chunks; i++) {
       (function (idx) {
-        var startT = idx * CHUNK;
+        var startT = idx * CHUNK, partEnd = Math.min(durSec, startT + CHUNK);
         var part = pathMod.join(os.tmpdir(), 'cutpilot-swara-' + idx + '-' + Date.now() + '.wav');
         seq = seq.then(function () {
           return runProc(ff, ['-y', '-ss', String(startT), '-t', String(CHUNK), '-i', audioPath, '-ac', '1', '-ar', '16000', part])
             .then(function () { return transcribeViaSwara(part, lang); })
             .then(function (cues) {
               if (cues.words) cues.words.forEach(function (w) { w.start += startT; w.end += startT; allWords.push(w); });
-              cues.forEach(function (c) { if (c.text) allText.push(c.text); });
+              // also keep per-chunk cues so TRANSLATE mode (no word timing) still yields
+              // several cues instead of one giant block.
+              cues.forEach(function (c) { if (c.text) allCues.push({ start: (c.start || 0) + startT, end: Math.min(partEnd, (c.end || 0) + startT) || partEnd, text: c.text }); });
               try { fs.unlinkSync(part); } catch (eU) {}
               setTranscriptBar('', '🇮🇳', 'Transcribing with Indian Voices… (' + (idx + 1) + '/' + chunks + ')', null);
             }, function (e) { try { fs.unlinkSync(part); } catch (_e) {} throw e; });
@@ -612,8 +625,9 @@
         var oneWord = allWords.map(function (w) { return { start: w.start, end: w.end, text: w.text }; });
         cues = CPCaptions.regroupWords(oneWord, 12, { maxGap: 0.7, sentenceBreak: true });
         cues.words = allWords;
-      } else if (allText.length) {
-        cues = [{ start: 0, end: durSec || 5, text: allText.join(' ') }];
+      } else if (allCues.length) {
+        allCues.sort(function (a, b) { return a.start - b.start; });
+        cues = allCues;
       } else { throw new Error('Indian Voices returned no speech.'); }
       return cues;
     });
@@ -826,7 +840,7 @@
       if (!wbin) return toast('Set the whisper engine in Settings → Auto-transcribe (brew install whisper-cpp).', true);
     }
     setTranscribing(true);   // all checks passed — commit, lock the buttons
-    var lang = swara ? (settings.sarvamLang || 'hi-IN') : (settings.whisperLang || 'en');
+    var lang = swara ? (settings.sarvamLang || 'unknown') : (settings.whisperLang || 'en');
     // HINGLISH = the real spoken words written in English letters, NOT a Hindi→English
     // translation. Always TRANSCRIPTION, never translation:
     //   • multilingual model (cloud, or a local non-.en model) → transcribe Hindi
@@ -836,6 +850,8 @@
     //     Latin (-l en). Weaker (drops Hindi-heavy stretches) — only a fallback.
     var wlang = lang, romanize = false;
     if (lang === 'hinglish' && cloud) { wlang = 'hi'; romanize = true; }
+    // Indian Voices Hinglish: transcribe Hindi (hi-IN), then romanise Devanagari→Latin.
+    if (lang === 'hinglish' && swara) { wlang = 'hi-IN'; romanize = true; }
     var ico = swara ? '🇮🇳' : cloud ? '☁️' : '🎙️';
     setTranscriptBar('', ico, useCloud ? 'Connecting to the cloud…' : 'Preparing the speech model…', null);
     (useCloud ? Promise.resolve(null) : resolveTranscribeModel()).then(function (model) {
@@ -6210,7 +6226,7 @@
       for (var i = 0; i < SWARA_LANGS.length; i++) {
         var o = document.createElement('option'); o.value = SWARA_LANGS[i].value; o.textContent = SWARA_LANGS[i].label; sel.appendChild(o);
       }
-      sel.value = settings.sarvamLang || 'hi-IN';
+      sel.value = settings.sarvamLang || 'unknown';
       sel.addEventListener('change', function () { settings.sarvamLang = this.value; saveSettings(); refreshWhisperStatus(); });
     }
     if ($('tr-swara-key')) $('tr-swara-key').addEventListener('input', function () {
