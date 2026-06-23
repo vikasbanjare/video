@@ -1922,7 +1922,7 @@
         var thumbUrl = '';
         try { if (fs.existsSync(path.join(mdir, 'thumbs', base + '.png'))) thumbUrl = 'mogrts/thumbs/' + encodeURIComponent(base + '.png'); } catch (e0) {}
         return { name: m.name, path: path.join(mdir, m.file),
-                 category: m.category || 'Templates', kind: m.kind || 'caption', desc: m.desc || '', thumb: thumbUrl };
+                 category: m.category || 'Templates', kind: m.kind || 'caption', desc: m.desc || '', thumb: thumbUrl, premium: !!m.premium };
       }).filter(function (m) { try { return fs.existsSync(m.path); } catch (e3) { return false; } });
       state.bundledDiag = state.bundledMogrts.length ? ('ok:' + state.bundledMogrts.length) : ('0 files exist in ' + mdir);
     } catch (e) { state.bundledMogrts = []; state.bundledDiag = 'error: ' + (e && e.message); }
@@ -2018,7 +2018,7 @@
     var out = [];
     (state.bundledMogrts || []).forEach(function (m) {
       out.push({ id: 'mogrt:' + m.path, name: m.name, category: MOGRT_CAT, mogrt: true,
-                 path: m.path, popularity: 90, subcat: m.desc || m.category, desc: m.desc, bundled: true, thumb: m.thumb });
+                 path: m.path, popularity: 90, subcat: m.desc || m.category, desc: m.desc, bundled: true, thumb: m.thumb, premium: m.premium });
     });
     (state.folderMogrts || []).forEach(function (m) {
       out.push({ id: 'mogrt:' + m.path, name: m.name, category: MOGRT_CAT, mogrt: true,
@@ -2274,6 +2274,13 @@
       badge.textContent = '✏️ EDITABLE';
       badge.title = 'Editable in Premiere’s Essential Graphics after you add it';
       mthumb.appendChild(badge);
+      if (t.premium) {
+        var prem = document.createElement('span');
+        prem.className = 'tpl-prem';
+        prem.textContent = '⭐ PREMIUM';
+        prem.title = 'Premium template';
+        mthumb.appendChild(prem);
+      }
       mc.appendChild(mthumb);
       var mmeta = document.createElement('div');
       mmeta.className = 'tpl-meta';
