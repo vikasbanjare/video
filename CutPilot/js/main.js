@@ -1187,6 +1187,7 @@
     wireSubviews();
     wireChapters();
     wireCommandPalette();
+    setVersionBadge();     // show the REAL installed version (badge used to be stale)
     loadBundledMogrts();   // shipped editable templates → into the gallery
     scanMogrtFolders();    // user-added template folders (Settings → Add folder)
     renderMogrtFoldersUI();
@@ -1893,6 +1894,25 @@
      described by mogrts/index.json, resolving each to an absolute path so
      importMGT can place them. These become editable, prebuilt caption/title
      templates in the gallery — no per-use seed picking. CEP-only (needs fs). */
+  /* Show the REAL installed version in the header badge by reading it from the
+     manifest, so it always matches the running build. The badge used to be a
+     hard-coded string that went stale on every release — which made it impossible
+     to tell whether an update had actually taken effect. */
+  function setVersionBadge() {
+    try {
+      if (!CPBridge.isCEP()) return;
+      var fs = nodeReq('fs'), path = nodeReq('path');
+      var ext = CPBridge.getExtensionPath && CPBridge.getExtensionPath();
+      if (!ext) return;
+      var xml = fs.readFileSync(path.join(ext, 'CSXS', 'manifest.xml'), 'utf8');
+      var m = xml.match(/ExtensionBundleVersion="([^"]+)"/);
+      if (m && m[1]) {
+        var el = $('ver'); if (el) el.textContent = 'v' + m[1];
+        var ft = $('ver-foot'); if (ft) ft.textContent = 'CutPilot v' + m[1] + ' · auto-edit · multicam · captions · chapters';
+      }
+    } catch (e) {}
+  }
+
   function loadBundledMogrts() {
     state.bundledMogrts = state.bundledMogrts || [];
     if (!CPBridge.isCEP()) return;
@@ -4596,7 +4616,7 @@
       var params = (state.mogrtParamsPath === mogrtPath) ? state.mogrtParams : [];
       var textStyle = (state.mogrtParamsPath === mogrtPath) ? state.mogrtTextStyle : null;
       var stretch = !!($('mg-stretch') && $('mg-stretch').checked);
-      var maxSpeed = state.mogrtMaxSpeed || 200;   // Animation-speed choice (action sheet)
+      var maxSpeed = state.mogrtMaxSpeed || 100;   // Animation-speed choice (action sheet); default Natural
       return CPBridge.callHost('CP_insertMogrtCaptions', {
         mogrtPath: mogrtPath, cues: tcues, videoTrack: null, audioTrack: 0,
         params: params, textStyle: textStyle, stretch: stretch, maxSpeed: maxSpeed

@@ -14,7 +14,7 @@
 <body class="theme-light">
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.174</span>
+    <span class="ver" id="ver">v0.9.182</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -194,11 +194,11 @@
         </div>
         <label style="font-size:11px;margin-top:8px;display:block">Animation speed</label>
         <div class="seg-control sub" id="ms-speed">
-          <button data-spd="100" type="button">🐢 Natural</button>
-          <button data-spd="200" type="button" class="on">⚖️ Balanced</button>
-          <button data-spd="100000" type="button">⚡ Fit all</button>
+          <button data-spd="100" type="button" class="on">🐢 Natural</button>
+          <button data-spd="200" type="button">⚖️ Balanced</button>
+          <button data-spd="400" type="button">⚡ Fast</button>
         </div>
-        <p class="hint" id="ms-speed-hint" style="font-size:10px;margin:3px 0 0">When a caption is shorter than the template's animation, <b>Natural</b> plays it at its real pace (the caption shows the start of the animation); <b>Fit all</b> squeezes the whole animation in (can look very fast).</p>
+        <p class="hint" id="ms-speed-hint" style="font-size:10px;margin:3px 0 0">When a caption is shorter than the template's animation, <b>Natural</b> plays it at its real pace and runs into the gap before the next caption (most visible). <b>Fast</b> speeds it up to ~4× to fit more in.</p>
         <!-- editable text colour / font / size / template colours, built on open -->
         <div id="ms-customizer" class="ms-customizer"></div>
         <button id="ms-preview" class="hero-btn small alt">▶ Preview on timeline</button>
@@ -991,7 +991,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center">CutPilot v0.9.174 · auto-edit · multicam · captions · chapters</p>
+    <p class="hint center" id="ver-foot">CutPilot v0.9.182 · auto-edit · multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

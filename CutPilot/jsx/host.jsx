@@ -1719,6 +1719,7 @@ function CP_insertMogrtCaptions(argsJson) {
       var wordEnd = wantEnd;
       var nextStart = (g + 1 < groups.length) ? groups[g + 1][0].start : (wordEnd + nat + 3600);
       var MAX_SPEED = (args.maxSpeed && args.maxSpeed > 0) ? args.maxSpeed : 200;
+      if (MAX_SPEED > 500) MAX_SPEED = 500;   // ABSOLUTE ceiling — a caption animation must never become a sub-frame flash, whatever the panel asks for
       var needed = wordEnd - clipStart;
       var endSec = wordEnd;
       if (args.stretch && nat > 0.05 && needed > 0.05 && nat > needed + 0.05) {
