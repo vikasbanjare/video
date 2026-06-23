@@ -325,7 +325,7 @@
   var WHISPER_QUALITIES = [
     { value: 'auto-best', label: '✨ Auto — best engine for me (recommended)' },
     { value: 'cloud-groq', label: '☁️ Cloud · Groq (most accurate · free key)' },
-    { value: 'cloud-swara', label: '🇮🇳 Swara · Sarvam AI (Indian languages)' },
+    { value: 'cloud-swara', label: '🇮🇳 Indian Voices (all Indian languages)' },
     { value: 'large-v3-turbo-q5_0', label: '★ Best free · large-v3-turbo (~574MB · multilingual)' },
     { value: 'tiny', label: 'Local · Fastest · tiny (~75MB)' },
     { value: 'base', label: 'Local · Fast · base (~150MB)' },
@@ -338,7 +338,7 @@
   // cloud option (the bundled key makes it work out of the box).
   if (WHITE_LABEL) WHISPER_QUALITIES = [
     { value: 'cloud-groq', label: '✨ CutPilot Cloud — best accuracy' },
-    { value: 'cloud-swara', label: '🇮🇳 Swara — Indian languages' }
+    { value: 'cloud-swara', label: '🇮🇳 Indian Voices — all languages' }
   ];
   var WHISPER_LANGS = [
     { value: 'en', label: 'English' }, { value: 'auto', label: 'Auto-detect' },
@@ -539,7 +539,7 @@
   function transcribeViaSwara(wavPath, langCode) {
     return new Promise(function (resolve, reject) {
       var key = cpSarvamKey();
-      if (!key) return reject(new Error('Add your Swara (Sarvam AI) key in Settings → Auto-transcribe.'));
+      if (!key) return reject(new Error('Add your Indian Voices key in Settings → Auto-transcribe.'));
       var cp; try { cp = nodeReq('child_process'); } catch (e) { return reject(e); }
       var args = ['-sS', '--max-time', '600', 'https://api.sarvam.ai/speech-to-text',
         '-H', 'api-subscription-key: ' + key,
@@ -555,13 +555,13 @@
       p.on('close', function (code) {
         if (code !== 0) {
           if (code === 6 || code === 7 || code === 28 || code === 5) {
-            return reject(new Error('Swara needs internet and couldn\'t reach Sarvam. ' +
+            return reject(new Error('Indian Voices needs internet and couldn\'t reach the server. ' +
               'Switch “Accuracy / engine” to a local model to transcribe offline.'));
           }
-          return reject(new Error('Swara request failed (curl ' + code + '): ' + err.slice(-160)));
+          return reject(new Error('Indian Voices request failed (curl ' + code + '): ' + err.slice(-160)));
         }
-        var j; try { j = JSON.parse(out); } catch (e) { return reject(new Error('Swara returned unexpected data: ' + out.slice(0, 160))); }
-        if (j.error) return reject(new Error('Swara: ' + (j.error.message || JSON.stringify(j.error))));
+        var j; try { j = JSON.parse(out); } catch (e) { return reject(new Error('Indian Voices returned unexpected data: ' + out.slice(0, 160))); }
+        if (j.error) return reject(new Error('Indian Voices: ' + (j.error.message || JSON.stringify(j.error))));
         var text = String(j.transcript != null ? j.transcript : (j.text != null ? j.text : '')).trim();
         var words = [];
         function pushWord(tx, st, en) { tx = String(tx == null ? '' : tx).trim(); if (tx) words.push({ start: +st || 0, end: +en || 0, text: tx, conf: null }); }
@@ -573,7 +573,7 @@
         }
         var cues = [];
         if (text || words.length) cues.push({ start: words.length ? words[0].start : 0, end: words.length ? words[words.length - 1].end : 5, text: text || words.map(function (w) { return w.text; }).join(' ') });
-        if (!cues.length) return reject(new Error('Swara returned no speech.'));
+        if (!cues.length) return reject(new Error('Indian Voices returned no speech.'));
         if (words.length) cues.words = words;
         resolve(cues);
       });
@@ -600,7 +600,7 @@
               if (cues.words) cues.words.forEach(function (w) { w.start += startT; w.end += startT; allWords.push(w); });
               cues.forEach(function (c) { if (c.text) allText.push(c.text); });
               try { fs.unlinkSync(part); } catch (eU) {}
-              setTranscriptBar('', '🇮🇳', 'Transcribing with Swara… (' + (idx + 1) + '/' + chunks + ')', null);
+              setTranscriptBar('', '🇮🇳', 'Transcribing with Indian Voices… (' + (idx + 1) + '/' + chunks + ')', null);
             }, function (e) { try { fs.unlinkSync(part); } catch (_e) {} throw e; });
         });
       })(i);
@@ -614,7 +614,7 @@
         cues.words = allWords;
       } else if (allText.length) {
         cues = [{ start: 0, end: durSec || 5, text: allText.join(' ') }];
-      } else { throw new Error('Swara returned no speech.'); }
+      } else { throw new Error('Indian Voices returned no speech.'); }
       return cues;
     });
   }
@@ -820,7 +820,7 @@
     if (cloud) {
       if (!cpKey()) return toast('Add your free Groq API key in Settings → Auto-transcribe (console.groq.com/keys).', true);
     } else if (swara) {
-      if (!cpSarvamKey()) return toast('Add your Swara (Sarvam AI) key in Settings → Auto-transcribe to use Indian-language transcription.', true);
+      if (!cpSarvamKey()) return toast('Add your Indian Voices key in Settings → Auto-transcribe to use Indian-language transcription.', true);
     } else {
       wbin = resolveWhisper();
       if (!wbin) return toast('Set the whisper engine in Settings → Auto-transcribe (brew install whisper-cpp).', true);
@@ -6154,8 +6154,8 @@
     }
     if (resolved === 'cloud-swara') {
       el.textContent = cpSarvamKey()
-        ? '🇮🇳 Swara (Sarvam AI) ready — pick your Indian language above.' + autoTag
-        : '🇮🇳 Swara selected — paste your Sarvam key in the box that just appeared.';
+        ? '🇮🇳 Indian Voices ready — pick your language above.' + autoTag
+        : '🇮🇳 Indian Voices selected — paste your key in the box that just appeared.';
       return;
     }
     var w = resolveWhisper(), m = resolveWhisperModel();
