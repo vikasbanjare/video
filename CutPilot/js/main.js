@@ -834,6 +834,62 @@
     });
   }
 
+  /* Turn a Hindi (Devanagari) transcript into NATURAL Hinglish — Hindi written in
+     Roman letters the way people actually type online — using the cloud LLM. The
+     old mechanical char-by-char transliteration produced clunky/wrong spellings;
+     this reads far better. Romanises the WORDS in batches (1:1, so Sarvam's exact
+     per-word timing is preserved), then rebuilds each line from its words. Falls
+     back to the mechanical transliterator with no key / offline / on any drift.
+     Mutates `rc` (cues, and rc.words if present) and returns a Promise. */
+  function hinglishify(rc) {
+    function mech() {
+      rc.forEach(function (c) { c.text = CPCaptions.devanagariToLatin(c.text); });
+      if (rc.words) rc.words.forEach(function (w) { w.text = CPCaptions.devanagariToLatin(w.text); });
+      return rc;
+    }
+    if (!cpKey() || typeof groqChat !== 'function') return Promise.resolve(mech());
+    var SYS = 'You transliterate Hindi (Devanagari) into natural Hinglish — the same Hindi words written in Roman/English letters the way Indians type online (e.g. "मैं ठीक हूँ" → "main theek hoon", "क्या हुआ" → "kya hua"). Never TRANSLATE to English — keep the exact Hindi words, only change the script. English words stay unchanged.';
+    var words = (rc.words && rc.words.length) ? rc.words : null;
+    if (words) {
+      var BATCH = 350, batches = [];
+      for (var i = 0; i < words.length; i += BATCH) batches.push(words.slice(i, i + BATCH));
+      setTranscriptBar('', '🇮🇳', 'Converting to Hinglish…', null);
+      var seq = Promise.resolve();
+      batches.forEach(function (batch) {
+        seq = seq.then(function () {
+          var joined = batch.map(function (w) { return w.text; }).join(' | ');
+          return groqChat([{ role: 'system', content: SYS },
+            { role: 'user', content: 'Transliterate each token to Hinglish. Tokens are separated by " | ". Return them in the SAME order separated by " | ", the SAME number of tokens, nothing else:\n\n' + joined }],
+            { temperature: 0.1 }).then(function (resp) {
+              var toks = String(resp).trim().split('|').map(function (s) { return s.trim(); }).filter(function (s) { return s.length; });
+              if (toks.length === batch.length) { for (var k = 0; k < batch.length; k++) batch[k].text = toks[k]; }
+              else batch.forEach(function (w) { w.text = CPCaptions.devanagariToLatin(w.text); });   // drift → safe per-word fallback
+            }, function () { batch.forEach(function (w) { w.text = CPCaptions.devanagariToLatin(w.text); }); });
+        });
+      });
+      return seq.then(function () {
+        // rebuild each line from its (now romanised) words so the line text matches
+        rc.forEach(function (c) {
+          var ws = words.filter(function (w) { return w.start >= c.start - 0.05 && w.start < c.end + 0.05; });
+          c.text = ws.length ? ws.map(function (w) { return w.text; }).join(' ') : CPCaptions.devanagariToLatin(c.text);
+        });
+        return rc;
+      });
+    }
+    // no per-word timing → romanise the lines (numbered) with sentence context
+    var lines = rc.map(function (c, i) { return (i + 1) + '. ' + c.text; }).join('\n');
+    setTranscriptBar('', '🇮🇳', 'Converting to Hinglish…', null);
+    return groqChat([{ role: 'system', content: SYS },
+      { role: 'user', content: 'Transliterate each line to Hinglish. Keep EXACTLY one line per input line with the same numbering, nothing else:\n\n' + lines }],
+      { temperature: 0.1 }).then(function (resp) {
+        var map = {};
+        String(resp).split('\n').forEach(function (ln) { var m = ln.match(/^\s*(\d+)[.)]\s*(.+)$/); if (m) map[+m[1]] = m[2].trim(); });
+        var hit = 0;
+        rc.forEach(function (c, i) { if (map[i + 1]) { c.text = map[i + 1]; hit++; } else c.text = CPCaptions.devanagariToLatin(c.text); });
+        return hit ? rc : mech();
+      }, function () { return mech(); });
+  }
+
   /* "Transcribe + auto-correct": same transcription, then an automatic AI
      proofread pass (fixes misheard words like "indiyya" → "India"). Needs the
      free Groq key for the correction step. */
@@ -987,14 +1043,12 @@
           }, function () { return plainPass(); });
         }).then(function (rawCues) {
           if (!rawCues || !rawCues.length) throw new Error('no speech detected in “' + shortName + '”');
-          // Hinglish (cloud/Hindi path): turn the Devanagari into Latin; English
-          // words already in Latin pass through untouched.
-          if (romanize) rawCues.forEach(function (rc) { rc.text = CPCaptions.devanagariToLatin(rc.text); });
-          // Capture Groq's real per-word timestamps (attached by transcribeViaGroq).
-          if (rawCues.words && rawCues.words.length) {
-            groqWords = rawCues.words;
-            if (romanize) groqWords.forEach(function (w) { w.text = CPCaptions.devanagariToLatin(w.text); });
-          }
+          // Hinglish: convert Devanagari → natural Hinglish via the cloud LLM
+          // (mechanical transliteration fallback inside). Async, so chain it.
+          return romanize ? hinglishify(rawCues) : rawCues;
+        }).then(function (rawCues) {
+          // Capture real per-word timestamps (now romanised if Hinglish).
+          if (rawCues.words && rawCues.words.length) groqWords = rawCues.words;
           // Map (wav-relative) cues onto every timeline piece showing that part,
           // converting to sequence time: seq = mediaTime - pieceIn + pieceSeqStart.
           function toSeq(list) {
