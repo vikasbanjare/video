@@ -1913,8 +1913,16 @@
       if (!idxFile) { state.bundledDiag = 'index.json not found in ' + path.join(cands[0], 'mogrts'); return; }
       var list = JSON.parse(fs.readFileSync(idxFile, 'utf8')) || [];
       state.bundledMogrts = list.map(function (m) {
+        // Each .mogrt ships a baked-in preview (thumb.png), pre-extracted to
+        // mogrts/thumbs/<basename>.png by tools/extract-mogrt-thumbs.js. If present,
+        // the gallery card shows that real preview instead of a generic glyph. The
+        // URL is RELATIVE to the panel root (index.html), so it loads without any
+        // file:// path-encoding headaches and the browser lazy-loads + scales it.
+        var base = String(m.file).replace(/\.mogrt$/i, '');
+        var thumbUrl = '';
+        try { if (fs.existsSync(path.join(mdir, 'thumbs', base + '.png'))) thumbUrl = 'mogrts/thumbs/' + encodeURIComponent(base + '.png'); } catch (e0) {}
         return { name: m.name, path: path.join(mdir, m.file),
-                 category: m.category || 'Templates', kind: m.kind || 'caption', desc: m.desc || '' };
+                 category: m.category || 'Templates', kind: m.kind || 'caption', desc: m.desc || '', thumb: thumbUrl };
       }).filter(function (m) { try { return fs.existsSync(m.path); } catch (e3) { return false; } });
       state.bundledDiag = state.bundledMogrts.length ? ('ok:' + state.bundledMogrts.length) : ('0 files exist in ' + mdir);
     } catch (e) { state.bundledMogrts = []; state.bundledDiag = 'error: ' + (e && e.message); }
@@ -2010,19 +2018,19 @@
     var out = [];
     (state.bundledMogrts || []).forEach(function (m) {
       out.push({ id: 'mogrt:' + m.path, name: m.name, category: MOGRT_CAT, mogrt: true,
-                 path: m.path, popularity: 90, subcat: m.desc || m.category, desc: m.desc, bundled: true });
+                 path: m.path, popularity: 90, subcat: m.desc || m.category, desc: m.desc, bundled: true, thumb: m.thumb });
     });
     (state.folderMogrts || []).forEach(function (m) {
       out.push({ id: 'mogrt:' + m.path, name: m.name, category: MOGRT_CAT, mogrt: true,
-                 path: m.path, popularity: 80, subcat: m.category, bundled: true });
+                 path: m.path, popularity: 80, subcat: m.category, bundled: true, thumb: m.thumb });
     });
     (state.installedMogrts || []).forEach(function (m) {
       out.push({ id: 'mogrt:' + m.path, name: m.name, category: MOGRT_CAT, mogrt: true,
-                 path: m.path, popularity: 55, subcat: m.category });
+                 path: m.path, popularity: 55, subcat: m.category, thumb: m.thumb });
     });
     (state.userMogrts || []).forEach(function (m) {
       out.push({ id: 'mogrt:' + m.path, name: m.name, category: MOGRT_CAT, mogrt: true,
-                 path: m.path, popularity: 60, subcat: 'Added by you' });
+                 path: m.path, popularity: 60, subcat: 'Added by you', thumb: m.thumb });
     });
     return out;
   }
@@ -2241,13 +2249,26 @@
     // MOGRT cards: distinct look + open the action sheet (preview / use)
     if (t.mogrt) {
       var mc = document.createElement('div');
-      mc.className = 'tpl-card is-mogrt';
+      mc.className = 'tpl-card is-mogrt' + (t.thumb ? ' has-thumb' : '');
       var mthumb = document.createElement('div');
       mthumb.className = 'tpl-thumb';
-      var mcap = document.createElement('div');
-      mcap.className = 't-cap';
-      mcap.textContent = '🎬';
-      mthumb.appendChild(mcap);
+      if (t.thumb) {
+        // real preview baked into the .mogrt (mogrts/thumbs/<name>.png)
+        var mimg = document.createElement('img');
+        mimg.className = 'tpl-thumb-img';
+        mimg.alt = t.name; mimg.loading = 'lazy'; mimg.src = t.thumb;
+        mimg.addEventListener('error', function () {           // missing/failed → glyph fallback
+          mc.classList.remove('has-thumb'); this.remove();
+          var c = document.createElement('div'); c.className = 't-cap'; c.textContent = '🎬';
+          mthumb.insertBefore(c, mthumb.firstChild);
+        });
+        mthumb.appendChild(mimg);
+      } else {
+        var mcap = document.createElement('div');
+        mcap.className = 't-cap';
+        mcap.textContent = '🎬';
+        mthumb.appendChild(mcap);
+      }
       var badge = document.createElement('span');
       badge.className = 'tpl-pop is-editable';
       badge.textContent = '✏️ EDITABLE';
@@ -2341,6 +2362,12 @@
   function openMogrtSheet(t) {
     state.selectedMogrt = { path: t.path, name: t.name };
     $('ms-name').textContent = t.name;
+    // large preview (the .mogrt's own baked-in thumbnail) at the top of the sheet
+    var msThumb = $('ms-thumb');
+    if (msThumb) {
+      if (t.thumb) { msThumb.src = t.thumb; msThumb.alt = t.name; msThumb.classList.remove('hidden'); }
+      else { msThumb.classList.add('hidden'); msThumb.removeAttribute('src'); }
+    }
     // show THIS template's real capabilities (read from its definition.json)
     if ($('ms-hint')) {
       var caps = mogrtCapsSummary(t.path);
