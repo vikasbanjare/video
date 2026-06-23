@@ -371,6 +371,21 @@
     { value: 'en-IN', label: 'English (Indian)' }, { value: 'en-US', label: 'English (US)' },
     { value: 'en-GB', label: 'English (UK)' }
   ];
+  // "Translate to" targets (value = "code|Name"). Rendered with the custom
+  // dropdown (native <select> doesn't open in Premiere's CEP).
+  var TRANSLATE_LANGS = [
+    { value: '', label: 'language…' },
+    { value: 'es|Spanish', label: 'Spanish' }, { value: 'fr|French', label: 'French' },
+    { value: 'de|German', label: 'German' }, { value: 'hi|Hindi', label: 'Hindi' },
+    { value: 'pt|Portuguese', label: 'Portuguese' }, { value: 'it|Italian', label: 'Italian' },
+    { value: 'ja|Japanese', label: 'Japanese' }, { value: 'ko|Korean', label: 'Korean' },
+    { value: 'zh|Chinese (Simplified)', label: 'Chinese' }, { value: 'ar|Arabic', label: 'Arabic' },
+    { value: 'ru|Russian', label: 'Russian' }, { value: 'id|Indonesian', label: 'Indonesian' },
+    { value: 'tr|Turkish', label: 'Turkish' }, { value: 'nl|Dutch', label: 'Dutch' },
+    { value: 'pl|Polish', label: 'Polish' }, { value: 'vi|Vietnamese', label: 'Vietnamese' },
+    { value: 'th|Thai', label: 'Thai' }, { value: 'en|English', label: 'English' }
+  ];
+  var _translateDD = null, _swaraDD = null;
   function _modelsDir() { try { return nodeReq('path').join(nodeReq('os').homedir(), '.cutpilot', 'models'); } catch (e) { return null; } }
   /* Resolve the user's chosen accuracy to a CONCRETE engine. "Auto — best" picks
      cloud Groq when a key is set (most accurate, fast, no download), otherwise the
@@ -1540,8 +1555,12 @@
     if ($('btn-exp-srt')) $('btn-exp-srt').addEventListener('click', function () { exportTranscript('srt'); });
     if ($('btn-exp-vtt')) $('btn-exp-vtt').addEventListener('click', function () { exportTranscript('vtt'); });
     if ($('btn-exp-txt')) $('btn-exp-txt').addEventListener('click', function () { exportTranscript('txt'); });
+    if ($('tr-translate-lang') && !$('tr-translate-lang').firstChild && typeof makeDropdown === 'function') {
+      _translateDD = makeDropdown(TRANSLATE_LANGS, '', function () {}, 'language…');
+      $('tr-translate-lang').appendChild(_translateDD.el);
+    }
     if ($('btn-translate')) $('btn-translate').addEventListener('click', function () {
-      var v = $('tr-translate-lang') ? $('tr-translate-lang').value : '';
+      var v = _translateDD ? _translateDD.get() : '';
       if (!v) return toast('Pick a language to translate to first.', true);
       var parts = v.split('|'); translateTranscript(parts[0], parts[1] || parts[0]);
     });
@@ -6219,15 +6238,15 @@
   // save the Groq key as you type too (so it persists even without "Save & check")
   if ($('set-groq-key')) $('set-groq-key').addEventListener('input', function () { onGroqKeyInput(this.value); });
   if ($('tr-groq-key')) $('tr-groq-key').addEventListener('input', function () { onGroqKeyInput(this.value); });
-  // Swara (Sarvam AI): fill the Indian-language picker + persist key/language.
+  // Indian Voices: mount the Indian-language picker (custom dropdown — native
+  // <select> doesn't open in CEP) + persist key/language.
   (function wireSwara() {
-    var sel = $('tr-swara-lang');
-    if (sel && !sel.firstChild) {
-      for (var i = 0; i < SWARA_LANGS.length; i++) {
-        var o = document.createElement('option'); o.value = SWARA_LANGS[i].value; o.textContent = SWARA_LANGS[i].label; sel.appendChild(o);
-      }
-      sel.value = settings.sarvamLang || 'unknown';
-      sel.addEventListener('change', function () { settings.sarvamLang = this.value; saveSettings(); refreshWhisperStatus(); });
+    var host = $('tr-swara-lang');
+    if (host && !host.firstChild && typeof makeDropdown === 'function') {
+      _swaraDD = makeDropdown(SWARA_LANGS, settings.sarvamLang || 'unknown', function (v) {
+        settings.sarvamLang = v; saveSettings(); refreshWhisperStatus();
+      }, 'Auto-detect');
+      host.appendChild(_swaraDD.el);
     }
     if ($('tr-swara-key')) $('tr-swara-key').addEventListener('input', function () {
       settings.sarvamKey = (this.value || '').trim(); saveSettings(); refreshWhisperStatus();
