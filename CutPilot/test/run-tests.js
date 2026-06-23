@@ -110,6 +110,18 @@ console.log('captions.js');
   assert(rgGap.length === 2 && rgGap[1].text === 'c', 'regroupWords breaks a caption at a long pause');
   assert(CPCaptions.regroupWords([{ start: 0, end: 2, text: 'hello world' }], 1, { uppercase: true })[0].text === 'HELLO',
          'regroupWords honors uppercase');
+  // sentenceBreak: a sentence end closes the caption so the next sentence starts fresh
+  // (a word like "My" is never stranded on the previous sentence's last frame).
+  const sb = CPCaptions.regroupWords(
+    'low level ozone. My name is Victor'.split(' ').map((w, i) => ({ start: i * 0.3, end: i * 0.3 + 0.3, text: w })),
+    5, { sentenceBreak: true });
+  assert(sb.length === 2 && sb[0].text === 'low level ozone.' && sb[1].text === 'My name is Victor',
+         'regroupWords sentenceBreak keeps each sentence in its own caption');
+  // maxChars: caption width is capped so text can't overflow (clip) the template box
+  const mc = CPCaptions.regroupWords(
+    'alpha beta gamma delta epsilon'.split(' ').map((w, i) => ({ start: i * 0.3, end: i * 0.3 + 0.3, text: w })),
+    9, { maxChars: 12 });
+  assert(mc.every(c => c.text.length <= 12), 'regroupWords maxChars caps every caption to the width limit');
 
   // Remap: cue at 2..4 over keeps [0..3] and [5..8] → portion 2..3 stays
   const remapped = CPCaptions.remapCuesToKeeps(

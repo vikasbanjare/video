@@ -3545,10 +3545,15 @@
   }
   function textCues(cues, words, caseMode) {
     var mode = (caseMode === true) ? 'upper' : (caseMode === false ? 'as-spoken' : (caseMode || 'as-spoken'));
-    // Regroup ACROSS line boundaries so "Words per graphic = N" actually yields
-    // fewer, longer captions (explodeWords only splits within a line, so it
-    // could never reduce the count — the cause of "word count not working").
-    var out = (words > 0) ? CPCaptions.regroupWords(cues, words, {}) : cues;
+    // Group sentence-aware AND width-capped so captions read cleanly and never overflow
+    // the template's text box (the cause of text clipping on the sides). "Words per
+    // graphic" is the word cap; we ALSO cap the width in characters (lower the word
+    // count to fit a narrower template) and start a fresh caption at every sentence end
+    // so a sentence is never split with a word stranded on the previous frame. Font size
+    // stays constant for the whole video — we shorten captions, never resize the text.
+    var perCap = (words > 0) ? words : 12;                       // 0 = "full line" → still capped so it can't run off-box
+    var maxChars = state.captionMaxChars || ((words > 0) ? Math.max(12, words * 8) : 28);
+    var out = CPCaptions.regroupWords(cues, perCap, { maxChars: maxChars, sentenceBreak: true });
     if (mode !== 'as-spoken') out = out.map(function (c) { return { start: c.start, end: c.end, text: applyCase(c.text, mode) }; });
     return out;
   }
