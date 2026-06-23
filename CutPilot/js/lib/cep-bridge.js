@@ -48,9 +48,16 @@
   function getExtensionPath() {
     if (root.__adobe_cep__ && root.__adobe_cep__.getSystemPath) {
       var p = root.__adobe_cep__.getSystemPath('extension');
-      // getSystemPath can return a URL-encoded path (spaces as %20); decode so
-      // Node fs can resolve it. Safe no-op if there's nothing to decode.
+      // getSystemPath returns a FILE URL (e.g. file:///Users/.../CutPilot on Mac,
+      // file:///C:/Users/.../CutPilot on Windows). Node's fs can't use that — it
+      // needs a plain path. Strip the scheme (and the spurious leading slash before
+      // a Windows drive letter), and URL-decode (spaces arrive as %20). Without this
+      // every fs lookup under the extension fails, so no bundled .mogrt ever loads.
       try { p = decodeURIComponent(p); } catch (e) {}
+      if (/^file:\/\//i.test(p)) {
+        p = p.replace(/^file:\/\//i, '');          // file:///Users/... → /Users/... ; file:///C:/... → /C:/...
+        if (/^\/[A-Za-z]:[\\/]/.test(p)) p = p.slice(1);   // Windows: /C:/... → C:/...
+      }
       return p;
     }
     return '';

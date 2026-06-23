@@ -1900,11 +1900,18 @@
       var fs = nodeReq('fs'), path = nodeReq('path');
       var raw = (CPBridge.getExtensionPath && CPBridge.getExtensionPath()) || '';
       if (!raw) { state.bundledDiag = 'no extension path'; return; }
-      // CEP's getSystemPath can be URL-encoded (spaces → %20), which fs can't
-      // resolve — try the decoded path first, then the raw one.
+      // Build robust path candidates: URL-decoded, file://-stripped, and raw — so
+      // bundled .mogrt loading works no matter which form getSystemPath returns.
       var cands = [];
-      try { var d = decodeURIComponent(raw); if (d !== raw) cands.push(d); } catch (e) {}
-      cands.push(raw);
+      function addCand(x) {
+        if (!x) return;
+        var v = x;
+        try { v = decodeURIComponent(v); } catch (e) {}
+        if (/^file:\/\//i.test(v)) { v = v.replace(/^file:\/\//i, ''); if (/^\/[A-Za-z]:[\\/]/.test(v)) v = v.slice(1); }
+        if (cands.indexOf(v) < 0) cands.push(v);
+        if (cands.indexOf(x) < 0) cands.push(x);
+      }
+      addCand(raw);
       var idxFile = null, mdir = null;
       for (var i = 0; i < cands.length; i++) {
         var md = path.join(cands[i], 'mogrts'), ix = path.join(md, 'index.json');
@@ -2902,8 +2909,14 @@
     grid.innerHTML = '';
     if (!list.length) {
       var e = document.createElement('div'); e.className = 'lib-empty';
-      e.textContent = q ? ('No Flux templates match “' + q + '”.')
-        : (CPBridge.isCEP() ? 'Flux templates will appear here.' : 'Flux templates load inside Premiere.');
+      if (q) e.textContent = 'No Flux templates match “' + q + '”.';
+      else if (!CPBridge.isCEP()) e.textContent = 'Flux templates load inside Premiere.';
+      else {                                       // in Premiere but nothing loaded → show why
+        var nb = (state.bundledMogrts || []).length;
+        e.innerHTML = 'No Flux templates loaded yet.<br>' +
+          '<span style="font-size:10px;opacity:.65">bundled .mogrts: ' + nb +
+          ' · ' + String(state.bundledDiag || 'not loaded').replace(/</g, '&lt;') + '</span>';
+      }
       grid.appendChild(e); return;
     }
     list.forEach(function (t) { grid.appendChild(buildTemplateCard(t)); });
