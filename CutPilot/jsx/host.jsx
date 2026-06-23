@@ -1184,6 +1184,34 @@ function CP_setMgrtText(prop, text, allowRich, style) {
   return false;
 }
 
+/* Scale the font size of EVERY editable text layer in a MOGRT by `scale`
+ * (1 = unchanged). Many templates stack more than one text layer — e.g. a big
+ * ghosted "echo" word behind the coloured caption. The panel's single Font-size
+ * control only resized the layer we wrote the caption into, leaving the other
+ * layer at its template size, so the two no longer matched and one overflowed
+ * the frame. Scaling every text layer from its OWN current (template-default)
+ * size keeps the design's size RATIO intact while the whole graphic grows or
+ * shrinks together. Style-only — never touches the text. Single-run layers only
+ * (same safety gate as the rich-text writer). Returns how many layers changed. */
+function CP_scaleAllTextSizes(comp, scale) {
+  if (!comp || !comp.properties || !scale || scale === 1) return 0;
+  var n = 0;
+  for (var i = 0; i < comp.properties.numItems; i++) {
+    var p = comp.properties[i], cur = null;
+    try { cur = p.getValue ? p.getValue() : null; } catch (e) { continue; }
+    if (typeof cur !== 'string') continue;
+    if (cur.indexOf('textEditValue') === -1 && cur.indexOf('capProp') === -1) continue;
+    if (!/"capPropTextRunCount"\s*:\s*1\b/.test(cur)) continue;        // single-run only (safe)
+    var out = cur.replace(/("fontSizeEditValue"\s*:\s*)\[\s*([\d.]+)\s*\]/,
+                          function (m, a, v) { return a + '[' + (parseFloat(v) * scale) + ']'; });
+    if (out === cur) out = cur.replace(/("fontSizeEditValue"\s*:\s*)([\d.]+)/,
+                          function (m, a, v) { return a + (parseFloat(v) * scale); });
+    if (out === cur) continue;
+    try { p.setValue(out, true); n++; } catch (e1) { try { p.setValue(out); n++; } catch (e2) {} }
+  }
+  return n;
+}
+
 /* A MOGRT GROUP control reports its value as a ';'-separated list of child
    UUIDs (e.g. "1e42b26d-…;c0e7d2a9-…"). Those are containers, NOT text. */
 function CP_isUuidList(s) {
@@ -1685,6 +1713,11 @@ function CP_insertMogrtCaptions(argsJson) {
                   CP_setMgrtText(props[p2], grp[0].text, allowRich, args.textStyle)) { textSet++; done = true; }
             }
           }
+          // Overall font size: scale EVERY text layer together (so a template's
+          // second "echo" layer grows with the caption instead of mismatching).
+          if (allowRich && args.textStyle && args.textStyle.sizeScale && args.textStyle.sizeScale !== 1) {
+            try { CP_scaleAllTextSizes(comp, args.textStyle.sizeScale); } catch (eSc) {}
+          }
         }
       } catch (eComp) {}
 
@@ -1978,6 +2011,9 @@ function CP_previewMogrt(argsJson) {
         if (args.text && pcomp.properties) {
           var ptp = CP_findTextProp(pcomp.properties, ['text', 'caption', 'title', 'subtitle', 'headline', 'body']);
           if (ptp) CP_setMgrtText(ptp, args.text, true, args.textStyle);
+          if (args.textStyle && args.textStyle.sizeScale && args.textStyle.sizeScale !== 1) {
+            try { CP_scaleAllTextSizes(pcomp, args.textStyle.sizeScale); } catch (eSc) {}
+          }
         }
       }
     } catch (ePv) {}

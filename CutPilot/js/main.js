@@ -4144,6 +4144,7 @@
   }
   function mpAddSlider(box, label, cur, min, max, onChange) {
     var row = mpRow(box, label);
+    row.classList.add('mp-row-wide');   // sliders span the full width so the value box isn't squeezed/clipped
     var wrap = document.createElement('span'); wrap.className = 'mp-ctrl mp-slider';
     var rng = document.createElement('input'); rng.type = 'range';
     if (min != null) rng.min = min; if (max != null) rng.max = max; rng.step = 'any';
@@ -4479,7 +4480,7 @@
           if (blob && (blob.fillColorEditValue || blob.fontFillColorEditValue || blob.FillColorEditValue)) {
             mpAddColor(box, 'Text colour', readBlobFill(blob), function (v) { richStyle().fill = v; });
           }
-          mpAddSlider(box, 'Font size', (blob && blob.fontSizeEditValue && blob.fontSizeEditValue[0]) || 100, 10, 1200, function (v) { richStyle().size = v; });
+          mpAddSlider(box, 'Overall size %', Math.round((richStyle().sizeScale || 1) * 100), 50, 300, function (v) { richStyle().sizeScale = (parseFloat(v) || 100) / 100; });
           mpAddCheck(box, 'ALL CAPS', !!(blob && blob.fontFSAllCapsValue && blob.fontFSAllCapsValue[0]), function (v) { richStyle().caps = v; });
           mpAddCheck(box, 'Bold', !!(blob && blob.fontFSBoldValue && blob.fontFSBoldValue[0]), function (v) { richStyle().bold = v; });
           mpAddCheck(box, 'Italic', !!(blob && blob.fontFSItalicValue && blob.fontFSItalicValue[0]), function (v) { richStyle().italic = v; });
@@ -4519,7 +4520,7 @@
       var blob = null; try { blob = JSON.parse(richProp.sample); } catch (eB) { blob = null; }
       mpHeader(box, 'Text style');
       mpAddFontSelect(box, 'Font', (blob && blob.fontEditValue && blob.fontEditValue[0]) || '', function (v) { richStyle().font = v || null; });
-      mpAddSlider(box, 'Font size', (blob && blob.fontSizeEditValue && blob.fontSizeEditValue[0]) || 100, 10, 1200, function (v) { richStyle().size = v; });
+      mpAddSlider(box, 'Overall size %', Math.round((richStyle().sizeScale || 1) * 100), 50, 300, function (v) { richStyle().sizeScale = (parseFloat(v) || 100) / 100; });
       mpAddCheck(box, 'ALL CAPS', !!(blob && blob.fontFSAllCapsValue && blob.fontFSAllCapsValue[0]), function (v) { richStyle().caps = v; });
     }
     if (editable.length) mpHeader(box, 'Template controls');
