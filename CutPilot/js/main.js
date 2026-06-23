@@ -1922,7 +1922,7 @@
         var thumbUrl = '';
         try { if (fs.existsSync(path.join(mdir, 'thumbs', base + '.png'))) thumbUrl = 'mogrts/thumbs/' + encodeURIComponent(base + '.png'); } catch (e0) {}
         return { name: m.name, path: path.join(mdir, m.file),
-                 category: m.category || 'Templates', kind: m.kind || 'caption', desc: m.desc || '', thumb: thumbUrl, premium: !!m.premium };
+                 category: m.category || 'Templates', kind: m.kind || 'caption', desc: m.desc || '', thumb: thumbUrl, premium: !!m.premium, section: m.section || '' };
       }).filter(function (m) { try { return fs.existsSync(m.path); } catch (e3) { return false; } });
       state.bundledDiag = state.bundledMogrts.length ? ('ok:' + state.bundledMogrts.length) : ('0 files exist in ' + mdir);
     } catch (e) { state.bundledMogrts = []; state.bundledDiag = 'error: ' + (e && e.message); }
@@ -2018,7 +2018,7 @@
     var out = [];
     (state.bundledMogrts || []).forEach(function (m) {
       out.push({ id: 'mogrt:' + m.path, name: m.name, category: MOGRT_CAT, mogrt: true,
-                 path: m.path, popularity: 90, subcat: m.desc || m.category, desc: m.desc, bundled: true, thumb: m.thumb, premium: m.premium });
+                 path: m.path, popularity: 90, subcat: m.desc || m.category, desc: m.desc, bundled: true, thumb: m.thumb, premium: m.premium, flux: (m.section === 'flux') });
     });
     (state.folderMogrts || []).forEach(function (m) {
       out.push({ id: 'mogrt:' + m.path, name: m.name, category: MOGRT_CAT, mogrt: true,
@@ -2078,6 +2078,7 @@
       chipBox.appendChild(chip);
     });
 
+    if ($('flux-search')) $('flux-search').addEventListener('input', function () { state.fluxSearch = this.value.toLowerCase(); renderFluxGrid(); });
     $('lib-search').addEventListener('input', function () { state.libSearch = this.value.toLowerCase(); renderTemplateGrid(); });
     $('lib-sort').addEventListener('change', function () { state.libSort = this.value; renderTemplateGrid(); });
     $('btn-tpl-import').addEventListener('click', importTemplate);
@@ -2111,7 +2112,7 @@
     // Styles view shows the built-in caption styles PLUS the bundled (shipped)
     // .mogrt templates, so prebuilt editable templates are visible right in the
     // main gallery. Installed/user .mogrts still live in the Editor tab.
-    var list = allTemplates().slice().filter(function (t) { return mogrtMode ? !!t.mogrt : (!t.mogrt || t.bundled); });
+    var list = allTemplates().slice().filter(function (t) { return mogrtMode ? !!t.mogrt : (!t.mogrt || (t.bundled && !t.flux)); });
     var cat = state.libCategory;
     if (!mogrtMode) {
       if (cat === 'Favorites') list = list.filter(function (t) { return state.favs[t.id]; });
@@ -2121,7 +2122,7 @@
       // editable on the timeline). They used to be hidden behind the "All" chip,
       // so a fresh open showed only burned-in PNG styles. Keep them visible in
       // EVERY browse category alongside that category's styles.
-      else if (cat !== 'All' && cat !== MOGRT_CAT) list = list.filter(function (t) { return t.category === cat || (t.mogrt && t.bundled); });
+      else if (cat !== 'All' && cat !== MOGRT_CAT) list = list.filter(function (t) { return t.category === cat || (t.mogrt && t.bundled && !t.flux); });
     }
 
     if (state.libSearch) {
@@ -2876,15 +2877,36 @@
   function showView(v) {
     var inStyleEdit = (v === 'style');
     var inMogrt = (v === 'editor');
+    var inFlux = (v === 'flux');
     $('view-templates').classList.toggle('hidden', v !== 'templates');
     $('view-editor').classList.toggle('hidden', !(inStyleEdit || inMogrt));
+    if ($('view-flux')) $('view-flux').classList.toggle('hidden', !inFlux);
     // editing a caption style still belongs under the Templates tab
-    var lit = inMogrt ? 'editor' : 'templates';
+    var lit = inMogrt ? 'editor' : inFlux ? 'flux' : 'templates';
     var btns = document.querySelectorAll('#cap-view button');
     for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('on', btns[i].dataset.view === lit);
     if (inStyleEdit) { setCapMethod('animated'); renderPreview(); }
     if (inMogrt) { setCapMethod('mogrt'); renderMogrtEditor(); }
     if (v === 'templates') renderTemplateGrid();
+    if (inFlux) renderFluxGrid();
+  }
+
+  /* The Flux section: premium, EDITABLE .mogrt templates (section:"flux" in
+     mogrts/index.json). Each card routes through the MOGRT pipeline — placed on
+     the timeline as a live Essential Graphics element, never a burned-in PNG. */
+  function renderFluxGrid() {
+    var grid = $('flux-grid'); if (!grid) return;
+    var q = (state.fluxSearch || '').trim();
+    var list = mogrtTemplates().filter(function (t) { return t.flux; });
+    if (q) list = list.filter(function (t) { return (t.name + ' ' + (t.subcat || '') + ' ' + (t.desc || '')).toLowerCase().indexOf(q) >= 0; });
+    grid.innerHTML = '';
+    if (!list.length) {
+      var e = document.createElement('div'); e.className = 'lib-empty';
+      e.textContent = q ? ('No Flux templates match “' + q + '”.')
+        : (CPBridge.isCEP() ? 'Flux templates will appear here.' : 'Flux templates load inside Premiere.');
+      grid.appendChild(e); return;
+    }
+    list.forEach(function (t) { grid.appendChild(buildTemplateCard(t)); });
   }
 
   /* Show the right controls for the active section. The Templates tab edits a

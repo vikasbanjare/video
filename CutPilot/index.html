@@ -128,7 +128,8 @@
 
     <div class="subview-switch" id="cap-view">
       <button data-view="templates" class="on">🎨 Templates</button>
-      <button data-view="editor">🎬 Editor (.mogrt)</button>
+      <button data-view="flux">⚡ Flux</button>
+      <button data-view="editor">🎬 Editor</button>
     </div>
 
     <!-- ===================== TEMPLATE LIBRARY (caption styles) ============= -->
@@ -157,6 +158,18 @@
       <div class="row tight" style="justify-content:center">
         <button id="btn-tpl-import" class="chip-btn">⤓ Import style</button>
       </div>
+    </div>
+
+    <!-- ===================== FLUX (editable .mogrt templates) ============= -->
+    <div id="view-flux" class="subview hidden">
+      <p class="hint" style="margin:2px 0 8px"><b>⚡ Flux</b> — premium <b>editable</b> templates.
+        Each one drops onto your timeline as a real Premiere <b>Essential Graphics</b> element
+        (font, colour, size and position stay editable, exactly like native Premiere) — never a
+        burned-in PNG. Tap a card to preview it, then caption with it.</p>
+      <div class="lib-toolbar">
+        <input type="text" id="flux-search" placeholder="🔍 Search Flux templates…">
+      </div>
+      <div class="tpl-grid" id="flux-grid"></div>
     </div>
 
     <!-- MOGRT action sheet -->
