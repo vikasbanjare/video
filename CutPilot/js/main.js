@@ -354,22 +354,24 @@
   ];
   // Swara (Sarvam AI) languages — BCP-47 codes. Shown when the Swara engine is
   // picked; Sarvam handles code-mixing (Hinglish/Tanglish) within these.
+  // Exactly Sarvam's accepted language_code set (24 incl. 'unknown'), plus our two
+  // UI-only modes (translate-en / hinglish) that are NOT sent as a language_code.
   var SWARA_LANGS = [
     { value: 'unknown', label: '✨ Auto-detect language (recommended)' },
     { value: 'translate-en', label: '🌐 → Translate to English (any language)' },
     { value: 'hinglish', label: 'Hinglish (Hindi in English letters)' },
-    { value: 'hi-IN', label: 'हिंदी (Hindi)' }, { value: 'ta-IN', label: 'தமிழ் (Tamil)' },
-    { value: 'te-IN', label: 'తెలుగు (Telugu)' }, { value: 'bn-IN', label: 'বাংলা (Bengali)' },
+    { value: 'hi-IN', label: 'हिंदी (Hindi)' }, { value: 'bn-IN', label: 'বাংলা (Bengali)' },
+    { value: 'ta-IN', label: 'தமிழ் (Tamil)' }, { value: 'te-IN', label: 'తెలుగు (Telugu)' },
     { value: 'mr-IN', label: 'मराठी (Marathi)' }, { value: 'gu-IN', label: 'ગુજરાતી (Gujarati)' },
     { value: 'kn-IN', label: 'ಕನ್ನಡ (Kannada)' }, { value: 'ml-IN', label: 'മലയാളം (Malayalam)' },
     { value: 'pa-IN', label: 'ਪੰਜਾਬੀ (Punjabi)' }, { value: 'od-IN', label: 'ଓଡ଼ିଆ (Odia)' },
     { value: 'as-IN', label: 'অসমীয়া (Assamese)' }, { value: 'ur-IN', label: 'اردو (Urdu)' },
+    { value: 'ne-IN', label: 'नेपाली (Nepali)' }, { value: 'en-IN', label: 'English (Indian)' },
     { value: 'kok-IN', label: 'कोंकणी (Konkani)' }, { value: 'mai-IN', label: 'मैथिली (Maithili)' },
-    { value: 'sat-IN', label: 'ᱥᱟᱱᱛᱟᱲᱤ (Santali)' }, { value: 'brx-IN', label: 'डोगरी (Dogri)' },
-    { value: 'ksb-IN', label: 'कश्मीरी (Kashmiri)' }, { value: 'mni-IN', label: 'মণিপুরী (Manipuri)' },
-    { value: 'si-IN', label: 'සිංහල (Sinhala)' }, { value: 'ne-IN', label: 'नेपाली (Nepali)' },
-    { value: 'en-IN', label: 'English (Indian)' }, { value: 'en-US', label: 'English (US)' },
-    { value: 'en-GB', label: 'English (UK)' }
+    { value: 'sat-IN', label: 'ᱥᱟᱱᱛᱟᱲᱤ (Santali)' }, { value: 'doi-IN', label: 'डोगरी (Dogri)' },
+    { value: 'ks-IN', label: 'कॉशुर (Kashmiri)' }, { value: 'mni-IN', label: 'মণিপুরী (Manipuri)' },
+    { value: 'brx-IN', label: 'बड़ो (Bodo)' }, { value: 'sd-IN', label: 'سنڌي (Sindhi)' },
+    { value: 'sa-IN', label: 'संस्कृतम् (Sanskrit)' }
   ];
   // "Translate to" targets (value = "code|Name"). Rendered with the custom
   // dropdown (native <select> doesn't open in Premiere's CEP).
@@ -570,9 +572,19 @@
         '-F', 'model=' + model,
         '-F', 'with_timestamps=true',
         '-F', 'file=@' + wavPath];
-      // language_code only for plain STT and only when a specific language is chosen
-      // ('unknown' = auto-detect → omit it; 'hinglish' is mapped to hi-IN upstream).
-      if (!translate && langCode && langCode !== 'unknown' && langCode !== 'hinglish') args.push('-F', 'language_code=' + langCode);
+      // language_code is REQUIRED by the STT endpoint and must be one of Sarvam's
+      // accepted codes ('unknown' = auto-detect). Always send a valid one. ('hinglish'
+      // is mapped to hi-IN upstream; guard here too. The translate endpoint auto-
+      // detects, so it takes no language_code.)
+      if (!translate) {
+        var lc = langCode;
+        if (lc === 'hinglish') lc = 'hi-IN';        // hinglish = transcribe Hindi, romanise later
+        if (!lc || lc === 'auto') lc = 'unknown';   // auto-detect
+        // Sarvam rejects anything outside its accepted set — guard stale/invalid codes.
+        var OK = { 'unknown':1,'hi-IN':1,'bn-IN':1,'kn-IN':1,'ml-IN':1,'mr-IN':1,'od-IN':1,'pa-IN':1,'ta-IN':1,'te-IN':1,'en-IN':1,'gu-IN':1,'as-IN':1,'ur-IN':1,'ne-IN':1,'kok-IN':1,'ks-IN':1,'sd-IN':1,'sa-IN':1,'sat-IN':1,'mni-IN':1,'brx-IN':1,'mai-IN':1,'doi-IN':1 };
+        if (!OK[lc]) lc = 'unknown';
+        args.push('-F', 'language_code=' + lc);
+      }
       var p; try { p = cp.spawn('curl', args); } catch (e) { return reject(e); }
       var out = '', err = '';
       if (p.stdout) p.stdout.on('data', function (d) { out += d.toString(); });
