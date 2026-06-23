@@ -449,6 +449,15 @@ input[type="range"]::-webkit-slider-thumb {
   border: 1px solid var(--line); padding: 16px 16px 14px; box-shadow: 0 -10px 40px rgba(0,0,0,.5);
   max-height: 88vh; overflow-y: auto;
 }
+/* sticky header in the action sheet: back to gallery + close */
+.ms-head { position: sticky; top: -16px; z-index: 3; display: flex; align-items: center; justify-content: space-between;
+  margin: -4px -4px 6px; padding: 4px 0; background: var(--card); }
+.ms-back { background: var(--card2); border: 1px solid var(--line); color: var(--fg);
+  font-size: 12px; font-weight: 800; cursor: pointer; padding: 7px 13px; border-radius: 999px; }
+.ms-back:hover { border-color: var(--accent); color: var(--accent); }
+.ms-x { background: transparent; border: none; color: var(--dim); font-size: 16px; line-height: 1;
+  cursor: pointer; padding: 6px 8px; border-radius: 8px; }
+.ms-x:hover { background: var(--card2); color: var(--fg); }
 .ms-customizer:not(:empty) { margin: 10px 0; }
 .ms-tr { font-size: 11px; color: var(--dim); margin: 2px 0 6px; }
 .ms-tr.ok { color: var(--ok, #6cc59a); }

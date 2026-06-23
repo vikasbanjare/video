@@ -2418,7 +2418,12 @@
       var w = parseInt($('c-words').value, 10) || 0; setWordCount(w === 0 ? 1 : 0);
     });
     if ($('ms-transcribe')) $('ms-transcribe').addEventListener('click', autoTranscribe);
-    $('ms-close').addEventListener('click', function () { $('mogrt-sheet').classList.add('hidden'); });
+    function closeMogrtSheet() { $('mogrt-sheet').classList.add('hidden'); }
+    $('ms-close').addEventListener('click', closeMogrtSheet);
+    // back / ✕ at the top → return to the template gallery (which sits behind the
+    // sheet) without scrolling all the way down to Close.
+    if ($('ms-back')) $('ms-back').addEventListener('click', closeMogrtSheet);
+    if ($('ms-x')) $('ms-x').addEventListener('click', closeMogrtSheet);
     $('mogrt-sheet').addEventListener('click', function (e) {
       if (e.target === this) this.classList.add('hidden'); // tap backdrop to close
     });
@@ -4419,25 +4424,28 @@
         continue;
       }
       if (t === MT.TEXT) {
-        // one shared Text-style editor (font/size/caps), from the first text's blob
+        // one shared Text-style editor (font/size/caps), from the first text's blob.
+        // Always show Font + Font size (defaulting when the blob doesn't expose them)
+        // — these are style overrides, not rich-text writes, so they're safe even on
+        // multi-run templates. Previously the WHOLE block was gated to single-run text
+        // (capPropTextRunCount===1), so on many templates the font-size control simply
+        // never appeared. Caps/Bold/Italic still come from the blob when present.
         if (!firstTextDone) {
           firstTextDone = true;
           var blob = null; try { blob = JSON.parse(ip.sample); } catch (eB) { blob = null; }
-          if (blob && blob.capPropTextRunCount === 1) {
-            mpHeader(box, 'Text style (all lines)');
-            mpAddFontSelect(box, 'Font', (blob.fontEditValue && blob.fontEditValue[0]) || '', function (v) { richStyle().font = v || null; });
-            // Only offer the blob's text colour when the blob actually carries a
-            // fill field; templates like the Subtitle_* set text colour through a
-            // dedicated "Text Color" param instead (shown below), so a blob colour
-            // row here would do nothing and confuse.
-            if (blob.fillColorEditValue || blob.fontFillColorEditValue || blob.FillColorEditValue) {
-              mpAddColor(box, 'Text colour', readBlobFill(blob), function (v) { richStyle().fill = v; });
-            }
-            mpAddSlider(box, 'Font size', (blob.fontSizeEditValue && blob.fontSizeEditValue[0]) || 100, 10, 1200, function (v) { richStyle().size = v; });
-            mpAddCheck(box, 'ALL CAPS', !!(blob.fontFSAllCapsValue && blob.fontFSAllCapsValue[0]), function (v) { richStyle().caps = v; });
-            mpAddCheck(box, 'Bold', !!(blob.fontFSBoldValue && blob.fontFSBoldValue[0]), function (v) { richStyle().bold = v; });
-            mpAddCheck(box, 'Italic', !!(blob.fontFSItalicValue && blob.fontFSItalicValue[0]), function (v) { richStyle().italic = v; });
+          mpHeader(box, 'Text style (all lines)');
+          mpAddFontSelect(box, 'Font', (blob && blob.fontEditValue && blob.fontEditValue[0]) || '', function (v) { richStyle().font = v || null; });
+          // Only offer the blob's text colour when the blob actually carries a
+          // fill field; templates like the Subtitle_* set text colour through a
+          // dedicated "Text Color" param instead (shown below), so a blob colour
+          // row here would do nothing and confuse.
+          if (blob && (blob.fillColorEditValue || blob.fontFillColorEditValue || blob.FillColorEditValue)) {
+            mpAddColor(box, 'Text colour', readBlobFill(blob), function (v) { richStyle().fill = v; });
           }
+          mpAddSlider(box, 'Font size', (blob && blob.fontSizeEditValue && blob.fontSizeEditValue[0]) || 100, 10, 1200, function (v) { richStyle().size = v; });
+          mpAddCheck(box, 'ALL CAPS', !!(blob && blob.fontFSAllCapsValue && blob.fontFSAllCapsValue[0]), function (v) { richStyle().caps = v; });
+          mpAddCheck(box, 'Bold', !!(blob && blob.fontFSBoldValue && blob.fontFSBoldValue[0]), function (v) { richStyle().bold = v; });
+          mpAddCheck(box, 'Italic', !!(blob && blob.fontFSItalicValue && blob.fontFSItalicValue[0]), function (v) { richStyle().italic = v; });
         }
         continue;
       }
@@ -4472,12 +4480,10 @@
     if (!editable.length && !richProp) { box.appendChild(document.createTextNode('No editable controls found.')); return; }
     if (richProp) {
       var blob = null; try { blob = JSON.parse(richProp.sample); } catch (eB) { blob = null; }
-      if (blob && blob.capPropTextRunCount === 1) {
-        mpHeader(box, 'Text style');
-        mpAddFontSelect(box, 'Font', (blob.fontEditValue && blob.fontEditValue[0]) || '', function (v) { richStyle().font = v || null; });
-        mpAddNumber(box, 'Size', (blob.fontSizeEditValue && blob.fontSizeEditValue[0]), function (v) { richStyle().size = v; });
-        mpAddCheck(box, 'ALL CAPS', !!(blob.fontFSAllCapsValue && blob.fontFSAllCapsValue[0]), function (v) { richStyle().caps = v; });
-      }
+      mpHeader(box, 'Text style');
+      mpAddFontSelect(box, 'Font', (blob && blob.fontEditValue && blob.fontEditValue[0]) || '', function (v) { richStyle().font = v || null; });
+      mpAddSlider(box, 'Font size', (blob && blob.fontSizeEditValue && blob.fontSizeEditValue[0]) || 100, 10, 1200, function (v) { richStyle().size = v; });
+      mpAddCheck(box, 'ALL CAPS', !!(blob && blob.fontFSAllCapsValue && blob.fontFSAllCapsValue[0]), function (v) { richStyle().caps = v; });
     }
     if (editable.length) mpHeader(box, 'Template controls');
     editable.forEach(function (p) {
