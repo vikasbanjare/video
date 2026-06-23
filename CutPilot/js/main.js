@@ -135,6 +135,20 @@
     try { fs = nodeReq('fs'); } catch (e) { return (settings.ffmpegPath || null); }
     var tryPath = function (p) { try { return p && fs.existsSync(p); } catch (e2) { return false; } };
     if (tryPath(settings.ffmpegPath)) return (_ffmpeg = settings.ffmpegPath);
+    // FIRST: ffmpeg bundled inside the installed extension (so it's turnkey —
+    // nothing for the user to install). The installer copies it to CutPilot/bin/.
+    var bundled = [];
+    try {
+      var os = nodeReq('os'), home = os.homedir();
+      if (home) {
+        bundled.push(home + '/Library/Application Support/Adobe/CEP/extensions/CutPilot/bin/ffmpeg');     // macOS
+        bundled.push(home + '/Library/Application Support/Adobe/CEP/extensions/com.cutpilot.panel/bin/ffmpeg');
+      }
+      if (process.env && process.env.APPDATA) {
+        bundled.push(process.env.APPDATA + '\\Adobe\\CEP\\extensions\\CutPilot\\bin\\ffmpeg.exe');         // Windows
+      }
+    } catch (eB) {}
+    for (var bi = 0; bi < bundled.length; bi++) if (tryPath(bundled[bi])) return (_ffmpeg = bundled[bi]);
     var cands = ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg',
                  '/opt/local/bin/ffmpeg', '/snap/bin/ffmpeg', '/Applications/ffmpeg',
                  'C:\\ffmpeg\\bin\\ffmpeg.exe', 'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe'];
