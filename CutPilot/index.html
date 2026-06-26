@@ -10,6 +10,7 @@
        live preview AND the canvas-rendered PNGs even if it isn't installed. -->
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Bebas+Neue&family=Archivo+Black&family=Fjalla+One&family=Bangers&family=Luckiest+Guy&family=Alfa+Slab+One&family=Bungee&family=Titan+One&family=Passion+One&family=Permanent+Marker&family=Pacifico&family=Shadows+Into+Light&family=Montserrat:wght@400;500;600;700;800;900&family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800;900&family=Oswald:wght@400;700&family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Lato:wght@400;700&family=Raleway:wght@400;700&family=Work+Sans:wght@400;700&family=Nunito:wght@400;700&family=Rubik:wght@400;700&family=DM+Sans:wght@400;500;700&family=Outfit:wght@400;500;600;700;800;900&family=Sora:wght@400;500;600;700;800&family=Barlow:wght@400;700&family=Manrope:wght@400;500;600;700;800&family=Teko:wght@400;700&family=Playfair+Display:wght@400;700&family=Merriweather:wght@400;700&family=Lora:wght@400;700&family=JetBrains+Mono:wght@400;700&family=Roboto+Mono:wght@400;700&family=Space+Mono:wght@400;700&family=Caveat:wght@400;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/organize.css">
 </head>
 <body class="theme-light">
   <header>
@@ -26,6 +27,7 @@
     <button class="tab" data-tab="silence"><span>✂️</span>Auto-Edit</button>
     <button class="tab" data-tab="multicam"><span>🎥</span>Multicam</button>
     <button class="tab" data-tab="chapters"><span>🔖</span>Chapters</button>
+    <button class="tab" data-tab="organize"><span>🗂️</span>Organize</button>
     <button class="tab" data-tab="settings"><span>⚙</span>Settings</button>
   </nav>
 
@@ -982,6 +984,18 @@
     <p class="hint center" id="ver-foot">CutPilot v0.9.204 · auto-edit · multicam · captions · chapters</p>
   </section>
 
+  <!-- ============================== ORGANIZE ============================ -->
+  <section id="tab-organize" class="tab-page">
+    <div class="cpo-head">
+      <div class="cpo-eyebrow">Project cleanup</div>
+      <h2 class="cpo-title">One-Click Organizer</h2>
+      <p class="cpo-desc">Sort your whole project into clean, nested bins by media type &mdash; in one click.</p>
+    </div>
+    <button id="cpo-run" class="cpo-run" type="button"><span class="cpo-spinner"></span>Organize project</button>
+    <div id="cpo-status" class="cpo-status"></div>
+    <section id="cpo-results" class="cpo-results"></section>
+  </section>
+
   <footer><div id="log" class="log"></div></footer>
   <div id="toast" class="toast hidden"></div>
 
@@ -1007,5 +1021,6 @@
   <script src="js/command.js"></script>
   <script src="js/chapters.js"></script>
   <script src="js/main.js"></script>
+  <script src="js/organize.js"></script>
 </body>
 </html>
