@@ -48,15 +48,19 @@
     var scale = (frameW && frameW > 0) ? (frameW / 1920) : (frameH / 1080);
     var strokeW = (o.strokeWidth != null) ? o.strokeWidth : (preset.strokeWidth || 0);
     var box = (o.boxColor !== undefined) ? o.boxColor : (preset.boxColor || null);
+    // A box colour the user CHANGED (differs from the template's default) becomes a
+    // SOLID box: drop the template's multi-stop gradient so the new colour actually
+    // shows. Unchanged → keep the template's designed gradient (e.g. "Aura").
+    var boxChanged = (o.boxColor !== undefined && preset.boxColor != null &&
+                      String(o.boxColor).toLowerCase() !== String(preset.boxColor).toLowerCase());
     var fill = o.fill || preset.fill;
     var highlight = o.highlight || preset.highlight || '#FFD400';
     var hlScale = (o.highlightScale != null) ? o.highlightScale : (preset.highlightScale || 1);
-    // Guarantee the spoken word is always visible: if the highlight colour is the
-    // same as the body text AND there's no box behind it (several minimalist
-    // templates are monochrome by design), make the active word pop by size so
-    // word-by-word sync is never invisible on those styles.
-    if (!box && String(highlight).toLowerCase() === String(fill).toLowerCase()) {
-      hlScale = Math.max(hlScale, 1.18);
+    // Guarantee the spoken word is ALWAYS visible: if the highlight colour matches
+    // the body text (so colour alone wouldn't set the active word apart), pop it by
+    // size — on EVERY template, box or not — so word-by-word is never invisible.
+    if (String(highlight).toLowerCase() === String(fill).toLowerCase()) {
+      hlScale = Math.max(hlScale, 1.2);
     }
     return {
       font: o.font || preset.font,
@@ -84,7 +88,7 @@
       shadowDY: Math.round(((o.shadowDY != null ? o.shadowDY : (preset.shadowDY || 0))) * scale),
       wordSpacing: Math.round(((o.wordSpacing != null ? o.wordSpacing : (preset.wordSpacing || 0))) * scale),
       emphasizeWords: (o.emphasizeWords != null) ? o.emphasizeWords : (preset.emphasizeWords != null ? preset.emphasizeWords : false),
-      boxColor2: (o.boxColor2 !== undefined) ? o.boxColor2 : (preset.boxColor2 || null),   // box gradient 2nd colour
+      boxColor2: (o.boxColor2 !== undefined) ? o.boxColor2 : (boxChanged ? null : (preset.boxColor2 || null)),   // box gradient 2nd colour
       numberColor: (o.numberColor !== undefined) ? o.numberColor : (preset.numberColor || null), // colour numbers/money
       brandColor: (o.brandColor !== undefined) ? o.brandColor : (preset.brandColor || null),      // colour brand keywords
       brandWords: o.brandWords || preset.brandWords || null,
@@ -129,7 +133,7 @@
       boxShadowBlur: (o.boxShadowBlur != null) ? o.boxShadowBlur : (preset.boxShadowBlur != null ? preset.boxShadowBlur : 0.5),
       boxShadowDY: Math.round(((o.boxShadowDY != null ? o.boxShadowDY : (preset.boxShadowDY != null ? preset.boxShadowDY : 0))) * scale),
       boxGradient: o.boxGradient || preset.boxGradient || 'v',   // 'v' vertical | 'h' horizontal
-      boxStops: o.boxStops || preset.boxStops || null            // [[offset,'#hex'],…] multi-stop fill
+      boxStops: o.boxStops || (boxChanged ? null : preset.boxStops) || null   // [[offset,'#hex'],…] multi-stop fill
     };
   }
 

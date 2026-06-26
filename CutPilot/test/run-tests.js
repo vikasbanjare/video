@@ -299,7 +299,7 @@ console.log('render.js (pure layout helpers)');
   const colored = CPRender.styleForFrame({ font: 'X', fontSize: 100, fill: '#FFFFFF', highlight: '#2D7CFF', highlightScale: 1 }, 1080, {});
   assert(colored.highlightScale === 1, 'a distinct highlight colour keeps the template scale (no forced bump)');
   const boxedMono = CPRender.styleForFrame({ font: 'X', fontSize: 100, fill: '#FFF', highlight: '#FFF', boxColor: '#000', highlightScale: 1 }, 1080, {});
-  assert(boxedMono.highlightScale === 1, 'monochrome but boxed keeps scale — the box already separates the word');
+  assert(boxedMono.highlightScale >= 1.2, 'monochrome pops the active word by size EVEN with a box — the box sits behind the whole line, not just the spoken word, so colour alone cannot set it apart');
 
   // pro controls flow through styleForFrame (overrides win, sensible defaults)
   const base2 = { font: 'X', fontSize: 100, fill: '#fff', highlight: '#FFD400' };
