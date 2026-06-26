@@ -1870,7 +1870,23 @@ function CP_inspectMogrt(argsJson) {
   try {
     var args = JSON.parse(argsJson);
     var seq = CP_activeSequence();
+    // Read the template's editable fields on a THROWAWAY top track that is
+    // guaranteed empty — never on the user's footage. The old code imported onto
+    // the existing top track at time 0, so if any clip lived there it got
+    // overwritten, and the fragile cleanup sometimes left the test graphic on the
+    // timeline ("clicking a template auto-generates a preview"). Now: reuse an
+    // already-empty top track if there is one, otherwise add a fresh one, so the
+    // track holds ONLY our throwaway clip and cleanup is unambiguous.
     var vTrack = seq.videoTracks.numTracks - 1;
+    var topEmpty = false;
+    try { topEmpty = (seq.videoTracks[vTrack].clips.numItems === 0); } catch (eEmpty) {}
+    if (!topEmpty) {
+      try {
+        app.enableQE();
+        qe.project.getActiveSequence().addTracks(1, seq.videoTracks.numTracks, 0);
+        vTrack = seq.videoTracks.numTracks - 1;
+      } catch (eTrack) {}
+    }
     var clip = null;
     try { clip = seq.importMGT(args.path, CP_ticksFromSeconds(0), vTrack, 0); }
     catch (eImp) { return CP_fail('importMGT failed: ' + eImp.message); }
@@ -1914,13 +1930,15 @@ function CP_inspectMogrt(argsJson) {
       }
     } catch (eComp) {}
 
-    // remove the test instance (best effort via QE)
+    // Remove the throwaway graphic. The track was empty before we imported, so
+    // clearing EVERY non-empty item on exactly this track (no early break) is
+    // safe and reliably leaves nothing behind on the user's timeline.
     try {
       app.enableQE();
       var qt = qe.project.getActiveSequence().getVideoTrackAt(vTrack);
       for (var k = qt.numItems - 1; k >= 0; k--) {
         var it = qt.getItemAt(k);
-        if (it && it.type !== 'Empty') { try { it.remove(0, 0); } catch (eR) {} break; }
+        if (it && it.type !== 'Empty') { try { it.remove(0, 0); } catch (eR) {} }
       }
     } catch (eQE) {}
 

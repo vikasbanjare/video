@@ -14,7 +14,7 @@
 <body class="theme-light">
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.199</span>
+    <span class="ver" id="ver">v0.9.200</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -676,10 +676,11 @@
       <div class="step-head">
         <span class="step-num">1</span>
         <span class="step-title">Your clip</span>
-        <span id="clip-badge" class="badge">click your clip in the timeline</span>
+        <span id="clip-badge" class="badge">found automatically from your timeline</span>
       </div>
-      <p class="hint">Select the video in your timeline — CutPilot listens to it
-         and finds every pause and dead moment.</p>
+      <p class="hint">Just tap “Find the silences” below — CutPilot grabs the talking
+         clip from your timeline automatically and finds every pause and dead
+         moment. (To target one specific clip, select it first.)</p>
       <details class="advanced">
         <summary>Advanced detection settings</summary>
         <div class="grid2">
@@ -769,15 +770,38 @@
   <!-- ============================== MULTICAM ============================= -->
   <section id="tab-multicam" class="tab-page">
     <div id="mc-ffmpeg" class="ff-banner hidden"></div>
+    <!-- STEP 1: how many cameras? -->
     <div class="card">
       <div class="step-head">
         <span class="step-num">1</span>
-        <span class="step-title">Auto multicam</span>
+        <span class="step-title">How many cameras?</span>
       </div>
-      <p class="hint">Like AutoPod: stack each camera on its own track (V1, V2…),
-         name each speaker and pick the mic that's on them, then click
-         <b>Auto multicam</b> — when that mic is talking, its camera is shown.
-         No nesting — each angle on its own video track.</p>
+      <p class="hint">Put each camera on its own video track (V1, V2, V3…), then tap
+         how many you have. CutPilot makes one setup row per camera in Step 2 — works
+         for 2, 3, 5, 7, 8 cameras and more.</p>
+      <div class="seg-control mc-count" id="mc-count">
+        <button type="button" data-n="2" class="on">2</button>
+        <button type="button" data-n="3">3</button>
+        <button type="button" data-n="4">4</button>
+        <button type="button" data-n="5">5</button>
+        <button type="button" data-n="6">6</button>
+        <button type="button" data-n="7">7</button>
+        <button type="button" data-n="8">8</button>
+      </div>
+      <label class="check" style="margin-top:8px;justify-content:center;gap:8px">More than 8?
+        <input type="number" id="mc-angles" value="2" min="2" max="16" style="width:64px">
+      </label>
+    </div>
+
+    <!-- STEP 2: set up each camera -->
+    <div class="card">
+      <div class="step-head">
+        <span class="step-num">2</span>
+        <span class="step-title">Set up each camera</span>
+      </div>
+      <p class="hint">Like AutoPod: name each speaker and pick the mic that's on them,
+         then click <b>Auto multicam</b> — when that mic is talking, its camera is
+         shown. No nesting — each angle on its own video track.</p>
 
       <label>How should it switch cameras?
         <select id="mc-source">
@@ -785,10 +809,6 @@
           <option value="speech">🔊 Switch when anyone speaks — one mic for everyone</option>
           <option value="interval">⏱️ Just change camera every few seconds</option>
         </select>
-      </label>
-
-      <label>Camera tracks
-        <input type="number" id="mc-angles" value="2" min="1" max="8">
       </label>
 
       <!-- one main / mixed mic -->
@@ -960,7 +980,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">CutPilot v0.9.199 · auto-edit · multicam · captions · chapters</p>
+    <p class="hint center" id="ver-foot">CutPilot v0.9.200 · auto-edit · multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

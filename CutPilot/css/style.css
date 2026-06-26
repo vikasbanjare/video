@@ -432,6 +432,8 @@ input[type="range"]::-webkit-slider-thumb {
 .seg-control.mini { margin-top: 4px; }
 .seg-control.wrap { flex-wrap: wrap; gap: 5px; }
 .seg-control.wrap button { flex: 1 0 30%; }
+/* camera-count picker (multicam Step 1) — big, tappable digits */
+.seg-control.mc-count button { padding: 11px 2px; font-size: 15px; }
 /* "More ways to add" disclosure — keeps one primary button, tucks the rest */
 .more-ways { margin-top: 8px; }
 .more-ways > summary { list-style: none; cursor: pointer; color: var(--dim); font-size: 12px; font-weight: 700; padding: 5px 0; text-align: center; }

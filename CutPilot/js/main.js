@@ -4602,6 +4602,10 @@
     return caps + colTxt;
   }
 
+  /* Live Essential-Graphics fields per template, keyed by .mogrt path. Filled the
+     first time a card is opened so we never re-import the same template twice. */
+  var _inspectCache = {};
+
   /* Build editable controls (colour / size / font / toggle) for the selected
      template — the same basic params Premiere shows in Essential Graphics. */
   function buildMogrtCustomizer(box, path) {
@@ -4614,7 +4618,14 @@
     box.classList.remove('hidden');
     box.innerHTML = '<p class="hint">Reading template…</p>';
     var defs = readMogrtDefinition(path);   // the .mogrt's own control tree (or null)
-    CPBridge.callHost('CP_inspectMogrt', { path: path }).then(function (r) {
+    // Inspecting drops a throwaway graphic on the timeline to read the live
+    // Essential-Graphics fields. Cache the result per template so re-opening the
+    // same card never re-imports — less timeline churn, instant re-open.
+    var cached = _inspectCache[path];
+    var inspectP = cached
+      ? Promise.resolve(cached)
+      : CPBridge.callHost('CP_inspectMogrt', { path: path }).then(function (r) { _inspectCache[path] = r; return r; });
+    inspectP.then(function (r) {
       var props = r.props || [];
       box.innerHTML = '';
       var head = document.createElement('div'); head.className = 'mp-head';
@@ -5245,7 +5256,14 @@
     prog.classList.remove('hidden');
     prog.textContent = 'Reading selected clip';
 
-    CPBridge.callHost('CP_getSelectedClip').then(function (res) {
+    // Use the SELECTED clip if there is one; otherwise auto-find the talking clip
+    // on the timeline (same as captions) so "Find the silences" works in one tap
+    // without forcing the user to click the clip first.
+    CPBridge.callHost('CP_getSelectedClip').then(
+      function (res) { return (res && res.clip) ? res : CPBridge.callHost('CP_getTranscribeSource'); },
+      function () { return CPBridge.callHost('CP_getTranscribeSource'); }
+    ).then(function (res) {
+      if (!res || !res.clip) throw new Error('Put your video or audio clip on the timeline first, then tap “Find the silences”.');
       state.clip = res.clip;
       $('clip-badge').textContent = res.clip.name;
       $('clip-badge').className = 'badge ok';
@@ -5648,9 +5666,30 @@
   /* How long to hold the wide/centre camera on each periodic cut to it (seconds). */
   function mcCenterHold() { return parseInt($('mc-centerhold') && $('mc-centerhold').value, 10) || 2; }
   $('mc-source').addEventListener('change', syncMcSource);
-  $('mc-angles').addEventListener('change', function () {
+
+  /* Camera-count picker (Step 1). The tap buttons (2–8) and the "more than 8"
+     number box both feed the one canonical #mc-angles value, refresh which button
+     looks active, and rebuild the per-camera setup rows so the user sees exactly
+     N cameras to configure — not a hard-wired 2-cam setup. */
+  function setMcCount(n) {
+    n = parseInt(n, 10) || 2;
+    if (n < 1) n = 1; if (n > 16) n = 16;
+    var inp = $('mc-angles');
+    if (inp && parseInt(inp.value, 10) !== n) inp.value = String(n);
+    var wrap = $('mc-count');
+    if (wrap) {
+      var btns = wrap.querySelectorAll('button');
+      for (var i = 0; i < btns.length; i++) {
+        btns[i].classList.toggle('on', parseInt(btns[i].dataset.n, 10) === n);
+      }
+    }
     if ($('mc-source').value === 'follow') renderMcMap();
+  }
+  if ($('mc-count')) $('mc-count').addEventListener('click', function (e) {
+    var b = e.target; while (b && b !== this && b.tagName !== 'BUTTON') b = b.parentNode;
+    if (b && b.dataset && b.dataset.n) setMcCount(b.dataset.n);
   });
+  $('mc-angles').addEventListener('change', function () { setMcCount(this.value); });
   // re-scan the timeline's audio tracks on demand (sequence may have opened
   // after the tab, or audio was just added)
   if ($('btn-mc-rescan')) $('btn-mc-rescan').addEventListener('click', function () {
