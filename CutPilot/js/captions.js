@@ -688,6 +688,14 @@
       fontSize: 52, fill: '#11151C', highlight: '#2D7CFF', highlightStyle: 'color',
       boxColor: '#FFFFFF', boxRadius: 12, boxOpacity: 0.96, glow: null, stroke: null, strokeWidth: 0,
       upcomingOpacity: 0.45, uppercase: false, wordsPerCue: 4, anim: 'karaoke' },
+    // Clean white-box subtitle where the SPOKEN word darkens (grey → near-black),
+    // following the voice word-by-word. The reliable, burned-in version of the
+    // "clean subtitle" look — no MOGRT overlap, no Premiere-internals.
+    { id: 'cap-clean-sub', name: 'Clean Subtitle', category: 'Minimal Professional', popularity: 96, layout: 'bottom', keyword: false, highlightScale: 1,
+      font: 'Inter', fallbackFonts: ['Helvetica', 'Arial'],
+      fontSize: 50, fill: '#8A93A3', highlight: '#0B0F17', highlightStyle: 'color',
+      boxColor: '#FFFFFF', boxRadius: 18, boxOpacity: 1, glow: null, stroke: null, strokeWidth: 0,
+      upcomingOpacity: 1, uppercase: false, wordsPerCue: 5, anim: 'karaoke' },
     // Warm clean studio caption — podcast/interview
     { id: 'cap-studio', name: 'Studio', category: 'Podcast Pro', popularity: 90, layout: 'bottom', keyword: false, highlightScale: 1.06,
       font: 'Manrope', fallbackFonts: ['Inter', 'Arial'],
