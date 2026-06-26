@@ -14,7 +14,7 @@
 <body class="theme-light">
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.200</span>
+    <span class="ver" id="ver">v0.9.201</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -370,14 +370,14 @@
                 <input type="range" id="c-strokew" min="0" max="24" value="10">
               </label>
               <label class="check"><input type="checkbox" id="c-shadow-on"> 🌑 Drop shadow</label>
-              <div class="ctrl-row" id="c-shadow-row">
+              <div class="ctrl-row hidden" id="c-shadow-row">
                 <label>Shadow colour<span class="cp-mount" data-for="c-shadow"></span><input type="hidden" id="c-shadow" value="#000000"></label>
                 <label>Shadow strength <span class="val" id="c-shadow-blur-val"></span>
                   <input type="range" id="c-shadow-blur" min="0" max="120" value="35">
                 </label>
               </div>
               <label class="check"><input type="checkbox" id="c-box-on"> 🟦 Background box behind text</label>
-              <div class="ctrl-row" id="c-shadow-offset-row">
+              <div class="ctrl-row hidden" id="c-shadow-offset-row">
                 <label>Shadow offset X <span class="val" id="c-shadow-dx-val"></span>
                   <input type="range" id="c-shadow-dx" min="-30" max="30" value="0">
                 </label>
@@ -539,10 +539,10 @@
         <div id="legibility-note" class="legibility-note hidden"></div>
         <label style="font-size:11px;display:block;margin:2px 0 4px">Caption type</label>
         <div class="seg-control" id="cap-output" style="margin-bottom:8px">
-          <button data-out="editable" class="on" type="button">✏️ Editable on timeline</button>
-          <button data-out="png" type="button">🖼 Exact look (burned-in)</button>
+          <button data-out="png" class="on" type="button">🖼 Exact look (burned-in)</button>
+          <button data-out="editable" type="button">✏️ Editable on timeline</button>
         </div>
-        <p class="hint" id="cap-output-hint" style="margin:0 0 8px">✏️ <b>Editable</b>: each caption is its own clip you can re-edit (text, size, colour, position) in Premiere's Essential Graphics, with a word-highlight that tracks — uses your chosen colours on an editable subtitle template. 🖼 <b>Exact look</b>: pixel-perfect to the preview, but flattened into the picture (not editable).</p>
+        <p class="hint" id="cap-output-hint" style="margin:0 0 8px">🖼 <b>Exact look</b> (recommended): pixel-perfect to the preview — every colour, box, 3D, glow and gradient lands exactly as you see it. ✏️ <b>Editable</b>: each caption is its own clip you can re-edit (text, size, colour, position) in Essential Graphics — best for plain coloured text; heavy box effects (3D / glow / border) only show in 🖼 Exact look.</p>
         <button id="btn-magic" class="hero-btn">✨ Add captions <span class="dim">(the style you picked — added to your timeline)</span></button>
         <button id="btn-viral-edit" class="hero-btn alt">⚡ One-click Viral Edit <span class="dim">(same style + auto zoom punches — beta)</span></button>
         <p class="hint" style="margin:2px 0 0">Both add the exact style you picked above. <b>Viral Edit</b> also adds subtle zoom punch-ins to your top clip (Ctrl/Cmd+Z to undo them).</p>
@@ -807,6 +807,7 @@
         <select id="mc-source">
           <option value="follow">🎙️ Switch to whoever is talking — best (needs a mic per camera)</option>
           <option value="speech">🔊 Switch when anyone speaks — one mic for everyone</option>
+          <option value="transcript">🗣️ Switch on each speaker change (from the transcript)</option>
           <option value="interval">⏱️ Just change camera every few seconds</option>
         </select>
       </label>
@@ -980,7 +981,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">CutPilot v0.9.200 · auto-edit · multicam · captions · chapters</p>
+    <p class="hint center" id="ver-foot">CutPilot v0.9.201 · auto-edit · multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>

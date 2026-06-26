@@ -124,11 +124,14 @@
       grp.sort(function (x, y) { return x - y; });
       var keepIdx = grp[grp.length - 1];          // default: keep the LAST attempt
       if (keep === 'confident') {
-        var bc = -Infinity;
+        var bc = -Infinity, anyConf = false;
         for (var ci = 0; ci < grp.length; ci++) {
-          var cf = pConf(phrases[grp[ci]]); if (cf == null) cf = -1;
-          if (cf > bc) { bc = cf; keepIdx = grp[ci]; }
+          var cf = pConf(phrases[grp[ci]]);
+          if (cf != null) { anyConf = true; if (cf > bc) { bc = cf; keepIdx = grp[ci]; } }
         }
+        // No per-word confidence anywhere (the common case for most transcripts)?
+        // Fall back to the LAST take — never silently keep the first/worse one.
+        if (!anyConf) keepIdx = grp[grp.length - 1];
       }
       for (var c2 = 0; c2 < grp.length; c2++) {
         var idx = grp[c2];

@@ -2922,6 +2922,9 @@
     if ($('c-weight-val')) $('c-weight-val').textContent = $('c-weight').value;
     if ($('c-shadow-blur-val')) $('c-shadow-blur-val').textContent = $('c-shadow-blur').value + '%';
     if ($('c-shadow-row')) $('c-shadow-row').classList.toggle('hidden', !$('c-shadow-on').checked);
+    // the X/Y offset sliders do nothing unless the drop shadow is on — hide them
+    // together with the colour/strength row so they're never inert-but-visible.
+    if ($('c-shadow-offset-row')) $('c-shadow-offset-row').classList.toggle('hidden', !$('c-shadow-on').checked);
     // pro-control value labels
     var lbl = {
       'c-wordpop-val': function () { return $('c-wordpop').value + '%'; },
@@ -3000,7 +3003,9 @@
                'c-brandon', 'c-brand', 'c-brand-words',
                // button-pack box effects
                'c-boxstroke-on', 'c-boxstroke', 'c-boxstrokew', 'c-boxglow-on', 'c-boxglow',
-               'c-box3d-depth', 'c-box3d', 'c-boxgloss'];
+               'c-box3d-depth', 'c-box3d', 'c-boxgloss',
+               // auto-emoji was read by the preview but never triggered a repaint
+               'c-emoji'];
     ids.forEach(function (id) {
       if (!$(id)) return;
       $(id).addEventListener('input', function () { updateVals(); renderPreview(); });
@@ -3462,10 +3467,13 @@
       highlight: $('c-hl').value,
       stroke: $('c-stroke').value,
       strokeWidth: parseInt($('c-strokew').value, 10),
-      // a gradient box implies a box, so turn the base box on when either the box
-      // toggle OR "Gradient background box" is checked (else the gradient had no
-      // base colour and drew nothing — the "gradient box not working" bug).
-      boxColor: ($('c-box-on').checked || cchk('c-boxgrad')) ? $('c-box').value : null,
+      // A gradient box, a 3D-depth button, or a gloss sheen all need a base box
+      // FACE to sit on. Turn the base box on when the box toggle OR any of those
+      // is set — otherwise they had no face and drew nothing (the "gradient box
+      // not working" and "3D depth sometimes does nothing" bugs).
+      boxColor: ($('c-box-on').checked || cchk('c-boxgrad') ||
+                 cnum('c-box3d-depth', 0) > 0 || cnum('c-boxgloss', 0) > 0)
+                ? $('c-box').value : null,
       highlightScale: pop / 100,
       highlightStyle: readHlStyle(),
       highlight2: cchk('c-hlgrad') ? $('c-hl2g').value : null,   // gradient 2nd colour for the highlighted word
@@ -3825,21 +3833,23 @@
     return false;
   }
 
-  // Caption output mode: ✏️ editable (one editable .mogrt clip per line — the
-  // word-highlight subtitle template, so it tracks AND stays editable in Premiere)
-  // vs 🖼 burned-in (pixel-perfect PNG of the exact style). Default = editable.
-  var _capOut = 'editable';
+  // Caption output mode: 🖼 burned-in (pixel-perfect PNG of the EXACT preview —
+  // every colour, box, 3D, glow and gradient renders identically to what you see)
+  // vs ✏️ editable (an editable subtitle template per line; Premiere's MOGRT engine
+  // can't reproduce every box effect, so it's text-colour/font/box only).
+  // Default = burned-in, because it's guaranteed to match the preview 1:1.
+  var _capOut = 'png';
   function updateMagicLabel() {
     var b = $('btn-magic'); if (!b) return;
     b.innerHTML = (_capOut === 'editable')
       ? '✏️ Add editable captions <span class="dim">(your style — each clip stays editable)</span>'
-      : '🖼 Add burned-in captions <span class="dim">(exact look — flattened into the picture)</span>';
+      : '🖼 Add captions <span class="dim">(exact look — every colour & effect, just like the preview)</span>';
   }
   (function wireCapOutput() {
     var box = $('cap-output'); if (!box) return;
     var btns = box.querySelectorAll('button');
     for (var i = 0; i < btns.length; i++) btns[i].addEventListener('click', function () {
-      _capOut = this.dataset.out || 'editable';
+      _capOut = this.dataset.out || 'png';
       var on = box.querySelector('button.on'); if (on) on.classList.remove('on');
       this.classList.add('on');
       updateMagicLabel();
@@ -3855,9 +3865,11 @@
       wrap.classList.toggle('collapsed', collapsed);
       btn.textContent = collapsed ? '▸ Show preview' : '▾ Preview';
     }
-    // Default COLLAPSED so the customization controls are front-and-centre (the
-    // preview kept burying them). The user's explicit choice is remembered.
-    var saved = true; try { var v = localStorage.getItem('cutpilot.previewCollapsed'); if (v === '0') saved = false; } catch (e) {}
+    // Default VISIBLE so you SEE every colour/effect change live as you make it
+    // (the whole point of a preview). It's compact (118px) and sticky — it pins to
+    // the top while the controls scroll under it, so it never buries them. Still
+    // collapsible, and the user's explicit choice is remembered.
+    var saved = false; try { var v = localStorage.getItem('cutpilot.previewCollapsed'); if (v === '1') saved = true; } catch (e) {}
     apply(saved);
     btn.addEventListener('click', function () {
       var now = !wrap.classList.contains('collapsed');
@@ -4606,6 +4618,47 @@
      first time a card is opened so we never re-import the same template twice. */
   var _inspectCache = {};
 
+  // ---- live colour/font preview for the .mogrt customizer --------------------
+  // A real MOGRT animation can only play on the timeline, but users still want to
+  // SEE colour/font changes as they edit. This draws sample caption text with the
+  // template's currently-chosen text/highlight/box colours + font using the SAME
+  // render engine, and repaints on every edit — so the customizer is no longer a
+  // blind form. (Honest: it's a colour/font preview, not the exact animation.)
+  var _mogrtPrevCanvas = null;
+  /* PostScript font id (e.g. "Montserrat-Bold") → a family name a browser canvas
+     can render ("Montserrat"). Best-effort, for the preview only. */
+  function mogrtFontFamily(ps) {
+    if (!ps) return '';
+    var base = String(ps).split('-')[0];
+    return base.replace(/([a-z])([A-Z])/g, '$1 $2').trim();
+  }
+  function mogrtColorRole(name) {
+    var n = String(name || '').toLowerCase();
+    if (/highlight|active|spoken|current|emphasi/.test(n)) return 'highlight';
+    if (/background|\bbg\b|box|pill|behind|panel|stroke|border|shadow|outline/.test(n)) return 'box';
+    if (/text|word|font|title|caption|subtitle|colou?r/.test(n)) return 'fill';
+    return null;
+  }
+  function renderMogrtPreview() {
+    var cv = _mogrtPrevCanvas;
+    if (!cv || !cv.parentNode || typeof CPRender === 'undefined' || !CPRender.drawFrame) return;
+    var pv = state.mogrtPrev || {};
+    var W = (cv.parentNode.clientWidth || 280), Hpx = 88;
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = Math.round(W * dpr); cv.height = Math.round(Hpx * dpr);
+    cv.style.width = W + 'px'; cv.style.height = Hpx + 'px';
+    var preset = {
+      id: 'mg', name: 'mg', font: pv.font || 'Arial', fontSize: 150,
+      weight: pv.bold ? 900 : 700, fill: pv.fill || '#FFFFFF',
+      highlight: pv.highlight || pv.fill || '#FFD400',
+      boxColor: pv.box || null, uppercase: !!pv.caps
+    };
+    try {
+      var st = CPRender.styleForFrame(preset, cv.height, {}, cv.width);
+      CPRender.drawFrame(cv, { words: ['Your', 'caption', 'here'], active: 1 }, st);
+    } catch (e) {}
+  }
+
   /* Build editable controls (colour / size / font / toggle) for the selected
      template — the same basic params Premiere shows in Essential Graphics. */
   function buildMogrtCustomizer(box, path) {
@@ -4642,11 +4695,21 @@
       sb.addEventListener('click', function () { saveCustomMogrt(path); });
       bar.appendChild(rb); bar.appendChild(sb); box.appendChild(bar);
 
+      // live colour/font preview — repaints as the controls below are edited
+      state.mogrtPrev = { fill: '#FFFFFF', highlight: null, box: null, font: 'Arial', caps: false, bold: false };
+      var pvFrame = document.createElement('div'); pvFrame.className = 'mogrt-prev-frame';
+      _mogrtPrevCanvas = document.createElement('canvas');
+      pvFrame.appendChild(_mogrtPrevCanvas); box.appendChild(pvFrame);
+      var pvNote = document.createElement('p'); pvNote.className = 'hint'; pvNote.style.cssText = 'margin:3px 0 9px;text-align:center;opacity:.8';
+      pvNote.textContent = 'Colour & font preview — updates live as you edit. The template’s full animation plays on your timeline.';
+      box.appendChild(pvNote);
+
       if (defs && defs.length) {
         renderFromDefinition(box, defs, props);   // exact Essential-Graphics layout
       } else {
         renderFromInspect(box, props);            // fallback: types guessed from values
       }
+      renderMogrtPreview();                        // first paint with the seeded colours
       var note = document.createElement('p'); note.className = 'hint';
       note.textContent = 'These are the template\'s own Essential Graphics controls — edit here, then "Add template captions". Every caption stays editable in Premiere (Window → Essential Graphics) too. Colours, size, position & toggles are reliable; font applies if it\'s installed.';
       box.appendChild(note);
@@ -4722,7 +4785,14 @@
         var hex = (spC && (spC.kind === 'color' || spC.kind === 'colorint')) ? spC.value
                 : (c.value && c.value.length >= 3) ? rgbaArrayToHex(c.value)
                 : (chosenC && typeof chosenC.value === 'string' && /^#[0-9a-f]{6}$/i.test(chosenC.value) ? chosenC.value : '#ffffff');
-        (function (idx) { mpAddColor(box, name, hex, function (v) { applyColor(idx, v); }); })(liveIdx);
+        var roleC = mogrtColorRole(name);
+        if (roleC && /^#[0-9a-f]{6}$/i.test(hex) && state.mogrtPrev && state.mogrtPrev[roleC] == null) state.mogrtPrev[roleC] = hex;
+        (function (idx, rl) {
+          mpAddColor(box, name, hex, function (v) {
+            applyColor(idx, v);
+            if (rl && state.mogrtPrev) { state.mogrtPrev[rl] = v; renderMogrtPreview(); }
+          });
+        })(liveIdx, roleC);
         continue;
       }
       if (t === MT.SLIDER || t === MT.ANGLE) {
@@ -4769,17 +4839,24 @@
           firstTextDone = true;
           var blob = null; try { blob = JSON.parse(ip.sample); } catch (eB) { blob = null; }
           mpHeader(box, 'Text style (all lines)');
-          mpAddFontSelect(box, 'Font', (blob && blob.fontEditValue && blob.fontEditValue[0]) || '', function (v) { richStyle().font = v || null; });
+          // seed the live preview from the template's own starting font / caps / bold
+          if (state.mogrtPrev) {
+            state.mogrtPrev.font = mogrtFontFamily((blob && blob.fontEditValue && blob.fontEditValue[0]) || '') || state.mogrtPrev.font;
+            state.mogrtPrev.caps = !!(blob && blob.fontFSAllCapsValue && blob.fontFSAllCapsValue[0]);
+            state.mogrtPrev.bold = !!(blob && blob.fontFSBoldValue && blob.fontFSBoldValue[0]);
+          }
+          mpAddFontSelect(box, 'Font', (blob && blob.fontEditValue && blob.fontEditValue[0]) || '', function (v) { richStyle().font = v || null; if (state.mogrtPrev) { state.mogrtPrev.font = mogrtFontFamily(v) || state.mogrtPrev.font; renderMogrtPreview(); } });
           // Only offer the blob's text colour when the blob actually carries a
           // fill field; templates like the Subtitle_* set text colour through a
           // dedicated "Text Color" param instead (shown below), so a blob colour
           // row here would do nothing and confuse.
           if (blob && (blob.fillColorEditValue || blob.fontFillColorEditValue || blob.FillColorEditValue)) {
-            mpAddColor(box, 'Text colour', readBlobFill(blob), function (v) { richStyle().fill = v; });
+            if (state.mogrtPrev) state.mogrtPrev.fill = readBlobFill(blob);
+            mpAddColor(box, 'Text colour', readBlobFill(blob), function (v) { richStyle().fill = v; if (state.mogrtPrev) { state.mogrtPrev.fill = v; renderMogrtPreview(); } });
           }
           mpAddSlider(box, 'Overall size %', Math.round((richStyle().sizeScale || 1) * 100), 50, 300, function (v) { richStyle().sizeScale = (parseFloat(v) || 100) / 100; });
-          mpAddCheck(box, 'ALL CAPS', !!(blob && blob.fontFSAllCapsValue && blob.fontFSAllCapsValue[0]), function (v) { richStyle().caps = v; });
-          mpAddCheck(box, 'Bold', !!(blob && blob.fontFSBoldValue && blob.fontFSBoldValue[0]), function (v) { richStyle().bold = v; });
+          mpAddCheck(box, 'ALL CAPS', !!(blob && blob.fontFSAllCapsValue && blob.fontFSAllCapsValue[0]), function (v) { richStyle().caps = v; if (state.mogrtPrev) { state.mogrtPrev.caps = v; renderMogrtPreview(); } });
+          mpAddCheck(box, 'Bold', !!(blob && blob.fontFSBoldValue && blob.fontFSBoldValue[0]), function (v) { richStyle().bold = v; if (state.mogrtPrev) { state.mogrtPrev.bold = v; renderMogrtPreview(); } });
           mpAddCheck(box, 'Italic', !!(blob && blob.fontFSItalicValue && blob.fontFSItalicValue[0]), function (v) { richStyle().italic = v; });
         }
         continue;
@@ -5034,6 +5111,29 @@
     return pick || find('subtitle') || list[0] || null;
   }
 
+  /* The preset the user is ACTUALLY looking at: the template's defaults with the
+     editor's own colour / font / box choices laid on top. Editable captions must
+     use THIS (not the raw preset) so the placed caption matches the live preview —
+     otherwise picking black text / blue highlight / silver box was ignored and the
+     caption kept the template's white. */
+  function styledPreset() {
+    var preset = currentPreset() || {};
+    var eff = {};
+    for (var k in preset) if (preset.hasOwnProperty(k)) eff[k] = preset[k];
+    var ov;
+    try { ov = readOverrides(); } catch (e) { return eff; }
+    if (ov.fill) eff.fill = ov.fill;
+    if (ov.fill2 !== undefined) eff.fill2 = ov.fill2;
+    if (ov.highlight) eff.highlight = ov.highlight;
+    if (ov.boxColor !== undefined) eff.boxColor = ov.boxColor;      // null = box turned off
+    if (ov.boxColor2 !== undefined) eff.boxColor2 = ov.boxColor2;
+    if (ov.boxOpacity != null) eff.boxOpacity = ov.boxOpacity;
+    if (ov.font) eff.font = ov.font;
+    if (ov.weight != null) eff.weight = ov.weight;
+    if (ov.uppercase != null) eff.uppercase = ov.uppercase;
+    return eff;
+  }
+
   /* Map a built-in style preset onto a template's NAMED colour/opacity params
      (best-effort by name; anything unmatched keeps the template default). */
   function mapPresetToMogrt(preset, props) {
@@ -5050,8 +5150,18 @@
     }
     function color(p, hex) { if (p && hex) out.push({ i: p.i, kind: p.kind || 'color', value: hex }); }
     function num(p, v) { if (p && v != null) out.push({ i: p.i, kind: 'number', value: v }); }
-    color(find([/text\s*colou?r/, /word\s*colou?r/, /font\s*colou?r/], COL), preset.fill);
-    color(find([/highlight/], COL), preset.highlight || preset.fill);
+    // every colour control in live order — lets us fall back POSITIONALLY when a
+    // template's colour control isn't named "text colour" (so the chosen text
+    // colour still lands instead of the caption keeping the template's default).
+    var colorProps = [];
+    for (var ci = 0; ci < props.length; ci++) { if (COL.indexOf(props[ci].kind) >= 0) colorProps.push(props[ci]); }
+    var textP = find([/text\s*colou?r/, /word\s*colou?r/, /font\s*colou?r/, /\bfill\b/, /\bcolou?r\b/], COL) || colorProps[0] || null;
+    color(textP, preset.fill);
+    // highlight: a named "highlight/active/spoken" control, else the next colour
+    // control after the text one (subtitle templates list text then highlight).
+    var hlP = find([/highlight|active|spoken|current/], COL);
+    if (!hlP) { for (var hi = 0; hi < colorProps.length; hi++) { if (colorProps[hi] !== textP) { hlP = colorProps[hi]; break; } } }
+    color(hlP, preset.highlight || preset.fill);
     if (preset.boxColor) {
       color(find([/background|\bbg\b|box/], COL), preset.boxColor);
       var bo = preset.boxOpacity; bo = (bo == null) ? 100 : (bo <= 1 ? Math.round(bo * 100) : bo);
@@ -5065,7 +5175,10 @@
 
   function applyEditableStyle() {
     if (!CPBridge.isCEP()) return toast('Editable captions need Premiere (open CutPilot inside Premiere).', true);
-    var preset = currentPreset();
+    // Use the editor-aware preset so the placed caption matches the preview:
+    // your chosen text colour, highlight colour and box colour all carry through
+    // (the old code used the raw template colours, so picks were ignored).
+    var preset = styledPreset();
     var bb = bundledBackbone(preset);
     if (!bb) { try { loadBundledMogrts(); } catch (e) {} bb = bundledBackbone(preset); }   // boot-timing safety: try once more
     if (!bb) {
@@ -5650,10 +5763,11 @@
     if ($('mc-director-opts')) $('mc-director-opts').classList.toggle('hidden', src !== 'follow' && src !== 'transcript');
     $('mc-main-opts').classList.toggle('hidden', src !== 'speech');
     $('mc-interval-wrap').classList.toggle('hidden', src !== 'interval');
-    // keep the rotate/ping-pong/hero pattern hidden — it just cycles cameras in
-    // order by default (the simple, expected behaviour). Power users can still
-    // reach it via the command palette if needed.
-    $('mc-pattern-opts').classList.add('hidden');
+    // the switching-style controls (Rotate / Ping-pong / Random / Hero cam and
+    // "switch every N cuts") apply when cameras change on a fixed cadence — show
+    // them for interval mode (they were permanently hidden, so those buttons were
+    // unreachable and interval was stuck on Rotate / every-1).
+    $('mc-pattern-opts').classList.toggle('hidden', src !== 'interval');
     if (src === 'speech') populateMainTracks();
     if (src === 'follow') renderMcMap();
     updateMcFfmpegBanner();

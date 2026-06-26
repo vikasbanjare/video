@@ -399,7 +399,11 @@
       // background box behind the whole line (opacity + padding + gradient).
       // barTop/barH are remembered so an active-word box can be centred inside it.
       var barTop = null, barH = null;
-      if (style.boxColor || style.boxStroke || style.boxGlow) {
+      // Draw the box layer when ANY box effect is set — face, border, glow, a 3D
+      // extrusion, or a gloss sheen. (3D/gloss were missing here, so a preset that
+      // only defined those drew nothing.)
+      if (style.boxColor || style.boxStroke || style.boxGlow ||
+          (style.box3d && style.box3dDepth > 0) || style.boxGloss > 0) {
         var padX = base * 0.32 * style.boxPad, padY = base * 0.22 * style.boxPad;
         var bxTop = y - line.height - padY + line.height * 0.18, bxH = line.height + padY * 2;
         var bxLeft = x - padX, bxW = line.width + padX * 2;
@@ -597,6 +601,15 @@
           // smart colour for numbers/brand words, else the body fill (gradient if set)
           var rc = restColorFor(it.word);
           ctx.fillStyle = rc ? rc : textFill(y - it.px * 0.72, it.px * 0.8, spkBody || style.fill, style.fill2);
+        }
+        // Cast the drop shadow / glow from the FILLED word itself. Previously the
+        // shadow was applied only around the outline and cleared before the fill,
+        // so a drop shadow or glow on a style WITHOUT an outline produced nothing
+        // at all (the "shadow does nothing" bug).
+        if (style.glow && !filled) {
+          ctx.shadowColor = style.glow;
+          ctx.shadowBlur = it.px * (style.glowBlur != null ? style.glowBlur : 0.35);
+          ctx.shadowOffsetX = style.shadowDX; ctx.shadowOffsetY = style.shadowDY;
         }
         ctx.fillText(it.word, x, y);
         ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;   // clear keyword glow
