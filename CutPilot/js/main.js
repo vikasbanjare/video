@@ -6264,8 +6264,8 @@
     var ff = resolveFfmpeg();
     var el = $('ffmpeg-status');
     if (ff) { el.textContent = '✅ ffmpeg found: ' + ff; el.className = 'hint'; }
-    else { el.textContent = '⚠️ No ffmpeg found. Multicam & Smart Cut can\'t read audio inside ' +
-            'video files without it. Install ffmpeg (e.g. "brew install ffmpeg") or set its path below.'; el.className = 'hint'; }
+    else { el.textContent = '⚠️ No audio engine yet — tap "⬇️ Set up audio engine (auto-download)" above. ' +
+            'Captions, Multicam & Smart Cut need it to read audio inside video files.'; el.className = 'hint'; }
   }
 
   $('btn-ffmpeg-pick').addEventListener('click', function () {
@@ -6351,7 +6351,7 @@
     var w = resolveWhisper(), m = resolveWhisperModel();
     var willUse = modelFileName();   // what accuracy+language will fetch/use
     if (w) { el.textContent = '✅ Engine ready · will use ' + willUse + (m ? '' : ' (downloads on first use)') + autoTag; }
-    else { el.textContent = 'Let CutPilot make the transcript itself — install the engine below.'; }
+    else { el.textContent = 'Cloud transcription is built in — pick a language above and transcribe.'; }
     var note = $('set-quality-note');
     if (note) { var q = (settings.whisperQuality || 'large-v3-turbo-q5_0'); var qo = WHISPER_QUALITIES.filter(function (x) { return x.value === q; })[0]; note.textContent = qo ? '· ' + qo.label.replace(/^[^·]*· /, '') : ''; }
   }

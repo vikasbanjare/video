@@ -14,7 +14,7 @@
 <body class="theme-light">
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.198</span>
+    <span class="ver" id="ver">v0.9.199</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -914,14 +914,17 @@
       <div class="step-head"><span class="step-title">Performance</span></div>
       <div id="ffmpeg-status" class="hint">checking for ffmpeg…</div>
       <button id="btn-ffmpeg-setup" class="chip-btn">⬇️ Set up audio engine (auto-download)</button>
-      <label>ffmpeg path (recommended — needed to read audio inside video files)
-        <div class="row tight">
-          <input type="text" id="set-ffmpeg" placeholder="/opt/homebrew/bin/ffmpeg">
-          <button id="btn-ffmpeg-pick" class="chip-btn">…</button>
-        </div>
-      </label>
       <label class="check"><input type="checkbox" id="set-dropframe"> Drop-frame timecode (29.97 / 59.94)</label>
       <button id="btn-save-settings" class="hero-btn small">Save settings</button>
+      <details class="advanced" style="margin-top:8px">
+        <summary>Advanced</summary>
+        <label>ffmpeg path <span class="dim">— only needed if the auto-download can't run</span>
+          <div class="row tight">
+            <input type="text" id="set-ffmpeg" placeholder="/opt/homebrew/bin/ffmpeg">
+            <button id="btn-ffmpeg-pick" class="chip-btn">…</button>
+          </div>
+        </label>
+      </details>
     </div>
 
     <div class="card">
@@ -943,49 +946,21 @@
       <label class="fld-full">Language
         <div id="set-whisper-lang" class="dd-mount"></div>
       </label>
-      <p class="hint">Higher accuracy = bigger model (auto-downloads the first time you transcribe).
-        Pick a language, or leave on Auto-detect.</p>
-      <label>☁️ Groq API key <span class="dim">— for "Cloud" accuracy. Free at console.groq.com/keys</span>
-        <input type="password" id="set-groq-key" placeholder="gsk_…" autocomplete="off">
-      </label>
-      <details class="advanced" style="margin:8px 0">
-        <summary>Local engine paths (advanced)</summary>
-      <label>whisper engine path
-        <div class="row tight">
-          <input type="text" id="set-whisper" placeholder="/opt/homebrew/bin/whisper-cli">
-          <button id="btn-whisper-pick" class="chip-btn">…</button>
-        </div>
-      </label>
-      <label>whisper model file (.bin)
-        <div class="row tight">
-          <input type="text" id="set-whisper-model" placeholder="…/ggml-base.en.bin">
-          <button id="btn-whisper-model-pick" class="chip-btn">…</button>
-        </div>
-      </label>
-      </details>
-      <button id="btn-whisper-install" class="hero-btn small">⬇️ Install the local engine for me (one tap)</button>
-      <div class="row tight">
-        <button id="btn-save-whisper" class="chip-btn">Save &amp; check</button>
-        <button id="btn-whisper-detect" class="chip-btn">🔍 Detect engine</button>
-      </div>
-      <pre id="whisper-diag" class="diag-out hidden"></pre>
+      <p class="hint">Pick your language above, or leave it on Auto-detect. The transcription
+        runs in the cloud — nothing to install.</p>
     </div>
 
     <div class="card">
-      <div class="step-head"><span class="step-title">🔧 Diagnostics</span></div>
-      <p class="hint">Tap the one button below and send me everything it shows — it checks ffmpeg, your mics, a caption template, and the transcript all at once.</p>
-      <button id="btn-diag-full" class="hero-btn small">🩺 Run full diagnostic</button>
-      <div class="diag-grid">
-        <button class="chip-btn" data-diag="CP_getEnv">Connection</button>
-        <button class="chip-btn" data-diag="CP_getSelectedClip">Selected clip</button>
-        <button class="chip-btn" data-diag="CP_getAudioTracks">Audio tracks</button>
-        <button class="chip-btn" data-diag="CP_findInstalledMogrts">Installed templates</button>
-      </div>
-      <pre id="diag-out" class="diag-out">Results appear here.</pre>
-      <button id="btn-diag-copy" class="chip-btn">Copy results</button>
+      <details class="advanced">
+        <summary>🔧 Diagnostics &amp; support</summary>
+        <p class="hint">If something isn't working, tap this and send me everything it shows — it checks ffmpeg, your mics, a caption template, and the transcript all at once.</p>
+        <button id="btn-diag-full" class="hero-btn small">🩺 Run full diagnostic</button>
+        <pre id="diag-out" class="diag-out">Results appear here.</pre>
+        <button id="btn-diag-copy" class="chip-btn">Copy results</button>
+      </details>
     </div>
 
-    <p class="hint center" id="ver-foot">CutPilot v0.9.198 · auto-edit · multicam · captions · chapters</p>
+    <p class="hint center" id="ver-foot">CutPilot v0.9.199 · auto-edit · multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>
