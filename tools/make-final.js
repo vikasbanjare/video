@@ -62,7 +62,7 @@ async function verify() {
     else { console.log('  ✗ broken seed: ' + JSON.stringify(r.probe) + (r.errs.length ? ('  errs=' + r.errs.join('|')) : '') + ' — retrying'); }
   }
   if (!good) { console.error('\nCould not produce a working obfuscated build in ' + MAX + ' tries.'); process.exit(1); }
-  console.log('\n===== packaging one-download setup =====');
-  cp.execSync('node ' + JSON.stringify(path.join(__dirname, 'make-setup.js')), { cwd: ROOT, stdio: 'inherit' });
-  console.log('\n✅ FINAL verified setup ready: CutPilot-Setup.zip');
+  console.log('\n===== packaging self-contained one-click installers =====');
+  cp.execSync('node ' + JSON.stringify(path.join(__dirname, 'make-installers.js')), { cwd: ROOT, stdio: 'inherit' });
+  console.log('\n✅ FINAL verified installers ready: CutPilot-Mac.zip  +  "Install CutPilot (Windows).hta"');
 })();
