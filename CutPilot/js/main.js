@@ -3822,12 +3822,34 @@
     return false;
   }
 
+  // Caption output mode: ✏️ editable (one editable .mogrt clip per line) vs
+  // 🖼 burned-in (the exact PNG-rendered look). Default = editable, so captions
+  // land on the timeline fully re-editable (text / size / colour / position).
+  var _capOut = 'editable';
+  function updateMagicLabel() {
+    var b = $('btn-magic'); if (!b) return;
+    b.innerHTML = (_capOut === 'editable')
+      ? '✏️ Add editable captions <span class="dim">(your style — each clip stays editable)</span>'
+      : '🖼 Add burned-in captions <span class="dim">(exact look — flattened into the picture)</span>';
+  }
+  (function wireCapOutput() {
+    var box = $('cap-output'); if (!box) return;
+    var btns = box.querySelectorAll('button');
+    for (var i = 0; i < btns.length; i++) btns[i].addEventListener('click', function () {
+      _capOut = this.dataset.out || 'editable';
+      var on = box.querySelector('button.on'); if (on) on.classList.remove('on');
+      this.classList.add('on');
+      updateMagicLabel();
+    });
+    updateMagicLabel();
+  })();
   $('btn-magic').addEventListener('click', function () {
+    if (_capOut === 'editable') return applyEditableStyle();   // editable .mogrt clips
     if (!ensureTranscriptThen('magic')) return;
     var cues;
     try { cues = readSelectedTranscript(); }
     catch (e) { return toast(e.message, true); }
-    runCaptionPipeline(cues, null);
+    runCaptionPipeline(cues, null);                            // burned-in PNG frames
   });
 
   /* Persist the last caption job so the edit/restyle buttons stay available even
@@ -4954,7 +4976,7 @@
      map the style's colours / font / size onto it. Result: each caption is its
      OWN clip, timed to the audio, fully editable in Premiere's Essential Graphics
      — the style's look (colours/font) carries over; the motion is the template's. */
-  function bundledBackbone() {
+  function bundledBackbone(preset) {
     // Prefer the shipped subtitle templates, but fall back to ANY available
     // .mogrt (user folders / installed / uploaded) so editable captions still
     // work even if the bundled set didn't load.
@@ -4966,9 +4988,22 @@
       }
       return null;
     }
+    // Pick the bundled subtitle MOGRT whose STRUCTURE best matches the chosen
+    // style, so the editable version resembles it: a pill/box style → the box
+    // template; a 2-colour highlight → the gradient one; a word-highlight →
+    // the word-highlight one; a clean style → the plain one.
+    preset = preset || {};
+    var hasBox = !!(preset.boxColor || preset.boxColor2);
+    var hasHL = !!(preset.keyword || preset.highlight);
+    var pick =
+      hasBox ? (find('subtitle_5') || find('subtitle_1')) :
+      (preset.boxGradient || preset.highlight2) ? (find('subtitle_4') || find('subtitle_1')) :
+      (preset.highlightScale && preset.highlightScale > 1) ? (find('subtitle_3') || find('subtitle_1')) :
+      hasHL ? (find('subtitle_1') || find('subtitle_3')) :
+      (find('subtitle_2') || find('subtitle_1'));
     // Subtitle 1 = word highlight + text + background + shadow → the most general
     // backbone (every part is a named param we can drive from the style).
-    return find('subtitle_1') || find('subtitle') || list[0] || null;
+    return pick || find('subtitle') || list[0] || null;
   }
 
   /* Map a built-in style preset onto a template's NAMED colour/opacity params
@@ -5002,26 +5037,30 @@
 
   function applyEditableStyle() {
     if (!CPBridge.isCEP()) return toast('Editable captions need Premiere (open CutPilot inside Premiere).', true);
-    var bb = bundledBackbone();
-    if (!bb) { try { loadBundledMogrts(); } catch (e) {} bb = bundledBackbone(); }   // boot-timing safety: try once more
+    var preset = currentPreset();
+    var bb = bundledBackbone(preset);
+    if (!bb) { try { loadBundledMogrts(); } catch (e) {} bb = bundledBackbone(preset); }   // boot-timing safety: try once more
     if (!bb) {
       var where = '';
       try { where = (CPBridge.getExtensionPath && CPBridge.getExtensionPath()) || ''; } catch (e) {}
       return toast('Editable captions need a template, but none loaded' +
         (state.bundledDiag ? ' [' + state.bundledDiag + ']' : '') +
         '. Your install may be missing the “mogrts” folder' + (where ? ' (looked in ' + where + '\\mogrts)' : '') +
-        '. Reinstall the full CutPilot folder, or use ✨ Burned-in captions / 📝 Plain caption track from “More ways”.', true);
+        '. Reinstall the full CutPilot folder, or switch the toggle to 🖼 Exact look (burned-in).', true);
     }
     if (!ensureTranscriptThen('editstyle')) return;
     var cues;
     try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
-    var preset = currentPreset();
     var words = parseInt($('c-words').value, 10) || 0;
     var caps = !!($('c-upper') && $('c-upper').checked) || !!preset.uppercase;
     var caseMode = caps ? 'upper' : (state.mogrtCase || 'as-spoken');
     var tcues = textCues(cues, words, caseMode);
     if (!tcues.length) return toast('No caption lines to add.', true);
-    var textStyle = { font: preset.font, size: preset.fontSize, caps: caps,
+    // Carry the style's FONT + colours + caps onto the editable template, but NOT
+    // an absolute size: preset.fontSize is render-engine scale (~230 for a 1080
+    // frame) and would blow up the MOGRT's text. Keep the template's designed size
+    // — the user resizes each caption on the timeline (Essential Graphics) anyway.
+    var textStyle = { font: preset.font, caps: caps,
                       bold: (preset.weight || 800) >= 600, fill: preset.fill };
     if (tcues.length > 120 &&
         !confirm(tcues.length + ' editable caption clips will be inserted — one per line. ' +
