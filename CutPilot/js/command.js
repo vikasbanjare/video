@@ -1,5 +1,5 @@
 /*
- * CutPilot — command-palette matcher (⌘K quick actions).
+ * Pulse — command-palette matcher (⌘K quick actions).
  * Pure fuzzy/subsequence scoring so the palette ranking is unit-testable.
  * No DOM/CEP dependencies.
  */

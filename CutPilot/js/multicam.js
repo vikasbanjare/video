@@ -1,5 +1,5 @@
 /*
- * CutPilot — multicam angle planning.
+ * Pulse — multicam angle planning.
  * Takes the keep-segments produced by silence detection and assigns a
  * camera angle to each one. The ExtendScript host then enables/disables
  * the stacked camera tracks per segment.

@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ExtensionManifest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                    ExtensionBundleId="com.cutpilot"
-                   ExtensionBundleVersion="0.9.204"
-                   ExtensionBundleName="CutPilot"
+                   ExtensionBundleVersion="0.9.205"
+                   ExtensionBundleName="Pulse"
                    Version="11.0">
   <ExtensionList>
-    <Extension Id="com.cutpilot.panel" Version="0.9.204"/>
+    <Extension Id="com.cutpilot.panel" Version="0.9.205"/>
   </ExtensionList>
   <ExecutionEnvironment>
     <HostList>
@@ -36,7 +36,7 @@
         </Lifecycle>
         <UI>
           <Type>Panel</Type>
-          <Menu>CutPilot</Menu>
+          <Menu>Pulse</Menu>
           <Geometry>
             <Size>
               <Height>640</Height>

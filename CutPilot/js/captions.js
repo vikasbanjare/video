@@ -1,5 +1,5 @@
 /*
- * CutPilot — caption tooling.
+ * Pulse — caption tooling.
  * SRT parse/serialize, word-by-word "karaoke" exploding, and the style
  * preset catalog used by both the native-caption and MOGRT pipelines.
  * Pure functions, unit-testable in Node.
@@ -921,7 +921,7 @@
   }
 
   /*
-   * Built-in animation catalog (CutPilot's own engine — no MOGRTs needed).
+   * Built-in animation catalog (Pulse's own engine — no MOGRTs needed).
    * 'keyframed' anims are realized as Premiere Motion/Opacity keyframes on
    * rendered caption images; 'framed' anims are realized as a sequence of
    * rendered frames (the swap is the animation).

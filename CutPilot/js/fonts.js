@@ -1,5 +1,5 @@
 /*
- * CutPilot — installed-font discovery.
+ * Pulse — installed-font discovery.
  * Reads the family name(s) out of the font files in the OS font folders so the
  * caption picker can list every font the user actually has installed (those
  * names are exactly what the <canvas> renderer needs to draw with).

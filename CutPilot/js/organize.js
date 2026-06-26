@@ -1,8 +1,8 @@
 /*
- * CutPilot — One-Click Organizer (panel logic).
+ * Pulse — One-Click Organizer (panel logic).
  * Self-contained: drives the "Organize" tab, loads jsx/organize.jsx via the
- * existing CutPilot CEP bridge (window.CPBridge), and renders results.
- * Adds nothing global except the IIFE; never depends on CutPilot's main.js.
+ * existing Pulse CEP bridge (window.CPBridge), and renders results.
+ * Adds nothing global except the IIFE; never depends on Pulse's main.js.
  */
 (function () {
   "use strict";

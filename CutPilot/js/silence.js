@@ -1,5 +1,5 @@
 /*
- * CutPilot — silence range math.
+ * Pulse — silence range math.
  * Pure functions, no DOM/CEP dependencies, so they can be unit-tested in Node.
  * All times are in seconds relative to the analyzed media.
  */

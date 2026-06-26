@@ -1,5 +1,5 @@
 /*
- * CutPilot — built-in sound-effects engine.
+ * Pulse — built-in sound-effects engine.
  * Synthesises short, original, royalty-free SFX (whoosh, pop, shutter, riser …)
  * as 16-bit PCM WAV bytes, so the panel can preview them (Web Audio) and drop
  * them on the timeline synced to caption / word / keyword timing — no shipped

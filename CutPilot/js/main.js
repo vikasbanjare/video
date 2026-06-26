@@ -1,5 +1,5 @@
 /*
- * CutPilot — panel controller (v0.2, automated flow).
+ * Pulse — panel controller (v0.2, automated flow).
  * Captions: auto-found transcripts → visual style + animation pickers →
  * one button. The built-in render engine draws every caption frame to a
  * transparent PNG and the host keyframes the entry animation — no MOGRTs,
@@ -154,18 +154,18 @@
     var tryPath = function (p) { try { return p && fs.existsSync(p); } catch (e2) { return false; } };
     if (tryPath(settings.ffmpegPath)) return (_ffmpeg = settings.ffmpegPath);
     // FIRST: ffmpeg bundled inside the installed extension (so it's turnkey —
-    // nothing for the user to install). The installer copies it to CutPilot/bin/.
+    // nothing for the user to install). The installer copies it to Pulse/bin/.
     var bundled = [];
     try {
       var os = nodeReq('os'), home = os.homedir();
       if (home) {
         bundled.push(home + '/.cutpilot/bin/ffmpeg');   // auto-installed by the panel (first run)
-        bundled.push(home + '/Library/Application Support/Adobe/CEP/extensions/CutPilot/bin/ffmpeg');     // macOS
+        bundled.push(home + '/Library/Application Support/Adobe/CEP/extensions/Pulse/bin/ffmpeg');     // macOS
         bundled.push(home + '/Library/Application Support/Adobe/CEP/extensions/com.cutpilot.panel/bin/ffmpeg');
         bundled.push(home + '\\.cutpilot\\bin\\ffmpeg.exe');   // Windows auto-installed
       }
       if (process.env && process.env.APPDATA) {
-        bundled.push(process.env.APPDATA + '\\Adobe\\CEP\\extensions\\CutPilot\\bin\\ffmpeg.exe');         // Windows
+        bundled.push(process.env.APPDATA + '\\Adobe\\CEP\\extensions\\Pulse\\bin\\ffmpeg.exe');         // Windows
       }
     } catch (eB) {}
     for (var bi = 0; bi < bundled.length; bi++) if (tryPath(bundled[bi])) return (_ffmpeg = bundled[bi]);
@@ -195,7 +195,7 @@
       try { https = nodeReq('https'); fs = nodeReq('fs'); } catch (e) { return reject(new Error('no network module')); }
       function get(u, n) {
         if (n > 6) return reject(new Error('too many redirects'));
-        https.get(u, { headers: { 'User-Agent': 'CutPilot' } }, function (res) {
+        https.get(u, { headers: { 'User-Agent': 'Pulse' } }, function (res) {
           if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) { res.resume(); return get(res.headers.location, n + 1); }
           if (res.statusCode !== 200) { res.resume(); return reject(new Error('HTTP ' + res.statusCode)); }
           var total = parseInt(res.headers['content-length'] || '0', 10), got = 0, f = fs.createWriteStream(dest);
@@ -354,7 +354,7 @@
   // white-label builds hide the underlying engine/model names: show ONE generic
   // cloud option (the bundled key makes it work out of the box).
   if (WHITE_LABEL) WHISPER_QUALITIES = [
-    { value: 'cloud-groq', label: '✨ CutPilot Cloud — best accuracy' },
+    { value: 'cloud-groq', label: '✨ Pulse Cloud — best accuracy' },
     { value: 'cloud-swara', label: '🇮🇳 Indian Voices — all languages' }
   ];
   var WHISPER_LANGS = [
@@ -1121,7 +1121,7 @@
             fs.writeFileSync(finalPath, CPCaptions.toSRT(cues), 'utf8');
             try { fs.unlinkSync(wav); } catch (eU) {}
             saveCachedTranscript(clip.mediaPath, minIn, maxOut, cues, state.transcriptWords);  // so this clip never needs re-transcribing
-            state.transcript = { label: 'CutPilot transcript (' + cues.length + ' lines)', path: finalPath, mtime: 1e16 };
+            state.transcript = { label: 'Pulse transcript (' + cues.length + ' lines)', path: finalPath, mtime: 1e16 };
             state.transcriptManual = true;
             $('tr-help').classList.add('hidden');
             refreshMogrtSheetTr(); refreshMogrtEditorTr();
@@ -1721,7 +1721,7 @@
   }
 
   function exportTranscript(kind) {
-    if (!CPBridge.isCEP()) return toast('Exporting needs Premiere (open CutPilot inside Premiere).', true);
+    if (!CPBridge.isCEP()) return toast('Exporting needs Premiere (open Pulse inside Premiere).', true);
     if (!state.transcript) return toast('Transcribe or load a transcript first.', true);
     var cues; try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
     if (!cues.length) return toast('The transcript is empty.', true);
@@ -2131,7 +2131,7 @@
   function saveCustom() { localStorage.setItem(LS.custom, JSON.stringify(state.customTemplates)); }
   function saveUserMogrts() { localStorage.setItem(LS.mogrts, JSON.stringify(state.userMogrts)); }
 
-  /* Load the .mogrt templates shipped INSIDE the panel (CutPilot/mogrts/),
+  /* Load the .mogrt templates shipped INSIDE the panel (Pulse/mogrts/),
      described by mogrts/index.json, resolving each to an absolute path so
      importMGT can place them. These become editable, prebuilt caption/title
      templates in the gallery — no per-use seed picking. CEP-only (needs fs). */
@@ -2149,7 +2149,7 @@
       var m = xml.match(/ExtensionBundleVersion="([^"]+)"/);
       if (m && m[1]) {
         var el = $('ver'); if (el) el.textContent = 'v' + m[1];
-        var ft = $('ver-foot'); if (ft) ft.textContent = 'CutPilot v' + m[1] + ' · auto-edit · multicam · captions · chapters';
+        var ft = $('ver-foot'); if (ft) ft.textContent = 'Pulse v' + m[1] + ' · auto-edit · multicam · captions · chapters · organize';
       }
     } catch (e) {}
   }
@@ -2198,7 +2198,7 @@
 
   /* Scan every user-added template folder (Settings → Add folder) for .mogrt
      files and cache them in state.folderMogrts. This is Captioneer's "Add Folder":
-     point CutPilot at any folder of MOGRTs and they become editable templates.
+     point Pulse at any folder of MOGRTs and they become editable templates.
      Walks subfolders (people organise packs into categories), capped for safety. */
   function scanMogrtFolders() {
     state.folderMogrts = [];
@@ -2232,7 +2232,7 @@
     var folders = settings.mogrtFolders || [];
     if (!folders.length) {
       var e = document.createElement('p'); e.className = 'hint';
-      e.textContent = 'No extra folders yet. Tap “Add folder…” to point CutPilot at a folder of .mogrt templates.';
+      e.textContent = 'No extra folders yet. Tap “Add folder…” to point Pulse at a folder of .mogrt templates.';
       box.appendChild(e); return;
     }
     folders.forEach(function (dir) {
@@ -3448,11 +3448,11 @@
   }
 
   function importTemplate() {
-    var p = pickFile('Choose a CutPilot template (.json)', ['json']);
+    var p = pickFile('Choose a Pulse template (.json)', ['json']);
     if (!p) return;
     try {
       var tpl = JSON.parse(nodeReq('fs').readFileSync(p, 'utf8'));
-      if (!tpl || !tpl.font) throw new Error('Not a CutPilot template file.');
+      if (!tpl || !tpl.font) throw new Error('Not a Pulse template file.');
       tpl.id = 'custom-' + Date.now();
       tpl.category = 'My Templates';
       tpl.custom = true;
@@ -4301,7 +4301,7 @@
         var isGroup = (p.type === 'string' && uuid.test(String(p.sample)));
         var isText = (p.type === 'string' && !isGroup);
         if (isText) textLines++;
-        var tag = isText ? '  ✏️ editable text — CutPilot fills this' : (isGroup ? '  (group)' : '');
+        var tag = isText ? '  ✏️ editable text — Pulse fills this' : (isGroup ? '  (group)' : '');
         // colour diagnostic: confirm the real colour API is available + current value
         var isColorName = /colou?r/i.test(p.name);
         if (isColorName) tag += '  🎨 colour · setColorValue=' + (p.hasSCV ? 'YES' : 'no') +
@@ -4310,12 +4310,12 @@
         return '#' + p.i + '  "' + p.name + '"  [' + p.type + ']' + tag + show;
       });
       var foot = (textLines > 1)
-        ? '\n\n✅ ' + textLines + ' text lines detected — CutPilot fills all of them, ' +
+        ? '\n\n✅ ' + textLines + ' text lines detected — Pulse fills all of them, ' +
           textLines + ' caption lines per graphic. It tests one throwaway copy first ' +
           '(project saved beforehand) before touching your timeline. Tap 🎨 Customize ' +
           'to edit font / size / style.'
         : (anyRich
-          ? '\n\nℹ️ Rich caption format — CutPilot fills it after a safe test write ' +
+          ? '\n\nℹ️ Rich caption format — Pulse fills it after a safe test write ' +
             '(project saved first). Tap 🎨 Customize to edit font / size / style.'
           : '');
       out.textContent = path.split(/[\\/]/).pop() + ' — ' + r.count + ' fields:\n' + lines.join('\n') + foot;
@@ -5063,7 +5063,7 @@
       if (r.textSet === 0) {
         var msg = r.richBlocked
           ? 'Placed ' + r.inserted + ' graphics, but a safety test showed THIS template\'s ' +
-            'rich text can\'t be filled without risking your project, so CutPilot left it ' +
+            'rich text can\'t be filled without risking your project, so Pulse left it ' +
             'alone. Your project was saved first — nothing is harmed. Use ✨ Add captions ' +
             '(Animated) for the words, or send me this .mogrt and I\'ll tune it.'
           : 'Placed ' + r.inserted + ' graphics, but this template exposes no fillable text ' +
@@ -5225,7 +5225,7 @@
   }
 
   function applyEditableStyle() {
-    if (!CPBridge.isCEP()) return toast('Editable captions need Premiere (open CutPilot inside Premiere).', true);
+    if (!CPBridge.isCEP()) return toast('Editable captions need Premiere (open Pulse inside Premiere).', true);
     // Use the editor-aware preset so the placed caption matches the preview:
     // your chosen text colour, highlight colour and box colour all carry through
     // (the old code used the raw template colours, so picks were ignored).
@@ -5238,7 +5238,7 @@
       return toast('Editable captions need a template, but none loaded' +
         (state.bundledDiag ? ' [' + state.bundledDiag + ']' : '') +
         '. Your install may be missing the “mogrts” folder' + (where ? ' (looked in ' + where + '\\mogrts)' : '') +
-        '. Reinstall the full CutPilot folder, or switch the toggle to 🖼 Exact look (burned-in).', true);
+        '. Reinstall the full Pulse folder, or switch the toggle to 🖼 Exact look (burned-in).', true);
     }
     if (!ensureTranscriptThen('editstyle')) return;
     var cues;
@@ -5531,7 +5531,7 @@
   });
 
   $('btn-clear-markers').addEventListener('click', function () {
-    CPBridge.callHost('CP_clearCutPilotMarkers', { label: 'Silence' })
+    CPBridge.callHost('CP_clearPulseMarkers', { label: 'Silence' })
       .then(function (r) { toast('Removed ' + r.removed + ' markers.'); })
       .catch(function (e) { toast(e.message, true); });
   });
@@ -5542,7 +5542,7 @@
     CPBridge.callHost('CP_rebuildTrimmed', {
       nodeId: state.clip.nodeId,
       keeps: state.keepsMedia,
-      name: 'CutPilot · ' + state.clip.name
+      name: 'Pulse · ' + state.clip.name
     }).then(function (r) {
       toast('🎉 Built "' + r.sequence + '" — ' + r.segmentsPlaced + ' segments, ' + fmt(r.finalDuration) + ' long.');
     }).catch(function (e) { toast('Rebuild failed: ' + e.message, true); });
@@ -6656,7 +6656,7 @@
     });
   });
 
-  /* Show exactly what CutPilot can (and can't) find — paste this to support. */
+  /* Show exactly what Pulse can (and can't) find — paste this to support. */
   if ($('btn-whisper-detect')) $('btn-whisper-detect').addEventListener('click', function () {
     var box = $('whisper-diag'); box.classList.remove('hidden'); box.textContent = 'Checking…';
     var out = [];
@@ -6710,7 +6710,7 @@
   $('btn-diag-full').addEventListener('click', function () {
     var out = $('diag-out');
     out.className = 'diag-out';
-    var R = ['CutPilot ' + ($('ver') ? $('ver').textContent : '') + ' — full diagnostic', ''];
+    var R = ['Pulse ' + ($('ver') ? $('ver').textContent : '') + ' — full diagnostic', ''];
     function show() { out.textContent = R.join('\n'); }
     if (!CPBridge.isCEP()) { out.textContent = 'Not running inside Premiere.'; return; }
     show();

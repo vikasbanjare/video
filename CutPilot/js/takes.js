@@ -1,5 +1,5 @@
 /*
- * CutPilot — repeated-take / bad-take cleanup (fuzzy).
+ * Pulse — repeated-take / bad-take cleanup (fuzzy).
  * Real retakes are rarely word-for-word identical — the speaker rephrases a
  * little (5–15% different). So instead of exact matching we split the transcript
  * into PHRASES (by pauses / sentence punctuation) and cluster consecutive

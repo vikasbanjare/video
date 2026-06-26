@@ -1,5 +1,5 @@
-/* CutPilot — One-Click Organizer tab. Scoped to #tab-organize / .cpo- so it
-   never collides with CutPilot's own styles. */
+/* Pulse — One-Click Organizer tab. Scoped to #tab-organize / .cpo- so it
+   never collides with Pulse's own styles. */
 #tab-organize { padding: 16px 4px; }
 
 #tab-organize .cpo-head { margin-bottom: 16px; }

@@ -1,4 +1,4 @@
-/* CutPilot Studio — two themes (Light / Dark), cool blue→cyan accent */
+/* Pulse Studio — two themes (Light / Dark), cool blue→cyan accent */
 :root {
   /* Brand accent — shared by both themes (no orange/purple). */
   --clay: #3d7dff;
@@ -51,7 +51,10 @@ body {
 header { display: flex; align-items: center; gap: 8px; padding: 14px 16px 11px; position: relative; }
 header::after { content: ''; position: absolute; left: 14px; right: 14px; bottom: 0; height: 1px;
   background: linear-gradient(90deg, transparent, var(--accent-line), transparent); }
-.brand { font-weight: 800; font-size: 18px; letter-spacing: -0.4px; color: var(--fg); }
+.brand { display: flex; align-items: center; gap: 7px; font-weight: 800; font-size: 18px; letter-spacing: -0.4px; color: var(--fg); }
+.brand .logo-mark { flex: none; display: block; }
+.brand .brand-name { line-height: 1; }
+.brand .brand-by { font-size: 9.5px; font-weight: 600; color: var(--dim); opacity: .85; letter-spacing: 0; align-self: flex-end; margin: 0 0 2px -2px; }
 .brand .logo { background: var(--grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-right: 1px; }
 .ver {
   font-size: 9px; font-weight: 700; color: var(--dim);

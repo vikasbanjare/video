@@ -1,5 +1,5 @@
 /*
- * CutPilot — transcript intelligence (v0.3).
+ * Pulse — transcript intelligence (v0.3).
  * Two transcript-driven features, both pure and unit-testable in Node:
  *
  *   1. Filler-word removal — find "um / uh / you know / …" in the transcript,

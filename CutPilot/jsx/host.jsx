@@ -1,5 +1,5 @@
 /*
- * CutPilot — ExtendScript host (runs inside Premiere Pro).
+ * Pulse — ExtendScript host (runs inside Premiere Pro).
  * All entry points are CP_* functions that take a single JSON string and
  * return a JSON string shaped {ok:true, ...} or {ok:false, error:"..."}.
  *
@@ -330,7 +330,7 @@ function CP_addMarkers(argsJson) {
   } catch (e) { return CP_fail(e.message); }
 }
 
-function CP_clearCutPilotMarkers(argsJson) {
+function CP_clearPulseMarkers(argsJson) {
   try {
     var args = JSON.parse(argsJson || '{}');
     var label = args.label || 'Silence';
@@ -497,7 +497,7 @@ function CP_rebuildTrimmed(argsJson) {
     var pItem = CP_findProjectItemByNodeId(app.project.rootItem, args.nodeId);
     if (!pItem) return CP_fail('Could not find the source project item.');
 
-    var seqName = args.name || ('CutPilot Trim ' + new Date().getTime());
+    var seqName = args.name || ('Pulse Trim ' + new Date().getTime());
     var newSeq = app.project.createNewSequenceFromClips(seqName, [pItem]);
     if (!newSeq) return CP_fail('Could not create the trimmed sequence.');
 
@@ -924,7 +924,7 @@ function CP_placeCaptionImages(argsJson) {
     var seq = CP_activeSequence();
 
     // Import everything into a tidy bin.
-    var bin = app.project.rootItem.createBin('CutPilot Captions ' + (new Date()).getTime() % 100000);
+    var bin = app.project.rootItem.createBin('Pulse Captions ' + (new Date()).getTime() % 100000);
     var paths = [];
     for (var i = 0; i < args.items.length; i++) paths.push(args.items[i].path);
     app.project.importFiles(paths, true, bin, false);
@@ -943,7 +943,7 @@ function CP_placeCaptionImages(argsJson) {
       trackIndex = args.overwriteOnTrack - 1;
     } else if (args.replaceTrack != null && args.replaceTrack >= 1 && args.replaceTrack <= seq.videoTracks.numTracks) {
       // Restyle "apply to all": reuse the existing caption track, but first clear
-      // only CutPilot's own caption frames (named cap_*.png) off it — so captions
+      // only Pulse's own caption frames (named cap_*.png) off it — so captions
       // never stack across restyles, and any other clip the user put there is safe.
       trackIndex = args.replaceTrack - 1;
       try {
@@ -1041,7 +1041,7 @@ function CP_placeSfx(argsJson) {
     if (!seq) return CP_fail('Open a sequence first.');
 
     // import the WAV into a tidy bin
-    var bin = app.project.rootItem.createBin('CutPilot SFX ' + ((new Date()).getTime() % 100000));
+    var bin = app.project.rootItem.createBin('Pulse SFX ' + ((new Date()).getTime() % 100000));
     app.project.importFiles([args.wavPath], true, bin, false);
     var item = null;
     for (var c = bin.children.numItems - 1; c >= 0; c--) {
@@ -1232,7 +1232,7 @@ function CP_isTextValue(v, name) {
 }
 
 /* All text-ish properties of a MOGRT component, in display order. Multi-line
-   templates (Text 01..NN) return several; CutPilot fills each with a
+   templates (Text 01..NN) return several; Pulse fills each with a
    consecutive caption line. Group refs / font pickers are excluded. */
 function CP_textPropsOf(comp) {
   var out = [];
@@ -1312,7 +1312,7 @@ function CP_probeRichText(mogrtPath, vTrack, aTrack, KEYS, sampleText, style) {
     var before = null; try { before = prop.getValue(); } catch (eB) {}
     if (typeof before === 'string' && (before.indexOf('textEditValue') !== -1 || before.indexOf('capProp') !== -1)) {
       res.kind = 'rich';
-      var probeText = String(sampleText || 'CutPilot test');
+      var probeText = String(sampleText || 'Pulse test');
       // probe the SAME write the real captions will do (text + optional style),
       // so enabling style edits can't slip past the safety verification.
       if (CP_setMgrtText(prop, probeText, true, style)) {
@@ -1585,7 +1585,7 @@ function CP_copyStyleSelectedToTrack() {
     }
     if (!sel) return CP_fail('Select one caption graphic you styled (click it on the timeline), then try again.');
     var srcComp = null; try { srcComp = sel.getMGTComponent(); } catch (eM) {}
-    if (!srcComp || !srcComp.properties) return CP_fail('The selected clip isn\'t a Motion Graphics template — select one of CutPilot\'s caption graphics.');
+    if (!srcComp || !srcComp.properties) return CP_fail('The selected clip isn\'t a Motion Graphics template — select one of Pulse\'s caption graphics.');
     var style = CP_captureMgrtStyle(srcComp);
     if (!style.length) return CP_fail('Could not read any style from the selected graphic.');
     var track = seq.videoTracks[selTrack], applied = 0;
@@ -1628,7 +1628,7 @@ function CP_insertMogrtCaptions(argsJson) {
     // enable writing if that verified clean — otherwise we place the graphics
     // but leave the text alone (never risking the "bad any cast" corruption).
     var probe = CP_probeRichText(args.mogrtPath, vTrack, aTrack, KEYS,
-                                 (args.cues[0] && args.cues[0].text) ? args.cues[0].text : 'CutPilot test',
+                                 (args.cues[0] && args.cues[0].text) ? args.cues[0].text : 'Pulse test',
                                  args.textStyle);
     var allowRich = (probe.kind === 'rich') ? probe.richSafe : false;
     var richBlocked = (probe.kind === 'rich' && !probe.richSafe);

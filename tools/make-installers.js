@@ -4,9 +4,9 @@
  * panel, downloads ffmpeg (the video engine) with a progress UI, enables the
  * panel, and finishes — no Terminal, no juggling multiple files.
  *
- *   • macOS:   "Install CutPilot.app"  (delivered inside CutPilot-Mac.zip)
+ *   • macOS:   "Install Pulse.app"  (delivered inside Pulse-Mac.zip)
  *              — embeds the panel, downloads ffmpeg, shows native status, done.
- *   • Windows: "Install CutPilot (Windows).hta"  (one file)
+ *   • Windows: "Install Pulse (Windows).hta"  (one file)
  *              — HTML window with a real progress BAR; a hidden PowerShell worker
  *                extracts the embedded panel, downloads ffmpeg, sets the registry.
  *
@@ -28,15 +28,15 @@ function copyDir(s, d) {
   }
 }
 
-// ---- 1. payload zip whose ROOT folder is "CutPilot" (so it extracts straight
-//         into the CEP extensions folder as .../extensions/CutPilot) -----------
+// ---- 1. payload zip whose ROOT folder is "Pulse" (so it extracts straight
+//         into the CEP extensions folder as .../extensions/Pulse) -----------
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'cpinst-'));
-const stage = path.join(work, 'CutPilot');
+const stage = path.join(work, 'Pulse');
 copyDir(EXT, stage);
-const payloadZip = path.join(work, 'CutPilot.zip');
-sh('cd "' + work + '" && zip -qry "' + payloadZip + '" CutPilot');
+const payloadZip = path.join(work, 'Pulse.zip');
+sh('cd "' + work + '" && zip -qry "' + payloadZip + '" Pulse');
 const payloadBytes = fs.statSync(payloadZip).size;
-console.log('payload: CutPilot.zip (' + (payloadBytes / 1048576).toFixed(1) + ' MB)');
+console.log('payload: Pulse.zip (' + (payloadBytes / 1048576).toFixed(1) + ' MB)');
 
 // =====================================================================  macOS
 // A real .app bundle. Double-click → runs Contents/MacOS/installer (a shell
@@ -47,8 +47,8 @@ const PLIST =
   '<?xml version="1.0" encoding="UTF-8"?>\n' +
   '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n' +
   '<plist version="1.0"><dict>' +
-  '<key>CFBundleName</key><string>Install CutPilot</string>' +
-  '<key>CFBundleDisplayName</key><string>Install CutPilot</string>' +
+  '<key>CFBundleName</key><string>Install Pulse</string>' +
+  '<key>CFBundleDisplayName</key><string>Install Pulse</string>' +
   '<key>CFBundleIdentifier</key><string>com.cutpilot.installer</string>' +
   '<key>CFBundleVersion</key><string>1.0</string>' +
   '<key>CFBundleShortVersionString</key><string>1.0</string>' +
@@ -60,26 +60,26 @@ const PLIST =
 
 const MAC_SH = [
   '#!/bin/bash',
-  '# CutPilot one-click installer — no Terminal, no typing.',
+  '# Pulse one-click installer — no Terminal, no typing.',
   'RES="$(cd "$(dirname "$0")/../Resources" && pwd)"',
   'EXT="$HOME/Library/Application Support/Adobe/CEP/extensions"',
   'BIN="$HOME/.cutpilot/bin"',
-  'TITLE="CutPilot"',
+  'TITLE="Pulse"',
   'note(){ /usr/bin/osascript -e "display notification \\"$1\\" with title \\"$TITLE\\"" >/dev/null 2>&1; }',
   'fail(){ /usr/bin/osascript -e "display dialog \\"$1\\" buttons {\\"OK\\"} default button \\"OK\\" with title \\"$TITLE\\" with icon stop" >/dev/null 2>&1; exit 1; }',
   '',
   '# 0) consent + heads-up about the one-time download',
-  'A=$(/usr/bin/osascript -e "button returned of (display dialog \\"This will install the CutPilot panel into Premiere Pro and download its video engine (about 40 MB — roughly a minute on a normal connection).\\n\\nNothing else to do. Continue?\\" buttons {\\"Cancel\\",\\"Install\\"} default button \\"Install\\" with title \\"$TITLE\\")" 2>/dev/null)',
+  'A=$(/usr/bin/osascript -e "button returned of (display dialog \\"This will install the Pulse panel into Premiere Pro and download its video engine (about 40 MB — roughly a minute on a normal connection).\\n\\nNothing else to do. Continue?\\" buttons {\\"Cancel\\",\\"Install\\"} default button \\"Install\\" with title \\"$TITLE\\")" 2>/dev/null)',
   '[ "$A" = "Install" ] || exit 0',
   '',
   '# 1) install the panel from the copy embedded in this app',
   'note "Installing the panel…"',
   'mkdir -p "$EXT" || fail "Could not create the Premiere extensions folder."',
-  'rm -rf "$EXT/CutPilot"',
-  'if ! /usr/bin/ditto -x -k "$RES/CutPilot.zip" "$EXT" 2>/dev/null; then',
-  '  ( cd "$EXT" && /usr/bin/unzip -oq "$RES/CutPilot.zip" ) || fail "Could not unpack the panel."',
+  'rm -rf "$EXT/Pulse"',
+  'if ! /usr/bin/ditto -x -k "$RES/Pulse.zip" "$EXT" 2>/dev/null; then',
+  '  ( cd "$EXT" && /usr/bin/unzip -oq "$RES/Pulse.zip" ) || fail "Could not unpack the panel."',
   'fi',
-  '[ -d "$EXT/CutPilot" ] || fail "The panel did not unpack correctly. Please re-download."',
+  '[ -d "$EXT/Pulse" ] || fail "The panel did not unpack correctly. Please re-download."',
   '',
   '# 2) download the right ffmpeg for this Mac',
   'note "Downloading the video engine…"',
@@ -102,38 +102,38 @@ const MAC_SH = [
   'chmod +x "$DEST" 2>/dev/null',
   '',
   '# 3) trust the freshly-downloaded files + enable unsigned panels',
-  '/usr/bin/xattr -dr com.apple.quarantine "$EXT/CutPilot" "$DEST" 2>/dev/null',
+  '/usr/bin/xattr -dr com.apple.quarantine "$EXT/Pulse" "$DEST" 2>/dev/null',
   'for v in 8 9 10 11 12 13 14 15; do /usr/bin/defaults write com.adobe.CSXS.$v PlayerDebugMode 1 2>/dev/null; done',
   '/usr/bin/killall cfprefsd 2>/dev/null',
   '',
   '# 4) done',
-  '/usr/bin/osascript -e "display dialog \\"✅ CutPilot is installed and ready.\\n\\nFully QUIT Premiere Pro (Cmd-Q), reopen it, then open:\\n   Window → Extensions → CutPilot\\" buttons {\\"Done\\"} default button \\"Done\\" with title \\"$TITLE\\"" >/dev/null 2>&1',
+  '/usr/bin/osascript -e "display dialog \\"✅ Pulse is installed and ready.\\n\\nFully QUIT Premiere Pro (Cmd-Q), reopen it, then open:\\n   Window → Extensions → Pulse\\" buttons {\\"Done\\"} default button \\"Done\\" with title \\"$TITLE\\"" >/dev/null 2>&1',
   ''
 ].join('\n');
 
 function buildMac() {
-  const OUT = path.join(ROOT, 'CutPilot-Mac');
+  const OUT = path.join(ROOT, 'Pulse-Mac');
   fs.rmSync(OUT, { recursive: true, force: true }); fs.mkdirSync(OUT, { recursive: true });
-  const APP = path.join(OUT, 'Install CutPilot.app');
+  const APP = path.join(OUT, 'Install Pulse.app');
   const CONTENTS = path.join(APP, 'Contents'), MACOS = path.join(CONTENTS, 'MacOS'), RESOURCES = path.join(CONTENTS, 'Resources');
   fs.mkdirSync(MACOS, { recursive: true }); fs.mkdirSync(RESOURCES, { recursive: true });
   fs.writeFileSync(path.join(CONTENTS, 'Info.plist'), PLIST);
   fs.writeFileSync(path.join(MACOS, 'installer'), MAC_SH, { mode: 0o755 });
   fs.chmodSync(path.join(MACOS, 'installer'), 0o755);
-  fs.copyFileSync(payloadZip, path.join(RESOURCES, 'CutPilot.zip'));
+  fs.copyFileSync(payloadZip, path.join(RESOURCES, 'Pulse.zip'));
   fs.writeFileSync(path.join(OUT, 'READ ME (Mac).txt'),
-    'CutPilot — Mac install\r\n======================\r\n\r\n' +
-    '1) Double-click  "Install CutPilot.app".\r\n' +
+    'Pulse — Mac install\r\n======================\r\n\r\n' +
+    '1) Double-click  "Install Pulse.app".\r\n' +
     '   First time only: if macOS says it is from an unidentified developer,\r\n' +
     '   RIGHT-CLICK the app → Open → Open. (Apple requires this for apps not\r\n' +
     '   from the App Store — it is safe.)\r\n' +
     '2) Click Install and wait for the "ready" message (it downloads ffmpeg).\r\n' +
-    '3) Quit & reopen Premiere → Window → Extensions → CutPilot.\r\n\r\n' +
+    '3) Quit & reopen Premiere → Window → Extensions → Pulse.\r\n\r\n' +
     'No Terminal, nothing else to install.\r\n');
   // zip the .app so it travels as one download and keeps its executable bit
-  sh('cd "' + OUT + '" && rm -f ../CutPilot-Mac.zip && zip -qry ../CutPilot-Mac.zip .');
-  const mb = (fs.statSync(path.join(ROOT, 'CutPilot-Mac.zip')).size / 1048576).toFixed(1);
-  console.log('  CutPilot-Mac.zip  (' + mb + ' MB)  → unzips to "Install CutPilot.app"');
+  sh('cd "' + OUT + '" && rm -f ../Pulse-Mac.zip && zip -qry ../Pulse-Mac.zip .');
+  const mb = (fs.statSync(path.join(ROOT, 'Pulse-Mac.zip')).size / 1048576).toFixed(1);
+  console.log('  Pulse-Mac.zip  (' + mb + ' MB)  → unzips to "Install Pulse.app"');
 }
 
 // ===================================================================  Windows
@@ -156,7 +156,7 @@ function buildWin() {
     '  [IO.File]::WriteAllBytes($zip, $bytes)',
     '  P 22 "Installing the panel..."',
     '  $ext = Join-Path $env:APPDATA "Adobe\\CEP\\extensions"',
-    '  if (Test-Path (Join-Path $ext "CutPilot")) { Remove-Item (Join-Path $ext "CutPilot") -Recurse -Force }',
+    '  if (Test-Path (Join-Path $ext "Pulse")) { Remove-Item (Join-Path $ext "Pulse") -Recurse -Force }',
     '  New-Item -ItemType Directory -Force -Path $ext | Out-Null',
     '  Add-Type -AssemblyName System.IO.Compression.FileSystem',
     '  [System.IO.Compression.ZipFile]::ExtractToDirectory($zip, $ext)',
@@ -172,7 +172,7 @@ function buildWin() {
     '  $dest = Join-Path $bin "ffmpeg.exe"',
     '  [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12',
     '  $url = "' + FF_BASE + 'ffmpeg-win32-x64"',
-    '  $req = [Net.HttpWebRequest]::Create($url); $req.UserAgent = "CutPilot"; $req.AllowAutoRedirect = $true',
+    '  $req = [Net.HttpWebRequest]::Create($url); $req.UserAgent = "Pulse"; $req.AllowAutoRedirect = $true',
     '  $res = $req.GetResponse(); $total = $res.ContentLength; $stream = $res.GetResponseStream()',
     '  $fs = [IO.File]::Create($dest); $buf = New-Object byte[] 131072; $sum = 0; $read = 0',
     '  do {',
@@ -189,8 +189,8 @@ function buildWin() {
 
   const HTA =
 '<!DOCTYPE html>\r\n<html>\r\n<head>\r\n<meta http-equiv="x-ua-compatible" content="ie=edge">\r\n' +
-'<title>Install CutPilot</title>\r\n' +
-'<hta:application id="app" applicationname="Install CutPilot" border="thin" caption="yes" ' +
+'<title>Install Pulse</title>\r\n' +
+'<hta:application id="app" applicationname="Install Pulse" border="thin" caption="yes" ' +
 'maximizebutton="no" minimizebutton="yes" showintaskbar="yes" scroll="no" singleinstance="yes" sysmenu="yes" />\r\n' +
 '<style>\r\n' +
 '  html,body{margin:0;height:100%;font-family:"Segoe UI",Arial,sans-serif;background:#0f1320;color:#eef1f7;}\r\n' +
@@ -204,12 +204,12 @@ function buildWin() {
 '  button[disabled]{background:#39406040;color:#7e88a6;cursor:default;}\r\n' +
 '  .note{margin-top:14px;color:#7e88a6;font-size:11px;line-height:1.5;}\r\n' +
 '</style>\r\n</head>\r\n<body>\r\n<div class="wrap">\r\n' +
-'  <h1>Install CutPilot</h1>\r\n' +
+'  <h1>Install Pulse</h1>\r\n' +
 '  <p class="sub">For Adobe Premiere Pro</p>\r\n' +
 '  <p id="status">Ready. Click Install — it sets up the panel and downloads the video engine automatically.</p>\r\n' +
 '  <div class="bar"><div id="fill"></div></div>\r\n' +
 '  <div class="row"><button id="go" onclick="startInstall()">Install</button></div>\r\n' +
-'  <p class="note">No Terminal, nothing else to install. When it finishes, quit &amp; reopen Premiere &rarr; Window &rarr; Extensions &rarr; CutPilot.</p>\r\n' +
+'  <p class="note">No Terminal, nothing else to install. When it finishes, quit &amp; reopen Premiere &rarr; Window &rarr; Extensions &rarr; Pulse.</p>\r\n' +
 '</div>\r\n' +
 '<script language="javascript">\r\n' +
 'var PAYLOAD="' + b64 + '";\r\n' +
@@ -246,15 +246,15 @@ function buildWin() {
 '}\r\n' +
 'function finish(){\r\n' +
 '  $("go").style.display="none";\r\n' +
-'  alert("CutPilot is installed and ready.\\n\\nFully QUIT Premiere Pro, reopen it, then open:\\nWindow > Extensions > CutPilot.");\r\n' +
+'  alert("Pulse is installed and ready.\\n\\nFully QUIT Premiere Pro, reopen it, then open:\\nWindow > Extensions > Pulse.");\r\n' +
 '  try{window.close();}catch(e){}\r\n' +
 '}\r\n' +
 '<\/script>\r\n</body>\r\n</html>\r\n';
 
-  const file = path.join(ROOT, 'Install CutPilot (Windows).hta');
+  const file = path.join(ROOT, 'Install Pulse (Windows).hta');
   fs.writeFileSync(file, HTA);
   const mb = (fs.statSync(file).size / 1048576).toFixed(1);
-  console.log('  "Install CutPilot (Windows).hta"  (' + mb + ' MB)  → one file, double-click');
+  console.log('  "Install Pulse (Windows).hta"  (' + mb + ' MB)  → one file, double-click');
 }
 
 console.log('Building self-contained installers…');

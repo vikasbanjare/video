@@ -1,9 +1,9 @@
 /*
- * CutPilot — One-Click Organizer (ExtendScript host, ES3 / CEP).
- * Self-contained: defines CPO_* functions and never touches CutPilot's host.jsx.
+ * Pulse — One-Click Organizer (ExtendScript host, ES3 / CEP).
+ * Self-contained: defines CPO_* functions and never touches Pulse's host.jsx.
  * Loaded by js/organize.js via $.evalFile at panel start.
  * Returns JSON strings shaped {ok:true,...} / {ok:false,error:"..."} to match
- * CutPilot's bridge convention (CPBridge.callHost).
+ * Pulse's bridge convention (CPBridge.callHost).
  */
 
 function CPO_ok(o) { o.ok = true; return JSON.stringify(o); }

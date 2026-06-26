@@ -1,5 +1,5 @@
 /*
- * CutPilot — audio analysis engines (CEP panel side).
+ * Pulse — audio analysis engines (CEP panel side).
  * Two interchangeable detectors:
  *   1. webAudioDetect — decodes the media file with Chromium's Web Audio
  *      decoder (no external dependencies; fine for clips up to ~20 min).

@@ -1,5 +1,5 @@
 /*
- * CutPilot — built-in caption rendering engine.
+ * Pulse — built-in caption rendering engine.
  * Renders every caption frame to a transparent PNG via <canvas> (any font,
  * fill, stroke, glow, highlight box — full pixel control), saves them with
  * Node, and hands the list to the ExtendScript host which places them on

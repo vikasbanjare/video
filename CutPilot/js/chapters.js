@@ -1,5 +1,5 @@
 /*
- * CutPilot — chapter generator.
+ * Pulse — chapter generator.
  * Turns transcript cues into timestamped chapters (YouTube/podcast style):
  * segment by a minimum length, then label each chapter with its most frequent
  * content word. Pure + unit-testable; no DOM/CEP dependencies.

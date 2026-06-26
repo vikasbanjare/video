@@ -1,5 +1,5 @@
 /*
- * CutPilot — minimal CEP bridge.
+ * Pulse — minimal CEP bridge.
  * A small functional subset of Adobe's CSInterface.js: evalScript with
  * Promise + JSON handling, and extension path lookup. If you prefer the
  * full official library, drop Adobe's CSInterface.js in this folder and
@@ -48,8 +48,8 @@
   function getExtensionPath() {
     if (root.__adobe_cep__ && root.__adobe_cep__.getSystemPath) {
       var p = root.__adobe_cep__.getSystemPath('extension');
-      // getSystemPath returns a FILE URL (e.g. file:///Users/.../CutPilot on Mac,
-      // file:///C:/Users/.../CutPilot on Windows). Node's fs can't use that — it
+      // getSystemPath returns a FILE URL (e.g. file:///Users/.../Pulse on Mac,
+      // file:///C:/Users/.../Pulse on Windows). Node's fs can't use that — it
       // needs a plain path. Strip the scheme (and the spurious leading slash before
       // a Windows drive letter), and URL-decode (spaces arrive as %20). Without this
       // every fs lookup under the extension fails, so no bundled .mogrt ever loads.
