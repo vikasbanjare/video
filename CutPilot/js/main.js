@@ -5068,12 +5068,17 @@
     var caseMode = caps ? 'upper' : (state.mogrtCase || 'as-spoken');
     var tcues = textCues(cues, words, caseMode);
     if (!tcues.length) return toast('No caption lines to add.', true);
-    // Carry the style's FONT + colours + caps onto the editable template, but NOT
-    // an absolute size: preset.fontSize is render-engine scale (~230 for a 1080
-    // frame) and would blow up the MOGRT's text. Keep the template's designed size
-    // — the user resizes each caption on the timeline (Essential Graphics) anyway.
+    // AUTO-FIT to the sequence format: the subtitle template is sized for a ~1920-
+    // wide frame, so in a vertical (1080-wide) sequence its text is too wide and
+    // spills outside. Scale every text layer by frameWidth/1920 (the same width-
+    // based rule the burned-in path uses) so vertical/square auto-shrink to fit and
+    // horizontal is unchanged. The user never has to shrink captions by hand.
+    var seqW = (state.env && state.env.width) || 1920;
+    var fitScale = Math.max(0.4, Math.min(1, seqW / 1920));
+    // Carry the style's FONT + colours + caps onto the editable template (NOT an
+    // absolute size — preset.fontSize is render scale and would blow up the MOGRT).
     var textStyle = { font: preset.font, caps: caps,
-                      bold: (preset.weight || 800) >= 600, fill: preset.fill };
+                      bold: (preset.weight || 800) >= 600, fill: preset.fill, sizeScale: fitScale };
     if (tcues.length > 120 &&
         !confirm(tcues.length + ' editable caption clips will be inserted — one per line. ' +
                  'MOGRTs insert slowly, so this can take a while. Tip: raise "Words per caption" for fewer, longer lines.\n\nContinue?')) return;
