@@ -3462,7 +3462,10 @@
       highlight: $('c-hl').value,
       stroke: $('c-stroke').value,
       strokeWidth: parseInt($('c-strokew').value, 10),
-      boxColor: $('c-box-on').checked ? $('c-box').value : null,
+      // a gradient box implies a box, so turn the base box on when either the box
+      // toggle OR "Gradient background box" is checked (else the gradient had no
+      // base colour and drew nothing — the "gradient box not working" bug).
+      boxColor: ($('c-box-on').checked || cchk('c-boxgrad')) ? $('c-box').value : null,
       highlightScale: pop / 100,
       highlightStyle: readHlStyle(),
       highlight2: cchk('c-hlgrad') ? $('c-hl2g').value : null,   // gradient 2nd colour for the highlighted word
@@ -3852,7 +3855,9 @@
       wrap.classList.toggle('collapsed', collapsed);
       btn.textContent = collapsed ? '▸ Show preview' : '▾ Preview';
     }
-    var saved = false; try { saved = localStorage.getItem('cutpilot.previewCollapsed') === '1'; } catch (e) {}
+    // Default COLLAPSED so the customization controls are front-and-centre (the
+    // preview kept burying them). The user's explicit choice is remembered.
+    var saved = true; try { var v = localStorage.getItem('cutpilot.previewCollapsed'); if (v === '0') saved = false; } catch (e) {}
     apply(saved);
     btn.addEventListener('click', function () {
       var now = !wrap.classList.contains('collapsed');
@@ -5068,17 +5073,12 @@
     var caseMode = caps ? 'upper' : (state.mogrtCase || 'as-spoken');
     var tcues = textCues(cues, words, caseMode);
     if (!tcues.length) return toast('No caption lines to add.', true);
-    // AUTO-FIT to the sequence format: the subtitle template is sized for a ~1920-
-    // wide frame, so in a vertical (1080-wide) sequence its text is too wide and
-    // spills outside. Scale every text layer by frameWidth/1920 (the same width-
-    // based rule the burned-in path uses) so vertical/square auto-shrink to fit and
-    // horizontal is unchanged. The user never has to shrink captions by hand.
-    var seqW = (state.env && state.env.width) || 1920;
-    var fitScale = Math.max(0.4, Math.min(1, seqW / 1920));
-    // Carry the style's FONT + colours + caps onto the editable template (NOT an
-    // absolute size — preset.fontSize is render scale and would blow up the MOGRT).
+    // Place the subtitle template at its OWN designed size (it's built to fit the
+    // frame). Carry the style's colours so the caption picks up your palette, but
+    // do NOT override size — a guessed scale made captions tiny. Adjust per-clip on
+    // the timeline if needed.
     var textStyle = { font: preset.font, caps: caps,
-                      bold: (preset.weight || 800) >= 600, fill: preset.fill, sizeScale: fitScale };
+                      bold: (preset.weight || 800) >= 600, fill: preset.fill };
     if (tcues.length > 120 &&
         !confirm(tcues.length + ' editable caption clips will be inserted — one per line. ' +
                  'MOGRTs insert slowly, so this can take a while. Tip: raise "Words per caption" for fewer, longer lines.\n\nContinue?')) return;

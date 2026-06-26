@@ -270,7 +270,9 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
 }
 #cap-preview.collapsed .preview-frame,
 #cap-preview.collapsed .replay-btn { display: none; }
-#cap-preview.collapsed { margin-bottom: 4px; padding-bottom: 2px; }
+/* collapsed: the toggle flows inline (no overlap with the next section) */
+#cap-preview.collapsed { position: static; margin: 0 0 8px; padding: 0; background: transparent; box-shadow: none; }
+#cap-preview.collapsed .preview-collapse { position: static; display: inline-block; margin: 0; }
 .preview-frame {
   position: relative; width: 100%; height: 118px; border-radius: var(--r);
   background:
