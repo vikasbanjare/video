@@ -2538,10 +2538,13 @@
         mcap.textContent = '🎬';
         mthumb.appendChild(mcap);
       }
+      // These are ANIMATED motion templates — that's what sets them apart from the
+      // static style presets. (Every template is editable either way, so an
+      // "editable" tag on only some was misleading.)
       var badge = document.createElement('span');
       badge.className = 'tpl-pop is-editable';
-      badge.textContent = '✏️ EDITABLE';
-      badge.title = 'Editable in Premiere’s Essential Graphics after you add it';
+      badge.textContent = '🎬 ANIMATED';
+      badge.title = 'Animated Motion Graphics template — stays editable in Premiere’s Essential Graphics';
       mthumb.appendChild(badge);
       if (t.premium) {
         var prem = document.createElement('span');
@@ -2679,19 +2682,13 @@
       var w = parseInt($('c-words').value, 10) || 0; setWordCount(w === 0 ? 1 : 0);
     });
     if ($('ms-transcribe')) $('ms-transcribe').addEventListener('click', autoTranscribe);
-    // Animation-speed presets — how a long template fits a shorter caption:
-    // Natural (100% = real pace, trim), Balanced (≤200%), Fit all (squeeze in).
-    if ($('ms-speed')) {
-      var spdBtns = $('ms-speed').querySelectorAll('button');
-      for (var si = 0; si < spdBtns.length; si++) {
-        spdBtns[si].addEventListener('click', function () {
-          state.mogrtMaxSpeed = parseInt(this.dataset.spd, 10) || 200;
-          var on = $('ms-speed').querySelector('button.on'); if (on) on.classList.remove('on');
-          this.classList.add('on');
-        });
-      }
+    // (Animation speed is no longer a manual control — the word-by-word reveal
+    //  follows the transcript's word timing, i.e. your actual speaking pace.)
+    function closeMogrtSheet() {
+      $('mogrt-sheet').classList.add('hidden');
+      var lp = $('ms-live-preview'); if (lp) lp.classList.add('hidden');   // free the sticky preview
+      _mogrtPrevCanvas = null;
     }
-    function closeMogrtSheet() { $('mogrt-sheet').classList.add('hidden'); }
     $('ms-close').addEventListener('click', closeMogrtSheet);
     // back / ✕ at the top → return to the template gallery (which sits behind the
     // sheet) without scrolling all the way down to Close.
@@ -4639,19 +4636,32 @@
     if (/text|word|font|title|caption|subtitle|colou?r/.test(n)) return 'fill';
     return null;
   }
+  function _hexLum(h) {
+    var m = /^#?([0-9a-f]{6})$/i.exec(String(h || '')); if (!m) return 1;
+    var n = parseInt(m[1], 16);
+    return (0.299 * (n >> 16 & 255) + 0.587 * (n >> 8 & 255) + 0.114 * (n & 255)) / 255;
+  }
   function renderMogrtPreview() {
     var cv = _mogrtPrevCanvas;
     if (!cv || !cv.parentNode || typeof CPRender === 'undefined' || !CPRender.drawFrame) return;
     var pv = state.mogrtPrev || {};
-    var W = (cv.parentNode.clientWidth || 280), Hpx = 88;
+    var par = cv.parentNode;
+    var W = par.clientWidth || 280, Hpx = par.clientHeight || 96;
+    if (Hpx < 50) Hpx = 96;
     var dpr = Math.min(2, window.devicePixelRatio || 1);
     cv.width = Math.round(W * dpr); cv.height = Math.round(Hpx * dpr);
     cv.style.width = W + 'px'; cv.style.height = Hpx + 'px';
+    var fill = pv.fill || '#FFFFFF', box = pv.box || null;
+    // Readability safety: if the text colour would be invisible on the box, give
+    // the sample text a thin outline so it's still legible in the preview (the
+    // real template often separates them with position/animation).
+    var stroke = null;
+    if (box && Math.abs(_hexLum(fill) - _hexLum(box)) < 0.28) stroke = (_hexLum(box) > 0.6) ? '#111111' : '#ffffff';
     var preset = {
       id: 'mg', name: 'mg', font: pv.font || 'Arial', fontSize: 150,
-      weight: pv.bold ? 900 : 700, fill: pv.fill || '#FFFFFF',
+      weight: pv.bold ? 900 : 700, fill: fill,
       highlight: pv.highlight || pv.fill || '#FFD400',
-      boxColor: pv.box || null, uppercase: !!pv.caps
+      boxColor: box, uppercase: !!pv.caps, stroke: stroke, strokeWidth: stroke ? 3 : 0
     };
     try {
       var st = CPRender.styleForFrame(preset, cv.height, {}, cv.width);
@@ -4695,14 +4705,23 @@
       sb.addEventListener('click', function () { saveCustomMogrt(path); });
       bar.appendChild(rb); bar.appendChild(sb); box.appendChild(bar);
 
-      // live colour/font preview — repaints as the controls below are edited
+      // live colour/font preview — repaints as the controls below are edited.
       state.mogrtPrev = { fill: '#FFFFFF', highlight: null, box: null, font: 'Arial', caps: false, bold: false };
-      var pvFrame = document.createElement('div'); pvFrame.className = 'mogrt-prev-frame';
-      _mogrtPrevCanvas = document.createElement('canvas');
-      pvFrame.appendChild(_mogrtPrevCanvas); box.appendChild(pvFrame);
-      var pvNote = document.createElement('p'); pvNote.className = 'hint'; pvNote.style.cssText = 'margin:3px 0 9px;text-align:center;opacity:.8';
-      pvNote.textContent = 'Colour & font preview — updates live as you edit. The template’s full animation plays on your timeline.';
-      box.appendChild(pvNote);
+      var sticky = document.getElementById('ms-live-preview');
+      if (sticky && box.id === 'ms-customizer') {
+        // in the action sheet: use the BIG preview that's pinned below the header,
+        // so it stays on screen the whole time you edit (no scrolling away).
+        sticky.classList.remove('hidden');
+        _mogrtPrevCanvas = document.getElementById('ms-live-canvas');
+      } else {
+        // editor tab: an inline preview frame
+        var pvFrame = document.createElement('div'); pvFrame.className = 'mogrt-prev-frame';
+        _mogrtPrevCanvas = document.createElement('canvas');
+        pvFrame.appendChild(_mogrtPrevCanvas); box.appendChild(pvFrame);
+        var pvNote = document.createElement('p'); pvNote.className = 'hint'; pvNote.style.cssText = 'margin:3px 0 9px;text-align:center;opacity:.8';
+        pvNote.textContent = 'Colour & font preview — updates live as you edit. The template’s full animation plays on your timeline.';
+        box.appendChild(pvNote);
+      }
 
       if (defs && defs.length) {
         renderFromDefinition(box, defs, props);   // exact Essential-Graphics layout

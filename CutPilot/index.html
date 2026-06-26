@@ -14,7 +14,7 @@
 <body class="theme-light">
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.201</span>
+    <span class="ver" id="ver">v0.9.202</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -166,6 +166,12 @@
           <button id="ms-x" class="ms-x" type="button" aria-label="Close">✕</button>
         </div>
         <div class="ms-name" id="ms-name">Template</div>
+        <!-- big, ALWAYS-VISIBLE live preview: pins below the header so you see
+             every colour / font change while you scroll the controls below -->
+        <div id="ms-live-preview" class="ms-live-preview hidden">
+          <canvas id="ms-live-canvas"></canvas>
+          <span class="ms-live-tag">live preview</span>
+        </div>
         <img id="ms-thumb" class="ms-thumb hidden" alt="">
         <p class="hint" id="ms-hint">Premiere Motion Graphics Template. Preview it on your
            timeline, or use it to caption your whole transcript.</p>
@@ -178,13 +184,7 @@
           <button class="wc-btn" id="ms-wc-plus" type="button">+</button>
           <button class="chip-btn" id="ms-wc-full" type="button">Full line</button>
         </div>
-        <label style="font-size:11px;margin-top:8px;display:block">Animation speed</label>
-        <div class="seg-control sub" id="ms-speed">
-          <button data-spd="100" type="button" class="on">🐢 Natural</button>
-          <button data-spd="200" type="button">⚖️ Balanced</button>
-          <button data-spd="400" type="button">⚡ Fast</button>
-        </div>
-        <p class="hint" id="ms-speed-hint" style="font-size:10px;margin:3px 0 0">When a caption is shorter than the template's animation, <b>Natural</b> plays it at its real pace and runs into the gap before the next caption (most visible). <b>Fast</b> speeds it up to ~4× to fit more in.</p>
+        <p class="hint" style="font-size:10px;margin:6px 0 0">⚡ The word-by-word animation follows your voice automatically — each word lights up exactly when it's spoken, at your natural talking pace. Nothing to set.</p>
         <!-- editable text colour / font / size / template colours, built on open -->
         <div id="ms-customizer" class="ms-customizer"></div>
         <button id="ms-preview" class="hero-btn small alt">▶ Preview on timeline</button>
@@ -458,9 +458,7 @@
                 </label>
               </div>
 
-              <label style="margin-top:6px">Animation speed <span class="val" id="c-animspeed-val"></span>
-                <input type="range" id="c-animspeed" min="50" max="200" value="100">
-              </label>
+              <p class="hint" style="margin:6px 0 0">⚡ Animation follows your voice automatically — each word reveals exactly when it's spoken, at your real talking pace. No speed to set.</p>
               <label class="check"><input type="checkbox" id="c-perword"> 🎬 Animate each word in as it's spoken</label>
               <label id="c-perword-style-wrap" style="display:none">Word entrance
                 <select id="c-perword-style">
@@ -981,7 +979,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">CutPilot v0.9.201 · auto-edit · multicam · captions · chapters</p>
+    <p class="hint center" id="ver-foot">CutPilot v0.9.202 · auto-edit · multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>
