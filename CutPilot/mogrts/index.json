@@ -1,5 +1,5 @@
 [
-  { "file": "Subtitle_2.mogrt",               "name": "Clean Subtitle",    "category": "Captions", "kind": "caption", "desc": "Animated subtitle, no word highlight — clean & universal" },
+  { "file": "Subtitle_2.mogrt",               "name": "Plain Subtitle",    "category": "Captions", "kind": "caption", "desc": "Static subtitle — NO word highlight (for word-by-word use the “Clean Subtitle” style)" },
   { "file": "Subtitle_1.mogrt",               "name": "Word Highlight",    "category": "Captions", "kind": "caption", "desc": "Active word changes colour as it's spoken (+ box & shadow)" },
   { "file": "Subtitle_3.mogrt",               "name": "Word Pop",          "category": "Captions", "kind": "caption", "desc": "Active word colours AND scales up — punchy" },
   { "file": "Subtitle_5.mogrt",               "name": "Active-Word Box",   "category": "Captions", "kind": "caption", "desc": "A coloured pill sweeps behind the spoken word" },
