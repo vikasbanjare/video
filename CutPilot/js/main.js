@@ -5079,8 +5079,10 @@
         var multi = (r.textCount > 1) ? ' · ' + r.textCount + ' lines per graphic' : '';
         // rich source-text was filled (and verified) — remind them it's undoable
         var safe = (r.probeKind === 'rich') ? ' · saved first, so ⌘Z undoes it all' : '';
+        // word-by-word: how many graphics got the highlight set to sweep with the voice
+        var sweep = (r.swept > 0) ? ' · ⚡ word-by-word on ' + r.swept : '';
         toast('🎬 Added ' + r.inserted + ' graphics (' + r.textSet + ' with text)' + multi +
-              (r.failed ? ' · ' + r.failed + ' failed' : '') + str + dur + safe + '.');
+              (r.failed ? ' · ' + r.failed + ' failed' : '') + str + dur + safe + sweep + '.');
       }
     }).catch(function (e) { if (btn) btn.disabled = false; capProgress(null); toast(e.message, true); });
   }

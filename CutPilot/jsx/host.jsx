@@ -1598,6 +1598,37 @@ function CP_copyStyleSelectedToTrack() {
   } catch (e) { return CP_fail(e.message); }
 }
 
+/* Make a word-highlight template (Flux / subtitle) SWEEP its highlight across the
+ * words over the caption's visible time, instead of holding on one fixed word.
+ * These templates expose a "Type" dropdown (Index Based | Duration Based) and a
+ * point "Start Time, Duration(Automated)" = [startSec, durationSec]. By default
+ * the template sweeps over a fixed ~6s, so on a short caption the highlight never
+ * reaches the later words. We force Duration Based and set the duration to the
+ * caption's real on-screen length, so the highlight advances word-by-word at the
+ * talking pace. No-op on templates without these controls. Returns a small
+ * diagnostic object (or null) so the panel can report what it set. */
+function CP_setWordSweep(comp, durSec) {
+  if (!comp || !comp.properties || !(durSec > 0)) return null;
+  var props = comp.properties, typeProp = null, durProp = null, i;
+  for (i = 0; i < props.numItems; i++) {
+    var dn = String(props[i].displayName || '');
+    if (!durProp && dn.indexOf('Start Time, Duration(Automated)') === 0) durProp = props[i];
+    else if (!typeProp && dn === 'Type') typeProp = props[i];
+  }
+  if (!durProp) return null;                       // not a word-highlight template
+  var info = { dur: durSec, typeSet: false, durSet: false };
+  // Type → "Duration Based" (2nd menu option; Premiere dropdowns are 1-based).
+  if (typeProp) {
+    try { typeProp.setValue(2, true); info.typeSet = true; }
+    catch (e1) { try { typeProp.setValue(2); info.typeSet = true; } catch (e2) {} }
+  }
+  // Start at 0, sweep across all words over the caption's visible duration.
+  try { durProp.setValue([0, durSec], true); info.durSet = true; }
+  catch (e3) { try { durProp.setValue([0, durSec]); info.durSet = true; }
+    catch (e4) { try { durProp.setValue({ x: 0, y: durSec }, true); info.durSet = true; } catch (e5) {} } }
+  return info;
+}
+
 function CP_insertMogrtCaptions(argsJson) {
   try {
     var args = JSON.parse(argsJson);
@@ -1616,7 +1647,7 @@ function CP_insertMogrtCaptions(argsJson) {
       } catch (eTrack) {}
     }
     var aTrack = args.audioTrack != null ? args.audioTrack : 0;
-    var inserted = 0, textSet = 0, clamped = 0, maxTemplateDur = 0;
+    var inserted = 0, textSet = 0, clamped = 0, maxTemplateDur = 0, swept = 0, sweepSample = null;
     var errors = [];
     var fieldNames = null; // captured once for diagnostics
 
@@ -1684,6 +1715,14 @@ function CP_insertMogrtCaptions(argsJson) {
             for (var fn = 0; fn < props.numItems; fn++) fieldNames.push(String(props[fn].displayName || ('#' + fn)));
           }
           CP_applyMgrtParams(comp, args.params);   // colour/size/font overrides
+
+          // Word-by-word: if this is a word-highlight template, make its highlight
+          // sweep across the words over THIS caption's visible length, so it
+          // follows the talking pace instead of holding on one word.
+          try {
+            var sw = CP_setWordSweep(comp, wantEnd - startSec);
+            if (sw) { swept++; if (!sweepSample) sweepSample = sw; }
+          } catch (eSw) {}
 
           var tprops = CP_textPropsOf(comp);
           if (tprops.length > 1) {
@@ -1777,6 +1816,8 @@ function CP_insertMogrtCaptions(argsJson) {
       clamped: clamped,
       stretched: stretched,
       maxTemplateDur: maxTemplateDur,
+      swept: swept,                       // # graphics switched to word-by-word sweep
+      sweepSample: sweepSample,           // what we set on the first one (diagnostic)
       graphics: groups.length,
       linesPerGraphic: perGraphic,
       textCount: probe.textCount,
