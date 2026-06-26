@@ -3720,7 +3720,7 @@
     // note below the preview).
     var pov = {}; for (var ko in ov) if (ov.hasOwnProperty(ko)) pov[ko] = ov[ko];
     pov.fontSize = (preset.wordsPerLine ? 140 : 230);   // stacked styles need a smaller ref to fit the frame
-    var pStyle = CPRender.styleForFrame(preset, canvas.height, pov);
+    var pStyle = CPRender.styleForFrame(preset, canvas.height, pov, canvas.width);   // width-based → fits vertical/horizontal like the export
     var anim = currentAnim();
     var words = parseInt($('c-words').value, 10) || 0;
     var speakerOn = $('c-speaker').checked;

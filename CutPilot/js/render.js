@@ -37,9 +37,15 @@
    * Resolve a preset + user overrides into concrete pixel values for a
    * given frame height. Override precedence matches CPCaptions.mergeStyle.
    */
-  function styleForFrame(preset, frameH, o) {
+  function styleForFrame(preset, frameH, o, frameW) {
     o = o || {};
-    var scale = frameH / 1080;
+    // Scale by frame WIDTH (relative to a 1920-wide reference), not height, so a
+    // caption is a consistent fraction of the frame's WIDTH and always fits inside
+    // it — vertical (1080×1920), horizontal (1920×1080) and square all auto-adjust.
+    // Height-based scaling made vertical captions 1.78× too big for the narrow
+    // frame, so they spilled outside. Falls back to height-based when no width is
+    // given (e.g. fixed-aspect gallery thumbnails).
+    var scale = (frameW && frameW > 0) ? (frameW / 1920) : (frameH / 1080);
     var strokeW = (o.strokeWidth != null) ? o.strokeWidth : (preset.strokeWidth || 0);
     var box = (o.boxColor !== undefined) ? o.boxColor : (preset.boxColor || null);
     var fill = o.fill || preset.fill;
@@ -622,7 +628,7 @@
     var outDir = opts.outDir;
     if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
-    var style = styleForFrame(opts.preset, opts.height, opts.overrides);
+    var style = styleForFrame(opts.preset, opts.height, opts.overrides, opts.width);
     var canvas = document.createElement('canvas');
     canvas.width = opts.width;
     canvas.height = opts.height;
