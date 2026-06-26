@@ -3822,10 +3822,11 @@
     return false;
   }
 
-  // Caption output mode: ✏️ editable (one editable .mogrt clip per line) vs
-  // 🖼 burned-in (the exact PNG-rendered look). Default = editable, so captions
-  // land on the timeline fully re-editable (text / size / colour / position).
-  var _capOut = 'editable';
+  // Caption output mode: 🖼 burned-in (the exact PNG-rendered look + per-word
+  // karaoke tracking — the proven path) vs ✏️ editable (one .mogrt clip per line,
+  // re-editable but no per-word highlight and an approximate look). Default =
+  // burned-in so the styles look exactly like the preview and track the words.
+  var _capOut = 'png';
   function updateMagicLabel() {
     var b = $('btn-magic'); if (!b) return;
     b.innerHTML = (_capOut === 'editable')

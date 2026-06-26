@@ -263,7 +263,7 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
   box-shadow: 0 8px 10px -8px rgba(0,0,0,.65);
 }
 .preview-frame {
-  position: relative; width: 100%; height: 188px; border-radius: var(--r);
+  position: relative; width: 100%; height: 150px; border-radius: var(--r);
   background:
     radial-gradient(80% 120% at 50% 0%, var(--accent-soft), transparent 70%),
     linear-gradient(150deg, #171b26, #20283a 55%, #1a2030);
@@ -548,10 +548,11 @@ input[type="range"]::-webkit-slider-thumb {
 /* real .mogrt preview (baked-in thumb.png) fills the whole card thumb */
 .tpl-card.is-mogrt.has-thumb .tpl-thumb { background: #0b0e16; padding: 0; }
 .tpl-thumb-img { display: block; width: 100%; height: 100%; object-fit: cover; }
-/* large preview at the top of the .mogrt action sheet */
+/* compact preview at the top of the .mogrt action sheet — small so the
+   customization controls below stay visible without scrolling */
 .ms-thumb {
-  display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover;
-  border-radius: 10px; margin: 0 0 10px; background: #0b0e16;
+  display: block; width: 100%; height: 104px; object-fit: contain;
+  border-radius: 10px; margin: 0 0 8px; background: #0b0e16;
   border: 1px solid rgba(255,255,255,.08);
 }
 .ms-thumb.hidden { display: none; }

@@ -14,7 +14,7 @@
 <body class="theme-light">
   <header>
     <div class="brand"><span class="logo">✦</span> CutPilot</div>
-    <span class="ver" id="ver">v0.9.193</span>
+    <span class="ver" id="ver">v0.9.194</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -538,10 +538,10 @@
         <div id="legibility-note" class="legibility-note hidden"></div>
         <label style="font-size:11px;display:block;margin:2px 0 4px">Caption type</label>
         <div class="seg-control" id="cap-output" style="margin-bottom:8px">
-          <button data-out="editable" class="on" type="button">✏️ Editable on timeline</button>
-          <button data-out="png" type="button">🖼 Exact look (burned-in)</button>
+          <button data-out="png" class="on" type="button">🖼 Exact look (recommended)</button>
+          <button data-out="editable" type="button">✏️ Editable on timeline</button>
         </div>
-        <p class="hint" id="cap-output-hint" style="margin:0 0 8px">✏️ <b>Editable</b>: each caption is its own clip you can resize and re-edit (text, size, colour, position) in Premiere's Essential Graphics. 🖼 <b>Burned-in</b>: pixel-perfect to the preview, but flattened (not editable).</p>
+        <p class="hint" id="cap-output-hint" style="margin:0 0 8px">🖼 <b>Exact look</b>: pixel-perfect to the preview, with per-word tracking — the polished result. ✏️ <b>Editable</b>: each caption is a clip you can re-edit (text, size, colour) in Essential Graphics, but the look is approximate and there's no per-word highlight.</p>
         <button id="btn-magic" class="hero-btn">✨ Add captions <span class="dim">(the style you picked — added to your timeline)</span></button>
         <button id="btn-viral-edit" class="hero-btn alt">⚡ One-click Viral Edit <span class="dim">(same style + auto zoom punches — beta)</span></button>
         <p class="hint" style="margin:2px 0 0">Both add the exact style you picked above. <b>Viral Edit</b> also adds subtle zoom punch-ins to your top clip (Ctrl/Cmd+Z to undo them).</p>
@@ -984,7 +984,7 @@
       <button id="btn-diag-copy" class="chip-btn">Copy results</button>
     </div>
 
-    <p class="hint center" id="ver-foot">CutPilot v0.9.193 · auto-edit · multicam · captions · chapters</p>
+    <p class="hint center" id="ver-foot">CutPilot v0.9.194 · auto-edit · multicam · captions · chapters</p>
   </section>
 
   <footer><div id="log" class="log"></div></footer>
