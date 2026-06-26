@@ -33,6 +33,23 @@ function copyDir(s, d) {
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'cpinst-'));
 const stage = path.join(work, 'Pulse');
 copyDir(EXT, stage);
+// The obfuscator injects a few white-label strings still branded "CutPilot"
+// (e.g. the "CutPilot Cloud" engine hint) and writes legacy per-OS install
+// scripts. Scrub the shipped payload so the panel is 100% Pulse: drop the legacy
+// installers (the .app/.hta replace them) and rewrite the remaining branded text
+// files. (js/jsx are already clean at source + string-encoded, so skip them.)
+['install-mac.command', 'install-windows.bat'].forEach(function (f) {
+  try { fs.unlinkSync(path.join(stage, f)); } catch (e) {}
+});
+(function scrub(dir) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) { scrub(p); continue; }
+    if (!/\.(html|txt)$/i.test(e.name)) continue;          // only branded text; never the obfuscated js
+    const t = fs.readFileSync(p, 'utf8');
+    if (t.indexOf('CutPilot') >= 0) fs.writeFileSync(p, t.replace(/CutPilot/g, 'Pulse'));
+  }
+})(stage);
 const payloadZip = path.join(work, 'Pulse.zip');
 sh('cd "' + work + '" && zip -qry "' + payloadZip + '" Pulse');
 const payloadBytes = fs.statSync(payloadZip).size;
