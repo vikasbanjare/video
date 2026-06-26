@@ -72,7 +72,9 @@ header::after { content: ''; position: absolute; left: 14px; right: 14px; bottom
   border-radius: 12px; color: var(--dim); cursor: pointer; font-size: 10.5px; font-weight: 700;
   transition: all .15s ease;
 }
-.tab span { font-size: 15px; opacity: .55; transition: opacity .15s; }
+.tab span { font-size: 15px; opacity: .55; transition: opacity .15s; display: inline-flex; }
+/* custom tab icons: inherit the tab's colour (dim → accent) + dim state */
+.tab .tab-ic { width: 19px; height: 19px; display: block; }
 .tab:hover { color: var(--fg); border-color: var(--line2); }
 .tab.active { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-text);
   box-shadow: 0 4px 14px -8px var(--accent-glow); }
