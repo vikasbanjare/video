@@ -3129,7 +3129,14 @@
     }
     if ($('c-off-minus')) $('c-off-minus').addEventListener('click', function () { bumpOffset(-50); });
     if ($('c-off-plus')) $('c-off-plus').addEventListener('click', function () { bumpOffset(50); });
-    if ($('c-off-reset')) $('c-off-reset').addEventListener('click', function () { $('c-sync-offset').value = 0; bumpOffset(0); });
+    // Reset → the default slight lead (−60ms), since whisper marks word starts a
+    // touch late; a small lead makes each word light up AS it's spoken.
+    if ($('c-off-reset')) $('c-off-reset').addEventListener('click', function () { $('c-sync-offset').value = -60; bumpOffset(0); });
+    // reflect the saved / default offset in the label on load
+    if ($('c-off-num') && $('c-sync-offset')) {
+      var ims = parseInt($('c-sync-offset').value, 10) || 0;
+      $('c-off-num').textContent = (ims > 0 ? '+' : '') + (ims / 1000).toFixed(2) + 's';
+    }
     $('btn-replay').addEventListener('click', renderPreview);
   }
 
