@@ -3822,11 +3822,10 @@
     return false;
   }
 
-  // Caption output mode: 🖼 burned-in (the exact PNG-rendered look + per-word
-  // karaoke tracking — the proven path) vs ✏️ editable (one .mogrt clip per line,
-  // re-editable but no per-word highlight and an approximate look). Default =
-  // burned-in so the styles look exactly like the preview and track the words.
-  var _capOut = 'png';
+  // Caption output mode: ✏️ editable (one editable .mogrt clip per line — the
+  // word-highlight subtitle template, so it tracks AND stays editable in Premiere)
+  // vs 🖼 burned-in (pixel-perfect PNG of the exact style). Default = editable.
+  var _capOut = 'editable';
   function updateMagicLabel() {
     var b = $('btn-magic'); if (!b) return;
     b.innerHTML = (_capOut === 'editable')
@@ -3843,6 +3842,24 @@
       updateMagicLabel();
     });
     updateMagicLabel();
+  })();
+  // Collapsible preview — the preview used to dominate the panel and bury the
+  // customization controls. It's compact now and can be hidden entirely; the
+  // choice is remembered.
+  (function wirePreviewCollapse() {
+    var wrap = $('cap-preview'), btn = $('btn-preview-collapse'); if (!wrap || !btn) return;
+    function apply(collapsed) {
+      wrap.classList.toggle('collapsed', collapsed);
+      btn.textContent = collapsed ? '▸ Show preview' : '▾ Preview';
+    }
+    var saved = false; try { saved = localStorage.getItem('cutpilot.previewCollapsed') === '1'; } catch (e) {}
+    apply(saved);
+    btn.addEventListener('click', function () {
+      var now = !wrap.classList.contains('collapsed');
+      apply(now);
+      try { localStorage.setItem('cutpilot.previewCollapsed', now ? '1' : '0'); } catch (e) {}
+      if (!now && typeof renderPreview === 'function') { try { renderPreview(); } catch (e2) {} }   // repaint when re-shown
+    });
   })();
   $('btn-magic').addEventListener('click', function () {
     if (_capOut === 'editable') return applyEditableStyle();   // editable .mogrt clips
@@ -4989,21 +5006,15 @@
       }
       return null;
     }
-    // Pick the bundled subtitle MOGRT whose STRUCTURE best matches the chosen
-    // style, so the editable version resembles it: a pill/box style → the box
-    // template; a 2-colour highlight → the gradient one; a word-highlight →
-    // the word-highlight one; a clean style → the plain one.
+    // ALWAYS prefer Subtitle 1 — it has a per-word HIGHLIGHT that tracks the
+    // spoken word (the thing users miss in editable mode), plus text + box +
+    // shadow, so every style's colours map onto it. Box-style presets can use
+    // the dedicated box template, which also tracks. Never fall back to the
+    // plain (no-highlight) template, or editable captions wouldn't track.
     preset = preset || {};
     var hasBox = !!(preset.boxColor || preset.boxColor2);
-    var hasHL = !!(preset.keyword || preset.highlight);
-    var pick =
-      hasBox ? (find('subtitle_5') || find('subtitle_1')) :
-      (preset.boxGradient || preset.highlight2) ? (find('subtitle_4') || find('subtitle_1')) :
-      (preset.highlightScale && preset.highlightScale > 1) ? (find('subtitle_3') || find('subtitle_1')) :
-      hasHL ? (find('subtitle_1') || find('subtitle_3')) :
-      (find('subtitle_2') || find('subtitle_1'));
-    // Subtitle 1 = word highlight + text + background + shadow → the most general
-    // backbone (every part is a named param we can drive from the style).
+    var pick = hasBox ? (find('subtitle_1') || find('subtitle_5'))
+                      : (find('subtitle_1') || find('subtitle_5') || find('subtitle_3'));
     return pick || find('subtitle') || list[0] || null;
   }
 
