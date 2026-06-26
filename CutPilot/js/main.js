@@ -2641,12 +2641,11 @@
   function openMogrtSheet(t) {
     state.selectedMogrt = { path: t.path, name: t.name };
     $('ms-name').textContent = t.name;
-    // large preview (the .mogrt's own baked-in thumbnail) at the top of the sheet
+    // The single preview shown is the live, editable one (#ms-live-preview), built
+    // by buildMogrtCustomizer below. The old static baked-in thumbnail is kept
+    // hidden so there's never TWO previews stacked on top of each other.
     var msThumb = $('ms-thumb');
-    if (msThumb) {
-      if (t.thumb) { msThumb.src = t.thumb; msThumb.alt = t.name; msThumb.classList.remove('hidden'); }
-      else { msThumb.classList.add('hidden'); msThumb.removeAttribute('src'); }
-    }
+    if (msThumb) { msThumb.classList.add('hidden'); msThumb.removeAttribute('src'); }
     // show THIS template's real capabilities (read from its definition.json)
     if ($('ms-hint')) {
       var caps = mogrtCapsSummary(t.path);
@@ -4632,9 +4631,9 @@
   function mogrtColorRole(name) {
     var n = String(name || '').toLowerCase();
     if (/highlight|active|spoken|current|emphasi/.test(n)) return 'highlight';
-    if (/background|\bbg\b|box|pill|behind|panel|stroke|border|shadow|outline/.test(n)) return 'box';
-    if (/text|word|font|title|caption|subtitle|colou?r/.test(n)) return 'fill';
-    return null;
+    if (/background|\bbg\b|\bbox\b|pill|panel|behind/.test(n)) return 'box';
+    if (/\btext\b|\bword\b|\bfont\b|title|caption|subtitle|\bfill\b/.test(n)) return 'fill';
+    return null;   // shadow / stroke / border / outline don't map to the simple preview
   }
   function _hexLum(h) {
     var m = /^#?([0-9a-f]{6})$/i.exec(String(h || '')); if (!m) return 1;
@@ -4651,7 +4650,10 @@
     var dpr = Math.min(2, window.devicePixelRatio || 1);
     cv.width = Math.round(W * dpr); cv.height = Math.round(Hpx * dpr);
     cv.style.width = W + 'px'; cv.style.height = Hpx + 'px';
-    var fill = pv.fill || '#FFFFFF', box = pv.box || null;
+    // text colour priority: a dedicated "Text Color" control → the source-text
+    // default → the first colour control (subtitle templates list text first) →
+    // white. This stops the preview defaulting to white-on-white.
+    var fill = pv.fill || pv.blobFill || pv.firstColor || '#FFFFFF', box = pv.box || null;
     // Readability safety: if the text colour would be invisible on the box, give
     // the sample text a thin outline so it's still legible in the preview (the
     // real template often separates them with position/animation).
@@ -4706,7 +4708,9 @@
       bar.appendChild(rb); bar.appendChild(sb); box.appendChild(bar);
 
       // live colour/font preview — repaints as the controls below are edited.
-      state.mogrtPrev = { fill: '#FFFFFF', highlight: null, box: null, font: 'Arial', caps: false, bold: false };
+      // fill/box/highlight start as null so the template's OWN colours seed them
+      // (a non-null default would block the seeding and force white-on-white).
+      state.mogrtPrev = { fill: null, highlight: null, box: null, firstColor: null, blobFill: null, font: 'Arial', caps: false, bold: false };
       var sticky = document.getElementById('ms-live-preview');
       if (sticky && box.id === 'ms-customizer') {
         // in the action sheet: use the BIG preview that's pinned below the header,
@@ -4805,7 +4809,10 @@
                 : (c.value && c.value.length >= 3) ? rgbaArrayToHex(c.value)
                 : (chosenC && typeof chosenC.value === 'string' && /^#[0-9a-f]{6}$/i.test(chosenC.value) ? chosenC.value : '#ffffff');
         var roleC = mogrtColorRole(name);
-        if (roleC && /^#[0-9a-f]{6}$/i.test(hex) && state.mogrtPrev && state.mogrtPrev[roleC] == null) state.mogrtPrev[roleC] = hex;
+        if (state.mogrtPrev && /^#[0-9a-f]{6}$/i.test(hex)) {
+          if (roleC && state.mogrtPrev[roleC] == null) state.mogrtPrev[roleC] = hex;   // first per role wins
+          if (state.mogrtPrev.firstColor == null) state.mogrtPrev.firstColor = hex;    // overall fallback for text
+        }
         (function (idx, rl) {
           mpAddColor(box, name, hex, function (v) {
             applyColor(idx, v);
@@ -4870,7 +4877,9 @@
           // dedicated "Text Color" param instead (shown below), so a blob colour
           // row here would do nothing and confuse.
           if (blob && (blob.fillColorEditValue || blob.fontFillColorEditValue || blob.FillColorEditValue)) {
-            if (state.mogrtPrev) state.mogrtPrev.fill = readBlobFill(blob);
+            // seed as a LOW-priority fallback (a dedicated "Text Color" colour
+            // control, when present, is the real editable text colour and wins).
+            if (state.mogrtPrev && state.mogrtPrev.blobFill == null) state.mogrtPrev.blobFill = readBlobFill(blob);
             mpAddColor(box, 'Text colour', readBlobFill(blob), function (v) { richStyle().fill = v; if (state.mogrtPrev) { state.mogrtPrev.fill = v; renderMogrtPreview(); } });
           }
           mpAddSlider(box, 'Overall size %', Math.round((richStyle().sizeScale || 1) * 100), 50, 300, function (v) { richStyle().sizeScale = (parseFloat(v) || 100) / 100; });
