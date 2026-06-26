@@ -202,6 +202,10 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
 .tpl-thumb-canvas { display: block; width: 100%; height: 100%; }
 .tpl-meta { display: flex; align-items: center; gap: 6px; padding: 8px 10px; }
 .tpl-name { font-size: 12px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* stacked meta (animated cards): full name on its own line, description below */
+.tpl-meta.tpl-meta-stack { flex-direction: column; align-items: flex-start; gap: 2px; }
+.tpl-meta-stack .tpl-name { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.2; }
+.tpl-meta-stack .tpl-cat { font-size: 10.5px; line-height: 1.25; max-height: 2.5em; overflow: hidden; }
 .tpl-cat { font-size: 8.5px; color: var(--dim); margin-left: auto; white-space: nowrap; font-weight: 600; }
 .tpl-fav {
   position: absolute; top: 7px; right: 7px; width: 23px; height: 23px; border-radius: 50%;

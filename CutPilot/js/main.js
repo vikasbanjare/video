@@ -2437,6 +2437,37 @@
      built while the Captions tab is hidden (0 width); a ResizeObserver + the
      fonts-ready hook repaint them at the right size once they're visible. */
   var _thumbFontsHooked = false, _thumbRO = null, _thumbT = null;
+  /* A CPRender-compatible style for an animated .mogrt card, built from the
+     template's OWN colours (read offline from its definition.json). Lets the
+     animated cards render the SAME clear preview as the style cards instead of a
+     tiny baked thumbnail. Cached per template; read lazily at paint time. */
+  function mogrtCardStyle(t) {
+    if (t._cardStyle) return t._cardStyle;
+    var fill = null, box = null, hl = null, first = null;
+    var defs = null; try { defs = readMogrtDefinition(t.path); } catch (e) {}
+    if (defs && defs.length) {
+      for (var i = 0; i < defs.length; i++) {
+        var c = defs[i];
+        if (c.type !== MT.COLOR || !c.value || c.value.length < 3) continue;
+        var hex = rgbaArrayToHex(c.value);
+        if (!/^#[0-9a-f]{6}$/i.test(hex)) continue;
+        var role = mogrtColorRole(ctrlName(c));
+        if (role === 'fill' && !fill) fill = hex;
+        else if (role === 'box' && !box) box = hex;
+        else if (role === 'highlight' && !hl) hl = hex;
+        if (!first) first = hex;
+      }
+    }
+    var style = {
+      id: t.id || 'mg', name: t.name, font: 'Inter', fontSize: 150, weight: 800,
+      uppercase: false, fill: fill || first || '#FFFFFF',
+      highlight: hl || '#FFD400', boxColor: box,
+      keyword: !!hl, wordsPerCue: 4, vCenter: true
+    };
+    t._cardStyle = style;
+    return style;
+  }
+
   function schedulePaintThumbs() { if (_thumbT) clearTimeout(_thumbT); _thumbT = setTimeout(paintThumbs, 50); }
   function paintThumbs() {
     if (!window.CPRender || !CPRender.drawFrame) return;
@@ -2444,6 +2475,7 @@
     var dpr = Math.min(2, window.devicePixelRatio || 1);
     for (var i = 0; i < canvases.length; i++) {
       var cvs = canvases[i], t = cvs._tpl;
+      if (!t && cvs._mogrtTpl) t = cvs._tpl = mogrtCardStyle(cvs._mogrtTpl);   // animated card → style from its colours
       if (!t) continue;
       var box = cvs.parentNode;
       var w = cvs.clientWidth || (box && box.clientWidth) || 0;
@@ -2518,26 +2550,15 @@
     // MOGRT cards: distinct look + open the action sheet (preview / use)
     if (t.mogrt) {
       var mc = document.createElement('div');
-      mc.className = 'tpl-card is-mogrt' + (t.thumb ? ' has-thumb' : '');
+      mc.className = 'tpl-card is-mogrt';
       var mthumb = document.createElement('div');
       mthumb.className = 'tpl-thumb';
-      if (t.thumb) {
-        // real preview baked into the .mogrt (mogrts/thumbs/<name>.png)
-        var mimg = document.createElement('img');
-        mimg.className = 'tpl-thumb-img';
-        mimg.alt = t.name; mimg.loading = 'lazy'; mimg.src = t.thumb;
-        mimg.addEventListener('error', function () {           // missing/failed → glyph fallback
-          mc.classList.remove('has-thumb'); this.remove();
-          var c = document.createElement('div'); c.className = 't-cap'; c.textContent = '🎬';
-          mthumb.insertBefore(c, mthumb.firstChild);
-        });
-        mthumb.appendChild(mimg);
-      } else {
-        var mcap = document.createElement('div');
-        mcap.className = 't-cap';
-        mcap.textContent = '🎬';
-        mthumb.appendChild(mcap);
-      }
+      // Render a CLEAR preview with the real engine from the template's own
+      // colours (same as the style cards), instead of a tiny baked thumbnail.
+      var mcvs = document.createElement('canvas');
+      mcvs.className = 'tpl-thumb-canvas';
+      mcvs._mogrtTpl = t;
+      mthumb.appendChild(mcvs);
       // These are ANIMATED motion templates — that's what sets them apart from the
       // static style presets. (Every template is editable either way, so an
       // "editable" tag on only some was misleading.)
@@ -2554,9 +2575,11 @@
         mthumb.appendChild(prem);
       }
       mc.appendChild(mthumb);
+      // name ABOVE the description (stacked) so the full template name always
+      // shows — the side-by-side layout truncated longer names to "Wor…".
       var mmeta = document.createElement('div');
-      mmeta.className = 'tpl-meta';
-      var mnm = document.createElement('span'); mnm.className = 'tpl-name'; mnm.textContent = t.name;
+      mmeta.className = 'tpl-meta tpl-meta-stack';
+      var mnm = document.createElement('span'); mnm.className = 'tpl-name'; mnm.textContent = t.name; mnm.title = t.name;
       var mct = document.createElement('span'); mct.className = 'tpl-cat';
       mct.textContent = t.subcat || 'Editable in Premiere'; mct.title = t.subcat || '';
       mmeta.appendChild(mnm); mmeta.appendChild(mct);
