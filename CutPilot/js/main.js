@@ -4414,7 +4414,15 @@
           setCaptionBusy(false); capProgress(null);
           state.lastLibassJob = { cues: cues, track: r.track };
           toast('🎉 Reliable captions added on V' + r.track + ' — word-by-word, baked in. ⌘Z/Ctrl+Z undoes it.');
-        }).catch(function (e) { setCaptionBusy(false); capProgress(null); toast('Placed render failed: ' + e.message, true); });
+        }).catch(function (e) {
+          // SAFETY NET: if placing the single overlay clip ever fails in this
+          // Premiere, fall back to the burned-in PNG path the user has already used
+          // successfully — so the Reliable button can NEVER leave them with nothing.
+          // Same libass-grouped text/sync; just placed via the proven mechanism.
+          capProgress('Overlay placement unavailable — using the proven burned-in path…');
+          toast('Switched to burned-in placement (overlay step unsupported here).');
+          runCaptionPipeline(cues, opts);
+        });
       });
     }).catch(function (e) { setCaptionBusy(false); capProgress(null); toast('Reliable captions failed: ' + (e && e.message || e), true); });
   }
