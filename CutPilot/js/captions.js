@@ -289,6 +289,53 @@
     return chunks;
   }
 
+  /* Split word cues into sentence-cohesive, balanced CHUNKS of word objects
+     (the shared core behind both the text grouping and the ASS/libass events).
+     Returns an array of word-arrays. */
+  function sentenceChunks(words, per, maxChars, maxGap, opts) {
+    var hardGap = (opts && opts.hardGap != null) ? opts.hardGap : Math.max(maxGap, 1.6);
+    var sentences = [], cur = [];
+    for (var i = 0; i < words.length; i++) {
+      cur.push(words[i]);
+      var gapNext = (i + 1 < words.length) ? (words[i + 1].start - words[i].end) : 0;
+      if (_SENTENCE_END.test(words[i].text) || gapNext > hardGap) { sentences.push(cur); cur = []; }
+    }
+    if (cur.length) sentences.push(cur);
+    var chunks = [];
+    for (var s = 0; s < sentences.length; s++) {
+      var ws = sentences[s];
+      var fitsWords = !per || ws.length <= per;
+      var fitsChars = !maxChars || _joinText(ws).length <= maxChars;
+      if (fitsWords && fitsChars) { chunks.push(ws); continue; }
+      var nW = per ? Math.ceil(ws.length / per) : 1;
+      var nC = maxChars ? Math.ceil(_joinText(ws).length / maxChars) : 1;
+      var parts = splitBalanced(ws, Math.max(2, nW, nC), per, maxChars);
+      for (var c = 0; c < parts.length; c++) chunks.push(parts[c]);
+    }
+    return chunks;
+  }
+
+  /* Group per-word cues into caption EVENTS that keep each word's timing — the
+     input to the ASS/libass generator. Same sentence-cohesive, balanced grouping
+     as the text path (so "What is your name?" stays one event), but the words are
+     preserved so the highlight can ride each spoken word.
+     Returns [{ start, end, words:[{text,start,end}] }]. */
+  function groupWordEvents(wordCues, opts) {
+    opts = opts || {};
+    var per = Math.max(0, opts.perCue || 0) || 999;     // 0/absent → sentence-driven
+    var maxChars = opts.maxChars || 0;
+    var maxGap = opts.maxGap != null ? opts.maxGap : 1.5;
+    var words = sanitizeWordCues(wordCues || [], 0.04);
+    var up = !!opts.uppercase;
+    if (up) words = words.map(function (w) { return { start: w.start, end: w.end, text: String(w.text).toUpperCase() }; });
+    return sentenceChunks(words, per, maxChars, maxGap, opts).map(function (g) {
+      return {
+        start: g[0].start, end: g[g.length - 1].end,
+        words: g.map(function (w) { return { text: w.text, start: w.start, end: w.end }; })
+      };
+    });
+  }
+
   function regroupWords(cues, perCue, opts) {
     opts = opts || {};
     var per = Math.max(1, perCue || 1);
@@ -1633,6 +1680,7 @@
     alignPhrase: alignPhrase,
     alignCuesToAudio: alignCuesToAudio,
     sanitizeWordCues: sanitizeWordCues,
-    buildCaptionFrames: buildCaptionFrames
+    buildCaptionFrames: buildCaptionFrames,
+    groupWordEvents: groupWordEvents
   };
 });

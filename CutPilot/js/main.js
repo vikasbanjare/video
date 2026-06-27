@@ -3940,11 +3940,13 @@
   // vs ✏️ editable (an editable subtitle template per line; Premiere's MOGRT engine
   // can't reproduce every box effect, so it's text-colour/font/box only).
   // Default = burned-in, because it's guaranteed to match the preview 1:1.
-  var _capOut = 'png';
+  var _capOut = 'reliable';
   function updateMagicLabel() {
     var b = $('btn-magic'); if (!b) return;
     b.innerHTML = (_capOut === 'editable')
       ? '✏️ Add editable captions <span class="dim">(your style — each clip stays editable)</span>'
+      : (_capOut === 'reliable')
+      ? '⚡ Add captions <span class="dim">(word-by-word, baked in — exactly what renders)</span>'
       : '🖼 Add captions <span class="dim">(exact look — every colour & effect, just like the preview)</span>';
   }
   (function wireCapOutput() {
@@ -3986,6 +3988,7 @@
     var cues;
     try { cues = readSelectedTranscript(); }
     catch (e) { return toast(e.message, true); }
+    if (_capOut === 'reliable') return runLibassCaptions(cues, null);   // ffmpeg+libass overlay
     runCaptionPipeline(cues, null);                            // burned-in PNG frames
   });
 
@@ -4307,6 +4310,124 @@
           { rise: 6, minSpacing: 0.1, snapWin: 0.18 });
       });
     }).catch(function () { return null; });  // any failure → silent fallback
+  }
+
+  /* ===== "Reliable captions" — ffmpeg + libass burned overlay =====
+     One .ass (per-word highlight + pop, sentence-grouped, portrait-safe margins)
+     → bundled ffmpeg renders ONE transparent overlay → host places ONE clip on ONE
+     track. No per-cue stacking, no clip.end trimming, and the render IS the preview. */
+  function assOptsFromStyle(W, H) {
+    var ov = readOverrides();
+    var preset = currentPreset() || {};
+    var fontSize = Math.round((parseInt(ov.fontSize, 10) || 150) * (H / 1080));
+    fontSize = Math.max(Math.round(H * 0.03), Math.min(fontSize, Math.round(H * 0.13)));
+    var yPct = (ov.yPct != null) ? ov.yPct : 0.85;                  // 0 top … 1 bottom
+    var marginV = Math.max(Math.round(H * 0.04), Math.round((1 - yPct) * H));
+    var align = (yPct < 0.4) ? 8 : (yPct < 0.66 ? 5 : 2);          // top / middle / bottom-centre
+    return {
+      width: W, height: H,
+      font: ov.font || preset.font || 'Arial',
+      fontSize: fontSize,
+      fill: ov.fill || preset.fill || '#FFFFFF',
+      highlight: ov.highlight || preset.highlight || '#FFD400',
+      outlineColor: ov.stroke || '#000000',
+      outline: (ov.strokeWidth != null ? ov.strokeWidth : Math.max(2, Math.round(fontSize * 0.06))),
+      bold: (ov.weight || preset.weight || 800) >= 600,
+      allCaps: !!ov.uppercase,
+      letterSpacing: ov.letterSpacing || 0,
+      align: align, marginV: marginV,
+      marginLR: Math.round(W * 0.06),
+      anim: 'pop'
+    };
+  }
+
+  function runLibassCaptions(cues, opts) {
+    opts = opts || {};
+    // refresh sequence dims first (portrait vs landscape) — mirror runCaptionPipeline
+    if (!opts._envRetried && CPBridge.isCEP()) {
+      CPBridge.callHost('CP_getEnv').then(function (env) {
+        state.env = env;
+        try { $('env-status').textContent = env.sequenceName + ' · ' + env.width + '×' + env.height; $('env-status').className = 'env-status ok'; } catch (eS) {}
+        opts._envRetried = true; runLibassCaptions(cues, opts);
+      }).catch(function () { if (!state.env) { toast('Open a sequence in the timeline, click it once, then tap Add again.', true); return; } opts._envRetried = true; runLibassCaptions(cues, opts); });
+      return;
+    }
+    if (!state.env) { toast('Open a sequence in the timeline, click it once, then tap Add again.', true); return; }
+    if (typeof CPAss === 'undefined') { toast('Caption engine not loaded — reinstall the Pulse folder.', true); return; }
+
+    var fs, pathMod, cpMod, osMod;
+    try { fs = nodeReq('fs'); pathMod = nodeReq('path'); cpMod = nodeReq('child_process'); osMod = nodeReq('os'); }
+    catch (e) { return toast('Reliable captions need Node — use 🖼 Exact look instead. (' + e.message + ')', true); }
+    var ff = resolveFfmpeg();
+    if (!ff) { toast('Set up the audio engine first (Settings → Set up audio engine), then try again.', true); return; }
+
+    var W = state.env.width || 1920, H = state.env.height || 1080;
+    var words = parseInt($('c-words').value, 10) || 0;
+    var ovr = readOverrides();
+    setCaptionBusy(true);
+    capProgress('Listening for word timing…');
+
+    getCaptionWordCues(cues, true).then(function (wordCues) {
+      wordCues = shiftWordCues(wordCues, captionSyncOffset());
+      // Build sentence-grouped caption events that KEEP per-word timing.
+      var portrait = (H > W);
+      var perLine = portrait ? 17 : 24;
+      var maxChars = (words > 0) ? Math.max(perLine, words * 9) : perLine * 2;
+      var events;
+      if (wordCues && wordCues.length) {
+        events = CPCaptions.groupWordEvents(wordCues, { perCue: words || 0, maxChars: maxChars, uppercase: ovr.uppercase });
+      } else {
+        // no per-word timing → spread each sentence-grouped cue's words evenly so
+        // the highlight still advances (graceful fallback).
+        var tc = textCues(cues, words, ovr.uppercase ? 'upper' : 'as-spoken');
+        events = tc.map(function (c) {
+          var toks = String(c.text).replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+          var d = (c.end - c.start) / Math.max(1, toks.length);
+          return { start: c.start, end: c.end, words: toks.map(function (t, i) { return { text: t, start: c.start + i * d, end: c.start + (i + 1) * d }; }) };
+        });
+      }
+      if (!events.length) { setCaptionBusy(false); capProgress(null); return toast('No words to caption.', true); }
+
+      var assStr = CPAss.buildAss(events, assOptsFromStyle(W, H));
+      var lastEnd = events[events.length - 1].end || 0;
+      var dir = pathMod.join(osMod.tmpdir(), 'pulse-libass-' + Date.now());
+      try { fs.mkdirSync(dir, { recursive: true }); } catch (eD) {}
+      var assPath = pathMod.join(dir, 'cap.ass');
+      var outPath = pathMod.join(dir, 'captions.mov');
+      var fontsDir = bundledFontsDir();
+      try { fs.writeFileSync(assPath, assStr, 'utf8'); } catch (eW) { setCaptionBusy(false); capProgress(null); return toast('Could not write caption file: ' + eW.message, true); }
+
+      capProgress('Rendering captions with libass…');
+      var args = CPAss.ffmpegOverlayArgs(assPath, W, H, lastEnd + 0.2, outPath, fontsDir, Math.round(state.env.fps || 30));
+      var proc;
+      try { proc = cpMod.spawn(ff, args); } catch (eS) { setCaptionBusy(false); capProgress(null); return toast('Could not launch ffmpeg: ' + eS.message, true); }
+      var errBuf = '';
+      proc.stderr.on('data', function (d) { errBuf += d.toString(); if (errBuf.length > 8000) errBuf = errBuf.slice(-8000); });
+      proc.on('error', function (e) { setCaptionBusy(false); capProgress(null); toast('ffmpeg failed to start: ' + e.message, true); });
+      proc.on('close', function (code) {
+        var ok = false; try { ok = fs.existsSync(outPath) && fs.statSync(outPath).size > 1000; } catch (eE) {}
+        if (code !== 0 || !ok) { setCaptionBusy(false); capProgress(null); return toast('Caption render failed (ffmpeg ' + code + '). ' + (errBuf.slice(-160)), true); }
+        capProgress('Placing the caption overlay…');
+        var placeArgs = { path: outPath, startSec: 0 };
+        if (opts.replaceTrack) placeArgs.replaceTrack = opts.replaceTrack;
+        CPBridge.callHost('CP_placeOverlay', placeArgs).then(function (r) {
+          setCaptionBusy(false); capProgress(null);
+          state.lastLibassJob = { cues: cues, track: r.track };
+          toast('🎉 Reliable captions added on V' + r.track + ' — word-by-word, baked in. ⌘Z/Ctrl+Z undoes it.');
+        }).catch(function (e) { setCaptionBusy(false); capProgress(null); toast('Placed render failed: ' + e.message, true); });
+      });
+    }).catch(function (e) { setCaptionBusy(false); capProgress(null); toast('Reliable captions failed: ' + (e && e.message || e), true); });
+  }
+
+  /* Locate a bundled fonts dir (so libass resolves the same font in the burn).
+     Optional — libass falls back to system fonts when absent. */
+  function bundledFontsDir() {
+    try {
+      var fs = nodeReq('fs'), pathMod = nodeReq('path');
+      var base = (typeof __dirname !== 'undefined') ? pathMod.join(__dirname, '..', 'fonts') : null;
+      if (base && fs.existsSync(base)) return base;
+    } catch (e) {}
+    return null;
   }
 
   // ---- advanced: Premiere template / plain track ----

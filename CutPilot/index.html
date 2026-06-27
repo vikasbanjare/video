@@ -24,7 +24,7 @@
       </svg>
       <span class="brand-name">Pulse</span><span class="brand-by">by aifloh</span>
     </div>
-    <span class="ver" id="ver">v0.9.217</span>
+    <span class="ver" id="ver">v0.9.218</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -551,10 +551,11 @@
         <div id="legibility-note" class="legibility-note hidden"></div>
         <label style="font-size:11px;display:block;margin:2px 0 4px">Caption type</label>
         <div class="seg-control" id="cap-output" style="margin-bottom:8px">
-          <button data-out="png" class="on" type="button">🖼 Exact look (burned-in)</button>
-          <button data-out="editable" type="button">✏️ Editable on timeline</button>
+          <button data-out="reliable" class="on" type="button">⚡ Reliable (word-by-word)</button>
+          <button data-out="png" type="button">🖼 Exact look</button>
+          <button data-out="editable" type="button">✏️ Editable</button>
         </div>
-        <p class="hint" id="cap-output-hint" style="margin:0 0 8px">🖼 <b>Exact look</b> (recommended): pixel-perfect to the preview — every colour, box, 3D, glow and gradient lands exactly as you see it. ✏️ <b>Editable</b>: each caption is its own clip you can re-edit (text, size, colour, position) in Essential Graphics — best for plain coloured text; heavy box effects (3D / glow / border) only show in 🖼 Exact look.</p>
+        <p class="hint" id="cap-output-hint" style="margin:0 0 8px">⚡ <b>Reliable</b> (recommended): word-by-word highlight baked into ONE overlay clip with ffmpeg — what you see is exactly what renders, the whole sentence stays together, and it never overflows the frame. 🖼 <b>Exact look</b>: pixel-perfect PNG of the preview (every box, 3D, glow, gradient). ✏️ <b>Editable</b>: each caption is its own clip you can re-edit in Essential Graphics — best for plain coloured text.</p>
         <button id="btn-magic" class="hero-btn">✨ Add captions <span class="dim">(the style you picked — added to your timeline)</span></button>
         <button id="btn-viral-edit" class="hero-btn alt">⚡ One-click Viral Edit <span class="dim">(same style + auto zoom punches — beta)</span></button>
         <p class="hint" style="margin:2px 0 0">Both add the exact style you picked above. <b>Viral Edit</b> also adds subtle zoom punch-ins to your top clip (Ctrl/Cmd+Z to undo them).</p>
@@ -993,7 +994,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.9.217 · auto-edit · multicam · captions · chapters · organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.9.218 · auto-edit · multicam · captions · chapters · organize</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->
@@ -1024,6 +1025,7 @@
   <script src="js/silence.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/captions.js"></script>
+  <script src="js/ass.js"></script>
   <script src="js/render.js"></script>
   <script src="js/multicam.js"></script>
   <script src="js/sfx.js"></script>

@@ -139,13 +139,33 @@
     return head.join('\n') + '\n' + lines.join('\n') + '\n';
   }
 
+  /* Escape an .ass path for use inside ffmpeg's subtitles filter (the filter
+     graph treats ':' and '\' specially; Windows backslashes must become '/'). */
+  function escFilterPath(p) {
+    return String(p).replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
+  }
+
   /* Build the ffmpeg burn-in command args (caller supplies in/out paths). The
      subtitles filter path must be escaped for the platform; fontsdir pins the
      bundled font so the burn matches the preview. Returns an argv array. */
   function ffmpegBurnArgs(inPath, assPath, outPath, fontsDir) {
-    var filter = 'subtitles=' + assPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
-    if (fontsDir) filter += ':fontsdir=' + fontsDir.replace(/\\/g, '/').replace(/:/g, '\\:');
+    var filter = 'subtitles=' + escFilterPath(assPath);
+    if (fontsDir) filter += ':fontsdir=' + escFilterPath(fontsDir);
     return ['-y', '-i', inPath, '-vf', filter, '-c:a', 'copy', outPath];
+  }
+
+  /* Build ffmpeg args that render the captions onto a TRANSPARENT background (an
+     alpha overlay), so the result drops onto a video track above the footage
+     without re-encoding the user's source. Output is qtrle .mov (lossless RGBA,
+     plays in every Premiere on Mac+Win). Caller supplies sequence dims + duration. */
+  function ffmpegOverlayArgs(assPath, width, height, durSec, outPath, fontsDir, fps) {
+    var dur = (durSec > 0) ? Math.ceil(durSec * 100) / 100 : 1;
+    var rate = fps || 30;
+    var sub = 'subtitles=' + escFilterPath(assPath) + ':alpha=1';
+    if (fontsDir) sub += ':fontsdir=' + escFilterPath(fontsDir);
+    return ['-y', '-f', 'lavfi',
+      '-i', 'color=c=black@0.0:s=' + width + 'x' + height + ':d=' + dur + ':r=' + rate + ',format=rgba',
+      '-vf', sub, '-c:v', 'qtrle', outPath];
   }
 
   return {
@@ -154,6 +174,8 @@
     assText: assText,
     toEvents: toEvents,
     buildAss: buildAss,
-    ffmpegBurnArgs: ffmpegBurnArgs
+    ffmpegBurnArgs: ffmpegBurnArgs,
+    ffmpegOverlayArgs: ffmpegOverlayArgs,
+    escFilterPath: escFilterPath
   };
 });

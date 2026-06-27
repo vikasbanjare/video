@@ -1036,6 +1036,24 @@ console.log('ass.js (libass karaoke generator)');
   const args = CPAss.ffmpegBurnArgs('in.mp4', '/tmp/c.ass', 'out.mp4', '/tmp/fonts');
   assert(args.indexOf('-vf') >= 0 && args.join(' ').indexOf('subtitles=') >= 0 &&
          args.join(' ').indexOf('fontsdir=') >= 0, 'ffmpegBurnArgs builds the subtitles filter with fontsdir');
+  // overlay (transparent) args
+  const ov = CPAss.ffmpegOverlayArgs('/tmp/c.ass', 1080, 1920, 4.2, '/tmp/o.mov', null, 30);
+  assert(ov.join(' ').indexOf('color=c=black@0.0:s=1080x1920') >= 0 && ov.join(' ').indexOf('alpha=1') >= 0 &&
+         ov.indexOf('qtrle') >= 0, 'ffmpegOverlayArgs renders a transparent qtrle overlay at the sequence size');
+
+  // groupWordEvents: the WIRED grouping keeps a sentence whole across a mid-pause
+  const wc = [
+    { text: 'What', start: 0.0, end: 0.3 }, { text: 'is', start: 0.3, end: 0.55 },
+    { text: 'your', start: 1.7, end: 2.0 }, { text: 'name?', start: 2.0, end: 2.4 },   // 1.15s pause inside
+    { text: 'I', start: 2.7, end: 2.9 }, { text: 'am', start: 2.9, end: 3.1 }, { text: 'Victor.', start: 3.1, end: 3.7 }
+  ];
+  const ev = CPCaptions.groupWordEvents(wc, { perCue: 0, maxChars: 34 });
+  assert(ev.length === 2, 'groupWordEvents splits into 2 sentences');
+  assert(ev[0].words.map(w => w.text).join(' ') === 'What is your name?',
+    'groupWordEvents keeps "What is your name?" whole across the mid-sentence pause');
+  assert(ev[1].words.map(w => w.text).join(' ') === 'I am Victor.', 'groupWordEvents starts a fresh event per sentence');
+  assert(ev[0].words[2].text === 'your' && close(ev[0].words[2].start, 1.7),
+    'groupWordEvents preserves each word\'s real timing for the highlight');
 }
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

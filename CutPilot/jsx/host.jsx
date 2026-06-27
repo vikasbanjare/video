@@ -1028,6 +1028,59 @@ function CP_placeCaptionImages(argsJson) {
 }
 
 /*
+ * Place ONE transparent caption-overlay clip (rendered by ffmpeg+libass) on a
+ * fresh top video track at startSec. This is the "Reliable captions" path: the
+ * whole word-by-word animation is baked into one alpha .mov, so there is NO
+ * per-cue stacking, NO clip.end trimming, and what renders is exactly what plays.
+ * argsJson: { path, startSec, replaceTrack? }
+ */
+function CP_placeOverlay(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+    if (!seq) return CP_fail('Open a sequence first.');
+    if (!args.path) return CP_fail('No overlay file.');
+
+    var bin = app.project.rootItem.createBin('Pulse Captions ' + ((new Date()).getTime() % 100000));
+    app.project.importFiles([args.path], true, bin, false);
+    var item = null;
+    for (var c = bin.children.numItems - 1; c >= 0; c--) {
+      var cand = bin.children[c];
+      if (cand && cand.type !== 2) { item = cand; break; }   // skip nested bins
+    }
+    if (!item) return CP_fail('Overlay import failed.');
+
+    var trackIndex;
+    if (args.replaceTrack != null && args.replaceTrack >= 1 && args.replaceTrack <= seq.videoTracks.numTracks) {
+      // reuse the existing overlay track, clearing Pulse's prior overlay clip off it
+      trackIndex = args.replaceTrack - 1;
+      try {
+        app.enableQE();
+        var qtR = qe.project.getActiveSequence().getVideoTrackAt(trackIndex);
+        for (var cr = qtR.numItems - 1; cr >= 0; cr--) {
+          var itR = qtR.getItemAt(cr);
+          if (!itR || itR.type === 'Empty') continue;
+          var nmR = ''; try { nmR = String(itR.name).toLowerCase(); } catch (eNm) {}
+          if (nmR.indexOf('pulse') >= 0 || nmR.indexOf('caption') >= 0) { try { itR.remove(0, 0); } catch (eRem) {} }
+        }
+      } catch (eClr) {}
+    } else {
+      // fresh top video track so we never stomp existing footage
+      trackIndex = seq.videoTracks.numTracks - 1;
+      try {
+        app.enableQE();
+        qe.project.getActiveSequence().addTracks(1, seq.videoTracks.numTracks, 0);
+        trackIndex = seq.videoTracks.numTracks - 1;
+      } catch (eTrack) {}
+    }
+    var track = seq.videoTracks[trackIndex];
+    var startSec = (args.startSec > 0) ? args.startSec : 0;
+    track.overwriteClip(item, startSec);
+    return CP_ok({ placed: 1, track: trackIndex + 1, bin: bin.name });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/*
  * Place one short SFX clip at each given time on an audio track. Imports the WAV
  * once, then overwrites a copy at every trigger time. Prefers an empty audio
  * track (so the voice is never clobbered); adds one via QE when none is free.
