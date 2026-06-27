@@ -14,6 +14,7 @@ const CPCommand = require(path.join(__dirname, '..', 'js', 'command.js'));
 const CPChapters = require(path.join(__dirname, '..', 'js', 'chapters.js'));
 const CPSfx = require(path.join(__dirname, '..', 'js', 'sfx.js'));
 const CPTakes = require(path.join(__dirname, '..', 'js', 'takes.js'));
+const CPAss = require(path.join(__dirname, '..', 'js', 'ass.js'));
 
 let passed = 0, failed = 0;
 
@@ -992,6 +993,49 @@ console.log('chapters.js (chapter generator)');
   assert(ch[1].start === 24, 'second chapter starts at the hand-off');
   assert(CPChapters.formatChapters(ch) === '0:00 Productivity\n0:24 Captions', 'formats a chapters block');
   assert(CPChapters.buildChapters([], {}).length === 0, 'no cues -> no chapters');
+}
+
+// ------------------------------------------------------------- ass.js ----
+console.log('ass.js (libass karaoke generator)');
+{
+  assert(CPAss.assTime(0) === '0:00:00.00', 'assTime formats zero');
+  assert(CPAss.assTime(3661.5) === '1:01:01.50', 'assTime formats H:MM:SS.cc');
+  assert(CPAss.assTime(1.234) === '0:00:01.23', 'assTime rounds to centiseconds');
+  // '#RRGGBB' -> ASS BGR '&HBBGGRR&'
+  assert(CPAss.assColor('#FFD400') === '&H00D4FF&', 'assColor converts RGB->BGR');
+  assert(CPAss.assColor('#fff') === '&HFFFFFF&', 'assColor expands shorthand hex');
+  assert(CPAss.assText('a {b} c\nd') === 'a (b) c\\Nd', 'assText neutralises braces + newlines');
+
+  const cues = [
+    { words: [
+      { text: 'What', start: 0.0, end: 0.3 },
+      { text: 'is',   start: 0.3, end: 0.6 },
+      { text: 'your', start: 1.8, end: 2.1 },
+      { text: 'name?', start: 2.1, end: 2.4 }
+    ] },
+    { words: [ { text: 'Hello', start: 3.0, end: 3.4 } ] }
+  ];
+  const ass = CPAss.buildAss(cues, { width: 1080, height: 1920, fill: '#FFFFFF', highlight: '#FFD400' });
+  assert(/\[Script Info\]/.test(ass) && /\[V4\+ Styles\]/.test(ass) && /\[Events\]/.test(ass),
+    'buildAss emits the three required ASS sections');
+  assert(/PlayResX: 1080\nPlayResY: 1920/.test(ass), 'buildAss sets PlayRes to the sequence dims');
+  // one Dialogue per spoken word: 4 + 1 = 5
+  assert((ass.match(/^Dialogue:/gm) || []).length === 5, 'buildAss emits one Dialogue per word');
+  // the active word carries the highlight colour
+  assert(ass.indexOf('&H00D4FF&') >= 0, 'buildAss applies the highlight colour to the active word');
+  // every Dialogue shows the FULL phrase (the whole sentence stays on screen)
+  const firstDlg = ass.split('\n').filter(l => l.indexOf('Dialogue:') === 0)[0];
+  assert(/What/.test(firstDlg) && /is/.test(firstDlg) && /your/.test(firstDlg) && /name\?/.test(firstDlg),
+    'each Dialogue shows the whole caption, only the active word highlighted');
+  // timing of the first word
+  assert(/Dialogue: 0,0:00:00.00,0:00:00.30,Pulse/.test(ass), 'first word Dialogue spans its own time');
+  // ALL CAPS option
+  const caps = CPAss.buildAss(cues, { allCaps: true });
+  assert(/WHAT/.test(caps) && !/What/.test(caps), 'allCaps uppercases the caption text');
+  // ffmpeg burn args
+  const args = CPAss.ffmpegBurnArgs('in.mp4', '/tmp/c.ass', 'out.mp4', '/tmp/fonts');
+  assert(args.indexOf('-vf') >= 0 && args.join(' ').indexOf('subtitles=') >= 0 &&
+         args.join(' ').indexOf('fontsdir=') >= 0, 'ffmpegBurnArgs builds the subtitles filter with fontsdir');
 }
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

@@ -13,6 +13,11 @@ const ROOT = path.resolve(__dirname, '..');
 const EXT = path.join(ROOT, 'CutPilot-protected');
 const KIT = path.join(ROOT, 'CutPilot-zxp-kit');
 const P12_PASS = 'cutpilot';
+// Timestamp authority for signing. A ZXP signed WITHOUT a timestamp stops loading
+// when the signing cert expires (the panel silently disappears months later) — the
+// #1 cause of "it worked, then one day it didn't." Signing with -tsa makes the
+// signature valid permanently regardless of cert expiry (Adobe's own guidance).
+const TSA = 'https://timestamp.digicert.com';
 if (!fs.existsSync(EXT)) { console.error('Build first: node tools/build-protected.js'); process.exit(1); }
 
 function copyDir(s, d) {
@@ -74,15 +79,22 @@ const macTries = macBins.map(function (b) {
 }).join('\n');
 fs.writeFileSync(path.join(KIT, 'sign-mac.command'),
   '#!/bin/bash\ncd "$(dirname "$0")"\nrm -f CutPilot.zxp\n' +
-  'try(){ chmod +x "$1" 2>/dev/null; "$1" -sign CutPilot CutPilot.zxp cert.p12 ' + P12_PASS + ' >/dev/null 2>&1; ' +
-  '[ -f CutPilot.zxp ] && return 0; arch -x86_64 "$1" -sign CutPilot CutPilot.zxp cert.p12 ' + P12_PASS + ' >/dev/null 2>&1; [ -f CutPilot.zxp ]; }\n' +
+  // Try WITH a timestamp first (signature never expires); fall back to no-timestamp
+  // only if the TSA is unreachable, so a signed .zxp is still produced offline.
+  'try(){ chmod +x "$1" 2>/dev/null; ' +
+  '"$1" -sign CutPilot CutPilot.zxp cert.p12 ' + P12_PASS + ' -tsa ' + TSA + ' >/dev/null 2>&1; [ -f CutPilot.zxp ] && return 0; ' +
+  'arch -x86_64 "$1" -sign CutPilot CutPilot.zxp cert.p12 ' + P12_PASS + ' -tsa ' + TSA + ' >/dev/null 2>&1; [ -f CutPilot.zxp ] && return 0; ' +
+  '"$1" -sign CutPilot CutPilot.zxp cert.p12 ' + P12_PASS + ' >/dev/null 2>&1; [ -f CutPilot.zxp ] && return 0; ' +
+  'arch -x86_64 "$1" -sign CutPilot CutPilot.zxp cert.p12 ' + P12_PASS + ' >/dev/null 2>&1; [ -f CutPilot.zxp ]; }\n' +
   macTries + '\n' +
-  'if [ -f CutPilot.zxp ]; then echo "Created CutPilot.zxp"; else echo "Signing did not work on this Mac. Use install-mac.command instead (no signing needed)."; fi\n' +
+  'if [ -f CutPilot.zxp ]; then echo "Created CutPilot.zxp (timestamped — signature won\'t expire)"; else echo "Signing did not work on this Mac. Use install-mac.command instead (no signing needed)."; fi\n' +
   'read -p "Press Enter to close…"\n', { mode: 0o755 });
 fs.writeFileSync(path.join(KIT, 'sign-win.bat'),
   '@echo off\r\ncd /d "%~dp0"\r\ndel /q CutPilot.zxp 2>nul\r\n' +
-  'ZXPSignCmd.exe -sign CutPilot CutPilot.zxp cert.p12 ' + P12_PASS + '\r\n' +
-  'if exist CutPilot.zxp (echo Created CutPilot.zxp) else (echo Signing failed - use install-win.bat instead.)\r\npause\r\n');
+  // Timestamped sign first (signature never expires); fall back to no-timestamp offline.
+  'ZXPSignCmd.exe -sign CutPilot CutPilot.zxp cert.p12 ' + P12_PASS + ' -tsa ' + TSA + '\r\n' +
+  'if not exist CutPilot.zxp ZXPSignCmd.exe -sign CutPilot CutPilot.zxp cert.p12 ' + P12_PASS + '\r\n' +
+  'if exist CutPilot.zxp (echo Created CutPilot.zxp ^(timestamped - signature won^'t expire^)) else (echo Signing failed - use install-win.bat instead.)\r\npause\r\n');
 
 fs.writeFileSync(path.join(KIT, 'README.txt'),
   'CutPilot — install on the Premiere machine\n' +
