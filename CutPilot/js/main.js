@@ -2550,15 +2550,33 @@
     // MOGRT cards: distinct look + open the action sheet (preview / use)
     if (t.mogrt) {
       var mc = document.createElement('div');
-      mc.className = 'tpl-card is-mogrt';
+      mc.className = 'tpl-card is-mogrt' + (t.thumb ? ' has-thumb' : '');
       var mthumb = document.createElement('div');
       mthumb.className = 'tpl-thumb';
-      // Render a CLEAR preview with the real engine from the template's own
-      // colours (same as the style cards), instead of a tiny baked thumbnail.
-      var mcvs = document.createElement('canvas');
-      mcvs.className = 'tpl-thumb-canvas';
-      mcvs._mogrtTpl = t;
-      mthumb.appendChild(mcvs);
+      // Show the baked thumb.png extracted from the .mogrt — each template has
+      // its own distinct rendered preview, far more informative than a generic
+      // CPRender canvas that looks the same for every dark-background template.
+      if (t.thumb) {
+        var mimg = document.createElement('img');
+        mimg.className = 'tpl-thumb-img';
+        mimg.src = t.thumb;
+        mimg.alt = t.name;
+        // fallback: if the baked thumb fails, render the CPRender canvas instead
+        mimg.onerror = function () {
+          mimg.style.display = 'none';
+          var mcvsFb = document.createElement('canvas');
+          mcvsFb.className = 'tpl-thumb-canvas';
+          mcvsFb._mogrtTpl = t;
+          mthumb.insertBefore(mcvsFb, mthumb.firstChild);
+          schedulePaintThumbs();
+        };
+        mthumb.appendChild(mimg);
+      } else {
+        var mcvs = document.createElement('canvas');
+        mcvs.className = 'tpl-thumb-canvas';
+        mcvs._mogrtTpl = t;
+        mthumb.appendChild(mcvs);
+      }
       // These are ANIMATED motion templates — that's what sets them apart from the
       // static style presets. (Every template is editable either way, so an
       // "editable" tag on only some was misleading.)
