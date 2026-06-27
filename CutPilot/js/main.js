@@ -4007,22 +4007,23 @@
     var replaceTrack = opts.replaceTrack || null;
     var overwriteOnTrack = opts.overwriteOnTrack || null;
     var range = opts.range || null;     // {start,end} for a segment restyle
-    // The sequence may have been opened/changed AFTER the panel loaded (state.env
-    // is captured at boot). Don't trust the stale value — if it's missing, fetch
-    // it live and retry once, so "Open a sequence first" never shows when one IS
-    // open. Only give up if Premiere truly reports no active sequence.
+    // Always refresh the sequence info before rendering so a stale env from a
+    // previously-open landscape sequence doesn't bake the wrong canvas dimensions
+    // (e.g. 1920-wide canvas on a 1080-wide portrait sequence → overflow on sides).
+    if (!opts._envRetried && CPBridge.isCEP()) {
+      CPBridge.callHost('CP_getEnv').then(function (env) {
+        state.env = env;
+        try { $('env-status').textContent = env.sequenceName + ' · ' + env.width + '×' + env.height; $('env-status').className = 'env-status ok'; } catch (eS) {}
+        opts._envRetried = true;
+        runCaptionPipeline(cues, opts);
+      }).catch(function () {
+        if (!state.env) { toast('Open a sequence in the timeline, click it once, then tap Add again.', true); return; }
+        opts._envRetried = true;
+        runCaptionPipeline(cues, opts);   // use stale env as fallback
+      });
+      return;
+    }
     if (!state.env) {
-      if (!opts._envRetried && CPBridge.isCEP()) {
-        CPBridge.callHost('CP_getEnv').then(function (env) {
-          state.env = env;
-          try { $('env-status').textContent = env.sequenceName + ' · ' + env.width + '×' + env.height; $('env-status').className = 'env-status ok'; } catch (eS) {}
-          opts._envRetried = true;
-          runCaptionPipeline(cues, opts);
-        }).catch(function () {
-          toast('Open a sequence in the timeline, click it once, then tap Add again.', true);
-        });
-        return;
-      }
       toast('Open a sequence in the timeline, click it once, then tap Add again.', true);
       return;
     }
@@ -4865,10 +4866,11 @@
         continue;
       }
       if (t === MT.ENUM) {
-        // Skip internal animation-timing controls (e.g. "Type: Index Based / Duration Based",
-        // "Word Index", "Start Time") — Pulse sets these automatically via CP_setWordSweep.
+        // Skip internal highlight controls that Pulse manages automatically via CP_setWordSweep
+        // ("Type" = highlight mode Index/Duration, "Word Index" = manual index, "Start Time" = sweep timing).
+        // DO show "Animation Type" (entrance direction: Word by Word L-R, Line by Line, etc.) — that's user choice.
         var nm_e = normName(name);
-        if (/\btype\b$|word\s*index|start\s*time|animation\s*(type|mode)/.test(nm_e)) continue;
+        if (/^type$|word\s*index|start\s*time/.test(nm_e)) continue;
         var opts = enumOptions(c);
         // Also skip if the options themselves are animation-mode labels
         var isAnimOpts = opts.some(function (o) { return /index\s*based|duration\s*based|word\s*based/i.test(o.label); });
@@ -5046,11 +5048,25 @@
 
   /* Caption the whole transcript with a specific .mogrt (used by the gallery
      sheet and the advanced section). Honors the MOGRT word-count control. */
-  function applyMogrtWithPath(mogrtPath, btn) {
+  function applyMogrtWithPath(mogrtPath, btn, _envRefreshed) {
+    // Always refresh env before inserting — so portrait/landscape dimensions are current.
+    if (!_envRefreshed && CPBridge.isCEP()) {
+      CPBridge.callHost('CP_getEnv').then(function (env) {
+        state.env = env;
+        try { $('env-status').textContent = env.sequenceName + ' · ' + env.width + '×' + env.height; $('env-status').className = 'env-status ok'; } catch (e2) {}
+        applyMogrtWithPath(mogrtPath, btn, true);
+      }).catch(function () { applyMogrtWithPath(mogrtPath, btn, true); });
+      return;
+    }
     var cues;
     try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
     var words = parseInt($('c-words').value, 10) || 0;   // the one Words-per-caption stepper
+    // On portrait sequences (e.g. 1080×1920 Shorts/Reels), long caption lines overflow
+    // the narrower frame. Cap at 16 chars per line so the text box stays within bounds.
+    var isPortrait = state.env && state.env.height > state.env.width;
+    if (isPortrait) state.captionMaxChars = Math.min(state.captionMaxChars || 999, 16);
     var tcues = textCues(cues, words, state.mogrtCase || 'as-spoken');   // Editor text-case control
+    if (isPortrait) state.captionMaxChars = null;   // reset immediately after
     if (tcues.length > 120 &&
         !confirm(tcues.length + ' template graphics will be inserted — one per caption. MOGRTs insert slowly, so this can take a long time and Premiere may sit near the end of its import bar. Tip: raise "Words per graphic" (fewer, longer captions), or use the Animated style instead.\n\nContinue anyway?')) return;
     if (btn) btn.disabled = true;

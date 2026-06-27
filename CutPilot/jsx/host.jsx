@@ -1633,6 +1633,14 @@ function CP_insertMogrtCaptions(argsJson) {
   try {
     var args = JSON.parse(argsJson);
     var seq = CP_activeSequence();
+    // Detect portrait sequences. Flux/MOGRT templates are authored for 1920×1080
+    // landscape; on a portrait sequence (e.g. 1080×1920 for Shorts/Reels) the
+    // MOGRT composition overflows the narrower frame by ~420px on each side.
+    // We scale every placed clip down to seqWidth/1920 so it fits.
+    var seqW = parseFloat(seq.frameSizeHorizontal) || 1920;
+    var seqH = parseFloat(seq.frameSizeVertical) || 1080;
+    var isPortrait = (seqH > seqW);
+    var portraitScale = isPortrait ? Math.round((seqW / 1920) * 10000) / 100 : 100;
     // Place MOGRT captions on a FRESH top video track (like the image engine)
     // so they never overwrite existing footage and are easy to find and trim.
     var vTrack;
@@ -1704,6 +1712,21 @@ function CP_insertMogrtCaptions(argsJson) {
         nat = clip.end.seconds - clipStart;
         if (nat > maxTemplateDur) maxTemplateDur = nat;
       } catch (eNat) {}
+
+      // Portrait scaling: scale the clip down so it fits within the narrower frame.
+      if (isPortrait && portraitScale < 99) {
+        try {
+          var motionFx = clip.getMGTComponent ? null : null;   // reset
+          // Try the standard Motion effect property (available on all video clips)
+          for (var mi = 0; mi < clip.videoComponents.numItems; mi++) {
+            var fx = clip.videoComponents[mi];
+            if (String(fx.displayName || '').toLowerCase().indexOf('motion') === 0) {
+              var scaleProp = fx.properties.getNamedProperty('Scale');
+              if (scaleProp) { scaleProp.setValue(portraitScale, true); break; }
+            }
+          }
+        } catch (eScale) {}
+      }
 
       var textSetBefore = textSet;
       try {
@@ -1807,6 +1830,25 @@ function CP_insertMogrtCaptions(argsJson) {
         if ((pct < 99 || pct > 101) && CP_stretchLastClip(vTrack, pct)) stretched++;
       }
       try { clip.end = CP_timeFromSeconds(endSec); } catch (eEnd) {}
+      // Fallback: if clip.end setter didn't trim the clip (some Premiere versions
+      // don't allow setting .end on MOGRT clips directly), use QE speed-up to force
+      // the clip to fit within the caption's desired duration. Without this, long
+      // templates (e.g. 30s Flux) would overflow into every subsequent caption slot,
+      // pushing each to its own video track and cluttering the timeline.
+      try {
+        var actualEnd = clip.end.seconds;
+        if (actualEnd > endSec + 0.2) {
+          var curDur = actualEnd - clipStart;
+          var wantDur = endSec - clipStart;
+          if (wantDur > 0.05 && curDur > wantDur) {
+            var fallbackPct = Math.min((curDur / wantDur) * 100, 5000);
+            if (CP_stretchLastClip(vTrack, fallbackPct)) {
+              try { clip.end = CP_timeFromSeconds(endSec); } catch (eR) {}
+              stretched++;
+            }
+          }
+        }
+      } catch (eFb) {}
       try { if (endSec < wordEnd - 0.05) clamped++; } catch (eChk) {}
     }
     return CP_ok({
