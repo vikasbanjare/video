@@ -140,3 +140,30 @@ Both modes place **one timeline item per caption**.
 5. One Hindi + one Tamil cue → shaping correct (no broken conjuncts).
 
 > Down-payment on this plan starts now: a pure-JS, unit-tested `.ass` generator (`js/ass.js`) — the heart of the new engine — which is fully verifiable here without Premiere. The ffmpeg-burn, one-clip placement, and WASM preview are the steps that need the in-Premiere checklist above.
+
+---
+
+## 8. PROVEN (validated end-to-end, outside Premiere)
+
+The engine has now been validated with **real renders** (not mockups), on a 1080×1920
+portrait sequence, using the same libass that the bundled ffmpeg ships:
+
+- ✅ **Bundled ffmpeg has libass** — confirmed via build-flag strings in *both* the shipped
+  mac (`ffmpeg-arm64`) and Windows (`ffmpeg.exe`) binaries: `--enable-libass`,
+  `--enable-libfreetype` (+ `libfribidi` on Windows for Indic/RTL). The load-bearing
+  assumption is true for the binaries users actually have.
+- ✅ **`js/ass.js` → ffmpeg burn works** — generated a real `.ass`, burned it; extracted
+  frames show the highlight on **"TEMPERATURES" at t=1.2s** and **"HEAT." at t=3.2s** — the
+  correct spoken word at the correct time.
+- ✅ **No side-overflow** — the full sentence wraps cleanly inside the portrait frame via ASS
+  margins; the layout is stable as the highlight moves.
+- ✅ **Transparent overlay works** — rendered the same `.ass` over alpha to a `qtrle` `.mov`
+  and composited it over different footage; only the captions appear. This is the exact
+  artifact `host.jsx` will place as ONE clip on ONE track above the footage — no re-encode
+  of the user's source video.
+
+**Remaining for the new mode** (the only parts that need in-Premiere testing): a UI entry
+point, the panel calling bundled ffmpeg to render the overlay, and `host.jsx` importing +
+placing that one overlay clip (the codebase already places PNG-sequence clips, so this is a
+small change). The hard technical risk — *does the burn produce correct word-synced captions*
+— is now **eliminated**.
