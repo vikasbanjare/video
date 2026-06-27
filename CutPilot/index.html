@@ -24,7 +24,7 @@
       </svg>
       <span class="brand-name">Pulse</span><span class="brand-by">by aifloh</span>
     </div>
-    <span class="ver" id="ver">v0.9.211</span>
+    <span class="ver" id="ver">v0.9.212</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -184,8 +184,8 @@
           <span class="ms-live-tag">live preview</span>
         </div>
         <img id="ms-thumb" class="ms-thumb hidden" alt="">
-        <p class="hint" id="ms-hint">Premiere Motion Graphics Template. Preview it on your
-           timeline, or use it to caption your whole transcript.</p>
+        <p class="hint" id="ms-hint">Editable caption template — drop it on your timeline to
+           preview the look, then caption your whole video with one tap.</p>
         <div id="ms-tr" class="ms-tr"></div>
         <button id="ms-transcribe" class="chip-btn">🎙️ Auto-transcribe my clip</button>
         <label style="font-size:11px">Words per graphic</label>
@@ -195,7 +195,7 @@
           <button class="wc-btn" id="ms-wc-plus" type="button">+</button>
           <button class="chip-btn" id="ms-wc-full" type="button">Full line</button>
         </div>
-        <p class="hint" style="font-size:10px;margin:6px 0 0">⚡ The word-by-word animation follows your voice automatically — each word lights up exactly when it's spoken, at your natural talking pace. Nothing to set.</p>
+        <p class="hint" style="font-size:10px;margin:6px 0 0">⚡ Word-by-word timing is set automatically — each word lights up exactly when it's spoken. If you see an <b>Animation Controls</b> section in Premiere's Essential Graphics panel (Type, Word Index…), ignore it — Pulse manages those settings for you.</p>
         <!-- editable text colour / font / size / template colours, built on open -->
         <div id="ms-customizer" class="ms-customizer"></div>
         <button id="ms-preview" class="hero-btn small alt">▶ Preview on timeline</button>
@@ -248,11 +248,11 @@
         <label class="check sync-line"><input type="checkbox" id="c-sync" checked> 🎯 Sync each word to the spoken audio <span id="sync-stat" class="dim"></span></label>
         <div class="wc-bar sync-nudge" id="sync-nudge">
           <span class="wc-label">Highlight timing</span>
-          <button class="wc-btn" id="c-off-minus" type="button" title="Highlight earlier (lead the voice)">−</button>
+          <button class="wc-btn" id="c-off-minus" type="button" title="Highlight fires earlier (−0.05s per tap)">−</button>
           <b id="c-off-num">−0.06s</b>
-          <button class="wc-btn" id="c-off-plus" type="button" title="Highlight later (trail the voice)">+</button>
+          <button class="wc-btn" id="c-off-plus" type="button" title="Highlight fires later (+0.05s per tap)">+</button>
           <button class="chip-btn" id="c-off-reset" type="button">Reset</button>
-          <span class="dim">if the highlight runs ahead of / behind your voice, nudge it here (±0.05s)</span>
+          <span class="dim">highlight fires too early? press + · too late? press −</span>
         </div>
         <input type="number" id="c-sync-offset" value="-60" class="hidden">
         <input type="number" id="c-words" value="1" class="hidden">
@@ -387,7 +387,6 @@
                   <input type="range" id="c-shadow-blur" min="0" max="120" value="35">
                 </label>
               </div>
-              <label class="check"><input type="checkbox" id="c-box-on"> 🟦 Background box behind text</label>
               <div class="ctrl-row hidden" id="c-shadow-offset-row">
                 <label>Shadow offset X <span class="val" id="c-shadow-dx-val"></span>
                   <input type="range" id="c-shadow-dx" min="-30" max="30" value="0">
@@ -397,6 +396,7 @@
                 </label>
               </div>
               <p class="hint" style="margin:2px 0 0">Set the offset with a low shadow strength for a clean hard / 3-D drop.</p>
+              <label class="check"><input type="checkbox" id="c-box-on"> 🟦 Background box behind text</label>
             </div>
 
             <!-- 🎛️ PRO CONTROLS -->
@@ -990,7 +990,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.9.211 · auto-edit · multicam · captions · chapters · organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.9.212 · auto-edit · multicam · captions · chapters · organize</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->

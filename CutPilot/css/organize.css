@@ -4,21 +4,21 @@
 
 #tab-organize .cpo-head { margin-bottom: 16px; }
 #tab-organize .cpo-eyebrow {
-  color: #4c8dff; font-size: 11px; font-weight: 700;
+  color: var(--accent-text); font-size: 11px; font-weight: 700;
   letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 5px;
 }
-#tab-organize .cpo-title { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
-#tab-organize .cpo-desc { margin: 8px 0 0; font-size: 12.5px; line-height: 1.55; opacity: 0.66; }
+#tab-organize .cpo-title { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.02em; color: var(--title); }
+#tab-organize .cpo-desc { margin: 8px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--dim); }
 
 #tab-organize .cpo-run {
   width: 100%; height: 42px; margin-top: 16px; border: 0; border-radius: 10px;
-  background: #4c8dff; color: #fff; font-size: 13.5px; font-weight: 700;
+  background: var(--accent-text); color: #fff; font-size: 13.5px; font-weight: 700;
   letter-spacing: -0.01em; cursor: pointer;
   transition: background .15s ease, transform .06s ease, opacity .15s ease;
 }
-#tab-organize .cpo-run:hover { background: #5e9bff; }
-#tab-organize .cpo-run:active { background: #3d7aea; transform: scale(.992); }
-#tab-organize .cpo-run:disabled { opacity: .55; cursor: default; }
+#tab-organize .cpo-run:hover { opacity: .88; }
+#tab-organize .cpo-run:active { transform: scale(.992); opacity: .8; }
+#tab-organize .cpo-run:disabled { opacity: .45; cursor: default; }
 
 #tab-organize .cpo-spinner {
   display: none; width: 13px; height: 13px; margin-right: 8px; vertical-align: -2px;
@@ -29,32 +29,36 @@
 @keyframes cpoSpin { to { transform: rotate(360deg); } }
 
 #tab-organize .cpo-status {
-  display: none; margin-top: 14px; font-size: 12.5px; line-height: 1.45; opacity: .8;
+  display: none; margin-top: 14px; font-size: 12.5px; line-height: 1.45; color: var(--dim);
 }
-#tab-organize .cpo-status.working { color: #9fb6da; opacity: 1; }
+#tab-organize .cpo-status.working { color: var(--accent-text); opacity: 1; }
 #tab-organize .cpo-status.error {
-  color: #ff8a96; opacity: 1; padding: 10px 12px; border-radius: 10px;
-  background: rgba(255,110,122,.08); border: 1px solid rgba(255,110,122,.22);
+  color: #c0392b; opacity: 1; padding: 10px 12px; border-radius: 10px;
+  background: rgba(192,57,43,.08); border: 1px solid rgba(192,57,43,.22);
+}
+body.theme-dark #tab-organize .cpo-status.error {
+  color: #ff8a96; background: rgba(255,110,122,.08); border-color: rgba(255,110,122,.22);
 }
 
 #tab-organize .cpo-results {
-  display: none; margin-top: 16px; border: 1px solid rgba(255,255,255,.09);
-  border-radius: 12px; overflow: hidden; background: rgba(255,255,255,.02);
+  display: none; margin-top: 16px; border: 1px solid var(--line2);
+  border-radius: 12px; overflow: hidden; background: var(--card);
+  box-shadow: var(--shadow);
 }
 #tab-organize .cpo-results-head {
   display: flex; align-items: baseline; justify-content: space-between;
-  padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,.08);
+  padding: 12px 14px; border-bottom: 1px solid var(--line);
 }
 #tab-organize .cpo-results-title {
-  font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; opacity: .5;
+  font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--dim);
 }
-#tab-organize .cpo-results-meta { display: inline-flex; align-items: center; font-size: 12px; font-weight: 600; opacity: .8; }
+#tab-organize .cpo-results-meta { display: inline-flex; align-items: center; font-size: 12px; font-weight: 600; color: var(--fg); }
 #tab-organize .cpo-results-meta::before {
   content: ""; width: 6px; height: 6px; border-radius: 50%; margin-right: 7px; background: #4ed99a;
 }
 #tab-organize .cpo-cat-list { list-style: none; margin: 0; padding: 4px 0; }
 #tab-organize .cpo-cat-row { display: flex; align-items: center; height: 36px; padding: 0 14px; }
-#tab-organize .cpo-cat-row + .cpo-cat-row { border-top: 1px solid rgba(255,255,255,.07); }
+#tab-organize .cpo-cat-row + .cpo-cat-row { border-top: 1px solid var(--line); }
 #tab-organize .cpo-swatch { width: 9px; height: 9px; border-radius: 3px; margin-right: 11px; flex: 0 0 auto; }
-#tab-organize .cpo-cat-name { flex: 1 1 auto; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#tab-organize .cpo-cat-count { font-size: 12.5px; font-weight: 600; opacity: .7; margin-left: 10px; }
+#tab-organize .cpo-cat-name { flex: 1 1 auto; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
+#tab-organize .cpo-cat-count { font-size: 12.5px; font-weight: 600; color: var(--dim); margin-left: 10px; }

@@ -4724,7 +4724,7 @@
       var props = r.props || [];
       box.innerHTML = '';
       var head = document.createElement('div'); head.className = 'mp-head';
-      head.textContent = '🎬 ' + path.split(/[\\/]/).pop().replace(/\.mogrt$/i, '') + ' — Essential Graphics';
+      head.textContent = '✏️ Customize';
       box.appendChild(head);
 
       // Reset (back to template defaults) + Save (as a reusable custom template)
@@ -4865,7 +4865,14 @@
         continue;
       }
       if (t === MT.ENUM) {
+        // Skip internal animation-timing controls (e.g. "Type: Index Based / Duration Based",
+        // "Word Index", "Start Time") — Pulse sets these automatically via CP_setWordSweep.
+        var nm_e = normName(name);
+        if (/\btype\b$|word\s*index|start\s*time|animation\s*(type|mode)/.test(nm_e)) continue;
         var opts = enumOptions(c);
+        // Also skip if the options themselves are animation-mode labels
+        var isAnimOpts = opts.some(function (o) { return /index\s*based|duration\s*based|word\s*based/i.test(o.label); });
+        if (isAnimOpts) continue;
         if (opts.length) {
           var spE = savedParam(liveIdx);
           var ev = (spE && spE.kind === 'number') ? spE.value
