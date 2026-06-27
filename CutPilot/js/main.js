@@ -2187,10 +2187,11 @@
         // URL is RELATIVE to the panel root (index.html), so it loads without any
         // file:// path-encoding headaches and the browser lazy-loads + scales it.
         var base = String(m.file).replace(/\.mogrt$/i, '');
-        var thumbUrl = '';
+        var thumbUrl = '', videoUrl = '';
         try { if (fs.existsSync(path.join(mdir, 'thumbs', base + '.png'))) thumbUrl = 'mogrts/thumbs/' + encodeURIComponent(base + '.png'); } catch (e0) {}
+        try { if (fs.existsSync(path.join(mdir, 'thumbs', base + '.mp4'))) videoUrl = 'mogrts/thumbs/' + encodeURIComponent(base + '.mp4'); } catch (e1) {}
         return { name: m.name, path: path.join(mdir, m.file),
-                 category: m.category || 'Templates', kind: m.kind || 'caption', desc: m.desc || '', thumb: thumbUrl, premium: !!m.premium, section: m.section || '' };
+                 category: m.category || 'Templates', kind: m.kind || 'caption', desc: m.desc || '', thumb: thumbUrl, video: videoUrl, premium: !!m.premium, section: m.section || '' };
       }).filter(function (m) { try { return fs.existsSync(m.path); } catch (e3) { return false; } });
       state.bundledDiag = state.bundledMogrts.length ? ('ok:' + state.bundledMogrts.length) : ('0 files exist in ' + mdir);
     } catch (e) { state.bundledMogrts = []; state.bundledDiag = 'error: ' + (e && e.message); }
@@ -2286,7 +2287,7 @@
     var out = [];
     (state.bundledMogrts || []).forEach(function (m) {
       out.push({ id: 'mogrt:' + m.path, name: m.name, category: MOGRT_CAT, mogrt: true,
-                 path: m.path, popularity: 90, subcat: m.desc || m.category, desc: m.desc, bundled: true, thumb: m.thumb, premium: m.premium, flux: (m.section === 'flux') });
+                 path: m.path, popularity: 90, subcat: m.desc || m.category, desc: m.desc, bundled: true, thumb: m.thumb, video: m.video, premium: m.premium, flux: (m.section === 'flux') });
     });
     (state.folderMogrts || []).forEach(function (m) {
       out.push({ id: 'mogrt:' + m.path, name: m.name, category: MOGRT_CAT, mogrt: true,
@@ -2553,15 +2554,29 @@
       mc.className = 'tpl-card is-mogrt' + (t.thumb ? ' has-thumb' : '');
       var mthumb = document.createElement('div');
       mthumb.className = 'tpl-thumb';
-      // Show the baked thumb.png extracted from the .mogrt — each template has
-      // its own distinct rendered preview, far more informative than a generic
-      // CPRender canvas that looks the same for every dark-background template.
-      if (t.thumb) {
+      // Priority: MP4 looping animation > PNG still > CPRender canvas fallback
+      if (t.video) {
+        // Looping video — shows the actual After Effects animation from thumb.mp4
+        var mvid = document.createElement('video');
+        mvid.className = 'tpl-thumb-video';
+        mvid.src = t.video;
+        mvid.autoplay = true;
+        mvid.loop = true;
+        mvid.muted = true;
+        mvid.setAttribute('playsinline', '');
+        mvid.setAttribute('disablepictureinpicture', '');
+        // fallback to PNG still if video fails
+        mvid.onerror = function () {
+          mvid.style.display = 'none';
+          if (t.thumb) { var fi = document.createElement('img'); fi.className = 'tpl-thumb-img'; fi.src = t.thumb; fi.alt = t.name; mthumb.insertBefore(fi, mthumb.firstChild); }
+        };
+        mthumb.appendChild(mvid);
+      } else if (t.thumb) {
         var mimg = document.createElement('img');
         mimg.className = 'tpl-thumb-img';
         mimg.src = t.thumb;
         mimg.alt = t.name;
-        // fallback: if the baked thumb fails, render the CPRender canvas instead
+        // fallback: CPRender canvas if PNG fails
         mimg.onerror = function () {
           mimg.style.display = 'none';
           var mcvsFb = document.createElement('canvas');
