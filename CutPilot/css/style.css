@@ -325,7 +325,7 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
 }
 .wc-btn:hover { background: var(--accent-soft); border-color: var(--accent); }
 .wc-bar b { font-size: 15px; font-weight: 800; min-width: 22px; text-align: center; }
-#wc-full.on { background: var(--grad); color: #fff; border-color: transparent; }
+#wc-full.on, #ms-wc-full.on, #mg-wc-full.on { background: var(--grad); color: #fff; border-color: transparent; }
 .sync-line { margin: 0 0 8px; font-weight: 600; font-size: 12px; }
 
 /* ------------------------------------------------- transcript bar --- */
