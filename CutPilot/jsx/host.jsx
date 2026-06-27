@@ -1043,12 +1043,18 @@ function CP_placeOverlay(argsJson) {
 
     var bin = app.project.rootItem.createBin('Pulse Captions ' + ((new Date()).getTime() % 100000));
     app.project.importFiles([args.path], true, bin, false);
+    // importFiles can populate the bin a beat late for a single media file; poll
+    // briefly (ExtendScript $.sleep) so we never miss the imported overlay. This is
+    // strictly more robust than the proven PNG path, which reads children at once.
     var item = null;
-    for (var c = bin.children.numItems - 1; c >= 0; c--) {
-      var cand = bin.children[c];
-      if (cand && cand.type !== 2) { item = cand; break; }   // skip nested bins
+    for (var tryN = 0; tryN < 20 && !item; tryN++) {
+      for (var c = bin.children.numItems - 1; c >= 0; c--) {
+        var cand = bin.children[c];
+        if (cand && cand.type !== 2) { item = cand; break; }   // skip nested bins (type 2)
+      }
+      if (!item) { try { $.sleep(60); } catch (eSl) {} }
     }
-    if (!item) return CP_fail('Overlay import failed.');
+    if (!item) return CP_fail('Overlay import failed (the .mov did not import).');
 
     var trackIndex;
     if (args.replaceTrack != null && args.replaceTrack >= 1 && args.replaceTrack <= seq.videoTracks.numTracks) {
@@ -1074,8 +1080,15 @@ function CP_placeOverlay(argsJson) {
       } catch (eTrack) {}
     }
     var track = seq.videoTracks[trackIndex];
+    if (!track) return CP_fail('Could not find a video track to place the overlay on.');
     var startSec = (args.startSec > 0) ? args.startSec : 0;
-    track.overwriteClip(item, startSec);
+    try {
+      track.overwriteClip(item, startSec);
+    } catch (ePlace) {
+      // overwriteClip occasionally rejects seconds on some builds — retry with ticks.
+      try { track.overwriteClip(item, CP_ticksFromSeconds(startSec)); }
+      catch (ePlace2) { return CP_fail('Could not place the caption overlay: ' + ePlace.message); }
+    }
     return CP_ok({ placed: 1, track: trackIndex + 1, bin: bin.name });
   } catch (e) { return CP_fail(e.message); }
 }
