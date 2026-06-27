@@ -24,7 +24,7 @@
       </svg>
       <span class="brand-name">Pulse</span><span class="brand-by">by aifloh</span>
     </div>
-    <span class="ver" id="ver">v0.9.216</span>
+    <span class="ver" id="ver">v0.9.217</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -179,9 +179,12 @@
         <div class="ms-name" id="ms-name">Template</div>
         <!-- big, ALWAYS-VISIBLE live preview: pins below the header so you see
              every colour / font change while you scroll the controls below -->
+        <!-- real looping animation (the template's baked thumb.mp4 = exactly what
+             gets placed) so you SEE the motion before using it -->
+        <video id="ms-anim" class="ms-anim hidden" autoplay loop muted playsinline disablepictureinpicture></video>
         <div id="ms-live-preview" class="ms-live-preview hidden">
           <canvas id="ms-live-canvas"></canvas>
-          <span class="ms-live-tag">live preview</span>
+          <span class="ms-live-tag">your colours</span>
         </div>
         <img id="ms-thumb" class="ms-thumb hidden" alt="">
         <p class="hint" id="ms-hint">Editable caption template — drop it on your timeline to
@@ -990,7 +993,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.9.216 · auto-edit · multicam · captions · chapters · organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.9.217 · auto-edit · multicam · captions · chapters · organize</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->

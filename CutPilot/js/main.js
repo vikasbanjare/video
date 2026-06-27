@@ -1155,7 +1155,7 @@
       $('tab-' + this.dataset.tab).classList.add('active');
       // Leaving Captions? Stop the live-preview animation loop so it isn't
       // painting an off-screen canvas forever in the background.
-      if (this.dataset.tab !== 'captions' && previewTimer) { clearInterval(previewTimer); previewTimer = null; }
+      if (this.dataset.tab !== 'captions') { if (previewTimer) { clearInterval(previewTimer); previewTimer = null; } stopCardAnimator(); }
       // Re-check for a transcript when returning to Captions (e.g. after
       // exporting one), and refresh the preview now the frame has a size.
       if (this.dataset.tab === 'captions' && CPBridge.isCEP()) {
@@ -1388,7 +1388,7 @@
     return Math.max(0, Math.ceil((first + TRIAL_DAYS_MS - Date.now()) / 86400000));
   }
   function showTrialLock() {
-    try { if (previewTimer) { clearInterval(previewTimer); previewTimer = null; } } catch (e) {}
+    try { if (previewTimer) { clearInterval(previewTimer); previewTimer = null; } stopCardAnimator(); } catch (e) {}
     var ov = document.createElement('div');
     ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#0d0f14;color:#e7ecf3;' +
       'display:flex;align-items:center;justify-content:center;text-align:center;' +
@@ -1676,10 +1676,10 @@
     document.addEventListener('visibilitychange', function () {
       // Hidden → pause the preview animation; visible again → resume it if the
       // user is on the Captions tab.
-      if (document.hidden) { if (previewTimer) { clearInterval(previewTimer); previewTimer = null; } return; }
+      if (document.hidden) { if (previewTimer) { clearInterval(previewTimer); previewTimer = null; } stopCardAnimator(); return; }
       maybeRefind();
       var active = document.querySelector('.tab.active');
-      if (active && active.dataset.tab === 'captions' && CPBridge.isCEP()) renderPreview();
+      if (active && active.dataset.tab === 'captions' && CPBridge.isCEP()) { renderPreview(); schedulePaintThumbs(); }
     });
   }
 
@@ -2438,6 +2438,7 @@
      built while the Captions tab is hidden (0 width); a ResizeObserver + the
      fonts-ready hook repaint them at the right size once they're visible. */
   var _thumbFontsHooked = false, _thumbRO = null, _thumbT = null;
+  var _cardAnimTimer = null, _cardTick = 0;   // shared looping animator for gallery cards
   /* A CPRender-compatible style for an animated .mogrt card, built from the
      template's OWN colours (read offline from its definition.json). Lets the
      animated cards render the SAME clear preview as the style cards instead of a
@@ -2489,6 +2490,9 @@
         cvs._painted = true;
       }
     }
+    // (Re)start the looping animator if any painted card has a multi-frame timeline
+    // (e.g. after returning to the Captions tab, where canvases stay painted).
+    for (var a = 0; a < canvases.length; a++) { if (canvases[a]._animLen > 1) { startCardAnimator(); break; } }
     // repaint when the grid first gets a size (hidden → visible) or the panel resizes
     if (!_thumbRO && window.ResizeObserver) {
       var grid = document.getElementById('tpl-grid');
@@ -2503,8 +2507,11 @@
     }
   }
 
-  /* Draw a single representative caption frame for a template into a small
-     canvas, using the same engine as the editor preview. */
+  /* Build a template's caption timeline + resolved style ONCE and cache them on
+     the card canvas, then draw the current frame. The shared card animator
+     (startCardAnimator) loops these frames so the gallery card plays the REAL
+     animation — the same engine, frames and style as the editor preview and the
+     burned-in export — instead of a frozen thumbnail. */
   function drawCardPreview(canvas, t) {
     try {
       var sample = t.uppercase ? 'YOUR BIG IDEA HERE' : 'Your big idea here';
@@ -2520,18 +2527,6 @@
         });
       } catch (eF) { frames = null; }
       if (!frames || !frames.length) frames = [{ words: sw }];
-      // pick the frame that best shows the style: a highlight present + the most words
-      var best = frames[0], bestScore = -1;
-      for (var i = 0; i < frames.length; i++) {
-        var f = frames[i];
-        var hl = (f.active != null) || (f.highlightSet && f.highlightSet.indexOf(true) >= 0) ? 1 : 0;
-        var nw = f.words ? f.words.length : 0;
-        var score = hl * 100 + nw;
-        if (score > bestScore) { bestScore = score; best = f; }
-      }
-      // the card is a static thumbnail — always show the FULL phrase (reveal/build
-      // frames only draw part of it), so a card never shows a single lonely word
-      if (best.reveal != null) { var bb = {}; for (var bk in best) if (best.hasOwnProperty(bk)) bb[bk] = best[bk]; bb.reveal = null; best = bb; }
       // Fill the card without overflowing: cap the font so the block fits the
       // card HEIGHT (the engine only fits WIDTH, so a too-big start clips top/
       // bottom). Account for each style's keyword scale + line gap + line count.
@@ -2542,10 +2537,46 @@
       var estLines = t.wordsPerLine ? 3 : 2;
       var fMax = Math.round(0.84 * 1080 / (estLines * hlsc * lg));   // height-safe maximum
       var pov = { fontSize: fMax, maxWidthPct: 0.95, maxLines: (t.wordsPerLine ? 0 : 2), vCenter: true };
-      var style = CPRender.styleForFrame(t, canvas.height, pov);
-      CPRender.drawFrame(canvas, best, style);
+      canvas._animFrames = frames;
+      canvas._animStyle = CPRender.styleForFrame(t, canvas.height, pov);
+      canvas._animLen = frames.length;
+      drawCardTickFrame(canvas, _cardTick);
+      if (frames.length > 1) startCardAnimator();
     } catch (e) { /* leave the gradient background showing */ }
   }
+
+  /* Draw one frame of a card's cached timeline. A 1-frame (static) card always
+     shows the full phrase (never a lonely reveal word); a multi-frame card cycles
+     so the word-by-word highlight / reveal / pop animates exactly like the output. */
+  function drawCardTickFrame(canvas, tick) {
+    var frames = canvas._animFrames, style = canvas._animStyle;
+    if (!frames || !style) return;
+    var f;
+    if (frames.length <= 1) {
+      f = frames[0] || { words: [] };
+      if (f.reveal != null) { var bb = {}; for (var bk in f) if (f.hasOwnProperty(bk)) bb[bk] = f[bk]; bb.reveal = null; f = bb; }
+    } else {
+      f = frames[((tick % frames.length) + frames.length) % frames.length];
+    }
+    try { CPRender.drawFrame(canvas, f, style); } catch (e) {}
+  }
+
+  /* One shared ticker repaints every animated card canvas — cheap (a handful of
+     small canvases) and keeps all cards in lockstep. Self-stops when no animated
+     card remains on screen. Lifecycle mirrors the editor previewTimer: paused on
+     leaving Captions / when the panel is hidden / on the trial lock. */
+  function startCardAnimator() {
+    if (_cardAnimTimer) return;
+    _cardAnimTimer = setInterval(function () {
+      _cardTick++;
+      var cs = document.querySelectorAll('.tpl-thumb-canvas'), any = false;
+      for (var i = 0; i < cs.length; i++) {
+        if (cs[i]._animFrames && cs[i]._animLen > 1) { drawCardTickFrame(cs[i], _cardTick); any = true; }
+      }
+      if (!any) stopCardAnimator();
+    }, 420);
+  }
+  function stopCardAnimator() { if (_cardAnimTimer) { clearInterval(_cardAnimTimer); _cardAnimTimer = null; } }
 
   function buildTemplateCard(t) {
     // MOGRT cards: distinct look + open the action sheet (preview / use)
@@ -2702,6 +2733,14 @@
     // hidden so there's never TWO previews stacked on top of each other.
     var msThumb = $('ms-thumb');
     if (msThumb) { msThumb.classList.add('hidden'); msThumb.removeAttribute('src'); }
+    // Show the template's REAL looping animation (baked thumb.mp4 = exactly what
+    // gets placed on the timeline) so the user sees the motion before using it.
+    // The live colour canvas below stays for editing colours/font.
+    var msAnim = $('ms-anim');
+    if (msAnim) {
+      if (t.video) { msAnim.src = t.video; msAnim.classList.remove('hidden'); try { msAnim.play(); } catch (eP) {} }
+      else { msAnim.classList.add('hidden'); msAnim.removeAttribute('src'); }
+    }
     // show THIS template's real capabilities (read from its definition.json)
     if ($('ms-hint')) {
       var caps = mogrtCapsSummary(t.path);
@@ -2742,6 +2781,7 @@
     function closeMogrtSheet() {
       $('mogrt-sheet').classList.add('hidden');
       var lp = $('ms-live-preview'); if (lp) lp.classList.add('hidden');   // free the sticky preview
+      var av = $('ms-anim'); if (av) { try { av.pause(); } catch (eA) {} av.classList.add('hidden'); av.removeAttribute('src'); }
       _mogrtPrevCanvas = null;
     }
     $('ms-close').addEventListener('click', closeMogrtSheet);
@@ -3856,14 +3896,17 @@
   }
   function textCues(cues, words, caseMode) {
     var mode = (caseMode === true) ? 'upper' : (caseMode === false ? 'as-spoken' : (caseMode || 'as-spoken'));
-    // Group sentence-aware AND width-capped so captions read cleanly and never overflow
-    // the template's text box (the cause of text clipping on the sides). "Words per
-    // graphic" is the word cap; we ALSO cap the width in characters (lower the word
-    // count to fit a narrower template) and start a fresh caption at every sentence end
-    // so a sentence is never split with a word stranded on the previous frame. Font size
-    // stays constant for the whole video — we shorten captions, never resize the text.
-    var perCap = (words > 0) ? words : 12;                       // 0 = "full line" → still capped so it can't run off-box
-    var maxChars = state.captionMaxChars || ((words > 0) ? Math.max(12, words * 8) : 28);
+    // Keep whole sentences together. A caption wraps to ~2 lines, so the width
+    // budget is per-CAPTION (2 lines) — NOT per-line. That's why a short sentence
+    // like "What is your name?" stays in ONE caption (wrapping if needed) instead
+    // of being split into "What is" | "your name". An ordinary breath-pause inside
+    // a sentence never splits it (only sentence punctuation or a long pause does).
+    // The font size never changes — we only choose how many words share a caption.
+    var portrait = !!(state.env && state.env.height > state.env.width);
+    var perLine = portrait ? 17 : 24;                 // safe chars per line for the frame width
+    var perCap = (words > 0) ? words : 14;            // 0 = "full line"
+    var maxChars = (words > 0) ? Math.max(perLine, words * 9) : (perLine * 2);   // ~2 lines per caption
+    if (state.captionMaxChars) maxChars = state.captionMaxChars;                 // explicit override wins
     var out = CPCaptions.regroupWords(cues, perCap, { maxChars: maxChars, sentenceBreak: true });
     if (mode !== 'as-spoken') out = out.map(function (c) { return { start: c.start, end: c.end, text: applyCase(c.text, mode) }; });
     return out;
@@ -5094,12 +5137,10 @@
     var cues;
     try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
     var words = parseInt($('c-words').value, 10) || 0;   // the one Words-per-caption stepper
-    // On portrait sequences (e.g. 1080×1920 Shorts/Reels), long caption lines overflow
-    // the narrower frame. Cap at 16 chars per line so the text box stays within bounds.
-    var isPortrait = state.env && state.env.height > state.env.width;
-    if (isPortrait) state.captionMaxChars = Math.min(state.captionMaxChars || 999, 16);
+    // textCues derives the per-caption width budget from the sequence orientation
+    // (portrait vs landscape) and keeps whole sentences together, wrapping to ~2
+    // lines rather than splitting a sentence across two graphics.
     var tcues = textCues(cues, words, state.mogrtCase || 'as-spoken');   // Editor text-case control
-    if (isPortrait) state.captionMaxChars = null;   // reset immediately after
     if (tcues.length > 120 &&
         !confirm(tcues.length + ' template graphics will be inserted — one per caption. MOGRTs insert slowly, so this can take a long time and Premiere may sit near the end of its import bar. Tip: raise "Words per graphic" (fewer, longer captions), or use the Animated style instead.\n\nContinue anyway?')) return;
     if (btn) btn.disabled = true;

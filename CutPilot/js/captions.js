@@ -210,13 +210,99 @@
    * starts when the gap to the next word exceeds opts.maxGap, so a caption
    * never spans a long pause. Returns [{start, end, text}]. Pure + tested.
    */
+  // --- sentence-aware caption grouping helpers ---------------------------------
+  // A caption may wrap to ~2 lines, so the char budget is per-CAPTION, not
+  // per-line. A whole sentence stays in ONE caption and is split ONLY when it
+  // genuinely exceeds the word/char budget — and then at a balanced, natural
+  // boundary so a phrase like "What is your name?" is never stranded as
+  // "What is" | "your name". Ordinary breath-pauses inside a sentence never
+  // split it; only a real long pause (scene change) does.
+  var _SENTENCE_END = /[.!?]["'»)\]]?$/;             // . ! ? (+ closing quote/paren)
+  var _SOFT_AFTER   = /[,;:—–]["'»)\]]?$/;  // , ; : — – → good to break AFTER
+  var _CONJ = { and:1, but:1, or:1, nor:1, so:1, yet:1, because:1, that:1, which:1,
+                when:1, while:1, if:1, then:1, with:1, to:1, of:1, as:1, at:1, in:1, on:1, for:1 };
+  function _bareWord(t) { return String(t).toLowerCase().replace(/[^a-z']/g, ''); }
+  function _isConj(t) { return _CONJ[_bareWord(t)] === 1; }                 // good to break BEFORE
+  function _joinText(ws) { return ws.map(function (w) { return w.text; }).join(' '); }
+  function _cueOf(ws) { return { start: ws[0].start, end: ws[ws.length - 1].end, text: _joinText(ws) }; }
+
+  function groupSentenceAware(words, per, maxChars, maxGap, opts) {
+    // A real pause still forces a break even without punctuation; an ordinary
+    // breath does not. Use the larger of the caller's maxGap and a floor so
+    // mid-sentence breaths don't split a sentence.
+    var hardGap = (opts && opts.hardGap != null) ? opts.hardGap : Math.max(maxGap, 1.6);
+    var sentences = [], cur = [];
+    for (var i = 0; i < words.length; i++) {
+      cur.push(words[i]);
+      var gapNext = (i + 1 < words.length) ? (words[i + 1].start - words[i].end) : 0;
+      if (_SENTENCE_END.test(words[i].text) || gapNext > hardGap) { sentences.push(cur); cur = []; }
+    }
+    if (cur.length) sentences.push(cur);
+    var out = [];
+    for (var s = 0; s < sentences.length; s++) packSentence(sentences[s], per, maxChars, out);
+    return out;
+  }
+
+  function packSentence(ws, per, maxChars, out) {
+    var fitsWords = !per || ws.length <= per;
+    var fitsChars = !maxChars || _joinText(ws).length <= maxChars;
+    if (fitsWords && fitsChars) { out.push(_cueOf(ws)); return; }   // whole sentence = one caption
+    var nW = per ? Math.ceil(ws.length / per) : 1;
+    var nC = maxChars ? Math.ceil(_joinText(ws).length / maxChars) : 1;
+    var n = Math.max(2, nW, nC);
+    var chunks = splitBalanced(ws, n, per, maxChars);
+    for (var c = 0; c < chunks.length; c++) out.push(_cueOf(chunks[c]));
+  }
+
+  function splitBalanced(ws, n, per, maxChars) {
+    var total = ws.length;
+    var target = Math.max(1, Math.round(total / n));   // ideal words per chunk
+    var chunks = [], cur = [], curChars = 0;
+    for (var i = 0; i < ws.length; i++) {
+      var w = ws[i], wl = w.text.length;
+      var projected = cur.length ? (curChars + 1 + wl) : wl;
+      var hardOverW = per && cur.length >= per;
+      var hardOverC = maxChars && projected > maxChars && cur.length > 0;
+      if (cur.length && (hardOverW || hardOverC)) { chunks.push(cur); cur = []; curChars = 0; }
+      cur.push(w); curChars = (cur.length === 1) ? wl : (curChars + 1 + wl);
+      if (i === ws.length - 1) break;
+      var remaining = total - (i + 1);
+      var chunksOpen = n - chunks.length;                  // chunks still to fill (incl. current)
+      var mustBreakSoon = remaining <= (chunksOpen - 1);   // reserve ≥1 word per remaining chunk
+      var atTarget = cur.length >= target;
+      var hereEndsClause = _SOFT_AFTER.test(w.text);
+      var nextStartsClause = _isConj(ws[i + 1].text);
+      if (chunks.length < n - 1 && remaining > 0) {
+        if ((atTarget && (hereEndsClause || nextStartsClause)) || cur.length > target || mustBreakSoon) {
+          chunks.push(cur); cur = []; curChars = 0;
+        }
+      }
+    }
+    if (cur.length) chunks.push(cur);
+    // Orphan fix: a trailing single word looks stranded — merge it back if it fits.
+    if (chunks.length >= 2 && chunks[chunks.length - 1].length === 1) {
+      var prev = chunks[chunks.length - 2], merged = prev.concat(chunks[chunks.length - 1]);
+      if ((!maxChars || _joinText(merged).length <= maxChars) && (!per || merged.length <= per)) {
+        chunks.splice(chunks.length - 2, 2, merged);
+      }
+    }
+    return chunks;
+  }
+
   function regroupWords(cues, perCue, opts) {
     opts = opts || {};
     var per = Math.max(1, perCue || 1);
     var maxGap = opts.maxGap != null ? opts.maxGap : 1.5;
     var maxChars = opts.maxChars || 0;            // 0 = no width limit (legacy / tests)
-    var sentenceBreak = !!opts.sentenceBreak;     // close a caption after . ! ? so a sentence is never split across frames
+    var sentenceBreak = !!opts.sentenceBreak;     // keep whole sentences together (cohesive grouping)
     var words = explodeWords(cues, { wordsPerCue: 1, uppercase: !!opts.uppercase });
+    if (!words.length) return [];
+
+    // Real caption flows pass sentenceBreak:true → sentence-cohesive, balanced
+    // grouping (above). The legacy greedy path below is kept byte-for-byte for
+    // back-compat and the test-suite contract (callers that pass no sentenceBreak).
+    if (sentenceBreak) return groupSentenceAware(words, per, maxChars, maxGap, opts);
+
     var out = [], group = [], groupChars = 0;
     function flush() {
       if (!group.length) return;
@@ -237,10 +323,6 @@
          )) flush();
       group.push(words[i]);
       groupChars = (group.length === 1) ? wlen : (groupChars + 1 + wlen);
-      // A word that ENDS a sentence closes the caption, so the next sentence starts
-      // fresh in its own frame — fixes a word like "my" being stranded on the prior
-      // sentence's last frame (e.g. "…ozone. My" → "…ozone." | "My name is Victor").
-      if (sentenceBreak && /[.!?]["'»)\]]?$/.test(wt)) flush();
     }
     flush();
     return out;
@@ -1409,7 +1491,7 @@
       frames = framesFromWordCues(wordCues, anim, wpc, kw, up);
     } else {
       var src = (wpc > 0)
-        ? regroupWords(cues, wpc, { uppercase: up })   // merge across lines -> N-word captions
+        ? regroupWords(cues, wpc, { uppercase: up, sentenceBreak: true })   // sentence-aware N-word captions (no mid-phrase split)
         : cues.map(function (c) { return { start: c.start, end: c.end, text: up ? c.text.toUpperCase() : c.text }; });
       frames = src.map(function (c) {
         var words = c.text.replace(/\s+/g, ' ').trim().split(' ');
