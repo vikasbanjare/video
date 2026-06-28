@@ -44,120 +44,82 @@
     ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
   }
 
-  // ---------- high-fidelity platform icons (x,y = centre, r = radius) ----------
-  function igHeart(c, x, y, r, fill) {
-    c.beginPath();
-    c.moveTo(x, y + r * 0.92);
-    c.bezierCurveTo(x - r * 1.45, y - r * 0.12, x - r * 0.92, y - r * 1.2, x, y - r * 0.42);
-    c.bezierCurveTo(x + r * 0.92, y - r * 1.2, x + r * 1.45, y - r * 0.12, x, y + r * 0.92);
-    c.closePath(); fill ? c.fill() : c.stroke();
-  }
-  function igComment(c, x, y, r, fill) {           // rounded speech bubble + small tail
-    c.beginPath();
-    if (c.ellipse) c.ellipse(x, y - r * 0.08, r, r * 0.9, 0, 0, Math.PI * 2); else c.arc(x, y, r, 0, Math.PI * 2);
-    fill ? c.fill() : c.stroke();
-    c.beginPath(); c.moveTo(x - r * 0.55, y + r * 0.55); c.lineTo(x - r * 0.78, y + r * 1.05); c.lineTo(x - r * 0.12, y + r * 0.78);
-    c.closePath(); fill ? c.fill() : c.stroke();
-  }
-  function igPlane(c, x, y, r) {                    // paper-plane share (outline)
-    c.beginPath();
-    c.moveTo(x - r * 1.05, y - r * 0.35); c.lineTo(x + r * 1.05, y - r * 1.0);
-    c.lineTo(x + r * 0.15, y + r * 1.05); c.lineTo(x - r * 0.02, y + r * 0.2); c.closePath(); c.stroke();
-    c.beginPath(); c.moveTo(x - r * 1.05, y - r * 0.35); c.lineTo(x - r * 0.02, y + r * 0.2);
-    c.lineTo(x + r * 1.05, y - r * 1.0); c.stroke();
-  }
-  function ytThumb(c, x, y, r, down) {              // YouTube thumbs up/down (filled)
-    c.save(); c.translate(x, y); if (down) c.rotate(Math.PI);
-    c.beginPath(); rr(c, -r * 1.0, -r * 0.05, r * 0.5, r * 1.0, r * 0.1); c.fill();   // sleeve
-    c.beginPath();
-    c.moveTo(-r * 0.42, r * 0.9); c.lineTo(-r * 0.42, -r * 0.05); c.lineTo(-r * 0.02, -r * 0.05);
-    c.lineTo(r * 0.18, -r * 0.95); c.quadraticCurveTo(r * 0.55, -r * 1.08, r * 0.48, -r * 0.4);
-    c.lineTo(r * 0.42, -r * 0.12); c.lineTo(r * 0.98, -r * 0.12);
-    c.quadraticCurveTo(r * 1.12, -r * 0.06, r * 0.96, r * 0.28);
-    c.lineTo(r * 0.72, r * 0.78); c.quadraticCurveTo(r * 0.6, r * 0.9, r * 0.32, r * 0.9);
-    c.closePath(); c.fill(); c.restore();
-  }
-  function ytShare(c, x, y, r) {                    // YouTube share (bent reply arrow, outline)
-    c.beginPath();
-    c.moveTo(x - r * 1.1, y + r * 0.85);
-    c.quadraticCurveTo(x - r * 0.9, y - r * 0.55, x + r * 0.15, y - r * 0.55);
-    c.stroke();
-    c.beginPath(); c.moveTo(x - r * 0.2, y - r * 1.05); c.lineTo(x + r * 0.9, y - r * 0.55);
-    c.lineTo(x - r * 0.2, y - r * 0.05); c.closePath(); c.fill();
-  }
-  function ytRemix(c, x, y, r) {                    // two looping arrows
-    c.beginPath(); c.arc(x, y, r * 0.78, Math.PI * 0.15, Math.PI * 1.15); c.stroke();
-    c.beginPath(); c.arc(x, y, r * 0.78, Math.PI * 1.15, Math.PI * 2.15); c.stroke();
-    c.beginPath(); c.moveTo(x + r * 0.55, y - r * 0.78); c.lineTo(x + r * 0.95, y - r * 0.55); c.lineTo(x + r * 0.5, y - r * 0.25); c.closePath(); c.fill();
-    c.beginPath(); c.moveTo(x - r * 0.55, y + r * 0.78); c.lineTo(x - r * 0.95, y + r * 0.55); c.lineTo(x - r * 0.5, y + r * 0.25); c.closePath(); c.fill();
-  }
-  function ttBookmark(c, x, y, r) {                 // TikTok bookmark (filled)
-    c.beginPath(); c.moveTo(x - r * 0.65, y - r); c.lineTo(x + r * 0.65, y - r);
-    c.lineTo(x + r * 0.65, y + r); c.lineTo(x, y + r * 0.35); c.lineTo(x - r * 0.65, y + r); c.closePath(); c.fill();
-  }
-  function ttShare(c, x, y, r) {                    // TikTok share (filled curved arrow)
-    c.beginPath();
-    c.moveTo(x - r * 1.0, y + r * 0.9); c.quadraticCurveTo(x - r * 0.7, y - r * 0.5, x + r * 0.15, y - r * 0.5);
-    c.lineTo(x + r * 0.15, y - r); c.lineTo(x + r * 1.1, y - r * 0.1); c.lineTo(x + r * 0.15, y + r * 0.8);
-    c.lineTo(x + r * 0.15, y + r * 0.3); c.quadraticCurveTo(x - r * 0.45, y + r * 0.3, x - r * 0.7, y + r * 0.95);
-    c.closePath(); c.fill();
+  // ---------- REAL vector icons (Lucide 24×24 path data) for crisp, app-accurate UI ----------
+  var IC = {
+    heart: ['M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z'],
+    comment: ['M7.9 20A9 9 0 1 0 4 16.1L2 22Z'],
+    send: ['M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z', 'm21.854 2.147-10.94 10.939'],
+    thumbsUp: ['M7 10v12', 'M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z'],
+    thumbsDown: ['M17 14V2', 'M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z'],
+    forward: ['m15 17 5-5-5-5', 'M4 18v-2a4 4 0 0 1 4-4h12'],
+    repeat: ['m17 2 4 4-4 4', 'M3 11v-1a4 4 0 0 1 4-4h14', 'm7 22-4-4 4-4', 'M21 13v1a4 4 0 0 1-4 4H3'],
+    bookmark: ['m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z'],
+    search: ['m21 21-4.34-4.34', 'M11 17a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z'],
+    home: ['m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z', 'M9 22V12h6v10'],
+    play: ['m6 3 14 9-14 9z'],
+    music: ['M9 18V5l12-2v13', 'M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0z', 'M21 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z'],
+    user: ['M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2', 'M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z']
+  };
+  // render a 24×24 icon centred at (cx,cy) at the given pixel size
+  function ic(c, key, cx, cy, size, fill) {
+    var paths = IC[key]; if (!paths) return;
+    c.save();
+    var s = size / 24;
+    c.translate(cx - size / 2, cy - size / 2); c.scale(s, s);
+    c.lineWidth = 1.9; c.lineJoin = 'round'; c.lineCap = 'round';
+    for (var i = 0; i < paths.length; i++) { var p = new Path2D(paths[i]); if (fill) c.fill(p); else c.stroke(p); }
+    c.restore();
   }
   function icPlus(c, x, y, s) { c.beginPath(); c.moveTo(x - s, y); c.lineTo(x + s, y); c.moveTo(x, y - s); c.lineTo(x, y + s); c.stroke(); }
-  function icSearch(c, x, y, s) { c.beginPath(); c.arc(x - s * 0.18, y - s * 0.18, s * 0.62, 0, Math.PI * 2); c.stroke(); c.beginPath(); c.moveTo(x + s * 0.32, y + s * 0.32); c.lineTo(x + s * 0.85, y + s * 0.85); c.stroke(); }
-  function icDots(c, x, y, s) { for (var i = -1; i <= 1; i++) { c.beginPath(); c.arc(x + i * s * 0.85, y, s * 0.22, 0, Math.PI * 2); c.fill(); } }
-  function icMusic(c, x, y, r) { c.beginPath(); c.arc(x - r * 0.55, y + r * 0.55, r * 0.4, 0, Math.PI * 2); c.arc(x + r * 0.55, y + r * 0.25, r * 0.4, 0, Math.PI * 2); c.fill(); c.lineWidth = Math.max(1.2, r * 0.18); c.beginPath(); c.moveTo(x - r * 0.18, y + r * 0.55); c.lineTo(x - r * 0.18, y - r * 0.7); c.lineTo(x + r * 0.92, y - r); c.lineTo(x + r * 0.92, y + r * 0.25); c.stroke(); }
-  function icHome(c, x, y, s, fill) { c.beginPath(); c.moveTo(x - s, y + s * 0.15); c.lineTo(x, y - s * 0.9); c.lineTo(x + s, y + s * 0.15); c.closePath(); fill ? c.fill() : c.stroke(); c.beginPath(); rr(c, x - s * 0.72, y + s * 0.1, s * 1.44, s * 0.85, s * 0.12); fill ? c.fill() : c.stroke(); }
+  function icDots(c, x, y, s) { for (var i = -1; i <= 1; i++) { c.beginPath(); c.arc(x + i * s * 1.7, y, s, 0, Math.PI * 2); c.fill(); } }   // horizontal 3-dots
+  function icDotsV(c, x, y, s) { for (var i = -1; i <= 1; i++) { c.beginPath(); c.arc(x, y + i * s * 1.7, s, 0, Math.PI * 2); c.fill(); } } // vertical 3-dots
   function avatar(c, x, y, r, ring) {
     if (ring) { c.save(); var g = c.createLinearGradient(x - r, y - r, x + r, y + r); g.addColorStop(0, '#feda75'); g.addColorStop(.5, '#d62976'); g.addColorStop(1, '#962fbf'); c.strokeStyle = g; c.lineWidth = r * 0.18; c.beginPath(); c.arc(x, y, r * 1.12, 0, Math.PI * 2); c.stroke(); c.restore(); }
     c.save(); var gg = c.createLinearGradient(x - r, y - r, x + r, y + r); gg.addColorStop(0, '#8a93a6'); gg.addColorStop(1, '#5a6273'); c.fillStyle = gg; c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill(); c.restore();
   }
 
-  /* Draw authentic platform chrome (guide). col = right action column. */
+  /* Draw the platform chrome (guide) with REAL icons, solid white, like the app. */
   function drawPlatformUI(c, W, H, pf) {
     var unit = Math.min(W, H);
-    var ico = unit * 0.05;                  // icon radius (bigger, clearer)
-    var lw = Math.max(2.5, unit * 0.0075);
+    var sz = unit * 0.066;                   // icon box size
     var colX = W - unit * 0.085;
-    var gap = unit * 0.135;                 // vertical spacing between action items
+    var gap = unit * 0.115;                  // vertical spacing between action items
     c.save();
-    c.lineJoin = 'round'; c.lineCap = 'round';
+    c.strokeStyle = '#fff'; c.fillStyle = '#fff';
     c.textAlign = 'center'; c.textBaseline = 'top';
-    c.shadowColor = 'rgba(0,0,0,0.5)'; c.shadowBlur = unit * 0.012;
-    function lbl(x, y, t, sz) { c.save(); c.fillStyle = '#fff'; c.font = '700 ' + Math.round(unit * (sz || 0.028)) + 'px Inter, system-ui, sans-serif'; c.fillText(t, x, y); c.restore(); }
-    function setW() { c.strokeStyle = '#fff'; c.fillStyle = '#fff'; c.lineWidth = lw; }
+    c.shadowColor = 'rgba(0,0,0,0.55)'; c.shadowBlur = unit * 0.009;
+    function lbl(x, y, t) { c.save(); c.fillStyle = '#fff'; c.font = '600 ' + Math.round(unit * 0.024) + 'px Inter, system-ui, sans-serif'; c.fillText(t, x, y); c.restore(); }
+    function thumb(x, y) { c.save(); c.fillStyle = 'rgba(255,255,255,0.22)'; rr(c, x - sz * 0.45, y - sz * 0.45, sz * 0.9, sz * 0.9, sz * 0.22); c.fill(); c.fillStyle = '#fff'; ic(c, 'music', x, y, sz * 0.52, false); c.restore(); }
 
     if (pf === 'reels') {
-      var y0 = H * 0.50;
-      setW(); igHeart(c, colX, y0, ico, false); lbl(colX, y0 + ico * 1.25, '1,618');
-      igComment(c, colX, y0 + gap, ico, false); lbl(colX, y0 + gap + ico * 1.25, '31');
-      igPlane(c, colX, y0 + gap * 2, ico); lbl(colX, y0 + gap * 2 + ico * 1.25, '1,095');
-      icDots(c, colX, y0 + gap * 3, ico * 0.7);
-      // audio album thumbnail (spinning)
-      c.save(); c.fillStyle = '#3a3a3a'; rr(c, colX - ico * 0.85, y0 + gap * 3.55, ico * 1.7, ico * 1.7, ico * 0.5); c.fill();
-      c.fillStyle = '#fff'; c.translate(colX, y0 + gap * 3.55 + ico * 0.85); c.scale(0.5, 0.5); icMusic(c, 0, 0, ico); c.restore();
+      var y0 = H * 0.52;
+      ic(c, 'heart', colX, y0, sz, false); lbl(colX, y0 + sz * 0.62, '1,618');
+      ic(c, 'comment', colX, y0 + gap, sz, false); lbl(colX, y0 + gap + sz * 0.62, '31');
+      ic(c, 'send', colX, y0 + gap * 2, sz, false); lbl(colX, y0 + gap * 2 + sz * 0.62, '1,095');
+      icDotsV(c, colX, y0 + gap * 2.95, unit * 0.009);
+      thumb(colX, y0 + gap * 3.7);
       brandRowMock(c, W, H, unit, 'cauldythe.app', 'A social network for the independent thinker.', 'Sponsored', 'follow', true);
       navBar(c, W, H, unit, 'reels');
     } else if (pf === 'shorts') {
-      setW(); icSearch(c, W - unit * 0.16, H * 0.075, ico * 0.85); icDots(c, W - unit * 0.06, H * 0.075, ico * 0.7);
+      ic(c, 'search', W - unit * 0.16, H * 0.07, sz * 0.82, false); icDotsV(c, W - unit * 0.055, H * 0.07, unit * 0.009);
       var y1 = H * 0.46;
-      ytThumb(c, colX, y1, ico, false); lbl(colX, y1 + ico * 1.3, '1M');
-      ytThumb(c, colX, y1 + gap, ico, true); lbl(colX, y1 + gap + ico * 1.3, 'Dislike');
-      igComment(c, colX, y1 + gap * 2, ico, true); lbl(colX, y1 + gap * 2 + ico * 1.3, '11K');
-      ytShare(c, colX, y1 + gap * 3, ico); lbl(colX, y1 + gap * 3 + ico * 1.3, 'Share');
-      ytRemix(c, colX, y1 + gap * 4, ico); lbl(colX, y1 + gap * 4 + ico * 1.3, 'Remix');
+      ic(c, 'thumbsUp', colX, y1, sz, true); lbl(colX, y1 + sz * 0.62, '1M');
+      ic(c, 'thumbsDown', colX, y1 + gap, sz, true); lbl(colX, y1 + gap + sz * 0.62, 'Dislike');
+      ic(c, 'comment', colX, y1 + gap * 2, sz, false); lbl(colX, y1 + gap * 2 + sz * 0.62, '11K');
+      ic(c, 'forward', colX, y1 + gap * 3, sz, false); lbl(colX, y1 + gap * 3 + sz * 0.62, 'Share');
+      ic(c, 'repeat', colX, y1 + gap * 4, sz, false); lbl(colX, y1 + gap * 4 + sz * 0.62, 'Remix');
       brandRowMock(c, W, H, unit, '@Skinnyfromthe9', '#shorts', '', 'subscribe', false);
       navBar(c, W, H, unit, 'shorts');
     } else if (pf === 'tiktok') {
-      var y2 = H * 0.44;
-      avatar(c, colX, y2, ico * 0.95, false);
-      c.save(); c.fillStyle = '#fe2c55'; c.beginPath(); c.arc(colX, y2 + ico * 1.05, ico * 0.42, 0, Math.PI * 2); c.fill(); setW(); c.lineWidth = lw * 0.7; icPlus(c, colX, y2 + ico * 1.05, ico * 0.2); c.restore();
-      setW();
-      igHeart(c, colX, y2 + gap * 1.05, ico, true); lbl(colX, y2 + gap * 1.05 + ico * 1.3, '328.7K');
-      igComment(c, colX, y2 + gap * 2.05, ico, true); lbl(colX, y2 + gap * 2.05 + ico * 1.3, '1,204');
-      ttBookmark(c, colX, y2 + gap * 3.05, ico); lbl(colX, y2 + gap * 3.05 + ico * 1.3, '45.1K');
-      ttShare(c, colX, y2 + gap * 4.05, ico); lbl(colX, y2 + gap * 4.05 + ico * 1.3, 'Share');
-      // spinning record disc
-      c.save(); c.fillStyle = '#1c1c1c'; c.beginPath(); c.arc(colX, y2 + gap * 5.0, ico * 1.0, 0, Math.PI * 2); c.fill(); c.fillStyle = '#fff'; c.beginPath(); c.arc(colX, y2 + gap * 5.0, ico * 0.28, 0, Math.PI * 2); c.fill(); c.restore();
+      var y2 = H * 0.42;
+      avatar(c, colX, y2, sz * 0.5, false);
+      c.save(); c.fillStyle = '#fe2c55'; c.beginPath(); c.arc(colX, y2 + sz * 0.55, sz * 0.2, 0, Math.PI * 2); c.fill(); c.strokeStyle = '#fff'; c.lineWidth = Math.max(1.5, unit * 0.004); icPlus(c, colX, y2 + sz * 0.55, sz * 0.1); c.restore();
+      c.fillStyle = '#fff';
+      ic(c, 'heart', colX, y2 + gap * 1.1, sz, true); lbl(colX, y2 + gap * 1.1 + sz * 0.62, '328.7K');
+      ic(c, 'comment', colX, y2 + gap * 2.1, sz, true); lbl(colX, y2 + gap * 2.1 + sz * 0.62, '1,204');
+      ic(c, 'bookmark', colX, y2 + gap * 3.1, sz, true); lbl(colX, y2 + gap * 3.1 + sz * 0.62, '45.1K');
+      ic(c, 'send', colX, y2 + gap * 4.1, sz, true); lbl(colX, y2 + gap * 4.1 + sz * 0.62, 'Share');
+      c.save(); c.fillStyle = '#1c1c1c'; c.beginPath(); c.arc(colX, y2 + gap * 5.05, sz * 0.5, 0, Math.PI * 2); c.fill(); c.fillStyle = '#fff'; c.beginPath(); c.arc(colX, y2 + gap * 5.05, sz * 0.14, 0, Math.PI * 2); c.fill(); c.restore();
       brandRowMock(c, W, H, unit, '@skinnyfromthe9', 'this is my caption  ♪ original sound', '', 'follow', false);
       navBar(c, W, H, unit, 'tiktok');
     }
@@ -196,34 +158,34 @@
     c.restore();
   }
 
-  // bottom navigation bar (over the video)
+  // bottom navigation bar (over the video) — real icons
   function navBar(c, W, H, unit, pf) {
     c.save();
-    var ny = H - unit * 0.045, isz = unit * 0.032;
-    if (pf === 'reels' || pf === 'tiktok') { c.fillStyle = 'rgba(16,16,20,0.62)'; rr(c, 0, ny - unit * 0.05, W, unit * 0.1 + (H - (ny + unit * 0.05)), 0); c.fill(); }
-    c.strokeStyle = '#fff'; c.fillStyle = '#fff'; c.lineWidth = Math.max(2, unit * 0.0055);
-    c.shadowColor = 'rgba(0,0,0,0.4)'; c.shadowBlur = unit * 0.006;
-    c.textAlign = 'center'; c.textBaseline = 'top'; c.font = '500 ' + Math.round(unit * 0.018) + 'px Inter, system-ui, sans-serif';
+    var ny = H - unit * 0.042, isz = unit * 0.05;
+    c.strokeStyle = '#fff'; c.fillStyle = '#fff';
+    c.shadowColor = 'rgba(0,0,0,0.45)'; c.shadowBlur = unit * 0.006;
     var xs = [0.1, 0.3, 0.5, 0.7, 0.9];
-    var labels = pf === 'shorts' ? ['Home', 'Shorts', '', 'Subs', 'You'] : (pf === 'tiktok' ? ['Home', 'Friends', '', 'Inbox', 'Profile'] : ['', '', '', '', '']);
+    var labels = pf === 'shorts' ? ['Home', 'Shorts', '', 'Subscriptions', 'You'] : (pf === 'tiktok' ? ['Home', 'Friends', '', 'Inbox', 'Profile'] : ['', '', '', '', '']);
     for (var i = 0; i < xs.length; i++) {
       var x = W * xs[i];
-      if (i === 2) {   // centre create button (white rounded rect with +)
-        c.save(); c.fillStyle = '#fff'; rr(c, x - unit * 0.05, ny - unit * 0.018, unit * 0.1, unit * 0.04, unit * 0.012); c.fill();
-        if (pf === 'tiktok') { c.fillStyle = '#fe2c55'; rr(c, x - unit * 0.062, ny - unit * 0.018, unit * 0.024, unit * 0.04, unit * 0.01); c.fill(); c.fillStyle = '#25f4ee'; rr(c, x + unit * 0.038, ny - unit * 0.018, unit * 0.024, unit * 0.04, unit * 0.01); c.fill(); c.fillStyle = '#fff'; rr(c, x - unit * 0.05, ny - unit * 0.018, unit * 0.1, unit * 0.04, unit * 0.012); c.fill(); }
-        c.strokeStyle = '#111'; c.lineWidth = unit * 0.006; icPlus(c, x, ny, unit * 0.013); c.restore();
-        if (labels[i]) lbl2(c, x, ny + unit * 0.028, labels[i], unit);
+      if (i === 2) {   // centre create button (rounded rect with +)
+        c.save();
+        if (pf === 'tiktok') { c.fillStyle = '#fe2c55'; rr(c, x - unit * 0.062, ny - unit * 0.02, unit * 0.026, unit * 0.04, unit * 0.01); c.fill(); c.fillStyle = '#25f4ee'; rr(c, x + unit * 0.036, ny - unit * 0.02, unit * 0.026, unit * 0.04, unit * 0.01); c.fill(); }
+        c.fillStyle = '#fff'; rr(c, x - unit * 0.05, ny - unit * 0.02, unit * 0.1, unit * 0.04, unit * 0.012); c.fill();
+        c.strokeStyle = '#111'; c.lineWidth = unit * 0.0055; icPlus(c, x, ny, unit * 0.013); c.restore();
+        if (labels[i]) lbl2(c, x, ny + unit * 0.032, labels[i], unit);
         continue;
       }
-      c.strokeStyle = '#fff'; c.fillStyle = '#fff'; c.lineWidth = Math.max(2, unit * 0.0055);
-      if (i === 0) icHome(c, x, ny, isz, pf === 'reels');
-      else if (i === 4) avatar(c, x, ny, isz * 0.85, false);
-      else { rr(c, x - isz * 0.78, ny - isz * 0.78, isz * 1.56, isz * 1.56, isz * 0.32); c.stroke(); }
-      if (labels[i]) lbl2(c, x, ny + unit * 0.028, labels[i], unit);
+      c.strokeStyle = '#fff'; c.fillStyle = '#fff';
+      if (i === 0) ic(c, 'home', x, ny, isz, pf === 'reels');
+      else if (i === 1) { pf === 'reels' || pf === 'shorts' ? ic(c, 'play', x, ny, isz * 0.9, true) : ic(c, 'user', x, ny, isz, false); }
+      else if (i === 3) pf === 'reels' ? ic(c, 'search', x, ny, isz, false) : ic(c, 'home', x, ny, isz, false);
+      else if (i === 4) avatar(c, x, ny, isz * 0.5, false);
+      if (labels[i]) lbl2(c, x, ny + unit * 0.032, labels[i], unit);
     }
     c.restore();
   }
-  function lbl2(c, x, y, t, unit) { c.save(); c.fillStyle = 'rgba(255,255,255,0.92)'; c.textAlign = 'center'; c.textBaseline = 'top'; c.font = '500 ' + Math.round(unit * 0.017) + 'px Inter, system-ui, sans-serif'; c.shadowBlur = 0; c.fillText(t, x, y); c.restore(); }
+  function lbl2(c, x, y, t, unit) { c.save(); c.fillStyle = 'rgba(255,255,255,0.92)'; c.textAlign = 'center'; c.textBaseline = 'top'; c.font = '500 ' + Math.round(unit * 0.016) + 'px Inter, system-ui, sans-serif'; c.shadowBlur = 0; c.fillText(t, x, y); c.restore(); }
 
   // the central area to keep content/branding inside (platform safe zone, or margins)
   function safeRect(W, H) {
@@ -292,13 +254,15 @@
     }
   }
 
-  /* Master draw: the GUIDE (platform UI and/or custom grid+overlays) at the chosen
-     opacity, then the BRANDING at full opacity on top. */
-  function draw(ctx, W, H) {
+  /* Master draw: the GUIDE (platform UI and/or custom grid+overlays) at alpha, then
+     the BRANDING at full opacity. alpha defaults to 1 so the on-panel PREVIEW is
+     always crisp & solid like the real app — the opacity slider only fades the
+     placed reference clip (passed by renderOverlayPng). */
+  function draw(ctx, W, H, alpha) {
     ctx.clearRect(0, 0, W, H);
     var unit = Math.min(W, H);
     ctx.save();
-    ctx.globalAlpha = Math.max(0.08, (state.opacity || 70) / 100);
+    ctx.globalAlpha = (alpha == null ? 1 : Math.max(0.08, alpha));
     if (state.mode === 'safezones' && state.platform !== 'none') {
       drawPlatformUI(ctx, W, H, state.platform);
       var sr = safeRect(W, H); dashBox(ctx, sr.x, sr.y, sr.w, sr.h, unit, 'SAFE AREA · ' + (PF_LABEL[state.platform] || ''));
@@ -321,11 +285,11 @@
     var ctx = cv.getContext('2d');
     var bg = ctx.createLinearGradient(0, 0, 0, cv.height); bg.addColorStop(0, '#2a3340'); bg.addColorStop(1, '#10141c');
     ctx.fillStyle = bg; ctx.fillRect(0, 0, cv.width, cv.height);
-    draw(ctx, cv.width, cv.height);
+    draw(ctx, cv.width, cv.height, 1);                       // preview = crisp, solid
   }
   function renderOverlayPng() {
     var d = envDims(), cv = document.createElement('canvas'); cv.width = d.w; cv.height = d.h;
-    draw(cv.getContext('2d'), d.w, d.h);
+    draw(cv.getContext('2d'), d.w, d.h, (state.opacity || 70) / 100);   // placed clip = chosen opacity
     return cv.toDataURL('image/png');
   }
 
