@@ -2582,47 +2582,17 @@
     // MOGRT cards: distinct look + open the action sheet (preview / use)
     if (t.mogrt) {
       var mc = document.createElement('div');
-      mc.className = 'tpl-card is-mogrt' + (t.thumb ? ' has-thumb' : '');
+      mc.className = 'tpl-card is-mogrt';
       var mthumb = document.createElement('div');
       mthumb.className = 'tpl-thumb';
-      // Priority: MP4 looping animation > PNG still > CPRender canvas fallback
-      if (t.video) {
-        // Looping video — shows the actual After Effects animation from thumb.mp4
-        var mvid = document.createElement('video');
-        mvid.className = 'tpl-thumb-video';
-        mvid.src = t.video;
-        mvid.autoplay = true;
-        mvid.loop = true;
-        mvid.muted = true;
-        mvid.setAttribute('playsinline', '');
-        mvid.setAttribute('disablepictureinpicture', '');
-        // fallback to PNG still if video fails
-        mvid.onerror = function () {
-          mvid.style.display = 'none';
-          if (t.thumb) { var fi = document.createElement('img'); fi.className = 'tpl-thumb-img'; fi.src = t.thumb; fi.alt = t.name; mthumb.insertBefore(fi, mthumb.firstChild); }
-        };
-        mthumb.appendChild(mvid);
-      } else if (t.thumb) {
-        var mimg = document.createElement('img');
-        mimg.className = 'tpl-thumb-img';
-        mimg.src = t.thumb;
-        mimg.alt = t.name;
-        // fallback: CPRender canvas if PNG fails
-        mimg.onerror = function () {
-          mimg.style.display = 'none';
-          var mcvsFb = document.createElement('canvas');
-          mcvsFb.className = 'tpl-thumb-canvas';
-          mcvsFb._mogrtTpl = t;
-          mthumb.insertBefore(mcvsFb, mthumb.firstChild);
-          schedulePaintThumbs();
-        };
-        mthumb.appendChild(mimg);
-      } else {
-        var mcvs = document.createElement('canvas');
-        mcvs.className = 'tpl-thumb-canvas';
-        mcvs._mogrtTpl = t;
-        mthumb.appendChild(mcvs);
-      }
+      // CLEAN animated preview via the real caption engine, themed from THIS
+      // template's own colours (read from its definition.json). Distinct per
+      // template AND readable — unlike the baked thumb.mp4, which is a tiny
+      // 640×360 clip that mostly shows the animation mid-build (an unreadable blob).
+      var mcvs = document.createElement('canvas');
+      mcvs.className = 'tpl-thumb-canvas';
+      mcvs._mogrtTpl = t;
+      mthumb.appendChild(mcvs);
       // These are ANIMATED motion templates — that's what sets them apart from the
       // static style presets. (Every template is editable either way, so an
       // "editable" tag on only some was misleading.)
@@ -2733,14 +2703,12 @@
     // hidden so there's never TWO previews stacked on top of each other.
     var msThumb = $('ms-thumb');
     if (msThumb) { msThumb.classList.add('hidden'); msThumb.removeAttribute('src'); }
-    // Show the template's REAL looping animation (baked thumb.mp4 = exactly what
-    // gets placed on the timeline) so the user sees the motion before using it.
-    // The live colour canvas below stays for editing colours/font.
+    // ONE preview only: the live "your colours" canvas below (which animates +
+    // reflects your edits). The baked thumb.mp4 is intentionally NOT shown — it's a
+    // tiny low-res clip with a different look, so stacking it here made two
+    // mismatched previews and stole the room needed for the customization controls.
     var msAnim = $('ms-anim');
-    if (msAnim) {
-      if (t.video) { msAnim.src = t.video; msAnim.classList.remove('hidden'); try { msAnim.play(); } catch (eP) {} }
-      else { msAnim.classList.add('hidden'); msAnim.removeAttribute('src'); }
-    }
+    if (msAnim) { try { msAnim.pause(); } catch (eP) {} msAnim.classList.add('hidden'); msAnim.removeAttribute('src'); }
     // show THIS template's real capabilities (read from its definition.json)
     if ($('ms-hint')) {
       var caps = mogrtCapsSummary(t.path);
@@ -2782,6 +2750,8 @@
       $('mogrt-sheet').classList.add('hidden');
       var lp = $('ms-live-preview'); if (lp) lp.classList.add('hidden');   // free the sticky preview
       var av = $('ms-anim'); if (av) { try { av.pause(); } catch (eA) {} av.classList.add('hidden'); av.removeAttribute('src'); }
+      // stop the live-preview canvas animating once the sheet is closed
+      var lc = $('ms-live-canvas'); if (lc) { lc._animFrames = null; lc._animLen = 0; lc.className = (lc.className || '').replace(/\btpl-thumb-canvas\b/, '').trim(); }
       _mogrtPrevCanvas = null;
     }
     $('ms-close').addEventListener('click', closeMogrtSheet);
@@ -3960,6 +3930,22 @@
     });
     updateMagicLabel();
   })();
+  // Word-animation mode: 'highlight' (whole line, active word lights up) vs
+  // 'reveal' (words pop in as spoken). Drives both the Reliable output and the
+  // live preview so they always match.
+  var _revealMode = 'highlight';
+  function captionRevealMode() { return _revealMode; }
+  (function wireCapReveal() {
+    var box = $('cap-reveal'); if (!box) return;
+    var btns = box.querySelectorAll('button');
+    for (var i = 0; i < btns.length; i++) btns[i].addEventListener('click', function () {
+      _revealMode = this.dataset.mode || 'highlight';
+      var on = box.querySelector('button.on'); if (on) on.classList.remove('on');
+      this.classList.add('on');
+      try { renderPreview(); } catch (e) {}
+      try { if (_mogrtPrevCanvas) renderMogrtPreview(); } catch (e2) {}
+    });
+  })();
   // Collapsible preview — the preview used to dominate the panel and bury the
   // customization controls. It's compact now and can be hidden entirely; the
   // choice is remembered.
@@ -4337,7 +4323,8 @@
       letterSpacing: ov.letterSpacing || 0,
       align: align, marginV: marginV,
       marginLR: Math.round(W * 0.06),
-      anim: 'pop'
+      anim: 'pop',
+      mode: captionRevealMode()          // 'highlight' | 'reveal'
     };
   }
 
@@ -4903,7 +4890,19 @@
     };
     try {
       var st = CPRender.styleForFrame(preset, cv.height, {}, cv.width);
-      CPRender.drawFrame(cv, { words: ['Your', 'caption', 'here'], active: 1 }, st);
+      // Animate the ONE preview so the user sees the motion, in the chosen mode:
+      // 'highlight' shows the whole line and lights up each word in turn; 'reveal'
+      // adds words one at a time. This matches what the Reliable output produces.
+      var ws = pv.caps ? ['YOUR', 'CAPTION', 'HERE'] : ['Your', 'caption', 'here'];
+      var mode = captionRevealMode();
+      var frames = [];
+      for (var i = 0; i < ws.length; i++) {
+        frames.push({ words: (mode === 'reveal') ? ws.slice(0, i + 1) : ws, active: i });
+      }
+      cv._animFrames = frames; cv._animStyle = st; cv._animLen = frames.length;
+      if ((cv.className || '').indexOf('tpl-thumb-canvas') < 0) cv.className = (cv.className ? cv.className + ' ' : '') + 'tpl-thumb-canvas';
+      drawCardTickFrame(cv, _cardTick);
+      startCardAnimator();
     } catch (e) {}
   }
 

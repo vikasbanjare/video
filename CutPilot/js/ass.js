@@ -89,6 +89,10 @@
     var allCaps = !!opts.allCaps;
     var anim = opts.anim || 'pop';
     var popScale = opts.popScale || 116;
+    // word-timing mode: 'highlight' shows the whole caption and recolours the
+    // spoken word; 'reveal' adds words one at a time as they're spoken (newest
+    // word is the active/popped one). Pick per template so each looks right.
+    var reveal = (opts.mode === 'reveal');
 
     var head = [
       '[Script Info]',
@@ -122,6 +126,7 @@
         if (!(end > start)) end = start + 0.04;     // never zero-length
         var parts = [];
         for (var j = 0; j < ws.length; j++) {
+          if (reveal && j > k) break;     // reveal: only the words spoken so far
           var word = assText(caseIt(ws[j].text));
           if (j === k) {
             var pop = (anim === 'pop')

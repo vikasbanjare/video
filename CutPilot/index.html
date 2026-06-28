@@ -24,7 +24,7 @@
       </svg>
       <span class="brand-name">Pulse</span><span class="brand-by">by aifloh</span>
     </div>
-    <span class="ver" id="ver">v0.9.220</span>
+    <span class="ver" id="ver">v0.9.221</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -556,6 +556,12 @@
           <button data-out="editable" type="button">✏️ Editable</button>
         </div>
         <p class="hint" id="cap-output-hint" style="margin:0 0 8px">⚡ <b>Reliable</b> (recommended): word-by-word highlight baked into ONE overlay clip with ffmpeg — what you see is exactly what renders, the whole sentence stays together, and it never overflows the frame. 🖼 <b>Exact look</b>: pixel-perfect PNG of the preview (every box, 3D, glow, gradient). ✏️ <b>Editable</b>: each caption is its own clip you can re-edit in Essential Graphics — best for plain coloured text.</p>
+        <label style="font-size:11px">Word animation</label>
+        <div class="seg-control" id="cap-reveal" style="margin-bottom:8px">
+          <button data-mode="highlight" class="on" type="button">🔆 Highlight word</button>
+          <button data-mode="reveal" type="button">📝 Reveal as spoken</button>
+        </div>
+        <p class="hint" style="margin:0 0 8px">🔆 <b>Highlight</b>: the whole line shows and the spoken word lights up (karaoke). 📝 <b>Reveal</b>: words pop in one at a time as they're said.</p>
         <button id="btn-magic" class="hero-btn">✨ Add captions <span class="dim">(the style you picked — added to your timeline)</span></button>
         <button id="btn-viral-edit" class="hero-btn alt">⚡ One-click Viral Edit <span class="dim">(same style + auto zoom punches — beta)</span></button>
         <p class="hint" style="margin:2px 0 0">Both add the exact style you picked above. <b>Viral Edit</b> also adds subtle zoom punch-ins to your top clip (Ctrl/Cmd+Z to undo them).</p>
@@ -994,7 +1000,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.9.220 · auto-edit · multicam · captions · chapters · organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.9.221 · auto-edit · multicam · captions · chapters · organize</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->

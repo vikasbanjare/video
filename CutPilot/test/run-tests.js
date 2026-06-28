@@ -1032,6 +1032,16 @@ console.log('ass.js (libass karaoke generator)');
   // ALL CAPS option
   const caps = CPAss.buildAss(cues, { allCaps: true });
   assert(/WHAT/.test(caps) && !/What/.test(caps), 'allCaps uppercases the caption text');
+  // reveal mode: words appear one at a time (first Dialogue shows ONLY the first word)
+  const rev = CPAss.buildAss([{ words: [
+    { text: 'one', start: 0, end: 0.3 }, { text: 'two', start: 0.3, end: 0.6 }, { text: 'three', start: 0.6, end: 0.9 }
+  ] }], { mode: 'reveal' });
+  const revDlgs = rev.split('\n').filter(l => l.indexOf('Dialogue:') === 0);
+  assert(revDlgs.length === 3, 'reveal mode still emits one Dialogue per word');
+  assert(/one/.test(revDlgs[0]) && !/two/.test(revDlgs[0]) && !/three/.test(revDlgs[0]),
+    'reveal mode first frame shows ONLY the first word');
+  assert(/one/.test(revDlgs[2]) && /two/.test(revDlgs[2]) && /three/.test(revDlgs[2]),
+    'reveal mode last frame shows all words');
   // ffmpeg burn args
   const args = CPAss.ffmpegBurnArgs('in.mp4', '/tmp/c.ass', 'out.mp4', '/tmp/fonts');
   assert(args.indexOf('-vf') >= 0 && args.join(' ').indexOf('subtitles=') >= 0 &&
