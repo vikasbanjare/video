@@ -2582,17 +2582,30 @@
     // MOGRT cards: distinct look + open the action sheet (preview / use)
     if (t.mogrt) {
       var mc = document.createElement('div');
-      mc.className = 'tpl-card is-mogrt';
+      mc.className = 'tpl-card is-mogrt' + (t.thumb ? ' has-thumb' : '');
       var mthumb = document.createElement('div');
       mthumb.className = 'tpl-thumb';
-      // CLEAN animated preview via the real caption engine, themed from THIS
-      // template's own colours (read from its definition.json). Distinct per
-      // template AND readable — unlike the baked thumb.mp4, which is a tiny
-      // 640×360 clip that mostly shows the animation mid-build (an unreadable blob).
-      var mcvs = document.createElement('canvas');
-      mcvs.className = 'tpl-thumb-canvas';
-      mcvs._mogrtTpl = t;
-      mthumb.appendChild(mcvs);
+      // Use the template's REAL baked render (thumb.png) so the preview MATCHES the
+      // actual output style — e.g. Flux Vector's blue gradient. The CPRender canvas
+      // can't reproduce each template's gradient/glow, so it drew plain white text
+      // ("preview wrong, output right"). The .png is an accurate, distinct still.
+      // Fallback to the canvas engine only when a template has no baked thumb.
+      if (t.thumb) {
+        var mimg = document.createElement('img');
+        mimg.className = 'tpl-thumb-img';
+        mimg.src = t.thumb; mimg.alt = t.name;
+        mimg.onerror = function () {
+          mimg.style.display = 'none';
+          var fb = document.createElement('canvas'); fb.className = 'tpl-thumb-canvas'; fb._mogrtTpl = t;
+          mthumb.insertBefore(fb, mthumb.firstChild); schedulePaintThumbs();
+        };
+        mthumb.appendChild(mimg);
+      } else {
+        var mcvs = document.createElement('canvas');
+        mcvs.className = 'tpl-thumb-canvas';
+        mcvs._mogrtTpl = t;
+        mthumb.appendChild(mcvs);
+      }
       // These are ANIMATED motion templates — that's what sets them apart from the
       // static style presets. (Every template is editable either way, so an
       // "editable" tag on only some was misleading.)
@@ -5775,6 +5788,7 @@
     if (!state.keepsMedia.length) return toast('No keep segments computed.', true);
     CPBridge.callHost('CP_rebuildTrimmed', {
       nodeId: state.clip.nodeId,
+      mediaPath: state.clip.mediaPath,    // fallback lookup when nodeId doesn't resolve
       keeps: state.keepsMedia,
       name: 'Pulse · ' + state.clip.name
     }).then(function (r) {

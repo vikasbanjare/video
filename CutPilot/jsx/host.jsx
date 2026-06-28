@@ -474,12 +474,33 @@ function CP_razorRipple(argsJson) {
 
 // ------------------------------------------------- safe rebuild cutting ----
 function CP_findProjectItemByNodeId(root, nodeId) {
+  if (nodeId == null) return null;
   for (var i = 0; i < root.children.numItems; i++) {
     var child = root.children[i];
-    if (child.nodeId === nodeId) return child;
+    if (String(child.nodeId) === String(nodeId)) return child;
     if (child.type === 2 /* BIN */) {
       var hit = CP_findProjectItemByNodeId(child, nodeId);
       if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+/* Fallback lookup by media path — robust when the timeline clip's projectItem
+   nodeId doesn't match a bin item (merged clips, subclips, multicam, Productions).
+   Normalises separators + case so Windows/macOS paths still match. */
+function CP_normPath(p) { return String(p == null ? '' : p).replace(/\\/g, '/').toLowerCase(); }
+function CP_findProjectItemByMediaPath(root, mediaPath) {
+  var want = CP_normPath(mediaPath);
+  if (!want) return null;
+  for (var i = 0; i < root.children.numItems; i++) {
+    var child = root.children[i];
+    if (child.type === 2 /* BIN */) {
+      var hit = CP_findProjectItemByMediaPath(child, mediaPath);
+      if (hit) return hit;
+    } else {
+      var mp = null; try { mp = child.getMediaPath(); } catch (e) {}
+      if (mp && CP_normPath(mp) === want) return child;
     }
   }
   return null;
@@ -495,7 +516,10 @@ function CP_rebuildTrimmed(argsJson) {
   try {
     var args = JSON.parse(argsJson);
     var pItem = CP_findProjectItemByNodeId(app.project.rootItem, args.nodeId);
-    if (!pItem) return CP_fail('Could not find the source project item.');
+    // Fallback: match by media path when the nodeId doesn't resolve (merged/sub/
+    // multicam clips expose a projectItem whose nodeId isn't a plain bin item).
+    if (!pItem && args.mediaPath) pItem = CP_findProjectItemByMediaPath(app.project.rootItem, args.mediaPath);
+    if (!pItem) return CP_fail('Could not find the source clip in the Project panel. Make sure the original media is still imported (not just on the timeline), then try again.');
 
     var seqName = args.name || ('Pulse Trim ' + new Date().getTime());
     var newSeq = app.project.createNewSequenceFromClips(seqName, [pItem]);
