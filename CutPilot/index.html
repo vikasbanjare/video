@@ -1026,11 +1026,11 @@
     <!-- live preview of the frame with guides + branding -->
     <div id="sz-preview-wrap" class="sz-preview-wrap"><canvas id="sz-canvas"></canvas></div>
 
-    <label style="font-size:11px">Platform safe zone <span class="dim">(where the app's UI covers your video)</span></label>
+    <label style="font-size:11px">Platform safe zone <span class="dim">(shows that app's real buttons &amp; captions so you keep clear of them)</span></label>
     <div class="seg-control" id="sz-platform" style="margin-bottom:8px">
-      <button data-pf="none" class="on" type="button">None</button>
+      <button data-pf="none" type="button">None</button>
       <button data-pf="tiktok" type="button">TikTok</button>
-      <button data-pf="reels" type="button">Reels</button>
+      <button data-pf="reels" class="on" type="button">Reels</button>
       <button data-pf="shorts" type="button">Shorts</button>
     </div>
 
@@ -1048,8 +1048,7 @@
       </div>
       <input id="sz-channel" type="text" placeholder="Channel name (e.g. @aifloh)" maxlength="40" style="margin:6px 0">
       <input id="sz-title" type="text" placeholder="Video title / hook (e.g. Best JDM builds)" maxlength="80" style="margin:0 0 6px">
-      <label class="sz-check"><input type="checkbox" id="sz-icons" checked> Show like / comment / share icons</label>
-      <label class="sz-check"><input type="checkbox" id="sz-handle" checked> Show channel handle row</label>
+      <label class="sz-check"><input type="checkbox" id="sz-handle" checked> Show my logo + channel row</label>
     </div>
 
     <label style="font-size:11px;margin-top:6px;display:block">Title position</label>
