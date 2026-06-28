@@ -3938,14 +3938,14 @@
   // vs ✏️ editable (an editable subtitle template per line; Premiere's MOGRT engine
   // can't reproduce every box effect, so it's text-colour/font/box only).
   // Default = burned-in, because it's guaranteed to match the preview 1:1.
-  var _capOut = 'reliable';
+  var _capOut = 'png';
   function updateMagicLabel() {
     var b = $('btn-magic'); if (!b) return;
     b.innerHTML = (_capOut === 'editable')
       ? '✏️ Add editable captions <span class="dim">(your style — each clip stays editable)</span>'
       : (_capOut === 'reliable')
-      ? '⚡ Add captions <span class="dim">(word-by-word, baked in — exactly what renders)</span>'
-      : '🖼 Add captions <span class="dim">(exact look — every colour & effect, just like the preview)</span>';
+      ? '⚡ Add captions <span class="dim">(word-by-word libass burn — single clip)</span>'
+      : '🖼 Add captions <span class="dim">(exact look — word-by-word, matches the preview 1:1)</span>';
   }
   (function wireCapOutput() {
     var box = $('cap-output'); if (!box) return;
@@ -4377,9 +4377,11 @@
 
     var fs, pathMod, cpMod, osMod;
     try { fs = nodeReq('fs'); pathMod = nodeReq('path'); cpMod = nodeReq('child_process'); osMod = nodeReq('os'); }
-    catch (e) { return toast('Reliable captions need Node — use 🖼 Exact look instead. (' + e.message + ')', true); }
+    catch (e) { return runCaptionPipeline(cues, opts); }   // no Node → burned-in
     var ff = resolveFfmpeg();
-    if (!ff) { toast('Set up the audio engine first (Settings → Set up audio engine), then try again.', true); return; }
+    // No ffmpeg available → just use the burned-in caption pipeline (it doesn't need
+    // ffmpeg when we already have word timing) so captions still get created.
+    if (!ff) { return runCaptionPipeline(cues, opts); }
 
     var W = state.env.width || 1920, H = state.env.height || 1080;
     var words = parseInt($('c-words').value, 10) || 0;
@@ -4428,14 +4430,23 @@
 
       capProgress('Rendering captions with libass…');
       var args = CPAss.ffmpegOverlayArgs(assPath, W, H, lastEnd + 0.2, outPath, fontsDir, Math.round(state.env.fps || 30));
+      // If ANY step of the libass path fails on this machine, fall back to the
+      // proven burned-in caption pipeline so "Add captions" NEVER fails outright.
+      var _fellBack = false;
+      function fallbackBurnedIn(reason) {
+        if (_fellBack) return; _fellBack = true;
+        capProgress('Using burned-in captions…');
+        try { toast('Reliable render unavailable here (' + reason + ') — used burned-in captions instead.'); } catch (e) {}
+        runCaptionPipeline(cues, opts);
+      }
       var proc;
-      try { proc = cpMod.spawn(ff, args); } catch (eS) { setCaptionBusy(false); capProgress(null); return toast('Could not launch ffmpeg: ' + eS.message, true); }
+      try { proc = cpMod.spawn(ff, args); } catch (eS) { return fallbackBurnedIn('ffmpeg launch'); }
       var errBuf = '';
       proc.stderr.on('data', function (d) { errBuf += d.toString(); if (errBuf.length > 8000) errBuf = errBuf.slice(-8000); });
-      proc.on('error', function (e) { setCaptionBusy(false); capProgress(null); toast('ffmpeg failed to start: ' + e.message, true); });
+      proc.on('error', function (e) { fallbackBurnedIn('ffmpeg error'); });
       proc.on('close', function (code) {
         var ok = false; try { ok = fs.existsSync(outPath) && fs.statSync(outPath).size > 1000; } catch (eE) {}
-        if (code !== 0 || !ok) { setCaptionBusy(false); capProgress(null); return toast('Caption render failed (ffmpeg ' + code + '). ' + (errBuf.slice(-160)), true); }
+        if (code !== 0 || !ok) { return fallbackBurnedIn('render ' + code); }
         capProgress('Placing the caption overlay…');
         var placeArgs = { path: outPath, startSec: 0 };
         if (opts.replaceTrack) placeArgs.replaceTrack = opts.replaceTrack;
