@@ -1156,6 +1156,8 @@
       // Leaving Captions? Stop the live-preview animation loop so it isn't
       // painting an off-screen canvas forever in the background.
       if (this.dataset.tab !== 'captions') { if (previewTimer) { clearInterval(previewTimer); previewTimer = null; } stopCardAnimator(); }
+      // Safe Zone tab → refresh its preview from the current sequence dimensions.
+      if (this.dataset.tab === 'safezone' && window.CPSafezone) { try { CPSafezone.onShow(); } catch (eSZ) {} }
       // Re-check for a transcript when returning to Captions (e.g. after
       // exporting one), and refresh the preview now the frame has a size.
       if (this.dataset.tab === 'captions' && CPBridge.isCEP()) {

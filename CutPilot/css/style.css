@@ -893,3 +893,19 @@ footer { border-top: 1px solid var(--line); background: var(--card); max-height:
 }
 .cmdk-empty { padding: 14px; text-align: center; color: var(--dim); font-size: 12px; }
 .cmdk-foot { padding: 8px 14px; border-top: 1px solid var(--line); color: var(--dim); font-size: 11px; }
+
+/* ---- Safe Zone & Branding tab ---- */
+.sz-preview-wrap {
+  width: 100%; display: flex; align-items: center; justify-content: center;
+  background: #0b0e16; border: 1px solid var(--line2); border-radius: 14px;
+  padding: 8px; margin: 4px 0 10px; min-height: 120px; overflow: hidden;
+}
+#sz-canvas { display: block; max-width: 100%; border-radius: 8px; box-shadow: 0 6px 18px -8px rgba(0,0,0,.7); }
+.sz-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+.sz-check { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--dim); margin: 4px 0; cursor: pointer; }
+.sz-check input { width: auto; }
+#sz-custom-fields.dim-disabled { opacity: .4; pointer-events: none; }
+#tab-safezone input[type=text] {
+  width: 100%; box-sizing: border-box; padding: 9px 11px; border-radius: 10px;
+  border: 1px solid var(--line2); background: var(--panel2, #141a26); color: var(--fg, #e7ecf3); font-size: 13px;
+}

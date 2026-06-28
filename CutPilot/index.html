@@ -37,6 +37,7 @@
     <button class="tab" data-tab="multicam"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="3.5" width="13" height="9" rx="2"/><rect x="3.5" y="9.5" width="13" height="9" rx="2"/></svg></span>Multicam</button>
     <button class="tab" data-tab="chapters"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4.5" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1.4" fill="currentColor" stroke="none"/></svg></span>Chapters</button>
     <button class="tab" data-tab="organize"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5a2 2 0 0 1 2-2h3.4a2 2 0 0 1 1.6.8l.9 1.2h7.1a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg></span>Organize</button>
+    <button class="tab" data-tab="safezone"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="2"/><rect x="9" y="7" width="6" height="6" rx="1"/><line x1="9" y1="17" x2="15" y2="17"/></svg></span>Safe Zone</button>
     <button class="tab" data-tab="settings"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 13.5a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 0 1-4 0v-.1a1.6 1.6 0 0 0-2.7-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z"/></svg></span>Settings</button>
   </nav>
 
@@ -1015,6 +1016,61 @@
     <section id="cpo-results" class="cpo-results"></section>
   </section>
 
+  <!-- ============================ SAFE ZONE ============================ -->
+  <section id="tab-safezone" class="tab-page">
+    <div class="step-head"><span class="step-title">🛟 Safe Zone &amp; Branding</span></div>
+    <p class="hint">See exactly where each platform's buttons &amp; captions sit, so your
+      content stays clear of them — then drop your logo, channel name and a title on top.
+      One tap places it as an overlay on your timeline.</p>
+
+    <!-- live preview of the frame with guides + branding -->
+    <div id="sz-preview-wrap" class="sz-preview-wrap"><canvas id="sz-canvas"></canvas></div>
+
+    <label style="font-size:11px">Platform safe zone <span class="dim">(where the app's UI covers your video)</span></label>
+    <div class="seg-control" id="sz-platform" style="margin-bottom:8px">
+      <button data-pf="none" class="on" type="button">None</button>
+      <button data-pf="tiktok" type="button">TikTok</button>
+      <button data-pf="reels" type="button">Reels</button>
+      <button data-pf="shorts" type="button">Shorts</button>
+    </div>
+
+    <label style="font-size:11px">Branding</label>
+    <div class="seg-control" id="sz-brandmode" style="margin-bottom:8px">
+      <button data-bm="pulse" class="on" type="button">⚡ Pulse default</button>
+      <button data-bm="custom" type="button">Custom</button>
+    </div>
+
+    <div id="sz-custom-fields">
+      <div class="sz-row">
+        <button id="sz-logo-pick" class="chip-btn" type="button">🖼 Upload logo…</button>
+        <span id="sz-logo-name" class="dim" style="font-size:11px">no logo — a circle badge is used</span>
+        <button id="sz-logo-clear" class="chip-btn hidden" type="button">✕</button>
+      </div>
+      <input id="sz-channel" type="text" placeholder="Channel name (e.g. @aifloh)" maxlength="40" style="margin:6px 0">
+      <input id="sz-title" type="text" placeholder="Video title / hook (e.g. Best JDM builds)" maxlength="80" style="margin:0 0 6px">
+      <label class="sz-check"><input type="checkbox" id="sz-icons" checked> Show like / comment / share icons</label>
+      <label class="sz-check"><input type="checkbox" id="sz-handle" checked> Show channel handle row</label>
+    </div>
+
+    <label style="font-size:11px;margin-top:6px;display:block">Title position</label>
+    <div class="seg-control" id="sz-titlepos" style="margin-bottom:8px">
+      <button data-tp="top" type="button">Top</button>
+      <button data-tp="center" type="button">Center</button>
+      <button data-tp="bottom" class="on" type="button">Bottom</button>
+    </div>
+
+    <label style="font-size:11px">Overlay length</label>
+    <div class="seg-control" id="sz-dur" style="margin-bottom:8px">
+      <button data-d="3" type="button">3s</button>
+      <button data-d="5" class="on" type="button">5s</button>
+      <button data-d="full" type="button">Whole clip</button>
+    </div>
+
+    <button id="sz-apply" class="hero-btn">➕ Add branding overlay to timeline</button>
+    <p class="hint" style="margin:4px 0 0">Places one transparent graphic on a new top track at the playhead. Ctrl/Cmd+Z undoes it. The dotted guides are NOT exported — they only show you the safe area.</p>
+    <div id="sz-progress" class="progress hidden"></div>
+  </section>
+
   <footer><div id="log" class="log"></div></footer>
   <div id="toast" class="toast hidden"></div>
 
@@ -1042,5 +1098,6 @@
   <script src="js/chapters.js"></script>
   <script src="js/main.js"></script>
   <script src="js/organize.js"></script>
+  <script src="js/safezone.js"></script>
 </body>
 </html>

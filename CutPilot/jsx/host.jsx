@@ -1113,6 +1113,14 @@ function CP_placeOverlay(argsJson) {
       try { track.overwriteClip(item, CP_ticksFromSeconds(startSec)); }
       catch (ePlace2) { return CP_fail('Could not place the caption overlay: ' + ePlace.message); }
     }
+    // Hold a still overlay (e.g. a branding PNG) for a requested duration.
+    if (args.durSec && args.durSec > 0) {
+      try {
+        var oc = (typeof CP_clipAtStart === 'function') ? CP_clipAtStart(track, startSec) : null;
+        if (!oc) oc = track.clips[track.clips.numItems - 1];
+        if (oc) { try { oc.end = CP_timeFromSeconds(startSec + args.durSec); } catch (eEnd) {} }
+      } catch (eDur) {}
+    }
     return CP_ok({ placed: 1, track: trackIndex + 1, bin: bin.name });
   } catch (e) { return CP_fail(e.message); }
 }
