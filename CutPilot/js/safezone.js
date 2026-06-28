@@ -14,7 +14,7 @@
   function $(id) { return document.getElementById(id); }
   var state = {
     platform: 'reels', brandMode: 'pulse', titlePos: 'bottom', dur: '5',
-    channel: '', title: '', handle: true, env: null, logo: null, logoName: ''
+    channel: '', title: '', handle: true, guide: false, env: null, logo: null, logoName: ''
   };
 
   // The safe area = the central region left clear once each platform's UI is drawn.
@@ -39,176 +39,180 @@
     ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
   }
 
-  // ---------- icons (cx,cy = centre, s = half-size) ----------
-  function icHeartOutline(c, x, y, s, fill) {
+  // ---------- high-fidelity platform icons (x,y = centre, r = radius) ----------
+  function igHeart(c, x, y, r, fill) {
     c.beginPath();
-    c.moveTo(x, y + s * 0.75);
-    c.bezierCurveTo(x - s * 1.3, y - s * 0.2, x - s * 0.55, y - s * 1.05, x, y - s * 0.3);
-    c.bezierCurveTo(x + s * 0.55, y - s * 1.05, x + s * 1.3, y - s * 0.2, x, y + s * 0.75);
+    c.moveTo(x, y + r * 0.92);
+    c.bezierCurveTo(x - r * 1.45, y - r * 0.12, x - r * 0.92, y - r * 1.2, x, y - r * 0.42);
+    c.bezierCurveTo(x + r * 0.92, y - r * 1.2, x + r * 1.45, y - r * 0.12, x, y + r * 0.92);
     c.closePath(); fill ? c.fill() : c.stroke();
   }
-  function icCommentOutline(c, x, y, s, fill) {
-    c.save(); c.beginPath();
-    c.ellipse ? c.ellipse(x, y - s * 0.1, s, s * 0.8, 0, 0, Math.PI * 2) : c.arc(x, y - s * 0.1, s, 0, Math.PI * 2);
-    fill ? c.fill() : c.stroke();
-    c.beginPath(); c.moveTo(x - s * 0.45, y + s * 0.5); c.lineTo(x - s * 0.1, y + s * 0.95); c.lineTo(x + s * 0.1, y + s * 0.55);
-    c.closePath(); fill ? c.fill() : c.stroke(); c.restore();
-  }
-  function icPlane(c, x, y, s) {   // instagram share / paper plane
+  function igComment(c, x, y, r, fill) {           // rounded speech bubble + small tail
     c.beginPath();
-    c.moveTo(x - s, y - s * 0.55); c.lineTo(x + s, y - s); c.lineTo(x + s * 0.1, y + s);
-    c.lineTo(x - s * 0.1, y + s * 0.1); c.closePath(); c.stroke();
-    c.beginPath(); c.moveTo(x - s, y - s * 0.55); c.lineTo(x - s * 0.1, y + s * 0.1); c.stroke();
+    if (c.ellipse) c.ellipse(x, y - r * 0.08, r, r * 0.9, 0, 0, Math.PI * 2); else c.arc(x, y, r, 0, Math.PI * 2);
+    fill ? c.fill() : c.stroke();
+    c.beginPath(); c.moveTo(x - r * 0.55, y + r * 0.55); c.lineTo(x - r * 0.78, y + r * 1.05); c.lineTo(x - r * 0.12, y + r * 0.78);
+    c.closePath(); fill ? c.fill() : c.stroke();
   }
-  function icThumbUp(c, x, y, s, down) {
-    c.save(); c.translate(x, y); if (down) c.scale(1, -1);
-    c.beginPath();                                  // cuff
-    rr(c, -s, -s * 0.05, s * 0.55, s, s * 0.12); c.fill();
-    c.beginPath();                                  // hand
-    c.moveTo(-s * 0.35, -s * 0.05); c.lineTo(-s * 0.35, -s * 0.55);
-    c.bezierCurveTo(-s * 0.35, -s * 1.05, s * 0.2, -s * 1.25, s * 0.18, -s * 0.6);
-    c.lineTo(s, -s * 0.6); c.bezierCurveTo(s * 1.15, -s * 0.55, s * 1.1, s * 0.05, s * 0.9, s * 0.1);
-    c.lineTo(-s * 0.05, s * 0.1); c.lineTo(-s * 0.35, -s * 0.05); c.closePath(); c.fill();
-    c.restore();
+  function igPlane(c, x, y, r) {                    // paper-plane share (outline)
+    c.beginPath();
+    c.moveTo(x - r * 1.05, y - r * 0.35); c.lineTo(x + r * 1.05, y - r * 1.0);
+    c.lineTo(x + r * 0.15, y + r * 1.05); c.lineTo(x - r * 0.02, y + r * 0.2); c.closePath(); c.stroke();
+    c.beginPath(); c.moveTo(x - r * 1.05, y - r * 0.35); c.lineTo(x - r * 0.02, y + r * 0.2);
+    c.lineTo(x + r * 1.05, y - r * 1.0); c.stroke();
   }
-  function icShareArrow(c, x, y, s) {   // youtube share — bent arrow
-    c.beginPath(); c.moveTo(x - s, y + s * 0.7); c.bezierCurveTo(x - s * 0.6, y - s * 0.3, x + s * 0.2, y - s * 0.5, x + s * 0.55, y - s * 0.5);
+  function ytThumb(c, x, y, r, down) {              // YouTube thumbs up/down (filled)
+    c.save(); c.translate(x, y); if (down) c.rotate(Math.PI);
+    c.beginPath(); rr(c, -r * 1.0, -r * 0.05, r * 0.5, r * 1.0, r * 0.1); c.fill();   // sleeve
+    c.beginPath();
+    c.moveTo(-r * 0.42, r * 0.9); c.lineTo(-r * 0.42, -r * 0.05); c.lineTo(-r * 0.02, -r * 0.05);
+    c.lineTo(r * 0.18, -r * 0.95); c.quadraticCurveTo(r * 0.55, -r * 1.08, r * 0.48, -r * 0.4);
+    c.lineTo(r * 0.42, -r * 0.12); c.lineTo(r * 0.98, -r * 0.12);
+    c.quadraticCurveTo(r * 1.12, -r * 0.06, r * 0.96, r * 0.28);
+    c.lineTo(r * 0.72, r * 0.78); c.quadraticCurveTo(r * 0.6, r * 0.9, r * 0.32, r * 0.9);
+    c.closePath(); c.fill(); c.restore();
+  }
+  function ytShare(c, x, y, r) {                    // YouTube share (bent reply arrow, outline)
+    c.beginPath();
+    c.moveTo(x - r * 1.1, y + r * 0.85);
+    c.quadraticCurveTo(x - r * 0.9, y - r * 0.55, x + r * 0.15, y - r * 0.55);
     c.stroke();
-    c.beginPath(); c.moveTo(x + s * 0.1, y - s); c.lineTo(x + s, y - s * 0.5); c.lineTo(x + s * 0.1, y); c.stroke();
+    c.beginPath(); c.moveTo(x - r * 0.2, y - r * 1.05); c.lineTo(x + r * 0.9, y - r * 0.55);
+    c.lineTo(x - r * 0.2, y - r * 0.05); c.closePath(); c.fill();
   }
-  function icRemix(c, x, y, s) {        // two looping arrows
-    c.beginPath(); c.arc(x, y, s * 0.8, Math.PI * 0.2, Math.PI * 1.25); c.stroke();
-    c.beginPath(); c.arc(x, y, s * 0.8, Math.PI * 1.2, Math.PI * 2.25); c.stroke();
-    c.beginPath(); c.moveTo(x + s * 0.8, y - s * 0.4); c.lineTo(x + s * 0.75, y + s * 0.15); c.lineTo(x + s * 1.25, y - s * 0.05); c.closePath(); c.fill();
+  function ytRemix(c, x, y, r) {                    // two looping arrows
+    c.beginPath(); c.arc(x, y, r * 0.78, Math.PI * 0.15, Math.PI * 1.15); c.stroke();
+    c.beginPath(); c.arc(x, y, r * 0.78, Math.PI * 1.15, Math.PI * 2.15); c.stroke();
+    c.beginPath(); c.moveTo(x + r * 0.55, y - r * 0.78); c.lineTo(x + r * 0.95, y - r * 0.55); c.lineTo(x + r * 0.5, y - r * 0.25); c.closePath(); c.fill();
+    c.beginPath(); c.moveTo(x - r * 0.55, y + r * 0.78); c.lineTo(x - r * 0.95, y + r * 0.55); c.lineTo(x - r * 0.5, y + r * 0.25); c.closePath(); c.fill();
   }
-  function icBookmark(c, x, y, s) {
-    c.beginPath(); c.moveTo(x - s * 0.7, y - s); c.lineTo(x + s * 0.7, y - s); c.lineTo(x + s * 0.7, y + s);
-    c.lineTo(x, y + s * 0.35); c.lineTo(x - s * 0.7, y + s); c.closePath(); c.fill();
+  function ttBookmark(c, x, y, r) {                 // TikTok bookmark (filled)
+    c.beginPath(); c.moveTo(x - r * 0.65, y - r); c.lineTo(x + r * 0.65, y - r);
+    c.lineTo(x + r * 0.65, y + r); c.lineTo(x, y + r * 0.35); c.lineTo(x - r * 0.65, y + r); c.closePath(); c.fill();
+  }
+  function ttShare(c, x, y, r) {                    // TikTok share (filled curved arrow)
+    c.beginPath();
+    c.moveTo(x - r * 1.0, y + r * 0.9); c.quadraticCurveTo(x - r * 0.7, y - r * 0.5, x + r * 0.15, y - r * 0.5);
+    c.lineTo(x + r * 0.15, y - r); c.lineTo(x + r * 1.1, y - r * 0.1); c.lineTo(x + r * 0.15, y + r * 0.8);
+    c.lineTo(x + r * 0.15, y + r * 0.3); c.quadraticCurveTo(x - r * 0.45, y + r * 0.3, x - r * 0.7, y + r * 0.95);
+    c.closePath(); c.fill();
   }
   function icPlus(c, x, y, s) { c.beginPath(); c.moveTo(x - s, y); c.lineTo(x + s, y); c.moveTo(x, y - s); c.lineTo(x, y + s); c.stroke(); }
-  function icSearch(c, x, y, s) { c.beginPath(); c.arc(x - s * 0.15, y - s * 0.15, s * 0.6, 0, Math.PI * 2); c.stroke(); c.beginPath(); c.moveTo(x + s * 0.35, y + s * 0.35); c.lineTo(x + s * 0.8, y + s * 0.8); c.stroke(); }
-  function icDots(c, x, y, s) { for (var i = -1; i <= 1; i++) { c.beginPath(); c.arc(x + i * s * 0.7, y, s * 0.2, 0, Math.PI * 2); c.fill(); } }
-  function icHome(c, x, y, s) { c.beginPath(); c.moveTo(x - s, y + s * 0.2); c.lineTo(x, y - s); c.lineTo(x + s, y + s * 0.2); c.stroke(); c.strokeRect(x - s * 0.65, y + s * 0.2, s * 1.3, s * 0.85); }
-
-  function num(n) { return n; }
-
-  // draw a right-column action item: icon + count label
-  function colItem(c, x, y, label, drawIcon, opt) {
-    opt = opt || {};
-    c.save();
-    c.strokeStyle = '#fff'; c.fillStyle = '#fff'; c.lineWidth = opt.lw || Math.max(2, x * 0.0); // set by caller scale
-    c.restore();
+  function icSearch(c, x, y, s) { c.beginPath(); c.arc(x - s * 0.18, y - s * 0.18, s * 0.62, 0, Math.PI * 2); c.stroke(); c.beginPath(); c.moveTo(x + s * 0.32, y + s * 0.32); c.lineTo(x + s * 0.85, y + s * 0.85); c.stroke(); }
+  function icDots(c, x, y, s) { for (var i = -1; i <= 1; i++) { c.beginPath(); c.arc(x + i * s * 0.85, y, s * 0.22, 0, Math.PI * 2); c.fill(); } }
+  function icMusic(c, x, y, r) { c.beginPath(); c.arc(x - r * 0.55, y + r * 0.55, r * 0.4, 0, Math.PI * 2); c.arc(x + r * 0.55, y + r * 0.25, r * 0.4, 0, Math.PI * 2); c.fill(); c.lineWidth = Math.max(1.2, r * 0.18); c.beginPath(); c.moveTo(x - r * 0.18, y + r * 0.55); c.lineTo(x - r * 0.18, y - r * 0.7); c.lineTo(x + r * 0.92, y - r); c.lineTo(x + r * 0.92, y + r * 0.25); c.stroke(); }
+  function icHome(c, x, y, s, fill) { c.beginPath(); c.moveTo(x - s, y + s * 0.15); c.lineTo(x, y - s * 0.9); c.lineTo(x + s, y + s * 0.15); c.closePath(); fill ? c.fill() : c.stroke(); c.beginPath(); rr(c, x - s * 0.72, y + s * 0.1, s * 1.44, s * 0.85, s * 0.12); fill ? c.fill() : c.stroke(); }
+  function avatar(c, x, y, r, ring) {
+    if (ring) { c.save(); var g = c.createLinearGradient(x - r, y - r, x + r, y + r); g.addColorStop(0, '#feda75'); g.addColorStop(.5, '#d62976'); g.addColorStop(1, '#962fbf'); c.strokeStyle = g; c.lineWidth = r * 0.18; c.beginPath(); c.arc(x, y, r * 1.12, 0, Math.PI * 2); c.stroke(); c.restore(); }
+    c.save(); var gg = c.createLinearGradient(x - r, y - r, x + r, y + r); gg.addColorStop(0, '#8a93a6'); gg.addColorStop(1, '#5a6273'); c.fillStyle = gg; c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill(); c.restore();
   }
 
-  /* Draw the authentic platform chrome (guide). unit = min(W,H). */
+  /* Draw authentic platform chrome (guide). col = right action column. */
   function drawPlatformUI(c, W, H, pf) {
     var unit = Math.min(W, H);
-    var ico = unit * 0.038;                 // icon half-size
-    var lw = Math.max(2, unit * 0.006);
-    var colX = W - W * 0.10;                 // right action column
+    var ico = unit * 0.05;                  // icon radius (bigger, clearer)
+    var lw = Math.max(2.5, unit * 0.0075);
+    var colX = W - unit * 0.085;
+    var gap = unit * 0.135;                 // vertical spacing between action items
     c.save();
-    c.strokeStyle = '#fff'; c.fillStyle = '#fff'; c.lineWidth = lw; c.lineJoin = 'round'; c.lineCap = 'round';
+    c.lineJoin = 'round'; c.lineCap = 'round';
     c.textAlign = 'center'; c.textBaseline = 'top';
-    c.font = '700 ' + Math.round(unit * 0.026) + 'px Inter, system-ui, sans-serif';
-    c.shadowColor = 'rgba(0,0,0,0.45)'; c.shadowBlur = unit * 0.01;
-
-    function label(x, y, t) { c.save(); c.fillStyle = '#fff'; c.fillText(t, x, y); c.restore(); }
+    c.shadowColor = 'rgba(0,0,0,0.5)'; c.shadowBlur = unit * 0.012;
+    function lbl(x, y, t, sz) { c.save(); c.fillStyle = '#fff'; c.font = '700 ' + Math.round(unit * (sz || 0.028)) + 'px Inter, system-ui, sans-serif'; c.fillText(t, x, y); c.restore(); }
+    function setW() { c.strokeStyle = '#fff'; c.fillStyle = '#fff'; c.lineWidth = lw; }
 
     if (pf === 'reels') {
-      var ys = [0.58, 0.665, 0.75], counts = ['1,618', '31', '1,095'];
-      // heart, comment, plane (outline style)
-      c.fillStyle = 'none';
-      c.strokeStyle = '#fff';
-      icHeartOutline(c, colX, H * ys[0], ico, false); label(colX, H * ys[0] + ico, counts[0]);
-      icCommentOutline(c, colX, H * ys[1], ico, false); label(colX, H * ys[1] + ico, counts[1]);
-      icPlane(c, colX, H * ys[2], ico); label(colX, H * ys[2] + ico, counts[2]);
-      c.fillStyle = '#fff'; icDots(c, colX, H * 0.83, ico * 0.8);
-      // audio thumbnail
-      rr(c, colX - ico * 0.8, H * 0.87, ico * 1.6, ico * 1.6, ico * 0.4); c.lineWidth = lw; c.stroke();
-      // bottom caption row (left)
-      brandRowMock(c, W, H, unit, 'cauldythe.app', 'A social network for the independent thinker.', 'Sponsored', false);
+      var y0 = H * 0.50;
+      setW(); igHeart(c, colX, y0, ico, false); lbl(colX, y0 + ico * 1.25, '1,618');
+      igComment(c, colX, y0 + gap, ico, false); lbl(colX, y0 + gap + ico * 1.25, '31');
+      igPlane(c, colX, y0 + gap * 2, ico); lbl(colX, y0 + gap * 2 + ico * 1.25, '1,095');
+      icDots(c, colX, y0 + gap * 3, ico * 0.7);
+      // audio album thumbnail (spinning)
+      c.save(); c.fillStyle = '#3a3a3a'; rr(c, colX - ico * 0.85, y0 + gap * 3.55, ico * 1.7, ico * 1.7, ico * 0.5); c.fill();
+      c.fillStyle = '#fff'; c.translate(colX, y0 + gap * 3.55 + ico * 0.85); c.scale(0.5, 0.5); icMusic(c, 0, 0, ico); c.restore();
+      brandRowMock(c, W, H, unit, 'cauldythe.app', 'A social network for the independent thinker.', 'Sponsored', 'follow', true);
       navBar(c, W, H, unit, 'reels');
     } else if (pf === 'shorts') {
-      // top-right search + menu
-      c.fillStyle = '#fff'; c.strokeStyle = '#fff';
-      icSearch(c, W * 0.86, H * 0.085, ico); icDots(c, W * 0.94, H * 0.085, ico * 0.7);
-      var sy = [0.55, 0.63, 0.71, 0.79, 0.86], sc = ['1m', '', '11k', '', '2'];
-      c.fillStyle = '#fff'; icThumbUp(c, colX, H * sy[0], ico, false); label(colX, H * sy[0] + ico, sc[0]);
-      icThumbUp(c, colX, H * sy[1], ico, true); label(colX, H * sy[1] + ico, 'Dislike');
-      icCommentOutline(c, colX, H * sy[2], ico, true); label(colX, H * sy[2] + ico, sc[2]);
-      c.strokeStyle = '#fff'; icShareArrow(c, colX, H * sy[3], ico); label(colX, H * sy[3] + ico, 'Share');
-      icRemix(c, colX, H * sy[4], ico); label(colX, H * sy[4] + ico, sc[4]);
-      brandRowMock(c, W, H, unit, '@Skinnyfromthe9', '#shorts', '', true);
+      setW(); icSearch(c, W - unit * 0.16, H * 0.075, ico * 0.85); icDots(c, W - unit * 0.06, H * 0.075, ico * 0.7);
+      var y1 = H * 0.46;
+      ytThumb(c, colX, y1, ico, false); lbl(colX, y1 + ico * 1.3, '1M');
+      ytThumb(c, colX, y1 + gap, ico, true); lbl(colX, y1 + gap + ico * 1.3, 'Dislike');
+      igComment(c, colX, y1 + gap * 2, ico, true); lbl(colX, y1 + gap * 2 + ico * 1.3, '11K');
+      ytShare(c, colX, y1 + gap * 3, ico); lbl(colX, y1 + gap * 3 + ico * 1.3, 'Share');
+      ytRemix(c, colX, y1 + gap * 4, ico); lbl(colX, y1 + gap * 4 + ico * 1.3, 'Remix');
+      brandRowMock(c, W, H, unit, '@Skinnyfromthe9', '#shorts', '', 'subscribe', false);
       navBar(c, W, H, unit, 'shorts');
     } else if (pf === 'tiktok') {
-      // avatar + plus
-      var ax = colX, ay = H * 0.52;
-      c.save(); c.fillStyle = '#bbb'; c.beginPath(); c.arc(ax, ay, ico * 1.1, 0, Math.PI * 2); c.fill();
-      c.fillStyle = '#fe2c55'; c.beginPath(); c.arc(ax, ay + ico * 1.1, ico * 0.45, 0, Math.PI * 2); c.fill();
-      c.strokeStyle = '#fff'; c.lineWidth = lw * 0.8; icPlus(c, ax, ay + ico * 1.1, ico * 0.22); c.restore();
-      var ty = [0.63, 0.71, 0.79, 0.87], tc = ['328.7K', '1.2K', '45.1K', 'Share'];
-      c.fillStyle = '#fff';
-      icHeartOutline(c, colX, H * ty[0], ico, true); label(colX, H * ty[0] + ico, tc[0]);
-      icCommentOutline(c, colX, H * ty[1], ico, true); label(colX, H * ty[1] + ico, tc[1]);
-      icBookmark(c, colX, H * ty[2], ico); label(colX, H * ty[2] + ico, tc[2]);
-      c.strokeStyle = '#fff'; icShareArrow(c, colX, H * ty[3], ico); label(colX, H * ty[3] + ico, tc[3]);
-      // spinning disc
-      c.save(); c.fillStyle = '#222'; c.beginPath(); c.arc(colX, H * 0.945, ico * 1.05, 0, Math.PI * 2); c.fill();
-      c.fillStyle = '#fff'; c.beginPath(); c.arc(colX, H * 0.945, ico * 0.3, 0, Math.PI * 2); c.fill(); c.restore();
-      brandRowMock(c, W, H, unit, '@skinnyfromthe9', 'this is my caption 🎵 original sound', '', true);
+      var y2 = H * 0.44;
+      avatar(c, colX, y2, ico * 0.95, false);
+      c.save(); c.fillStyle = '#fe2c55'; c.beginPath(); c.arc(colX, y2 + ico * 1.05, ico * 0.42, 0, Math.PI * 2); c.fill(); setW(); c.lineWidth = lw * 0.7; icPlus(c, colX, y2 + ico * 1.05, ico * 0.2); c.restore();
+      setW();
+      igHeart(c, colX, y2 + gap * 1.05, ico, true); lbl(colX, y2 + gap * 1.05 + ico * 1.3, '328.7K');
+      igComment(c, colX, y2 + gap * 2.05, ico, true); lbl(colX, y2 + gap * 2.05 + ico * 1.3, '1,204');
+      ttBookmark(c, colX, y2 + gap * 3.05, ico); lbl(colX, y2 + gap * 3.05 + ico * 1.3, '45.1K');
+      ttShare(c, colX, y2 + gap * 4.05, ico); lbl(colX, y2 + gap * 4.05 + ico * 1.3, 'Share');
+      // spinning record disc
+      c.save(); c.fillStyle = '#1c1c1c'; c.beginPath(); c.arc(colX, y2 + gap * 5.0, ico * 1.0, 0, Math.PI * 2); c.fill(); c.fillStyle = '#fff'; c.beginPath(); c.arc(colX, y2 + gap * 5.0, ico * 0.28, 0, Math.PI * 2); c.fill(); c.restore();
+      brandRowMock(c, W, H, unit, '@skinnyfromthe9', 'this is my caption  ♪ original sound', '', 'follow', false);
       navBar(c, W, H, unit, 'tiktok');
     }
     c.restore();
   }
 
-  // bottom-left channel/caption row that each app shows over the video
-  function brandRowMock(c, W, H, unit, handle, caption, tag, withSub) {
+  // bottom channel + caption row (over the video)
+  function brandRowMock(c, W, H, unit, handle, caption, tag, btn, withRing) {
     c.save();
-    c.textAlign = 'left'; c.textBaseline = 'middle'; c.shadowColor = 'rgba(0,0,0,0.5)'; c.shadowBlur = unit * 0.012;
-    var x = W * 0.05, y = H * 0.84;
-    c.fillStyle = '#ccc'; c.beginPath(); c.arc(x + unit * 0.035, y, unit * 0.035, 0, Math.PI * 2); c.fill();
-    c.fillStyle = '#fff'; c.font = '800 ' + Math.round(unit * 0.032) + 'px Inter, system-ui, sans-serif';
-    c.fillText(handle, x + unit * 0.085, y - unit * 0.004);
-    if (withSub) {
-      c.font = '800 ' + Math.round(unit * 0.026) + 'px Inter, system-ui, sans-serif';
-      var sw = c.measureText(handle).width + unit * 0.085 + unit * 0.02;
-      c.strokeStyle = '#fff'; c.lineWidth = Math.max(1.5, unit * 0.004);
-      rr(c, x + sw, y - unit * 0.026, unit * 0.16, unit * 0.052, unit * 0.026); c.stroke();
-      c.fillStyle = '#fff'; c.textAlign = 'center'; c.fillText('Subscribe', x + sw + unit * 0.08, y);
-      c.textAlign = 'left';
+    c.textAlign = 'left'; c.textBaseline = 'middle'; c.shadowColor = 'rgba(0,0,0,0.55)'; c.shadowBlur = unit * 0.012;
+    var x = W * 0.045, y = H * 0.835, av = unit * 0.04;
+    avatar(c, x + av, y, av, withRing);
+    c.fillStyle = '#fff'; c.font = '800 ' + Math.round(unit * 0.034) + 'px Inter, system-ui, sans-serif';
+    var hx = x + av * 2 + unit * 0.02;
+    c.fillText(handle, hx, y - unit * 0.005);
+    // verified tick
+    var vw = c.measureText(handle).width;
+    c.save(); c.fillStyle = '#3897f0'; c.beginPath(); c.arc(hx + vw + unit * 0.022, y - unit * 0.005, unit * 0.016, 0, Math.PI * 2); c.fill(); c.fillStyle = '#fff'; c.lineWidth = unit * 0.004; c.strokeStyle = '#fff'; c.beginPath(); c.moveTo(hx + vw + unit * 0.014, y - unit * 0.005); c.lineTo(hx + vw + unit * 0.020, y + unit * 0.001); c.lineTo(hx + vw + unit * 0.030, y - unit * 0.013); c.stroke(); c.restore();
+    // follow / subscribe pill
+    if (btn) {
+      var pillX = hx + vw + unit * 0.05, pw = unit * (btn === 'subscribe' ? 0.20 : 0.15), ph = unit * 0.05;
+      if (btn === 'subscribe') { c.fillStyle = '#fff'; rr(c, pillX, y - ph / 2, pw, ph, ph / 2); c.fill(); c.fillStyle = '#111'; }
+      else { c.strokeStyle = '#fff'; c.lineWidth = Math.max(1.5, unit * 0.0035); rr(c, pillX, y - ph / 2, pw, ph, ph / 2); c.stroke(); c.fillStyle = '#fff'; }
+      c.textAlign = 'center'; c.font = '800 ' + Math.round(unit * 0.027) + 'px Inter, system-ui, sans-serif';
+      c.fillText(btn === 'subscribe' ? 'Subscribe' : 'Follow', pillX + pw / 2, y); c.textAlign = 'left';
     }
-    c.font = '500 ' + Math.round(unit * 0.028) + 'px Inter, system-ui, sans-serif';
-    c.fillStyle = 'rgba(255,255,255,0.92)';
-    c.fillText(caption.slice(0, 38), x, y + unit * 0.05);
-    if (tag) { c.fillStyle = 'rgba(255,255,255,0.7)'; c.fillText(tag, x, y + unit * 0.09); }
+    c.font = '500 ' + Math.round(unit * 0.03) + 'px Inter, system-ui, sans-serif'; c.fillStyle = 'rgba(255,255,255,0.95)';
+    c.fillText(caption.slice(0, 36), x, y + unit * 0.052);
+    if (tag) { c.fillStyle = 'rgba(255,255,255,0.7)'; c.font = '500 ' + Math.round(unit * 0.026) + 'px Inter, system-ui, sans-serif'; c.fillText(tag, x, y + unit * 0.092); }
     c.restore();
   }
 
-  // bottom navigation bar mock per platform
+  // bottom navigation bar (over the video)
   function navBar(c, W, H, unit, pf) {
     c.save();
-    var ny = H - H * 0.035, isz = unit * 0.03;
-    c.strokeStyle = '#fff'; c.fillStyle = '#fff'; c.lineWidth = Math.max(2, unit * 0.005); c.lineJoin = 'round'; c.lineCap = 'round';
-    c.shadowColor = 'rgba(0,0,0,0.4)'; c.shadowBlur = unit * 0.008;
-    if (pf === 'reels' || pf === 'tiktok') {
-      // pill background
-      c.save(); c.shadowBlur = 0; c.fillStyle = 'rgba(20,20,24,0.55)';
-      rr(c, W * 0.06, ny - unit * 0.045, W * 0.88, unit * 0.085, unit * 0.045); c.fill(); c.restore();
-    }
-    var xs = [0.16, 0.34, 0.5, 0.66, 0.84];
+    var ny = H - unit * 0.045, isz = unit * 0.032;
+    if (pf === 'reels' || pf === 'tiktok') { c.fillStyle = 'rgba(16,16,20,0.62)'; rr(c, 0, ny - unit * 0.05, W, unit * 0.1 + (H - (ny + unit * 0.05)), 0); c.fill(); }
+    c.strokeStyle = '#fff'; c.fillStyle = '#fff'; c.lineWidth = Math.max(2, unit * 0.0055);
+    c.shadowColor = 'rgba(0,0,0,0.4)'; c.shadowBlur = unit * 0.006;
+    c.textAlign = 'center'; c.textBaseline = 'top'; c.font = '500 ' + Math.round(unit * 0.018) + 'px Inter, system-ui, sans-serif';
+    var xs = [0.1, 0.3, 0.5, 0.7, 0.9];
+    var labels = pf === 'shorts' ? ['Home', 'Shorts', '', 'Subs', 'You'] : (pf === 'tiktok' ? ['Home', 'Friends', '', 'Inbox', 'Profile'] : ['', '', '', '', '']);
     for (var i = 0; i < xs.length; i++) {
       var x = W * xs[i];
-      if (i === 2 && (pf === 'shorts' || pf === 'tiktok')) {   // centre create button
-        c.save(); c.fillStyle = '#fff'; rr(c, x - unit * 0.045, ny - unit * 0.022, unit * 0.09, unit * 0.044, unit * 0.012); c.fill();
-        c.strokeStyle = '#111'; c.lineWidth = unit * 0.006; icPlus(c, x, ny, unit * 0.014); c.restore(); continue;
+      if (i === 2) {   // centre create button (white rounded rect with +)
+        c.save(); c.fillStyle = '#fff'; rr(c, x - unit * 0.05, ny - unit * 0.018, unit * 0.1, unit * 0.04, unit * 0.012); c.fill();
+        if (pf === 'tiktok') { c.fillStyle = '#fe2c55'; rr(c, x - unit * 0.062, ny - unit * 0.018, unit * 0.024, unit * 0.04, unit * 0.01); c.fill(); c.fillStyle = '#25f4ee'; rr(c, x + unit * 0.038, ny - unit * 0.018, unit * 0.024, unit * 0.04, unit * 0.01); c.fill(); c.fillStyle = '#fff'; rr(c, x - unit * 0.05, ny - unit * 0.018, unit * 0.1, unit * 0.04, unit * 0.012); c.fill(); }
+        c.strokeStyle = '#111'; c.lineWidth = unit * 0.006; icPlus(c, x, ny, unit * 0.013); c.restore();
+        if (labels[i]) lbl2(c, x, ny + unit * 0.028, labels[i], unit);
+        continue;
       }
-      c.strokeStyle = '#fff'; c.fillStyle = '#fff';
-      if (i === 0) icHome(c, x, ny, isz);
-      else if (i === 4) { c.beginPath(); c.arc(x, ny, isz * 0.8, 0, Math.PI * 2); c.stroke(); }
-      else { rr(c, x - isz * 0.7, ny - isz * 0.7, isz * 1.4, isz * 1.4, isz * 0.3); c.stroke(); }
+      c.strokeStyle = '#fff'; c.fillStyle = '#fff'; c.lineWidth = Math.max(2, unit * 0.0055);
+      if (i === 0) icHome(c, x, ny, isz, pf === 'reels');
+      else if (i === 4) avatar(c, x, ny, isz * 0.85, false);
+      else { rr(c, x - isz * 0.78, ny - isz * 0.78, isz * 1.56, isz * 1.56, isz * 0.32); c.stroke(); }
+      if (labels[i]) lbl2(c, x, ny + unit * 0.028, labels[i], unit);
     }
     c.restore();
   }
+  function lbl2(c, x, y, t, unit) { c.save(); c.fillStyle = 'rgba(255,255,255,0.92)'; c.textAlign = 'center'; c.textBaseline = 'top'; c.font = '500 ' + Math.round(unit * 0.017) + 'px Inter, system-ui, sans-serif'; c.shadowBlur = 0; c.fillText(t, x, y); c.restore(); }
 
   /* Master draw. guides → also draw the platform chrome + dashed safe box. */
   function draw(ctx, W, H, guides) {
@@ -291,7 +295,9 @@
   }
   function renderOverlayPng() {
     var d = envDims(), cv = document.createElement('canvas'); cv.width = d.w; cv.height = d.h;
-    draw(cv.getContext('2d'), d.w, d.h, false);
+    // Include the platform-UI guide in the exported clip only if the user opted in
+    // (a reference layer they hide before final export); otherwise branding only.
+    draw(cv.getContext('2d'), d.w, d.h, !!state.guide);
     return cv.toDataURL('image/png');
   }
 
@@ -312,6 +318,7 @@
     if ($('sz-channel')) $('sz-channel').addEventListener('input', function () { state.channel = this.value; renderPreview(); });
     if ($('sz-title')) $('sz-title').addEventListener('input', function () { state.title = this.value; renderPreview(); });
     if ($('sz-handle')) $('sz-handle').addEventListener('change', function () { state.handle = this.checked; renderPreview(); });
+    if ($('sz-guide')) $('sz-guide').addEventListener('change', function () { state.guide = this.checked; });
     if ($('sz-logo-pick')) $('sz-logo-pick').addEventListener('click', pickLogo);
     if ($('sz-logo-clear')) $('sz-logo-clear').addEventListener('click', function () {
       state.logo = null; state.logoName = ''; if ($('sz-logo-name')) $('sz-logo-name').textContent = 'no logo — a circle badge is used';
