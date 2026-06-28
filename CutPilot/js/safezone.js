@@ -17,7 +17,7 @@
     platform: 'reels', alsoCustom: false,
     rows: 3, cols: 3, margin: 5, gutter: 0,
     ov: { margin: false, thirds: true, cross: false, action: false, title: false, diag: false },
-    brandMode: 'pulse', titlePos: 'bottom', dur: 'full',
+    brandMode: 'none', titlePos: 'bottom', dur: 'full',
     channel: '', title: '', handle: true, opacity: 70, replace: true,
     env: null, logo: null, logoName: ''
   };
@@ -169,7 +169,13 @@
     c.save();
     c.textAlign = 'left'; c.textBaseline = 'middle'; c.shadowColor = 'rgba(0,0,0,0.55)'; c.shadowBlur = unit * 0.012;
     var x = W * 0.045, y = H * 0.835, av = unit * 0.04;
-    avatar(c, x + av, y, av, withRing);
+    // Show the CREATOR's own logo + handle here — this is where the platform shows
+    // it — when they've set them; otherwise the platform's sample data.
+    var useUser = (state.brandMode === 'custom' && (state.channel || state.logo));
+    if (state.brandMode === 'pulse') handle = 'Pulse';
+    else if (useUser && state.channel) handle = state.channel;
+    if (state.brandMode === 'custom' && state.logo) { c.save(); c.beginPath(); c.arc(x + av, y, av, 0, Math.PI * 2); c.clip(); try { c.drawImage(state.logo, x, y - av, av * 2, av * 2); } catch (e) {} c.restore(); }
+    else avatar(c, x + av, y, av, withRing);
     c.fillStyle = '#fff'; c.font = '800 ' + Math.round(unit * 0.034) + 'px Inter, system-ui, sans-serif';
     var hx = x + av * 2 + unit * 0.02;
     c.fillText(handle, hx, y - unit * 0.005);
@@ -264,24 +270,13 @@
     c.restore();
   }
 
+  /* The ONLY thing a creator actually burns into the video is a title/hook. Their
+     logo + channel are shown by the platform itself (the bottom-left channel row of
+     the guide), not a fake badge — so we don't draw a top-left logo here anymore. */
   function drawBranding(c, W, H, unit) {
     if (state.brandMode === 'none') return;
     var sr = safeRect(W, H);
-    var pulse = (state.brandMode === 'pulse');
-    var channel = pulse ? 'Pulse' : (state.channel || '');
-    if (state.handle && (channel || state.logo || pulse)) {
-      var bx = sr.x + sr.w * 0.01, by = sr.y + unit * 0.05, badge = unit * 0.08;
-      c.save();
-      if (state.logo) { c.save(); rr(c, bx, by, badge, badge, badge * 0.28); c.clip(); try { c.drawImage(state.logo, bx, by, badge, badge); } catch (e) {} c.restore(); }
-      else { var g = c.createLinearGradient(bx, by, bx + badge, by + badge); g.addColorStop(0, '#7c5cff'); g.addColorStop(1, '#3d7dff'); c.fillStyle = g; rr(c, bx, by, badge, badge, badge * 0.28); c.fill(); c.fillStyle = '#fff'; c.font = '800 ' + Math.round(badge * 0.6) + 'px Inter, system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(pulse ? 'P' : (channel ? channel.replace('@', '').charAt(0).toUpperCase() : 'P'), bx + badge / 2, by + badge / 2 + badge * 0.03); }
-      var tx = bx + badge + unit * 0.02, ty = by + badge * 0.5;
-      c.textAlign = 'left'; c.textBaseline = 'middle'; c.fillStyle = '#fff'; c.shadowColor = 'rgba(0,0,0,0.6)'; c.shadowBlur = unit * 0.01;
-      c.font = '800 ' + Math.round(unit * 0.04) + 'px Inter, system-ui, sans-serif'; c.fillText(pulse ? 'Pulse' : (channel || 'Your channel'), tx, ty - unit * 0.016);
-      c.font = '500 ' + Math.round(unit * 0.028) + 'px Inter, system-ui, sans-serif'; c.fillStyle = 'rgba(255,255,255,0.85)';
-      c.fillText(pulse ? 'by aiFloh' : (channel && channel.charAt(0) !== '@' ? '@' + channel.toLowerCase().replace(/\s+/g, '') : ''), tx, ty + unit * 0.022);
-      c.restore();
-    }
-    var title = pulse ? (state.title || 'Made with Pulse') : (state.title || '');
+    var title = state.title || '';
     if (title) {
       c.save();
       var fontSize = Math.round(unit * 0.07); c.font = '900 ' + fontSize + 'px Inter, system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
