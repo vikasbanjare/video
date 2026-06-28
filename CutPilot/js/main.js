@@ -4333,8 +4333,13 @@
   function assOptsFromStyle(W, H) {
     var ov = readOverrides();
     var preset = currentPreset() || {};
-    var fontSize = Math.round((parseInt(ov.fontSize, 10) || 150) * (H / 1080));
-    fontSize = Math.max(Math.round(H * 0.03), Math.min(fontSize, Math.round(H * 0.13)));
+    // Size the font to the SHORTER frame dimension, not the height — otherwise a
+    // tall portrait frame (1080×1920) gets a huge font that fits only ~8 chars per
+    // line, which forces even a 4-word question to split. Scaling by min(W,H) keeps
+    // the font readable AND lets a short sentence stay on one caption in any aspect.
+    var base = Math.min(W, H);
+    var fontSize = Math.round((parseInt(ov.fontSize, 10) || 120) * (base / 1080));
+    fontSize = Math.max(Math.round(base * 0.045), Math.min(fontSize, Math.round(base * 0.115)));
     var yPct = (ov.yPct != null) ? ov.yPct : 0.85;                  // 0 top … 1 bottom
     var marginV = Math.max(Math.round(H * 0.04), Math.round((1 - yPct) * H));
     var align = (yPct < 0.4) ? 8 : (yPct < 0.66 ? 5 : 2);          // top / middle / bottom-centre
@@ -4393,7 +4398,10 @@
       var usableW = W - 2 * (assOpts.marginLR || Math.round(W * 0.06));
       var charW = (assOpts.fontSize || Math.round(H * 0.05)) * 0.56;   // avg bold-sans glyph width
       var charsPerLine = Math.max(6, Math.floor(usableW / charW));
-      var maxChars = (words > 0) ? Math.max(charsPerLine, words * 9) : charsPerLine * 2;
+      // A caption fits ~2 lines; floor the budget at ~28 chars so a short sentence
+      // (e.g. "What is your name?" = 18) is NEVER split into two captions, while a
+      // genuinely long sentence still splits to fit.
+      var maxChars = (words > 0) ? Math.max(charsPerLine, words * 9) : Math.max(28, charsPerLine * 2);
       var events;
       if (wordCues && wordCues.length) {
         events = CPCaptions.groupWordEvents(wordCues, { perCue: words || 0, maxChars: maxChars, uppercase: ovr.uppercase });
