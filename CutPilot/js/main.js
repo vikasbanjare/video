@@ -2445,7 +2445,7 @@
      tiny baked thumbnail. Cached per template; read lazily at paint time. */
   function mogrtCardStyle(t) {
     if (t._cardStyle) return t._cardStyle;
-    var fill = null, box = null, hl = null, first = null;
+    var fill = null, box = null, hl = null, first = null, gradStops = [];
     var defs = null; try { defs = readMogrtDefinition(t.path); } catch (e) {}
     if (defs && defs.length) {
       for (var i = 0; i < defs.length; i++) {
@@ -2453,17 +2453,26 @@
         if (c.type !== MT.COLOR || !c.value || c.value.length < 3) continue;
         var hex = rgbaArrayToHex(c.value);
         if (!/^#[0-9a-f]{6}$/i.test(hex)) continue;
-        var role = mogrtColorRole(ctrlName(c));
+        var rawNm = ctrlName(c) || '', nm = rawNm.toLowerCase();
+        // A "gradient … color" stop IS the template's real body look (Flux Vector's
+        // blue, Flux Orbit's orange, …). Collect stops in order; the plain white
+        // "Change/Fill Color" base is only used when there's no gradient.
+        if (/gradient/.test(nm)) { gradStops.push(hex); continue; }
+        if (/light\s*sweep|\bshine\b|sheen/.test(nm)) continue;   // motion accents, not the fill
+        var role = mogrtColorRole(rawNm);
         if (role === 'fill' && !fill) fill = hex;
         else if (role === 'box' && !box) box = hex;
         else if (role === 'highlight' && !hl) hl = hex;
         if (!first) first = hex;
       }
     }
+    var fill2 = null;
+    if (gradStops.length >= 2) { fill = gradStops[0]; fill2 = gradStops[gradStops.length - 1]; }
+    else if (gradStops.length === 1 && !fill) { fill = gradStops[0]; }
     var style = {
       id: t.id || 'mg', name: t.name, font: 'Inter', fontSize: 150, weight: 800,
-      uppercase: false, fill: fill || first || '#FFFFFF',
-      highlight: hl || '#FFD400', boxColor: box,
+      uppercase: false, fill: fill || first || '#FFFFFF', fill2: fill2,
+      highlight: hl || fill2 || '#FFD400', boxColor: box,
       keyword: !!hl, wordsPerCue: 4, vCenter: true
     };
     t._cardStyle = style;
@@ -2582,30 +2591,18 @@
     // MOGRT cards: distinct look + open the action sheet (preview / use)
     if (t.mogrt) {
       var mc = document.createElement('div');
-      mc.className = 'tpl-card is-mogrt' + (t.thumb ? ' has-thumb' : '');
+      mc.className = 'tpl-card is-mogrt';
       var mthumb = document.createElement('div');
       mthumb.className = 'tpl-thumb';
-      // Use the template's REAL baked render (thumb.png) so the preview MATCHES the
-      // actual output style — e.g. Flux Vector's blue gradient. The CPRender canvas
-      // can't reproduce each template's gradient/glow, so it drew plain white text
-      // ("preview wrong, output right"). The .png is an accurate, distinct still.
-      // Fallback to the canvas engine only when a template has no baked thumb.
-      if (t.thumb) {
-        var mimg = document.createElement('img');
-        mimg.className = 'tpl-thumb-img';
-        mimg.src = t.thumb; mimg.alt = t.name;
-        mimg.onerror = function () {
-          mimg.style.display = 'none';
-          var fb = document.createElement('canvas'); fb.className = 'tpl-thumb-canvas'; fb._mogrtTpl = t;
-          mthumb.insertBefore(fb, mthumb.firstChild); schedulePaintThumbs();
-        };
-        mthumb.appendChild(mimg);
-      } else {
-        var mcvs = document.createElement('canvas');
-        mcvs.className = 'tpl-thumb-canvas';
-        mcvs._mogrtTpl = t;
-        mthumb.appendChild(mcvs);
-      }
+      // ANIMATED + ACCURATE preview: the CPRender canvas, themed from each
+      // template's REAL colours read from definition.json — now gradient/box aware,
+      // so Flux Vector shows its blue gradient, Flux Orbit its orange, Flux Halo its
+      // blue box + yellow highlight (verified with a headless render), and it loops
+      // word-by-word via the shared card animator. Both accurate AND animated.
+      var mcvs = document.createElement('canvas');
+      mcvs.className = 'tpl-thumb-canvas';
+      mcvs._mogrtTpl = t;
+      mthumb.appendChild(mcvs);
       // These are ANIMATED motion templates — that's what sets them apart from the
       // static style presets. (Every template is editable either way, so an
       // "editable" tag on only some was misleading.)
@@ -2710,6 +2707,9 @@
 
   function openMogrtSheet(t) {
     state.selectedMogrt = { path: t.path, name: t.name };
+    // Cache this template's accurate base look (gradient/box, read from its
+    // definition.json) so the action-sheet preview matches the gallery card.
+    try { state.selectedMogrtBase = mogrtCardStyle(t); } catch (eBase) { state.selectedMogrtBase = null; }
     $('ms-name').textContent = t.name;
     // The single preview shown is the live, editable one (#ms-live-preview), built
     // by buildMogrtCustomizer below. The old static baked-in thumbnail is kept
@@ -4889,7 +4889,12 @@
     // text colour priority: a dedicated "Text Color" control → the source-text
     // default → the first colour control (subtitle templates list text first) →
     // white. This stops the preview defaulting to white-on-white.
-    var fill = pv.fill || pv.blobFill || pv.firstColor || '#FFFFFF', box = pv.box || null;
+    // Default to the template's accurate base look (gradient/box) so the preview
+    // matches the gallery card; the user's own colour edits (pv.*) override it.
+    var base = state.selectedMogrtBase || {};
+    var fill = pv.fill || pv.blobFill || pv.firstColor || base.fill || '#FFFFFF';
+    var fill2 = (pv.fill || pv.firstColor) ? (pv.fill2 || null) : (base.fill2 || null);   // keep the gradient unless the user picked a solid colour
+    var box = pv.box || base.boxColor || null;
     // Readability safety: if the text colour would be invisible on the box, give
     // the sample text a thin outline so it's still legible in the preview (the
     // real template often separates them with position/animation).
@@ -4897,8 +4902,8 @@
     if (box && Math.abs(_hexLum(fill) - _hexLum(box)) < 0.28) stroke = (_hexLum(box) > 0.6) ? '#111111' : '#ffffff';
     var preset = {
       id: 'mg', name: 'mg', font: pv.font || 'Arial', fontSize: 150,
-      weight: pv.bold ? 900 : 700, fill: fill,
-      highlight: pv.highlight || pv.fill || '#FFD400',
+      weight: pv.bold ? 900 : 700, fill: fill, fill2: fill2,
+      highlight: pv.highlight || base.highlight || pv.fill || '#FFD400',
       boxColor: box, uppercase: !!pv.caps, stroke: stroke, strokeWidth: stroke ? 3 : 0
     };
     try {
