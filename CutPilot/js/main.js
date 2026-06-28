@@ -4382,10 +4382,16 @@
 
     getCaptionWordCues(cues, true).then(function (wordCues) {
       wordCues = shiftWordCues(wordCues, captionSyncOffset());
-      // Build sentence-grouped caption events that KEEP per-word timing.
-      var portrait = (H > W);
-      var perLine = portrait ? 17 : 24;
-      var maxChars = (words > 0) ? Math.max(perLine, words * 9) : perLine * 2;
+      // AUTO-FIT (orientation-agnostic): derive how many characters fit on ONE line
+      // from the ACTUAL frame width + the render font size, then cap each caption to
+      // ~2 lines. This REDUCES THE NUMBER OF WORDS per caption to fit the frame — the
+      // font size is never shrunk — so captions never cross the frame edges, whether
+      // the sequence is horizontal or vertical. No manual words-per-caption needed.
+      var assOpts = assOptsFromStyle(W, H);
+      var usableW = W - 2 * (assOpts.marginLR || Math.round(W * 0.06));
+      var charW = (assOpts.fontSize || Math.round(H * 0.05)) * 0.56;   // avg bold-sans glyph width
+      var charsPerLine = Math.max(6, Math.floor(usableW / charW));
+      var maxChars = (words > 0) ? Math.max(charsPerLine, words * 9) : charsPerLine * 2;
       var events;
       if (wordCues && wordCues.length) {
         events = CPCaptions.groupWordEvents(wordCues, { perCue: words || 0, maxChars: maxChars, uppercase: ovr.uppercase });
@@ -4401,7 +4407,7 @@
       }
       if (!events.length) { setCaptionBusy(false); capProgress(null); return toast('No words to caption.', true); }
 
-      var assStr = CPAss.buildAss(events, assOptsFromStyle(W, H));
+      var assStr = CPAss.buildAss(events, assOpts);   // reuse the auto-fit opts computed above
       var lastEnd = events[events.length - 1].end || 0;
       var dir = pathMod.join(osMod.tmpdir(), 'pulse-libass-' + Date.now());
       try { fs.mkdirSync(dir, { recursive: true }); } catch (eD) {}
