@@ -1019,27 +1019,57 @@
   <!-- ============================ SAFE ZONE ============================ -->
   <section id="tab-safezone" class="tab-page">
     <div class="step-head"><span class="step-title">🛟 Safe Zone &amp; Branding</span></div>
-    <p class="hint">See exactly where each platform's buttons &amp; captions sit, so your
-      content stays clear of them — then drop your logo, channel name and a title on top.
-      One tap places it as an overlay on your timeline.</p>
 
     <!-- live preview of the frame with guides + branding -->
     <div id="sz-preview-wrap" class="sz-preview-wrap"><canvas id="sz-canvas"></canvas></div>
 
-    <label style="font-size:11px">Platform safe zone <span class="dim">(shows that app's real buttons &amp; captions so you keep clear of them)</span></label>
-    <div class="seg-control" id="sz-platform" style="margin-bottom:8px">
-      <button data-pf="none" type="button">None</button>
-      <button data-pf="tiktok" type="button">TikTok</button>
-      <button data-pf="reels" class="on" type="button">Reels</button>
-      <button data-pf="shorts" type="button">Shorts</button>
+    <!-- MODE: Safe zones (platform UI) vs Custom (grid builder) -->
+    <div class="seg-control" id="sz-mode" style="margin-bottom:8px">
+      <button data-mode="safezones" class="on" type="button">Safe zones</button>
+      <button data-mode="custom" type="button">Custom</button>
     </div>
 
+    <!-- ===== Safe zones panel ===== -->
+    <div id="sz-panel-safezones">
+      <p class="hint" style="margin:0 0 6px">Pick a platform to overlay its real on-screen UI (buttons, captions, controls) so your content stays clear of it.</p>
+      <div class="seg-control" id="sz-platform" style="margin-bottom:8px">
+        <button data-pf="none" type="button">None</button>
+        <button data-pf="tiktok" type="button">TikTok</button>
+        <button data-pf="reels" class="on" type="button">Reels</button>
+        <button data-pf="shorts" type="button">Shorts</button>
+      </div>
+      <label class="sz-check"><input type="checkbox" id="sz-also-custom"> Also include the custom grid guide</label>
+    </div>
+
+    <!-- ===== Custom grid builder panel ===== -->
+    <div id="sz-panel-custom" class="hidden">
+      <label style="font-size:11px">Grid</label>
+      <div class="grid2" style="margin-bottom:8px">
+        <div class="sz-num"><span>Rows</span><input id="sz-rows" type="number" min="0" max="12" value="3"></div>
+        <div class="sz-num"><span>Columns</span><input id="sz-cols" type="number" min="0" max="12" value="3"></div>
+      </div>
+      <div class="grid2" style="margin-bottom:8px">
+        <div class="sz-num"><span>Margins %</span><input id="sz-margin" type="number" min="0" max="40" value="5"></div>
+        <div class="sz-num"><span>Gutter %</span><input id="sz-gutter" type="number" min="0" max="20" value="0"></div>
+      </div>
+      <label style="font-size:11px">Overlays</label>
+      <div class="check-grid" style="margin-bottom:8px">
+        <label class="sz-check"><input type="checkbox" id="sz-ov-margin"> Margin box</label>
+        <label class="sz-check"><input type="checkbox" id="sz-ov-thirds" checked> Rule of thirds</label>
+        <label class="sz-check"><input type="checkbox" id="sz-ov-cross"> Center cross</label>
+        <label class="sz-check"><input type="checkbox" id="sz-ov-action"> Action safe (90%)</label>
+        <label class="sz-check"><input type="checkbox" id="sz-ov-title"> Title safe (80%)</label>
+        <label class="sz-check"><input type="checkbox" id="sz-ov-diag"> Diagonals</label>
+      </div>
+    </div>
+
+    <!-- ===== Branding (kept, on top of the guide) ===== -->
     <label style="font-size:11px">Branding</label>
     <div class="seg-control" id="sz-brandmode" style="margin-bottom:8px">
-      <button data-bm="pulse" class="on" type="button">⚡ Pulse default</button>
+      <button data-bm="none" type="button">None</button>
+      <button data-bm="pulse" class="on" type="button">⚡ Pulse</button>
       <button data-bm="custom" type="button">Custom</button>
     </div>
-
     <div id="sz-custom-fields">
       <div class="sz-row">
         <button id="sz-logo-pick" class="chip-btn" type="button">🖼 Upload logo…</button>
@@ -1049,25 +1079,32 @@
       <input id="sz-channel" type="text" placeholder="Channel name (e.g. @aifloh)" maxlength="40" style="margin:6px 0">
       <input id="sz-title" type="text" placeholder="Video title / hook (e.g. Best JDM builds)" maxlength="80" style="margin:0 0 6px">
       <label class="sz-check"><input type="checkbox" id="sz-handle" checked> Show my logo + channel row</label>
+      <label style="font-size:11px;margin-top:6px;display:block">Title position</label>
+      <div class="seg-control" id="sz-titlepos" style="margin-bottom:6px">
+        <button data-tp="top" type="button">Top</button>
+        <button data-tp="center" type="button">Center</button>
+        <button data-tp="bottom" class="on" type="button">Bottom</button>
+      </div>
     </div>
 
-    <label style="font-size:11px;margin-top:6px;display:block">Title position</label>
-    <div class="seg-control" id="sz-titlepos" style="margin-bottom:8px">
-      <button data-tp="top" type="button">Top</button>
-      <button data-tp="center" type="button">Center</button>
-      <button data-tp="bottom" class="on" type="button">Bottom</button>
-    </div>
+    <!-- ===== Guide overlay (timeline) ===== -->
+    <label style="font-size:11px;margin-top:4px;display:block">Guide opacity <span class="val" id="sz-op-val">70%</span></label>
+    <input type="range" id="sz-opacity" min="10" max="100" value="70" style="width:100%;margin:0 0 8px">
 
-    <label style="font-size:11px">Overlay length</label>
+    <label style="font-size:11px">Length</label>
     <div class="seg-control" id="sz-dur" style="margin-bottom:8px">
       <button data-d="3" type="button">3s</button>
-      <button data-d="5" class="on" type="button">5s</button>
-      <button data-d="full" type="button">Whole clip</button>
+      <button data-d="5" type="button">5s</button>
+      <button data-d="full" class="on" type="button">Whole clip</button>
     </div>
 
-    <label class="sz-check"><input type="checkbox" id="sz-guide"> Also place the platform UI as a <b>reference guide</b> on the clip (toggle the track's eye off / delete before final export)</label>
-    <button id="sz-apply" class="hero-btn">➕ Add overlay to timeline</button>
-    <p class="hint" style="margin:4px 0 0">Places one transparent graphic on a new top video track. Toggle that track's eye icon to turn it on/off, or Ctrl/Cmd+Z to undo. Your branding exports; the guide is just for lining things up — hide it before you export.</p>
+    <label class="sz-check" style="margin-bottom:8px"><input type="checkbox" id="sz-replace" checked> Replace existing guide on apply</label>
+
+    <div class="sz-row" style="margin-bottom:6px">
+      <button id="sz-apply" class="hero-btn" style="margin:0;flex:2">➕ Apply guide to timeline</button>
+      <button id="sz-remove" class="chip-btn" style="flex:1">Remove</button>
+    </div>
+    <p class="hint" style="margin:4px 0 0">Places one transparent guide on a new top video track. It's a <b>reference layer</b> — toggle that track's eye icon on/off while you line things up, then hide or delete it before you export. Your branding (logo/title) is meant to stay.</p>
     <div id="sz-progress" class="progress hidden"></div>
   </section>
 

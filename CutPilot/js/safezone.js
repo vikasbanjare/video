@@ -13,8 +13,13 @@
   'use strict';
   function $(id) { return document.getElementById(id); }
   var state = {
-    platform: 'reels', brandMode: 'pulse', titlePos: 'bottom', dur: '5',
-    channel: '', title: '', handle: true, guide: false, env: null, logo: null, logoName: ''
+    mode: 'safezones',                 // 'safezones' | 'custom'
+    platform: 'reels', alsoCustom: false,
+    rows: 3, cols: 3, margin: 5, gutter: 0,
+    ov: { margin: false, thirds: true, cross: false, action: false, title: false, diag: false },
+    brandMode: 'pulse', titlePos: 'bottom', dur: 'full',
+    channel: '', title: '', handle: true, opacity: 70, replace: true,
+    env: null, logo: null, logoName: ''
   };
 
   // The safe area = the central region left clear once each platform's UI is drawn.
@@ -214,70 +219,100 @@
   }
   function lbl2(c, x, y, t, unit) { c.save(); c.fillStyle = 'rgba(255,255,255,0.92)'; c.textAlign = 'center'; c.textBaseline = 'top'; c.font = '500 ' + Math.round(unit * 0.017) + 'px Inter, system-ui, sans-serif'; c.shadowBlur = 0; c.fillText(t, x, y); c.restore(); }
 
-  /* Master draw. guides → also draw the platform chrome + dashed safe box. */
-  function draw(ctx, W, H, guides) {
-    ctx.clearRect(0, 0, W, H);
-    var s = SAFE[state.platform] || SAFE.none;
-    var inL = s.left * W, inR = s.right * W, inT = s.top * H, inB = s.bottom * H;
-    var safeX = inL, safeY = inT, safeW = W - inL - inR, safeH = H - inT - inB;
-    var unit = Math.min(W, H);
-
-    if (guides && state.platform !== 'none') {
-      drawPlatformUI(ctx, W, H, state.platform);
-      ctx.save();
-      ctx.strokeStyle = 'rgba(80,170,255,0.95)'; ctx.lineWidth = Math.max(1.5, unit * 0.004);
-      ctx.setLineDash([unit * 0.02, unit * 0.015]);
-      ctx.strokeRect(safeX, safeY, safeW, safeH); ctx.setLineDash([]);
-      ctx.fillStyle = 'rgba(130,195,255,0.95)';
-      ctx.font = '600 ' + Math.round(unit * 0.028) + 'px Inter, system-ui, sans-serif';
-      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-      ctx.fillText('SAFE AREA · ' + (PF_LABEL[state.platform] || ''), safeX + unit * 0.015, safeY + unit * 0.012);
-      ctx.restore();
+  // the central area to keep content/branding inside (platform safe zone, or margins)
+  function safeRect(W, H) {
+    if (state.mode === 'safezones' && state.platform !== 'none') {
+      var s = SAFE[state.platform] || SAFE.none;
+      return { x: s.left * W, y: s.top * H, w: W - (s.left + s.right) * W, h: H - (s.top + s.bottom) * H };
     }
+    var m = (state.margin || 0) / 100;
+    return { x: m * W, y: m * H, w: W * (1 - 2 * m), h: H * (1 - 2 * m) };
+  }
 
-    // ---- creator branding (logo + handle + title) — composited into the safe area ----
+  function dashBox(c, x, y, w, h, unit, lbl) {
+    c.save();
+    c.strokeStyle = 'rgba(80,170,255,0.95)'; c.lineWidth = Math.max(1.5, unit * 0.004);
+    c.setLineDash([unit * 0.02, unit * 0.015]); c.strokeRect(x, y, w, h); c.setLineDash([]);
+    if (lbl) { c.fillStyle = 'rgba(130,195,255,0.95)'; c.font = '600 ' + Math.round(unit * 0.026) + 'px Inter, system-ui, sans-serif'; c.textAlign = 'left'; c.textBaseline = 'top'; c.fillText(lbl, x + unit * 0.014, y + unit * 0.012); }
+    c.restore();
+  }
+
+  // Custom rows×columns grid with margins + gutter (Guideify-style)
+  function drawGrid(c, W, H, unit) {
+    var m = (state.margin || 0) / 100, g = (state.gutter || 0) / 100;
+    var gx = m * W, gy = m * H, gw = W * (1 - 2 * m), gh = H * (1 - 2 * m);
+    var rows = Math.max(0, state.rows | 0), cols = Math.max(0, state.cols | 0);
+    c.save(); c.strokeStyle = 'rgba(90,200,255,0.85)'; c.lineWidth = Math.max(1, unit * 0.0028);
+    if (rows > 0 || cols > 0) c.strokeRect(gx, gy, gw, gh);
+    var gutX = g * W, gutY = g * H;
+    if (cols > 0) { var cw = (gw - gutX * (cols - 1)) / cols; for (var i = 0; i < cols; i++) { var x0 = gx + i * (cw + gutX); if (i > 0) { c.strokeRect(x0 - gutX, gy, gutX, gh); } if (i < cols - 1 || gutX === 0) { var lx = gx + (i + 1) * cw + i * gutX; if (i < cols - 1) { c.beginPath(); c.moveTo(lx, gy); c.lineTo(lx, gy + gh); c.stroke(); } } } }
+    if (rows > 0) { var rh = (gh - gutY * (rows - 1)) / rows; for (var j = 0; j < rows - 1; j++) { var ly = gy + (j + 1) * rh + j * gutY; c.beginPath(); c.moveTo(gx, ly); c.lineTo(gx + gw, ly); c.stroke(); } }
+    c.restore();
+  }
+
+  // The 6 Guideify overlay toggles
+  function drawOverlays(c, W, H, unit) {
+    var o = state.ov || {};
+    c.save(); c.lineWidth = Math.max(1, unit * 0.003);
+    function box(frac, col) { var ix = (1 - frac) / 2 * W, iy = (1 - frac) / 2 * H; c.strokeStyle = col; c.strokeRect(ix, iy, W * frac, H * frac); }
+    if (o.action) box(0.90, 'rgba(255,210,90,0.9)');
+    if (o.title) box(0.80, 'rgba(255,150,90,0.9)');
+    if (o.margin) { var mm = (state.margin || 5) / 100; c.strokeStyle = 'rgba(120,230,150,0.9)'; c.strokeRect(mm * W, mm * H, W * (1 - 2 * mm), H * (1 - 2 * mm)); }
+    if (o.thirds) { c.strokeStyle = 'rgba(255,255,255,0.55)'; for (var i = 1; i <= 2; i++) { c.beginPath(); c.moveTo(W * i / 3, 0); c.lineTo(W * i / 3, H); c.stroke(); c.beginPath(); c.moveTo(0, H * i / 3); c.lineTo(W, H * i / 3); c.stroke(); } }
+    if (o.diag) { c.strokeStyle = 'rgba(255,255,255,0.45)'; c.beginPath(); c.moveTo(0, 0); c.lineTo(W, H); c.moveTo(W, 0); c.lineTo(0, H); c.stroke(); }
+    if (o.cross) { c.strokeStyle = 'rgba(255,255,255,0.8)'; var cl = unit * 0.04; c.beginPath(); c.moveTo(W / 2 - cl, H / 2); c.lineTo(W / 2 + cl, H / 2); c.moveTo(W / 2, H / 2 - cl); c.lineTo(W / 2, H / 2 + cl); c.stroke(); }
+    c.restore();
+  }
+
+  function drawBranding(c, W, H, unit) {
+    if (state.brandMode === 'none') return;
+    var sr = safeRect(W, H);
     var pulse = (state.brandMode === 'pulse');
     var channel = pulse ? 'Pulse' : (state.channel || '');
     if (state.handle && (channel || state.logo || pulse)) {
-      var bx = safeX + safeW * 0.01, by = safeY + (guides ? unit * 0.05 : safeH * 0.02), badge = unit * 0.08;
-      ctx.save();
-      if (state.logo) { ctx.save(); rr(ctx, bx, by, badge, badge, badge * 0.28); ctx.clip(); try { ctx.drawImage(state.logo, bx, by, badge, badge); } catch (e) {} ctx.restore(); }
-      else {
-        var g = ctx.createLinearGradient(bx, by, bx + badge, by + badge); g.addColorStop(0, '#7c5cff'); g.addColorStop(1, '#3d7dff');
-        ctx.fillStyle = g; rr(ctx, bx, by, badge, badge, badge * 0.28); ctx.fill();
-        ctx.fillStyle = '#fff'; ctx.font = '800 ' + Math.round(badge * 0.6) + 'px Inter, system-ui, sans-serif';
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(pulse ? 'P' : (channel ? channel.replace('@', '').charAt(0).toUpperCase() : 'P'), bx + badge / 2, by + badge / 2 + badge * 0.03);
-      }
+      var bx = sr.x + sr.w * 0.01, by = sr.y + unit * 0.05, badge = unit * 0.08;
+      c.save();
+      if (state.logo) { c.save(); rr(c, bx, by, badge, badge, badge * 0.28); c.clip(); try { c.drawImage(state.logo, bx, by, badge, badge); } catch (e) {} c.restore(); }
+      else { var g = c.createLinearGradient(bx, by, bx + badge, by + badge); g.addColorStop(0, '#7c5cff'); g.addColorStop(1, '#3d7dff'); c.fillStyle = g; rr(c, bx, by, badge, badge, badge * 0.28); c.fill(); c.fillStyle = '#fff'; c.font = '800 ' + Math.round(badge * 0.6) + 'px Inter, system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(pulse ? 'P' : (channel ? channel.replace('@', '').charAt(0).toUpperCase() : 'P'), bx + badge / 2, by + badge / 2 + badge * 0.03); }
       var tx = bx + badge + unit * 0.02, ty = by + badge * 0.5;
-      ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff';
-      ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = unit * 0.01;
-      ctx.font = '800 ' + Math.round(unit * 0.04) + 'px Inter, system-ui, sans-serif';
-      ctx.fillText(pulse ? 'Pulse' : (channel || 'Your channel'), tx, ty - unit * 0.016);
-      ctx.font = '500 ' + Math.round(unit * 0.028) + 'px Inter, system-ui, sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      ctx.fillText(pulse ? 'by aiFloh' : (channel && channel.charAt(0) !== '@' ? '@' + channel.toLowerCase().replace(/\s+/g, '') : ''), tx, ty + unit * 0.022);
-      ctx.restore();
+      c.textAlign = 'left'; c.textBaseline = 'middle'; c.fillStyle = '#fff'; c.shadowColor = 'rgba(0,0,0,0.6)'; c.shadowBlur = unit * 0.01;
+      c.font = '800 ' + Math.round(unit * 0.04) + 'px Inter, system-ui, sans-serif'; c.fillText(pulse ? 'Pulse' : (channel || 'Your channel'), tx, ty - unit * 0.016);
+      c.font = '500 ' + Math.round(unit * 0.028) + 'px Inter, system-ui, sans-serif'; c.fillStyle = 'rgba(255,255,255,0.85)';
+      c.fillText(pulse ? 'by aiFloh' : (channel && channel.charAt(0) !== '@' ? '@' + channel.toLowerCase().replace(/\s+/g, '') : ''), tx, ty + unit * 0.022);
+      c.restore();
     }
-
-    // ---- title / hook ----
     var title = pulse ? (state.title || 'Made with Pulse') : (state.title || '');
     if (title) {
-      ctx.save();
-      var fontSize = Math.round(unit * 0.07);
-      ctx.font = '900 ' + fontSize + 'px Inter, system-ui, sans-serif';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      var maxW = safeW * 0.96, words = title.toUpperCase().split(/\s+/), lines = [], cur = '';
-      for (var i = 0; i < words.length; i++) { var t = cur ? cur + ' ' + words[i] : words[i]; if (ctx.measureText(t).width > maxW && cur) { lines.push(cur); cur = words[i]; } else cur = t; }
-      if (cur) lines.push(cur);
+      c.save();
+      var fontSize = Math.round(unit * 0.07); c.font = '900 ' + fontSize + 'px Inter, system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      var maxW = sr.w * 0.96, words = title.toUpperCase().split(/\s+/), lines = [], curr = '';
+      for (var i = 0; i < words.length; i++) { var t = curr ? curr + ' ' + words[i] : words[i]; if (c.measureText(t).width > maxW && curr) { lines.push(curr); curr = words[i]; } else curr = t; }
+      if (curr) lines.push(curr);
       var lh = fontSize * 1.16, blockH = lines.length * lh;
-      var cy0 = state.titlePos === 'top' ? (safeY + blockH * 0.6 + safeH * 0.05)
-              : state.titlePos === 'center' ? (safeY + safeH * 0.46)
-              : (safeY + safeH - blockH * 0.6 - safeH * 0.03);
-      var cx = safeX + safeW / 2;
-      ctx.lineJoin = 'round'; ctx.strokeStyle = '#000'; ctx.lineWidth = fontSize * 0.16; ctx.fillStyle = '#fff';
-      for (var L = 0; L < lines.length; L++) { var yy = cy0 - blockH / 2 + lh * (L + 0.5); ctx.strokeText(lines[L], cx, yy); ctx.fillText(lines[L], cx, yy); }
-      ctx.restore();
+      var cy0 = state.titlePos === 'top' ? (sr.y + blockH * 0.6 + sr.h * 0.05) : state.titlePos === 'center' ? (sr.y + sr.h * 0.46) : (sr.y + sr.h - blockH * 0.6 - sr.h * 0.03);
+      var cx = sr.x + sr.w / 2;
+      c.lineJoin = 'round'; c.strokeStyle = '#000'; c.lineWidth = fontSize * 0.16; c.fillStyle = '#fff';
+      for (var L = 0; L < lines.length; L++) { var yy = cy0 - blockH / 2 + lh * (L + 0.5); c.strokeText(lines[L], cx, yy); c.fillText(lines[L], cx, yy); }
+      c.restore();
     }
+  }
+
+  /* Master draw: the GUIDE (platform UI and/or custom grid+overlays) at the chosen
+     opacity, then the BRANDING at full opacity on top. */
+  function draw(ctx, W, H) {
+    ctx.clearRect(0, 0, W, H);
+    var unit = Math.min(W, H);
+    ctx.save();
+    ctx.globalAlpha = Math.max(0.08, (state.opacity || 70) / 100);
+    if (state.mode === 'safezones' && state.platform !== 'none') {
+      drawPlatformUI(ctx, W, H, state.platform);
+      var sr = safeRect(W, H); dashBox(ctx, sr.x, sr.y, sr.w, sr.h, unit, 'SAFE AREA · ' + (PF_LABEL[state.platform] || ''));
+    }
+    if (state.mode === 'custom' || (state.mode === 'safezones' && state.alsoCustom)) {
+      drawOverlays(ctx, W, H, unit); drawGrid(ctx, W, H, unit);
+    }
+    ctx.restore();
+    drawBranding(ctx, W, H, unit);
   }
 
   function renderPreview() {
@@ -291,13 +326,11 @@
     var ctx = cv.getContext('2d');
     var bg = ctx.createLinearGradient(0, 0, 0, cv.height); bg.addColorStop(0, '#2a3340'); bg.addColorStop(1, '#10141c');
     ctx.fillStyle = bg; ctx.fillRect(0, 0, cv.width, cv.height);
-    draw(ctx, cv.width, cv.height, true);
+    draw(ctx, cv.width, cv.height);
   }
   function renderOverlayPng() {
     var d = envDims(), cv = document.createElement('canvas'); cv.width = d.w; cv.height = d.h;
-    // Include the platform-UI guide in the exported clip only if the user opted in
-    // (a reference layer they hide before final export); otherwise branding only.
-    draw(cv.getContext('2d'), d.w, d.h, !!state.guide);
+    draw(cv.getContext('2d'), d.w, d.h);
     return cv.toDataURL('image/png');
   }
 
@@ -306,28 +339,40 @@
     var btns = box.querySelectorAll('button');
     for (var i = 0; i < btns.length; i++) btns[i].addEventListener('click', function () {
       var on = box.querySelector('button.on'); if (on) on.classList.remove('on'); this.classList.add('on');
-      state[key] = this.getAttribute('data-pf') || this.getAttribute('data-bm') || this.getAttribute('data-tp') || this.getAttribute('data-d');
+      state[key] = this.getAttribute('data-mode') || this.getAttribute('data-pf') || this.getAttribute('data-bm') || this.getAttribute('data-tp') || this.getAttribute('data-d');
       if (after) after(); renderPreview();
     });
   }
-  function refreshCustomVisibility() { var box = $('sz-custom-fields'); if (box) box.classList.toggle('dim-disabled', state.brandMode === 'pulse'); }
+  function refreshModeVisibility() {
+    if ($('sz-panel-safezones')) $('sz-panel-safezones').classList.toggle('hidden', state.mode !== 'safezones');
+    if ($('sz-panel-custom')) $('sz-panel-custom').classList.toggle('hidden', state.mode !== 'custom');
+  }
+  function refreshBrandVisibility() { var box = $('sz-custom-fields'); if (box) box.classList.toggle('dim-disabled', state.brandMode !== 'custom'); }
 
   function wire() {
-    seg('sz-platform', 'platform'); seg('sz-brandmode', 'brandMode', refreshCustomVisibility);
+    seg('sz-mode', 'mode', refreshModeVisibility);
+    seg('sz-platform', 'platform'); seg('sz-brandmode', 'brandMode', refreshBrandVisibility);
     seg('sz-titlepos', 'titlePos'); seg('sz-dur', 'dur');
+    // text + checkbox inputs
+    function num(id, key) { var el = $(id); if (el) el.addEventListener('input', function () { state[key] = parseFloat(this.value) || 0; renderPreview(); }); }
+    num('sz-rows', 'rows'); num('sz-cols', 'cols'); num('sz-margin', 'margin'); num('sz-gutter', 'gutter');
+    function ovChk(id, key) { var el = $(id); if (el) el.addEventListener('change', function () { state.ov[key] = this.checked; renderPreview(); }); }
+    ovChk('sz-ov-margin', 'margin'); ovChk('sz-ov-thirds', 'thirds'); ovChk('sz-ov-cross', 'cross');
+    ovChk('sz-ov-action', 'action'); ovChk('sz-ov-title', 'title'); ovChk('sz-ov-diag', 'diag');
+    if ($('sz-also-custom')) $('sz-also-custom').addEventListener('change', function () { state.alsoCustom = this.checked; renderPreview(); });
     if ($('sz-channel')) $('sz-channel').addEventListener('input', function () { state.channel = this.value; renderPreview(); });
     if ($('sz-title')) $('sz-title').addEventListener('input', function () { state.title = this.value; renderPreview(); });
     if ($('sz-handle')) $('sz-handle').addEventListener('change', function () { state.handle = this.checked; renderPreview(); });
-    if ($('sz-guide')) $('sz-guide').addEventListener('change', function () { state.guide = this.checked; });
+    if ($('sz-opacity')) $('sz-opacity').addEventListener('input', function () { state.opacity = parseInt(this.value, 10) || 70; if ($('sz-op-val')) $('sz-op-val').textContent = state.opacity + '%'; renderPreview(); });
+    if ($('sz-replace')) $('sz-replace').addEventListener('change', function () { state.replace = this.checked; });
     if ($('sz-logo-pick')) $('sz-logo-pick').addEventListener('click', pickLogo);
     if ($('sz-logo-clear')) $('sz-logo-clear').addEventListener('click', function () {
       state.logo = null; state.logoName = ''; if ($('sz-logo-name')) $('sz-logo-name').textContent = 'no logo — a circle badge is used';
       $('sz-logo-clear').classList.add('hidden'); renderPreview();
     });
     if ($('sz-apply')) $('sz-apply').addEventListener('click', applyOverlay);
-    // default platform highlight = reels
-    var pf = $('sz-platform'); if (pf) { var on = pf.querySelector('button.on'); if (on) on.classList.remove('on'); var r = pf.querySelector('button[data-pf=reels]'); if (r) r.classList.add('on'); }
-    refreshCustomVisibility();
+    if ($('sz-remove')) $('sz-remove').addEventListener('click', removeOverlay);
+    refreshModeVisibility(); refreshBrandVisibility();
   }
 
   function pickLogo() {
@@ -355,17 +400,28 @@
       var fs, pathMod, osMod;
       try { fs = require('fs'); pathMod = require('path'); osMod = require('os'); } catch (e) { try { toast('Node unavailable: ' + e.message, true); } catch (e2) {} return; }
       var png = renderOverlayPng().split(',')[1];
-      var dir = pathMod.join(osMod.tmpdir(), 'pulse-brand-' + Date.now());
+      var dir = pathMod.join(osMod.tmpdir(), 'pulse-guide-' + Date.now());
       try { fs.mkdirSync(dir, { recursive: true }); } catch (e0) {}
-      var pngPath = pathMod.join(dir, 'brand.png');
+      var pngPath = pathMod.join(dir, 'guide.png');
       try { fs.writeFileSync(pngPath, Buffer.from(png, 'base64')); } catch (eW) { try { toast('Could not write overlay: ' + eW.message, true); } catch (e3) {} return; }
       var durSec = state.dur === 'full' ? Math.max(2, (state.env && +state.env.endSeconds) || 10) : (parseFloat(state.dur) || 5);
-      var prog = $('sz-progress'); if (prog) { prog.classList.remove('hidden'); prog.textContent = 'Placing on timeline…'; }
-      CPBridge.callHost('CP_placeOverlay', { path: pngPath, startSec: 0, durSec: durSec }).then(function (r) {
+      var prog = $('sz-progress'); if (prog) { prog.classList.remove('hidden'); prog.textContent = 'Placing guide on timeline…'; }
+      var args = { path: pngPath, startSec: 0, durSec: durSec };
+      if (state.replace && state.lastGuideTrack) args.replaceTrack = state.lastGuideTrack;  // reuse + clear the existing guide track
+      CPBridge.callHost('CP_placeOverlay', args).then(function (r) {
         if (prog) prog.classList.add('hidden');
-        try { toast('🎉 Branding overlay added on V' + r.track + ' for ' + Math.round(durSec) + 's. ⌘Z/Ctrl+Z undoes it.'); } catch (e) {}
+        state.lastGuideTrack = r.track;
+        try { toast('🎉 Guide on V' + r.track + ' (opacity ' + state.opacity + '%) for ' + Math.round(durSec) + 's. Toggle that track\'s eye to hide it. ⌘Z/Ctrl+Z undoes it.'); } catch (e) {}
       }).catch(function (e) { if (prog) prog.classList.add('hidden'); try { toast('Place failed: ' + e.message, true); } catch (e2) {} });
     });
+  }
+
+  function removeOverlay() {
+    if (!(window.CPBridge && CPBridge.isCEP && CPBridge.isCEP())) return;
+    CPBridge.callHost('CP_removeOverlay', { track: state.lastGuideTrack || null }).then(function (r) {
+      state.lastGuideTrack = null;
+      try { toast(r && r.removed ? ('Removed ' + r.removed + ' guide clip' + (r.removed === 1 ? '' : 's') + '.') : 'No Pulse guide found to remove.'); } catch (e) {}
+    }).catch(function (e) { try { toast('Remove failed: ' + e.message, true); } catch (e2) {} });
   }
 
   window.CPSafezone = { onShow: function () { refreshEnv(); }, render: renderPreview };

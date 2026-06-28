@@ -1126,6 +1126,35 @@ function CP_placeOverlay(argsJson) {
 }
 
 /*
+ * Remove Pulse guide/overlay clips from the timeline (the Safe Zone reference
+ * layer). If args.track is given, clear just that video track; otherwise scan all
+ * video tracks. Matches clips whose name looks like a Pulse guide/brand/overlay.
+ * argsJson: { track? }
+ */
+function CP_removeOverlay(argsJson) {
+  try {
+    var args = JSON.parse(argsJson || '{}');
+    var seq = CP_activeSequence();
+    if (!seq) return CP_fail('Open a sequence first.');
+    app.enableQE();
+    var qseq = qe.project.getActiveSequence();
+    var removed = 0;
+    var t0 = 0, t1 = seq.videoTracks.numTracks - 1;
+    if (args.track != null && args.track >= 1 && args.track <= seq.videoTracks.numTracks) { t0 = args.track - 1; t1 = args.track - 1; }
+    for (var ti = t1; ti >= t0; ti--) {
+      var qt = qseq.getVideoTrackAt(ti);
+      for (var i = qt.numItems - 1; i >= 0; i--) {
+        var it = qt.getItemAt(i);
+        if (!it || it.type === 'Empty') continue;
+        var nm = ''; try { nm = String(it.name).toLowerCase(); } catch (eN) {}
+        if (nm.indexOf('guide') >= 0 || nm.indexOf('pulse') >= 0 || nm.indexOf('brand') >= 0) { try { it.remove(0, 0); removed++; } catch (eR) {} }
+      }
+    }
+    return CP_ok({ removed: removed });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/*
  * Place one short SFX clip at each given time on an audio track. Imports the WAV
  * once, then overwrites a copy at every trigger time. Prefers an empty audio
  * track (so the voice is never clobbered); adds one via QE when none is free.
