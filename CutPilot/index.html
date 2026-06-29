@@ -24,7 +24,7 @@
       </svg>
       <span class="brand-name">Pulse</span><span class="brand-by">by aifloh</span>
     </div>
-    <span class="ver" id="ver">v0.9.237</span>
+    <span class="ver" id="ver">v0.9.238</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -1087,6 +1087,16 @@
       <p id="set-vb-msg" class="hint" style="min-height:14px;margin-top:4px"></p>
     </div>
     <div class="card">
+      <div class="step-head"><span class="step-title">Diagnostics</span><span class="badge" id="diag-count">0</span></div>
+      <p class="hint">If something misbehaves, <b>reproduce it</b>, then tap <b>Copy diagnostics</b> and paste it back to
+         aiFloh. It captures the exact error so the real bug gets fixed — no guessing. <b>No API keys are included.</b></p>
+      <div class="row tight">
+        <button id="btn-diag-copy" class="chip-btn">📋 Copy diagnostics</button>
+        <button id="btn-diag-clear" class="chip-btn">Clear</button>
+      </div>
+      <textarea id="diag-text" readonly style="display:none;width:100%;box-sizing:border-box;height:150px;margin-top:8px;font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;background:var(--field);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px;resize:vertical"></textarea>
+    </div>
+    <div class="card">
       <div class="step-head"><span class="step-title">Performance</span></div>
       <div id="ffmpeg-status" class="hint">checking for ffmpeg…</div>
       <button id="btn-ffmpeg-setup" class="chip-btn">⬇️ Set up audio engine (auto-download)</button>
@@ -1136,7 +1146,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.9.237 · auto-edit · multicam · captions · chapters · organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.9.238 · auto-edit · multicam · captions · chapters · organize</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->

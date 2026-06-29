@@ -134,7 +134,65 @@
     if (isErr) { t.title = 'Click to dismiss'; }
     else { t.title = ''; toastTimer = setTimeout(function () { t.classList.add('hidden'); }, 4500); }
     log(msg, isErr ? 'err' : 'ok');
+    if (isErr) { try { diag('error', msg); } catch (e) {} }
   }
+
+  // ----------------------------------------------------- diagnostics ----
+  // Capture real failures (error toasts, uncaught JS errors, rejected promises,
+  // failed Premiere host calls) into a buffer the user can copy and paste back,
+  // so bugs are fixed from the EXACT error, not a guess. No API keys are stored.
+  var _diag = [];
+  function _stamp() {
+    try { var d = new Date(); function p(n) { return (n < 10 ? '0' : '') + n; } return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()); }
+    catch (e) { return ''; }
+  }
+  function diag(kind, msg) {
+    try {
+      _diag.push({ t: _stamp(), kind: kind, msg: String(msg == null ? '' : msg).slice(0, 700) });
+      if (_diag.length > 300) _diag.shift();
+      var c = document.getElementById('diag-count'); if (c) c.textContent = String(_diag.length);
+    } catch (e) {}
+  }
+  function diagEnv() {
+    var L = [];
+    function row(s) { L.push(s); }
+    try { row('Pulse ' + (($('ver') && $('ver').textContent) || '?')); } catch (e) {}
+    try { row('Platform: ' + ((typeof navigator !== 'undefined' && navigator.platform) || '?') + ' · in Premiere: ' + (typeof CPBridge !== 'undefined' && CPBridge.isCEP() ? 'yes' : 'no')); } catch (e) {}
+    try { row('ffmpeg: ' + (resolveFfmpeg() || 'NOT FOUND')); } catch (e) {}
+    try { row('Transcribe key: ' + (cpKey() ? 'set' : 'none') + ' · Verbatim: ' + ((settings && settings.verbatimKey || '').trim() ? (settings.verbatimProvider || 'set') : 'none')); } catch (e) {}
+    try { row('Transcript: ' + (state.transcriptWords && state.transcriptWords.length ? (state.transcriptWords.length + ' words') : 'none') + ' · clip: ' + (state.clip ? (state.clip.name || 'yes') : 'none')); } catch (e) {}
+    return L.join('\n');
+  }
+  function buildDiagText() {
+    var out = '=== Pulse diagnostics ===\n' + diagEnv() + '\n\n--- recent events (oldest first) ---\n';
+    if (!_diag.length) out += '(nothing recorded yet — reproduce the problem, then Copy again)\n';
+    for (var i = 0; i < _diag.length; i++) out += '[' + _diag[i].t + '] ' + _diag[i].kind + ': ' + _diag[i].msg + '\n';
+    return out;
+  }
+  // install global capture immediately (works even on the trial-lock screen)
+  (function installDiagCapture() {
+    try {
+      if (typeof window !== 'undefined') {
+        window.onerror = function (msg, src, line, col, err) {
+          diag('js-error', (msg || 'error') + ' @' + String(src || '').split(/[\\/]/).pop() + ':' + line + ':' + col +
+            (err && err.stack ? ('  ' + String(err.stack).split('\n').slice(0, 2).join(' | ')) : ''));
+          return false;
+        };
+        window.addEventListener('unhandledrejection', function (e) {
+          var r = e && e.reason; diag('promise', (r && r.message) ? r.message : String(r));
+        });
+      }
+      if (typeof CPBridge !== 'undefined' && CPBridge.callHost && !CPBridge._diagWrapped) {
+        var _orig = CPBridge.callHost;
+        CPBridge.callHost = function (fnName) {
+          return _orig.apply(this, arguments).catch(function (e) {
+            diag('host', fnName + '(): ' + (e && e.message ? e.message : e)); throw e;
+          });
+        };
+        CPBridge._diagWrapped = true;
+      }
+    } catch (e) {}
+  })();
 
   function fmt(sec) {
     var m = Math.floor(sec / 60);
@@ -1485,6 +1543,25 @@
     });
   }
 
+  function wireDiagnostics() {
+    var copyBtn = $('btn-diag-copy'), clearBtn = $('btn-diag-clear'), ta = $('diag-text');
+    if ($('diag-count')) $('diag-count').textContent = String(_diag.length);
+    if (copyBtn) copyBtn.addEventListener('click', function () {
+      var text = buildDiagText();
+      if (ta) { ta.value = text; ta.style.display = ''; ta.focus(); ta.select(); }
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) {}
+      if (!ok && typeof navigator !== 'undefined' && navigator.clipboard) {
+        try { navigator.clipboard.writeText(text); ok = true; } catch (e2) {}
+      }
+      toast(ok ? '📋 Diagnostics copied — paste it to aiFloh.' : 'Couldn’t auto-copy — select the text below and copy it manually.');
+    });
+    if (clearBtn) clearBtn.addEventListener('click', function () {
+      _diag.length = 0; if ($('diag-count')) $('diag-count').textContent = '0';
+      if (ta) { ta.value = ''; ta.style.display = 'none'; } toast('Diagnostics cleared.');
+    });
+  }
+
   function boot() {
     if (trialExpired()) { showTrialLock(); return; }   // locked: never wires any controls
     if (TRIAL_DAYS_MS) { var _dl = trialDaysLeft(); if ($('ver')) $('ver').textContent = 'Trial · ' + _dl + 'd left'; }
@@ -1497,6 +1574,7 @@
     wireTheme();
     wireLicense();
     wireVerbatim();
+    wireDiagnostics();
     $('set-ffmpeg').value = settings.ffmpegPath || '';
     $('set-dropframe').checked = !!settings.dropFrame;
     if ($('set-whisper')) $('set-whisper').value = settings.whisperPath || '';
