@@ -1474,6 +1474,17 @@
     refresh();
   }
 
+  function wireVerbatim() {
+    if ($('set-vb-provider')) $('set-vb-provider').value = settings.verbatimProvider || 'deepgram';
+    if ($('set-vb-key')) $('set-vb-key').value = settings.verbatimKey || '';
+    if ($('btn-save-vb')) $('btn-save-vb').addEventListener('click', function () {
+      settings.verbatimProvider = ($('set-vb-provider') && $('set-vb-provider').value) || 'deepgram';
+      settings.verbatimKey = ($('set-vb-key') ? $('set-vb-key').value : '').trim();
+      saveSettings();
+      var m = $('set-vb-msg'); if (m) { m.style.color = ''; m.textContent = settings.verbatimKey ? '✓ Saved — “Find retakes (Verbatim AI)” will use ' + settings.verbatimProvider + '.' : 'Cleared.'; }
+    });
+  }
+
   function boot() {
     if (trialExpired()) { showTrialLock(); return; }   // locked: never wires any controls
     if (TRIAL_DAYS_MS) { var _dl = trialDaysLeft(); if ($('ver')) $('ver').textContent = 'Trial · ' + _dl + 'd left'; }
@@ -1485,6 +1496,7 @@
     }
     wireTheme();
     wireLicense();
+    wireVerbatim();
     $('set-ffmpeg').value = settings.ffmpegPath || '';
     $('set-dropframe').checked = !!settings.dropFrame;
     if ($('set-whisper')) $('set-whisper').value = settings.whisperPath || '';
@@ -6249,9 +6261,18 @@
       ' — about <b>' + total.toFixed(1) + 's</b> to remove. Review, then apply.';
     dels.forEach(function (d, i) {
       var item = document.createElement('div'); item.className = 'seg-item';
+      var play = document.createElement('button'); play.className = 'angle-chip'; play.textContent = '▶';
+      play.title = 'Preview this cut on the timeline';
+      play.style.cursor = 'pointer';
+      play.addEventListener('click', function () {
+        CPBridge.callHost('CP_setInOut', { start: d.start, end: d.end })
+          .then(function () { toast('In/Out set to this cut — press Play to hear it before applying.'); })
+          .catch(function (e) { toast(e.message, true); });
+      });
+      item.appendChild(play);
       var chip = document.createElement('span'); chip.className = 'angle-chip'; chip.textContent = takeChip(d.label); item.appendChild(chip);
       var span = document.createElement('span');
-      var txt = d.text.length > 40 ? d.text.slice(0, 40) + '…' : d.text;
+      var txt = d.text.length > 38 ? d.text.slice(0, 38) + '…' : d.text;
       span.textContent = '#' + (i + 1) + '  ' + fmt(d.start) + '→' + fmt(d.end) + '  “' + txt + '”' +
         (d.label && d.reason ? '  · ' + d.reason : '');
       item.appendChild(span);
@@ -6371,6 +6392,117 @@
     }).catch(function (e) { prog.classList.add('hidden'); toast('Smart Cleanup failed: ' + e.message, true); });
   }
   if ($('btn-smart-cleanup')) $('btn-smart-cleanup').addEventListener('click', runSmartCleanup);
+
+  // ---- Verbatim retake removal (the accurate path for scripted re-records) ----
+  function _curlJson(args) {
+    return new Promise(function (resolve, reject) {
+      var cp; try { cp = nodeReq('child_process'); } catch (e) { return reject(e); }
+      var p; try { p = cp.spawn('curl', args); } catch (e2) { return reject(e2); }
+      var out = '', err = '';
+      if (p.stdout) p.stdout.on('data', function (d) { out += d.toString(); });
+      if (p.stderr) p.stderr.on('data', function (d) { err += d.toString(); });
+      p.on('error', reject);
+      p.on('close', function (code) {
+        if (code !== 0) return reject(new Error('Request failed (curl ' + code + '): ' + err.slice(-140)));
+        var j; try { j = JSON.parse(out); } catch (e) { return reject(new Error('Unexpected response: ' + out.slice(0, 120))); }
+        resolve(j);
+      });
+    });
+  }
+  function verbatimDeepgram(audioPath, key) {
+    return _curlJson(['-sS', '--max-time', '600', CPVerbatim.deepgramUrl({}),
+      '-H', 'Authorization: Token ' + key, '-H', 'Content-Type: audio/mpeg', '--data-binary', '@' + audioPath])
+      .then(function (j) {
+        if (j.err_code || j.error) throw new Error('Deepgram: ' + (j.err_msg || j.error || j.reason || 'error'));
+        var ws = CPVerbatim.parseDeepgram(j);
+        if (!ws.length) throw new Error('Deepgram returned no words — check the key and that the clip has speech.');
+        return ws;
+      });
+  }
+  function verbatimAssembly(audioPath, key) {
+    return _curlJson(['-sS', '--max-time', '600', 'https://api.assemblyai.com/v2/upload',
+      '-H', 'authorization: ' + key, '-H', 'Content-Type: application/octet-stream', '--data-binary', '@' + audioPath])
+      .then(function (up) {
+        if (!up.upload_url) throw new Error('AssemblyAI upload failed' + (up.error ? ': ' + up.error : '.'));
+        return _curlJson(['-sS', '--max-time', '60', 'https://api.assemblyai.com/v2/transcript',
+          '-H', 'authorization: ' + key, '-H', 'Content-Type: application/json',
+          '-d', JSON.stringify(CPVerbatim.assemblySubmitBody(up.upload_url, {}))]);
+      }).then(function (sub) {
+        if (!sub.id) throw new Error('AssemblyAI submit failed' + (sub.error ? ': ' + sub.error : '.'));
+        return new Promise(function (resolve, reject) {
+          var tries = 0;
+          (function poll() {
+            tries++;
+            _curlJson(['-sS', '--max-time', '60', 'https://api.assemblyai.com/v2/transcript/' + sub.id, '-H', 'authorization: ' + key])
+              .then(function (t) {
+                if (t.status === 'completed') { var ws = CPVerbatim.parseAssembly(t); if (!ws.length) return reject(new Error('AssemblyAI returned no words.')); return resolve(ws); }
+                if (t.status === 'error') return reject(new Error('AssemblyAI: ' + (t.error || 'error')));
+                if (tries > 150) return reject(new Error('AssemblyAI timed out.'));
+                setTimeout(poll, 3000);
+              }).catch(reject);
+          })();
+        });
+      });
+  }
+  /* Extract the clip's audio, transcribe VERBATIM (keeps every take), return
+     words in SEQUENCE time with per-word confidence. */
+  function verbatimTranscribe(clip, ff) {
+    return new Promise(function (resolve, reject) {
+      var key = (settings.verbatimKey || '').trim();
+      if (!key) return reject(new Error('Add a Deepgram or AssemblyAI key in Settings → Verbatim transcription.'));
+      var cp, fs, os, pathMod;
+      try { cp = nodeReq('child_process'); fs = nodeReq('fs'); os = nodeReq('os'); pathMod = nodeReq('path'); } catch (e) { return reject(e); }
+      var audio = pathMod.join(os.tmpdir(), 'pulse-vb-' + Date.now() + '.mp3');
+      var inP = clip.inPoint || 0, outP = clip.outPoint || 0, dur = (outP > inP) ? (outP - inP) : 0;
+      var args = ['-y', '-ss', String(inP), '-i', clip.mediaPath];
+      if (dur > 0) args = args.concat(['-t', String(dur)]);
+      args = args.concat(['-vn', '-ac', '1', '-ar', '16000', '-b:a', '64k', audio]);
+      var ex; try { ex = cp.spawn(ff, args); } catch (e3) { return reject(e3); }
+      var exErr = '';
+      if (ex.stderr) ex.stderr.on('data', function (d) { exErr += d.toString(); });
+      ex.on('error', function (e) { reject(new Error('Audio extract failed: ' + e.message)); });
+      ex.on('close', function (code) {
+        if (code !== 0 || !fs.existsSync(audio)) return reject(new Error('Could not extract audio: ' + exErr.slice(-140)));
+        function cleanup() { try { fs.unlinkSync(audio); } catch (e) {} }
+        var off = (clip.seqStart || 0);   // word time is relative to inPoint → seq = seqStart + t
+        function toSeq(ws) { return ws.map(function (w) { return { start: off + w.start, end: off + w.end, text: w.text, conf: w.conf }; }); }
+        var engine = (settings.verbatimProvider === 'assemblyai') ? verbatimAssembly : verbatimDeepgram;
+        engine(audio, key).then(function (ws) { cleanup(); resolve(toSeq(ws)); }).catch(function (e) { cleanup(); reject(e); });
+      });
+    });
+  }
+  function runVerbatimRetakes() {
+    var ff = resolveFfmpeg();
+    if (!ff) return toast('This needs ffmpeg (Settings → ffmpeg).', true);
+    if (!(settings.verbatimKey || '').trim()) return toast('Add a Deepgram or AssemblyAI key in Settings → Verbatim transcription to use this.', true);
+    var prog = $('takes-progress'); prog.classList.remove('hidden'); prog.textContent = 'Finding your clip…';
+    CPBridge.callHost('CP_getSelectedClip').then(
+      function (res) { return (res && res.clip && res.clip.mediaPath) ? res : CPBridge.callHost('CP_getTranscribeSource'); },
+      function () { return CPBridge.callHost('CP_getTranscribeSource'); }
+    ).then(function (res) {
+      if (!res || !res.clip || !res.clip.mediaPath) throw new Error('Put your video on the timeline (select it) so I can read its audio.');
+      state.clip = res.clip;
+      prog.textContent = '🎙 Transcribing verbatim (keeps every take)… this can take a minute';
+      return verbatimTranscribe(res.clip, ff).then(function (words) {
+        state.transcriptWords = words;                       // adopt the verbatim transcript
+        prog.textContent = 'Finding the best take of each line…';
+        var tp = TAKE_PRESETS[state.takeStrength || 'balanced'] || TAKE_PRESETS.balanced;
+        var det = CPTakes.findRepeatedTakes(words, { minRun: tp.minrun, sim: tp.sim / 100, keep: 'best' });
+        var deletes = CPTakes.tidyDeletes(det.deletes, 0.1);
+        prog.textContent = 'Snapping cuts to the pauses…';
+        return detectSilencesRobust(res.clip, ff, { thresholdDb: -35, minSilence: 0.12, padding: 0 }).then(function (sd) {
+          var sils = (sd.silences || []).map(function (s) { return { start: (res.clip.seqStart || 0) + (s.start - res.clip.inPoint), end: (res.clip.seqStart || 0) + (s.end - res.clip.inPoint) }; });
+          return CPSilence.snapCutsToSilence(deletes, sils, { window: 0.25, pad: 0.02 });
+        }).then(function (snapped) { return CPTakes.tidyDeletes(snapped, 0.1); }, function () { return deletes; });
+      });
+    }).then(function (cuts) {
+      state.takeDeletes = cuts;
+      prog.classList.add('hidden');
+      renderTakes(cuts);
+      toast(cuts.length ? ('🎯 Found ' + cuts.length + ' retake/off-script cut' + (cuts.length === 1 ? '' : 's') + ' — review (▶ to preview), then apply.') : 'No clear retakes found in the verbatim transcript.');
+    }).catch(function (e) { prog.classList.add('hidden'); toast('Verbatim retakes failed: ' + e.message, true); });
+  }
+  if ($('btn-verbatim-retakes')) $('btn-verbatim-retakes').addEventListener('click', runVerbatimRetakes);
 
   // =========================================================== VIRAL SHORTS ====
   /* Sentence-level segments for the highlight finder: prefer the caption job's

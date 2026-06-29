@@ -24,7 +24,7 @@
       </svg>
       <span class="brand-name">Pulse</span><span class="brand-by">by aifloh</span>
     </div>
-    <span class="ver" id="ver">v0.9.236</span>
+    <span class="ver" id="ver">v0.9.237</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -813,6 +813,11 @@
         </details>
       </div>
       <button id="btn-takes-find" class="hero-btn alt">🔎 Find repeated takes</button>
+      <p class="hint" style="margin-top:10px">🎯 <b>Find retakes (Verbatim AI)</b> is the accurate one for a <b>script re-read many
+         times</b>: it re-transcribes with a verbatim engine (keeps every take Groq throws away),
+         keeps your <b>best</b> take of each line, snaps cuts to the pauses, and lists them to review.
+         Needs a Deepgram/AssemblyAI key (Settings).</p>
+      <button id="btn-verbatim-retakes" class="hero-btn">🎯 Find retakes (Verbatim AI)</button>
       <p class="hint" style="margin-top:10px">✨ <b>Smart Cleanup (AI)</b> goes further — it reads the whole
          transcript and also removes <b>false starts</b>, fillers (“um”, “you know”) and
          <b>“let me think” dead-air</b> that silence-cutting can’t see, then keeps the best take.
@@ -1063,6 +1068,25 @@
       <p id="set-lic-msg" class="hint" style="min-height:14px;margin-top:4px"></p>
     </div>
     <div class="card">
+      <div class="step-head"><span class="step-title">Verbatim transcription</span><span class="badge">for retake removal</span></div>
+      <p class="hint">Removing retakes needs a transcript that keeps <b>every</b> re-read — the normal
+         engine (Groq) cleans those away. Add a <b>Deepgram</b> or <b>AssemblyAI</b> key (both have free
+         tiers) and Pulse uses it just for the “remove retakes” pass.</p>
+      <label class="fld-full">Engine
+        <select id="set-vb-provider">
+          <option value="deepgram" selected>Deepgram (nova-3)</option>
+          <option value="assemblyai">AssemblyAI</option>
+        </select>
+      </label>
+      <label class="fld-full" style="margin-top:6px">API key
+        <div class="row tight">
+          <input type="password" id="set-vb-key" placeholder="paste your Deepgram / AssemblyAI key" autocomplete="off" spellcheck="false">
+          <button id="btn-save-vb" class="chip-btn">Save</button>
+        </div>
+      </label>
+      <p id="set-vb-msg" class="hint" style="min-height:14px;margin-top:4px"></p>
+    </div>
+    <div class="card">
       <div class="step-head"><span class="step-title">Performance</span></div>
       <div id="ffmpeg-status" class="hint">checking for ffmpeg…</div>
       <button id="btn-ffmpeg-setup" class="chip-btn">⬇️ Set up audio engine (auto-download)</button>
@@ -1112,7 +1136,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.9.236 · auto-edit · multicam · captions · chapters · organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.9.237 · auto-edit · multicam · captions · chapters · organize</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->
@@ -1241,6 +1265,7 @@
   <script src="js/sfx.js"></script>
   <script src="js/takes.js"></script>
   <script src="js/smartedit.js"></script>
+  <script src="js/verbatim.js"></script>
   <script src="js/reframe.js"></script>
   <script src="js/transcript.js"></script>
   <script src="js/fonts.js"></script>
