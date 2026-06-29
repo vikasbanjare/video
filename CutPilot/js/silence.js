@@ -140,6 +140,80 @@
     return ranges;
   }
 
+  // ---- transcript ↔ timeline sync ------------------------------------------
+  // These keep the transcript (words / caption cues) aligned to the timeline
+  // after an edit, so silence-cut → remove-takes → captions all compose. Pure,
+  // so they're unit-tested in Node and shared by every edit path in the panel.
+
+  /* Copy the optional metadata fields a remapped item should carry forward. */
+  function carry(src, start, end) {
+    var o = { start: start, end: end, text: src.text };
+    if (src.conf != null) o.conf = src.conf;
+    if (src.speaker != null) o.speaker = src.speaker;
+    if (src.word != null) o.word = src.word;
+    return o;
+  }
+
+  /*
+   * Ripple a list of timed items through a set of CUT ranges (same time base).
+   * Items whose midpoint lands inside a cut are dropped; items after a cut slide
+   * left by the total removed time before them — exactly what a ripple-delete
+   * does on the timeline. closeGaps:false drops in-cut items WITHOUT shifting
+   * (the gap stays open, so downstream clips don't move).
+   * items: [{start,end,text,conf?,speaker?,word?}], ranges: [{start,end}].
+   */
+  function rippleItems(items, ranges, closeGaps) {
+    if (!items || !items.length) return items ? items.slice() : [];
+    var merged = mergeRanges((ranges || []).filter(function (r) { return r.end > r.start; }), 0.0001);
+    if (!merged.length) return items.slice();
+    if (closeGaps === undefined) closeGaps = true;
+    var out = [];
+    for (var k = 0; k < items.length; k++) {
+      var it = items[k], mid = (it.start + it.end) / 2, inside = false, shift = 0;
+      for (var i = 0; i < merged.length; i++) {
+        var r = merged[i];
+        if (mid >= r.start - 0.001 && mid < r.end + 0.001) { inside = true; break; }
+        if (r.end <= it.start + 0.001) shift += (r.end - r.start);
+      }
+      if (inside) continue;                       // word/line was cut out
+      if (!closeGaps) shift = 0;                  // gap left open → nothing moves
+      out.push(carry(it, Math.max(0, it.start - shift), Math.max(0, it.end - shift)));
+    }
+    return out;
+  }
+
+  /*
+   * Remap a list of timed items through a set of KEEP ranges that get
+   * concatenated (the "rebuild a trimmed sequence" case): each keep is laid down
+   * back-to-back starting at 0, so an item inside keep i lands at
+   * (sum of earlier keep durations) + (item.start − keep.start). Items outside
+   * every keep are dropped. items/keeps share one time base.
+   */
+  function remapThroughKeeps(items, keeps) {
+    if (!items || !items.length) return items ? items.slice() : [];
+    var ks = (keeps || []).filter(function (k) { return k.end > k.start; })
+      .sort(function (a, b) { return a.start - b.start; });
+    if (!ks.length) return [];
+    var cum = [], acc = 0, i;
+    for (i = 0; i < ks.length; i++) { cum.push(acc); acc += (ks[i].end - ks[i].start); }
+    var out = [];
+    for (var j = 0; j < items.length; j++) {
+      var it = items[j], mid = (it.start + it.end) / 2;
+      for (var k = 0; k < ks.length; k++) {
+        var seg = ks[k];
+        if (mid >= seg.start - 0.001 && mid < seg.end + 0.001) {
+          var len = seg.end - seg.start;
+          var ns = cum[k] + Math.min(len, Math.max(0, it.start - seg.start));
+          var ne = cum[k] + Math.min(len, Math.max(0, it.end - seg.start));
+          if (ne <= ns) ne = Math.min(cum[k] + len, ns + 0.02);
+          out.push(carry(it, ns, ne));
+          break;
+        }
+      }
+    }
+    return out;
+  }
+
   return {
     dbToLinear: dbToLinear,
     detectSilences: detectSilences,
@@ -147,6 +221,8 @@
     refineSilences: refineSilences,
     invertToKeep: invertToKeep,
     totalDuration: totalDuration,
-    parseFfmpegSilences: parseFfmpegSilences
+    parseFfmpegSilences: parseFfmpegSilences,
+    rippleItems: rippleItems,
+    remapThroughKeeps: remapThroughKeeps
   };
 });

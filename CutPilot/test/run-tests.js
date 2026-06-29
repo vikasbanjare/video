@@ -65,6 +65,38 @@ console.log('silence.js');
   assert(ff.length === 2, 'ffmpeg parser finds both silences');
   assert(close(ff[0].start, 1.5) && close(ff[0].end, 3.25), 'ffmpeg range values parsed');
   assert(close(ff[1].end, 12), 'trailing open silence closed at media duration');
+
+  // ---- transcript ↔ timeline sync (the silence→duplicate→caption chain) ----
+  // Words on a timeline; a cut removes the DUP word and everything after slides
+  // left — exactly what "remove repeated takes" needs after a silence cut.
+  const wordsA = [
+    { start: 0, end: 1, text: 'what', conf: 0.9 }, { start: 1, end: 2, text: 'is' },
+    { start: 2, end: 3, text: 'DUP' },
+    { start: 3, end: 4, text: 'your' }, { start: 4, end: 5, text: 'name' }
+  ];
+  const rip = CPSilence.rippleItems(wordsA, [{ start: 2, end: 3 }], true);
+  assert(rip.length === 4, 'rippleItems drops the cut-out word');
+  assert(rip.map(w => w.text).join(' ') === 'what is your name', 'rippleItems keeps the surviving words in order');
+  assert(close(rip[2].start, 2) && close(rip[3].end, 4), 'rippleItems shifts later words left by the removed time');
+  assert(rip[0].conf === 0.9, 'rippleItems carries per-word confidence forward');
+
+  const ripOpen = CPSilence.rippleItems(wordsA, [{ start: 2, end: 3 }], false);
+  assert(close(ripOpen[2].start, 3), 'rippleItems with closeGaps=false drops but does NOT shift');
+  assert(CPSilence.rippleItems(wordsA, []).length === 5, 'rippleItems with no cuts returns every word');
+
+  // Rebuild: keeps [0,2] and [5,8] are concatenated from 0 → new timeline is
+  // [0,2]+[2,5]. A word originally at 6s must land at 3s on the rebuilt clip, so
+  // a later duplicate/caption pass uses the rebuilt timing — the user's bug.
+  const wordsB = [
+    { start: 0.5, end: 1.5, text: 'A' }, { start: 3, end: 4, text: 'cutB' },
+    { start: 6, end: 7, text: 'C' }, { start: 9, end: 9.5, text: 'cutD' }
+  ];
+  const re = CPSilence.remapThroughKeeps(wordsB, [{ start: 0, end: 2 }, { start: 5, end: 8 }]);
+  assert(re.length === 2, 'remapThroughKeeps drops words that fall in cut regions');
+  assert(re.map(w => w.text).join(' ') === 'A C', 'remapThroughKeeps keeps words inside kept segments');
+  assert(close(re[0].start, 0.5), 'remapThroughKeeps leaves the first kept word at its concatenated start');
+  assert(close(re[1].start, 3) && close(re[1].end, 4), 'remapThroughKeeps maps a 6s word onto the rebuilt 3s slot');
+  assert(CPSilence.remapThroughKeeps(wordsB, []).length === 0, 'remapThroughKeeps with no keeps yields nothing');
 }
 
 // ------------------------------------------------------------ captions ----

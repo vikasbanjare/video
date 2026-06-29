@@ -5634,24 +5634,38 @@
      progressively more lenient thresholds (louder room tone needs a higher
      gate). This fixes "finds no silences" on quiet-but-not-silent rooms. */
   function detectSilencesRobust(clip, ff, opts) {
-    var thresholds = [opts.thresholdDb, opts.thresholdDb + 8, opts.thresholdDb + 16];
+    // Escalate BOTH the gate (louder room tone needs a higher threshold) AND the
+    // min-pause (a fast talker's pauses can be shorter than the default) — the
+    // old ladder only raised the threshold, so loud-room + short-pause clips
+    // still reported "no pauses". Each step is strictly more lenient.
+    var base = opts.thresholdDb, minS = opts.minSilence;
+    var ladder = [
+      { thr: base,      min: minS },
+      { thr: base + 8,  min: minS },
+      { thr: base + 16, min: minS },
+      { thr: base + 16, min: Math.min(minS, 0.4) },
+      { thr: base + 22, min: Math.min(minS, 0.3) },
+      { thr: base + 28, min: Math.min(minS, 0.25) }
+    ];
     var idx = 0, prog = $('analyze-progress');
     function attempt() {
-      var thr = thresholds[idx];
+      var a = ladder[idx];
       var p = ff
-        ? CPAudio.ffmpegDetect(clip.mediaPath, ff, thr, Math.min(opts.minSilence, 0.3), CPSilence)
-        : CPAudio.webAudioDetect(clip.mediaPath, { thresholdDb: thr }, CPSilence);
+        ? CPAudio.ffmpegDetect(clip.mediaPath, ff, a.thr, Math.min(a.min, 0.25), CPSilence)
+        : CPAudio.webAudioDetect(clip.mediaPath, { thresholdDb: a.thr }, CPSilence);
       return p.then(function (det) {
         var refined = CPSilence.refineSilences(det.silences, {
-          minSilence: opts.minSilence, padding: opts.padding,
+          minSilence: a.min, padding: opts.padding,
           totalDuration: det.duration || clip.outPoint
         });
-        if (!refined.length && idx < thresholds.length - 1) {
+        if (!refined.length && idx < ladder.length - 1) {
           idx++;
-          if (prog) prog.textContent = 'No pauses at ' + thr + 'dB — trying ' + thresholds[idx] + 'dB…';
+          if (prog) prog.textContent = 'No pauses at ' + a.thr + 'dB / ' + a.min + 's — easing to ' +
+            ladder[idx].thr + 'dB / ' + ladder[idx].min + 's…';
           return attempt();
         }
-        det._usedThreshold = thr;
+        det._usedThreshold = a.thr;
+        det._usedMinSilence = a.min;       // the handler must refine with THIS, not the strict default
         return det;
       });
     }
@@ -5698,6 +5712,12 @@
       });
       segs.forEach(function (seg) { if (seg.end - seg.start >= minLen) out.push({ start: seg.start, end: seg.end, kind: 'silence' }); });
     });
+    // Safety net: a coarse, line-level transcript (few cues spanning long spans)
+    // can interpolate "words" right across a real pause and protect ALL of them
+    // away — which looks like "No pauses found" after you transcribe. If
+    // protection wiped out every silence, keep the unprotected set rather than
+    // cutting nothing; speech-protection is a refinement, not a hard gate.
+    if (!out.length && silences.length) return silences.slice();
     return out;
   }
 
@@ -5728,8 +5748,12 @@
     }).then(function (det) {
       var clip = state.clip;
       var mediaDuration = det.duration || clip.outPoint;
+      // Refine with the min-pause that actually surfaced pauses during the
+      // robust ladder (det._usedMinSilence) — refining with the strict default
+      // here would silently throw the eased results away again.
+      var usedMin = det._usedMinSilence != null ? det._usedMinSilence : opts.minSilence;
       var refined = CPSilence.refineSilences(det.silences, {
-        minSilence: opts.minSilence,
+        minSilence: usedMin,
         padding: opts.padding,
         totalDuration: mediaDuration
       });
@@ -5744,7 +5768,7 @@
       // it's quiet (a soft trailing-off ending reads as low-dB "silence" but the
       // transcript proves there are words there). Clip silence ranges around the
       // transcript words so quiet speech / endings survive.
-      silencesMedia = protectSpeechMedia(silencesMedia, clip, opts.minSilence);
+      silencesMedia = protectSpeechMedia(silencesMedia, clip, usedMin);
       // fold in transcript filler-word cuts (already in media time), then sort
       // so the combined cut list stays ordered for invertToKeep.
       var fillers = fillerMediaRanges(clip);
@@ -5776,8 +5800,11 @@
         toast('No pauses found — even after easing the threshold. Your room tone may be loud: raise “Threshold (dB)” toward −25 in Advanced, or lower “Min pause”. ' +
               (resolveFfmpeg() ? '' : '(Also: ffmpeg isn’t set up — Settings → ffmpeg path — needed to read audio inside video files.)'), true);
       } else {
+        var eased = [];
+        if (det._usedThreshold != null && det._usedThreshold !== opts.thresholdDb) eased.push(det._usedThreshold + 'dB');
+        if (det._usedMinSilence != null && det._usedMinSilence !== opts.minSilence) eased.push(det._usedMinSilence + 's pause');
         toast('Found ' + nSil + ' silence' + (nSil === 1 ? '' : 's') +
-              (det._usedThreshold != null && det._usedThreshold !== opts.thresholdDb ? ' (auto-eased to ' + det._usedThreshold + 'dB)' : '') +
+              (eased.length ? ' (auto-eased to ' + eased.join(' / ') + ')' : '') +
               (nFill ? ' + ' + nFill + ' filler cuts' : '') + '.');
       }
     }).catch(function (e) {
@@ -5837,7 +5864,14 @@
       keeps: state.keepsMedia,
       name: 'Pulse · ' + state.clip.name
     }).then(function (r) {
-      toast('🎉 Built "' + r.sequence + '" — ' + r.segmentsPlaced + ' segments, ' + fmt(r.finalDuration) + ' long.');
+      // The rebuilt sequence is the keeps concatenated from 0 — remap the
+      // transcript onto it so "Remove repeated takes" / captions line up with
+      // the trimmed clip, no re-transcribe needed.
+      remapTranscriptToRebuild(state.keepsSeq);
+      // the old silence list belongs to the previous timeline — clear it.
+      state.silencesSeq = []; if ($('results')) $('results').classList.add('hidden');
+      toast('🎉 Built "' + r.sequence + '" — ' + r.segmentsPlaced + ' segments, ' + fmt(r.finalDuration) +
+            ' long. Transcript auto-synced to the trimmed clip — go straight to “Remove repeated takes” or captions.');
     }).catch(function (e) { toast('Rebuild failed: ' + e.message, true); });
   });
 
@@ -5897,43 +5931,44 @@
     return out;
   }
 
-  /* After an in-place ripple cut, shift the transcript to match the edited
-     timeline so you NEVER have to re-transcribe between steps: words inside a
-     removed range are dropped, words after it slide left by the removed time.
-     Keeps state.transcriptWords + the caption-job cues in sync for the next
-     operation (another cut, or captions). */
-  function rippleTranscriptByRanges(ranges) {
-    if (!ranges || !ranges.length) return 0;
-    var merged = ranges.slice().filter(function (r) { return r.end > r.start; })
-      .sort(function (a, b) { return a.start - b.start; });
-    if (!merged.length) return 0;
-    function remap(items) {
-      if (!items || !items.length) return items;
-      var out = [];
-      for (var k = 0; k < items.length; k++) {
-        var it = items[k], mid = (it.start + it.end) / 2, inside = false, shift = 0;
-        for (var i = 0; i < merged.length; i++) {
-          var r = merged[i];
-          if (mid >= r.start - 0.001 && mid < r.end + 0.001) { inside = true; break; }
-          if (r.end <= it.start + 0.001) shift += (r.end - r.start);
-        }
-        if (inside) continue;                       // word/line was cut out
-        var o = { start: Math.max(0, it.start - shift), end: Math.max(0, it.end - shift), text: it.text };
-        if (it.conf != null) o.conf = it.conf;
-        if (it.speaker != null) o.speaker = it.speaker;
-        out.push(o);
-      }
-      return out;
-    }
+  /* Re-sync EVERY transcript copy the panel holds (word timing, the last caption
+     job's cues, and the template-editor cues) after a timeline edit, using one
+     pure remap function so silence-cut, remove-takes, rebuild and captions all
+     stay on the same clock. `remapFn(items)` returns the items in the new time
+     base; words/cues that were cut out are dropped. Returns words dropped. */
+  function resyncTranscripts(remapFn) {
     var dropped = 0;
     if (state.transcriptWords && state.transcriptWords.length) {
       var before = state.transcriptWords.length;
-      state.transcriptWords = remap(state.transcriptWords);
+      state.transcriptWords = remapFn(state.transcriptWords);
       dropped = before - state.transcriptWords.length;
     }
-    if (state.lastCaptionJob && state.lastCaptionJob.cues) state.lastCaptionJob.cues = remap(state.lastCaptionJob.cues);
-    if (typeof _treCues !== 'undefined' && _treCues && _treCues.length) _treCues = remap(_treCues);
+    if (state.lastCaptionJob && state.lastCaptionJob.cues) state.lastCaptionJob.cues = remapFn(state.lastCaptionJob.cues);
+    if (typeof _treCues !== 'undefined' && _treCues && _treCues.length) _treCues = remapFn(_treCues);
     return dropped;
+  }
+
+  /* After an in-place ripple cut, shift the transcript to match the edited
+     timeline so you NEVER have to re-transcribe between steps: words inside a
+     removed range are dropped, words after it slide left by the removed time.
+     `closeGaps` mirrors what the host did (default true — gaps closed). */
+  function rippleTranscriptByRanges(ranges, closeGaps) {
+    if (!ranges || !ranges.length) return 0;
+    return resyncTranscripts(function (items) {
+      return CPSilence.rippleItems(items, ranges, closeGaps !== false);
+    });
+  }
+
+  /* After "Build a trimmed sequence" (CP_rebuildTrimmed) the new sequence is the
+     keep-segments concatenated from 0. Remap the transcript onto that brand-new
+     timeline so remove-takes / captions run on the rebuilt clip with no
+     re-transcribe. `keepsSeq` are the keeps in the ORIGINAL sequence time base
+     (same base the transcript words use). */
+  function remapTranscriptToRebuild(keepsSeq) {
+    if (!keepsSeq || !keepsSeq.length) return 0;
+    return resyncTranscripts(function (items) {
+      return CPSilence.remapThroughKeeps(items, keepsSeq);
+    });
   }
 
   // ---- Auto-Edit: remove repeated takes (uses the transcript) ----
