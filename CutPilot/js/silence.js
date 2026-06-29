@@ -214,6 +214,39 @@
     return out;
   }
 
+  /*
+   * Snap each cut edge to the nearest real silence boundary so cuts land in the
+   * gap BETWEEN takes, not mid-word. Transcript-derived word times drift by up to
+   * a few hundred ms; the breath/pause around a retake is precise. For each cut
+   * [s,e], move s and e to the nearest silence on/offset within `window`; then
+   * shrink very slightly (`pad`) so a plosive onset / breath tail is never
+   * clipped. cuts:[{start,end,...}], silences:[{start,end}]. Pure.
+   */
+  function snapCutsToSilence(cuts, silences, opts) {
+    opts = opts || {};
+    var win = opts.window != null ? opts.window : 0.25;
+    var pad = opts.pad != null ? opts.pad : 0.02;
+    var edges = [];
+    (silences || []).forEach(function (s) { edges.push(s.start); edges.push(s.end); });
+    edges.sort(function (a, b) { return a - b; });
+    function nearest(t) {
+      var best = null, bd = Infinity;
+      for (var i = 0; i < edges.length; i++) { var d = Math.abs(edges[i] - t); if (d < bd) { bd = d; best = edges[i]; } }
+      return (best != null && bd <= win) ? best : null;
+    }
+    return (cuts || []).map(function (c) {
+      var ns = nearest(c.start), ne = nearest(c.end);
+      var s = (ns != null ? ns : c.start) + pad;
+      var e = (ne != null ? ne : c.end) - pad;
+      if (e <= s) { s = c.start; e = c.end; }            // pad/snap collapsed it → keep original
+      var o = { start: s, end: e };
+      if (c.text != null) o.text = c.text;
+      if (c.reason != null) o.reason = c.reason;
+      if (c.label != null) o.label = c.label;
+      return o;
+    });
+  }
+
   return {
     dbToLinear: dbToLinear,
     detectSilences: detectSilences,
@@ -223,6 +256,7 @@
     totalDuration: totalDuration,
     parseFfmpegSilences: parseFfmpegSilences,
     rippleItems: rippleItems,
-    remapThroughKeeps: remapThroughKeeps
+    remapThroughKeeps: remapThroughKeeps,
+    snapCutsToSilence: snapCutsToSilence
   };
 });

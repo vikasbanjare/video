@@ -147,7 +147,23 @@
       if (grp.length < 2) return;
       grp.sort(function (x, y) { return x - y; });
       var keepIdx = grp[grp.length - 1];          // default: keep the LAST attempt
-      if (keep === 'confident') {
+      if (keep === 'best') {
+        // Score each take: completeness (a truncated/false-start take scores low
+        // and is rejected) dominates, then mean per-word confidence (clean vs
+        // flubbed delivery — needs a verbatim transcript to be meaningful), then
+        // recency (people usually nail a later try). Keep the highest.
+        var maxLen = 0, mi;
+        for (mi = 0; mi < grp.length; mi++) maxLen = Math.max(maxLen, phrases[grp[mi]].length);
+        var bestScore = -Infinity;
+        for (var bi = 0; bi < grp.length; bi++) {
+          var ph = phrases[grp[bi]];
+          var completeness = maxLen ? (ph.length / maxLen) : 1;
+          var cf = pConf(ph); if (cf == null) cf = 0.6;          // neutral when no confidence
+          var recency = (grp.length > 1) ? (bi / (grp.length - 1)) : 1;
+          var sc = 0.55 * completeness + 0.25 * cf + 0.20 * recency;
+          if (sc > bestScore) { bestScore = sc; keepIdx = grp[bi]; }
+        }
+      } else if (keep === 'confident') {
         var bc = -Infinity, anyConf = false;
         for (var ci = 0; ci < grp.length; ci++) {
           var cf = pConf(phrases[grp[ci]]);

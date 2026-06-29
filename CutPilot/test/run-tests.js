@@ -998,6 +998,40 @@ console.log('reframe.js (speaker-aware vertical)');
   assert(CPReframe.targetSize('1:1').h === 1080 && CPReframe.targetSize('9:16').h === 1920, 'targetSize maps aspect labels to pixels');
 }
 
+// ------------------------------------------ verbatim ASR (retake capture) ----
+console.log('verbatim.js (Deepgram / AssemblyAI)');
+{
+  const CPV = require(path.join(__dirname, '..', 'js', 'verbatim.js'));
+  assert(/filler_words=true/.test(CPV.deepgramUrl({})), 'deepgram URL keeps filler words (verbatim)');
+  assert(/model=nova-3/.test(CPV.deepgramUrl({})), 'deepgram URL defaults to nova-3');
+  const dg = CPV.parseDeepgram({ results: { channels: [{ alternatives: [{ words: [
+    { word: 'so', punctuated_word: 'So', start: 0.1, end: 0.4, confidence: 0.99 },
+    { word: 'um', start: 0.4, end: 0.6, confidence: 0.55 }
+  ] }] }] } });
+  assert(dg.length === 2 && dg[0].text === 'So' && close(dg[0].conf, 0.99), 'parseDeepgram keeps punctuated words + confidence');
+  assert(dg[1].text === 'um', 'parseDeepgram keeps the filler "um" (verbatim)');
+  const aa = CPV.parseAssembly({ words: [{ text: 'Hello', start: 1000, end: 1500, confidence: 0.9 }] });
+  assert(aa.length === 1 && close(aa[0].start, 1) && close(aa[0].end, 1.5), 'parseAssembly converts ms → seconds');
+  assert(CPV.assemblySubmitBody('http://x/a.wav', {}).disfluencies === true, 'assembly submit keeps disfluencies');
+  const cues = CPV.wordsToCues([{ text: 'a', start: 0, end: 0.3 }, { text: 'b.', start: 0.3, end: 0.6 }, { text: 'c', start: 2.0, end: 2.3 }]);
+  assert(cues.length === 2, 'wordsToCues splits on sentence end / long pause');
+
+  // best-take selection: keep the COMPLETE high-confidence take, not the last (truncated) one
+  function mk(words, t) { var o = [], x = t; words.split(' ').forEach(function (w) { o.push({ start: +x.toFixed(2), end: +(x + 0.28).toFixed(2), text: w, conf: 0.9 }); x += 0.3; }); return o; }
+  const w1 = mk('the plan is to grow the business fast', 0);            // complete, conf 0.9
+  const w2 = mk('the plan is to', 4).map(function (w) { return { start: w.start, end: w.end, text: w.text, conf: 0.4 }; }); // truncated, low conf, LAST
+  const bt = CPTakes.findRepeatedTakes(w1.concat(w2.map(function (w) { return { start: w.start + 0, end: w.end, text: w.text, conf: w.conf }; })), { sim: 0.5, minRun: 3, keep: 'best' });
+  assert(bt.deletes.some(function (d) { return /the plan is to$/.test(d.text.trim()); }), 'best-take cuts the truncated last attempt, keeps the complete one');
+
+  // silence-snap: a cut near a real pause snaps onto it
+  const snapped = CPSilence.snapCutsToSilence([{ start: 2.07, end: 3.12, text: 'x' }], [{ start: 1.9, end: 2.0 }, { start: 3.0, end: 3.2 }], { window: 0.25, pad: 0.02 });
+  assert(snapped[0].start > 1.95 && snapped[0].start < 2.05, 'snap moves the cut start onto the ~2.0s pause edge');
+  assert(snapped[0].end > 3.12 && snapped[0].end < 3.22, 'snap moves the cut end onto the nearest pause edge (speech onset ~3.2s)');
+  assert(snapped[0].text === 'x', 'snap carries the label/text through');
+  const noSnap = CPSilence.snapCutsToSilence([{ start: 10, end: 12 }], [{ start: 1, end: 2 }], { window: 0.25 });
+  assert(close(noSnap[0].start, 10.02, 0.001), 'snap leaves a cut alone (just pad) when no silence is within the window');
+}
+
 // --------------------------------------------- transcript: filler removal ----
 console.log('transcript.js (filler removal)');
 {
