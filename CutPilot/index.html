@@ -24,7 +24,7 @@
       </svg>
       <span class="brand-name">Pulse</span><span class="brand-by">by aifloh</span>
     </div>
-    <span class="ver" id="ver">v0.9.241</span>
+    <span class="ver" id="ver">v0.9.242</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -553,11 +553,11 @@
         <div id="legibility-note" class="legibility-note hidden"></div>
         <label style="font-size:11px;display:block;margin:2px 0 4px">Caption type</label>
         <div class="seg-control" id="cap-output" style="margin-bottom:8px">
-          <button data-out="png" class="on" type="button">🖼 Exact look (matches preview)</button>
+          <button data-out="editable" class="on" type="button">✏️ Editable (recommended)</button>
+          <button data-out="png" type="button">🖼 Exact look</button>
           <button data-out="reliable" type="button">⚡ Reliable</button>
-          <button data-out="editable" type="button">✏️ Editable</button>
         </div>
-        <p class="hint" id="cap-output-hint" style="margin:0 0 8px">🖼 <b>Exact look</b> (recommended): word-by-word captions rendered with the SAME engine as the preview above — so the output matches the preview 1:1 (every colour, box, glow, gradient). ⚡ <b>Reliable</b>: one libass-burned clip (great for Indic/RTL); falls back to Exact look automatically if ffmpeg can't render here. ✏️ <b>Editable</b>: each caption is its own clip you can re-edit in Essential Graphics.</p>
+        <p class="hint" id="cap-output-hint" style="margin:0 0 8px">✏️ <b>Editable</b> (recommended): each caption is its own native Premiere clip — <b>exactly the template you preview</b>, fully re-editable in Window → Essential Graphics. 🖼 <b>Exact look</b>: word-by-word burned-in PNGs that match the canvas preview 1:1 (every colour, box, glow, gradient). ⚡ <b>Reliable</b>: one libass-burned clip (great for Indic/RTL).</p>
         <label style="font-size:11px">Word animation</label>
         <div class="seg-control" id="cap-reveal" style="margin-bottom:8px">
           <button data-mode="highlight" class="on" type="button">🔆 Highlight word</button>
@@ -1146,7 +1146,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.9.241 · auto-edit · multicam · captions · chapters · organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.9.242 · auto-edit · multicam · captions · chapters · organize</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->

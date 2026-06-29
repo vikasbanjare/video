@@ -224,6 +224,13 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
 .tpl-card:hover .tpl-thumb { transform: translateY(-2px); box-shadow: var(--shadow); }
 .tpl-card.on .tpl-thumb { box-shadow: 0 0 0 2px var(--accent); }
 .tpl-thumb-canvas { display: block; width: 100%; height: 100%; }
+/* real MOGRT render (.mp4/.png) = exactly what Premiere inserts → tile == timeline.
+   Zoomed into the caption region (the source frame is mostly empty black) so the
+   caption is legible in the small tile; it's still the real render. */
+.tpl-thumb-media {
+  display: block; width: 100%; height: 100%; object-fit: cover; background: #000;
+  transform: scale(2); transform-origin: center 56%;
+}
 
 /* favorite: invisible at rest, fades in on card hover; a SET favorite always
    shows. Sits in the label row so it never covers the preview. */

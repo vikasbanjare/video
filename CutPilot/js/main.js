@@ -2789,15 +2789,33 @@
     head.appendChild(fav);
     card.appendChild(head);
 
-    // single dark preview box — the live canvas (paintThumbs renders it after the
-    // grid lays out and again once the web fonts load). MOGRT cards carry
-    // _mogrtTpl (style derived from the .mogrt colours); presets carry _tpl.
+    // single dark preview box.
     var thumb = document.createElement('div');
     thumb.className = 'tpl-thumb';
-    var cvs = document.createElement('canvas');
-    cvs.className = 'tpl-thumb-canvas';
-    if (isMogrt) cvs._mogrtTpl = t; else cvs._tpl = t;
-    thumb.appendChild(cvs);
+    if (isMogrt && (t.video || t.thumb)) {
+      // EDITABLE templates show their REAL Premiere render (the exact thing that
+      // gets inserted) — so the gallery tile == the timeline, guaranteed. Prefer
+      // the looping .mp4 (shows the motion), else the baked .png.
+      var media;
+      if (t.video) {
+        media = document.createElement('video');
+        media.src = t.video; media.muted = true; media.loop = true; media.autoplay = true;
+        media.setAttribute('playsinline', ''); media.setAttribute('disablepictureinpicture', '');
+        try { media.play(); } catch (ePlay) {}
+      } else {
+        media = document.createElement('img');
+        media.src = t.thumb; media.alt = t.name;
+      }
+      media.className = 'tpl-thumb-media';
+      thumb.appendChild(media);
+    } else {
+      // built-in canvas styles (paintThumbs renders these after layout). A MOGRT
+      // with no baked render falls back to the colour-approximation canvas.
+      var cvs = document.createElement('canvas');
+      cvs.className = 'tpl-thumb-canvas';
+      if (isMogrt) cvs._mogrtTpl = t; else cvs._tpl = t;
+      thumb.appendChild(cvs);
+    }
     card.appendChild(thumb);
 
     if (isMogrt) card.addEventListener('click', function () { openMogrtSheet(t); });
@@ -2822,21 +2840,28 @@
 
   function openMogrtSheet(t) {
     state.selectedMogrt = { path: t.path, name: t.name };
-    // Cache this template's accurate base look (gradient/box, read from its
-    // definition.json) so the action-sheet preview matches the gallery card.
+    state.selectedMogrtTpl = t;
     try { state.selectedMogrtBase = mogrtCardStyle(t); } catch (eBase) { state.selectedMogrtBase = null; }
     $('ms-name').textContent = t.name;
-    // The single preview shown is the live, editable one (#ms-live-preview), built
-    // by buildMogrtCustomizer below. The old static baked-in thumbnail is kept
-    // hidden so there's never TWO previews stacked on top of each other.
-    var msThumb = $('ms-thumb');
-    if (msThumb) { msThumb.classList.add('hidden'); msThumb.removeAttribute('src'); }
-    // ONE preview only: the live "your colours" canvas below (which animates +
-    // reflects your edits). The baked thumb.mp4 is intentionally NOT shown — it's a
-    // tiny low-res clip with a different look, so stacking it here made two
-    // mismatched previews and stole the room needed for the customization controls.
-    var msAnim = $('ms-anim');
-    if (msAnim) { try { msAnim.pause(); } catch (eP) {} msAnim.classList.add('hidden'); msAnim.removeAttribute('src'); }
+    // PREVIEW = the template's REAL render (the EXACT thing Premiere inserts), so
+    // the sheet matches the gallery tile AND the timeline. Prefer the looping .mp4
+    // (shows the motion), else the baked .png. Only if a template has no baked
+    // render do we fall back to the live "your colours" canvas approximation.
+    var msThumb = $('ms-thumb'), msAnim = $('ms-anim'), msLive = $('ms-live-preview');
+    var hasReal = !!(t.video || t.thumb);
+    state.mogrtShowingReal = hasReal;
+    if (msLive) msLive.classList.add('hidden');
+    if (t.video && msAnim) {
+      try { msAnim.pause(); } catch (eP0) {}
+      msAnim.src = t.video; msAnim.classList.remove('hidden'); try { msAnim.play(); } catch (eP1) {}
+      if (msThumb) { msThumb.classList.add('hidden'); msThumb.removeAttribute('src'); }
+    } else if (t.thumb && msThumb) {
+      if (msAnim) { try { msAnim.pause(); } catch (eP2) {} msAnim.classList.add('hidden'); msAnim.removeAttribute('src'); }
+      msThumb.src = t.thumb; msThumb.classList.remove('hidden');
+    } else {
+      if (msThumb) { msThumb.classList.add('hidden'); msThumb.removeAttribute('src'); }
+      if (msAnim) { try { msAnim.pause(); } catch (eP3) {} msAnim.classList.add('hidden'); msAnim.removeAttribute('src'); }
+    }
     // show THIS template's real capabilities (read from its definition.json)
     if ($('ms-hint')) {
       var caps = mogrtCapsSummary(t.path);
@@ -4030,12 +4055,12 @@
     return false;
   }
 
-  // Caption output mode: 🖼 burned-in (pixel-perfect PNG of the EXACT preview —
-  // every colour, box, 3D, glow and gradient renders identically to what you see)
-  // vs ✏️ editable (an editable subtitle template per line; Premiere's MOGRT engine
-  // can't reproduce every box effect, so it's text-colour/font/box only).
-  // Default = burned-in, because it's guaranteed to match the preview 1:1.
-  var _capOut = 'png';
+  // Caption output mode. DEFAULT = ✏️ editable: each caption is its own native
+  // Premiere clip (a real .mogrt template, re-editable in Essential Graphics) and
+  // the gallery/sheet now preview the template's REAL render — so what you pick is
+  // exactly what lands on the timeline. (The owner always wants editable; 🖼 PNG /
+  // ⚡ libass remain available but are never the default.)
+  var _capOut = 'editable';
   function updateMagicLabel() {
     var b = $('btn-magic'); if (!b) return;
     b.innerHTML = (_capOut === 'editable')
@@ -4048,7 +4073,7 @@
     var box = $('cap-output'); if (!box) return;
     var btns = box.querySelectorAll('button');
     for (var i = 0; i < btns.length; i++) btns[i].addEventListener('click', function () {
-      _capOut = this.dataset.out || 'png';
+      _capOut = this.dataset.out || 'editable';
       var on = box.querySelector('button.on'); if (on) on.classList.remove('on');
       this.classList.add('on');
       updateMagicLabel();
@@ -5103,10 +5128,17 @@
       state.mogrtPrev = { fill: null, highlight: null, box: null, firstColor: null, blobFill: null, font: 'Arial', caps: false, bold: false };
       var sticky = document.getElementById('ms-live-preview');
       if (sticky && box.id === 'ms-customizer') {
-        // in the action sheet: use the BIG preview that's pinned below the header,
-        // so it stays on screen the whole time you edit (no scrolling away).
-        sticky.classList.remove('hidden');
-        _mogrtPrevCanvas = document.getElementById('ms-live-canvas');
+        if (state.mogrtShowingReal) {
+          // the template's REAL render is already pinned above as the preview — do
+          // NOT add the colour-approximation canvas (it would only disagree with
+          // the real look). Colour/font edits still apply when the caption is placed.
+          sticky.classList.add('hidden');
+          _mogrtPrevCanvas = null;
+        } else {
+          // no baked render → use the live "your colours" canvas as the preview.
+          sticky.classList.remove('hidden');
+          _mogrtPrevCanvas = document.getElementById('ms-live-canvas');
+        }
       } else {
         // editor tab: an inline preview frame
         var pvFrame = document.createElement('div'); pvFrame.className = 'mogrt-prev-frame';
