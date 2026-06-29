@@ -228,6 +228,20 @@
     return b;
   }
 
+  /* Prompt for a short title from a transcript (names new sequences). */
+  function buildTitlePrompt(text) {
+    return {
+      system: 'You write short, punchy video titles. Reply with STRICT JSON only, no emojis, no surrounding quotes.',
+      user: 'Give a catchy 3–6 word title for this video, usable as a clip/sequence name.\n' +
+        'Reply: {"title":"..."}\n\nTRANSCRIPT:\n' + String(text || '').slice(0, 4000)
+    };
+  }
+  function parseTitle(textResp) {
+    var raw = extractJson(textResp); if (!raw) return '';
+    try { var o = JSON.parse(raw); return (o && o.title != null) ? String(o.title).replace(/^["'\s]+|["'\s]+$/g, '').slice(0, 60) : ''; }
+    catch (e) { return ''; }
+  }
+
   /* Split an array into chunks of at most `size` items (used to keep each
      transcript request under the token-per-minute limit). Pure. */
   function chunk(arr, size) {
@@ -244,6 +258,8 @@
     parseCleanupResponse: parseCleanupResponse,
     buildHighlightPrompt: buildHighlightPrompt,
     parseHighlightResponse: parseHighlightResponse,
+    buildTitlePrompt: buildTitlePrompt,
+    parseTitle: parseTitle,
     mmss: mmss,
     chunk: chunk,
     chatBody: chatBody

@@ -5952,11 +5952,14 @@
   $('btn-rebuild').addEventListener('click', function () {
     if (!state.clip) return toast('Run the analysis first.', true);
     if (!state.keepsMedia.length) return toast('No keep segments computed.', true);
-    CPBridge.callHost('CP_rebuildTrimmed', {
-      nodeId: state.clip.nodeId,
-      mediaPath: state.clip.mediaPath,    // fallback lookup when nodeId doesn't resolve
-      keeps: state.keepsMedia,
-      name: 'Pulse · ' + state.clip.name
+    // Name the new sequence after the video's detected title (falls back to the clip name).
+    detectTitle(highlightSegments(), 'Pulse · ' + state.clip.name).then(function (name) {
+      return CPBridge.callHost('CP_rebuildTrimmed', {
+        nodeId: state.clip.nodeId,
+        mediaPath: state.clip.mediaPath,    // fallback lookup when nodeId doesn't resolve
+        keeps: state.keepsMedia,
+        name: name
+      });
     }).then(function (r) {
       // The rebuilt sequence is the keeps concatenated from 0 — remap the
       // transcript onto it so "Remove repeated takes" / captions line up with
@@ -6276,18 +6279,82 @@
       });
       var rt = shRatio();
       btn(rt ? ('⬛ Make ' + rt.label + ' clip') : '⬛ Make clip', 'hero-btn', function () {
-        var msg = 'Create a new ' + (rt ? rt.label + ' vertical' : 'trimmed') + ' sequence from this moment?\n\n' +
-          'Your original timeline stays untouched (a copy is trimmed' + (rt ? ', then Premiere’s Auto Reframe tracks the subject — the UI may pause briefly' : '') + ').';
-        if (!confirm(msg)) return;
-        toast('Building the clip…' + (rt ? ' Auto Reframe can take a moment — Premiere may look frozen.' : ''));
-        CPBridge.callHost('CP_makeShort', { start: h.start, end: h.end, name: (h.title || ('Short ' + (i + 1))), ratio: rt, dropFrame: !!settings.dropFrame })
-          .then(function (r) {
-            toast('🎬 Created “' + r.sequence + '”' + (r.reframed ? ' — Auto-Reframed to ' + rt.label + '.' : '.') + (r.note ? ' ' + r.note : ''));
-          }).catch(function (e) { toast('Make clip failed: ' + e.message, true); });
+        makeVerticalClip(h, rt, i);
       });
       card.appendChild(row); box.appendChild(card);
     });
   }
+  /* Which part of the source to keep when cropping to vertical (the "keep in
+     frame" control) — center uses the full frame (centre cover-crop); left/right
+     bias toward that side of the source for off-centre subjects. */
+  function shFocusRegion() {
+    var f = ($('sh-focus') && $('sh-focus').value) || 'center';
+    if (f === 'left') return { x: 0, y: 0, w: 0.62, h: 1 };
+    if (f === 'right') return { x: 0.38, y: 0, w: 0.62, h: 1 };
+    return { x: 0, y: 0, w: 1, h: 1 };
+  }
+  /* Make a name safe to use as a Premiere sequence name. */
+  function sanitizeName(s) {
+    s = String(s == null ? '' : s).replace(/[\\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
+    return s.slice(0, 60) || 'Pulse clip';
+  }
+  /* Ask the LLM for a short title from the transcript; fall back to TF-IDF
+     keywords, then to `fallback`. Always resolves (never blocks the clip). */
+  function detectTitle(segments, fallback) {
+    return new Promise(function (resolve) {
+      var fb = sanitizeName(fallback || 'Pulse clip');
+      var text = (segments && segments.length) ? segments.map(function (s) { return s.text; }).join(' ').trim() : '';
+      if (!text || typeof CPSmartEdit === 'undefined' || !CPSmartEdit.buildTitlePrompt || !cpKey()) {
+        // keyword fallback (no network) when possible
+        if (text && typeof CPTranscript !== 'undefined' && CPTranscript.topKeywordSet) {
+          try {
+            var set = CPTranscript.topKeywordSet([{ text: text, start: 0, end: 1 }], { maxWords: 4 });
+            var ks = Object.keys(set).slice(0, 4).map(function (w) { return w.charAt(0).toUpperCase() + w.slice(1); });
+            if (ks.length) return resolve(sanitizeName(ks.join(' ')));
+          } catch (e) {}
+        }
+        return resolve(fb);
+      }
+      aiChat(CPSmartEdit.buildTitlePrompt(text), { maxTokens: 60 }).then(function (c) {
+        resolve(sanitizeName(CPSmartEdit.parseTitle(c)) || fb);
+      }).catch(function () { resolve(fb); });
+    });
+  }
+
+  /* Render a highlight moment as a vertical (or original) clip with ffmpeg and
+     import it as a sequence named after the moment's title. Reliable on every
+     Premiere version (no dependency on the Auto Reframe script method). */
+  function makeVerticalClip(h, rt) {
+    var ff = resolveFfmpeg();
+    if (!ff) return toast('Making a clip needs ffmpeg (Settings → ffmpeg path).', true);
+    if (typeof CPReframe === 'undefined') return toast('Reframe module missing.', true);
+    var name = sanitizeName(h.title || 'Pulse clip');
+    var prog = $('shorts-progress'); prog.classList.remove('hidden'); prog.textContent = 'Finding the source video…';
+    CPBridge.callHost('CP_getSelectedClip').then(
+      function (s) { return (s && s.clip && s.clip.mediaPath) ? s : CPBridge.callHost('CP_getTranscribeSource'); },
+      function () { return CPBridge.callHost('CP_getTranscribeSource'); }
+    ).then(function (s) {
+      if (!s || !s.clip || !s.clip.mediaPath) throw new Error('Put the source video on the timeline (select it) so I can cut the clip from it.');
+      var clip = s.clip;
+      var ms = Math.max(0, (h.start - (clip.seqStart || 0)) + (clip.inPoint || 0));
+      var me = (h.end - (clip.seqStart || 0)) + (clip.inPoint || 0);
+      if (!(me > ms)) me = ms + Math.max(1, h.dur || 5);
+      prog.textContent = 'Measuring the video…';
+      return probeDims(ff, clip.mediaPath).then(function (src) {
+        var target = rt ? CPReframe.targetSize(rt.label) : src;
+        var ctx = { source: clip.mediaPath, src: src, plan: [{ start: ms, end: me, mode: 'single', speaker: 0 }] };
+        var rtTag = rt || { num: src.w, den: src.h, label: 'orig' };
+        return renderReframe(ff, ctx, [shFocusRegion()], target, rtTag, prog);
+      });
+    }).then(function (outPath) {
+      prog.textContent = 'Importing “' + name + '”…';
+      return CPBridge.callHost('CP_importClip', { path: outPath, name: name });
+    }).then(function (res) {
+      prog.classList.add('hidden');
+      toast('🎬 Created “' + (res && res.sequence ? res.sequence : name) + '”' + (rt ? ' — ' + rt.label + ' vertical.' : '.'));
+    }).catch(function (e) { prog.classList.add('hidden'); toast('Make clip failed: ' + e.message, true); });
+  }
+
   function runHighlightFinder() {
     if (typeof CPSmartEdit === 'undefined') return toast('Shorts module missing.', true);
     var segs = highlightSegments();
@@ -6399,8 +6466,10 @@
     }).then(function (ctx) {
       return renderReframe(ff, ctx, regions, target, rt, prog);
     }).then(function (outPath) {
-      prog.textContent = 'Importing into Premiere…';
-      return CPBridge.callHost('CP_importClip', { path: outPath, name: 'Pulse vertical · ' + rt.label });
+      prog.textContent = 'Naming & importing…';
+      return detectTitle(highlightSegments(), 'Pulse vertical').then(function (title) {
+        return CPBridge.callHost('CP_importClip', { path: outPath, name: title + ' · ' + rt.label });
+      });
     }).then(function (res) {
       prog.classList.add('hidden');
       toast('🎙 Speaker-aware ' + rt.label + ' clip built' + (res && res.sequence ? ' — sequence “' + res.sequence + '” is ready in your project.' : ' — imported into your project.'));

@@ -952,6 +952,12 @@ console.log('smartedit.js (AI cleanup)');
   assert(CPSmart.chunk([], 1000).length === 0, 'chunk of empty is empty');
   assert(CPSmart.chatBody({ system: 's', user: 'u' }, 'm', 2048).max_tokens === 2048, 'chatBody caps max_tokens');
   assert(CPSmart.chatBody({ system: 's', user: 'u' }).max_tokens === undefined, 'chatBody omits max_tokens when not set');
+
+  // auto title for new sequences
+  assert(/TRANSCRIPT:/.test(CPSmart.buildTitlePrompt('hello world').user), 'buildTitlePrompt includes the transcript');
+  assert(CPSmart.parseTitle('{"title":"The Secret to Growth"}') === 'The Secret to Growth', 'parseTitle extracts the title');
+  assert(CPSmart.parseTitle('```json\n{"title":"\\"Quoted\\""}\n```') === 'Quoted', 'parseTitle strips wrapping quotes/fences');
+  assert(CPSmart.parseTitle('no json here') === '', 'parseTitle on garbage → empty (caller falls back)');
 }
 
 // ------------------------------------ reframe: speaker-aware vertical clip ----
