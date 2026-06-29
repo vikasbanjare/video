@@ -24,7 +24,7 @@
       </svg>
       <span class="brand-name">Pulse</span><span class="brand-by">by aifloh</span>
     </div>
-    <span class="ver" id="ver">v0.9.231</span>
+    <span class="ver" id="ver">v0.9.232</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -1018,6 +1018,15 @@
   <!-- ============================== SETTINGS ============================= -->
   <section id="tab-settings" class="tab-page">
     <div class="card">
+      <div class="step-head"><span class="step-title">License</span><span id="lic-state" class="badge">checking…</span></div>
+      <p class="hint">Enter your license key to activate Pulse permanently. Trial copies stop working when the evaluation ends; a valid key unlocks it for good.</p>
+      <div class="row tight">
+        <input type="text" id="set-lic-key" placeholder="PULSE-XXXX-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false">
+        <button id="btn-activate-lic" class="chip-btn">Activate</button>
+      </div>
+      <p id="set-lic-msg" class="hint" style="min-height:14px;margin-top:4px"></p>
+    </div>
+    <div class="card">
       <div class="step-head"><span class="step-title">Performance</span></div>
       <div id="ffmpeg-status" class="hint">checking for ffmpeg…</div>
       <button id="btn-ffmpeg-setup" class="chip-btn">⬇️ Set up audio engine (auto-download)</button>
@@ -1067,7 +1076,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.9.231 · auto-edit · multicam · captions · chapters · organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.9.232 · auto-edit · multicam · captions · chapters · organize</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->

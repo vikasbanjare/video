@@ -62,6 +62,10 @@
   var BUNDLED_SARVAM_KEY = ''; /*@@CP_SARVAM@@*/  // shared Sarvam (Swara) key baked into the build
   var WHITE_LABEL = false; /*@@CP_WL@@*/     // hide the underlying engine/model names
   var KEY_BUNDLED = !!BUNDLED_KEY;
+  // Valid license keys are stored ONLY as sha256 hashes (the keys themselves are
+  // never in the source, so reading the build can't mint keys). Entering a key
+  // whose hash is listed here unlocks the panel for good, even past a trial.
+  var LICENSE_HASHES = ['6ae5bbeb5b84eae23f5aec10e2efe04ca42ec12ec59114fe42ccfdb22a7a52b6']; /*@@CP_LICENSE@@*/
 
   var settings = loadSettings();
   var _booted = false;            // true once boot() has restored the saved look
@@ -1371,7 +1375,41 @@
       if (f) { var d = p.dirname(f); if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); fs.writeFileSync(f, v, 'utf8'); }
     } catch (e2) {}
   }
+  // ---- license-key unlock (bypasses the trial/expiry gate for good) ----
+  function _sha256(s) {
+    try { return nodeReq('crypto').createHash('sha256').update(String(s == null ? '' : s).trim()).digest('hex'); }
+    catch (e) { return ''; }
+  }
+  function _licStored() {
+    try { var v = localStorage.getItem('cutpilot.lic'); if (v) return v; } catch (e) {}
+    try {
+      var fs = nodeReq('fs'), p = nodeReq('path'), f = _trialFile();
+      if (f) { var lf = p.join(p.dirname(f), 'lic'); if (fs.existsSync(lf)) return fs.readFileSync(lf, 'utf8'); }
+    } catch (e2) {}
+    return '';
+  }
+  function licenseValid() {
+    var k = _licStored(); if (!k) return false;
+    var h = _sha256(k); if (!h) return false;
+    for (var i = 0; i < LICENSE_HASHES.length; i++) if (LICENSE_HASHES[i] === h) return true;
+    return false;
+  }
+  /* Validate + persist a key. Returns true if it unlocked. */
+  function applyLicense(key) {
+    var h = _sha256(key);
+    if (!h) return false;
+    for (var i = 0; i < LICENSE_HASHES.length; i++) {
+      if (LICENSE_HASHES[i] === h) {
+        try { localStorage.setItem('cutpilot.lic', String(key).trim()); } catch (e) {}
+        try { var fs = nodeReq('fs'), p = nodeReq('path'), f = _trialFile(); if (f) { var d = p.dirname(f); if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); fs.writeFileSync(p.join(d, 'lic'), String(key).trim(), 'utf8'); } } catch (e2) {}
+        return true;
+      }
+    }
+    return false;
+  }
+
   function trialExpired() {
+    if (licenseValid()) return false;                  // a valid license unlocks everything
     if (!TRIAL_DAYS_MS && !HARD_EXPIRY) return false;  // dev / full build
     var now = Date.now(), st = _trialState();
     // ABSOLUTE kill-date baked into the build — deleting the saved trial files
@@ -1395,10 +1433,44 @@
     ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#0d0f14;color:#e7ecf3;' +
       'display:flex;align-items:center;justify-content:center;text-align:center;' +
       'font-family:Hanken Grotesk,system-ui,sans-serif;padding:28px';
-    ov.innerHTML = '<div style="max-width:340px"><div style="font-size:46px">⏳</div>' +
+    var inStyle = 'width:100%;box-sizing:border-box;margin:14px 0 8px;padding:11px 12px;border-radius:10px;' +
+      'border:1px solid #2b3242;background:#151922;color:#e7ecf3;font-size:14px;text-align:center;letter-spacing:1px';
+    var btStyle = 'width:100%;padding:11px;border:none;border-radius:10px;background:linear-gradient(135deg,#4f8cff,#34c3f0);' +
+      'color:#fff;font-weight:800;font-size:14px;cursor:pointer';
+    ov.innerHTML = '<div style="max-width:360px"><div style="font-size:46px">⏳</div>' +
       '<h2 style="margin:10px 0 6px">Evaluation period ended</h2>' +
-      '<p style="opacity:.78;line-height:1.5">This evaluation copy has expired. Please contact the sender to continue using it.</p></div>';
+      '<p style="opacity:.78;line-height:1.5">Enter your license key to unlock Pulse, or contact the sender to continue.</p>' +
+      '<input id="lic-input" placeholder="PULSE-XXXX-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false" style="' + inStyle + '">' +
+      '<button id="lic-unlock" style="' + btStyle + '">Unlock</button>' +
+      '<p id="lic-msg" style="min-height:16px;margin:8px 0 0;font-size:12px;opacity:.85"></p></div>';
     document.body.appendChild(ov);
+    var inp = ov.querySelector('#lic-input'), btn = ov.querySelector('#lic-unlock'), msg = ov.querySelector('#lic-msg');
+    function tryUnlock() {
+      if (applyLicense(inp.value)) {
+        msg.style.color = '#46d39a'; msg.textContent = '✓ Unlocked — reopening…';
+        setTimeout(function () { try { location.reload(); } catch (e) { try { ov.parentNode.removeChild(ov); } catch (e2) {} boot(); } }, 650);
+      } else { msg.style.color = '#ff6b6b'; msg.textContent = 'That key isn’t valid — check it and try again.'; }
+    }
+    if (btn) btn.addEventListener('click', tryUnlock);
+    if (inp) inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') tryUnlock(); });
+  }
+
+  function wireLicense() {
+    var state = $('lic-state'), input = $('set-lic-key'), btn = $('btn-activate-lic'), msg = $('set-lic-msg');
+    function refresh() {
+      if (!state) return;
+      if (licenseValid()) { state.textContent = '✓ Activated'; state.className = 'badge ok'; }
+      else if (TRIAL_DAYS_MS) { var dl = trialDaysLeft(); state.textContent = 'Trial · ' + dl + 'd left'; state.className = 'badge'; }
+      else { state.textContent = 'Unlimited'; state.className = 'badge ok'; }
+    }
+    if (input && licenseValid()) input.value = _licStored();
+    if (btn) btn.addEventListener('click', function () {
+      if (applyLicense(input ? input.value : '')) {
+        if (msg) { msg.style.color = ''; msg.textContent = '✓ Activated — thank you! Pulse is unlocked.'; }
+        refresh();
+      } else if (msg) { msg.style.color = 'var(--danger)'; msg.textContent = 'That key isn’t valid. Double-check it and try again.'; }
+    });
+    refresh();
   }
 
   function boot() {
@@ -1411,6 +1483,7 @@
       });
     }
     wireTheme();
+    wireLicense();
     $('set-ffmpeg').value = settings.ffmpegPath || '';
     $('set-dropframe').checked = !!settings.dropFrame;
     if ($('set-whisper')) $('set-whisper').value = settings.whisperPath || '';
