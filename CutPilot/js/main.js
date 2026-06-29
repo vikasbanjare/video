@@ -2689,7 +2689,7 @@
      burned-in export — instead of a frozen thumbnail. */
   function drawCardPreview(canvas, t) {
     try {
-      var sample = t.uppercase ? 'YOUR BIG IDEA HERE' : 'Your big idea here';
+      var sample = t.uppercase ? 'BIG IDEA' : 'Big idea';   // short → legible in the 3-up tiles
       var sw = sample.split(' '), DUR = 0.4;
       var wordCues = sw.map(function (w, i) { return { start: i * DUR, end: (i + 1) * DUR, text: w }; });
       var animId = CPCaptions.animIdForConcept(t.anim);
@@ -2697,7 +2697,7 @@
       try {
         frames = CPCaptions.buildCaptionFrames([{ start: 0, end: sw.length * DUR, text: sample }], {
           anim: animId, wordsPerCue: (t.wordsPerCue || 4), uppercase: !!t.uppercase,
-          keyword: { on: !!t.keyword, mode: 'smart' }, speaker: { on: false },   // same picker as export → card = output
+          keyword: { on: !!t.keyword, mode: (t.keywordMode || 'smart') }, speaker: { on: false },   // same picker as export → card = output
           build: !!t.build, wordCues: wordCues, window: (t.window || 0)
         });
       } catch (eF) { frames = null; }
@@ -3022,6 +3022,11 @@
     setWordCount(p.wordsPerCue);
     syncHlStyleButtons(p.highlightStyle || 'color');
     $('c-kw').checked = !!p.keyword;
+    // reset the keyword MODE to this template's own (default 'smart', the same
+    // mode the gallery tile uses) so the SAME word lights up in the gallery, the
+    // click preview, and the timeline — a leftover 'auto'/'numbers' from a prior
+    // template no longer bleeds in and highlights a different word.
+    if ($('c-kw-mode')) $('c-kw-mode').value = p.keywordMode || 'smart';
     $('c-kw-mode-wrap').classList.toggle('hidden', !p.keyword);
     $('c-hl-scale').value = Math.round((p.highlightScale || 1) * 100);
     // pro controls that track the template: spoken-word pop + box roundness + dim
@@ -3913,22 +3918,14 @@
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
     canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
 
-    // The preview is a STYLE reference, not a size preview: render the caption at
-    // a constant, readable size so lowering the "Size" slider never shrinks the
-    // preview. Size still drives the REAL exported captions (and the legibility
-    // note above, `st`, still uses the real size). The engine auto-fits this
-    // reference to the frame, so longer lines simply wrap/shrink to fit.
-    // WYSIWYG preview: render at the REAL size and play the EXACT frames the
-    // engine produces for a realistic sentence — so the preview matches the final
-    // captions 1:1 (animation, word-highlight timing, grouping) and the Size
-    // slider now visibly affects it.
-    // Preview shows the STYLE big & clearly for every template (not the tiny real
-    // on-frame proportion). A large reference size makes the caption fill the
-    // preview; the real exported size is the Size slider (shown in the legibility
-    // note below the preview).
-    var pov = {}; for (var ko in ov) if (ov.hasOwnProperty(ko)) pov[ko] = ov[ko];
-    pov.fontSize = (preset.wordsPerLine ? 140 : 230);   // stacked styles need a smaller ref to fit the frame
-    var pStyle = CPRender.styleForFrame(preset, canvas.height, pov, canvas.width);   // width-based → fits vertical/horizontal like the export
+    // TRUE-TO-OUTPUT preview: render through the EXACT same style path the
+    // timeline uses — styleForFrame(preset, frameH, overrides, frameW) — so the
+    // caption shows at its real on-screen size AND position, scaled to the preview
+    // frame. The Size slider (overrides.fontSize) now visibly drives the preview,
+    // exactly as it drives the export. (Previously this hard-coded fontSize 230,
+    // which made the preview giant and immune to the Size slider — the root cause
+    // of "the preview looks nothing like what I generate".)
+    var pStyle = CPRender.styleForFrame(preset, canvas.height, ov, canvas.width);
     var anim = currentAnim();
     var words = parseInt($('c-words').value, 10) || 0;
     var speakerOn = $('c-speaker').checked;

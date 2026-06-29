@@ -204,25 +204,25 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
    Each card is just a small label on top + one dark rounded preview box (the
    live caption canvas). No outer card chrome, badges or pills: the dark box is
    the visual element, the selection ring + hover lift live on the box itself. */
-.tpl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 11px; }
+.tpl-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 13px 8px; }
 .tpl-card { position: relative; background: transparent; border: none; cursor: pointer; }
 
-.tpl-head { display: flex; align-items: center; gap: 6px; margin: 0 2px 6px; min-height: 14px; }
+.tpl-head { display: flex; align-items: center; gap: 4px; margin: 0 1px 4px; min-height: 12px; }
 .tpl-name {
   flex: 1 1 auto; min-width: 0;
-  font-size: 10px; font-weight: 700; letter-spacing: .055em; text-transform: uppercase;
+  font-size: 9px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
   color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .tpl-card.on .tpl-name { color: var(--accent-text); }
 
+/* one flat dark preview tile per card — no border, no gradient (Option A). The
+   selection ring + a gentle hover shadow live on the tile itself. */
 .tpl-thumb {
-  position: relative; height: 116px; border-radius: 12px; overflow: hidden;
-  background: linear-gradient(160deg, #141a28, #0d121d);
-  border: 1px solid var(--line);
-  transition: transform .12s, box-shadow .15s, border-color .15s;
+  position: relative; height: 70px; border-radius: 9px; overflow: hidden;
+  background: #0f1320; transition: transform .12s, box-shadow .15s;
 }
-.tpl-card:hover .tpl-thumb { transform: translateY(-2px); box-shadow: var(--shadow); border-color: var(--accent-line); }
-.tpl-card.on .tpl-thumb { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
+.tpl-card:hover .tpl-thumb { transform: translateY(-2px); box-shadow: var(--shadow); }
+.tpl-card.on .tpl-thumb { box-shadow: 0 0 0 2px var(--accent); }
 .tpl-thumb-canvas { display: block; width: 100%; height: 100%; }
 
 /* favorite: invisible at rest, fades in on card hover; a SET favorite always
@@ -585,15 +585,8 @@ input[type="range"]::-webkit-slider-thumb {
 .ms-name { font-size: 15px; font-weight: 800; margin-bottom: 4px; }
 .ms-card .hero-btn { width: 100%; }
 .ms-card .link-btn { display: block; margin: 6px auto 0; }
-/* Animated Premiere (.mogrt) cards — same clean layout, a subtle blue-tinted
-   preview box so they read as the "motion" set without any extra badge. */
-.tpl-card.is-mogrt .tpl-thumb {
-  background:
-    radial-gradient(120% 90% at 50% 0%, rgba(61,125,255,.30), transparent 62%),
-    linear-gradient(160deg, #161f37, #0f1830);
-  border-color: var(--accent-line);
-}
-.tpl-card.is-mogrt:hover .tpl-thumb { border-color: var(--accent); box-shadow: 0 12px 26px -14px var(--accent-glow); }
+/* Animated Premiere (.mogrt) cards use the SAME flat tile as the presets — the
+   gallery stays uniform/clean (they still open the customize sheet on click). */
 /* compact preview at the top of the .mogrt action sheet — small so the
    customization controls below stay visible without scrolling */
 .ms-thumb {
