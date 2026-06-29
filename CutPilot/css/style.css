@@ -52,7 +52,9 @@ header { display: flex; align-items: center; gap: 8px; padding: 14px 16px 11px; 
 header::after { content: ''; position: absolute; left: 14px; right: 14px; bottom: 0; height: 1px;
   background: linear-gradient(90deg, transparent, var(--accent-line), transparent); }
 .brand { display: flex; align-items: center; gap: 6px; font-weight: 800; font-size: 18px; letter-spacing: -0.4px; color: var(--fg); flex: 0 0 auto; }
-.brand .logo-mark { flex: none; display: block; }
+/* Nudge the mark up ~2px so it optically aligns to the cap-height of "Pulse"
+   rather than the text line-box centre (which made it sit a touch low). */
+.brand .logo-mark { flex: none; display: block; transform: translateY(-2px); }
 .brand .brand-name { line-height: 1; }
 /* "by aifloh" sits to the right of the wordmark with real breathing room (the
    old -2px margin made it overlap "Pulse"); baseline-aligned so it reads as a
