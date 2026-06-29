@@ -5701,11 +5701,151 @@
     show(parseFloat(num.value));
   })();
 
+  // ---- "Strength" presets: one plain-language control drives the technical
+  //      numbers (which now live in Advanced). Gentle keeps more, Strong cuts more.
+  var SIL_PRESETS = {
+    gentle:   { thr: -45, min: 0.8,  pad: 0.15, keep: 0.30 },
+    balanced: { thr: -40, min: 0.5,  pad: 0.12, keep: 0.25 },
+    strong:   { thr: -32, min: 0.35, pad: 0.10, keep: 0.20 }
+  };
+  var TAKE_PRESETS = {
+    gentle:   { minrun: 4, sim: 75 },
+    balanced: { minrun: 3, sim: 60 },
+    strong:   { minrun: 2, sim: 50 }
+  };
+  state.silStrength = 'balanced';
+  state.takeStrength = 'balanced';
+  function applySilStrength(name) {
+    var p = SIL_PRESETS[name] || SIL_PRESETS.balanced; state.silStrength = name;
+    if ($('opt-threshold')) $('opt-threshold').value = p.thr;
+    if ($('opt-minsilence')) $('opt-minsilence').value = p.min;
+    if ($('opt-padding')) $('opt-padding').value = p.pad;
+    if ($('opt-minkeep')) $('opt-minkeep').value = p.keep;
+    if ($('opt-threshold-range')) $('opt-threshold-range').value = p.thr;
+    if ($('opt-threshold-val')) $('opt-threshold-val').textContent = '−' + Math.abs(p.thr) + ' dB';
+    if ($('opt-threshold-manual')) $('opt-threshold-manual').checked = false;   // preset = "let Pulse decide"
+  }
+  function applyTakeStrength(name) {
+    var p = TAKE_PRESETS[name] || TAKE_PRESETS.balanced; state.takeStrength = name;
+    if ($('tk-minrun')) $('tk-minrun').value = p.minrun;
+    if ($('tk-sim')) { $('tk-sim').value = p.sim; if ($('tk-sim-val')) $('tk-sim-val').textContent = p.sim + '%'; }
+  }
+  function wireStrength(groupId, apply) {
+    var g = $(groupId); if (!g) return;
+    g.addEventListener('click', function (e) {
+      var b = e.target; while (b && b !== g && b.tagName !== 'BUTTON') b = b.parentNode;
+      if (!b || b.tagName !== 'BUTTON' || !b.getAttribute('data-s')) return;
+      var btns = g.getElementsByTagName('button');
+      for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('on', btns[i] === b);
+      apply(b.getAttribute('data-s'));
+    });
+  }
+  wireStrength('sil-strength', applySilStrength);
+  wireStrength('tk-strength', applyTakeStrength);
+  applySilStrength('balanced'); applyTakeStrength('balanced');   // sensible defaults on load
+
+  // ============================ ONE-TAP "CLEAN UP MY VIDEO" ================
+  // Detect ALL dead air (start / middle / end) + every repeated take + optional
+  // fillers, merge them into ONE cut list, and ripple-cut once — so the
+  // transcript only re-syncs a single time (no re-transcribing between steps).
+  state.acStrength = 'balanced';
+  (function () {
+    var g = $('ac-strength'); if (!g) return;
+    g.addEventListener('click', function (e) {
+      var b = e.target; while (b && b !== g && b.tagName !== 'BUTTON') b = b.parentNode;
+      if (!b || b.tagName !== 'BUTTON' || !b.getAttribute('data-s')) return;
+      var btns = g.getElementsByTagName('button');
+      for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('on', btns[i] === b);
+      state.acStrength = b.getAttribute('data-s');
+    });
+  })();
+  function silOptsFromPreset(strength) {
+    var p = SIL_PRESETS[strength] || SIL_PRESETS.balanced;
+    return { thresholdDb: p.thr, minSilence: p.min, padding: p.pad, minKeep: p.keep, manual: false };
+  }
+  /* Map a clip's MEDIA-time range list → sequence time. */
+  function mediaRangesToSeq(ranges, clip) {
+    return ranges.map(function (r) { return { start: clip.seqStart + (r.start - clip.inPoint), end: clip.seqStart + (r.end - clip.inPoint) }; });
+  }
+  /* Detect the silence (+optional filler) ranges to REMOVE, in sequence time. */
+  function detectSilenceCutRanges(clip, opts, includeFillers) {
+    return detectSilencesRobust(clip, resolveFfmpeg(), opts).then(function (det) {
+      var mediaDuration = det.duration || clip.outPoint;
+      var usedMin = det._usedMinSilence != null ? det._usedMinSilence : opts.minSilence;
+      var refined = CPSilence.refineSilences(det.silences, { minSilence: usedMin, padding: opts.padding, totalDuration: mediaDuration });
+      var media = [];
+      for (var i = 0; i < refined.length; i++) {
+        var s = Math.max(refined[i].start, clip.inPoint), e = Math.min(refined[i].end, clip.outPoint);
+        if (e > s) media.push({ start: s, end: e, kind: 'silence' });
+      }
+      media = protectSpeechMedia(media, clip, usedMin);
+      if (includeFillers) media = media.concat(fillerMediaRanges(clip, true));
+      return mediaRangesToSeq(media, clip);
+    });
+  }
+  function mergeSeqRanges(ranges) {
+    var s = ranges.filter(function (r) { return r.end > r.start; }).sort(function (a, b) { return a.start - b.start; });
+    var out = [];
+    for (var i = 0; i < s.length; i++) {
+      if (out.length && s[i].start <= out[out.length - 1].end + 0.02) out[out.length - 1].end = Math.max(out[out.length - 1].end, s[i].end);
+      else out.push({ start: s[i].start, end: s[i].end });
+    }
+    return out;
+  }
+  function runAutoCleanAll() {
+    var strength = state.acStrength || 'balanced';
+    var doSil = !$('ac-do-silence') || $('ac-do-silence').checked;
+    var doTakes = !$('ac-do-takes') || $('ac-do-takes').checked;
+    var doFill = $('ac-do-fillers') && $('ac-do-fillers').checked;
+    if (!doSil && !doTakes && !doFill) return toast('Tick at least one thing to remove.', true);
+    var prog = $('autoclean-progress'); prog.classList.remove('hidden'); prog.textContent = 'Reading your clip…';
+    CPBridge.callHost('CP_getSelectedClip').then(
+      function (res) { return (res && res.clip) ? res : CPBridge.callHost('CP_getTranscribeSource'); },
+      function () { return CPBridge.callHost('CP_getTranscribeSource'); }
+    ).then(function (res) {
+      if (!res || !res.clip) throw new Error('Put your video or audio clip on the timeline first.');
+      state.clip = res.clip;
+      var clip = res.clip, opts = silOptsFromPreset(strength);
+      var pSil;
+      if (doSil) { prog.textContent = 'Listening for dead air…'; pSil = detectSilenceCutRanges(clip, opts, !!doFill); }
+      else if (doFill) pSil = Promise.resolve(mediaRangesToSeq(fillerMediaRanges(clip, true), clip));
+      else pSil = Promise.resolve([]);
+      return pSil.then(function (ranges) {
+        ranges = ranges.slice();
+        if (doTakes && state.transcriptWords && state.transcriptWords.length) {
+          prog.textContent = 'Finding repeated takes…';
+          var tp = TAKE_PRESETS[strength] || TAKE_PRESETS.balanced;
+          var tk = CPTakes.findRepeatedTakes(state.transcriptWords, { minRun: tp.minrun, sim: tp.sim / 100, keep: 'last' });
+          tk.deletes.forEach(function (d) { ranges.push({ start: d.start, end: d.end }); });
+        }
+        return { ranges: ranges, needTranscript: doTakes && !(state.transcriptWords && state.transcriptWords.length) };
+      });
+    }).then(function (r) {
+      var ranges = mergeSeqRanges(snapRangesToWords(r.ranges, state.transcriptWords));
+      prog.classList.add('hidden');
+      if (!ranges.length) return toast('Nothing to clean — your video is already tight!' + (r.needTranscript ? ' (Transcribe first to also remove repeated takes.)' : ''));
+      var total = ranges.reduce(function (a, x) { return a + (x.end - x.start); }, 0);
+      var msg = 'Clean up your video?\n\nRemove ' + ranges.length + ' dead-air / retake section' + (ranges.length > 1 ? 's' : '') +
+        ' — about ' + total.toFixed(1) + 's.\n\n✅ A backup of your sequence is made first.' +
+        (r.needTranscript ? '\n\n(Tip: transcribe first to also catch repeated takes — this pass did silences only.)' : '');
+      if (!confirm(msg)) return;
+      prog.classList.remove('hidden'); prog.textContent = 'Cleaning your timeline…';
+      return CPBridge.callHost('CP_razorRipple', { ranges: ranges, closeGaps: true, backup: true, dropFrame: !!settings.dropFrame }).then(function (rr) {
+        rippleTranscriptByRanges(ranges);                       // transcript follows the cut — no re-transcribe
+        state.silencesSeq = []; if ($('results')) $('results').classList.add('hidden');
+        prog.classList.add('hidden');
+        toast('✨ Cleaned! Removed ' + (rr.removedClips != null ? rr.removedClips : ranges.length) + ' section' + ((rr.removedClips || ranges.length) === 1 ? '' : 's') +
+          '. Captions & takes stay in sync — run any other step or add captions with no re-transcribe. ⌘Z / Ctrl+Z undoes it.');
+      });
+    }).catch(function (e) { prog.classList.add('hidden'); toast('Auto-clean failed: ' + e.message, true); });
+  }
+  if ($('btn-autoclean')) $('btn-autoclean').addEventListener('click', runAutoCleanAll);
+
   /* Filler-word cut ranges in the selected clip's MEDIA time, from the
      transcript. Sequence time T maps to media (T − seqStart + inPoint), the
      inverse of the silence mapping. Returns [] when disabled/unavailable. */
-  function fillerMediaRanges(clip) {
-    if (!$('opt-fillers').checked || typeof CPTranscript === 'undefined') return [];
+  function fillerMediaRanges(clip, force) {
+    if ((!force && !$('opt-fillers').checked) || typeof CPTranscript === 'undefined') return [];
     var cues;
     try { cues = readSelectedTranscript(); }
     catch (e) { toast('Filler removal skipped — ' + e.message, true); return []; }
