@@ -52,6 +52,25 @@
     return lcsLen(A, B) / Math.max(A.length, B.length);
   }
 
+  /* Containment: how much of the SHORTER phrase is covered by the longer one
+     (LCS / shorter length). High containment with a short A means A is a
+     fragment/restart of B even when overall similarity (LCS / longer) is low. */
+  function phraseContain(A, B) {
+    if (!A.length || !B.length) return 0;
+    return lcsLen(A, B) / Math.min(A.length, B.length);
+  }
+
+  /* Is `a` a near-prefix of `b` — the speaker started a line, stopped, and
+     restarted it ("so the— so the main thing is…"). `a` must be the shorter one. */
+  function isNearPrefix(a, b, frac) {
+    frac = (frac == null) ? 0.7 : frac;
+    var n = a.length;
+    if (!n || n >= b.length) return false;
+    var match = 0;
+    for (var i = 0; i < n; i++) if (a[i] === b[i]) match++;
+    return (match / n) >= frac;
+  }
+
   function pTokens(p) { var a = []; for (var i = 0; i < p.length; i++) { var n = norm(p[i].text); if (n) a.push(n); } return a; }
   function pText(p) { var s = []; for (var i = 0; i < p.length; i++) s.push(p[i].text); return s.join(' '); }
   function pConf(p) { var s = 0, c = 0; for (var i = 0; i < p.length; i++) { if (p[i].conf != null) { s += p[i].conf; c++; } } return c ? s / c : null; }
@@ -87,7 +106,8 @@
     var thresh = (opts.sim != null) ? opts.sim : 0.6;
     var minRun = Math.max(2, opts.minRun || 3);
     var keep = opts.keep || 'last';
-    var win = opts.window || 6;                 // how many phrases ahead a retake can be
+    var win = opts.window || 16;                // how many phrases ahead a retake can be (TimeBolt-style wide look-ahead; a retake after a "ugh let me redo that" aside is often >6 phrases away)
+    var containThresh = (opts.contain != null) ? opts.contain : 0.85;
     var N = (words || []).length;
     if (N < minRun * 2) return { deletes: [], kept: 0, removedWords: 0 };
 
@@ -107,7 +127,11 @@
       var hi = Math.min(P - 1, a + win);
       for (var b = a + 1; b <= hi; b++) {
         if (toks[b].length < Math.min(minRun, 2)) continue;
-        if (phraseSim(toks[a], toks[b]) >= thresh) uni(a, b);
+        // Link if the two phrases are broadly similar (a re-recorded line) OR if
+        // one is largely CONTAINED in the other (a rephrased/partial retake that
+        // similarity-over-longer-length would score too low to catch).
+        if (phraseSim(toks[a], toks[b]) >= thresh ||
+            phraseContain(toks[a], toks[b]) >= containThresh) uni(a, b);
       }
     }
 
@@ -140,6 +164,21 @@
         removedWords += phrases[idx].length;
       }
     });
+
+    // False starts / restarts: a SHORT phrase that is a near-prefix of the NEXT
+    // phrase — the speaker began a line, stopped, and restarted it. These have no
+    // full second take to cluster against, so the similarity pass alone misses
+    // them. Delete the fragment, keep the completed line.
+    if (opts.falseStarts !== false) {
+      var maxFrag = opts.maxFragWords || 6;
+      for (var fi = 0; fi + 1 < P; fi++) {
+        if (!toks[fi].length || toks[fi].length > maxFrag) continue;
+        if (isNearPrefix(toks[fi], toks[fi + 1], opts.prefixFrac)) {
+          deletes.push({ start: startOf(fi), end: nextStart(fi), text: pText(phrases[fi]), reason: 'false start' });
+          removedWords += phrases[fi].length;
+        }
+      }
+    }
     return { deletes: tidyDeletes(deletes, 0.1), kept: deletes.length, removedWords: removedWords };
   }
 
@@ -160,6 +199,7 @@
 
   return {
     findRepeatedTakes: findRepeatedTakes, flatten: flatten, tidyDeletes: tidyDeletes,
-    phraseSim: phraseSim, lcsLen: lcsLen, splitPhrases: splitPhrases, _norm: norm
+    phraseSim: phraseSim, phraseContain: phraseContain, isNearPrefix: isNearPrefix,
+    lcsLen: lcsLen, splitPhrases: splitPhrases, _norm: norm
   };
 });

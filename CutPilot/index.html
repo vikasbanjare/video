@@ -783,6 +783,12 @@
         </label>
       </div>
       <button id="btn-takes-find" class="hero-btn alt">🔎 Find repeated takes</button>
+      <p class="hint" style="margin-top:10px">✨ <b>Smart Cleanup (AI)</b> goes further — it reads the whole
+         transcript and also removes <b>false starts</b>, fillers (“um”, “you know”) and
+         <b>“let me think” dead-air</b> that silence-cutting can’t see, then keeps the best take.
+         You review every cut before anything is removed.</p>
+      <label class="check" style="margin:2px 0 8px"><input type="checkbox" id="sc-aggressive"> Aggressive cut <span class="dim">(tighter — still never mid-sentence)</span></label>
+      <button id="btn-smart-cleanup" class="hero-btn">✨ Smart Cleanup (AI)</button>
       <div id="takes-progress" class="progress hidden"></div>
       <div id="takes-results" class="hidden">
         <div class="card">
@@ -1141,6 +1147,7 @@
   <script src="js/multicam.js"></script>
   <script src="js/sfx.js"></script>
   <script src="js/takes.js"></script>
+  <script src="js/smartedit.js"></script>
   <script src="js/transcript.js"></script>
   <script src="js/fonts.js"></script>
   <script src="js/command.js"></script>

@@ -873,6 +873,59 @@ console.log('takes.js');
   // tidyDeletes merges adjacent ranges and drops tiny ones
   var tidy = CPTakes.tidyDeletes([{ start: 0, end: 1, text: 'a' }, { start: 1.01, end: 2, text: 'b' }, { start: 5, end: 5.02, text: 'tiny' }], 0.08);
   assert(tidy.length === 1 && close(tidy[0].end, 2, 0.01), 'tidyDeletes merges touching ranges and drops sub-min ones');
+
+  // FALSE START / RESTART: an aborted fragment that is a prefix of the next line
+  assert(CPTakes.isNearPrefix(['so', 'the'], ['so', 'the', 'main', 'thing'], 0.7), 'isNearPrefix detects a restart fragment');
+  assert(!CPTakes.isNearPrefix(['so', 'the', 'main', 'thing'], ['so', 'the'], 0.7), 'isNearPrefix requires the fragment to be the shorter one');
+  assert(CPTakes.phraseContain(['growth', 'consistency'], ['the', 'secret', 'to', 'growth', 'is', 'consistency']) >= 0.85, 'phraseContain: short phrase inside a longer one scores high');
+  var fsr = CPTakes.findRepeatedTakes(mkTakes([
+    'so the',
+    'so the main point is consistency over time',
+    'and then we wrap up the whole episode here'
+  ]), { sim: 0.6, minRun: 3 });
+  assert(fsr.deletes.some(function (d) { return /^so the/.test(d.text); }), 'false start: the aborted "so the" fragment is cut');
+  assert(!fsr.deletes.some(function (d) { return /wrap up the whole episode/.test(d.text); }), 'false start: the real line survives');
+
+  // WIDE LOOK-AHEAD: retakes 8 phrases apart still cluster (old window of 6 missed)
+  var wide = CPTakes.findRepeatedTakes(mkTakes([
+    'the key to success is showing up every single day',
+    'filler one about something else entirely here',
+    'filler two a completely different topic now',
+    'filler three yet another unrelated line',
+    'filler four more unrelated content over here',
+    'filler five still nothing to do with that',
+    'filler six just another distinct sentence',
+    'filler seven the last of the unrelated ones',
+    'the key to success is just showing up every day'
+  ]), { sim: 0.6, minRun: 3 });
+  assert(wide.deletes.length >= 1, 'wide window: clusters retakes 8 phrases apart');
+  assert(/showing up every single day/.test(wide.deletes.map(function (d) { return d.text; }).join(' ')), 'wide window: it is the EARLIER retake that gets cut (keep-last)');
+}
+
+// ------------------------------------------------- smartedit: AI cleanup ----
+console.log('smartedit.js (AI cleanup)');
+{
+  const CPSmart = require(path.join(__dirname, '..', 'js', 'smartedit.js'));
+  const words = [
+    { text: 'so', start: 0, end: 0.3 }, { text: 'the', start: 0.3, end: 0.6 },
+    { text: 'the', start: 1.0, end: 1.3 }, { text: 'main', start: 1.3, end: 1.6 }, { text: 'point', start: 1.6, end: 2.0 },
+    { text: 'is', start: 2.0, end: 2.2 }, { text: 'focus', start: 2.2, end: 2.6 }
+  ];
+  const prompt = CPSmart.buildCleanupPrompt(words);
+  assert(/\[0\] so/.test(prompt.user), 'prompt indexes each token by position');
+  assert(prompt.user.indexOf('NEVER cut mid-sentence') > 0, 'prompt carries the hard rules');
+  assert(prompt.user.indexOf('HARD RULES') < prompt.user.indexOf('TRANSCRIPT:'), 'instruction precedes transcript (TimeStampEval layout)');
+
+  const reply = 'Sure!\n```json\n{"cuts":[{"from":0,"to":1,"category":"false_start","reason":"aborted","confidence":0.9}]}\n```';
+  const cuts = CPSmart.parseCleanupResponse(reply, words);
+  assert(cuts.length === 1 && cuts[0].label === 'false_start', 'parses a fenced JSON reply wrapped in prose');
+  assert(close(cuts[0].start, 0) && close(cuts[0].end, 0.6), 'maps the index span back to the words time base');
+  assert(cuts[0].text === 'so the', 'reconstructs the cut text from the indices');
+
+  assert(CPSmart.parseCleanupResponse('{"cuts":[{"from":99,"to":200}]}', words).length === 0, 'drops out-of-range index spans');
+  assert(CPSmart.parseCleanupResponse('total garbage, no json', words).length === 0, 'garbage reply → no cuts, never throws');
+  assert(CPSmart.parseCleanupResponse('{"cuts":[]}', words).length === 0, 'empty cuts → nothing removed');
+  assert(CPSmart.parseCleanupResponse('{"cuts":[{"from":0,"to":1,"category":"filler","confidence":0.2}]}', words, { minConfidence: 0.5 }).length === 0, 'confidence gate drops low-confidence cuts');
 }
 
 // --------------------------------------------- transcript: filler removal ----

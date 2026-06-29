@@ -5999,24 +5999,29 @@
     if (!cues) { try { cues = readSelectedTranscript(); } catch (e) { cues = null; } }
     return (cues && cues.length) ? CPTakes.flatten(cues) : null;
   }
+  function takeChip(label) {
+    return label === 'false_start' ? '⏮' : label === 'filler' ? '🗯'
+         : label === 'dead_air' ? '💭' : label === 'tangent' ? '↗' : '✂';
+  }
   function renderTakes(dels) {
     var stats = $('takes-stats'), list = $('takes-list');
     $('takes-results').classList.remove('hidden');
     list.innerHTML = '';
     if (!dels.length) {
-      stats.textContent = 'No repeated takes found — the transcript reads clean. (Tip: lower “Min repeated words” to catch shorter restarts.)';
+      stats.textContent = 'Nothing to remove — the transcript reads clean. (Tip: lower “Match sensitivity”, or try ✨ Smart Cleanup for false starts, fillers & dead-air.)';
       $('btn-takes-apply').classList.add('hidden');
       return;
     }
     var total = dels.reduce(function (a, d) { return a + (d.end - d.start); }, 0);
-    stats.innerHTML = 'Found <b>' + dels.length + '</b> repeated take' + (dels.length > 1 ? 's' : '') +
+    stats.innerHTML = 'Found <b>' + dels.length + '</b> cut' + (dels.length > 1 ? 's' : '') +
       ' — about <b>' + total.toFixed(1) + 's</b> to remove. Review, then apply.';
     dels.forEach(function (d, i) {
       var item = document.createElement('div'); item.className = 'seg-item';
-      var chip = document.createElement('span'); chip.className = 'angle-chip'; chip.textContent = '✂'; item.appendChild(chip);
+      var chip = document.createElement('span'); chip.className = 'angle-chip'; chip.textContent = takeChip(d.label); item.appendChild(chip);
       var span = document.createElement('span');
-      var txt = d.text.length > 44 ? d.text.slice(0, 44) + '…' : d.text;
-      span.textContent = '#' + (i + 1) + '  ' + fmt(d.start) + '→' + fmt(d.end) + '  “' + txt + '”';
+      var txt = d.text.length > 40 ? d.text.slice(0, 40) + '…' : d.text;
+      span.textContent = '#' + (i + 1) + '  ' + fmt(d.start) + '→' + fmt(d.end) + '  “' + txt + '”' +
+        (d.label && d.reason ? '  · ' + d.reason : '');
       item.appendChild(span);
       list.appendChild(item);
     });
@@ -6058,6 +6063,69 @@
   }
   if ($('btn-takes-apply')) $('btn-takes-apply').addEventListener('click', function () { applyTakes(true); });
   if ($('btn-takes-cut')) $('btn-takes-cut').addEventListener('click', function () { applyTakes(false); });
+
+  // ---- Auto-Edit: ✨ Smart Cleanup (AI) — the "worded dead-air" pass ----
+  /* One Groq chat-completions call (reuses the transcription key). The JSON body
+     can be large, so it's written to a temp file and curled with --data @file
+     rather than passed on the command line (avoids ARG_MAX). */
+  function groqChat(prompt, opts) {
+    return new Promise(function (resolve, reject) {
+      var key = cpKey();
+      if (!key) return reject(new Error('Add your free Groq API key in Settings → Auto-transcribe (console.groq.com/keys) to use Smart Cleanup.'));
+      var cp, fs, os, pathMod;
+      try { cp = nodeReq('child_process'); fs = nodeReq('fs'); os = nodeReq('os'); pathMod = nodeReq('path'); }
+      catch (e) { return reject(e); }
+      var body = CPSmartEdit.chatBody(prompt, (opts && opts.model) || 'llama-3.3-70b-versatile');
+      var bodyPath = pathMod.join(os.tmpdir(), 'pulse-cleanup-' + Date.now() + '.json');
+      try { fs.writeFileSync(bodyPath, JSON.stringify(body)); } catch (e) { return reject(e); }
+      function cleanup() { try { fs.unlinkSync(bodyPath); } catch (e) {} }
+      var args = ['-sS', '--max-time', '120', 'https://api.groq.com/openai/v1/chat/completions',
+        '-H', 'Authorization: Bearer ' + key, '-H', 'Content-Type: application/json',
+        '--data', '@' + bodyPath];
+      var p; try { p = cp.spawn('curl', args); } catch (e) { cleanup(); return reject(e); }
+      var out = '', err = '';
+      if (p.stdout) p.stdout.on('data', function (d) { out += d.toString(); });
+      if (p.stderr) p.stderr.on('data', function (d) { err += d.toString(); });
+      p.on('error', function (e) { cleanup(); reject(e); });
+      p.on('close', function (code) {
+        cleanup();
+        if (code !== 0) {
+          if (code === 6 || code === 7 || code === 28 || code === 5)
+            return reject(new Error('Smart Cleanup needs internet and couldn’t reach Groq. Check your connection and try again.'));
+          return reject(new Error('Cloud request failed (curl ' + code + '): ' + err.slice(-160)));
+        }
+        var j; try { j = JSON.parse(out); } catch (e) { return reject(new Error('Cloud returned unexpected data.')); }
+        if (j.error) return reject(new Error('Groq: ' + (j.error.message || JSON.stringify(j.error))));
+        var content = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+        if (content == null) return reject(new Error('Cloud returned no result.'));
+        resolve(content);
+      });
+    });
+  }
+
+  function runSmartCleanup() {
+    if (typeof CPSmartEdit === 'undefined') return toast('Smart Cleanup module missing.', true);
+    var words = takesGetWords();
+    if (!words || words.length < 6) return toast('Transcribe your clip first (Transcribe tab) — Smart Cleanup reads the words.', true);
+    // Cap what we send so a very long video stays one fast call; the deterministic
+    // "Find repeated takes" still covers the whole clip.
+    var MAXW = 1800;
+    var slice = words.length > MAXW ? words.slice(0, MAXW) : words;
+    var prompt = CPSmartEdit.buildCleanupPrompt(slice, { aggressive: !!($('sc-aggressive') && $('sc-aggressive').checked) });
+    var prog = $('takes-progress'); prog.classList.remove('hidden');
+    prog.textContent = '✨ Reading your transcript with AI…' + (words.length > MAXW ? ' (first ' + MAXW + ' words)' : '');
+    groqChat(prompt).then(function (content) {
+      var cuts = CPSmartEdit.parseCleanupResponse(content, slice, { minConfidence: 0 });
+      state.takeDeletes = cuts;            // reuse the same review → apply pipeline
+      prog.classList.add('hidden');
+      renderTakes(cuts);
+      if (cuts.length) toast('✨ Smart Cleanup found ' + cuts.length + ' cut' + (cuts.length === 1 ? '' : 's') + ' — review them, then apply.');
+    }).catch(function (e) {
+      prog.classList.add('hidden');
+      toast('Smart Cleanup failed: ' + e.message, true);
+    });
+  }
+  if ($('btn-smart-cleanup')) $('btn-smart-cleanup').addEventListener('click', runSmartCleanup);
 
   // =========================================================== MULTICAM ====
   var mcButtons = document.querySelectorAll('#mc-mode button');
