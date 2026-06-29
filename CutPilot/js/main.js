@@ -1571,6 +1571,12 @@
         saveSettings();
       });
     }
+    // precise word-by-word timing toggle (on by default; refines ASR stamps vs audio)
+    var pt = $('set-precise-timing');
+    if (pt) {
+      pt.checked = (settings.preciseTiming !== false);
+      pt.addEventListener('change', function () { settings.preciseTiming = !!pt.checked; saveSettings(); });
+    }
   }
 
   function wireDiagnostics() {
@@ -4457,13 +4463,47 @@
 
   /* Build audio-aligned word cues for tight sync (null = fall back to
      length-weighted timing). Uses the first audio track's envelope. */
+  /* Sharpen the ASR word stamps so the word-by-word highlight rides the actual
+     voice (CPAlign): snap any boundary that landed in silence to the real speech
+     edge, and syllable-shape boundaries inside a continuous run. Pure DATA — the
+     captions stay fully editable. SAFE BY DESIGN:
+       • words are SEQUENCE time, the envelope is MEDIA time → map via the clip's
+         seqStart/inPoint, refine, map back.
+       • self-check: if most words DON'T fall on speech (a time-base mismatch or a
+         music-only clip) we DON'T trust the audio — we fall back to a gentle
+         syllable-only pass, which can't drift the timing.
+       • any failure, or the toggle off, returns the original stamps untouched. */
+  function refineWordCues(words) {
+    if (!words || !words.length || settings.preciseTiming === false || typeof CPAlign === 'undefined') {
+      return Promise.resolve(words);
+    }
+    function shapeOnly() { try { return CPAlign.refineWords(words, [], { blend: 0.35 }); } catch (e) { return words; } }
+    var clip = state.clip, ff = resolveFfmpeg();
+    if (!clip || !clip.mediaPath || !ff || typeof CPAudio === 'undefined' || !CPAudio.ffmpegEnvelope) {
+      return Promise.resolve(shapeOnly());
+    }
+    return CPAudio.ffmpegEnvelope(clip.mediaPath, ff, 0.02).then(function (env) {
+      if (!env || !env.samples || !env.samples.length) return shapeOnly();
+      var sS = clip.seqStart || 0, iP = clip.inPoint || 0;
+      var media = words.map(function (w) { return { start: w.start - sS + iP, end: w.end - sS + iP, text: w.text, conf: w.conf }; });
+      var runs = CPAlign.speechRuns(env.samples, {});
+      var hit = 0;
+      media.forEach(function (w) { var c = (w.start + w.end) / 2; for (var i = 0; i < runs.length; i++) if (c >= runs[i].start && c <= runs[i].end) { hit++; break; } });
+      var aligned = runs.length > 0 && (hit / media.length) >= 0.6;   // do the words actually line up with speech?
+      try { diag('align', 'precise-timing ' + (aligned ? 'snap+shape' : 'shape-only') + ' — ' + hit + '/' + media.length + ' words on speech'); } catch (eD) {}
+      var refined = aligned ? CPAlign.refineWords(media, env.samples, { blend: 0.5, snapWin: 0.25 })
+                            : CPAlign.refineWords(media, [], { blend: 0.35 });
+      return refined.map(function (w) { return { start: w.start - iP + sS, end: w.end - iP + sS, text: w.text, conf: w.conf }; });
+    }).catch(function () { return shapeOnly(); });
+  }
+
   function getCaptionWordCues(cues, wantSync) {
     // Best source: whisper's real per-word timestamps captured at transcribe
     // time, so the highlight rides the ACTUAL spoken word. These are free and
     // accurate, so use them whenever we have them — independent of the sync
     // toggle or words-per-caption. (Cleared on transcript edit / external file,
     // so they always match the words we're captioning.)
-    if (state.transcriptWords && state.transcriptWords.length) return Promise.resolve(state.transcriptWords.slice());
+    if (state.transcriptWords && state.transcriptWords.length) return refineWordCues(state.transcriptWords.slice());
     if (!wantSync) return Promise.resolve(null);   // audio-envelope alignment is the opt-in fallback
     var ff = resolveFfmpeg();
     if (!ff) return Promise.resolve(null);

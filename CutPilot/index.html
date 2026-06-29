@@ -24,7 +24,7 @@
       </svg>
       <span class="brand-name">Pulse</span><span class="brand-by">by aifloh</span>
     </div>
-    <span class="ver" id="ver">v0.9.243</span>
+    <span class="ver" id="ver">v0.9.244</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -1092,6 +1092,11 @@
       <label class="check"><input type="checkbox" id="set-enhance-audio" checked> 🎧 Clean audio before transcribing</label>
     </div>
     <div class="card">
+      <div class="step-head"><span class="step-title">Word-by-word timing</span><span class="badge">tighter highlight</span></div>
+      <p class="hint">Sharpen each word's start/end against the audio so the highlight rides the actual voice — snaps any word that drifted into a pause back onto the speech, and evens out long vs. short words. It's pure timing data, so your captions stay <b>fully editable</b>. (Self-checks the audio first; if it can't line up, it stays gentle.)</p>
+      <label class="check"><input type="checkbox" id="set-precise-timing" checked> 🎯 Precise word timing</label>
+    </div>
+    <div class="card">
       <div class="step-head"><span class="step-title">Diagnostics</span><span class="badge" id="diag-count">0</span></div>
       <p class="hint">If something misbehaves, <b>reproduce it</b>, then tap <b>Copy diagnostics</b> and paste it back to
          aiFloh. It captures the exact error so the real bug gets fixed — no guessing. <b>No API keys are included.</b></p>
@@ -1151,7 +1156,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.9.243 · auto-edit · multicam · captions · chapters · organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.9.244 · auto-edit · multicam · captions · chapters · organize</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->
@@ -1286,6 +1291,7 @@
   <script src="js/fonts.js"></script>
   <script src="js/command.js"></script>
   <script src="js/chapters.js"></script>
+  <script src="js/align.js"></script>
   <script src="js/main.js"></script>
   <script src="js/organize.js"></script>
   <script src="js/safezone.js"></script>

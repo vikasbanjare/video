@@ -15,6 +15,7 @@ const CPChapters = require(path.join(__dirname, '..', 'js', 'chapters.js'));
 const CPSfx = require(path.join(__dirname, '..', 'js', 'sfx.js'));
 const CPTakes = require(path.join(__dirname, '..', 'js', 'takes.js'));
 const CPAss = require(path.join(__dirname, '..', 'js', 'ass.js'));
+const CPAlign = require(path.join(__dirname, '..', 'js', 'align.js'));
 
 let passed = 0, failed = 0;
 
@@ -1253,6 +1254,67 @@ console.log('ass.js (libass karaoke generator)');
   assert(ev[1].words.map(w => w.text).join(' ') === 'I am Victor.', 'groupWordEvents starts a fresh event per sentence');
   assert(ev[0].words[2].text === 'your' && close(ev[0].words[2].start, 1.7),
     'groupWordEvents preserves each word\'s real timing for the highlight');
+}
+
+// ------------------------------------------------------------- align ----
+console.log('align.js (word-timing refinement)');
+{
+  // syllable estimate (relative duration weight)
+  assert(CPAlign.syllableCount('a') === 1, 'syllableCount("a") = 1');
+  assert(CPAlign.syllableCount('cat') === 1, 'syllableCount("cat") = 1');
+  assert(CPAlign.syllableCount('table') === 2, 'syllableCount("table") = 2');
+  assert(CPAlign.syllableCount('international') >= 4, 'syllableCount("international") >= 4');
+  assert(CPAlign.syllableCount('international') > CPAlign.syllableCount('a'),
+    'a long word weighs more than "a"');
+
+  // P-centre: a consonant-cluster onset beats later than a vowel-initial word
+  assert(CPAlign.pCenterFraction('apple') === 0, 'pCenterFraction vowel-initial = 0');
+  assert(CPAlign.pCenterFraction('strike') > CPAlign.pCenterFraction('apple'),
+    'pCenterFraction("strike") later than vowel-initial word');
+
+  // speechRuns from an RMS-dB envelope: loud / silent / loud → two runs
+  const env = [];
+  for (let t = 0; t < 3; t += 0.05) {
+    const loud = (t < 1.0) || (t >= 2.0);          // silence between 1.0 and 2.0s
+    env.push({ t: t, db: loud ? -14 : -90 });
+  }
+  const runs = CPAlign.speechRuns(env, { minSilence: 0.1 });
+  assert(runs.length === 2, 'speechRuns finds two speech runs around the gap');
+  assert(runs[0].end <= 1.05 && runs[1].start >= 1.95, 'speechRuns brackets the silent gap');
+
+  // snap: a word ending just inside the silent gap (a realistic ~0.2s ASR error)
+  // gets pulled back to the speech edge; the cap stops it yanking boundaries wildly
+  let refined = CPAlign.refineWords(
+    [{ start: 0.1, end: 1.2, text: 'hello' }, { start: 2.05, end: 2.6, text: 'world' }],
+    env, { blend: 0 });   // blend 0 → isolate the snap behaviour
+  assert(refined[0].end <= 1.05 + 1e-6, 'refineWords snaps a word-end out of silence to the speech edge');
+  assert(refined.length === 2 && refined[0].text === 'hello', 'refineWords preserves words + order');
+
+  // shape: two contiguous words, ASR split them evenly but syllables are 1 vs 3 →
+  // after a full syllable blend the long word ("a" vs "international") gets more time
+  const flat = [];
+  for (let t = 0; t < 2; t += 0.05) flat.push({ t: t, db: -14 });   // all speech, no gaps
+  let shaped = CPAlign.refineWords(
+    [{ start: 0.0, end: 1.0, text: 'a' }, { start: 1.0, end: 2.0, text: 'international' }],
+    flat, { blend: 1 });
+  assert(shaped[0].end < 0.9, 'refineWords gives the short word "a" less time (syllable shape)');
+  assert(shaped[1].start === shaped[0].end, 'refineWords keeps adjacent boundaries shared (no gap/overlap)');
+
+  // monotonic guarantee on messy input
+  let mono = CPAlign.refineWords(
+    [{ start: 0, end: 0.5, text: 'one' }, { start: 0.4, end: 0.5, text: 'two' }, { start: 0.5, end: 0.5, text: 'three' }],
+    [], {});
+  let ok = true; for (let i = 0; i < mono.length; i++) { if (mono[i].end <= mono[i].start) ok = false; if (i && mono[i].start < mono[i - 1].end - 1e-9) ok = false; }
+  assert(ok, 'refineWords output is strictly monotonic with positive widths');
+
+  // readability grouping: break on sentence punctuation + char cap
+  const W = 'This is a fairly long opening line that should wrap. Then a new sentence.'
+    .split(' ').map((t, i) => ({ start: i * 0.4, end: i * 0.4 + 0.38, text: t }));
+  const cues = CPAlign.groupForReadability(W, { maxChars: 30 });
+  assert(cues.length >= 2, 'groupForReadability splits a long line into multiple cues');
+  assert(/\.$/.test(cues[0].text) || cues[0].text.length <= 30 + 12,
+    'groupForReadability respects the char cap / sentence break');
+  assert(cues[cues.length - 1].text.indexOf('new sentence') >= 0, 'groupForReadability keeps the final sentence');
 }
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
