@@ -390,12 +390,16 @@ function CP_deleteClipsInRange(qseq, startSec, endSec, ripple) {
         var item = track.getItemAt(i);
         if (!item) continue;
         var s = item.start.secs, e = item.end.secs;
-        // Ripple-remove EVERY item fully inside the span — including gaps
-        // (type 'Empty') — so each track shifts left by the same amount and
-        // audio/video stay in sync with no leftover gap. (Before, gaps were left
-        // by a non-ripple lift and only video gaps were ever closed → the
-        // stray-space + desync you saw.)
-        if (s >= startSec - eps && e <= endSec + eps) {
+        // Decide membership by the clip's MIDPOINT, not exact edges. track.razor()
+        // snaps each cut to the nearest FRAME (~33ms @30fps), so the isolated
+        // piece's start/end land a few ms outside the requested [start,end];
+        // the old "fully inside within 1ms" test then matched NOTHING, so the
+        // razor fired but the delete removed zero clips (repeated-take + in-place
+        // silence cuts silently did nothing). Razoring at both bounds isolates the
+        // target piece, so its midpoint is solidly inside the span while every
+        // kept neighbour's midpoint is outside — robust to frame snapping.
+        var mid = (s + e) / 2;
+        if (mid > startSec + eps && mid < endSec - eps) {
           var isEmpty = (item.type === 'Empty');
           try { item.remove(ripple ? 1 : 0, 0); if (!isEmpty) removed++; } catch (eRem) {}
         }
