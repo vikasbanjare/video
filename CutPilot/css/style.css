@@ -51,16 +51,23 @@ body {
 header { display: flex; align-items: center; gap: 8px; padding: 14px 16px 11px; position: relative; }
 header::after { content: ''; position: absolute; left: 14px; right: 14px; bottom: 0; height: 1px;
   background: linear-gradient(90deg, transparent, var(--accent-line), transparent); }
-.brand { display: flex; align-items: center; gap: 7px; font-weight: 800; font-size: 18px; letter-spacing: -0.4px; color: var(--fg); }
+.brand { display: flex; align-items: center; gap: 6px; font-weight: 800; font-size: 18px; letter-spacing: -0.4px; color: var(--fg); flex: 0 0 auto; }
 .brand .logo-mark { flex: none; display: block; }
 .brand .brand-name { line-height: 1; }
-.brand .brand-by { font-size: 9.5px; font-weight: 600; color: var(--dim); opacity: .85; letter-spacing: 0; align-self: flex-end; margin: 0 0 2px -2px; }
+/* "by aifloh" sits to the right of the wordmark with real breathing room (the
+   old -2px margin made it overlap "Pulse"); baseline-aligned so it reads as a
+   subscript byline, not crammed into the logo. */
+.brand .brand-by { font-size: 9.5px; font-weight: 600; color: var(--dim); opacity: .85; letter-spacing: 0; align-self: flex-end; margin: 0 0 2px 3px; white-space: nowrap; }
 .brand .logo { background: var(--grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-right: 1px; }
+/* Push the whole controls cluster (version + buttons + status) to the right so
+   it never crowds the wordmark. */
 .ver {
+  margin-left: auto;
   font-size: 9px; font-weight: 700; color: var(--dim);
   background: var(--card2); border: 1px solid var(--line); border-radius: 99px; padding: 2px 7px; letter-spacing: .3px;
+  flex: 0 0 auto;
 }
-.env-status { margin-left: auto; color: var(--dim); font-size: 10.5px; }
+.env-status { color: var(--dim); font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 92px; flex: 0 1 auto; }
 .env-status.ok { color: var(--ok); }
 .env-status.err { color: var(--danger); }
 
