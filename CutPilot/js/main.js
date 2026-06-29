@@ -5612,6 +5612,21 @@
     $('opt-fillers-adv').style.display = this.checked ? '' : 'none';
   });
 
+  // Manual dB control: the prominent slider, the Advanced number box, and the
+  // readout label all drive the one canonical opt-threshold value.
+  (function () {
+    var rng = $('opt-threshold-range'), num = $('opt-threshold'), lab = $('opt-threshold-val');
+    if (!rng || !num) return;
+    function show(v) { if (lab) lab.textContent = '−' + Math.abs(v) + ' dB'; }
+    rng.addEventListener('input', function () { num.value = rng.value; show(rng.value); });
+    num.addEventListener('input', function () {
+      var v = parseFloat(num.value); if (isNaN(v)) return;
+      rng.value = v;                 // the browser clamps to the slider's range automatically
+      show(v);
+    });
+    show(parseFloat(num.value));
+  })();
+
   /* Filler-word cut ranges in the selected clip's MEDIA time, from the
      transcript. Sequence time T maps to media (T − seqStart + inPoint), the
      inverse of the silence mapping. Returns [] when disabled/unavailable. */
@@ -5639,7 +5654,9 @@
     // old ladder only raised the threshold, so loud-room + short-pause clips
     // still reported "no pauses". Each step is strictly more lenient.
     var base = opts.thresholdDb, minS = opts.minSilence;
-    var ladder = [
+    // Manual mode: one pass at exactly the dB/min-pause the user dialled in — no
+    // auto-easing, so the result is predictable and fully under their control.
+    var ladder = opts.manual ? [ { thr: base, min: minS } ] : [
       { thr: base,      min: minS },
       { thr: base + 8,  min: minS },
       { thr: base + 16, min: minS },
@@ -5726,7 +5743,8 @@
       thresholdDb: parseFloat($('opt-threshold').value),
       minSilence: parseFloat($('opt-minsilence').value),
       padding: parseFloat($('opt-padding').value),
-      minKeep: parseFloat($('opt-minkeep').value)
+      minKeep: parseFloat($('opt-minkeep').value),
+      manual: !!($('opt-threshold-manual') && $('opt-threshold-manual').checked)
     };
     var prog = $('analyze-progress');
     prog.classList.remove('hidden');
@@ -5797,8 +5815,10 @@
       var nFill = fillers.length;
       var nSil = silencesMedia.length - nFill;
       if (nSil === 0 && nFill === 0) {
-        toast('No pauses found — even after easing the threshold. Your room tone may be loud: raise “Threshold (dB)” toward −25 in Advanced, or lower “Min pause”. ' +
-              (resolveFfmpeg() ? '' : '(Also: ffmpeg isn’t set up — Settings → ffmpeg path — needed to read audio inside video files.)'), true);
+        var why = opts.manual
+          ? 'No pauses found at ' + opts.thresholdDb + ' dB / ' + opts.minSilence + 's (Manual). Drag the threshold higher (toward −20 dB), lower “Min pause”, or untick Manual to let Pulse auto-ease. '
+          : 'No pauses found — even after easing the threshold. Your room tone may be loud: drag “Silence threshold” higher (toward −20 dB), or lower “Min pause”. ';
+        toast(why + (resolveFfmpeg() ? '' : '(Also: ffmpeg isn’t set up — Settings → ffmpeg path — needed to read audio inside video files.)'), true);
       } else {
         var eased = [];
         if (det._usedThreshold != null && det._usedThreshold !== opts.thresholdDb) eased.push(det._usedThreshold + 'dB');

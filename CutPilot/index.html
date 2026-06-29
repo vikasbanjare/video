@@ -701,6 +701,18 @@
       <p class="hint">Just tap “Find the silences” below — Pulse grabs the talking
          clip from your timeline automatically and finds every pause and dead
          moment. (To target one specific clip, select it first.)</p>
+
+      <div style="margin-top:10px">
+        <label style="display:flex;justify-content:space-between;align-items:center;margin:0 0 2px">
+          <span>Silence threshold <b id="opt-threshold-val">−40 dB</b></span>
+          <label class="check" style="margin:0;font-size:11px"><input type="checkbox" id="opt-threshold-manual"> Manual</label>
+        </label>
+        <input type="range" id="opt-threshold-range" min="-70" max="-15" step="1" value="-40">
+        <p class="hint" style="margin-top:4px">Drag right (toward −20 dB) to catch louder
+           room tone; left (−60 dB) cuts only near-silence. <b>Auto</b> starts here and eases
+           by itself if it finds nothing — tick <b>Manual</b> to use exactly this value.</p>
+      </div>
+
       <details class="advanced">
         <summary>Advanced detection settings</summary>
         <div class="grid2">
