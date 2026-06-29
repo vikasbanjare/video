@@ -2753,76 +2753,31 @@
   }
   function stopCardAnimator() { if (_cardAnimTimer) { clearInterval(_cardAnimTimer); _cardAnimTimer = null; } }
 
+  /* Clean, minimal gallery card (one shared layout for built-in styles AND
+     animated .mogrt templates): a small label on top + ONE dark preview box that
+     plays the real caption animation (same CPRender engine as the editor preview
+     and the burned-in output — box == preview == output). No popularity flames,
+     no Edit pill, no category line, no ANIMATED/PREMIUM badges — the reference
+     "text presets" look the user asked for. The favorite star is hidden at rest
+     and fades in on hover so the grid stays uncluttered. */
   function buildTemplateCard(t) {
-    // MOGRT cards: distinct look + open the action sheet (preview / use)
-    if (t.mogrt) {
-      var mc = document.createElement('div');
-      mc.className = 'tpl-card is-mogrt';   // live-canvas preview (no baked .mp4) → matches the editor
-      var mthumb = document.createElement('div');
-      mthumb.className = 'tpl-thumb';
-      // ANIMATED + ACCURATE preview: render the card with the SAME live engine
-      // (CPRender) as the editor preview and the burned-in output, using the
-      // template's REAL colours read from its definition.json (mogrtCardStyle).
-      // Previously the card showed a pre-baked .mp4 that drifted from the live
-      // preview — so the gallery box looked different from everything else. Now
-      // box == preview == Exact-look output (all one engine). The baked clip
-      // (t.video), if present, is ignored.
-      var mcvs = document.createElement('canvas');
-      mcvs.className = 'tpl-thumb-canvas';
-      mcvs._mogrtTpl = t;
-      mthumb.appendChild(mcvs);
-      // These are ANIMATED motion templates — that's what sets them apart from the
-      // static style presets. (Every template is editable either way, so an
-      // "editable" tag on only some was misleading.)
-      var badge = document.createElement('span');
-      badge.className = 'tpl-pop is-editable';
-      badge.textContent = '🎬 ANIMATED';
-      badge.title = 'Animated Motion Graphics template — stays editable in Premiere’s Essential Graphics';
-      mthumb.appendChild(badge);
-      if (t.premium) {
-        var prem = document.createElement('span');
-        prem.className = 'tpl-prem';
-        prem.textContent = '⭐ PREMIUM';
-        prem.title = 'Premium template';
-        mthumb.appendChild(prem);
-      }
-      mc.appendChild(mthumb);
-      // name ABOVE the description (stacked) so the full template name always
-      // shows — the side-by-side layout truncated longer names to "Wor…".
-      var mmeta = document.createElement('div');
-      mmeta.className = 'tpl-meta tpl-meta-stack';
-      var mnm = document.createElement('span'); mnm.className = 'tpl-name'; mnm.textContent = t.name; mnm.title = t.name;
-      var mct = document.createElement('span'); mct.className = 'tpl-cat';
-      mct.textContent = t.subcat || 'Editable in Premiere'; mct.title = t.subcat || '';
-      mmeta.appendChild(mnm); mmeta.appendChild(mct);
-      mc.appendChild(mmeta);
-      mc.addEventListener('click', function () { openMogrtSheet(t); });
-      return mc;
-    }
-
+    var isMogrt = !!t.mogrt;
     var card = document.createElement('div');
-    card.className = 'tpl-card' + (t.id === state.presetId ? ' on' : '');
+    card.className = 'tpl-card' + (isMogrt ? ' is-mogrt' : '') +
+      (!isMogrt && t.id === state.presetId ? ' on' : '');
 
-    var thumb = document.createElement('div');
-    thumb.className = 'tpl-thumb';
-    // WYSIWYG card preview: render the template with the REAL engine (same canvas
-    // pipeline as the editor) so browsing shows exactly how each style looks —
-    // gradients, glossy, two-tier, italic-serif keyword, boxes and all — without
-    // having to open it first. (paintThumbs renders these after the grid lays out
-    // and again once the web fonts have loaded.)
-    var cvs = document.createElement('canvas');
-    cvs.className = 'tpl-thumb-canvas';
-    cvs._tpl = t;
-    thumb.appendChild(cvs);
-
-    var pop = document.createElement('span');
-    pop.className = 'tpl-pop';
-    pop.textContent = '🔥 ' + (t.popularity || 60);
-    thumb.appendChild(pop);
+    // label row (name + hover-only favorite)
+    var head = document.createElement('div');
+    head.className = 'tpl-head';
+    var nm = document.createElement('span');
+    nm.className = 'tpl-name';
+    nm.textContent = t.name; nm.title = t.name;
+    head.appendChild(nm);
 
     var fav = document.createElement('button');
     fav.className = 'tpl-fav' + (state.favs[t.id] ? ' on' : '');
     fav.textContent = state.favs[t.id] ? '★' : '☆';
+    fav.title = 'Save to Favorites';
     fav.addEventListener('click', function (ev) {
       ev.stopPropagation();
       if (state.favs[t.id]) delete state.favs[t.id]; else state.favs[t.id] = 1;
@@ -2831,30 +2786,22 @@
       fav.textContent = state.favs[t.id] ? '★' : '☆';
       if (state.libCategory === 'Favorites') renderTemplateGrid();
     });
-    thumb.appendChild(fav);
+    head.appendChild(fav);
+    card.appendChild(head);
 
-    // explicit Edit button → open this style in the editor (the whole card also
-    // opens it, but the button is the obvious affordance people look for)
-    var edit = document.createElement('button');
-    edit.className = 'tpl-edit';
-    edit.innerHTML = '✏️ Edit';
-    edit.title = 'Open “' + t.name + '” in the style editor';
-    edit.addEventListener('click', function (ev) {
-      ev.stopPropagation();
-      applyTemplate(t);
-      showView('style');
-    });
-    thumb.appendChild(edit);
+    // single dark preview box — the live canvas (paintThumbs renders it after the
+    // grid lays out and again once the web fonts load). MOGRT cards carry
+    // _mogrtTpl (style derived from the .mogrt colours); presets carry _tpl.
+    var thumb = document.createElement('div');
+    thumb.className = 'tpl-thumb';
+    var cvs = document.createElement('canvas');
+    cvs.className = 'tpl-thumb-canvas';
+    if (isMogrt) cvs._mogrtTpl = t; else cvs._tpl = t;
+    thumb.appendChild(cvs);
     card.appendChild(thumb);
 
-    var meta = document.createElement('div');
-    meta.className = 'tpl-meta';
-    var nm = document.createElement('span'); nm.className = 'tpl-name'; nm.textContent = t.name;
-    var ct = document.createElement('span'); ct.className = 'tpl-cat'; ct.textContent = t.category;
-    meta.appendChild(nm); meta.appendChild(ct);
-    card.appendChild(meta);
-
-    card.addEventListener('click', function () { applyTemplate(t); showView('style'); });
+    if (isMogrt) card.addEventListener('click', function () { openMogrtSheet(t); });
+    else card.addEventListener('click', function () { applyTemplate(t); showView('style'); });
     return card;
   }
 
