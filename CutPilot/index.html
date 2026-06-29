@@ -24,7 +24,7 @@
       </svg>
       <span class="brand-name">Pulse</span><span class="brand-by">by aifloh</span>
     </div>
-    <span class="ver" id="ver">v0.9.242</span>
+    <span class="ver" id="ver">v0.9.243</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -1087,6 +1087,11 @@
       <p id="set-vb-msg" class="hint" style="min-height:14px;margin-top:4px"></p>
     </div>
     <div class="card">
+      <div class="step-head"><span class="step-title">Audio enhancement</span><span class="badge">cleaner = more accurate</span></div>
+      <p class="hint">Before transcribing, Pulse runs a quick voice clean-up (drops low rumble &amp; hiss) so the recogniser hears clearer speech — fewer wrong words, especially on noisy recordings. It only touches the copy sent to the recogniser; <b>your media is never changed</b>.</p>
+      <label class="check"><input type="checkbox" id="set-enhance-audio" checked> 🎧 Clean audio before transcribing</label>
+    </div>
+    <div class="card">
       <div class="step-head"><span class="step-title">Diagnostics</span><span class="badge" id="diag-count">0</span></div>
       <p class="hint">If something misbehaves, <b>reproduce it</b>, then tap <b>Copy diagnostics</b> and paste it back to
          aiFloh. It captures the exact error so the real bug gets fixed — no guessing. <b>No API keys are included.</b></p>
@@ -1146,7 +1151,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.9.242 · auto-edit · multicam · captions · chapters · organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.9.243 · auto-edit · multicam · captions · chapters · organize</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->
