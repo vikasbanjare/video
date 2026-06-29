@@ -945,6 +945,13 @@ console.log('smartedit.js (AI cleanup)');
   // sorted by score desc
   const two = CPSmart.parseHighlightResponse('{"clips":[{"from":0,"to":4,"score":40},{"from":5,"to":9,"score":95}]}', segs, { min: 10, max: 90 });
   assert(two.length === 2 && two[0].score === 95, 'highlights sorted by score, best first');
+
+  // chunking keeps each request under the tokens-per-minute limit
+  const ch = CPSmart.chunk(Array.from({ length: 2500 }, (_, i) => i), 1000);
+  assert(ch.length === 3 && ch[0].length === 1000 && ch[2].length === 500, 'chunk splits 2500 items into 1000/1000/500');
+  assert(CPSmart.chunk([], 1000).length === 0, 'chunk of empty is empty');
+  assert(CPSmart.chatBody({ system: 's', user: 'u' }, 'm', 2048).max_tokens === 2048, 'chatBody caps max_tokens');
+  assert(CPSmart.chatBody({ system: 's', user: 'u' }).max_tokens === undefined, 'chatBody omits max_tokens when not set');
 }
 
 // ------------------------------------ reframe: speaker-aware vertical clip ----

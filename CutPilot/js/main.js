@@ -693,6 +693,7 @@
       var body = { model: opts.model || 'llama-3.3-70b-versatile',
                    temperature: (opts.temperature != null ? opts.temperature : 0.2), messages: messages };
       if (opts.json) body.response_format = { type: 'json_object' };
+      if (opts.maxTokens) body.max_tokens = opts.maxTokens;   // cap response → stay under tokens-per-minute
       var tmp = pathMod.join(os.tmpdir(), 'cutpilot-groq-' + Date.now() + '.json');
       try { fs.writeFileSync(tmp, JSON.stringify(body), 'utf8'); } catch (eW) { return reject(eW); }
       var args = ['-sS', '--max-time', String(opts.timeout || 120), 'https://api.groq.com/openai/v1/chat/completions',
@@ -6141,58 +6142,67 @@
   /* One Groq chat-completions call (reuses the transcription key). The JSON body
      can be large, so it's written to a temp file and curled with --data @file
      rather than passed on the command line (avoids ARG_MAX). */
-  function groqChat(prompt, opts) {
-    return new Promise(function (resolve, reject) {
-      var key = cpKey();
-      if (!key) return reject(new Error('Add your free Groq API key in Settings → Auto-transcribe (console.groq.com/keys) to use Smart Cleanup.'));
-      var cp, fs, os, pathMod;
-      try { cp = nodeReq('child_process'); fs = nodeReq('fs'); os = nodeReq('os'); pathMod = nodeReq('path'); }
-      catch (e) { return reject(e); }
-      var body = CPSmartEdit.chatBody(prompt, (opts && opts.model) || 'llama-3.3-70b-versatile');
-      var bodyPath = pathMod.join(os.tmpdir(), 'pulse-cleanup-' + Date.now() + '.json');
-      try { fs.writeFileSync(bodyPath, JSON.stringify(body)); } catch (e) { return reject(e); }
-      function cleanup() { try { fs.unlinkSync(bodyPath); } catch (e) {} }
-      var args = ['-sS', '--max-time', '120', 'https://api.groq.com/openai/v1/chat/completions',
-        '-H', 'Authorization: Bearer ' + key, '-H', 'Content-Type: application/json',
-        '--data', '@' + bodyPath];
-      var p; try { p = cp.spawn('curl', args); } catch (e) { cleanup(); return reject(e); }
-      var out = '', err = '';
-      if (p.stdout) p.stdout.on('data', function (d) { out += d.toString(); });
-      if (p.stderr) p.stderr.on('data', function (d) { err += d.toString(); });
-      p.on('error', function (e) { cleanup(); reject(e); });
-      p.on('close', function (code) {
-        cleanup();
-        if (code !== 0) {
-          if (code === 6 || code === 7 || code === 28 || code === 5)
-            return reject(new Error('Smart Cleanup needs internet and couldn’t reach Groq. Check your connection and try again.'));
-          return reject(new Error('Cloud request failed (curl ' + code + '): ' + err.slice(-160)));
-        }
-        var j; try { j = JSON.parse(out); } catch (e) { return reject(new Error('Cloud returned unexpected data.')); }
-        if (j.error) return reject(new Error('Groq: ' + (j.error.message || JSON.stringify(j.error))));
-        var content = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
-        if (content == null) return reject(new Error('Cloud returned no result.'));
-        resolve(content);
-      });
+  /* One JSON chat call from a {system,user} prompt, via the shared groqChat.
+     maxTokens caps the response so the request stays under the per-minute token
+     limit. */
+  function aiChat(prompt, opts) {
+    opts = opts || {};
+    return groqChat(
+      [{ role: 'system', content: prompt.system }, { role: 'user', content: prompt.user }],
+      { json: true, model: opts.model, maxTokens: opts.maxTokens || 2048, temperature: 0 }
+    );
+  }
+  /* aiChat with a wait-and-retry when the org's tokens-per-minute limit is hit
+     across chunks (Groq says "try again in Xs"). Doesn't retry a single
+     too-large request (retrying the same size can't help). */
+  function aiChatRetry(prompt, opts, tries) {
+    tries = tries || 0;
+    return aiChat(prompt, opts).catch(function (e) {
+      var m = String((e && e.message) || '');
+      var tooBig = /too large|reduce your message/i.test(m);
+      var rateLimited = /rate.?limit|try again in|tokens per minute|TPM/i.test(m);
+      if (tries < 3 && rateLimited && !tooBig) {
+        var waitS = 22, mm = /try again in ([\d.]+)s/i.exec(m);
+        if (mm) waitS = Math.min(60, Math.ceil(parseFloat(mm[1])) + 2);
+        return new Promise(function (res) { setTimeout(res, waitS * 1000); }).then(function () { return aiChatRetry(prompt, opts, tries + 1); });
+      }
+      throw e;
     });
+  }
+  /* Run each chunk through fn sequentially (keeps us under the rate limit) and
+     flatten the results. fn(chunk,index) → Promise<array>. */
+  function processChunks(chunks, fn, prog, label) {
+    var all = [], i = 0;
+    function step() {
+      if (i >= chunks.length) return Promise.resolve(all);
+      if (prog) prog.textContent = label + (chunks.length > 1 ? ' (' + (i + 1) + '/' + chunks.length + ')' : '') + '…';
+      return fn(chunks[i], i).then(function (part) { if (part && part.length) all = all.concat(part); i++; return step(); });
+    }
+    return step();
   }
 
   function runSmartCleanup() {
     if (typeof CPSmartEdit === 'undefined') return toast('Smart Cleanup module missing.', true);
     var words = takesGetWords();
     if (!words || words.length < 6) return toast('Transcribe your clip first (Transcribe tab) — Smart Cleanup reads the words.', true);
-    // Cap what we send so a very long video stays one fast call; the deterministic
-    // "Find repeated takes" still covers the whole clip.
-    var MAXW = 1800;
-    var slice = words.length > MAXW ? words.slice(0, MAXW) : words;
-    var prompt = CPSmartEdit.buildCleanupPrompt(slice, { aggressive: !!($('sc-aggressive') && $('sc-aggressive').checked) });
+    // Chunk the transcript so each request stays under the tokens-per-minute
+    // limit (the whole thing in one shot exceeded it). Chunks run in sequence.
+    var MAXW = 5000;
+    var truncated = words.length > MAXW;
+    var use = truncated ? words.slice(0, MAXW) : words;
+    var chunks = CPSmartEdit.chunk(use, 1000);
+    var aggressive = !!($('sc-aggressive') && $('sc-aggressive').checked);
     var prog = $('takes-progress'); prog.classList.remove('hidden');
-    prog.textContent = '✨ Reading your transcript with AI…' + (words.length > MAXW ? ' (first ' + MAXW + ' words)' : '');
-    groqChat(prompt).then(function (content) {
-      var cuts = CPSmartEdit.parseCleanupResponse(content, slice, { minConfidence: 0 });
+    processChunks(chunks, function (cw) {
+      var prompt = CPSmartEdit.buildCleanupPrompt(cw, { aggressive: aggressive });
+      return aiChatRetry(prompt, { maxTokens: 2048 }).then(function (content) {
+        return CPSmartEdit.parseCleanupResponse(content, cw, { minConfidence: 0 });
+      });
+    }, prog, '✨ Reading your transcript with AI').then(function (cuts) {
       state.takeDeletes = cuts;            // reuse the same review → apply pipeline
       prog.classList.add('hidden');
       renderTakes(cuts);
-      if (cuts.length) toast('✨ Smart Cleanup found ' + cuts.length + ' cut' + (cuts.length === 1 ? '' : 's') + ' — review them, then apply.');
+      if (cuts.length) toast('✨ Smart Cleanup found ' + cuts.length + ' cut' + (cuts.length === 1 ? '' : 's') + (truncated ? ' (first ' + MAXW + ' words)' : '') + ' — review them, then apply.');
     }).catch(function (e) {
       prog.classList.add('hidden');
       toast('Smart Cleanup failed: ' + e.message, true);
@@ -6283,14 +6293,23 @@
     var segs = highlightSegments();
     if (!segs || segs.length < 4) return toast('Transcribe your video first (Transcribe tab) — I read the transcript to find the best moments.', true);
     var len = shLen();
-    var prompt = CPSmartEdit.buildHighlightPrompt(segs, { min: len.min, max: len.max, count: 8 });
+    // Chunk so each request stays under the per-minute token limit; merge + rank.
+    var MAXSEG = 600;
+    var truncated = segs.length > MAXSEG;
+    var use = truncated ? segs.slice(0, MAXSEG) : segs;
+    var chunks = CPSmartEdit.chunk(use, 80);
     var prog = $('shorts-progress'); prog.classList.remove('hidden');
-    prog.textContent = '✨ Scanning your video for viral moments…';
-    groqChat(prompt).then(function (content) {
-      var hl = CPSmartEdit.parseHighlightResponse(content, segs, { min: Math.max(5, len.min - 5), max: len.max + 30 });
+    processChunks(chunks, function (cs) {
+      var prompt = CPSmartEdit.buildHighlightPrompt(cs, { min: len.min, max: len.max, count: 6 });
+      return aiChatRetry(prompt, { maxTokens: 1500 }).then(function (content) {
+        return CPSmartEdit.parseHighlightResponse(content, cs, { min: Math.max(5, len.min - 5), max: len.max + 30 });
+      });
+    }, prog, '✨ Scanning your video for viral moments').then(function (hl) {
+      hl.sort(function (a, b) { return b.score - a.score; });
+      hl = hl.slice(0, 12);
       prog.classList.add('hidden');
       renderShorts(hl);
-      if (hl.length) toast('Found ' + hl.length + ' viral moment' + (hl.length === 1 ? '' : 's') + ' — preview or clip any of them.');
+      if (hl.length) toast('Found ' + hl.length + ' viral moment' + (hl.length === 1 ? '' : 's') + (truncated ? ' (first ' + MAXSEG + ' lines)' : '') + ' — preview or clip any of them.');
     }).catch(function (e) { prog.classList.add('hidden'); toast('Couldn’t find moments: ' + e.message, true); });
   }
   if ($('btn-find-shorts')) $('btn-find-shorts').addEventListener('click', runHighlightFinder);

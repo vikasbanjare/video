@@ -211,9 +211,11 @@
     return out;
   }
 
-  /* Body for the Groq (OpenAI-compatible) chat call — main.js curls this. */
-  function chatBody(prompt, model) {
-    return {
+  /* Body for the Groq (OpenAI-compatible) chat call — main.js curls this.
+     maxTokens caps the RESPONSE so the request total stays under the tier's
+     tokens-per-minute limit (the whole transcript in one shot blew past it). */
+  function chatBody(prompt, model, maxTokens) {
+    var b = {
       model: model || 'llama-3.3-70b-versatile',
       temperature: 0,
       response_format: { type: 'json_object' },
@@ -222,6 +224,17 @@
         { role: 'user', content: prompt.user }
       ]
     };
+    if (maxTokens) b.max_tokens = maxTokens;
+    return b;
+  }
+
+  /* Split an array into chunks of at most `size` items (used to keep each
+     transcript request under the token-per-minute limit). Pure. */
+  function chunk(arr, size) {
+    arr = arr || []; size = Math.max(1, size || 800);
+    var out = [];
+    for (var i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+    return out;
   }
 
   return {
@@ -232,6 +245,7 @@
     buildHighlightPrompt: buildHighlightPrompt,
     parseHighlightResponse: parseHighlightResponse,
     mmss: mmss,
+    chunk: chunk,
     chatBody: chatBody
   };
 });
