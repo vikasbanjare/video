@@ -2757,31 +2757,20 @@
     // MOGRT cards: distinct look + open the action sheet (preview / use)
     if (t.mogrt) {
       var mc = document.createElement('div');
-      mc.className = 'tpl-card is-mogrt' + (t.video ? ' has-thumb' : '');
+      mc.className = 'tpl-card is-mogrt';   // live-canvas preview (no baked .mp4) → matches the editor
       var mthumb = document.createElement('div');
       mthumb.className = 'tpl-thumb';
-      // ANIMATED + ACCURATE preview: a clean, high-quality looping clip pre-rendered
-      // per template in its REAL colours (gradient/box/highlight from definition.json)
-      // showing the word-by-word reveal — Flux Vector blue gradient, Orbit orange,
-      // Halo white-on-blue-box, etc. Readable + on-brand (unlike the old blobby AE
-      // thumb.mp4). Falls back to the live canvas if the clip is missing.
-      if (t.video) {
-        var mvid = document.createElement('video');
-        mvid.className = 'tpl-thumb-video';
-        mvid.src = t.video; mvid.autoplay = true; mvid.loop = true; mvid.muted = true;
-        mvid.setAttribute('playsinline', ''); mvid.setAttribute('disablepictureinpicture', '');
-        mvid.onerror = function () {
-          mvid.style.display = 'none';
-          var fb = document.createElement('canvas'); fb.className = 'tpl-thumb-canvas'; fb._mogrtTpl = t;
-          mthumb.insertBefore(fb, mthumb.firstChild); schedulePaintThumbs();
-        };
-        mthumb.appendChild(mvid);
-      } else {
-        var mcvs = document.createElement('canvas');
-        mcvs.className = 'tpl-thumb-canvas';
-        mcvs._mogrtTpl = t;
-        mthumb.appendChild(mcvs);
-      }
+      // ANIMATED + ACCURATE preview: render the card with the SAME live engine
+      // (CPRender) as the editor preview and the burned-in output, using the
+      // template's REAL colours read from its definition.json (mogrtCardStyle).
+      // Previously the card showed a pre-baked .mp4 that drifted from the live
+      // preview — so the gallery box looked different from everything else. Now
+      // box == preview == Exact-look output (all one engine). The baked clip
+      // (t.video), if present, is ignored.
+      var mcvs = document.createElement('canvas');
+      mcvs.className = 'tpl-thumb-canvas';
+      mcvs._mogrtTpl = t;
+      mthumb.appendChild(mcvs);
       // These are ANIMATED motion templates — that's what sets them apart from the
       // static style presets. (Every template is editable either way, so an
       // "editable" tag on only some was misleading.)
