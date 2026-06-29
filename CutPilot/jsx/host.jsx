@@ -569,6 +569,75 @@ function CP_rebuildTrimmed(argsJson) {
   } catch (e) { return CP_fail(e.message); }
 }
 
+// --------------------------------------------------- viral shorts ----------
+/* Make the active sequence active by object (best-effort across versions). */
+function CP_activateSequence(seqObj) {
+  if (!seqObj) return;
+  try { app.project.activeSequence = seqObj; } catch (e1) {}
+  try { if (seqObj.sequenceID) app.project.openSequence(seqObj.sequenceID); } catch (e2) {}
+}
+
+/* Set the active sequence's in/out points to a range, so the user can preview /
+   export just that moment. argsJson: { start, end } in sequence seconds. */
+function CP_setInOut(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+    try { seq.setInPoint(CP_ticksFromSeconds(args.start)); } catch (eIn) {
+      try { seq.setInPoint(args.start); } catch (eIn2) {}
+    }
+    try { seq.setOutPoint(CP_ticksFromSeconds(args.end)); } catch (eOut) {
+      try { seq.setOutPoint(args.end); } catch (eOut2) {}
+    }
+    return CP_ok({ start: args.start, end: args.end });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/*
+ * Extract one highlight as its own short. Clones the active sequence (original
+ * untouched), trims the clone down to [start,end], then — if a target ratio is
+ * given — runs Premiere's real Auto Reframe (subject tracking) to produce the
+ * vertical/square sequence. argsJson: { start, end, name, ratio:{num,den}|null }.
+ */
+function CP_makeShort(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+    var name = args.name || ('Short ' + (Math.round((args.start || 0))) + 's');
+
+    var work = null;
+    try { work = seq.clone(); } catch (eC) {}
+    if (!work) {                                  // some builds don't return the clone
+      try { seq.clone(); } catch (eC2) {}
+      work = app.project.activeSequence;          // …but it usually becomes findable
+    }
+    if (!work) return CP_fail('Could not duplicate the sequence to build the short.');
+    CP_activateSequence(work);
+    try { work.name = name + ' (wide)'; } catch (eN) {}
+
+    var qseq = CP_qeSequence();
+    var fps = CP_sequenceFps(work);
+    var dur = 0; try { dur = work.end ? work.end.seconds : 0; } catch (eD) {}
+    var BIG = (dur > 0 ? dur : 1e7) + 5;
+    // isolate [start,end]: razor both bounds, lift the tail, ripple the head to 0
+    CP_razorAllTracksAt(qseq, args.end, fps, !!args.dropFrame);
+    CP_razorAllTracksAt(qseq, args.start, fps, !!args.dropFrame);
+    CP_deleteClipsInRange(qseq, args.end, BIG, false);     // tail → lift (no shift needed)
+    CP_deleteClipsInRange(qseq, 0, args.start, true);      // head → ripple, segment slides to 0
+
+    // optional: real Auto Reframe to the target aspect (returns a NEW sequence)
+    if (args.ratio && args.ratio.num && args.ratio.den) {
+      var rfName = name + ' ' + args.ratio.num + 'x' + args.ratio.den;
+      var reframed = null;
+      try { reframed = work.autoReframeSequence(args.ratio.num, args.ratio.den, 'default', rfName, false); } catch (eR) {
+        return CP_ok({ sequence: work.name, reframed: false, note: 'Trimmed clip created; Auto Reframe failed on this version: ' + eR.message });
+      }
+      if (reframed) { CP_activateSequence(reframed); return CP_ok({ sequence: rfName, reframed: true }); }
+    }
+    return CP_ok({ sequence: work.name, reframed: false });
+  } catch (e) { return CP_fail(e.message); }
+}
+
 // ------------------------------------------------------------- multicam ----
 /*
  * Apply an angle plan to stacked camera tracks (FireCut-style).

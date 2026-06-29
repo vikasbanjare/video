@@ -926,6 +926,25 @@ console.log('smartedit.js (AI cleanup)');
   assert(CPSmart.parseCleanupResponse('total garbage, no json', words).length === 0, 'garbage reply → no cuts, never throws');
   assert(CPSmart.parseCleanupResponse('{"cuts":[]}', words).length === 0, 'empty cuts → nothing removed');
   assert(CPSmart.parseCleanupResponse('{"cuts":[{"from":0,"to":1,"category":"filler","confidence":0.2}]}', words, { minConfidence: 0.5 }).length === 0, 'confidence gate drops low-confidence cuts');
+
+  // ---- viral highlight finder (long → shorts) ----
+  const segs = [];
+  for (let i = 0; i < 12; i++) segs.push({ text: 'sentence number ' + i + ' about the topic', start: i * 5, end: i * 5 + 4.8 });
+  const hp = CPSmart.buildHighlightPrompt(segs, { min: 15, max: 60, count: 5 });
+  assert(/\[0\] \(0:00\)/.test(hp.user), 'highlight prompt indexes segments with m:ss timestamps');
+  assert(hp.user.indexOf('OPEN on a hook') > 0 && hp.user.indexOf('TRANSCRIPT:') > hp.user.indexOf('OPEN on a hook'), 'highlight prompt: rules precede transcript');
+  assert(CPSmart.mmss(75) === '1:15', 'mmss formats seconds as m:ss');
+
+  const hreply = '```json\n{"clips":[{"from":0,"to":6,"title":"The Big Idea","hook":"Here is the secret","score":88,"reason":"strong hook"},{"from":8,"to":8,"title":"too short","score":50}]}\n```';
+  const hl = CPSmart.parseHighlightResponse(hreply, segs, { min: 15, max: 90 });
+  assert(hl.length === 1, 'highlight parse drops the too-short clip, keeps the valid one');
+  assert(close(hl[0].start, 0) && close(hl[0].end, 34.8), 'highlight maps index range to segment start/end');
+  assert(hl[0].title === 'The Big Idea' && hl[0].score === 88, 'highlight carries title + score');
+  assert(CPSmart.parseHighlightResponse('{"clips":[]}', segs).length === 0, 'highlight: empty clips → nothing');
+  assert(CPSmart.parseHighlightResponse('no json here', segs).length === 0, 'highlight: garbage → nothing, no throw');
+  // sorted by score desc
+  const two = CPSmart.parseHighlightResponse('{"clips":[{"from":0,"to":4,"score":40},{"from":5,"to":9,"score":95}]}', segs, { min: 10, max: 90 });
+  assert(two.length === 2 && two[0].score === 95, 'highlights sorted by score, best first');
 }
 
 // --------------------------------------------- transcript: filler removal ----

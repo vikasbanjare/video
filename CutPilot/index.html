@@ -24,7 +24,7 @@
       </svg>
       <span class="brand-name">Pulse</span><span class="brand-by">by aifloh</span>
     </div>
-    <span class="ver" id="ver">v0.9.229</span>
+    <span class="ver" id="ver">v0.9.230</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -34,6 +34,7 @@
     <button class="tab active" data-tab="transcribe"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>Transcribe</button>
     <button class="tab" data-tab="captions"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3.5"/><path d="M10 10.5a2.2 2.2 0 1 0 0 3"/><path d="M16.5 10.5a2.2 2.2 0 1 0 0 3"/></svg></span>Captions</button>
     <button class="tab" data-tab="silence"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><line x1="20" y1="4" x2="8.5" y2="15.5"/><line x1="14.5" y1="14.5" x2="20" y2="20"/><line x1="8.5" y1="8.5" x2="12" y2="12"/></svg></span>Auto-Edit</button>
+    <button class="tab" data-tab="shorts"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="2.5" width="9" height="19" rx="2.5"/><path d="M10.5 12l4 -2.3v4.6Z" fill="currentColor" stroke="none"/></svg></span>Shorts</button>
     <button class="tab" data-tab="multicam"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="3.5" width="13" height="9" rx="2"/><rect x="3.5" y="9.5" width="13" height="9" rx="2"/></svg></span>Multicam</button>
     <button class="tab" data-tab="chapters"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4.5" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1.4" fill="currentColor" stroke="none"/></svg></span>Chapters</button>
     <button class="tab" data-tab="organize"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5a2 2 0 0 1 2-2h3.4a2 2 0 0 1 1.6.8l.9 1.2h7.1a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg></span>Organize</button>
@@ -805,6 +806,37 @@
     </div><!-- /ae-takes -->
   </section>
 
+  <!-- =============================== SHORTS ============================= -->
+  <section id="tab-shorts" class="tab-page">
+    <div class="card">
+      <div class="step-head"><span class="step-title">🎬 Viral Shorts</span><span class="badge">long video → clips</span></div>
+      <p class="hint">Pulse reads your transcript and finds the moments most likely to pop as
+         short clips — each one a self-contained <b>hook → payoff</b>. Transcribe your video
+         first (Transcribe tab). Then for each moment you can <b>preview</b> it, <b>mark</b> it,
+         or cut it out as a <b>vertical clip</b> — real Premiere Auto Reframe keeps the subject in frame.</p>
+      <div class="grid2">
+        <label>Clip length
+          <select id="sh-len">
+            <option value="15-60" selected>15–60s · standard</option>
+            <option value="10-30">10–30s · punchy</option>
+            <option value="30-90">30–90s · story</option>
+          </select>
+        </label>
+        <label>Aspect ratio
+          <select id="sh-ratio">
+            <option value="9:16" selected>9:16 vertical · Reels/Shorts/TikTok</option>
+            <option value="1:1">1:1 square</option>
+            <option value="4:5">4:5 portrait · feed</option>
+            <option value="none">Keep original · no reframe</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <button id="btn-find-shorts" class="hero-btn alt">✨ Find viral moments</button>
+    <div id="shorts-progress" class="progress hidden"></div>
+    <div id="shorts-results"></div>
+  </section>
+
   <!-- ============================== MULTICAM ============================= -->
   <section id="tab-multicam" class="tab-page">
     <div id="mc-ffmpeg" class="ff-banner hidden"></div>
@@ -1019,7 +1051,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.9.229 · auto-edit · multicam · captions · chapters · organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.9.230 · auto-edit · multicam · captions · chapters · organize</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->

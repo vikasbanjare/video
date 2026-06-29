@@ -6127,6 +6127,101 @@
   }
   if ($('btn-smart-cleanup')) $('btn-smart-cleanup').addEventListener('click', runSmartCleanup);
 
+  // =========================================================== VIRAL SHORTS ====
+  /* Sentence-level segments for the highlight finder: prefer the caption job's
+     cues / an external transcript; else group the word stream into sentences. */
+  function highlightSegments() {
+    var cues = (state.lastCaptionJob && state.lastCaptionJob.cues) || null;
+    if (!cues || !cues.length) { try { cues = readSelectedTranscript(); } catch (e) { cues = null; } }
+    if (cues && cues.length) {
+      return cues.filter(function (c) { return c && c.text; })
+        .map(function (c) { return { text: c.text, start: +c.start || 0, end: +c.end || 0 }; });
+    }
+    var w = state.transcriptWords;
+    if (!w || !w.length) return null;
+    var segs = [], cur = [];
+    for (var i = 0; i < w.length; i++) {
+      cur.push(w[i]);
+      var endsSentence = /[.!?]["')\]]?$/.test(w[i].text);
+      var gap = (i + 1 < w.length) ? (w[i + 1].start - w[i].end) : 99;
+      if (endsSentence || gap > 0.8 || cur.length >= 14) {
+        segs.push({ text: cur.map(function (x) { return x.text; }).join(' '), start: cur[0].start, end: cur[cur.length - 1].end });
+        cur = [];
+      }
+    }
+    if (cur.length) segs.push({ text: cur.map(function (x) { return x.text; }).join(' '), start: cur[0].start, end: cur[cur.length - 1].end });
+    return segs;
+  }
+  function shRatio() {
+    var v = ($('sh-ratio') && $('sh-ratio').value) || '9:16';
+    if (v === 'none') return null;
+    var p = v.split(':');
+    return { num: parseInt(p[0], 10), den: parseInt(p[1], 10), label: v };
+  }
+  function shLen() {
+    var p = (($('sh-len') && $('sh-len').value) || '15-60').split('-');
+    return { min: parseInt(p[0], 10) || 15, max: parseInt(p[1], 10) || 60 };
+  }
+  function renderShorts(list) {
+    var box = $('shorts-results'); if (!box) return;
+    box.innerHTML = '';
+    if (!list || !list.length) {
+      box.innerHTML = '<div class="card"><p class="hint">No standout moments found. Try a longer clip or a different clip-length — and make sure the video is transcribed.</p></div>';
+      return;
+    }
+    list.forEach(function (h, i) {
+      var card = document.createElement('div'); card.className = 'card';
+      var head = document.createElement('div'); head.className = 'step-head';
+      var title = document.createElement('span'); title.className = 'step-title'; title.textContent = (i + 1) + '. ' + (h.title || 'Clip');
+      var score = document.createElement('span'); score.className = 'badge ok'; score.textContent = '🔥 ' + Math.round(h.score);
+      head.appendChild(title); head.appendChild(score); card.appendChild(head);
+      var meta = document.createElement('p'); meta.className = 'hint';
+      var b = document.createElement('b'); b.textContent = fmt(h.start) + ' → ' + fmt(h.end) + ' · ' + Math.round(h.dur) + 's'; meta.appendChild(b);
+      if (h.hook) { meta.appendChild(document.createElement('br')); meta.appendChild(document.createTextNode('“' + h.hook + '”')); }
+      if (h.reason) { meta.appendChild(document.createElement('br')); var sp = document.createElement('span'); sp.className = 'dim'; sp.textContent = h.reason; meta.appendChild(sp); }
+      card.appendChild(meta);
+      var row = document.createElement('div'); row.className = 'row tight';
+      function btn(label, cls, fn) { var x = document.createElement('button'); x.className = cls; x.textContent = label; x.addEventListener('click', fn); row.appendChild(x); }
+      btn('▶ Preview', 'chip-btn', function () {
+        CPBridge.callHost('CP_setInOut', { start: h.start, end: h.end })
+          .then(function () { toast('In/Out set to this moment — press Play, or Export to render just this clip.'); })
+          .catch(function (e) { toast(e.message, true); });
+      });
+      btn('📍 Mark', 'chip-btn', function () {
+        CPBridge.callHost('CP_addMarkers', { ranges: [{ start: h.start, end: h.end }], names: [h.title || ('Clip ' + (i + 1))], label: 'Short' })
+          .then(function () { toast('Marker added.'); }).catch(function (e) { toast(e.message, true); });
+      });
+      var rt = shRatio();
+      btn(rt ? ('⬛ Make ' + rt.label + ' clip') : '⬛ Make clip', 'hero-btn', function () {
+        var msg = 'Create a new ' + (rt ? rt.label + ' vertical' : 'trimmed') + ' sequence from this moment?\n\n' +
+          'Your original timeline stays untouched (a copy is trimmed' + (rt ? ', then Premiere’s Auto Reframe tracks the subject — the UI may pause briefly' : '') + ').';
+        if (!confirm(msg)) return;
+        toast('Building the clip…' + (rt ? ' Auto Reframe can take a moment — Premiere may look frozen.' : ''));
+        CPBridge.callHost('CP_makeShort', { start: h.start, end: h.end, name: (h.title || ('Short ' + (i + 1))), ratio: rt, dropFrame: !!settings.dropFrame })
+          .then(function (r) {
+            toast('🎬 Created “' + r.sequence + '”' + (r.reframed ? ' — Auto-Reframed to ' + rt.label + '.' : '.') + (r.note ? ' ' + r.note : ''));
+          }).catch(function (e) { toast('Make clip failed: ' + e.message, true); });
+      });
+      card.appendChild(row); box.appendChild(card);
+    });
+  }
+  function runHighlightFinder() {
+    if (typeof CPSmartEdit === 'undefined') return toast('Shorts module missing.', true);
+    var segs = highlightSegments();
+    if (!segs || segs.length < 4) return toast('Transcribe your video first (Transcribe tab) — I read the transcript to find the best moments.', true);
+    var len = shLen();
+    var prompt = CPSmartEdit.buildHighlightPrompt(segs, { min: len.min, max: len.max, count: 8 });
+    var prog = $('shorts-progress'); prog.classList.remove('hidden');
+    prog.textContent = '✨ Scanning your video for viral moments…';
+    groqChat(prompt).then(function (content) {
+      var hl = CPSmartEdit.parseHighlightResponse(content, segs, { min: Math.max(5, len.min - 5), max: len.max + 30 });
+      prog.classList.add('hidden');
+      renderShorts(hl);
+      if (hl.length) toast('Found ' + hl.length + ' viral moment' + (hl.length === 1 ? '' : 's') + ' — preview or clip any of them.');
+    }).catch(function (e) { prog.classList.add('hidden'); toast('Couldn’t find moments: ' + e.message, true); });
+  }
+  if ($('btn-find-shorts')) $('btn-find-shorts').addEventListener('click', runHighlightFinder);
+
   // =========================================================== MULTICAM ====
   var mcButtons = document.querySelectorAll('#mc-mode button');
   for (var m = 0; m < mcButtons.length; m++) {

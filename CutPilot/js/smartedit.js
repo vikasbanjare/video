@@ -128,6 +128,89 @@
     return out;
   }
 
+  // ====================================================== VIRAL HIGHLIGHTS ==
+  // Long video → short clips. The LLM reads the transcript (segment-indexed) and
+  // returns the most clippable moments — each a self-contained thought that opens
+  // on a hook — scored Opus-style on hook/flow/value. We address SEGMENTS by
+  // index (not raw timestamps the model drifts on) and map back to time here.
+
+  var HL_SYSTEM =
+    'You are a viral short-form video editor who has studied thousands of TikToks, Reels and ' +
+    'YouTube Shorts. You find the moments in a long video that would perform best as standalone ' +
+    'short clips. You only pick self-contained moments that make sense with no other context, ' +
+    'that open with a strong hook, and that end on a clean payoff. You reply with STRICT JSON only.';
+
+  function mmss(sec) {
+    sec = Math.max(0, Math.round(+sec || 0));
+    var m = Math.floor(sec / 60), s = sec % 60;
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  /* Build the {system,user} highlight prompt from sentence-level segments
+     [{text,start,end}]. opts: {min,max} target clip length in seconds, count. */
+  function buildHighlightPrompt(segments, opts) {
+    opts = opts || {};
+    var minS = opts.min || 15, maxS = opts.max || 60, want = opts.count || 8;
+    var segs = (segments || []).filter(function (s) { return s && s.text != null; });
+    var lines = [];
+    for (var i = 0; i < segs.length; i++) {
+      lines.push('[' + i + '] (' + mmss(segs[i].start) + ') ' + String(segs[i].text).replace(/\s+/g, ' ').trim());
+    }
+    var user =
+      'Below is a video transcript, one indexed segment per line: "[index] (m:ss) text".\n' +
+      'Pick the best moments to cut as vertical short clips and return them as INCLUSIVE index ranges.\n\n' +
+      'Each clip MUST:\n' +
+      '- be a self-contained thought that makes sense on its own (no "as I said earlier"),\n' +
+      '- OPEN on a hook (a question, bold claim, surprising line, or strong statement),\n' +
+      '- end on a clean payoff/punchline — never mid-sentence,\n' +
+      '- be roughly ' + minS + '–' + maxS + ' seconds long.\n\n' +
+      'Score each 0–100 on: HOOK (grabs attention in 3s), FLOW (complete arc), VALUE (emotional or useful payoff).\n' +
+      'Return up to ' + want + ' clips, best first. Prefer fewer, stronger clips over many weak ones.\n\n' +
+      'Reply with STRICT JSON only:\n' +
+      '{"clips":[{"from":<int>,"to":<int>,"title":"<catchy 3-6 word title>","hook":"<the opening hook line>","score":<0-100>,"reason":"<why it pops, short>"}]}\n' +
+      'If nothing is clip-worthy, reply {"clips":[]}.\n\n' +
+      'TRANSCRIPT:\n' + lines.join('\n');
+    return { system: HL_SYSTEM, user: user, count: segs.length };
+  }
+
+  /* Parse highlight reply → [{start,end,title,hook,score,reason,text}] sorted by
+     score desc, duration-guarded. Malformed entries are dropped (never throws). */
+  function parseHighlightResponse(text, segments, opts) {
+    opts = opts || {};
+    var minS = opts.min != null ? opts.min : 6, maxS = opts.max != null ? opts.max : 120;
+    var segs = segments || [];
+    var raw = extractJson(text);
+    if (!raw) return [];
+    var obj; try { obj = JSON.parse(raw); } catch (e) { return []; }
+    var clips = obj && obj.clips;
+    if (!clips || !clips.length) return [];
+    var out = [];
+    for (var i = 0; i < clips.length; i++) {
+      var c = clips[i] || {};
+      var from = parseInt(c.from, 10), to = parseInt(c.to, 10);
+      if (isNaN(from) || isNaN(to)) continue;
+      if (from < 0) from = 0;
+      if (to >= segs.length) to = segs.length - 1;
+      if (to < from) continue;
+      if (!segs[from] || !segs[to]) continue;
+      var start = +segs[from].start, end = +segs[to].end, dur = end - start;
+      if (!(dur > 0) || dur < minS || dur > maxS) continue;
+      var score = (c.score != null) ? Math.max(0, Math.min(100, +c.score || 0)) : 50;
+      var bodyTxt = [];
+      for (var k = from; k <= to; k++) bodyTxt.push(String(segs[k].text).trim());
+      out.push({
+        start: start, end: end, dur: dur,
+        title: (c.title ? String(c.title) : 'Clip').slice(0, 60),
+        hook: (c.hook ? String(c.hook) : '').slice(0, 120),
+        score: score,
+        reason: (c.reason ? String(c.reason) : '').slice(0, 120),
+        text: bodyTxt.join(' ')
+      });
+    }
+    out.sort(function (a, b) { return b.score - a.score; });
+    return out;
+  }
+
   /* Body for the Groq (OpenAI-compatible) chat call — main.js curls this. */
   function chatBody(prompt, model) {
     return {
@@ -146,6 +229,9 @@
     buildCleanupPrompt: buildCleanupPrompt,
     extractJson: extractJson,
     parseCleanupResponse: parseCleanupResponse,
+    buildHighlightPrompt: buildHighlightPrompt,
+    parseHighlightResponse: parseHighlightResponse,
+    mmss: mmss,
     chatBody: chatBody
   };
 });
