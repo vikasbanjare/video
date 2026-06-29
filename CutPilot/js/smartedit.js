@@ -42,9 +42,18 @@
       ? 'Lean toward a tighter cut, but never remove a real, on-topic sentence.'
       : 'Strongly bias toward KEEPING. Only cut what is clearly throwaway.';
 
+    // The defining case: a SCRIPT re-recorded many times in one continuous take.
+    var scripted = opts.scripted
+      ? 'IMPORTANT CONTEXT: this is usually a SCRIPT being re-recorded — the speaker reads the same lines ' +
+        'several times without stopping the camera, with off-script talking ("ok again", "wait", "let me redo that", ' +
+        'random chatter) BETWEEN the attempts. Your main job: for every line that is read more than once, KEEP ONLY ' +
+        'THE LAST clean, complete take and cut ALL earlier attempts, AND cut every off-script bit between takes. The ' +
+        'final result must read like ONE clean pass of the script.\n\n'
+      : '';
+
     var user =
       'Below is a transcript as one indexed token per line: "[index] word".\n' +
-      'Find spans that a good editor would CUT, and return them as index ranges.\n\n' +
+      'Find spans that a good editor would CUT, and return them as index ranges.\n\n' + scripted +
       'CUT only these, by category:\n' +
       '- "false_start": the speaker began a phrase, stopped, and restarted it (keep the completed restart, cut the aborted fragment).\n' +
       '- "repetition": the same line was said more than once (a retake) — KEEP THE LAST/best attempt, cut the earlier ones.\n' +

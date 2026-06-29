@@ -5810,15 +5810,30 @@
       if (doSil) { prog.textContent = 'Listening for dead air…'; pSil = detectSilenceCutRanges(clip, opts, !!doFill); }
       else if (doFill) pSil = Promise.resolve(mediaRangesToSeq(fillerMediaRanges(clip, true), clip));
       else pSil = Promise.resolve([]);
-      return pSil.then(function (ranges) {
-        ranges = ranges.slice();
-        if (doTakes && state.transcriptWords && state.transcriptWords.length) {
-          prog.textContent = 'Finding repeated takes…';
+      return pSil.then(function (silRanges) {
+        silRanges = silRanges.slice();
+        var haveT = state.transcriptWords && state.transcriptWords.length;
+        if (!doTakes || !haveT) return { ranges: silRanges, needTranscript: doTakes && !haveT, ai: false };
+
+        function deterministic() {
           var tp = TAKE_PRESETS[strength] || TAKE_PRESETS.balanced;
           var tk = CPTakes.findRepeatedTakes(state.transcriptWords, { minRun: tp.minrun, sim: tp.sim / 100, keep: 'last' });
-          tk.deletes.forEach(function (d) { ranges.push({ start: d.start, end: d.end }); });
+          var out = silRanges.slice();
+          tk.deletes.forEach(function (d) { out.push({ start: d.start, end: d.end }); });
+          return out;
         }
-        return { ranges: ranges, needTranscript: doTakes && !(state.transcriptWords && state.transcriptWords.length) };
+        // AI handles the hard case (a script re-read many times + off-script talk
+        // between takes — keep the last clean take). Falls back to the matcher.
+        if (cpKey() && typeof CPSmartEdit !== 'undefined' && typeof aiCleanupCuts === 'function') {
+          return aiCleanupCuts(state.transcriptWords, { aggressive: (strength === 'strong'), scripted: true }, prog, '✨ AI finding retakes & off-script talk')
+            .then(function (rr) {
+              var out = silRanges.concat(rr.cuts.map(function (c) { return { start: c.start, end: c.end }; }));
+              return { ranges: out, needTranscript: false, ai: true };
+            })
+            .catch(function () { return { ranges: deterministic(), needTranscript: false, ai: false }; });
+        }
+        prog.textContent = 'Finding repeated takes…';
+        return { ranges: deterministic(), needTranscript: false, ai: false };
       });
     }).then(function (r) {
       var ranges = mergeSeqRanges(snapRangesToWords(r.ranges, state.transcriptWords));
@@ -6324,32 +6339,36 @@
     return step();
   }
 
-  function runSmartCleanup() {
-    if (typeof CPSmartEdit === 'undefined') return toast('Smart Cleanup module missing.', true);
-    var words = takesGetWords();
-    if (!words || words.length < 6) return toast('Transcribe your clip first (Transcribe tab) — Smart Cleanup reads the words.', true);
-    // Chunk the transcript so each request stays under the tokens-per-minute
-    // limit (the whole thing in one shot exceeded it). Chunks run in sequence.
+  /* Chunked AI cleanup → cut ranges (sequence time, via the words' own times).
+     opts:{aggressive,scripted}. Shared by the review-first Smart Cleanup button
+     and the one-tap "Clean up my video". Resolves {cuts, truncated, maxw}. */
+  function aiCleanupCuts(words, opts, prog, label) {
+    opts = opts || {};
     var MAXW = 5000;
     var truncated = words.length > MAXW;
     var use = truncated ? words.slice(0, MAXW) : words;
     var chunks = CPSmartEdit.chunk(use, 1000);
-    var aggressive = !!($('sc-aggressive') && $('sc-aggressive').checked);
-    var prog = $('takes-progress'); prog.classList.remove('hidden');
-    processChunks(chunks, function (cw) {
-      var prompt = CPSmartEdit.buildCleanupPrompt(cw, { aggressive: aggressive });
+    return processChunks(chunks, function (cw) {
+      var prompt = CPSmartEdit.buildCleanupPrompt(cw, { aggressive: !!opts.aggressive, scripted: !!opts.scripted });
       return aiChatRetry(prompt, { maxTokens: 2048 }).then(function (content) {
         return CPSmartEdit.parseCleanupResponse(content, cw, { minConfidence: 0 });
       });
-    }, prog, '✨ Reading your transcript with AI').then(function (cuts) {
-      state.takeDeletes = cuts;            // reuse the same review → apply pipeline
-      prog.classList.add('hidden');
-      renderTakes(cuts);
-      if (cuts.length) toast('✨ Smart Cleanup found ' + cuts.length + ' cut' + (cuts.length === 1 ? '' : 's') + (truncated ? ' (first ' + MAXW + ' words)' : '') + ' — review them, then apply.');
-    }).catch(function (e) {
-      prog.classList.add('hidden');
-      toast('Smart Cleanup failed: ' + e.message, true);
+    }, prog, label || '✨ AI is reading your transcript').then(function (cuts) {
+      return { cuts: cuts, truncated: truncated, maxw: MAXW };
     });
+  }
+  function runSmartCleanup() {
+    if (typeof CPSmartEdit === 'undefined') return toast('Smart Cleanup module missing.', true);
+    var words = takesGetWords();
+    if (!words || words.length < 6) return toast('Transcribe your clip first (Transcribe tab) — Smart Cleanup reads the words.', true);
+    var aggressive = !!($('sc-aggressive') && $('sc-aggressive').checked);
+    var prog = $('takes-progress'); prog.classList.remove('hidden');
+    aiCleanupCuts(words, { aggressive: aggressive, scripted: true }, prog, '✨ Reading your transcript with AI').then(function (r) {
+      state.takeDeletes = r.cuts;          // reuse the same review → apply pipeline
+      prog.classList.add('hidden');
+      renderTakes(r.cuts);
+      if (r.cuts.length) toast('✨ Smart Cleanup found ' + r.cuts.length + ' cut' + (r.cuts.length === 1 ? '' : 's') + (r.truncated ? ' (first ' + r.maxw + ' words)' : '') + ' — review them, then apply.');
+    }).catch(function (e) { prog.classList.add('hidden'); toast('Smart Cleanup failed: ' + e.message, true); });
   }
   if ($('btn-smart-cleanup')) $('btn-smart-cleanup').addEventListener('click', runSmartCleanup);
 

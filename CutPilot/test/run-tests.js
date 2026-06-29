@@ -927,6 +927,11 @@ console.log('smartedit.js (AI cleanup)');
   assert(CPSmart.parseCleanupResponse('{"cuts":[]}', words).length === 0, 'empty cuts → nothing removed');
   assert(CPSmart.parseCleanupResponse('{"cuts":[{"from":0,"to":1,"category":"filler","confidence":0.2}]}', words, { minConfidence: 0.5 }).length === 0, 'confidence gate drops low-confidence cuts');
 
+  // scripted-retake mode adds the "keep the last clean take" instruction
+  assert(!/SCRIPT being re-recorded/.test(CPSmart.buildCleanupPrompt(words, {}).user), 'cleanup prompt omits scripted context by default');
+  assert(/SCRIPT being re-recorded/.test(CPSmart.buildCleanupPrompt(words, { scripted: true }).user), 'scripted:true adds the re-record context');
+  assert(/KEEP ONLY[\s\S]*LAST clean/.test(CPSmart.buildCleanupPrompt(words, { scripted: true }).user), 'scripted prompt says keep only the last clean take');
+
   // ---- viral highlight finder (long → shorts) ----
   const segs = [];
   for (let i = 0; i < 12; i++) segs.push({ text: 'sentence number ' + i + ' about the topic', start: i * 5, end: i * 5 + 4.8 });
