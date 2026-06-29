@@ -638,6 +638,26 @@ function CP_makeShort(argsJson) {
   } catch (e) { return CP_fail(e.message); }
 }
 
+/* Import a rendered file and, if possible, build a sequence sized to it (so a
+   vertical render lands as a ready vertical sequence). argsJson:{ path, name }. */
+function CP_importClip(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    try { app.project.importFiles([args.path], true, app.project.rootItem, false); } catch (eImp) {
+      return CP_fail('Could not import the rendered clip: ' + eImp.message);
+    }
+    var item = CP_findProjectItemByMediaPath(app.project.rootItem, args.path);
+    var seqName = args.name || 'Vertical clip';
+    if (item && app.project.createNewSequenceFromClips) {
+      try {
+        var ns = app.project.createNewSequenceFromClips(seqName, [item]);
+        if (ns) { CP_activateSequence(ns); return CP_ok({ imported: true, sequence: seqName }); }
+      } catch (eSeq) {}
+    }
+    return CP_ok({ imported: true, sequence: null });
+  } catch (e) { return CP_fail(e.message); }
+}
+
 // ------------------------------------------------------------- multicam ----
 /*
  * Apply an angle plan to stacked camera tracks (FireCut-style).

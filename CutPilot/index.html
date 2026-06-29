@@ -24,7 +24,7 @@
       </svg>
       <span class="brand-name">Pulse</span><span class="brand-by">by aifloh</span>
     </div>
-    <span class="ver" id="ver">v0.9.230</span>
+    <span class="ver" id="ver">v0.9.231</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -835,6 +835,22 @@
     <button id="btn-find-shorts" class="hero-btn alt">✨ Find viral moments</button>
     <div id="shorts-progress" class="progress hidden"></div>
     <div id="shorts-results"></div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="step-head"><span class="step-title">🎙 Speaker-aware vertical</span><span class="badge">podcast · multi-mic</span></div>
+      <p class="hint">For 2–3 people each on their own mic/track: Pulse follows whoever’s talking —
+         a single centered speaker when one holds the floor, <b>split-screen</b> during crosstalk.
+         Uses your separate audio tracks + the aspect ratio chosen above, and renders a finished
+         vertical clip back into your project.</p>
+      <label class="fld-full">People are arranged…
+        <select id="sr-arrange">
+          <option value="lr" selected>Side by side · left / right (2 people)</option>
+          <option value="thirds">Across · left / centre / right (3 people)</option>
+        </select>
+      </label>
+      <button id="btn-speaker-reframe" class="hero-btn" style="margin-top:8px">🎙 Build speaker-aware vertical</button>
+      <div id="sr-progress" class="progress hidden"></div>
+    </div>
   </section>
 
   <!-- ============================== MULTICAM ============================= -->
@@ -1051,7 +1067,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.9.230 · auto-edit · multicam · captions · chapters · organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.9.231 · auto-edit · multicam · captions · chapters · organize</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->
@@ -1180,6 +1196,7 @@
   <script src="js/sfx.js"></script>
   <script src="js/takes.js"></script>
   <script src="js/smartedit.js"></script>
+  <script src="js/reframe.js"></script>
   <script src="js/transcript.js"></script>
   <script src="js/fonts.js"></script>
   <script src="js/command.js"></script>

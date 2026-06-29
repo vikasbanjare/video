@@ -6222,6 +6222,100 @@
   }
   if ($('btn-find-shorts')) $('btn-find-shorts').addEventListener('click', runHighlightFinder);
 
+  // ---- Speaker-aware vertical (podcast, separate mics) ----
+  function regionsForArrange(a) {
+    if (a === 'thirds') return [{ x: 0, y: 0, w: 1 / 3, h: 1 }, { x: 1 / 3, y: 0, w: 1 / 3, h: 1 }, { x: 2 / 3, y: 0, w: 1 / 3, h: 1 }];
+    return [{ x: 0, y: 0, w: 0.5, h: 1 }, { x: 0.5, y: 0, w: 0.5, h: 1 }];   // left / right
+  }
+  /* Read the source video's pixel size from ffmpeg's banner (ffprobe isn't bundled). */
+  function probeDims(ff, path) {
+    return runFfmpeg(ff, ['-hide_banner', '-i', path], 20000).then(function (r) {
+      var m = /,\s*(\d{2,5})x(\d{2,5})/.exec(r.stderr || '');
+      return m ? { w: +m[1], h: +m[2] } : { w: 1920, h: 1080 };
+    });
+  }
+  /* Render each layout segment with ffmpeg, then concat into one vertical file. */
+  function renderReframe(ff, ctx, regions, target, rt, prog) {
+    var fs = nodeReq('fs'), os = nodeReq('os'), pathMod = nodeReq('path');
+    var dir = pathMod.join(os.tmpdir(), 'pulse-reframe-' + Date.now());
+    try { fs.mkdirSync(dir); } catch (e) {}
+    var segFiles = [], chain = Promise.resolve();
+    ctx.plan.forEach(function (seg, i) {
+      chain = chain.then(function () {
+        prog.textContent = 'Rendering piece ' + (i + 1) + '/' + ctx.plan.length + '…';
+        var sf = CPReframe.segmentFilter(seg, regions, ctx.src, target);
+        var outF = pathMod.join(dir, 'seg_' + i + '.mp4');
+        var args = ['-y', '-ss', seg.start.toFixed(3), '-to', seg.end.toFixed(3), '-i', ctx.source,
+          '-filter_complex', sf.filter, '-map', '[' + sf.out + ']', '-map', '0:a?',
+          '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p',
+          '-c:a', 'aac', '-ar', '48000', '-r', '30', '-movflags', '+faststart', outF];
+        return runFfmpeg(ff, args, 180000).then(function (rr) {
+          if (rr.error || (rr.code && rr.code !== 0)) throw new Error('render piece ' + (i + 1) + ' failed: ' + String(rr.stderr || rr.error || '').slice(-140));
+          segFiles.push(outF);
+        });
+      });
+    });
+    return chain.then(function () {
+      var listPath = pathMod.join(dir, 'list.txt');
+      fs.writeFileSync(listPath, segFiles.map(function (f) { return "file '" + f.replace(/'/g, "'\\''") + "'"; }).join('\n'));
+      var outPath = pathMod.join(dir, 'pulse-vertical-' + rt.num + 'x' + rt.den + '.mp4');
+      return runFfmpeg(ff, ['-y', '-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', outPath], 180000).then(function (rr) {
+        if (rr.error || (rr.code && rr.code !== 0)) {
+          return runFfmpeg(ff, ['-y', '-f', 'concat', '-safe', '0', '-i', listPath, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-c:a', 'aac', outPath], 180000).then(function (r2) {
+            if (r2.error || (r2.code && r2.code !== 0)) throw new Error('stitch failed: ' + String(r2.stderr || r2.error || '').slice(-140));
+            return outPath;
+          });
+        }
+        return outPath;
+      });
+    });
+  }
+  function runSpeakerReframe() {
+    var ff = resolveFfmpeg();
+    if (!ff) return toast('Speaker-aware reframe needs ffmpeg (Settings → ffmpeg path).', true);
+    if (typeof CPReframe === 'undefined' || typeof CPMulticam === 'undefined') return toast('Reframe module missing.', true);
+    var arrange = ($('sr-arrange') && $('sr-arrange').value) || 'lr';
+    var regions = regionsForArrange(arrange), nPeople = regions.length;
+    var rt = shRatio() || { num: 9, den: 16, label: '9:16' };
+    var target = CPReframe.targetSize(rt.label);
+    var prog = $('sr-progress'); prog.classList.remove('hidden'); prog.textContent = 'Reading your audio tracks…';
+    CPBridge.callHost('CP_getAudioTracks').then(function (r) {
+      var tracks = (r.audioTracks || []).filter(function (t) { return t.mediaPath; });
+      if (tracks.length < nPeople) throw new Error('Found ' + tracks.length + ' mic track(s) with media, but this layout needs ' + nPeople + '. Put each speaker on their own audio track — or use a highlight’s “Make clip” (single-subject Auto Reframe) instead.');
+      tracks = tracks.slice(0, nPeople);
+      return CPBridge.callHost('CP_getSelectedClip').then(
+        function (s) { return (s && s.clip) ? s : CPBridge.callHost('CP_getTranscribeSource'); },
+        function () { return CPBridge.callHost('CP_getTranscribeSource'); }
+      ).then(function (s) {
+        if (!s || !s.clip || !s.clip.mediaPath) throw new Error('Put the podcast video on the timeline (select it) so I know which video to reframe.');
+        return { tracks: tracks, source: s.clip.mediaPath };
+      });
+    }).then(function (ctx) {
+      prog.textContent = 'Detecting who’s talking…';
+      var step = 0.2;
+      return Promise.all(ctx.tracks.map(function (t) { return CPAudio.ffmpegEnvelope(t.mediaPath, ff, step); })).then(function (envs) {
+        ctx.grids = envs.map(function (e) { return e.samples.map(function (s) { return s.db; }); });
+        ctx.dur = Math.max.apply(null, envs.map(function (e) { return e.duration || 0; }).concat([0]));
+        ctx.step = step; return ctx;
+      });
+    }).then(function (ctx) {
+      var active = CPMulticam.loudnessToRegions(ctx.grids, ctx.step, {});
+      ctx.plan = CPReframe.layoutPlan(active, ctx.dur, { holdSec: 3, step: ctx.step });
+      if (!ctx.plan.length) throw new Error('Couldn’t detect speaker turns — make sure each mic track actually has that person’s audio.');
+      prog.textContent = 'Measuring the video…';
+      return probeDims(ff, ctx.source).then(function (d) { ctx.src = d; return ctx; });
+    }).then(function (ctx) {
+      return renderReframe(ff, ctx, regions, target, rt, prog);
+    }).then(function (outPath) {
+      prog.textContent = 'Importing into Premiere…';
+      return CPBridge.callHost('CP_importClip', { path: outPath, name: 'Pulse vertical · ' + rt.label });
+    }).then(function (res) {
+      prog.classList.add('hidden');
+      toast('🎙 Speaker-aware ' + rt.label + ' clip built' + (res && res.sequence ? ' — sequence “' + res.sequence + '” is ready in your project.' : ' — imported into your project.'));
+    }).catch(function (e) { prog.classList.add('hidden'); toast('Speaker reframe failed: ' + e.message, true); });
+  }
+  if ($('btn-speaker-reframe')) $('btn-speaker-reframe').addEventListener('click', runSpeakerReframe);
+
   // =========================================================== MULTICAM ====
   var mcButtons = document.querySelectorAll('#mc-mode button');
   for (var m = 0; m < mcButtons.length; m++) {

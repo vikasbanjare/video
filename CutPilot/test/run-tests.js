@@ -947,6 +947,39 @@ console.log('smartedit.js (AI cleanup)');
   assert(two.length === 2 && two[0].score === 95, 'highlights sorted by score, best first');
 }
 
+// ------------------------------------ reframe: speaker-aware vertical clip ----
+console.log('reframe.js (speaker-aware vertical)');
+{
+  const CPReframe = require(path.join(__dirname, '..', 'js', 'reframe.js'));
+  // 2 speakers: A holds the floor 0–5s, B holds 5–10s, both talk (crosstalk) 10–11s
+  const active = [
+    [{ start: 0, end: 5 }, { start: 10, end: 11 }],
+    [{ start: 5, end: 10 }, { start: 10, end: 11 }]
+  ];
+  const plan = CPReframe.layoutPlan(active, 11, { holdSec: 3, step: 0.2, minSeg: 0.6 });
+  assert(plan.length === 3, 'layout: single-A, single-B, split-crosstalk (got ' + plan.length + ')');
+  assert(plan[0].mode === 'single' && plan[0].speaker === 0, 'layout: speaker A holds the floor → single A');
+  assert(plan[1].mode === 'single' && plan[1].speaker === 1, 'layout: speaker B holds the floor → single B');
+  assert(plan[2].mode === 'split', 'layout: crosstalk → split-screen');
+
+  const blip = CPReframe.layoutPlan([[{ start: 0, end: 1 }], [{ start: 1, end: 6 }]], 6, { holdSec: 3 });
+  assert(blip[0].mode === 'split', 'layout: a sub-holdSec solo blip stays split (no flicker cut)');
+
+  const src = { w: 1920, h: 1080 }, tgt = { w: 1080, h: 1920 };
+  const regions = [{ x: 0, y: 0, w: 0.5, h: 1 }, { x: 0.5, y: 0, w: 0.5, h: 1 }];
+  const sf = CPReframe.segmentFilter({ mode: 'single', speaker: 1 }, regions, src, tgt);
+  assert(/crop=960:1080:960:0/.test(sf.filter), 'single filter crops speaker 1’s half of the 1920 source');
+  assert(/scale=1080:1920/.test(sf.filter) && /\[v\]$/.test(sf.filter), 'single filter covers the 1080x1920 target → [v]');
+
+  const spl = CPReframe.segmentFilter({ mode: 'split', speaker: null }, regions, src, tgt);
+  assert(/\[0:v\]split=2/.test(spl.filter), 'split filter splits the source into 2 copies');
+  assert(/vstack=inputs=2\[v\]/.test(spl.filter), 'split filter vstacks both speaker cells');
+
+  const px = CPReframe.regionPx({ x: 0.9, y: 0, w: 0.5, h: 1 }, { w: 1000, h: 1000 });
+  assert(px.x === 900 && px.w === 100, 'regionPx clamps a region that runs past the right edge');
+  assert(CPReframe.targetSize('1:1').h === 1080 && CPReframe.targetSize('9:16').h === 1920, 'targetSize maps aspect labels to pixels');
+}
+
 // --------------------------------------------- transcript: filler removal ----
 console.log('transcript.js (filler removal)');
 {
