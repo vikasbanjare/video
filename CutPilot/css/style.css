@@ -1,35 +1,36 @@
-/* Pulse Studio — two themes (Light / Dark), cool blue→cyan accent */
+/* Pulse Studio — lime "C6F24E" accent on near-black (Space/Hanken Grotesk).
+   --accent is a LIGHT lime, so anything sitting ON it uses --accent-fg (dark). */
 :root {
-  /* Brand accent — shared by both themes (no orange/purple). */
-  --clay: #3d7dff;
-  --accent: #3d7dff;
-  --grad: linear-gradient(135deg, #4f8cff 0%, #3d7dff 55%, #34c3f0 100%);
-  --grad-soft: linear-gradient(135deg, rgba(61,125,255,.22), rgba(52,195,240,.10));
-  --ok: #2bbf91;
+  --clay: #C6F24E;
+  --accent: #C6F24E;
+  --accent-fg: #14180A;                 /* dark text/icon that sits ON the lime accent */
+  --grad: linear-gradient(135deg, #D4FF6E, #A8E63C);
+  --grad-soft: linear-gradient(135deg, rgba(198,242,78,.20), rgba(168,230,60,.08));
+  --ok: #8fd14f;
   --danger: #ef6f6a;
   --r: 14px;
 }
-/* ---- DARK theme: cool charcoal + blue accent ---- */
+/* ---- DARK theme (the design) ---- */
 body.theme-dark {
-  --bg: #0c0e14; --bg2: #12151e; --card: #161a24; --card2: #1d2230; --card3: #2a3142;
-  --card-grad: linear-gradient(180deg, #1a1f2b 0%, #12151d 100%);
-  --line: rgba(190,205,235,.09); --line2: rgba(190,205,235,.16);
-  --fg: #eef1f7; --dim: #99a2b4; --title: #e7ecf5; --field: #1d2230;
-  --accent-text: #84b3ff; --accent-soft: rgba(61,125,255,.18);
-  --accent-glow: rgba(61,125,255,.60); --accent-line: rgba(61,125,255,.50);
-  --shadow-sm: 0 1px 2px rgba(0,0,0,.45);
-  --shadow: 0 10px 26px -12px rgba(0,0,0,.6);
+  --bg: #0E0F13; --bg2: #121419; --card: #16181E; --card2: #1B1E25; --card3: #232733;
+  --card-grad: linear-gradient(180deg, #181b22 0%, #131519 100%);
+  --line: rgba(255,255,255,.07); --line2: rgba(255,255,255,.11);
+  --fg: #F2F3F5; --dim: #7E8493; --title: #F2F3F5; --field: #16181E;
+  --accent-text: #C6F24E; --accent-soft: rgba(198,242,78,.13);
+  --accent-glow: rgba(198,242,78,.50); --accent-line: rgba(198,242,78,.42);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.5);
+  --shadow: 0 14px 34px -16px rgba(0,0,0,.7);
 }
-/* ---- LIGHT theme: Studio (clean white) + blue accent ---- */
+/* ---- LIGHT theme: clean white + lime accent ---- */
 body.theme-light {
-  --bg: #f4f6fa; --bg2: #e8ecf3; --card: #ffffff; --card2: #eef1f6; --card3: #ffffff;
+  --bg: #f5f7f2; --bg2: #e9efe1; --card: #ffffff; --card2: #f1f4ec; --card3: #ffffff;
   --card-grad: #ffffff;
-  --line: rgba(20,30,60,.10); --line2: rgba(20,30,60,.15);
-  --fg: #191d27; --dim: #6a7282; --title: #242a36; --field: #f3f5f9;
-  --accent-text: #1f6feb; --accent-soft: rgba(61,125,255,.12);
-  --accent-glow: rgba(61,125,255,.38); --accent-line: rgba(61,125,255,.42);
-  --shadow-sm: 0 1px 2px rgba(20,30,60,.10);
-  --shadow: 0 10px 26px -14px rgba(20,30,60,.22);
+  --line: rgba(20,30,10,.10); --line2: rgba(20,30,10,.16);
+  --fg: #191d18; --dim: #6a7268; --title: #242a22; --field: #f3f6ee;
+  --accent-text: #5a7d18; --accent-soft: rgba(168,230,60,.20);
+  --accent-glow: rgba(168,230,60,.45); --accent-line: rgba(168,230,60,.5);
+  --shadow-sm: 0 1px 2px rgba(20,30,10,.10);
+  --shadow: 0 10px 26px -14px rgba(20,30,10,.20);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -45,6 +46,13 @@ body {
   height: 100vh;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Display font (Space Grotesk) for the wordmark, section headers, primary
+   actions, the selected-style name and numeric steppers; Hanken Grotesk = body. */
+.brand-name, .step-title, .ver, .hero-btn, .ms-name, .ms-live-tag,
+.seg-control.mc-count button, .wc-num, #ms-wc-num, #mg-wc-num, .mp-snum {
+  font-family: "Space Grotesk", "Hanken Grotesk", sans-serif;
 }
 
 /* ------------------------------------------------------------ header --- */
@@ -103,7 +111,7 @@ header::after { content: ''; position: absolute; left: 14px; right: 14px; bottom
 .step-head:first-child { margin-top: 0; }
 .step-num {
   width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center;
-  border-radius: 50%; background: var(--grad); color: #fff; font-size: 11px; font-weight: 800; flex: none;
+  border-radius: 50%; background: var(--grad); color: var(--accent-fg); font-size: 11px; font-weight: 800; flex: none;
   box-shadow: 0 3px 10px -2px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,.3);
 }
 .step-title { font-weight: 800; font-size: 14px; letter-spacing: -0.2px; }
@@ -138,8 +146,19 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
 .row { display: flex; gap: 8px; align-items: center; margin: 8px 0 0; }
 .row.tight { margin-top: 9px; }
 .row > input { flex: 1; }
-.check { display: flex; align-items: flex-start; gap: 7px; color: var(--fg); font-weight: 500; margin-top: 8px; line-height: 1.35; }
-.check input { accent-color: var(--clay); width: 15px; height: 15px; flex: none; margin-top: 1px; }
+.check { display: flex; align-items: center; gap: 9px; color: var(--fg); font-weight: 500; margin-top: 8px; line-height: 1.35; }
+/* checkboxes render as pill switches (the design's signature toggle) */
+.check input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none; flex: none; margin: 0; cursor: pointer;
+  width: 36px; height: 21px; border-radius: 99px; background: var(--card3);
+  border: 1px solid var(--line2); position: relative; transition: background .15s, border-color .15s;
+}
+.check input[type="checkbox"]::after {
+  content: ''; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px;
+  border-radius: 50%; background: #fff; transition: left .15s; box-shadow: 0 1px 2px rgba(0,0,0,.4);
+}
+.check input[type="checkbox"]:checked { background: var(--accent); border-color: transparent; }
+.check input[type="checkbox"]:checked::after { left: 18px; }
 /* pack standalone toggles left-to-right so the panel is shorter / less scrolling */
 .check-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 14px; align-items: start; }
 .check-grid .check { margin-top: 7px; }
@@ -147,13 +166,13 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
 
 /* ------------------------------------------------------------ buttons --- */
 .hero-btn {
-  width: 100%; padding: 13px 14px; background: var(--grad); color: #fff; border: none;
+  width: 100%; padding: 13px 14px; background: var(--grad); color: var(--accent-fg); border: none;
   border-radius: 12px; font-size: 14px; font-weight: 700; letter-spacing: -0.1px; cursor: pointer;
   box-shadow: 0 8px 22px -6px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,.28);
   transition: transform .12s, box-shadow .12s, filter .12s, opacity .12s;
   margin: 4px 0 9px;
 }
-.hero-btn .dim { color: rgba(255,255,255,.85); font-weight: 600; }
+.hero-btn .dim { color: rgba(20,24,10,.66); font-weight: 600; }
 .hero-btn:hover { transform: translateY(-1px); filter: brightness(1.06); box-shadow: 0 12px 26px -6px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,.3); }
 .hero-btn:active { transform: translateY(0); }
 .hero-btn:disabled { opacity: .45; cursor: default; transform: none; box-shadow: none; }
@@ -198,7 +217,7 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
   color: var(--dim); font-size: 10px; font-weight: 700; cursor: pointer; white-space: nowrap; transition: all .12s;
 }
 .cat-chip:hover { color: var(--fg); }
-.cat-chip.on { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-text); }
+.cat-chip.on { background: var(--accent); border-color: transparent; color: var(--accent-fg); }
 
 /* ---------- caption template gallery — clean "text presets" cards ----------
    Each card is just a small label on top + one dark rounded preview box (the
@@ -331,7 +350,7 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
 }
 .wc-btn:hover { background: var(--accent-soft); border-color: var(--accent); }
 .wc-bar b { font-size: 15px; font-weight: 800; min-width: 22px; text-align: center; }
-#wc-full.on, #ms-wc-full.on, #mg-wc-full.on { background: var(--grad); color: #fff; border-color: transparent; }
+#wc-full.on, #ms-wc-full.on, #mg-wc-full.on { background: var(--grad); color: var(--accent-fg); border-color: transparent; }
 .sync-line { margin: 0 0 8px; font-weight: 600; font-size: 12px; }
 
 /* ------------------------------------------------- transcript bar --- */
@@ -440,7 +459,7 @@ input[type="range"]::-webkit-slider-thumb {
   color: var(--dim); font-size: 11px; font-weight: 700; cursor: pointer; transition: all .12s;
 }
 .anim-chip:hover { color: var(--fg); }
-.anim-chip.on { background: var(--grad); border-color: transparent; color: #fff; }
+.anim-chip.on { background: var(--grad); border-color: transparent; color: var(--accent-fg); }
 
 .style-rail { display: flex; gap: 9px; overflow-x: auto; padding: 2px 1px 8px; }
 .style-card { flex: 0 0 100px; background: var(--card); border: 1.5px solid var(--line); border-radius: 12px; padding: 8px 7px 7px; cursor: pointer; text-align: center; }
@@ -451,7 +470,7 @@ input[type="range"]::-webkit-slider-thumb {
 /* segmented + mapping */
 .seg-control { display: flex; gap: 3px; background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 3px; margin-top: 9px; }
 .seg-control button { flex: 1; padding: 7px 2px; background: transparent; border: none; border-radius: 8px; color: var(--dim); font-size: 10.5px; font-weight: 700; cursor: pointer; transition: color .12s, background .12s; }
-.seg-control button.on { background: var(--card3); color: var(--accent-text); box-shadow: var(--shadow-sm); }
+.seg-control button.on { background: var(--accent); color: var(--accent-fg); box-shadow: var(--shadow-sm); }
 .seg-control.sub { margin: 0 0 10px; }
 .seg-control.mini { margin-top: 4px; }
 .seg-control.wrap { flex-wrap: wrap; gap: 5px; }
@@ -469,7 +488,7 @@ input[type="range"]::-webkit-slider-thumb {
 
 .map-label { font-size: 11px; font-weight: 700; color: var(--dim); margin: 6px 0 7px; }
 .map-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
-.map-row .map-cam { flex: none; width: 36px; font-size: 11px; font-weight: 800; color: #fff; background: var(--grad); border-radius: 8px; padding: 5px 0; text-align: center; }
+.map-row .map-cam { flex: none; width: 36px; font-size: 11px; font-weight: 800; color: var(--accent-fg); background: var(--grad); border-radius: 8px; padding: 5px 0; text-align: center; }
 .map-row select { margin: 0; flex: 1; }
 
 .alt-block { background: var(--card2); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 11px; }
@@ -669,7 +688,7 @@ input[type="range"]::-webkit-slider-thumb {
 .seg-list { max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
 .seg-item { display: flex; align-items: center; gap: 8px; padding: 5px 9px; border-radius: 9px; font-size: 11px; font-variant-numeric: tabular-nums; background: var(--card2); }
 .seg-item .dur { margin-left: auto; color: var(--dim); }
-.seg-item .angle-chip { background: var(--grad); color: #fff; border-radius: 6px; padding: 1px 8px; font-size: 9.5px; font-weight: 800; }
+.seg-item .angle-chip { background: var(--grad); color: var(--accent-fg); border-radius: 6px; padding: 1px 8px; font-size: 9.5px; font-weight: 800; }
 .seg-item input { accent-color: var(--clay); }
 
 details.advanced { margin-top: 12px; }
@@ -882,7 +901,7 @@ footer { border-top: 1px solid var(--line); background: var(--card); max-height:
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #fff;
+  color: var(--accent-fg);
   background: var(--grad);
   padding: 2px 7px;
   border-radius: 99px;
