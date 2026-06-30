@@ -5110,7 +5110,18 @@
   }
   function renderMogrtPreview() {
     var cv = _mogrtPrevCanvas;
-    if (!cv || !cv.parentNode || typeof CPRender === 'undefined' || !CPRender.drawFrame) return;
+    if (!cv || typeof CPRender === 'undefined' || !CPRender.drawFrame) return;
+    // First edit in the action sheet → swap the static REAL render for this live
+    // "your colours" canvas, so the user actually SEES the colour/font change they
+    // just made (the baked render can't show custom colours).
+    if (state.mogrtShowingReal && cv.id === 'ms-live-canvas') {
+      var _an = $('ms-anim'), _th = $('ms-thumb'), _lp = $('ms-live-preview');
+      if (_an) { try { _an.pause(); } catch (eP) {} _an.classList.add('hidden'); _an.removeAttribute('src'); }
+      if (_th) _th.classList.add('hidden');
+      if (_lp) _lp.classList.remove('hidden');
+      state.mogrtShowingReal = false;
+    }
+    if (!cv.parentNode) return;
     var pv = state.mogrtPrev || {};
     var par = cv.parentNode;
     var W = par.clientWidth || 280, Hpx = par.clientHeight || 96;
@@ -5198,17 +5209,13 @@
       state.mogrtPrev = { fill: null, highlight: null, box: null, firstColor: null, blobFill: null, font: 'Arial', caps: false, bold: false };
       var sticky = document.getElementById('ms-live-preview');
       if (sticky && box.id === 'ms-customizer') {
-        if (state.mogrtShowingReal) {
-          // the template's REAL render is already pinned above as the preview — do
-          // NOT add the colour-approximation canvas (it would only disagree with
-          // the real look). Colour/font edits still apply when the caption is placed.
-          sticky.classList.add('hidden');
-          _mogrtPrevCanvas = null;
-        } else {
-          // no baked render → use the live "your colours" canvas as the preview.
-          sticky.classList.remove('hidden');
-          _mogrtPrevCanvas = document.getElementById('ms-live-canvas');
-        }
+        // ALWAYS wire the live "your colours" canvas so edits can be shown — but
+        // keep it hidden behind the template's REAL render until the user actually
+        // changes something. The first edit calls renderMogrtPreview(), which then
+        // reveals this canvas so you SEE your colour/font change (the static real
+        // render can't show custom colours). box == real render until you edit.
+        _mogrtPrevCanvas = document.getElementById('ms-live-canvas');
+        sticky.classList.toggle('hidden', !!state.mogrtShowingReal);
       } else {
         // editor tab: an inline preview frame
         var pvFrame = document.createElement('div'); pvFrame.className = 'mogrt-prev-frame';
@@ -5224,7 +5231,10 @@
       } else {
         renderFromInspect(box, props);            // fallback: types guessed from values
       }
-      renderMogrtPreview();                        // first paint with the seeded colours
+      // editor tab: always paint its own inline canvas. Action sheet: paint the
+      // live canvas only if it's the active preview; if the real render is showing,
+      // leave it until the first edit (renderMogrtPreview reveals the canvas then).
+      if (box.id !== 'ms-customizer' || !state.mogrtShowingReal) renderMogrtPreview();
       var note = document.createElement('p'); note.className = 'hint';
       note.textContent = 'These are the template\'s own Essential Graphics controls — edit here, then "Add template captions". Every caption stays editable in Premiere (Window → Essential Graphics) too. Colours, size, position & toggles are reliable; font applies if it\'s installed.';
       box.appendChild(note);

@@ -499,7 +499,7 @@ input[type="range"]::-webkit-slider-thumb {
 /* big, always-visible live preview pinned below the sheet header while editing */
 .ms-live-preview {
   position: -webkit-sticky; position: sticky; top: 34px; z-index: 2;
-  width: 100%; height: 150px; margin: 8px 0 4px; border-radius: 14px; overflow: hidden;
+  width: 100%; height: 132px; margin: 8px 0 6px; border-radius: 14px; overflow: hidden;
   background: radial-gradient(80% 120% at 50% 0%, var(--accent-soft), transparent 70%),
               linear-gradient(150deg, #171b26, #20283a 55%, #1a2030);
   box-shadow: 0 6px 18px -8px rgba(0,0,0,.7), inset 0 0 60px rgba(0,0,0,.5);
@@ -624,9 +624,12 @@ input[type="range"]::-webkit-slider-thumb {
    Graphics: titled panel, full-width section dividers, and compact controls laid
    out two-per-row (label on top, control fills the cell) so there's little
    scrolling. Used by both the editor tab (#tpl-params) and the action sheet. */
-.tpl-params { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 0; align-items: start;
+/* ONE control per row (was a cramped 2-up grid that made buttons hard to find).
+   Each row is full-width with a clear label on top and a divider, so the
+   customization controls are easy to scan and tap. */
+.tpl-params { display: grid; grid-template-columns: 1fr; gap: 0; align-items: stretch;
   background: var(--bg2); border: 1px solid var(--line2); border-radius: 12px;
-  padding: 0 0 8px; margin-bottom: 11px; overflow: visible; }
+  padding: 0 0 6px; margin-bottom: 11px; overflow: visible; }
 /* full-width bands span both columns */
 .tpl-params > .mp-head { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px;
   font-size: 11.5px; font-weight: 800; color: var(--fg); background: var(--card2);
@@ -639,15 +642,18 @@ input[type="range"]::-webkit-slider-thumb {
 .tpl-params > .mp-sub:first-of-type { border-top: none; }
 .tpl-params > .hint { grid-column: 1 / -1; padding: 8px 12px 0; margin: 0; border-top: 1px solid var(--line); }
 /* two-per-row property cells */
-.mp-row { display: flex; flex-direction: column; align-items: stretch; gap: 3px;
-  margin: 0; padding: 5px 12px; min-height: 0; border: none; }
-.mp-row .mp-name { font-size: 11px; color: var(--fg); opacity: .92; white-space: normal;
-  line-height: 1.25; overflow: visible; }
-.mp-row .mp-ctrl { align-self: stretch; }
+.mp-row { display: flex; flex-direction: column; align-items: stretch; gap: 6px;
+  margin: 0; padding: 10px 14px; min-height: 0; border-bottom: 1px solid var(--line); }
+.mp-row:last-child { border-bottom: none; }
+.mp-row .mp-name { font-size: 12px; font-weight: 600; color: var(--fg); opacity: .96; white-space: normal;
+  line-height: 1.3; overflow: visible; }
+.mp-row .mp-ctrl { align-self: stretch; min-height: 30px; }
+.mp-row input, .mp-row select, .mp-row .cp-dd-btn { font-size: 12px; }
 .mp-row input[type="number"] { width: 100%; }
 .mp-row select.mp-ctrl { max-width: none; width: 100%; }
-.mp-color { display: flex; align-items: center; width: 100%; gap: 6px; }
-.mp-color .mp-hex { flex: 1 1 auto; width: auto; min-width: 0; font: 11px ui-monospace, "JetBrains Mono", monospace; text-transform: uppercase; }
+.mp-color { display: flex; align-items: center; width: 100%; gap: 8px; }
+.mp-color .cp-swatch { width: 48px; height: 30px; border-radius: 8px; }
+.mp-color .mp-hex { flex: 1 1 auto; width: auto; min-width: 0; height: 30px; box-sizing: border-box; font: 12px ui-monospace, "JetBrains Mono", monospace; text-transform: uppercase; }
 .tpl-params > .mp-row-wide { grid-column: 1 / -1; }
 .mp-slider { display: flex; align-items: center; width: 100%; gap: 6px; }
 .mp-slider input[type="range"] { flex: 1 1 auto; width: auto; min-width: 0; }
