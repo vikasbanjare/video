@@ -5381,21 +5381,37 @@
             state.mogrtPrev.caps = !!(blob && blob.fontFSAllCapsValue && blob.fontFSAllCapsValue[0]);
             state.mogrtPrev.bold = !!(blob && blob.fontFSBoldValue && blob.fontFSBoldValue[0]);
           }
-          mpAddFontSelect(box, 'Font', (blob && blob.fontEditValue && blob.fontEditValue[0]) || '', function (v) { richStyle().font = v || null; if (state.mogrtPrev) { state.mogrtPrev.font = mogrtFontFamily(v) || state.mogrtPrev.font; renderMogrtPreview(); } });
-          // Only offer the blob's text colour when the blob actually carries a
-          // fill field; templates like the Subtitle_* set text colour through a
-          // dedicated "Text Color" param instead (shown below), so a blob colour
-          // row here would do nothing and confuse.
+          // Font = FAMILY + WEIGHT + ITALIC, combined into the PostScript name the
+          // template expects (e.g. Poppins + Light → "Poppins-Light"). Pick the
+          // font first, THEN pick the weight (Light/Regular/Medium/SemiBold/Bold/
+          // Black) and Italic — exactly the "second option for the font" the user
+          // asked for. Picking a family keeps the chosen weight; picking a weight
+          // rebuilds the name.
+          var startPs = (blob && blob.fontEditValue && blob.fontEditValue[0]) || '';
+          var WEIGHTS = ['Thin', 'ExtraLight', 'Light', 'Regular', 'Medium', 'SemiBold', 'Bold', 'ExtraBold', 'Black'];
+          var fFamily = (startPs.split('-')[0]) || '';
+          var fWeight = 'Regular', fItalic = !!(blob && blob.fontFSItalicValue && blob.fontFSItalicValue[0]);
+          (function () { var sfx = (startPs.split('-')[1] || ''); for (var w = WEIGHTS.length - 1; w >= 0; w--) { if (sfx.toLowerCase().indexOf(WEIGHTS[w].toLowerCase()) >= 0) { fWeight = WEIGHTS[w]; break; } } if (/italic/i.test(sfx)) fItalic = true; })();
+          function applyFont() {
+            var fam = (fFamily || 'Inter').replace(/\s+/g, '');
+            var w = (fWeight === 'Regular') ? (fItalic ? 'Italic' : 'Regular') : (fWeight + (fItalic ? 'Italic' : ''));
+            var ps = fam + '-' + w;
+            richStyle().font = ps;
+            richStyle().bold = (fWeight === 'Bold' || fWeight === 'ExtraBold' || fWeight === 'Black');
+            richStyle().italic = fItalic;
+            if (state.mogrtPrev) { state.mogrtPrev.font = mogrtFontFamily(ps) || fFamily; state.mogrtPrev.bold = richStyle().bold; renderMogrtPreview(); }
+          }
+          mpAddFontSelect(box, 'Font', startPs, function (v) { if (v) { fFamily = (String(v).split('-')[0]) || fFamily; applyFont(); } });
+          mpAddSelect(box, 'Weight', WEIGHTS.map(function (x) { return { value: x, label: x }; }), fWeight, function (v) { fWeight = v || 'Regular'; applyFont(); });
+          mpAddSlider(box, 'Font size', Math.round((richStyle().sizeScale || 1) * 100), 50, 300, function (v) { richStyle().sizeScale = (parseFloat(v) || 100) / 100; });
           if (blob && (blob.fillColorEditValue || blob.fontFillColorEditValue || blob.FillColorEditValue)) {
             // seed as a LOW-priority fallback (a dedicated "Text Color" colour
             // control, when present, is the real editable text colour and wins).
             if (state.mogrtPrev && state.mogrtPrev.blobFill == null) state.mogrtPrev.blobFill = readBlobFill(blob);
             mpAddColor(box, 'Text colour', readBlobFill(blob), function (v) { richStyle().fill = v; if (state.mogrtPrev) { state.mogrtPrev.fill = v; renderMogrtPreview(); } });
           }
-          mpAddSlider(box, 'Overall size %', Math.round((richStyle().sizeScale || 1) * 100), 50, 300, function (v) { richStyle().sizeScale = (parseFloat(v) || 100) / 100; });
           mpAddCheck(box, 'ALL CAPS', !!(blob && blob.fontFSAllCapsValue && blob.fontFSAllCapsValue[0]), function (v) { richStyle().caps = v; if (state.mogrtPrev) { state.mogrtPrev.caps = v; renderMogrtPreview(); } });
-          mpAddCheck(box, 'Bold', !!(blob && blob.fontFSBoldValue && blob.fontFSBoldValue[0]), function (v) { richStyle().bold = v; if (state.mogrtPrev) { state.mogrtPrev.bold = v; renderMogrtPreview(); } });
-          mpAddCheck(box, 'Italic', !!(blob && blob.fontFSItalicValue && blob.fontFSItalicValue[0]), function (v) { richStyle().italic = v; });
+          mpAddCheck(box, 'Italic', fItalic, function (v) { fItalic = !!v; applyFont(); });
         }
         continue;
       }
