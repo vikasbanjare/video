@@ -2879,25 +2879,15 @@
     state.selectedMogrtTpl = t;
     try { state.selectedMogrtBase = mogrtCardStyle(t); } catch (eBase) { state.selectedMogrtBase = null; }
     $('ms-name').textContent = t.name;
-    // PREVIEW = the template's REAL render (the EXACT thing Premiere inserts), so
-    // the sheet matches the gallery tile AND the timeline. Prefer the looping .mp4
-    // (shows the motion), else the baked .png. Only if a template has no baked
-    // render do we fall back to the live "your colours" canvas approximation.
+    // PREVIEW = the live "your colours" canvas, ALWAYS visible the moment you click
+    // a template (a SMALL box with BIG, legible text) and it reflects every colour/
+    // font edit live. (The baked .mp4/.png rendered the caption at its tiny real
+    // on-frame size, which read as "no preview" — so it's no longer shown here.)
     var msThumb = $('ms-thumb'), msAnim = $('ms-anim'), msLive = $('ms-live-preview');
-    var hasReal = !!(t.video || t.thumb);
-    state.mogrtShowingReal = hasReal;
-    if (msLive) msLive.classList.add('hidden');
-    if (t.video && msAnim) {
-      try { msAnim.pause(); } catch (eP0) {}
-      msAnim.src = t.video; msAnim.classList.remove('hidden'); try { msAnim.play(); } catch (eP1) {}
-      if (msThumb) { msThumb.classList.add('hidden'); msThumb.removeAttribute('src'); }
-    } else if (t.thumb && msThumb) {
-      if (msAnim) { try { msAnim.pause(); } catch (eP2) {} msAnim.classList.add('hidden'); msAnim.removeAttribute('src'); }
-      msThumb.src = t.thumb; msThumb.classList.remove('hidden');
-    } else {
-      if (msThumb) { msThumb.classList.add('hidden'); msThumb.removeAttribute('src'); }
-      if (msAnim) { try { msAnim.pause(); } catch (eP3) {} msAnim.classList.add('hidden'); msAnim.removeAttribute('src'); }
-    }
+    state.mogrtShowingReal = false;
+    if (msAnim) { try { msAnim.pause(); } catch (eP0) {} msAnim.classList.add('hidden'); msAnim.removeAttribute('src'); }
+    if (msThumb) { msThumb.classList.add('hidden'); msThumb.removeAttribute('src'); }
+    if (msLive) msLive.classList.remove('hidden');
     // show THIS template's real capabilities (read from its definition.json)
     if ($('ms-hint')) {
       var caps = mogrtCapsSummary(t.path);
@@ -5150,11 +5140,14 @@
       boxColor: box, uppercase: !!pv.caps, stroke: stroke, strokeWidth: stroke ? 3 : 0
     };
     try {
-      var st = CPRender.styleForFrame(preset, cv.height, {}, cv.width);
+      // BIG text in a SMALL box: height-fit the caption so it fills the preview
+      // and stays legible (it's a style swatch, not a true on-frame size match).
+      var fMax = Math.round(0.80 * 1080 / (2 * 1.18));
+      var st = CPRender.styleForFrame(preset, cv.height, { fontSize: fMax, maxWidthPct: 0.92, maxLines: 2, vCenter: true });
       // Animate the ONE preview so the user sees the motion, in the chosen mode:
       // 'highlight' shows the whole line and lights up each word in turn; 'reveal'
       // adds words one at a time. This matches what the Reliable output produces.
-      var ws = pv.caps ? ['YOUR', 'CAPTION', 'HERE'] : ['Your', 'caption', 'here'];
+      var ws = pv.caps ? ['BIG', 'IDEA'] : ['Big', 'idea'];   // 2 words → fills the small box cleanly
       var mode = captionRevealMode();
       var frames = [];
       for (var i = 0; i < ws.length; i++) {
@@ -5238,7 +5231,33 @@
       var note = document.createElement('p'); note.className = 'hint';
       note.textContent = 'These are the template\'s own Essential Graphics controls — edit here, then "Add template captions". Every caption stays editable in Premiere (Window → Essential Graphics) too. Colours, size, position & toggles are reliable; font applies if it\'s installed.';
       box.appendChild(note);
+      makeCustomizerCollapsible(box);   // fold the controls into expandable sections
     }).catch(function (e) { box.innerHTML = '<p class="hint err">Couldn\'t read template: ' + e.message + '</p>'; });
+  }
+
+  /* Fold the generated controls into expandable sections so the customizer is a
+     few tidy parts instead of one long form. Each section header (mp-head / mp-sub)
+     toggles the controls beneath it up to the next header; the FIRST section stays
+     open, the rest start collapsed — "click to open the part you want". */
+  function makeCustomizerCollapsible(box) {
+    var kids = Array.prototype.slice.call(box.children);
+    function isHead(el) { return el && el.classList && (el.classList.contains('mp-head') || el.classList.contains('mp-sub')); }
+    var heads = kids.filter(isHead);
+    if (heads.length < 2) return;   // nothing to fold
+    heads.forEach(function (h, hi) {
+      var group = [], k = h.nextElementSibling;
+      while (k && !isHead(k)) { group.push(k); k = k.nextElementSibling; }
+      if (!group.length) return;
+      h.classList.add('mp-collapsible');
+      var caret = document.createElement('span'); caret.className = 'mp-caret'; h.appendChild(caret);
+      var collapsed = hi > 0;   // first part open, rest folded
+      function apply() {
+        for (var g = 0; g < group.length; g++) group[g].style.display = collapsed ? 'none' : '';
+        h.classList.toggle('collapsed', collapsed);
+      }
+      h.addEventListener('click', function () { collapsed = !collapsed; apply(); if (!collapsed) { try { renderMogrtPreview(); } catch (e) {} } });
+      apply();
+    });
   }
 
   /* Build the editor straight from the template's definition.json — groups as

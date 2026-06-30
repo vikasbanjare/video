@@ -670,6 +670,12 @@ input[type="range"]::-webkit-slider-thumb {
 .mp-row input, .mp-row select, .mp-row .cp-dd-btn { font-size: 12px; }
 .mp-row input[type="number"] { width: 100%; }
 .mp-row select.mp-ctrl { max-width: none; width: 100%; }
+/* collapsible customizer sections — header toggles the controls beneath it */
+.mp-collapsible { cursor: pointer; user-select: none; }
+.tpl-params > .mp-sub.mp-collapsible { display: flex; align-items: center; }
+.mp-collapsible .mp-caret { margin-left: auto; font-size: 10px; color: var(--dim); transition: transform .12s; }
+.mp-collapsible .mp-caret::before { content: '▾'; }
+.mp-collapsible.collapsed .mp-caret::before { content: '▸'; }
 .mp-color { display: flex; align-items: center; width: 100%; gap: 8px; }
 .mp-color .cp-swatch { width: 48px; height: 30px; border-radius: 8px; }
 .mp-color .mp-hex { flex: 1 1 auto; width: auto; min-width: 0; height: 30px; box-sizing: border-box; font: 12px ui-monospace, "JetBrains Mono", monospace; text-transform: uppercase; }
