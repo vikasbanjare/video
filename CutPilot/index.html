@@ -24,7 +24,7 @@
       </svg>
       <span class="brand-name">Pulse</span><span class="brand-by">by aifloh</span>
     </div>
-    <span class="ver" id="ver">v0.9.248</span>
+    <span class="ver" id="ver">v0.9.249</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -551,13 +551,15 @@
         </details>
 
         <div id="legibility-note" class="legibility-note hidden"></div>
-        <label style="font-size:11px;display:block;margin:2px 0 4px">Caption type</label>
-        <div class="seg-control" id="cap-output" style="margin-bottom:8px">
-          <button data-out="editable" class="on" type="button">✏️ Editable (recommended)</button>
+        <!-- Output mode is locked to EDITABLE — every caption is placed as its own
+             native Premiere clip, re-editable in Essential Graphics. The old
+             PNG/libass picker is hidden so nothing is ever baked. -->
+        <div class="seg-control" id="cap-output" style="display:none">
+          <button data-out="editable" class="on" type="button">✏️ Editable</button>
           <button data-out="png" type="button">🖼 Exact look</button>
           <button data-out="reliable" type="button">⚡ Reliable</button>
         </div>
-        <p class="hint" id="cap-output-hint" style="margin:0 0 8px">✏️ <b>Editable</b> (recommended): each caption is its own native Premiere clip — <b>exactly the template you preview</b>, fully re-editable in Window → Essential Graphics. 🖼 <b>Exact look</b>: word-by-word burned-in PNGs that match the canvas preview 1:1 (every colour, box, glow, gradient). ⚡ <b>Reliable</b>: one libass-burned clip (great for Indic/RTL).</p>
+        <p class="hint" id="cap-output-hint" style="margin:0 0 8px">✏️ Every caption is placed as its <b>own editable clip</b> on the timeline — change the text or styling any time in <b>Window → Essential Graphics</b>. Nothing is baked.</p>
         <label style="font-size:11px">Word animation</label>
         <div class="seg-control" id="cap-reveal" style="margin-bottom:8px">
           <button data-mode="highlight" class="on" type="button">🔆 Highlight word</button>
@@ -1156,7 +1158,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.9.248 · auto-edit · multicam · captions · chapters · organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.9.249 · auto-edit · multicam · captions · chapters · organize</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->

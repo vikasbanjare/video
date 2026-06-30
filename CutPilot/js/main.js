@@ -4145,13 +4145,10 @@
     });
   })();
   $('btn-magic').addEventListener('click', function () {
-    if (_capOut === 'editable') return applyEditableStyle();   // editable .mogrt clips
-    if (!ensureTranscriptThen('magic')) return;
-    var cues;
-    try { cues = readSelectedTranscript(); }
-    catch (e) { return toast(e.message, true); }
-    if (_capOut === 'reliable') return runLibassCaptions(cues, null);   // ffmpeg+libass overlay
-    runCaptionPipeline(cues, null);                            // burned-in PNG frames
+    // EVERY caption goes onto the timeline as an EDITABLE native clip (one .mogrt
+    // per line, re-editable in Premiere's Essential Graphics) — always, no baked
+    // PNG / libass. (The owner wants editable captions every single time.)
+    return applyEditableStyle();
   });
 
   /* Persist the last caption job so the edit/restyle buttons stay available even
@@ -5842,7 +5839,7 @@
       .then(function (r) {
         if (r && r.applied) toast('⚡ Added ' + r.applied + ' zoom punches (beta) to your top clip. Now placing captions… (Ctrl/Cmd+Z removes the zooms if you don\'t like them.)');
       }, function () { /* zoom is best-effort; ignore and still caption */ })
-      .then(function () { runCaptionPipeline(cues, null); });   // 2) captions in the EXACT selected style
+      .then(function () { applyEditableStyle(); });   // 2) captions — EDITABLE native clips on the timeline
   }
 
   // ========================================================== SMART CUT ====
