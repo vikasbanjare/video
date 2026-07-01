@@ -670,6 +670,11 @@ input[type="range"]::-webkit-slider-thumb {
 .mp-row input, .mp-row select, .mp-row .cp-dd-btn { font-size: 12px; }
 .mp-row input[type="number"] { width: 100%; }
 .mp-row select.mp-ctrl { max-width: none; width: 100%; }
+/* PNG-era controls that do NOT carry into editable (.mogrt) captions — hidden so
+   the editor only shows what actually changes the output. The inputs stay in the
+   DOM (readOverrides/applyTemplate still read/write them), they're just not shown. */
+.png-only { display: none !important; }
+
 /* collapsible customizer sections — header toggles the controls beneath it */
 .mp-collapsible { cursor: pointer; user-select: none; }
 .tpl-params > .mp-sub.mp-collapsible { display: flex; align-items: center; }

@@ -2725,6 +2725,11 @@
      burned-in export — instead of a frozen thumbnail. */
   function drawCardPreview(canvas, t) {
     try {
+      // The tile shows what the EDITABLE clip will look like — the style filtered
+      // to the properties that actually reach the .mogrt backbone. Highlight
+      // styles play the word-by-word sweep (the backbone's real motion); plain
+      // styles sit static. No PNG-era gradients/gloss that the output can't have.
+      t = carryableStyle(t);
       var sample = t.uppercase ? 'BIG IDEA' : 'Big idea';   // short → legible in the 3-up tiles
       var sw = sample.split(' '), DUR = 0.4;
       var wordCues = sw.map(function (w, i) { return { start: i * DUR, end: (i + 1) * DUR, text: w }; });
@@ -2733,21 +2738,15 @@
       try {
         frames = CPCaptions.buildCaptionFrames([{ start: 0, end: sw.length * DUR, text: sample }], {
           anim: animId, wordsPerCue: (t.wordsPerCue || 4), uppercase: !!t.uppercase,
-          keyword: { on: !!t.keyword, mode: (t.keywordMode || 'smart') }, speaker: { on: false },   // same picker as export → card = output
-          build: !!t.build, wordCues: wordCues, window: (t.window || 0)
+          keyword: { on: false }, speaker: { on: false },   // sweep (active word) supplies the highlight, like the backbone
+          wordCues: wordCues, window: 0
         });
       } catch (eF) { frames = null; }
       if (!frames || !frames.length) frames = [{ words: sw }];
       // Fill the card without overflowing: cap the font so the block fits the
-      // card HEIGHT (the engine only fits WIDTH, so a too-big start clips top/
-      // bottom). Account for each style's keyword scale + line gap + line count.
-      var hlsc = Math.max(1, t.highlightScale || 1);
-      if (t.highlight && t.fill && !t.boxColor &&
-          String(t.highlight).toLowerCase() === String(t.fill).toLowerCase()) hlsc = Math.max(hlsc, 1.18); // mirror engine guard
-      var lg = (t.lineGap != null) ? t.lineGap : 1.18;
-      var estLines = t.wordsPerLine ? 3 : 2;
-      var fMax = Math.round(0.84 * 1080 / (estLines * hlsc * lg));   // height-safe maximum
-      var pov = { fontSize: fMax, maxWidthPct: 0.95, maxLines: (t.wordsPerLine ? 0 : 2), vCenter: true };
+      // card HEIGHT (the engine only fits WIDTH, so a too-big start clips top/bottom).
+      var fMax = Math.round(0.84 * 1080 / (2 * 1.18));   // height-safe maximum (2 lines)
+      var pov = { fontSize: fMax, maxWidthPct: 0.95, maxLines: 2, vCenter: true };
       canvas._animFrames = frames;
       canvas._animStyle = CPRender.styleForFrame(t, canvas.height, pov);
       canvas._animLen = frames.length;
@@ -3953,12 +3952,14 @@
     var canvas = $('preview-canvas');
     if (!canvas || !CPRender || !CPRender.drawFrame) return;
 
-    // Render the preview with the SAME engine as the real output, so EVERY
-    // customization (shapes, gradient, spacing, shadow offset, box opacity,
-    // number/brand colours, case, censor…) reflects exactly and in real time.
-    var preset = currentPreset();
-    var ov = readOverrides();
-    var st = CPRender.styleForFrame(preset, 1080, ov);  // for the legibility note
+    // PREVIEW = THE EDITABLE OUTPUT. The style (template + your edits) is passed
+    // through the SAME carryable filter the insert uses, so the preview can only
+    // show what the placed caption clip will actually have: font, weight, caps,
+    // text / highlight / box colours, box opacity, shadow. Highlight styles play
+    // the word-by-word sweep (the backbone's real motion); plain styles sit
+    // static. Rendered as a big readable swatch — the template controls its own
+    // on-frame size/position, so the preview is about the LOOK, not geometry.
+    var carry = carryableStyle(styledPreset());
 
     // Fit a canvas of the sequence's aspect ratio inside the preview box.
     var boxW = frame.clientWidth || 300, boxH = frame.clientHeight || 168;
@@ -3969,44 +3970,30 @@
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
     canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
 
-    // TRUE-TO-OUTPUT preview: render through the EXACT same style path the
-    // timeline uses — styleForFrame(preset, frameH, overrides, frameW) — so the
-    // caption shows at its real on-screen size AND position, scaled to the preview
-    // frame. The Size slider (overrides.fontSize) now visibly drives the preview,
-    // exactly as it drives the export. (Previously this hard-coded fontSize 230,
-    // which made the preview giant and immune to the Size slider — the root cause
-    // of "the preview looks nothing like what I generate".)
-    var pStyle = CPRender.styleForFrame(preset, canvas.height, ov, canvas.width);
-    var anim = currentAnim();
-    var words = parseInt($('c-words').value, 10) || 0;
-    var speakerOn = $('c-speaker').checked;
-    var sample = 'This is exactly how your captions will look on screen as you talk';
+    var fMax = Math.round(0.80 * 1080 / (2 * 1.18));   // big swatch text, height-safe for 2 lines
+    var pStyle = CPRender.styleForFrame(carry, canvas.height, { fontSize: fMax, maxWidthPct: 0.92, maxLines: 2, vCenter: true });
+    var sample = carry.uppercase ? 'YOUR BIG IDEA' : 'Your big idea';
     var sw = sample.split(' ');
     var DUR = 0.42;                                   // seconds per word (preview pacing)
     var wordCues = sw.map(function (w, i) { return { start: i * DUR, end: (i + 1) * DUR, text: w }; });
     var frames;
     try {
       frames = CPCaptions.buildCaptionFrames([{ start: 0, end: sw.length * DUR, text: sample }], {
-        anim: anim, wordsPerCue: (words || 4), uppercase: ov.uppercase,
-        keyword: { on: $('c-kw').checked, mode: ($('c-kw-mode') ? $('c-kw-mode').value : 'auto') },
-        speaker: { on: false }, emoji: cchk('c-emoji'), build: !!preset.build,
-        wordCues: wordCues, window: (preset.window || 0)
+        anim: CPCaptions.animIdForConcept(carry.anim), wordsPerCue: sw.length, uppercase: carry.uppercase,
+        keyword: { on: false }, speaker: { on: false },   // the sweep (active word) IS the highlight, like the backbone
+        wordCues: wordCues, window: 0
       });
     } catch (eF) { frames = null; }
-    if (!frames || !frames.length) frames = [{ words: sw.slice(0, Math.max(1, words || 6)) }];
+    if (!frames || !frames.length) frames = [{ words: sw }];
 
     var pi = 0;
     function play() {
-      var f = frames[pi % frames.length], fo = {};
-      for (var fk in f) if (f.hasOwnProperty(fk)) fo[fk] = f[fk];
-      if (speakerOn) fo.speaker = 'Host';
-      CPRender.drawFrame(canvas, fo, pStyle);
+      CPRender.drawFrame(canvas, frames[pi % frames.length], pStyle);
       pi++;
     }
     play();
-    if (frames.length > 1) previewTimer = setInterval(play, Math.max(150, Math.round((DUR * 1000) / (ov.animSpeed || 1))));
+    if (frames.length > 1) previewTimer = setInterval(play, Math.max(150, Math.round(DUR * 1000)));
 
-    updateLegibilityNote(st);
     if (_booted) saveLook();
   }
 
@@ -4089,11 +4076,8 @@
   var _capOut = 'editable';
   function updateMagicLabel() {
     var b = $('btn-magic'); if (!b) return;
-    b.innerHTML = (_capOut === 'editable')
-      ? '✏️ Add editable captions <span class="dim">(your style — each clip stays editable)</span>'
-      : (_capOut === 'reliable')
-      ? '⚡ Add captions <span class="dim">(word-by-word libass burn — single clip)</span>'
-      : '🖼 Add captions <span class="dim">(exact look — word-by-word, matches the preview 1:1)</span>';
+    // Output is always EDITABLE — one label, no modes.
+    b.innerHTML = '✏️ Add captions <span class="dim">(editable clips — the style you picked)</span>';
   }
   (function wireCapOutput() {
     var box = $('cap-output'); if (!box) return;
@@ -5754,7 +5738,41 @@
     if (ov.font) eff.font = ov.font;
     if (ov.weight != null) eff.weight = ov.weight;
     if (ov.uppercase != null) eff.uppercase = ov.uppercase;
+    // the editor's shadow toggle carries too (mapPresetToMogrt → the backbone's
+    // Shadow Color / Shadow Opacity controls) — previously only a template's own
+    // glow carried, so turning shadow on/off in the editor silently did nothing.
+    eff.glow = ov.glow || null;
+    if (ov.glowBlur != null) eff.glowBlur = ov.glowBlur;
     return eff;
+  }
+
+  /* What the EDITABLE caption clip will actually look like: only the properties
+     that survive the trip onto the .mogrt backbone (font / weight / caps / text
+     colour / word-highlight colour / box + opacity / shadow). Every preview
+     surface (gallery tile, editor preview, customize sheet) renders THROUGH this
+     filter, so what you see is what lands on the timeline — the PNG-era effects
+     (gradients, gloss, outline, 3D boxes…) are stripped because the editable
+     output genuinely doesn't have them. */
+  function carryableStyle(p) {
+    p = p || {};
+    var hasHl = p.keyword !== false;
+    return {
+      id: p.id, name: p.name,
+      font: p.font, fallbackFonts: p.fallbackFonts,
+      weight: (p.weight || 800) >= 600 ? 800 : 500,   // backbone only knows bold vs regular
+      uppercase: !!p.uppercase,
+      fill: p.fill || '#FFFFFF',
+      highlight: hasHl ? (p.highlight || p.fill || '#FFD400') : (p.fill || '#FFFFFF'),
+      keyword: hasHl,
+      boxColor: p.boxColor || null,
+      boxOpacity: (p.boxOpacity != null ? p.boxOpacity : 1),
+      boxRadius: 10,                                   // the backbone's own roundness
+      glow: p.glow || null,
+      glowBlur: (p.glowBlur != null ? p.glowBlur : 0.35),
+      wordsPerCue: p.wordsPerCue,
+      anim: hasHl ? 'karaoke' : 'fade',                // sweep for highlight styles, static otherwise
+      vCenter: true
+    };
   }
 
   /* Map a built-in style preset onto a template's NAMED colour/opacity params
@@ -5850,12 +5868,21 @@
     var caseMode = caps ? 'upper' : (state.mogrtCase || 'as-spoken');
     var tcues = textCues(cues, words, caseMode);
     if (!tcues.length) return toast('No caption lines to add.', true);
-    // Place the subtitle template at its OWN designed size (it's built to fit the
-    // frame). Carry the style's colours so the caption picks up your palette, but
-    // do NOT override size — a guessed scale made captions tiny. Adjust per-clip on
-    // the timeline if needed.
+    // Place the subtitle template at its OWN designed size, scaled by the Size
+    // slider RELATIVE to the style's default — untouched slider = scale 1 (the
+    // template's designed size), dragged bigger/smaller = the host scales every
+    // text layer by that ratio (CP_scaleAllTextSizes). Clamped so a wild value
+    // can't make captions unreadable or frame-filling.
+    var basePreset = currentPreset() || {};
+    var sizeScale = 1;
+    try {
+      var wantPx = parseInt($('c-size').value, 10);
+      var basePx = basePreset.fontSize || wantPx;
+      if (wantPx > 0 && basePx > 0) sizeScale = Math.max(0.5, Math.min(2.5, wantPx / basePx));
+    } catch (eSz) {}
     var textStyle = { font: preset.font, caps: caps,
-                      bold: (preset.weight || 800) >= 600, fill: preset.fill };
+                      bold: (preset.weight || 800) >= 600, fill: preset.fill,
+                      sizeScale: (Math.abs(sizeScale - 1) > 0.02 ? sizeScale : 1) };
     if (tcues.length > 120 &&
         !confirm(tcues.length + ' editable caption clips will be inserted — one per line. ' +
                  'MOGRTs insert slowly, so this can take a while. Tip: raise "Words per caption" for fewer, longer lines.\n\nContinue?')) return;
@@ -7990,7 +8017,10 @@
       });
     });
   }
-  $('btn-diag-copy').addEventListener('click', function () {
+  // ("Copy results" under Run-full-diagnostic. Was id btn-diag-copy — a DUPLICATE
+  //  of the Settings copy button, so this one never got the handler and the other
+  //  fired twice. Renamed → both buttons work independently.)
+  $('btn-diagfull-copy').addEventListener('click', function () {
     var t = $('diag-out').textContent;
     try {
       var ta = document.createElement('textarea');

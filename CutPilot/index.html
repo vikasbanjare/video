@@ -24,7 +24,7 @@
       </svg>
       <span class="brand-name">Pulse</span><span class="brand-by">by aifloh</span>
     </div>
-    <span class="ver" id="ver">v0.9.250</span>
+    <span class="ver" id="ver">v0.9.251</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -133,9 +133,9 @@
 
     <!-- ===================== TEMPLATE LIBRARY (caption styles) ============= -->
     <div id="view-templates" class="subview">
-      <p class="hint" style="margin:2px 0 8px"><b>✏️ Editable</b> cards (🎬) drop captions you edit right inside
-        Premiere's <b>Essential Graphics</b> — font, colour, size, position — exactly like native Premiere.
-        Plain style cards are <b>burned-in</b> (baked into the picture). Add your own template packs in
+      <p class="hint" style="margin:2px 0 8px">Every style drops <b>editable caption clips</b> onto your
+        timeline — change the text or look any time in Premiere's <b>Essential Graphics</b>.
+        The tile shows exactly what you'll get. Add your own template packs in
         <b>Settings → Template folders</b>.</p>
       <div class="lib-toolbar">
         <input type="text" id="lib-search" placeholder="🔍 Search style, color, industry…">
@@ -250,8 +250,8 @@
           <button class="wc-btn" id="wc-plus" type="button">+</button>
           <button class="chip-btn" id="wc-full" type="button">Full line</button>
         </div>
-        <label class="check sync-line"><input type="checkbox" id="c-sync" checked> 🎯 Sync each word to the spoken audio <span id="sync-stat" class="dim"></span></label>
-        <div class="wc-bar sync-nudge" id="sync-nudge">
+        <label class="check sync-line png-only"><input type="checkbox" id="c-sync" checked> 🎯 Sync each word to the spoken audio <span id="sync-stat" class="dim"></span></label>
+        <div class="wc-bar sync-nudge png-only" id="sync-nudge">
           <span class="wc-label">Highlight timing</span>
           <button class="wc-btn" id="c-off-minus" type="button" title="Highlight fires earlier (−0.05s per tap)">−</button>
           <b id="c-off-num">−0.06s</b>
@@ -263,9 +263,9 @@
         <input type="number" id="c-words" value="1" class="hidden">
 
         <details class="advanced" id="customize-drawer" open>
-          <summary>🎨 Edit style — font · colour · size · position · animation</summary>
+          <summary>🎨 Edit style — font · size · colours · box · shadow</summary>
           <div class="customizer">
-            <div class="seg-control cust-tabs" id="cust-tabs">
+            <div class="seg-control cust-tabs png-only" id="cust-tabs">
               <button type="button" data-pane="style" class="on">🎨 Style</button>
               <button type="button" data-pane="pro">✨ Effects &amp; Pro</button>
             </div>
@@ -281,37 +281,48 @@
                 <label>Size <span class="val" id="c-size-val"></span>
                   <input type="range" id="c-size" min="32" max="160" value="90">
                 </label>
-                <label>Letter spacing <span class="val" id="c-letter-val"></span>
+                <label class="png-only">Letter spacing <span class="val" id="c-letter-val"></span>
                   <input type="range" id="c-letter" min="0" max="20" value="0">
                 </label>
               </div>
-              <p class="hint" style="margin:5px 0 0">Size applies to your exported captions. The preview stays a fixed size so the style is always easy to see.</p>
+              <p class="hint" style="margin:5px 0 0">Size scales your captions on the timeline (the slider's middle ≈ the template's own size). The preview stays big so the style is easy to see.</p>
               <label>Weight <span class="val" id="c-weight-val"></span>
                 <input type="range" id="c-weight" min="100" max="900" step="100" value="800">
               </label>
               <label class="check"><input type="checkbox" id="c-upper" checked> ALL CAPS</label>
             </div>
 
-            <!-- 🎨 COLOURS -->
+            <!-- 🎨 COLOURS — everything here carries onto the editable caption clip -->
             <div class="cust-group">
               <div class="cust-group-title">🎨 Colours</div>
               <div class="swatches">
                 <label class="sw" id="sw-fill">Text<span class="cp-mount" data-for="c-fill"></span><input type="hidden" id="c-fill" value="#ffffff"></label>
                 <label class="sw" id="sw-hl">Highlight<span class="cp-mount" data-for="c-hl"></span><input type="hidden" id="c-hl" value="#ffd400"></label>
-                <label class="sw" id="sw-stroke">Outline<span class="cp-mount" data-for="c-stroke"></span><input type="hidden" id="c-stroke" value="#000000"></label>
+                <label class="sw png-only" id="sw-stroke">Outline<span class="cp-mount" data-for="c-stroke"></span><input type="hidden" id="c-stroke" value="#000000"></label>
                 <label class="sw" id="sw-box">Box<span class="cp-mount" data-for="c-box"></span><input type="hidden" id="c-box" value="#ff3b6b"></label>
               </div>
-              <label class="check"><input type="checkbox" id="c-hlgrad"> 🌈 Gradient highlight <span class="dim">(Highlight → 2nd colour)</span></label>
-              <div class="swatches" id="c-hlgrad-opts" style="display:none">
+              <label class="check"><input type="checkbox" id="c-box-on"> 🟦 Background box behind text</label>
+              <label id="c-box-opacity-wrap">Box see-through <span class="val" id="c-box-opacity-val"></span>
+                <input type="range" id="c-box-opacity" min="20" max="100" value="100">
+              </label>
+              <label class="check"><input type="checkbox" id="c-shadow-on"> 🌑 Soft shadow behind text</label>
+              <div class="ctrl-row hidden" id="c-shadow-row">
+                <label>Shadow colour<span class="cp-mount" data-for="c-shadow"></span><input type="hidden" id="c-shadow" value="#000000"></label>
+                <label>Shadow strength <span class="val" id="c-shadow-blur-val"></span>
+                  <input type="range" id="c-shadow-blur" min="0" max="120" value="35">
+                </label>
+              </div>
+              <label class="check png-only"><input type="checkbox" id="c-hlgrad"> 🌈 Gradient highlight <span class="dim">(Highlight → 2nd colour)</span></label>
+              <div class="swatches png-only" id="c-hlgrad-opts" style="display:none">
                 <label class="sw">2nd colour<span class="cp-mount" data-for="c-hl2g"></span><input type="hidden" id="c-hl2g" value="#ff6a00"></label>
               </div>
-              <label class="check"><input type="checkbox" id="c-glossy"> ✨ Glossy sheen <span class="dim">(shiny metallic band)</span></label>
-              <label class="check"><input type="checkbox" id="c-hlserif"> 🅸 Keyword in italic serif <span class="dim">(elegant different font)</span></label>
-              <label class="check"><input type="checkbox" id="c-hlglow"> 🌟 Keyword glow <span class="dim">(soft shiny halo)</span></label>
+              <label class="check png-only"><input type="checkbox" id="c-glossy"> ✨ Glossy sheen <span class="dim">(shiny metallic band)</span></label>
+              <label class="check png-only"><input type="checkbox" id="c-hlserif"> 🅸 Keyword in italic serif <span class="dim">(elegant different font)</span></label>
+              <label class="check png-only"><input type="checkbox" id="c-hlglow"> 🌟 Keyword glow <span class="dim">(soft shiny halo)</span></label>
             </div>
 
-            <!-- 📐 POSITION -->
-            <div class="cust-group">
+            <!-- 📐 POSITION (PNG-era: the editable template places itself) -->
+            <div class="cust-group png-only">
               <div class="cust-group-title">📐 Position</div>
               <label>On screen <span class="val" id="c-pos-val"></span>
                 <input type="range" id="c-pos" min="10" max="92" value="76">
@@ -343,8 +354,9 @@
               </div>
             </div>
 
-            <!-- 🖍️ WORD HIGHLIGHT -->
-            <div class="cust-group">
+            <!-- 🖍️ WORD HIGHLIGHT (PNG-era controls; the editable template's own
+                 word-by-word highlight is automatic and uses the Highlight colour) -->
+            <div class="cust-group png-only">
               <div class="cust-group-title">🖍️ Word highlight</div>
               <label class="check"><input type="checkbox" id="c-wordhl" checked> ✨ Highlight each word as it's spoken</label>
               <p class="hint" style="margin:4px 0 8px">The whole line shows and the current word lights up as the person says it — word by word.</p>
@@ -378,20 +390,15 @@
             </div>
 
             </div><!-- /cust-pane-style -->
-            <div id="cust-pane-pro" class="cust-pane hidden">
+            <div id="cust-pane-pro" class="cust-pane hidden png-only">
             <!-- ✨ EFFECTS -->
             <div class="cust-group">
               <div class="cust-group-title">✨ Effects <span class="dim">— readability over any footage</span></div>
               <label>Outline width <span class="val" id="c-strokew-val"></span>
                 <input type="range" id="c-strokew" min="0" max="24" value="10">
               </label>
-              <label class="check"><input type="checkbox" id="c-shadow-on"> 🌑 Drop shadow</label>
-              <div class="ctrl-row hidden" id="c-shadow-row">
-                <label>Shadow colour<span class="cp-mount" data-for="c-shadow"></span><input type="hidden" id="c-shadow" value="#000000"></label>
-                <label>Shadow strength <span class="val" id="c-shadow-blur-val"></span>
-                  <input type="range" id="c-shadow-blur" min="0" max="120" value="35">
-                </label>
-              </div>
+              <!-- (Drop shadow + Background box moved up into 🎨 Colours — they carry
+                   onto the editable caption clip; the rest of this pane is PNG-era.) -->
               <div class="ctrl-row hidden" id="c-shadow-offset-row">
                 <label>Shadow offset X <span class="val" id="c-shadow-dx-val"></span>
                   <input type="range" id="c-shadow-dx" min="-30" max="30" value="0">
@@ -401,7 +408,6 @@
                 </label>
               </div>
               <p class="hint" style="margin:2px 0 0">Set the offset with a low shadow strength for a clean hard / 3-D drop.</p>
-              <label class="check"><input type="checkbox" id="c-box-on"> 🟦 Background box behind text</label>
             </div>
 
             <!-- 🎛️ PRO CONTROLS -->
@@ -421,9 +427,6 @@
               <div class="ctrl-row">
                 <label>Box roundness <span class="val" id="c-box-radius-val"></span>
                   <input type="range" id="c-box-radius" min="0" max="60" value="12">
-                </label>
-                <label>Box see-through <span class="val" id="c-box-opacity-val"></span>
-                  <input type="range" id="c-box-opacity" min="20" max="100" value="100">
                 </label>
               </div>
               <label>Box padding <span class="val" id="c-box-pad-val"></span>
@@ -560,12 +563,12 @@
           <button data-out="reliable" type="button">⚡ Reliable</button>
         </div>
         <p class="hint" id="cap-output-hint" style="margin:0 0 8px">✏️ Every caption is placed as its <b>own editable clip</b> on the timeline — change the text or styling any time in <b>Window → Essential Graphics</b>. Nothing is baked.</p>
-        <label style="font-size:11px">Word animation</label>
-        <div class="seg-control" id="cap-reveal" style="margin-bottom:8px">
+        <label class="png-only" style="font-size:11px">Word animation</label>
+        <div class="seg-control png-only" id="cap-reveal" style="margin-bottom:8px">
           <button data-mode="highlight" class="on" type="button">🔆 Highlight word</button>
           <button data-mode="reveal" type="button">📝 Reveal as spoken</button>
         </div>
-        <p class="hint" style="margin:0 0 8px">🔆 <b>Highlight</b>: the whole line shows and the spoken word lights up (karaoke). 📝 <b>Reveal</b>: words pop in one at a time as they're said.</p>
+        <p class="hint png-only" style="margin:0 0 8px">🔆 <b>Highlight</b>: the whole line shows and the spoken word lights up (karaoke). 📝 <b>Reveal</b>: words pop in one at a time as they're said.</p>
         <button id="btn-magic" class="hero-btn">✨ Add captions <span class="dim">(the style you picked — added to your timeline)</span></button>
         <button id="btn-viral-edit" class="hero-btn alt">⚡ One-click Viral Edit <span class="dim">(same style + auto zoom punches — beta)</span></button>
         <p class="hint" style="margin:2px 0 0">Both add the exact style you picked above. <b>Viral Edit</b> also adds subtle zoom punch-ins to your top clip (Ctrl/Cmd+Z to undo them).</p>
@@ -1154,11 +1157,11 @@
         <p class="hint">If something isn't working, tap this and send me everything it shows — it checks ffmpeg, your mics, a caption template, and the transcript all at once.</p>
         <button id="btn-diag-full" class="hero-btn small">🩺 Run full diagnostic</button>
         <pre id="diag-out" class="diag-out">Results appear here.</pre>
-        <button id="btn-diag-copy" class="chip-btn">Copy results</button>
+        <button id="btn-diagfull-copy" class="chip-btn">Copy results</button>
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.9.250 · auto-edit · multicam · captions · chapters · organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.9.251 · auto-edit · multicam · captions · chapters · organize</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->
