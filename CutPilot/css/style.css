@@ -211,7 +211,11 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
 .niche-row .dim { font-size: 11px; white-space: nowrap; font-weight: 600; }
 .niche-row select { margin: 0; flex: 1; }
 
-.cat-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 13px; }
+/* one swipeable row instead of a 3-row wall of chips — fewer choices on screen
+   at once (the rest are a scroll away), which is what makes the tab feel calm */
+.cat-chips { display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 6px; margin-bottom: 13px;
+  padding-bottom: 3px; scrollbar-width: thin; }
+.cat-chips .cat-chip { flex: 0 0 auto; white-space: nowrap; }
 .cat-chip {
   padding: 5px 11px; background: var(--card2); border: 1px solid var(--line); border-radius: 99px;
   color: var(--dim); font-size: 10px; font-weight: 700; cursor: pointer; white-space: nowrap; transition: all .12s;

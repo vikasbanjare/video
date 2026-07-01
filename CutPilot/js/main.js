@@ -3972,6 +3972,7 @@
 
     var fMax = Math.round(0.80 * 1080 / (2 * 1.18));   // big swatch text, height-safe for 2 lines
     var pStyle = CPRender.styleForFrame(carry, canvas.height, { fontSize: fMax, maxWidthPct: 0.92, maxLines: 2, vCenter: true });
+    canvas._pvStyle = pStyle;   // exposed so the parity harness can machine-compare tile vs preview
     var sample = carry.uppercase ? 'YOUR BIG IDEA' : 'Your big idea';
     var sw = sample.split(' ');
     var DUR = 0.42;                                   // seconds per word (preview pacing)
@@ -5117,40 +5118,37 @@
     var dpr = Math.min(2, window.devicePixelRatio || 1);
     cv.width = Math.round(W * dpr); cv.height = Math.round(Hpx * dpr);
     cv.style.width = W + 'px'; cv.style.height = Hpx + 'px';
-    // text colour priority: a dedicated "Text Color" control → the source-text
-    // default → the first colour control (subtitle templates list text first) →
-    // white. This stops the preview defaulting to white-on-white.
-    // Default to the template's accurate base look (gradient/box) so the preview
-    // matches the gallery card; the user's own colour edits (pv.*) override it.
+    // SAME pipeline as every other preview: the template's base look (from its
+    // definition.json, i.e. what the gallery tile shows) + the user's edits,
+    // passed through the ONE carryable filter and drawn by the ONE renderer —
+    // so tile == sheet == what gets inserted. (This used to be a third,
+    // hand-rolled renderer with an 'Arial' default that never matched the tile.)
     var base = state.selectedMogrtBase || {};
-    var fill = pv.fill || pv.blobFill || pv.firstColor || base.fill || '#FFFFFF';
-    var fill2 = (pv.fill || pv.firstColor) ? (pv.fill2 || null) : (base.fill2 || null);   // keep the gradient unless the user picked a solid colour
-    var box = pv.box || base.boxColor || null;
-    // Readability safety: if the text colour would be invisible on the box, give
-    // the sample text a thin outline so it's still legible in the preview (the
-    // real template often separates them with position/animation).
-    var stroke = null;
-    if (box && Math.abs(_hexLum(fill) - _hexLum(box)) < 0.28) stroke = (_hexLum(box) > 0.6) ? '#111111' : '#ffffff';
-    var preset = {
-      id: 'mg', name: 'mg', font: pv.font || 'Arial', fontSize: 150,
-      weight: pv.bold ? 900 : 700, fill: fill, fill2: fill2,
-      highlight: pv.highlight || base.highlight || pv.fill || '#FFD400',
-      boxColor: box, uppercase: !!pv.caps, stroke: stroke, strokeWidth: stroke ? 3 : 0
-    };
+    var merged = {};
+    for (var bk in base) if (base.hasOwnProperty(bk)) merged[bk] = base[bk];
+    if (pv.fill || pv.blobFill || pv.firstColor) merged.fill = pv.fill || pv.blobFill || pv.firstColor;
+    if (pv.highlight) merged.highlight = pv.highlight;
+    if (pv.box) merged.boxColor = pv.box;
+    if (pv.font) merged.font = pv.font;
+    if (pv.caps != null) merged.uppercase = !!pv.caps;
+    if (pv.bold != null) merged.weight = pv.bold ? 800 : 500;
+    var carry = carryableStyle(merged);
     try {
       // BIG text in a SMALL box: height-fit the caption so it fills the preview
       // and stays legible (it's a style swatch, not a true on-frame size match).
       var fMax = Math.round(0.80 * 1080 / (2 * 1.18));
-      var st = CPRender.styleForFrame(preset, cv.height, { fontSize: fMax, maxWidthPct: 0.92, maxLines: 2, vCenter: true });
-      // Animate the ONE preview so the user sees the motion, in the chosen mode:
-      // 'highlight' shows the whole line and lights up each word in turn; 'reveal'
-      // adds words one at a time. This matches what the Reliable output produces.
-      var ws = pv.caps ? ['BIG', 'IDEA'] : ['Big', 'idea'];   // 2 words → fills the small box cleanly
-      var mode = captionRevealMode();
-      var frames = [];
-      for (var i = 0; i < ws.length; i++) {
-        frames.push({ words: (mode === 'reveal') ? ws.slice(0, i + 1) : ws, active: i });
-      }
+      var st = CPRender.styleForFrame(carry, cv.height, { fontSize: fMax, maxWidthPct: 0.92, maxLines: 2, vCenter: true });
+      var sample = carry.uppercase ? 'BIG IDEA' : 'Big idea';
+      var sw2 = sample.split(' '), DUR2 = 0.4;
+      var wc2 = sw2.map(function (w, i) { return { start: i * DUR2, end: (i + 1) * DUR2, text: w }; });
+      var frames;
+      try {
+        frames = CPCaptions.buildCaptionFrames([{ start: 0, end: sw2.length * DUR2, text: sample }], {
+          anim: CPCaptions.animIdForConcept(carry.anim), wordsPerCue: sw2.length, uppercase: carry.uppercase,
+          keyword: { on: false }, speaker: { on: false }, wordCues: wc2, window: 0
+        });
+      } catch (eF2) { frames = null; }
+      if (!frames || !frames.length) frames = [{ words: sw2 }];
       cv._animFrames = frames; cv._animStyle = st; cv._animLen = frames.length;
       if ((cv.className || '').indexOf('tpl-thumb-canvas') < 0) cv.className = (cv.className ? cv.className + ' ' : '') + 'tpl-thumb-canvas';
       drawCardTickFrame(cv, _cardTick);

@@ -24,7 +24,7 @@
       </svg>
       <span class="brand-name">Pulse</span><span class="brand-by">by aifloh</span>
     </div>
-    <span class="ver" id="ver">v0.9.251</span>
+    <span class="ver" id="ver">v0.9.252</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -138,15 +138,17 @@
         The tile shows exactly what you'll get. Add your own template packs in
         <b>Settings → Template folders</b>.</p>
       <div class="lib-toolbar">
-        <input type="text" id="lib-search" placeholder="🔍 Search style, color, industry…">
-        <select id="lib-sort">
+        <input type="text" id="lib-search" placeholder="🔍 Search styles…">
+        <!-- sort + "suggest for my niche" hidden: two extra decisions nobody
+             needed before picking a style (search + chips cover both) -->
+        <select id="lib-sort" class="png-only">
           <option value="popular">Popular</option>
           <option value="recent">Recent</option>
           <option value="favorites">Favorites</option>
           <option value="az">A–Z</option>
         </select>
       </div>
-      <div class="niche-row">
+      <div class="niche-row png-only">
         <span class="dim">✨ Suggest for</span>
         <select id="lib-niche">
           <option value="">choose your content…</option>
@@ -1161,7 +1163,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.9.251 · auto-edit · multicam · captions · chapters · organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.9.252 · auto-edit · multicam · captions · chapters · organize</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->
