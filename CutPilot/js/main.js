@@ -4159,6 +4159,7 @@
       if (!state.lastCaptionJob) return;
       localStorage.setItem('cutpilot.lastcap', JSON.stringify({
         cues: state.lastCaptionJob.cues, track: state.lastCaptionJob.track,
+        mode: state.lastCaptionJob.mode || null,   // 'editable' vs a legacy PNG job
         seq: (state.env && state.env.sequenceName) || ''
       }));
     } catch (e) {}
@@ -4167,7 +4168,7 @@
     try {
       var j = JSON.parse(localStorage.getItem('cutpilot.lastcap') || 'null');
       if (j && j.cues && j.cues.length && (!j.seq || !state.env || j.seq === state.env.sequenceName)) {
-        state.lastCaptionJob = { cues: j.cues, track: j.track };
+        state.lastCaptionJob = { cues: j.cues, track: j.track, mode: j.mode || null };
         reflectCaptionsPlaced();
       }
     } catch (e) {}
@@ -4224,13 +4225,29 @@
   }
 
   /* Reveal the edit/restyle buttons once captions have been placed. */
+  // Fix one line / edit all text / restyle-all / restyle-a-range regenerate PNG
+  // frames — they don't apply to editable (.mogrt) captions, whose text and
+  // style live natively on the Premiere clip and are edited THERE. So those 4
+  // stay hidden for an editable job; the hint instead explains how to edit it.
+  var CAP_RESTYLE_HINT_HTML = 'Captions are on your timeline. <b>Apply to all</b> restyles everything; to make one section different, select that clip/range on the timeline, pick a style, then <b>Restyle selected range</b>.';
   function reflectCaptionsPlaced() {
-    var on = !!(state.lastCaptionJob && state.lastCaptionJob.cues);
+    var job = state.lastCaptionJob;
+    var editable = !!(job && job.mode === 'editable');
+    var on = !!(job && job.cues) && !editable;
     if ($('btn-cap-edit')) $('btn-cap-edit').classList.toggle('hidden', !on);
     if ($('btn-cap-fix1')) $('btn-cap-fix1').classList.toggle('hidden', !on);
     if ($('btn-cap-restyle')) $('btn-cap-restyle').classList.toggle('hidden', !on);
     if ($('btn-cap-segment')) $('btn-cap-segment').classList.toggle('hidden', !on);
-    if ($('cap-restyle-hint')) $('cap-restyle-hint').classList.toggle('hidden', !on);
+    var hint = $('cap-restyle-hint');
+    if (hint) {
+      if (editable) {
+        hint.innerHTML = 'Editable captions are on your timeline — click any caption clip and edit its <b>text or styling</b> in Window → Essential Graphics. Running “Add captions” again replaces this set.';
+        hint.classList.remove('hidden');
+      } else {
+        hint.innerHTML = CAP_RESTYLE_HINT_HTML;
+        hint.classList.toggle('hidden', !on);
+      }
+    }
     if (!on && $('cap1-editor')) $('cap1-editor').classList.add('hidden');
   }
 
@@ -5579,9 +5596,14 @@
       var textStyle = (state.mogrtParamsPath === mogrtPath) ? state.mogrtTextStyle : null;
       var stretch = !!($('mg-stretch') && $('mg-stretch').checked);
       var maxSpeed = state.mogrtMaxSpeed || 100;   // Animation-speed choice (action sheet); default Natural
+      // Reuse the SAME track as the last editable job (any editable job — canvas
+      // style or MOGRT card) so re-running with a different template/colour
+      // REPLACES the previous set instead of stacking a second one on top.
+      var prevJobM = state.lastCaptionJob;
+      var reuseTrackM = (prevJobM && prevJobM.mode === 'editable' && prevJobM.track) ? prevJobM.track : null;
       return CPBridge.callHost('CP_insertMogrtCaptions', {
         mogrtPath: mogrtPath, cues: tcues, videoTrack: null, audioTrack: 0,
-        params: params, textStyle: textStyle, stretch: stretch, maxSpeed: maxSpeed
+        params: params, textStyle: textStyle, stretch: stretch, maxSpeed: maxSpeed, replaceTrack: reuseTrackM
       });
     }).then(function (r) {
       if (r == null) return;
@@ -5591,6 +5613,9 @@
         var why = (r.sampleErrors && r.sampleErrors.length) ? ' (' + r.sampleErrors[0] + ')' : '';
         return toast('Couldn\'t add this template' + why + '. Try another, or use an Animated style.', true);
       }
+      state.lastCaptionJob = { cues: tcues, track: r.track, mode: 'editable' };
+      saveLastCaptionJob();
+      reflectCaptionsPlaced();
       if (r.textSet === 0) {
         var msg = r.richBlocked
           ? 'Placed ' + r.inserted + ' graphics, but a safety test showed THIS template\'s ' +
@@ -5683,16 +5708,30 @@
       }
       return null;
     }
-    // ALWAYS prefer Subtitle 1 — it has a per-word HIGHLIGHT that tracks the
-    // spoken word (the thing users miss in editable mode), plus text + box +
-    // shadow, so every style's colours map onto it. Box-style presets can use
-    // the dedicated box template, which also tracks. Never fall back to the
-    // plain (no-highlight) template, or editable captions wouldn't track.
+    // Pick the REAL template whose OWN capabilities best match what the chosen
+    // canvas style actually needs, instead of always defaulting to one or two
+    // templates (which flattened most of the 70+ gallery styles into the same
+    // look on the timeline — "doesn't look like what I picked"):
+    //   - a style with NO word-by-word highlight (keyword:false, ~2/3 of the
+    //     gallery) gets the plain subtitle template — Subtitle 1's highlight
+    //     control would otherwise still pop/animate even set to the same colour.
+    //   - a style with a two-colour keyword gradient (highlight2) gets the one
+    //     template built for that, so BOTH gradient stops actually show.
+    //   - everything else (single-colour highlight) keeps the previous default.
+    // Every one of these still carries text + box + shadow controls, so box
+    // presets keep working via the existing opacity mapping below.
     preset = preset || {};
-    var hasBox = !!(preset.boxColor || preset.boxColor2);
-    var pick = hasBox ? (find('subtitle_1') || find('subtitle_5'))
-                      : (find('subtitle_1') || find('subtitle_5') || find('subtitle_3'));
-    return pick || find('subtitle') || list[0] || null;
+    var wantsHighlight = preset.keyword !== false;
+    var wantsGradientHl = wantsHighlight && !!preset.highlight2;
+    var pick = wantsGradientHl ? find('subtitle_4')
+             : !wantsHighlight ? find('subtitle_2')
+             : (find('subtitle_1') || find('subtitle_5') || find('subtitle_3'));
+    if (pick) return pick;
+    pick = find('subtitle_1') || find('subtitle');
+    if (pick) return pick;
+    // last resort: never hand back a TITLE template for a caption job
+    for (var li = 0; li < list.length; li++) if ((list[li].kind || 'caption') === 'caption') return list[li];
+    return list[0] || null;
   }
 
   /* The preset the user is ACTUALLY looking at: the template's defaults with the
@@ -5724,16 +5763,18 @@
     var out = [];
     if (!preset || !props || !props.length) return out;
     var COL = ['color', 'colorint'];
-    function find(res, kinds) {
+    function find(res, kinds, exclude) {
       for (var i = 0; i < props.length; i++) {
         var p = props[i]; if (kinds && kinds.indexOf(p.kind) < 0) continue;
+        if (exclude && exclude.indexOf(p) >= 0) continue;
         var nm = (p.name || '').toLowerCase();
         for (var r = 0; r < res.length; r++) if (res[r].test(nm)) return p;
       }
       return null;
     }
+    function clamp(v, p) { if (p && p.min != null && p.max != null) return Math.max(p.min, Math.min(p.max, v)); return v; }
     function color(p, hex) { if (p && hex) out.push({ i: p.i, kind: p.kind || 'color', value: hex }); }
-    function num(p, v) { if (p && v != null) out.push({ i: p.i, kind: 'number', value: v }); }
+    function num(p, v) { if (p && v != null) out.push({ i: p.i, kind: 'number', value: clamp(v, p) }); }
     // every colour control in live order — lets us fall back POSITIONALLY when a
     // template's colour control isn't named "text colour" (so the chosen text
     // colour still lands instead of the caption keeping the template's default).
@@ -5741,18 +5782,46 @@
     for (var ci = 0; ci < props.length; ci++) { if (COL.indexOf(props[ci].kind) >= 0) colorProps.push(props[ci]); }
     var textP = find([/text\s*colou?r/, /word\s*colou?r/, /font\s*colou?r/, /\bfill\b/, /\bcolou?r\b/], COL) || colorProps[0] || null;
     color(textP, preset.fill);
-    // highlight: a named "highlight/active/spoken" control, else the next colour
-    // control after the text one (subtitle templates list text then highlight).
-    var hlP = find([/highlight|active|spoken|current/], COL);
-    if (!hlP) { for (var hi = 0; hi < colorProps.length; hi++) { if (colorProps[hi] !== textP) { hlP = colorProps[hi]; break; } } }
-    color(hlP, preset.highlight || preset.fill);
+    // highlight: only map one when the STYLE actually wants a word highlight —
+    // otherwise leave the backbone's own default alone (we already picked a
+    // no-highlight backbone for these, but stay defensive if it lacks one).
+    var wantsHighlight = preset.keyword !== false;
+    var hlP = null, hl2P = null;
+    if (wantsHighlight) {
+      hlP = find([/highlight|active|spoken|current/], COL);
+      if (!hlP) { for (var hi = 0; hi < colorProps.length; hi++) { if (colorProps[hi] !== textP) { hlP = colorProps[hi]; break; } } }
+      color(hlP, preset.highlight || preset.fill);
+      // two-tone keyword gradient (preset.highlight2): the SECOND highlight-like
+      // colour control (named "…2", "…colour 2", or the next colour control after
+      // the first highlight) carries the second stop, so gradient styles actually
+      // show BOTH colours instead of collapsing to one.
+      if (preset.highlight2) {
+        hl2P = find([/highlight.*2|2.*highlight|colou?r\s*2\b/], COL, [textP, hlP]);
+        if (!hl2P) { for (var h2 = 0; h2 < colorProps.length; h2++) { if (colorProps[h2] !== textP && colorProps[h2] !== hlP) { hl2P = colorProps[h2]; break; } } }
+        color(hl2P, preset.highlight2);
+      }
+    }
     if (preset.boxColor) {
       color(find([/background|\bbg\b|box/], COL), preset.boxColor);
       var bo = preset.boxOpacity; bo = (bo == null) ? 100 : (bo <= 1 ? Math.round(bo * 100) : bo);
       num(find([/(background|\bbg\b|box).*opacit|opacit.*(background|\bbg\b|box)/], ['number']), bo);
+      // NOTE: corner roundness is deliberately NOT mapped — preset.boxRadius is
+      // authored in wildly different scales across styles (2..120) and the live
+      // inspect doesn't expose the control's real min/max to clamp against, so
+      // pushing it through unverified risked an ugly over/under-rounded box.
     } else {
       // style has no pill → hide the template's background so the look matches
       num(find([/(background|\bbg\b|box).*opacit|opacit.*(background|\bbg\b|box)/], ['number']), 0);
+    }
+    // soft shadow/glow: most subtitle templates expose a Shadow Color + Shadow
+    // Opacity pair — map the style's glow onto it (or hide it if the style has
+    // none), so shadowed/glowing styles aren't flattened to the template default.
+    var shadowOpP = find([/shadow.*opacit|opacit.*shadow/], ['number']);
+    if (preset.glow) {
+      color(find([/shadow.*colou?r|colou?r.*shadow/], COL), preset.glow);
+      num(shadowOpP, Math.round(((preset.glowBlur != null ? preset.glowBlur : 0.35)) * 100));
+    } else {
+      num(shadowOpP, 0);
     }
     return out;
   }
@@ -5771,7 +5840,7 @@
       return toast('Editable captions need a template, but none loaded' +
         (state.bundledDiag ? ' [' + state.bundledDiag + ']' : '') +
         '. Your install may be missing the “mogrts” folder' + (where ? ' (looked in ' + where + '\\mogrts)' : '') +
-        '. Reinstall the full Pulse folder, or switch the toggle to 🖼 Exact look (burned-in).', true);
+        '. Reinstall the full Pulse folder, or copy Diagnostics and send it over.', true);
     }
     if (!ensureTranscriptThen('editstyle')) return;
     var cues;
@@ -5791,6 +5860,13 @@
         !confirm(tcues.length + ' editable caption clips will be inserted — one per line. ' +
                  'MOGRTs insert slowly, so this can take a while. Tip: raise "Words per caption" for fewer, longer lines.\n\nContinue?')) return;
 
+    // Regenerating (a colour tweak, a different template, running it again)
+    // reuses the SAME track as last time so it REPLACES the old captions instead
+    // of stacking a second set on top — only when the previous job was itself an
+    // editable one (a PNG job's track has a different clip-naming scheme).
+    var prevJob = state.lastCaptionJob;
+    var reuseTrack = (prevJob && prevJob.mode === 'editable' && prevJob.track) ? prevJob.track : null;
+
     capProgress('Saving project…');
     ensureProjectSaved().then(function (ok) {
       if (!ok) { capProgress(null); return null; }
@@ -5800,7 +5876,7 @@
         capProgress('Adding ' + tcues.length + ' editable, styled captions…', tcues.length * 230);
         return CPBridge.callHost('CP_insertMogrtCaptions', {
           mogrtPath: bb.path, cues: tcues, videoTrack: null, audioTrack: 0,
-          params: params, textStyle: textStyle, stretch: false
+          params: params, textStyle: textStyle, stretch: false, replaceTrack: reuseTrack
         });
       });
     }).then(function (r) {
@@ -5808,10 +5884,17 @@
       capProgress(null);
       if (!r.inserted) {
         var why = (r.sampleErrors && r.sampleErrors.length) ? ' (' + r.sampleErrors[0] + ')' : '';
-        return toast('Couldn\'t place editable captions' + why + '. Try "Add captions (burned-in)" instead.', true);
+        return toast('Couldn\'t place editable captions' + why + '. Copy Diagnostics and send it over.', true);
       }
+      // track this job (own "mode" so the old PNG-only restyle UI never shows for
+      // it — editable captions are re-edited natively in Essential Graphics) and
+      // remember the track so the NEXT regenerate replaces it instead of stacking.
+      state.lastCaptionJob = { cues: tcues, track: r.track, mode: 'editable' };
+      saveLastCaptionJob();
+      reflectCaptionsPlaced();
       toast('✅ Added ' + r.inserted + ' EDITABLE caption clips, styled like “' + preset.name + '” — each is its ' +
-            'OWN clip on the timeline, timed to your audio. Edit any in Window → Essential Graphics.');
+            'OWN clip on the timeline, timed to your audio. Edit any in Window → Essential Graphics.' +
+            (reuseTrack ? ' (Replaced the previous set.)' : ''));
     }).catch(function (e) { capProgress(null); toast(e.message, true); });
   }
 

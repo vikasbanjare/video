@@ -1862,9 +1862,24 @@ function CP_insertMogrtCaptions(argsJson) {
     var isPortrait = (seqH > seqW);
     var portraitScale = isPortrait ? Math.round((seqW / 1920) * 10000) / 100 : 100;
     // Place MOGRT captions on a FRESH top video track (like the image engine)
-    // so they never overwrite existing footage and are easy to find and trim.
+    // so they never overwrite existing footage and are easy to find and trim —
+    // UNLESS replaceTrack asks us to reuse a track Pulse placed captions on
+    // before (regenerating after a colour/style change), in which case we clear
+    // that track's own clips first so re-running "Add captions" replaces the
+    // old set instead of stacking a second one on top of it.
     var vTrack;
-    if (args.videoTrack != null) {
+    if (args.replaceTrack != null && args.replaceTrack >= 1 && args.replaceTrack <= seq.videoTracks.numTracks) {
+      vTrack = args.replaceTrack - 1;
+      try {
+        app.enableQE();
+        var qseqRep = qe.project.getActiveSequence();
+        var qtRep = qseqRep.getVideoTrackAt(vTrack);
+        for (var rp = qtRep.numItems - 1; rp >= 0; rp--) {
+          var itRep = qtRep.getItemAt(rp);
+          if (itRep && itRep.type !== 'Empty') { try { itRep.remove(0, 0); } catch (eRemRep) {} }
+        }
+      } catch (eClrRep) {}
+    } else if (args.videoTrack != null) {
       vTrack = args.videoTrack;
     } else {
       vTrack = seq.videoTracks.numTracks - 1;
@@ -2087,7 +2102,8 @@ function CP_insertMogrtCaptions(argsJson) {
       richBlocked: richBlocked,           // template is rich AND probe said unsafe
       probeKind: probe.kind,              // 'rich' | 'simple' | 'strdb' | 'plain' | 'none'
       fields: fieldNames ? fieldNames.slice(0, 8) : [],
-      sampleErrors: errors.slice(0, 3)
+      sampleErrors: errors.slice(0, 3),
+      track: vTrack + 1                   // 1-based, so a later call can replaceTrack this same set
     });
   } catch (e) { return CP_fail(e.message); }
 }
