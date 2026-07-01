@@ -142,9 +142,11 @@
     function nextStart(idx) { return (idx + 1 < P) ? phrases[idx + 1][0].start : phrases[idx][phrases[idx].length - 1].end; }
 
     var deletes = [], removedWords = 0;
+    var inRetakeGroup = {};   // phrase idx → member of a real (2+) retake group
     Object.keys(groups).forEach(function (key) {
       var grp = groups[key];
       if (grp.length < 2) return;
+      for (var gm = 0; gm < grp.length; gm++) inRetakeGroup[grp[gm]] = true;
       grp.sort(function (x, y) { return x - y; });
       var keepIdx = grp[grp.length - 1];          // default: keep the LAST attempt
       if (keep === 'best') {
@@ -192,6 +194,40 @@
         if (isNearPrefix(toks[fi], toks[fi + 1], opts.prefixFrac)) {
           deletes.push({ start: startOf(fi), end: nextStart(fi), text: pText(phrases[fi]), reason: 'false start' });
           removedWords += phrases[fi].length;
+          inRetakeGroup[fi] = true;   // retake activity — lets the aside pass anchor on it
+        }
+      }
+    }
+
+    // Off-script ASIDES between takes ("no no wait", "ugh let me try that
+    // again", "okay one more time"…): they're not similar to anything, so the
+    // grouping can't catch them — but they're exactly what a one-button cleanup
+    // must remove. TWO locks keep this safe: (1) the phrase must be short and
+    // chatter-worded (a strong marker + mostly filler vocabulary), and (2) it
+    // must sit DIRECTLY NEXT TO detected retake activity. In a video with no
+    // retakes nothing is adjacent, so nothing can ever be taken by mistake.
+    if (opts.asides !== false) {
+      var STRONG = /^(no|nope|wait|again|redo|sorry|cut|ugh|over|messed|flubbed|scratch|terrible|awful|horrible|damn|dammit|shit|fuck|crap|retry|restart|stop)$/;
+      var WEAK = /^(let|me|try|that|this|it|one|more|time|okay|ok|hmm|um|uh|oh|man|god|was|is|i|do|did|hold|on|start|take|two|three|from|the|top|line|up|so|bad|not|good|right|yeah|well|alright|a|go|gonna|redo)$/;
+      var PHRASE_STRONG = /\b(one more time|take (two|three|\d+)|start over|from the top|try (that|it) again|do (that|it) again|that again)\b/;
+      var maxAside = opts.maxAsideWords || 8;
+      for (var ai = 0; ai < P; ai++) {
+        if (inRetakeGroup[ai]) continue;
+        var tk = toks[ai];
+        if (!tk.length || tk.length > maxAside) continue;
+        var near = (ai > 0 && inRetakeGroup[ai - 1]) || (ai + 1 < P && inRetakeGroup[ai + 1]);
+        if (!near) continue;
+        var joined = tk.join(' ');
+        var strong = 0, weak = 0;
+        for (var ti = 0; ti < tk.length; ti++) {
+          if (STRONG.test(tk[ti])) strong++;
+          else if (WEAK.test(tk[ti])) weak++;
+        }
+        var hasStrong = strong > 0 || PHRASE_STRONG.test(joined);
+        var chattery = (strong + weak) / tk.length >= 0.75;
+        if (hasStrong && chattery) {
+          deletes.push({ start: startOf(ai), end: nextStart(ai), text: pText(phrases[ai]), reason: 'off-script aside' });
+          removedWords += phrases[ai].length;
         }
       }
     }

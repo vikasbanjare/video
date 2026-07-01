@@ -1256,6 +1256,77 @@ console.log('ass.js (libass karaoke generator)');
     'groupWordEvents preserves each word\'s real timing for the highlight');
 }
 
+// ---------------------------------------------- takes: 10-min cleanup sim ----
+console.log('takes.js (scripted re-record simulation)');
+{
+  const LINES = [
+    'welcome back to the channel today we are talking about focus',
+    'the first thing you need to understand is that attention is a muscle',
+    'most people never train it and that is why they struggle',
+    'in this video I will show you three techniques that actually work',
+    'technique number one is called time boxing and it is dead simple',
+    'you pick one task and you give it a hard deadline of twenty five minutes',
+    'when the timer ends you stop no matter what and take a short break',
+    'technique number two is about removing friction from your environment',
+    'put your phone in another room and close every tab you do not need',
+    'the third technique is the most powerful one and nobody talks about it',
+    'you write down the exact next action before you ever sit down to work',
+    'if you enjoyed this video subscribe and I will see you in the next one'
+  ];
+  const CHATTER = ['no no wait', 'ugh let me try that again', 'okay one more time',
+    'that was terrible', 'sorry start over', 'wait I messed up that line'];
+  const words = []; let t = 2.0, chI = 0;
+  const emit = (text, junk, conf, endGap) => {
+    const ws = text.split(' ');
+    ws.forEach((w, i) => { words.push({ start: t, end: t + 0.26, text: w, conf, junk });
+      t += 0.26 + (i === ws.length - 1 ? endGap : 0.05); });
+  };
+  LINES.forEach((line, i) => {
+    const junkTakes = 1 + (i % 3);
+    for (let k = 0; k < junkTakes; k++) {
+      const ws = line.split(' ');
+      let take;
+      if (k === 0 && junkTakes > 1) take = ws.slice(0, Math.max(3, Math.round(ws.length * 0.5))).join(' ');
+      else if (k === 1 && junkTakes > 2) { const c = ws.slice(); c[Math.min(4, c.length - 1)] = 'blah'; take = c.join(' ') + ' no'; }
+      else take = ws.slice(0, Math.max(4, Math.round(ws.length * 0.75))).join(' ');
+      emit(take, true, 0.74 + 0.04 * k, 1.1);
+      if (k % 2 === 0) emit(CHATTER[chI++ % CHATTER.length], true, 0.8, 1.0);
+    }
+    emit(line, false, 0.96, 1.4);
+  });
+  const r = CPTakes.findRepeatedTakes(words.map(w => ({ start: w.start, end: w.end, text: w.text, conf: w.conf })),
+    { minRun: 3, sim: 0.6, keep: 'best' });
+  const inDel = m => r.deletes.some(d => m >= d.start && m <= d.end);
+  let junkDur = 0, junkDel = 0, goodDel = 0;
+  words.forEach(w => {
+    const dur = w.end - w.start, mid = (w.start + w.end) / 2;
+    if (w.junk) { junkDur += dur; if (inDel(mid)) junkDel += dur; }
+    else if (inDel(mid)) goodDel += dur;
+  });
+  const recall = junkDel / junkDur, precision = junkDel / (junkDel + goodDel || junkDel || 1);
+  assert(recall >= 0.95, 'cleanup sim: recall >= 95% of junk removed (got ' + (recall * 100).toFixed(1) + '%)');
+  assert(goodDel === 0, 'cleanup sim: ZERO seconds of the good takes deleted');
+  assert(precision >= 0.98, 'cleanup sim: precision >= 98%');
+
+  // safety: a clean video (no retakes) with chattery-sounding CONTENT loses nothing
+  const mk = (texts) => { const o = []; let tt = 1;
+    texts.forEach(tx => tx.split(' ').forEach((w, i, a) => { o.push({ start: tt, end: tt + 0.26, text: w });
+      tt += 0.26 + (i === a.length - 1 ? 1.0 : 0.05); })); return o; };
+  const clean = mk(['hold on because this next part is important',
+    'that was terrible for the whole industry last year',
+    'no other tool does this one thing well',
+    'let me try to explain the second technique now']);
+  assert(CPTakes.findRepeatedTakes(clean, { minRun: 3, sim: 0.6, keep: 'best' }).deletes.length === 0,
+    'cleanup sim: clean video (no retakes) → nothing deleted, even chattery-sounding content');
+  // safety: short NON-chatter content adjacent to a retake survives
+  const mixed = mk(['technique number one is called time boxing and it is simple',
+    'subscribe and hit the bell',
+    'technique number one is called time boxing and it is dead simple']);
+  const rm = CPTakes.findRepeatedTakes(mixed, { minRun: 3, sim: 0.6, keep: 'best' });
+  assert(!rm.deletes.some(d => /subscribe/.test(d.text)), 'cleanup sim: short content next to a retake survives');
+  assert(rm.deletes.length === 1 && rm.deletes[0].reason === 'repeated take', 'cleanup sim: only the junk take goes');
+}
+
 // ------------------------------------------------------------- align ----
 console.log('align.js (word-timing refinement)');
 {

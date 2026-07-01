@@ -45,7 +45,7 @@
     customTemplates: [],
     favs: {},
     recent: [],
-    libCategory: '⭐ Premium',
+    libCategory: 'All',   // open on the FULL catalog — a category default hid 59 of 77 styles ("you removed my templates")
     libSearch: '',
     libSort: 'popular',
     libMode: 'styles'      // 'styles' (built-in) | 'mogrt' (user .mogrt files)
@@ -1691,6 +1691,13 @@
       var act = state.pendingCaptionAction;
       state.pendingCaptionAction = null;
       setTimeout(function () {
+        if (act === 'autoclean') {
+          // one-button cleanup: words just arrived → go straight back to Auto-Edit
+          // and finish the clean automatically (no second tap needed)
+          var ta = document.querySelector('.tab[data-tab="silence"]'); if (ta) ta.click();
+          runAutoCleanAll();
+          return;
+        }
         var tb = document.querySelector('.tab[data-tab="captions"]'); if (tb) tb.click();
         showView('style');
         if (act === 'native') applyNative();
@@ -5761,6 +5768,9 @@
       uppercase: !!p.uppercase,
       fill: p.fill || '#FFFFFF',
       highlight: hasHl ? (p.highlight || p.fill || '#FFD400') : (p.fill || '#FFFFFF'),
+      // a TWO-TONE highlight is real on the timeline (the gradient backbone has
+      // Highlighted Word Color 1 + 2) — keep it so those styles stay distinct
+      highlight2: hasHl ? (p.highlight2 || null) : null,
       keyword: hasHl,
       boxColor: p.boxColor || null,
       boxOpacity: (p.boxOpacity != null ? p.boxOpacity : 1),
@@ -6087,31 +6097,68 @@
       else pSil = Promise.resolve([]);
       return pSil.then(function (silRanges) {
         silRanges = silRanges.slice();
-        var haveT = state.transcriptWords && state.transcriptWords.length;
-        if (!doTakes || !haveT) return { ranges: silRanges, needTranscript: doTakes && !haveT, ai: false };
+        var tp = TAKE_PRESETS[strength] || TAKE_PRESETS.balanced;
 
-        function deterministic() {
-          var tp = TAKE_PRESETS[strength] || TAKE_PRESETS.balanced;
-          var tk = CPTakes.findRepeatedTakes(state.transcriptWords, { minRun: tp.minrun, sim: tp.sim / 100, keep: 'last' });
+        function takesOn(words) {
+          // keep:'best' — completeness + per-word confidence + recency picks the
+          // take that actually got finished cleanly, not blindly the last one.
+          var tk = CPTakes.findRepeatedTakes(words, { minRun: tp.minrun, sim: tp.sim / 100, keep: 'best' });
           var out = silRanges.slice();
           tk.deletes.forEach(function (d) { out.push({ start: d.start, end: d.end }); });
           return out;
         }
-        // AI handles the hard case (a script re-read many times + off-script talk
-        // between takes — keep the last clean take). Falls back to the matcher.
-        if (cpKey() && typeof CPSmartEdit !== 'undefined' && typeof aiCleanupCuts === 'function') {
-          return aiCleanupCuts(state.transcriptWords, { aggressive: (strength === 'strong'), scripted: true }, prog, '✨ AI finding retakes & off-script talk')
-            .then(function (rr) {
-              var out = silRanges.concat(rr.cuts.map(function (c) { return { start: c.start, end: c.end }; }));
-              return { ranges: out, needTranscript: false, ai: true };
-            })
-            .catch(function () { return { ranges: deterministic(), needTranscript: false, ai: false }; });
+
+        // BEST PATH — the verbatim engine. The normal transcript (Groq) CLEANS
+        // the speech: it silently drops the re-reads and stumbles, so neither the
+        // matcher nor the AI can even SEE the retakes in it — that's why cleanup
+        // felt ~10% accurate. When a Deepgram/AssemblyAI key is set, the one
+        // button now transcribes VERBATIM (every retake kept, per-word
+        // confidence) and runs the take-picker on that. Falls back below if the
+        // engine errors.
+        if (doTakes && (settings.verbatimKey || '').trim() && typeof verbatimTranscribe === 'function') {
+          var ffV = resolveFfmpeg();
+          if (ffV) {
+            prog.textContent = '🎯 Reading every word (verbatim engine)…';
+            return verbatimTranscribe(clip, ffV).then(function (vw) {
+              prog.textContent = 'Picking the best take of every line…';
+              return { ranges: takesOn(vw), needTranscript: false, ai: false, verbatim: true, vWords: vw };
+            }).catch(function (eV) {
+              try { diag('autoclean', 'verbatim failed, falling back: ' + (eV && eV.message)); } catch (e0) {}
+              return fallbackPath();
+            });
+          }
         }
-        prog.textContent = 'Finding repeated takes…';
-        return { ranges: deterministic(), needTranscript: false, ai: false };
+        return fallbackPath();
+
+        function fallbackPath() {
+          var haveT = state.transcriptWords && state.transcriptWords.length;
+          if (!doTakes) return { ranges: silRanges, needTranscript: false, ai: false };
+          if (!haveT) {
+            // ONE button = do the whole job: no words yet → kick transcription and
+            // this same clean re-runs automatically the moment words are ready.
+            if (!state.transcript && !state.pendingCaptionAction) {
+              prog.classList.add('hidden');
+              if (!ensureTranscriptThen('autoclean')) return { pending: true };
+            }
+            return { ranges: silRanges, needTranscript: true, ai: false };
+          }
+          // AI pass on the normal transcript (it may still catch sentence-level
+          // repeats); the deterministic matcher is the floor either way.
+          if (cpKey() && typeof CPSmartEdit !== 'undefined' && typeof aiCleanupCuts === 'function') {
+            return aiCleanupCuts(state.transcriptWords, { aggressive: (strength === 'strong'), scripted: true }, prog, '✨ AI finding retakes & off-script talk')
+              .then(function (rr) {
+                var out = silRanges.concat(rr.cuts.map(function (c) { return { start: c.start, end: c.end }; }));
+                return { ranges: out, needTranscript: false, ai: true };
+              })
+              .catch(function () { return { ranges: takesOn(state.transcriptWords), needTranscript: false, ai: false }; });
+          }
+          prog.textContent = 'Finding repeated takes…';
+          return { ranges: takesOn(state.transcriptWords), needTranscript: false, ai: false };
+        }
       });
     }).then(function (r) {
-      var ranges = mergeSeqRanges(snapRangesToWords(r.ranges, state.transcriptWords));
+      if (r && r.pending) return;   // transcription kicked off; the clean re-runs itself when words land
+      var ranges = mergeSeqRanges(snapRangesToWords(r.ranges, r.vWords || state.transcriptWords));
       prog.classList.add('hidden');
       if (!ranges.length) return toast('Nothing to clean — your video is already tight!' + (r.needTranscript ? ' (Transcribe first to also remove repeated takes.)' : ''));
       var total = ranges.reduce(function (a, x) { return a + (x.end - x.start); }, 0);
