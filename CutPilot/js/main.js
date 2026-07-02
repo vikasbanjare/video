@@ -5931,6 +5931,20 @@
       if (scP && typeof scP.num === 'number' && isFinite(scP.num) && scP.num > 0) {
         num(scP, Math.max(10, Math.min(400, scP.num * preset.sizeScale)));
       }
+      // the BOX must shrink/grow WITH the text: scale every padding control by the
+      // same ratio (point {x,y} paddings and numeric ones), from its LIVE value —
+      // otherwise a smaller caption sits in the template's full-size box.
+      for (var pd = 0; pd < props.length; pd++) {
+        var pp = props[pd];
+        var pn = (pp.name || '').toLowerCase();
+        if (pn.indexOf('pad') < 0) continue;
+        if (pp.point && pp.point.x != null) {
+          out.push({ i: pp.i, kind: 'point',
+                     value: { x: pp.point.x * preset.sizeScale, y: pp.point.y * preset.sizeScale } });
+        } else if (pp.kind === 'number' && typeof pp.num === 'number' && isFinite(pp.num)) {
+          num(pp, pp.num * preset.sizeScale);
+        }
+      }
     }
     if (preset.boxColor) {
       color(find([/background|\bbg\b|box/], COL), preset.boxColor);

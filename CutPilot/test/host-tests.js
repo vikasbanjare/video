@@ -158,8 +158,15 @@ function makeWorld(opts) {
           setColorValue(a, r, g, b) { color = [r, g, b]; },
           getColorValue() { return [255, color[0], color[1], color[2]]; }
         };
-        const props = [textProp, colorProp];
-        Object.defineProperty(props, 'numItems', { get() { return 2; } });
+        // word-sweep controls, named like the REAL template — including the space
+        // before "(Automated)" that the old exact-prefix matcher choked on
+        const sweep = { type: null, dur: null, wordIndex: null };
+        const typeProp = { displayName: 'Type', getValue() { return 1; }, setValue(v) { sweep.type = v; } };
+        const durProp = { displayName: 'Start Time, Duration (Automated)', getValue() { return [0, 0]; }, setValue(v) { sweep.dur = v; } };
+        const idxProp = { displayName: 'Word Index', getValue() { return 0; }, setValue(v) { sweep.wordIndex = v; } };
+        clip._sweep = () => sweep;
+        const props = [textProp, colorProp, typeProp, durProp, idxProp];
+        Object.defineProperty(props, 'numItems', { get() { return 5; } });
         clip.getMGTComponent = () => ({ properties: props });
         clip._finalColor = () => color.slice();
         clip._finalBlob = () => blob;
@@ -391,6 +398,14 @@ console.log('host.jsx — colour params re-applied AFTER text writes (preview ==
   const blob = JSON.parse(clip._finalBlob());
   assert(blob.textEditValue === 'the pollution levels', 'final blob carries the caption words');
   assert(blob.fontFSBoldValue.every(x => x === true), 'final blob carries BOLD on every run');
+  // the word-by-word sweep — this is "the highlighting is not working" bug:
+  // the old matcher demanded the byte-exact name "Start Time, Duration(Automated)"
+  // and this template (like real ones) has a space before "(Automated)" → no sweep.
+  assert(r.swept === 1, 'word-sweep ENGAGED despite the spaced "(Automated)" name (was 0 before)');
+  const sw = clip._sweep();
+  assert(sw.type === 2, 'highlight Type switched to Duration-Based (2)');
+  assert(Array.isArray(sw.dur) && sw.dur[0] === 0 && Math.abs(sw.dur[1] - 1.5) < 0.05,
+    'sweep runs 0 → caption length (' + JSON.stringify(sw.dur) + ')');
 }
 
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');

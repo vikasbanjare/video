@@ -1891,18 +1891,35 @@ function CP_copyStyleSelectedToTrack() {
  * diagnostic object (or null) so the panel can report what it set. */
 function CP_setWordSweep(comp, durSec) {
   if (!comp || !comp.properties || !(durSec > 0)) return null;
-  var props = comp.properties, typeProp = null, durProp = null, i;
+  // RELAXED name matching. The old code demanded the byte-exact prefix
+  // "Start Time, Duration(Automated)" — one space difference in the live
+  // display name (e.g. "Duration (Automated)") and it bailed with null: NO
+  // sweep on any caption, which reads as "the highlight is not working".
+  // Same class of bug the colour mapper had. Now: normalize (lowercase, strip
+  // non-letters) and match on substance, and NEVER bind the entrance
+  // "Animation Type" dropdown as the highlight Type.
+  var props = comp.properties, typeProp = null, durProp = null, idxProp = null, i;
   for (i = 0; i < props.numItems; i++) {
     var dn = String(props[i].displayName || '');
-    if (!durProp && dn.indexOf('Start Time, Duration(Automated)') === 0) durProp = props[i];
-    else if (!typeProp && dn === 'Type') typeProp = props[i];
+    var nn = dn.toLowerCase().replace(/[^a-z]/g, '');     // "Start Time, Duration (Automated)" → "starttimedurationautomated"
+    if (!durProp && (nn.indexOf('starttimeduration') === 0 || (nn.indexOf('duration') >= 0 && nn.indexOf('automated') >= 0))) durProp = props[i];
+    else if (!typeProp && (nn === 'type' || nn === 'highlighttype') && nn.indexOf('animation') < 0) typeProp = props[i];
+    else if (!idxProp && nn === 'wordindex') idxProp = props[i];
   }
   if (!durProp) return null;                       // not a word-highlight template
-  var info = { dur: durSec, typeSet: false, durSet: false };
+  var info = { dur: durSec, typeSet: false, durSet: false,
+               typeName: typeProp ? String(typeProp.displayName) : null,
+               durName: String(durProp.displayName) };
   // Type → "Duration Based" (2nd menu option; Premiere dropdowns are 1-based).
   if (typeProp) {
     try { typeProp.setValue(2, true); info.typeSet = true; }
     catch (e1) { try { typeProp.setValue(2); info.typeSet = true; } catch (e2) {} }
+  }
+  // GRACEFUL DEGRADATION: if the mode switch didn't take (or doesn't exist) the
+  // template may sit in Index mode where "Word Index" 0 highlights NOTHING —
+  // point it at the first word so there is always a visible highlight.
+  if (!info.typeSet && idxProp) {
+    try { idxProp.setValue(1, true); } catch (eI1) { try { idxProp.setValue(1); } catch (eI2) {} }
   }
   // Start at 0, sweep across all words over the caption's visible duration.
   try { durProp.setValue([0, durSec], true); info.durSet = true; }
