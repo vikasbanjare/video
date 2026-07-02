@@ -123,7 +123,7 @@ function makeWorld(opts) {
       const start = Number(ticks) / TICKS;
       const clip = model.addClip('vTracks', vTrack, start, start + model.mogrtNaturalDur, {
         name: path.basename(String(mogrtPath)),
-        getMGTComponent() { return null; },       // text/param surface not modelled yet
+        getMGTComponent() { return null; },       // default: no component surface
         videoComponents: {
           get numItems() { return 1; },
           0: {
@@ -134,6 +134,36 @@ function makeWorld(opts) {
           }
         }
       });
+      if (opts.richText) {
+        // A Subtitle-like component: a rich source-text prop + a param-driven
+        // "Text Color". CLOBBER SIMULATION: any write to the source text resets
+        // the colour param to white — the exact preview-vs-timeline failure the
+        // user screenshotted (white template-default text on a styled box).
+        let blob = JSON.stringify({
+          capPropFontEdit: true, capPropTextRunCount: 2,
+          textEditValue: 'Template default words', capPropTextRunLength: [22],
+          fontEditValue: ['SegoeUI', 'SegoeUI'], fontSizeEditValue: [62, 48],
+          fontFSBoldValue: [false, false], fontFSAllCapsValue: [false, false],
+          fontFSItalicValue: [false, false], fillColorEditValue: [[1, 1, 1], [1, 1, 1]]
+        });
+        let color = [255, 255, 255];
+        const textProp = {
+          displayName: 'Text',
+          getValue() { return blob; },
+          setValue(v) { blob = String(v); color = [255, 255, 255]; }   // ← the clobber
+        };
+        const colorProp = {
+          displayName: 'Text Color',
+          getValue() { return 16777215; },
+          setColorValue(a, r, g, b) { color = [r, g, b]; },
+          getColorValue() { return [255, color[0], color[1], color[2]]; }
+        };
+        const props = [textProp, colorProp];
+        Object.defineProperty(props, 'numItems', { get() { return 2; } });
+        clip.getMGTComponent = () => ({ properties: props });
+        clip._finalColor = () => color.slice();
+        clip._finalBlob = () => blob;
+      }
       model.imports.push({ path: String(mogrtPath), start, vTrack });
       return clip;
     }
@@ -289,6 +319,78 @@ const CUES3 = [
   assert(caps.length === 2, 'old caption set cleared — track holds exactly the new set');
   assert(caps.every(c => /Subtitle_2/.test(c.name)), 'the clips on the track are the NEW template');
   assert(r2.track === r1.track, 'the same track number is reported back again');
+}
+
+// ══════════════════════════ CP_setMgrtText — multi-run styling (the fix) ═════
+console.log('host.jsx — CP_setMgrtText styles MULTI-run source text (the white-text bug)');
+{
+  const w = makeWorld({});
+  const host = loadHost(w);
+  const mkProp = (blob) => { let v = blob; return { getValue() { return v; }, setValue(nv) { v = String(nv); }, read() { return v; } }; };
+  const multi = JSON.stringify({
+    capPropFontEdit: true, capPropTextRunCount: 2,
+    textEditValue: 'old words', capPropTextRunLength: [9],
+    fontEditValue: ['SegoeUI', 'SegoeUI'], fontSizeEditValue: [62, 48],
+    fontFSBoldValue: [false, false], fontFSAllCapsValue: [false, false],
+    fontFSItalicValue: [false, false], fillColorEditValue: [[1, 1, 1], [1, 1, 1]]
+  });
+  const p = mkProp(multi);
+  const okSet = host.CP_setMgrtText(p, 'the pollution levels', true,
+    { font: 'Inter-Bold', bold: true, caps: false, fill: '#111317', size: 80 });
+  assert(okSet === true, 'multi-run rich write reports success');
+  let parsed = null; try { parsed = JSON.parse(p.read()); } catch (e) {}
+  assert(!!parsed, 'blob still parses as JSON after the rewrite (no structural corruption)');
+  assert(parsed.textEditValue === 'the pollution levels', 'words replaced');
+  assert(parsed.capPropTextRunLength.length === 1 && parsed.capPropTextRunLength[0] === 20,
+    'run-length updated to the new text length');
+  assert(parsed.fontFSBoldValue.length === 2 && parsed.fontFSBoldValue[0] === true && parsed.fontFSBoldValue[1] === true,
+    'BOLD applied to EVERY run (was skipped entirely on multi-run blobs)');
+  const f = parsed.fillColorEditValue;
+  const wantFill = [17 / 255, 19 / 255, 23 / 255];
+  const fillOk = f.length === 2 && f.every(run => run.length === 3 && run.every((c, i) => Math.abs(c - wantFill[i]) < 1e-6));
+  assert(fillOk, 'text FILL (#111317) applied to EVERY run, run count preserved');
+  assert(parsed.fontEditValue.length === 2 && parsed.fontEditValue.every(x => x === 'Inter-Bold'),
+    'font applied to every run');
+  assert(parsed.fontSizeEditValue[0] === 62 && parsed.fontSizeEditValue[1] === 48,
+    'multi-run SIZES untouched (designed hierarchy — scaled elsewhere)');
+  assert(parsed.fontFSItalicValue[0] === false && parsed.fontFSItalicValue[1] === false,
+    'fields not in the style stay exactly as they were');
+
+  // single-run regression: size DOES apply there
+  const single = JSON.stringify({
+    capPropTextRunCount: 1, textEditValue: 'hi', textRunLength: [2],
+    fontSizeEditValue: [62], fontFSBoldValue: [false], fillColorEditValue: [[1, 1, 1]]
+  });
+  const ps = mkProp(single);
+  host.CP_setMgrtText(ps, 'yo there', true, { bold: true, fill: '#111317', size: 80 });
+  const sp = JSON.parse(ps.read());
+  assert(sp.fontSizeEditValue[0] === 80 && sp.fontFSBoldValue[0] === true,
+    'single-run blob: size + bold still apply (no regression)');
+}
+
+// ════════════════ insert flow: params survive the text-write clobber ═════
+console.log('host.jsx — colour params re-applied AFTER text writes (preview == timeline)');
+{
+  const w = makeWorld({ vTracks: 1, aTracks: 1, richText: true });
+  const host = loadHost(w);
+  const r = call(host, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Subtitle_2.mogrt',
+    cues: [{ start: 1.0, end: 2.5, text: 'the pollution levels' }],
+    videoTrack: null, audioTrack: 0,
+    params: [{ i: 1, kind: 'color', value: '#111317' }],
+    textStyle: { font: 'Inter-Bold', caps: false, bold: true, fill: '#111317', sizeScale: 1 },
+    stretch: false
+  });
+  assert(r.ok === true && r.inserted === 1, 'insert with rich component succeeds');
+  assert(r.textSet === 1, 'the caption text was written into the rich source text');
+  const caps = w.model.vTracks[w.model.vTracks.length - 1];
+  const clip = caps[0];
+  const finalColor = clip._finalColor();
+  assert(Math.abs(finalColor[0] - 17) <= 2 && Math.abs(finalColor[1] - 19) <= 2 && Math.abs(finalColor[2] - 23) <= 2,
+    'Text Color param survives the text-write clobber (re-applied last): ' + JSON.stringify(finalColor));
+  const blob = JSON.parse(clip._finalBlob());
+  assert(blob.textEditValue === 'the pollution levels', 'final blob carries the caption words');
+  assert(blob.fontFSBoldValue.every(x => x === true), 'final blob carries BOLD on every run');
 }
 
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');

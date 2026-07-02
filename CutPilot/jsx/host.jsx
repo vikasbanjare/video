@@ -1304,6 +1304,67 @@ function CP_placeSfx(argsJson) {
  * passes true AFTER a probe write on a throwaway instance verified that this
  * specific template accepts the edit cleanly (see CP_probeRichText). Without
  * that proof we refuse rich writes — they can corrupt the project. */
+/* ---- balanced-span field rewriting for rich source-text blobs ----------
+   Styling fields live in PER-RUN arrays ("fillColorEditValue":[[r,g,b],[r,g,b]],
+   "fontFSBoldValue":[true,false], …). The old writer only styled SINGLE-run
+   blobs, so on any multi-run template the words were replaced but the styling
+   block was skipped — the caption landed with the template's default look
+   (white thin text on Subs Light while the preview showed dark bold: the
+   preview-vs-timeline screenshot). These helpers rewrite the VALUES inside the
+   existing arrays without ever changing an array's length or any run-length
+   field, so they are exactly as structure-safe as the single-run path. */
+function CP_scanJsonValue(s, i) {
+  while (i < s.length && (s.charAt(i) === ' ' || s.charAt(i) === '\t')) i++;
+  var c = s.charAt(i);
+  if (c === '[') {
+    var d = 0, j = i, inStr = false;
+    for (; j < s.length; j++) {
+      var ch = s.charAt(j);
+      if (inStr) { if (ch === '\\') { j++; continue; } if (ch === '"') inStr = false; continue; }
+      if (ch === '"') inStr = true;
+      else if (ch === '[') d++;
+      else if (ch === ']') { d--; if (!d) return { start: i, end: j + 1 }; }
+    }
+    return null;
+  }
+  var j2 = i, inS = false;
+  for (; j2 < s.length; j2++) {
+    var ch2 = s.charAt(j2);
+    if (inS) { if (ch2 === '\\') { j2++; continue; } if (ch2 === '"') inS = false; continue; }
+    if (ch2 === '"') inS = true;
+    else if (ch2 === ',' || ch2 === '}') break;
+  }
+  return { start: i, end: j2 };
+}
+function CP_rewriteBlobField(blob, fieldRegexSrc, fn) {
+  var re = new RegExp('"' + fieldRegexSrc + '"\\s*:\\s*', 'g');
+  var m, res = '', last = 0, changedAny = false;
+  while ((m = re.exec(blob)) !== null) {
+    var vs = re.lastIndex;
+    var span = CP_scanJsonValue(blob, vs);
+    if (!span) continue;
+    res += blob.substring(last, vs) + fn(blob.substring(span.start, span.end));
+    last = span.end;
+    re.lastIndex = span.end;
+    changedAny = true;
+  }
+  if (!changedAny) return blob;
+  return res + blob.substring(last);
+}
+function CP_runBoolsAll(desired) {
+  return function (span) { return span.replace(/true|false/g, desired ? 'true' : 'false'); };
+}
+function CP_runTripletsAll(t3) {
+  return function (span) {
+    if (/^\[\s*\[/.test(span)) return span.replace(/\[[^\[\]]*\]/g, function () { return '[' + t3 + ']'; });
+    if (span.charAt(0) === '[') return '[' + t3 + ']';
+    return span;
+  };
+}
+function CP_runStringsAll(str) {
+  return function (span) { return span.replace(/"(?:[^"\\]|\\.)*"/g, '"' + str + '"'); };
+}
+
 function CP_setMgrtText(prop, text, allowRich, style) {
   var cur = null;
   try { cur = prop.getValue ? prop.getValue() : null; } catch (eCur) { cur = null; }
@@ -1334,35 +1395,36 @@ function CP_setMgrtText(prop, text, allowRich, style) {
     // keep any *RunLength field consistent with the new char count
     out = out.replace(/("[A-Za-z]*RunLength"\s*:\s*)\[\s*\d+\s*\]/g, function (m, a) { return a + '[' + n + ']'; });
     out = out.replace(/("[A-Za-z]*RunLength"\s*:\s*)\d+/g, function (m, a) { return a + n; });
-    // Text STYLE edits (font / size / caps / bold / italic). These live in
-    // per-run arrays like "fontEditValue":["X"], so they're only safe on a
-    // SINGLE run (length-1 arrays stay consistent). Gate on run count.
+    // Text STYLE edits. fill / caps / bold / italic / font apply on ANY run
+    // count now: CP_rewriteBlobField replaces the values INSIDE the existing
+    // per-run arrays without changing their length (or any run-length field),
+    // so a multi-run blob stays exactly as structurally consistent as before —
+    // the old single-run gate silently skipped ALL styling on multi-run
+    // templates, which is why timeline captions came out template-default
+    // (white/thin) while the preview showed the chosen colours. Only SIZE keeps
+    // the single-run gate: multi-run sizes are a designed hierarchy, and
+    // CP_scaleAllTextSizes already scales those proportionally.
     var singleRun = /"capPropTextRunCount"\s*:\s*1\b/.test(out);
-    if (style && singleRun) {
+    if (style) {
       if (style.font) {
         var fe = esc(String(style.font));
-        out = out.replace(/("fontEditValue"\s*:\s*\[\s*")(?:[^"\\]|\\.)*("\s*\])/, function (m, a, b) { return a + fe + b; });
-        out = out.replace(/("fontEditValue"\s*:\s*")(?:[^"\\]|\\.)*(")/, function (m, a, b) { return a + fe + b; });
+        out = CP_rewriteBlobField(out, 'fontEditValue', CP_runStringsAll(fe));
         out = out.replace(/("fontName"\s*:\s*")(?:[^"\\]|\\.)*(")/g, function (m, a, b) { return a + fe + b; });
       }
-      if (style.size != null && !isNaN(parseFloat(style.size))) {
+      if (style.size != null && !isNaN(parseFloat(style.size)) && singleRun) {
         var sz = parseFloat(style.size);
         out = out.replace(/("fontSizeEditValue"\s*:\s*)\[\s*[\d.]+\s*\]/, function (m, a) { return a + '[' + sz + ']'; });
         out = out.replace(/("fontSizeEditValue"\s*:\s*)[\d.]+/, function (m, a) { return a + sz; });
       }
-      if (style.caps != null)
-        out = out.replace(/("fontFSAllCapsValue"\s*:\s*)\[\s*(?:true|false)\s*\]/, function (m, a) { return a + '[' + (style.caps ? 'true' : 'false') + ']'; });
-      if (style.bold != null)
-        out = out.replace(/("fontFSBoldValue"\s*:\s*)\[\s*(?:true|false)\s*\]/, function (m, a) { return a + '[' + (style.bold ? 'true' : 'false') + ']'; });
-      if (style.italic != null)
-        out = out.replace(/("fontFSItalicValue"\s*:\s*)\[\s*(?:true|false)\s*\]/, function (m, a) { return a + '[' + (style.italic ? 'true' : 'false') + ']'; });
+      if (style.caps != null) out = CP_rewriteBlobField(out, 'fontFSAllCapsValue', CP_runBoolsAll(!!style.caps));
+      if (style.bold != null) out = CP_rewriteBlobField(out, 'fontFSBoldValue', CP_runBoolsAll(!!style.bold));
+      if (style.italic != null) out = CP_rewriteBlobField(out, 'fontFSItalicValue', CP_runBoolsAll(!!style.italic));
       // Text FILL colour lives in the source text too (AE stores [r,g,b] 0..1,
-      // sometimes nested per-run as [[r,g,b]]). Replace whichever form is there.
+      // per-run as [[r,g,b],[r,g,b],…]) — every run gets the chosen colour.
       if (style.fill) {
         var fcr = CP_hexToRgba(style.fill);
         var t3 = fcr[0] + ',' + fcr[1] + ',' + fcr[2];
-        out = out.replace(/("(?:font)?[Ff]ill[Cc]olou?r(?:Edit)?Value"\s*:\s*\[\s*\[)[^\]]*(\])/g, function (m, a, b) { return a + t3 + b; });
-        out = out.replace(/("(?:font)?[Ff]ill[Cc]olou?r(?:Edit)?Value"\s*:\s*\[)(?!\s*\[)[^\]]*(\])/g, function (m, a, b) { return a + t3 + b; });
+        out = CP_rewriteBlobField(out, '(?:font)?[Ff]ill[Cc]olou?r(?:Edit)?Value', CP_runTripletsAll(t3));
       }
     }
     try { prop.setValue(out, true); return true; } catch (e1) {}
@@ -2023,6 +2085,13 @@ function CP_insertMogrtCaptions(argsJson) {
       // is invalidated. CP_forceRerender dirties it (and always leaves it enabled
       // at its real opacity) so the new words actually paint.
       if (textSet > textSetBefore) CP_forceRerender(clip);
+
+      // Re-apply the colour/param overrides LAST — writing a source-text blob
+      // (the caption text, the size scale, and the re-render kick above all do)
+      // can revert param-driven styling on some templates, which left e.g. a
+      // white box with the template's default white text while the preview was
+      // right. CP_applyMgrtParams is idempotent, so a second pass is free.
+      try { if (comp && comp.properties) CP_applyMgrtParams(comp, args.params); } catch (eReap) {}
 
       // Entrance animation — the SAME keyframe engine the PNG path uses, applied
       // to the editable graphic clip. This is what gives "editable template"
