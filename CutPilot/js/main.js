@@ -2765,8 +2765,8 @@
       if (!frames || !frames.length) frames = [{ words: sw }];
       // Fill the card without overflowing: cap the font so the block fits the
       // card HEIGHT (the engine only fits WIDTH, so a too-big start clips top/bottom).
-      var fMax = Math.round(0.84 * 1080 / (2 * 1.18));   // height-safe maximum (2 lines)
-      var pov = { fontSize: fMax, maxWidthPct: 0.95, maxLines: 2, vCenter: true };
+      var fMax = Math.round(0.5 * 1080 / 1.18);   // single line, width-fit (like the real strip)
+      var pov = { fontSize: fMax, maxWidthPct: 0.95, maxLines: 1, vCenter: true };
       canvas._animFrames = frames;
       canvas._animStyle = CPRender.styleForFrame(t, canvas.height, pov);
       canvas._animLen = frames.length;
@@ -4004,16 +4004,18 @@
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
     canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
 
-    var fMax = Math.round(0.80 * 1080 / (2 * 1.18));   // big swatch text, height-safe for 2 lines
+    // ONE line, like the real backbone caption (a strip, not stacked pills) —
+    // the engine width-fits the size down so the whole sample stays on one line.
+    var fMax = Math.round(0.42 * 1080 / 1.18);
     var pStyle;
     try {
-      pStyle = CPRender.styleForFrame(carry, canvas.height, { fontSize: fMax, maxWidthPct: 0.92, maxLines: 2, vCenter: true });
+      pStyle = CPRender.styleForFrame(carry, canvas.height, { fontSize: fMax, maxWidthPct: 0.92, maxLines: 1, vCenter: true });
     } catch (eStyle) {
       // a style that trips the engine must NEVER blank the preview — fall back to
       // a minimal look and record which template + why in Diagnostics.
       try { diag('preview', (carry.id || '?') + ' styleForFrame: ' + (eStyle && eStyle.message)); } catch (eD1) {}
       pStyle = CPRender.styleForFrame({ id: carry.id, font: 'Inter', fill: carry.fill || '#ffffff', fontSize: 120 },
-                                      canvas.height, { fontSize: fMax, maxWidthPct: 0.92, maxLines: 2, vCenter: true });
+                                      canvas.height, { fontSize: fMax, maxWidthPct: 0.92, maxLines: 1, vCenter: true });
     }
     canvas._pvStyle = pStyle;   // exposed so the parity harness can machine-compare tile vs preview
     var sample = carry.uppercase ? 'YOUR BIG IDEA' : 'Your big idea';
@@ -5192,8 +5194,8 @@
     try {
       // BIG text in a SMALL box: height-fit the caption so it fills the preview
       // and stays legible (it's a style swatch, not a true on-frame size match).
-      var fMax = Math.round(0.80 * 1080 / (2 * 1.18));
-      var st = CPRender.styleForFrame(carry, cv.height, { fontSize: fMax, maxWidthPct: 0.92, maxLines: 2, vCenter: true });
+      var fMax = Math.round(0.42 * 1080 / 1.18);
+      var st = CPRender.styleForFrame(carry, cv.height, { fontSize: fMax, maxWidthPct: 0.92, maxLines: 1, vCenter: true });
       var sample = carry.uppercase ? 'BIG IDEA' : 'Big idea';
       var sw2 = sample.split(' '), DUR2 = 0.4;
       var wc2 = sw2.map(function (w, i) { return { start: i * DUR2, end: (i + 1) * DUR2, text: w }; });
