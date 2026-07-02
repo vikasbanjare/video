@@ -90,9 +90,14 @@ def make_variant(base_files, spec):
     d = json.loads(base_files['definition.json'].decode('utf-8'))
     d['capsuleID'] = str(uuid.uuid4())
     d['capsuleName'] = spec['name']
-    if isinstance(d.get('capsuleNameLocalized'), dict):
-        for loc in d['capsuleNameLocalized']:
-            d['capsuleNameLocalized'][loc] = spec['name']
+    # capsuleNameLocalized is a strDB ARRAY of {localeString, str} objects.
+    # (v1 of this tool replaced the array with a plain string — Premiere then
+    # failed the whole import with "bad any cast". Shape must be preserved.)
+    cnl = d.get('capsuleNameLocalized')
+    if isinstance(cnl, dict) and isinstance(cnl.get('strDB'), list):
+        for ent in cnl['strDB']:
+            if isinstance(ent, dict) and 'str' in ent:
+                ent['str'] = spec['name']
     applied = set()
     for c in d.get('clientControls', []):
         n = ui_name(c)
@@ -106,10 +111,32 @@ def make_variant(base_files, spec):
     out['definition.json'] = json.dumps(d, separators=(',', ':')).encode('utf-8')
     return out, d
 
+def assert_same_shape(a, b, path='$'):
+    """Recursively assert the variant keeps EXACTLY the base's JSON shape:
+    same types everywhere, same dict keys, same array lengths — only leaf
+    VALUES may differ. This is what Premiere's strict 'any cast' parser needs,
+    and it catches the exact corruption class that broke pilot v1."""
+    num = lambda x: isinstance(x, (int, float)) and not isinstance(x, bool)
+    if num(a) and num(b):
+        return   # int↔float is fine — JSON has one number type
+    if type(a) is not type(b):
+        raise SystemExit('SHAPE CHANGED at %s: %s -> %s' % (path, type(a).__name__, type(b).__name__))
+    if isinstance(a, dict):
+        if set(a.keys()) != set(b.keys()):
+            raise SystemExit('KEYS CHANGED at %s: %s' % (path, set(a.keys()) ^ set(b.keys())))
+        for k in a:
+            assert_same_shape(a[k], b[k], path + '.' + k)
+    elif isinstance(a, list):
+        if len(a) != len(b):
+            raise SystemExit('ARRAY LENGTH CHANGED at %s: %d -> %d' % (path, len(a), len(b)))
+        for i, (x, y) in enumerate(zip(a, b)):
+            assert_same_shape(x, y, '%s[%d]' % (path, i))
+
 def validate(base_files, var_path, spec):
     base_d = json.loads(base_files['definition.json'].decode('utf-8'))
     v_files = load_mogrt(var_path)
     v_d = json.loads(v_files['definition.json'].decode('utf-8'))
+    assert_same_shape(base_d, v_d)   # strict: only leaf values may differ, never structure
     a = base_d['clientControls']; b = v_d['clientControls']
     assert len(a) == len(b), 'control count changed'
     diffs = []
