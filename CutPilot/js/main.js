@@ -2788,7 +2788,13 @@
     } else {
       f = frames[((tick % frames.length) + frames.length) % frames.length];
     }
-    try { CPRender.drawFrame(canvas, f, style); } catch (e) {}
+    try { CPRender.drawFrame(canvas, f, style); }
+    catch (e) {
+      if (!canvas._drawDiagged) {
+        canvas._drawDiagged = 1;
+        try { diag('preview', 'tile/sheet draw failed: ' + (e && e.message)); } catch (e2) {}
+      }
+    }
   }
 
   /* One shared ticker repaints every animated card canvas — cheap (a handful of
@@ -2898,7 +2904,7 @@
     // the Premiere inspect round-trip below (slow, and if it failed the sheet sat
     // with an empty preview box = "no preview when I click a template").
     try {
-      state.mogrtPrev = { fill: null, highlight: null, box: null, firstColor: null, blobFill: null, font: 'Arial', caps: false, bold: false };
+      state.mogrtPrev = { fill: null, highlight: null, box: null, firstColor: null, blobFill: null, font: '', caps: null, bold: null };
       _mogrtPrevCanvas = $('ms-live-canvas');
       renderMogrtPreview();
       // once layout has actually run, repaint at the real size
@@ -2955,7 +2961,7 @@
     if ($('ms-back')) $('ms-back').addEventListener('click', closeMogrtSheet);
     if ($('ms-x')) $('ms-x').addEventListener('click', closeMogrtSheet);
     $('mogrt-sheet').addEventListener('click', function (e) {
-      if (e.target === this) this.classList.add('hidden'); // tap backdrop to close
+      if (e.target === this) closeMogrtSheet();   // backdrop close = full teardown, same as ✕
     });
     $('ms-preview').addEventListener('click', function () {
       if (!state.selectedMogrt) return;
@@ -5245,7 +5251,7 @@
       // live colour/font preview — repaints as the controls below are edited.
       // fill/box/highlight start as null so the template's OWN colours seed them
       // (a non-null default would block the seeding and force white-on-white).
-      state.mogrtPrev = { fill: null, highlight: null, box: null, firstColor: null, blobFill: null, font: 'Arial', caps: false, bold: false };
+      state.mogrtPrev = { fill: null, highlight: null, box: null, firstColor: null, blobFill: null, font: '', caps: null, bold: null };
       var sticky = document.getElementById('ms-live-preview');
       if (sticky && box.id === 'ms-customizer') {
         // ALWAYS wire the live "your colours" canvas so edits can be shown — but
@@ -5880,8 +5886,9 @@
     var NOT_TEXT = /highlight|active|spoken|current|background|\bbg\b|\bbox\b|shadow|stroke|outline|glow/;
     var textP = find([/text\s*colou?r/, /font\s*colou?r/, /\bfill\b/, /\bcolou?r\b/], COL, null, NOT_TEXT);
     if (!textP) { for (var tf = 0; tf < colorProps.length; tf++) { if (!NOT_TEXT.test((colorProps[tf].name || '').toLowerCase())) { textP = colorProps[tf]; break; } } }
-    if (!textP) textP = colorProps[0] || null;
+    // no safe candidate at all → write NO fill (never clobber a highlight/bg control)
     color(textP, preset.fill);
+    out._bind = { fill: textP ? textP.name : null };   // trace: WHICH control each slot bound to
     // highlight: only map one when the STYLE actually wants the word sweep —
     // otherwise leave the backbone's own default alone (we already picked a
     // no-highlight backbone for these, but stay defensive if it lacks one).
@@ -5890,6 +5897,7 @@
     if (wantsHighlight) {
       hlP = find([/highlight|active|spoken|current/], COL, [textP]);   // never the prop the fill went to
       if (!hlP) { for (var hi = 0; hi < colorProps.length; hi++) { if (colorProps[hi] !== textP) { hlP = colorProps[hi]; break; } } }
+      out._bind.hl = hlP ? hlP.name : null;
       // same visible-colour guarantee as carryableStyle: never sweep invisibly
       var hlHex = preset.highlight;
       if (!hlHex || String(hlHex).toLowerCase() === String(preset.fill || '').toLowerCase()) hlHex = '#ffd400';
@@ -5998,12 +6006,14 @@
     var prevJob = state.lastCaptionJob;
     var reuseTrack = (prevJob && prevJob.mode === 'editable' && prevJob.track) ? prevJob.track : null;
 
+    var sentParams = null;   // kept for the style trace (includes ._bind slot→control names)
     capProgress('Saving project…');
     ensureProjectSaved().then(function (ok) {
       if (!ok) { capProgress(null); return null; }
       capProgress('Reading the editable template…');
       return CPBridge.callHost('CP_inspectMogrt', { path: bb.path }).then(function (r) {
         var params = mapPresetToMogrt(preset, (r && r.props) || []);
+        sentParams = params;
         capProgress('Adding ' + tcues.length + ' editable, styled captions…', tcues.length * 230);
         return CPBridge.callHost('CP_insertMogrtCaptions', {
           mogrtPath: bb.path, cues: tcues, videoTrack: null, audioTrack: 0,
@@ -6018,10 +6028,12 @@
       try {
         diag('editable', JSON.stringify({
           ver: ($('ver') && $('ver').textContent) || '?', backbone: bb.name || bb.path,
-          probeKind: r.probeKind, richBlocked: !!r.richBlocked, textSet: r.textSet,
-          inserted: r.inserted, swept: r.swept, paramsSent: (r.paramsSent != null ? r.paramsSent : undefined),
+          probeKind: r.probeKind, textSet: r.textSet, inserted: r.inserted,
+          bind: (sentParams && sentParams._bind) || null,   // WHICH control took fill/highlight — catches wrong-binding instantly
+          richBlocked: !!r.richBlocked, swept: r.swept,
+          paramsSent: (r.paramsSent != null ? r.paramsSent : undefined),
           paramsApplied: (r.paramsApplied != null ? r.paramsApplied : undefined),
-          fields: r.fields, errs: r.sampleErrors
+          errs: r.sampleErrors, fields: r.fields
         }));
       } catch (eTr) {}
       if (!r.inserted) {
@@ -6045,7 +6057,11 @@
       toast('✅ Added ' + r.inserted + ' EDITABLE caption clips, styled like “' + preset.name + '” — each is its ' +
             'OWN clip on the timeline, timed to your audio. Edit any in Window → Essential Graphics.' +
             (reuseTrack ? ' (Replaced the previous set.)' : ''));
-    }).catch(function (e) { capProgress(null); toast(e.message, true); });
+    }).catch(function (e) {
+      capProgress(null);
+      try { diag('editable', 'FAILED before placement: ' + (e && e.message)); } catch (eTr2) {}
+      toast(e.message, true);
+    });
   }
 
   // ---- ONE-CLICK VIRAL EDIT: the SELECTED style + auto zoom punch-ins (beta) --
