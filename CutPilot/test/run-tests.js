@@ -1400,4 +1400,16 @@ try {
     { stdio: 'inherit' });
 } catch (e) { auditOk = false; }
 
-process.exit(failed || !auditOk ? 1 : 0);
+// ------------------------------------------------- host (timeline) ----
+// The REAL jsx/host.jsx evaluated against a mini-Premiere (DOM + QE views over
+// one geometry model): razor/ripple correctness, editable-caption placement,
+// track reuse, portrait scaling. This is the layer where "it didn't work on
+// the timeline" lives — it gets tested on every run now.
+console.log('\nRunning host (timeline) tests…');
+var hostOk = true;
+try {
+  require('child_process').execSync('node "' + require('path').join(__dirname, 'host-tests.js') + '"',
+    { stdio: 'inherit' });
+} catch (e) { hostOk = false; }
+
+process.exit(failed || !auditOk || !hostOk ? 1 : 0);
