@@ -17,8 +17,8 @@
     platform: 'reels', alsoCustom: false,
     rows: 3, cols: 3, margin: 5, gutter: 0,
     ov: { margin: false, thirds: true, cross: false, action: false, title: false, diag: false },
-    brandMode: 'none', titlePos: 'bottom', dur: 'full',
-    channel: '', title: '', handle: true, opacity: 70, replace: true,
+    brandMode: 'pulse', titlePos: 'bottom', dur: 'full',   // default: Pulse (by aifloh) branding ON
+    channel: 'by aifloh', title: '', handle: true, opacity: 70, replace: true,
     env: null, logo: null, logoName: ''
   };
 
@@ -349,7 +349,16 @@
 
   function refreshEnv(cb) {
     if (window.CPBridge && CPBridge.isCEP && CPBridge.isCEP()) {
-      CPBridge.callHost('CP_getEnv').then(function (env) { state.env = env; if (cb) cb(); renderPreview(); }).catch(function () { if (cb) cb(); renderPreview(); });
+      CPBridge.callHost('CP_getEnv').then(function (env) {
+        state.env = env;
+        // basic generated title: seed from the sequence's own name once, so the
+        // branded overlay always has something sensible without any typing
+        if (!state.title && env && env.sequenceName) {
+          state.title = String(env.sequenceName).replace(/\.[^.]*$/, '');
+          var ti = $('sz-title'); if (ti && !ti.value) ti.value = state.title;
+        }
+        if (cb) cb(); renderPreview();
+      }).catch(function () { if (cb) cb(); renderPreview(); });
     } else { renderPreview(); }
   }
 

@@ -1715,9 +1715,16 @@
      fresh); only show the "looking…" placeholder when nothing's chosen yet
      so a background rescan doesn't flicker an already-confirmed transcript. */
   function findTranscript() {
-    state.transcriptManual = false;
-    state.transcriptWords = null;   // an auto-found external SRT has no word timing
-    if (!state.transcript) setTranscriptBar('', '🔎', 'looking for your words…', null);
+    // NON-DESTRUCTIVE rescan. This used to clear the manual flag + word timing
+    // at ENTRY and then re-decide — so every panel focus could rip out the
+    // transcript the user just made (a rescan with no clip selected can't see
+    // the cutpilot cache) and adopt some random project .srt instead, flipping
+    // back and forth ("auto-detecting other subtitles and reloading again and
+    // again"). Now: a made/hand-picked transcript is NEVER replaced by a scan;
+    // scans only fill emptiness or upgrade an earlier auto pick.
+    var cur = state.transcript;
+    var curProtected = !!(state.transcriptManual || (cur && cur.src === 'cutpilot-cache'));
+    if (!cur) setTranscriptBar('', '🔎', 'looking for your words…', null);
     var found = [];
     var seen = {};
     function add(s) {
@@ -1770,16 +1777,23 @@
       pick.forEach(function (s) { s.score = rel(s) + (s.base || 0) + Math.min(s.mtime || 0, 9e12) / 1e3; });
       pick.sort(function (a, b) { return b.score - a.score; });
 
-      if (pick.length) {
-        state.transcript = pick[0];
-        if (pick[0].src === 'cutpilot-cache') {
+      var top = pick.length ? pick[0] : null;
+      var samePath = !!(top && cur && cur.path && top.path === cur.path);
+      if (cur && (curProtected || !top)) {
+        // keep what the user has — a background scan never downgrades or clears it.
+        // (If the scan re-found the same file, silently refresh its metadata.)
+        if (samePath && top.words && !state.transcriptWords) state.transcriptWords = top.words;
+      } else if (top) {
+        if (!samePath) state.transcriptWords = top.words || null;   // words only reset when the FILE changes
+        state.transcript = top;
+        if (top.src === 'cutpilot-cache') {
           // restore the saved word-level timing + protect it from a background rescan
-          state.transcriptWords = pick[0].words || null;
+          state.transcriptWords = top.words || null;
           state.transcriptManual = true;
           setTranscriptBar('ok', '✅', 'Using your saved transcript — already done, no re-transcribe', 'Change');
         } else {
-          var note = (rel(pick[0]) > 0) ? '' : ' · tap Change if wrong';
-          setTranscriptBar('ok', '✅', 'Using ' + pick[0].label + note, 'Change');
+          var note = (rel(top) > 0) ? '' : ' · tap Change if wrong';
+          setTranscriptBar('ok', '✅', 'Using ' + top.label + note, 'Change');
         }
       } else {
         state.transcript = null;
@@ -1787,8 +1801,7 @@
       }
       refreshMogrtSheetTr(); refreshMogrtEditorTr();
     }).catch(function () {
-      state.transcript = null;
-      setTranscriptBar('warn', '⚠️', 'No transcript found yet', 'Get one →');
+      if (!state.transcript) setTranscriptBar('warn', '⚠️', 'No transcript found yet', 'Get one →');
       refreshMogrtSheetTr(); refreshMogrtEditorTr();
     });
   }
@@ -2831,33 +2844,16 @@
     head.appendChild(fav);
     card.appendChild(head);
 
-    // single dark preview box.
+    // single dark preview box — ALWAYS the live carryable canvas, for MOGRT cards
+    // too. (The baked thumb .mp4/.png showed the caption at its tiny real
+    // on-frame size — mostly empty black tiles — and drifted from the customize
+    // sheet. One renderer everywhere: tile == sheet == editor == output.)
     var thumb = document.createElement('div');
     thumb.className = 'tpl-thumb';
-    if (isMogrt && (t.video || t.thumb)) {
-      // EDITABLE templates show their REAL Premiere render (the exact thing that
-      // gets inserted) — so the gallery tile == the timeline, guaranteed. Prefer
-      // the looping .mp4 (shows the motion), else the baked .png.
-      var media;
-      if (t.video) {
-        media = document.createElement('video');
-        media.src = t.video; media.muted = true; media.loop = true; media.autoplay = true;
-        media.setAttribute('playsinline', ''); media.setAttribute('disablepictureinpicture', '');
-        try { media.play(); } catch (ePlay) {}
-      } else {
-        media = document.createElement('img');
-        media.src = t.thumb; media.alt = t.name;
-      }
-      media.className = 'tpl-thumb-media';
-      thumb.appendChild(media);
-    } else {
-      // built-in canvas styles (paintThumbs renders these after layout). A MOGRT
-      // with no baked render falls back to the colour-approximation canvas.
-      var cvs = document.createElement('canvas');
-      cvs.className = 'tpl-thumb-canvas';
-      if (isMogrt) cvs._mogrtTpl = t; else cvs._tpl = t;
-      thumb.appendChild(cvs);
-    }
+    var cvs = document.createElement('canvas');
+    cvs.className = 'tpl-thumb-canvas';
+    if (isMogrt) cvs._mogrtTpl = t; else cvs._tpl = t;
+    thumb.appendChild(cvs);
     card.appendChild(thumb);
 
     if (isMogrt) card.addEventListener('click', function () { openMogrtSheet(t); });
@@ -2894,6 +2890,14 @@
     if (msAnim) { try { msAnim.pause(); } catch (eP0) {} msAnim.classList.add('hidden'); msAnim.removeAttribute('src'); }
     if (msThumb) { msThumb.classList.add('hidden'); msThumb.removeAttribute('src'); }
     if (msLive) msLive.classList.remove('hidden');
+    // Paint the preview RIGHT NOW from the template's own colours — don't wait on
+    // the Premiere inspect round-trip below (slow, and if it failed the sheet sat
+    // with an empty preview box = "no preview when I click a template").
+    try {
+      state.mogrtPrev = { fill: null, highlight: null, box: null, firstColor: null, blobFill: null, font: 'Arial', caps: false, bold: false };
+      _mogrtPrevCanvas = $('ms-live-canvas');
+      renderMogrtPreview();
+    } catch (ePv) {}
     // show THIS template's real capabilities (read from its definition.json)
     if ($('ms-hint')) {
       var caps = mogrtCapsSummary(t.path);
@@ -5710,7 +5714,10 @@
     // Every one of these still carries text + box + shadow controls, so box
     // presets keep working via the existing opacity mapping below.
     preset = preset || {};
-    var wantsHighlight = preset.keyword !== false;
+    // Sweep-by-default: only an explicit wordHl:false (or the user's toggle)
+    // routes to the static Subtitle_2 — everything else gets a word-highlight
+    // backbone, matching carryableStyle()'s rule so preview == output.
+    var wantsHighlight = preset.wordHl !== false;
     var wantsGradientHl = wantsHighlight && !!preset.highlight2;
     var pick = wantsGradientHl ? find('subtitle_4')
              : !wantsHighlight ? find('subtitle_2')
@@ -5748,6 +5755,8 @@
     // glow carried, so turning shadow on/off in the editor silently did nothing.
     eff.glow = ov.glow || null;
     if (ov.glowBlur != null) eff.glowBlur = ov.glowBlur;
+    // the visible "Word-by-word highlight" toggle is authoritative for the sweep
+    eff.wordHl = cchk('c-wordhl');
     return eff;
   }
 
@@ -5760,14 +5769,24 @@
      output genuinely doesn't have them. */
   function carryableStyle(p) {
     p = p || {};
-    var hasHl = p.keyword !== false;
+    // Word-by-word is the product's signature: the sweep is ON for EVERY style
+    // unless it explicitly opts out (wordHl:false — 4 quiet/minimal templates) or
+    // the user unticks the toggle. keyword:false only ever meant "no static
+    // keyword colouring", which had wrongly silenced the sweep on 55/77 styles
+    // ("word by word not working for most of the captions").
+    var hasHl = p.wordHl !== false;
+    // the sweep needs a VISIBLE colour — a style whose highlight is missing or
+    // identical to the text colour would sweep invisibly, so give those the
+    // classic yellow pop (shown in the preview too, so it stays WYSIWYG).
+    var hl = p.highlight || null;
+    if (hasHl && (!hl || String(hl).toLowerCase() === String(p.fill || '').toLowerCase())) hl = '#ffd400';
     return {
       id: p.id, name: p.name,
       font: p.font, fallbackFonts: p.fallbackFonts,
       weight: (p.weight || 800) >= 600 ? 800 : 500,   // backbone only knows bold vs regular
       uppercase: !!p.uppercase,
       fill: p.fill || '#FFFFFF',
-      highlight: hasHl ? (p.highlight || p.fill || '#FFD400') : (p.fill || '#FFFFFF'),
+      highlight: hasHl ? hl : (p.fill || '#FFFFFF'),
       // a TWO-TONE highlight is real on the timeline (the gradient backbone has
       // Highlighted Word Color 1 + 2) — keep it so those styles stay distinct
       highlight2: hasHl ? (p.highlight2 || null) : null,
@@ -5808,15 +5827,18 @@
     for (var ci = 0; ci < props.length; ci++) { if (COL.indexOf(props[ci].kind) >= 0) colorProps.push(props[ci]); }
     var textP = find([/text\s*colou?r/, /word\s*colou?r/, /font\s*colou?r/, /\bfill\b/, /\bcolou?r\b/], COL) || colorProps[0] || null;
     color(textP, preset.fill);
-    // highlight: only map one when the STYLE actually wants a word highlight —
+    // highlight: only map one when the STYLE actually wants the word sweep —
     // otherwise leave the backbone's own default alone (we already picked a
     // no-highlight backbone for these, but stay defensive if it lacks one).
-    var wantsHighlight = preset.keyword !== false;
+    var wantsHighlight = preset.wordHl !== false;
     var hlP = null, hl2P = null;
     if (wantsHighlight) {
       hlP = find([/highlight|active|spoken|current/], COL);
       if (!hlP) { for (var hi = 0; hi < colorProps.length; hi++) { if (colorProps[hi] !== textP) { hlP = colorProps[hi]; break; } } }
-      color(hlP, preset.highlight || preset.fill);
+      // same visible-colour guarantee as carryableStyle: never sweep invisibly
+      var hlHex = preset.highlight;
+      if (!hlHex || String(hlHex).toLowerCase() === String(preset.fill || '').toLowerCase()) hlHex = '#ffd400';
+      color(hlP, hlHex);
       // two-tone keyword gradient (preset.highlight2): the SECOND highlight-like
       // colour control (named "…2", "…colour 2", or the next colour control after
       // the first highlight) carries the second stop, so gradient styles actually
