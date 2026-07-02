@@ -134,7 +134,90 @@ function makeWorld(opts) {
           }
         }
       });
-      if (opts.richText) {
+      if (opts.fluxComponent) {
+        // The FLUX caption engine (Flux_Halo2) — the template every gallery
+        // style now rides. Exact control set + display names from the real
+        // definition.json, in the real order: strDB main text, a "(Change font
+        // only)" mirror + author Note that must NEVER be written, named colour
+        // controls with the real colour API, bool/point/number params, and the
+        // word-sweep pair ("Type" / "Start Time, Duration(Automated)").
+        const writes = { fg: 0, note: 0 };
+        const mk = {
+          uuid: (name) => ({ displayName: name, getValue() { return 'b7358fe1-9ef6-4156-9886-6834d89c8406;bed39a3c-2f72-4bad-93a2-3b3b54bfe4e0'; } }),
+          color: (name, store) => ({
+            displayName: name,
+            getValue() { return 16777215; },
+            setColorValue(a, r, g, b) { store.v = [r, g, b]; },
+            getColorValue() { return [255].concat(store.v); }
+          }),
+          num: (name, store) => ({ displayName: name, getValue() { return store.v; }, setValue(v) { store.v = v; } }),
+          bool: (name, store) => ({ displayName: name, getValue() { return store.v; }, setValue(v) { store.v = !!v; } }),
+          point: (name, store) => ({ displayName: name, getValue() { return { x: store.x, y: store.y }; },
+                                     setValue(v) { store.x = (v && v.x != null) ? v.x : v[0]; store.y = (v && v.y != null) ? v.y : v[1]; } }),
+          // onWrite fires only when the CONTENT changes — CP_forceRerender
+          // legitimately re-applies a prop's own value as a re-composite kick
+          strdb: (name, store, onWrite) => ({ displayName: name, getValue() { return store.v; },
+                                              setValue(v) { if (String(v) !== store.v && onWrite) onWrite(); store.v = String(v); } })
+        };
+        const S = clip._flux = {
+          text:   { v: '{"strDB":[{"localeString":"en_US","str":"Flux Halo"}]}' },
+          fgText: { v: '{"strDB":[{"localeString":"en_US","str":"Flux Halo"}]}' },
+          note:   { v: 'If you change the font, match the Gradient FG text.' },
+          hl1: { v: [197, 255, 0] }, hl2: { v: [197, 255, 0] },
+          textColor: { v: [255, 255, 255] }, bgColor: { v: [0, 60, 255] }, shColor: { v: [0, 0, 0] },
+          // SENTINEL seeds (deliberately NOT the real template defaults) so every
+          // write the panel relies on is OBSERVABLE: an assertion that expects the
+          // same value the mock booted with can never fail. sweepType boots 1
+          // (Index mode) so the Duration-Based switch is a real 1→2 transition;
+          // tOpacity/shSoft/bgOpacity/shOn boot "dimmed/mis-set" so the forced
+          // values are provably written, not inherited.
+          animType: { v: 4 }, sweepType: { v: 1 }, wordIdx: { v: 0 },
+          sweepDur: { x: 0.5, y: 2 }, animDur: { x: 0, y: 1 },
+          gradA: { x: 284, y: 960 }, gradB: { x: 791, y: 960 },
+          textPos: { x: 540, y: 960 }, fgPos: { x: 540, y: 960 }, pad: { x: 50, y: 50 },
+          scale: { v: 100 }, tOpacity: { v: 40 }, lineSp: { v: 0 },
+          bgRound: { v: 0 }, bgOpacity: { v: 42 },
+          shOn: { v: true }, shOpacity: { v: 25 }, shDist: { v: 5 }, shSoft: { v: 20 }, shDir: { v: 135 }
+        };
+        const props = [
+          mk.uuid('Text Animation Controls'),                    // 0
+          mk.num('Animation Type', S.animType),                  // 1
+          mk.point('Animation Start Time, Duration', S.animDur), // 2
+          mk.uuid('Word Highlight Controls'),                    // 3
+          mk.num('Type', S.sweepType),                           // 4
+          mk.num('Word Index (Manual)', S.wordIdx),              // 5
+          mk.point('Start Time, Duration(Automated)', S.sweepDur), // 6
+          mk.color('Highlighted Word Color 1', S.hl1),           // 7
+          mk.color('Highlighted Word Color 2', S.hl2),           // 8
+          mk.point('Start of Gradient', S.gradA),                // 9
+          mk.point('End of Gradient', S.gradB),                  // 10
+          mk.uuid('Text Controls'),                              // 11
+          mk.strdb('Text', S.text),                              // 12
+          mk.point('Text Position', S.textPos),                  // 13
+          mk.strdb('Note', S.note, () => writes.note++),         // 14
+          mk.strdb('Gradient FG Text (Change font only)', S.fgText, () => writes.fg++), // 15
+          mk.point('Gradient FG Text Position', S.fgPos),        // 16
+          mk.num('Text Scale', S.scale),                         // 17
+          mk.num('Text Opacity', S.tOpacity),                    // 18
+          mk.color('Text Color', S.textColor),                   // 19
+          mk.num('Line Spacing', S.lineSp),                      // 20
+          mk.uuid('BG Controls'),                                // 21
+          mk.point('BG Box Padding', S.pad),                     // 22
+          mk.color('BG Color', S.bgColor),                       // 23
+          mk.num('BG Roundness', S.bgRound),                     // 24
+          mk.num('BG Opacity', S.bgOpacity),                     // 25
+          mk.uuid('Shadow Controls'),                            // 26
+          mk.bool('Shadow On/Off', S.shOn),                      // 27
+          mk.color('Shadow Color', S.shColor),                   // 28
+          mk.num('Shadow Opacity', S.shOpacity),                 // 29
+          mk.num('Shadow Distance', S.shDist),                   // 30
+          mk.num('Shadow Softness', S.shSoft),                   // 31
+          mk.num('Shadow Direction', S.shDir)                    // 32
+        ];
+        Object.defineProperty(props, 'numItems', { get() { return props.length; } });
+        clip.getMGTComponent = () => ({ properties: props });
+        clip._fluxWrites = writes;
+      } else if (opts.richText) {
         // A Subtitle-like component: a rich source-text prop + a param-driven
         // "Text Color". CLOBBER SIMULATION: any write to the source text resets
         // the colour param to white — the exact preview-vs-timeline failure the
@@ -406,6 +489,96 @@ console.log('host.jsx — colour params re-applied AFTER text writes (preview ==
   assert(sw.type === 2, 'highlight Type switched to Duration-Based (2)');
   assert(Array.isArray(sw.dur) && sw.dur[0] === 0 && Math.abs(sw.dur[1] - 1.5) < 0.05,
     'sweep runs 0 → caption length (' + JSON.stringify(sw.dur) + ')');
+}
+
+// ═══════════ the FLUX caption engine: gallery styles ride it 1:1 now ═══════
+console.log('host.jsx — Flux engine (Halo2 control set): text, exact-name params, sweep');
+{
+  const w = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true });
+  const host = loadHost(w);
+  // params exactly as mapPresetToFlux emits for "Subs Light" (dark text, blue
+  // spoken word, white bar, no glow) at Size ×1.2 — indexes = the real control order
+  const r = call(host, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt',
+    cues: [{ start: 1.0, end: 2.2, text: 'the pollution levels' },
+           { start: 2.2, end: 3.4, text: 'are rising fast' }],
+    videoTrack: null, audioTrack: 0,
+    params: [
+      { i: 19, kind: 'color',  value: '#15181E' },   // Text Color
+      { i: 7,  kind: 'color',  value: '#2D7CFF' },   // Highlighted Word Color 1
+      { i: 8,  kind: 'color',  value: '#2D7CFF' },   // Highlighted Word Color 2 (solid → same)
+      { i: 18, kind: 'number', value: 100 },         // Text Opacity
+      { i: 23, kind: 'color',  value: '#F1F2F4' },   // BG Color
+      { i: 25, kind: 'number', value: 100 },         // BG Opacity
+      { i: 24, kind: 'number', value: 10 },          // BG Roundness
+      { i: 17, kind: 'number', value: 120 },         // Text Scale (×1.2)
+      { i: 22, kind: 'point',  value: { x: 60, y: 60 } }, // BG Box Padding (×1.2)
+      { i: 27, kind: 'bool',   value: false },       // Shadow On/Off
+      { i: 29, kind: 'number', value: 0 }            // Shadow Opacity
+    ],
+    textStyle: null, stretch: false
+  });
+  assert(r.ok === true && r.inserted === 2, 'both caption clips insert on the Flux engine');
+  assert(r.probeKind === 'strdb', 'Flux text probes as strDB (' + r.probeKind + ')');
+  assert(r.textCount === 1, 'exactly ONE writable text field — the FG mirror and Note are excluded');
+  assert(r.textSet === 2, 'the words were written into both graphics');
+  const caps = w.model.vTracks[w.model.vTracks.length - 1];
+  const f0 = caps[0]._flux, f1 = caps[1]._flux;
+  assert(JSON.parse(f0.text.v).strDB[0].str === 'the pollution levels' &&
+         JSON.parse(f1.text.v).strDB[0].str === 'are rising fast',
+    'each clip carries its OWN cue text, and the strDB stays valid JSON');
+  assert(caps[0]._fluxWrites.fg === 0 && caps[0]._fluxWrites.note === 0 &&
+         caps[1]._fluxWrites.fg === 0 && caps[1]._fluxWrites.note === 0 &&
+         JSON.parse(f0.fgText.v).strDB[0].str === 'Flux Halo',
+    'the "(Change font only)" mirror and the author Note keep their baked content (never changed)');
+  const near = (v, want) => v.every((x, i) => Math.abs(x - want[i]) <= 2);
+  assert(near(f0.textColor.v, [0x15, 0x18, 0x1E]), 'Text Color = the style fill (' + f0.textColor.v + ')');
+  assert(near(f0.hl1.v, [0x2D, 0x7C, 0xFF]) && near(f0.hl2.v, [0x2D, 0x7C, 0xFF]),
+    'both highlight stops = the style highlight (solid)');
+  assert(near(f0.bgColor.v, [0xF1, 0xF2, 0xF4]) && f0.bgOpacity.v === 100 && f0.bgRound.v === 10,
+    'box colour/opacity/roundness land on the named BG controls');
+  assert(f0.scale.v === 120 && f0.pad.x === 60 && f0.pad.y === 60,
+    'Size slider scales Text Scale AND the box padding together');
+  assert(f0.shOn.v === false && f0.shOpacity.v === 0, 'no glow → the engine shadow is OFF');
+  assert(f0.tOpacity.v === 100, 'text opacity forced fully visible');
+  assert(r.swept === 2, 'word-by-word sweep engaged on every clip');
+  assert(f0.sweepType.v === 2 && f1.sweepType.v === 2,
+    'highlight Type WRITTEN 1 → 2 (Duration Based) on each — a real transition, not the seed');
+  assert(f0.animType.v === 4 && f1.animType.v === 4,
+    'the entrance "Animation Type" enum is NEVER bound as the sweep Type (stays 4)');
+  assert(f0.animDur.x === 0 && f0.animDur.y === 1,
+    '"Animation Start Time, Duration" is never mistaken for the sweep duration');
+  assert(Math.abs(f0.sweepDur.x - 0) < 1e-6 && Math.abs(f0.sweepDur.y - 1.2) < 0.05 &&
+         Math.abs(f1.sweepDur.y - 1.2) < 0.05,
+    'sweep runs 0 → each caption\'s own length (' + JSON.stringify(f0.sweepDur) + ')');
+}
+
+// glow styles: the engine's soft shadow becomes a centred halo
+{
+  const w = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true });
+  const host = loadHost(w);
+  const r = call(host, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt',
+    cues: [{ start: 0.5, end: 1.8, text: 'neon nights' }],
+    videoTrack: null, audioTrack: 0,
+    params: [
+      { i: 19, kind: 'color',  value: '#FFFFFF' },
+      { i: 25, kind: 'number', value: 0 },            // boxless style → BG hidden
+      { i: 27, kind: 'bool',   value: true },          // Shadow On/Off ← glow
+      { i: 28, kind: 'color',  value: '#00E5FF' },     // Shadow Color ← glow colour
+      { i: 29, kind: 'number', value: 60 },            // Shadow Opacity
+      { i: 30, kind: 'number', value: 0 },             // Shadow Distance 0 = halo, not drop
+      { i: 31, kind: 'number', value: 100 }            // Shadow Softness
+    ],
+    textStyle: null, stretch: false
+  });
+  const f = w.model.vTracks[w.model.vTracks.length - 1][0]._flux;
+  assert(r.ok === true && r.inserted === 1 && r.textSet === 1, 'glow-style insert succeeds');
+  assert(f.shOn.v === true && Math.abs(f.shDist.v) < 1e-6 && f.shSoft.v === 100 &&
+         f.shOpacity.v === 60 && near2(f.shColor.v, [0x00, 0xE5, 0xFF]),
+    'glow rides the shadow controls as a centred halo (on/colour/opacity/dist 0/softness 100)');
+  assert(f.bgOpacity.v === 0, 'boxless style hides the engine\'s box');
+  function near2(v, want) { return v.every((x, i) => Math.abs(x - want[i]) <= 2); }
 }
 
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');

@@ -1,26 +1,5 @@
 [
   {
-    "file": "Style_BoldPop.mogrt",
-    "name": "\u2605 Bold Pop (Pilot)",
-    "category": "Captions",
-    "kind": "caption",
-    "desc": "PILOT \u2014 authored defaults, zero translation: white text, yellow spoken word, dark bar"
-  },
-  {
-    "file": "Style_SubsLight.mogrt",
-    "name": "\u2605 Subs Light (Pilot)",
-    "category": "Captions",
-    "kind": "caption",
-    "desc": "PILOT \u2014 dark text on a white bar, blue spoken word"
-  },
-  {
-    "file": "Style_KaraokeBar.mogrt",
-    "name": "\u2605 Karaoke Bar (Pilot)",
-    "category": "Captions",
-    "kind": "caption",
-    "desc": "PILOT \u2014 white text on a dark bar, green spoken word"
-  },
-  {
     "file": "Subtitle_2.mogrt",
     "name": "Plain Subtitle",
     "category": "Captions",

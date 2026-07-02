@@ -5,7 +5,8 @@
   <title>Pulse</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Inter 600 = the caption engine's baked face; loading it makes every preview pixel-honest when online -->
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@500;600;700&display=swap" rel="stylesheet">
   <!-- Caption faces — loaded as web fonts so the chosen font renders in the
        live preview AND the canvas-rendered PNGs even if it isn't installed. -->
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Bebas+Neue&family=Archivo+Black&family=Fjalla+One&family=Bangers&family=Luckiest+Guy&family=Alfa+Slab+One&family=Bungee&family=Titan+One&family=Passion+One&family=Permanent+Marker&family=Pacifico&family=Shadows+Into+Light&family=Montserrat:wght@400;500;600;700;800;900&family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800;900&family=Oswald:wght@400;700&family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Lato:wght@400;700&family=Raleway:wght@400;700&family=Work+Sans:wght@400;700&family=Nunito:wght@400;700&family=Rubik:wght@400;700&family=DM+Sans:wght@400;500;700&family=Outfit:wght@400;500;600;700;800;900&family=Sora:wght@400;500;600;700;800&family=Barlow:wght@400;700&family=Manrope:wght@400;500;600;700;800&family=Teko:wght@400;700&family=Playfair+Display:wght@400;700&family=Merriweather:wght@400;700&family=Lora:wght@400;700&family=JetBrains+Mono:wght@400;700&family=Roboto+Mono:wght@400;700&family=Space+Mono:wght@400;700&family=Caveat:wght@400;700&display=swap" rel="stylesheet">
@@ -24,7 +25,7 @@
       </svg>
       <span class="brand-name">Pulse</span><span class="brand-by">by aifloh</span>
     </div>
-    <span class="ver" id="ver">v0.9.262</span>
+    <span class="ver" id="ver">v0.9.263</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -265,7 +266,7 @@
         <input type="number" id="c-words" value="1" class="hidden">
 
         <details class="advanced" id="customize-drawer" open>
-          <summary>🎨 Edit style — font · size · colours · box · shadow</summary>
+          <summary>🎨 Edit style — size · colours · box · shadow</summary>
           <div class="customizer">
             <div class="seg-control cust-tabs png-only" id="cust-tabs">
               <button type="button" data-pane="style" class="on">🎨 Style</button>
@@ -275,7 +276,11 @@
             <!-- ✍️ TEXT -->
             <div class="cust-group">
               <div class="cust-group-title">✍️ Text</div>
-              <label class="full">Font
+              <!-- Font + weight are BAKED into the caption engine (Inter SemiBold):
+                   a .mogrt's text carries no font, so a picker here could never
+                   reach the timeline. Hidden rather than lying; the inputs stay in
+                   the DOM because readOverrides() reads them unguarded. -->
+              <label class="full png-only">Font
                 <div class="dd-mount" id="c-font-mount"></div>
                 <input type="hidden" id="c-font">
               </label>
@@ -288,7 +293,7 @@
                 </label>
               </div>
               <p class="hint" style="margin:5px 0 0">Size scales your captions on the timeline (the slider's middle ≈ the template's own size). The preview stays big so the style is easy to see.</p>
-              <label>Weight <span class="val" id="c-weight-val"></span>
+              <label class="png-only">Weight <span class="val" id="c-weight-val"></span>
                 <input type="range" id="c-weight" min="100" max="900" step="100" value="800">
               </label>
               <label class="check"><input type="checkbox" id="c-upper" checked> ALL CAPS</label>
@@ -1168,7 +1173,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.9.262 · auto-edit · multicam · captions · chapters · organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.9.263 · auto-edit · multicam · captions · chapters · organize</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->

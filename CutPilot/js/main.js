@@ -5191,6 +5191,13 @@
     if (pv.caps != null) merged.uppercase = !!pv.caps;
     if (pv.bold != null) merged.weight = pv.bold ? 800 : 500;
     var carry = carryableStyle(merged);
+    // The SHEET's own Font/Bold edits stay visible here: on rich-text .mogrts
+    // they really do reach the timeline (CP_setMgrtText's rich branch rewrites
+    // fontEditValue/fontFSBoldValue), so the sheet preview must track them —
+    // carryableStyle's Inter/600 face is only the truth for the Flux gallery
+    // engine, whose sheet never sets pv.font/pv.bold.
+    if (pv.font) { carry.font = pv.font; carry.fallbackFonts = null; }
+    if (pv.bold != null) carry.weight = pv.bold ? 800 : 500;
     try {
       // BIG text in a SMALL box: height-fit the caption so it fills the preview
       // and stays legible (it's a style swatch, not a true on-frame size match).
@@ -5748,27 +5755,25 @@
       }
       return null;
     }
-    // Pick the REAL template whose OWN capabilities best match what the chosen
-    // canvas style actually needs, instead of always defaulting to one or two
-    // templates (which flattened most of the 70+ gallery styles into the same
-    // look on the timeline — "doesn't look like what I picked"):
-    //   - a style with NO word-by-word highlight (keyword:false, ~2/3 of the
-    //     gallery) gets the plain subtitle template — Subtitle 1's highlight
-    //     control would otherwise still pop/animate even set to the same colour.
-    //   - a style with a two-colour keyword gradient (highlight2) gets the one
-    //     template built for that, so BOTH gradient stops actually show.
-    //   - everything else (single-colour highlight) keeps the previous default.
-    // Every one of these still carries text + box + shadow controls, so box
-    // presets keep working via the existing opacity mapping below.
+    // EVERY style now rides the FLUX caption engine (Flux_Halo2) — the one
+    // template the user confirmed works 1:1 on their machine, over and over,
+    // while every Subtitle-backbone style came out wrong ("none of them are
+    // working properly other than the flux"). Halo2 exposes an exact named
+    // control for everything a gallery style needs (Text Color, Highlighted
+    // Word Color 1+2, BG Color/Opacity/Roundness/Padding, Text Scale, Shadow,
+    // and the word-sweep Type/Duration pair), so mapPresetToFlux() can set
+    // them BY NAME — the guess-matching that broke style after style is
+    // bypassed entirely on this path.
     preset = preset || {};
-    // Sweep-by-default: only an explicit wordHl:false (or the user's toggle)
-    // routes to the static Subtitle_2 — everything else gets a word-highlight
-    // backbone, matching carryableStyle()'s rule so preview == output.
+    var pick = find('flux_halo2') || find('flux_halo');
+    if (pick) return pick;
+    // Fallbacks (Flux missing from the install): the old capability-matched
+    // Subtitle backbones, so editable captions still work at all.
     var wantsHighlight = preset.wordHl !== false;
     var wantsGradientHl = wantsHighlight && !!preset.highlight2;
-    var pick = wantsGradientHl ? find('subtitle_4')
-             : !wantsHighlight ? find('subtitle_2')
-             : (find('subtitle_1') || find('subtitle_5') || find('subtitle_3'));
+    pick = wantsGradientHl ? find('subtitle_4')
+         : !wantsHighlight ? find('subtitle_2')
+         : (find('subtitle_1') || find('subtitle_5') || find('subtitle_3'));
     if (pick) return pick;
     pick = find('subtitle_1') || find('subtitle');
     if (pick) return pick;
@@ -5829,8 +5834,12 @@
     if (hasHl && (!hl || String(hl).toLowerCase() === String(p.fill || '').toLowerCase())) hl = '#ffd400';
     return {
       id: p.id, name: p.name,
-      font: p.font, fallbackFonts: p.fallbackFonts,
-      weight: (p.weight || 800) >= 600 ? 800 : 500,   // backbone only knows bold vs regular
+      // The Flux engine's face is BAKED into its After Effects project:
+      // Inter SemiBold. A .mogrt's strDB text carries no font, so no chosen
+      // font can reach the timeline — previewing one would be a lie (the
+      // exact preview≠output complaint). Every preview shows the real face.
+      font: 'Inter', fallbackFonts: ['Hanken Grotesk', 'Segoe UI', 'Helvetica Neue', 'Arial', 'sans-serif'],
+      weight: 600,                                     // Inter SemiBold — the engine's real weight
       uppercase: !!p.uppercase,
       fill: p.fill || '#FFFFFF',
       highlight: hasHl ? hl : (p.fill || '#FFFFFF'),
@@ -5840,7 +5849,9 @@
       keyword: hasHl,
       boxColor: p.boxColor || null,
       boxOpacity: (p.boxOpacity != null ? p.boxOpacity : 1),
-      boxRadius: 10,                                   // the backbone's own roundness
+      // the engine has a REAL roundness control now — carry each style's own
+      // corner radius (clamped to sane px at the 1080-wide comp scale)
+      boxRadius: Math.max(0, Math.min(60, (p.boxRadius != null ? p.boxRadius : 10))),
       glow: p.glow || null,
       glowBlur: (p.glowBlur != null ? p.glowBlur : 0.35),
       wordsPerCue: p.wordsPerCue,
@@ -5971,6 +5982,90 @@
     return out;
   }
 
+  /* Map a style preset onto the FLUX caption engine (Flux_Halo2) by EXACT
+     control name — the engine the user confirmed works 1:1, whose control set
+     is known and fixed. No pattern-guessing (that's where every wrong-colour /
+     wrong-look bug lived): each style slot goes to one named control, period.
+     Returns null when the template turns out not to be the Flux engine
+     (required controls absent) so the caller can fall back to the generic
+     mapper. `props` are CP_inspectMogrt's LIVE records ({i,name,kind,num,point}). */
+  function mapPresetToFlux(preset, props) {
+    if (!preset || !props || !props.length) return null;
+    var byName = {};
+    for (var i = 0; i < props.length; i++) {
+      // normalize: lowercase, collapse spaces — display names are otherwise exact
+      var key = String(props[i].name || '').toLowerCase().replace(/\s+/g, ' ').replace(/^ | $/g, '');
+      if (byName[key] === undefined) byName[key] = props[i];
+    }
+    function P(name) { return byName[name] || null; }
+    var out = [];
+    function color(p, hex) { if (p && hex) out.push({ i: p.i, kind: (p.kind === 'colorint' ? 'colorint' : 'color'), value: hex }); }
+    function num(p, v) { if (p && v != null && isFinite(v)) out.push({ i: p.i, kind: 'number', value: v }); }
+    function bool(p, v) { if (p) out.push({ i: p.i, kind: 'bool', value: !!v }); }
+    function point(p, x, y) { if (p) out.push({ i: p.i, kind: 'point', value: { x: x, y: y } }); }
+
+    var textC = P('text color');
+    var hl1 = P('highlighted word color 1');
+    if (!textC || !hl1) return null;   // not the Flux engine after all → generic mapper
+
+    // ---- text + word-highlight colours -------------------------------------
+    var fill = preset.fill || '#FFFFFF';
+    color(textC, fill);
+    var wantsHighlight = preset.wordHl !== false;
+    // same visible-colour guarantee as carryableStyle: never sweep invisibly
+    var hlHex = preset.highlight;
+    if (!hlHex || String(hlHex).toLowerCase() === String(fill).toLowerCase()) hlHex = '#ffd400';
+    if (!wantsHighlight) hlHex = fill;             // static style: the "highlight" paints like the text
+    color(hl1, hlHex);
+    // second stop: a real two-tone gradient when the style has one, otherwise
+    // the SAME colour (solid) — the engine always renders colour1→colour2.
+    color(P('highlighted word color 2'), (wantsHighlight && preset.highlight2) ? preset.highlight2 : hlHex);
+    num(P('text opacity'), 100);                   // never inherit a dimmed default
+
+    // ---- box ----------------------------------------------------------------
+    var hasBox = !!preset.boxColor;
+    if (hasBox) {
+      color(P('bg color'), preset.boxColor);
+      var bo = preset.boxOpacity; bo = (bo == null) ? 100 : (bo <= 1 ? Math.round(bo * 100) : bo);
+      num(P('bg opacity'), Math.max(0, Math.min(100, bo)));
+      // SAME clamp rule as carryableStyle — preview promise == sent value
+      num(P('bg roundness'), Math.max(0, Math.min(60, (preset.boxRadius != null ? preset.boxRadius : 10))));
+    } else {
+      num(P('bg opacity'), 0);                     // style has no pill → hide the engine's box
+    }
+
+    // ---- size (and the box breathes WITH the text) --------------------------
+    var sc = preset.sizeScale;
+    if (sc && Math.abs(sc - 1) > 0.02) {
+      var scP = P('text scale');
+      if (scP && typeof scP.num === 'number' && isFinite(scP.num) && scP.num > 0) {
+        num(scP, Math.max(25, Math.min(250, scP.num * sc)));
+      }
+      var padP = P('bg box padding');
+      if (hasBox && padP && padP.point && padP.point.x != null) {
+        point(padP, padP.point.x * sc, padP.point.y * sc);
+      }
+    }
+
+    // ---- glow → the engine's soft shadow as a centred halo ------------------
+    if (preset.glow) {
+      bool(P('shadow on/off'), true);
+      color(P('shadow color'), preset.glow);
+      // full 0..100 range — the preview renders the slider's raw strength, so
+      // a floor/ceiling here would make the timeline diverge from the preview
+      var gOp = Math.round(((preset.glowBlur != null ? preset.glowBlur : 0.35)) * 100);
+      num(P('shadow opacity'), Math.max(0, Math.min(100, gOp)));
+      num(P('shadow distance'), 0);                // distance 0 + full softness = glow, not drop
+      num(P('shadow softness'), 100);
+    } else {
+      bool(P('shadow on/off'), false);
+      num(P('shadow opacity'), 0);
+    }
+
+    out._bind = { engine: 'flux', fill: textC.name, hl: hl1.name };
+    return out;
+  }
+
   function applyEditableStyle() {
     if (!CPBridge.isCEP()) return toast('Editable captions need Premiere (open Pulse inside Premiere).', true);
     // Use the editor-aware preset so the placed caption matches the preview:
@@ -6028,7 +6123,12 @@
       if (!ok) { capProgress(null); return null; }
       capProgress('Reading the editable template…');
       return CPBridge.callHost('CP_inspectMogrt', { path: bb.path }).then(function (r) {
-        var params = mapPresetToMogrt(preset, (r && r.props) || []);
+        var liveProps = (r && r.props) || [];
+        // The Flux engine gets its EXACT-name mapping (returns null if this
+        // file isn't actually the Flux engine); anything else keeps the
+        // generic best-effort matcher.
+        var isFlux = String(bb.path || '').toLowerCase().indexOf('flux_halo') >= 0;
+        var params = (isFlux ? mapPresetToFlux(preset, liveProps) : null) || mapPresetToMogrt(preset, liveProps);
         sentParams = params;
         capProgress('Adding ' + tcues.length + ' editable, styled captions…', tcues.length * 230);
         return CPBridge.callHost('CP_insertMogrtCaptions', {
@@ -8286,6 +8386,7 @@
   try {
     window.CP_DEBUG = {
       mapPresetToMogrt: mapPresetToMogrt,
+      mapPresetToFlux: mapPresetToFlux,
       bundledBackbone: bundledBackbone,
       carryableStyle: carryableStyle
     };
