@@ -2890,6 +2890,10 @@
     if (msAnim) { try { msAnim.pause(); } catch (eP0) {} msAnim.classList.add('hidden'); msAnim.removeAttribute('src'); }
     if (msThumb) { msThumb.classList.add('hidden'); msThumb.removeAttribute('src'); }
     if (msLive) msLive.classList.remove('hidden');
+    // Unhide the SHEET first — painting while it's display:none makes the canvas
+    // measure 0×0 and fall back to a tiny 280×96 that only fixed itself after the
+    // (slow, failable) Premiere inspect round-trip.
+    $('mogrt-sheet').classList.remove('hidden');
     // Paint the preview RIGHT NOW from the template's own colours — don't wait on
     // the Premiere inspect round-trip below (slow, and if it failed the sheet sat
     // with an empty preview box = "no preview when I click a template").
@@ -2897,6 +2901,8 @@
       state.mogrtPrev = { fill: null, highlight: null, box: null, firstColor: null, blobFill: null, font: 'Arial', caps: false, bold: false };
       _mogrtPrevCanvas = $('ms-live-canvas');
       renderMogrtPreview();
+      // once layout has actually run, repaint at the real size
+      if (window.requestAnimationFrame) requestAnimationFrame(function () { try { renderMogrtPreview(); } catch (eR) {} });
     } catch (ePv) {}
     // show THIS template's real capabilities (read from its definition.json)
     if ($('ms-hint')) {
@@ -3060,6 +3066,17 @@
     opts = opts || {};
     state.presetId = p.id;
     $('editor-tpl-name').textContent = p.name;
+    // Picking a template = the user wants to SEE it. A previously-collapsed
+    // preview (persisted in localStorage) used to stay collapsed forever — every
+    // template click then looked like "the preview disappeared". Auto-expand.
+    try {
+      var pvWrap = $('cap-preview');
+      if (pvWrap && pvWrap.classList.contains('collapsed')) {
+        pvWrap.classList.remove('collapsed');
+        var pvBtn = $('btn-preview-collapse'); if (pvBtn) pvBtn.textContent = '▾ Preview';
+        localStorage.setItem('cutpilot.previewCollapsed', '0');
+      }
+    } catch (ePv) {}
 
     setFontValue(p.font);
     $('c-size').value = p.fontSize;
@@ -3982,7 +3999,16 @@
     canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
 
     var fMax = Math.round(0.80 * 1080 / (2 * 1.18));   // big swatch text, height-safe for 2 lines
-    var pStyle = CPRender.styleForFrame(carry, canvas.height, { fontSize: fMax, maxWidthPct: 0.92, maxLines: 2, vCenter: true });
+    var pStyle;
+    try {
+      pStyle = CPRender.styleForFrame(carry, canvas.height, { fontSize: fMax, maxWidthPct: 0.92, maxLines: 2, vCenter: true });
+    } catch (eStyle) {
+      // a style that trips the engine must NEVER blank the preview — fall back to
+      // a minimal look and record which template + why in Diagnostics.
+      try { diag('preview', (carry.id || '?') + ' styleForFrame: ' + (eStyle && eStyle.message)); } catch (eD1) {}
+      pStyle = CPRender.styleForFrame({ id: carry.id, font: 'Inter', fill: carry.fill || '#ffffff', fontSize: 120 },
+                                      canvas.height, { fontSize: fMax, maxWidthPct: 0.92, maxLines: 2, vCenter: true });
+    }
     canvas._pvStyle = pStyle;   // exposed so the parity harness can machine-compare tile vs preview
     var sample = carry.uppercase ? 'YOUR BIG IDEA' : 'Your big idea';
     var sw = sample.split(' ');
@@ -4000,7 +4026,20 @@
 
     var pi = 0;
     function play() {
-      CPRender.drawFrame(canvas, frames[pi % frames.length], pStyle);
+      // NEVER let one template's style crash the preview into a blank box — draw
+      // a plain fallback and log WHICH template + why into Diagnostics instead.
+      try { CPRender.drawFrame(canvas, frames[pi % frames.length], pStyle); }
+      catch (eDraw) {
+        try { diag('preview', (carry.id || '?') + ': ' + (eDraw && eDraw.message)); } catch (eD2) {}
+        try {
+          var g = canvas.getContext('2d');
+          g.clearRect(0, 0, canvas.width, canvas.height);
+          g.fillStyle = carry.fill || '#fff';
+          g.font = '900 ' + Math.round(canvas.height * 0.28) + 'px ' + (carry.font || 'Inter') + ', sans-serif';
+          g.textAlign = 'center'; g.textBaseline = 'middle';
+          g.fillText(sample, canvas.width / 2, canvas.height / 2);
+        } catch (eFb) {}
+      }
       pi++;
     }
     play();
@@ -5808,12 +5847,24 @@
     var out = [];
     if (!preset || !props || !props.length) return out;
     var COL = ['color', 'colorint'];
-    function find(res, kinds, exclude) {
-      for (var i = 0; i < props.length; i++) {
-        var p = props[i]; if (kinds && kinds.indexOf(p.kind) < 0) continue;
-        if (exclude && exclude.indexOf(p) >= 0) continue;
-        var nm = (p.name || '').toLowerCase();
-        for (var r = 0; r < res.length; r++) if (res[r].test(nm)) return p;
+    // PRIORITY-ordered matching: try the FIRST regex against every prop, then the
+    // second, and so on. The old version looped props-outer/regex-inner, so on the
+    // real backbones "Highlighted Word Color" (an early control) matched the
+    // text-colour pattern /word colour/ before "Text Color" (a later control) was
+    // ever reached — the user's TEXT colour was written onto the HIGHLIGHT control
+    // and then overwritten by the highlight colour on the same control, so it
+    // reached nothing at all (white template-default text on the timeline while
+    // the preview was right). `avoid` hard-excludes name families a slot must
+    // never bind to, whatever the regexes accidentally match.
+    function find(res, kinds, exclude, avoid) {
+      for (var r = 0; r < res.length; r++) {
+        for (var i = 0; i < props.length; i++) {
+          var p = props[i]; if (kinds && kinds.indexOf(p.kind) < 0) continue;
+          if (exclude && exclude.indexOf(p) >= 0) continue;
+          var nm = (p.name || '').toLowerCase();
+          if (avoid && avoid.test(nm)) continue;
+          if (res[r].test(nm)) return p;
+        }
       }
       return null;
     }
@@ -5825,7 +5876,11 @@
     // colour still lands instead of the caption keeping the template's default).
     var colorProps = [];
     for (var ci = 0; ci < props.length; ci++) { if (COL.indexOf(props[ci].kind) >= 0) colorProps.push(props[ci]); }
-    var textP = find([/text\s*colou?r/, /word\s*colou?r/, /font\s*colou?r/, /\bfill\b/, /\bcolou?r\b/], COL) || colorProps[0] || null;
+    // the TEXT colour slot must never bind to highlight/background/shadow controls
+    var NOT_TEXT = /highlight|active|spoken|current|background|\bbg\b|\bbox\b|shadow|stroke|outline|glow/;
+    var textP = find([/text\s*colou?r/, /font\s*colou?r/, /\bfill\b/, /\bcolou?r\b/], COL, null, NOT_TEXT);
+    if (!textP) { for (var tf = 0; tf < colorProps.length; tf++) { if (!NOT_TEXT.test((colorProps[tf].name || '').toLowerCase())) { textP = colorProps[tf]; break; } } }
+    if (!textP) textP = colorProps[0] || null;
     color(textP, preset.fill);
     // highlight: only map one when the STYLE actually wants the word sweep —
     // otherwise leave the backbone's own default alone (we already picked a
@@ -5833,7 +5888,7 @@
     var wantsHighlight = preset.wordHl !== false;
     var hlP = null, hl2P = null;
     if (wantsHighlight) {
-      hlP = find([/highlight|active|spoken|current/], COL);
+      hlP = find([/highlight|active|spoken|current/], COL, [textP]);   // never the prop the fill went to
       if (!hlP) { for (var hi = 0; hi < colorProps.length; hi++) { if (colorProps[hi] !== textP) { hlP = colorProps[hi]; break; } } }
       // same visible-colour guarantee as carryableStyle: never sweep invisibly
       var hlHex = preset.highlight;
@@ -5847,6 +5902,24 @@
         hl2P = find([/highlight.*2|2.*highlight|colou?r\s*2\b/], COL, [textP, hlP]);
         if (!hl2P) { for (var h2 = 0; h2 < colorProps.length; h2++) { if (colorProps[h2] !== textP && colorProps[h2] !== hlP) { hl2P = colorProps[h2]; break; } } }
         color(hl2P, preset.highlight2);
+      }
+    } else {
+      // NO-SWEEP backbone: its "Text Opacity" ships at 25 (a designed dim for its
+      // own animation) — a plain caption at 25% opacity reads as faint ghost text
+      // (the washed-out white in the user's screenshot). Plain captions must be
+      // fully visible.
+      num(find([/text.*opacit|opacit.*text/], ['number']), 100);
+    }
+    // SIZE actually carries now: the backbones expose a numeric text-scale
+    // control (e.g. "Text Scale", live default 150) that was never mapped — and
+    // the source-text size path can't work on these templates (their text is
+    // strDB, which carries no styling). Scale the control's LIVE value by the
+    // Size slider's ratio, clamped into the control's own range.
+    if (preset.sizeScale && Math.abs(preset.sizeScale - 1) > 0.02) {
+      var scP = find([/text\s*scale|font\s*size|text\s*size|\bscale\b|\bsize\b/], ['number'], null,
+                     /background|\bbg\b|\bbox\b|shadow|opacit|blur|round|pad|posi|offset|track|spac/);
+      if (scP && typeof scP.num === 'number' && isFinite(scP.num) && scP.num > 0) {
+        num(scP, Math.max(10, Math.min(400, scP.num * preset.sizeScale)));
       }
     }
     if (preset.boxColor) {
@@ -5913,6 +5986,7 @@
     var textStyle = { font: preset.font, caps: caps,
                       bold: (preset.weight || 800) >= 600, fill: preset.fill,
                       sizeScale: (Math.abs(sizeScale - 1) > 0.02 ? sizeScale : 1) };
+    preset.sizeScale = sizeScale;   // mapPresetToMogrt scales the backbone's text-scale control by this
     if (tcues.length > 120 &&
         !confirm(tcues.length + ' editable caption clips will be inserted — one per line. ' +
                  'MOGRTs insert slowly, so this can take a while. Tip: raise "Words per caption" for fewer, longer lines.\n\nContinue?')) return;
@@ -5939,6 +6013,17 @@
     }).then(function (r) {
       if (r == null) { capProgress(null); return; }
       capProgress(null);
+      // STYLE TRACE — one Diagnostics copy now pins exactly which host branch ran
+      // on the user's machine (template text format, whether text/params landed).
+      try {
+        diag('editable', JSON.stringify({
+          ver: ($('ver') && $('ver').textContent) || '?', backbone: bb.name || bb.path,
+          probeKind: r.probeKind, richBlocked: !!r.richBlocked, textSet: r.textSet,
+          inserted: r.inserted, swept: r.swept, paramsSent: (r.paramsSent != null ? r.paramsSent : undefined),
+          paramsApplied: (r.paramsApplied != null ? r.paramsApplied : undefined),
+          fields: r.fields, errs: r.sampleErrors
+        }));
+      } catch (eTr) {}
       if (!r.inserted) {
         var why = (r.sampleErrors && r.sampleErrors.length) ? ' (' + r.sampleErrors[0] + ')' : '';
         return toast('Couldn\'t place editable captions' + why + '. Copy Diagnostics and send it over.', true);
@@ -5949,6 +6034,14 @@
       state.lastCaptionJob = { cues: tcues, track: r.track, mode: 'editable' };
       saveLastCaptionJob();
       reflectCaptionsPlaced();
+      if (r.textSet === 0) {
+        // be HONEST instead of claiming success: the graphics are there but the
+        // words/styling could not be written into this template's text.
+        toast('⚠️ Placed ' + r.inserted + ' caption clips, but this template\'s text could not be filled (' +
+              (r.richBlocked ? 'its rich text failed the safety probe' : 'no writable text field') +
+              '). Copy Diagnostics and send it over — that pinpoints it.', true);
+        return;
+      }
       toast('✅ Added ' + r.inserted + ' EDITABLE caption clips, styled like “' + preset.name + '” — each is its ' +
             'OWN clip on the timeline, timed to your audio. Edit any in Window → Essential Graphics.' +
             (reuseTrack ? ' (Replaced the previous set.)' : ''));
@@ -8154,6 +8247,17 @@
   refreshFfmpegStatus();
   mountWhisperDropdowns();
   refreshWhisperStatus();
+
+  // Test-only hook: lets the headless harness call the REAL mapping/styling
+  // functions and verify them against real template layouts. No behaviour
+  // change; nothing inside Premiere uses this.
+  try {
+    window.CP_DEBUG = {
+      mapPresetToMogrt: mapPresetToMogrt,
+      bundledBackbone: bundledBackbone,
+      carryableStyle: carryableStyle
+    };
+  } catch (eDbg) {}
 
   boot();
 })();

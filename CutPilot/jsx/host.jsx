@@ -1955,6 +1955,7 @@ function CP_insertMogrtCaptions(argsJson) {
     var inserted = 0, textSet = 0, clamped = 0, maxTemplateDur = 0, swept = 0, sweepSample = null;
     var errors = [];
     var fieldNames = null; // captured once for diagnostics
+    var paramsApplied = 0; // how many colour/number overrides actually landed (all passes)
 
     var KEYS = ['text', 'source', 'caption', 'title', 'subtitle', 'headline',
                 'body', 'content', 'label', 'name', 'word'];
@@ -2034,7 +2035,7 @@ function CP_insertMogrtCaptions(argsJson) {
             fieldNames = [];
             for (var fn = 0; fn < props.numItems; fn++) fieldNames.push(String(props[fn].displayName || ('#' + fn)));
           }
-          CP_applyMgrtParams(comp, args.params);   // colour/size/font overrides
+          paramsApplied += CP_applyMgrtParams(comp, args.params);   // colour/size/font overrides
 
           // Word-by-word: if this is a word-highlight template, make its highlight
           // sweep across the words over THIS caption's visible length, so it
@@ -2091,7 +2092,7 @@ function CP_insertMogrtCaptions(argsJson) {
       // can revert param-driven styling on some templates, which left e.g. a
       // white box with the template's default white text while the preview was
       // right. CP_applyMgrtParams is idempotent, so a second pass is free.
-      try { if (comp && comp.properties) CP_applyMgrtParams(comp, args.params); } catch (eReap) {}
+      try { if (comp && comp.properties) paramsApplied += CP_applyMgrtParams(comp, args.params); } catch (eReap) {}
 
       // Entrance animation — the SAME keyframe engine the PNG path uses, applied
       // to the editable graphic clip. This is what gives "editable template"
@@ -2172,6 +2173,9 @@ function CP_insertMogrtCaptions(argsJson) {
       probeKind: probe.kind,              // 'rich' | 'simple' | 'strdb' | 'plain' | 'none'
       fields: fieldNames ? fieldNames.slice(0, 8) : [],
       sampleErrors: errors.slice(0, 3),
+      allowRich: allowRich,               // did the safety probe permit rich-text writes?
+      paramsSent: (args.params || []).length,
+      paramsApplied: paramsApplied,       // across both passes (pre-text + final re-apply)
       track: vTrack + 1                   // 1-based, so a later call can replaceTrack this same set
     });
   } catch (e) { return CP_fail(e.message); }
