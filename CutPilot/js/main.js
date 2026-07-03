@@ -6102,10 +6102,20 @@
       var basePx = basePreset.fontSize || wantPx;
       if (wantPx > 0 && basePx > 0) sizeScale = Math.max(0.5, Math.min(2.5, wantPx / basePx));
     } catch (eSz) {}
-    var textStyle = { font: preset.font, caps: caps,
+    // The Flux engine is styled ENTIRELY through named params (the user's own
+    // diagnostics show 100% of them applying) and sized through its Text Scale
+    // param. Its text probes as RICH on real machines, so sending a textStyle
+    // here would ALSO rewrite font/bold/size inside the text blob: the size
+    // then applies TWICE (text outgrows its box), and a hidden font push lands
+    // that the preview never showed — while the gradient-highlight mirror
+    // layer keeps the baked face and drifts off the words. Params-only is
+    // deterministic and WYSIWYG; the generic backbones keep the old behaviour.
+    var isFluxBB = String((bb && bb.path) || '').toLowerCase().indexOf('flux_halo') >= 0;
+    var textStyle = isFluxBB ? null
+                  : { font: preset.font, caps: caps,
                       bold: (preset.weight || 800) >= 600, fill: preset.fill,
                       sizeScale: (Math.abs(sizeScale - 1) > 0.02 ? sizeScale : 1) };
-    preset.sizeScale = sizeScale;   // mapPresetToMogrt scales the backbone's text-scale control by this
+    preset.sizeScale = sizeScale;   // the mapper scales the backbone's text-scale control by this
     if (tcues.length > 120 &&
         !confirm(tcues.length + ' editable caption clips will be inserted — one per line. ' +
                  'MOGRTs insert slowly, so this can take a while. Tip: raise "Words per caption" for fewer, longer lines.\n\nContinue?')) return;
@@ -8360,9 +8370,17 @@
         });
       } else if (!ff) { R.push('   (skipped mic test — no ffmpeg)'); show(); }
     }).then(function () {
-      // inspect a caption template's fields
-      var capTpl = (state.installedMogrts || []).filter(function (m) { return /caption/i.test(m.category) || /caption/i.test(m.name); })[0];
-      if (!capTpl) { R.push('4) MOGRT: no caption template found to inspect'); show(); return null; }
+      // inspect the REAL caption backbone — the template "Add captions" actually
+      // uses (the Flux engine). The old check searched only user-INSTALLED
+      // templates, so a normal install always reported "no caption template
+      // found to inspect" — a false alarm, right while captions were working.
+      var capTpl = null;
+      try { capTpl = bundledBackbone(currentPreset() || {}); } catch (eBB) {}
+      if (!capTpl) {
+        var pool = (state.bundledMogrts || []).concat(state.installedMogrts || []);
+        capTpl = pool.filter(function (m) { return (m.kind || 'caption') === 'caption' || /caption/i.test(m.category || '') || /caption/i.test(m.name || ''); })[0];
+      }
+      if (!capTpl) { R.push('4) MOGRT: no caption template found to inspect — the mogrts folder may be missing from this install'); show(); return null; }
       R.push('4) inspecting MOGRT "' + capTpl.name + '"…'); show();
       return CPBridge.callHost('CP_inspectMogrt', { path: capTpl.path }).then(function (ins) {
         if (!ins.props || !ins.props.length) R.push('   no editable fields found');

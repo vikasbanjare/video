@@ -160,7 +160,15 @@ function makeWorld(opts) {
                                               setValue(v) { if (String(v) !== store.v && onWrite) onWrite(); store.v = String(v); } })
         };
         const S = clip._flux = {
-          text:   { v: '{"strDB":[{"localeString":"en_US","str":"Flux Halo"}]}' },
+          // The LIVE 'Text' property probes as RICH AE source text on real
+          // machines (the user's v0.9.263 diagnostics: probeKind:"rich") even
+          // though the definition control is strDB — model reality. Single-run,
+          // so the safe text-only rewrite verifies round-trip in the probe.
+          text:   { v: JSON.stringify({ capPropFontEdit: true, capPropTextRunCount: 1,
+                                        textEditValue: 'Flux Halo', capPropTextRunLength: [9],
+                                        fontEditValue: ['Inter-SemiBold'], fontSizeEditValue: [90],
+                                        fontFSBoldValue: [false], fontFSAllCapsValue: [false],
+                                        fontFSItalicValue: [false], fillColorEditValue: [[1, 1, 1]] }) },
           fgText: { v: '{"strDB":[{"localeString":"en_US","str":"Flux Halo"}]}' },
           note:   { v: 'If you change the font, match the Gradient FG text.' },
           hl1: { v: [197, 255, 0] }, hl2: { v: [197, 255, 0] },
@@ -519,14 +527,26 @@ console.log('host.jsx — Flux engine (Halo2 control set): text, exact-name para
     textStyle: null, stretch: false
   });
   assert(r.ok === true && r.inserted === 2, 'both caption clips insert on the Flux engine');
-  assert(r.probeKind === 'strdb', 'Flux text probes as strDB (' + r.probeKind + ')');
+  assert(r.probeKind === 'rich' && r.allowRich === true,
+    'Flux text probes as RICH and the safety probe verifies the write (' + r.probeKind + ')');
   assert(r.textCount === 1, 'exactly ONE writable text field — the FG mirror and Note are excluded');
   assert(r.textSet === 2, 'the words were written into both graphics');
   const caps = w.model.vTracks[w.model.vTracks.length - 1];
   const f0 = caps[0]._flux, f1 = caps[1]._flux;
-  assert(JSON.parse(f0.text.v).strDB[0].str === 'the pollution levels' &&
-         JSON.parse(f1.text.v).strDB[0].str === 'are rising fast',
-    'each clip carries its OWN cue text, and the strDB stays valid JSON');
+  const t0 = JSON.parse(f0.text.v), t1 = JSON.parse(f1.text.v);
+  assert(t0.textEditValue === 'the pollution levels' && t1.textEditValue === 'are rising fast',
+    'each clip carries its OWN cue text, and the rich blob stays valid JSON');
+  assert(t0.capPropTextRunLength[0] === 20 && t1.capPropTextRunLength[0] === 15,
+    'run-length follows each caption\'s text (no "bad any cast" inconsistency)');
+  // PARAMS-ONLY invariant (the v0.9.264 fix): with no textStyle sent, the text
+  // write must change NOTHING but the words — no font push behind the preview's
+  // back, no bold flip, and no blob-size rewrite on top of the Text Scale param
+  // (the "size applies twice" bug from the user's rich-probing machine).
+  assert(t0.fontEditValue[0] === 'Inter-SemiBold' && t1.fontEditValue[0] === 'Inter-SemiBold',
+    'the engine\'s baked face is untouched (no hidden font push)');
+  assert(t0.fontSizeEditValue[0] === 90 && t1.fontSizeEditValue[0] === 90 &&
+         t0.fontFSBoldValue[0] === false && t0.fontFSAllCapsValue[0] === false,
+    'no size/bold/caps rewrites inside the blob — size rides ONLY the Text Scale param');
   assert(caps[0]._fluxWrites.fg === 0 && caps[0]._fluxWrites.note === 0 &&
          caps[1]._fluxWrites.fg === 0 && caps[1]._fluxWrites.note === 0 &&
          JSON.parse(f0.fgText.v).strDB[0].str === 'Flux Halo',
