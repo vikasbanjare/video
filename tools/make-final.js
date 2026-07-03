@@ -7,7 +7,11 @@
  * build can never ship.
  *
  * Usage (key/trial via env, same as build-protected.js):
- *   CP_TRIAL_DAYS=7 CP_WHITELABEL=1 CP_GROQ_KEY=... node tools/make-final.js
+ *   node tools/make-final.js                       -> DEFAULT: 7-day trial (from each machine's first run)
+ *   CP_TRIAL_DAYS=0 node tools/make-final.js       -> unlimited owner build (no timer)
+ *   CP_TRIAL_DAYS=14 ...                           -> different trial length
+ *   CP_EXPIRY_DAYS=30 ...                          -> opt-in ABSOLUTE kill-date (build time + N days)
+ * The license key permanently unlocks any build, trial or not.
  */
 const cp = require('child_process'), path = require('path'), fs = require('fs');
 const ROOT = path.resolve(__dirname, '..');
