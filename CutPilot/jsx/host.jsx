@@ -1973,6 +1973,7 @@ function CP_insertMogrtCaptions(argsJson) {
     var errors = [];
     var fieldNames = null; // captured once for diagnostics
     var paramsApplied = 0; // how many colour/number overrides actually landed (all passes)
+    var fgFontSet = 0;     // "(Change font only)" gradient mirrors given the style's font
 
     var KEYS = ['text', 'source', 'caption', 'title', 'subtitle', 'headline',
                 'body', 'content', 'label', 'name', 'word'];
@@ -2090,6 +2091,32 @@ function CP_insertMogrtCaptions(argsJson) {
                   CP_setMgrtText(props[p2], grp[0].text, allowRich, args.textStyle)) { textSet++; done = true; }
             }
           }
+          // The gradient-highlight overlay ("Gradient FG Text (Change font
+          // only)") must wear the SAME face as the main text or the highlight
+          // drifts off the words — the template author's own Note says to keep
+          // them matched. FONT-ONLY write: its words stay expression-driven
+          // from the main Text, so nothing else in its blob is touched.
+          if (allowRich && args.textStyle && args.textStyle.font) {
+            try {
+              for (var fgI = 0; fgI < props.numItems; fgI++) {
+                var fgDn = String(props[fgI].displayName || '').toLowerCase();
+                if (fgDn.indexOf('change font only') < 0) continue;
+                var fgV = null; try { fgV = props[fgI].getValue(); } catch (eFgV) {}
+                if (typeof fgV === 'string' &&
+                    (fgV.indexOf('fontEditValue') !== -1 || fgV.indexOf('capProp') !== -1)) {
+                  var fgE = String(args.textStyle.font).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+                  var fgOut = CP_rewriteBlobField(fgV, 'fontEditValue', CP_runStringsAll(fgE));
+                  fgOut = fgOut.replace(/("fontName"\s*:\s*")(?:[^"\\]|\\.)*(")/g,
+                    function (m, a, b) { return a + fgE + b; });
+                  if (fgOut !== fgV) {
+                    try { props[fgI].setValue(fgOut, true); fgFontSet++; }
+                    catch (eFgS1) { try { props[fgI].setValue(fgOut); fgFontSet++; } catch (eFgS2) {} }
+                  }
+                }
+                break;
+              }
+            } catch (eFg) {}
+          }
           // Overall font size: scale EVERY text layer together (so a template's
           // second "echo" layer grows with the caption instead of mismatching).
           if (allowRich && args.textStyle && args.textStyle.sizeScale && args.textStyle.sizeScale !== 1) {
@@ -2193,6 +2220,7 @@ function CP_insertMogrtCaptions(argsJson) {
       allowRich: allowRich,               // did the safety probe permit rich-text writes?
       paramsSent: (args.params || []).length,
       paramsApplied: paramsApplied,       // across both passes (pre-text + final re-apply)
+      fgFontSet: fgFontSet,               // gradient "(Change font only)" mirrors re-faced
       track: vTrack + 1                   // 1-based, so a later call can replaceTrack this same set
     });
   } catch (e) { return CP_fail(e.message); }

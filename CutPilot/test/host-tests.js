@@ -169,7 +169,13 @@ function makeWorld(opts) {
                                         fontEditValue: ['Inter-SemiBold'], fontSizeEditValue: [90],
                                         fontFSBoldValue: [false], fontFSAllCapsValue: [false],
                                         fontFSItalicValue: [false], fillColorEditValue: [[1, 1, 1]] }) },
-          fgText: { v: '{"strDB":[{"localeString":"en_US","str":"Flux Halo"}]}' },
+          // the gradient overlay mirror is rich too; its WORDS are expression-
+          // driven from the main Text, only its FONT is meant to be edited
+          fgText: { v: JSON.stringify({ capPropFontEdit: true, capPropTextRunCount: 1,
+                                        textEditValue: 'Flux Halo', capPropTextRunLength: [9],
+                                        fontEditValue: ['Inter-SemiBold'], fontSizeEditValue: [90],
+                                        fontFSBoldValue: [false], fontFSAllCapsValue: [false],
+                                        fontFSItalicValue: [false], fillColorEditValue: [[1, 1, 1]] }) },
           note:   { v: 'If you change the font, match the Gradient FG text.' },
           hl1: { v: [197, 255, 0] }, hl2: { v: [197, 255, 0] },
           textColor: { v: [255, 255, 255] }, bgColor: { v: [0, 60, 255] }, shColor: { v: [0, 0, 0] },
@@ -524,7 +530,10 @@ console.log('host.jsx — Flux engine (Halo2 control set): text, exact-name para
       { i: 27, kind: 'bool',   value: false },       // Shadow On/Off
       { i: 29, kind: 'number', value: 0 }            // Shadow Opacity
     ],
-    textStyle: null, stretch: false
+    // per-style FACE rides the probe-verified rich write; sizeScale pinned to 1
+    // so size can only come from the Text Scale param (never double-applied)
+    textStyle: { font: 'Archivo Black', bold: true, sizeScale: 1 },
+    stretch: false
   });
   assert(r.ok === true && r.inserted === 2, 'both caption clips insert on the Flux engine');
   assert(r.probeKind === 'rich' && r.allowRich === true,
@@ -538,19 +547,27 @@ console.log('host.jsx — Flux engine (Halo2 control set): text, exact-name para
     'each clip carries its OWN cue text, and the rich blob stays valid JSON');
   assert(t0.capPropTextRunLength[0] === 20 && t1.capPropTextRunLength[0] === 15,
     'run-length follows each caption\'s text (no "bad any cast" inconsistency)');
-  // PARAMS-ONLY invariant (the v0.9.264 fix): with no textStyle sent, the text
-  // write must change NOTHING but the words — no font push behind the preview's
-  // back, no bold flip, and no blob-size rewrite on top of the Text Scale param
-  // (the "size applies twice" bug from the user's rich-probing machine).
-  assert(t0.fontEditValue[0] === 'Inter-SemiBold' && t1.fontEditValue[0] === 'Inter-SemiBold',
-    'the engine\'s baked face is untouched (no hidden font push)');
-  assert(t0.fontSizeEditValue[0] === 90 && t1.fontSizeEditValue[0] === 90 &&
-         t0.fontFSBoldValue[0] === false && t0.fontFSAllCapsValue[0] === false,
-    'no size/bold/caps rewrites inside the blob — size rides ONLY the Text Scale param');
-  assert(caps[0]._fluxWrites.fg === 0 && caps[0]._fluxWrites.note === 0 &&
-         caps[1]._fluxWrites.fg === 0 && caps[1]._fluxWrites.note === 0 &&
-         JSON.parse(f0.fgText.v).strDB[0].str === 'Flux Halo',
-    'the "(Change font only)" mirror and the author Note keep their baked content (never changed)');
+  // The style's FACE rides the rich write (that's what keeps 77 styles
+  // distinct — and the previews show the same face), but SIZE must never:
+  // it rides ONLY the Text Scale param (the "size applies twice" bug from the
+  // user's rich-probing machine), and colour stays param-owned.
+  assert(t0.fontEditValue[0] === 'Archivo Black' && t1.fontEditValue[0] === 'Archivo Black' &&
+         t0.fontFSBoldValue[0] === true,
+    'the style\'s font + bold land inside the rich text (previews show the same face)');
+  assert(t0.fontSizeEditValue[0] === 90 && t1.fontSizeEditValue[0] === 90,
+    'blob font size UNTOUCHED — size rides ONLY the Text Scale param (no double-scale)');
+  assert(t0.fontFSAllCapsValue[0] === false &&
+         JSON.stringify(t0.fillColorEditValue) === JSON.stringify([[1, 1, 1]]),
+    'caps ride the text string and colour stays param-owned — neither written into the blob');
+  const fg0 = JSON.parse(f0.fgText.v), fg1 = JSON.parse(f1.fgText.v);
+  assert(fg0.fontEditValue[0] === 'Archivo Black' && fg1.fontEditValue[0] === 'Archivo Black',
+    'the "(Change font only)" gradient mirror wears the SAME face (highlight stays aligned)');
+  assert(fg0.textEditValue === 'Flux Halo' && fg0.capPropTextRunLength[0] === 9 &&
+         fg0.fontSizeEditValue[0] === 90,
+    'the mirror write is FONT-ONLY — its words/size/runs are untouched');
+  assert(r.fgFontSet === 2, 'both clips report the mirror re-face (fgFontSet=' + r.fgFontSet + ')');
+  assert(caps[0]._fluxWrites.note === 0 && caps[1]._fluxWrites.note === 0,
+    'the author Note is NEVER written');
   const near = (v, want) => v.every((x, i) => Math.abs(x - want[i]) <= 2);
   assert(near(f0.textColor.v, [0x15, 0x18, 0x1E]), 'Text Color = the style fill (' + f0.textColor.v + ')');
   assert(near(f0.hl1.v, [0x2D, 0x7C, 0xFF]) && near(f0.hl2.v, [0x2D, 0x7C, 0xFF]),
@@ -598,6 +615,8 @@ console.log('host.jsx — Flux engine (Halo2 control set): text, exact-name para
          f.shOpacity.v === 60 && near2(f.shColor.v, [0x00, 0xE5, 0xFF]),
     'glow rides the shadow controls as a centred halo (on/colour/opacity/dist 0/softness 100)');
   assert(f.bgOpacity.v === 0, 'boxless style hides the engine\'s box');
+  assert(JSON.parse(f.text.v).fontEditValue[0] === 'Inter-SemiBold' && r.fgFontSet === 0,
+    'no textStyle → the baked face is untouched and no mirror re-face');
   function near2(v, want) { return v.every((x, i) => Math.abs(x - want[i]) <= 2); }
 }
 

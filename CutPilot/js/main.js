@@ -2659,7 +2659,7 @@
      the card's ACTUAL on-screen size so it's never stretched. Cards are often
      built while the Captions tab is hidden (0 width); a ResizeObserver + the
      fonts-ready hook repaint them at the right size once they're visible. */
-  var _thumbFontsHooked = false, _thumbRO = null, _thumbT = null;
+  var _thumbFontsHooked = false, _thumbRO = null, _fluxRO = null, _thumbT = null;
   var _cardAnimTimer = null, _cardTick = 0;   // shared looping animator for gallery cards
   /* A CPRender-compatible style for an animated .mogrt card, built from the
      template's OWN colours (read offline from its definition.json). Lets the
@@ -2850,16 +2850,36 @@
     head.appendChild(fav);
     card.appendChild(head);
 
-    // single dark preview box — ALWAYS the live carryable canvas, for MOGRT cards
-    // too. (The baked thumb .mp4/.png showed the caption at its tiny real
-    // on-frame size — mostly empty black tiles — and drifted from the customize
-    // sheet. One renderer everywhere: tile == sheet == editor == output.)
+    // Preview box. Templates that SHIP a real render show it — the Flux cards'
+    // looping .mp4 previews ("flux preview is gone" when these were dropped) and
+    // the title templates' stills. Caption templates without a video keep the
+    // live carryable canvas instead: their baked thumbs were a tiny caption in
+    // an empty frame, which read as "no preview" — the canvas swatch shows the
+    // actual look at a legible size.
     var thumb = document.createElement('div');
     thumb.className = 'tpl-thumb';
-    var cvs = document.createElement('canvas');
-    cvs.className = 'tpl-thumb-canvas';
-    if (isMogrt) cvs._mogrtTpl = t; else cvs._tpl = t;
-    thumb.appendChild(cvs);
+    var showReal = isMogrt && (t.video || (t.thumb && (t.kind || 'caption') !== 'caption'));
+    if (showReal) {
+      var media;
+      if (t.video) {
+        media = document.createElement('video');
+        media.muted = true; media.loop = true; media.autoplay = true;
+        media.setAttribute('muted', ''); media.setAttribute('playsinline', '');
+        if (t.thumb) media.poster = t.thumb;
+        media.src = t.video;
+        try { var pp = media.play(); if (pp && pp.catch) pp.catch(function () {}); } catch (ePl) {}
+      } else {
+        media = document.createElement('img');
+        media.src = t.thumb;
+      }
+      media.className = 'tpl-thumb-media';
+      thumb.appendChild(media);
+    } else {
+      var cvs = document.createElement('canvas');
+      cvs.className = 'tpl-thumb-canvas';
+      if (isMogrt) cvs._mogrtTpl = t; else cvs._tpl = t;
+      thumb.appendChild(cvs);
+    }
     card.appendChild(thumb);
 
     if (isMogrt) card.addEventListener('click', function () { openMogrtSheet(t); });
@@ -2887,14 +2907,28 @@
     state.selectedMogrtTpl = t;
     try { state.selectedMogrtBase = mogrtCardStyle(t); } catch (eBase) { state.selectedMogrtBase = null; }
     $('ms-name').textContent = t.name;
-    // PREVIEW = the live "your colours" canvas, ALWAYS visible the moment you click
-    // a template (a SMALL box with BIG, legible text) and it reflects every colour/
-    // font edit live. (The baked .mp4/.png rendered the caption at its tiny real
-    // on-frame size, which read as "no preview" — so it's no longer shown here.)
+    // PREVIEW: templates that ship a REAL render show it (the Flux .mp4 loop /
+    // a title's still) — that's the template's true animation. The live
+    // "your colours" canvas stays visible beneath it and reflects every edit.
+    // Caption templates without a video show only the live canvas (their baked
+    // thumbs were a tiny caption in an empty frame = "no preview").
     var msThumb = $('ms-thumb'), msAnim = $('ms-anim'), msLive = $('ms-live-preview');
-    state.mogrtShowingReal = false;
-    if (msAnim) { try { msAnim.pause(); } catch (eP0) {} msAnim.classList.add('hidden'); msAnim.removeAttribute('src'); }
-    if (msThumb) { msThumb.classList.add('hidden'); msThumb.removeAttribute('src'); }
+    var showReal = !!(t.video || (t.thumb && (t.kind || 'caption') !== 'caption'));
+    state.mogrtShowingReal = showReal;
+    if (showReal && msAnim && t.video) {
+      if (msThumb) { msThumb.classList.add('hidden'); msThumb.removeAttribute('src'); }
+      msAnim.muted = true; msAnim.loop = true;
+      msAnim.src = t.video;
+      msAnim.classList.remove('hidden');
+      try { var pms = msAnim.play(); if (pms && pms.catch) pms.catch(function () {}); } catch (ePl2) {}
+    } else if (showReal && msThumb && t.thumb) {
+      if (msAnim) { try { msAnim.pause(); } catch (eP0b) {} msAnim.classList.add('hidden'); msAnim.removeAttribute('src'); }
+      msThumb.src = t.thumb;
+      msThumb.classList.remove('hidden');
+    } else {
+      if (msAnim) { try { msAnim.pause(); } catch (eP0) {} msAnim.classList.add('hidden'); msAnim.removeAttribute('src'); }
+      if (msThumb) { msThumb.classList.add('hidden'); msThumb.removeAttribute('src'); }
+    }
     if (msLive) msLive.classList.remove('hidden');
     // Unhide the SHEET first — painting while it's display:none makes the canvas
     // measure 0×0 and fall back to a tiny 280×96 that only fixed itself after the
@@ -3489,6 +3523,16 @@
       grid.appendChild(e); return;
     }
     list.forEach(function (t) { grid.appendChild(buildTemplateCard(t)); });
+    // paint any canvas-fallback cards (video cards need no paint). The shared
+    // repaint loop's ResizeObserver only watched #tpl-grid, so Flux cards first
+    // shown while this grid was hidden could stay dark forever.
+    schedulePaintThumbs();
+    try {
+      if (!_fluxRO && window.ResizeObserver) {
+        _fluxRO = new ResizeObserver(schedulePaintThumbs);
+        _fluxRO.observe(grid);
+      }
+    } catch (eRO) {}
   }
 
   /* Show the right controls for the active section. The Templates tab edits a
@@ -5834,12 +5878,13 @@
     if (hasHl && (!hl || String(hl).toLowerCase() === String(p.fill || '').toLowerCase())) hl = '#ffd400';
     return {
       id: p.id, name: p.name,
-      // The Flux engine's face is BAKED into its After Effects project:
-      // Inter SemiBold. A .mogrt's strDB text carries no font, so no chosen
-      // font can reach the timeline — previewing one would be a lie (the
-      // exact preview≠output complaint). Every preview shows the real face.
-      font: 'Inter', fallbackFonts: ['Hanken Grotesk', 'Segoe UI', 'Helvetica Neue', 'Arial', 'sans-serif'],
-      weight: 600,                                     // Inter SemiBold — the engine's real weight
+      // Per-style FONTS are real on the timeline again: the engine's live text
+      // is rich AE source text (probeKind:"rich" in the user's own diagnostics,
+      // probe-verified safe), so the insert writes each style's font/bold into
+      // it — and the preview shows the same face. Styles keep their identity.
+      font: p.font || 'Inter',
+      fallbackFonts: p.fallbackFonts || ['Hanken Grotesk', 'Segoe UI', 'Helvetica Neue', 'Arial', 'sans-serif'],
+      weight: (p.weight || 800) >= 600 ? 800 : 500,   // the rich write only knows bold vs regular
       uppercase: !!p.uppercase,
       fill: p.fill || '#FFFFFF',
       highlight: hasHl ? hl : (p.fill || '#FFFFFF'),
@@ -6102,16 +6147,18 @@
       var basePx = basePreset.fontSize || wantPx;
       if (wantPx > 0 && basePx > 0) sizeScale = Math.max(0.5, Math.min(2.5, wantPx / basePx));
     } catch (eSz) {}
-    // The Flux engine is styled ENTIRELY through named params (the user's own
-    // diagnostics show 100% of them applying) and sized through its Text Scale
-    // param. Its text probes as RICH on real machines, so sending a textStyle
-    // here would ALSO rewrite font/bold/size inside the text blob: the size
-    // then applies TWICE (text outgrows its box), and a hidden font push lands
-    // that the preview never showed — while the gradient-highlight mirror
-    // layer keeps the baked face and drifts off the words. Params-only is
-    // deterministic and WYSIWYG; the generic backbones keep the old behaviour.
+    // The Flux engine: colours/box/size ride the named params (the user's own
+    // diagnostics show 100% of them applying; size ONLY via Text Scale —
+    // sizeScale is pinned to 1 here so the rich path can never double-scale).
+    // The style's FONT + BOLD ride the rich text write, which the user's
+    // machine probe-verified (probeKind:"rich", richBlocked:false) — that's
+    // what keeps 77 styles visually distinct, and the previews show the same
+    // face. The host also mirrors the font onto the template's "(Change font
+    // only)" gradient layer so the word-highlight stays aligned. No fill or
+    // caps in the blob: colour is param-owned, caps rides the text string.
     var isFluxBB = String((bb && bb.path) || '').toLowerCase().indexOf('flux_halo') >= 0;
-    var textStyle = isFluxBB ? null
+    var textStyle = isFluxBB
+                  ? (preset.font ? { font: preset.font, bold: (preset.weight || 800) >= 600, sizeScale: 1 } : null)
                   : { font: preset.font, caps: caps,
                       bold: (preset.weight || 800) >= 600, fill: preset.fill,
                       sizeScale: (Math.abs(sizeScale - 1) > 0.02 ? sizeScale : 1) };
@@ -6159,6 +6206,8 @@
           richBlocked: !!r.richBlocked, swept: r.swept,
           paramsSent: (r.paramsSent != null ? r.paramsSent : undefined),
           paramsApplied: (r.paramsApplied != null ? r.paramsApplied : undefined),
+          fontSent: (textStyle && textStyle.font) || undefined,   // per-style face on the rich path
+          fgFont: (r.fgFontSet != null ? r.fgFontSet : undefined), // gradient mirrors re-faced
           errs: r.sampleErrors, fields: r.fields
         }));
       } catch (eTr) {}
