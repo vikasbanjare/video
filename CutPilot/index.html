@@ -25,7 +25,7 @@
       </svg>
       <span class="brand-name">Pulse</span><span class="brand-by">by aifloh</span>
     </div>
-    <span class="ver" id="ver">v0.9.268</span>
+    <span class="ver" id="ver">v0.9.269</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -266,7 +266,7 @@
         <input type="number" id="c-words" value="1" class="hidden">
 
         <details class="advanced" id="customize-drawer" open>
-          <summary>🎨 Edit style — size · colours · box · shadow</summary>
+          <summary>🎨 Edit style — font · size · colours · box · shadow</summary>
           <div class="customizer">
             <div class="seg-control cust-tabs png-only" id="cust-tabs">
               <button type="button" data-pane="style" class="on">🎨 Style</button>
@@ -276,11 +276,10 @@
             <!-- ✍️ TEXT -->
             <div class="cust-group">
               <div class="cust-group-title">✍️ Text</div>
-              <!-- Font + weight are BAKED into the caption engine (Inter SemiBold):
-                   a .mogrt's text carries no font, so a picker here could never
-                   reach the timeline. Hidden rather than lying; the inputs stay in
-                   the DOM because readOverrides() reads them unguarded. -->
-              <label class="full png-only">Font
+              <!-- Font + Weight DO reach the timeline (the engine's rich text is
+                   probe-verified writable on real machines since v265) — so these
+                   are honest, live controls again. -->
+              <label class="full">Font
                 <div class="dd-mount" id="c-font-mount"></div>
                 <input type="hidden" id="c-font">
               </label>
@@ -293,7 +292,7 @@
                 </label>
               </div>
               <p class="hint" style="margin:5px 0 0">Size scales your captions on the timeline (the slider's middle ≈ the template's own size). The preview stays big so the style is easy to see.</p>
-              <label class="png-only">Weight <span class="val" id="c-weight-val"></span>
+              <label>Weight <span class="val" id="c-weight-val"></span>
                 <input type="range" id="c-weight" min="100" max="900" step="100" value="800">
               </label>
               <label class="check"><input type="checkbox" id="c-upper" checked> ALL CAPS</label>
@@ -1194,7 +1193,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.9.268 · auto-edit · multicam · captions · chapters · organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.9.269 · auto-edit · multicam · captions · chapters · organize</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->

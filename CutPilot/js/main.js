@@ -2404,20 +2404,40 @@
       }
       if (!idxFile) { state.bundledDiag = 'index.json not found in ' + path.join(cands[0], 'mogrts'); return; }
       var list = JSON.parse(fs.readFileSync(idxFile, 'utf8')) || [];
+      // Preview lookup — BULLETPROOF version ("preview of the Flux is gone"):
+      //  · looks in mogrts/thumbs/ AND right beside the .mogrt itself (the user
+      //    drops their own <TemplateName>.png/.jpg/.mp4 next to the file),
+      //  · accepts png/jpg/jpeg/webp images and mp4/mov videos,
+      //  · returns ABSOLUTE file:// URLs (relative URLs proved fragile in some
+      //    CEP builds — absolute always resolves, wherever the page lives).
+      function fileUrl(p) {
+        var u = String(p).replace(/\\/g, '/');
+        if (u.charAt(0) !== '/') u = '/' + u;             // Windows drive paths → /C:/…
+        return 'file://' + encodeURI(u).replace(/#/g, '%23').replace(/\?/g, '%3F');
+      }
+      function findMedia(base, exts) {
+        for (var d = 0; d < 2; d++) {
+          var dir = d === 0 ? path.join(mdir, 'thumbs') : mdir;
+          for (var x = 0; x < exts.length; x++) {
+            var p2 = path.join(dir, base + exts[x]);
+            try { if (fs.existsSync(p2)) return fileUrl(p2); } catch (eF) {}
+          }
+        }
+        return '';
+      }
+      var withThumb = 0, withVideo = 0;
       state.bundledMogrts = list.map(function (m) {
-        // Each .mogrt ships a baked-in preview (thumb.png), pre-extracted to
-        // mogrts/thumbs/<basename>.png by tools/extract-mogrt-thumbs.js. If present,
-        // the gallery card shows that real preview instead of a generic glyph. The
-        // URL is RELATIVE to the panel root (index.html), so it loads without any
-        // file:// path-encoding headaches and the browser lazy-loads + scales it.
         var base = String(m.file).replace(/\.mogrt$/i, '');
-        var thumbUrl = '', videoUrl = '';
-        try { if (fs.existsSync(path.join(mdir, 'thumbs', base + '.png'))) thumbUrl = 'mogrts/thumbs/' + encodeURIComponent(base + '.png'); } catch (e0) {}
-        try { if (fs.existsSync(path.join(mdir, 'thumbs', base + '.mp4'))) videoUrl = 'mogrts/thumbs/' + encodeURIComponent(base + '.mp4'); } catch (e1) {}
+        var thumbUrl = findMedia(base, ['.png', '.jpg', '.jpeg', '.webp']);
+        var videoUrl = findMedia(base, ['.mp4', '.mov']);
+        if (thumbUrl) withThumb++;
+        if (videoUrl) withVideo++;
         return { name: m.name, path: path.join(mdir, m.file),
                  category: m.category || 'Templates', kind: m.kind || 'caption', desc: m.desc || '', thumb: thumbUrl, video: videoUrl, premium: !!m.premium, section: m.section || '' };
       }).filter(function (m) { try { return fs.existsSync(m.path); } catch (e3) { return false; } });
-      state.bundledDiag = state.bundledMogrts.length ? ('ok:' + state.bundledMogrts.length) : ('0 files exist in ' + mdir);
+      state.bundledDiag = state.bundledMogrts.length
+        ? ('ok:' + state.bundledMogrts.length + ' thumbs:' + withThumb + ' videos:' + withVideo)
+        : ('0 files exist in ' + mdir);
     } catch (e) { state.bundledMogrts = []; state.bundledDiag = 'error: ' + (e && e.message); }
   }
 
@@ -2755,7 +2775,9 @@
       var sample = t.uppercase ? 'BIG IDEA' : 'Big idea';   // short → legible in the 3-up tiles
       var sw = sample.split(' '), DUR = 0.4;
       var wordCues = sw.map(function (w, i) { return { start: i * DUR, end: (i + 1) * DUR, text: w }; });
-      var animId = CPCaptions.animIdForConcept(t.anim);
+      // the tile plays the style's OWN motion: its entrance when it has one
+      // (that's what the inserted clip does too), else the word sweep
+      var animId = CPCaptions.animIdForConcept((t.entrance && t.entrance !== 'none') ? t.entrance : t.anim);
       var frames;
       try {
         frames = CPCaptions.buildCaptionFrames([{ start: 0, end: sw.length * DUR, text: sample }], {
@@ -2861,26 +2883,40 @@
     var thumb = document.createElement('div');
     thumb.className = 'tpl-thumb';
     var showReal = isMogrt && (t.video || (t.thumb && (t.kind || 'caption') !== 'caption'));
-    if (showReal) {
-      var media;
-      if (t.video) {
-        media = document.createElement('video');
-        media.muted = true; media.loop = true; media.autoplay = true;
-        media.setAttribute('muted', ''); media.setAttribute('playsinline', '');
-        if (t.thumb) media.poster = t.thumb;
-        media.src = t.video;
-        try { var pp = media.play(); if (pp && pp.catch) pp.catch(function () {}); } catch (ePl) {}
-      } else {
-        media = document.createElement('img');
-        media.src = t.thumb;
-      }
-      media.className = 'tpl-thumb-media';
-      thumb.appendChild(media);
-    } else {
+    function mountCanvasSwatch() {
       var cvs = document.createElement('canvas');
       cvs.className = 'tpl-thumb-canvas';
       if (isMogrt) cvs._mogrtTpl = t; else cvs._tpl = t;
       thumb.appendChild(cvs);
+      schedulePaintThumbs();
+    }
+    function mountImg() {
+      var img = document.createElement('img');
+      img.className = 'tpl-thumb-media';
+      img.addEventListener('error', function () { try { thumb.removeChild(img); } catch (eR) {} mountCanvasSwatch(); });
+      img.src = t.thumb;
+      thumb.appendChild(img);
+    }
+    if (showReal) {
+      if (t.video) {
+        var media = document.createElement('video');
+        media.muted = true; media.loop = true; media.autoplay = true;
+        media.setAttribute('muted', ''); media.setAttribute('playsinline', '');
+        if (t.thumb) media.poster = t.thumb;
+        media.className = 'tpl-thumb-media';
+        // a video that can't load/decode falls back to the still, then the canvas
+        media.addEventListener('error', function () {
+          try { thumb.removeChild(media); } catch (eR2) {}
+          if (t.thumb) mountImg(); else mountCanvasSwatch();
+        });
+        media.src = t.video;
+        thumb.appendChild(media);
+        try { var pp = media.play(); if (pp && pp.catch) pp.catch(function () {}); } catch (ePl) {}
+      } else {
+        mountImg();
+      }
+    } else {
+      mountCanvasSwatch();
     }
     card.appendChild(thumb);
 
@@ -3124,6 +3160,9 @@
     $('c-size').value = p.fontSize;
     $('c-pos').value = (p.layout === 'top') ? 18 : (p.layout === 'center') ? 50 : 76;
     setLayoutButton($('c-pos').value);
+    // each style carries its own entrance identity (user can still override)
+    state.captionEntrance = entranceForPreset(p);
+    setEntranceButtons(state.captionEntrance);
     $('c-fill').value = toHex(p.fill, '#ffffff');
     $('c-hl').value = toHex(p.highlight, '#ffd400');
     $('c-stroke').value = toHex(p.stroke, '#000000');
@@ -5943,6 +5982,24 @@
      filter, so what you see is what lands on the timeline — the PNG-era effects
      (gradients, gloss, outline, 3D boxes…) are stripped because the editable
      output genuinely doesn't have them. */
+  /* Each style's ENTRANCE identity (None/Pop/Slide/Fade — real clip keyframes).
+     Authored per style: an explicit preset.entrance wins; otherwise the style's
+     PNG-era anim concept maps to the closest real entrance, so designs keep the
+     motion character they were designed with ("previews all look the same"). */
+  function entranceForPreset(p) {
+    if (!p) return 'none';
+    if (p.entrance) return p.entrance;
+    var a = String(p.anim || '');
+    if (/pop|bounce|zoom|glitch|wave|scale/.test(a)) return 'pop';
+    if (/slide|reveal/.test(a)) return 'slide';
+    if (/typewriter|fade/.test(a)) return 'fade';
+    return 'none';   // karaoke / colour-sweep styles: the word sweep IS the motion
+  }
+  function setEntranceButtons(v) {
+    var bs = document.querySelectorAll('#c-entrance button');
+    for (var i = 0; i < bs.length; i++) bs[i].classList.toggle('on', (bs[i].dataset.e || 'none') === v);
+  }
+
   function carryableStyle(p) {
     p = p || {};
     // Word-by-word is the product's signature: the sweep is ON for EVERY style
@@ -5981,6 +6038,7 @@
       glowBlur: (p.glowBlur != null ? p.glowBlur : 0.35),
       wordsPerCue: p.wordsPerCue,
       anim: hasHl ? 'karaoke' : 'fade',                // sweep for highlight styles, static otherwise
+      entrance: entranceForPreset(p),                  // the style's clip-entrance identity
       // vertical position carries onto the engine's Text Position control
       // (0 = top … 1 = bottom; 0.5 = the engine's authored centre)
       yPct: (p.yPct != null && isFinite(p.yPct)) ? Math.max(0.1, Math.min(0.92, p.yPct)) : 0.5,
