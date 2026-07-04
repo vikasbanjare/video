@@ -2817,9 +2817,12 @@
       if (!frames || !frames.length) frames = [{ words: sw }];
       // CAPTION-BAND view: the tile shows the frame REGION around the caption
       // (≈22% of frame height), so the style is readable AND size-true within
-      // the band. fontSize is in 1080-frame-height units.
+      // the band. GROUND TRUTH (extracted from the engine's own .aep + its real
+      // render): the authored face is 75px in a 1920-tall comp = 3.9% of frame
+      // height → 17.7% of the band → fontSize 191 in 1080-units. (Was 227,
+      // based on a 90px guess — previews drew ~20% too big.)
       var ratio = ((raw.fontSize || 90) / 90);
-      var pov = { fontSize: Math.round(227 * ratio), maxWidthPct: 0.86, maxLines: 2,
+      var pov = { fontSize: Math.round(191 * ratio), maxWidthPct: 0.86, maxLines: 2,
                   vCenter: true };
       canvas._animFrames = frames;
       canvas._animStyle = CPRender.styleForFrame(t, canvas.height, pov);
@@ -4126,7 +4129,10 @@
     canvas.style.width = boxW + 'px'; canvas.style.height = boxH + 'px';
 
     var ratio = ((styled.fontSize || 90) / 90);       // Size slider vs the authored default
-    var pov = { fontSize: Math.round(227 * ratio), maxWidthPct: 0.86, maxLines: 2,
+    // 191 = the engine's AUTHORED 75px/1920 face inside the ≈22% caption band
+    // (measured from the template's own .aep + its real render — see
+    // tools/sim-preview-check.js, which re-verifies this on every build)
+    var pov = { fontSize: Math.round(191 * ratio), maxWidthPct: 0.86, maxLines: 2,
                 vCenter: true };
     var pStyle;
     try {

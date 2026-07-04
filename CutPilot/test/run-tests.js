@@ -1416,4 +1416,21 @@ try {
     { stdio: 'inherit' });
 } catch (e) { hostOk = false; }
 
-process.exit(failed || !auditOk || !hostOk ? 1 : 0);
+// GROUND-TRUTH PREVIEW SIMULATION: extracts the caption engine's AUTHORED
+// numbers from inside its .mogrt (font size in the .aep, comp size/position
+// in definition.json), renders the real panel headless, pixel-measures the
+// tiles, and fails if previews drift from the engine truth. Skipped only
+// where headless Chromium isn't available (the sim needs a browser).
+var simOk = true;
+try {
+  var fsSim = require('fs');
+  if (fsSim.existsSync('/opt/pw-browsers/chromium')) {
+    console.log('\nRunning ground-truth preview simulation…');
+    require('child_process').execSync('node "' + require('path').join(__dirname, '..', '..', 'tools', 'sim-preview-check.js') + '"',
+      { stdio: 'inherit' });
+  } else {
+    console.log('\n(preview simulation skipped — no headless Chromium here)');
+  }
+} catch (e) { simOk = false; }
+
+process.exit(failed || !auditOk || !hostOk || !simOk ? 1 : 0);
