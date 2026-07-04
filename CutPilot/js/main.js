@@ -19,7 +19,7 @@
     transcript: null,        // { label, path } — the one chosen transcript
     transcriptWords: null,   // real per-word cues (whisper -ml 1) for tight highlight sync
     transcriptManual: false, // true once the user picks a file by hand (auto-rescan won't override)
-    presetId: 'pro-spotlight',
+    presetId: 'hormozi',   // boot default — the Avenir-group keeper ('pro-spotlight' merged into it)
     animId: 'pop',
     mcMode: 'rotate',
     tplSource: 'installed',  // installed | file
@@ -1600,7 +1600,9 @@
 
   function boot() {
     if (trialExpired()) { showTrialLock(); return; }   // locked: never wires any controls
-    if (TRIAL_DAYS_MS) { var _dl = trialDaysLeft(); if ($('ver')) $('ver').textContent = 'Trial · ' + _dl + 'd left'; }
+    // keep the VERSION visible next to the trial state — testers report bugs by
+    // badge version, and "Trial · 7d left" alone hid which build they were on
+    if (TRIAL_DAYS_MS) { var _dl = trialDaysLeft(); if ($('ver')) $('ver').textContent = $('ver').textContent + ' · trial ' + _dl + 'd'; }
     // a bundled (shared) key is hidden from the tester — don't show the key fields
     if (KEY_BUNDLED) {
       ['tr-groq-wrap', 'set-groq-key'].forEach(function (id) {

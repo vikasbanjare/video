@@ -476,7 +476,6 @@
   var CATEGORIES = [
     '⭐ Premium',
     '🔘 Buttons',
-    'Trending',
     'Bold Creator', 'Minimal Professional', 'Dynamic Highlight', 'Social Growth',
     'Podcast Pro', 'Storytelling', 'Gaming Stream', 'Cinematic', 'Motivation', 'Education'
   ];
@@ -1004,7 +1003,14 @@
     lumen: 1, bloom: 1, sonnet: 1,
     // curation round 2 — exact same look (box/fill/highlight/caps/glow signature)
     // as a kept style, differing only in name:
-    'cap-grit': 1, 'highlight-box': 1, 'pro-clarity': 1, 'v1-ali': 1, sketch: 1 };
+    'cap-grit': 1, 'highlight-box': 1, 'pro-clarity': 1, 'v1-ali': 1, sketch: 1,
+    // curation round 3 — the user's rule: if a style is reachable from another
+    // by the customization tab alone (colours, box, opacity, shadow, caps,
+    // word-by-word, gradient highlight, size, position, entrance), it is a
+    // duplicate. Identity = what the tab CANNOT change: font family, bold vs
+    // regular, and box-corner class. 22 genuinely distinct styles remain —
+    // one keeper per identity group:
+    'pro-spotlight': 1, 'pro-subs-light': 1, 'pro-clean-glow': 1, 'pro-karaokebar': 1, 'pro-pulse': 1, 'pro-thuban': 1, 'pro-nova': 1, 'pro-andromeda': 1, rocket: 1, prism: 1, 'cap-core': 1, 'cap-hype': 1, 'cap-aurora': 1, 'btn-spotify': 1, 'btn-aura': 1, 'btn-gold': 1, 'btn-glass': 1, 'btn-outline': 1, 'btn-blue': 1, 'btn-paper': 1, 'btn-twitter': 1, 'btn-google': 1, mars: 1, stack: 1, 'cap-clarity': 1, 'cap-card': 1, 'cap-studio': 1, 'btn-twitch': 1, 'btn-figma': 1, 'v1-beast': 1, prime: 1, kai: 1, 'pro-coolpop': 1, 'pro-cleanbold': 1, 'pro-runway': 1, 'pro-evo': 1, focus: 1, cinema: 1, 'btn-pop3d': 1, 'btn-3dred': 1, 'btn-neo': 1, neon: 1, volt: 1, align: 1, 'cap-mono': 1, 'pro-elevate': 1, monolith: 1, ember: 1, linen: 1, 'btn-bios': 1 };
   TEMPLATES = TEMPLATES.filter(function (t) { return !_RETIRED[t.id]; });
 
   // ---- timeline-safe faces --------------------------------------------------
@@ -1042,8 +1048,8 @@
 
   /* Niche → recommended template id (the "AI Caption Styling" suggester). */
   var NICHE_RECOMMEND = {
-    Podcast: 'lift', Business: 'stack', Finance: 'minimal', Education: 'mars',
-    Fitness: 'impact', Motivation: 'hormozi', Gaming: 'neon', Tech: 'align', Vlog: 'karaoke'
+    Podcast: 'lift', Business: 'lift', Finance: 'minimal', Education: 'lift',
+    Fitness: 'impact', Motivation: 'hormozi', Gaming: 'impact', Tech: 'typewriter', Vlog: 'karaoke'
   };
   var NICHES = ['Podcast', 'Business', 'Finance', 'Education', 'Fitness', 'Motivation', 'Gaming', 'Tech', 'Vlog'];
 

@@ -281,7 +281,7 @@ console.log('captions.js (style customizer)');
   assert(custom.strokeWidth === 0, 'strokeWidth 0 override is honored (not treated as falsy fallback)');
   assert(custom.uppercase === false && custom.yPct === 0.5, 'boolean/number overrides honored');
 
-  const noBox = CPCaptions.mergeStyle(CPCaptions.getPreset('focus'), { boxColor: null });   // ('highlight-box' retired — same look; 'focus' kept)
+  const noBox = CPCaptions.mergeStyle(CPCaptions.getPreset('karaoke'), { boxColor: null });   // ('highlight-box' retired — same look; 'focus' kept)
   assert(noBox.boxColor === null, 'explicit null boxColor removes the box');
 
   // render.styleForFrame scales and applies the same precedence
@@ -378,7 +378,11 @@ console.log('render.js (pure layout helpers)');
 // ------------------------------------------------- template library ----
 console.log('captions.js (template library)');
 {
-  assert(CPCaptions.TEMPLATES.length >= 24, 'catalog has 24+ templates');
+  // curation policy: a style reachable from another via the customization tab
+  // (colours/box/shadow/caps/gradient/size/position/entrance) is a duplicate.
+  // Identity = font family x weight class x box-corner class -> 22 keepers.
+  assert(CPCaptions.TEMPLATES.length >= 18 && CPCaptions.TEMPLATES.length <= 40,
+         'catalog stays curated (18..40 genuinely distinct styles, currently ' + CPCaptions.TEMPLATES.length + ')');
   // every template carries the library metadata the browser needs
   CPCaptions.TEMPLATES.forEach(function (t) {
     if (!t.category || t.popularity == null || !t.layout) {
@@ -391,7 +395,7 @@ console.log('captions.js (template library)');
   const cats = {};
   CPCaptions.TEMPLATES.forEach(function (t) { cats[t.category] = 1; });
   assert(CPCaptions.CATEGORIES.every(function (c) { return cats[c]; }),
-         'all 10 categories have at least one template');
+         'every declared category has at least one template');
 
   // niche recommendations resolve to real templates
   assert(CPCaptions.NICHES.every(function (n) {
