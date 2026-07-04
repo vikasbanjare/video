@@ -2765,15 +2765,41 @@
      (startCardAnimator) loops these frames so the gallery card plays the REAL
      animation — the same engine, frames and style as the editor preview and the
      burned-in export — instead of a frozen thumbnail. */
+  /* The tile is a TRUE-OUTPUT MINIATURE: a 9:16 mini-frame with the caption at
+     its REAL relative size (the engine's authored face ≈90px in a 1920-tall
+     frame ≈ 4.7% of height, scaled by the style's own size) and REAL position
+     (the style's layout), playing the style's own entrance/sweep — a shrunken
+     version of exactly what lands on the timeline. Sample = the user's own
+     transcript words when loaded, else a per-style line so tiles differ. */
+  var TILE_SAMPLES = ['Make every word count', 'Heat waves are rising', 'Grow your channel fast',
+                      'This changes everything', 'Nobody tells you this', 'Start before you are ready'];
+  function tileSampleText(p) {
+    try {
+      var tw = state.transcriptWords;
+      if (tw && tw.length >= 4) {
+        var ws = [];
+        for (var i = 0; i < tw.length && ws.length < 5; i++) {
+          var wd = tw[i] && (tw[i].text || tw[i].word);
+          if (wd) ws.push(String(wd));
+        }
+        if (ws.length >= 3) return ws.join(' ').replace(/[.,!?]+$/, '');
+      }
+    } catch (eT) {}
+    var h = 0, id = String((p && p.id) || '');
+    for (var k = 0; k < id.length; k++) h = (h * 31 + id.charCodeAt(k)) & 0xffff;
+    return TILE_SAMPLES[h % TILE_SAMPLES.length];
+  }
+  function layoutYPct(p) {
+    var l = p && p.layout;
+    return l === 'top' ? 0.2 : (l === 'center' ? 0.5 : 0.74);
+  }
   function drawCardPreview(canvas, t) {
     try {
-      // The tile shows what the EDITABLE clip will look like — the style filtered
-      // to the properties that actually reach the .mogrt backbone. Highlight
-      // styles play the word-by-word sweep (the backbone's real motion); plain
-      // styles sit static. No PNG-era gradients/gloss that the output can't have.
+      var raw = t;
       t = carryableStyle(t);
-      var sample = t.uppercase ? 'BIG IDEA' : 'Big idea';   // short → legible in the 3-up tiles
-      var sw = sample.split(' '), DUR = 0.4;
+      var sample = tileSampleText(raw);
+      if (t.uppercase) sample = sample.toUpperCase();
+      var sw = sample.split(' '), DUR = 0.35;
       var wordCues = sw.map(function (w, i) { return { start: i * DUR, end: (i + 1) * DUR, text: w }; });
       // the tile plays the style's OWN motion: its entrance when it has one
       // (that's what the inserted clip does too), else the word sweep
@@ -2787,10 +2813,10 @@
         });
       } catch (eF) { frames = null; }
       if (!frames || !frames.length) frames = [{ words: sw }];
-      // Fill the card without overflowing: cap the font so the block fits the
-      // card HEIGHT (the engine only fits WIDTH, so a too-big start clips top/bottom).
-      var fMax = Math.round(0.5 * 1080 / 1.18);   // single line, width-fit (like the real strip)
-      var pov = { fontSize: fMax, maxWidthPct: 0.95, maxLines: 1, vCenter: true };
+      // TRUE scale + TRUE position (fontSize is in 1080-frame-height units)
+      var ratio = ((raw.fontSize || 90) / 90);
+      var pov = { fontSize: Math.round(51 * ratio), maxWidthPct: 0.86, maxLines: 2,
+                  vCenter: false, yPct: layoutYPct(raw) };
       canvas._animFrames = frames;
       canvas._animStyle = CPRender.styleForFrame(t, canvas.height, pov);
       canvas._animLen = frames.length;
@@ -2848,7 +2874,7 @@
   function buildTemplateCard(t) {
     var isMogrt = !!t.mogrt;
     var card = document.createElement('div');
-    card.className = 'tpl-card' + (isMogrt ? ' is-mogrt' : '') +
+    card.className = 'tpl-card' + (isMogrt ? ' is-mogrt' : ' is-style') +
       (!isMogrt && t.id === state.presetId ? ' on' : '');
 
     // label row (name + hover-only favorite)
@@ -4080,39 +4106,40 @@
     var canvas = $('preview-canvas');
     if (!canvas || !CPRender || !CPRender.drawFrame) return;
 
-    // PREVIEW = THE EDITABLE OUTPUT. The style (template + your edits) is passed
-    // through the SAME carryable filter the insert uses, so the preview can only
-    // show what the placed caption clip will actually have: font, weight, caps,
-    // text / highlight / box colours, box opacity, shadow. Highlight styles play
-    // the word-by-word sweep (the backbone's real motion); plain styles sit
-    // static. Rendered as a big readable swatch — the template controls its own
-    // on-frame size/position, so the preview is about the LOOK, not geometry.
-    var carry = carryableStyle(styledPreset());
+    // PREVIEW = THE EDITABLE OUTPUT, as a TRUE FRAME: the caption is drawn at
+    // its real relative size (the engine's authored face ≈4.7% of frame height
+    // at Size=default, scaled by the Size slider) and at the Position slider's
+    // real spot — a shrunken version of the final frame, not a zoomed swatch.
+    var styled = styledPreset();
+    var carry = carryableStyle(styled);
 
     // Fit a canvas of the sequence's aspect ratio inside the preview box.
+    // No sequence yet → assume vertical (the product's home turf).
+    var aw = (state.env && state.env.width) || 1080, ah = (state.env && state.env.height) || 1920;
+    frame.classList.toggle('frame916', ah > aw);      // portrait sequences get the tall frame
     var boxW = frame.clientWidth || 300, boxH = frame.clientHeight || 168;
-    var aw = (state.env && state.env.width) || 1920, ah = (state.env && state.env.height) || 1080;
     var ar = aw / ah, W, H;
     if (boxW / boxH > ar) { H = boxH; W = Math.round(boxH * ar); } else { W = boxW; H = Math.round(boxW / ar); }
     var dpr = Math.min(2, (window.devicePixelRatio || 1));
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
     canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
 
-    // ONE line, like the real backbone caption (a strip, not stacked pills) —
-    // the engine width-fits the size down so the whole sample stays on one line.
-    var fMax = Math.round(0.42 * 1080 / 1.18);
+    var ratio = ((styled.fontSize || 90) / 90);       // Size slider vs the authored default
+    var pov = { fontSize: Math.round(51 * ratio), maxWidthPct: 0.86, maxLines: 2,
+                vCenter: false, yPct: carry.yPct };
     var pStyle;
     try {
-      pStyle = CPRender.styleForFrame(carry, canvas.height, { fontSize: fMax, maxWidthPct: 0.92, maxLines: 1, vCenter: true });
+      pStyle = CPRender.styleForFrame(carry, canvas.height, pov);
     } catch (eStyle) {
       // a style that trips the engine must NEVER blank the preview — fall back to
       // a minimal look and record which template + why in Diagnostics.
       try { diag('preview', (carry.id || '?') + ' styleForFrame: ' + (eStyle && eStyle.message)); } catch (eD1) {}
       pStyle = CPRender.styleForFrame({ id: carry.id, font: 'Inter', fill: carry.fill || '#ffffff', fontSize: 120 },
-                                      canvas.height, { fontSize: fMax, maxWidthPct: 0.92, maxLines: 1, vCenter: true });
+                                      canvas.height, pov);
     }
     canvas._pvStyle = pStyle;   // exposed so the parity harness can machine-compare tile vs preview
-    var sample = carry.uppercase ? 'YOUR BIG IDEA' : 'Your big idea';
+    var sample = tileSampleText(styled);
+    if (carry.uppercase) sample = sample.toUpperCase();
     var sw = sample.split(' ');
     var DUR = 0.42;                                   // seconds per word (preview pacing)
     var wordCues = sw.map(function (w, i) { return { start: i * DUR, end: (i + 1) * DUR, text: w }; });
@@ -6042,7 +6069,10 @@
       // vertical position carries onto the engine's Text Position control
       // (0 = top … 1 = bottom; 0.5 = the engine's authored centre)
       yPct: (p.yPct != null && isFinite(p.yPct)) ? Math.max(0.1, Math.min(0.92, p.yPct)) : 0.5,
-      vCenter: true
+      // NOT vCenter — previews are TRUE frames now, and the renderer lets a
+      // style-level vCenter override the yPct position (swatch-era leftover).
+      // Surfaces that still want a centred swatch (the sheet) pass their own.
+      vCenter: false
     };
   }
 
