@@ -1931,6 +1931,13 @@ function CP_setWordSweep(comp, durSec) {
 function CP_insertMogrtCaptions(argsJson) {
   try {
     var args = JSON.parse(argsJson);
+    // Cues MUST be in time order: the never-overrun-the-next-caption clamp and
+    // the per-group gap logic both assume it. The panel sends sorted cues, but
+    // ASR quirks / other callers can hand them out of order — an earlier
+    // caption then overruns a later one and both fight on screen. Sort here.
+    if (args.cues && args.cues.length > 1) {
+      args.cues.sort(function (a, b) { return (a && a.start || 0) - (b && b.start || 0); });
+    }
     var seq = CP_activeSequence();
     // Detect portrait sequences. Flux/MOGRT templates are authored for 1920×1080
     // landscape; on a portrait sequence (e.g. 1080×1920 for Shorts/Reels) the

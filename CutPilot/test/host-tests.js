@@ -630,5 +630,81 @@ console.log('host.jsx — Flux engine (Halo2 control set): text, exact-name para
   function near2(v, want) { return v.every((x, i) => Math.abs(x - want[i]) <= 2); }
 }
 
+// ═════════════ insert edge cases: the inputs real projects produce ═════════
+console.log('host.jsx — insert edge cases (empty / tiny / overlapping / unsorted / hostile text)');
+{
+  // empty cue list → clean no-op, not a crash
+  const w0 = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true });
+  const h0 = loadHost(w0);
+  const r0 = call(h0, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt', cues: [], videoTrack: null, audioTrack: 0,
+    params: [], textStyle: null, stretch: false
+  });
+  assert(r0.ok === true && r0.inserted === 0 && r0.failed === 0, 'empty cue list → ok, nothing inserted, nothing "failed"');
+
+  // a single very short one-word cue → inserts, sweeps its real (tiny) length
+  const w1 = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true });
+  const h1 = loadHost(w1);
+  const r1 = call(h1, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt', cues: [{ start: 2.0, end: 2.2, text: 'Go' }],
+    videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false
+  });
+  const c1 = w1.model.vTracks[w1.model.vTracks.length - 1][0];
+  assert(r1.ok && r1.inserted === 1 && r1.textSet === 1, 'a 0.2s one-word cue inserts with its text');
+  assert(Math.abs(c1._flux.sweepDur.y - 0.2) < 0.05, 'sweep runs the cue\'s real 0.2s (' + c1._flux.sweepDur.y + ')');
+  assert(c1.end.seconds <= 2.2 + 1e-6, 'clip never outlives its lonely cue');
+
+  // OVERLAPPING cues (ASR sometimes emits them): earlier clip must be clamped
+  // to the next caption's start — never two captions on screen fighting
+  const w2 = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true });
+  const h2 = loadHost(w2);
+  const r2 = call(h2, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt',
+    cues: [{ start: 1.0, end: 3.0, text: 'first line long' }, { start: 2.0, end: 3.5, text: 'second line' }],
+    videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false
+  });
+  const t2 = w2.model.vTracks[w2.model.vTracks.length - 1];
+  assert(r2.ok && r2.inserted === 2, 'overlapping cues both insert');
+  assert(t2[0].end.seconds <= 2.0 + 1e-6, 'first clip is clamped to the overlap start (' + t2[0].end.seconds + ')');
+
+  // UNSORTED cues: the host must sort — clamping logic assumes time order, and
+  // out-of-order input previously made an earlier caption overrun a later one
+  const w3 = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true });
+  const h3 = loadHost(w3);
+  const r3 = call(h3, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt',
+    cues: [{ start: 5.0, end: 7.0, text: 'later' }, { start: 1.0, end: 6.0, text: 'earlier overlapping' }],
+    videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false
+  });
+  const t3 = w3.model.vTracks[w3.model.vTracks.length - 1].slice().sort((a, b) => a.start.seconds - b.start.seconds);
+  assert(r3.ok && r3.inserted === 2, 'unsorted cues both insert');
+  assert(t3[0].start.seconds === 1.0 && t3[0].end.seconds <= 5.0 + 1e-6,
+    'after sorting, the earlier caption is clamped to the later one\'s start (' + t3[0].end.seconds + ')');
+
+  // hostile text: quotes, backslashes, newlines — the rich JSON write must
+  // stay parseable and carry the exact characters
+  const w4 = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true });
+  const h4 = loadHost(w4);
+  const hostile = 'He said "wow" \\ really\nnew line';
+  const r4 = call(h4, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt', cues: [{ start: 0.5, end: 2.0, text: hostile }],
+    videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false
+  });
+  const c4 = w4.model.vTracks[w4.model.vTracks.length - 1][0];
+  const blob4 = JSON.parse(c4._flux.text.v);
+  assert(r4.ok && r4.textSet === 1, 'hostile-character cue inserts with text');
+  assert(blob4.textEditValue === hostile, 'quotes/backslash/newline round-trip exactly');
+  assert(blob4.capPropTextRunLength[0] === hostile.length, 'run-length matches the hostile text length');
+
+  // zero-length cue (start == end): must not crash or divide by zero
+  const w5 = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true });
+  const h5 = loadHost(w5);
+  const r5 = call(h5, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt', cues: [{ start: 3.0, end: 3.0, text: 'blip' }],
+    videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false
+  });
+  assert(r5.ok === true && r5.inserted === 1, 'zero-length cue inserts without crashing');
+}
+
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
