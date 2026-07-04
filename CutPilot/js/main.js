@@ -2415,21 +2415,23 @@
         if (u.charAt(0) !== '/') u = '/' + u;             // Windows drive paths → /C:/…
         return 'file://' + encodeURI(u).replace(/#/g, '%23').replace(/\?/g, '%3F');
       }
-      function findMedia(base, exts) {
-        for (var d = 0; d < 2; d++) {
-          var dir = d === 0 ? path.join(mdir, 'thumbs') : mdir;
-          for (var x = 0; x < exts.length; x++) {
-            var p2 = path.join(dir, base + exts[x]);
-            try { if (fs.existsSync(p2)) return fileUrl(p2); } catch (eF) {}
-          }
+      function findIn(dir, base, exts) {
+        for (var x = 0; x < exts.length; x++) {
+          var p2 = path.join(dir, base + exts[x]);
+          try { if (fs.existsSync(p2)) return fileUrl(p2); } catch (eF) {}
         }
         return '';
       }
       var withThumb = 0, withVideo = 0;
       state.bundledMogrts = list.map(function (m) {
         var base = String(m.file).replace(/\.mogrt$/i, '');
-        var thumbUrl = findMedia(base, ['.png', '.jpg', '.jpeg', '.webp']);
-        var videoUrl = findMedia(base, ['.mp4', '.mov']);
+        var IMG = ['.png', '.jpg', '.jpeg', '.webp'], VID = ['.mp4', '.mov'];
+        // the USER'S files (dropped beside the .mogrt) always win over shipped
+        // thumbs — and a user-added IMAGE replaces the shipped video entirely
+        // ("I added the thumbnail in the folder of the mogrt file — pick that").
+        var userImg = findIn(mdir, base, IMG), userVid = findIn(mdir, base, VID);
+        var thumbUrl = userImg || findIn(path.join(mdir, 'thumbs'), base, IMG);
+        var videoUrl = userVid || (userImg ? '' : findIn(path.join(mdir, 'thumbs'), base, VID));
         if (thumbUrl) withThumb++;
         if (videoUrl) withVideo++;
         return { name: m.name, path: path.join(mdir, m.file),
@@ -2813,10 +2815,12 @@
         });
       } catch (eF) { frames = null; }
       if (!frames || !frames.length) frames = [{ words: sw }];
-      // TRUE scale + TRUE position (fontSize is in 1080-frame-height units)
+      // CAPTION-BAND view: the tile shows the frame REGION around the caption
+      // (≈22% of frame height), so the style is readable AND size-true within
+      // the band. fontSize is in 1080-frame-height units.
       var ratio = ((raw.fontSize || 90) / 90);
-      var pov = { fontSize: Math.round(51 * ratio), maxWidthPct: 0.86, maxLines: 2,
-                  vCenter: false, yPct: layoutYPct(raw) };
+      var pov = { fontSize: Math.round(227 * ratio), maxWidthPct: 0.86, maxLines: 2,
+                  vCenter: true };
       canvas._animFrames = frames;
       canvas._animStyle = CPRender.styleForFrame(t, canvas.height, pov);
       canvas._animLen = frames.length;
@@ -4113,20 +4117,17 @@
     var styled = styledPreset();
     var carry = carryableStyle(styled);
 
-    // Fit a canvas of the sequence's aspect ratio inside the preview box.
-    // No sequence yet → assume vertical (the product's home turf).
-    var aw = (state.env && state.env.width) || 1080, ah = (state.env && state.env.height) || 1920;
-    frame.classList.toggle('frame916', ah > aw);      // portrait sequences get the tall frame
+    // CAPTION-BAND preview: the region of the frame around the caption, at a
+    // readable size (the full 9:16 frame wasted the panel on empty backdrop).
+    // A small frame gauge in the corner shows WHERE on screen it will sit.
     var boxW = frame.clientWidth || 300, boxH = frame.clientHeight || 168;
-    var ar = aw / ah, W, H;
-    if (boxW / boxH > ar) { H = boxH; W = Math.round(boxH * ar); } else { W = boxW; H = Math.round(boxW / ar); }
     var dpr = Math.min(2, (window.devicePixelRatio || 1));
-    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
-    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    canvas.width = Math.round(boxW * dpr); canvas.height = Math.round(boxH * dpr);
+    canvas.style.width = boxW + 'px'; canvas.style.height = boxH + 'px';
 
     var ratio = ((styled.fontSize || 90) / 90);       // Size slider vs the authored default
-    var pov = { fontSize: Math.round(51 * ratio), maxWidthPct: 0.86, maxLines: 2,
-                vCenter: false, yPct: carry.yPct };
+    var pov = { fontSize: Math.round(227 * ratio), maxWidthPct: 0.86, maxLines: 2,
+                vCenter: true };
     var pStyle;
     try {
       pStyle = CPRender.styleForFrame(carry, canvas.height, pov);
@@ -4153,11 +4154,27 @@
     } catch (eF) { frames = null; }
     if (!frames || !frames.length) frames = [{ words: sw }];
 
+    // tiny 9:16 frame gauge (top-right): the marker = the Position slider's
+    // real spot, so geometry stays visible without wasting the whole preview
+    function drawGauge() {
+      try {
+        var g = canvas.getContext('2d');
+        var gh = Math.round(canvas.height * 0.34), gw = Math.round(gh * 9 / 16);
+        var gx = canvas.width - gw - Math.round(8 * dpr), gy = Math.round(8 * dpr);
+        g.save();
+        g.fillStyle = 'rgba(10,12,18,.55)'; g.strokeStyle = 'rgba(255,255,255,.5)'; g.lineWidth = dpr;
+        g.beginPath(); g.rect(gx, gy, gw, gh); g.fill(); g.stroke();
+        var my = gy + Math.round(gh * (carry.yPct != null ? carry.yPct : 0.5));
+        g.strokeStyle = (carry.highlight || '#ffd400'); g.lineWidth = 2 * dpr;
+        g.beginPath(); g.moveTo(gx + 2 * dpr, my); g.lineTo(gx + gw - 2 * dpr, my); g.stroke();
+        g.restore();
+      } catch (eG) {}
+    }
     var pi = 0;
     function play() {
       // NEVER let one template's style crash the preview into a blank box — draw
       // a plain fallback and log WHICH template + why into Diagnostics instead.
-      try { CPRender.drawFrame(canvas, frames[pi % frames.length], pStyle); }
+      try { CPRender.drawFrame(canvas, frames[pi % frames.length], pStyle); drawGauge(); }
       catch (eDraw) {
         try { diag('preview', (carry.id || '?') + ': ' + (eDraw && eDraw.message)); } catch (eD2) {}
         try {

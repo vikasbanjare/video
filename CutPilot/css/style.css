@@ -249,13 +249,12 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
 /* caption-style cards: a vertical mini VIDEO FRAME — the caption is drawn at its
    real on-frame size and position, so the tile is a shrunken final output. */
 .tpl-card.is-style .tpl-thumb {
-  height: auto; aspect-ratio: 9 / 16;
-  /* a MID-TONE "video still" backdrop — real footage is never pure black, and
-     dark caption boxes (Bold Pop & co.) must stay visible against it */
+  /* compact CAPTION-BAND view: the region of the frame around the caption,
+     at readable size — true style, no dead space (the full-frame 9:16 tiles
+     were mostly empty backdrop with 10px text) */
+  height: 100px;
   background:
     radial-gradient(120% 75% at 50% 18%, rgba(255,255,255,.16), transparent 62%),
-    radial-gradient(150% 60% at 50% 108%, rgba(0,0,0,.45), transparent 60%),
-    linear-gradient(168deg, #57607235, transparent 55%),
     linear-gradient(165deg, #454d5c, #2e333e 72%);
 }
 .tpl-card:hover .tpl-thumb { transform: translateY(-2px); box-shadow: var(--shadow); }
@@ -325,7 +324,7 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
 #cap-preview.collapsed { position: static; margin: 0 0 8px; padding: 0; background: transparent; box-shadow: none; }
 #cap-preview.collapsed .preview-collapse { position: static; display: inline-block; margin: 0; }
 .preview-frame {
-  position: relative; width: 100%; height: 118px; border-radius: var(--r);
+  position: relative; width: 100%; height: 148px; border-radius: var(--r);
   margin: 0 auto;
   background:
     radial-gradient(80% 120% at 50% 0%, var(--accent-soft), transparent 70%),
@@ -336,13 +335,7 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
 #preview-canvas { display: block; max-width: 100%; max-height: 100%; }
 /* TRUE-FRAME editor preview: a vertical sequence shows a 9:16 frame with the
    caption at real size/position (the Position slider visibly moves it). */
-.preview-frame.frame916 {
-  height: 336px; width: auto; aspect-ratio: 9 / 16;
-  background:
-    radial-gradient(120% 75% at 50% 18%, rgba(255,255,255,.16), transparent 62%),
-    radial-gradient(150% 60% at 50% 108%, rgba(0,0,0,.45), transparent 60%),
-    linear-gradient(165deg, #454d5c, #2e333e 72%);
-}
+.preview-frame.frame916 { /* retired: tall full-frame preview */ }
 /* live colour/font preview inside the .mogrt template customizer */
 .mogrt-prev-frame {
   width: 100%; height: 88px; border-radius: var(--r); margin: 2px 0 0; overflow: hidden;
