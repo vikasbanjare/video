@@ -1001,8 +1001,44 @@
   var _RETIRED = { evo: 1, cleanwhite: 1, byline: 1, 'pro-neon': 1, rebel: 1, boldyellow: 1,
     grind: 1, 'v1-podcast': 1, paper: 1, tvnews: 1, 'v1-finance': 1, 'pro-copernicus': 1,
     'v1-hormozi26': 1, 'v1-reels': 1, 'pro-velocity': 1, 'pro-quint': 1, magazine: 1,
-    lumen: 1, bloom: 1, sonnet: 1 };
+    lumen: 1, bloom: 1, sonnet: 1,
+    // curation round 2 — exact same look (box/fill/highlight/caps/glow signature)
+    // as a kept style, differing only in name:
+    'cap-grit': 1, 'highlight-box': 1, 'pro-clarity': 1, 'v1-ali': 1, sketch: 1 };
   TEMPLATES = TEMPLATES.filter(function (t) { return !_RETIRED[t.id]; });
+
+  // ---- timeline-safe faces --------------------------------------------------
+  // Styles were authored with Google webfonts, which are NOT installed on a
+  // stock Mac/Windows — the canvas preview loaded them from the web while the
+  // TIMELINE silently substituted something else. Remap each to the closest
+  // face that ships with macOS (with sane Windows twins), and keep the original
+  // webfont as the preview's first fallback so machines that DO have it render
+  // the closest possible look. Preview and output stay in agreement.
+  var FONT_SAFE = {
+    'Inter': 'Helvetica Neue',
+    'Manrope': 'Helvetica Neue',
+    'Montserrat': 'Avenir Next',
+    'Outfit': 'Avenir Next',
+    'Poppins': 'Futura',
+    'Archivo Black': 'Arial Black',
+    'Anton': 'Impact',
+    'Bebas Neue': 'Impact',
+    'Oswald': 'Arial Narrow',
+    'JetBrains Mono': 'Menlo',
+    'Space Mono': 'Courier New',
+    'Playfair Display': 'Didot',
+    'Nunito': 'Trebuchet MS',
+    'Bangers': 'Marker Felt',
+    'Pacifico': 'Snell Roundhand'
+  };
+  TEMPLATES.forEach(function (t) {
+    var safe = FONT_SAFE[t.font];
+    if (!safe) return;
+    var fb = [t.font].concat(t.fallbackFonts || []);
+    if (fb.indexOf('sans-serif') < 0 && fb.indexOf('serif') < 0 && fb.indexOf('monospace') < 0) fb.push('sans-serif');
+    t.fallbackFonts = fb;
+    t.font = safe;
+  });
 
   /* Niche → recommended template id (the "AI Caption Styling" suggester). */
   var NICHE_RECOMMEND = {
@@ -1022,6 +1058,10 @@
     'Montserrat', 'Poppins', 'Inter', 'Roboto', 'Open Sans', 'Lato', 'Raleway',
     'Work Sans', 'Nunito', 'Rubik', 'DM Sans', 'Outfit', 'Sora', 'Barlow', 'Manrope',
     'Helvetica', 'Verdana', 'Tahoma', 'Futura',
+    // System faces (ship with macOS/Windows — nothing to load; these are the
+    // timeline-safe primaries the FONT_SAFE remap points styles at)
+    'Helvetica Neue', 'Avenir Next', 'Arial Narrow', 'Trebuchet MS',
+    'Menlo', 'Didot', 'Marker Felt', 'Snell Roundhand',
     // Serif
     'Playfair Display', 'Merriweather', 'Lora', 'Georgia', 'Times New Roman',
     // Mono

@@ -281,7 +281,7 @@ console.log('captions.js (style customizer)');
   assert(custom.strokeWidth === 0, 'strokeWidth 0 override is honored (not treated as falsy fallback)');
   assert(custom.uppercase === false && custom.yPct === 0.5, 'boolean/number overrides honored');
 
-  const noBox = CPCaptions.mergeStyle(CPCaptions.getPreset('highlight-box'), { boxColor: null });
+  const noBox = CPCaptions.mergeStyle(CPCaptions.getPreset('focus'), { boxColor: null });   // ('highlight-box' retired — same look; 'focus' kept)
   assert(noBox.boxColor === null, 'explicit null boxColor removes the box');
 
   // render.styleForFrame scales and applies the same precedence

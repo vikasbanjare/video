@@ -3381,6 +3381,15 @@
         updateVals(); renderPreview();
       });
     }
+    // 🎬 Entrance — real Motion keyframes on each caption clip (None default)
+    var ent = document.querySelectorAll('#c-entrance button');
+    for (var en = 0; en < ent.length; en++) {
+      ent[en].addEventListener('click', function () {
+        for (var ej = 0; ej < ent.length; ej++) ent[ej].classList.remove('on');
+        this.classList.add('on');
+        state.captionEntrance = this.dataset.e || 'none';
+      });
+    }
     // gradient-text + multi-colour reveal their colour swatches
     if ($('c-grad')) $('c-grad').addEventListener('change', function () {
       if ($('c-grad-opts')) $('c-grad-opts').style.display = this.checked ? '' : 'none';
@@ -4130,6 +4139,72 @@
     if (mode === 'title') return s.replace(/\S+/g, function (w) { return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(); });
     return s;   // 'as-spoken' / false / undefined
   }
+  /* ✨ Smart emphasis — TEXT-level, so it lands identically on every output
+     path (editable engine clips, burned captions, SRT). One fitting emoji per
+     matching line; the video's most important words (TF-IDF over the whole
+     transcript) in CAPITALS. Both opt-in toggles. */
+  var EMOJI_LEX = [
+    [/\b(money|cash|paid|price|prices|cost|profit|revenue|rupees?|dollars?|lakhs?|crores?)\b/i, '💰'],
+    [/\b(grow|growth|growing|increase|increasing|rising|rise|scale|scaling|boost)\b/i, '📈'],
+    [/\b(drop|fall|falling|decrease|crash|collapse)\b/i, '📉'],
+    [/\b(fire|hot|burn|burning|lit|heat|heatwaves?)\b/i, '🔥'],
+    [/\b(idea|ideas|think|thinking|brain|smart|genius)\b/i, '💡'],
+    [/\b(love|heart|care|caring)\b/i, '❤️'],
+    [/\b(warning|danger|dangerous|careful|risk|risky|alert|crisis)\b/i, '⚠️'],
+    [/\b(time|clock|minutes?|hours?|deadline|schedule)\b/i, '⏰'],
+    [/\b(goal|goals|target|aim|focus|focused)\b/i, '🎯'],
+    [/\b(win|winner|won|success|successful|victory)\b/i, '🏆'],
+    [/\b(work|working|grind|hustle|effort)\b/i, '💪'],
+    [/\b(secret|secrets|hidden|nobody tells)\b/i, '🤫'],
+    [/\b(crazy|insane|unbelievable|shocking|shocked|mind ?blown)\b/i, '🤯'],
+    [/\b(stop|never|avoid|quit)\b/i, '🚫'],
+    [/\b(new|launch|launched|launching|announcement|announcing)\b/i, '🚀'],
+    [/\b(look|watch|see this|attention)\b/i, '👀'],
+    [/\b(health|healthy|doctor|hospital|medicine|disease)\b/i, '🩺'],
+    [/\b(food|eat|eating|meal|diet|nutrition)\b/i, '🍽️'],
+    [/\b(video|camera|filming|shoot|record)\b/i, '🎬'],
+    [/\b(music|song|sound|audio|voice)\b/i, '🎵'],
+    [/\b(free|gift|bonus|giveaway)\b/i, '🎁'],
+    [/\b(number one|the best|top rated|first place)\b/i, '🥇'],
+    [/\b(world|global|everyone|everywhere|planet)\b/i, '🌍'],
+    [/\b(phone|mobile|app|apps)\b/i, '📱'],
+    [/\b(sleep|sleeping|tired|exhausted|rest)\b/i, '😴'],
+    [/\b(happy|happiness|smile|joy|fun)\b/i, '😊'],
+    [/\b(sad|crying|pain|painful|hurt)\b/i, '😢'],
+    [/\b(india|indian|desi)\b/i, '🇮🇳']
+  ];
+  function applySmartEmphasis(cues) {
+    var emojiOn = cchk('c-emoji');
+    var capsOn = cchk('c-kwcaps');
+    if (!emojiOn && !capsOn) return cues;
+    var kw = null;
+    if (capsOn && typeof CPTranscript !== 'undefined' && CPTranscript.topKeywordSet) {
+      // budget scales with the video: a short clip gets ~4 CAPS words, a long
+      // talk up to 14 — a fixed cap over-CAPSed short transcripts with filler.
+      var totalWords = 0;
+      for (var tw = 0; tw < cues.length; tw++) totalWords += (String(cues[tw].text || '').split(/\s+/).length);
+      var budget = Math.max(4, Math.min(14, Math.round(totalWords / 12)));
+      try { kw = CPTranscript.topKeywordSet(cues, { maxWords: budget }); } catch (eKw) { kw = null; }
+    }
+    return cues.map(function (c) {
+      var text = c.text;
+      if (kw) {
+        text = text.split(' ').map(function (w) {
+          var k = w.toLowerCase().replace(/[^a-z0-9']/g, '');
+          return (k && kw[k]) ? w.toUpperCase() : w;
+        }).join(' ');
+      }
+      if (emojiOn) {
+        for (var i = 0; i < EMOJI_LEX.length; i++) {
+          if (EMOJI_LEX[i][0].test(c.text)) { text = text + ' ' + EMOJI_LEX[i][1]; break; }
+        }
+      }
+      var out = { start: c.start, end: c.end, text: text };
+      if (c.words) out.words = c.words;   // keep word timings for the sweep
+      return out;
+    });
+  }
+
   function textCues(cues, words, caseMode) {
     var mode = (caseMode === true) ? 'upper' : (caseMode === false ? 'as-spoken' : (caseMode || 'as-spoken'));
     // Keep whole sentences together. A caption wraps to ~2 lines, so the width
@@ -4145,7 +4220,7 @@
     if (state.captionMaxChars) maxChars = state.captionMaxChars;                 // explicit override wins
     var out = CPCaptions.regroupWords(cues, perCap, { maxChars: maxChars, sentenceBreak: true });
     if (mode !== 'as-spoken') out = out.map(function (c) { return { start: c.start, end: c.end, text: applyCase(c.text, mode) }; });
-    return out;
+    return applySmartEmphasis(out);
   }
 
   // ---- main button: the animated engine ----
@@ -5853,6 +5928,9 @@
     if (ov.glowBlur != null) eff.glowBlur = ov.glowBlur;
     // the visible "Word-by-word highlight" toggle is authoritative for the sweep
     eff.wordHl = cchk('c-wordhl');
+    // vertical position (the Position slider / Top-Center-Bottom / Safe-zone
+    // presets) — drives the engine's real Text Position control
+    if (ov.yPct != null && isFinite(ov.yPct)) eff.yPct = ov.yPct;
     return eff;
   }
 
@@ -5901,6 +5979,9 @@
       glowBlur: (p.glowBlur != null ? p.glowBlur : 0.35),
       wordsPerCue: p.wordsPerCue,
       anim: hasHl ? 'karaoke' : 'fade',                // sweep for highlight styles, static otherwise
+      // vertical position carries onto the engine's Text Position control
+      // (0 = top … 1 = bottom; 0.5 = the engine's authored centre)
+      yPct: (p.yPct != null && isFinite(p.yPct)) ? Math.max(0.1, Math.min(0.92, p.yPct)) : 0.5,
       vCenter: true
     };
   }
@@ -6092,6 +6173,23 @@
       }
     }
 
+    // ---- vertical position ---------------------------------------------------
+    // The engine's comp is 1080×1920. On a portrait sequence comp-space maps to
+    // the screen 1:1; on a landscape sequence only the middle 1080px band of the
+    // comp is visible (the comp sits centred at 100%), so the slider maps into
+    // that band. The gradient overlay's position AND the gradient anchors move
+    // with the text so the word-highlight stays glued to the words.
+    var yp = preset.yPct;
+    if (yp != null && isFinite(yp)) {
+      yp = Math.max(0.1, Math.min(0.92, yp));
+      var compY = preset.seqLandscape ? Math.round(420 + 1080 * yp) : Math.round(1920 * yp);
+      point(P('text position'), 540, compY);
+      point(P('gradient fg text position'), 540, compY);
+      var gA = P('start of gradient'), gB = P('end of gradient');
+      if (gA && gA.point) point(gA, gA.point.x, compY);
+      if (gB && gB.point) point(gB, gB.point.x, compY);
+    }
+
     // ---- glow → the engine's soft shadow as a centred halo ------------------
     if (preset.glow) {
       bool(P('shadow on/off'), true);
@@ -6163,6 +6261,10 @@
                       bold: (preset.weight || 800) >= 600, fill: preset.fill,
                       sizeScale: (Math.abs(sizeScale - 1) > 0.02 ? sizeScale : 1) };
     preset.sizeScale = sizeScale;   // the mapper scales the backbone's text-scale control by this
+    // orientation decides how the Position slider maps into the engine's comp
+    preset.seqLandscape = !!(state.env && state.env.width > state.env.height);
+    // Entrance = real Motion keyframes on each caption clip (None default)
+    var entrance = state.captionEntrance || 'none';
     if (tcues.length > 120 &&
         !confirm(tcues.length + ' editable caption clips will be inserted — one per line. ' +
                  'MOGRTs insert slowly, so this can take a while. Tip: raise "Words per caption" for fewer, longer lines.\n\nContinue?')) return;
@@ -6190,7 +6292,8 @@
         capProgress('Adding ' + tcues.length + ' editable, styled captions…', tcues.length * 230);
         return CPBridge.callHost('CP_insertMogrtCaptions', {
           mogrtPath: bb.path, cues: tcues, videoTrack: null, audioTrack: 0,
-          params: params, textStyle: textStyle, stretch: false, replaceTrack: reuseTrack
+          params: params, textStyle: textStyle, stretch: false, replaceTrack: reuseTrack,
+          anim: (entrance !== 'none' ? entrance : null), animSpeed: 100
         });
       });
     }).then(function (r) {
@@ -8455,7 +8558,8 @@
       mapPresetToMogrt: mapPresetToMogrt,
       mapPresetToFlux: mapPresetToFlux,
       bundledBackbone: bundledBackbone,
-      carryableStyle: carryableStyle
+      carryableStyle: carryableStyle,
+      textCues: textCues
     };
   } catch (eDbg) {}
 

@@ -528,7 +528,13 @@ console.log('host.jsx — Flux engine (Halo2 control set): text, exact-name para
       { i: 17, kind: 'number', value: 120 },         // Text Scale (×1.2)
       { i: 22, kind: 'point',  value: { x: 60, y: 60 } }, // BG Box Padding (×1.2)
       { i: 27, kind: 'bool',   value: false },       // Shadow On/Off
-      { i: 29, kind: 'number', value: 0 }            // Shadow Opacity
+      { i: 29, kind: 'number', value: 0 },           // Shadow Opacity
+      // position (slider 76% on a portrait sequence → comp y 1460): the text,
+      // the gradient overlay AND both gradient anchors move together
+      { i: 13, kind: 'point',  value: { x: 540, y: 1460 } },      // Text Position
+      { i: 16, kind: 'point',  value: { x: 540, y: 1460 } },      // Gradient FG Text Position
+      { i: 9,  kind: 'point',  value: { x: 284.25, y: 1460 } },   // Start of Gradient
+      { i: 10, kind: 'point',  value: { x: 791.375, y: 1460 } }   // End of Gradient
     ],
     // per-style FACE rides the probe-verified rich write; sizeScale pinned to 1
     // so size can only come from the Text Scale param (never double-applied)
@@ -576,6 +582,10 @@ console.log('host.jsx — Flux engine (Halo2 control set): text, exact-name para
     'box colour/opacity/roundness land on the named BG controls');
   assert(f0.scale.v === 120 && f0.pad.x === 60 && f0.pad.y === 60,
     'Size slider scales Text Scale AND the box padding together');
+  assert(f0.textPos.y === 1460 && f0.fgPos.y === 1460 && f0.textPos.x === 540,
+    'Position slider moves the text AND its gradient overlay together');
+  assert(f0.gradA.y === 1460 && f0.gradA.x === 284.25 && f0.gradB.y === 1460,
+    'the gradient anchors follow the text (highlight stays glued at any position)');
   assert(f0.shOn.v === false && f0.shOpacity.v === 0, 'no glow → the engine shadow is OFF');
   assert(f0.tOpacity.v === 100, 'text opacity forced fully visible');
   assert(r.swept === 2, 'word-by-word sweep engaged on every clip');
