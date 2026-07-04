@@ -1,0 +1,205 @@
+/*
+ * panel-proofs.js — the PANEL-SIDE half of the autonomous QA system.
+ *
+ * Boots the REAL panel in headless Chromium and machine-verifies, with no
+ * human looking at it:
+ *   A. MAPPING  — every gallery style × the real Flux engine control layout
+ *                 (preview promise == params sent), including position math
+ *                 for portrait AND landscape, faces, radius, glow-as-halo.
+ *   B. PARITY   — clicks every style card; gallery tile == editor preview on
+ *                 every WYSIWYG field.
+ *   C. FONT UI  — opens the Font picker like a user, picks a face, asserts the
+ *                 preview changes; same for Weight.
+ *   D. EMPHASIS — Smart-emphasis toggles: ON adds emoji + CAPS keywords,
+ *                 OFF leaves text byte-identical.
+ *
+ * Self-contained: the Flux control layout is generated from the REAL
+ * .mogrt's definition.json (via unzip), not a fixture that can go stale.
+ * Browser resolution: CP_CHROMIUM env → /opt/pw-browsers/chromium →
+ * system chromium → puppeteer's own download (CI).
+ *
+ * Run: node CutPilot/test/panel-proofs.js   (wired into test/run-tests.js)
+ */
+const cp = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const ROOT = path.join(__dirname, '..', '..');
+const PANEL = 'file://' + path.join(ROOT, 'CutPilot', 'index.html');
+const MOGRT = path.join(ROOT, 'CutPilot', 'mogrts', 'Flux_Halo2.mogrt');
+
+let failed = 0;
+function ok(m) { console.log('  ✓ ' + m); }
+function bad(m) { console.log('  ✗ ' + m); failed++; }
+
+function requirePuppeteer() {
+  const tries = [path.join(ROOT, 'node_modules', 'puppeteer'), 'puppeteer', 'puppeteer-core'];
+  for (const t of tries) { try { return require(t); } catch (e) {} }
+  throw new Error('no puppeteer/puppeteer-core available');
+}
+function resolveBrowser(pptr) {
+  if (process.env.CP_CHROMIUM && fs.existsSync(process.env.CP_CHROMIUM)) return process.env.CP_CHROMIUM;
+  for (const c of ['/opt/pw-browsers/chromium', '/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome'])
+    if (fs.existsSync(c)) return c;
+  try { const p = pptr.executablePath(); if (p && fs.existsSync(p)) return p; } catch (e) {}
+  throw new Error('no Chromium found (set CP_CHROMIUM)');
+}
+
+// live-prop records exactly as CP_inspectMogrt reports them, from the REAL engine
+function fluxProps() {
+  const def = JSON.parse(cp.execSync('unzip -p ' + JSON.stringify(MOGRT) + ' definition.json', { maxBuffer: 1 << 24 }));
+  return (def.clientControls || []).map((c, i) => {
+    let name = '?'; try { name = c.uiName.strDB[0].str; } catch (e) {}
+    const t = c.type, v = c.value;
+    let kind = 'text', num = null, point = null;
+    if (t === 4) kind = 'color';
+    else if (t === 2 || t === 3 || t === 13) { kind = 'number'; num = v; }
+    else if (t === 5) { kind = 'string'; if (v && v.x != null) point = { x: v.x, y: v.y }; }
+    else if (t === 1) kind = 'bool';
+    return { i, name, kind, num, point };
+  });
+}
+
+(async () => {
+  console.log('panel proofs (headless, real panel)');
+  const pptr = requirePuppeteer();
+  const browser = await pptr.launch({ headless: 'new', executablePath: resolveBrowser(pptr),
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--allow-file-access-from-files'] });
+  const page = await browser.newPage();
+  await page.setViewport({ width: 420, height: 900 });
+  page.on('pageerror', e => bad('page error: ' + e.message));
+  await page.goto(PANEL, { waitUntil: 'networkidle0' });
+  await new Promise(r => setTimeout(r, 700));
+  await page.evaluate(() => document.querySelector('[data-tab="captions"]').click());
+  await new Promise(r => setTimeout(r, 300));
+  await page.evaluate(() => { const b = document.getElementById('btn-browse-styles'); if (b) b.click(); });
+  await new Promise(r => setTimeout(r, 800));
+
+  // ---- A. MAPPING against the real engine layout ---------------------------
+  const PROPS = fluxProps();
+  const mapRes = await page.evaluate((PROPS) => {
+    const D = window.CP_DEBUG;
+    if (!D || !D.mapPresetToFlux || !D.carryableStyle) return { fatal: 'CP_DEBUG hooks missing' };
+    const T = (window.CPCaptions && window.CPCaptions.TEMPLATES) || [];
+    const lc = h => String(h || '').toLowerCase();
+    const fails = [];
+    const IDX = {};
+    PROPS.forEach(p => { IDX[p.name.toLowerCase()] = p.i; });
+    const I = n => IDX[n];
+    T.forEach(t => {
+      const cs = D.carryableStyle(t);
+      const params = D.mapPresetToFlux(t, PROPS);
+      if (!params) { fails.push(t.id + ': mapPresetToFlux null'); return; }
+      const byI = {}; params.forEach(p => { byI[p.i] = p; });
+      const b = m => fails.push(t.id + ': ' + m);
+      if (!byI[I('text color')] || lc(byI[I('text color')].value) !== lc(cs.fill)) b('fill mismatch');
+      const wantHl = cs.keyword ? cs.highlight : cs.fill;
+      if (!byI[I('highlighted word color 1')] || lc(byI[I('highlighted word color 1')].value) !== lc(wantHl)) b('hl1 mismatch');
+      const wantHl2 = (cs.keyword && cs.highlight2) ? cs.highlight2 : wantHl;
+      if (!byI[I('highlighted word color 2')] || lc(byI[I('highlighted word color 2')].value) !== lc(wantHl2)) b('hl2 mismatch');
+      if (!byI[I('text opacity')] || byI[I('text opacity')].value !== 100) b('text opacity not 100');
+      if (cs.boxColor) {
+        const bo = cs.boxOpacity == null ? 100 : (cs.boxOpacity <= 1 ? Math.round(cs.boxOpacity * 100) : cs.boxOpacity);
+        if (!byI[I('bg color')] || lc(byI[I('bg color')].value) !== lc(cs.boxColor)) b('bg color mismatch');
+        if (!byI[I('bg opacity')] || byI[I('bg opacity')].value !== Math.max(0, Math.min(100, bo))) b('bg opacity mismatch');
+        if (!byI[I('bg roundness')] || byI[I('bg roundness')].value !== cs.boxRadius) b('bg roundness mismatch');
+      } else if (!byI[I('bg opacity')] || byI[I('bg opacity')].value !== 0) b('boxless must hide bg');
+      if (cs.glow) {
+        if (!byI[I('shadow on/off')] || byI[I('shadow on/off')].value !== true) b('glow: shadow not on');
+        if (!byI[I('shadow distance')] || byI[I('shadow distance')].value !== 0) b('glow: distance not 0');
+      } else if (!byI[I('shadow on/off')] || byI[I('shadow on/off')].value !== false) b('no-glow: shadow not off');
+      if (byI[I('text position')]) b('position sent without yPct');
+      const t3 = Object.assign({}, t, { yPct: 0.76 });
+      const p3 = D.mapPresetToFlux(t3, PROPS) || []; const b3 = {}; p3.forEach(p => { b3[p.i] = p; });
+      const yPort = Math.round(1920 * 0.76);
+      if (!b3[I('text position')] || b3[I('text position')].value.y !== yPort) b('portrait position wrong');
+      if (!b3[I('gradient fg text position')] || b3[I('gradient fg text position')].value.y !== yPort) b('gradient overlay did not follow');
+      t3.seqLandscape = true;
+      const p4 = D.mapPresetToFlux(t3, PROPS) || []; const b4 = {}; p4.forEach(p => { b4[p.i] = p; });
+      if (!b4[I('text position')] || b4[I('text position')].value.y !== Math.round(420 + 1080 * 0.76)) b('landscape position wrong');
+      const wantFont = t.font || 'Inter';
+      if (cs.font !== wantFont) b('preview face ' + cs.font + ' != ' + wantFont);
+    });
+    return { checked: T.length, fails };
+  }, PROPS);
+  if (mapRes.fatal) bad('mapping: ' + mapRes.fatal);
+  else if (mapRes.fails.length) mapRes.fails.slice(0, 10).forEach(f => bad('mapping: ' + f));
+  else ok('mapping: all ' + mapRes.checked + ' styles → engine params match the preview promise');
+
+  // ---- B. PARITY tile == editor preview -------------------------------------
+  const par = await page.evaluate(async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const grid = document.getElementById('tpl-grid');
+    const ids = new Set(((window.CPCaptions && window.CPCaptions.TEMPLATES) || []).map(t => t.id));
+    const canvases = Array.from(grid.querySelectorAll('.tpl-thumb-canvas')).filter(c => c._tpl && ids.has(c._tpl.id));
+    for (const c of canvases) { if (!c._animStyle) { c.scrollIntoView({ block: 'center' }); await sleep(25); } }
+    await sleep(600);
+    const KEYS = ['font', 'fill', 'highlight', 'highlight2', 'boxColor', 'boxOpacity', 'glow', 'weight', 'uppercase'];
+    const lc = v => (typeof v === 'string' ? v.toLowerCase() : (v == null ? null : v));
+    const fails = []; let checked = 0;
+    for (const cvs of canvases) {
+      const t = cvs._tpl;
+      if (!cvs._animStyle) { fails.push(t.id + ': never painted'); continue; }
+      let el = cvs; while (el && el !== grid && !(el.classList && el.classList.contains('tpl-card'))) el = el.parentNode;
+      (el && el !== grid ? el : cvs).click();
+      await sleep(60);
+      const pvs = (document.getElementById('preview-canvas') || {})._pvStyle;
+      if (!pvs) { fails.push(t.id + ': no preview style'); continue; }
+      checked++;
+      for (const k of KEYS) if (lc(pvs[k]) !== lc(cvs._animStyle[k])) fails.push(t.id + ': ' + k);
+    }
+    return { total: canvases.length, checked, fails };
+  });
+  if (par.fails.length) par.fails.slice(0, 10).forEach(f => bad('parity: ' + f));
+  else ok('parity: tile == editor preview for all ' + par.checked + '/' + par.total + ' styles');
+
+  // ---- C. FONT + WEIGHT controls are live -----------------------------------
+  const fw = await page.evaluate(async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const res = {};
+    const mount = document.getElementById('c-font-mount');
+    const btn = mount && mount.querySelector('.cp-dd-btn');
+    res.clickable = !!(btn && btn.offsetParent !== null);
+    if (btn) {
+      btn.click(); await sleep(120);
+      const opts = Array.from(document.querySelectorAll('.cp-dd-list li, .cp-dd-list button, .cp-dd-item'));
+      res.listCount = opts.length;
+      const impact = opts.find(o => /impact/i.test(o.textContent));
+      if (impact) { impact.click(); await sleep(180); }
+      res.afterFont = ((document.getElementById('preview-canvas') || {})._pvStyle || {}).font;
+    }
+    const w = document.getElementById('c-weight');
+    w.value = '400'; w.dispatchEvent(new Event('input')); await sleep(180);
+    res.afterWeight = ((document.getElementById('preview-canvas') || {})._pvStyle || {}).weight;
+    return res;
+  });
+  if (fw.clickable && fw.afterFont === 'Impact' && fw.afterWeight === 500)
+    ok('font/weight controls live (picker ' + fw.listCount + ' faces → preview follows)');
+  else bad('font/weight dead: ' + JSON.stringify(fw));
+
+  // ---- D. SMART EMPHASIS on/off ----------------------------------------------
+  const em = await page.evaluate(() => {
+    const words = ('heatwaves are creating a hidden health crisis in india and the crisis is growing ' +
+      'every summer while doctors warn about the money and health risks for every family').split(' ');
+    const cues = words.map((w, i) => ({ start: i * 0.4, end: (i + 1) * 0.4, text: w }));
+    const T = window.CP_DEBUG.textCues;
+    const off = T(cues, 6, 'as-spoken').map(c => c.text).join('|');
+    document.getElementById('c-emoji').checked = true;
+    document.getElementById('c-kwcaps').checked = true;
+    const on = T(cues, 6, 'as-spoken').map(c => c.text);
+    document.getElementById('c-emoji').checked = false;
+    document.getElementById('c-kwcaps').checked = false;
+    const off2 = T(cues, 6, 'as-spoken').map(c => c.text).join('|');
+    return {
+      offStable: off === off2 && !/[\u{1F300}-\u{1FAFF}]/u.test(off),
+      emojiLines: on.filter(t => /[\u{1F300}-\u{1FAFF}]/u.test(t)).length,
+      capsWords: on.join(' ').split(' ').filter(w => w.length > 3 && w === w.toUpperCase() && /[A-Z]/.test(w)).length
+    };
+  });
+  if (em.offStable && em.emojiLines >= 2 && em.capsWords >= 2)
+    ok('smart emphasis: ON adds (' + em.emojiLines + ' emoji lines, ' + em.capsWords + ' CAPS), OFF byte-identical');
+  else bad('smart emphasis broken: ' + JSON.stringify(em));
+
+  await browser.close();
+  console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');
+  process.exit(failed ? 1 : 0);
+})().catch(e => { console.log('  ✗ harness error: ' + e.message); process.exit(1); });

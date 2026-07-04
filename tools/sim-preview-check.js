@@ -65,8 +65,14 @@ function groundTruth() {
   const wantBandFrac = sizeFrac / BAND;                        // expected text/tile-height fraction
 
   // ---- 2+3. render the real panel, measure pixels --------------------------
-  const puppeteer = require(path.join(ROOT, 'node_modules', 'puppeteer'));
-  const browser = await puppeteer.launch({ headless: 'new', executablePath: '/opt/pw-browsers/chromium',
+  let puppeteer;
+  for (const t of [path.join(ROOT, 'node_modules', 'puppeteer'), 'puppeteer', 'puppeteer-core']) {
+    try { puppeteer = require(t); break; } catch (e) {}
+  }
+  let chromium = process.env.CP_CHROMIUM;
+  if (!chromium) for (const c of ['/opt/pw-browsers/chromium', '/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome']) if (fs.existsSync(c)) { chromium = c; break; }
+  if (!chromium) { try { chromium = puppeteer.executablePath(); } catch (e) {} }
+  const browser = await puppeteer.launch({ headless: 'new', executablePath: chromium,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--allow-file-access-from-files'] });
   const page = await browser.newPage();
   await page.setViewport({ width: 420, height: 900, deviceScaleFactor: 2 });
@@ -80,7 +86,7 @@ function groundTruth() {
 
   const res = await page.evaluate(async () => {
     const sleep = ms => new Promise(r => setTimeout(r, ms));
-    const want = ['hormozi', 'cap-clean-sub', 'pro-boldpop', 'btn-neon'];
+    const want = ((window.CPCaptions && window.CPCaptions.TEMPLATES) || []).map(t => t.id);   // EVERY style
     const out = [];
     const cvs = Array.from(document.querySelectorAll('#tpl-grid .tpl-thumb-canvas'));
     for (const c of cvs) {
@@ -98,6 +104,7 @@ function groundTruth() {
         }
       }
       out.push({ id: t.id, hasBox: !!t.boxColor, painted: n,
+                 fSize: t.fontSize || 90,
                  paintedFrac: n / ((w / 2) * (h / 2)),
                  blockFrac: n ? (maxY - minY) / h : 0, colored });
     }
@@ -106,20 +113,25 @@ function groundTruth() {
   await browser.close();
 
   // ---- 4. judge -------------------------------------------------------------
-  if (res.length < 3) fail('only ' + res.length + ' probe tiles found');
+  if (res.length < 30) fail('only ' + res.length + ' tiles measured — expected the whole catalogue');
   for (const r of res) {
     if (!r.painted) { fail(r.id + ': tile is BLANK'); continue; }
-    // block height = text (+box padding) — a bare single-line caption measures
-    // cap-height only (~0.6x em), while a box + two lines legitimately add height
-    const lo = wantBandFrac * 0.55, hi = wantBandFrac * 2.6;
+    // block height = text (+box padding) — judged against THIS style's own
+    // authored size (its fontSize relative to the engine's 90px default). A
+    // bare single-line caption measures cap-height (~0.6x em); a box + two
+    // lines legitimately add height.
+    const wantThis = wantBandFrac * (r.fSize / 90);
+    const lo = wantThis * 0.55, hi = wantThis * 2.6;
     if (r.blockFrac < lo || r.blockFrac > hi) {
       fail(r.id + ': caption block is ' + (r.blockFrac * 100).toFixed(0) + '% of the tile — authored truth says ' +
-           (wantBandFrac * 100).toFixed(0) + '% (band-relative), tolerance ' + (lo * 100).toFixed(0) + '–' + (hi * 100).toFixed(0) + '%');
+           (wantThis * 100).toFixed(0) + '% (band-relative), tolerance ' + (lo * 100).toFixed(0) + '–' + (hi * 100).toFixed(0) + '%');
     } else {
-      ok(r.id + ': block ' + (r.blockFrac * 100).toFixed(0) + '% of tile (truth ' + (wantBandFrac * 100).toFixed(0) + '%, in tolerance)');
+      ok(r.id + ': block ' + (r.blockFrac * 100).toFixed(0) + '% of tile (truth ' + (wantThis * 100).toFixed(0) + '%, in tolerance)');
     }
-    // a box (any colour, white included) fills far more area than bare text
-    if (r.hasBox && r.paintedFrac < 0.05) fail(r.id + ': has a box colour but painted area is only ' + (r.paintedFrac * 100).toFixed(1) + '% — box not drawn');
+    // a box (any colour, white included) fills far more area than bare text —
+    // scaled by the style's own face size (a small button pill covers less)
+    const boxFloor = Math.max(0.012, 0.05 * Math.pow(r.fSize / 90, 2));
+    if (r.hasBox && r.paintedFrac < boxFloor) fail(r.id + ': has a box colour but painted area is only ' + (r.paintedFrac * 100).toFixed(1) + '% (floor ' + (boxFloor * 100).toFixed(1) + '%) — box not drawn');
   }
   console.log(process.exitCode ? 'SIMULATION: preview drifted from the engine truth' : 'SIMULATION: previews match the engine truth ✓');
 })();

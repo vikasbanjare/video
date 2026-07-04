@@ -1422,9 +1422,14 @@ try {
 // tiles, and fails if previews drift from the engine truth. Skipped only
 // where headless Chromium isn't available (the sim needs a browser).
 var simOk = true;
-try {
+var hasChromium = (function () {
   var fsSim = require('fs');
-  if (fsSim.existsSync('/opt/pw-browsers/chromium')) {
+  if (process.env.CP_CHROMIUM && fsSim.existsSync(process.env.CP_CHROMIUM)) return true;
+  return ['/opt/pw-browsers/chromium', '/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome']
+    .some(function (c) { return fsSim.existsSync(c); }) || !!process.env.CI;
+})();
+try {
+  if (hasChromium) {
     console.log('\nRunning ground-truth preview simulation…');
     require('child_process').execSync('node "' + require('path').join(__dirname, '..', '..', 'tools', 'sim-preview-check.js') + '"',
       { stdio: 'inherit' });
@@ -1433,4 +1438,18 @@ try {
   }
 } catch (e) { simOk = false; }
 
-process.exit(failed || !auditOk || !hostOk || !simOk ? 1 : 0);
+// PANEL PROOFS: the real panel driven headless — mapping (every style → the
+// real engine layout), tile==preview parity, live font/weight controls,
+// smart-emphasis on/off. The other half of the autonomous QA system.
+var proofsOk = true;
+try {
+  if (hasChromium) {
+    console.log('\nRunning panel proofs…');
+    require('child_process').execSync('node "' + require('path').join(__dirname, 'panel-proofs.js') + '"',
+      { stdio: 'inherit' });
+  } else {
+    console.log('(panel proofs skipped — no headless Chromium here)');
+  }
+} catch (e) { proofsOk = false; }
+
+process.exit(failed || !auditOk || !hostOk || !simOk || !proofsOk ? 1 : 0);
