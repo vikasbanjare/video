@@ -199,6 +199,52 @@ function fluxProps() {
     ok('smart emphasis: ON adds (' + em.emojiLines + ' emoji lines, ' + em.capsWords + ' CAPS), OFF byte-identical');
   else bad('smart emphasis broken: ' + JSON.stringify(em));
 
+  // ---- E. CONTROL FUZZ — random control combinations must never blank/throw --
+  // Seeded PRNG so a red run is reproducible from its seed. Runs LAST because
+  // it deliberately trashes the editor state.
+  const fz = await page.evaluate(async (SEED) => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    let s = SEED >>> 0;
+    const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
+    const pick = a => a[Math.floor(rnd() * a.length)];
+    const hex = () => '#' + Math.floor(rnd() * 0xffffff).toString(16).padStart(6, '0');
+    const grid = document.getElementById('tpl-grid');
+    const cards = Array.from(grid.querySelectorAll('.tpl-thumb-canvas')).filter(c => c._tpl);
+    const set = (id, v) => { const e = document.getElementById(id); if (!e) return; e.value = v; e.dispatchEvent(new Event('input')); e.dispatchEvent(new Event('change')); };
+    const tick = (id, v) => { const e = document.getElementById(id); if (!e) return; e.checked = v; e.dispatchEvent(new Event('change')); };
+    const fails = [];
+    for (let i = 0; i < 40; i++) {
+      // random style, then a storm of random overrides
+      const cvs = pick(cards);
+      let el = cvs; while (el && el !== grid && !(el.classList && el.classList.contains('tpl-card'))) el = el.parentNode;
+      (el && el !== grid ? el : cvs).click();
+      await sleep(25);
+      set('c-size', String(32 + Math.floor(rnd() * 128)));
+      set('c-pos', String(10 + Math.floor(rnd() * 82)));
+      set('c-fill', hex()); set('c-hl', hex()); set('c-box', hex());
+      tick('c-box-on', rnd() < 0.6);
+      tick('c-shadow-on', rnd() < 0.4); set('c-shadow-blur', String(Math.floor(rnd() * 120)));
+      tick('c-wordhl', rnd() < 0.8); tick('c-upper', rnd() < 0.5);
+      tick('c-hlgrad', rnd() < 0.3); set('c-hl2g', hex());
+      const ent = document.querySelectorAll('#c-entrance button');
+      if (ent.length) ent[Math.floor(rnd() * ent.length)].click();
+      await sleep(45);
+      const pv = document.getElementById('preview-canvas');
+      const st = pv && pv._pvStyle;
+      if (!st) { fails.push('combo ' + i + ' (' + (cvs._tpl && cvs._tpl.id) + '): no preview style'); continue; }
+      if (!/^#[0-9a-fA-F]{3,8}$/.test(String(st.fill || ''))) fails.push('combo ' + i + ': bad fill ' + st.fill);
+      let painted = 0;
+      try {
+        const px = pv.getContext('2d').getImageData(0, 0, pv.width, pv.height).data;
+        for (let k = 3; k < px.length; k += 64) if (px[k] > 10) painted++;
+      } catch (e) { fails.push('combo ' + i + ': canvas unreadable'); }
+      if (!painted) fails.push('combo ' + i + ' (' + (cvs._tpl && cvs._tpl.id) + '): preview BLANK');
+    }
+    return { combos: 40, fails: fails.slice(0, 8) };
+  }, 20260705);
+  if (fz.fails.length) fz.fails.forEach(f => bad('fuzz: ' + f));
+  else ok('fuzz: ' + fz.combos + ' random control combinations — preview never blanked, styles stayed valid');
+
   await browser.close();
   console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');
   process.exit(failed ? 1 : 0);
