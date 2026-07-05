@@ -266,10 +266,11 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
 .tpl-thumb-media {
   display: block; width: 100%; height: 100%; object-fit: contain; background: #000;
 }
-/* a style tile playing a USER RENDER is a real vertical frame → 9:16 card
-   (contain would otherwise pillarbox the 9:16 video inside the wide band) */
-.tpl-card.is-style .tpl-thumb.has-media {
-  height: auto; aspect-ratio: 9 / 16;
+/* a style tile playing a USER RENDER stays COMPACT (tall 9:16 cards made the
+   gallery an endless scroll — the user's call, and right for a panel): the
+   vertical render is cover-cropped to its caption band, positioned per style */
+.tpl-card.is-style .tpl-thumb.has-media .tpl-thumb-media {
+  object-fit: cover;
 }
 
 /* favorite: invisible at rest, fades in on card hover; a SET favorite always

@@ -2981,9 +2981,11 @@
       thumb.appendChild(img);
     }
     if (showReal) {
-      if (userPrev) thumb.className += ' has-media';   // 9:16 card for a real vertical render
+      if (userPrev) thumb.className += ' has-media';   // compact band, cover-cropped
       var srcUrl = userPrev ? userPrev.url : (t.video || t.thumb);
       var isVid = userPrev ? userPrev.video : !!t.video;
+      // crop window follows where THIS style puts its caption (top/center/bottom)
+      var prevPos = userPrev ? ('50% ' + Math.round(layoutYPct(t) * 100) + '%') : null;
       if (isVid) {
         var media = document.createElement('video');
         media.muted = true; media.loop = true; media.autoplay = true;
@@ -2995,12 +2997,14 @@
           try { thumb.removeChild(media); } catch (eR2) {}
           if (!userPrev && t.thumb) mountImg(); else mountCanvasSwatch();
         });
+        if (prevPos) media.style.objectPosition = prevPos;
         media.src = srcUrl;
         thumb.appendChild(media);
         try { var pp = media.play(); if (pp && pp.catch) pp.catch(function () {}); } catch (ePl) {}
       } else {
         var img = document.createElement('img');
         img.className = 'tpl-thumb-media';
+        if (prevPos) img.style.objectPosition = prevPos;
         img.addEventListener('error', function () { try { thumb.removeChild(img); } catch (eRI) {} mountCanvasSwatch(); });
         img.src = srcUrl;
         thumb.appendChild(img);
