@@ -2378,6 +2378,53 @@
     } catch (e) {}
   }
 
+  /* USER-RENDER PREVIEWS for the caption STYLE tiles: drop a real render of a
+     style (mp4 / gif / png — e.g. a screen recording of the timeline) into
+     either folder below, named like the style ("Bold Pop.mp4", "hormozi.gif" —
+     spacing/case don't matter), and the tile plays YOUR render instead of the
+     drawn preview. Files sent to the developer get baked into the installer
+     so every install ships them.
+       1. <extension>/mogrts/style-previews/     (shipped defaults)
+       2. ~/Documents/Pulse/style-previews/      (yours — SURVIVES reinstalls)  */
+  var _stylePrev = null;
+  function normPrevName(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+  function loadStylePreviews() {
+    _stylePrev = {};
+    if (!CPBridge.isCEP()) return;
+    var fs, path;
+    try { fs = nodeReq('fs'); path = nodeReq('path'); } catch (e) { return; }
+    function fileUrl(p) {
+      var u = String(p).replace(/\\/g, '/');
+      if (u.charAt(0) !== '/') u = '/' + u;
+      return 'file://' + encodeURI(u).replace(/#/g, '%23').replace(/\?/g, '%3F');
+    }
+    var dirs = [];
+    try { dirs.push(path.join(CPBridge.getExtensionPath(), 'mogrts', 'style-previews')); } catch (e1) {}
+    try {
+      var home = process.env.HOME || process.env.USERPROFILE;
+      if (home) dirs.push(path.join(home, 'Documents', 'Pulse', 'style-previews'));
+    } catch (e2) {}
+    var count = 0;
+    for (var d = 0; d < dirs.length; d++) {          // later dirs (the user's) WIN
+      var files = [];
+      try { files = fs.readdirSync(dirs[d]); } catch (e3) { continue; }
+      for (var i = 0; i < files.length; i++) {
+        var m = files[i].match(/^(.+)\.(mp4|mov|gif|png|jpe?g|webp)$/i);
+        if (!m) continue;
+        _stylePrev[normPrevName(m[1])] = {
+          url: fileUrl(path.join(dirs[d], files[i])),
+          video: /^(mp4|mov)$/i.test(m[2])
+        };
+        count++;
+      }
+    }
+    if (count) diag('previews', 'style renders loaded: ' + count);
+  }
+  function stylePreviewFor(t) {
+    if (_stylePrev == null) loadStylePreviews();
+    return _stylePrev[normPrevName(t.id)] || _stylePrev[normPrevName(t.name)] || null;
+  }
+
   function loadBundledMogrts() {
     state.bundledMogrts = state.bundledMogrts || [];
     if (!CPBridge.isCEP()) return;
@@ -2915,7 +2962,10 @@
     // actual look at a legible size.
     var thumb = document.createElement('div');
     thumb.className = 'tpl-thumb';
-    var showReal = isMogrt && (t.video || (t.thumb && (t.kind || 'caption') !== 'caption'));
+    // a USER-SUPPLIED render of a caption style beats the drawn preview —
+    // it IS the timeline look ("what if I gave you a render video or gif?")
+    var userPrev = !isMogrt ? stylePreviewFor(t) : null;
+    var showReal = (isMogrt && (t.video || (t.thumb && (t.kind || 'caption') !== 'caption'))) || !!userPrev;
     function mountCanvasSwatch() {
       var cvs = document.createElement('canvas');
       cvs.className = 'tpl-thumb-canvas';
@@ -2931,22 +2981,28 @@
       thumb.appendChild(img);
     }
     if (showReal) {
-      if (t.video) {
+      var srcUrl = userPrev ? userPrev.url : (t.video || t.thumb);
+      var isVid = userPrev ? userPrev.video : !!t.video;
+      if (isVid) {
         var media = document.createElement('video');
         media.muted = true; media.loop = true; media.autoplay = true;
         media.setAttribute('muted', ''); media.setAttribute('playsinline', '');
-        if (t.thumb) media.poster = t.thumb;
+        if (!userPrev && t.thumb) media.poster = t.thumb;
         media.className = 'tpl-thumb-media';
         // a video that can't load/decode falls back to the still, then the canvas
         media.addEventListener('error', function () {
           try { thumb.removeChild(media); } catch (eR2) {}
-          if (t.thumb) mountImg(); else mountCanvasSwatch();
+          if (!userPrev && t.thumb) mountImg(); else mountCanvasSwatch();
         });
-        media.src = t.video;
+        media.src = srcUrl;
         thumb.appendChild(media);
         try { var pp = media.play(); if (pp && pp.catch) pp.catch(function () {}); } catch (ePl) {}
       } else {
-        mountImg();
+        var img = document.createElement('img');
+        img.className = 'tpl-thumb-media';
+        img.addEventListener('error', function () { try { thumb.removeChild(img); } catch (eRI) {} mountCanvasSwatch(); });
+        img.src = srcUrl;
+        thumb.appendChild(img);
       }
     } else {
       mountCanvasSwatch();
