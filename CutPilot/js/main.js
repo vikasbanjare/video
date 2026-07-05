@@ -2981,6 +2981,7 @@
       thumb.appendChild(img);
     }
     if (showReal) {
+      if (userPrev) thumb.className += ' has-media';   // 9:16 card for a real vertical render
       var srcUrl = userPrev ? userPrev.url : (t.video || t.thumb);
       var isVid = userPrev ? userPrev.video : !!t.video;
       if (isVid) {
