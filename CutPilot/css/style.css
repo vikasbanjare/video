@@ -1087,3 +1087,43 @@ footer { border-top: 1px solid var(--line); background: var(--card); max-height:
   .mp-row .cp-swatch { width: 26px; height: 22px; }
   .mp-row input[type="number"].mp-ctrl { max-width: 84px; }
 }
+
+/* the moment-of-truth button lives with the preview */
+.real-preview-btn { display: block; width: 100%; margin: 6px 0 0; text-align: center; }
+@media (min-width: 620px) { #view-editor > #cap-preview > .real-preview-btn { order: 8; } }
+
+/* ═══ ONE-LINE NAV — "push all the navigation tabs into one line, left to
+   right": each tab becomes a horizontal icon+label chip, the row never wraps,
+   and overflow scrolls sideways. Saves ~60px of vertical space at any width. */
+.tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 8px; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab { flex: 0 0 auto; flex-direction: row; align-items: center; gap: 6px; padding: 7px 11px; white-space: nowrap; }
+.tab span { font-size: 14px; }
+
+/* ═══ COMPACT AT EVERY WIDTH — the small-panel reality: the same multi-per-row
+   grids apply from the smallest panel up (auto-fill collapses gracefully). ═══ */
+.customizer .cust-group {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 4px 12px; align-items: end;
+}
+.customizer .cust-group > .cust-group-title, .customizer .cust-group > p.hint,
+.customizer .cust-group > .swatches, .customizer .cust-group > .seg-control,
+.customizer .cust-group > .ctrl-row, .customizer .cust-group > .wc-row,
+.customizer .cust-group > label.full { grid-column: 1 / -1; }
+.tpl-params {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 2px 12px; align-items: end;
+}
+.tpl-params > .mp-head, .tpl-params > .mp-sub, .tpl-params > .mp-toolbar,
+.tpl-params > .hint, .tpl-params > .mogrt-prev-frame, .tpl-params > .mp-swap,
+.tpl-params > p { grid-column: 1 / -1; }
+.mp-row { padding: 4px 0 5px; border-bottom: none; gap: 3px; }
+.mp-row .mp-name { font-size: 10px; opacity: .85; }
+.mp-row .mp-hex { max-width: 74px; }
+.mp-row .cp-swatch { width: 26px; height: 22px; }
+.mp-row input[type="number"].mp-ctrl { max-width: 84px; }
+/* the preview card is a column at EVERY width: chip, frame, then buttons */
+.preview-wrap { display: flex; flex-direction: column; }
+.preview-wrap > .preview-collapse { align-self: flex-start; }
+.preview-wrap > .real-preview-btn { order: 9; }
+.preview-wrap > #cap-actions-dock { order: 10; }

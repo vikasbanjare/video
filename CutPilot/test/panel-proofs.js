@@ -230,6 +230,57 @@ function fluxProps() {
     ok('smart emphasis: ON adds (' + em.emojiLines + ' emoji lines, ' + em.capsWords + ' CAPS), OFF byte-identical');
   else bad('smart emphasis broken: ' + JSON.stringify(em));
 
+  // ---- D2. EVERY-SETTING AUDIT: each visible control must have an OBSERVABLE
+  // effect ("check every single setting, not just the text setting") -----------
+  const audit = await page.evaluate(async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const pv = () => (document.getElementById('preview-canvas') || {})._pvStyle || {};
+    const set = (id, v) => { const e = document.getElementById(id); if (!e) return false; e.value = v; e.dispatchEvent(new Event('input')); e.dispatchEvent(new Event('change')); return true; };
+    const tick = (id, v) => { const e = document.getElementById(id); if (!e) return false; e.checked = v; e.dispatchEvent(new Event('change')); return true; };
+    const fails = [];
+    async function expect(name, act, read, mustDiffer) {
+      const before = JSON.stringify(read());
+      if (!act()) { fails.push(name + ': control missing'); return; }
+      await sleep(90);
+      const after = JSON.stringify(read());
+      if (mustDiffer && before === after) fails.push(name + ': NO observable effect (' + before + ')');
+    }
+    await expect('Size slider', () => set('c-size', '140'), () => pv().size, true);
+    await expect('Position slider', () => set('c-pos', '20'), () => (window.CP_DEBUG.snapshot() || {}).yPct, true);
+    await expect('Text colour', () => set('c-fill', '#123456'), () => pv().fill, true);
+    await expect('Highlight colour', () => set('c-hl', '#654321'), () => pv().highlight, true);
+    await expect('Box toggle ON', () => tick('c-box-on', true), () => !!pv().boxColor, true);
+    await expect('Box colour', () => set('c-box', '#abcdef'), () => pv().boxColor, true);
+    await expect('Box opacity', () => set('c-box-opacity', '40'), () => pv().boxOpacity, true);
+    tick('c-shadow-on', false); await sleep(60);   // known OFF state → the ON transition is observable
+    await expect('Shadow toggle', () => tick('c-shadow-on', true), () => !!pv().glow, true);
+    await expect('Shadow colour', () => set('c-shadow', '#00ff88'), () => pv().glow, true);
+    await expect('Shadow strength', () => set('c-shadow-blur', '90'), () => pv().glowBlur, true);
+    await expect('ALL CAPS', () => tick('c-upper', true), () => pv().uppercase, true);
+    await expect('Word-by-word OFF', () => tick('c-wordhl', false), () => pv().highlight, true);
+    await expect('Weight', () => set('c-weight', pv().weight === 800 ? '300' : '900'), () => pv().weight, true);
+    await expect('Gradient highlight', () => { tick('c-wordhl', true); return tick('c-hlgrad', true) && set('c-hl2g', '#ff00aa'); }, () => pv().highlight2, true);
+    // entrance buttons: observable via the CP_DEBUG snapshot
+    const entBtns = document.querySelectorAll('#c-entrance button');
+    let entOk = false;
+    if (entBtns.length && window.CP_DEBUG && window.CP_DEBUG.snapshot) {
+      const b0 = window.CP_DEBUG.snapshot().entrance;
+      entBtns[1].click(); await sleep(50);
+      entOk = window.CP_DEBUG.snapshot().entrance !== b0 || b0 === entBtns[1].dataset.e;
+    }
+    if (!entOk) fails.push('Entrance buttons: no observable effect');
+    // safe-zone buttons drive the position slider
+    const szBtns = document.querySelectorAll('#c-safezone button');
+    if (szBtns.length >= 2) {
+      const p0 = document.getElementById('c-pos').value;
+      szBtns[1].click(); await sleep(50);
+      if (document.getElementById('c-pos').value === p0) fails.push('Safe-zone buttons: position did not move');
+    } else fails.push('Safe-zone buttons missing');
+    return { checked: 16, fails };
+  });
+  if (audit.fails.length) audit.fails.forEach(f => bad('setting audit: ' + f));
+  else ok('setting audit: all ' + audit.checked + ' visible controls have observable effects');
+
   // ---- E. CONTROL FUZZ — random control combinations must never blank/throw --
   // Seeded PRNG so a red run is reproducible from its seed. Runs LAST because
   // it deliberately trashes the editor state.

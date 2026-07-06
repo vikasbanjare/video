@@ -6179,9 +6179,11 @@
     for (var k in preset) if (preset.hasOwnProperty(k)) eff[k] = preset[k];
     var ov;
     try { ov = readOverrides(); } catch (e) { return eff; }
+    if (ov.fontSize > 0) eff.fontSize = ov.fontSize;   // Size slider must reach the preview (audit-caught: it silently didn't)
     if (ov.fill) eff.fill = ov.fill;
     if (ov.fill2 !== undefined) eff.fill2 = ov.fill2;
     if (ov.highlight) eff.highlight = ov.highlight;
+    eff.highlight2 = ov.highlight2;   // gradient 2nd stop (null = user turned the gradient off) — audit-caught: it was dropped here, making the toggle affect nothing
     if (ov.boxColor !== undefined) eff.boxColor = ov.boxColor;      // null = box turned off
     if (ov.boxColor2 !== undefined) eff.boxColor2 = ov.boxColor2;
     if (ov.boxOpacity != null) eff.boxOpacity = ov.boxOpacity;
@@ -6496,6 +6498,44 @@
 
     out._bind = { engine: 'flux', fill: textC.name, hl: hl1.name };
     return out;
+  }
+
+  /* "▶ Real preview on timeline": drop ONE real engine caption at the playhead
+     with the CURRENT edits (colours/size/position/font) applied — real Premiere
+     pixels for the exact settings, without captioning the whole video. This is
+     the accuracy layer no drawn preview can provide. */
+  function realPreviewOnTimeline(btn) {
+    if (!CPBridge.isCEP()) return toast('Real preview needs Premiere (open Pulse inside Premiere).', true);
+    var preset = styledPreset();
+    var bb = bundledBackbone(preset);
+    if (!bb) return toast('No caption engine loaded — reinstall the full Pulse folder.', true);
+    var basePreset = currentPreset() || {};
+    var sizeScale = 1;
+    try {
+      var wantPx = parseInt($('c-size').value, 10);
+      var basePx = basePreset.fontSize || wantPx;
+      if (wantPx > 0 && basePx > 0) sizeScale = Math.max(0.5, Math.min(2.5, wantPx / basePx));
+    } catch (eSz) {}
+    preset.sizeScale = sizeScale;
+    preset.seqLandscape = !!(state.env && state.env.width > state.env.height);
+    var sample = 'Make every word count';
+    try {
+      var cues = readSelectedTranscript();
+      if (cues && cues[0]) sample = String(cues[0].text).split(/\s+/).slice(0, 5).join(' ');
+    } catch (eTr) {}
+    if (preset.uppercase || cchk('c-upper')) sample = sample.toUpperCase();
+    var textStyle = preset.font ? { font: preset.font, bold: (preset.weight || 800) >= 600, sizeScale: 1 } : null;
+    if (btn) btn.disabled = true;
+    toast('Dropping a real preview at the playhead…');
+    CPBridge.callHost('CP_inspectMogrt', { path: bb.path }).then(function (r) {
+      var liveProps = (r && r.props) || [];
+      var isFlux = String(bb.path || '').toLowerCase().indexOf('flux_halo') >= 0;
+      var params = (isFlux ? mapPresetToFlux(preset, liveProps) : null) || mapPresetToMogrt(preset, liveProps);
+      return CPBridge.callHost('CP_previewMogrt', { path: bb.path, seconds: 4, params: params, text: sample, textStyle: textStyle });
+    }).then(function (r) {
+      if (btn) btn.disabled = false;
+      toast('▶ Real preview on V' + r.track + ' at the playhead — scrub to see EXACTLY what your settings render. Delete the clip when done (or ⌘Z).');
+    }).catch(function (e) { if (btn) btn.disabled = false; toast(e.message, true); });
   }
 
   function applyEditableStyle() {
@@ -8843,6 +8883,7 @@
   // functions and verify them against real template layouts. No behaviour
   // change; nothing inside Premiere uses this.
   try {
+    if ($('btn-real-preview')) $('btn-real-preview').addEventListener('click', function () { realPreviewOnTimeline(this); });
     try {
       dockCapActions();
       var _dockT = null;
@@ -8856,7 +8897,8 @@
       mapPresetToFlux: mapPresetToFlux,
       bundledBackbone: bundledBackbone,
       carryableStyle: carryableStyle,
-      textCues: textCues
+      textCues: textCues,
+      snapshot: function () { var y = null; try { y = carryableStyle(styledPreset()).yPct; } catch (e) {} return { entrance: state.captionEntrance || 'none', presetId: state.presetId, yPct: y }; }
     };
   } catch (eDbg) {}
 
