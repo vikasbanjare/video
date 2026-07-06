@@ -176,6 +176,37 @@ function fluxProps() {
     ok('font/weight controls live (picker ' + fw.listCount + ' faces → preview follows)');
   else bad('font/weight dead: ' + JSON.stringify(fw));
 
+  // ---- C2. PHOTOSHOP-STYLE PICKER: drag hue + square → colour + preview follow --
+  const pk = await page.evaluate(async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const mount = document.querySelector('.cp-mount[data-for="c-fill"]');
+    const swatch = mount && mount.querySelector('.cp-swatch');
+    if (!swatch) return { err: 'no fill swatch' };
+    const before = document.getElementById('c-fill').value;
+    swatch.click(); await sleep(120);
+    const hue = mount.querySelector('.cp-pk-huewrap');
+    const sv = mount.querySelector('.cp-pk-svwrap');
+    if (!hue || !sv) return { err: 'picker not in popover' };
+    function md(el, fx, fy) {
+      const r = el.getBoundingClientRect();
+      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: r.left + r.width * fx, clientY: r.top + r.height * fy }));
+      document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    }
+    md(hue, 0.33, 0.5);          // ~green hue
+    await sleep(60);
+    md(sv, 0.95, 0.08);          // near-pure, bright
+    await sleep(200);
+    const after = document.getElementById('c-fill').value;
+    const pv = ((document.getElementById('preview-canvas') || {})._pvStyle || {}).fill;
+    swatch.click(); await sleep(50);   // close
+    return { before, after, pv,
+             greenish: parseInt(after.substr(3, 2), 16) > parseInt(after.substr(1, 2), 16) };
+  });
+  if (pk.err) bad('picker: ' + pk.err);
+  else if (pk.after !== pk.before && pk.greenish && pk.pv && pk.pv.toLowerCase() === pk.after.toLowerCase())
+    ok('photoshop picker: hue+square drags → ' + pk.after + ', preview follows live');
+  else bad('picker did not take: ' + JSON.stringify(pk));
+
   // ---- D. SMART EMPHASIS on/off ----------------------------------------------
   const em = await page.evaluate(() => {
     const words = ('heatwaves are creating a hidden health crisis in india and the crisis is growing ' +

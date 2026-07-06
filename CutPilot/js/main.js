@@ -5278,18 +5278,104 @@
     var sw = document.createElement('button'); sw.type = 'button'; sw.className = 'cp-swatch'; sw.style.background = hex; sw.title = 'Pick a colour';
     var hx = document.createElement('input'); hx.type = 'text'; hx.className = 'mp-hex'; hx.value = hex; hx.maxLength = 7; hx.spellcheck = false;
     var pop = document.createElement('div'); pop.className = 'cp-pop hidden';
+
+    // ── Photoshop-style picker: hue strip + saturation/brightness square ──
+    // Click the swatch → pick any colour by hand, live, like Photoshop's
+    // colour panel. The quick palette chips stay below for one-tap choices.
+    var pk = document.createElement('div'); pk.className = 'cp-pk';
+    var svC = document.createElement('canvas'); svC.width = 168; svC.height = 112; svC.className = 'cp-pk-sv';
+    var svDot = document.createElement('span'); svDot.className = 'cp-pk-dot';
+    var svWrap = document.createElement('div'); svWrap.className = 'cp-pk-svwrap';
+    svWrap.appendChild(svC); svWrap.appendChild(svDot);
+    var huC = document.createElement('canvas'); huC.width = 168; huC.height = 14; huC.className = 'cp-pk-hue';
+    var huDot = document.createElement('span'); huDot.className = 'cp-pk-huedot';
+    var huWrap = document.createElement('div'); huWrap.className = 'cp-pk-huewrap';
+    huWrap.appendChild(huC); huWrap.appendChild(huDot);
+    pk.appendChild(svWrap); pk.appendChild(huWrap);
+    pop.appendChild(pk);
+    var H = 0, S = 1, V = 1;
+    function hsv2hex(h, s, v) {
+      var c = v * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = v - c, r = 0, g = 0, b = 0;
+      if (h < 60) { r = c; g = x; } else if (h < 120) { r = x; g = c; }
+      else if (h < 180) { g = c; b = x; } else if (h < 240) { g = x; b = c; }
+      else if (h < 300) { r = x; b = c; } else { r = c; b = x; }
+      function u(n) { n = Math.round((n + m) * 255); var t = n.toString(16); return t.length < 2 ? '0' + t : t; }
+      return '#' + u(r) + u(g) + u(b);
+    }
+    function hex2hsv(hv) {
+      var r = parseInt(hv.substr(1, 2), 16) / 255, g = parseInt(hv.substr(3, 2), 16) / 255, b = parseInt(hv.substr(5, 2), 16) / 255;
+      var mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn, h = 0;
+      if (d) { h = mx === r ? 60 * (((g - b) / d) % 6) : mx === g ? 60 * ((b - r) / d + 2) : 60 * ((r - g) / d + 4); }
+      if (h < 0) h += 360;
+      return { h: h, s: mx ? d / mx : 0, v: mx };
+    }
+    function drawHue() {
+      var g = huC.getContext('2d'), gr = g.createLinearGradient(0, 0, huC.width, 0);
+      ['#f00', '#ff0', '#0f0', '#0ff', '#00f', '#f0f', '#f00'].forEach(function (c, i) { gr.addColorStop(i / 6, c); });
+      g.fillStyle = gr; g.fillRect(0, 0, huC.width, huC.height);
+    }
+    function drawSV() {
+      var g = svC.getContext('2d');
+      g.fillStyle = hsv2hex(H, 1, 1); g.fillRect(0, 0, svC.width, svC.height);
+      var w = g.createLinearGradient(0, 0, svC.width, 0);
+      w.addColorStop(0, '#fff'); w.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = w; g.fillRect(0, 0, svC.width, svC.height);
+      var k = g.createLinearGradient(0, 0, 0, svC.height);
+      k.addColorStop(0, 'rgba(0,0,0,0)'); k.addColorStop(1, '#000');
+      g.fillStyle = k; g.fillRect(0, 0, svC.width, svC.height);
+    }
+    function placeDots() {
+      svDot.style.left = Math.round(S * (svC.clientWidth || svC.width)) + 'px';
+      svDot.style.top = Math.round((1 - V) * (svC.clientHeight || svC.height)) + 'px';
+      huDot.style.left = Math.round((H / 360) * (huC.clientWidth || huC.width)) + 'px';
+    }
+    var _pkRaf = null;
+    function applyHSV() {
+      var v = hsv2hex(H, S, V);
+      setDisplay(v);
+      placeDots();
+      if (_pkRaf) return;                                   // throttle live preview to frame rate
+      _pkRaf = requestAnimationFrame(function () { _pkRaf = null; onChange(hex); });
+    }
+    function dragOn(el, fn) {
+      function move(e) { fn(e); e.preventDefault(); }
+      function up() { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); }
+      el.addEventListener('mousedown', function (e) {
+        e.stopPropagation(); fn(e);
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', up);
+      });
+    }
+    dragOn(svWrap, function (e) {
+      var r = svC.getBoundingClientRect();
+      S = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+      V = Math.max(0, Math.min(1, 1 - (e.clientY - r.top) / r.height));
+      applyHSV();
+    });
+    dragOn(huWrap, function (e) {
+      var r = huC.getBoundingClientRect();
+      H = Math.max(0, Math.min(359.9, 360 * (e.clientX - r.left) / r.width));
+      drawSV(); applyHSV();
+    });
+    function syncPicker() {
+      var c = hex2hsv(hex); H = c.h; S = c.s; V = c.v;
+      drawHue(); drawSV(); placeDots();
+    }
+
+    var chips = document.createElement('div'); chips.className = 'cp-chips';
     CP_PALETTE.forEach(function (col) {
       var b = document.createElement('button'); b.type = 'button'; b.className = 'cp-chip'; b.style.background = col; b.title = col;
-      b.addEventListener('click', function (e) { e.stopPropagation(); set(col); pop.classList.add('hidden'); _cpOpenPop = null; });
-      pop.appendChild(b);
+      b.addEventListener('click', function (e) { e.stopPropagation(); set(col); syncPicker(); });
+      chips.appendChild(b);
     });
+    pop.appendChild(chips);
     function setDisplay(v) { hex = norm(v); sw.style.background = hex; if (hx.value.toLowerCase() !== hex.toLowerCase()) hx.value = hex; }
     function set(v) { setDisplay(v); onChange(hex); }
     sw.addEventListener('click', function (e) {
       e.stopPropagation();
       var willOpen = pop.classList.contains('hidden');
       if (_cpOpenPop) _cpOpenPop.classList.add('hidden');
-      if (willOpen) { pop.classList.remove('hidden'); _cpOpenPop = pop; } else { _cpOpenPop = null; }
+      if (willOpen) { pop.classList.remove('hidden'); _cpOpenPop = pop; syncPicker(); } else { _cpOpenPop = null; }
     });
     hx.addEventListener('click', function (e) { e.stopPropagation(); });
     hx.addEventListener('input', function () { var v = hx.value.charAt(0) === '#' ? hx.value : '#' + hx.value; if (/^#[0-9a-f]{6}$/i.test(v)) { hex = norm(v); sw.style.background = hex; onChange(hex); } });
@@ -5604,7 +5690,11 @@
     heads.forEach(function (h, hi) {
       var group = [], k = h.nextElementSibling;
       while (k && !isHead(k)) { group.push(k); k = k.nextElementSibling; }
-      if (!group.length) return;
+      // an EMPTY section is a template group whose members all rendered under a
+      // different header (e.g. Halo's "Text Controls" — its Text feeds the shared
+      // "Text style" section). A dead unclickable header row confuses ("why does
+      // this control have no control?") — drop it entirely.
+      if (!group.length) { try { h.parentNode.removeChild(h); } catch (eRm) {} return; }
       h.classList.add('mp-collapsible');
       var caret = document.createElement('span'); caret.className = 'mp-caret'; h.appendChild(caret);
       var collapsed = hi > 0;   // first part open, rest folded

@@ -438,9 +438,9 @@ input[type="range"]::-webkit-slider-thumb {
 .cp-swatch { width: 34px; height: 24px; border-radius: 7px; border: 1px solid var(--line2); cursor: pointer; padding: 0; flex: 0 0 auto; }
 .cp-swatch:hover { border-color: var(--accent, #6ea8fe); }
 .cp-pop {
-  position: absolute; top: 100%; left: 0; z-index: 80; margin-top: 5px; padding: 8px;
+  position: absolute; top: 100%; left: 0; z-index: 80; margin-top: 5px; padding: 6px;
   background: var(--card); border: 1px solid var(--line); border-radius: 11px; box-shadow: var(--shadow);
-  display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; width: max-content;
+  display: block; width: 184px;   /* was a 7-col chip grid — the picker block made it explode */
 }
 .cp-pop.hidden { display: none; }
 .cp-chip { width: 21px; height: 21px; border-radius: 5px; border: 1px solid rgba(0,0,0,.3); cursor: pointer; padding: 0; }
@@ -1058,4 +1058,32 @@ footer { border-top: 1px solid var(--line); background: var(--card); max-height:
 @media (min-width: 620px) {
   /* the dock also holds the words-per-caption bar, right above the actions */
   .cap-actions-dock .wc-bar { margin: 10px 0 0; }
+}
+
+/* ══ Photoshop-style colour picker (inside every colour swatch's popover) ══ */
+.cp-pk { padding: 4px 4px 6px; }
+.cp-pk-svwrap { position: relative; width: 168px; height: 112px; cursor: crosshair; }
+.cp-pk-svwrap canvas { display: block; border-radius: 6px; }
+.cp-pk-dot {
+  position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; pointer-events: none;
+  border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,.6);
+}
+.cp-pk-huewrap { position: relative; width: 168px; height: 14px; margin-top: 7px; cursor: ew-resize; }
+.cp-pk-huewrap canvas { display: block; border-radius: 7px; }
+.cp-pk-huedot {
+  position: absolute; top: -2px; width: 6px; height: 18px; margin-left: -3px; pointer-events: none;
+  background: #fff; border-radius: 3px; box-shadow: 0 0 0 1px rgba(0,0,0,.55);
+}
+.cp-chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 4px 2px; border-top: 1px solid var(--line2); margin-top: 6px; }
+
+/* ══ COMPACT .mogrt customizer rows — "shadow colour + opacity + distance +
+   softness in one line": rows become small cells that share lines instead of
+   one full-width slider per row ══ */
+@media (min-width: 620px) {
+  .tpl-params { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)) !important; gap: 2px 12px !important; }
+  .mp-row { padding: 4px 0 5px !important; border-bottom: none !important; gap: 3px !important; }
+  .mp-row .mp-name { font-size: 10px !important; opacity: .85; }
+  .mp-row .mp-hex { max-width: 74px; }
+  .mp-row .cp-swatch { width: 26px; height: 22px; }
+  .mp-row input[type="number"].mp-ctrl { max-width: 84px; }
 }
