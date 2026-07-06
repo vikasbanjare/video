@@ -1022,3 +1022,40 @@ footer { border-top: 1px solid var(--line); background: var(--card); max-height:
   .tpl-params > .hint, .tpl-params > .mogrt-prev-frame, .tpl-params > .mp-swap,
   .tpl-params > p { grid-column: 1 / -1; }
 }
+
+
+/* ═══ DENSITY 2: side-by-side GROUPS — the customizer becomes a two-column
+   board on wide panels, so TEXT sits next to COLOURS instead of stacking ═══ */
+@media (min-width: 860px) {
+  #cust-pane-style, #cust-pane-pro {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 14px; align-items: start;
+  }
+  #cust-pane-style > .cust-group, #cust-pane-pro > .cust-group { margin: 6px 0; }
+  /* swatch stacks share the row evenly, hex fields fill their cell */
+  .swatches { display: grid !important; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 6px 10px; }
+  .swatches .sw { width: auto; }
+}
+@media (min-width: 900px) {
+  .customizer .cust-group { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .customizer .cust-group > label.full { grid-column: span 3; }
+  .customizer .cust-group > .seg-control { grid-column: span 2; }
+}
+/* grid hygiene at BOTH densities: toggle labels get room (span 2), loose dim
+   explainers wrap small, and nothing may overflow its cell onto a neighbour */
+@media (min-width: 620px) {
+  .customizer .cust-group > * { min-width: 0; }
+  .customizer .cust-group > label.check { grid-column: span 2; }
+  .customizer .cust-group > label.check .dim { display: block; font-size: 10px; line-height: 1.25; }
+  .customizer .cust-group > span.dim { grid-column: span 2; font-size: 10px; align-self: center; }
+}
+@media (min-width: 860px) {
+  /* at full density the parenthetical explainers become skinny word-stacks —
+     the labels are self-explanatory, so reclaim their cells */
+  .customizer .cust-group > label.check .dim,
+  .customizer .cust-group > span.dim { display: none; }
+}
+@media (min-width: 620px) {
+  /* the dock also holds the words-per-caption bar, right above the actions */
+  .cap-actions-dock .wc-bar { margin: 10px 0 0; }
+}

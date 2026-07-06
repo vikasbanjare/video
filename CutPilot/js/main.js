@@ -3442,10 +3442,19 @@
     var dock = $('cap-actions-dock'), home = $('cap-actions-home');
     var magic = $('btn-magic'), viral = $('btn-viral-edit');
     if (!dock || !home || !magic) return;
+    var wc = $('wc-block');
     var wide = (window.innerWidth || 0) >= 620;
     if (wide && magic.parentNode !== dock) {
+      if (wc && !$('wc-home')) {
+        var wcHome = document.createElement('span');
+        wcHome.id = 'wc-home'; wcHome.style.display = 'none';
+        wc.parentNode.insertBefore(wcHome, wc);
+      }
+      if (wc) dock.appendChild(wc);            // words-per-caption sits with the action
       dock.appendChild(magic); if (viral) dock.appendChild(viral);
     } else if (!wide && magic.parentNode === dock) {
+      var wcH = $('wc-home');
+      if (wc && wcH) wcH.parentNode.insertBefore(wc, wcH.nextSibling);
       home.parentNode.insertBefore(magic, home.nextSibling);
       if (viral) home.parentNode.insertBefore(viral, magic.nextSibling);
     }
