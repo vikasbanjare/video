@@ -967,3 +967,48 @@ footer { border-top: 1px solid var(--line); background: var(--card); max-height:
 .sz-num span { font-size: 11px; color: var(--dim); white-space: nowrap; }
 .sz-num input { margin: 0; flex: 1; min-width: 0; }
 #sz-panel-custom.hidden, #sz-panel-safezones.hidden { display: none; }
+
+/* ══════════ WIDE-PANEL EDITOR: preview docks LEFT, controls get the room ═══
+   "when we go on customization section there is very little space to tweak"
+   — on a wide panel the preview no longer balloons into a full-width banner:
+   it docks as a sticky column on the left (always visible while you scroll
+   the controls), and every customization group packs its controls 2–3 per
+   row. Narrow panels keep the stacked layout. */
+@media (min-width: 620px) {
+  #view-editor {
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    gap: 4px 16px;
+    align-items: start;
+  }
+  #view-editor > * { grid-column: 2; min-width: 0; }
+  #view-editor > .editor-head { grid-column: 1 / -1; }
+  #view-editor > #cap-preview {
+    grid-column: 1; grid-row: 2 / span 200;
+    position: sticky; top: 6px; align-self: start;
+    margin: 0; padding: 0;
+  }
+  #view-editor > #cap-preview .preview-frame { height: 168px; }
+  #view-editor > #cap-preview.collapsed { position: sticky; }
+
+  /* pack the customizer: titles/hints/segments span the row; single controls
+     (sliders, checks, number fields) flow 2–3 per row */
+  .customizer .cust-group {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
+    gap: 6px 16px; align-items: end;
+  }
+  .customizer .cust-group > .cust-group-title,
+  .customizer .cust-group > p.hint,
+  .customizer .cust-group > .swatches,
+  .customizer .cust-group > .seg-control,
+  .customizer .cust-group > .ctrl-row,
+  .customizer .cust-group > .wc-row,
+  .customizer .cust-group > label.full { grid-column: 1 / -1; }
+
+  /* the .mogrt customizer too: two controls per row, headers span */
+  .tpl-params { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 16px; align-items: end; }
+  .tpl-params > .mp-head, .tpl-params > .mp-sub, .tpl-params > .mp-toolbar,
+  .tpl-params > .hint, .tpl-params > .mogrt-prev-frame, .tpl-params > .mp-swap,
+  .tpl-params > p { grid-column: 1 / -1; }
+}
