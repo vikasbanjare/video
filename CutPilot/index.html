@@ -10,8 +10,8 @@
   <!-- Caption faces — loaded as web fonts so the chosen font renders in the
        live preview AND the canvas-rendered PNGs even if it isn't installed. -->
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Bebas+Neue&family=Archivo+Black&family=Fjalla+One&family=Bangers&family=Luckiest+Guy&family=Alfa+Slab+One&family=Bungee&family=Titan+One&family=Passion+One&family=Permanent+Marker&family=Pacifico&family=Shadows+Into+Light&family=Montserrat:wght@400;500;600;700;800;900&family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800;900&family=Oswald:wght@400;700&family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Lato:wght@400;700&family=Raleway:wght@400;700&family=Work+Sans:wght@400;700&family=Nunito:wght@400;700&family=Rubik:wght@400;700&family=DM+Sans:wght@400;500;700&family=Outfit:wght@400;500;600;700;800;900&family=Sora:wght@400;500;600;700;800&family=Barlow:wght@400;700&family=Manrope:wght@400;500;600;700;800&family=Teko:wght@400;700&family=Playfair+Display:wght@400;700&family=Merriweather:wght@400;700&family=Lora:wght@400;700&family=JetBrains+Mono:wght@400;700&family=Roboto+Mono:wght@400;700&family=Space+Mono:wght@400;700&family=Caveat:wght@400;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=v0.9.276">
-  <link rel="stylesheet" href="css/organize.css?v=v0.9.276">
+  <link rel="stylesheet" href="css/style.css?v=v0.9.277">
+  <link rel="stylesheet" href="css/organize.css?v=v0.9.277">
 </head>
 <body class="theme-light">
   <header>
@@ -25,7 +25,7 @@
       </svg>
       <span class="brand-name">Pulse</span><span class="brand-by">by aifloh</span>
     </div>
-    <span class="ver" id="ver">v0.9.276</span>
+    <span class="ver" id="ver">v0.9.277</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -229,6 +229,7 @@
       <!-- LIVE PREVIEW (caption styles only) -->
       <div class="preview-wrap" id="cap-preview">
         <button id="btn-preview-collapse" class="preview-collapse" type="button" title="Hide / show the preview">▾ Preview</button>
+        <div id="cap-actions-dock" class="cap-actions-dock"></div>
         <div class="preview-frame" id="preview-frame">
           <canvas id="preview-canvas"></canvas>
           <div class="preview-speaker hidden" id="preview-speaker"></div>
@@ -598,6 +599,7 @@
           <button data-mode="reveal" type="button">📝 Reveal as spoken</button>
         </div>
         <p class="hint png-only" style="margin:0 0 8px">🔆 <b>Highlight</b>: the whole line shows and the spoken word lights up (karaoke). 📝 <b>Reveal</b>: words pop in one at a time as they're said.</p>
+        <span id="cap-actions-home" style="display:none"></span>
         <button id="btn-magic" class="hero-btn">✨ Add captions <span class="dim">(the style you picked — added to your timeline)</span></button>
         <button id="btn-viral-edit" class="hero-btn alt">⚡ One-click Viral Edit <span class="dim">(same style + auto zoom punches — beta)</span></button>
         <p class="hint" style="margin:2px 0 0">Both add the exact style you picked above. <b>Viral Edit</b> also adds subtle zoom punch-ins to your top clip (Ctrl/Cmd+Z to undo them).</p>
@@ -1193,7 +1195,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.9.276 · auto-edit · multicam · captions · chapters · organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.9.277 · auto-edit · multicam · captions · chapters · organize</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->
@@ -1312,25 +1314,25 @@
     </div>
   </div>
 
-  <script src="js/lib/cep-bridge.js?v=v0.9.276"></script>
-  <script src="js/silence.js?v=v0.9.276"></script>
-  <script src="js/audio.js?v=v0.9.276"></script>
-  <script src="js/captions.js?v=v0.9.276"></script>
-  <script src="js/ass.js?v=v0.9.276"></script>
-  <script src="js/render.js?v=v0.9.276"></script>
-  <script src="js/multicam.js?v=v0.9.276"></script>
-  <script src="js/sfx.js?v=v0.9.276"></script>
-  <script src="js/takes.js?v=v0.9.276"></script>
-  <script src="js/smartedit.js?v=v0.9.276"></script>
-  <script src="js/verbatim.js?v=v0.9.276"></script>
-  <script src="js/reframe.js?v=v0.9.276"></script>
-  <script src="js/transcript.js?v=v0.9.276"></script>
-  <script src="js/fonts.js?v=v0.9.276"></script>
-  <script src="js/command.js?v=v0.9.276"></script>
-  <script src="js/chapters.js?v=v0.9.276"></script>
-  <script src="js/align.js?v=v0.9.276"></script>
-  <script src="js/main.js?v=v0.9.276"></script>
-  <script src="js/organize.js?v=v0.9.276"></script>
-  <script src="js/safezone.js?v=v0.9.276"></script>
+  <script src="js/lib/cep-bridge.js?v=v0.9.277"></script>
+  <script src="js/silence.js?v=v0.9.277"></script>
+  <script src="js/audio.js?v=v0.9.277"></script>
+  <script src="js/captions.js?v=v0.9.277"></script>
+  <script src="js/ass.js?v=v0.9.277"></script>
+  <script src="js/render.js?v=v0.9.277"></script>
+  <script src="js/multicam.js?v=v0.9.277"></script>
+  <script src="js/sfx.js?v=v0.9.277"></script>
+  <script src="js/takes.js?v=v0.9.277"></script>
+  <script src="js/smartedit.js?v=v0.9.277"></script>
+  <script src="js/verbatim.js?v=v0.9.277"></script>
+  <script src="js/reframe.js?v=v0.9.277"></script>
+  <script src="js/transcript.js?v=v0.9.277"></script>
+  <script src="js/fonts.js?v=v0.9.277"></script>
+  <script src="js/command.js?v=v0.9.277"></script>
+  <script src="js/chapters.js?v=v0.9.277"></script>
+  <script src="js/align.js?v=v0.9.277"></script>
+  <script src="js/main.js?v=v0.9.277"></script>
+  <script src="js/organize.js?v=v0.9.277"></script>
+  <script src="js/safezone.js?v=v0.9.277"></script>
 </body>
 </html>

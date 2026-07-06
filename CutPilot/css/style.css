@@ -977,17 +977,23 @@ footer { border-top: 1px solid var(--line); background: var(--card); max-height:
 @media (min-width: 620px) {
   #view-editor {
     display: grid;
-    grid-template-columns: 280px minmax(0, 1fr);
+    grid-template-columns: 268px minmax(0, 1fr);
     gap: 4px 16px;
     align-items: start;
   }
+  /* the dead space under the docked preview becomes the ACTION area: the two
+     primary buttons live right beneath what you're looking at */
+  .cap-actions-dock .hero-btn { display: block; width: 100%; margin: 8px 0 0; }
+  .cap-actions-dock .hero-btn .dim { display: block; font-size: 10px; }
   #view-editor > * { grid-column: 2; min-width: 0; }
   #view-editor > .editor-head { grid-column: 1 / -1; }
   #view-editor > #cap-preview {
     grid-column: 1; grid-row: 2 / span 200;
     position: sticky; top: 6px; align-self: start;
     margin: 0; padding: 0;
+    display: flex; flex-direction: column;
   }
+  #view-editor > #cap-preview > #cap-actions-dock { order: 9; }
   #view-editor > #cap-preview .preview-frame { height: 168px; }
   #view-editor > #cap-preview.collapsed { position: sticky; }
 
@@ -995,9 +1001,13 @@ footer { border-top: 1px solid var(--line); background: var(--card); max-height:
      (sliders, checks, number fields) flow 2–3 per row */
   .customizer .cust-group {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
-    gap: 6px 16px; align-items: end;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px 14px; align-items: end;
+    padding: 8px 12px 10px; margin: 8px 0;
   }
+  .customizer .cust-group > label.full,
+  .customizer .cust-group > .seg-control { grid-column: span 2; }
+  .customizer .cust-group > p.hint { font-size: 10px; opacity: .7; margin: 2px 0 0; }
   .customizer .cust-group > .cust-group-title,
   .customizer .cust-group > p.hint,
   .customizer .cust-group > .swatches,

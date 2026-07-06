@@ -3435,6 +3435,22 @@
     });
   }
 
+  /* On WIDE panels the two primary actions dock under the sticky preview —
+     the dead space the user pointed at — and return to their normal spot when
+     the panel is narrow. Moving nodes preserves their listeners. */
+  function dockCapActions() {
+    var dock = $('cap-actions-dock'), home = $('cap-actions-home');
+    var magic = $('btn-magic'), viral = $('btn-viral-edit');
+    if (!dock || !home || !magic) return;
+    var wide = (window.innerWidth || 0) >= 620;
+    if (wide && magic.parentNode !== dock) {
+      dock.appendChild(magic); if (viral) dock.appendChild(viral);
+    } else if (!wide && magic.parentNode === dock) {
+      home.parentNode.insertBefore(magic, home.nextSibling);
+      if (viral) home.parentNode.insertBefore(viral, magic.nextSibling);
+    }
+  }
+
   function wireCustomizer() {
     wireCustomizerTabs();
     var ids = ['c-size', 'c-pos', 'c-fill', 'c-hl', 'c-stroke', 'c-box',
@@ -8728,6 +8744,14 @@
   // functions and verify them against real template layouts. No behaviour
   // change; nothing inside Premiere uses this.
   try {
+    try {
+      dockCapActions();
+      var _dockT = null;
+      window.addEventListener('resize', function () {
+        if (_dockT) clearTimeout(_dockT);
+        _dockT = setTimeout(dockCapActions, 120);
+      });
+    } catch (eDock) {}
     window.CP_DEBUG = {
       mapPresetToMogrt: mapPresetToMogrt,
       mapPresetToFlux: mapPresetToFlux,
