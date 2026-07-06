@@ -2965,7 +2965,7 @@
     // a USER-SUPPLIED render of a caption style beats the drawn preview —
     // it IS the timeline look ("what if I gave you a render video or gif?")
     var userPrev = !isMogrt ? stylePreviewFor(t) : null;
-    var showReal = (isMogrt && (t.video || (t.thumb && (t.kind || 'caption') !== 'caption'))) || !!userPrev;
+    var showReal = (isMogrt && (t.video || t.thumb)) || !!userPrev;
     function mountCanvasSwatch() {
       var cvs = document.createElement('canvas');
       cvs.className = 'tpl-thumb-canvas';
@@ -2981,11 +2981,12 @@
       thumb.appendChild(img);
     }
     if (showReal) {
-      if (userPrev) thumb.className += ' has-media';   // compact band, cover-cropped
+      if (userPrev || (isMogrt && !t.video)) thumb.className += ' has-media';   // compact band, cover-cropped
+      var mogrtStillPos = (isMogrt && !t.video && !userPrev) ? '50% 50%' : null;   // shipped stills: centred caption band
       var srcUrl = userPrev ? userPrev.url : (t.video || t.thumb);
       var isVid = userPrev ? userPrev.video : !!t.video;
       // crop window follows where THIS style puts its caption (top/center/bottom)
-      var prevPos = userPrev ? ('50% ' + Math.round(layoutYPct(t) * 100) + '%') : null;
+      var prevPos = userPrev ? ('50% ' + Math.round(layoutYPct(t) * 100) + '%') : mogrtStillPos;
       if (isVid) {
         var media = document.createElement('video');
         media.muted = true; media.loop = true; media.autoplay = true;
@@ -3077,11 +3078,7 @@
       if (window.requestAnimationFrame) requestAnimationFrame(function () { try { renderMogrtPreview(); } catch (eR) {} });
     } catch (ePv) {}
     // show THIS template's real capabilities (read from its definition.json)
-    if ($('ms-hint')) {
-      var caps = mogrtCapsSummary(t.path);
-      $('ms-hint').textContent = caps ? ('✏️ Editable in Premiere — ' + caps)
-        : 'Premiere Motion Graphics Template — stays editable in Essential Graphics.';
-    }
+    if ($('ms-hint')) $('ms-hint').textContent = '';   // guidance text removed — space wins
     $('ms-inspect-out').classList.add('hidden');
     refreshWordMirrors();
     $('mogrt-sheet').classList.remove('hidden');
@@ -3252,7 +3249,8 @@
 
     setFontValue(p.font);
     $('c-size').value = p.fontSize;
-    $('c-pos').value = (p.layout === 'top') ? 18 : (p.layout === 'center') ? 50 : 76;
+    $('c-pos').value = (p.posPct != null) ? p.posPct
+                     : (p.layout === 'top') ? 18 : (p.layout === 'center') ? 50 : 76;
     setLayoutButton($('c-pos').value);
     // each style carries its own entrance identity (user can still override)
     state.captionEntrance = entranceForPreset(p);
@@ -3888,6 +3886,12 @@
       letterSpacing: o.letterSpacing || currentPreset().letterSpacing || 0,
       highlightScale: o.highlightScale,
       uppercase: o.uppercase,
+      weight: parseInt($('c-weight').value, 10) || 800,
+      highlight2: o.highlight2,                        // gradient 2nd stop
+      glowBlur: o.glowBlur,                            // shadow strength
+      wordHl: cchk('c-wordhl'),                        // word-by-word on/off
+      entrance: state.captionEntrance || 'none',       // entrance animation
+      posPct: parseInt($('c-pos').value, 10) || 50,    // EXACT position, not just the coarse bucket
       layout: o.yPct <= 0.3 ? 'top' : o.yPct >= 0.66 ? 'bottom' : 'center',
       keyword: $('c-kw').checked,
       speaker: $('c-speaker').checked,
@@ -5657,9 +5661,6 @@
         var pvFrame = document.createElement('div'); pvFrame.className = 'mogrt-prev-frame';
         _mogrtPrevCanvas = document.createElement('canvas');
         pvFrame.appendChild(_mogrtPrevCanvas); box.appendChild(pvFrame);
-        var pvNote = document.createElement('p'); pvNote.className = 'hint'; pvNote.style.cssText = 'margin:3px 0 9px;text-align:center;opacity:.8';
-        pvNote.textContent = 'Colour & font preview — updates live as you edit. The template’s full animation plays on your timeline.';
-        box.appendChild(pvNote);
       }
 
       if (defs && defs.length) {
@@ -5671,9 +5672,6 @@
       // live canvas only if it's the active preview; if the real render is showing,
       // leave it until the first edit (renderMogrtPreview reveals the canvas then).
       if (box.id !== 'ms-customizer' || !state.mogrtShowingReal) renderMogrtPreview();
-      var note = document.createElement('p'); note.className = 'hint';
-      note.textContent = 'These are the template\'s own Essential Graphics controls — edit here, then "Add template captions". Every caption stays editable in Premiere (Window → Essential Graphics) too. Colours, size, position & toggles are reliable; font applies if it\'s installed.';
-      box.appendChild(note);
       makeCustomizerCollapsible(box);   // fold the controls into expandable sections
     }).catch(function (e) { box.innerHTML = '<p class="hint err">Couldn\'t read template: ' + e.message + '</p>'; });
   }
@@ -5885,20 +5883,7 @@
       // anything else: skip — not safely settable as a generic control.
     }
 
-    // Escape hatch: some Premiere builds read a template's colour red↔blue (your
-    // warm colours show up blue). One toggle flips it — available for every
-    // template that has colours, whatever format it uses.
-    if (anyColor) {
-      var swapWrap = document.createElement('div'); swapWrap.className = 'mp-swap';
-      var swapHint = document.createElement('p'); swapHint.className = 'hint';
-      swapHint.innerHTML = '<b>Colour coming out wrong (e.g. you pick orange, it shows blue)?</b> Turn this on:';
-      swapWrap.appendChild(swapHint); box.appendChild(swapWrap);
-      mpAddCheck(box, '⇄ Fix red/blue swap', !!state.mogrtRBSwap, function (v) {
-        state.mogrtRBSwap = v;
-        for (var idx in colorHexById) if (colorHexById.hasOwnProperty(idx)) applyColor(parseInt(idx, 10), colorHexById[idx]);
-        toast(v ? '✓ Red/blue flipped — ▶ Preview to check.' : 'Red/blue back to normal — ▶ Preview to check.');
-      });
-    }
+    // (the red/blue swap escape hatch was removed — colour writes are verified now)
   }
 
   /* Fallback editor when the .mogrt can't be unzipped (e.g. no unzip on PATH):

@@ -327,6 +327,55 @@ function fluxProps() {
   if (fz.fails.length) fz.fails.forEach(f => bad('fuzz: ' + f));
   else ok('fuzz: ' + fz.combos + ' random control combinations — preview never blanked, styles stayed valid');
 
+  // ---- F. SAVED-TEMPLATE ROUNDTRIP: "My Templates must give back EXACTLY the
+  // template I created" — save a customized look, trash the controls, reopen
+  // the saved template, and assert every field comes back --------------------
+  const rt = await page.evaluate(async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const set = (id, v) => { const e = document.getElementById(id); e.value = v; e.dispatchEvent(new Event('input')); e.dispatchEvent(new Event('change')); };
+    const tick = (id, v) => { const e = document.getElementById(id); e.checked = v; e.dispatchEvent(new Event('change')); };
+    window.prompt = () => 'RT Test';
+    set('c-fill', '#112233'); set('c-hl', '#445566');
+    tick('c-hlgrad', true); set('c-hl2g', '#778899');
+    set('c-pos', '30'); set('c-size', '120');
+    const ent = document.querySelectorAll('#c-entrance button');
+    for (const b of ent) if (b.dataset.e === 'slide') b.click();
+    tick('c-shadow-on', true); set('c-shadow', '#0a0b0c'); set('c-shadow-blur', '80');
+    await sleep(80);
+    document.getElementById('btn-save-tpl').click(); await sleep(150);
+    // trash everything
+    set('c-fill', '#ffffff'); set('c-hl', '#ffd400'); tick('c-hlgrad', false);
+    set('c-pos', '76'); set('c-size', '62'); tick('c-shadow-on', false);
+    for (const b of ent) if (b.dataset.e === 'none') b.click();
+    await sleep(80);
+    // reopen the saved template from the grid
+    document.getElementById('btn-browse-styles').click(); await sleep(400);
+    const grid = document.getElementById('tpl-grid');
+    const card = Array.from(grid.querySelectorAll('.tpl-thumb-canvas')).find(c => c._tpl && c._tpl.custom);
+    if (!card) return { err: 'saved template not in grid' };
+    let el = card; while (el && !(el.classList && el.classList.contains('tpl-card'))) el = el.parentNode;
+    el.click(); await sleep(250);
+    const snap = window.CP_DEBUG.snapshot();
+    return {
+      fill: document.getElementById('c-fill').value,
+      hl: document.getElementById('c-hl').value,
+      grad: document.getElementById('c-hlgrad').checked,
+      hl2: document.getElementById('c-hl2g').value,
+      pos: document.getElementById('c-pos').value,
+      size: document.getElementById('c-size').value,
+      shadowOn: document.getElementById('c-shadow-on').checked,
+      blur: document.getElementById('c-shadow-blur').value,
+      entrance: snap.entrance
+    };
+  });
+  if (rt.err) bad('saved-template roundtrip: ' + rt.err);
+  else {
+    const want = { fill: '#112233', hl: '#445566', grad: true, hl2: '#778899', pos: '30', size: '120', shadowOn: true, blur: '80', entrance: 'slide' };
+    const misses = Object.keys(want).filter(k => String(rt[k]).toLowerCase() !== String(want[k]).toLowerCase());
+    if (misses.length) bad('saved-template roundtrip lost: ' + misses.map(k => k + '=' + rt[k] + '≠' + want[k]).join(', '));
+    else ok('saved-template roundtrip: all 9 fields restored exactly (colours, gradient, position, size, shadow, entrance)');
+  }
+
   await browser.close();
   console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');
   process.exit(failed ? 1 : 0);
