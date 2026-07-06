@@ -1012,7 +1012,6 @@ footer { border-top: 1px solid var(--line); background: var(--card); max-height:
   .customizer .cust-group > p.hint,
   .customizer .cust-group > .swatches,
   .customizer .cust-group > .seg-control,
-  .customizer .cust-group > .ctrl-row,
   .customizer .cust-group > .wc-row,
   .customizer .cust-group > label.full { grid-column: 1 / -1; }
 
@@ -1103,15 +1102,20 @@ footer { border-top: 1px solid var(--line); background: var(--card); max-height:
 /* ═══ COMPACT AT EVERY WIDTH — the small-panel reality: the same multi-per-row
    grids apply from the smallest panel up (auto-fill collapses gracefully). ═══ */
 .customizer .cust-group {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
   gap: 4px 12px; align-items: end;
 }
 .customizer .cust-group > .cust-group-title, .customizer .cust-group > p.hint,
 .customizer .cust-group > .swatches, .customizer .cust-group > .seg-control,
-.customizer .cust-group > .ctrl-row, .customizer .cust-group > .wc-row,
+.customizer .cust-group > .wc-row,
 .customizer .cust-group > label.full { grid-column: 1 / -1; }
+/* wrapper rows dissolve — their children join the grid as normal cells, so
+   Size/Weight/CAPS pack together even on the smallest panel */
+.customizer .cust-group > .ctrl-row { display: contents; }
+.customizer .cust-group label { min-width: 0; }
+.customizer .cust-group label input[type="range"] { width: 100%; }
 .tpl-params {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
   gap: 2px 12px; align-items: end;
 }
 .tpl-params > .mp-head, .tpl-params > .mp-sub, .tpl-params > .mp-toolbar,
