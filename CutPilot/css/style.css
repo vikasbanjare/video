@@ -1131,3 +1131,21 @@ footer { border-top: 1px solid var(--line); background: var(--card); max-height:
 .preview-wrap > .preview-collapse { align-self: flex-start; }
 .preview-wrap > .real-preview-btn { order: 9; }
 .preview-wrap > #cap-actions-dock { order: 10; }
+
+/* ═══ SINGLE-LINE CONTROLS: label LEFT, control RIGHT — a cell is ONE line
+   tall ("not one by one, top to bottom"). Halves the vertical footprint. ═══ */
+.customizer .cust-group > label:not(.check):not(.full),
+.customizer .cust-group > .ctrl-row > label {
+  display: flex; flex-direction: row; align-items: center; gap: 7px;
+  white-space: nowrap; font-size: 11px;
+}
+.customizer .cust-group > label:not(.check):not(.full) input[type="range"],
+.customizer .cust-group > .ctrl-row > label input[type="range"] {
+  flex: 1 1 40px; min-width: 36px; margin: 0;
+}
+.customizer .cust-group > label .val { margin-left: auto; }
+.mp-row { flex-direction: row !important; align-items: center !important; gap: 7px !important; }
+.mp-row .mp-name { white-space: nowrap !important; flex: 0 0 auto; }
+.mp-row .mp-ctrl, .mp-row .mp-slider { flex: 1 1 auto; min-width: 0; }
+/* hints inside groups are decorative — space is the priority on a panel */
+.customizer .cust-group > p.hint { display: none; }
