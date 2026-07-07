@@ -2970,18 +2970,27 @@
   /* Fire onBlank() only if a looping preview video is STILL blank ~1/3 of the way
      in. A black INTRO frame alone must not trigger (a title reveal legitimately
      starts on black), so we sample during playback, not at loadeddata — only a
-     video that is uniform/black even mid-loop falls back to the still/swatch. */
+     video that is uniform/black even mid-loop falls back to the still/swatch. We
+     sample at duration/3 (matching tools/thumb-scan.js exactly, so the build gate
+     and the runtime agree) — NOT a fixed 1s cap, which on a long user render fell
+     inside a slow reveal's dark intro and wrongly hid a good video. The listener
+     is stored on the element and any prior one removed, so reusing the shared
+     ms-anim across quick open/close cycles can't leak stacked listeners. */
   function guardVideoBlank(v, onBlank) {
     if (!v) return;
+    if (v._blankChk) { try { v.removeEventListener('timeupdate', v._blankChk); } catch (e0) {} v._blankChk = null; }
     var checked = false;
     function chk() {
       if (checked) return;
-      var when = Math.min(1.0, (v.duration || 2) / 3);
+      var dur = v.duration || 2;
+      var when = Math.min(dur / 3, dur - 0.05);
       if (!(v.currentTime >= when)) return;
       checked = true;
       try { v.removeEventListener('timeupdate', chk); } catch (e) {}
+      v._blankChk = null;
       if (videoFrameLooksBlank(v)) { try { onBlank(); } catch (e2) {} }
     }
+    v._blankChk = chk;
     v.addEventListener('timeupdate', chk);
   }
 
@@ -3128,6 +3137,20 @@
     if (window.requestAnimationFrame) requestAnimationFrame(function () { try { renderMogrtPreview(); } catch (e) {} });
   }
 
+  /* The FIRST edit of ANY sheet control must swap the baked real render for the
+     live "your colours" swatch, so the user sees they're now customising. The
+     colour/font handlers already repaint the swatch (which triggers the swap);
+     this covers the controls that DON'T feed the swatch — sliders, toggles,
+     enums, points, font-size, and null-role colours (Outline/Shadow/Stroke…) —
+     so the very first edit always swaps regardless of which control is touched.
+     Sheet-only: a no-op on the editor tab (its inline preview is another canvas),
+     so editor behaviour is unchanged. */
+  function sheetFirstEdit() {
+    if (state.mogrtShowingReal && _mogrtPrevCanvas && _mogrtPrevCanvas.id === 'ms-live-canvas') {
+      try { renderMogrtPreview(); } catch (e) {}
+    }
+  }
+
   function openMogrtSheet(t) {
     state.selectedMogrt = { path: t.path, name: t.name };
     state.selectedMogrtTpl = t;
@@ -3228,7 +3251,11 @@
     function closeMogrtSheet() {
       $('mogrt-sheet').classList.add('hidden');
       var lp = $('ms-live-preview'); if (lp) lp.classList.add('hidden');   // free the sticky preview
-      var av = $('ms-anim'); if (av) { try { av.pause(); } catch (eA) {} av.classList.add('hidden'); av.removeAttribute('src'); }
+      var av = $('ms-anim'); if (av) { try { av.pause(); } catch (eA) {} av.classList.add('hidden'); av.removeAttribute('src');
+        // tear down any pending blank-video guard so listeners can't accumulate
+        // on the shared ms-anim element across quick open/close cycles
+        if (av._blankChk) { try { av.removeEventListener('timeupdate', av._blankChk); } catch (eG) {} av._blankChk = null; }
+      }
       // stop the live-preview canvas animating once the sheet is closed
       var lc = $('ms-live-canvas'); if (lc) { lc._animFrames = null; lc._animLen = 0; lc.className = (lc.className || '').replace(/\btpl-thumb-canvas\b/, '').trim(); }
       _mogrtPrevCanvas = null;
@@ -5897,7 +5924,8 @@
         (function (idx, rl) {
           mpAddColor(box, name, hex, function (v) {
             applyColor(idx, v);
-            if (rl && state.mogrtPrev) { state.mogrtPrev[rl] = v; renderMogrtPreview(); }
+            if (rl && state.mogrtPrev) state.mogrtPrev[rl] = v;
+            renderMogrtPreview();   // repaint the swatch AND swap on the first edit (any colour, role or not)
           });
         })(liveIdx, roleC);
         continue;
@@ -5906,13 +5934,13 @@
         var spN = savedParam(liveIdx);
         var cv = (spN && spN.kind === 'number') ? spN.value
                : (typeof ip.value === 'number') ? ip.value : (c.value != null ? c.value : 0);
-        (function (idx) { mpAddSlider(box, name, cv, c.min, c.max, function (v) { setMogrtParam(idx, 'number', v); }); })(liveIdx);
+        (function (idx) { mpAddSlider(box, name, cv, c.min, c.max, function (v) { setMogrtParam(idx, 'number', v); sheetFirstEdit(); }); })(liveIdx);
         continue;
       }
       if (t === MT.BOOL) {
         var spB = savedParam(liveIdx);
         var bv = (spB && spB.kind === 'bool') ? spB.value : ((typeof ip.value === 'boolean') ? ip.value : !!c.value);
-        (function (idx) { mpAddCheck(box, name, bv, function (v) { setMogrtParam(idx, 'bool', v); }); })(liveIdx);
+        (function (idx) { mpAddCheck(box, name, bv, function (v) { setMogrtParam(idx, 'bool', v); sheetFirstEdit(); }); })(liveIdx);
         continue;
       }
       if (t === MT.ENUM) {
@@ -5929,7 +5957,7 @@
           var spE = savedParam(liveIdx);
           var ev = (spE && spE.kind === 'number') ? spE.value
                  : (typeof ip.value === 'number') ? ip.value : (typeof c.value === 'number' ? c.value : opts[0].value);
-          (function (idx) { mpAddSelect(box, name, opts, ev, function (v) { setMogrtParam(idx, 'number', v); }); })(liveIdx);
+          (function (idx) { mpAddSelect(box, name, opts, ev, function (v) { setMogrtParam(idx, 'number', v); sheetFirstEdit(); }); })(liveIdx);
         }
         continue;
       }
@@ -5940,7 +5968,7 @@
         var pv = (spP && spP.kind === 'point') ? spP.value
                : (ip.point && ip.point.x != null) ? ip.point
                : (c.value && c.value.x != null) ? c.value : { x: 0, y: 0 };
-        (function (idx) { mpAddPoint(box, name, pv.x, pv.y, function (v) { setMogrtParam(idx, 'point', v); }); })(liveIdx);
+        (function (idx) { mpAddPoint(box, name, pv.x, pv.y, function (v) { setMogrtParam(idx, 'point', v); sheetFirstEdit(); }); })(liveIdx);
         continue;
       }
       if (t === MT.TEXT) {
@@ -5982,7 +6010,7 @@
           }
           mpAddFontSelect(box, 'Font', startPs, function (v) { if (v) { fFamily = (String(v).split('-')[0]) || fFamily; applyFont(); } });
           mpAddSelect(box, 'Weight', WEIGHTS.map(function (x) { return { value: x, label: x }; }), fWeight, function (v) { fWeight = v || 'Regular'; applyFont(); });
-          mpAddSlider(box, 'Font size', Math.round((richStyle().sizeScale || 1) * 100), 50, 300, function (v) { richStyle().sizeScale = (parseFloat(v) || 100) / 100; });
+          mpAddSlider(box, 'Font size', Math.round((richStyle().sizeScale || 1) * 100), 50, 300, function (v) { richStyle().sizeScale = (parseFloat(v) || 100) / 100; sheetFirstEdit(); });
           if (blob && (blob.fillColorEditValue || blob.fontFillColorEditValue || blob.FillColorEditValue)) {
             // seed as a LOW-priority fallback (a dedicated "Text Color" colour
             // control, when present, is the real editable text colour and wins).
@@ -9003,6 +9031,7 @@
       imageLooksBlank: imageLooksBlank,
       openMogrtSheet: openMogrtSheet,
       renderMogrtPreview: renderMogrtPreview,
+      sheetFirstEdit: sheetFirstEdit,
       sheetState: function () {
         var th = $('ms-thumb'), an = $('ms-anim'), lp = $('ms-live-preview');
         return {

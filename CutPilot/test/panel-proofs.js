@@ -420,8 +420,10 @@ function fluxProps() {
     try { D.openMogrtSheet({ name: 'ProofReal', path: '/nope/ProofReal.mogrt', mogrt: true, thumb: thumb, video: '' }); } catch (e) { return { fatal: 'openMogrtSheet threw: ' + e.message }; }
     await sleep(160);
     const onOpen = D.sheetState();
-    // simulate the user's first edit (an edit handler calls renderMogrtPreview)
-    D.renderMogrtPreview();
+    // simulate the first edit of a NON-colour control (slider/toggle/outline colour):
+    // sheetFirstEdit() is what those handlers call — it must trigger the swap even
+    // though it doesn't touch a swatch colour (the confirmed regression case).
+    D.sheetFirstEdit();
     await sleep(80);
     const afterEdit = D.sheetState();
     return { onOpen, afterEdit };
@@ -429,7 +431,7 @@ function fluxProps() {
   if (sh.fatal) bad('sheet real-render persistence: ' + sh.fatal);
   else if (sh.onOpen.showingReal && sh.onOpen.thumbShown && !sh.onOpen.liveShown &&
            !sh.afterEdit.showingReal && !sh.afterEdit.thumbShown && sh.afterEdit.liveShown)
-    ok('sheet shows the REAL render on open (card==sheet), swaps to the live swatch only on first edit');
+    ok('sheet shows the REAL render on open (card==sheet), swaps to the live swatch on the first edit of ANY control (slider/toggle/outline colour included)');
   else bad('sheet real-render wrong: onOpen=' + JSON.stringify(sh.onOpen) + ' afterEdit=' + JSON.stringify(sh.afterEdit) +
            ' (want onOpen thumb+real, afterEdit live)');
 
