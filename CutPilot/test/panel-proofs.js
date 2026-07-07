@@ -404,6 +404,35 @@ function fluxProps() {
     ok('blank-preview detector: flags black + uniform frames, keeps a real caption render');
   else bad('blank-preview detector wrong: black=' + bl.black + ' grey=' + bl.grey + ' caption=' + bl.caption + ' (want true/true/false)');
 
+  // ---- H. SHEET REAL-RENDER PERSISTENCE: clicking a template must show its
+  // REAL render (matching the gallery card + the timeline), and only swap to the
+  // live "your colours" swatch on the FIRST EDIT — not on open. The swap firing
+  // on open was "the preview is different when I click a template" ----------------
+  const sh = await page.evaluate(async () => {
+    const D = window.CP_DEBUG;
+    if (!D || !D.openMogrtSheet || !D.renderMogrtPreview || !D.sheetState) return { fatal: 'sheet hooks missing' };
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    // a non-blank caption still (a real render) as a data URL
+    const c = document.createElement('canvas'); c.width = 284; c.height = 160;
+    const x = c.getContext('2d'); x.fillStyle = '#0b0e16'; x.fillRect(0, 0, 284, 160);
+    x.fillStyle = '#fff'; x.font = 'bold 22px sans-serif'; x.textAlign = 'center'; x.fillText('REAL RENDER', 142, 90);
+    const thumb = c.toDataURL('image/png');
+    try { D.openMogrtSheet({ name: 'ProofReal', path: '/nope/ProofReal.mogrt', mogrt: true, thumb: thumb, video: '' }); } catch (e) { return { fatal: 'openMogrtSheet threw: ' + e.message }; }
+    await sleep(160);
+    const onOpen = D.sheetState();
+    // simulate the user's first edit (an edit handler calls renderMogrtPreview)
+    D.renderMogrtPreview();
+    await sleep(80);
+    const afterEdit = D.sheetState();
+    return { onOpen, afterEdit };
+  });
+  if (sh.fatal) bad('sheet real-render persistence: ' + sh.fatal);
+  else if (sh.onOpen.showingReal && sh.onOpen.thumbShown && !sh.onOpen.liveShown &&
+           !sh.afterEdit.showingReal && !sh.afterEdit.thumbShown && sh.afterEdit.liveShown)
+    ok('sheet shows the REAL render on open (card==sheet), swaps to the live swatch only on first edit');
+  else bad('sheet real-render wrong: onOpen=' + JSON.stringify(sh.onOpen) + ' afterEdit=' + JSON.stringify(sh.afterEdit) +
+           ' (want onOpen thumb+real, afterEdit live)');
+
   await browser.close();
   console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');
   process.exit(failed ? 1 : 0);

@@ -2947,6 +2947,44 @@
     } catch (e) { return false; }
   }
 
+  /* Same blank test for a VIDEO's current frame (luminance range < 60). Used to
+     catch a black/failed preview .mp4 (the "video section is blank" bug also
+     applies to the looping card/sheet videos, not just stills). */
+  function videoFrameLooksBlank(v) {
+    try {
+      if (!v || !v.videoWidth || !v.videoHeight) return false;
+      var scale = Math.min(1, 160 / v.videoHeight);
+      var w = Math.max(1, Math.round(v.videoWidth * scale));
+      var h = Math.max(1, Math.round(v.videoHeight * scale));
+      var c = document.createElement('canvas'); c.width = w; c.height = h;
+      var ctx = c.getContext('2d'); ctx.drawImage(v, 0, 0, w, h);
+      var d = ctx.getImageData(0, 0, w, h).data, mn = 255, mx = 0;
+      for (var i = 0; i < d.length; i += 4) {
+        var luma = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        if (luma < mn) mn = luma; if (luma > mx) mx = luma;
+      }
+      return (mx - mn) < 60;
+    } catch (e) { return false; }
+  }
+
+  /* Fire onBlank() only if a looping preview video is STILL blank ~1/3 of the way
+     in. A black INTRO frame alone must not trigger (a title reveal legitimately
+     starts on black), so we sample during playback, not at loadeddata — only a
+     video that is uniform/black even mid-loop falls back to the still/swatch. */
+  function guardVideoBlank(v, onBlank) {
+    if (!v) return;
+    var checked = false;
+    function chk() {
+      if (checked) return;
+      var when = Math.min(1.0, (v.duration || 2) / 3);
+      if (!(v.currentTime >= when)) return;
+      checked = true;
+      try { v.removeEventListener('timeupdate', chk); } catch (e) {}
+      if (videoFrameLooksBlank(v)) { try { onBlank(); } catch (e2) {} }
+    }
+    v.addEventListener('timeupdate', chk);
+  }
+
   /* Clean, minimal gallery card (one shared layout for built-in styles AND
      animated .mogrt templates): a small label on top + ONE dark preview box that
      plays the real caption animation (same CPRender engine as the editor preview
@@ -3025,11 +3063,16 @@
         media.setAttribute('muted', ''); media.setAttribute('playsinline', '');
         if (!userPrev && t.thumb) media.poster = t.thumb;
         media.className = 'tpl-thumb-media';
-        // a video that can't load/decode falls back to the still, then the canvas
-        media.addEventListener('error', function () {
+        // a video that can't load/decode — OR that plays back blank/black — falls
+        // back to the still, then the canvas swatch (the "video section is blank"
+        // bug applies to looping preview videos too, not just stills)
+        function videoFallback() {
           try { thumb.removeChild(media); } catch (eR2) {}
+          thumb.className = thumb.className.replace(/\s*has-media\b/, '');
           if (!userPrev && t.thumb) mountImg(); else mountCanvasSwatch();
-        });
+        }
+        media.addEventListener('error', videoFallback);
+        guardVideoBlank(media, videoFallback);
         if (prevPos) media.style.objectPosition = prevPos;
         media.src = srcUrl;
         thumb.appendChild(media);
@@ -3070,6 +3113,21 @@
     ['wc-full', 'ms-wc-full', 'mg-wc-full'].forEach(function (id) { var e = document.getElementById(id); if (e) e.classList.toggle('on', w === 0); });
   }
 
+  /* Swap the action sheet from its real render to the live "your colours" swatch.
+     Called on the first edit (via renderMogrtPreview's swap) and as the fallback
+     when a shipped still/video preview turns out blank or fails to load, so the
+     sheet is never left showing an empty box. */
+  function revealSheetSwatch() {
+    var an = $('ms-anim'), th = $('ms-thumb'), lp = $('ms-live-preview');
+    if (an) { try { an.pause(); } catch (e) {} an.classList.add('hidden'); an.removeAttribute('src'); }
+    if (th) th.classList.add('hidden');
+    if (lp) lp.classList.remove('hidden');
+    state.mogrtShowingReal = false;
+    _mogrtPrevCanvas = $('ms-live-canvas');
+    try { renderMogrtPreview(); } catch (e) {}
+    if (window.requestAnimationFrame) requestAnimationFrame(function () { try { renderMogrtPreview(); } catch (e) {} });
+  }
+
   function openMogrtSheet(t) {
     state.selectedMogrt = { path: t.path, name: t.name };
     state.selectedMogrtTpl = t;
@@ -3083,37 +3141,56 @@
     var msThumb = $('ms-thumb'), msAnim = $('ms-anim'), msLive = $('ms-live-preview');
     var showReal = !!(t.video || t.thumb);   // any real render wins — the drawn swatch was the odd one out
     state.mogrtShowingReal = showReal;
+    // seed the live-preview state BEFORE anything paints (edit handlers read it)
+    state.mogrtPrev = { fill: null, highlight: null, box: null, firstColor: null, blobFill: null, font: '', caps: null, bold: null };
+    _mogrtPrevCanvas = $('ms-live-canvas');
     if (showReal && msAnim && t.video) {
+      // real MOTION render → show ONLY the video and keep the live "your colours"
+      // swatch HIDDEN until the first edit. Painting the swatch now would fire
+      // renderMogrtPreview's first-edit swap and replace the render immediately —
+      // that was "the preview is different when I click a template" (sheet showed
+      // the swatch while the card + timeline showed the real render).
       if (msThumb) { msThumb.classList.add('hidden'); msThumb.removeAttribute('src'); }
+      if (msLive) msLive.classList.add('hidden');
       msAnim.muted = true; msAnim.loop = true;
       msAnim.src = t.video;
       msAnim.classList.remove('hidden');
+      // a black/failed video preview must fall back to the live swatch
+      guardVideoBlank(msAnim, revealSheetSwatch);
+      msAnim.onerror = function () { revealSheetSwatch(); };
       try { var pms = msAnim.play(); if (pms && pms.catch) pms.catch(function () {}); } catch (ePl2) {}
     } else if (showReal && msThumb && t.thumb) {
+      // real STILL render → show ONLY the still; live swatch hidden until first edit
       if (msAnim) { try { msAnim.pause(); } catch (eP0b) {} msAnim.classList.add('hidden'); msAnim.removeAttribute('src'); }
-      // a blank/black shipped still would sit over the live canvas as an empty box
-      // ("blank when I click a template") → hide it and let ms-live-canvas show
-      msThumb.onload = function () { if (imageLooksBlank(msThumb)) msThumb.classList.add('hidden'); };
+      if (msLive) msLive.classList.add('hidden');
+      // a blank/black shipped still would leave an empty box ("blank when I click a
+      // template") → reveal the live swatch instead (renderMogrtPreview's swap)
+      msThumb.onload = function () { if (imageLooksBlank(msThumb)) revealSheetSwatch(); };
+      msThumb.onerror = function () { revealSheetSwatch(); };
       msThumb.src = t.thumb;
       msThumb.classList.remove('hidden');
     } else {
+      // no real render (caption styles, title templates with no still) → the live
+      // "your colours" swatch IS the preview
       if (msAnim) { try { msAnim.pause(); } catch (eP0) {} msAnim.classList.add('hidden'); msAnim.removeAttribute('src'); }
       if (msThumb) { msThumb.classList.add('hidden'); msThumb.removeAttribute('src'); }
+      state.mogrtShowingReal = false;
+      if (msLive) msLive.classList.remove('hidden');
     }
-    if (msLive) msLive.classList.remove('hidden');
     // Unhide the SHEET first — painting while it's display:none makes the canvas
     // measure 0×0 and fall back to a tiny 280×96 that only fixed itself after the
     // (slow, failable) Premiere inspect round-trip.
     $('mogrt-sheet').classList.remove('hidden');
-    // Paint the preview RIGHT NOW from the template's own colours — don't wait on
-    // the Premiere inspect round-trip below (slow, and if it failed the sheet sat
-    // with an empty preview box = "no preview when I click a template").
+    // Paint the live swatch RIGHT NOW only when it's the visible preview. When a
+    // real render is showing, DON'T paint here — renderMogrtPreview() would fire
+    // its first-edit swap and replace the render with the swatch immediately. The
+    // swatch is painted on the user's first real edit (edit handlers call it).
     try {
-      state.mogrtPrev = { fill: null, highlight: null, box: null, firstColor: null, blobFill: null, font: '', caps: null, bold: null };
-      _mogrtPrevCanvas = $('ms-live-canvas');
-      renderMogrtPreview();
-      // once layout has actually run, repaint at the real size
-      if (window.requestAnimationFrame) requestAnimationFrame(function () { try { renderMogrtPreview(); } catch (eR) {} });
+      if (!state.mogrtShowingReal) {
+        renderMogrtPreview();
+        // once layout has actually run, repaint at the real size
+        if (window.requestAnimationFrame) requestAnimationFrame(function () { try { if (!state.mogrtShowingReal) renderMogrtPreview(); } catch (eR) {} });
+      }
     } catch (ePv) {}
     // show THIS template's real capabilities (read from its definition.json)
     if ($('ms-hint')) $('ms-hint').textContent = '';   // guidance text removed — space wins
@@ -8924,6 +9001,17 @@
       carryableStyle: carryableStyle,
       textCues: textCues,
       imageLooksBlank: imageLooksBlank,
+      openMogrtSheet: openMogrtSheet,
+      renderMogrtPreview: renderMogrtPreview,
+      sheetState: function () {
+        var th = $('ms-thumb'), an = $('ms-anim'), lp = $('ms-live-preview');
+        return {
+          showingReal: !!state.mogrtShowingReal,
+          thumbShown: !!(th && !th.classList.contains('hidden')),
+          animShown: !!(an && !an.classList.contains('hidden')),
+          liveShown: !!(lp && !lp.classList.contains('hidden'))
+        };
+      },
       snapshot: function () { var y = null; try { y = carryableStyle(styledPreset()).yPct; } catch (e) {} return { entrance: state.captionEntrance || 'none', presetId: state.presetId, yPct: y }; }
     };
   } catch (eDbg) {}
