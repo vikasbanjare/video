@@ -376,6 +376,34 @@ function fluxProps() {
     else ok('saved-template roundtrip: all 9 fields restored exactly (colours, gradient, position, size, shadow, entrance)');
   }
 
+  // ---- G. BLANK-PREVIEW DETECTOR: the real imageLooksBlank() must flag a
+  // black/uniform frame (the "video section is blank" bug) yet NEVER flag a
+  // real caption-on-dark-frame render — tested through the SHIPPED function so
+  // the runtime card/sheet fallback and the build-time thumb-scan gate agree ----
+  const bl = await page.evaluate(async () => {
+    const D = window.CP_DEBUG;
+    if (!D || !D.imageLooksBlank) return { fatal: 'imageLooksBlank hook missing' };
+    function paint(draw) {
+      const c = document.createElement('canvas'); c.width = 284; c.height = 160;
+      const x = c.getContext('2d'); draw(x, c); return c.toDataURL('image/png');
+    }
+    const black = paint((x, c) => { x.fillStyle = '#000'; x.fillRect(0, 0, c.width, c.height); });
+    // a thin light caption on a dark frame — the case that must NOT be flagged
+    const caption = paint((x, c) => {
+      x.fillStyle = '#0b0e16'; x.fillRect(0, 0, c.width, c.height);
+      x.fillStyle = '#ffffff'; x.font = 'bold 20px sans-serif'; x.textAlign = 'center';
+      x.fillText('MAKE EVERY WORD COUNT', c.width / 2, c.height * 0.55);
+    });
+    const uniformGrey = paint((x, c) => { x.fillStyle = '#3a3a3a'; x.fillRect(0, 0, c.width, c.height); });
+    const load = (src) => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = src; });
+    const [ib, ic, iu] = await Promise.all([load(black), load(caption), load(uniformGrey)]);
+    return { black: D.imageLooksBlank(ib), caption: D.imageLooksBlank(ic), grey: D.imageLooksBlank(iu) };
+  });
+  if (bl.fatal) bad('blank-detector: ' + bl.fatal);
+  else if (bl.black === true && bl.grey === true && bl.caption === false)
+    ok('blank-preview detector: flags black + uniform frames, keeps a real caption render');
+  else bad('blank-preview detector wrong: black=' + bl.black + ' grey=' + bl.grey + ' caption=' + bl.caption + ' (want true/true/false)');
+
   await browser.close();
   console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');
   process.exit(failed ? 1 : 0);

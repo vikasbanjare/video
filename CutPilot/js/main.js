@@ -2918,6 +2918,35 @@
   }
   function stopCardAnimator() { if (_cardAnimTimer) { clearInterval(_cardAnimTimer); _cardAnimTimer = null; } }
 
+  /* Is this loaded <img> essentially BLANK (a uniform/black frame with no visible
+     text or graphic)? Some shipped stills came out of Premiere all-black ("some
+     of the text isn't showing — it's blank"), which read as a broken preview.
+     METRIC = luminance RANGE (brightest minus darkest) of the decoded frame:
+     a pure-black/uniform frame ranges ~0, while ANY render with a caption on it
+     ranges wide (measured floor across all real stills = 175). We flag blank only
+     below 60 — a 115-point margin, so a real render (even a thin light caption on
+     a dark frame) is NEVER hidden. Content-FRACTION can't be used here: a thin
+     caption covers <0.3% of the frame, overlapping the black stills. Any failure
+     (canvas taint on some CEF builds, decode error) returns false → keep the
+     image; the shipped-still deletion already covers the known-blank ones, this
+     is the belt-and-suspenders safety net. */
+  function imageLooksBlank(img) {
+    try {
+      if (!img || !img.naturalWidth || !img.naturalHeight) return false;
+      var scale = Math.min(1, 160 / img.naturalHeight);
+      var w = Math.max(1, Math.round(img.naturalWidth * scale));
+      var h = Math.max(1, Math.round(img.naturalHeight * scale));
+      var c = document.createElement('canvas'); c.width = w; c.height = h;
+      var ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
+      var d = ctx.getImageData(0, 0, w, h).data, mn = 255, mx = 0;
+      for (var i = 0; i < d.length; i += 4) {
+        var luma = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        if (luma < mn) mn = luma; if (luma > mx) mx = luma;
+      }
+      return (mx - mn) < 60;
+    } catch (e) { return false; }
+  }
+
   /* Clean, minimal gallery card (one shared layout for built-in styles AND
      animated .mogrt templates): a small label on top + ONE dark preview box that
      plays the real caption animation (same CPRender engine as the editor preview
@@ -2977,6 +3006,9 @@
       var img = document.createElement('img');
       img.className = 'tpl-thumb-media';
       img.addEventListener('error', function () { try { thumb.removeChild(img); } catch (eR) {} mountCanvasSwatch(); });
+      img.addEventListener('load', function () {
+        if (imageLooksBlank(img)) { try { thumb.removeChild(img); } catch (eB) {} thumb.className = thumb.className.replace(/\s*has-media\b/, ''); mountCanvasSwatch(); }
+      });
       img.src = t.thumb;
       thumb.appendChild(img);
     }
@@ -3007,6 +3039,9 @@
         img.className = 'tpl-thumb-media';
         if (prevPos) img.style.objectPosition = prevPos;
         img.addEventListener('error', function () { try { thumb.removeChild(img); } catch (eRI) {} mountCanvasSwatch(); });
+        img.addEventListener('load', function () {
+          if (imageLooksBlank(img)) { try { thumb.removeChild(img); } catch (eBI) {} thumb.className = thumb.className.replace(/\s*has-media\b/, ''); mountCanvasSwatch(); }
+        });
         img.src = srcUrl;
         thumb.appendChild(img);
       }
@@ -3056,6 +3091,9 @@
       try { var pms = msAnim.play(); if (pms && pms.catch) pms.catch(function () {}); } catch (ePl2) {}
     } else if (showReal && msThumb && t.thumb) {
       if (msAnim) { try { msAnim.pause(); } catch (eP0b) {} msAnim.classList.add('hidden'); msAnim.removeAttribute('src'); }
+      // a blank/black shipped still would sit over the live canvas as an empty box
+      // ("blank when I click a template") → hide it and let ms-live-canvas show
+      msThumb.onload = function () { if (imageLooksBlank(msThumb)) msThumb.classList.add('hidden'); };
       msThumb.src = t.thumb;
       msThumb.classList.remove('hidden');
     } else {
@@ -8885,6 +8923,7 @@
       bundledBackbone: bundledBackbone,
       carryableStyle: carryableStyle,
       textCues: textCues,
+      imageLooksBlank: imageLooksBlank,
       snapshot: function () { var y = null; try { y = carryableStyle(styledPreset()).yPct; } catch (e) {} return { entrance: state.captionEntrance || 'none', presetId: state.presetId, yPct: y }; }
     };
   } catch (eDbg) {}

@@ -1452,4 +1452,29 @@ try {
   }
 } catch (e) { proofsOk = false; }
 
-process.exit(failed || !auditOk || !hostOk || !simOk || !proofsOk ? 1 : 0);
+// BLANK-PREVIEW GATE: no shipped template preview may be an empty/black frame.
+// This is the "some of the text isn't showing — the video section is blank" bug:
+// four Title stills shipped all-black. Measures the luminance range of every
+// shipped still (and preview video frame) and fails if any is uniform/blank.
+// Needs a browser to decode images, so it shares the hasChromium gate.
+var thumbsOk = true;
+try {
+  if (hasChromium) {
+    console.log('\nRunning blank-preview scan…');
+    require('child_process').execSync('node "' + require('path').join(__dirname, '..', '..', 'tools', 'thumb-scan.js') + '"',
+      { stdio: 'inherit' });
+  } else {
+    console.log('(blank-preview scan skipped — no headless Chromium here)');
+  }
+} catch (e) {
+  // exit 2 = the scan skipped itself (puppeteer not installed) — not a failure
+  if (e && e.status === 2) console.log('(blank-preview scan skipped — puppeteer not installed)');
+  else thumbsOk = false;
+}
+
+var allOk = !failed && auditOk && hostOk && simOk && proofsOk && thumbsOk;
+console.log('\n' + (allOk ? '════ ALL GATES GREEN ════' : '════ SOME GATES FAILED ════') +
+  '  (js:' + (failed ? 'FAIL' : 'ok') + ' audit:' + (auditOk ? 'ok' : 'FAIL') +
+  ' host:' + (hostOk ? 'ok' : 'FAIL') + ' sim:' + (simOk ? 'ok' : 'FAIL') +
+  ' proofs:' + (proofsOk ? 'ok' : 'FAIL') + ' blank-scan:' + (thumbsOk ? 'ok' : 'FAIL') + ')');
+process.exit(allOk ? 0 : 1);
