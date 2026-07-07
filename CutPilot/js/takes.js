@@ -31,6 +31,7 @@
   /* Longest-common-subsequence length of two token arrays (order-aware, tolerant
      of insertions/deletions/substitutions — exactly how retakes differ). */
   function lcsLen(a, b) {
+    if (!a || !b) return 0;
     var n = a.length, m = b.length;
     if (!n || !m) return 0;
     var prev = new Array(m + 1), cur = new Array(m + 1), i, j;

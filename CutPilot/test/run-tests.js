@@ -1392,6 +1392,24 @@ console.log('align.js (word-timing refinement)');
   assert(cues[cues.length - 1].text.indexOf('new sentence') >= 0, 'groupForReadability keeps the final sentence');
 }
 
+// ---- robustness: adversarial inputs must never THROW (found by a fuzz probe) ----
+// A stale/removed preset id resolves to null; a malformed cue can lack .text; the
+// takes/align helpers can be handed empty/undefined. None may crash the panel.
+console.log('robustness (null/edge inputs never crash)');
+{
+  const CPRenderR = require(path.join(__dirname, '..', 'js', 'render.js'));
+  const CPTakesR = require(path.join(__dirname, '..', 'js', 'takes.js'));
+  function noThrow(name, fn) { try { fn(); assert(true, name); } catch (e) { assert(false, name + ' threw: ' + e.message); } }
+  noThrow('explodeWords tolerates a cue with no text', () => CPCaptions.explodeWords([{ start: 0, end: 1 }], { wordsPerCue: 1 }));
+  noThrow('mergeStyle tolerates a null preset (stale saved id)', () => CPCaptions.mergeStyle(null, { fill: '#fff' }));
+  noThrow('styleForFrame tolerates a null preset', () => CPRenderR.styleForFrame(null, 1080, {}));
+  noThrow('groupForReadability tolerates undefined words', () => CPAlign.groupForReadability(undefined));
+  noThrow('lcsLen tolerates a missing second arg', () => CPTakesR.lcsLen([], undefined));
+  // and the fix produces a sane value, not just non-throwing
+  const ms = CPCaptions.mergeStyle(null, { fill: '#abcdef' });
+  assert(ms && ms.fill === '#abcdef', 'mergeStyle with null preset still applies the override');
+}
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 
 // ------------------------------------------------- template audit ----

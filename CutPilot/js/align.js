@@ -150,6 +150,7 @@
      when a cue would exceed maxChars, maxWords, maxDur, or the reading-speed cap
      (chars-per-second). Returns [{start,end,text,words:[...]}]. */
   function groupForReadability(words, opts) {
+    if (!words || !words.length) return [];
     opts = opts || {};
     var maxChars = opts.maxChars || 42, maxWords = opts.maxWords || 0;
     var maxDur = opts.maxDur || 6, minDur = opts.minDur || 0.7, maxCps = opts.maxCps || 17;

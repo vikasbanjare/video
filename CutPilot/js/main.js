@@ -5815,7 +5815,14 @@
       // leave it until the first edit (renderMogrtPreview reveals the canvas then).
       if (box.id !== 'ms-customizer' || !state.mogrtShowingReal) renderMogrtPreview();
       makeCustomizerCollapsible(box);   // fold the controls into expandable sections
-    }).catch(function (e) { box.innerHTML = '<p class="hint err">Couldn\'t read template: ' + e.message + '</p>'; });
+    }).catch(function (e) {
+      // build via textContent so a template name/path with < > & in the error
+      // can't break the panel layout (or inject markup)
+      box.innerHTML = '';
+      var p = document.createElement('p'); p.className = 'hint err';
+      p.textContent = 'Couldn\'t read template: ' + (e && e.message ? e.message : e);
+      box.appendChild(p);
+    });
   }
 
   /* Fold the generated controls into expandable sections so the customizer is a

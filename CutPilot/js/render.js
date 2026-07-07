@@ -39,6 +39,7 @@
    */
   function styleForFrame(preset, frameH, o, frameW) {
     o = o || {};
+    preset = preset || {};   // never deref a null preset (stale id / missing base)
     // Scale by frame WIDTH (relative to a 1920-wide reference), not height, so a
     // caption is a consistent fraction of the frame's WIDTH and always fits inside
     // it — vertical (1080×1920), horizontal (1920×1080) and square all auto-adjust.

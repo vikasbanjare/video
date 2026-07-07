@@ -148,7 +148,7 @@
     var out = [];
     for (var i = 0; i < cues.length; i++) {
       var cue = cues[i];
-      var words = cue.text.replace(/\s+/g, ' ').trim().split(' ');
+      var words = String((cue && cue.text) || '').replace(/\s+/g, ' ').trim().split(' ');
       if (!words.length || words[0] === '') continue;
 
       var groups = [];
@@ -1083,6 +1083,7 @@
    */
   function mergeStyle(preset, o) {
     o = o || {};
+    preset = preset || {};   // a stale/removed preset id resolves to null — don't crash
     function has(k) { return o[k] !== undefined && o[k] !== null && o[k] !== ''; }
     return {
       font: has('font') ? o.font : preset.font,
