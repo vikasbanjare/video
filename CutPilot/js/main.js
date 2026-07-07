@@ -6607,7 +6607,9 @@
         return CPBridge.callHost('CP_insertMogrtCaptions', {
           mogrtPath: bb.path, cues: tcues, videoTrack: null, audioTrack: 0,
           params: params, textStyle: textStyle, stretch: false, replaceTrack: reuseTrack,
-          anim: (entrance !== 'none' ? entrance : null), animSpeed: 100
+          // animSpeed is a MULTIPLIER (1 = natural pace). 100 compressed every
+          // entrance into ~1ms — Pop/Slide/Fade were invisible on the timeline.
+          anim: (entrance !== 'none' ? entrance : null), animSpeed: 1
         });
       });
     }).then(function (r) {

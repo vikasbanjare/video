@@ -231,6 +231,25 @@ function makeWorld(opts) {
         Object.defineProperty(props, 'numItems', { get() { return props.length; } });
         clip.getMGTComponent = () => ({ properties: props });
         clip._fluxWrites = writes;
+        // clip-level Motion/Opacity with the REAL keyframe API surface
+        // (setTimeVarying/addKey/setValueAtKey) so entrance animations are testable
+        clip.inPoint = mkT(start);
+        const keys = clip._keys = {};
+        const kfProp = (name) => ({
+          displayName: name,
+          setTimeVarying(v) { (keys[name] = keys[name] || { keys: [] }).tv = v; },
+          addKey(t) { (keys[name] = keys[name] || { keys: [] }).keys.push({ t }); },
+          setValueAtKey(t, v) {
+            const K = (keys[name] = keys[name] || { keys: [] }).keys;
+            for (const k of K) if (Math.abs(k.t - t) < 1e-9) { k.v = v; return; }
+            K.push({ t, v });
+          }
+        });
+        const mkComps = (arr) => { Object.defineProperty(arr, 'numItems', { get() { return arr.length; } }); return arr; };
+        clip.components = mkComps([
+          { displayName: 'Motion', properties: mkComps([kfProp('Scale'), kfProp('Position')]) },
+          { displayName: 'Opacity', properties: mkComps([kfProp('Opacity')]) }
+        ]);
       } else if (opts.richText) {
         // A Subtitle-like component: a rich source-text prop + a param-driven
         // "Text Color". CLOBBER SIMULATION: any write to the source text resets
@@ -704,6 +723,51 @@ console.log('host.jsx — insert edge cases (empty / tiny / overlapping / unsort
     videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false
   });
   assert(r5.ok === true && r5.inserted === 1, 'zero-length cue inserts without crashing');
+}
+
+// ═══════════ entrance animations: real Motion/Opacity keyframes ═══════════
+console.log('host.jsx — entrance keyframes (pop/slide/fade at NATURAL pace)');
+{
+  const w = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true });
+  const host = loadHost(w);
+  const r = call(host, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt',
+    cues: [{ start: 1.0, end: 2.5, text: 'pop goes the caption' }],
+    videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false,
+    anim: 'pop', animSpeed: 1
+  });
+  const c = w.model.vTracks[w.model.vTracks.length - 1][0];
+  assert(r.ok && r.inserted === 1 && r.textSet === 1, 'pop-entrance insert succeeds');
+  const sc = c._keys && c._keys.Scale;
+  assert(!!sc && sc.tv === true && sc.keys.length === 3, 'pop sets 3 Scale keyframes');
+  assert(Math.abs(sc.keys[1].t - sc.keys[0].t - 0.09) < 1e-6,
+    'keyframes run at NATURAL pace (0.09s apart — animSpeed=100 compressed them into ~1ms: entrances were invisible)');
+  assert(sc.keys[2].v === 100, 'pop settles at 100% scale');
+  assert(c._flux.sweepType.v === 2, 'the word sweep still engages alongside the entrance');
+
+  const w2 = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true });
+  const h2 = loadHost(w2);
+  call(h2, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt',
+    cues: [{ start: 0.5, end: 2.0, text: 'slide in' }],
+    videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false,
+    anim: 'slide', animSpeed: 1
+  });
+  const c2 = w2.model.vTracks[w2.model.vTracks.length - 1][0];
+  assert(!!c2._keys.Position && c2._keys.Position.keys.length === 2 &&
+         !!c2._keys.Opacity && c2._keys.Opacity.keys.length === 2,
+    'slide sets Position + Opacity keyframes');
+
+  const w3 = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true });
+  const h3 = loadHost(w3);
+  call(h3, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt',
+    cues: [{ start: 0.5, end: 2.0, text: 'no entrance' }],
+    videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false,
+    anim: null, animSpeed: 1
+  });
+  const c3 = w3.model.vTracks[w3.model.vTracks.length - 1][0];
+  assert(!c3._keys || Object.keys(c3._keys).length === 0, 'None → zero keyframes touched');
 }
 
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');
