@@ -8822,7 +8822,7 @@
     }).then(function (r) {
       var tracks = (r.audioTracks || []).filter(function (t) { return t.mediaPath; });
       R.push('3) mics on audio tracks: ' + tracks.length);
-      tracks.forEach(function (t) { R.push('     ' + t.name + ' → ' + t.mediaPath.split('/').pop()); });
+      tracks.forEach(function (t) { R.push('     ' + t.name + ' → ' + t.mediaPath.split(/[\\/]/).pop()); });
       show();
       if (ff && tracks.length) {
         R.push('   testing ffmpeg on first 60s of ' + tracks[0].name + '…'); show();

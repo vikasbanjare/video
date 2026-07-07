@@ -798,5 +798,30 @@ console.log('host.jsx — last-clip trim survives a refused end-assignment');
     'LAST caption is razor-trimmed to its cue (' + last.end.seconds.toFixed(2) + 's, cue ends 3.2s) — was left at 30s');
 }
 
+// ═══ "▶ Real preview on timeline": the SAME broken-end-setter trap — the
+//     preview clip must come out ~4s even when the template is 30s ═══
+console.log('host.jsx — CP_previewMogrt trims a 30s template to the preview window');
+{
+  const w = makeWorld({ vTracks: 2, aTracks: 1, fluxComponent: true, endSetterBroken: true, mogrtNaturalDur: 30 });
+  const host = loadHost(w);
+  const r = call(host, 'CP_previewMogrt', {
+    path: '/tmp/Flux_Halo2.mogrt', seconds: 4,
+    params: [
+      { i: 19, kind: 'color', value: '#15181E' },   // Text Color
+      { i: 7,  kind: 'color', value: '#2D7CFF' }    // Highlighted Word Color 1
+    ],
+    text: 'Make every word count', textStyle: null
+  });
+  const track = w.model.vTracks[w.model.vTracks.length - 1];   // preview goes on the TOP track
+  assert(r.ok === true, 'preview call succeeds: ' + JSON.stringify(r));
+  assert(r.paramsSet >= 2, 'panel colour overrides reach the preview clip (' + r.paramsSet + ' params)');
+  assert(track.length === 1,
+    'razored tail is deleted — exactly one preview clip remains (' + JSON.stringify(trackSpans(track)) + ')');
+  assert(track[0].end.seconds <= 4 + 0.25,
+    'preview clip trimmed to the 4s window (' + track[0].end.seconds.toFixed(2) + 's) — was left at 30s');
+  const blob = JSON.parse(track[0]._flux.text.v);
+  assert(blob.textEditValue === 'Make every word count', 'preview clip carries the sample words');
+}
+
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

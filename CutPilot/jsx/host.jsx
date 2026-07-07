@@ -1557,6 +1557,30 @@ function CP_removeLastClipOnTrack(vTrack) {
   } catch (eQE) {}
 }
 
+/* LAST-RESORT clip trim: razor the track at `wantEnd` and delete the piece
+   that starts there. Needed on Premiere versions whose MOGRT clips silently
+   refuse `.end` assignment AND QE speed-stretch — without it a 30s template
+   stays at its full natural length. Used by the caption inserter (final cue)
+   and by the timeline preview. */
+function CP_razorTrimTail(seq, vTrack, wantEnd, tailEnd) {
+  try {
+    app.enableQE();
+    var fpsT = CP_TICKS_PER_SECOND / parseFloat(seq.timebase);
+    var qtT = qe.project.getActiveSequence().getVideoTrackAt(vTrack);
+    qtT.razor(CP_timecode(wantEnd, fpsT, false));
+    var halfF = 0.5 / fpsT;
+    for (var tk = qtT.numItems - 1; tk >= 0; tk--) {
+      var itT = qtT.getItemAt(tk);
+      if (itT && itT.type !== 'Empty' &&
+          itT.start.secs >= wantEnd - halfF && itT.start.secs < tailEnd - halfF) {
+        try { itT.remove(0, 0); return true; } catch (eRt) {}
+        break;
+      }
+    }
+  } catch (eTailTrim) {}
+  return false;
+}
+
 /* Time-stretch the most-recently-placed clip on a track to `speedPct` (best
    effort via QE). Slowing it (<100%) makes a fixed-length MOGRT last longer —
    the only scriptable way to extend past a template's authored duration. */
@@ -2212,21 +2236,7 @@ function CP_insertMogrtCaptions(argsJson) {
       // no next, so a failed trim left the template's full natural length.
       try {
         var tailEnd = clip.end.seconds;
-        if (tailEnd > endSec + 0.2) {
-          app.enableQE();
-          var fpsT = CP_TICKS_PER_SECOND / parseFloat(seq.timebase);
-          var qtT = qe.project.getActiveSequence().getVideoTrackAt(vTrack);
-          qtT.razor(CP_timecode(endSec, fpsT, false));
-          var halfF = 0.5 / fpsT;
-          for (var tk = qtT.numItems - 1; tk >= 0; tk--) {
-            var itT = qtT.getItemAt(tk);
-            if (itT && itT.type !== 'Empty' &&
-                itT.start.secs >= endSec - halfF && itT.start.secs < tailEnd - halfF) {
-              try { itT.remove(0, 0); } catch (eRt) {}
-              break;
-            }
-          }
-        }
+        if (tailEnd > endSec + 0.2) CP_razorTrimTail(seq, vTrack, endSec, tailEnd);
       } catch (eTailTrim) {}
       try { if (endSec < wordEnd - 0.05) clamped++; } catch (eChk) {}
     }
@@ -2486,7 +2496,8 @@ function CP_previewMogrt(argsJson) {
     var vTrack = seq.videoTracks.numTracks - 1;
     var clip = seq.importMGT(args.path, CP_ticksFromSeconds(at), vTrack, 0);
     if (!clip) return CP_fail('Premiere could not place this template.');
-    try { clip.end = CP_timeFromSeconds(at + (args.seconds || 4)); } catch (eE) {}
+    var pvEnd = at + (args.seconds || 4);
+    try { clip.end = CP_timeFromSeconds(pvEnd); } catch (eE) {}
     // apply the panel's colour/size/font overrides + sample text to the preview
     var pParams = 0;
     try {
@@ -2502,6 +2513,13 @@ function CP_previewMogrt(argsJson) {
         }
       }
     } catch (ePv) {}
+    // same broken-end-setter trap as the caption inserter: if the end
+    // assignment was refused, razor-trim so the preview is 4s, not 30s.
+    // AFTER params/text — razoring can invalidate the component reference.
+    try {
+      var pvActual = clip.end.seconds;
+      if (pvActual > pvEnd + 0.2) CP_razorTrimTail(seq, vTrack, pvEnd, pvActual);
+    } catch (ePvTrim) {}
     return CP_ok({ placedAt: at, track: vTrack + 1, paramsSet: pParams });
   } catch (e) { return CP_fail(e.message); }
 }
