@@ -3046,7 +3046,7 @@
     // Caption templates without a video show only the live canvas (their baked
     // thumbs were a tiny caption in an empty frame = "no preview").
     var msThumb = $('ms-thumb'), msAnim = $('ms-anim'), msLive = $('ms-live-preview');
-    var showReal = !!(t.video || (t.thumb && (t.kind || 'caption') !== 'caption'));
+    var showReal = !!(t.video || t.thumb);   // any real render wins — the drawn swatch was the odd one out
     state.mogrtShowingReal = showReal;
     if (showReal && msAnim && t.video) {
       if (msThumb) { msThumb.classList.add('hidden'); msThumb.removeAttribute('src'); }

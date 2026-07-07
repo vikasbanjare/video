@@ -50,7 +50,15 @@ function makeWorld(opts) {
   function mkClip(start, end, extra) {
     const clip = Object.assign({ type: 'Clip', name: 'clip' }, extra || {});
     clip.start = mkT(start);
-    clip.end = mkT(end);
+    if (opts.endSetterBroken) {
+      let endT = mkT(end);
+      Object.defineProperty(clip, 'end', {
+        get() { return endT; },
+        set(v) { if (model.allowEndSet) endT = v; }   // only the razor may cut
+      });
+    } else {
+      clip.end = mkT(end);
+    }
     return clip;
   }
   model.addClip = (kind, ti, start, end, extra) => {
@@ -96,8 +104,10 @@ function makeWorld(opts) {
           const it = items[i];
           if (it.type === 'Empty') continue;
           if (it.start.seconds < cut - 1e-9 && it.end.seconds > cut + 1e-9) {
+            model.allowEndSet = true;                 // a razor cut always lands
             const right = mkClip(cut, it.end.seconds, { name: it.name });
             it.end = mkT(cut);
+            model.allowEndSet = false;
             items.splice(i + 1, 0, right);
             return;
           }
@@ -768,6 +778,24 @@ console.log('host.jsx — entrance keyframes (pop/slide/fade at NATURAL pace)');
   });
   const c3 = w3.model.vTracks[w3.model.vTracks.length - 1][0];
   assert(!c3._keys || Object.keys(c3._keys).length === 0, 'None → zero keyframes touched');
+}
+
+// ═══ the "last caption runs way too long" bug: trim must survive a refused
+//     .end assignment (razor-tail fallback) ═══
+console.log('host.jsx — last-clip trim survives a refused end-assignment');
+{
+  const w = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true, endSetterBroken: true, mogrtNaturalDur: 30 });
+  const host = loadHost(w);
+  const r = call(host, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt',
+    cues: [{ start: 1.0, end: 2.0, text: 'first' }, { start: 2.0, end: 3.2, text: 'last one here' }],
+    videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false
+  });
+  const track = w.model.vTracks[w.model.vTracks.length - 1];
+  const last = track.slice().sort((a, b) => a.start.seconds - b.start.seconds).pop();
+  assert(r.ok && r.inserted === 2, 'both cues insert with a 30s template and a refused end-setter');
+  assert(last.end.seconds <= 3.2 + 0.25,
+    'LAST caption is razor-trimmed to its cue (' + last.end.seconds.toFixed(2) + 's, cue ends 3.2s) — was left at 30s');
 }
 
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');

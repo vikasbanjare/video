@@ -2205,6 +2205,29 @@ function CP_insertMogrtCaptions(argsJson) {
           }
         }
       } catch (eFb) {}
+      // LAST-RESORT trim: if the clip STILL overruns (end-assignment refused AND
+      // speed-stretch refused), razor at the wanted end and delete the tail.
+      // This is the "last caption runs way too long" bug: earlier captions only
+      // looked right because the NEXT import overwrote them — the final clip has
+      // no next, so a failed trim left the template's full natural length.
+      try {
+        var tailEnd = clip.end.seconds;
+        if (tailEnd > endSec + 0.2) {
+          app.enableQE();
+          var fpsT = CP_TICKS_PER_SECOND / parseFloat(seq.timebase);
+          var qtT = qe.project.getActiveSequence().getVideoTrackAt(vTrack);
+          qtT.razor(CP_timecode(endSec, fpsT, false));
+          var halfF = 0.5 / fpsT;
+          for (var tk = qtT.numItems - 1; tk >= 0; tk--) {
+            var itT = qtT.getItemAt(tk);
+            if (itT && itT.type !== 'Empty' &&
+                itT.start.secs >= endSec - halfF && itT.start.secs < tailEnd - halfF) {
+              try { itT.remove(0, 0); } catch (eRt) {}
+              break;
+            }
+          }
+        }
+      } catch (eTailTrim) {}
       try { if (endSec < wordEnd - 0.05) clamped++; } catch (eChk) {}
     }
     return CP_ok({

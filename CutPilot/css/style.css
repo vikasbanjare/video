@@ -269,9 +269,11 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
 /* a style tile playing a USER RENDER stays COMPACT (tall 9:16 cards made the
    gallery an endless scroll — the user's call, and right for a panel): the
    vertical render is cover-cropped to its caption band, positioned per style */
-.tpl-card.is-style .tpl-thumb.has-media .tpl-thumb-media {
-  object-fit: cover;
+.tpl-thumb.has-media .tpl-thumb-media {
+  object-fit: cover;   /* template cards included — full-frame stills showed a microscopic pill */
 }
+/* the sheet's real still: caption band, legible */
+#ms-thumb { object-fit: cover; object-position: 50% 50%; width: 100%; height: 132px; }
 
 /* favorite: invisible at rest, fades in on card hover; a SET favorite always
    shows. Sits in the label row so it never covers the preview. */
