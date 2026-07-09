@@ -733,6 +733,20 @@ console.log('host.jsx — insert edge cases (empty / tiny / overlapping / unsort
     videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false
   });
   assert(r5.ok === true && r5.inserted === 1, 'zero-length cue inserts without crashing');
+
+  // SHORT template, LONG word (stretch on): a 1s template under a 4s spoken word
+  // must HOLD (extend) through the whole word — not blink off after 1s. Symmetric
+  // to the tiny-cue case above (which trims a long template DOWN).
+  const w6 = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true, mogrtNaturalDur: 1.0 });
+  const h6 = loadHost(w6);
+  const r6 = call(h6, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt', cues: [{ start: 0.0, end: 4.0, text: 'one long spoken span' }],
+    videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: true
+  });
+  const c6 = w6.model.vTracks[w6.model.vTracks.length - 1][0];
+  assert(r6.ok && r6.inserted === 1, 'short-template long-word cue inserts');
+  assert(c6.end.seconds >= 4.0 - 0.05,
+    'a 1s template HOLDS through the 4s word (end ' + c6.end.seconds.toFixed(2) + 's, want >=4) — no mid-word blink-off');
 }
 
 // ═══════════ entrance animations: real Motion/Opacity keyframes ═══════════
