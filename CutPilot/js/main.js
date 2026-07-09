@@ -3449,6 +3449,42 @@
     if ($('c-subscale')) $('c-subscale').value = Math.round(((p.subScale != null ? p.subScale : 0.62)) * 100);
     if ($('c-wordsperline')) $('c-wordsperline').value = (p.wordsPerLine != null ? p.wordsPerLine : 3);
     if ($('c-twotier-wrap')) $('c-twotier-wrap').style.display = twoTier ? '' : 'none';
+    // ---- restore the rest of the saved look (was missing → these settings were
+    // lost on restore AND leaked from the previous template into the next one) ----
+    // gradient text fill + multi-colour highlight
+    if ($('c-grad')) $('c-grad').checked = !!p.fill2;
+    if ($('c-fill2')) $('c-fill2').value = toHex(p.fill2, '#9aa7ff');
+    if ($('c-grad-opts')) $('c-grad-opts').style.display = p.fill2 ? '' : 'none';
+    var hc = p.highlightColors;
+    if ($('c-multicolor')) $('c-multicolor').checked = !!(hc && hc.length >= 3);
+    if ($('c-multicolor-opts')) $('c-multicolor-opts').style.display = (hc && hc.length >= 3) ? '' : 'none';
+    if (hc && hc.length >= 3) {
+      if ($('c-hl2')) $('c-hl2').value = toHex(hc[1], '#ff6a00');
+      if ($('c-hl3')) $('c-hl3').value = toHex(hc[2], '#00e0ff');
+    }
+    // box gradient 2nd colour + padding
+    if ($('c-boxgrad')) $('c-boxgrad').checked = !!p.boxColor2;
+    if ($('c-box2')) $('c-box2').value = toHex(p.boxColor2, '#000000');
+    if ($('c-boxgrad-opts')) $('c-boxgrad-opts').style.display = p.boxColor2 ? '' : 'none';
+    if ($('c-box-pad')) $('c-box-pad').value = Math.round(((p.boxPad != null ? p.boxPad : 1)) * 100);
+    // directional shadow offset
+    if ($('c-shadow-dx')) $('c-shadow-dx').value = (p.shadowDX != null ? p.shadowDX : 0);
+    if ($('c-shadow-dy')) $('c-shadow-dy').value = (p.shadowDY != null ? p.shadowDY : 0);
+    // layout metrics
+    if ($('c-wordspace')) $('c-wordspace').value = (p.wordSpacing != null ? p.wordSpacing : 0);
+    if ($('c-maxwidth')) $('c-maxwidth').value = Math.round(((p.maxWidthPct != null ? p.maxWidthPct : 0.86)) * 100);
+    // smart text + case + censor + emphasis + per-word entrance
+    if ($('c-emphasize')) $('c-emphasize').checked = !!p.emphasizeWords;
+    if ($('c-strippunct')) $('c-strippunct').checked = !!p.stripPunctuation;
+    if ($('c-censor')) $('c-censor').checked = !!p.censor;
+    if ($('c-case')) $('c-case').value = p.textCase || 'original';
+    if ($('c-perword')) $('c-perword').checked = !!p.perWordEntrance;
+    if ($('c-perword-style') && p.perWordEntranceStyle) $('c-perword-style').value = p.perWordEntranceStyle;
+    if ($('c-numon')) $('c-numon').checked = !!p.numberColor;
+    if ($('c-num') && p.numberColor) $('c-num').value = toHex(p.numberColor, '#00e0ff');
+    if ($('c-brandon')) $('c-brandon').checked = !!p.brandColor;
+    if ($('c-brand') && p.brandColor) $('c-brand').value = toHex(p.brandColor, '#ff2ea6');
+    if ($('c-brand-words') && p.brandWords) $('c-brand-words').value = (p.brandWords || []).join(', ');
     $('c-speaker').checked = !!p.speaker;
     var aId = CPCaptions.animIdForConcept(p.anim);
     selectAnim(aId);
@@ -4036,9 +4072,25 @@
       posPct: parseInt($('c-pos').value, 10) || 50,    // EXACT position, not just the coarse bucket
       layout: o.yPct <= 0.3 ? 'top' : o.yPct >= 0.66 ? 'bottom' : 'center',
       keyword: $('c-kw').checked,
+      keywordMode: ($('c-kw-mode') ? $('c-kw-mode').value : 'smart'),
       speaker: $('c-speaker').checked,
       wordsPerCue: parseInt($('c-words').value, 10) || 0,
-      anim: state.animId
+      anim: state.animId,
+      // COMPLETE the saved look: every field readOverrides() feeds the pipeline
+      // must be saved, or "My Template" silently loses it on restore. These were
+      // read-but-never-saved (or saved-but-never-restored) — the "saved template
+      // doesn't come back exactly" bug. Kept in lock-step with readOverrides.
+      align: o.align, maxLines: o.maxLines, highlightStyle: o.highlightStyle,
+      upcomingOpacity: o.upcomingOpacity, lineGap: o.lineGap,
+      glossy: o.glossy, highlightFont: o.highlightFont, highlightGlow: o.highlightGlow,
+      subScale: o.subScale, wordsPerLine: o.wordsPerLine,
+      fill2: o.fill2, highlightColors: o.highlightColors,
+      shadowDX: o.shadowDX, shadowDY: o.shadowDY, wordSpacing: o.wordSpacing,
+      maxWidthPct: o.maxWidthPct, emphasizeWords: o.emphasizeWords,
+      stripPunctuation: o.stripPunctuation, perWordEntrance: o.perWordEntrance,
+      perWordEntranceStyle: o.perWordEntranceStyle, numberColor: o.numberColor,
+      brandColor: o.brandColor, brandWords: o.brandWords, textCase: o.textCase,
+      censor: o.censor
     };
   }
 
