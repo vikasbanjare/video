@@ -407,6 +407,20 @@ console.log('captions.js (template library)');
   assert(CPCaptions.animIdForConcept('zoom') === 'zoom', 'direct engine id passes through');
   assert(CPCaptions.animIdForConcept('bogus') === 'pop', 'unknown concept falls back to pop');
   assert(CPCaptions.getAnimation('zoom').id === 'zoom', 'zoom animation exists');
+
+  // FONT SAFETY: after the FONT_SAFE remap, every style's font MUST ship on
+  // macOS/Windows (or fall back to one) — an uncovered Google font renders as a
+  // wrong OS default = "this style looks wrong". Guards future font additions.
+  const SYS_FONTS = ['helvetica neue', 'helvetica', 'arial', 'arial black', 'arial narrow',
+    'avenir next', 'avenir', 'futura', 'impact', 'menlo', 'consolas', 'courier new', 'courier',
+    'didot', 'marker felt', 'snell roundhand', 'trebuchet ms', 'georgia', 'times new roman',
+    'times', 'verdana', 'tahoma', 'comic sans ms', 'bradley hand', 'palatino', 'gill sans',
+    'optima', 'baskerville', 'segoe ui', 'calibri', 'cambria', 'sans-serif', 'serif', 'monospace'];
+  const fontSafe = f => SYS_FONTS.indexOf(String(f || '').toLowerCase()) >= 0;
+  const unsafeStyles = CPCaptions.TEMPLATES.filter(t =>
+    !fontSafe(t.font) && !(t.fallbackFonts || []).some(fontSafe));
+  assert(unsafeStyles.length === 0,
+    'every style resolves to a system-safe font (' + unsafeStyles.map(t => t.id + ':' + t.font).join(', ') + ')');
 }
 
 // ------------------------------------------------- keyword highlight ----
