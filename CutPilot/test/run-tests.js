@@ -1213,6 +1213,10 @@ console.log('ass.js (libass karaoke generator)');
   assert(CPAss.assColor('#FFD400') === '&H00D4FF&', 'assColor converts RGB->BGR');
   assert(CPAss.assColor('#fff') === '&HFFFFFF&', 'assColor expands shorthand hex');
   assert(CPAss.assText('a {b} c\nd') === 'a (b) c\\Nd', 'assText neutralises braces + newlines');
+  // malformed hex must degrade to a VALID ASS colour, never emit a broken style
+  assert(/^&H[0-9A-F]{6}&$/.test(CPAss.assColor('#GGG')), 'assColor turns garbage hex into a valid (white) colour');
+  assert(/^&H[0-9A-F]{6}&$/.test(CPAss.assColor('#12')), 'assColor pads a too-short hex to a valid colour');
+  assert(/^&H[0-9A-F]{6}&$/.test(CPAss.assColor(null)), 'assColor tolerates null (defaults valid)');
 
   const cues = [
     { words: [
