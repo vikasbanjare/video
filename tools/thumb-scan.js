@@ -53,21 +53,34 @@ function findFfmpeg() {
   return (probe.status === 0) ? 'ffmpeg' : null;
 }
 
-// Pull a frame ~1/3 into the clip (the intro of a title reveal is often still
-// black) to a temp PNG. Returns the PNG path, or null if extraction failed.
-function extractFrame(ffmpeg, video) {
-  const out = path.join(os.tmpdir(), 'cpthumb_' + path.basename(video).replace(/[^\w.]/g, '_') + '.png');
-  try { fs.unlinkSync(out); } catch (e) {}
-  // probe duration so we can seek to duration/3 (cheap, best-effort)
-  let when = 1.0;
+function videoDuration(ffmpeg, video) {
   try {
     const d = spawnSync(ffmpeg, ['-i', video], { encoding: 'utf8' });
     const m = /Duration:\s*(\d+):(\d+):([\d.]+)/.exec((d.stderr || '') + (d.stdout || ''));
-    if (m) { const secs = (+m[1]) * 3600 + (+m[2]) * 60 + parseFloat(m[3]); if (secs > 0) when = Math.min(secs / 3, secs - 0.05); }
+    if (m) { const secs = (+m[1]) * 3600 + (+m[2]) * 60 + parseFloat(m[3]); if (secs > 0) return secs; }
   } catch (e) {}
-  const r = spawnSync(ffmpeg, ['-y', '-ss', String(when), '-i', video, '-frames:v', '1', '-q:v', '3', out], { stdio: 'ignore' });
-  if (r.status === 0 && fs.existsSync(out)) return out;
-  return null;
+  return 0;
+}
+
+// Extract SEVERAL frames spread across the clip to temp PNGs. `ffmpeg -ss` on a
+// non-keyframe is imprecise and can land on a slightly different (occasionally
+// darker) frame between runs — sampling one frame made the gate FLAKY on CI
+// (a borderline video dipped under the blank floor on some runs, passed on
+// others). Sampling multiple frames and taking the BRIGHTEST is stable AND
+// correct: a looping preview is "not blank" if ANY frame shows content.
+// Returns an array of PNG paths (may be shorter than requested on decode gaps).
+function extractFrames(ffmpeg, video) {
+  const dur = videoDuration(ffmpeg, video) || 2;
+  const fracs = [0.2, 0.4, 0.55, 0.7, 0.85];
+  const outs = [];
+  fracs.forEach((f, i) => {
+    const when = Math.min(dur * f, dur - 0.05);
+    const out = path.join(os.tmpdir(), 'cpthumb_' + path.basename(video).replace(/[^\w.]/g, '_') + '_' + i + '.png');
+    try { fs.unlinkSync(out); } catch (e) {}
+    const r = spawnSync(ffmpeg, ['-y', '-ss', String(when), '-i', video, '-frames:v', '1', '-q:v', '3', out], { stdio: 'ignore' });
+    if (r.status === 0 && fs.existsSync(out)) outs.push(out);
+  });
+  return outs;
 }
 
 function listMedia(dir, exts) {
@@ -94,10 +107,15 @@ async function main() {
 
   if (!stills.length && !videos.length) { console.log('thumb-scan: no previews found — SKIP'); process.exit(2); }
 
-  const browser = await puppeteer.launch({
+  const launchOpts = {
     executablePath: exe || puppeteer.executablePath(),
-    args: ['--no-sandbox', '--allow-file-access-from-files', '--disable-web-security', '--autoplay-policy=no-user-gesture-required']
-  });
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--allow-file-access-from-files', '--disable-web-security', '--autoplay-policy=no-user-gesture-required']
+  };
+  let browser = null;
+  for (let attempt = 1; attempt <= 3 && !browser; attempt++) {
+    try { browser = await puppeteer.launch(launchOpts); }
+    catch (e) { if (attempt === 3) throw e; await new Promise(r => setTimeout(r, 1500 * attempt)); }
+  }
   const page = await browser.newPage();
   await page.goto('file://' + THUMBS + '/');
 
@@ -130,16 +148,21 @@ async function main() {
   }
   for (const f of videos) {
     const rel = path.relative(ROOT, f);
-    // extract a mid-frame with ffmpeg (codec-capable), then measure it as a still
+    // extract SEVERAL frames with ffmpeg (codec-capable) and take the BRIGHTEST —
+    // one imprecise -ss seek could land on a dark frame and flake the gate.
     if (!ffmpeg) { console.log('  ? ' + rel + ' — no ffmpeg to decode video (skipped)'); continue; }
-    const frame = extractFrame(ffmpeg, f);
-    if (!frame) { console.log('  ✗ ' + rel + ' — ffmpeg could not extract a frame'); blanks.push(rel + ' (video frame extract failed)'); continue; }
-    tmpFrames.push(frame);
-    let r = -1;
-    try { r = await lumaRangeImage('file://' + frame); } catch (e) { r = -1; }
-    if (r < 0) { console.log('  ✗ ' + rel + ' — extracted frame would not decode'); blanks.push(rel + ' (video frame decode failed)'); }
-    else if (r < RANGE_FLOOR) { console.log('  ✗ ' + rel + ' — BLANK video (luma range ' + r.toFixed(0) + ')'); blanks.push(rel + ' (video range ' + r.toFixed(0) + ')'); }
-    else console.log('  ✓ ' + rel + ' (video luma range ' + r.toFixed(0) + ')');
+    const frames = extractFrames(ffmpeg, f);
+    if (!frames.length) { console.log('  ✗ ' + rel + ' — ffmpeg could not extract any frame'); blanks.push(rel + ' (video frame extract failed)'); continue; }
+    let best = -1;
+    for (const fr of frames) {
+      tmpFrames.push(fr);
+      let r = -1;
+      try { r = await lumaRangeImage('file://' + fr); } catch (e) { r = -1; }
+      if (r > best) best = r;
+    }
+    if (best < 0) { console.log('  ✗ ' + rel + ' — no extracted frame decoded'); blanks.push(rel + ' (video frame decode failed)'); }
+    else if (best < RANGE_FLOOR) { console.log('  ✗ ' + rel + ' — BLANK video (max luma range ' + best.toFixed(0) + ' over ' + frames.length + ' frames)'); blanks.push(rel + ' (video range ' + best.toFixed(0) + ')'); }
+    else console.log('  ✓ ' + rel + ' (video luma range ' + best.toFixed(0) + ' / ' + frames.length + ' frames)');
   }
 
   await browser.close();

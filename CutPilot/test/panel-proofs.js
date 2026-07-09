@@ -62,8 +62,13 @@ function fluxProps() {
 (async () => {
   console.log('panel proofs (headless, real panel)');
   const pptr = requirePuppeteer();
-  const browser = await pptr.launch({ headless: 'new', executablePath: resolveBrowser(pptr),
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--allow-file-access-from-files'] });
+  const _lopts = { headless: 'new', executablePath: resolveBrowser(pptr),
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--allow-file-access-from-files'] };
+  let browser = null;
+  for (let _a = 1; _a <= 3 && !browser; _a++) {
+    try { browser = await pptr.launch(_lopts); }
+    catch (e) { if (_a === 3) throw e; await new Promise(r => setTimeout(r, 1500 * _a)); }
+  }
   const page = await browser.newPage();
   await page.setViewport({ width: 420, height: 900 });
   page.on('pageerror', e => bad('page error: ' + e.message));

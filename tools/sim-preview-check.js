@@ -72,8 +72,13 @@ function groundTruth() {
   let chromium = process.env.CP_CHROMIUM;
   if (!chromium) for (const c of ['/opt/pw-browsers/chromium', '/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome']) if (fs.existsSync(c)) { chromium = c; break; }
   if (!chromium) { try { chromium = puppeteer.executablePath(); } catch (e) {} }
-  const browser = await puppeteer.launch({ headless: 'new', executablePath: chromium,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--allow-file-access-from-files'] });
+  const _lopts = { headless: 'new', executablePath: chromium,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--allow-file-access-from-files'] };
+  let browser = null;
+  for (let _a = 1; _a <= 3 && !browser; _a++) {
+    try { browser = await puppeteer.launch(_lopts); }
+    catch (e) { if (_a === 3) throw e; await new Promise(r => setTimeout(r, 1500 * _a)); }
+  }
   const page = await browser.newPage();
   await page.setViewport({ width: 420, height: 900, deviceScaleFactor: 2 });
   page.on('pageerror', e => fail('page error: ' + e.message));
