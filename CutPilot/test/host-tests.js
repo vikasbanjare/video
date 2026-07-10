@@ -792,6 +792,30 @@ console.log('host.jsx — entrance keyframes (pop/slide/fade at NATURAL pace)');
   });
   const c3 = w3.model.vTracks[w3.model.vTracks.length - 1][0];
   assert(!c3._keys || Object.keys(c3._keys).length === 0, 'None → zero keyframes touched');
+
+  // fade = OPACITY only (no Scale/Position move) — a caption that only fades in
+  const w4 = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true });
+  const h4 = loadHost(w4);
+  call(h4, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt', cues: [{ start: 0.5, end: 2.0, text: 'fade in' }],
+    videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false, anim: 'fade', animSpeed: 1
+  });
+  const c4 = w4.model.vTracks[w4.model.vTracks.length - 1][0];
+  assert(!!c4._keys.Opacity && c4._keys.Opacity.keys.length === 2, 'fade sets 2 Opacity keyframes');
+  assert(!c4._keys.Scale && !c4._keys.Position, 'fade moves nothing else (opacity-only entrance)');
+  assert(c4._keys.Opacity.keys[0].v === 0 && c4._keys.Opacity.keys[1].v === 100, 'fade ramps opacity 0 → 100');
+
+  // zoom = SCALE (down from oversized) + OPACITY, settling at 100%
+  const w5 = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true });
+  const h5 = loadHost(w5);
+  call(h5, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt', cues: [{ start: 0.5, end: 2.0, text: 'zoom in' }],
+    videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false, anim: 'zoom', animSpeed: 1
+  });
+  const c5 = w5.model.vTracks[w5.model.vTracks.length - 1][0];
+  assert(!!c5._keys.Scale && c5._keys.Scale.keys.length === 2 && c5._keys.Scale.keys[1].v === 100,
+    'zoom sets 2 Scale keyframes settling at 100%');
+  assert(!!c5._keys.Opacity && c5._keys.Opacity.keys.length === 2, 'zoom also fades opacity in');
 }
 
 // ═══ the "last caption runs way too long" bug: trim must survive a refused
