@@ -421,6 +421,22 @@ console.log('captions.js (template library)');
     !fontSafe(t.font) && !(t.fallbackFonts || []).some(fontSafe));
   assert(unsafeStyles.length === 0,
     'every style resolves to a system-safe font (' + unsafeStyles.map(t => t.id + ':' + t.font).join(', ') + ')');
+
+  // PREVIEW-KEY UNIQUENESS: the panel matches a user's dropped render file to a
+  // style by normalising id/name (lowercase, strip non-alphanumerics). If two
+  // DIFFERENT styles normalise to the same key, one shows the other's render.
+  const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const keyOwner = {}; const keyClashes = [];
+  CPCaptions.TEMPLATES.forEach(t => {
+    [t.id, t.name].forEach(v => {
+      const k = norm(v);
+      if (!k) return;
+      if (keyOwner[k] && keyOwner[k] !== t.id) keyClashes.push(k + ': ' + keyOwner[k] + ' vs ' + t.id);
+      else keyOwner[k] = t.id;
+    });
+  });
+  assert(keyClashes.length === 0,
+    'no two styles share a normalised preview key (' + keyClashes.join('; ') + ')');
 }
 
 // ------------------------------------------------- keyword highlight ----
