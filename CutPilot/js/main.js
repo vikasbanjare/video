@@ -1708,7 +1708,10 @@
         else if (act === 'magic' && $('btn-magic')) $('btn-magic').click();
       }, 60);
     } else if (cls === 'warn' && state.pendingCaptionAction) {
+      // the queued one-click caption action can't run — say so instead of
+      // silently dropping it ("I clicked a style and nothing ever appeared")
       state.pendingCaptionAction = null;
+      toast('⚠️ Couldn\'t get your words, so no captions were added — fix the transcription (see the message above), then click your style again.', true);
     }
   }
 
@@ -1924,7 +1927,12 @@
 
   function readSelectedTranscript() {
     if (!state.transcript) throw new Error('No transcript yet — tap "Get one →" for the 1-minute steps.');
-    var text = nodeReq('fs').readFileSync(state.transcript.path, 'utf8');
+    var text;
+    try { text = nodeReq('fs').readFileSync(state.transcript.path, 'utf8'); }
+    catch (eRd) {
+      // a temp/moved/deleted transcript file used to surface as a cryptic ENOENT
+      throw new Error('Your transcript file is missing (it may have been a temporary file that was cleaned up). Tap 🎙️ Auto-transcribe again — it only takes a minute.');
+    }
     var cues = CPCaptions.parseSRT(text);
     if (!cues.length) throw new Error('No captions found inside ' + state.transcript.label);
     if (censorEnabled()) cues = cues.map(function (c) { c.text = maskProfanity(c.text); return c; });
@@ -4697,15 +4705,18 @@
       localStorage.setItem('cutpilot.lastcap', JSON.stringify({
         cues: state.lastCaptionJob.cues, track: state.lastCaptionJob.track,
         mode: state.lastCaptionJob.mode || null,   // 'editable' vs a legacy PNG job
-        seq: (state.env && state.env.sequenceName) || ''
+        seq: state.lastCaptionJob.seq || (state.env && state.env.sequenceName) || ''
       }));
     } catch (e) {}
   }
   function restoreLastCaptionJob() {
     try {
       var j = JSON.parse(localStorage.getItem('cutpilot.lastcap') || 'null');
-      if (j && j.cues && j.cues.length && (!j.seq || !state.env || j.seq === state.env.sequenceName)) {
-        state.lastCaptionJob = { cues: j.cues, track: j.track, mode: j.mode || null };
+      // STRICT sequence match — a legacy entry with no seq, or a different
+      // sequence's entry, is NOT restored: its track index could point at real
+      // footage here (the host's clip-signature check is the second seatbelt).
+      if (j && j.cues && j.cues.length && j.seq && state.env && j.seq === state.env.sequenceName) {
+        state.lastCaptionJob = { cues: j.cues, track: j.track, mode: j.mode || null, seq: j.seq };
         reflectCaptionsPlaced();
       }
     } catch (e) {}
@@ -6186,6 +6197,22 @@
     }).catch(function () { return true; });  // if save errors, proceed anyway
   }
 
+  /* Basenames of every caption template we could have placed — the host uses
+     these as the SIGNATURE when asked to clear-and-replace a remembered track:
+     it refuses to touch a track holding clips with any other name, so a stale
+     track index can never wipe real footage. */
+  function captionGraphicNames(extraPath) {
+    var out = [], seen = {};
+    function add(p) {
+      var b = String(p || '').split(/[\\/]/).pop().replace(/\.[^.]+$/, '').toLowerCase();
+      if (b && !seen[b]) { seen[b] = 1; out.push(b); }
+    }
+    (state.bundledMogrts || []).forEach(function (m) { add(m.path); });
+    (state.folderMogrts || []).forEach(function (m) { add(m.path); });
+    add(extraPath);
+    return out;
+  }
+
   /* Caption the whole transcript with a specific .mogrt (used by the gallery
      sheet and the advanced section). Honors the MOGRT word-count control. */
   function applyMogrtWithPath(mogrtPath, btn, _envRefreshed) {
@@ -6205,12 +6232,15 @@
     // (portrait vs landscape) and keeps whole sentences together, wrapping to ~2
     // lines rather than splitting a sentence across two graphics.
     var tcues = textCues(cues, words, state.mogrtCase || 'as-spoken');   // Editor text-case control
+    if (!tcues.length) return toast('No caption lines to add — your transcript has no usable words. Transcribe again (or check the transcript).', true);
     if (tcues.length > 120 &&
-        !confirm(tcues.length + ' template graphics will be inserted — one per caption. MOGRTs insert slowly, so this can take a long time and Premiere may sit near the end of its import bar. Tip: raise "Words per graphic" (fewer, longer captions), or use the Animated style instead.\n\nContinue anyway?')) return;
+        !confirm(tcues.length + ' template graphics will be inserted — one per caption. MOGRTs insert slowly, so this can take a long time and Premiere may sit near the end of its import bar. Tip: raise "Words per graphic" (fewer, longer captions), or use the Animated style instead.\n\nContinue anyway?')) return toast('Cancelled — no captions were added.');
     if (btn) btn.disabled = true;
     capProgress('Saving project…');
     ensureProjectSaved().then(function (ok) {
-      if (!ok) { if (btn) btn.disabled = false; capProgress(null); return null; }
+      // PERSISTENT banner (not just a transient toast) — an unsaved project was
+      // the classic "I clicked and nothing appeared, no idea why" case.
+      if (!ok) { if (btn) btn.disabled = false; capProgress('⚠️ Save your Premiere project first (⌘S / Ctrl+S), then click again.'); return null; }
       capProgress('Adding ' + tcues.length + ' template graphics…', tcues.length * 230);
       var params = (state.mogrtParamsPath === mogrtPath) ? state.mogrtParams : [];
       var textStyle = (state.mogrtParamsPath === mogrtPath) ? state.mogrtTextStyle : null;
@@ -6219,11 +6249,16 @@
       // Reuse the SAME track as the last editable job (any editable job — canvas
       // style or MOGRT card) so re-running with a different template/colour
       // REPLACES the previous set instead of stacking a second one on top.
+      // SEQUENCE-SCOPED: a track index remembered on another sequence is never
+      // reused here (it could point at real footage there); the host also
+      // verifies the track really holds our caption clips before clearing.
       var prevJobM = state.lastCaptionJob;
-      var reuseTrackM = (prevJobM && prevJobM.mode === 'editable' && prevJobM.track) ? prevJobM.track : null;
+      var sameSeqM = !!(prevJobM && prevJobM.seq && state.env && prevJobM.seq === state.env.sequenceName);
+      var reuseTrackM = (prevJobM && prevJobM.mode === 'editable' && prevJobM.track && sameSeqM) ? prevJobM.track : null;
       return CPBridge.callHost('CP_insertMogrtCaptions', {
         mogrtPath: mogrtPath, cues: tcues, videoTrack: null, audioTrack: 0,
-        params: params, textStyle: textStyle, stretch: stretch, maxSpeed: maxSpeed, replaceTrack: reuseTrackM
+        params: params, textStyle: textStyle, stretch: stretch, maxSpeed: maxSpeed, replaceTrack: reuseTrackM,
+        captionNames: captionGraphicNames(mogrtPath)
       });
     }).then(function (r) {
       if (r == null) return;
@@ -6233,7 +6268,8 @@
         var why = (r.sampleErrors && r.sampleErrors.length) ? ' (' + r.sampleErrors[0] + ')' : '';
         return toast('Couldn\'t add this template' + why + '. Try another, or use an Animated style.', true);
       }
-      state.lastCaptionJob = { cues: tcues, track: r.track, mode: 'editable' };
+      state.lastCaptionJob = { cues: tcues, track: r.track, mode: 'editable',
+                              seq: (state.env && state.env.sequenceName) || '' };
       saveLastCaptionJob();
       reflectCaptionsPlaced();
       if (r.textSet === 0) {
@@ -6777,25 +6813,31 @@
                       bold: (preset.weight || 800) >= 600, fill: preset.fill,
                       sizeScale: (Math.abs(sizeScale - 1) > 0.02 ? sizeScale : 1) };
     preset.sizeScale = sizeScale;   // the mapper scales the backbone's text-scale control by this
-    // orientation decides how the Position slider maps into the engine's comp
-    preset.seqLandscape = !!(state.env && state.env.width > state.env.height);
     // Entrance = real Motion keyframes on each caption clip (None default)
     var entrance = state.captionEntrance || 'none';
     if (tcues.length > 120 &&
         !confirm(tcues.length + ' editable caption clips will be inserted — one per line. ' +
-                 'MOGRTs insert slowly, so this can take a while. Tip: raise "Words per caption" for fewer, longer lines.\n\nContinue?')) return;
+                 'MOGRTs insert slowly, so this can take a while. Tip: raise "Words per caption" for fewer, longer lines.\n\nContinue?')) return toast('Cancelled — no captions were added.');
 
-    // Regenerating (a colour tweak, a different template, running it again)
-    // reuses the SAME track as last time so it REPLACES the old captions instead
-    // of stacking a second set on top — only when the previous job was itself an
-    // editable one (a PNG job's track has a different clip-naming scheme).
-    var prevJob = state.lastCaptionJob;
-    var reuseTrack = (prevJob && prevJob.mode === 'editable' && prevJob.track) ? prevJob.track : null;
-
+    // Regenerating reuses the SAME track as last time so it REPLACES the old
+    // captions instead of stacking a second set — SEQUENCE-SCOPED: the env is
+    // refreshed first so a track index remembered on another sequence/project
+    // is never applied here (the host additionally verifies the track really
+    // holds our caption clips before clearing anything).
+    var reuseTrack = null;
     var sentParams = null;   // kept for the style trace (includes ._bind slot→control names)
     capProgress('Saving project…');
-    ensureProjectSaved().then(function (ok) {
-      if (!ok) { capProgress(null); return null; }
+    CPBridge.callHost('CP_getEnv').catch(function () { return null; }).then(function (env) {
+      if (env && env.sequenceName != null) state.env = env;
+      // orientation decides how the Position slider maps into the engine's comp
+      preset.seqLandscape = !!(state.env && state.env.width > state.env.height);
+      var prevJob = state.lastCaptionJob;
+      var sameSeq = !!(prevJob && prevJob.seq && state.env && prevJob.seq === state.env.sequenceName);
+      reuseTrack = (prevJob && prevJob.mode === 'editable' && prevJob.track && sameSeq) ? prevJob.track : null;
+      return ensureProjectSaved();
+    }).then(function (ok) {
+      // PERSISTENT banner (a transient toast was easy to miss = "nothing appeared")
+      if (!ok) { capProgress('⚠️ Save your Premiere project first (⌘S / Ctrl+S), then click your style again.'); return null; }
       capProgress('Reading the editable template…');
       return CPBridge.callHost('CP_inspectMogrt', { path: bb.path }).then(function (r) {
         var liveProps = (r && r.props) || [];
@@ -6809,6 +6851,7 @@
         return CPBridge.callHost('CP_insertMogrtCaptions', {
           mogrtPath: bb.path, cues: tcues, videoTrack: null, audioTrack: 0,
           params: params, textStyle: textStyle, stretch: false, replaceTrack: reuseTrack,
+          captionNames: captionGraphicNames(bb.path),
           // animSpeed is a MULTIPLIER (1 = natural pace). 100 compressed every
           // entrance into ~1ms — Pop/Slide/Fade were invisible on the timeline.
           anim: (entrance !== 'none' ? entrance : null), animSpeed: 1
@@ -6825,6 +6868,7 @@
           probeKind: r.probeKind, textSet: r.textSet, inserted: r.inserted,
           bind: (sentParams && sentParams._bind) || null,   // WHICH control took fill/highlight — catches wrong-binding instantly
           richBlocked: !!r.richBlocked, swept: r.swept,
+          replaceMode: r.replaceMode, guard: r.replaceGuard,   // how the target track was chosen
           paramsSent: (r.paramsSent != null ? r.paramsSent : undefined),
           paramsApplied: (r.paramsApplied != null ? r.paramsApplied : undefined),
           fontSent: (textStyle && textStyle.font) || undefined,   // per-style face on the rich path
@@ -6839,7 +6883,8 @@
       // track this job (own "mode" so the old PNG-only restyle UI never shows for
       // it — editable captions are re-edited natively in Essential Graphics) and
       // remember the track so the NEXT regenerate replaces it instead of stacking.
-      state.lastCaptionJob = { cues: tcues, track: r.track, mode: 'editable' };
+      state.lastCaptionJob = { cues: tcues, track: r.track, mode: 'editable',
+                              seq: (state.env && state.env.sequenceName) || '' };
       saveLastCaptionJob();
       reflectCaptionsPlaced();
       if (r.textSet === 0) {

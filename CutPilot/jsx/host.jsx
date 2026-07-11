@@ -1605,11 +1605,12 @@ function CP_stretchLastClip(vTrack, speedPct) {
  * unless this verified the template accepts the edit cleanly.
  * Returns: { kind:'rich'|'simple'|'strdb'|'plain'|'none', richSafe:bool, textCount:int }. */
 function CP_probeRichText(mogrtPath, vTrack, aTrack, KEYS, sampleText, style) {
-  var res = { kind: 'none', richSafe: false, textCount: 0 };
+  var res = { kind: 'none', richSafe: false, textCount: 0, imported: false };
   var clip = null;
   try {
     clip = seqGlobalImport(mogrtPath, vTrack, aTrack);
     if (!clip) return res;
+    res.imported = true;   // the template CAN be placed — safe to clear a replaced set
     var comp = clip.getMGTComponent();
     if (!comp || !comp.properties) { CP_removeLastClipOnTrack(vTrack); return res; }
     res.textCount = CP_textPropsOf(comp).length;     // how many text lines this template holds
@@ -1913,6 +1914,88 @@ function CP_copyStyleSelectedToTrack() {
  * caption's real on-screen length, so the highlight advances word-by-word at the
  * talking pace. No-op on templates without these controls. Returns a small
  * diagnostic object (or null) so the panel can report what it set. */
+/* ---- caption-track safety helpers (the "nothing appears" bug class) --------
+   A remembered "replace this track" index can go stale: the user layers b-roll
+   above it (captions render hidden behind footage), switches sequence/project
+   (the index now points at REAL footage), locks/mutes the track, or the
+   regenerate's template fails to import after the old set was already wiped.
+   These helpers make every one of those safe. */
+
+/* Normalise a clip/template name for the caption-track signature: drop any
+   file extension, lowercase, strip non-alphanumerics. */
+function CP_sigNorm(s) {
+  s = String(s == null ? '' : s).toLowerCase().replace(/\.[a-z0-9]{2,5}$/, '');
+  return s.replace(/[^a-z0-9]/g, '');
+}
+
+/* TRUE only when every clip on the track is one of OUR caption graphics (its
+   name starts with a known template basename). An empty track passes (clearing
+   it is a no-op). Any failure to inspect returns FALSE — we never clear what
+   we cannot verify. */
+function CP_trackIsPulseCaptions(ti, names) {
+  try {
+    app.enableQE();
+    var qt = qe.project.getActiveSequence().getVideoTrackAt(ti);
+    for (var k = 0; k < qt.numItems; k++) {
+      var it = qt.getItemAt(k);
+      if (!it || it.type === 'Empty') continue;
+      var nm = CP_sigNorm(it.name);
+      var ok1 = false;
+      for (var n = 0; n < names.length; n++) {
+        if (nm && names[n] && nm.indexOf(names[n]) === 0) { ok1 = true; break; }
+      }
+      if (!ok1) return false;
+    }
+    return true;
+  } catch (e) { return false; }
+}
+
+function CP_clearTrackClips(ti) {
+  try {
+    app.enableQE();
+    var qt = qe.project.getActiveSequence().getVideoTrackAt(ti);
+    for (var rp = qt.numItems - 1; rp >= 0; rp--) {
+      var it = qt.getItemAt(rp);
+      if (it && it.type !== 'Empty') { try { it.remove(0, 0); } catch (e1) {} }
+    }
+  } catch (e) {}
+}
+
+/* Add a video track ABOVE everything; return its 0-based index, or -1 when
+   Premiere refused (QE unavailable) — the caller must NOT fall back to writing
+   on the existing top track, that overwrites the user's footage. */
+function CP_addTopVideoTrack() {
+  var seqA = CP_activeSequence();
+  var before = seqA.videoTracks.numTracks;
+  try { app.enableQE(); qe.project.getActiveSequence().addTracks(1, before, 0); } catch (e1) {}
+  seqA = CP_activeSequence();
+  if (seqA.videoTracks.numTracks > before) return seqA.videoTracks.numTracks - 1;
+  try { app.enableQE(); qe.project.getActiveSequence().addTracks(1); } catch (e2) {}
+  seqA = CP_activeSequence();
+  if (seqA.videoTracks.numTracks > before) return seqA.videoTracks.numTracks - 1;
+  return -1;
+}
+
+/* Best-effort: a muted or locked target track shows nothing / refuses clips.
+   Both calls are harmless no-ops where the API surface is missing. */
+function CP_bestEffortShowTrack(seq, ti) {
+  try { var t = seq.videoTracks[ti]; if (t && t.setMute) t.setMute(0); } catch (e1) {}
+  try { var qt = qe.project.getActiveSequence().getVideoTrackAt(ti); if (qt && qt.setLock) qt.setLock(false); } catch (e2) {}
+}
+
+/* The full zero-insert result shape with ONE loud reason — every field the
+   panel reads, so an early abort is never mistaken for success. */
+function CP_zeroInsertResult(args, msg) {
+  return {
+    inserted: 0, reused: 0, textSet: 0, clamped: 0, stretched: 0, maxTemplateDur: 0,
+    swept: 0, sweepSample: null, graphics: 0, linesPerGraphic: 1, textCount: 0,
+    failed: (args && args.cues) ? args.cues.length : 0, richBlocked: false,
+    probeKind: 'none', fields: [], sampleErrors: [msg], allowRich: false,
+    paramsSent: (args && args.params) ? args.params.length : 0, paramsApplied: 0,
+    fgFontSet: 0, track: 0, replaceMode: 'aborted', replaceGuard: null, templateImports: false
+  };
+}
+
 function CP_setWordSweep(comp, durSec) {
   if (!comp || !comp.properties || !(durSec > 0)) return null;
   // RELAXED name matching. The old code demanded the byte-exact prefix
@@ -1972,32 +2055,42 @@ function CP_insertMogrtCaptions(argsJson) {
     var isPortrait = (seqH > seqW);
     var portraitScale = isPortrait ? Math.round((seqW / 1920) * 10000) / 100 : 100;
     // Place MOGRT captions on a FRESH top video track (like the image engine)
-    // so they never overwrite existing footage and are easy to find and trim —
-    // UNLESS replaceTrack asks us to reuse a track Pulse placed captions on
-    // before (regenerating after a colour/style change), in which case we clear
-    // that track's own clips first so re-running "Add captions" replaces the
-    // old set instead of stacking a second one on top of it.
-    var vTrack;
+    // so they never overwrite existing footage — UNLESS replaceTrack asks us to
+    // reuse a track Pulse captioned before (regenerating after a style change).
+    // The reuse path is guarded four ways (the "nothing appears" bug class):
+    //  · SIGNATURE — we only touch a track whose every clip is one of OUR
+    //    caption graphics; a stale index that now points at real footage
+    //    (sequence/project switch) is treated as foreign and left alone;
+    //  · VISIBILITY — a verified caption track that is no longer TOP (b-roll
+    //    layered above) is cleared but the NEW set goes on a fresh top track,
+    //    so captions can never sit hidden behind footage while we report ✅;
+    //  · KEEP-ON-FAIL — the old set is cleared only AFTER the import probe
+    //    proves this template actually imports;
+    //  · LOUD ABORT — if Premiere refuses to add a fresh track we stop with a
+    //    clear reason instead of silently overwriting the current top track.
+    var sigNames = [];
+    try { sigNames.push(CP_sigNorm(String(args.mogrtPath || '').split(/[\\\/]/).pop())); } catch (eSg) {}
+    if (args.captionNames && args.captionNames.length) {
+      for (var cnI = 0; cnI < args.captionNames.length; cnI++) sigNames.push(CP_sigNorm(args.captionNames[cnI]));
+    }
+    var vTrack = -1, reuseIdx = null, replaceMode = 'fresh', replaceGuard = null;
     if (args.replaceTrack != null && args.replaceTrack >= 1 && args.replaceTrack <= seq.videoTracks.numTracks) {
-      vTrack = args.replaceTrack - 1;
-      try {
-        app.enableQE();
-        var qseqRep = qe.project.getActiveSequence();
-        var qtRep = qseqRep.getVideoTrackAt(vTrack);
-        for (var rp = qtRep.numItems - 1; rp >= 0; rp--) {
-          var itRep = qtRep.getItemAt(rp);
-          if (itRep && itRep.type !== 'Empty') { try { itRep.remove(0, 0); } catch (eRemRep) {} }
-        }
-      } catch (eClrRep) {}
+      reuseIdx = args.replaceTrack - 1;
+      if (!CP_trackIsPulseCaptions(reuseIdx, sigNames)) { replaceGuard = 'foreign'; reuseIdx = null; }
+    } else if (args.replaceTrack != null) {
+      replaceGuard = 'out-of-range';
+    }
+    if (reuseIdx != null) {
+      vTrack = reuseIdx;                 // provisional — cleared only after the probe verifies import
     } else if (args.videoTrack != null) {
-      vTrack = args.videoTrack;
+      vTrack = args.videoTrack; replaceMode = 'explicit';
     } else {
-      vTrack = seq.videoTracks.numTracks - 1;
-      try {
-        app.enableQE();
-        qe.project.getActiveSequence().addTracks(1, seq.videoTracks.numTracks, 0);
-        vTrack = seq.videoTracks.numTracks - 1;
-      } catch (eTrack) {}
+      vTrack = CP_addTopVideoTrack();
+      if (vTrack < 0) {
+        return CP_ok(CP_zeroInsertResult(args,
+          'Could not add a caption video track (Premiere scripting was unavailable). Nothing on your timeline was changed — add one empty video track above your footage, then try again.'));
+      }
+      seq = CP_activeSequence();
     }
     var aTrack = args.audioTrack != null ? args.audioTrack : 0;
     var inserted = 0, textSet = 0, clamped = 0, maxTemplateDur = 0, swept = 0, sweepSample = null;
@@ -2018,6 +2111,24 @@ function CP_insertMogrtCaptions(argsJson) {
                                  args.textStyle);
     var allowRich = (probe.kind === 'rich') ? probe.richSafe : false;
     var richBlocked = (probe.kind === 'rich' && !probe.richSafe);
+
+    // Finalize the replace flow now the probe told us the template imports:
+    // only NOW is it safe to clear the previous set; and if the verified
+    // caption track is no longer the TOP track, the new set moves to a fresh
+    // top track so it can never hide behind footage layered above.
+    if (reuseIdx != null) {
+      if (!probe.imported) {
+        return CP_ok(CP_zeroInsertResult(args,
+          'This template failed to import, so your previous captions were left untouched. Try another template.'));
+      }
+      CP_clearTrackClips(reuseIdx);
+      if (reuseIdx < seq.videoTracks.numTracks - 1) {
+        var ntTop = CP_addTopVideoTrack();
+        if (ntTop >= 0) { vTrack = ntTop; seq = CP_activeSequence(); replaceMode = 'fresh-after-clear'; }
+        else { vTrack = reuseIdx; replaceMode = 'reused'; }   // couldn't add — reuse in place (never worse than before)
+      } else { replaceMode = 'reused'; }
+    }
+    CP_bestEffortShowTrack(seq, vTrack);   // un-mute/un-lock the target so placed captions are visible
 
     var trackObj = seq.videoTracks[vTrack];
     var sharedItem = null, reused = 0, stretched = 0;
@@ -2261,7 +2372,10 @@ function CP_insertMogrtCaptions(argsJson) {
       paramsSent: (args.params || []).length,
       paramsApplied: paramsApplied,       // across both passes (pre-text + final re-apply)
       fgFontSet: fgFontSet,               // gradient "(Change font only)" mirrors re-faced
-      track: vTrack + 1                   // 1-based, so a later call can replaceTrack this same set
+      track: vTrack + 1,                  // 1-based, so a later call can replaceTrack this same set
+      replaceMode: replaceMode,           // 'fresh' | 'reused' | 'fresh-after-clear' | 'explicit'
+      replaceGuard: replaceGuard,         // null | 'foreign' | 'out-of-range' — why a reuse was refused
+      templateImports: probe.imported     // the safety probe could place this template
     });
   } catch (e) { return CP_fail(e.message); }
 }

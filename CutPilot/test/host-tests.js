@@ -130,6 +130,7 @@ function makeWorld(opts) {
     get audioTracks() { return domTracks(model.aTracks); },
     clone() { model.cloned++; },
     importMGT(mogrtPath, ticks, vTrack, aTrack) {
+      if (opts.importMGTFails) return null;           // simulate a template Premiere can't place
       const start = Number(ticks) / TICKS;
       const clip = model.addClip('vTracks', vTrack, start, start + model.mogrtNaturalDur, {
         name: path.basename(String(mogrtPath)),
@@ -318,7 +319,7 @@ function makeWorld(opts) {
             get numAudioTracks() { return model.aTracks.length; },
             getVideoTrackAt(i) { return qeTrack(model.vTracks[i]); },
             getAudioTrackAt(i) { return qeTrack(model.aTracks[i]); },
-            addTracks(nV) { for (let i = 0; i < (nV || 1); i++) model.vTracks.push([]); }
+            addTracks(nV) { if (opts.qeAddTracksFails) return; for (let i = 0; i < (nV || 1); i++) model.vTracks.push([]); }
           };
         }
       }
@@ -444,14 +445,86 @@ const CUES3 = [
   const tracksAfter1 = w.model.vTracks.length;
   const r2 = call(host, 'CP_insertMogrtCaptions', {
     mogrtPath: '/tmp/Subtitle_2.mogrt', cues: CUES3.slice(0, 2), videoTrack: null, audioTrack: 0,
-    params: [], textStyle: null, stretch: false, replaceTrack: r1.track
+    params: [], textStyle: null, stretch: false, replaceTrack: r1.track,
+    captionNames: ['subtitle_1', 'subtitle_2']
   });
   assert(r2.ok && w.model.vTracks.length === tracksAfter1,
     'regenerate with replaceTrack does NOT add another track');
+  assert(r2.replaceMode === 'reused', 'a verified top caption track is reused in place');
   const caps = w.model.vTracks[r1.track - 1];
   assert(caps.length === 2, 'old caption set cleared — track holds exactly the new set');
   assert(caps.every(c => /Subtitle_2/.test(c.name)), 'the clips on the track are the NEW template');
   assert(r2.track === r1.track, 'the same track number is reported back again');
+}
+
+// ═══ replace-track SAFETY (the "nothing appears" bug class) ═══
+console.log('host.jsx — replace-track safety (stale/foreign/covered/failed cases)');
+{
+  // 1) a STALE replaceTrack pointing at real FOOTAGE must never clear it —
+  //    captions go to a fresh TOP track instead (sequence/project-switch case)
+  const w = makeWorld({ vTracks: 2, aTracks: 1, fluxComponent: true });
+  w.model.addClip('vTracks', 1, 0, 60, { name: 'MyFootage.mp4' });
+  const host = loadHost(w);
+  const r = call(host, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt', cues: [{ start: 1, end: 2, text: 'hi' }],
+    videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false,
+    replaceTrack: 2, captionNames: ['flux_halo2']
+  });
+  assert(r.ok && r.inserted === 1, 'stale replaceTrack over footage still inserts captions');
+  assert(w.model.vTracks[1].some(c => c.name === 'MyFootage.mp4'),
+    'the FOOTAGE track is untouched — a stale index can never wipe real clips');
+  assert(w.model.vTracks.length === 3 && w.model.vTracks[2].length === 1 && r.track === 3,
+    'captions landed on a fresh TOP track instead');
+  assert(r.replaceGuard === 'foreign', 'the guard reports WHY the reuse was refused');
+}
+{
+  // 2) a verified caption track that is NO LONGER TOP (b-roll layered above):
+  //    old set cleared, NEW set on a fresh top track — never hidden behind footage
+  const w = makeWorld({ vTracks: 3, aTracks: 1, fluxComponent: true });
+  w.model.addClip('vTracks', 0, 0, 60, { name: 'A-roll.mp4' });
+  w.model.addClip('vTracks', 1, 0, 3, { name: 'Flux_Halo2.mogrt' });   // old captions on V2
+  w.model.addClip('vTracks', 2, 0, 60, { name: 'B-roll.mp4' });        // footage ABOVE them
+  const host = loadHost(w);
+  const r = call(host, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt', cues: [{ start: 1, end: 2, text: 'seen' }],
+    videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false,
+    replaceTrack: 2, captionNames: ['flux_halo2']
+  });
+  assert(r.ok && r.inserted === 1 && r.replaceMode === 'fresh-after-clear',
+    'covered caption track → cleared, new set moved to a fresh top track');
+  assert(w.model.vTracks[1].length === 0, 'the OLD caption set was cleared');
+  assert(w.model.vTracks.length === 4 && w.model.vTracks[3].length === 1,
+    'the NEW captions sit ABOVE the b-roll (never hidden while reporting success)');
+}
+{
+  // 3) a regenerate whose template can't import keeps the OLD set (no more
+  //    "cleared first, then every import failed → timeline left empty")
+  const w = makeWorld({ vTracks: 2, aTracks: 1, fluxComponent: true, importMGTFails: true });
+  w.model.addClip('vTracks', 1, 0, 3, { name: 'Flux_Halo2.mogrt' });
+  const host = loadHost(w);
+  const r = call(host, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt', cues: [{ start: 1, end: 2, text: 'x' }],
+    videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false,
+    replaceTrack: 2, captionNames: ['flux_halo2']
+  });
+  assert(r.ok && r.inserted === 0, 'failed-import regenerate inserts nothing');
+  assert(w.model.vTracks[1].length === 1, 'the PREVIOUS captions were left untouched');
+  assert(/untouched/i.test((r.sampleErrors || [])[0] || ''), 'the reason says the old set was kept');
+}
+{
+  // 4) fresh-track add REFUSED (QE dead): abort loudly, never overwrite the
+  //    existing top track's footage
+  const w = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true, qeAddTracksFails: true });
+  w.model.addClip('vTracks', 0, 0, 60, { name: 'MyFootage.mp4' });
+  const host = loadHost(w);
+  const r = call(host, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt', cues: [{ start: 1, end: 2, text: 'x' }],
+    videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false
+  });
+  assert(r.ok && r.inserted === 0, 'no fresh track available → aborts instead of overwriting footage');
+  assert(w.model.vTracks.length === 1 && w.model.vTracks[0].length === 1 &&
+         w.model.vTracks[0][0].name === 'MyFootage.mp4', 'the existing top track is untouched');
+  assert(/caption video track/i.test((r.sampleErrors || [])[0] || ''), 'the reason names the track failure');
 }
 
 // ══════════════════════════ CP_setMgrtText — multi-run styling (the fix) ═════
