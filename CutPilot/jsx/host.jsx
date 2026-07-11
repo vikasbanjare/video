@@ -2035,6 +2035,41 @@ function CP_setWordSweep(comp, durSec) {
   return info;
 }
 
+/* The engine's text layers are OPACITY-GATED by an authored intro animation:
+ *   if (Animation Type == K) easeOut(time, stime, stime+atime, 0, 100) else 0
+ * with "Animation Start Time, Duration" authored as [0, 1] — a ONE-SECOND
+ * fade-in on every caption. Real captions are often shorter than that (98
+ * captions in a 60s video ≈ 0.6s each), so the words never became visible
+ * while the BG box (not gated) rendered fine → "box on the video, no words".
+ * Neutralize per clip: intro = [0, 0.12] (words appear immediately; a 3-frame
+ * ease keeps the expression's math smooth) and make sure "Animation Type"
+ * holds a VALID variant (1..8) — an out-of-range value blanks EVERY text
+ * layer. A value the USER explicitly sent in params (template sheet) wins. */
+function CP_forceIntroVisible(comp, params) {
+  if (!comp || !comp.properties) return 0;
+  var props = comp.properties, fixed = 0;
+  function userSet(idx) {
+    if (!params || !params.length) return false;
+    for (var p = 0; p < params.length; p++) { if (params[p] && params[p].i === idx) return true; }
+    return false;
+  }
+  for (var i = 0; i < props.numItems; i++) {
+    var nn = String(props[i].displayName || '').toLowerCase().replace(/[^a-z]/g, '');
+    if (nn === 'animationstarttimeduration') {
+      if (userSet(i)) continue;
+      try { props[i].setValue([0, 0.12], true); fixed++; }
+      catch (e1) { try { props[i].setValue({ x: 0, y: 0.12 }, true); fixed++; } catch (e2) {} }
+    } else if (nn === 'animationtype') {
+      if (userSet(i)) continue;
+      var cur = null; try { cur = props[i].getValue(); } catch (eG) {}
+      if (!(cur >= 1 && cur <= 8)) {
+        try { props[i].setValue(1, true); fixed++; } catch (e3) {}
+      }
+    }
+  }
+  return fixed;
+}
+
 function CP_insertMogrtCaptions(argsJson) {
   try {
     var args = JSON.parse(argsJson);
@@ -2093,7 +2128,7 @@ function CP_insertMogrtCaptions(argsJson) {
       seq = CP_activeSequence();
     }
     var aTrack = args.audioTrack != null ? args.audioTrack : 0;
-    var inserted = 0, textSet = 0, clamped = 0, maxTemplateDur = 0, swept = 0, sweepSample = null;
+    var inserted = 0, textSet = 0, clamped = 0, maxTemplateDur = 0, swept = 0, sweepSample = null, introFixed = 0;
     var errors = [];
     var fieldNames = null; // captured once for diagnostics
     var paramsApplied = 0; // how many colour/number overrides actually landed (all passes)
@@ -2204,6 +2239,10 @@ function CP_insertMogrtCaptions(argsJson) {
             var sw = CP_setWordSweep(comp, wantEnd - startSec);
             if (sw) { swept++; if (!sweepSample) sweepSample = sw; }
           } catch (eSw) {}
+
+          // words must be visible IMMEDIATELY — neutralize the authored 1s
+          // intro fade that left short captions as an empty box (see helper)
+          try { introFixed += CP_forceIntroVisible(comp, args.params); } catch (eIv) {}
 
           var tprops = CP_textPropsOf(comp);
           if (tprops.length > 1) {
@@ -2375,7 +2414,8 @@ function CP_insertMogrtCaptions(argsJson) {
       track: vTrack + 1,                  // 1-based, so a later call can replaceTrack this same set
       replaceMode: replaceMode,           // 'fresh' | 'reused' | 'fresh-after-clear' | 'explicit'
       replaceGuard: replaceGuard,         // null | 'foreign' | 'out-of-range' — why a reuse was refused
-      templateImports: probe.imported     // the safety probe could place this template
+      templateImports: probe.imported,    // the safety probe could place this template
+      introFixed: introFixed              // authored intro fades neutralized (words visible at once)
     });
   } catch (e) { return CP_fail(e.message); }
 }
@@ -2618,6 +2658,7 @@ function CP_previewMogrt(argsJson) {
       var pcomp = clip.getMGTComponent();
       if (pcomp) {
         pParams = CP_applyMgrtParams(pcomp, args.params);
+        try { CP_forceIntroVisible(pcomp, args.params); } catch (eIv) {}   // words visible at once (see helper)
         if (args.text && pcomp.properties) {
           var ptp = CP_findTextProp(pcomp.properties, ['text', 'caption', 'title', 'subtitle', 'headline', 'body']);
           if (ptp) CP_setMgrtText(ptp, args.text, true, args.textStyle);

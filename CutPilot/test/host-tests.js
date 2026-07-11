@@ -196,7 +196,7 @@ function makeWorld(opts) {
           // (Index mode) so the Duration-Based switch is a real 1→2 transition;
           // tOpacity/shSoft/bgOpacity/shOn boot "dimmed/mis-set" so the forced
           // values are provably written, not inherited.
-          animType: { v: 4 }, sweepType: { v: 1 }, wordIdx: { v: 0 },
+          animType: { v: (opts.animTypeSeed != null ? opts.animTypeSeed : 4) }, sweepType: { v: 1 }, wordIdx: { v: 0 },
           sweepDur: { x: 0.5, y: 2 }, animDur: { x: 0, y: 1 },
           gradA: { x: 284, y: 960 }, gradB: { x: 791, y: 960 },
           textPos: { x: 540, y: 960 }, fgPos: { x: 540, y: 960 }, pad: { x: 50, y: 50 },
@@ -527,6 +527,37 @@ console.log('host.jsx — replace-track safety (stale/foreign/covered/failed cas
   assert(/caption video track/i.test((r.sampleErrors || [])[0] || ''), 'the reason names the track failure');
 }
 
+// ═══ the "box with no words" bug: the engine's authored intro fade ═══
+console.log('host.jsx — intro-fade neutralizer (empty-box-with-no-words bug)');
+{
+  // an OUT-OF-RANGE Animation Type blanks EVERY text layer (each layer is
+  // "visible only when Animation Type == my variant") → must be forced valid
+  const w = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true, animTypeSeed: 0 });
+  const host = loadHost(w);
+  call(host, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt', cues: [{ start: 1, end: 2, text: 'show me' }],
+    videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false
+  });
+  const f = w.model.vTracks[w.model.vTracks.length - 1][0]._flux;
+  assert(f.animType.v === 1, 'an invalid Animation Type (0) is forced to a VISIBLE variant (1)');
+  assert(f.animDur.x === 0 && Math.abs(f.animDur.y - 0.12) < 1e-9, 'intro fade neutralized alongside');
+}
+{
+  // a user's EXPLICIT sheet values for the two animation controls must win —
+  // the neutralizer only fixes what the user didn't set
+  const w = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true });
+  const host = loadHost(w);
+  call(host, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt', cues: [{ start: 1, end: 2, text: 'user choice' }],
+    videoTrack: null, audioTrack: 0, textStyle: null, stretch: false,
+    params: [{ i: 1, kind: 'number', value: 7 }, { i: 2, kind: 'point', value: { x: 0.4, y: 0.5 } }]
+  });
+  const f = w.model.vTracks[w.model.vTracks.length - 1][0]._flux;
+  assert(f.animType.v === 7, 'a user-chosen Animation Type (7) is kept');
+  assert(Math.abs(f.animDur.x - 0.4) < 1e-9 && Math.abs(f.animDur.y - 0.5) < 1e-9,
+    'a user-set intro Start/Duration is kept (neutralizer respects explicit params)');
+}
+
 // ══════════════════════════ CP_setMgrtText — multi-run styling (the fix) ═════
 console.log('host.jsx — CP_setMgrtText styles MULTI-run source text (the white-text bug)');
 {
@@ -695,8 +726,13 @@ console.log('host.jsx — Flux engine (Halo2 control set): text, exact-name para
     'highlight Type WRITTEN 1 → 2 (Duration Based) on each — a real transition, not the seed');
   assert(f0.animType.v === 4 && f1.animType.v === 4,
     'the entrance "Animation Type" enum is NEVER bound as the sweep Type (stays 4)');
-  assert(f0.animDur.x === 0 && f0.animDur.y === 1,
-    '"Animation Start Time, Duration" is never mistaken for the sweep duration');
+  // the engine's text layers are opacity-gated by an authored [0,1s] intro fade
+  // ("Animation Start Time, Duration") — short captions stayed an EMPTY BOX.
+  // Every insert must neutralize it so the words are visible immediately.
+  assert(f0.animDur.x === 0 && Math.abs(f0.animDur.y - 0.12) < 1e-9 &&
+         Math.abs(f1.animDur.y - 0.12) < 1e-9,
+    'the authored 1s intro fade is neutralized to [0, 0.12] on every clip (words show at once — the "box with no words" bug)');
+  assert(r.introFixed >= 2, 'the result reports the intro fix ran on each clip (' + r.introFixed + ')');
   assert(Math.abs(f0.sweepDur.x - 0) < 1e-6 && Math.abs(f0.sweepDur.y - 1.2) < 0.05 &&
          Math.abs(f1.sweepDur.y - 1.2) < 0.05,
     'sweep runs 0 → each caption\'s own length (' + JSON.stringify(f0.sweepDur) + ')');
