@@ -466,6 +466,18 @@ function fluxProps() {
   else bad('sheet real-render wrong: onOpen=' + JSON.stringify(sh.onOpen) + ' afterEdit=' + JSON.stringify(sh.afterEdit) +
            ' (want onOpen thumb+real, afterEdit live)');
 
+  // ---- I. ASR LANGUAGE DEFAULT: must be AUTO-detect. The old 'en' default
+  // FORCED English on every voice — Hindi audio transcribed as English-ish
+  // nonsense ("If you India to the"). Locks the default forever. -------------
+  const asr = await page.evaluate(() => {
+    const D = window.CP_DEBUG;
+    if (!D || !D.asrLang) return { fatal: 'asrLang hook missing' };
+    return { lang: D.asrLang() };
+  });
+  if (asr.fatal) bad('asr default: ' + asr.fatal);
+  else if (asr.lang === 'auto') ok('transcription language defaults to AUTO-detect (never forces English on Hindi audio)');
+  else bad('asr default language is "' + asr.lang + '" — must be "auto"');
+
   await browser.close();
   console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');
   process.exit(failed ? 1 : 0);

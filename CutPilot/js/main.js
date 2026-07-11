@@ -431,7 +431,11 @@
     { value: 'cloud-swara', label: '🇮🇳 Indian Voices — all languages' }
   ];
   var WHISPER_LANGS = [
-    { value: 'en', label: 'English' }, { value: 'auto', label: 'Auto-detect' },
+    // AUTO first and default: the old 'en' default FORCED English on every
+    // voice — Hindi audio came back as English-ish nonsense. Auto lets the
+    // engine hear the real language.
+    { value: 'auto', label: '✨ Auto-detect (recommended)' },
+    { value: 'en', label: 'English' },
     { value: 'hinglish', label: 'Hinglish (Hindi in English letters)' },
     { value: 'hi', label: 'Hindi (हिन्दी)' }, { value: 'es', label: 'Spanish' },
     { value: 'fr', label: 'French' }, { value: 'de', label: 'German' },
@@ -490,7 +494,7 @@
   }
   function modelFileName() {
     var q = resolveQuality();
-    var lang = settings.whisperLang || 'en';
+    var lang = settings.whisperLang || 'auto';   // AUTO-detect by default — forcing 'en' garbled every non-English voice (Hindi → English-ish nonsense)
     var hasEnVariant = (q === 'tiny' || q === 'base' || q === 'small' || q === 'medium');  // large-* are multilingual only
     // Hinglish needs a MULTILINGUAL model — it actually understands Hindi, so it
     // transcribes the words (then we romanise Devanagari→Latin). The old English-
@@ -548,7 +552,7 @@
         '-F', 'timestamp_granularities[]=word',
         '-F', 'temperature=0',
         '-F', 'file=@' + wavPath];
-      if (lang && lang !== 'auto') args.push('-F', 'language=' + lang);
+      if (lang && lang !== 'auto' && lang !== 'unknown') args.push('-F', 'language=' + lang);   // auto = let the engine detect
       var p; try { p = cp.spawn('curl', args); } catch (e) { return reject(e); }
       var out = '', err = '';
       if (p.stdout) p.stdout.on('data', function (d) { out += d.toString(); });
@@ -601,6 +605,7 @@
           });
           if (wa.length) cues.words = wa;
         }
+        if (j.language) cues.detectedLang = String(j.language).toLowerCase();   // e.g. "hindi" (verbose_json)
         resolve(cues);
       });
     });
@@ -627,6 +632,7 @@
             .then(function (cues) {
               cues.forEach(function (c) { c.start += startT; c.end += startT; });
               if (cues.words) cues.words.forEach(function (w) { w.start += startT; w.end += startT; });
+              if (cues.detectedLang && !all.detectedLang) all.detectedLang = cues.detectedLang;
               all = all.concat(cues); if (cues.words) allWords = allWords.concat(cues.words);
               try { fs.unlinkSync(part); } catch (eU) {}
               setTranscriptBar('', '☁️', 'Transcribing in the cloud… (' + all.length + ' lines)', null);
@@ -858,7 +864,7 @@
     // key on the RESOLVED engine + language, so changing the model (or "Auto"
     // resolving differently) produces a new key and the clip is re-transcribed.
     var s = _TC_VER + '|' + String(mediaPath) + '|' + Math.round((minIn || 0) * 100) + '|' + Math.round((maxOut || 0) * 100) +
-            '|' + resolveQuality() + '|' + (settings.whisperLang || '') + '|' + (settings.sarvamLang || '');
+            '|' + resolveQuality() + '|' + (settings.whisperLang || 'auto') + '|' + (settings.sarvamLang || '');
     var h = 0; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
     var base = String(mediaPath).split(/[\\/]/).pop().replace(/\.[^.]+$/, '').replace(/[^\w]+/g, '_').slice(0, 40);
     return base + '-' + _TC_VER + '-' + h.toString(16);
@@ -880,7 +886,7 @@
       fs.writeFileSync(p.join(dir, key + '.srt'), CPCaptions.toSRT(cues), 'utf8');
       // record the engine + language that produced it so the loose finder only
       // auto-loads a transcript that matches the CURRENT model (else re-transcribe)
-      try { fs.writeFileSync(p.join(dir, key + '.json'), JSON.stringify({ words: words || null, q: resolveQuality(), lang: (settings.whisperLang || ''), at: Date.now() }), 'utf8'); } catch (eW) {}
+      try { fs.writeFileSync(p.join(dir, key + '.json'), JSON.stringify({ words: words || null, q: resolveQuality(), lang: (settings.whisperLang || 'auto'), at: Date.now() }), 'utf8'); } catch (eW) {}
     } catch (e) {}
   }
   /* Loosely find a transcript we already saved for this media file (any trim),
@@ -893,7 +899,7 @@
       var fs = nodeReq('fs'), p = nodeReq('path'), dir = _tcDir();
       if (!dir || !mediaPath) return null;
       var base = String(mediaPath).split(/[\\/]/).pop().replace(/\.[^.]+$/, '').replace(/[^\w]+/g, '_').slice(0, 40);
-      var curQ = resolveQuality(), curLang = (settings.whisperLang || '');
+      var curQ = resolveQuality(), curLang = (settings.whisperLang || 'auto');
       var best = null, bestM = -1, bestWords = null;
       fs.readdirSync(dir).forEach(function (f) {
         if (f.indexOf(base + '-') !== 0 || !/\.srt$/i.test(f)) return;
@@ -1014,7 +1020,7 @@
       if (!wbin) return toast('Set the whisper engine in Settings → Auto-transcribe (brew install whisper-cpp).', true);
     }
     setTranscribing(true);   // all checks passed — commit, lock the buttons
-    var lang = swara ? (settings.sarvamLang || 'unknown') : (settings.whisperLang || 'en');
+    var lang = swara ? (settings.sarvamLang || 'unknown') : (settings.whisperLang || 'auto');   // default AUTO — never force English on non-English audio
     // HINGLISH = the real spoken words written in English letters, NOT a Hindi→English
     // translation. Always TRANSCRIPTION, never translation:
     //   • multilingual model (cloud, or a local non-.en model) → transcribe Hindi
@@ -1149,6 +1155,20 @@
         }).then(function (rawCues) {
           // Capture real per-word timestamps (now romanised if Hinglish).
           if (rawCues.words && rawCues.words.length) groqWords = rawCues.words;
+          // Indic language auto-detected on the generic cloud engine → point the
+          // user at the two better options ONCE (never silently — discoverability
+          // was the whole reason Hindi audio used to come out garbled).
+          try {
+            var dl = String(rawCues.detectedLang || '').toLowerCase();
+            var INDIC = ['hindi', 'urdu', 'bengali', 'tamil', 'telugu', 'marathi', 'gujarati',
+                         'kannada', 'malayalam', 'punjabi', 'nepali', 'assamese', 'odia', 'sanskrit'];
+            if (cloud && lang === 'auto' && INDIC.indexOf(dl) >= 0 && !state._indicHinted) {
+              state._indicHinted = true;
+              toast('🇮🇳 ' + dl.charAt(0).toUpperCase() + dl.slice(1) + ' detected and transcribed. Tip: for even better accuracy pick “Indian Voices” in Settings → Auto-transcribe' +
+                    (dl === 'hindi' ? ' — or choose “Hinglish” in the language picker for Hindi written in English letters.' : '.'));
+              try { diag('asr', 'indic detected: ' + dl); } catch (eD) {}
+            }
+          } catch (eHint) {}
           // Map (wav-relative) cues onto every timeline piece showing that part,
           // converting to sequence time: seq = mediaTime - pieceIn + pieceSeqStart.
           function toSeq(list) {
@@ -8907,7 +8927,7 @@
     function mountInto(id, kind) {
       var host = $(id); if (!host || host.firstChild) return;
       var opts = (kind === 'q') ? WHISPER_QUALITIES : WHISPER_LANGS;
-      var cur = (kind === 'q') ? (settings.whisperQuality || 'large-v3-turbo-q5_0') : (settings.whisperLang || 'en');
+      var cur = (kind === 'q') ? (settings.whisperQuality || 'large-v3-turbo-q5_0') : (settings.whisperLang || 'auto');
       var dd = makeDropdown(opts, cur, function (v) {
         if (kind === 'q') settings.whisperQuality = v; else settings.whisperLang = v;
         saveSettings(); refreshWhisperStatus();
@@ -9133,6 +9153,7 @@
       carryableStyle: carryableStyle,
       textCues: textCues,
       imageLooksBlank: imageLooksBlank,
+      asrLang: function () { return settings.whisperLang || 'auto'; },   // must NEVER default to 'en' again (garbled Hindi)
       openMogrtSheet: openMogrtSheet,
       renderMogrtPreview: renderMogrtPreview,
       sheetFirstEdit: sheetFirstEdit,
