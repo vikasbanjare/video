@@ -461,10 +461,10 @@ function fluxProps() {
   });
   if (sh.fatal) bad('sheet real-render persistence: ' + sh.fatal);
   else if (sh.onOpen.showingReal && sh.onOpen.thumbShown && !sh.onOpen.liveShown &&
-           !sh.afterEdit.showingReal && !sh.afterEdit.thumbShown && sh.afterEdit.liveShown)
-    ok('sheet shows the REAL render on open (card==sheet), swaps to the live swatch on the first edit of ANY control (slider/toggle/outline colour included)');
+           sh.afterEdit.thumbShown && sh.afterEdit.liveShown)
+    ok('sheet keeps the ORIGINAL render on screen always; the first edit reveals the "your colours" swatch BELOW it (never replaces the original)');
   else bad('sheet real-render wrong: onOpen=' + JSON.stringify(sh.onOpen) + ' afterEdit=' + JSON.stringify(sh.afterEdit) +
-           ' (want onOpen thumb+real, afterEdit live)');
+           ' (want onOpen thumb only, afterEdit thumb+live BOTH visible)');
 
   // ---- I. ASR LANGUAGE DEFAULT: must be AUTO-detect. The old 'en' default
   // FORCED English on every voice — Hindi audio transcribed as English-ish

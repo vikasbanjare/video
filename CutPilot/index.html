@@ -10,8 +10,8 @@
   <!-- Caption faces — loaded as web fonts so the chosen font renders in the
        live preview AND the canvas-rendered PNGs even if it isn't installed. -->
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Bebas+Neue&family=Archivo+Black&family=Fjalla+One&family=Bangers&family=Luckiest+Guy&family=Alfa+Slab+One&family=Bungee&family=Titan+One&family=Passion+One&family=Permanent+Marker&family=Pacifico&family=Shadows+Into+Light&family=Montserrat:wght@400;500;600;700;800;900&family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800;900&family=Oswald:wght@400;700&family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Lato:wght@400;700&family=Raleway:wght@400;700&family=Work+Sans:wght@400;700&family=Nunito:wght@400;700&family=Rubik:wght@400;700&family=DM+Sans:wght@400;500;700&family=Outfit:wght@400;500;600;700;800;900&family=Sora:wght@400;500;600;700;800&family=Barlow:wght@400;700&family=Manrope:wght@400;500;600;700;800&family=Teko:wght@400;700&family=Playfair+Display:wght@400;700&family=Merriweather:wght@400;700&family=Lora:wght@400;700&family=JetBrains+Mono:wght@400;700&family=Roboto+Mono:wght@400;700&family=Space+Mono:wght@400;700&family=Caveat:wght@400;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=v0.9.293">
-  <link rel="stylesheet" href="css/organize.css?v=v0.9.293">
+  <link rel="stylesheet" href="css/style.css?v=v0.9.294">
+  <link rel="stylesheet" href="css/organize.css?v=v0.9.294">
 </head>
 <body class="theme-light">
   <header>
@@ -25,7 +25,7 @@
       </svg>
       <span class="brand-name">Pulse</span><span class="brand-by">by aifloh</span>
     </div>
-    <span class="ver" id="ver">v0.9.293</span>
+    <span class="ver" id="ver">v0.9.294</span>
     <button id="theme-toggle" class="theme-toggle" title="Switch light / dark">🌙</button>
     <button id="cmdk-open" class="cmdk-open" title="Quick actions — Ctrl/Cmd K">⌘K</button>
     <div id="env-status" class="env-status">connecting…</div>
@@ -202,6 +202,7 @@
         </div>
         <p class="hint" style="font-size:10px;margin:6px 0 0">⚡ Word-by-word timing is set automatically — each word lights up exactly when it's spoken. If you see an <b>Animation Controls</b> section in Premiere's Essential Graphics panel (Type, Word Index…), ignore it — Pulse manages those settings for you.</p>
         <!-- editable text colour / font / size / template colours, built on open -->
+        <button id="ms-reset-orig" class="chip-btn" type="button">↺ Original (remove my edits)</button>
         <div id="ms-customizer" class="ms-customizer"></div>
         <button id="ms-preview" class="hero-btn small alt">▶ Preview on timeline</button>
         <button id="ms-use" class="hero-btn small">✨ Caption with this template</button>
@@ -1193,7 +1194,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.9.293 · auto-edit · multicam · captions · chapters · organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.9.294 · auto-edit · multicam · captions · chapters · organize</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->
@@ -1312,25 +1313,25 @@
     </div>
   </div>
 
-  <script src="js/lib/cep-bridge.js?v=v0.9.293"></script>
-  <script src="js/silence.js?v=v0.9.293"></script>
-  <script src="js/audio.js?v=v0.9.293"></script>
-  <script src="js/captions.js?v=v0.9.293"></script>
-  <script src="js/ass.js?v=v0.9.293"></script>
-  <script src="js/render.js?v=v0.9.293"></script>
-  <script src="js/multicam.js?v=v0.9.293"></script>
-  <script src="js/sfx.js?v=v0.9.293"></script>
-  <script src="js/takes.js?v=v0.9.293"></script>
-  <script src="js/smartedit.js?v=v0.9.293"></script>
-  <script src="js/verbatim.js?v=v0.9.293"></script>
-  <script src="js/reframe.js?v=v0.9.293"></script>
-  <script src="js/transcript.js?v=v0.9.293"></script>
-  <script src="js/fonts.js?v=v0.9.293"></script>
-  <script src="js/command.js?v=v0.9.293"></script>
-  <script src="js/chapters.js?v=v0.9.293"></script>
-  <script src="js/align.js?v=v0.9.293"></script>
-  <script src="js/main.js?v=v0.9.293"></script>
-  <script src="js/organize.js?v=v0.9.293"></script>
-  <script src="js/safezone.js?v=v0.9.293"></script>
+  <script src="js/lib/cep-bridge.js?v=v0.9.294"></script>
+  <script src="js/silence.js?v=v0.9.294"></script>
+  <script src="js/audio.js?v=v0.9.294"></script>
+  <script src="js/captions.js?v=v0.9.294"></script>
+  <script src="js/ass.js?v=v0.9.294"></script>
+  <script src="js/render.js?v=v0.9.294"></script>
+  <script src="js/multicam.js?v=v0.9.294"></script>
+  <script src="js/sfx.js?v=v0.9.294"></script>
+  <script src="js/takes.js?v=v0.9.294"></script>
+  <script src="js/smartedit.js?v=v0.9.294"></script>
+  <script src="js/verbatim.js?v=v0.9.294"></script>
+  <script src="js/reframe.js?v=v0.9.294"></script>
+  <script src="js/transcript.js?v=v0.9.294"></script>
+  <script src="js/fonts.js?v=v0.9.294"></script>
+  <script src="js/command.js?v=v0.9.294"></script>
+  <script src="js/chapters.js?v=v0.9.294"></script>
+  <script src="js/align.js?v=v0.9.294"></script>
+  <script src="js/main.js?v=v0.9.294"></script>
+  <script src="js/organize.js?v=v0.9.294"></script>
+  <script src="js/safezone.js?v=v0.9.294"></script>
 </body>
 </html>

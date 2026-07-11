@@ -3274,6 +3274,14 @@
       var w = parseInt($('c-words').value, 10) || 0; setWordCount(w === 0 ? 1 : 0);
     });
     if ($('ms-transcribe')) $('ms-transcribe').addEventListener('click', autoTranscribe);
+    // "↺ Original" — wipe every sheet edit for this template so the next insert
+    // is 100% as-authored (colours, font, animation all the template's own)
+    if ($('ms-reset-orig')) $('ms-reset-orig').addEventListener('click', function () {
+      state.mogrtParams = []; state.mogrtTextStyle = null; state.mogrtRBSwap = false; state.mogrtParamsPath = null;
+      var tpl = state.selectedMogrtTpl;
+      if (tpl) openMogrtSheet(tpl);   // rebuild the sheet clean (original render + fresh controls)
+      toast('↺ Back to the template\'s ORIGINAL look — captions will use its own colours, font and animation.');
+    });
     // (Animation speed is no longer a manual control — the word-by-word reveal
     //  follows the transcript's word timing, i.e. your actual speaking pace.)
     function closeMogrtSheet() {
@@ -5769,13 +5777,13 @@
   function renderMogrtPreview() {
     var cv = _mogrtPrevCanvas;
     if (!cv || typeof CPRender === 'undefined' || !CPRender.drawFrame) return;
-    // First edit in the action sheet → swap the static REAL render for this live
-    // "your colours" canvas, so the user actually SEES the colour/font change they
-    // just made (the baked render can't show custom colours).
+    // First edit in the action sheet → REVEAL the live "your colours" canvas so
+    // the user sees the change — but the template's ORIGINAL render stays on
+    // screen above it ("use the original preview, don't add your own"): the
+    // authored animation/colours remain the reference, the swatch only shows
+    // what the edits change.
     if (state.mogrtShowingReal && cv.id === 'ms-live-canvas') {
-      var _an = $('ms-anim'), _th = $('ms-thumb'), _lp = $('ms-live-preview');
-      if (_an) { try { _an.pause(); } catch (eP) {} _an.classList.add('hidden'); _an.removeAttribute('src'); }
-      if (_th) _th.classList.add('hidden');
+      var _lp = $('ms-live-preview');
       if (_lp) _lp.classList.remove('hidden');
       state.mogrtShowingReal = false;
     }

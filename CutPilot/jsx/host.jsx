@@ -2041,20 +2041,19 @@ function CP_setWordSweep(comp, durSec) {
  * slide/fade-in. Real captions are often shorter than that (98 captions in a
  * 60s video ≈ 0.6s each), so the words never became visible while the BG box
  * (not gated) rendered fine → "box on the video, no words".
- * FIT the animation instead of killing it: intro = [0, 28% of the caption's
- * visible length] clamped to 0.12–0.45s — the template's own entrance still
- * plays (the Flux signature pop-in), but the words are always fully on screen
- * within the first third of even the shortest caption. Also make sure
- * "Animation Type" holds a VALID variant (1..8) — an out-of-range value blanks
- * EVERY text layer. A value the USER explicitly sent in params (template
- * sheet) always wins. */
+ * PRESERVE the ORIGINAL whenever it fits: if the authored intro finishes
+ * within 60% of this caption's visible length, it is left completely
+ * untouched — the template plays exactly as its author designed (the user's
+ * own .mogrt keeps ITS animation). Only when the caption is too short for
+ * the authored intro (the empty-box case) is it scaled down to half the
+ * caption's length (never below 0.12s, never longer than authored). Also
+ * make sure "Animation Type" holds a VALID variant (1..8) — an out-of-range
+ * value blanks EVERY text layer. A value the USER explicitly sent in params
+ * (template sheet) always wins. */
 function CP_forceIntroVisible(comp, params, clipDurSec) {
   if (!comp || !comp.properties) return 0;
   var props = comp.properties, fixed = 0;
   var dur = (clipDurSec && clipDurSec > 0) ? clipDurSec : 1;
-  var atime = 0.28 * dur;
-  if (atime < 0.12) atime = 0.12;
-  if (atime > 0.45) atime = 0.45;
   function userSet(idx) {
     if (!params || !params.length) return false;
     for (var p = 0; p < params.length; p++) { if (params[p] && params[p].i === idx) return true; }
@@ -2064,8 +2063,18 @@ function CP_forceIntroVisible(comp, params, clipDurSec) {
     var nn = String(props[i].displayName || '').toLowerCase().replace(/[^a-z]/g, '');
     if (nn === 'animationstarttimeduration') {
       if (userSet(i)) continue;
-      try { props[i].setValue([0, atime], true); fixed++; }
-      catch (e1) { try { props[i].setValue({ x: 0, y: atime }, true); fixed++; } catch (e2) {} }
+      var stime = 0, atime = 1;
+      try {
+        var cv = props[i].getValue();
+        if (cv && cv.x != null) { stime = +cv.x || 0; atime = +cv.y || 1; }
+        else if (cv && cv.length >= 2) { stime = +cv[0] || 0; atime = +cv[1] || 1; }
+      } catch (eR) {}
+      if (stime + atime <= 0.6 * dur) continue;   // authored intro FITS → keep the ORIGINAL animation untouched
+      var fit = 0.5 * dur;
+      if (fit > atime) fit = atime;               // never slower than authored
+      if (fit < 0.12) fit = 0.12;                 // never a hard pop (still animated)
+      try { props[i].setValue([0, fit], true); fixed++; }
+      catch (e1) { try { props[i].setValue({ x: 0, y: fit }, true); fixed++; } catch (e2) {} }
     } else if (nn === 'animationtype') {
       if (userSet(i)) continue;
       var cur = null; try { cur = props[i].getValue(); } catch (eG) {}
