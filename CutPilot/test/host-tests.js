@@ -540,7 +540,31 @@ console.log('host.jsx — intro-fade neutralizer (empty-box-with-no-words bug)')
   });
   const f = w.model.vTracks[w.model.vTracks.length - 1][0]._flux;
   assert(f.animType.v === 1, 'an invalid Animation Type (0) is forced to a VISIBLE variant (1)');
-  assert(f.animDur.x === 0 && Math.abs(f.animDur.y - 0.12) < 1e-9, 'intro fade neutralized alongside');
+  const wantI = Math.max(0.12, Math.min(0.45, 0.28 * 1.0));   // this cue is 1.0s
+  assert(f.animDur.x === 0 && Math.abs(f.animDur.y - wantI) < 1e-9, 'intro fitted to the cue alongside (' + wantI.toFixed(2) + 's)');
+
+  // SHORT cue: the fitted entrance must never fall below the 0.12s floor
+  // (still animated) and never exceed the caption itself
+  const wS = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true });
+  const hS = loadHost(wS);
+  call(hS, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt', cues: [{ start: 2.0, end: 2.3, text: 'Go' }],
+    videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false
+  });
+  const fS = wS.model.vTracks[wS.model.vTracks.length - 1][0]._flux;
+  assert(Math.abs(fS.animDur.y - 0.12) < 1e-9,
+    'a 0.3s cue gets the 0.12s minimum entrance — words fully visible well inside the caption');
+
+  // LONG cue: the entrance is capped at 0.45s (snappy, never the authored 1s)
+  const wL = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true });
+  const hL = loadHost(wL);
+  call(hL, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt', cues: [{ start: 0, end: 4.0, text: 'a long spoken caption line' }],
+    videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false
+  });
+  const fL = wL.model.vTracks[wL.model.vTracks.length - 1][0]._flux;
+  assert(Math.abs(fL.animDur.y - 0.45) < 1e-9,
+    'a 4s cue caps the entrance at 0.45s (never crawls back to the authored 1s)');
 }
 {
   // a user's EXPLICIT sheet values for the two animation controls must win —
@@ -726,12 +750,15 @@ console.log('host.jsx — Flux engine (Halo2 control set): text, exact-name para
     'highlight Type WRITTEN 1 → 2 (Duration Based) on each — a real transition, not the seed');
   assert(f0.animType.v === 4 && f1.animType.v === 4,
     'the entrance "Animation Type" enum is NEVER bound as the sweep Type (stays 4)');
-  // the engine's text layers are opacity-gated by an authored [0,1s] intro fade
-  // ("Animation Start Time, Duration") — short captions stayed an EMPTY BOX.
-  // Every insert must neutralize it so the words are visible immediately.
-  assert(f0.animDur.x === 0 && Math.abs(f0.animDur.y - 0.12) < 1e-9 &&
-         Math.abs(f1.animDur.y - 0.12) < 1e-9,
-    'the authored 1s intro fade is neutralized to [0, 0.12] on every clip (words show at once — the "box with no words" bug)');
+  // the engine's text layers are opacity-gated by an authored [0,1s] intro
+  // animation ("Animation Start Time, Duration") — short captions stayed an
+  // EMPTY BOX. Every insert must FIT the animation to the caption instead:
+  // 28% of its visible length, clamped 0.12–0.45s, so the Flux entrance still
+  // plays but the words are always fully on screen in the first third.
+  const wantIntro = Math.max(0.12, Math.min(0.45, 0.28 * 1.2));   // both cues here are 1.2s
+  assert(f0.animDur.x === 0 && Math.abs(f0.animDur.y - wantIntro) < 1e-9 &&
+         Math.abs(f1.animDur.y - wantIntro) < 1e-9,
+    'the authored 1s intro is FITTED to each caption (' + wantIntro.toFixed(3) + 's for a 1.2s cue) — animated, never an empty box');
   assert(r.introFixed >= 2, 'the result reports the intro fix ran on each clip (' + r.introFixed + ')');
   assert(Math.abs(f0.sweepDur.x - 0) < 1e-6 && Math.abs(f0.sweepDur.y - 1.2) < 0.05 &&
          Math.abs(f1.sweepDur.y - 1.2) < 0.05,
