@@ -1090,23 +1090,43 @@
         insts.forEach(function (it) { if (it.inPoint < minIn) minIn = it.inPoint; if (it.outPoint > maxOut) maxOut = it.outPoint; });
         if (!isFinite(minIn)) minIn = 0;
         var dur = (maxOut > minIn) ? (maxOut - minIn) : 0;
+        // one-line trace that makes "it didn't hear everything" diagnosable from
+        // a single Copy-Diagnostics: which media, how many timeline pieces, span
+        try { diag('asr', 'source “' + (clip.name || '?') + '” (' + (clip.trackType || '?') + ' track) · ' + insts.length + ' piece' + (insts.length === 1 ? '' : 's') + ' · media ' + Math.round(minIn) + '→' + Math.round(maxOut) + 's'); } catch (eDs) {}
         var asrWordLevel = false;   // true once we have real per-word timing (-ml 1)
         var groqWords = null;       // real per-word cues from Groq (cloud path)
 
         // Already transcribed this exact clip (same media + trim + model + language)?
         // Load the SAVED transcript instantly — no ffmpeg, no whisper, no waiting.
+        // TWO GUARDS (the "still not able to transcribe all the audio" trap: a
+        // failed early run left a 1–3 line junk transcript in the cache, and it
+        // was served back forever):
+        //  · a SPARSE cache (almost no speech relative to the audio span) is
+        //    ignored and the clip is re-transcribed for real;
+        //  · pressing Auto-transcribe AGAIN right after a cache-load forces a
+        //    fresh re-listen (the natural "no, actually listen again" gesture).
+        var cacheKeyNow = String(clip.mediaPath) + '|' + Math.round(minIn) + '|' + Math.round(maxOut);
         var cached = loadCachedTranscript(clip.mediaPath, minIn, maxOut);
         if (cached) {
-          state.transcript = { label: 'Saved transcript (' + shortName + ')', path: cached.srtPath, mtime: 1e16 };
-          state.transcriptWords = cached.words || null;
-          state.transcriptManual = true;
-          $('tr-help').classList.add('hidden');
-          refreshMogrtSheetTr(); refreshMogrtEditorTr();
           var cc = []; try { cc = CPCaptions.parseSRT(nodeReq('fs').readFileSync(cached.srtPath, 'utf8')); } catch (eR) {}
-          setTranscriptBar('ok', '✅', 'Loaded the saved transcript — no re-transcribe needed' + (cc.length ? (' (' + cc.length + ' lines)') : ''), 'Change');
-          toast('✓ Loaded the saved transcript for “' + shortName + '” — already done, so no re-transcribe.');
-          return;   // skip ffmpeg + whisper entirely
+          var covered = 0;
+          for (var cvI = 0; cvI < cc.length; cvI++) covered += Math.max(0, (cc[cvI].end || 0) - (cc[cvI].start || 0));
+          var sparse = !cc.length || (dur > 30 && (cc.length < 3 || covered < 0.12 * dur));
+          var forceFresh = (state._cacheServedKey === cacheKeyNow);
+          if (!sparse && !forceFresh) {
+            state.transcript = { label: 'Saved transcript (' + shortName + ')', path: cached.srtPath, mtime: 1e16 };
+            state.transcriptWords = cached.words || null;
+            state.transcriptManual = true;
+            state._cacheServedKey = cacheKeyNow;
+            $('tr-help').classList.add('hidden');
+            refreshMogrtSheetTr(); refreshMogrtEditorTr();
+            setTranscriptBar('ok', '✅', 'Loaded the saved transcript (' + cc.length + ' lines). Not right? Tap Auto-transcribe again to re-listen.', 'Change');
+            toast('✓ Loaded the saved transcript for “' + shortName + '”. If it looks incomplete, tap Auto-transcribe once more — that re-listens from scratch.');
+            return;   // skip ffmpeg + whisper entirely
+          }
+          try { diag('asr', (sparse ? 'IGNORED sparse cached transcript (' + cc.length + ' lines / ' + Math.round(covered) + 's over ' + Math.round(dur) + 's span)' : 'user asked to re-listen') + ' — transcribing fresh'); } catch (eDg) {}
         }
+        state._cacheServedKey = null;   // this run is a real transcription
         // -ss BEFORE -i (fast seek), -t AFTER -i (duration from seek point).
         // Cloud upload: compress to a small 16k-mono MP3 (whisper-quality, but a
         // fraction of WAV size) so long recordings don't blow past Groq's upload
@@ -1192,6 +1212,7 @@
           // (mechanical transliteration fallback inside). Async, so chain it.
           return romanize ? hinglishify(rawCues) : rawCues;
         }).then(function (rawCues) {
+          try { diag('asr', 'heard ' + rawCues.length + ' lines' + (rawCues.words ? ' · ' + rawCues.words.length + ' words' : '') + (rawCues.detectedLang ? ' · ' + rawCues.detectedLang : '')); } catch (eDh) {}
           // Capture real per-word timestamps (now romanised if Hinglish).
           if (rawCues.words && rawCues.words.length) groqWords = rawCues.words;
           // Indic language auto-detected on the generic cloud engine → point the
