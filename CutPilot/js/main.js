@@ -1112,7 +1112,7 @@
           var covered = 0;
           for (var cvI = 0; cvI < cc.length; cvI++) covered += Math.max(0, (cc[cvI].end || 0) - (cc[cvI].start || 0));
           var sparse = !cc.length || (dur > 30 && (cc.length < 3 || covered < 0.12 * dur));
-          var forceFresh = (state._cacheServedKey === cacheKeyNow);
+          var forceFresh = (state._cacheServedKey === cacheKeyNow) || !!state._forceRetranscribe;
           if (!sparse && !forceFresh) {
             state.transcript = { label: 'Saved transcript (' + shortName + ')', path: cached.srtPath, mtime: 1e16 };
             state.transcriptWords = cached.words || null;
@@ -1127,6 +1127,7 @@
           try { diag('asr', (sparse ? 'IGNORED sparse cached transcript (' + cc.length + ' lines / ' + Math.round(covered) + 's over ' + Math.round(dur) + 's span)' : 'user asked to re-listen') + ' — transcribing fresh'); } catch (eDg) {}
         }
         state._cacheServedKey = null;   // this run is a real transcription
+        state._forceRetranscribe = false;   // the force applies to this run only
         // -ss BEFORE -i (fast seek), -t AFTER -i (duration from seek point).
         // Cloud upload: compress to a small 16k-mono MP3 (whisper-quality, but a
         // fraction of WAV size) so long recordings don't blow past Groq's upload
@@ -1941,6 +1942,13 @@
     if ($('btn-tr-auto')) $('btn-tr-auto').addEventListener('click', autoTranscribe);
     if ($('btn-tr-auto-main')) $('btn-tr-auto-main').addEventListener('click', autoTranscribe);
     if ($('btn-tr-auto-ai')) $('btn-tr-auto-ai').addEventListener('click', autoTranscribeAI);
+    // "↻ Re-transcribe" — ALWAYS listens again from scratch, ignoring any saved
+    // transcript for this clip (use after trimming/re-editing the video).
+    if ($('btn-retranscribe')) $('btn-retranscribe').addEventListener('click', function () {
+      state._forceRetranscribe = true;
+      toast('↻ Re-listening from scratch (ignoring the saved transcript)…');
+      autoTranscribe();
+    });
     if ($('btn-tr-edit')) $('btn-tr-edit').addEventListener('click', openTranscriptEditor);
     if ($('btn-mark-hooks')) $('btn-mark-hooks').addEventListener('click', markViralHooks);
     if ($('btn-broll')) $('btn-broll').addEventListener('click', showBrollIdeas);
