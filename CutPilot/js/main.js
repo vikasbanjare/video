@@ -1040,7 +1040,7 @@
         if (/\.en\.bin$/i.test(String(model))) { wlang = 'en'; romanize = false; }   // English-only fallback
         else { wlang = 'hi'; romanize = true; }                                       // multilingual: transcribe + romanise
       }
-      var modelLabel = cloud ? 'Cloud · Groq (large-v3)' : String(model).split(/[\\/]/).pop();
+      var modelLabel = swara ? 'Indian Voices (Sarvam)' : cloud ? 'Cloud · Groq (large-v3)' : String(model).split(/[\\/]/).pop();
       return CPBridge.callHost('CP_getTranscribeSource').then(function (res) {
         var clip = res.clip;
         if (!clip || !clip.mediaPath) throw new Error('Put your video or audio clip on the timeline first.');
@@ -1231,7 +1231,9 @@
             var span = fmt(cues[0].start) + '–' + fmt(cues[cues.length - 1].end);
             setTranscriptBar('ok', '✅', 'Transcribed — ' + cues.length + ' lines · ' + span + ' · ' + modelLabel, 'Change');
             var note = '';
-            if (!cloud) { var want = modelFileName(); if (modelLabel !== want) note = ' ⚠️ wanted ' + want + ' but it didn\'t load — used a fallback (check internet).'; }
+            // local models only — the two CLOUD engines have no ggml file at all
+            // (this used to print "wanted ggml-cloud-swara.bin … used a fallback")
+            if (!cloud && !swara) { var want = modelFileName(); if (modelLabel !== want) note = ' ⚠️ wanted ' + want + ' but it didn\'t load — used a fallback (check internet).'; }
             toast('✓ Transcribed “' + shortName + '” — ' + cues.length + ' lines using ' + modelLabel + '.' +
                   (state.transcriptWords ? ' 🎯 Word-level highlight ready.' : '') + note);
           });
@@ -2501,12 +2503,14 @@
       state.bundledMogrts = list.map(function (m) {
         var base = String(m.file).replace(/\.mogrt$/i, '');
         var IMG = ['.png', '.jpg', '.jpeg', '.webp'], VID = ['.mp4', '.mov'];
-        // the USER'S files (dropped beside the .mogrt) always win over shipped
-        // thumbs — and a user-added IMAGE replaces the shipped video entirely
-        // ("I added the thumbnail in the folder of the mogrt file — pick that").
-        var userImg = findIn(mdir, base, IMG), userVid = findIn(mdir, base, VID);
-        var thumbUrl = userImg || findIn(path.join(mdir, 'thumbs'), base, IMG);
-        var videoUrl = userVid || (userImg ? '' : findIn(path.join(mdir, 'thumbs'), base, VID));
+        // The SHIPPED render (mogrts/thumbs/) is the template's OWN original
+        // preview and WINS. Files dropped beside the .mogrt are only a fallback
+        // for templates that ship none — the old user-first rule let a stale
+        // re-render (e.g. every card showing the same blue Halo box) mask the
+        // real template ("use the original preview").
+        var shipImg = findIn(path.join(mdir, 'thumbs'), base, IMG), shipVid = findIn(path.join(mdir, 'thumbs'), base, VID);
+        var thumbUrl = shipImg || findIn(mdir, base, IMG);
+        var videoUrl = shipVid || findIn(mdir, base, VID);
         if (thumbUrl) withThumb++;
         if (videoUrl) withVideo++;
         return { name: m.name, path: path.join(mdir, m.file),

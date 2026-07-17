@@ -1614,6 +1614,22 @@ function CP_probeRichText(mogrtPath, vTrack, aTrack, KEYS, sampleText, style) {
     var comp = clip.getMGTComponent();
     if (!comp || !comp.properties) { CP_removeLastClipOnTrack(vTrack); return res; }
     res.textCount = CP_textPropsOf(comp).length;     // how many text lines this template holds
+    // Word-highlight caption engines (Flux Halo/Prism family) carry a second
+    // text layer that is an expression-driven HIGHLIGHT MIRROR of the first —
+    // its words follow the main text automatically. When the mirror is not
+    // name-tagged ("(Change font only)") it still counts as a text prop, and
+    // treating it as a second caption LINE paired two cues into one graphic
+    // and "the second text never changed". Detect the rig instead: a sweep
+    // duration control + exactly two text props = mirror, ONE caption line.
+    try {
+      var pr = comp.properties;
+      for (var sw = 0; sw < pr.numItems; sw++) {
+        var swn = String(pr[sw].displayName || '').toLowerCase().replace(/[^a-z]/g, '');
+        if (swn.indexOf('starttimeduration') === 0 || (swn.indexOf('duration') >= 0 && swn.indexOf('automated') >= 0)) { res.hasSweep = true; break; }
+      }
+    } catch (eRig) {}
+    res.mirrorText = !!(res.hasSweep && res.textCount === 2);
+    if (res.mirrorText) res.textCount = 1;           // the mirror is NOT a caption line
     var prop = CP_findTextProp(comp.properties, KEYS);
     if (!prop) { CP_removeLastClipOnTrack(vTrack); return res; }
     var before = null; try { before = prop.getValue(); } catch (eB) {}
@@ -2262,7 +2278,14 @@ function CP_insertMogrtCaptions(argsJson) {
           try { introFixed += CP_forceIntroVisible(comp, args.params, wantEnd - startSec); } catch (eIv) {}
 
           var tprops = CP_textPropsOf(comp);
-          if (tprops.length > 1) {
+          if (probe.mirrorText && tprops.length > 1) {
+            // word-highlight engine with an UN-TAGGED expression mirror (Prism
+            // family): the caption words go into the MAIN text only — the mirror
+            // follows it by expression. Writing cue text (or '') into the mirror
+            // desynced the highlight and looked like "the second text never
+            // changes". The mirror still gets the font-only pass below.
+            if (CP_setMgrtText(tprops[0], grp[0].text, allowRich, args.textStyle)) textSet++;
+          } else if (tprops.length > 1) {
             // multi-line: one caption line per text field, blank unused slots
             var anySet = false;
             for (var j = 0; j < tprops.length; j++) {
@@ -2296,10 +2319,15 @@ function CP_insertMogrtCaptions(argsJson) {
           // from the main Text, so nothing else in its blob is touched.
           if (allowRich && args.textStyle && args.textStyle.font) {
             try {
+              // candidates: the name-tagged "(Change font only)" prop AND — on
+              // Prism-family engines — the un-tagged expression mirror (tprops[1])
+              var fgProps = [];
               for (var fgI = 0; fgI < props.numItems; fgI++) {
-                var fgDn = String(props[fgI].displayName || '').toLowerCase();
-                if (fgDn.indexOf('change font only') < 0) continue;
-                var fgV = null; try { fgV = props[fgI].getValue(); } catch (eFgV) {}
+                if (String(props[fgI].displayName || '').toLowerCase().indexOf('change font only') >= 0) { fgProps.push(props[fgI]); break; }
+              }
+              if (probe.mirrorText && tprops.length > 1 && fgProps.length === 0) fgProps.push(tprops[1]);
+              for (var fgN = 0; fgN < fgProps.length; fgN++) {
+                var fgV = null; try { fgV = fgProps[fgN].getValue(); } catch (eFgV) {}
                 if (typeof fgV === 'string' &&
                     (fgV.indexOf('fontEditValue') !== -1 || fgV.indexOf('capProp') !== -1)) {
                   var fgE = String(args.textStyle.font).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -2307,11 +2335,10 @@ function CP_insertMogrtCaptions(argsJson) {
                   fgOut = fgOut.replace(/("fontName"\s*:\s*")(?:[^"\\]|\\.)*(")/g,
                     function (m, a, b) { return a + fgE + b; });
                   if (fgOut !== fgV) {
-                    try { props[fgI].setValue(fgOut, true); fgFontSet++; }
-                    catch (eFgS1) { try { props[fgI].setValue(fgOut); fgFontSet++; } catch (eFgS2) {} }
+                    try { fgProps[fgN].setValue(fgOut, true); fgFontSet++; }
+                    catch (eFgS1) { try { fgProps[fgN].setValue(fgOut); fgFontSet++; } catch (eFgS2) {} }
                   }
                 }
-                break;
               }
             } catch (eFg) {}
           }

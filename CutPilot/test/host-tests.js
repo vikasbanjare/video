@@ -220,7 +220,9 @@ function makeWorld(opts) {
           mk.strdb('Text', S.text),                              // 12
           mk.point('Text Position', S.textPos),                  // 13
           mk.strdb('Note', S.note, () => writes.note++),         // 14
-          mk.strdb('Gradient FG Text (Change font only)', S.fgText, () => writes.fg++), // 15
+          // Prism-family engines ship the same mirror WITHOUT the name tag —
+          // opts.mirrorPlainName models that ("the second text never changes" bug)
+          mk.strdb(opts.mirrorPlainName ? 'Text FG' : 'Gradient FG Text (Change font only)', S.fgText, () => writes.fg++), // 15
           mk.point('Gradient FG Text Position', S.fgPos),        // 16
           mk.num('Text Scale', S.scale),                         // 17
           mk.num('Text Opacity', S.tOpacity),                    // 18
@@ -525,6 +527,31 @@ console.log('host.jsx — replace-track safety (stale/foreign/covered/failed cas
   assert(w.model.vTracks.length === 1 && w.model.vTracks[0].length === 1 &&
          w.model.vTracks[0][0].name === 'MyFootage.mp4', 'the existing top track is untouched');
   assert(/caption video track/i.test((r.sampleErrors || [])[0] || ''), 'the reason names the track failure');
+}
+
+// ═══ Prism-family: the highlight mirror is NOT a second caption line ═══
+console.log('host.jsx — un-tagged highlight mirror (Prism family, "second text never changes")');
+{
+  const w = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true, mirrorPlainName: true });
+  const host = loadHost(w);
+  const r = call(host, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Prism.mogrt',
+    cues: [{ start: 0.5, end: 1.5, text: 'first words' }, { start: 1.5, end: 2.5, text: 'second words' }],
+    videoTrack: null, audioTrack: 0, params: [],
+    textStyle: { font: 'Impact-Bold', bold: true, sizeScale: 1 }, stretch: false
+  });
+  const track = w.model.vTracks[w.model.vTracks.length - 1];
+  assert(r.ok && r.inserted === 2 && r.graphics === 2 && r.linesPerGraphic === 1,
+    'sweep rig + 2 text props = MIRROR: one cue per graphic (cues were being paired before)');
+  const b0 = JSON.parse(track[0]._flux.text.v), b1 = JSON.parse(track[1]._flux.text.v);
+  assert(b0.textEditValue === 'first words' && b1.textEditValue === 'second words',
+    'each caption\'s words land in the MAIN text');
+  const fg0 = JSON.parse(track[0]._flux.fgText.v);
+  assert(fg0.textEditValue === 'Flux Halo',
+    'the mirror\'s WORDS are untouched (expression-driven — writing them desynced the highlight)');
+  assert(fg0.fontEditValue[0] === 'Impact-Bold' && r.fgFontSet >= 2,
+    'the mirror still gets the FONT-only pass so the highlight face matches');
+  assert(r.swept === 2, 'word-by-word sweep engages on both captions');
 }
 
 // ═══ the "box with no words" bug: the engine's authored intro fade ═══
