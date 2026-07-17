@@ -1158,3 +1158,10 @@ footer { border-top: 1px solid var(--line); background: var(--card); max-height:
 .cp-pk-hexrow .mp-hex { flex: 1; min-width: 90px; }
 /* X/Y point steppers: wide enough to actually read the number */
 .mp-xy { width: 58px; min-width: 58px; text-align: center; }
+
+/* colour swatch: FIXED size — after the inline hex moved into the picker the
+   swatch collapsed into a 2px sliver ("thin bars instead of colours") */
+.cp-swatch { width: 30px; height: 20px; min-width: 30px; border-radius: 6px; border: 1px solid var(--line2); flex: 0 0 auto; cursor: pointer; }
+.cp-field { display: inline-flex; align-items: center; position: relative; }
+/* emphasis / feature toggles: one clean line each, never word-per-line columns */
+.check { display: flex; align-items: center; gap: 6px; grid-column: 1 / -1; }

@@ -189,8 +189,11 @@ function fluxProps() {
     if (!swatch) return { err: 'no fill swatch' };
     const before = document.getElementById('c-fill').value;
     swatch.click(); await sleep(120);
-    const hue = mount.querySelector('.cp-pk-huewrap');
-    const sv = mount.querySelector('.cp-pk-svwrap');
+    // the open popover is BODY-mounted now (so ancestor re-layouts can't
+    // collapse it mid-drag) — find the visible one at document level
+    const pop = document.querySelector('body > .cp-pop:not(.hidden)') || mount.querySelector('.cp-pop:not(.hidden)');
+    const hue = pop && pop.querySelector('.cp-pk-huewrap');
+    const sv = pop && pop.querySelector('.cp-pk-svwrap');
     if (!hue || !sv) return { err: 'picker not in popover' };
     function md(el, fx, fy) {
       const r = el.getBoundingClientRect();

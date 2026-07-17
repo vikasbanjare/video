@@ -306,7 +306,9 @@
     if ($('sz-panel-safezones')) $('sz-panel-safezones').classList.toggle('hidden', state.mode !== 'safezones');
     if ($('sz-panel-custom')) $('sz-panel-custom').classList.toggle('hidden', state.mode !== 'custom');
   }
-  function refreshBrandVisibility() { var box = $('sz-custom-fields'); if (box) box.classList.toggle('dim-disabled', state.brandMode !== 'custom'); }
+  // fully HIDE the My-branding inputs unless that mode is active — greyed-out
+  // empty slabs read as broken UI, not as disabled fields
+  function refreshBrandVisibility() { var box = $('sz-custom-fields'); if (box) box.classList.toggle('hidden', state.brandMode !== 'custom'); }
 
   function wire() {
     seg('sz-mode', 'mode', refreshModeVisibility);
@@ -351,12 +353,9 @@
     if (window.CPBridge && CPBridge.isCEP && CPBridge.isCEP()) {
       CPBridge.callHost('CP_getEnv').then(function (env) {
         state.env = env;
-        // basic generated title: seed from the sequence's own name once, so the
-        // branded overlay always has something sensible without any typing
-        if (!state.title && env && env.sequenceName) {
-          state.title = String(env.sequenceName).replace(/\.[^.]*$/, '');
-          var ti = $('sz-title'); if (ti && !ti.value) ti.value = state.title;
-        }
+        // NO auto title. Seeding it from the sequence's name burned a giant
+        // "SEQUENCE 01" onto the video — a hook title only renders when the
+        // user actually types one.
         if (cb) cb(); renderPreview();
       }).catch(function () { if (cb) cb(); renderPreview(); });
     } else { renderPreview(); }

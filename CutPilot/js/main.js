@@ -5635,7 +5635,20 @@
       e.stopPropagation();
       var willOpen = pop.classList.contains('hidden');
       if (_cpOpenPop) _cpOpenPop.classList.add('hidden');
-      if (willOpen) { pop.classList.remove('hidden'); pop._openerEl = sw; _cpOpenPop = pop; syncPicker(); } else { _cpOpenPop = null; }
+      if (willOpen) {
+        pop.classList.remove('hidden'); pop._openerEl = sw; _cpOpenPop = pop; syncPicker();
+        // BODY-mounted + fixed position: while dragging, live updates can hide or
+        // re-layout the swatch's ANCESTORS (colour-relevance sync, section folds,
+        // preview repaints) — which closed the picker mid-drag ("it collapses
+        // automatically"). Parked on <body>, nothing can collapse it but a real
+        // outside press.
+        var swR = sw.getBoundingClientRect();
+        document.body.appendChild(pop);
+        pop.style.position = 'fixed';
+        pop.style.zIndex = '99999';
+        pop.style.left = Math.max(6, Math.min((window.innerWidth || 360) - 195, swR.left)) + 'px';
+        pop.style.top = Math.max(6, Math.min((window.innerHeight || 600) - 245, swR.bottom + 6)) + 'px';
+      } else { _cpOpenPop = null; }
     });
     hx.addEventListener('click', function (e) { e.stopPropagation(); });
     hx.addEventListener('input', function () { var v = hx.value.charAt(0) === '#' ? hx.value : '#' + hx.value; if (/^#[0-9a-f]{6}$/i.test(v)) { hex = norm(v); sw.style.background = hex; onChange(hex); } });
@@ -6913,6 +6926,7 @@
           mogrtPath: bb.path, cues: tcues, videoTrack: null, audioTrack: 0,
           params: params, textStyle: textStyle, stretch: false, replaceTrack: reuseTrack,
           captionNames: captionGraphicNames(bb.path),
+          introMode: 'snappy',   // caption styles: words readable on any paused frame (templates keep fit-original)
           // animSpeed is a MULTIPLIER (1 = natural pace). 100 compressed every
           // entrance into ~1ms — Pop/Slide/Fade were invisible on the timeline.
           anim: (entrance !== 'none' ? entrance : null), animSpeed: 1

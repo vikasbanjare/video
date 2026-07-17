@@ -594,6 +594,22 @@ console.log('host.jsx — intro-fade neutralizer (empty-box-with-no-words bug)')
   assert(fL.animDur.x === 0 && Math.abs(fL.animDur.y - 1) < 1e-9,
     'a 4s cue KEEPS the authored [0, 1s] intro untouched — the ORIGINAL template animation');
   assert(rL.introFixed === 0, 'nothing was "fixed" when the original animation already fits');
+
+  // CAPTION STYLES pass introMode 'snappy': fast pop-in on EVERY caption, even
+  // when the authored 1s would "fit" — a paused frame early in a caption must
+  // never show an empty box (the Reels screenshot)
+  const wQ = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true });
+  const hQ = loadHost(wQ);
+  call(hQ, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt',
+    cues: [{ start: 0, end: 4.0, text: 'long caption line' }, { start: 4.0, end: 4.4, text: 'quick' }],
+    videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false, introMode: 'snappy'
+  });
+  const t = wQ.model.vTracks[wQ.model.vTracks.length - 1];
+  assert(Math.abs(t[0]._flux.animDur.y - 0.25) < 1e-9,
+    'snappy: a 4s caption pops in over 0.25s (authored 1s overridden — styles need readable words on any frame)');
+  assert(Math.abs(t[1]._flux.animDur.y - 0.16) < 1e-9,
+    'snappy: a 0.4s caption pops in over 0.16s (0.4×dur, floor 0.12s)');
 }
 {
   // a user's EXPLICIT sheet values for the two animation controls must win —

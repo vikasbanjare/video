@@ -2066,7 +2066,7 @@ function CP_setWordSweep(comp, durSec) {
  * make sure "Animation Type" holds a VALID variant (1..8) — an out-of-range
  * value blanks EVERY text layer. A value the USER explicitly sent in params
  * (template sheet) always wins. */
-function CP_forceIntroVisible(comp, params, clipDurSec) {
+function CP_forceIntroVisible(comp, params, clipDurSec, mode) {
   if (!comp || !comp.properties) return 0;
   var props = comp.properties, fixed = 0;
   var dur = (clipDurSec && clipDurSec > 0) ? clipDurSec : 1;
@@ -2079,6 +2079,19 @@ function CP_forceIntroVisible(comp, params, clipDurSec) {
     var nn = String(props[i].displayName || '').toLowerCase().replace(/[^a-z]/g, '');
     if (nn === 'animationstarttimeduration') {
       if (userSet(i)) continue;
+      // CAPTION STYLES ('snappy'): words must be readable almost immediately on
+      // EVERY frame a viewer can pause on — a fast 0.12–0.25s pop-in, always,
+      // even when the authored 1s fade would "fit". (A paused frame early in a
+      // caption showed an empty box — the user's Reels screenshot.) The user's
+      // own TEMPLATES keep the fit-original behaviour below.
+      if (mode === 'snappy') {
+        var fitS = 0.4 * dur;
+        if (fitS > 0.25) fitS = 0.25;
+        if (fitS < 0.12) fitS = 0.12;
+        try { props[i].setValue([0, fitS], true); fixed++; }
+        catch (eS1) { try { props[i].setValue({ x: 0, y: fitS }, true); fixed++; } catch (eS2) {} }
+        continue;
+      }
       var stime = 0, atime = 1;
       try {
         var cv = props[i].getValue();
@@ -2275,7 +2288,7 @@ function CP_insertMogrtCaptions(argsJson) {
           // fit the template's own entrance animation to THIS caption's length —
           // the authored 1s intro left short captions as an empty box, but the
           // animation itself is the Flux signature look, so it plays scaled
-          try { introFixed += CP_forceIntroVisible(comp, args.params, wantEnd - startSec); } catch (eIv) {}
+          try { introFixed += CP_forceIntroVisible(comp, args.params, wantEnd - startSec, args.introMode); } catch (eIv) {}
 
           var tprops = CP_textPropsOf(comp);
           if (probe.mirrorText && tprops.length > 1) {
