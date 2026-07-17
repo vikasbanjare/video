@@ -1041,7 +1041,34 @@
         else { wlang = 'hi'; romanize = true; }                                       // multilingual: transcribe + romanise
       }
       var modelLabel = swara ? 'Indian Voices (Sarvam)' : cloud ? 'Cloud · Groq (large-v3)' : String(model).split(/[\\/]/).pop();
-      return CPBridge.callHost('CP_getTranscribeSource').then(function (res) {
+      // Does this media file actually CONTAIN an audio stream? A podcast setup
+      // often has a video file with NO embedded sound + the mic recording as a
+      // separate audio clip — extracting from the video then fails with ffmpeg's
+      // "output contains no stream". Probe first; on silence, re-pick from the
+      // timeline's audio-bearing clips automatically.
+      function mediaHasAudio(p) {
+        return runProc(ff, ['-t', '0.3', '-i', p, '-vn', '-f', 'null', '-'])
+          .then(function () { return true; },
+                function (e) { return !/does not contain any stream|matches no streams|Output file is empty/i.test(String(e && e.message || e)); });
+      }
+      var NO_AUD_MSG = 'No audio found in your timeline clips — Pulse can\'t hear a voice to transcribe. ' +
+        'Make sure the clip with the voice (video with sound, or the audio clip on an A track) is on the timeline and not offline, then try again.';
+      return CPBridge.callHost('CP_getTranscribeSource').then(function (res0) {
+        var c0 = res0 && res0.clip;
+        if (!c0 || !c0.mediaPath) throw new Error('Put your video or audio clip on the timeline first.');
+        return mediaHasAudio(c0.mediaPath).then(function (ok) {
+          if (ok) return res0;
+          try { diag('asr', 'no audio inside ' + String(c0.mediaPath).split(/[\\/]/).pop() + ' — auto-switching to an audio clip'); } catch (eD) {}
+          return CPBridge.callHost('CP_getTranscribeSource', { ignoreSelection: true, excludeMediaPath: c0.mediaPath }).then(function (alt) {
+            if (!alt || !alt.clip || !alt.clip.mediaPath) throw new Error(NO_AUD_MSG);
+            return mediaHasAudio(alt.clip.mediaPath).then(function (ok2) {
+              if (!ok2) throw new Error(NO_AUD_MSG);
+              toast('🎧 Using the audio from “' + (alt.clip.name || 'your audio clip') + '” — the selected clip has no sound inside it.');
+              return alt;
+            });
+          });
+        });
+      }).then(function (res) {
         var clip = res.clip;
         if (!clip || !clip.mediaPath) throw new Error('Put your video or audio clip on the timeline first.');
         var shortName = (clip.name || 'clip').replace(/\.[^.]+$/, '');

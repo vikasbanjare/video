@@ -180,8 +180,13 @@ function CP_getSelectedClip() {
  * and otherwise fall back to the longest A/V clip in the sequence (the main
  * talking clip). Returns the same shape as CP_getSelectedClip.
  */
-function CP_getTranscribeSource() {
+function CP_getTranscribeSource(argsJson) {
   try {
+    // opts.ignoreSelection: pick from ALL clips (the panel retries this way when
+    // the selected clip's media turns out to have no audio stream inside it);
+    // opts.excludeMediaPath: never re-pick the media that just failed the probe.
+    var opts = {};
+    try { if (argsJson) opts = JSON.parse(argsJson) || {}; } catch (eOp) {}
     var seq = CP_activeSequence();
     var bad = /\.(aegraphic|mogrt|prproj|psd|ai|png|jpe?g|gif|tiff?|svg|eps|bmp|webp|heic)$/i;
     var selected = [], all = [];
@@ -195,6 +200,7 @@ function CP_getTranscribeSource() {
           var mp = null;
           try { mp = pItem ? pItem.getMediaPath() : null; } catch (eMp) {}
           if (!mp || bad.test(mp)) continue;          // skip graphics, stills, offline
+          if (opts.excludeMediaPath && mp === opts.excludeMediaPath) continue;   // this media already failed the audio probe
           var rec = {
             name: clip.name, mediaPath: mp,
             trackType: g === 0 ? 'audio' : 'video', trackIndex: t,
@@ -208,9 +214,16 @@ function CP_getTranscribeSource() {
         }
       }
     }
-    var pool = selected.length ? selected : all;
+    var pool = (!opts.ignoreSelection && selected.length) ? selected : all;
     if (!pool.length) return CP_fail('No clip with audio found. Put your video or audio clip on the timeline, then try again.');
-    pool.sort(function (a, b) { return b.dur - a.dur; });  // longest = most speech
+    // longest = most speech — but on a near-tie prefer the AUDIO track item:
+    // Premiere's linked selection selects video+audio together, and picking the
+    // (fractionally longer) VIDEO chose a file with no embedded sound.
+    pool.sort(function (a, b) {
+      var d = b.dur - a.dur;
+      if (d > 0.75 || d < -0.75) return d;
+      return (a.trackType === 'audio' ? 0 : 1) - (b.trackType === 'audio' ? 0 : 1);
+    });
     var main = pool[0];
     // Every timeline piece that uses the SAME source media — so a recording cut
     // into jump-cuts is transcribed in full and each piece mapped back to where
