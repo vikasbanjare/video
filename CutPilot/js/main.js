@@ -1103,11 +1103,23 @@
         var ffArgs = buildFfArgs();
         var pieces = insts.length > 1 ? (' (' + insts.length + ' cuts)') : '';
         setTranscriptBar('', ico, 'Extracting audio from “' + shortName + '”' + pieces + '…', null);
+        // a clip with NO audio stream makes every extract fail with ffmpeg's
+        // cryptic "Output file does not contain any stream" — translate it
+        function noAudioErr(e) {
+          return /does not contain any stream|Stream map .* matches no streams|Output file is empty/i.test(String(e && e.message || e));
+        }
         return runProc(ff, ffArgs).catch(function (eEnh) {
+          if (noAudioErr(eEnh)) throw eEnh;          // no audio at all — retrying won't help
           if (!audioEnhanceEnabled()) throw eEnh;   // already raw audio → a genuine extract failure
           _audioEnhFellBack = true;                  // this ffmpeg can't run the cleanup → retry raw
           try { diag('asr', 'audio-enhance unsupported, using raw audio: ' + (eEnh && eEnh.message || eEnh)); } catch (e) {}
           return runProc(ff, buildFfArgs());
+        }).catch(function (eX) {
+          if (noAudioErr(eX)) {
+            throw new Error('“' + shortName + '” has NO audio inside it — Pulse can\'t hear any voice to transcribe. ' +
+              'Click the clip that actually carries the sound (the video with the voice, or the audio clip on an A track), then tap Auto-transcribe again.');
+          }
+          throw eX;
         }).then(function () {
           setTranscriptBar('', ico, useCloud ? 'Transcribing in the cloud…' : ('Transcribing with ' + modelLabel + ' — this can take a minute…'), null);
           if (swara) {
