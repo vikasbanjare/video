@@ -1151,3 +1151,10 @@ footer { border-top: 1px solid var(--line); background: var(--card); max-height:
 .mp-row .mp-ctrl, .mp-row .mp-slider { flex: 1 1 auto; min-width: 0; }
 /* hints inside groups are decorative — space is the priority on a panel */
 .customizer .cust-group > p.hint { display: none; }
+
+/* hex input lives INSIDE the colour picker (rows show only the swatch) */
+.cp-pk-hexrow { display: flex; align-items: center; gap: 8px; margin: 7px 2px 2px; }
+.cp-pk-hexlbl { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .05em; }
+.cp-pk-hexrow .mp-hex { flex: 1; min-width: 90px; }
+/* X/Y point steppers: wide enough to actually read the number */
+.mp-xy { width: 58px; min-width: 58px; text-align: center; }

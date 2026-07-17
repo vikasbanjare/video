@@ -4,7 +4,7 @@
     "name": "Plain Subtitle",
     "category": "Captions",
     "kind": "caption",
-    "desc": "Static subtitle \u2014 NO word highlight (for word-by-word use the \u201cClean Subtitle\u201d style)"
+    "desc": "Static subtitle — NO word highlight (for word-by-word use the “Clean Subtitle” style)"
   },
   {
     "file": "Subtitle_1.mogrt",
@@ -18,7 +18,7 @@
     "name": "Word Pop",
     "category": "Captions",
     "kind": "caption",
-    "desc": "Active word colours AND scales up \u2014 punchy"
+    "desc": "Active word colours AND scales up — punchy"
   },
   {
     "file": "Subtitle_5.mogrt",
@@ -69,7 +69,7 @@
     "section": "flux",
     "premium": true,
     "kind": "title",
-    "desc": "Two-tone bold title \u2014 solid word + ghosted word"
+    "desc": "Two-tone bold title — solid word + ghosted word"
   },
   {
     "file": "Flux_Echo.mogrt",
@@ -96,7 +96,9 @@
     "section": "flux",
     "premium": true,
     "kind": "caption",
-    "desc": "Blue word-highlight caption box \u2014 wide"
+    "desc": "Blue word-highlight caption box — wide",
+    "hidden": true,
+    "hiddenWhy": "same design as Flux Halo (wide variant)"
   },
   {
     "file": "Flux_Orbit.mogrt",
@@ -123,7 +125,9 @@
     "section": "flux",
     "premium": true,
     "kind": "title",
-    "desc": "Pulsing text reveal"
+    "desc": "Pulsing text reveal",
+    "hidden": true,
+    "hiddenWhy": "same reveal family as Flux Echo"
   },
   {
     "file": "Flux_Surge.mogrt",
@@ -132,7 +136,9 @@
     "section": "flux",
     "premium": true,
     "kind": "title",
-    "desc": "Surging text reveal"
+    "desc": "Surging text reveal",
+    "hidden": true,
+    "hiddenWhy": "same reveal family as Flux Echo (and only one working colour control)"
   },
   {
     "file": "Flux_Vector.mogrt",

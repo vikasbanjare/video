@@ -381,8 +381,8 @@ console.log('captions.js (template library)');
   // curation policy: a style reachable from another via the customization tab
   // (colours/box/shadow/caps/gradient/size/position/entrance) is a duplicate.
   // Identity = font family x weight class x box-corner class -> 22 keepers.
-  assert(CPCaptions.TEMPLATES.length >= 18 && CPCaptions.TEMPLATES.length <= 40,
-         'catalog stays curated (18..40 genuinely distinct styles, currently ' + CPCaptions.TEMPLATES.length + ')');
+  assert(CPCaptions.TEMPLATES.length >= 18 && CPCaptions.TEMPLATES.length <= 90,
+         'catalog stays curated (18..90 incl. the Creator Pack tab, currently ' + CPCaptions.TEMPLATES.length + ')');
   // every template carries the library metadata the browser needs
   CPCaptions.TEMPLATES.forEach(function (t) {
     if (!t.category || t.popularity == null || !t.layout) {

@@ -2500,6 +2500,9 @@
         return '';
       }
       var withThumb = 0, withVideo = 0;
+      // near-duplicate designs are hidden in index.json ("if there is a similar
+      // design template remove that") — the kept sibling has the full control set
+      list = list.filter(function (m) { return !m.hidden; });
       state.bundledMogrts = list.map(function (m) {
         var base = String(m.file).replace(/\.mogrt$/i, '');
         var IMG = ['.png', '.jpg', '.jpeg', '.webp'], VID = ['.mp4', '.mov'];
@@ -5511,7 +5514,17 @@
     '#00C2FF', '#00E5C0', '#1DB954', '#39FF14', '#A3E635', '#C9A227', '#8B5E3C'
   ];
   var _cpOpenPop = null;
-  document.addEventListener('click', function () { if (_cpOpenPop) { _cpOpenPop.classList.add('hidden'); _cpOpenPop = null; } });
+  // Close on MOUSEDOWN outside (containment-checked) — the old document 'click'
+  // closer fired when a colour DRAG ended outside the popover (mousedown inside
+  // + mouseup outside = click on their common ancestor), so "when I let go of
+  // the mouse it collapses". A press that starts inside can never close it now.
+  document.addEventListener('mousedown', function (e) {
+    if (!_cpOpenPop) return;
+    if (_cpOpenPop.contains && _cpOpenPop.contains(e.target)) return;                       // inside the popover
+    var op = _cpOpenPop._openerEl;
+    if (op && op.contains && op.contains(e.target)) return;                                 // the opener toggles it itself
+    _cpOpenPop.classList.add('hidden'); _cpOpenPop = null;
+  }, true);
   function makeColorField(initialHex, onChange) {
     function norm(v) { v = String(v == null ? '' : v); if (v.charAt(0) !== '#') v = '#' + v; return /^#[0-9a-f]{6}$/i.test(v) ? v : '#ffffff'; }
     var hex = norm(initialHex);
@@ -5603,6 +5616,12 @@
       drawHue(); drawSV(); placeDots();
     }
 
+    // hex lives INSIDE the picker ("don't show the hex on every colour row —
+    // open the colour and the hex option is in there")
+    var hxRow = document.createElement('div'); hxRow.className = 'cp-pk-hexrow';
+    var hxLbl = document.createElement('span'); hxLbl.className = 'cp-pk-hexlbl'; hxLbl.textContent = 'Hex';
+    hxRow.appendChild(hxLbl); hxRow.appendChild(hx);
+    pop.appendChild(hxRow);
     var chips = document.createElement('div'); chips.className = 'cp-chips';
     CP_PALETTE.forEach(function (col) {
       var b = document.createElement('button'); b.type = 'button'; b.className = 'cp-chip'; b.style.background = col; b.title = col;
@@ -5616,12 +5635,12 @@
       e.stopPropagation();
       var willOpen = pop.classList.contains('hidden');
       if (_cpOpenPop) _cpOpenPop.classList.add('hidden');
-      if (willOpen) { pop.classList.remove('hidden'); _cpOpenPop = pop; syncPicker(); } else { _cpOpenPop = null; }
+      if (willOpen) { pop.classList.remove('hidden'); pop._openerEl = sw; _cpOpenPop = pop; syncPicker(); } else { _cpOpenPop = null; }
     });
     hx.addEventListener('click', function (e) { e.stopPropagation(); });
     hx.addEventListener('input', function () { var v = hx.value.charAt(0) === '#' ? hx.value : '#' + hx.value; if (/^#[0-9a-f]{6}$/i.test(v)) { hex = norm(v); sw.style.background = hex; onChange(hex); } });
     pop.addEventListener('click', function (e) { e.stopPropagation(); });
-    wrap.appendChild(sw); wrap.appendChild(hx); wrap.appendChild(pop);
+    wrap.appendChild(sw); wrap.appendChild(pop);   // the row is just the swatch — hex is inside the picker
     return { el: wrap, set: set, setDisplay: setDisplay, get: function () { return hex; } };
   }
   function mpAddColor(box, label, curHex, onChange) {
@@ -5670,7 +5689,7 @@
       var willOpen = list.classList.contains('hidden');
       if (_cpOpenPop) _cpOpenPop.classList.add('hidden');
       if (willOpen) {
-        list.classList.remove('hidden'); _cpOpenPop = list;
+        list.classList.remove('hidden'); list._openerEl = btn; _cpOpenPop = list;
         if (search) {
           search.value = '';
           for (var i = 0; i < items.length; i++) items[i].el.style.display = '';
@@ -5685,8 +5704,11 @@
   function mpAddPoint(box, label, x, y, onChange) {
     var row = mpRow(box, label);
     var wrap = document.createElement('span'); wrap.className = 'mp-ctrl mp-point';
-    var ix = document.createElement('input'); ix.type = 'number'; ix.step = 'any'; ix.className = 'mp-xy'; ix.value = (x != null ? x : 0); ix.title = 'X';
-    var iy = document.createElement('input'); iy.type = 'number'; iy.step = 'any'; iy.className = 'mp-xy'; iy.value = (y != null ? y : 0); iy.title = 'Y';
+    // a NaN/undefined value rendered an EMPTY spinner box ("what is this?") —
+    // coerce to a real number and show it at a readable precision
+    function numStr(v) { v = Number(v); if (!isFinite(v)) v = 0; return String(Math.round(v * 100) / 100); }
+    var ix = document.createElement('input'); ix.type = 'number'; ix.step = 'any'; ix.className = 'mp-xy'; ix.value = numStr(x); ix.title = 'X';
+    var iy = document.createElement('input'); iy.type = 'number'; iy.step = 'any'; iy.className = 'mp-xy'; iy.value = numStr(y); iy.title = 'Y';
     function up() { onChange({ x: parseFloat(ix.value) || 0, y: parseFloat(iy.value) || 0 }); }
     ix.addEventListener('input', up); iy.addEventListener('input', up);
     var lx = document.createElement('span'); lx.className = 'mp-xylbl'; lx.textContent = 'X';
@@ -6004,6 +6026,13 @@
       var ip = lp || {};                                // live value for this control
 
       if (t === MT.GROUP) { mpHeader(box, name); continue; }
+
+      // Pulse MANAGES these — showing them only confused ("Word Index 0"?,
+      // empty "Start Time, Duration" X/Y boxes). Word-by-word timing and the
+      // intro fit are set automatically per caption; hide them everywhere.
+      // ("Animation Type" — the entrance direction — stays: that's user choice.)
+      var nmInternal = normName(name).replace(/[^a-z]/g, '');
+      if (/^type$|^wordindex(manual)?$|^starttimedurationautomated$|^animationstarttimeduration$/.test(nmInternal)) continue;
 
       if (t === MT.COLOR) {
         anyColor = true;
