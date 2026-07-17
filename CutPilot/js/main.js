@@ -5582,12 +5582,14 @@
     '#00C2FF', '#00E5C0', '#1DB954', '#39FF14', '#A3E635', '#C9A227', '#8B5E3C'
   ];
   var _cpOpenPop = null;
+  var _cpDragging = false;   // HARD LOCK: while a picker drag is in progress NOTHING may close it
   // Close on MOUSEDOWN outside (containment-checked) — the old document 'click'
   // closer fired when a colour DRAG ended outside the popover (mousedown inside
   // + mouseup outside = click on their common ancestor), so "when I let go of
   // the mouse it collapses". A press that starts inside can never close it now.
   document.addEventListener('mousedown', function (e) {
     if (!_cpOpenPop) return;
+    if (_cpDragging) return;                                                                // a drag is live — never close
     if (_cpOpenPop.contains && _cpOpenPop.contains(e.target)) return;                       // inside the popover
     var op = _cpOpenPop._openerEl;
     if (op && op.contains && op.contains(e.target)) return;                                 // the opener toggles it itself
@@ -5656,14 +5658,21 @@
       var v = hsv2hex(H, S, V);
       setDisplay(v);
       placeDots();
+      // SELF-HEAL: if any live-update side effect hid the picker mid-drag
+      // ("select the brightness → it collapses"), rip it back open instantly —
+      // while the user's finger is down the picker is unconditionally alive.
+      if (_cpDragging && pop.classList.contains('hidden')) { pop.classList.remove('hidden'); _cpOpenPop = pop; }
       if (_pkRaf) return;                                   // throttle live preview to frame rate
       _pkRaf = requestAnimationFrame(function () { _pkRaf = null; onChange(hex); });
     }
     function dragOn(el, fn) {
       function move(e) { fn(e); e.preventDefault(); }
-      function up() { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); }
+      function up() {
+        _cpDragging = false;                                // drag over — normal close rules resume
+        document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+      }
       el.addEventListener('mousedown', function (e) {
-        e.stopPropagation(); fn(e);
+        e.stopPropagation(); _cpDragging = true; fn(e);
         document.addEventListener('mousemove', move);
         document.addEventListener('mouseup', up);
       });
