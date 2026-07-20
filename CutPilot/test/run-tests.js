@@ -1518,6 +1518,32 @@ console.log('caption grouping follows speech (pauses, Hindi danda, balanced spli
   assert(r.length === 2 && /^aur /.test(r[1].text), '"aur" leads the next caption: ' + JSON.stringify(r.map(c => c.text)));
 }
 
+// ---- overlapping duplicate lines ("same text 2 times") --------------------
+console.log('duplicate-cue cleanup (linked-clip double mapping / whisper repeats)');
+{
+  // the user's exact case: identical lines at 0:00.00 and 0:00.87, overlapping
+  const dd = CPCaptions.dedupeRepeatedCues([
+    { start: 0, end: 3.4, text: 'Hello everyone, my name is Akshay Uddeshi' },
+    { start: 0.87, end: 4.27, text: 'Hello everyone, my name is Akshay Uddeshi' },
+    { start: 6, end: 7.5, text: 'aaj hum baat karenge' },
+    { start: 12, end: 15, text: 'Hello everyone, my name is Akshay Uddeshi' }   // a REAL later repeat — keep
+  ]);
+  assert(dd.length === 3, 'overlapping duplicate collapses to one line, the real later repeat stays (got ' + dd.length + ')');
+  assert(Math.abs(dd[0].end - 4.27) < 1e-9, 'the kept line covers BOTH copies\' windows');
+  assert(dd[2].start === 12, 'the genuine repeat 12s later is untouched');
+  // word mode: tighter — only near-identical overlapping words collapse
+  const dw = CPCaptions.dedupeRepeatedCues([
+    { start: 1, end: 1.2, text: 'very' }, { start: 1.05, end: 1.25, text: 'very' },
+    { start: 2, end: 2.2, text: 'very' }                                       // said again — keep
+  ], { word: true });
+  assert(dw.length === 2, 'word mode keeps legitimately repeated words (got ' + dw.length + ')');
+  // different text overlapping is never touched
+  const dx = CPCaptions.dedupeRepeatedCues([
+    { start: 0, end: 2, text: 'pehli baat' }, { start: 0.5, end: 2.5, text: 'doosri baat' }
+  ]);
+  assert(dx.length === 2, 'different overlapping text stays');
+}
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 
 // ------------------------------------------------- template audit ----

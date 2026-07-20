@@ -2100,6 +2100,40 @@
   }
 
   /*
+   * Drop OVERLAPPING duplicate cues — the same words at nearly the same time
+   * ("same text 2 times"). Sources: a linked clip mapped once per track copy,
+   * chunked-cloud boundary overlap, and whisper's own repetition glitch.
+   * A cue is a duplicate only when an earlier kept cue has the SAME text AND
+   * their windows overlap (starts within `slack`) — a speaker legitimately
+   * repeating a line later is never touched (no overlap). The kept cue's
+   * window widens to cover both. opts.word uses tighter limits for per-word
+   * cues (short words legitimately repeat often). Pure + tested.
+   */
+  function dedupeRepeatedCues(cues, opts) {
+    if (!cues || !cues.length) return cues;
+    opts = opts || {};
+    var slack = opts.word ? 0.15 : 2.0;      // max start-to-start distance to count as "the same moment"
+    var margin = opts.word ? 0.05 : 0.3;     // windows must overlap (or nearly touch) this closely
+    function norm(t) { return String(t == null ? '' : t).replace(/\s+/g, ' ').replace(/^ | $/g, '').toLowerCase(); }
+    var out = [];
+    for (var i = 0; i < cues.length; i++) {
+      var c = cues[i], cn = norm(c.text), dup = false;
+      if (cn) {
+        var back = Math.max(0, out.length - 4);          // duplicates land adjacent — check the last few
+        for (var j = out.length - 1; j >= back; j--) {
+          var p = out[j];
+          if (norm(p.text) === cn && c.start < p.end + margin && Math.abs(c.start - p.start) <= slack) {
+            if (c.end > p.end) p.end = c.end;            // keep the wider window
+            dup = true; break;
+          }
+        }
+      }
+      if (!dup) out.push({ start: c.start, end: c.end, text: c.text });
+    }
+    return out;
+  }
+
+  /*
    * Merge a base preset with explicit user overrides into a flat style
    * object (absolute 1080p sizes — the renderer scales later). Empty/null
    * overrides fall back to the preset. Pure + tested.
@@ -2739,6 +2773,7 @@
     FONTS: FONTS,
     psFontName: psFontName,
     psIsBoldFace: psIsBoldFace,
+    dedupeRepeatedCues: dedupeRepeatedCues,
     mergeStyle: mergeStyle,
     ANIMATIONS: ANIMATIONS,
     getAnimation: getAnimation,

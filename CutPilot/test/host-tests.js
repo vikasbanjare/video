@@ -644,6 +644,27 @@ console.log('host.jsx — transcribe source picks by coverage ("multiple cut aud
   r = call(host, 'CP_getTranscribeSource', {});
   assert(r.ok && r.clip.mediaPath === '/m/voice.wav' && r.fromSelection === true && r.instances.length === 4,
     'selecting one piece still transcribes the WHOLE recording (every piece of that file)');
+  // scenario 4: a LINKED clip — the same file's video piece (V1) AND audio
+  // piece (A1) cover the same media range → must collapse to ONE instance
+  // (each caption line was being placed once per copy: "same text 2 times")
+  w.sandbox.app.project.activeSequence = {
+    sequenceID: 'sq-linked',
+    audioTracks: mkTracks([{ clips: mkClips([real('Talk audio', '/m/talk.mp4', 0, 30, 0)]) }]),
+    videoTracks: mkTracks([{ clips: mkClips([real('Talk.mp4', '/m/talk.mp4', 0, 30, 0)]) }])
+  };
+  r = call(host, 'CP_getTranscribeSource', {});
+  assert(r.ok && r.clip.mediaPath === '/m/talk.mp4' && r.instances.length === 1,
+    'LINKED clip (V+A of one file) = ONE instance — was 2, so every line showed twice: ' + JSON.stringify(r.instances));
+  // scenario 5: audio NUDGED 0.9s off the video — still one instance, and the
+  // AUDIO-track mapping wins (that is what actually plays)
+  w.sandbox.app.project.activeSequence = {
+    sequenceID: 'sq-slipped',
+    audioTracks: mkTracks([{ clips: mkClips([real('Talk audio', '/m/talk.mp4', 0.9, 30.9, 0)]) }]),
+    videoTracks: mkTracks([{ clips: mkClips([real('Talk.mp4', '/m/talk.mp4', 0, 30, 0)]) }])
+  };
+  r = call(host, 'CP_getTranscribeSource', {});
+  assert(r.ok && r.instances.length === 1 && Math.abs(r.instances[0].seqStart - 0.9) < 1e-6,
+    'slipped audio: one instance, the AUDIO copy\'s timing wins: ' + JSON.stringify(r.instances));
 }
 
 // ═══ Prism-family: the highlight mirror is NOT a second caption line ═══

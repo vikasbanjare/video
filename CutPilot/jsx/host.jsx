@@ -297,11 +297,31 @@ function CP_getTranscribeSource(argsJson) {
     // Every timeline piece that uses the SAME source media — so a recording cut
     // into jump-cuts is transcribed in full and each piece mapped back to where
     // it sits on the timeline (music/b-roll on other files are excluded).
+    // DEDUPE overlapping copies: a LINKED clip contributes the same media range
+    // TWICE (its video piece + its audio piece), and every caption line was
+    // then placed once per copy — "same text 2 times". Same mapping → union;
+    // different mapping (slipped/nudged audio) → the AUDIO-track copy wins
+    // (audio pieces are collected first — they are what actually plays). Only
+    // true jump-cut pieces (disjoint media ranges) stay separate.
     var instances = [];
     for (var k = 0; k < all.length; k++) {
-      if (all[k].mediaPath === main.mediaPath) {
-        instances.push({ inPoint: all[k].inPoint, outPoint: all[k].outPoint, seqStart: all[k].seqStart });
+      if (all[k].mediaPath !== main.mediaPath) continue;
+      var cnd = all[k], dup = false;
+      for (var m2 = 0; m2 < instances.length; m2++) {
+        var ex = instances[m2];
+        var ovl = (ex.outPoint < cnd.outPoint ? ex.outPoint : cnd.outPoint) -
+                  (ex.inPoint > cnd.inPoint ? ex.inPoint : cnd.inPoint);
+        if (ovl > 0.1) {
+          var offEx = ex.seqStart - ex.inPoint, offC = cnd.seqStart - cnd.inPoint;
+          if (offEx - offC < 0.05 && offC - offEx < 0.05) {
+            // identical mapping (the linked pair) → merge into one window
+            if (cnd.inPoint < ex.inPoint) { ex.seqStart -= (ex.inPoint - cnd.inPoint); ex.inPoint = cnd.inPoint; }
+            if (cnd.outPoint > ex.outPoint) ex.outPoint = cnd.outPoint;
+          }
+          dup = true; break;   // slipped copy: the earlier (audio-first) one stays
+        }
       }
+      if (!dup) instances.push({ inPoint: cnd.inPoint, outPoint: cnd.outPoint, seqStart: cnd.seqStart });
     }
     return CP_ok({ clip: main, instances: instances, fromSelection: selected.length > 0, candidates: all.length });
   } catch (e) { return CP_fail(e.message); }

@@ -1245,6 +1245,10 @@
             return out;
           }
           var cues = toSeq(rawCues);
+          // overlapping copies of the SAME line ("same text 2 times") — from a
+          // linked clip's double mapping, chunk-boundary overlap, or whisper
+          // repeating itself — collapse to one
+          cues = CPCaptions.dedupeRepeatedCues(cues);
           if (!cues.length) throw new Error('no speech detected in “' + shortName + '”');
 
           // Per-word timing for the highlight so it rides the SPOKEN word. Best
@@ -1260,7 +1264,7 @@
             wordsReady = Promise.resolve();
           } else if (groqWords && groqWords.length) {
             // REAL per-word timestamps from Groq → highlight rides the spoken word.
-            var gw = toSeq(groqWords);
+            var gw = CPCaptions.dedupeRepeatedCues(toSeq(groqWords), { word: true });
             state.transcriptWords = gw.length ? gw : null;
             wordsReady = Promise.resolve();
           } else if (typeof CPAudio !== 'undefined' && CPAudio.ffmpegEnvelope && ff) {
@@ -2025,12 +2029,15 @@
     }
     var cues = CPCaptions.parseSRT(text);
     if (!cues.length) throw new Error('No captions found inside ' + state.transcript.label);
+    // clean OVERLAPPING duplicate lines here too, so transcripts saved by older
+    // builds (the doubles already baked into the cache) come out right
+    cues = CPCaptions.dedupeRepeatedCues(cues);
     if (censorEnabled()) cues = cues.map(function (c) { c.text = maskProfanity(c.text); return c; });
     // Attach the REAL per-word timing so grouping can follow pauses inside a
     // line. Every site that changes state.transcript keeps transcriptWords in
     // step (nulling it for hand-picked/edited files), so these always match.
     if (state.transcriptWords && state.transcriptWords.length) {
-      var wsAtt = state.transcriptWords;
+      var wsAtt = CPCaptions.dedupeRepeatedCues(state.transcriptWords, { word: true });
       if (censorEnabled()) wsAtt = wsAtt.map(function (w) { return { start: w.start, end: w.end, text: maskProfanity(w.text) }; });
       cues.words = wsAtt;
     }
