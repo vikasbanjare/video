@@ -535,6 +535,22 @@
       });
     });
   }
+  /* Spawn curl with SECRET headers delivered via a stdin config (-K -), never
+     on the command line — argv is readable machine-wide (ps / Task Manager /
+     any local process), the stdin pipe is not. Non-secret args stay on argv. */
+  function curlWithSecret(cp, args, secretHeaders) {
+    var p = cp.spawn('curl', ['-K', '-'].concat(args));
+    try {
+      if (p.stdin && p.stdin.on) p.stdin.on('error', function () {});   // curl exiting early must not crash the panel (EPIPE)
+      var cfg = '';
+      for (var i = 0; i < secretHeaders.length; i++) {
+        cfg += 'header = "' + String(secretHeaders[i]).replace(/[\\"\r\n]/g, '') + '"\n';
+      }
+      p.stdin.write(cfg); p.stdin.end();
+    } catch (eCfg) {}
+    return p;
+  }
+
   /* Cloud transcription via Groq (OpenAI-compatible Whisper-large-v3). Uploads the
      extracted audio and returns [{start,end,text}] cues. Used when Accuracy =
      "☁️ Cloud · Groq". Needs a free API key (settings.groqKey). curl handles the
@@ -545,7 +561,6 @@
       if (!key) return reject(new Error('Add your free Groq API key in Settings → Auto-transcribe (console.groq.com/keys).'));
       var cp; try { cp = nodeReq('child_process'); } catch (e) { return reject(e); }
       var args = ['-sS', '--max-time', '600', 'https://api.groq.com/openai/v1/audio/transcriptions',
-        '-H', 'Authorization: Bearer ' + key,
         '-F', 'model=whisper-large-v3',
         '-F', 'response_format=verbose_json',
         '-F', 'timestamp_granularities[]=segment',
@@ -553,7 +568,7 @@
         '-F', 'temperature=0',
         '-F', 'file=@' + wavPath];
       if (lang && lang !== 'auto' && lang !== 'unknown') args.push('-F', 'language=' + lang);   // auto = let the engine detect
-      var p; try { p = cp.spawn('curl', args); } catch (e) { return reject(e); }
+      var p; try { p = curlWithSecret(cp, args, ['Authorization: Bearer ' + key]); } catch (e) { return reject(e); }
       var out = '', err = '';
       if (p.stdout) p.stdout.on('data', function (d) { out += d.toString(); });
       if (p.stderr) p.stderr.on('data', function (d) { err += d.toString(); });
@@ -664,7 +679,6 @@
       var url = translate ? 'https://api.sarvam.ai/speech-to-text-translate' : 'https://api.sarvam.ai/speech-to-text';
       var model = translate ? 'saaras:v2.5' : 'saarika:v2.5';
       var args = ['-sS', '--max-time', '600', url,
-        '-H', 'api-subscription-key: ' + key,
         '-F', 'model=' + model,
         '-F', 'with_timestamps=true',
         '-F', 'file=@' + wavPath];
@@ -681,7 +695,7 @@
         if (!OK[lc]) lc = 'unknown';
         args.push('-F', 'language_code=' + lc);
       }
-      var p; try { p = cp.spawn('curl', args); } catch (e) { return reject(e); }
+      var p; try { p = curlWithSecret(cp, args, ['api-subscription-key: ' + key]); } catch (e) { return reject(e); }
       var out = '', err = '';
       if (p.stdout) p.stdout.on('data', function (d) { out += d.toString(); });
       if (p.stderr) p.stderr.on('data', function (d) { err += d.toString(); });
@@ -772,8 +786,8 @@
       var tmp = pathMod.join(os.tmpdir(), 'cutpilot-groq-' + Date.now() + '.json');
       try { fs.writeFileSync(tmp, JSON.stringify(body), 'utf8'); } catch (eW) { return reject(eW); }
       var args = ['-sS', '--max-time', String(opts.timeout || 120), 'https://api.groq.com/openai/v1/chat/completions',
-        '-H', 'Authorization: Bearer ' + key, '-H', 'Content-Type: application/json', '--data-binary', '@' + tmp];
-      var p; try { p = cp.spawn('curl', args); } catch (eS) { try { fs.unlinkSync(tmp); } catch (e) {} return reject(eS); }
+        '-H', 'Content-Type: application/json', '--data-binary', '@' + tmp];
+      var p; try { p = curlWithSecret(cp, args, ['Authorization: Bearer ' + key]); } catch (eS) { try { fs.unlinkSync(tmp); } catch (e) {} return reject(eS); }
       var out = '', err = '';
       if (p.stdout) p.stdout.on('data', function (d) { out += d.toString(); });
       if (p.stderr) p.stderr.on('data', function (d) { err += d.toString(); });
@@ -5874,8 +5888,10 @@
     try {
       if (!path || !/\.mogrt$/i.test(path)) return null;
       var cp = nodeReq('child_process');
-      var q = '"' + String(path).replace(/(["$`\\])/g, '\\$1') + '"';
-      var buf = cp.execSync('unzip -p ' + q + ' definition.json', { maxBuffer: 64 * 1024 * 1024 });
+      // execFileSync with an args ARRAY — no shell. The old quoted-string form
+      // was POSIX-escaped but NOT cmd.exe-safe: a mogrt filename containing a
+      // quote (or %VAR%) could break out of the quoting on Windows.
+      var buf = cp.execFileSync('unzip', ['-p', String(path), 'definition.json'], { maxBuffer: 64 * 1024 * 1024 });
       var d = JSON.parse(buf.toString('utf8'));
       return (d && d.clientControls) ? d.clientControls : null;
     } catch (e) { return null; }
@@ -7944,10 +7960,12 @@
   if ($('btn-smart-cleanup')) $('btn-smart-cleanup').addEventListener('click', runSmartCleanup);
 
   // ---- Verbatim retake removal (the accurate path for scripted re-records) ----
-  function _curlJson(args) {
+  function _curlJson(args, secretHeaders) {
     return new Promise(function (resolve, reject) {
       var cp; try { cp = nodeReq('child_process'); } catch (e) { return reject(e); }
-      var p; try { p = cp.spawn('curl', args); } catch (e2) { return reject(e2); }
+      var p; try {
+        p = (secretHeaders && secretHeaders.length) ? curlWithSecret(cp, args, secretHeaders) : cp.spawn('curl', args);
+      } catch (e2) { return reject(e2); }
       var out = '', err = '';
       if (p.stdout) p.stdout.on('data', function (d) { out += d.toString(); });
       if (p.stderr) p.stderr.on('data', function (d) { err += d.toString(); });
@@ -7961,7 +7979,7 @@
   }
   function verbatimDeepgram(audioPath, key) {
     return _curlJson(['-sS', '--max-time', '600', CPVerbatim.deepgramUrl({}),
-      '-H', 'Authorization: Token ' + key, '-H', 'Content-Type: audio/mpeg', '--data-binary', '@' + audioPath])
+      '-H', 'Content-Type: audio/mpeg', '--data-binary', '@' + audioPath], ['Authorization: Token ' + key])
       .then(function (j) {
         if (j.err_code || j.error) throw new Error('Deepgram: ' + (j.err_msg || j.error || j.reason || 'error'));
         var ws = CPVerbatim.parseDeepgram(j);
@@ -7971,19 +7989,19 @@
   }
   function verbatimAssembly(audioPath, key) {
     return _curlJson(['-sS', '--max-time', '600', 'https://api.assemblyai.com/v2/upload',
-      '-H', 'authorization: ' + key, '-H', 'Content-Type: application/octet-stream', '--data-binary', '@' + audioPath])
+      '-H', 'Content-Type: application/octet-stream', '--data-binary', '@' + audioPath], ['authorization: ' + key])
       .then(function (up) {
         if (!up.upload_url) throw new Error('AssemblyAI upload failed' + (up.error ? ': ' + up.error : '.'));
         return _curlJson(['-sS', '--max-time', '60', 'https://api.assemblyai.com/v2/transcript',
-          '-H', 'authorization: ' + key, '-H', 'Content-Type: application/json',
-          '-d', JSON.stringify(CPVerbatim.assemblySubmitBody(up.upload_url, {}))]);
+          '-H', 'Content-Type: application/json',
+          '-d', JSON.stringify(CPVerbatim.assemblySubmitBody(up.upload_url, {}))], ['authorization: ' + key]);
       }).then(function (sub) {
         if (!sub.id) throw new Error('AssemblyAI submit failed' + (sub.error ? ': ' + sub.error : '.'));
         return new Promise(function (resolve, reject) {
           var tries = 0;
           (function poll() {
             tries++;
-            _curlJson(['-sS', '--max-time', '60', 'https://api.assemblyai.com/v2/transcript/' + sub.id, '-H', 'authorization: ' + key])
+            _curlJson(['-sS', '--max-time', '60', 'https://api.assemblyai.com/v2/transcript/' + sub.id], ['authorization: ' + key])
               .then(function (t) {
                 if (t.status === 'completed') { var ws = CPVerbatim.parseAssembly(t); if (!ws.length) return reject(new Error('AssemblyAI returned no words.')); return resolve(ws); }
                 if (t.status === 'error') return reject(new Error('AssemblyAI: ' + (t.error || 'error')));
