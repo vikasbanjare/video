@@ -1468,7 +1468,12 @@ function CP_setMgrtText(prop, text, allowRich, style) {
   // corrupts the clip). Crucially, every run-length field must match the NEW
   // text length or Premiere throws "bad any cast"; update them generically
   // (scalar AND single-run array forms). Gated behind allowRich.
-  if (cur.indexOf('textEditValue') !== -1 || cur.indexOf('capProp') !== -1) {
+  // NOTE the strDB guard: once the strDB branch has extended a value with
+  // fonteditinfo (capProp…), a REGENERATE must still route it to the strDB
+  // branch — matching capProp here would fail the textEditValue swap and
+  // break re-runs.
+  if (cur.indexOf('"strDB"') === -1 &&
+      (cur.indexOf('textEditValue') !== -1 || cur.indexOf('capProp') !== -1)) {
     if (!allowRich) return false;
     var n = String(text).length, e = esc(text), changed = false;
     var out = cur.replace(/("textEditValue"\s*:\s*")(?:[^"\\]|\\.)*(")/,
@@ -1522,6 +1527,47 @@ function CP_setMgrtText(prop, text, allowRich, style) {
     var os = cur.replace(/("str"\s*:\s*")(?:[^"\\]|\\.)*(")/g,
       function (m, a, b) { chs = true; return a + es + b; });
     if (chs) {
+      // FONT on strDB-valued Text controls: the face lives in a control-level
+      // `fonteditinfo` (see the mogrt's definition.json), NOT in the plain
+      // value — which is why font picks were silently ignored on templates
+      // whose live value is strDB. Write the value EXTENDED with fonteditinfo,
+      // read back to confirm this Premiere accepted the shape, and fall back
+      // to the plain write if it didn't (words always land). NOT gated behind
+      // allowRich: that guard protects the run-length-sensitive RICH rewrite;
+      // this shape has no run-lengths and self-verifies + reverts.
+      if (style && style.font) {
+        try {
+          var fe3 = esc(String(style.font));
+          var ext = null;
+          if (os.indexOf('"fonteditinfo"') !== -1) {
+            ext = CP_rewriteBlobField(os, 'fontEditValue', CP_runStringsAll(fe3));
+            if (style.bold != null) ext = CP_rewriteBlobField(ext, 'fontFSBoldValue', CP_runBoolsAll(!!style.bold));
+            if (style.italic != null) ext = CP_rewriteBlobField(ext, 'fontFSItalicValue', CP_runBoolsAll(!!style.italic));
+            if (style.caps != null) ext = CP_rewriteBlobField(ext, 'fontFSAllCapsValue', CP_runBoolsAll(!!style.caps));
+          } else if (os.charAt(0) === '{') {
+            ext = '{' +
+              '"fonteditinfo":{"capPropFontEdit":true,"capPropFontFauxStyleEdit":true,"capPropFontSizeEdit":true,' +
+              '"fontEditValue":"' + fe3 + '",' +
+              '"fontFSAllCapsValue":' + (style.caps ? 'true' : 'false') + ',' +
+              '"fontFSBoldValue":' + (style.bold ? 'true' : 'false') + ',' +
+              '"fontFSItalicValue":' + (style.italic ? 'true' : 'false') + ',' +
+              '"fontFSSmallCapsValue":false},' +
+              os.substring(1);
+          }
+          if (ext && ext !== os) {
+            var extSet = false;
+            try { prop.setValue(ext, true); extSet = true; } catch (eX1) {
+              try { prop.setValue(ext); extSet = true; } catch (eX2) {}
+            }
+            if (extSet) {
+              var back = '';
+              try { back = String(prop.getValue()); } catch (eBk) {}
+              if (back.indexOf(fe3) !== -1) return true;   // the font STUCK
+              // this Premiere stripped/refused the shape → plain write below
+            }
+          }
+        } catch (eFei) {}
+      }
       try { prop.setValue(os, true); return true; } catch (eS1) {}
       try { prop.setValue(os); return true; } catch (eS2) {}
     }

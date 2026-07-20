@@ -6627,6 +6627,11 @@
     if (ov.glowBlur != null) eff.glowBlur = ov.glowBlur;
     // the visible "Word-by-word highlight" toggle is authoritative for the sweep
     eff.wordHl = cchk('c-wordhl');
+    // 🎬 "As spoken" entrance → the engine's base text goes invisible and each
+    // word appears when the sweep (timed to the words) reaches it. Carried on
+    // the preset so Apply AND the real preview map it identically.
+    eff.revealSpoken = (state.captionEntrance === 'spoken');
+    if (eff.revealSpoken) eff.wordHl = true;   // the reveal IS the sweep — keep it on
     // vertical position (the Position slider / Top-Center-Bottom / Safe-zone
     // presets) — drives the engine's real Text Position control
     if (ov.yPct != null && isFinite(ov.yPct)) eff.yPct = ov.yPct;
@@ -6894,7 +6899,10 @@
     // second stop: a real two-tone gradient when the style has one, otherwise
     // the SAME colour (solid) — the engine always renders colour1→colour2.
     color(P('highlighted word color 2'), (wantsHighlight && preset.highlight2) ? preset.highlight2 : hlHex);
-    num(P('text opacity'), 100);                   // never inherit a dimmed default
+    // ✨ "As spoken": base text INVISIBLE (0) — each word only paints when the
+    // highlight sweep reaches it, so text appears exactly when it's said.
+    // Otherwise 100: never inherit a dimmed default.
+    num(P('text opacity'), preset.revealSpoken ? 0 : 100);
 
     // ---- box ----------------------------------------------------------------
     var hasBox = !!preset.boxColor;
@@ -7095,7 +7103,9 @@
           introMode: 'snappy',   // caption styles: words readable on any paused frame (templates keep fit-original)
           // animSpeed is a MULTIPLIER (1 = natural pace). 100 compressed every
           // entrance into ~1ms — Pop/Slide/Fade were invisible on the timeline.
-          anim: (entrance !== 'none' ? entrance : null), animSpeed: 1
+          // 'spoken' is NOT a Motion keyframe entrance — it rides the engine's
+          // sweep + Text Opacity 0 (already mapped into params above).
+          anim: (entrance !== 'none' && entrance !== 'spoken' ? entrance : null), animSpeed: 1
         });
       });
     }).then(function (r) {
@@ -7126,6 +7136,8 @@
       // instead of letting "I changed the font and nothing happened" ride.
       if (textStyle && textStyle.font && r.fontApplied && r.fontApplied !== textStyle.font) {
         toast('⚠️ This template kept its own font (' + r.fontApplied + ') instead of ' + textStyle.font + '. If the font you picked isn\'t installed on this computer, install it or pick another from the Font list.', true);
+      } else if (textStyle && textStyle.font && r.textSet > 0 && !r.fontApplied) {
+        toast('⚠️ This template didn\'t accept a font change from Pulse (its text stores no font field). Your words, colours and layout all applied.', true);
       }
       // track this job (own "mode" so the old PNG-only restyle UI never shows for
       // it — editable captions are re-edited natively in Essential Graphics) and

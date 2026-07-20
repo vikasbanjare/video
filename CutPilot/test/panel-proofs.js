@@ -541,6 +541,25 @@ function fluxProps() {
     ok('captions follow the speech: a 0.9s pause and a Hindi danda (।) each start a new caption, and attached word timing splits at the REAL pause inside a line');
   else bad('speech-following grouping wrong: ' + JSON.stringify(gr));
 
+  // ---- L. "🎬 AS SPOKEN" reveal: the entrance option exists and maps the
+  // engine's base Text Opacity to 0, so each word paints only when the word
+  // sweep reaches it ("text comes only when they say it") -------------------
+  const sp = await page.evaluate((PROPS) => {
+    const D = window.CP_DEBUG;
+    if (!D || !D.mapPresetToFlux) return { fatal: 'mapPresetToFlux hook missing' };
+    const btn = document.querySelector('[data-e="spoken"]');
+    if (!btn) return { fatal: 'no As-spoken entrance button in the DOM' };
+    const IDX = {}; PROPS.forEach(p => { IDX[p.name.toLowerCase()] = p.i; });
+    const on = D.mapPresetToFlux({ fill: '#ffffff', highlight: '#ffd400', revealSpoken: true }, PROPS) || [];
+    const off = D.mapPresetToFlux({ fill: '#ffffff', highlight: '#ffd400' }, PROPS) || [];
+    const pick = (ps) => { const f = ps.find(p => p.i === IDX['text opacity']); return f && f.value; };
+    return { onV: pick(on), offV: pick(off) };
+  }, PROPS);
+  if (sp.fatal) bad('as-spoken reveal: ' + sp.fatal);
+  else if (sp.onV === 0 && sp.offV === 100)
+    ok('🎬 As spoken: base Text Opacity 0 with the option on (words appear only when the sweep reaches them), 100 otherwise');
+  else bad('as-spoken reveal wrong: ' + JSON.stringify(sp));
+
   await browser.close();
   console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');
   process.exit(failed ? 1 : 0);

@@ -166,20 +166,30 @@ function makeWorld(opts) {
           point: (name, store) => ({ displayName: name, getValue() { return { x: store.x, y: store.y }; },
                                      setValue(v) { store.x = (v && v.x != null) ? v.x : v[0]; store.y = (v && v.y != null) ? v.y : v[1]; } }),
           // onWrite fires only when the CONTENT changes — CP_forceRerender
-          // legitimately re-applies a prop's own value as a re-composite kick
+          // legitimately re-applies a prop's own value as a re-composite kick.
+          // opts.strdbRejectExtended models a Premiere build that REFUSES the
+          // fonteditinfo-extended value shape (throws on setValue).
           strdb: (name, store, onWrite) => ({ displayName: name, getValue() { return store.v; },
-                                              setValue(v) { if (String(v) !== store.v && onWrite) onWrite(); store.v = String(v); } })
+                                              setValue(v) {
+                                                if (opts.strdbRejectExtended && String(v).indexOf('fonteditinfo') !== -1) throw new Error('invalid value');
+                                                if (String(v) !== store.v && onWrite) onWrite(); store.v = String(v);
+                                              } })
         };
         const S = clip._flux = {
           // The LIVE 'Text' property probes as RICH AE source text on real
           // machines (the user's v0.9.263 diagnostics: probeKind:"rich") even
           // though the definition control is strDB — model reality. Single-run,
           // so the safe text-only rewrite verifies round-trip in the probe.
-          text:   { v: JSON.stringify({ capPropFontEdit: true, capPropTextRunCount: 1,
-                                        textEditValue: 'Flux Halo', capPropTextRunLength: [9],
-                                        fontEditValue: ['Inter-SemiBold'], fontSizeEditValue: [90],
-                                        fontFSBoldValue: [false], fontFSAllCapsValue: [false],
-                                        fontFSItalicValue: [false], fillColorEditValue: [[1, 1, 1]] }) },
+          // opts.strdbText models the OTHER reality (older builds / uploaded
+          // templates): the live value is the definition's plain strDB — where
+          // the font must ride a control-level `fonteditinfo`.
+          text:   { v: opts.strdbText
+                       ? '{"strDB":[{"localeString":"en_US","str":"Flux Halo"}]}'
+                       : JSON.stringify({ capPropFontEdit: true, capPropTextRunCount: 1,
+                                          textEditValue: 'Flux Halo', capPropTextRunLength: [9],
+                                          fontEditValue: ['Inter-SemiBold'], fontSizeEditValue: [90],
+                                          fontFSBoldValue: [false], fontFSAllCapsValue: [false],
+                                          fontFSItalicValue: [false], fillColorEditValue: [[1, 1, 1]] }) },
           // the gradient overlay mirror is rich too; its WORDS are expression-
           // driven from the main Text, only its FONT is meant to be edited
           fgText: { v: JSON.stringify({ capPropFontEdit: true, capPropTextRunCount: 1,
@@ -661,6 +671,55 @@ console.log('host.jsx — un-tagged highlight mirror (Prism family, "second text
   assert(r.swept === 2, 'word-by-word sweep engages on both captions');
   assert(r.fontApplied === 'Impact-Bold',
     'READBACK reports the face the graphic actually stored (ground truth for "font never changes"): ' + r.fontApplied);
+}
+
+// ═══ strDB-valued Text (uploaded templates / older builds): the font must ride
+// a control-level fonteditinfo — the plain value has NO font field at all ═══
+console.log('host.jsx — strDB text: font written via fonteditinfo ("fonts are not changing")');
+{
+  const w = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true, strdbText: true });
+  const host = loadHost(w);
+  const r = call(host, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt', cues: [{ start: 0.5, end: 1.5, text: 'naya font' }],
+    videoTrack: null, audioTrack: 0, params: [], textStyle: { font: 'BebasNeue-Regular', bold: false, sizeScale: 1 }, stretch: false
+  });
+  const v = w.model.vTracks[w.model.vTracks.length - 1][0]._flux.text.v;
+  assert(r.ok && r.inserted === 1 && r.textSet >= 1, 'insert succeeds on a strDB-text template: ' + JSON.stringify(r).slice(0, 140));
+  assert(v.indexOf('"str":"naya font"') !== -1, 'the words land in the strDB value');
+  assert(v.indexOf('"fonteditinfo"') !== -1 && v.indexOf('"fontEditValue":"BebasNeue-Regular"') !== -1,
+    'the chosen face is written into a control-level fonteditinfo (plain strDB has no font field): ' + v.slice(0, 160));
+  assert(r.fontApplied === 'BebasNeue-Regular', 'READBACK confirms the font stuck: ' + r.fontApplied);
+}
+{
+  // a Premiere build that REFUSES the extended shape: words still land, and the
+  // readback honestly reports that no font channel exists (panel says so)
+  const w = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true, strdbText: true, strdbRejectExtended: true });
+  const host = loadHost(w);
+  const r = call(host, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt', cues: [{ start: 0.5, end: 1.5, text: 'naya font' }],
+    videoTrack: null, audioTrack: 0, params: [], textStyle: { font: 'BebasNeue-Regular', bold: false, sizeScale: 1 }, stretch: false
+  });
+  const v = w.model.vTracks[w.model.vTracks.length - 1][0]._flux.text.v;
+  assert(r.ok && r.inserted === 1 && r.textSet >= 1, 'refusing build still gets the WORDS (plain fallback)');
+  assert(v.indexOf('"str":"naya font"') !== -1 && v.indexOf('fonteditinfo') === -1, 'value stays plain strDB after the refusal');
+  assert(r.fontApplied == null, 'readback honestly reports no font channel (got ' + r.fontApplied + ')');
+}
+
+// ═══ "As spoken" reveal: Text Opacity 0 rides the params — regenerate restores ═══
+console.log('host.jsx — As-spoken reveal params (base text invisible, sweep paints each word)');
+{
+  const w = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true });
+  const host = loadHost(w);
+  const r = call(host, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt', cues: [{ start: 0.5, end: 1.5, text: 'ek do teen' }],
+    videoTrack: null, audioTrack: 0,
+    params: [{ i: 18, kind: 'number', value: 0 }],   // what mapPresetToFlux sends for revealSpoken
+    textStyle: null, stretch: false
+  });
+  const f = w.model.vTracks[w.model.vTracks.length - 1][0]._flux;
+  assert(r.ok && r.inserted === 1, 'as-spoken insert succeeds');
+  assert(f.tOpacity.v === 0, 'base Text Opacity is 0 — unspoken words are INVISIBLE until the sweep reaches them');
+  assert(f.sweepType.v === 2 && f.sweepDur.x === 0, 'the word sweep is engaged from t=0 (words appear AS spoken)');
 }
 
 // ═══ the "box with no words" bug: the engine's authored intro fade ═══
