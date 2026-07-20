@@ -529,6 +529,51 @@ console.log('host.jsx — replace-track safety (stale/foreign/covered/failed cas
   assert(/caption video track/i.test((r.sampleErrors || [])[0] || ''), 'the reason names the track failure');
 }
 
+// ═══ NESTED SEQUENCES: the voice inside a nest must be found + time-mapped ═══
+console.log('host.jsx — transcribe source resolves nested sequences ("only one word transcribed")');
+{
+  const w = makeWorld({ vTracks: 1, aTracks: 1 });
+  const host = loadHost(w);
+  const T = s => ({ seconds: s, get secs() { return this.seconds; } });
+  const mkTracks = list => { const o = {}; list.forEach((tr, i) => { o[i] = tr; }); o.numTracks = list.length; return o; };
+  const mkClips = arr => { const c = { numItems: arr.length }; arr.forEach((x, i) => { c[i] = x; }); return c; };
+  const real = (name, path, st, en, ip, sel) => ({
+    name, start: T(st), end: T(en), inPoint: T(ip), outPoint: T(ip + (en - st)),
+    isSelected: () => !!sel, projectItem: { getMediaPath: () => path, nodeId: 'n_' + name }
+  });
+  const nest = (name, nodeId, st, en, ip) => ({
+    name, start: T(st), end: T(en), inPoint: T(ip), outPoint: T(ip + (en - st)),
+    isSelected: () => false, projectItem: { getMediaPath: () => null, nodeId }
+  });
+  // inner sequence: ONE voice file jump-cut into two pieces on its own timeline
+  const innerSeq = {
+    sequenceID: 'sq-inner', projectItem: { nodeId: 'nest1' },
+    audioTracks: mkTracks([{ clips: mkClips([
+      real('voice a', '/m/voice.wav', 0, 40, 0),     // inner 0–40 uses media 0–40
+      real('voice b', '/m/voice.wav', 40, 80, 45)    // inner 40–80 uses media 45–85
+    ]) }]),
+    videoTracks: mkTracks([])
+  };
+  // master timeline: the nest placed at 5s showing inner 10–70, plus a stray 3s clip
+  const master = {
+    sequenceID: 'sq-master',
+    audioTracks: mkTracks([{ clips: mkClips([nest('ETF nest', 'nest1', 5, 65, 10)]) }]),
+    videoTracks: mkTracks([{ clips: mkClips([real('Stray.mp4', '/m/stray.mp4', 0, 3, 0)]) }])
+  };
+  w.sandbox.app.project.activeSequence = master;
+  w.sandbox.app.project.sequences = { numSequences: 1, 0: innerSeq };
+  const r = call(host, 'CP_getTranscribeSource', {});
+  assert(r.ok === true, 'nested timeline resolves: ' + JSON.stringify(r).slice(0, 120));
+  assert(r.clip.mediaPath === '/m/voice.wav',
+    'the VOICE file inside the nest wins (not the stray top-level clip)');
+  assert(r.instances.length === 2, 'both jump-cut pieces inside the nest are found');
+  const i0 = r.instances[0], i1 = r.instances[1];
+  assert(Math.abs(i0.inPoint - 10) < 1e-6 && Math.abs(i0.outPoint - 40) < 1e-6 && Math.abs(i0.seqStart - 5) < 1e-6,
+    'piece 1 time-mapped through the nest (media 10→40 at master 5s): ' + JSON.stringify(i0));
+  assert(Math.abs(i1.inPoint - 45) < 1e-6 && Math.abs(i1.outPoint - 75) < 1e-6 && Math.abs(i1.seqStart - 35) < 1e-6,
+    'piece 2 time-mapped + clipped to the nest window (media 45→75 at master 35s): ' + JSON.stringify(i1));
+}
+
 // ═══ Prism-family: the highlight mirror is NOT a second caption line ═══
 console.log('host.jsx — un-tagged highlight mirror (Prism family, "second text never changes")');
 {

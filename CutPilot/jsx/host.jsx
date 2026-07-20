@@ -190,30 +190,80 @@ function CP_getTranscribeSource(argsJson) {
     var seq = CP_activeSequence();
     var bad = /\.(aegraphic|mogrt|prproj|psd|ai|png|jpe?g|gif|tiff?|svg|eps|bmp|webp|heic)$/i;
     var selected = [], all = [];
-    var groups = [seq.audioTracks, seq.videoTracks]; // audio first: most likely the voice
-    for (var g = 0; g < groups.length; g++) {
-      for (var t = 0; t < groups[g].numTracks; t++) {
-        var track = groups[g][t];
-        for (var i = 0; i < track.clips.numItems; i++) {
-          var clip = track.clips[i];
-          var pItem = clip.projectItem;
-          var mp = null;
-          try { mp = pItem ? pItem.getMediaPath() : null; } catch (eMp) {}
-          if (!mp || bad.test(mp)) continue;          // skip graphics, stills, offline
-          if (opts.excludeMediaPath && mp === opts.excludeMediaPath) continue;   // this media already failed the audio probe
-          var rec = {
-            name: clip.name, mediaPath: mp,
-            trackType: g === 0 ? 'audio' : 'video', trackIndex: t,
-            seqStart: clip.start.seconds, seqEnd: clip.end.seconds,
-            inPoint: clip.inPoint.seconds, outPoint: clip.outPoint.seconds,
-            dur: clip.end.seconds - clip.start.seconds,
-            selected: clip.isSelected()
-          };
-          all.push(rec);
-          if (rec.selected) selected.push(rec);
+    // A NESTED SEQUENCE has no media path, so the old picker skipped the very
+    // clip holding the voice ("only one word gets transcribed"). Resolve the
+    // Sequence object behind a nested project item…
+    function seqForItem(pItem) {
+      if (!pItem) return null;
+      try { if (pItem.isSequence && !pItem.isSequence()) return null; } catch (eIs) {}
+      try {
+        var sqs = app.project.sequences;
+        for (var sI = 0; sI < sqs.numSequences; sI++) {
+          var cand = sqs[sI];
+          try {
+            if (cand && cand.projectItem && pItem.nodeId != null &&
+                String(cand.projectItem.nodeId) === String(pItem.nodeId)) return cand;
+          } catch (eCmp) {}
+        }
+      } catch (eSq) {}
+      return null;
+    }
+    // …and FLATTEN nests (depth-limited, cycle-guarded along the path) with
+    // exact time remapping: a voice recording jump-cut INSIDE a nest maps every
+    // piece back to where it plays on the MASTER timeline.
+    //   offset    = master-time where this window begins
+    //   winIn/Out = the slice of THIS sequence's own timeline that is visible
+    function collect(sq, offset, winIn, winOut, depth, pathIds, parentSel) {
+      if (!sq || depth > 4) return;
+      var idKey = null;
+      try { idKey = String(sq.sequenceID || sq.name || ''); } catch (eId) {}
+      if (idKey && pathIds[idKey]) return;             // a nest that contains itself
+      var childPath = {};
+      for (var pk in pathIds) { if (pathIds.hasOwnProperty(pk)) childPath[pk] = 1; }
+      if (idKey) childPath[idKey] = 1;
+      var groups = [sq.audioTracks, sq.videoTracks];   // audio first: most likely the voice
+      for (var g = 0; g < groups.length; g++) {
+        for (var t = 0; t < groups[g].numTracks; t++) {
+          var track = groups[g][t];
+          for (var i = 0; i < track.clips.numItems; i++) {
+            var clip = track.clips[i];
+            var st = clip.start.seconds, en = clip.end.seconds;
+            var visStart = st > winIn ? st : winIn;
+            var visEnd = en < winOut ? en : winOut;
+            if (visEnd - visStart <= 0.04) continue;   // outside the visible window
+            var ip = clip.inPoint.seconds;
+            var isSel = parentSel;
+            try { isSel = parentSel || clip.isSelected(); } catch (eSel) {}
+            var pItem = clip.projectItem;
+            var mp = null;
+            try { mp = pItem ? pItem.getMediaPath() : null; } catch (eMp) {}
+            if (mp && !bad.test(mp)) {
+              if (opts.excludeMediaPath && mp === opts.excludeMediaPath) continue;
+              var mIn = ip + (visStart - st), mOut = ip + (visEnd - st);
+              var sStart = offset + (visStart - winIn);
+              var rec = {
+                name: clip.name, mediaPath: mp,
+                trackType: g === 0 ? 'audio' : 'video', trackIndex: t,
+                seqStart: sStart, seqEnd: sStart + (visEnd - visStart),
+                inPoint: mIn, outPoint: mOut,
+                dur: visEnd - visStart,
+                selected: isSel
+              };
+              all.push(rec);
+              if (rec.selected) selected.push(rec);
+            } else if (!mp) {
+              var inner = seqForItem(pItem);
+              if (inner) {
+                collect(inner, offset + (visStart - winIn),
+                        ip + (visStart - st), ip + (visEnd - st),
+                        depth + 1, childPath, isSel);
+              }
+            }
+          }
         }
       }
     }
+    collect(seq, 0, 0, 3600 * 100, 0, {}, false);
     var pool = (!opts.ignoreSelection && selected.length) ? selected : all;
     if (!pool.length) return CP_fail('No clip with audio found. Put your video or audio clip on the timeline, then try again.');
     // longest = most speech — but on a near-tie prefer the AUDIO track item:
