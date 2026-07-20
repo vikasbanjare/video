@@ -2741,9 +2741,11 @@
     });
 
     // category chips (caption styles only — .mogrt lives in the Editor tab now).
-    // ⭐ Premium leads; the rest follow.
-    var cats = ['⭐ Premium', 'All', 'Favorites', 'Recent', 'My Templates']
-      .concat(CPCaptions.CATEGORIES.filter(function (c) { return c !== '⭐ Premium'; }));
+    // ⭐ Premium leads; 🎥 Your Styles (the 35 styles learned from the user's
+    // OWN videos) sits right up front — parked at the tail of a scrolling chip
+    // row it was invisible in a narrow panel ("where are those captions?").
+    var cats = ['⭐ Premium', 'All', '🎥 Your Styles', 'Favorites', 'Recent', 'My Templates']
+      .concat(CPCaptions.CATEGORIES.filter(function (c) { return c !== '⭐ Premium' && c !== '🎥 Your Styles'; }));
     var chipBox = $('lib-cats');
     cats.forEach(function (c) {
       var chip = document.createElement('button');

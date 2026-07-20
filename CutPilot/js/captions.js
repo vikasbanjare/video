@@ -496,7 +496,7 @@
   /* The ten library categories the browser groups templates into. */
   var CATEGORIES = [
     '⭐ Premium',
-    'Creator Pack',
+    '🎥 Your Styles',
     '🔘 Buttons',
     'Bold Creator', 'Minimal Professional', 'Dynamic Highlight', 'Social Growth',
     'Podcast Pro', 'Storytelling', 'Gaming Stream', 'Cinematic', 'Motivation', 'Education'
@@ -1085,7 +1085,7 @@
       "wordsPerCue": 1,
       "anim": "glitch-in",
       "animNotes": "2-frame RGB-split glitch on entry, outer glow pulses with audio.",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 88,
       "layout": "center",
       "keyword": true,
@@ -1094,7 +1094,7 @@
     {
       "id": "pro-spotlight",
       "name": "Spotlight",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 100,
       "layout": "bottom",
       "keyword": false,
@@ -1122,7 +1122,7 @@
     {
       "id": "pro-subs-light",
       "name": "Subs Light",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 100,
       "layout": "bottom",
       "keyword": false,
@@ -1153,7 +1153,7 @@
     {
       "id": "pro-clean-glow",
       "name": "Clean Glow",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 99,
       "layout": "center",
       "keyword": false,
@@ -1183,7 +1183,7 @@
     {
       "id": "pro-karaokebar",
       "name": "Karaoke Bar",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 99,
       "layout": "bottom",
       "keyword": false,
@@ -1215,7 +1215,7 @@
     {
       "id": "pro-pulse",
       "name": "Pulse",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 99,
       "layout": "center",
       "keyword": true,
@@ -1242,7 +1242,7 @@
     {
       "id": "pro-thuban",
       "name": "Thuban",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 98,
       "layout": "bottom",
       "keyword": true,
@@ -1269,7 +1269,7 @@
     {
       "id": "pro-runway",
       "name": "Runway",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 97,
       "layout": "bottom",
       "keyword": true,
@@ -1297,7 +1297,7 @@
     {
       "id": "pro-evo",
       "name": "Evo",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 94,
       "layout": "bottom",
       "keyword": true,
@@ -1322,7 +1322,7 @@
     {
       "id": "pro-nova",
       "name": "Nova",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 93,
       "layout": "bottom",
       "keyword": true,
@@ -1347,7 +1347,7 @@
     {
       "id": "pro-andromeda",
       "name": "Andromeda",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 92,
       "layout": "bottom",
       "keyword": false,
@@ -1372,7 +1372,7 @@
     {
       "id": "pro-elevate",
       "name": "Elevate II",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 91,
       "layout": "center",
       "keyword": false,
@@ -1397,7 +1397,7 @@
     {
       "id": "v1-beast",
       "name": "MrBeast Inspired",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 83,
       "layout": "bottom",
       "keyword": true,
@@ -1422,7 +1422,7 @@
     {
       "id": "prime",
       "name": "Prime",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 94,
       "layout": "center",
       "keyword": true,
@@ -1445,7 +1445,7 @@
     {
       "id": "focus",
       "name": "Focus",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 93,
       "layout": "bottom",
       "keyword": true,
@@ -1470,7 +1470,7 @@
     {
       "id": "volt",
       "name": "Volt",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 91,
       "layout": "bottom",
       "keyword": true,
@@ -1493,7 +1493,7 @@
     {
       "id": "rocket",
       "name": "Rocket",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 90,
       "layout": "bottom",
       "keyword": true,
@@ -1518,7 +1518,7 @@
     {
       "id": "mars",
       "name": "Mars",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 87,
       "layout": "bottom",
       "keyword": true,
@@ -1543,7 +1543,7 @@
     {
       "id": "ember",
       "name": "Ember",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 68,
       "layout": "center",
       "keyword": false,
@@ -1563,7 +1563,7 @@
     {
       "id": "pack-cinema",
       "name": "Cinematic",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 79,
       "layout": "bottom",
       "keyword": false,
@@ -1586,7 +1586,7 @@
     {
       "id": "align",
       "name": "Align",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 71,
       "layout": "center",
       "keyword": false,
@@ -1610,7 +1610,7 @@
     {
       "id": "prism",
       "name": "Prism Pro",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 96,
       "layout": "bottom",
       "keyword": true,
@@ -1633,7 +1633,7 @@
     {
       "id": "stack",
       "name": "Stack",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 84,
       "layout": "bottom",
       "keyword": true,
@@ -1656,7 +1656,7 @@
     {
       "id": "kai",
       "name": "Kai",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 86,
       "layout": "bottom",
       "keyword": false,
@@ -1679,7 +1679,7 @@
     {
       "id": "linen",
       "name": "Linen",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 73,
       "layout": "bottom",
       "keyword": false,
@@ -1702,7 +1702,7 @@
     {
       "id": "monolith",
       "name": "Monolith",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 83,
       "layout": "center",
       "keyword": false,
@@ -1727,7 +1727,7 @@
     {
       "id": "cap-core",
       "name": "Core",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 99,
       "layout": "center",
       "keyword": false,
@@ -1752,7 +1752,7 @@
     {
       "id": "cap-clarity",
       "name": "Crisp",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 92,
       "layout": "center",
       "keyword": false,
@@ -1775,7 +1775,7 @@
     {
       "id": "cap-hype",
       "name": "Surge",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 95,
       "layout": "center",
       "keyword": false,
@@ -1800,7 +1800,7 @@
     {
       "id": "cap-aurora",
       "name": "Aurora",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 96,
       "layout": "center",
       "keyword": false,
@@ -1831,7 +1831,7 @@
     {
       "id": "cap-mono",
       "name": "Mono",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 91,
       "layout": "bottom",
       "keyword": false,
@@ -1862,7 +1862,7 @@
     {
       "id": "cap-card",
       "name": "Clean Card",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 93,
       "layout": "bottom",
       "keyword": false,
@@ -1892,7 +1892,7 @@
     {
       "id": "cap-studio",
       "name": "Studio",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 90,
       "layout": "bottom",
       "keyword": false,
@@ -1921,7 +1921,7 @@
     {
       "id": "pro-coolpop",
       "name": "Cool Pop",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 99,
       "layout": "center",
       "keyword": true,
@@ -1956,7 +1956,7 @@
     {
       "id": "pro-cleanbold",
       "name": "Clean Bold",
-      "category": "Creator Pack",
+      "category": "🎥 Your Styles",
       "popularity": 98,
       "layout": "center",
       "keyword": true,
