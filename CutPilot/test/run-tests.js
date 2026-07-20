@@ -1479,6 +1479,45 @@ console.log('font resolution (family names → the PostScript names Premiere acc
   });
 }
 
+// ---- speech-following caption grouping ("captions don't follow pauses / ----
+// ---- sentences break in parts") -------------------------------------------
+console.log('caption grouping follows speech (pauses, Hindi danda, balanced splits)');
+{
+  const G = (cues, per, opts) => CPCaptions.regroupWords(cues, per, Object.assign({ sentenceBreak: true }, opts));
+  // A deliberate pause (0.9s) between lines starts a NEW caption at 0.7s
+  // sensitivity — the old 1.6s floor merged straight across it.
+  let r = G([{ start: 0, end: 1.2, text: 'kya haal hai' }, { start: 2.1, end: 3.2, text: 'sab theek hai' }],
+            14, { maxChars: 60, hardGap: 0.7 });
+  assert(r.length === 2 && r[0].text === 'kya haal hai', 'a 0.9s pause starts a new caption (was merged before)');
+  // …but a breath (0.3s) never splits a sentence.
+  r = G([{ start: 0, end: 1.2, text: 'kya haal' }, { start: 1.5, end: 2.4, text: 'hai bhai' }],
+        14, { maxChars: 60, hardGap: 0.7 });
+  assert(r.length === 1, 'a 0.3s breath does NOT split (got ' + r.length + ')');
+  // Hindi sentences end with the danda — each one is its own caption now.
+  r = G([{ start: 0, end: 4, text: 'मेरा नाम विकास है। आप कैसे हैं।' }], 14, { maxChars: 80, hardGap: 0.7 });
+  assert(r.length === 2 && /है।$/.test(r[0].text), 'Devanagari danda (।) ends a sentence (got ' + r.length + ')');
+  // REAL word cues (whisper word pass) expose a pause INSIDE one ASR line.
+  const wordCues = [
+    { start: 0.0, end: 0.3, text: 'mera' }, { start: 0.3, end: 0.6, text: 'naam' },
+    { start: 0.6, end: 1.0, text: 'vikas' }, { start: 1.0, end: 1.3, text: 'hai' },
+    { start: 2.2, end: 2.5, text: 'aur' }, { start: 2.5, end: 2.9, text: 'aap' },
+    { start: 2.9, end: 3.3, text: 'kaise' }, { start: 3.3, end: 3.7, text: 'hain' }
+  ];
+  r = G(wordCues, 14, { maxChars: 60, hardGap: 0.7 });
+  assert(r.length === 2 && r[0].text === 'mera naam vikas hai' && Math.abs(r[1].start - 2.2) < 1e-6,
+    'a pause inside one ASR line splits at the REAL word timing: ' + JSON.stringify(r.map(c => c.text)));
+  // Balanced splits: "(my name is) (vikas banjare)" — never "(… vikas) (banjare)".
+  r = G([{ start: 0, end: 2.5, text: 'my name is vikas banjare' }], 3, { maxChars: 60 });
+  assert(r.length === 2 && r[0].text === 'my name is' && r[1].text === 'vikas banjare',
+    'a 5-word sentence over a 3-word budget splits 3|2 at the natural spot: ' + JSON.stringify(r.map(c => c.text)));
+  // One word of slack IS taken when it lands on a comma…
+  r = G([{ start: 0, end: 2.5, text: 'the big brown, fox jumps high' }], 3, { maxChars: 60 });
+  assert(r[0].text === 'the big brown,', 'split defers one word to land on a comma: "' + r[0].text + '"');
+  // …and a conjunction starts the NEXT caption, never dangles at the end.
+  r = G([{ start: 0, end: 2.5, text: 'main chai peeta hoon aur biscuit khata hoon' }], 5, { maxChars: 60 });
+  assert(r.length === 2 && /^aur /.test(r[1].text), '"aur" leads the next caption: ' + JSON.stringify(r.map(c => c.text)));
+}
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 
 // ------------------------------------------------- template audit ----

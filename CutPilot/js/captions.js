@@ -217,11 +217,19 @@
   // boundary so a phrase like "What is your name?" is never stranded as
   // "What is" | "your name". Ordinary breath-pauses inside a sentence never
   // split it; only a real long pause (scene change) does.
-  var _SENTENCE_END = /[.!?]["'»)\]]?$/;             // . ! ? (+ closing quote/paren)
+  // . ! ? + Devanagari danda ।/॥ (Hindi sentences end with ।, never ".") +
+  // Urdu ۔ — without these, Hindi/Hinglish transcripts had NO sentence breaks
+  // and were chopped at arbitrary word counts instead.
+  var _SENTENCE_END = /[.!?।॥۔]["'»)\]]?$/;
   var _SOFT_AFTER   = /[,;:—–]["'»)\]]?$/;  // , ; : — – → good to break AFTER
   var _CONJ = { and:1, but:1, or:1, nor:1, so:1, yet:1, because:1, that:1, which:1,
-                when:1, while:1, if:1, then:1, with:1, to:1, of:1, as:1, at:1, in:1, on:1, for:1 };
-  function _bareWord(t) { return String(t).toLowerCase().replace(/[^a-z']/g, ''); }
+                when:1, while:1, if:1, then:1, with:1, to:1, of:1, as:1, at:1, in:1, on:1, for:1,
+                // Hindi/Hinglish joiners — a new caption reads naturally when
+                // these LEAD it (aur = and, lekin/par/magar = but, ya = or,
+                // kyunki = because, toh/phir = then, jo/ki = that/which)
+                aur:1, lekin:1, par:1, magar:1, ya:1, kyunki:1, toh:1, phir:1, jo:1, ki:1,
+                'और':1, 'लेकिन':1, 'पर':1, 'मगर':1, 'या':1, 'क्योंकि':1, 'तो':1, 'फिर':1, 'जो':1, 'कि':1 };
+  function _bareWord(t) { return String(t).toLowerCase().replace(/[^a-z'ऀ-ॿ]/g, ''); }
   function _isConj(t) { return _CONJ[_bareWord(t)] === 1; }                 // good to break BEFORE
   function _joinText(ws) { return ws.map(function (w) { return w.text; }).join(' '); }
   function _cueOf(ws) { return { start: ws[0].start, end: ws[ws.length - 1].end, text: _joinText(ws) }; }
@@ -269,13 +277,26 @@
       var remaining = total - (i + 1);
       var chunksOpen = n - chunks.length;                  // chunks still to fill (incl. current)
       var mustBreakSoon = remaining <= (chunksOpen - 1);   // reserve ≥1 word per remaining chunk
+      if (chunks.length >= n - 1 || remaining <= 0) continue;
       var atTarget = cur.length >= target;
       var hereEndsClause = _SOFT_AFTER.test(w.text);
       var nextStartsClause = _isConj(ws[i + 1].text);
-      if (chunks.length < n - 1 && remaining > 0) {
-        if ((atTarget && (hereEndsClause || nextStartsClause)) || cur.length > target || mustBreakSoon) {
-          chunks.push(cur); cur = []; curChars = 0;
-        }
+      // BALANCED-FIRST: break AT the target size. The old rule kept adding
+      // words while hunting for a clause boundary, so "my name is vikas
+      // banjare" came out "(my name is vikas) (banjare)" — a stranded word.
+      // Now the split lands "(my name is) (vikas banjare)"; the ONLY reason
+      // to run one word past target is when the very NEXT position is a real
+      // boundary (a comma, or just before a conjunction) that still fits.
+      var boundaryHere = hereEndsClause || nextStartsClause;
+      var boundaryNext = false;
+      if (!boundaryHere && i + 1 < ws.length) {
+        var nw = ws[i + 1], nl = nw.text.length;
+        var fitsNext = (!per || cur.length + 1 <= per) && (!maxChars || (curChars + 1 + nl) <= maxChars);
+        boundaryNext = fitsNext && (_SOFT_AFTER.test(nw.text) ||
+                                    (i + 2 < ws.length && _isConj(ws[i + 2].text)));
+      }
+      if (mustBreakSoon || (atTarget && !boundaryNext)) {
+        chunks.push(cur); cur = []; curChars = 0;
       }
     }
     if (cur.length) chunks.push(cur);

@@ -2026,6 +2026,14 @@
     var cues = CPCaptions.parseSRT(text);
     if (!cues.length) throw new Error('No captions found inside ' + state.transcript.label);
     if (censorEnabled()) cues = cues.map(function (c) { c.text = maskProfanity(c.text); return c; });
+    // Attach the REAL per-word timing so grouping can follow pauses inside a
+    // line. Every site that changes state.transcript keeps transcriptWords in
+    // step (nulling it for hand-picked/edited files), so these always match.
+    if (state.transcriptWords && state.transcriptWords.length) {
+      var wsAtt = state.transcriptWords;
+      if (censorEnabled()) wsAtt = wsAtt.map(function (w) { return { start: w.start, end: w.end, text: maskProfanity(w.text) }; });
+      cues.words = wsAtt;
+    }
     return cues;
   }
 
@@ -3220,7 +3228,7 @@
      (editor, MOGRT section, and the gallery action sheet). */
   function refreshWordMirrors() {
     var w = parseInt($('c-words').value, 10) || 0;
-    var label = (w === 0) ? '—' : String(w);
+    var label = (w === 0) ? 'Auto' : String(w);   // 0 = ✨ Auto: whole sentences, fit to the frame
     ['wc-num', 'ms-wc-num', 'mg-wc-num'].forEach(function (id) { var e = document.getElementById(id); if (e) e.textContent = label; });
     ['wc-full', 'ms-wc-full', 'mg-wc-full'].forEach(function (id) { var e = document.getElementById(id); if (e) e.classList.toggle('on', w === 0); });
   }
@@ -3421,10 +3429,36 @@
      "type any font" escape hatch. Each carries its own face for preview. */
   function fontOptionList() {
     var seen = {}, opts = [];
-    CPCaptions.FONTS.forEach(function (f) { if (!seen[f]) { seen[f] = 1; opts.push({ value: f, label: f, font: f }); } });
+    // Once the installed-font scan has run, the Suggested list only offers
+    // faces that are ACTUALLY on this computer — Premiere silently keeps the
+    // template's font when asked for a missing one ("the font never changes"),
+    // so every font we show must really work.
+    var have = null;
+    if (_installedFonts.length) {
+      have = {};
+      _installedFonts.forEach(function (f) { have[String(f).toLowerCase()] = 1; });
+    }
+    CPCaptions.FONTS.forEach(function (f) {
+      if (seen[f]) return; seen[f] = 1;
+      if (have && !have[f.toLowerCase()]) return;   // not installed → don't offer it
+      opts.push({ value: f, label: f, font: f });
+    });
     _installedFonts.forEach(function (f) { if (!seen[f]) { seen[f] = 1; opts.push({ value: f, label: f, font: f }); } });
     opts.push({ value: '__custom__', label: '✏️ Type any installed font…' });
     return opts;
+  }
+
+  /* True (and warns) when the family is NOT installed on this computer, so
+     Premiere would silently keep the template's own font. Only fires when the
+     installed scan has completed — never a false alarm from an empty list. */
+  function fontInstallWarn(family) {
+    if (!family || !CPBridge.isCEP() || !_installedFonts.length) return false;
+    var lf = String(family).toLowerCase(), has = false;
+    for (var i = 0; i < _installedFonts.length; i++) {
+      if (String(_installedFonts[i]).toLowerCase() === lf) { has = true; break; }
+    }
+    if (!has) toast('⚠️ The font “' + family + '” is not installed on this computer, so Premiere will keep the template\'s own font. Every font in the Font list IS installed — pick from there.', true);
+    return !has;
   }
 
   /* (Re)build the font dropdown, preserving the current value. */
@@ -4701,10 +4735,17 @@
     // The font size never changes — we only choose how many words share a caption.
     var portrait = !!(state.env && state.env.height > state.env.width);
     var perLine = portrait ? 17 : 24;                 // safe chars per line for the frame width
-    var perCap = (words > 0) ? words : 14;            // 0 = "full line"
+    var perCap = (words > 0) ? words : 14;            // 0 = ✨ Auto (sentence-fit to the frame)
     var maxChars = (words > 0) ? Math.max(perLine, words * 9) : (perLine * 2);   // ~2 lines per caption
     if (state.captionMaxChars) maxChars = state.captionMaxChars;                 // explicit override wins
-    var out = CPCaptions.regroupWords(cues, perCap, { maxChars: maxChars, sentenceBreak: true });
+    // REAL per-word timestamps (whisper word pass, kept with the transcript)
+    // beat line-interpolated timing: a pause INSIDE an ASR line becomes visible,
+    // so captions start/stop with the actual speech instead of drifting.
+    var src = (cues && cues.words && cues.words.length > 3) ? cues.words : cues;
+    // hardGap 0.7s: a deliberate pause/beat starts a NEW caption (the 1.6s
+    // default only broke on scene-length silences — "captions don't follow
+    // when someone takes a pause"). Breaths (~0.2–0.4s) still never split.
+    var out = CPCaptions.regroupWords(src, perCap, { maxChars: maxChars, sentenceBreak: true, hardGap: 0.7 });
     if (mode !== 'as-spoken') out = out.map(function (c) { return { start: c.start, end: c.end, text: applyCase(c.text, mode) }; });
     return applySmartEmphasis(out);
   }
@@ -5503,7 +5544,6 @@
   var _mogrtFontOpts = null;
   function mogrtFontOptions(curPs) {
     var opts = [{ value: '', label: 'Keep (' + (curPs || 'template') + ')' }];
-    POPULAR_FONTS.forEach(function (f) { opts.push({ value: f.ps, label: f.label }); });
     if (_mogrtFontOpts === null) {
       _mogrtFontOpts = [];
       try {
@@ -5513,6 +5553,17 @@
         }
       } catch (e) {}
     }
+    // Curated faces only when actually installed — a missing face is silently
+    // ignored by Premiere, which read as "the font never changes".
+    var have = null;
+    if (_mogrtFontOpts.length) {
+      have = {};
+      _mogrtFontOpts.forEach(function (o) { have[String(o.label).toLowerCase()] = 1; });
+    }
+    POPULAR_FONTS.forEach(function (f) {
+      var fam = f.label.replace(/\s+bold$/i, '');   // "Montserrat Bold" → family "Montserrat"
+      if (!have || have[f.label.toLowerCase()] || have[fam.toLowerCase()]) opts.push({ value: f.ps, label: f.label });
+    });
     return _mogrtFontOpts.length ? opts.concat(_mogrtFontOpts) : opts;
   }
   function mpAddFontSelect(box, label, curPs, onChange) {
@@ -6227,6 +6278,7 @@
             // the naive StripSpaces+"-Weight" guess named faces that don't exist,
             // so Premiere ignored the write ("not able to change the fonts").
             var ps = CPCaptions.psFontName(fFamily || 'Inter', fWeight, fItalic);
+            fontInstallWarn(fFamily);
             var wantsBold = (fWeight === 'Bold' || fWeight === 'ExtraBold' || fWeight === 'Black');
             richStyle().font = ps;
             richStyle().bold = wantsBold && !CPCaptions.psIsBoldFace(ps);   // a real Bold face needs no synthetic bold on top
@@ -6930,6 +6982,7 @@
     } catch (eTr) {}
     if (preset.uppercase || cchk('c-upper')) sample = sample.toUpperCase();
     var rfPrev = resolvedEditorFont(preset);   // PostScript name — same resolve as Apply, so preview face == output face
+    fontInstallWarn(preset.font);
     var textStyle = rfPrev ? { font: rfPrev.font, bold: rfPrev.bold, sizeScale: 1 } : null;
     if (btn) btn.disabled = true;
     toast('Dropping a real preview at the playhead…');
@@ -6993,6 +7046,7 @@
     // rf.font is the POSTSCRIPT name — the family name the picker shows was
     // silently ignored by Premiere's text engine ("not able to change the fonts")
     var rf = resolvedEditorFont(preset);
+    fontInstallWarn(preset.font);   // a missing font would be silently kept — say so up front
     var textStyle = isFluxBB
                   ? (rf ? { font: rf.font, bold: rf.bold, sizeScale: 1 } : null)
                   : { font: rf && rf.font, caps: caps,
@@ -7059,6 +7113,7 @@
           paramsSent: (r.paramsSent != null ? r.paramsSent : undefined),
           paramsApplied: (r.paramsApplied != null ? r.paramsApplied : undefined),
           fontSent: (textStyle && textStyle.font) || undefined,   // per-style face on the rich path
+          fontApplied: (r.fontApplied != null ? r.fontApplied : undefined),   // READBACK — what the graphic actually stored
           fgFont: (r.fgFontSet != null ? r.fgFontSet : undefined), // gradient mirrors re-faced
           errs: r.sampleErrors, fields: r.fields
         }));
@@ -7066,6 +7121,11 @@
       if (!r.inserted) {
         var why = (r.sampleErrors && r.sampleErrors.length) ? ' (' + r.sampleErrors[0] + ')' : '';
         return toast('Couldn\'t place editable captions' + why + '. Copy Diagnostics and send it over.', true);
+      }
+      // READBACK honesty: if the graphic did NOT store the face we sent, say so
+      // instead of letting "I changed the font and nothing happened" ride.
+      if (textStyle && textStyle.font && r.fontApplied && r.fontApplied !== textStyle.font) {
+        toast('⚠️ This template kept its own font (' + r.fontApplied + ') instead of ' + textStyle.font + '. If the font you picked isn\'t installed on this computer, install it or pick another from the Font list.', true);
       }
       // track this job (own "mode" so the old PNG-only restyle UI never shows for
       // it — editable captions are re-edited natively in Essential Graphics) and

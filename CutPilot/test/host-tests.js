@@ -659,6 +659,8 @@ console.log('host.jsx — un-tagged highlight mirror (Prism family, "second text
   assert(fg0.fontEditValue[0] === 'Impact-Bold' && r.fgFontSet >= 2,
     'the mirror still gets the FONT-only pass so the highlight face matches');
   assert(r.swept === 2, 'word-by-word sweep engages on both captions');
+  assert(r.fontApplied === 'Impact-Bold',
+    'READBACK reports the face the graphic actually stored (ground truth for "font never changes"): ' + r.fontApplied);
 }
 
 // ═══ the "box with no words" bug: the engine's authored intro fade ═══

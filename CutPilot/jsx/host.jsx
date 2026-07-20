@@ -2260,6 +2260,7 @@ function CP_insertMogrtCaptions(argsJson) {
     var fieldNames = null; // captured once for diagnostics
     var paramsApplied = 0; // how many colour/number overrides actually landed (all passes)
     var fgFontSet = 0;     // "(Change font only)" gradient mirrors given the style's font
+    var fontApplied = null; // READBACK: the face the first graphic actually stored (ground truth)
 
     var KEYS = ['text', 'source', 'caption', 'title', 'subtitle', 'headline',
                 'body', 'content', 'label', 'name', 'word'];
@@ -2442,6 +2443,16 @@ function CP_insertMogrtCaptions(argsJson) {
           if (allowRich && args.textStyle && args.textStyle.sizeScale && args.textStyle.sizeScale !== 1) {
             try { CP_scaleAllTextSizes(comp, args.textStyle.sizeScale); } catch (eSc) {}
           }
+          // READBACK (once): the face the graphic actually STORED after our
+          // write — ground truth for "I changed the font but the video didn't"
+          // (a font that isn't installed is silently kept by Premiere).
+          if (fontApplied === null && args.textStyle && args.textStyle.font && tprops.length) {
+            try {
+              var fbV = String(tprops[0].getValue());
+              var fbM = fbV.match(/"fontEditValue"\s*:\s*\[?\s*"((?:[^"\\]|\\.)*)"/);
+              if (fbM) fontApplied = fbM[1];
+            } catch (eFb) {}
+          }
         }
       } catch (eComp) {}
 
@@ -2550,6 +2561,7 @@ function CP_insertMogrtCaptions(argsJson) {
       paramsSent: (args.params || []).length,
       paramsApplied: paramsApplied,       // across both passes (pre-text + final re-apply)
       fgFontSet: fgFontSet,               // gradient "(Change font only)" mirrors re-faced
+      fontApplied: fontApplied,           // the face the first graphic actually stored (readback)
       track: vTrack + 1,                  // 1-based, so a later call can replaceTrack this same set
       replaceMode: replaceMode,           // 'fresh' | 'reused' | 'fresh-after-clear' | 'explicit'
       replaceGuard: replaceGuard,         // null | 'foreign' | 'out-of-range' — why a reuse was refused

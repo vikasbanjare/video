@@ -506,6 +506,41 @@ function fluxProps() {
        ', Times New Roman → ' + fr.tnr.font + ') — family names were silently ignored before');
   else bad('font resolution wrong: ' + JSON.stringify(fr));
 
+  // ---- K. SPEECH-FOLLOWING GROUPING through the real panel: a pause starts a
+  // new caption, a Hindi danda ends a sentence, and REAL word timing attached
+  // to the cues splits at a pause INSIDE one ASR line ("captions are not
+  // following when someone takes a pause / sentences break in parts") --------
+  const gr = await page.evaluate(() => {
+    const D = window.CP_DEBUG;
+    if (!D || !D.textCues) return { fatal: 'textCues hook missing' };
+    const wEl = document.getElementById('c-words');
+    const prevW = wEl ? wEl.value : null;
+    if (wEl) wEl.value = '0';   // ✨ Auto (the new default)
+    const out = {};
+    // 0.9s pause between lines → two captions
+    out.pause = D.textCues([{ start: 0, end: 1.2, text: 'kya haal hai' },
+                            { start: 2.1, end: 3.2, text: 'sab theek hai' }], 0, 'as-spoken').length;
+    // danda sentence break inside one line
+    out.danda = D.textCues([{ start: 0, end: 4, text: 'मेरा नाम विकास है। आप कैसे हैं।' }], 0, 'as-spoken').length;
+    // REAL word timing attached: the pause lives INSIDE the single ASR line
+    const cs = [{ start: 0, end: 3.7, text: 'mera naam vikas hai aur aap kaise hain' }];
+    cs.words = [
+      { start: 0.0, end: 0.3, text: 'mera' }, { start: 0.3, end: 0.6, text: 'naam' },
+      { start: 0.6, end: 1.0, text: 'vikas' }, { start: 1.0, end: 1.3, text: 'hai' },
+      { start: 2.2, end: 2.5, text: 'aur' }, { start: 2.5, end: 2.9, text: 'aap' },
+      { start: 2.9, end: 3.3, text: 'kaise' }, { start: 3.3, end: 3.7, text: 'hain' }
+    ];
+    const ww = D.textCues(cs, 0, 'as-spoken');
+    out.words = ww.length; out.firstText = ww[0] && ww[0].text; out.secondStart = ww[1] && ww[1].start;
+    if (wEl && prevW != null) wEl.value = prevW;
+    return out;
+  });
+  if (gr.fatal) bad('speech-following grouping: ' + gr.fatal);
+  else if (gr.pause === 2 && gr.danda === 2 && gr.words === 2 &&
+           gr.firstText === 'mera naam vikas hai' && Math.abs(gr.secondStart - 2.2) < 1e-6)
+    ok('captions follow the speech: a 0.9s pause and a Hindi danda (।) each start a new caption, and attached word timing splits at the REAL pause inside a line');
+  else bad('speech-following grouping wrong: ' + JSON.stringify(gr));
+
   await browser.close();
   console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');
   process.exit(failed ? 1 : 0);
