@@ -574,6 +574,68 @@ console.log('host.jsx — transcribe source resolves nested sequences ("only one
     'piece 2 time-mapped + clipped to the nest window (media 45→75 at master 35s): ' + JSON.stringify(i1));
 }
 
+// ═══ FLAT jump-cuts: many short voice pieces must beat one long b-roll ═══
+console.log('host.jsx — transcribe source picks by coverage ("multiple cut audio, still one word")');
+{
+  // The old rule ("longest single piece wins") picked a 20s b-roll clip over a
+  // voice recording jump-cut into 8s pieces — Whisper then transcribed the
+  // b-roll's near-silent scratch audio into a single word.
+  const w = makeWorld({ vTracks: 1, aTracks: 1 });
+  const host = loadHost(w);
+  const T = s => ({ seconds: s, get secs() { return this.seconds; } });
+  const mkTracks = list => { const o = {}; list.forEach((tr, i) => { o[i] = tr; }); o.numTracks = list.length; return o; };
+  const mkClips = arr => { const c = { numItems: arr.length }; arr.forEach((x, i) => { c[i] = x; }); return c; };
+  const real = (name, path, st, en, ip, sel) => ({
+    name, start: T(st), end: T(en), inPoint: T(ip), outPoint: T(ip + (en - st)),
+    isSelected: () => !!sel, projectItem: { getMediaPath: () => path, nodeId: 'n_' + name }
+  });
+  const voicePieces = () => [
+    real('v1', '/m/voice.wav', 0, 8, 0),     // four jump-cut pieces, 8s each
+    real('v2', '/m/voice.wav', 10, 18, 9),
+    real('v3', '/m/voice.wav', 20, 28, 19),
+    real('v4', '/m/voice.wav', 30, 38, 30)
+  ];
+  // scenario 1: b-roll on a VIDEO track only (no audio-track presence)
+  w.sandbox.app.project.activeSequence = {
+    sequenceID: 'sq-flat1',
+    audioTracks: mkTracks([{ clips: mkClips(voicePieces()) }]),
+    videoTracks: mkTracks([{ clips: mkClips([real('Broll.mp4', '/m/broll.mp4', 0, 20, 0)]) }])
+  };
+  let r = call(host, 'CP_getTranscribeSource', {});
+  assert(r.ok && r.clip.mediaPath === '/m/voice.wav',
+    'jump-cut voice on the A-track beats a LONGER video-only b-roll piece');
+  assert(r.instances.length === 4, 'all four voice pieces are transcribed');
+  const p1 = r.instances[1];
+  assert(Math.abs(p1.inPoint - 9) < 1e-6 && Math.abs(p1.outPoint - 17) < 1e-6 && Math.abs(p1.seqStart - 10) < 1e-6,
+    'each piece keeps its own media window + timeline position: ' + JSON.stringify(p1));
+  // scenario 2: the b-roll is a LINKED clip — its scratch audio sits on A2, so
+  // its longest single piece (20s) still beats any voice piece (8s) under the
+  // old rule, and it's on an audio track too. COVERAGE must decide: 32s of
+  // voice vs 20s of camera audio.
+  w.sandbox.app.project.activeSequence = {
+    sequenceID: 'sq-flat2',
+    audioTracks: mkTracks([
+      { clips: mkClips(voicePieces()) },
+      { clips: mkClips([real('Broll audio', '/m/broll.mp4', 0, 20, 0)]) }
+    ]),
+    videoTracks: mkTracks([{ clips: mkClips([real('Broll.mp4', '/m/broll.mp4', 0, 20, 0)]) }])
+  };
+  r = call(host, 'CP_getTranscribeSource', {});
+  assert(r.ok && r.clip.mediaPath === '/m/voice.wav',
+    'voice with MORE total audio coverage beats camera scratch audio with the longest single piece');
+  assert(r.instances.length === 4, 'still all four voice pieces');
+  // scenario 3: the user SELECTED one voice piece → selection is honoured
+  const selWorld = voicePieces(); selWorld[2].isSelected = () => true;
+  w.sandbox.app.project.activeSequence = {
+    sequenceID: 'sq-flat3',
+    audioTracks: mkTracks([{ clips: mkClips(selWorld) }]),
+    videoTracks: mkTracks([{ clips: mkClips([real('Broll.mp4', '/m/broll.mp4', 0, 20, 0)]) }])
+  };
+  r = call(host, 'CP_getTranscribeSource', {});
+  assert(r.ok && r.clip.mediaPath === '/m/voice.wav' && r.fromSelection === true && r.instances.length === 4,
+    'selecting one piece still transcribes the WHOLE recording (every piece of that file)');
+}
+
 // ═══ Prism-family: the highlight mirror is NOT a second caption line ═══
 console.log('host.jsx — un-tagged highlight mirror (Prism family, "second text never changes")');
 {

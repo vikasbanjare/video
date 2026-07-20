@@ -264,17 +264,36 @@ function CP_getTranscribeSource(argsJson) {
       }
     }
     collect(seq, 0, 0, 3600 * 100, 0, {}, false);
-    var pool = (!opts.ignoreSelection && selected.length) ? selected : all;
-    if (!pool.length) return CP_fail('No clip with audio found. Put your video or audio clip on the timeline, then try again.');
-    // longest = most speech — but on a near-tie prefer the AUDIO track item:
-    // Premiere's linked selection selects video+audio together, and picking the
-    // (fractionally longer) VIDEO chose a file with no embedded sound.
-    pool.sort(function (a, b) {
-      var d = b.dur - a.dur;
-      if (d > 0.75 || d < -0.75) return d;
-      return (a.trackType === 'audio' ? 0 : 1) - (b.trackType === 'audio' ? 0 : 1);
-    });
-    var main = pool[0];
+    if (!all.length) return CP_fail('No clip with audio found. Put your video or audio clip on the timeline, then try again.');
+    // Pick the media file by TOTAL COVERAGE, strongly preferring files that sit
+    // on AUDIO tracks. The old "longest single piece" rule broke jump-cut
+    // timelines: the voice is many SHORT pieces while one long b-roll/camera
+    // clip wins — its faint scratch audio passes the stream probe and Whisper
+    // transcribes near-silence into a single word.
+    var byMedia = {}, order = [], bk;
+    for (bk = 0; bk < all.length; bk++) {
+      var r0 = all[bk];
+      var bm = byMedia[r0.mediaPath];
+      if (!bm) { bm = byMedia[r0.mediaPath] = { total: 0, audioTotal: 0, onAudio: false, best: r0, selAny: false }; order.push(r0.mediaPath); }
+      bm.total += r0.dur;
+      if (r0.trackType === 'audio') { bm.audioTotal += r0.dur; bm.onAudio = true; }
+      if (r0.selected) bm.selAny = true;
+      if (r0.dur > bm.best.dur) bm.best = r0;
+    }
+    function pickPath(requireSel) {
+      var bestPath = null, bestTier = -1, bestScore = -1;
+      for (var oi = 0; oi < order.length; oi++) {
+        var bm2 = byMedia[order[oi]];
+        if (requireSel && !bm2.selAny) continue;
+        var tier = bm2.onAudio ? 1 : 0;                      // anything on an A-track outranks video-only media
+        var score = bm2.audioTotal * 2 + bm2.total;          // then: most on-screen coverage wins
+        if (tier > bestTier || (tier === bestTier && score > bestScore)) { bestTier = tier; bestScore = score; bestPath = order[oi]; }
+      }
+      return bestPath;
+    }
+    var useSel = (!opts.ignoreSelection && selected.length > 0);
+    var mainPath = (useSel ? pickPath(true) : null) || pickPath(false);
+    var main = byMedia[mainPath].best;
     // Every timeline piece that uses the SAME source media — so a recording cut
     // into jump-cuts is transcribed in full and each piece mapped back to where
     // it sits on the timeline (music/b-roll on other files are excluded).
