@@ -2009,6 +2009,76 @@
   ];
 
   /*
+   * ── PostScript font-name resolution ────────────────────────────────────
+   * Premiere identifies a face inside a template's "source text" by its
+   * POSTSCRIPT name ("BebasNeue-Regular"), never the family name pickers
+   * show ("Bebas Neue"). Writing a family name is silently ignored — the
+   * caption keeps the template's authored face ("not able to change the
+   * fonts"). Three rules cover every picker:
+   *   1. system faces whose PS names follow no pattern → exact table
+   *   2. families that ship exactly ONE face → never ask for a Bold that
+   *      doesn't exist (the write would be ignored again)
+   *   3. everything else (all the Google faces) → StripSpaces + "-Weight"
+   * A name that already looks PostScript ("Poppins-Light") passes through.
+   */
+  var PS_EXACT = {
+    'arial':           { Regular: 'ArialMT', Bold: 'Arial-BoldMT', Italic: 'Arial-ItalicMT', BoldItalic: 'Arial-BoldItalicMT' },
+    'arial black':     { Regular: 'Arial-Black' },
+    'arial narrow':    { Regular: 'ArialNarrow', Bold: 'ArialNarrow-Bold', Italic: 'ArialNarrow-Italic', BoldItalic: 'ArialNarrow-BoldItalic' },
+    'impact':          { Regular: 'Impact' },
+    'times new roman': { Regular: 'TimesNewRomanPSMT', Bold: 'TimesNewRomanPS-BoldMT', Italic: 'TimesNewRomanPS-ItalicMT', BoldItalic: 'TimesNewRomanPS-BoldItalicMT' },
+    'courier new':     { Regular: 'CourierNewPSMT', Bold: 'CourierNewPS-BoldMT', Italic: 'CourierNewPS-ItalicMT', BoldItalic: 'CourierNewPS-BoldItalicMT' },
+    'comic sans ms':   { Regular: 'ComicSansMS', Bold: 'ComicSansMS-Bold' },
+    'trebuchet ms':    { Regular: 'TrebuchetMS', Bold: 'TrebuchetMS-Bold', Italic: 'TrebuchetMS-Italic', BoldItalic: 'Trebuchet-BoldItalic' },
+    'verdana':         { Regular: 'Verdana', Bold: 'Verdana-Bold', Italic: 'Verdana-Italic', BoldItalic: 'Verdana-BoldItalic' },
+    'tahoma':          { Regular: 'Tahoma', Bold: 'Tahoma-Bold' },
+    'georgia':         { Regular: 'Georgia', Bold: 'Georgia-Bold', Italic: 'Georgia-Italic', BoldItalic: 'Georgia-BoldItalic' },
+    'helvetica':       { Regular: 'Helvetica', Bold: 'Helvetica-Bold', Italic: 'Helvetica-Oblique', BoldItalic: 'Helvetica-BoldOblique' },
+    'helvetica neue':  { Regular: 'HelveticaNeue', Bold: 'HelveticaNeue-Bold', Medium: 'HelveticaNeue-Medium', Light: 'HelveticaNeue-Light', Italic: 'HelveticaNeue-Italic', BoldItalic: 'HelveticaNeue-BoldItalic' },
+    'avenir next':     { Regular: 'AvenirNext-Regular', Medium: 'AvenirNext-Medium', SemiBold: 'AvenirNext-DemiBold', Bold: 'AvenirNext-Bold', Italic: 'AvenirNext-Italic', BoldItalic: 'AvenirNext-BoldItalic' },
+    'menlo':           { Regular: 'Menlo-Regular', Bold: 'Menlo-Bold', Italic: 'Menlo-Italic', BoldItalic: 'Menlo-BoldItalic' },
+    'didot':           { Regular: 'Didot', Bold: 'Didot-Bold', Italic: 'Didot-Italic' },
+    'marker felt':     { Regular: 'MarkerFelt-Thin', Bold: 'MarkerFelt-Wide' },
+    'snell roundhand': { Regular: 'SnellRoundhand', Bold: 'SnellRoundhand-Bold', Black: 'SnellRoundhand-Black' },
+    'bradley hand':    { Regular: 'BradleyHandITCTT-Bold' },
+    'futura':          { Regular: 'Futura-Medium', Medium: 'Futura-Medium', Bold: 'Futura-Bold', Italic: 'Futura-MediumItalic' }
+  };
+  /* Families that ship exactly one face — asking for "-Bold" would name a
+     face that doesn't exist and Premiere would ignore the whole write. */
+  var PS_SINGLE_FACE = {
+    'anton': 1, 'bebas neue': 1, 'archivo black': 1, 'bangers': 1,
+    'luckiest guy': 1, 'alfa slab one': 1, 'bungee': 1, 'titan one': 1,
+    'permanent marker': 1, 'pacifico': 1, 'shadows into light': 1, 'fjalla one': 1
+  };
+  function psFontName(family, weight, italic) {
+    var f = String(family == null ? '' : family).replace(/^\s+|\s+$/g, '');
+    if (!f) return '';
+    if (f.indexOf('-') !== -1 && f.indexOf(' ') === -1) return f;   // already PostScript-style
+    var w = (weight === true) ? 'Bold' : (weight || 'Regular');
+    if (w === false) w = 'Regular';
+    var it = !!italic, key = f.toLowerCase();
+    var ex = PS_EXACT[key];
+    if (ex) {
+      var name = null;
+      if (it && ex[w + 'Italic']) name = ex[w + 'Italic'];
+      else if (it && w === 'Regular' && ex.Italic) name = ex.Italic;
+      if (!name) name = ex[w] || null;
+      if (!name && w !== 'Regular') name = ex.Bold || null;   // closest heavy face this family has
+      return name || ex.Regular;
+    }
+    var fam = f.replace(/\s+/g, '');
+    if (PS_SINGLE_FACE[key]) return fam + '-Regular';
+    var sfx = (w === 'Regular') ? (it ? 'Italic' : 'Regular') : (w + (it ? 'Italic' : ''));
+    return fam + '-' + sfx;
+  }
+  /* True when a resolved name already IS a heavy face — the caller then skips
+     the synthetic-bold flag (synthetic bold on top of a real Bold face renders
+     smudged and over-thick). */
+  function psIsBoldFace(ps) {
+    return /bold|black|heavy|-wide$/i.test(String(ps || ''));
+  }
+
+  /*
    * Merge a base preset with explicit user overrides into a flat style
    * object (absolute 1080p sizes — the renderer scales later). Empty/null
    * overrides fall back to the preset. Pure + tested.
@@ -2646,6 +2716,8 @@
     getPreset: getPreset,
     animIdForConcept: animIdForConcept,
     FONTS: FONTS,
+    psFontName: psFontName,
+    psIsBoldFace: psIsBoldFace,
     mergeStyle: mergeStyle,
     ANIMATIONS: ANIMATIONS,
     getAnimation: getAnimation,

@@ -1444,6 +1444,41 @@ console.log('robustness (null/edge inputs never crash)');
   assert(ms && ms.fill === '#abcdef', 'mergeStyle with null preset still applies the override');
 }
 
+// ---- PostScript font resolution ("not able to change the fonts") ----
+// Premiere's source-text blob takes POSTSCRIPT names, never the family names
+// the pickers show. Writing "Bebas Neue" was silently ignored — the caption
+// kept the template's authored face. psFontName() is the one resolver every
+// font path (style editor, sheet, template font params) goes through.
+console.log('font resolution (family names → the PostScript names Premiere accepts)');
+{
+  const ps = CPCaptions.psFontName;
+  assert(ps('Bebas Neue') === 'BebasNeue-Regular', 'Google display face resolves: Bebas Neue → BebasNeue-Regular');
+  assert(ps('Bebas Neue', 'Bold') === 'BebasNeue-Regular', 'single-face family NEVER asks for a Bold that does not exist');
+  assert(ps('Montserrat', 'Bold') === 'Montserrat-Bold', 'multi-weight family gets the real Bold face');
+  assert(ps('Poppins', 'Light', true) === 'Poppins-LightItalic', 'weight + italic combine into one face name');
+  assert(ps('Montserrat', 'Regular', true) === 'Montserrat-Italic', 'regular italic is just -Italic');
+  assert(ps('Times New Roman') === 'TimesNewRomanPSMT', 'system faces use their EXACT PS names (no naming pattern)');
+  assert(ps('Times New Roman', 'Bold') === 'TimesNewRomanPS-BoldMT', 'Times New Roman bold face');
+  assert(ps('Arial') === 'ArialMT' && ps('Arial', 'Bold') === 'Arial-BoldMT', 'Arial family');
+  assert(ps('Impact', 'Bold') === 'Impact', 'Impact ships one face — bold request still names the real face');
+  assert(ps('Arial Black', 'Bold') === 'Arial-Black', 'Arial Black is its own single face');
+  assert(ps('Helvetica Neue', 'Medium') === 'HelveticaNeue-Medium', 'named middle weights hit the exact table');
+  assert(ps('Avenir Next', 'SemiBold') === 'AvenirNext-DemiBold', 'Apple calls SemiBold "DemiBold" — table knows');
+  assert(ps('Playfair Display', 'Bold') === 'PlayfairDisplay-Bold', 'spaced Google family: strip spaces + weight');
+  assert(ps('Montserrat-SemiBold') === 'Montserrat-SemiBold', 'a PostScript-style name passes through untouched');
+  assert(ps('') === '' && ps(null) === '', 'empty/null stays empty (host then skips the font write)');
+  assert(ps('Comic Sans MS', true) === 'ComicSansMS-Bold', 'boolean true means Bold (editor bold toggle)');
+  assert(CPCaptions.psIsBoldFace('Montserrat-Bold') && CPCaptions.psIsBoldFace('Arial-Black') &&
+         !CPCaptions.psIsBoldFace('Inter-Regular'), 'psIsBoldFace tells callers to skip synthetic bold on real heavy faces');
+  // EVERY font the picker offers must resolve to something PostScript-shaped:
+  // no spaces (a spaced name is exactly the bug), non-empty, for both weights
+  CPCaptions.FONTS.forEach(function (f) {
+    const r = ps(f), rb = ps(f, 'Bold');
+    assert(r && r.indexOf(' ') === -1 && rb && rb.indexOf(' ') === -1,
+      'picker font "' + f + '" resolves clean (got "' + r + '" / bold "' + rb + '")');
+  });
+}
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 
 // ------------------------------------------------- template audit ----

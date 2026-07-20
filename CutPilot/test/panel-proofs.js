@@ -481,6 +481,31 @@ function fluxProps() {
   else if (asr.lang === 'auto') ok('transcription language defaults to AUTO-detect (never forces English on Hindi audio)');
   else bad('asr default language is "' + asr.lang + '" — must be "auto"');
 
+  // ---- J. FONT RESOLUTION: the face sent to Premiere must be a POSTSCRIPT
+  // name. The picker shows family names ("Bebas Neue"); writing one into a
+  // template's source text is silently ignored — "not able to change the
+  // fonts". Drives the END-TO-END editor path: set the picker value → read
+  // the exact font string Apply AND the real preview will send. ------------
+  const fr = await page.evaluate(() => {
+    const D = window.CP_DEBUG;
+    if (!D || !D.psFontName || !D.editorFont) return { fatal: 'font hooks missing' };
+    const el = document.getElementById('c-font');
+    if (!el) return { fatal: '#c-font input missing' };
+    const prev = el.value, out = {};
+    el.value = 'Bebas Neue';       out.bebas = D.editorFont();
+    el.value = 'Times New Roman';  out.tnr = D.editorFont();
+    out.exact = D.psFontName('Times New Roman', 'Bold');
+    el.value = prev;
+    return out;
+  });
+  if (fr.fatal) bad('font resolution: ' + fr.fatal);
+  else if (fr.bebas && fr.bebas.font === 'BebasNeue-Regular' &&
+           fr.tnr && /^TimesNewRomanPS/.test(fr.tnr.font) && fr.tnr.font.indexOf(' ') === -1 &&
+           fr.exact === 'TimesNewRomanPS-BoldMT')
+    ok('chosen font reaches Premiere as its POSTSCRIPT name (Bebas Neue → ' + fr.bebas.font +
+       ', Times New Roman → ' + fr.tnr.font + ') — family names were silently ignored before');
+  else bad('font resolution wrong: ' + JSON.stringify(fr));
+
   await browser.close();
   console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');
   process.exit(failed ? 1 : 0);

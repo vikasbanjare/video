@@ -3383,7 +3383,7 @@
       if (!state.selectedMogrt) return;
       var path = state.selectedMogrt.path;
       var params = (state.mogrtParamsPath === path) ? state.mogrtParams : [];
-      var textStyle = (state.mogrtParamsPath === path) ? state.mogrtTextStyle : null;
+      var textStyle = resolveTextStyleFont((state.mogrtParamsPath === path) ? state.mogrtTextStyle : null);
       var sample = 'Sample caption';                         // show colour/font on real-ish text
       try { var cs = readSelectedTranscript(); if (cs && cs[0] && cs[0].text) sample = cs[0].text; } catch (e) {}
       CPBridge.callHost('CP_previewMogrt', { path: path, seconds: 4, params: params, textStyle: textStyle, text: sample }).then(function (r) {
@@ -5876,6 +5876,7 @@
   function mogrtFontFamily(ps) {
     if (!ps) return '';
     var base = String(ps).split('-')[0];
+    base = base.replace(/(PSMT|ITCTT|PS|MT)$/, '');   // ArialMT → Arial, TimesNewRomanPSMT → TimesNewRoman
     return base.replace(/([a-z])([A-Z])/g, '$1 $2').trim();
   }
   function mogrtColorRole(name) {
@@ -6221,13 +6222,16 @@
           var fWeight = 'Regular', fItalic = !!(blob && blob.fontFSItalicValue && blob.fontFSItalicValue[0]);
           (function () { var sfx = (startPs.split('-')[1] || ''); for (var w = WEIGHTS.length - 1; w >= 0; w--) { if (sfx.toLowerCase().indexOf(WEIGHTS[w].toLowerCase()) >= 0) { fWeight = WEIGHTS[w]; break; } } if (/italic/i.test(sfx)) fItalic = true; })();
           function applyFont() {
-            var fam = (fFamily || 'Inter').replace(/\s+/g, '');
-            var w = (fWeight === 'Regular') ? (fItalic ? 'Italic' : 'Regular') : (fWeight + (fItalic ? 'Italic' : ''));
-            var ps = fam + '-' + w;
+            // psFontName knows the system faces whose PostScript names follow no
+            // pattern (Arial → ArialMT, Times New Roman → TimesNewRomanPSMT…) —
+            // the naive StripSpaces+"-Weight" guess named faces that don't exist,
+            // so Premiere ignored the write ("not able to change the fonts").
+            var ps = CPCaptions.psFontName(fFamily || 'Inter', fWeight, fItalic);
+            var wantsBold = (fWeight === 'Bold' || fWeight === 'ExtraBold' || fWeight === 'Black');
             richStyle().font = ps;
-            richStyle().bold = (fWeight === 'Bold' || fWeight === 'ExtraBold' || fWeight === 'Black');
+            richStyle().bold = wantsBold && !CPCaptions.psIsBoldFace(ps);   // a real Bold face needs no synthetic bold on top
             richStyle().italic = fItalic;
-            if (state.mogrtPrev) { state.mogrtPrev.font = mogrtFontFamily(ps) || fFamily; state.mogrtPrev.bold = richStyle().bold; renderMogrtPreview(); }
+            if (state.mogrtPrev) { state.mogrtPrev.font = mogrtFontFamily(ps) || fFamily; state.mogrtPrev.bold = wantsBold; renderMogrtPreview(); }
           }
           mpAddFontSelect(box, 'Font', startPs, function (v) { if (v) { fFamily = (String(v).split('-')[0]) || fFamily; applyFont(); } });
           mpAddSelect(box, 'Weight', WEIGHTS.map(function (x) { return { value: x, label: x }; }), fWeight, function (v) { fWeight = v || 'Regular'; applyFont(); });
@@ -6262,7 +6266,7 @@
     if (richProp) {
       var blob = null; try { blob = JSON.parse(richProp.sample); } catch (eB) { blob = null; }
       mpHeader(box, 'Text style');
-      mpAddFontSelect(box, 'Font', (blob && blob.fontEditValue && blob.fontEditValue[0]) || '', function (v) { richStyle().font = v || null; });
+      mpAddFontSelect(box, 'Font', (blob && blob.fontEditValue && blob.fontEditValue[0]) || '', function (v) { richStyle().font = v ? CPCaptions.psFontName(v, 'Regular') : null; });
       mpAddSlider(box, 'Overall size %', Math.round((richStyle().sizeScale || 1) * 100), 50, 300, function (v) { richStyle().sizeScale = (parseFloat(v) || 100) / 100; });
       mpAddCheck(box, 'ALL CAPS', !!(blob && blob.fontFSAllCapsValue && blob.fontFSAllCapsValue[0]), function (v) { richStyle().caps = v; });
     }
@@ -6275,7 +6279,7 @@
       } else if (p.kind === 'bool') {
         (function (idx) { mpAddCheck(box, p.name, p.value, function (v) { setMogrtParam(idx, 'bool', v); }); })(p.i);
       } else {
-        (function (idx) { mpAddFontSelect(box, p.name, String(p.value), function (v) { setMogrtParam(idx, 'font', v); }); })(p.i);
+        (function (idx) { mpAddFontSelect(box, p.name, String(p.value), function (v) { setMogrtParam(idx, 'font', v ? CPCaptions.psFontName(v, 'Regular') : v); }); })(p.i);
       }
     });
   }
@@ -6289,7 +6293,7 @@
     try { var c = readSelectedTranscript(); if (c && c[0]) sample = String(c[0].text).split(/\s+/).slice(0, 3).join(' '); } catch (e) {}
     sample = applyCase(sample, state.mogrtCase || 'as-spoken');   // match the chosen text case
     var params = (state.mogrtParamsPath === path) ? state.mogrtParams : [];
-    var textStyle = (state.mogrtParamsPath === path) ? state.mogrtTextStyle : null;
+    var textStyle = resolveTextStyleFont((state.mogrtParamsPath === path) ? state.mogrtTextStyle : null);
     toast('Dropping a preview at the playhead…');
     CPBridge.callHost('CP_previewMogrt', { path: path, seconds: 4, params: params, text: sample, textStyle: textStyle })
       .then(function (r) { toast('▶ Preview placed on V' + r.track + ' at the playhead. Scrub to see it.'); })
@@ -6394,7 +6398,7 @@
       if (!ok) { if (btn) btn.disabled = false; capProgress('⚠️ Save your Premiere project first (⌘S / Ctrl+S), then click again.'); return null; }
       capProgress('Adding ' + tcues.length + ' template graphics…', tcues.length * 230);
       var params = (state.mogrtParamsPath === mogrtPath) ? state.mogrtParams : [];
-      var textStyle = (state.mogrtParamsPath === mogrtPath) ? state.mogrtTextStyle : null;
+      var textStyle = resolveTextStyleFont((state.mogrtParamsPath === mogrtPath) ? state.mogrtTextStyle : null);
       var stretch = !!($('mg-stretch') && $('mg-stretch').checked);
       var maxSpeed = state.mogrtMaxSpeed || 100;   // Animation-speed choice (action sheet); default Natural
       // Reuse the SAME track as the last editable job (any editable job — canvas
@@ -6575,6 +6579,33 @@
     // presets) — drives the engine's real Text Position control
     if (ov.yPct != null && isFinite(ov.yPct)) eff.yPct = ov.yPct;
     return eff;
+  }
+
+  /* The face the editable pipeline asks Premiere for: the chosen family
+     resolved to its POSTSCRIPT name ("Bebas Neue" → "BebasNeue-Regular"),
+     which is the only name a template's source-text blob understands — the
+     raw family name was silently ignored ("not able to change the fonts").
+     Also decides whether synthetic bold is still needed: when the resolved
+     name already IS a Bold face, stacking the bold flag on top rendered
+     smudged. Used by Apply AND the real preview so both always match. */
+  function resolvedEditorFont(preset) {
+    if (!preset || !preset.font) return null;
+    var wantBold = (preset.weight || 800) >= 600;
+    var ps = CPCaptions.psFontName(preset.font, wantBold ? 'Bold' : 'Regular');
+    if (!ps) return null;
+    return { font: ps, bold: wantBold && !CPCaptions.psIsBoldFace(ps) };
+  }
+
+  /* Templates saved by older builds stored the font as a FAMILY name —
+     resolve it at send time (a PostScript-style name passes through
+     untouched, so this is safe to apply on every path). */
+  function resolveTextStyleFont(ts) {
+    if (!ts || !ts.font) return ts;
+    var out = {};
+    for (var k in ts) if (ts.hasOwnProperty(k)) out[k] = ts[k];
+    out.font = CPCaptions.psFontName(ts.font, out.bold ? 'Bold' : 'Regular', out.italic);
+    if (out.bold && CPCaptions.psIsBoldFace(out.font)) out.bold = false;
+    return out;
   }
 
   /* What the EDITABLE caption clip will actually look like: only the properties
@@ -6898,7 +6929,8 @@
       if (cues && cues[0]) sample = String(cues[0].text).split(/\s+/).slice(0, 5).join(' ');
     } catch (eTr) {}
     if (preset.uppercase || cchk('c-upper')) sample = sample.toUpperCase();
-    var textStyle = preset.font ? { font: preset.font, bold: (preset.weight || 800) >= 600, sizeScale: 1 } : null;
+    var rfPrev = resolvedEditorFont(preset);   // PostScript name — same resolve as Apply, so preview face == output face
+    var textStyle = rfPrev ? { font: rfPrev.font, bold: rfPrev.bold, sizeScale: 1 } : null;
     if (btn) btn.disabled = true;
     toast('Dropping a real preview at the playhead…');
     CPBridge.callHost('CP_inspectMogrt', { path: bb.path }).then(function (r) {
@@ -6958,10 +6990,13 @@
     // only)" gradient layer so the word-highlight stays aligned. No fill or
     // caps in the blob: colour is param-owned, caps rides the text string.
     var isFluxBB = String((bb && bb.path) || '').toLowerCase().indexOf('flux_halo') >= 0;
+    // rf.font is the POSTSCRIPT name — the family name the picker shows was
+    // silently ignored by Premiere's text engine ("not able to change the fonts")
+    var rf = resolvedEditorFont(preset);
     var textStyle = isFluxBB
-                  ? (preset.font ? { font: preset.font, bold: (preset.weight || 800) >= 600, sizeScale: 1 } : null)
-                  : { font: preset.font, caps: caps,
-                      bold: (preset.weight || 800) >= 600, fill: preset.fill,
+                  ? (rf ? { font: rf.font, bold: rf.bold, sizeScale: 1 } : null)
+                  : { font: rf && rf.font, caps: caps,
+                      bold: rf ? rf.bold : (preset.weight || 800) >= 600, fill: preset.fill,
                       sizeScale: (Math.abs(sizeScale - 1) > 0.02 ? sizeScale : 1) };
     preset.sizeScale = sizeScale;   // the mapper scales the backbone's text-scale control by this
     // Entrance = real Motion keyframes on each caption clip (None default)
@@ -9286,6 +9321,9 @@
       textCues: textCues,
       imageLooksBlank: imageLooksBlank,
       asrLang: function () { return settings.whisperLang || 'auto'; },   // must NEVER default to 'en' again (garbled Hindi)
+      psFontName: CPCaptions.psFontName,
+      editorFont: function () { return resolvedEditorFont(styledPreset()); },   // the exact face Apply/preview will send
+
       openMogrtSheet: openMogrtSheet,
       renderMogrtPreview: renderMogrtPreview,
       sheetFirstEdit: sheetFirstEdit,
