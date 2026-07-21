@@ -343,7 +343,18 @@ function fluxProps() {
     const set = (id, v) => { const e = document.getElementById(id); e.value = v; e.dispatchEvent(new Event('input')); e.dispatchEvent(new Event('change')); };
     const tick = (id, v) => { const e = document.getElementById(id); e.checked = v; e.dispatchEvent(new Event('change')); };
     const clickBtn = (sel) => { const b = document.querySelector(sel); if (b) b.click(); };
-    window.prompt = () => 'RT Test';
+    // saving now uses the IN-PANEL name dialog (window.prompt is dead in CEP) —
+    // fill + confirm it exactly like a user
+    window.prompt = () => { throw new Error('window.prompt must never be used'); };
+    const confirmSaveDialog = async (name) => {
+      await sleep(60);
+      const ov = document.getElementById('cp-prompt-ov');
+      if (!ov) return false;
+      ov.querySelector('input').value = name;
+      document.getElementById('cp-prompt-save').click();
+      await sleep(60);
+      return true;
+    };
     set('c-fill', '#112233'); set('c-hl', '#445566');
     tick('c-hlgrad', true); set('c-hl2g', '#778899');
     set('c-pos', '30'); set('c-size', '120');
@@ -358,7 +369,9 @@ function fluxProps() {
     if (document.getElementById('c-case')) set('c-case', 'upper');
     tick('c-censor', true);
     await sleep(80);
-    document.getElementById('btn-save-tpl').click(); await sleep(150);
+    document.getElementById('btn-save-tpl').click();
+    if (!(await confirmSaveDialog('RT Test'))) return { err: 'save name dialog did not open' };
+    await sleep(150);
     // trash everything
     set('c-fill', '#ffffff'); set('c-hl', '#ffd400'); tick('c-hlgrad', false);
     set('c-pos', '76'); set('c-size', '62'); tick('c-shadow-on', false);
@@ -559,6 +572,39 @@ function fluxProps() {
   else if (sp.onV === 0 && sp.offV === 100)
     ok('🎬 As spoken: base Text Opacity 0 with the option on (words appear only when the sweep reaches them), 100 otherwise');
   else bad('as-spoken reveal wrong: ' + JSON.stringify(sp));
+
+  // ---- M. SAVE AS CUSTOM works WITHOUT window.prompt: CEF suppresses
+  // prompt() inside Premiere (returns null instantly), so "＋ Save" silently
+  // did nothing ("save as custom is not saving"). Drives the real button →
+  // in-panel name dialog → Save, and checks the template lands in
+  // My Templates with the gallery switched there. --------------------------
+  const sv = await page.evaluate(async () => {
+    const D = window.CP_DEBUG;
+    if (!D || !D.customCount || !D.libCategory) return { fatal: 'custom hooks missing' };
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    window.prompt = () => { throw new Error('window.prompt must never be used — CEP suppresses it'); };
+    const before = D.customCount();
+    const btn = document.getElementById('btn-save-tpl');
+    if (!btn) return { fatal: 'no ＋ Save button' };
+    btn.click();
+    await sleep(60);
+    const ov = document.getElementById('cp-prompt-ov');
+    if (!ov) return { fatal: 'in-panel name dialog did not open' };
+    const inp = ov.querySelector('input');
+    inp.value = 'Proof Custom Style';
+    document.getElementById('cp-prompt-save').click();
+    await sleep(120);
+    const cards = document.querySelectorAll('#tpl-grid .tpl-name, #tpl-grid [class*="name"]');
+    let seen = false;
+    cards.forEach(c => { if (/Proof Custom Style/.test(c.textContent)) seen = true; });
+    return { before, after: D.customCount(), cat: D.libCategory(), seen,
+             overlayGone: !document.getElementById('cp-prompt-ov') };
+  });
+  if (sv.fatal) bad('save-as-custom: ' + sv.fatal);
+  else if (sv.after === sv.before + 1 && sv.cat === 'My Templates' && sv.overlayGone)
+    ok('＋ Save works without window.prompt: in-panel dialog → template saved (' + sv.before + '→' + sv.after +
+       ') and the gallery jumps to My Templates' + (sv.seen ? ' showing it' : ''));
+  else bad('save-as-custom wrong: ' + JSON.stringify(sv));
 
   await browser.close();
   console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');

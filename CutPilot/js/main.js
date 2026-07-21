@@ -164,6 +164,45 @@
       var c = document.getElementById('diag-count'); if (c) c.textContent = String(_diag.length);
     } catch (e) {}
   }
+  /* window.prompt() is DEAD inside Premiere's panel — CEF suppresses it and
+     returns null instantly, so every "name this template" flow silently did
+     NOTHING ("save as custom is not saving"). In-panel replacement: a small
+     overlay with an input + Save/Cancel. Callback gets the string, or null. */
+  function promptInline(title, defVal, onDone) {
+    var old = document.getElementById('cp-prompt-ov');
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    var ov = document.createElement('div'); ov.id = 'cp-prompt-ov';
+    ov.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(8,10,16,.72);z-index:99998;display:flex;align-items:center;justify-content:center;';
+    var card = document.createElement('div');
+    card.style.cssText = 'background:#151922;border:1px solid #2b3242;border-radius:12px;padding:16px;width:280px;max-width:92vw;';
+    var h = document.createElement('div'); h.textContent = title;
+    h.style.cssText = 'color:#e7ecf3;font-size:12px;font-weight:700;margin-bottom:10px;line-height:1.45;';
+    var inp = document.createElement('input'); inp.type = 'text'; inp.value = defVal || ''; inp.spellcheck = false;
+    inp.style.cssText = 'width:100%;box-sizing:border-box;background:#0b0e16;color:#e7ecf3;border:1px solid #2b3242;border-radius:8px;padding:8px 10px;font-size:12px;margin-bottom:12px;';
+    var row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
+    var done = false;
+    function close(val) {
+      if (done) return; done = true;
+      try { ov.parentNode.removeChild(ov); } catch (e) {}
+      try { onDone(val); } catch (e2) {}
+    }
+    var bC = document.createElement('button'); bC.type = 'button'; bC.textContent = 'Cancel';
+    bC.style.cssText = 'padding:7px 14px;border-radius:8px;border:1px solid #2b3242;background:transparent;color:#aab3c5;cursor:pointer;font-size:12px;';
+    var bS = document.createElement('button'); bS.type = 'button'; bS.textContent = 'Save'; bS.id = 'cp-prompt-save';
+    bS.style.cssText = 'padding:7px 16px;border-radius:8px;border:0;background:#c6f24e;color:#10140a;font-weight:800;cursor:pointer;font-size:12px;';
+    bC.onclick = function () { close(null); };
+    bS.onclick = function () { close(inp.value); };
+    inp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') close(inp.value);
+      if (e.key === 'Escape') close(null);
+    });
+    ov.addEventListener('mousedown', function (e) { if (e.target === ov) close(null); });
+    row.appendChild(bC); row.appendChild(bS);
+    card.appendChild(h); card.appendChild(inp); card.appendChild(row);
+    ov.appendChild(card); document.body.appendChild(ov);
+    setTimeout(function () { try { inp.focus(); inp.select(); } catch (e) {} }, 0);
+  }
+
   function diagEnv() {
     var L = [];
     function row(s) { L.push(s); }
@@ -3493,12 +3532,14 @@
     mount.innerHTML = '';
     _fontDD = makeDropdown(fontOptionList(), cur, function (v) {
       if (v === '__custom__') {
-        var f = prompt('Type the exact name of any font installed on your computer\n(e.g. "Proxima Nova", "SF Pro Display", "Gotham"):', '');
-        var pick = (f && f.trim()) ? f.trim() : (currentPreset() ? currentPreset().font : CPCaptions.FONTS[0]);
-        setFontValue(pick);
-      } else {
-        $('c-font').value = v;
+        promptInline('Type the exact name of any font installed on your computer (e.g. "Proxima Nova", "SF Pro Display", "Gotham"):', '', function (f) {
+          var pick = (f && f.trim()) ? f.trim() : (currentPreset() ? currentPreset().font : CPCaptions.FONTS[0]);
+          setFontValue(pick);
+          updateVals(); renderPreview();
+        });
+        return;
       }
+      $('c-font').value = v;
       updateVals(); renderPreview();
     }, 'Pick a font');
     _fontDD.el.classList.add('cp-font-dd');
@@ -4174,16 +4215,17 @@
       if (list[i].path === path && (list[i].name || '') === (state.mogrtSelName || '')) { base = list[i].name; break; }
     }
     if (!base) base = path.split(/[\\/]/).pop().replace(/\.mogrt$/i, '');
-    var name = prompt('Save this customized template as:', base.replace(/ \(custom\)$/i, '') + ' (custom)');
-    if (!name || !name.trim()) return;
-    name = name.trim();
-    var edits = { params: (state.mogrtParams || []).slice(), textStyle: state.mogrtTextStyle || null, rbSwap: !!state.mogrtRBSwap };
-    state.userMogrts = list.filter(function (m) { return (m.name || '') !== name; });   // replace same-name
-    state.userMogrts.unshift({ name: name, path: path, edits: edits });
-    saveUserMogrts();
-    state.mogrtSelName = name;
-    renderMogrtUploads();
-    toast('Saved “' + name + '” to Your templates — selecting it restores these edits.');
+    promptInline('Save this customized template as:', base.replace(/ \(custom\)$/i, '') + ' (custom)', function (name) {
+      if (!name || !name.trim()) return;
+      name = name.trim();
+      var edits = { params: (state.mogrtParams || []).slice(), textStyle: state.mogrtTextStyle || null, rbSwap: !!state.mogrtRBSwap };
+      state.userMogrts = (state.userMogrts || []).filter(function (m) { return (m.name || '') !== name; });   // replace same-name
+      state.userMogrts.unshift({ name: name, path: path, edits: edits });
+      saveUserMogrts();
+      state.mogrtSelName = name;
+      renderMogrtUploads();
+      toast('✅ Saved “' + name + '” to Your templates — selecting it restores these edits.');
+    });
   }
 
   /* Transcript status shown inside the Editor (.mogrt) section. */
@@ -4263,14 +4305,23 @@
   }
 
   function saveAsTemplate() {
-    var name = prompt('Name this template:', currentPreset().name + ' Custom');
-    if (!name) return;
-    var tpl = styleFromControls(name);
-    state.customTemplates.push(tpl);
-    saveCustom();
-    state.presetId = tpl.id;
-    $('editor-tpl-name').textContent = tpl.name;
-    toast('Saved "' + name + '" to My Templates.');
+    promptInline('Name this template:', currentPreset().name + ' Custom', function (name) {
+      if (!name || !name.trim()) return;
+      name = name.trim();
+      var tpl = styleFromControls(name);
+      state.customTemplates.push(tpl);
+      saveCustom();
+      state.presetId = tpl.id;
+      $('editor-tpl-name').textContent = tpl.name;
+      // land the gallery ON the saved template so the user SEES where it went
+      state.libCategory = 'My Templates';
+      try {
+        var chips = $('lib-cats').querySelectorAll('.cat-chip');
+        for (var i = 0; i < chips.length; i++) chips[i].classList.toggle('on', chips[i].textContent === 'My Templates');
+      } catch (eCh) {}
+      renderTemplateGrid();
+      toast('✅ Saved "' + name + '" — it\'s in the style browser under “My Templates”.');
+    });
   }
 
   function duplicateTemplate() {
@@ -9422,6 +9473,8 @@
       asrLang: function () { return settings.whisperLang || 'auto'; },   // must NEVER default to 'en' again (garbled Hindi)
       psFontName: CPCaptions.psFontName,
       editorFont: function () { return resolvedEditorFont(styledPreset()); },   // the exact face Apply/preview will send
+      customCount: function () { return (state.customTemplates || []).length; },
+      libCategory: function () { return state.libCategory; },
 
       openMogrtSheet: openMogrtSheet,
       renderMogrtPreview: renderMogrtPreview,
