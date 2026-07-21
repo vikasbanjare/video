@@ -219,9 +219,11 @@ function makeWorld(opts) {
           mk.num('Animation Type', S.animType),                  // 1
           mk.point('Animation Start Time, Duration', S.animDur), // 2
           mk.uuid('Word Highlight Controls'),                    // 3
-          mk.num('Type', S.sweepType),                           // 4
+          // opts.noSweep models an engine WITHOUT the word-sweep rig (the
+          // "As spoken" reveal must then fall back to VISIBLE text)
+          mk.num(opts.noSweep ? 'Style Variant' : 'Type', S.sweepType),  // 4
           mk.num('Word Index (Manual)', S.wordIdx),              // 5
-          mk.point('Start Time, Duration(Automated)', S.sweepDur), // 6
+          mk.point(opts.noSweep ? 'Timing Offset' : 'Start Time, Duration(Automated)', S.sweepDur), // 6
           mk.color('Highlighted Word Color 1', S.hl1),           // 7
           mk.color('Highlighted Word Color 2', S.hl2),           // 8
           mk.point('Start of Gradient', S.gradA),                // 9
@@ -741,6 +743,39 @@ console.log('host.jsx — As-spoken reveal params (base text invisible, sweep pa
   assert(r.ok && r.inserted === 1, 'as-spoken insert succeeds');
   assert(f.tOpacity.v === 0, 'base Text Opacity is 0 — unspoken words are INVISIBLE until the sweep reaches them');
   assert(f.sweepType.v === 2 && f.sweepDur.x === 0, 'the word sweep is engaged from t=0 (words appear AS spoken)');
+}
+
+// ═══ As-spoken SAFETY: a clip whose sweep fails must NEVER be invisible ═══
+console.log('host.jsx — as-spoken fallback (sweep failed → text forced visible)');
+{
+  // Text Opacity 0 + no sweep = NO TEXT AT ALL ("some captions' text is not
+  // visible") — the host must force that clip's base text back to 100.
+  const w = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true, noSweep: true });
+  const host = loadHost(w);
+  const r = call(host, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt', cues: [{ start: 0.5, end: 1.5, text: 'dikhna chahiye' }],
+    videoTrack: null, audioTrack: 0,
+    params: [{ i: 18, kind: 'number', value: 0 }],   // the as-spoken Text Opacity 0
+    textStyle: null, stretch: false, revealSpoken: true
+  });
+  const f = w.model.vTracks[w.model.vTracks.length - 1][0]._flux;
+  assert(r.ok && r.inserted === 1 && r.swept === 0, 'insert lands, sweep could not engage');
+  assert(f.tOpacity.v === 100, 'base text FORCED VISIBLE (was left at 0 = invisible caption)');
+  assert(r.spokenFallbacks === 1, 'the fallback is counted so the panel can say so honestly');
+}
+{
+  // and when the sweep DOES engage, as-spoken keeps Text Opacity 0 (the reveal)
+  const w2 = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true });
+  const host2 = loadHost(w2);
+  const r2 = call(host2, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt', cues: [{ start: 0.5, end: 1.5, text: 'ek do teen' }],
+    videoTrack: null, audioTrack: 0,
+    params: [{ i: 18, kind: 'number', value: 0 }],
+    textStyle: null, stretch: false, revealSpoken: true
+  });
+  const f2 = w2.model.vTracks[w2.model.vTracks.length - 1][0]._flux;
+  assert(r2.ok && r2.swept === 1 && f2.tOpacity.v === 0 && r2.spokenFallbacks === 0,
+    'sweep engaged → reveal stays (opacity 0, no fallback)');
 }
 
 // ═══ TRUE previews: Premiere renders each style's card frame itself ═══

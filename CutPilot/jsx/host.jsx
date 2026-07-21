@@ -2327,6 +2327,7 @@ function CP_insertMogrtCaptions(argsJson) {
     var paramsApplied = 0; // how many colour/number overrides actually landed (all passes)
     var fgFontSet = 0;     // "(Change font only)" gradient mirrors given the style's font
     var fontApplied = null; // READBACK: the face the first graphic actually stored (ground truth)
+    var spokenFallbacks = 0; // "As spoken" clips whose sweep failed → base text forced visible
 
     var KEYS = ['text', 'source', 'caption', 'title', 'subtitle', 'headline',
                 'body', 'content', 'label', 'name', 'word'];
@@ -2429,9 +2430,10 @@ function CP_insertMogrtCaptions(argsJson) {
           // Word-by-word: if this is a word-highlight template, make its highlight
           // sweep across the words over THIS caption's visible length, so it
           // follows the talking pace instead of holding on one word.
+          var swOk = null;
           try {
-            var sw = CP_setWordSweep(comp, wantEnd - startSec);
-            if (sw) { swept++; if (!sweepSample) sweepSample = sw; }
+            swOk = CP_setWordSweep(comp, wantEnd - startSec);
+            if (swOk) { swept++; if (!sweepSample) sweepSample = swOk; }
           } catch (eSw) {}
 
           // fit the template's own entrance animation to THIS caption's length —
@@ -2534,6 +2536,26 @@ function CP_insertMogrtCaptions(argsJson) {
       // white box with the template's default white text while the preview was
       // right. CP_applyMgrtParams is idempotent, so a second pass is free.
       try { if (comp && comp.properties) paramsApplied += CP_applyMgrtParams(comp, args.params); } catch (eReap) {}
+      // "AS SPOKEN" SAFETY (after the re-apply, which would undo it): that mode
+      // makes the BASE text invisible (Text Opacity 0) and relies on the word
+      // sweep to paint each word — on a clip where the sweep did NOT engage,
+      // that meant NO TEXT AT ALL ("some captions' text is not visible").
+      // Force this clip's base text fully visible: readable words beat a
+      // missing effect, always.
+      if (args.revealSpoken && !swOk) {
+        try {
+          if (comp && comp.properties) {
+            for (var svI = 0; svI < comp.properties.numItems; svI++) {
+              var svN = String(comp.properties[svI].displayName || '').toLowerCase().replace(/\s+/g, ' ');
+              if (svN === 'text opacity') {
+                try { comp.properties[svI].setValue(100, true); } catch (eSv1) { try { comp.properties[svI].setValue(100); } catch (eSv2) {} }
+                spokenFallbacks++;
+                break;
+              }
+            }
+          }
+        } catch (eSpF) {}
+      }
 
       // Entrance animation — the SAME keyframe engine the PNG path uses, applied
       // to the editable graphic clip. This is what gives "editable template"
@@ -2628,6 +2650,7 @@ function CP_insertMogrtCaptions(argsJson) {
       paramsApplied: paramsApplied,       // across both passes (pre-text + final re-apply)
       fgFontSet: fgFontSet,               // gradient "(Change font only)" mirrors re-faced
       fontApplied: fontApplied,           // the face the first graphic actually stored (readback)
+      spokenFallbacks: spokenFallbacks,   // as-spoken clips whose sweep failed → text forced visible
       track: vTrack + 1,                  // 1-based, so a later call can replaceTrack this same set
       replaceMode: replaceMode,           // 'fresh' | 'reused' | 'fresh-after-clear' | 'explicit'
       replaceGuard: replaceGuard,         // null | 'foreign' | 'out-of-range' — why a reuse was refused

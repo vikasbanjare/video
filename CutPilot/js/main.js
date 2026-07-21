@@ -7248,7 +7248,9 @@
           // animSpeed is a MULTIPLIER (1 = natural pace). 100 compressed every
           // entrance into ~1ms — Pop/Slide/Fade were invisible on the timeline.
           // 'spoken' is NOT a Motion keyframe entrance — it rides the engine's
-          // sweep + Text Opacity 0 (already mapped into params above).
+          // sweep + Text Opacity 0 (already mapped into params above). The flag
+          // lets the host force text VISIBLE on any clip whose sweep fails.
+          revealSpoken: (entrance === 'spoken'),
           anim: (entrance !== 'none' && entrance !== 'spoken' ? entrance : null), animSpeed: 1
         });
       });
@@ -7268,6 +7270,7 @@
           paramsApplied: (r.paramsApplied != null ? r.paramsApplied : undefined),
           fontSent: (textStyle && textStyle.font) || undefined,   // per-style face on the rich path
           fontApplied: (r.fontApplied != null ? r.fontApplied : undefined),   // READBACK — what the graphic actually stored
+          spokenFb: (r.spokenFallbacks ? r.spokenFallbacks : undefined),      // as-spoken clips forced back to visible text
           fgFont: (r.fgFontSet != null ? r.fgFontSet : undefined), // gradient mirrors re-faced
           errs: r.sampleErrors, fields: r.fields
         }));
@@ -7282,6 +7285,10 @@
         toast('⚠️ This template kept its own font (' + r.fontApplied + ') instead of ' + textStyle.font + '. If the font you picked isn\'t installed on this computer, install it or pick another from the Font list.', true);
       } else if (textStyle && textStyle.font && r.textSet > 0 && !r.fontApplied) {
         toast('⚠️ This template didn\'t accept a font change from Pulse (its text stores no font field). Your words, colours and layout all applied.', true);
+      }
+      if (r.spokenFallbacks > 0) {
+        toast('ℹ️ ' + r.spokenFallbacks + ' caption' + (r.spokenFallbacks > 1 ? 's' : '') +
+              ' couldn\'t run the 🎬 As-spoken reveal, so their words are shown normally instead (never invisible).');
       }
       // track this job (own "mode" so the old PNG-only restyle UI never shows for
       // it — editable captions are re-edited natively in Essential Graphics) and
