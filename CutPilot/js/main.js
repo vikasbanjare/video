@@ -2591,6 +2591,73 @@
     return _stylePrev[normPrevName(t.id)] || _stylePrev[normPrevName(t.name)] || null;
   }
 
+  /* 🎥 "Make previews REAL": Premiere renders every caption style ONCE into
+     ~/Documents/Pulse/style-previews/<id>.png through a TEMP sequence (the
+     user's timeline is untouched) — the gallery then shows the ENGINE's own
+     output on every card, exactly what lands on the timeline. The drawn
+     canvas swatch stays only as the fallback for styles that fail. */
+  var _truePrevBusy = false;
+  function renderTruePreviews() {
+    if (_truePrevBusy) return toast('Already rendering — hang tight…');
+    if (!CPBridge.isCEP()) return toast('Real previews need Premiere (open Pulse inside Premiere).', true);
+    var bb = bundledBackbone(currentPreset() || {});
+    if (!bb) { try { loadBundledMogrts(); } catch (e) {} bb = bundledBackbone(currentPreset() || {}); }
+    if (!bb) return toast('The caption engine template is missing — reinstall Pulse.', true);
+    var fs, pathMod, os;
+    try { fs = nodeReq('fs'); pathMod = nodeReq('path'); os = nodeReq('os'); } catch (e2) { return toast('Node unavailable in this panel.', true); }
+    var outDir = pathMod.join(os.homedir(), 'Documents', 'Pulse', 'style-previews');
+    try { fs.mkdirSync(outDir, { recursive: true }); } catch (eMk) {}
+    var styles = CPCaptions.TEMPLATES.concat(state.customTemplates || []).filter(function (t) { return t && t.id && !t.mogrt; });
+    if (!styles.length) return toast('No styles to render.', true);
+    _truePrevBusy = true;
+    var btn = $('btn-true-prev'); if (btn) btn.disabled = true;
+    capProgress('Reading the caption engine…');
+    CPBridge.callHost('CP_inspectMogrt', { path: bb.path }).then(function (r) {
+      var liveProps = (r && r.props) || [];
+      var isFlux = String(bb.path || '').toLowerCase().indexOf('flux_halo') >= 0;
+      var payload = [];
+      styles.forEach(function (t) {
+        var params = (isFlux ? mapPresetToFlux(t, liveProps) : null) || mapPresetToMogrt(t, liveProps) || [];
+        var rf = resolvedEditorFont(t);
+        payload.push({ id: t.id, params: params,
+                       textStyle: rf ? { font: rf.font, bold: rf.bold, sizeScale: 1 } : null,
+                       text: 'Your words here' });
+      });
+      var chunks = [];
+      for (var i = 0; i < payload.length; i += 12) chunks.push(payload.slice(i, i + 12));
+      var doneN = 0, okAll = [], failAll = [];
+      var chain = Promise.resolve();
+      chunks.forEach(function (ch) {
+        chain = chain.then(function () {
+          capProgress('🎥 Premiere is rendering TRUE previews… ' + doneN + '/' + payload.length + ' styles', 12000);
+          return CPBridge.callHost('CP_renderStylePreviews', {
+            mogrtPath: bb.path, outDir: outDir, sep: pathMod.sep, seconds: 2.5, styles: ch
+          }).then(function (rr) {
+            doneN += ch.length;
+            okAll = okAll.concat(rr.rendered || []);
+            failAll = failAll.concat(rr.failed || []);
+          });
+        });
+      });
+      return chain.then(function () {
+        capProgress(null);
+        _stylePrev = null; loadStylePreviews();
+        renderTemplateGrid();
+        _truePrevBusy = false; if (btn) btn.disabled = false;
+        if (okAll.length) {
+          toast('✅ ' + okAll.length + ' style cards now show Premiere\'s OWN render — exactly what lands on your timeline' +
+                (failAll.length ? ' (' + failAll.length + ' kept the drawn swatch)' : '') + '.');
+        } else {
+          toast('Couldn\'t render previews on this Premiere — cards keep the drawn swatch. Copy Diagnostics and send it over.', true);
+        }
+        try { diag('previews', 'true renders: ' + okAll.length + ' ok, ' + failAll.length + ' failed'); } catch (eDg) {}
+      });
+    }).catch(function (e3) {
+      capProgress(null); _truePrevBusy = false; if (btn) btn.disabled = false;
+      toast('True-preview render failed: ' + e3.message, true);
+    });
+  }
+
   function loadBundledMogrts() {
     state.bundledMogrts = state.bundledMogrts || [];
     if (!CPBridge.isCEP()) return;
@@ -2812,6 +2879,7 @@
       });
       chipBox.appendChild(chip);
     });
+    if ($('btn-true-prev')) $('btn-true-prev').addEventListener('click', renderTruePreviews);
 
     if ($('flux-search')) $('flux-search').addEventListener('input', function () { state.fluxSearch = this.value.toLowerCase(); renderFluxGrid(); });
     $('lib-search').addEventListener('input', function () { state.libSearch = this.value.toLowerCase(); renderTemplateGrid(); });

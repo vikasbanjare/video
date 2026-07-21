@@ -2896,6 +2896,84 @@ function CP_previewMogrt(argsJson) {
   } catch (e) { return CP_fail(e.message); }
 }
 
+/*
+ * Render REAL style previews with Premiere itself — the gallery cards then
+ * show EXACTLY what the engine renders ("almost every caption preview is
+ * wrong — render the animation and put exactly that"). Uses a TEMP sequence
+ * so the user's timeline is never touched: per style, import the engine
+ * .mogrt, apply the style's params + sample words + word sweep, park the
+ * playhead mid-sweep and export ONE frame via QE (named <styleId>.png so
+ * the panel's style-previews loader picks it up as-is). Cleans up after.
+ * argsJson: { mogrtPath, outDir, sep, at, seconds,
+ *             styles:[{ id, params, textStyle, text }] }
+ */
+function CP_renderStylePreviews(argsJson) {
+  var prevActive = null, seq = null;
+  var rendered = [], failed = [];
+  try {
+    var args = JSON.parse(argsJson);
+    if (!args.styles || !args.styles.length) return CP_fail('No styles given.');
+    try { prevActive = app.project.activeSequence; } catch (ePA) {}
+    if (!app.project.createNewSequence) return CP_fail('This Premiere version cannot create a render sequence from a panel.');
+    seq = app.project.createNewSequence('Pulse preview render (temp)', 'pulse-prev-' + String(Math.floor(Math.random() * 1e9)));
+    if (!seq) return CP_fail('Could not create the temp render sequence.');
+    // vertical 1080×1920 (the cards are 9:16 true-output miniatures)
+    try {
+      var st = seq.getSettings();
+      st.videoFrameWidth = 1080; st.videoFrameHeight = 1920;
+      seq.setSettings(st);
+    } catch (eSt) {}
+    app.project.activeSequence = seq;
+    app.enableQE();
+    var seconds = args.seconds || 2.5;
+    var at = (args.at != null) ? args.at : (seconds * 0.55);   // mid-sweep: highlight visibly ON
+    for (var s = 0; s < args.styles.length; s++) {
+      var stl = args.styles[s], out = null;
+      try {
+        var clip = seq.importMGT(args.mogrtPath, CP_ticksFromSeconds(0), 0, 0);
+        if (!clip) { failed.push(stl.id); continue; }
+        try { clip.end = CP_timeFromSeconds(seconds); } catch (eE) {}
+        var comp = clip.getMGTComponent();
+        if (comp) {
+          try { CP_applyMgrtParams(comp, stl.params || []); } catch (ePr) {}
+          try { CP_forceIntroVisible(comp, stl.params || [], seconds, 'snappy'); } catch (eIv) {}
+          try { CP_setWordSweep(comp, seconds); } catch (eSw) {}
+          if (stl.text && comp.properties) {
+            var tp = CP_findTextProp(comp.properties, ['text', 'caption', 'title', 'subtitle']);
+            if (tp) { try { CP_setMgrtText(tp, stl.text, true, stl.textStyle || null); } catch (eTx) {} }
+          }
+          try { CP_forceRerender(clip); } catch (eRr) {}
+          try { CP_applyMgrtParams(comp, stl.params || []); } catch (ePr2) {}   // re-apply (text writes can revert params)
+        }
+        try { seq.setPlayerPosition(CP_ticksFromSeconds(at)); } catch (eCt) {}
+        var qseq = qe.project.getActiveSequence();
+        var tc = null;
+        try { tc = qseq.CTI.timecode; } catch (eTc) {}
+        out = args.outDir + (args.sep || '/') + stl.id + '.png';
+        var okF = false;
+        try { okF = qseq.exportFramePNG(tc, out); } catch (eXp) {}
+        if (okF !== false) rendered.push(stl.id); else failed.push(stl.id);
+        // clear the track for the next style
+        try {
+          var qtr = qseq.getVideoTrackAt(0);
+          for (var qi = qtr.numItems - 1; qi >= 0; qi--) {
+            var qit = qtr.getItemAt(qi);
+            if (qit && qit.type !== 'Empty') { try { qit.remove(0, 0); } catch (eRm) {} }
+          }
+        } catch (eClr) {}
+      } catch (ePer) { failed.push(stl.id); }
+    }
+  } catch (e) {
+    try { if (prevActive) app.project.activeSequence = prevActive; } catch (eR1) {}
+    return CP_fail(e.message);
+  }
+  // cleanup: restore the user's sequence, delete the temp one (best effort)
+  try { if (prevActive) app.project.activeSequence = prevActive; } catch (eR2) {}
+  var cleaned = false;
+  try { if (app.project.deleteSequence && seq) { app.project.deleteSequence(seq); cleaned = true; } } catch (eDel) {}
+  return CP_ok({ rendered: rendered, failed: failed, cleaned: cleaned });
+}
+
 /* Return sorted sequence-marker times (seconds) — a Smart-Cut-free source
    of multicam switch points. */
 function CP_getMarkers() {

@@ -743,6 +743,44 @@ console.log('host.jsx — As-spoken reveal params (base text invisible, sweep pa
   assert(f.sweepType.v === 2 && f.sweepDur.x === 0, 'the word sweep is engaged from t=0 (words appear AS spoken)');
 }
 
+// ═══ TRUE previews: Premiere renders each style's card frame itself ═══
+console.log('host.jsx — CP_renderStylePreviews (cards show the ENGINE\'s own render)');
+{
+  const w = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true });
+  const mainSeq = w.sandbox.app.project.activeSequence;
+  const exportsOut = [], events = { deleted: 0, settings: null, positions: [] };
+  const tempSeq = {
+    getSettings() { return { videoFrameWidth: 1920, videoFrameHeight: 1080 }; },
+    setSettings(s) { events.settings = s; },
+    importMGT(p, t, vt, at) { return mainSeq.importMGT(p, t, vt, at); },
+    setPlayerPosition(t) { events.positions.push(t); },
+    videoTracks: mainSeq.videoTracks, audioTracks: mainSeq.audioTracks
+  };
+  w.sandbox.app.project.createNewSequence = () => tempSeq;
+  w.sandbox.app.project.deleteSequence = () => { events.deleted++; };
+  const baseQe = w.sandbox.qe.project.getActiveSequence.bind(w.sandbox.qe.project);
+  w.sandbox.qe.project.getActiveSequence = () => {
+    const q = baseQe();
+    q.CTI = { timecode: '00:00:01:09' };
+    q.exportFramePNG = (tc, out) => { exportsOut.push(out); return true; };
+    return q;
+  };
+  const host = loadHost(w);
+  const r = call(host, 'CP_renderStylePreviews', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt', outDir: '/prev', sep: '/', seconds: 2.5,
+    styles: [{ id: 'hormozi', params: [], textStyle: { font: 'Inter-Bold' }, text: 'Your words here' },
+             { id: 'karaoke', params: [], textStyle: null, text: 'Your words here' }]
+  });
+  assert(r.ok && r.rendered.length === 2 && r.failed.length === 0,
+    'both styles render: ' + JSON.stringify(r));
+  assert(exportsOut.length === 2 && exportsOut[0] === '/prev/hormozi.png' && exportsOut[1] === '/prev/karaoke.png',
+    'one REAL engine frame per style, named <styleId>.png (exactly the loader\'s key): ' + JSON.stringify(exportsOut));
+  assert(events.settings && events.settings.videoFrameWidth === 1080 && events.settings.videoFrameHeight === 1920,
+    'temp sequence set to vertical 1080×1920 (the cards are 9:16)');
+  assert(events.deleted === 1, 'the temp render sequence is deleted afterwards');
+  assert(w.sandbox.app.project.activeSequence === mainSeq, 'the user\'s own sequence is active again');
+}
+
 // ═══ the "box with no words" bug: the engine's authored intro fade ═══
 console.log('host.jsx — intro-fade neutralizer (empty-box-with-no-words bug)');
 {
