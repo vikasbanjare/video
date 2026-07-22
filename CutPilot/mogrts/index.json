@@ -1,161 +1,161 @@
 [
-  {
-    "file": "Subtitle_2.mogrt",
-    "name": "Plain Subtitle",
-    "category": "Captions",
-    "kind": "caption",
-    "desc": "Static subtitle — NO word highlight (for word-by-word use the “Clean Subtitle” style)"
-  },
-  {
-    "file": "Subtitle_1.mogrt",
-    "name": "Word Highlight",
-    "category": "Captions",
-    "kind": "caption",
-    "desc": "Active word changes colour as it's spoken (+ box & shadow)"
-  },
-  {
-    "file": "Subtitle_3.mogrt",
-    "name": "Word Pop",
-    "category": "Captions",
-    "kind": "caption",
-    "desc": "Active word colours AND scales up — punchy"
-  },
-  {
-    "file": "Subtitle_5.mogrt",
-    "name": "Active-Word Box",
-    "category": "Captions",
-    "kind": "caption",
-    "desc": "A coloured pill sweeps behind the spoken word"
-  },
-  {
-    "file": "Subtitle_4.mogrt",
-    "name": "Gradient Highlight",
-    "category": "Captions",
-    "kind": "caption",
-    "desc": "Two-colour gradient highlight + entry animation"
-  },
-  {
-    "file": "Text_Animation_01.mogrt",
-    "name": "Solid Title",
-    "category": "Titles",
-    "kind": "title",
-    "desc": "Bold one-colour title reveal"
-  },
-  {
-    "file": "Text_Animation_03.mogrt",
-    "name": "Gradient Title",
-    "category": "Titles",
-    "kind": "title",
-    "desc": "Title with a 4-stop gradient fill"
-  },
-  {
-    "file": "Text_Animation_05.mogrt",
-    "name": "Three-Line Title",
-    "category": "Titles",
-    "kind": "title",
-    "desc": "Three independently-styled stacked lines"
-  },
-  {
-    "file": "Shorts_Text_Animation_01.mogrt",
-    "name": "Shorts Stack",
-    "category": "Titles",
-    "kind": "title",
-    "desc": "Five positioned text lines for Shorts/Reels intros"
-  },
-  {
-    "file": "Flux_Apex.mogrt",
-    "name": "Flux Apex",
-    "category": "Flux",
-    "section": "flux",
-    "premium": true,
-    "kind": "title",
-    "desc": "Two-tone bold title — solid word + ghosted word"
-  },
-  {
-    "file": "Flux_Echo.mogrt",
-    "name": "Flux Echo",
-    "category": "Flux",
-    "section": "flux",
-    "premium": true,
-    "kind": "title",
-    "desc": "Echoed text reveal"
-  },
-  {
-    "file": "Flux_Halo2.mogrt",
-    "name": "Flux Halo",
-    "category": "Flux",
-    "section": "flux",
-    "premium": true,
-    "kind": "caption",
-    "desc": "Blue word-highlight caption box"
-  },
-  {
-    "file": "Flux_Halo.mogrt",
-    "name": "Flux Halo Pro",
-    "category": "Flux",
-    "section": "flux",
-    "premium": true,
-    "kind": "caption",
-    "desc": "Blue word-highlight caption box — wide",
-    "hidden": true,
-    "hiddenWhy": "same design as Flux Halo (wide variant)"
-  },
-  {
-    "file": "Flux_Orbit.mogrt",
-    "name": "Flux Orbit",
-    "category": "Flux",
-    "section": "flux",
-    "premium": true,
-    "kind": "title",
-    "desc": "Glowing orange title"
-  },
-  {
-    "file": "Flux_Prism.mogrt",
-    "name": "Flux Prism",
-    "category": "Flux",
-    "section": "flux",
-    "premium": true,
-    "kind": "title",
-    "desc": "Rounded pill title box"
-  },
-  {
-    "file": "Flux_Pulse.mogrt",
-    "name": "Flux Pulse",
-    "category": "Flux",
-    "section": "flux",
-    "premium": true,
-    "kind": "title",
-    "desc": "Pulsing text reveal",
-    "hidden": true,
-    "hiddenWhy": "same reveal family as Flux Echo"
-  },
-  {
-    "file": "Flux_Surge.mogrt",
-    "name": "Flux Surge",
-    "category": "Flux",
-    "section": "flux",
-    "premium": true,
-    "kind": "title",
-    "desc": "Surging text reveal",
-    "hidden": true,
-    "hiddenWhy": "same reveal family as Flux Echo (and only one working colour control)"
-  },
-  {
-    "file": "Flux_Vector.mogrt",
-    "name": "Flux Vector",
-    "category": "Flux",
-    "section": "flux",
-    "premium": true,
-    "kind": "title",
-    "desc": "Electric-blue glow title"
-  },
-  {
-    "file": "Flux_Vortex.mogrt",
-    "name": "Flux Vortex",
-    "category": "Flux",
-    "section": "flux",
-    "premium": true,
-    "kind": "title",
-    "desc": "Kinetic split-word title"
-  }
+ {
+  "file": "Subtitle_2.mogrt",
+  "name": "Plain Subtitle",
+  "category": "Captions",
+  "kind": "caption",
+  "desc": "Static subtitle — NO word highlight (for word-by-word use the “Clean Subtitle” style)"
+ },
+ {
+  "file": "Subtitle_1.mogrt",
+  "name": "Word Highlight",
+  "category": "Captions",
+  "kind": "caption",
+  "desc": "Active word changes colour as it's spoken (+ box & shadow)"
+ },
+ {
+  "file": "Subtitle_3.mogrt",
+  "name": "Word Pop",
+  "category": "Captions",
+  "kind": "caption",
+  "desc": "Active word colours AND scales up — punchy"
+ },
+ {
+  "file": "Subtitle_5.mogrt",
+  "name": "Active-Word Box",
+  "category": "Captions",
+  "kind": "caption",
+  "desc": "A coloured pill sweeps behind the spoken word"
+ },
+ {
+  "file": "Subtitle_4_r2.mogrt",
+  "name": "Gradient Highlight",
+  "category": "Captions",
+  "kind": "caption",
+  "desc": "Two-colour gradient highlight + entry animation"
+ },
+ {
+  "file": "Text_Animation_01.mogrt",
+  "name": "Solid Title",
+  "category": "Titles",
+  "kind": "title",
+  "desc": "Bold one-colour title reveal"
+ },
+ {
+  "file": "Text_Animation_03.mogrt",
+  "name": "Gradient Title",
+  "category": "Titles",
+  "kind": "title",
+  "desc": "Title with a 4-stop gradient fill"
+ },
+ {
+  "file": "Text_Animation_05.mogrt",
+  "name": "Three-Line Title",
+  "category": "Titles",
+  "kind": "title",
+  "desc": "Three independently-styled stacked lines"
+ },
+ {
+  "file": "Shorts_Text_Animation_01.mogrt",
+  "name": "Shorts Stack",
+  "category": "Titles",
+  "kind": "title",
+  "desc": "Five positioned text lines for Shorts/Reels intros"
+ },
+ {
+  "file": "Flux_Apex.mogrt",
+  "name": "Flux Apex",
+  "category": "Flux",
+  "section": "flux",
+  "premium": true,
+  "kind": "title",
+  "desc": "Two-tone bold title — solid word + ghosted word"
+ },
+ {
+  "file": "Flux_Echo.mogrt",
+  "name": "Flux Echo",
+  "category": "Flux",
+  "section": "flux",
+  "premium": true,
+  "kind": "title",
+  "desc": "Echoed text reveal"
+ },
+ {
+  "file": "Flux_Halo2_r2.mogrt",
+  "name": "Flux Halo",
+  "category": "Flux",
+  "section": "flux",
+  "premium": true,
+  "kind": "caption",
+  "desc": "Blue word-highlight caption box"
+ },
+ {
+  "file": "Flux_Halo_r2.mogrt",
+  "name": "Flux Halo Pro",
+  "category": "Flux",
+  "section": "flux",
+  "premium": true,
+  "kind": "caption",
+  "desc": "Blue word-highlight caption box — wide",
+  "hidden": true,
+  "hiddenWhy": "same design as Flux Halo (wide variant)"
+ },
+ {
+  "file": "Flux_Orbit.mogrt",
+  "name": "Flux Orbit",
+  "category": "Flux",
+  "section": "flux",
+  "premium": true,
+  "kind": "title",
+  "desc": "Glowing orange title"
+ },
+ {
+  "file": "Flux_Prism.mogrt",
+  "name": "Flux Prism",
+  "category": "Flux",
+  "section": "flux",
+  "premium": true,
+  "kind": "title",
+  "desc": "Rounded pill title box"
+ },
+ {
+  "file": "Flux_Pulse.mogrt",
+  "name": "Flux Pulse",
+  "category": "Flux",
+  "section": "flux",
+  "premium": true,
+  "kind": "title",
+  "desc": "Pulsing text reveal",
+  "hidden": true,
+  "hiddenWhy": "same reveal family as Flux Echo"
+ },
+ {
+  "file": "Flux_Surge.mogrt",
+  "name": "Flux Surge",
+  "category": "Flux",
+  "section": "flux",
+  "premium": true,
+  "kind": "title",
+  "desc": "Surging text reveal",
+  "hidden": true,
+  "hiddenWhy": "same reveal family as Flux Echo (and only one working colour control)"
+ },
+ {
+  "file": "Flux_Vector.mogrt",
+  "name": "Flux Vector",
+  "category": "Flux",
+  "section": "flux",
+  "premium": true,
+  "kind": "title",
+  "desc": "Electric-blue glow title"
+ },
+ {
+  "file": "Flux_Vortex.mogrt",
+  "name": "Flux Vortex",
+  "category": "Flux",
+  "section": "flux",
+  "premium": true,
+  "kind": "title",
+  "desc": "Kinetic split-word title"
+ }
 ]

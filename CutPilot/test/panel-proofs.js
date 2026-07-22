@@ -25,7 +25,7 @@ const fs = require('fs');
 const path = require('path');
 const ROOT = path.join(__dirname, '..', '..');
 const PANEL = 'file://' + path.join(ROOT, 'CutPilot', 'index.html');
-const MOGRT = path.join(ROOT, 'CutPilot', 'mogrts', 'Flux_Halo2.mogrt');
+const MOGRT = path.join(ROOT, 'CutPilot', 'mogrts', 'Flux_Halo2_r2.mogrt');
 
 let failed = 0;
 function ok(m) { console.log('  ✓ ' + m); }

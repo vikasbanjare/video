@@ -2268,13 +2268,11 @@ function CP_forceIntroVisible(comp, params, clipDurSec, mode) {
     } else if (nn === 'animationtype') {
       if (userSet(i)) continue;
       var cur = null; try { cur = props[i].getValue(); } catch (eG) {}
-      // GROUND TRUTH from the engine's .aep: variants 1-7 declare cstime/
-      // astime but their easeOut() reads *stime* — a DEAD expression that
-      // falls back to the layer's static opacity (invisible text on the
-      // machines/styles that land there). Variant 8 is the ONLY working
-      // intro; 9 = "None" is a legitimate choice (the old 1..8 check
-      // "corrected" it onto a dead variant).
-      var want = (mode === 'snappy') ? 8 : ((cur >= 1 && cur <= 9) ? cur : 8);
+      // With the repaired engines (all 8 intro gates live, "else 100"
+      // neutral) EVERY variant 1..9 renders text safely — keep the template's
+      // own choice and only rescue an out-of-range value. (History: variant 8
+      // was forced while 1-7 carried the author's dead-expression bug.)
+      var want = (cur >= 1 && cur <= 9) ? cur : 8;
       if (cur !== want) {
         try { props[i].setValue(want, true); fixed++; } catch (e3) {}
       }
