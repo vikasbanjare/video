@@ -2160,7 +2160,7 @@ function CP_zeroInsertResult(args, msg) {
   };
 }
 
-function CP_setWordSweep(comp, durSec) {
+function CP_setWordSweep(comp, durSec, wordCount) {
   if (!comp || !comp.properties || !(durSec > 0)) return null;
   // RELAXED name matching. The old code demanded the byte-exact prefix
   // "Start Time, Duration(Automated)" — one space difference in the live
@@ -2192,10 +2192,23 @@ function CP_setWordSweep(comp, durSec) {
   if (!info.typeSet && idxProp) {
     try { idxProp.setValue(1, true); } catch (eI1) { try { idxProp.setValue(1); } catch (eI2) {} }
   }
-  // Start at 0, sweep across all words over the caption's visible duration.
-  try { durProp.setValue([0, durSec], true); info.durSet = true; }
-  catch (e3) { try { durProp.setValue([0, durSec]); info.durSet = true; }
-    catch (e4) { try { durProp.setValue({ x: 0, y: durSec }, true); info.durSet = true; } catch (e5) {} } }
+  // THE ENGINE'S OWN MATH (read from the .aep):
+  //   activeIndex = round(linear(time, d[0], d[0]+d[1], 0, words+1))
+  // Index 0 (before word 1) and words+1 (past the last word) highlight
+  // NOTHING. The old [0, caption-length] window therefore started every
+  // caption with NO active word and dropped the last word early — the
+  // highlight lagged the voice ("animation speed is wrong"), and in
+  // As-spoken those stretches were BLANK (a 1-word caption: HALF of it).
+  // Window such that t=0 lands at index 0.75 (safely ON word 1) and t=dur
+  // at words+0.25 (still on the last word):
+  //   d1 = dur*(W+1)/(W-0.5)      d0 = -0.75*dur/(W-0.5)
+  var W = (wordCount && wordCount > 0) ? wordCount : 3;
+  var d1 = durSec * (W + 1) / (W - 0.5);
+  var d0 = -0.75 * durSec / (W - 0.5);
+  info.words = W; info.d0 = d0; info.d1 = d1;
+  try { durProp.setValue([d0, d1], true); info.durSet = true; }
+  catch (e3) { try { durProp.setValue([d0, d1]); info.durSet = true; }
+    catch (e4) { try { durProp.setValue({ x: d0, y: d1 }, true); info.durSet = true; } catch (e5) {} } }
   return info;
 }
 
@@ -2255,8 +2268,15 @@ function CP_forceIntroVisible(comp, params, clipDurSec, mode) {
     } else if (nn === 'animationtype') {
       if (userSet(i)) continue;
       var cur = null; try { cur = props[i].getValue(); } catch (eG) {}
-      if (!(cur >= 1 && cur <= 8)) {
-        try { props[i].setValue(1, true); fixed++; } catch (e3) {}
+      // GROUND TRUTH from the engine's .aep: variants 1-7 declare cstime/
+      // astime but their easeOut() reads *stime* — a DEAD expression that
+      // falls back to the layer's static opacity (invisible text on the
+      // machines/styles that land there). Variant 8 is the ONLY working
+      // intro; 9 = "None" is a legitimate choice (the old 1..8 check
+      // "corrected" it onto a dead variant).
+      var want = (mode === 'snappy') ? 8 : ((cur >= 1 && cur <= 9) ? cur : 8);
+      if (cur !== want) {
+        try { props[i].setValue(want, true); fixed++; } catch (e3) {}
       }
     }
   }
@@ -2432,7 +2452,8 @@ function CP_insertMogrtCaptions(argsJson) {
           // follows the talking pace instead of holding on one word.
           var swOk = null;
           try {
-            swOk = CP_setWordSweep(comp, wantEnd - startSec);
+            var swWords = String(grp[0].text || '').replace(/\s+/g, ' ').replace(/^ | $/g, '').split(' ').length;
+            swOk = CP_setWordSweep(comp, wantEnd - startSec, swWords);
             if (swOk) { swept++; if (!sweepSample) sweepSample = swOk; }
           } catch (eSw) {}
 
@@ -2960,7 +2981,10 @@ function CP_renderStylePreviews(argsJson) {
         if (comp) {
           try { CP_applyMgrtParams(comp, stl.params || []); } catch (ePr) {}
           try { CP_forceIntroVisible(comp, stl.params || [], seconds, 'snappy'); } catch (eIv) {}
-          try { CP_setWordSweep(comp, seconds); } catch (eSw) {}
+          try {
+            var pvW = String(stl.text || '').replace(/\s+/g, ' ').replace(/^ | $/g, '').split(' ').length;
+            CP_setWordSweep(comp, seconds, pvW);
+          } catch (eSw) {}
           if (stl.text && comp.properties) {
             var tp = CP_findTextProp(comp.properties, ['text', 'caption', 'title', 'subtitle']);
             if (tp) { try { CP_setMgrtText(tp, stl.text, true, stl.textStyle || null); } catch (eTx) {} }
