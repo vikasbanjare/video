@@ -2725,6 +2725,18 @@
         { id: 'pulse-st-font', params: probeParams({}), textStyle: { font: 'Impact', bold: false, sizeScale: 1 },
           name: 'Font change still renders words' }
       ];
+      // …plus the user's CURRENT style exactly as Apply would send it —
+      // catches style-specific failures (e.g. text colour == box colour).
+      try {
+        var curP = styledPreset();
+        var curParams = mapPresetToFlux(curP, liveProps);
+        if (curParams) {
+          var curRf = resolvedEditorFont(curP);
+          probes.push({ id: 'pulse-st-current', params: curParams,
+                        textStyle: curRf ? { font: curRf.font, bold: curRf.bold, sizeScale: 1 } : null,
+                        name: 'YOUR current style renders words (' + (curP.name || currentPreset().name || 'style') + ')' });
+        }
+      } catch (eCur) {}
       return CPBridge.callHost('CP_renderStylePreviews', {
         mogrtPath: bb.path, outDir: outDir, sep: pathMod.sep, seconds: 2.5,
         styles: probes.map(function (p) { return { id: p.id, params: p.params, textStyle: p.textStyle, text: 'PULSE TEST WORDS' }; })
@@ -9747,7 +9759,10 @@
         show();
       }).catch(function (e) { R.push('   inspect failed: ' + e.message); show(); });
     }).then(function () {
-      R.push('5) transcript: ' + (state.transcript ? ('✅ ' + state.transcript.label) : '⚠️ none loaded — captions need one (Window→Text→Transcribe→export SRT)'));
+      R.push('5) transcript: ' + (state.transcript ? ('✅ ' + state.transcript.label)
+        : (state.transcriptWords && state.transcriptWords.length)
+          ? ('⚠️ file not selected right now, but ' + state.transcriptWords.length + ' words of timing are loaded — click your clip once (Pulse re-finds its saved transcript) or tap 🎙️ Auto-transcribe')
+          : '⚠️ none loaded — tap 🎙️ Auto-transcribe on the Transcribe tab'));
       R.push('', 'Done. Tap "Copy results" and send this to support.');
       show();
     }).catch(function (e) { R.push('ERROR: ' + e.message); show(); });
