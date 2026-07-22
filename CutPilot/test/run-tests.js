@@ -1544,6 +1544,50 @@ console.log('duplicate-cue cleanup (linked-clip double mapping / whisper repeats
   assert(dx.length === 2, 'different overlapping text stays');
 }
 
+// ---- engine expression health ("box is showing, text is not") -------------
+// The shipped caption engines' intro animators are gated by expressions like
+//   if (Animation Type==K) easeOut(time, stime, stime+atime, 0, 100) else 0
+// The original author declared cstime/astime but USED stime in 7 of 8
+// variants — dead expressions whose static fallback left text invisible on
+// some machines/styles. We repair the .aep bytes at ship time; this guard
+// keeps every bundled engine honest forever.
+console.log('bundled engine expressions (all animation variants must be live)');
+{
+  const cp = require('child_process');
+  const fs = require('fs');
+  let unzipOk = true;
+  try { cp.execSync('unzip -v', { stdio: 'ignore' }); } catch (e) { unzipOk = false; }
+  if (!unzipOk) console.log('  ? unzip not available — engine expression scan skipped');
+  else {
+    const os = require('os');
+    const mdir = path.join(__dirname, '..', 'mogrts');
+    fs.readdirSync(mdir).filter(f => f.endsWith('.mogrt')).forEach(f => {
+      let aep = null;
+      try {
+        const ae = cp.execSync('unzip -p ' + JSON.stringify(path.join(mdir, f)) + ' project.aegraphic', { maxBuffer: 256 * 1024 * 1024 });
+        const tmp = path.join(os.tmpdir(), 'pulse-aeg-' + process.pid + '.zip');
+        fs.writeFileSync(tmp, ae);
+        aep = cp.execSync('unzip -p ' + JSON.stringify(tmp) + ' "*.aep"', { maxBuffer: 256 * 1024 * 1024 });
+        fs.unlinkSync(tmp);
+      } catch (e) { return; }   // no aegraphic / no aep inside — nothing to scan
+      const txt = aep.toString('latin1');
+      assert(txt.indexOf('cstime') === -1 && txt.indexOf('astime') === -1,
+        f + ': no typo\'d intro variables (cstime/astime) remain');
+      let broken = 0;
+      const runs = txt.match(/[\x20-\x7e\n\r\t]{60,}/g) || [];
+      runs.forEach(t => {
+        const m = /Animation Type"?\)\s*==\s*(\d+)/.exec(t);
+        if (m && t.indexOf('easeOut') >= 0) {
+          const decl = (t.match(/([a-z]+time)\s*=/g) || []).map(x => x.replace(/\s*=$/, ''));
+          const used = /easeOut\(time,\s*([a-z]+time)/.exec(t);
+          if (used && decl.indexOf(used[1]) === -1) broken++;
+        }
+      });
+      assert(broken === 0, f + ': every animation variant\'s intro expression uses a variable it declares (' + broken + ' dead)');
+    });
+  }
+}
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 
 // ------------------------------------------------- template audit ----

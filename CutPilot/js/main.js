@@ -2651,6 +2651,31 @@
           toast('Couldn\'t render previews on this Premiere — cards keep the drawn swatch. Copy Diagnostics and send it over.', true);
         }
         try { diag('previews', 'true renders: ' + okAll.length + ' ok, ' + failAll.length + ' failed'); } catch (eDg) {}
+        // BLANK-SCAN the real renders: any style whose ENGINE output is a box
+        // with no words is caught right here, named in Diagnostics — the
+        // user's own machine becomes the test rig for "text is not showing".
+        try {
+          var boxOnly = [];
+          var scanChain = Promise.resolve();
+          okAll.forEach(function (id) {
+            scanChain = scanChain.then(function () {
+              return new Promise(function (res) {
+                var im = new Image();
+                im.onload = function () { try { if (imageLooksBlank(im)) boxOnly.push(id); } catch (eB) {} res(); };
+                im.onerror = function () { res(); };
+                im.src = 'file://' + encodeURI((outDir + pathMod.sep + id + '.png').replace(/\\/g, '/'));
+              });
+            });
+          });
+          scanChain.then(function () {
+            if (boxOnly.length) {
+              diag('previews', 'BOX-ONLY renders (engine shows no words for these styles): ' + boxOnly.join(', '));
+              toast('⚠️ ' + boxOnly.length + ' style(s) render as a box with NO words on this machine — their names are in Copy Diagnostics. Send it over and I\'ll fix those exact styles.', true);
+            } else {
+              diag('previews', 'blank-scan: every rendered style shows words ✓');
+            }
+          });
+        } catch (eScan) {}
       });
     }).catch(function (e3) {
       capProgress(null); _truePrevBusy = false; if (btn) btn.disabled = false;
