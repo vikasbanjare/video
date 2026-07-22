@@ -2633,6 +2633,30 @@
      settings, exports a true frame, and the panel verifies the words are
      literally VISIBLE in the pixels. Plain ✅/⚠️/❌ report; a copy lands in
      Diagnostics automatically. */
+  /* Load a just-exported PNG robustly: QE writes the file a beat AFTER the
+     call returns, and CEP webviews can refuse file:// URLs from the OS temp
+     dir — so read the bytes with Node (retrying briefly) and hand Image a
+     data: URL. cb(imgOrNull). */
+  function loadRenderedFrame(pngPath, cb) {
+    var fs = null;
+    try { fs = nodeReq('fs'); } catch (e) { return cb(null); }
+    var tries = 0;
+    (function attempt() {
+      tries++;
+      var buf = null;
+      try { if (fs.existsSync(pngPath)) buf = fs.readFileSync(pngPath); } catch (eR) {}
+      if (buf && buf.length > 800) {
+        var im = new Image();
+        im.onload = function () { cb(im); };
+        im.onerror = function () { cb(null); };
+        im.src = 'data:image/png;base64,' + buf.toString('base64');
+        return;
+      }
+      if (tries >= 10) return cb(null);
+      setTimeout(attempt, 350);
+    })();
+  }
+
   function buildSelfTestReport(rows) {   // pure — proof-tested
     var lines = [], fails = 0, warns = 0;
     for (var i = 0; i < rows.length; i++) {
@@ -2715,15 +2739,13 @@
           chain = chain.then(function () {
             return new Promise(function (res) {
               if (!okIds[p.id]) { row(p.name, 'fail', 'no frame exported'); return res(); }
-              var im = new Image();
-              im.onload = function () {
+              loadRenderedFrame(outDir + pathMod.sep + p.id + '.png', function (im) {
+                if (!im) { row(p.name, 'fail', 'frame file never appeared'); return res(); }
                 var blank = true;
                 try { blank = imageLooksBlank(im); } catch (eB2) {}
                 row(p.name, blank ? 'fail' : 'ok', blank ? 'rendered frame shows NO words' : '');
                 res();
-              };
-              im.onerror = function () { row(p.name, 'fail', 'frame unreadable'); res(); };
-              im.src = 'file://' + encodeURI((outDir + pathMod.sep + p.id + '.png').replace(/\\/g, '/'));
+              });
             });
           });
         });
@@ -2796,10 +2818,10 @@
           okAll.forEach(function (id) {
             scanChain = scanChain.then(function () {
               return new Promise(function (res) {
-                var im = new Image();
-                im.onload = function () { try { if (imageLooksBlank(im)) boxOnly.push(id); } catch (eB) {} res(); };
-                im.onerror = function () { res(); };
-                im.src = 'file://' + encodeURI((outDir + pathMod.sep + id + '.png').replace(/\\/g, '/'));
+                loadRenderedFrame(outDir + pathMod.sep + id + '.png', function (im) {
+                  try { if (im && imageLooksBlank(im)) boxOnly.push(id); } catch (eB) {}
+                  res();
+                });
               });
             });
           });
