@@ -9822,6 +9822,11 @@
         : (state.transcriptWords && state.transcriptWords.length)
           ? ('⚠️ file not selected right now, but ' + state.transcriptWords.length + ' words of timing are loaded — click your clip once (Pulse re-finds its saved transcript) or tap 🎙️ Auto-transcribe')
           : '⚠️ none loaded — tap 🎙️ Auto-transcribe on the Transcribe tab'));
+      // include the LIVE event log (render-check verdicts, insert traces,
+      // self-test reports) so EITHER diagnostics button carries everything —
+      // support kept receiving this report missing the part that matters.
+      R.push('', '════ panel event log ════');
+      try { R.push(buildDiagText()); } catch (eBD) {}
       R.push('', 'Done. Tap "Copy results" and send this to support.');
       show();
     }).catch(function (e) { R.push('ERROR: ' + e.message); show(); });
