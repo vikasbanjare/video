@@ -2657,6 +2657,64 @@
     })();
   }
 
+  /* Does the caption BAND of a frame contain text-like contrast? Samples the
+     middle 64% width at the style's y position: a solid box (or nothing) is
+     near-uniform; words on a box (or on video) produce a wide luma range.
+     Only trustworthy for BOX styles (video content behind boxless captions
+     has its own contrast) — callers gate on preset.boxColor. */
+  function captionBandHasText(img, yPct) {
+    try {
+      var W = img.naturalWidth || img.width, H = img.naturalHeight || img.height;
+      if (!W || !H) return null;
+      var bandH = Math.max(24, Math.round(H * 0.09));
+      var y0 = Math.max(0, Math.round(H * yPct - bandH / 2));
+      var c = document.createElement('canvas');
+      c.width = Math.round(W * 0.64); c.height = bandH;
+      var g = c.getContext('2d');
+      g.drawImage(img, Math.round(W * 0.18), y0, c.width, bandH, 0, 0, c.width, bandH);
+      var d = g.getImageData(0, 0, c.width, c.height).data;
+      var mn = 255, mx = 0;
+      for (var i = 0; i < d.length; i += 16) {   // stride: every 4th pixel
+        var l = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        if (l < mn) mn = l;
+        if (l > mx) mx = l;
+      }
+      return (mx - mn) > 26;   // words on the box create real contrast; a bare box is flat
+    } catch (e) { return null; }
+  }
+
+  /* AFTER-INSERT RENDER CHECK: capture ONE real frame of the user's own
+     sequence at the first caption and verify the words are actually painted.
+     The verdict goes to Diagnostics + a toast — every "Add captions" run now
+     proves (or disproves) itself with zero extra buttons. */
+  function verifyCaptionRender(tcues, preset) {
+    try {
+      if (!CPBridge.isCEP() || !tcues || !tcues.length) return;
+      if (!preset || !preset.boxColor) return;   // band check is only conclusive on box styles
+      var fs = nodeReq('fs'), pathMod = nodeReq('path'), os = nodeReq('os');
+      var c0 = tcues[0];
+      var at = c0.start + Math.min(0.6, Math.max(0.3, (c0.end - c0.start) / 2));
+      var png = pathMod.join(os.tmpdir(), 'pulse-rendercheck.png');
+      try { if (fs.existsSync(png)) fs.unlinkSync(png); } catch (eU) {}
+      CPBridge.callHost('CP_captureSequenceFrame', { at: at, outPath: png }).then(function (r) {
+        if (!r || r.exported === false) { diag('render-check', 'frame export refused'); return; }
+        loadRenderedFrame(png, function (im) {
+          if (!im) { diag('render-check', 'frame never appeared'); return; }
+          var yp = (preset.yPct != null && isFinite(preset.yPct)) ? Math.max(0.1, Math.min(0.92, preset.yPct)) : 0.76;
+          var hasText = captionBandHasText(im, yp);
+          if (hasText === true) {
+            diag('render-check', '✅ REAL frame at ' + at.toFixed(2) + 's: words are visible in the caption band');
+          } else if (hasText === false) {
+            diag('render-check', '❌ REAL frame at ' + at.toFixed(2) + 's: caption band is a FLAT box — no words painted (yPct ' + yp + ')');
+            toast('⚠️ Pulse checked a real frame of your timeline: the caption box shows but the words are NOT painted. Tap 📋 Copy diagnostics and send it over — this is recorded.', true);
+          } else {
+            diag('render-check', 'frame captured but band unreadable');
+          }
+        });
+      }).catch(function (e) { try { diag('render-check', 'failed: ' + e.message); } catch (eD) {} });
+    } catch (e2) {}
+  }
+
   function buildSelfTestReport(rows) {   // pure — proof-tested
     var lines = [], fails = 0, warns = 0;
     for (var i = 0; i < rows.length; i++) {
@@ -7530,6 +7588,7 @@
                               seq: (state.env && state.env.sequenceName) || '' };
       saveLastCaptionJob();
       reflectCaptionsPlaced();
+      verifyCaptionRender(tcues, preset);   // prove it on a REAL frame of THIS sequence (verdict → Diagnostics)
       if (r.textSet === 0) {
         // be HONEST instead of claiming success: the graphics are there but the
         // words/styling could not be written into this template's text.

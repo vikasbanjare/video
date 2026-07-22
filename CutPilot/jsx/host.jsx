@@ -3019,6 +3019,24 @@ function CP_renderStylePreviews(argsJson) {
   return CP_ok({ rendered: rendered, failed: failed, cleaned: cleaned });
 }
 
+/* Export ONE real frame of the ACTIVE sequence at `at` seconds (QE PNG).
+   Used by the panel's automatic after-insert render check — the proof that
+   the words are visible comes from the user's own timeline, not a test rig. */
+function CP_captureSequenceFrame(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+    try { seq.setPlayerPosition(CP_ticksFromSeconds(args.at || 0)); } catch (eP) {}
+    app.enableQE();
+    var qseq = qe.project.getActiveSequence();
+    var tc = null;
+    try { tc = qseq.CTI.timecode; } catch (eT) {}
+    var okF = false;
+    try { okF = qseq.exportFramePNG(tc, args.outPath); } catch (eX) {}
+    return CP_ok({ exported: okF !== false, at: args.at || 0 });
+  } catch (e) { return CP_fail(e.message); }
+}
+
 /* Return sorted sequence-marker times (seconds) — a Smart-Cut-free source
    of multicam switch points. */
 function CP_getMarkers() {
