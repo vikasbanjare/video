@@ -1584,6 +1584,14 @@ console.log('bundled engine expressions (all animation variants must be live)');
         }
       });
       assert(broken === 0, f + ': every animation variant\'s intro expression uses a variable it declares (' + broken + ' dead)');
+      // the expressions drive the range selector START: 0 = affect ALL text.
+      // "else 0" therefore meant every NON-selected animator permanently hid
+      // the words (box, no text). Neutral is 100 (affect nothing).
+      let hideAll = 0;
+      runs.forEach(t => {
+        if (t.indexOf('easeOut') >= 0 && /Animation Type"?\)\s*==/.test(t) && /else\s+0\b/.test(t)) hideAll++;
+      });
+      assert(hideAll === 0, f + ': no animator falls to "else 0" — the hide-ALL-text state (' + hideAll + ' found)');
     });
   }
 }
