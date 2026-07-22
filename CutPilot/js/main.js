@@ -7270,7 +7270,10 @@
       // gradient anchors, box padding) really do take pixels — verified by
       // the same screenshot showing them stored exactly as sent.
       point(P('text position'), 540 / 1080, compY / 1920);
-      point(P('gradient fg text position'), 540 / 1080, compY / 1920);
+      // …but the HIGHLIGHT overlay's position control is EFFECT-space (PIXELS,
+      // like the gradient anchors): sending it the normalized pair parked the
+      // blue word near the corner ("text is coming but in the bottom").
+      point(P('gradient fg text position'), 540, compY);
       var gA = P('start of gradient'), gB = P('end of gradient');
       if (gA && gA.point) point(gA, gA.point.x, compY);
       if (gB && gB.point) point(gB, gB.point.x, compY);
