@@ -2496,21 +2496,24 @@ function CP_insertMogrtCaptions(argsJson) {
             }
           }
           // The gradient-highlight overlay ("Gradient FG Text (Change font
-          // only)") must wear the SAME face as the main text or the highlight
-          // drifts off the words — the template author's own Note says to keep
-          // them matched. FONT-ONLY write: its words stay expression-driven
-          // from the main Text, so nothing else in its blob is touched.
-          if (allowRich && args.textStyle && args.textStyle.font) {
+          // only)") must match the main text. The NAME-TAGGED prop now gets a
+          // FULL write — the user's WORDS and face ("there are 2 text boxes,
+          // you have to change both"): if the template's internal auto-link is
+          // healthy the static words are simply ignored, and if it is broken
+          // on a given machine the correct words render instead of the sample.
+          // The UN-TAGGED Prism mirror stays FONT-ONLY: its words are
+          // expression-driven and writing them desynced the highlight.
+          if (allowRich && args.textStyle) {
             try {
-              // candidates: the name-tagged "(Change font only)" prop AND — on
-              // Prism-family engines — the un-tagged expression mirror (tprops[1])
-              var fgProps = [];
+              var fgTagged = null;
               for (var fgI = 0; fgI < props.numItems; fgI++) {
-                if (String(props[fgI].displayName || '').toLowerCase().indexOf('change font only') >= 0) { fgProps.push(props[fgI]); break; }
+                if (String(props[fgI].displayName || '').toLowerCase().indexOf('change font only') >= 0) { fgTagged = props[fgI]; break; }
               }
-              if (probe.mirrorText && tprops.length > 1 && fgProps.length === 0) fgProps.push(tprops[1]);
-              for (var fgN = 0; fgN < fgProps.length; fgN++) {
-                var fgV = null; try { fgV = fgProps[fgN].getValue(); } catch (eFgV) {}
+              if (fgTagged) {
+                if (CP_setMgrtText(fgTagged, grp[0].text, allowRich, args.textStyle)) fgFontSet++;
+              } else if (probe.mirrorText && tprops.length > 1 && args.textStyle.font) {
+                var fgP = tprops[1];
+                var fgV = null; try { fgV = fgP.getValue(); } catch (eFgV) {}
                 if (typeof fgV === 'string' &&
                     (fgV.indexOf('fontEditValue') !== -1 || fgV.indexOf('capProp') !== -1)) {
                   var fgE = String(args.textStyle.font).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -2518,8 +2521,8 @@ function CP_insertMogrtCaptions(argsJson) {
                   fgOut = fgOut.replace(/("fontName"\s*:\s*")(?:[^"\\]|\\.)*(")/g,
                     function (m, a, b) { return a + fgE + b; });
                   if (fgOut !== fgV) {
-                    try { fgProps[fgN].setValue(fgOut, true); fgFontSet++; }
-                    catch (eFgS1) { try { fgProps[fgN].setValue(fgOut); fgFontSet++; } catch (eFgS2) {} }
+                    try { fgP.setValue(fgOut, true); fgFontSet++; }
+                    catch (eFgS1) { try { fgP.setValue(fgOut); fgFontSet++; } catch (eFgS2) {} }
                   }
                 }
               }
@@ -2994,7 +2997,8 @@ function CP_renderStylePreviews(argsJson) {
         var qseq = qe.project.getActiveSequence();
         var tc = null;
         try { tc = qseq.CTI.timecode; } catch (eTc) {}
-        out = args.outDir + (args.sep || '/') + stl.id + '.png';
+        // QE appends ".png" itself — pass the BASE path (see CP_captureSequenceFrame)
+        out = args.outDir + (args.sep || '/') + stl.id;
         var okF = false;
         try { okF = qseq.exportFramePNG(tc, out); } catch (eXp) {}
         if (okF !== false) rendered.push(stl.id); else failed.push(stl.id);
@@ -3031,9 +3035,13 @@ function CP_captureSequenceFrame(argsJson) {
     var qseq = qe.project.getActiveSequence();
     var tc = null;
     try { tc = qseq.CTI.timecode; } catch (eT) {}
+    // QE appends ".png" to the path ITSELF — passing "x.png" writes
+    // "x.png.png" and every checker looked at the wrong file ("frame never
+    // appeared"). Hand it the base path; the file lands at base + ".png".
+    var base = String(args.outPath || '').replace(/\.png$/i, '');
     var okF = false;
-    try { okF = qseq.exportFramePNG(tc, args.outPath); } catch (eX) {}
-    return CP_ok({ exported: okF !== false, at: args.at || 0 });
+    try { okF = qseq.exportFramePNG(tc, base); } catch (eX) {}
+    return CP_ok({ exported: okF !== false, at: args.at || 0, file: base + '.png' });
   } catch (e) { return CP_fail(e.message); }
 }
 

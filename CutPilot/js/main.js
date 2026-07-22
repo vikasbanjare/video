@@ -2644,7 +2644,11 @@
     (function attempt() {
       tries++;
       var buf = null;
-      try { if (fs.existsSync(pngPath)) buf = fs.readFileSync(pngPath); } catch (eR) {}
+      // some QE builds append ".png" themselves — accept either spelling
+      try {
+        if (fs.existsSync(pngPath)) buf = fs.readFileSync(pngPath);
+        else if (fs.existsSync(pngPath + '.png')) buf = fs.readFileSync(pngPath + '.png');
+      } catch (eR) {}
       if (buf && buf.length > 800) {
         var im = new Image();
         im.onload = function () { cb(im); };

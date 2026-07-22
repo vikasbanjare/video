@@ -798,7 +798,7 @@ console.log('host.jsx — CP_renderStylePreviews (cards show the ENGINE\'s own r
   w.sandbox.qe.project.getActiveSequence = () => {
     const q = baseQe();
     q.CTI = { timecode: '00:00:01:09' };
-    q.exportFramePNG = (tc, out) => { exportsOut.push(out); return true; };
+    q.exportFramePNG = (tc, out) => { exportsOut.push(out + '.png'); return true; };   // REAL QE appends .png itself — model it
     return q;
   };
   const host = loadHost(w);
@@ -1033,9 +1033,9 @@ console.log('host.jsx — Flux engine (Halo2 control set): text, exact-name para
   const fg0 = JSON.parse(f0.fgText.v), fg1 = JSON.parse(f1.fgText.v);
   assert(fg0.fontEditValue[0] === 'Archivo Black' && fg1.fontEditValue[0] === 'Archivo Black',
     'the "(Change font only)" gradient mirror wears the SAME face (highlight stays aligned)');
-  assert(fg0.textEditValue === 'Flux Halo' && fg0.capPropTextRunLength[0] === 9 &&
-         fg0.fontSizeEditValue[0] === 90,
-    'the mirror write is FONT-ONLY — its words/size/runs are untouched');
+  assert(fg0.textEditValue === 'the pollution levels' && fg0.capPropTextRunLength[0] === 20 &&
+         fg1.textEditValue === 'are rising fast' && fg0.fontSizeEditValue[0] === 90,
+    'the TAGGED overlay carries the user\'s WORDS too ("change both text boxes") with matched run-lengths; size untouched');
   assert(r.fgFontSet === 2, 'both clips report the mirror re-face (fgFontSet=' + r.fgFontSet + ')');
   assert(caps[0]._fluxWrites.note === 0 && caps[1]._fluxWrites.note === 0,
     'the author Note is NEVER written');
