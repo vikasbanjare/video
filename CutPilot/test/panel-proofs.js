@@ -124,16 +124,17 @@ function fluxProps() {
       if (!b3[I('text position')] || !near(b3[I('text position')].value.y, yPortN) ||
           !near(b3[I('text position')].value.x, 0.5)) b('portrait position wrong (must be NORMALIZED 0–1)');
       if (b3[I('text position')].value.y > 1.001) b('position sent as PIXELS — text lands off-screen');
-      // the HIGHLIGHT overlay is EFFECT-space: PIXELS, same row as the text
-      const yPortPx = Math.round(1920 * 0.76);
-      if (!b3[I('gradient fg text position')] || !near(b3[I('gradient fg text position')].value.y, yPortPx) ||
-          !near(b3[I('gradient fg text position')].value.x, 540)) b('highlight overlay must be PIXEL-space at the text row');
-      if (b3[I('gradient fg text position')].value.y <= 1.001) b('highlight overlay sent normalized — lands in the corner');
+      // the HIGHLIGHT overlay is a LAYER point too: NORMALIZED, same row as
+      // the text (the pixel write of v0.9.315 parked it off-screen — the
+      // render-check "FLAT box" verdict on the user's machine)
+      if (!b3[I('gradient fg text position')] || !near(b3[I('gradient fg text position')].value.y, yPortN) ||
+          !near(b3[I('gradient fg text position')].value.x, 0.5)) b('highlight overlay must be NORMALIZED at the text row');
+      if (b3[I('gradient fg text position')].value.y > 1.001) b('highlight overlay sent as PIXELS — words vanish off-screen');
       if (b3[I('start of gradient')] && b3[I('start of gradient')].value.y <= 1.001) b('gradient anchors must stay PIXEL-space');
       t3.seqLandscape = true;
       const p4 = D.mapPresetToFlux(t3, PROPS) || []; const b4 = {}; p4.forEach(p => { b4[p.i] = p; });
       if (!b4[I('text position')] || !near(b4[I('text position')].value.y, Math.round(420 + 1080 * 0.76) / 1920)) b('landscape position wrong');
-      if (!b4[I('gradient fg text position')] || !near(b4[I('gradient fg text position')].value.y, Math.round(420 + 1080 * 0.76))) b('landscape highlight overlay wrong');
+      if (!b4[I('gradient fg text position')] || !near(b4[I('gradient fg text position')].value.y, Math.round(420 + 1080 * 0.76) / 1920)) b('landscape highlight overlay wrong');
       const wantFont = t.font || 'Inter';
       if (cs.font !== wantFont) b('preview face ' + cs.font + ' != ' + wantFont);
     });

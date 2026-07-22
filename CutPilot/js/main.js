@@ -7371,10 +7371,14 @@
       // gradient anchors, box padding) really do take pixels — verified by
       // the same screenshot showing them stored exactly as sent.
       point(P('text position'), 540 / 1080, compY / 1920);
-      // …but the HIGHLIGHT overlay's position control is EFFECT-space (PIXELS,
-      // like the gradient anchors): sending it the normalized pair parked the
-      // blue word near the corner ("text is coming but in the bottom").
-      point(P('gradient fg text position'), 540, compY);
+      // The HIGHLIGHT overlay is ALSO a layer-position point (normalized 0–1,
+      // same as Text Position). The v0.9.315 pixel write threw it off-screen
+      // (×1080/×1920 on store) — with As-spoken hiding the base text by
+      // design, the overlay was the only word-painter, so captions rendered
+      // as a FLAT BOX (the render-check verdict on the user's machine). The
+      // "bottom-left blue word" that prompted the pixel change was actually
+      // word #1 rendering at its CORRECT spot in a centred line.
+      point(P('gradient fg text position'), 540 / 1080, compY / 1920);
       var gA = P('start of gradient'), gB = P('end of gradient');
       if (gA && gA.point) point(gA, gA.point.x, compY);
       if (gB && gB.point) point(gB, gB.point.x, compY);
