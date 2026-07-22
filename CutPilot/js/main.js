@@ -7108,8 +7108,15 @@
     if (yp != null && isFinite(yp)) {
       yp = Math.max(0.1, Math.min(0.92, yp));
       var compY = preset.seqLandscape ? Math.round(420 + 1080 * yp) : Math.round(1920 * yp);
-      point(P('text position'), 540, compY);
-      point(P('gradient fg text position'), 540, compY);
+      // LAYER-position points take NORMALIZED 0–1 input through Premiere's
+      // scripting API — sending pixels multiplied them by the frame (the
+      // user's EG panel read "583200 × 2801280" = 540×1080, 1459×1920): the
+      // text AND its highlight overlay sat hundreds of thousands of pixels
+      // OFF-SCREEN — "box is showing, text is not". EFFECT points (the
+      // gradient anchors, box padding) really do take pixels — verified by
+      // the same screenshot showing them stored exactly as sent.
+      point(P('text position'), 540 / 1080, compY / 1920);
+      point(P('gradient fg text position'), 540 / 1080, compY / 1920);
       var gA = P('start of gradient'), gB = P('end of gradient');
       if (gA && gA.point) point(gA, gA.point.x, compY);
       if (gB && gB.point) point(gB, gB.point.x, compY);
