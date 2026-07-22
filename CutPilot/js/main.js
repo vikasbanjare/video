@@ -203,6 +203,36 @@
     setTimeout(function () { try { inp.focus(); inp.select(); } catch (e) {} }, 0);
   }
 
+  /* In-panel yes/no. confirm() pops a modal OVER Premiere's window — every
+     decision now stays inside the Pulse tab (same overlay as promptInline). */
+  function confirmInline(msg, okLabel, onDone) {
+    var old = document.getElementById('cp-confirm-ov');
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    var ov = document.createElement('div'); ov.id = 'cp-confirm-ov';
+    ov.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(8,10,16,.72);z-index:99998;display:flex;align-items:center;justify-content:center;';
+    var card = document.createElement('div');
+    card.style.cssText = 'background:#151922;border:1px solid #2b3242;border-radius:12px;padding:16px;width:300px;max-width:92vw;';
+    var h = document.createElement('div'); h.textContent = msg;
+    h.style.cssText = 'color:#e7ecf3;font-size:12px;line-height:1.5;margin-bottom:12px;white-space:pre-line;';
+    var rowEl = document.createElement('div'); rowEl.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
+    var done = false;
+    function close(val) {
+      if (done) return; done = true;
+      try { ov.parentNode.removeChild(ov); } catch (e) {}
+      try { onDone(val); } catch (e2) {}
+    }
+    var bC = document.createElement('button'); bC.type = 'button'; bC.textContent = 'Cancel';
+    bC.style.cssText = 'padding:7px 14px;border-radius:8px;border:1px solid #2b3242;background:transparent;color:#aab3c5;cursor:pointer;font-size:12px;';
+    var bS = document.createElement('button'); bS.type = 'button'; bS.textContent = okLabel || 'Continue'; bS.id = 'cp-confirm-ok';
+    bS.style.cssText = 'padding:7px 16px;border-radius:8px;border:0;background:#c6f24e;color:#10140a;font-weight:800;cursor:pointer;font-size:12px;';
+    bC.onclick = function () { close(false); };
+    bS.onclick = function () { close(true); };
+    ov.addEventListener('mousedown', function (e) { if (e.target === ov) close(false); });
+    rowEl.appendChild(bC); rowEl.appendChild(bS);
+    card.appendChild(h); card.appendChild(rowEl);
+    ov.appendChild(card); document.body.appendChild(ov);
+  }
+
   function diagEnv() {
     var L = [];
     function row(s) { L.push(s); }
@@ -2596,6 +2626,112 @@
      user's timeline is untouched) — the gallery then shows the ENGINE's own
      output on every card, exactly what lands on the timeline. The drawn
      canvas swatch stays only as the fallback for styles that fail. */
+  /* 🧪 SELF-TEST — "come up with something where you can test so I don't have
+     to check every single function": Pulse proves ITSELF on this exact
+     machine. Environment checks first, then REAL Premiere renders in a temp
+     sequence (timeline untouched): each probe places a caption with known
+     settings, exports a true frame, and the panel verifies the words are
+     literally VISIBLE in the pixels. Plain ✅/⚠️/❌ report; a copy lands in
+     Diagnostics automatically. */
+  function buildSelfTestReport(rows) {   // pure — proof-tested
+    var lines = [], fails = 0, warns = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var mark = r.state === 'ok' ? '✅' : (r.state === 'warn' ? '⚠️' : '❌');
+      if (r.state === 'fail') fails++;
+      if (r.state === 'warn') warns++;
+      lines.push(mark + ' ' + r.name + (r.note ? ' — ' + r.note : ''));
+    }
+    var head = fails ? ('❌ ' + fails + ' problem' + (fails > 1 ? 's' : '') + ' found — tap 📋 Copy diagnostics and send it over.')
+             : warns ? ('⚠️ Working — ' + warns + ' note' + (warns > 1 ? 's' : '') + ' below.')
+             : '✅ Everything works on this machine.';
+    return head + '\n' + lines.join('\n');
+  }
+  var _selfTestBusy = false;
+  function runSelfTest() {
+    if (_selfTestBusy) return toast('Self-test already running — hang tight…');
+    var out = $('selftest-out');
+    if (out) out.classList.remove('hidden');
+    if (!CPBridge.isCEP()) { if (out) out.textContent = 'Self-test needs Premiere (open Pulse inside Premiere).'; return; }
+    var rows = [];
+    function row(name, state, note) { rows.push({ name: name, state: state, note: note || '' }); }
+    function finish() {
+      _selfTestBusy = false;
+      var report = buildSelfTestReport(rows);
+      if (out) out.textContent = report;
+      try { diag('selftest', report.replace(/\n/g, ' | ')); } catch (eD) {}
+      toast(report.split('\n')[0], report.charAt(0) === '❌');
+    }
+    var fs = null, pathMod = null, os = null;
+    try { fs = nodeReq('fs'); pathMod = nodeReq('path'); os = nodeReq('os'); } catch (eN) {}
+    row('Panel engine (Node)', fs ? 'ok' : 'fail', fs ? '' : 'node unavailable');
+    var ff = resolveFfmpeg();
+    row('Audio engine (ffmpeg)', ff ? 'ok' : 'warn', ff ? '' : 'not found — Auto-transcribe will offer to install it');
+    row('Cloud transcription key', cpKey() ? 'ok' : 'warn', cpKey() ? 'set' : 'none — add one in Settings');
+    row('Indian Voices key', cpSarvamKey() ? 'ok' : 'warn', cpSarvamKey() ? 'set' : 'none');
+    var styles = CPCaptions.TEMPLATES.filter(function (t) { return !t.mogrt; });
+    row('Caption styles loaded', styles.length >= 60 ? 'ok' : 'fail', styles.length + ' styles');
+    var bb = bundledBackbone(currentPreset() || {});
+    if (!bb) { try { loadBundledMogrts(); } catch (eB) {} bb = bundledBackbone(currentPreset() || {}); }
+    row('Caption engine template', bb ? 'ok' : 'fail', bb ? (bb.name || 'found') : 'missing — reinstall Pulse');
+    if (!bb || !fs) return finish();
+    _selfTestBusy = true;
+    if (out) out.textContent = '🧪 Testing inside Premiere… (~20s — a temp sequence appears briefly; your timeline is untouched)';
+    var outDir = pathMod.join(os.tmpdir(), 'pulse-selftest');
+    try { fs.mkdirSync(outDir, { recursive: true }); } catch (eMk) {}
+    CPBridge.callHost('CP_inspectMogrt', { path: bb.path }).then(function (r) {
+      var liveProps = (r && r.props) || [];
+      row('Engine opens in Premiere', (liveProps.length > 5) ? 'ok' : 'fail', liveProps.length + ' controls found');
+      var base = styles[0] || {};
+      function probeParams(extra) {
+        var t = {};
+        for (var k in base) if (base.hasOwnProperty(k)) t[k] = base[k];
+        t.fill = '#ffffff'; t.highlight = '#ffd400'; t.boxColor = '#000000';
+        t.yPct = (extra.yPct != null) ? extra.yPct : 0.76;
+        if (extra.revealSpoken) t.revealSpoken = true;
+        return (mapPresetToFlux(t, liveProps) || []);
+      }
+      var probes = [
+        { id: 'pulse-st-basic', params: probeParams({}), textStyle: null,
+          name: 'Words VISIBLE in a real render (bottom)' },
+        { id: 'pulse-st-top', params: probeParams({ yPct: 0.15 }), textStyle: null,
+          name: 'Words visible at the TOP position' },
+        { id: 'pulse-st-spoken', params: probeParams({ revealSpoken: true }), textStyle: null,
+          name: '🎬 As-spoken reveal paints the words' },
+        { id: 'pulse-st-font', params: probeParams({}), textStyle: { font: 'Impact', bold: false, sizeScale: 1 },
+          name: 'Font change still renders words' }
+      ];
+      return CPBridge.callHost('CP_renderStylePreviews', {
+        mogrtPath: bb.path, outDir: outDir, sep: pathMod.sep, seconds: 2.5,
+        styles: probes.map(function (p) { return { id: p.id, params: p.params, textStyle: p.textStyle, text: 'PULSE TEST WORDS' }; })
+      }).then(function (rr) {
+        var okIds = {};
+        (rr.rendered || []).forEach(function (id) { okIds[id] = 1; });
+        row('Temp-sequence render pipeline', (rr.rendered || []).length ? 'ok' : 'fail',
+            (rr.rendered || []).length + '/' + probes.length + ' frames exported' +
+            (rr.cleaned ? '' : ' · temp sequence left in the project — safe to delete'));
+        var chain = Promise.resolve();
+        probes.forEach(function (p) {
+          chain = chain.then(function () {
+            return new Promise(function (res) {
+              if (!okIds[p.id]) { row(p.name, 'fail', 'no frame exported'); return res(); }
+              var im = new Image();
+              im.onload = function () {
+                var blank = true;
+                try { blank = imageLooksBlank(im); } catch (eB2) {}
+                row(p.name, blank ? 'fail' : 'ok', blank ? 'rendered frame shows NO words' : '');
+                res();
+              };
+              im.onerror = function () { row(p.name, 'fail', 'frame unreadable'); res(); };
+              im.src = 'file://' + encodeURI((outDir + pathMod.sep + p.id + '.png').replace(/\\/g, '/'));
+            });
+          });
+        });
+        return chain;
+      });
+    }).then(finish, function (e) { row('Self-test run', 'fail', e.message); finish(); });
+  }
+
   var _truePrevBusy = false;
   function renderTruePreviews() {
     if (_truePrevBusy) return toast('Already rendering — hang tight…');
@@ -2905,6 +3041,7 @@
       chipBox.appendChild(chip);
     });
     if ($('btn-true-prev')) $('btn-true-prev').addEventListener('click', renderTruePreviews);
+    if ($('btn-selftest')) $('btn-selftest').addEventListener('click', runSelfTest);
 
     if ($('flux-search')) $('flux-search').addEventListener('input', function () { state.fluxSearch = this.value.toLowerCase(); renderFluxGrid(); });
     $('lib-search').addEventListener('input', function () { state.libSearch = this.value.toLowerCase(); renderTemplateGrid(); });
@@ -5187,9 +5324,13 @@
         wordCues: wordCues, window: (currentPreset().window || 0)
       });
 
-      if (frames.length > 600 &&
-          !confirm(frames.length + ' caption graphics will be created. That many can be slow to render and import — Premiere may look stuck near the end of its import bar. Tip: raise "Words per caption" or pick a shorter clip for fewer graphics.\n\nContinue anyway?')) {
-        setCaptionBusy(false); capProgress(null); return;
+      if (frames.length > 600 && !state._bigOk) {
+        confirmInline(frames.length + ' caption graphics will be created. That many can be slow to render and import — Premiere may look stuck near the end of its import bar. Tip: raise "Words per caption" or pick a shorter clip for fewer graphics.\n\nContinue anyway?', 'Continue', function (yes) {
+          if (!yes) { setCaptionBusy(false); capProgress(null); return; }
+          state._bigOk = true;
+          try { runCaptionPipeline(cues, opts); } finally { state._bigOk = false; }
+        });
+        return;
       }
 
       var outDir;
@@ -5294,7 +5435,14 @@
     var vol = (parseInt($('sfx-vol').value, 10) || 80) / 100;
     var times = sfxTimes(trigger);
     if (!times.length) return toast('No timing to sync to yet — add captions (or transcribe) first.', true);
-    if (times.length > 400 && !confirm(times.length + ' SFX hits will be placed. That\'s a lot — continue?')) return;
+    if (times.length > 400 && !state._bigOk) {
+      confirmInline(times.length + ' SFX hits will be placed. That\'s a lot — continue?', 'Place them', function (yes) {
+        if (!yes) return;
+        state._bigOk = true;
+        try { sfxAdd(); } finally { state._bigOk = false; }
+      });
+      return;
+    }
     var fs, os, pathMod;
     try { fs = nodeReq('fs'); os = nodeReq('os'); pathMod = nodeReq('path'); } catch (e) { return toast('Node unavailable: ' + e.message, true); }
     var bytes, wavPath;
@@ -6609,8 +6757,14 @@
     // lines rather than splitting a sentence across two graphics.
     var tcues = textCues(cues, words, state.mogrtCase || 'as-spoken');   // Editor text-case control
     if (!tcues.length) return toast('No caption lines to add — your transcript has no usable words. Transcribe again (or check the transcript).', true);
-    if (tcues.length > 120 &&
-        !confirm(tcues.length + ' template graphics will be inserted — one per caption. MOGRTs insert slowly, so this can take a long time and Premiere may sit near the end of its import bar. Tip: raise "Words per graphic" (fewer, longer captions), or use the Animated style instead.\n\nContinue anyway?')) return toast('Cancelled — no captions were added.');
+    if (tcues.length > 120 && !state._bigOk) {
+      confirmInline(tcues.length + ' template graphics will be inserted — one per caption. MOGRTs insert slowly, so this can take a long time and Premiere may sit near the end of its import bar. Tip: raise "Words per graphic" (fewer, longer captions), or use the Animated style instead.\n\nContinue anyway?', 'Insert them', function (yes) {
+        if (!yes) return toast('Cancelled — no captions were added.');
+        state._bigOk = true;
+        try { applyMogrtWithPath(mogrtPath, btn, _envRefreshed); } finally { state._bigOk = false; }
+      });
+      return;
+    }
     if (btn) btn.disabled = true;
     capProgress('Saving project…');
     ensureProjectSaved().then(function (ok) {
@@ -7239,9 +7393,14 @@
     preset.sizeScale = sizeScale;   // the mapper scales the backbone's text-scale control by this
     // Entrance = real Motion keyframes on each caption clip (None default)
     var entrance = state.captionEntrance || 'none';
-    if (tcues.length > 120 &&
-        !confirm(tcues.length + ' editable caption clips will be inserted — one per line. ' +
-                 'MOGRTs insert slowly, so this can take a while. Tip: raise "Words per caption" for fewer, longer lines.\n\nContinue?')) return toast('Cancelled — no captions were added.');
+    if (tcues.length > 120 && !state._bigOk) {
+      confirmInline(tcues.length + ' editable caption clips will be inserted — one per line. MOGRTs insert slowly, so this can take a while. Tip: raise "Words per caption" for fewer, longer lines.\n\nContinue?', 'Insert them', function (yes) {
+        if (!yes) return toast('Cancelled — no captions were added.');
+        state._bigOk = true;
+        try { applyEditableStyle(); } finally { state._bigOk = false; }
+      });
+      return;
+    }
 
     // Regenerating reuses the SAME track as last time so it REPLACES the old
     // captions instead of stacking a second set — SEQUENCE-SCOPED: the env is
@@ -7579,7 +7738,8 @@
       var msg = 'Clean up your video?\n\nRemove ' + ranges.length + ' dead-air / retake section' + (ranges.length > 1 ? 's' : '') +
         ' — about ' + total.toFixed(1) + 's.\n\n✅ A backup of your sequence is made first.' +
         (r.needTranscript ? '\n\n(Tip: transcribe first to also catch repeated takes — this pass did silences only.)' : '');
-      if (!confirm(msg)) return;
+      return new Promise(function (res) { confirmInline(msg, 'Clean it up', res); }).then(function (yes) {
+      if (!yes) return;
       prog.classList.remove('hidden'); prog.textContent = 'Cleaning your timeline…';
       return CPBridge.callHost('CP_razorRipple', { ranges: ranges, closeGaps: true, backup: true, dropFrame: !!settings.dropFrame }).then(function (rr) {
         rippleTranscriptByRanges(ranges);                       // transcript follows the cut — no re-transcribe
@@ -7587,6 +7747,7 @@
         prog.classList.add('hidden');
         toast('✨ Cleaned! Removed ' + (rr.removedClips != null ? rr.removedClips : ranges.length) + ' section' + ((rr.removedClips || ranges.length) === 1 ? '' : 's') +
           '. Captions & takes stay in sync — run any other step or add captions with no re-transcribe. ⌘Z / Ctrl+Z undoes it.');
+      });
       });
     }).catch(function (e) { prog.classList.add('hidden'); toast('Auto-clean failed: ' + e.message, true); });
   }
@@ -7872,7 +8033,8 @@
     var msg = 'Cut ' + ranges.length + ' silent range' + (ranges.length > 1 ? 's' : '') + ' directly in this sequence?';
     msg += backup ? '\n\n✅ A backup of the sequence will be made first.'
                   : '\n\n⚠️ Backup is OFF — this edits your live sequence with no safety copy. Tick “Back up sequence first” if you’re unsure.';
-    if (!confirm(msg)) return;
+    confirmInline(msg, 'Cut them', function (yes) {
+    if (!yes) return;
     CPBridge.callHost('CP_razorRipple', {
       ranges: ranges,
       closeGaps: $('opt-closegaps').checked,
@@ -7884,6 +8046,7 @@
       state.silencesSeq = []; if ($('results')) $('results').classList.add('hidden');
       toast('Cut done — removed ' + r.removedClips + ' pieces. Transcript auto-synced — go straight to “Remove repeated takes” or captions, no re-transcribe needed.');
     }).catch(function (e) { toast('Cut failed: ' + e.message, true); });
+    });
   });
 
   // ---- Auto-Edit: switch between the two functions (silence / takes) ----
@@ -8028,7 +8191,14 @@
     var backup = safeCopy ? true : ($('tk-backup') ? $('tk-backup').checked : true);
     var msg = 'Remove ' + ranges.length + ' repeated take' + (ranges.length > 1 ? 's' : '') + ' (ripple-delete)?' +
       (backup ? '\n\n✅ A backup of the sequence is made first.' : '\n\n⚠️ Backup is OFF — edits your live sequence.');
-    if (!confirm(msg)) return;
+    if (!state._bigOk) {
+      confirmInline(msg, 'Remove them', function (yes) {
+        if (!yes) return;
+        state._bigOk = true;
+        try { applyTakes(safeCopy); } finally { state._bigOk = false; }
+      });
+      return;
+    }
     CPBridge.callHost('CP_razorRipple', { ranges: ranges, closeGaps: true, backup: backup, dropFrame: !!settings.dropFrame })
       .then(function (r) {
         rippleTranscriptByRanges(ranges);   // keep the transcript in sync — no re-transcribe
@@ -9582,6 +9752,7 @@
       editorFont: function () { return resolvedEditorFont(styledPreset()); },   // the exact face Apply/preview will send
       customCount: function () { return (state.customTemplates || []).length; },
       libCategory: function () { return state.libCategory; },
+      buildSelfTestReport: buildSelfTestReport,
 
       openMogrtSheet: openMogrtSheet,
       renderMogrtPreview: renderMogrtPreview,

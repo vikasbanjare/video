@@ -614,6 +614,27 @@ function fluxProps() {
        ') and the gallery jumps to My Templates' + (sv.seen ? ' showing it' : ''));
   else bad('save-as-custom wrong: ' + JSON.stringify(sv));
 
+  // ---- N. SELF-TEST report card: the 🧪 button exists and the report builder
+  // says the right thing for clean / warned / failing machines ---------------
+  const st = await page.evaluate(() => {
+    const D = window.CP_DEBUG;
+    if (!D || !D.buildSelfTestReport) return { fatal: 'self-test hook missing' };
+    if (!document.getElementById('btn-selftest')) return { fatal: 'no 🧪 button' };
+    const clean = D.buildSelfTestReport([
+      { name: 'A', state: 'ok', note: '' }, { name: 'B', state: 'ok', note: '' }]);
+    const warned = D.buildSelfTestReport([
+      { name: 'A', state: 'ok', note: '' }, { name: 'B', state: 'warn', note: 'x' }]);
+    const failing = D.buildSelfTestReport([
+      { name: 'A', state: 'fail', note: 'no frame' }, { name: 'B', state: 'fail', note: 'y' }]);
+    return { clean: clean.split('\n')[0], warned: warned.split('\n')[0], failing: failing.split('\n')[0],
+             marks: failing.indexOf('❌ A — no frame') > 0 };
+  });
+  if (st.fatal) bad('self-test: ' + st.fatal);
+  else if (/^✅ Everything works/.test(st.clean) && /^⚠️ Working/.test(st.warned) &&
+           /^❌ 2 problems found/.test(st.failing) && st.marks)
+    ok('🧪 self-test report card: clean/warned/failing machines each get the right plain-language verdict');
+  else bad('self-test report wrong: ' + JSON.stringify(st));
+
   await browser.close();
   console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');
   process.exit(failed ? 1 : 0);
