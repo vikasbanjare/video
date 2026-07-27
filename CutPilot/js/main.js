@@ -2710,7 +2710,16 @@
             diag('render-check', '✅ REAL frame at ' + at.toFixed(2) + 's: words are visible in the caption band');
           } else if (hasText === false) {
             diag('render-check', '❌ REAL frame at ' + at.toFixed(2) + 's: caption band is a FLAT box — no words painted (yPct ' + yp + ')');
-            toast('⚠️ Pulse checked a real frame of your timeline: the caption box shows but the words are NOT painted. Tap 📋 Copy diagnostics and send it over — this is recorded.', true);
+            // AUTO-LADDER: don't wait for anyone to find the 🧪 button — a
+            // measured flat box triggers the full A–I diagnostic ladder by
+            // itself, and its verdicts land in the same diagnostics copy.
+            if (!state._autoLadderRan) {
+              state._autoLadderRan = true;
+              toast('⚠️ Words are NOT painted on your timeline — Pulse is now testing itself (~40s). When the report card appears, tap 📋 Copy diagnostics and send it over.', true);
+              setTimeout(function () { try { runSelfTest(); } catch (eL) {} }, 400);
+            } else {
+              toast('⚠️ Caption words are still not painted. Tap 📋 Copy diagnostics and send it over.', true);
+            }
           } else {
             diag('render-check', 'frame captured but band unreadable');
           }
