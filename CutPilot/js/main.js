@@ -2756,6 +2756,15 @@
       if (out) out.textContent = report;
       try { diag('selftest', report.replace(/\n/g, ' | ')); } catch (eD) {}
       toast(report.split('\n')[0], report.charAt(0) === '❌');
+      // "check and generate ALL the captions for every template on your own
+      // and give report": after each self-test, render EVERY style once with
+      // the real engine and blank-scan each frame — per-style ✅/❌ lands in
+      // Diagnostics (and the cards get true previews as a bonus).
+      if (!state._stylesAuditRan && CPBridge.isCEP()) {
+        state._stylesAuditRan = true;
+        toast('🎥 Now checking EVERY caption style automatically (~2 min) — the per-style report will be in 📋 Copy diagnostics.');
+        setTimeout(function () { try { renderTruePreviews(); } catch (eA) {} }, 900);
+      }
     }
     var fs = null, pathMod = null, os = null;
     try { fs = nodeReq('fs'); pathMod = nodeReq('path'); os = nodeReq('os'); } catch (eN) {}
@@ -2853,6 +2862,25 @@
               });
             });
           });
+        });
+        // J· the SAME bare graphic, but on the USER'S OWN sequence — separates
+        // "pipeline broken" from "THIS sequence is broken" (the temp ladder
+        // can be all-green while the user's sequence refuses to paint text).
+        chain = chain.then(function () {
+          var jpng = pathMod.join(os.tmpdir(), 'pulse-st-realseq.png');
+          try { if (fs.existsSync(jpng)) fs.unlinkSync(jpng); } catch (eJ0) {}
+          return CPBridge.callHost('CP_probeRealSequence', { mogrtPath: bb.path, outPath: jpng, text: 'PULSE TEST WORDS' })
+            .then(function () {
+              return new Promise(function (res) {
+                loadRenderedFrame(jpng, function (im) {
+                  if (!im) { row('J· bare text on YOUR sequence', 'fail', 'no frame came back'); return res(); }
+                  var has = captionBandHasText(im, 0.5);   // bare graphic sits at the authored centre
+                  row('J· bare text on YOUR sequence', (has === false) ? 'fail' : 'ok',
+                      (has === false) ? 'THIS sequence refuses to paint caption text — make a FRESH sequence and add captions there' : '');
+                  res();
+                });
+              });
+            }).catch(function (eJr) { row('J· bare text on YOUR sequence', 'fail', eJr.message); });
         });
         return chain;
       });

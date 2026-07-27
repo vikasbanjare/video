@@ -3028,6 +3028,48 @@ function CP_renderStylePreviews(argsJson) {
   return CP_ok({ rendered: rendered, failed: failed, cleaned: cleaned });
 }
 
+/* Rung J of the self-test ladder: place ONE bare engine graphic on the
+   USER'S OWN active sequence (fresh top track), export a frame, remove the
+   clip and the track again. Discriminates "the pipeline is broken" from
+   "THIS sequence is broken" — the temp-sequence ladder can be all-green
+   while the user's sequence refuses to paint text. */
+function CP_probeRealSequence(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+    var vTrack = seq.videoTracks.numTracks;          // fresh top track keeps footage safe
+    if (CP_addTopVideoTrack(seq) < 0) return CP_fail('could not add a probe track');
+    var clip = seq.importMGT(args.mogrtPath, CP_ticksFromSeconds(0), vTrack, 0);
+    if (!clip) return CP_fail('engine would not import on this sequence');
+    try { clip.end = CP_timeFromSeconds(1.2); } catch (eE) {}
+    try {
+      var comp = clip.getMGTComponent();
+      if (comp && comp.properties) {
+        var tp = CP_findTextProp(comp.properties, ['text', 'caption', 'title']);
+        if (tp) CP_setMgrtText(tp, args.text || 'PULSE TEST WORDS', true, null);
+      }
+    } catch (eT) {}
+    try { CP_forceRerender(clip); } catch (eR) {}
+    try { seq.setPlayerPosition(CP_ticksFromSeconds(0.6)); } catch (eP) {}
+    app.enableQE();
+    var qseq = qe.project.getActiveSequence();
+    var tc = null;
+    try { tc = qseq.CTI.timecode; } catch (eTc) {}
+    var base = String(args.outPath || '').replace(/\.png$/i, '');
+    var okF = false;
+    try { okF = qseq.exportFramePNG(tc, base); } catch (eX) {}
+    // clean up: remove the probe clip from the added track
+    try {
+      var qtr = qseq.getVideoTrackAt(vTrack);
+      for (var qi = qtr.numItems - 1; qi >= 0; qi--) {
+        var qit = qtr.getItemAt(qi);
+        if (qit && qit.type !== 'Empty') { try { qit.remove(0, 0); } catch (eRm) {} }
+      }
+    } catch (eClr) {}
+    return CP_ok({ exported: okF !== false, file: base + '.png', track: vTrack + 1 });
+  } catch (e) { return CP_fail(e.message); }
+}
+
 /* Export ONE real frame of the ACTIVE sequence at `at` seconds (QE PNG).
    Used by the panel's automatic after-insert render check — the proof that
    the words are visible comes from the user's own timeline, not a test rig. */
