@@ -2666,6 +2666,49 @@
      near-uniform; words on a box (or on video) produce a wide luma range.
      Only trustworthy for BOX styles (video content behind boxless captions
      has its own contrast) — callers gate on preset.boxColor. */
+  /* Deep quality read of a RENDERED caption frame — the same checks the
+     build-time style audit applies (tools/style-quality-audit.js), run here on
+     Premiere's OWN output: is there text, is it readable, phone-legible, inside
+     the frame? Returns {ok, why} so the report can name the real problem
+     instead of a bare "blank". */
+  function gradeCaptionFrame(img) {
+    try {
+      var W = img.naturalWidth || img.width, H = img.naturalHeight || img.height;
+      if (!W || !H) return { ok: false, why: 'unreadable frame' };
+      var c = document.createElement('canvas');
+      c.width = Math.min(W, 720); c.height = Math.round(c.width * H / W);
+      var g = c.getContext('2d');
+      g.drawImage(img, 0, 0, c.width, c.height);
+      var d = g.getImageData(0, 0, c.width, c.height).data;
+      var lum = function (i) { return 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; };
+      // brightest/darkest populations → the caption's own contrast, plus the
+      // bounding box of the minority (glyph) population
+      var vals = [], x, y, i;
+      for (y = 0; y < c.height; y += 2) for (x = 0; x < c.width; x += 2) vals.push(lum((y * c.width + x) * 4));
+      vals.sort(function (a, b) { return a - b; });
+      var lo = vals[Math.floor(vals.length * 0.03)], hi = vals[Math.floor(vals.length * 0.97)];
+      var contrast = hi - lo;
+      if (contrast < 40) return { ok: false, why: 'flat frame — no readable caption (contrast ' + Math.round(contrast) + ')' };
+      var tol = Math.max(16, contrast * 0.28), hiN = 0, loN = 0, k;
+      for (k = 0; k < vals.length; k++) { if (vals[k] >= hi - tol) hiN++; else if (vals[k] <= lo + tol) loN++; }
+      var wantHi = hiN <= loN;
+      var minX = c.width, maxX = -1, minY = c.height, maxY = -1, n = 0;
+      for (y = 0; y < c.height; y += 2) for (x = 0; x < c.width; x += 2) {
+        var v = lum((y * c.width + x) * 4);
+        var isText = wantHi ? (v >= hi - tol) : (v <= lo + tol);
+        if (!isText) continue;
+        n++;
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+      }
+      if (n < 25) return { ok: false, why: 'no caption text found in the frame' };
+      var capPx = (maxY - minY) * (W / c.width);
+      if (capPx / W < 0.018) return { ok: false, why: 'text renders microscopic (' + Math.round(capPx) + 'px)' };
+      if (minX / c.width < 0.02 || maxX / c.width > 0.98) return { ok: false, why: 'text is clipped by the frame edge' };
+      return { ok: true, why: '' };
+    } catch (e) { return { ok: false, why: 'grade failed: ' + e.message }; }
+  }
+
   function captionBandHasText(img, yPct) {
     try {
       var W = img.naturalWidth || img.width, H = img.naturalHeight || img.height;
@@ -2952,7 +2995,13 @@
             scanChain = scanChain.then(function () {
               return new Promise(function (res) {
                 loadRenderedFrame(outDir + pathMod.sep + id + '.png', function (im) {
-                  try { if (im && imageLooksBlank(im)) boxOnly.push(id); } catch (eB) {}
+                  try {
+                    if (!im) boxOnly.push(id + ' (no frame)');
+                    else {
+                      var gr = gradeCaptionFrame(im);
+                      if (!gr.ok) boxOnly.push(id + ' — ' + gr.why);
+                    }
+                  } catch (eB) {}
                   res();
                 });
               });
@@ -2960,10 +3009,10 @@
           });
           scanChain.then(function () {
             if (boxOnly.length) {
-              diag('previews', 'BOX-ONLY renders (engine shows no words for these styles): ' + boxOnly.join(', '));
-              toast('⚠️ ' + boxOnly.length + ' style(s) render as a box with NO words on this machine — their names are in Copy Diagnostics. Send it over and I\'ll fix those exact styles.', true);
+              diag('previews', 'STYLE QUALITY failures (' + boxOnly.length + '): ' + boxOnly.join(' | '));
+              toast('⚠️ ' + boxOnly.length + ' style(s) did not render a proper caption on this machine — each one is named with its reason in 📋 Copy diagnostics. Send it over and I\'ll fix those exact styles.', true);
             } else {
-              diag('previews', 'blank-scan: every rendered style shows words ✓');
+              diag('previews', 'style quality: all ' + okAll.length + ' styles rendered readable, in-frame captions ✓');
             }
           });
         } catch (eScan) {}

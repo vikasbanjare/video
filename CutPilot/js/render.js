@@ -47,6 +47,16 @@
     // frame, so they spilled outside. Falls back to height-based when no width is
     // given (e.g. fixed-aspect gallery thumbnails).
     var scale = (frameW && frameW > 0) ? (frameW / 1920) : (frameH / 1080);
+    // PORTRAIT BOOST: pure width-scaling makes a vertical caption the same
+    // fraction of WIDTH as a landscape one — on a 1080×1920 frame that lands at
+    // ~30px, unreadable on a phone (measured by tools/style-quality-audit.js:
+    // 57 of 74 styles came out below the legibility floor). Reels/Shorts
+    // captions run far larger relative to width, so tall frames scale up
+    // proportionally to how tall they are, capped so nothing overflows.
+    if (frameW && frameH && frameH > frameW) {
+      var tallness = Math.min(1.9, frameH / frameW);      // 16:9 vertical = 1.78
+      scale *= 1 + 0.55 * (tallness - 1);                 // 1.0 (square) … ~1.43 (9:16)
+    }
     var strokeW = (o.strokeWidth != null) ? o.strokeWidth : (preset.strokeWidth || 0);
     var box = (o.boxColor !== undefined) ? o.boxColor : (preset.boxColor || null);
     // A box colour the user CHANGED (differs from the template's default) becomes a
@@ -66,7 +76,15 @@
     return {
       font: o.font || preset.font,
       fallbacks: (preset.fallbackFonts || []).join('", "'),
-      size: Math.round((o.fontSize || preset.fontSize) * scale),
+      // LEGIBILITY FLOOR on real output frames (never on gallery tiles, which
+      // pass their own band-relative fontSize and no frameW): a style authored
+      // small must still be readable on a phone — measured floor is 5% of the
+      // frame width. Styles above it keep their own authored character.
+      size: (function () {
+        var px = Math.round((o.fontSize || preset.fontSize) * scale);
+        if (frameW && frameW > 0) px = Math.max(px, Math.round(frameW * 0.05));
+        return px;
+      })(),
       fill: fill,
       highlight: highlight,
       stroke: (o.stroke !== undefined) ? o.stroke : (preset.stroke || null),

@@ -1634,6 +1634,19 @@ try {
 // PANEL PROOFS: the real panel driven headless — mapping (every style → the
 // real engine layout), tile==preview parity, live font/weight controls,
 // smart-emphasis on/off. The other half of the autonomous QA system.
+// ------------------------------------------- style QUALITY audit ----
+// Renders EVERY caption style at true 1080×1920 through the shipped renderer
+// and measures it like a viewer: readable contrast, phone-legible size, inside
+// the frame, at the position the style asks for. ("Most of the captions failed
+// to generate text and are not showing properly" — this is the gate that keeps
+// that honest, style by style.)
+console.log('\nRunning style quality audit…');
+var styleQualityOk = true;
+try {
+  require('child_process').execSync('node "' + require('path').join(__dirname, '..', '..', 'tools', 'style-quality-audit.js') + '"',
+    { stdio: 'inherit' });
+} catch (e) { if (e.status === 2) console.log('(style quality audit skipped — no headless Chromium here)'); else styleQualityOk = false; }
+
 var proofsOk = true;
 try {
   if (hasChromium) {
@@ -1665,9 +1678,10 @@ try {
   else thumbsOk = false;
 }
 
-var allOk = !failed && auditOk && hostOk && simOk && proofsOk && thumbsOk;
+var allOk = !failed && auditOk && hostOk && simOk && proofsOk && thumbsOk && styleQualityOk;
 console.log('\n' + (allOk ? '════ ALL GATES GREEN ════' : '════ SOME GATES FAILED ════') +
   '  (js:' + (failed ? 'FAIL' : 'ok') + ' audit:' + (auditOk ? 'ok' : 'FAIL') +
   ' host:' + (hostOk ? 'ok' : 'FAIL') + ' sim:' + (simOk ? 'ok' : 'FAIL') +
-  ' proofs:' + (proofsOk ? 'ok' : 'FAIL') + ' blank-scan:' + (thumbsOk ? 'ok' : 'FAIL') + ')');
+  ' proofs:' + (proofsOk ? 'ok' : 'FAIL') + ' blank-scan:' + (thumbsOk ? 'ok' : 'FAIL') +
+  ' style-quality:' + (styleQualityOk ? 'ok' : 'FAIL') + ')');
 process.exit(allOk ? 0 : 1);
