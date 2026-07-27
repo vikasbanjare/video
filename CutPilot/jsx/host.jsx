@@ -2980,12 +2980,17 @@ function CP_renderStylePreviews(argsJson) {
         try { clip.end = CP_timeFromSeconds(seconds); } catch (eE) {}
         var comp = clip.getMGTComponent();
         if (comp) {
+          // stl.noIntro / stl.noSweep: the self-test's diagnostic LADDER skips
+          // individual writes to isolate which one kills the render on a
+          // given machine.
           try { CP_applyMgrtParams(comp, stl.params || []); } catch (ePr) {}
-          try { CP_forceIntroVisible(comp, stl.params || [], seconds, 'snappy'); } catch (eIv) {}
-          try {
-            var pvW = String(stl.text || '').replace(/\s+/g, ' ').replace(/^ | $/g, '').split(' ').length;
-            CP_setWordSweep(comp, seconds, pvW);
-          } catch (eSw) {}
+          if (!stl.noIntro) { try { CP_forceIntroVisible(comp, stl.params || [], seconds, 'snappy'); } catch (eIv) {} }
+          if (!stl.noSweep) {
+            try {
+              var pvW = String(stl.text || '').replace(/\s+/g, ' ').replace(/^ | $/g, '').split(' ').length;
+              CP_setWordSweep(comp, seconds, pvW);
+            } catch (eSw) {}
+          }
           if (stl.text && comp.properties) {
             var tp = CP_findTextProp(comp.properties, ['text', 'caption', 'title', 'subtitle']);
             if (tp) { try { CP_setMgrtText(tp, stl.text, true, stl.textStyle || null); } catch (eTx) {} }

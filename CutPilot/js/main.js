@@ -2777,18 +2777,40 @@
         if (extra.revealSpoken) t.revealSpoken = true;
         return (mapPresetToFlux(t, liveProps) || []);
       }
+      // pick specific controls by (normalized) name so ladder rungs can send
+      // ONLY one kind of write
+      function ctrlIdx(name) {
+        for (var ci = 0; ci < liveProps.length; ci++) {
+          if (String(liveProps[ci].name || '').toLowerCase().replace(/\s+/g, ' ') === name) return liveProps[ci].i;
+        }
+        return null;
+      }
+      function only(params, names) {
+        var want = {};
+        names.forEach(function (n) { var ix = ctrlIdx(n); if (ix != null) want[ix] = 1; });
+        return params.filter(function (pp) { return want[pp.i]; });
+      }
+      var full = probeParams({});
+      // DIAGNOSTIC LADDER — each rung adds ONE write class; the first ❌ rung
+      // names the write that kills rendering on THIS machine.
       var probes = [
-        { id: 'pulse-st-basic', params: probeParams({}), textStyle: null,
-          name: 'Words VISIBLE in a real render (bottom)' },
-        { id: 'pulse-st-top', params: probeParams({ yPct: 0.15 }), textStyle: null,
-          name: 'Words visible at the TOP position' },
-        { id: 'pulse-st-spoken', params: probeParams({ revealSpoken: true }), textStyle: null,
-          name: '🎬 As-spoken reveal paints the words' },
-        { id: 'pulse-st-font', params: probeParams({}), textStyle: { font: 'Impact', bold: false, sizeScale: 1 },
-          name: 'Font change still renders words' }
+        { id: 'pulse-st-a', params: [], textStyle: null, noIntro: true, noSweep: true,
+          name: 'A· bare text renders (no writes at all)' },
+        { id: 'pulse-st-b', params: [], textStyle: null, noIntro: true,
+          name: 'B· + word-sweep write' },
+        { id: 'pulse-st-c', params: [], textStyle: null, noSweep: true,
+          name: 'C· + intro-fit write' },
+        { id: 'pulse-st-d', params: only(full, ['text position', 'gradient fg text position']), textStyle: null, noIntro: true, noSweep: true,
+          name: 'D· + position writes' },
+        { id: 'pulse-st-e', params: only(full, ['text color', 'highlighted word color 1', 'highlighted word color 2', 'bg color', 'bg opacity', 'text opacity']), textStyle: null, noIntro: true, noSweep: true,
+          name: 'E· + colour writes' },
+        { id: 'pulse-st-f', params: full, textStyle: null, noIntro: true, noSweep: true,
+          name: 'F· full params (no intro/sweep)' },
+        { id: 'pulse-st-g', params: full, textStyle: null,
+          name: 'G· FULL pipeline (bottom)' },
+        { id: 'pulse-st-font', params: full, textStyle: { font: 'Impact', bold: false, sizeScale: 1 },
+          name: 'H· full + font change' }
       ];
-      // …plus the user's CURRENT style exactly as Apply would send it —
-      // catches style-specific failures (e.g. text colour == box colour).
       try {
         var curP = styledPreset();
         var curParams = mapPresetToFlux(curP, liveProps);
@@ -2796,12 +2818,12 @@
           var curRf = resolvedEditorFont(curP);
           probes.push({ id: 'pulse-st-current', params: curParams,
                         textStyle: curRf ? { font: curRf.font, bold: curRf.bold, sizeScale: 1 } : null,
-                        name: 'YOUR current style renders words (' + (curP.name || currentPreset().name || 'style') + ')' });
+                        name: 'I· YOUR current style (' + (curP.name || currentPreset().name || 'style') + ')' });
         }
       } catch (eCur) {}
       return CPBridge.callHost('CP_renderStylePreviews', {
         mogrtPath: bb.path, outDir: outDir, sep: pathMod.sep, seconds: 2.5,
-        styles: probes.map(function (p) { return { id: p.id, params: p.params, textStyle: p.textStyle, text: 'PULSE TEST WORDS' }; })
+        styles: probes.map(function (p) { return { id: p.id, params: p.params, textStyle: p.textStyle, text: 'PULSE TEST WORDS', noIntro: !!p.noIntro, noSweep: !!p.noSweep }; })
       }).then(function (rr) {
         var okIds = {};
         (rr.rendered || []).forEach(function (id) { okIds[id] = 1; });
