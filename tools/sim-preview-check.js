@@ -21,7 +21,7 @@ const cp = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const ROOT = path.join(__dirname, '..');
-const MOGRT = path.join(ROOT, 'CutPilot', 'mogrts', 'Flux_Halo2_r2.mogrt');
+const MOGRT = path.join(ROOT, 'CutPilot', 'mogrts', 'Flux_Halo2_r3.mogrt');
 
 function fail(msg) { console.log('  ✗ ' + msg); process.exitCode = 1; }
 function ok(msg) { console.log('  ✓ ' + msg); }

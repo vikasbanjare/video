@@ -1544,14 +1544,17 @@ console.log('duplicate-cue cleanup (linked-clip double mapping / whisper repeats
   assert(dx.length === 2, 'different overlapping text stays');
 }
 
-// ---- engine expression health ("box is showing, text is not") -------------
-// The shipped caption engines' intro animators are gated by expressions like
-//   if (Animation Type==K) easeOut(time, stime, stime+atime, 0, 100) else 0
-// The original author declared cstime/astime but USED stime in 7 of 8
-// variants — dead expressions whose static fallback left text invisible on
-// some machines/styles. We repair the .aep bytes at ship time; this guard
-// keeps every bundled engine honest forever.
-console.log('bundled engine expressions (all animation variants must be live)');
+// ---- engine expression integrity (ship the AUTHOR'S engine, untouched) ----
+// HARD-WON LESSON (v0.9.311→322): the author's variant expressions use
+//   if (Animation Type==K) easeOut(…Percent Start 0→100…) else 0
+// where the animators REVEAL text — "else 0" keeps the full reveal range
+// (text VISIBLE), and the cstime/stime typo merely leaves an intro dead
+// (benign: static fallback keeps text shown). Our "repairs" that rewrote
+// else 0 → else 100 INVERTED the logic and hid every caption after the
+// intro ("flat box", measured by render-check on the user's machine).
+// This guard keeps the engines exactly as authored: any resurfacing of
+// the else-100 rewrite fails the build.
+console.log('bundled engine expressions (author-original, never our rewrite)');
 {
   const cp = require('child_process');
   const fs = require('fs');
@@ -1569,29 +1572,15 @@ console.log('bundled engine expressions (all animation variants must be live)');
         fs.writeFileSync(tmp, ae);
         aep = cp.execSync('unzip -p ' + JSON.stringify(tmp) + ' "*.aep"', { maxBuffer: 256 * 1024 * 1024 });
         fs.unlinkSync(tmp);
-      } catch (e) { return; }   // no aegraphic / no aep inside — nothing to scan
+      } catch (e) { return; }
       const txt = aep.toString('latin1');
-      assert(txt.indexOf('cstime') === -1 && txt.indexOf('astime') === -1,
-        f + ': no typo\'d intro variables (cstime/astime) remain');
-      let broken = 0;
-      const runs = txt.match(/[\x20-\x7e\n\r\t]{60,}/g) || [];
-      runs.forEach(t => {
-        const m = /Animation Type"?\)\s*==\s*(\d+)/.exec(t);
-        if (m && t.indexOf('easeOut') >= 0) {
-          const decl = (t.match(/([a-z]+time)\s*=/g) || []).map(x => x.replace(/\s*=$/, ''));
-          const used = /easeOut\(time,\s*([a-z]+time)/.exec(t);
-          if (used && decl.indexOf(used[1]) === -1) broken++;
-        }
-      });
-      assert(broken === 0, f + ': every animation variant\'s intro expression uses a variable it declares (' + broken + ' dead)');
-      // the expressions drive the range selector START: 0 = affect ALL text.
-      // "else 0" therefore meant every NON-selected animator permanently hid
-      // the words (box, no text). Neutral is 100 (affect nothing).
-      let hideAll = 0;
-      runs.forEach(t => {
-        if (t.indexOf('easeOut') >= 0 && /Animation Type"?\)\s*==/.test(t) && /else\s+0\b/.test(t)) hideAll++;
-      });
-      assert(hideAll === 0, f + ': no animator falls to "else 0" — the hide-ALL-text state (' + hideAll + ' found)');
+      assert(txt.indexOf('else 100') === -1,
+        f + ': carries the AUTHOR-ORIGINAL expressions (our inverted else-100 rewrite hid all text — must never ship again)');
+      const variants = (txt.match(/Animation Type"?\)\s*==\s*\d+/g) || []).length;
+      if (variants) {
+        assert((txt.match(/else\s?0/g) || []).length > 0,
+          f + ': variant gates present with the authored else-0 reveal state (' + variants + ' variants)');
+      }
     });
   }
 }

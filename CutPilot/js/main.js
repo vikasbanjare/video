@@ -6833,6 +6833,7 @@
     // the old broken engine stayed inside existing projects forever). Old
     // caption tracks are named by the old files; keep them replaceable.
     add('flux_halo2'); add('flux_halo'); add('subtitle_4');
+    add('flux_halo2_r2'); add('flux_halo_r2'); add('subtitle_4_r2');
     (state.folderMogrts || []).forEach(function (m) { add(m.path); });
     add(extraPath);
     return out;
