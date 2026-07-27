@@ -2676,35 +2676,43 @@
       var W = img.naturalWidth || img.width, H = img.naturalHeight || img.height;
       if (!W || !H) return { ok: false, why: 'unreadable frame' };
       var c = document.createElement('canvas');
-      c.width = Math.min(W, 720); c.height = Math.round(c.width * H / W);
+      c.width = Math.min(W, 720); c.height = Math.max(1, Math.round(c.width * H / W));
       var g = c.getContext('2d');
       g.drawImage(img, 0, 0, c.width, c.height);
       var d = g.getImageData(0, 0, c.width, c.height).data;
       var lum = function (i) { return 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; };
-      // brightest/darkest populations → the caption's own contrast, plus the
-      // bounding box of the minority (glyph) population
-      var vals = [], x, y, i;
-      for (y = 0; y < c.height; y += 2) for (x = 0; x < c.width; x += 2) vals.push(lum((y * c.width + x) * 4));
-      vals.sort(function (a, b) { return a - b; });
-      var lo = vals[Math.floor(vals.length * 0.03)], hi = vals[Math.floor(vals.length * 0.97)];
-      var contrast = hi - lo;
-      if (contrast < 40) return { ok: false, why: 'flat frame — no readable caption (contrast ' + Math.round(contrast) + ')' };
-      var tol = Math.max(16, contrast * 0.28), hiN = 0, loN = 0, k;
-      for (k = 0; k < vals.length; k++) { if (vals[k] >= hi - tol) hiN++; else if (vals[k] <= lo + tol) loN++; }
-      var wantHi = hiN <= loN;
-      var minX = c.width, maxX = -1, minY = c.height, maxY = -1, n = 0;
+      var x, y, i, k;
+      // BACKGROUND = the modal luma bucket (an engine frame is mostly empty
+      // backdrop; assuming "minority == glyphs" over the whole frame misfires)
+      var hist = [], B = 32;
+      for (k = 0; k < B; k++) hist[k] = 0;
       for (y = 0; y < c.height; y += 2) for (x = 0; x < c.width; x += 2) {
-        var v = lum((y * c.width + x) * 4);
-        var isText = wantHi ? (v >= hi - tol) : (v <= lo + tol);
-        if (!isText) continue;
-        n++;
-        if (x < minX) minX = x; if (x > maxX) maxX = x;
-        if (y < minY) minY = y; if (y > maxY) maxY = y;
+        hist[Math.min(B - 1, Math.floor(lum((y * c.width + x) * 4) / (256 / B)))]++;
       }
-      if (n < 25) return { ok: false, why: 'no caption text found in the frame' };
+      var bgBin = 0;
+      for (k = 1; k < B; k++) if (hist[k] > hist[bgBin]) bgBin = k;
+      var bgLum = (bgBin + 0.5) * (256 / B);
+      // INK = anything clearly different from the backdrop (box, glyphs, glow)
+      var minX = c.width, maxX = -1, minY = c.height, maxY = -1, inkN = 0;
+      for (y = 0; y < c.height; y += 2) for (x = 0; x < c.width; x += 2) {
+        if (Math.abs(lum((y * c.width + x) * 4) - bgLum) > 26) {
+          inkN++;
+          if (x < minX) minX = x; if (x > maxX) maxX = x;
+          if (y < minY) minY = y; if (y > maxY) maxY = y;
+        }
+      }
+      if (inkN < 25) return { ok: false, why: 'nothing rendered (empty frame)' };
+      // GLYPH CONTRAST inside the ink box: a caption always has bright/dark
+      // structure there; a bare box is flat
+      var vals = [];
+      for (y = minY; y <= maxY; y += 2) for (x = minX; x <= maxX; x += 2) vals.push(lum((y * c.width + x) * 4));
+      vals.sort(function (a, b) { return a - b; });
+      var lo = vals[Math.floor(vals.length * 0.05)], hi = vals[Math.floor(vals.length * 0.95)];
+      var contrast = hi - lo;
+      if (contrast < 38) return { ok: false, why: 'caption area is FLAT — box with no words (contrast ' + Math.round(contrast) + ')' };
       var capPx = (maxY - minY) * (W / c.width);
-      if (capPx / W < 0.018) return { ok: false, why: 'text renders microscopic (' + Math.round(capPx) + 'px)' };
-      if (minX / c.width < 0.02 || maxX / c.width > 0.98) return { ok: false, why: 'text is clipped by the frame edge' };
+      if (capPx / H < 0.012) return { ok: false, why: 'caption renders microscopic (' + Math.round(capPx) + 'px tall)' };
+      if (minX / c.width < 0.015 || maxX / c.width > 0.985) return { ok: false, why: 'caption is clipped by the frame edge' };
       return { ok: true, why: '' };
     } catch (e) { return { ok: false, why: 'grade failed: ' + e.message }; }
   }
@@ -3009,7 +3017,10 @@
           });
           scanChain.then(function () {
             if (boxOnly.length) {
-              diag('previews', 'STYLE QUALITY failures (' + boxOnly.length + '): ' + boxOnly.join(' | '));
+              diag('previews', 'STYLE QUALITY failures: ' + boxOnly.length + ' of ' + okAll.length + ' styles');
+              for (var bo = 0; bo < boxOnly.length; bo += 5) {
+                diag('style-fail', boxOnly.slice(bo, bo + 5).join(' | '));
+              }
               toast('⚠️ ' + boxOnly.length + ' style(s) did not render a proper caption on this machine — each one is named with its reason in 📋 Copy diagnostics. Send it over and I\'ll fix those exact styles.', true);
             } else {
               diag('previews', 'style quality: all ' + okAll.length + ' styles rendered readable, in-frame captions ✓');
