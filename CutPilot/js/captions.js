@@ -496,6 +496,7 @@
   /* The ten library categories the browser groups templates into. */
   var CATEGORIES = [
     '⭐ Premium',
+    '🎬 From My Videos',
     '🎥 Your Styles',
     '🔘 Buttons',
     'Bold Creator', 'Minimal Professional', 'Dynamic Highlight', 'Social Growth',
@@ -1067,7 +1068,7 @@
     {
       "id": "pack-orange-word-pop",
       "name": "Orange Word Pop",
-      "category": "🎥 Your Styles",
+      "category": "🎬 From My Videos",
       "popularity": 100,
       "layout": "bottom",
       "posPct": 62,
@@ -1092,7 +1093,7 @@
     {
       "id": "pack-script-glow",
       "name": "Script Glow",
-      "category": "🎥 Your Styles",
+      "category": "🎬 From My Videos",
       "popularity": 100,
       "layout": "bottom",
       "posPct": 72,

@@ -3007,7 +3007,16 @@
                     if (!im) boxOnly.push(id + ' (no frame)');
                     else {
                       var gr = gradeCaptionFrame(im);
-                      if (!gr.ok) boxOnly.push(id + ' — ' + gr.why);
+                      if (!gr.ok) {
+                        boxOnly.push(id + ' — ' + gr.why);
+                        // NEVER let a bad render become the card preview — that
+                        // is what emptied the gallery ("all the previews are
+                        // gone"). Delete it so the drawn swatch comes back.
+                        try {
+                          var badP = outDir + pathMod.sep + id + '.png';
+                          if (fs.existsSync(badP)) fs.unlinkSync(badP);
+                        } catch (eDel) {}
+                      }
                     }
                   } catch (eB) {}
                   res();
@@ -3025,6 +3034,9 @@
             } else {
               diag('previews', 'style quality: all ' + okAll.length + ' styles rendered readable, in-frame captions ✓');
             }
+            // re-read the folder (failed frames were removed) and repaint, so
+            // every card shows either a GOOD real render or its drawn swatch
+            try { _stylePrev = null; loadStylePreviews(); renderTemplateGrid(); } catch (eRe) {}
           });
         } catch (eScan) {}
       });
@@ -3240,8 +3252,8 @@
     // ⭐ Premium leads; 🎥 Your Styles (the 35 styles learned from the user's
     // OWN videos) sits right up front — parked at the tail of a scrolling chip
     // row it was invisible in a narrow panel ("where are those captions?").
-    var cats = ['⭐ Premium', 'All', '🎥 Your Styles', 'Favorites', 'Recent', 'My Templates']
-      .concat(CPCaptions.CATEGORIES.filter(function (c) { return c !== '⭐ Premium' && c !== '🎥 Your Styles'; }));
+    var cats = ['⭐ Premium', 'All', '🎬 From My Videos', '🎥 Your Styles', 'Favorites', 'Recent', 'My Templates']
+      .concat(CPCaptions.CATEGORIES.filter(function (c) { return c !== '⭐ Premium' && c !== '🎥 Your Styles' && c !== '🎬 From My Videos'; }));
     var chipBox = $('lib-cats');
     cats.forEach(function (c) {
       var chip = document.createElement('button');
@@ -3257,6 +3269,24 @@
     });
     if ($('btn-true-prev')) $('btn-true-prev').addEventListener('click', renderTruePreviews);
     if ($('btn-selftest')) $('btn-selftest').addEventListener('click', runSelfTest);
+    // ↺ Reset previews — wipe every rendered frame and go back to the drawn
+    // style previews (recovery for "all the previews are gone")
+    if ($('btn-reset-prev')) $('btn-reset-prev').addEventListener('click', function () {
+      if (!CPBridge.isCEP()) return toast('Preview reset needs Premiere.', true);
+      var n = 0;
+      try {
+        var fs2 = nodeReq('fs'), pm = nodeReq('path'), os2 = nodeReq('os');
+        var dir = pm.join(os2.homedir(), 'Documents', 'Pulse', 'style-previews');
+        if (fs2.existsSync(dir)) {
+          var files = fs2.readdirSync(dir);
+          for (var i = 0; i < files.length; i++) {
+            if (/\.(png|jpe?g|webp|mp4|mov)$/i.test(files[i])) { try { fs2.unlinkSync(pm.join(dir, files[i])); n++; } catch (eU) {} }
+          }
+        }
+      } catch (eR) { return toast('Could not clear the previews: ' + eR.message, true); }
+      _stylePrev = null; loadStylePreviews(); renderTemplateGrid();
+      toast('↺ Cleared ' + n + ' rendered preview' + (n === 1 ? '' : 's') + ' — the style cards are back to Pulse\'s own previews.');
+    });
 
     if ($('flux-search')) $('flux-search').addEventListener('input', function () { state.fluxSearch = this.value.toLowerCase(); renderFluxGrid(); });
     $('lib-search').addEventListener('input', function () { state.libSearch = this.value.toLowerCase(); renderTemplateGrid(); });
