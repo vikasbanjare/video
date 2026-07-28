@@ -3102,7 +3102,25 @@
               for (var bo = 0; bo < boxOnly.length; bo += 5) {
                 diag('style-fail', boxOnly.slice(bo, bo + 5).join(' | '));
               }
-              toast('⚠️ ' + boxOnly.length + ' style(s) did not render a proper caption on this machine — each one is named with its reason in 📋 Copy diagnostics. Send it over and I\'ll fix those exact styles.', true);
+              // SHOW the names in the panel (nobody should have to dig through
+              // a log to tell me which styles failed) AND drop a report file on
+              // the Desktop that can be sent as-is.
+              var rep = 'Pulse style report — ' + boxOnly.length + ' of ' + okAll.length +
+                        ' styles did not render a proper caption on this machine:\n\n' +
+                        boxOnly.map(function (x, i) { return (i + 1) + '. ' + x; }).join('\n');
+              try {
+                var so = $('selftest-out');
+                if (so) { so.classList.remove('hidden'); so.textContent = rep; }
+              } catch (eS) {}
+              try {
+                var os3 = nodeReq('os'), pm3 = nodeReq('path'), fs3 = nodeReq('fs');
+                var deskDir = pm3.join(os3.homedir(), 'Desktop');
+                if (!fs3.existsSync(deskDir)) deskDir = os3.homedir();
+                var repPath = pm3.join(deskDir, 'Pulse-style-report.txt');
+                fs3.writeFileSync(repPath, rep, 'utf8');
+                diag('previews', 'report saved: ' + repPath);
+              } catch (eF) {}
+              toast('⚠️ ' + boxOnly.length + ' style(s) failed on this machine. The full list is ON SCREEN below and saved to your Desktop as “Pulse-style-report.txt” — send me that file (or a screenshot) and I\'ll fix those exact styles.', true);
             } else {
               diag('previews', 'style quality: all ' + okAll.length + ' styles rendered readable, in-frame captions ✓');
             }
