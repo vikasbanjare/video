@@ -1585,6 +1585,35 @@ console.log('bundled engine expressions (author-original, never our rewrite)');
   }
 }
 
+// ---- script alignment ("fix all the script") ------------------------------
+console.log('script alignment (your script\'s words + the transcript\'s timing)');
+{
+  const S = require(path.join(__dirname, '..', 'js', 'scriptalign.js'));
+  const cues = [{ start: 0, end: 2, text: 'hello everyone my name is akshi adeshi' },
+                { start: 2, end: 4, text: 'and today we talk about gold funds' }];
+  const script = 'Hello everyone, my name is Akshay Uddeshi.\nAnd today we talk about gold funds.';
+  const r = S.alignToScript(cues, script);
+  assert(r.matched === true, 'a matching script is accepted (rate ' + r.matchRate.toFixed(2) + ')');
+  assert(r.cues[0].text === 'Hello everyone, my name is Akshay Uddeshi.',
+    'misheard name is corrected INSIDE its own caption: "' + r.cues[0].text + '"');
+  assert(r.cues[1].text === 'And today we talk about gold funds.', 'second caption takes the script spelling');
+  assert(r.cues[0].start === 0 && r.cues[0].end === 2 && r.cues[1].start === 2,
+    'every cue keeps its ORIGINAL timing (captions still land on the voice)');
+  // a script from another recording must never destroy a good transcript
+  const wrong = S.alignToScript(cues, 'Completely different words about cooking pasta tonight in Rome');
+  assert(wrong.matched === false && wrong.cues === cues, 'a mismatched script is refused, transcript untouched');
+  // speaker labels + stage directions are not spoken words
+  const sw = S.scriptWords('VIKAS: Hello there [laughs]\n(pause)\nSecond line');
+  assert(sw.join(' ') === 'Hello there Second line', 'labels/directions stripped: ' + sw.join(' '));
+  // Hindi/Devanagari scripts align too
+  const hi = S.alignToScript([{ start: 0, end: 2, text: 'मेरा नाम विकस है' }], 'मेरा नाम विकास है।');
+  assert(hi.matched === true && /विकास/.test(hi.cues[0].text), 'Devanagari script corrects the Hindi transcript');
+  // dropped words in the middle are restored into the right caption
+  const drop = S.alignToScript([{ start: 0, end: 3, text: 'we build for creators' }],
+                               'We build tools for creators');
+  assert(drop.cues[0].text === 'We build tools for creators', 'a word the transcriber missed is restored: ' + drop.cues[0].text);
+}
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 
 // ------------------------------------------------- template audit ----
