@@ -2434,6 +2434,26 @@ function CP_insertMogrtCaptions(argsJson) {
         } catch (eScale) {}
       }
 
+      // WHOLE-GRAPHIC POSITION: move the clip's Motion, not the text layer —
+      // the BG box is its own layer, so moving text alone split them apart
+      // ("the text is not aligned with the box"). Motion Position is
+      // normalized; the engine's caption sits at the comp centre (0.5), so the
+      // wanted caption row IS the Y to set.
+      if (args.posYPct != null && isFinite(args.posYPct)) {
+        try {
+          for (var mvI = 0; mvI < clip.videoComponents.numItems; mvI++) {
+            var mvFx = clip.videoComponents[mvI];
+            if (String(mvFx.displayName || '').toLowerCase().indexOf('motion') !== 0) continue;
+            var posP = mvFx.properties.getNamedProperty('Position');
+            if (!posP) break;
+            var wantY = args.posYPct;
+            if (wantY < 0.05) wantY = 0.05; else if (wantY > 0.95) wantY = 0.95;
+            try { posP.setValue([0.5, wantY], true); } catch (eMv1) { try { posP.setValue([0.5, wantY]); } catch (eMv2) {} }
+            break;
+          }
+        } catch (eMv) {}
+      }
+
       var textSetBefore = textSet;
       try {
         var comp = clip.getMGTComponent();

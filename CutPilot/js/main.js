@@ -7513,25 +7513,13 @@
     if (yp != null && isFinite(yp)) {
       yp = Math.max(0.1, Math.min(0.92, yp));
       var compY = preset.seqLandscape ? Math.round(420 + 1080 * yp) : Math.round(1920 * yp);
-      // LAYER-position points take NORMALIZED 0–1 input through Premiere's
-      // scripting API — sending pixels multiplied them by the frame (the
-      // user's EG panel read "583200 × 2801280" = 540×1080, 1459×1920): the
-      // text AND its highlight overlay sat hundreds of thousands of pixels
-      // OFF-SCREEN — "box is showing, text is not". EFFECT points (the
-      // gradient anchors, box padding) really do take pixels — verified by
-      // the same screenshot showing them stored exactly as sent.
-      point(P('text position'), 540 / 1080, compY / 1920);
-      // The HIGHLIGHT overlay is ALSO a layer-position point (normalized 0–1,
-      // same as Text Position). The v0.9.315 pixel write threw it off-screen
-      // (×1080/×1920 on store) — with As-spoken hiding the base text by
-      // design, the overlay was the only word-painter, so captions rendered
-      // as a FLAT BOX (the render-check verdict on the user's machine). The
-      // "bottom-left blue word" that prompted the pixel change was actually
-      // word #1 rendering at its CORRECT spot in a centred line.
-      point(P('gradient fg text position'), 540 / 1080, compY / 1920);
-      var gA = P('start of gradient'), gB = P('end of gradient');
-      if (gA && gA.point) point(gA, gA.point.x, compY);
-      if (gB && gB.point) point(gB, gB.point.x, compY);
+      // DO NOT move the text layer: the BG box is a separate layer that stays
+      // at its authored place, so moving the text alone splits them apart —
+      // "the text is not aligned with the box". Position now rides the CLIP's
+      // Motion (host: args.posYPct), which moves box + text + highlight
+      // together as one graphic. Gradient anchors stay authored for the same
+      // reason (they are glued to the text's authored row).
+      out._posYPct = preset.seqLandscape ? (420 + 1080 * yp) / 1920 : yp;
     }
 
     // ---- glow → the engine's soft shadow as a centred halo ------------------
@@ -7644,7 +7632,11 @@
     var rf = resolvedEditorFont(preset);
     fontInstallWarn(preset.font);   // a missing font would be silently kept — say so up front
     var textStyle = isFluxBB
-                  ? (rf ? { font: rf.font, bold: rf.bold, sizeScale: 1 } : null)
+                  ? { font: rf && rf.font, bold: rf ? rf.bold : false, sizeScale: 1,
+                      // write the colour INTO the text as well as the param:
+                      // the blob's own fillColor otherwise wins and the caption
+                      // keeps the template colour ("colours are not changing")
+                      fill: preset.fill }
                   : { font: rf && rf.font, caps: caps,
                       bold: rf ? rf.bold : (preset.weight || 800) >= 600, fill: preset.fill,
                       sizeScale: (Math.abs(sizeScale - 1) > 0.02 ? sizeScale : 1) };
@@ -7693,6 +7685,7 @@
           mogrtPath: bb.path, cues: tcues, videoTrack: null, audioTrack: 0,
           params: params, textStyle: textStyle, stretch: false, replaceTrack: reuseTrack,
           captionNames: captionGraphicNames(bb.path),
+          posYPct: (params && params._posYPct != null) ? params._posYPct : null,   // whole-graphic placement
           introMode: 'snappy',   // caption styles: words readable on any paused frame (templates keep fit-original)
           // animSpeed is a MULTIPLIER (1 = natural pace). 100 compressed every
           // entrance into ~1ms — Pop/Slide/Fade were invisible on the timeline.

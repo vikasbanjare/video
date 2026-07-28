@@ -113,28 +113,19 @@ function fluxProps() {
         if (!byI[I('shadow distance')] || byI[I('shadow distance')].value !== 0) b('glow: distance not 0');
       } else if (!byI[I('shadow on/off')] || byI[I('shadow on/off')].value !== false) b('no-glow: shadow not off');
       if (byI[I('text position')]) b('position sent without yPct');
-      // LAYER-position points ride Premiere's scripting API NORMALIZED (0–1):
-      // pixels were multiplied by the frame (EG showed 583200×2801280) and the
-      // text + highlight overlay sat off-screen — "box shows, text doesn't".
-      // Effect points (gradient anchors) stay in PIXELS.
+      // POSITION now moves the WHOLE graphic via the clip's Motion (params
+      // carry _posYPct) — moving the text layer alone left the BG box behind
+      // ("text not aligned with the box"), so no layer-position params may be
+      // sent at all.
       const t3 = Object.assign({}, t, { yPct: 0.76 });
       const p3 = D.mapPresetToFlux(t3, PROPS) || []; const b3 = {}; p3.forEach(p => { b3[p.i] = p; });
-      const yPortN = Math.round(1920 * 0.76) / 1920;
-      const near = (a, w) => Math.abs(a - w) < 1e-9;
-      if (!b3[I('text position')] || !near(b3[I('text position')].value.y, yPortN) ||
-          !near(b3[I('text position')].value.x, 0.5)) b('portrait position wrong (must be NORMALIZED 0–1)');
-      if (b3[I('text position')].value.y > 1.001) b('position sent as PIXELS — text lands off-screen');
-      // the HIGHLIGHT overlay is a LAYER point too: NORMALIZED, same row as
-      // the text (the pixel write of v0.9.315 parked it off-screen — the
-      // render-check "FLAT box" verdict on the user's machine)
-      if (!b3[I('gradient fg text position')] || !near(b3[I('gradient fg text position')].value.y, yPortN) ||
-          !near(b3[I('gradient fg text position')].value.x, 0.5)) b('highlight overlay must be NORMALIZED at the text row');
-      if (b3[I('gradient fg text position')].value.y > 1.001) b('highlight overlay sent as PIXELS — words vanish off-screen');
-      if (b3[I('start of gradient')] && b3[I('start of gradient')].value.y <= 1.001) b('gradient anchors must stay PIXEL-space');
-      t3.seqLandscape = true;
-      const p4 = D.mapPresetToFlux(t3, PROPS) || []; const b4 = {}; p4.forEach(p => { b4[p.i] = p; });
-      if (!b4[I('text position')] || !near(b4[I('text position')].value.y, Math.round(420 + 1080 * 0.76) / 1920)) b('landscape position wrong');
-      if (!b4[I('gradient fg text position')] || !near(b4[I('gradient fg text position')].value.y, Math.round(420 + 1080 * 0.76) / 1920)) b('landscape highlight overlay wrong');
+      const near = (a, w) => Math.abs(a - w) < 1e-6;
+      if (b3[I('text position')] || b3[I('gradient fg text position')])
+        b('text/overlay layer position must NOT be moved (box would stay behind)');
+      if (!near(p3._posYPct, 0.76)) b('whole-graphic position wrong: ' + p3._posYPct);
+      const t4 = Object.assign({}, t3, { seqLandscape: true });
+      const p4 = D.mapPresetToFlux(t4, PROPS) || [];
+      if (!near(p4._posYPct, (420 + 1080 * 0.76) / 1920)) b('landscape whole-graphic position wrong: ' + p4._posYPct);
       const wantFont = t.font || 'Inter';
       if (cs.font !== wantFont) b('preview face ' + cs.font + ' != ' + wantFont);
     });
