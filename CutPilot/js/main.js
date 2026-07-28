@@ -2615,7 +2615,52 @@
       }
     }
     if (count) diag('previews', 'style renders loaded: ' + count);
+    _prevValidated = false;
+    setTimeout(validateStylePreviews, 60);   // blank frames are dropped + deleted
   }
+  /* Cached style-preview frames are trusted blindly — a folder full of BLACK
+     frames from a failed render pass therefore replaces every good card and
+     the gallery looks empty ("still no text in the caption previews"). On every
+     load, verify each cached image and DROP + DELETE the blank ones, then
+     repaint: bad frames can never hide a style again, with no button to press. */
+  var _prevValidated = false;
+  function validateStylePreviews() {
+    if (_prevValidated || !CPBridge.isCEP() || !_stylePrev) return;
+    _prevValidated = true;
+    var keys = [], k;
+    for (k in _stylePrev) if (_stylePrev.hasOwnProperty(k)) keys.push(k);
+    if (!keys.length) return;
+    var fs2 = null, dropped = [];
+    try { fs2 = nodeReq('fs'); } catch (eN) {}
+    var pending = keys.length;
+    function done() {
+      if (--pending > 0) return;
+      if (!dropped.length) return;
+      try { diag('previews', 'dropped ' + dropped.length + ' blank cached preview(s): ' + dropped.slice(0, 8).join(', ')); } catch (eD) {}
+      try { renderTemplateGrid(); } catch (eR) {}
+    }
+    keys.forEach(function (key) {
+      var rec = _stylePrev[key];
+      if (!rec || rec.video) { done(); return; }          // videos keep their runtime blank-guard
+      var im = new Image();
+      im.onload = function () {
+        var blank = false;
+        try { blank = imageLooksBlank(im); } catch (eB) {}
+        if (blank) {
+          delete _stylePrev[key];
+          dropped.push(key);
+          try {
+            var fp = decodeURI(String(rec.url).replace(/^file:\/\//, ''));
+            if (fs2 && fs2.existsSync(fp)) fs2.unlinkSync(fp);
+          } catch (eU) {}
+        }
+        done();
+      };
+      im.onerror = function () { delete _stylePrev[key]; dropped.push(key); done(); };
+      im.src = rec.url;
+    });
+  }
+
   function stylePreviewFor(t) {
     if (_stylePrev == null) loadStylePreviews();
     return _stylePrev[normPrevName(t.id)] || _stylePrev[normPrevName(t.name)] || null;
@@ -5487,7 +5532,9 @@
   // frames — they don't apply to editable (.mogrt) captions, whose text and
   // style live natively on the Premiere clip and are edited THERE. So those 4
   // stay hidden for an editable job; the hint instead explains how to edit it.
-  var CAP_RESTYLE_HINT_HTML = 'Captions are on your timeline. <b>Apply to all</b> restyles everything; to make one section different, select that clip/range on the timeline, pick a style, then <b>Restyle selected range</b>.';
+  var CAP_RESTYLE_HINT_HTML = '✅ Captions are on your timeline — and they stay <b>fully editable from Pulse</b>: ' +
+    '<b>✏️ Edit words</b> fixes any wording (Pulse re-renders that caption in place), <b>Apply to all</b> changes the style of every caption, ' +
+    'and <b>Restyle selected range</b> restyles just the clips you select. Nothing is locked — the words, colours, font, size and position can all be changed after the fact.';
   function reflectCaptionsPlaced() {
     var job = state.lastCaptionJob;
     var editable = !!(job && job.mode === 'editable');
