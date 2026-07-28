@@ -2587,6 +2587,13 @@
   function loadStylePreviews() {
     _stylePrev = {};
     if (!CPBridge.isCEP()) return;
+    // SAVED RENDER FRAMES ARE OPT-IN. They caused the whole "all previews are
+    // black" / "the card shows one thing and clicking gives another" class of
+    // bugs: a saved frame always beat the drawn preview, so any bad render
+    // hid a style permanently. Default is now Pulse's OWN drawn preview —
+    // which is the SAME renderer that draws the captions, so the card and the
+    // timeline match by construction. "🎥 Make previews REAL" opts in.
+    if (!(settings && settings.useRealPreviews)) return;
     var fs, path;
     try { fs = nodeReq('fs'); path = nodeReq('path'); } catch (e) { return; }
     function fileUrl(p) {
@@ -2624,6 +2631,25 @@
      load, verify each cached image and DROP + DELETE the blank ones, then
      repaint: bad frames can never hide a style again, with no button to press. */
   var _prevValidated = false;
+  /* ONE-TIME HEAL: wipe render frames left by earlier builds (they are what
+     turned the gallery black). Runs once per install, silently. */
+  function purgeLegacyPreviewFrames() {
+    try {
+      if (!CPBridge.isCEP()) return;
+      if (localStorage.getItem('cutpilot.prevPurged') === '2') return;
+      var fs2 = nodeReq('fs'), pm = nodeReq('path'), os2 = nodeReq('os');
+      var dir = pm.join(os2.homedir(), 'Documents', 'Pulse', 'style-previews');
+      var n = 0;
+      if (fs2.existsSync(dir)) {
+        var files = fs2.readdirSync(dir);
+        for (var i = 0; i < files.length; i++) {
+          if (/\.(png|jpe?g|webp|mp4|mov)$/i.test(files[i])) { try { fs2.unlinkSync(pm.join(dir, files[i])); n++; } catch (eU) {} }
+        }
+      }
+      localStorage.setItem('cutpilot.prevPurged', '2');
+      if (n) { try { diag('previews', 'one-time cleanup: removed ' + n + ' old render frame(s) that were hiding the style previews'); } catch (eD) {} }
+    } catch (e) {}
+  }
   function validateStylePreviews() {
     if (_prevValidated || !CPBridge.isCEP() || !_stylePrev) return;
     _prevValidated = true;
@@ -2662,7 +2688,7 @@
   }
 
   function stylePreviewFor(t) {
-    if (_stylePrev == null) loadStylePreviews();
+    if (_stylePrev == null) { purgeLegacyPreviewFrames(); loadStylePreviews(); }
     return _stylePrev[normPrevName(t.id)] || _stylePrev[normPrevName(t.name)] || null;
   }
 
@@ -2997,6 +3023,7 @@
     var styles = CPCaptions.TEMPLATES.concat(state.customTemplates || []).filter(function (t) { return t && t.id && !t.mogrt; });
     if (!styles.length) return toast('No styles to render.', true);
     _truePrevBusy = true;
+    settings.useRealPreviews = true; saveSettings();   // explicit opt-in
     var btn = $('btn-true-prev'); if (btn) btn.disabled = true;
     capProgress('Reading the caption engine…');
     CPBridge.callHost('CP_inspectMogrt', { path: bb.path }).then(function (r) {
@@ -3329,6 +3356,7 @@
           }
         }
       } catch (eR) { return toast('Could not clear the previews: ' + eR.message, true); }
+      settings.useRealPreviews = false; saveSettings();
       _stylePrev = null; loadStylePreviews(); renderTemplateGrid();
       toast('↺ Cleared ' + n + ' rendered preview' + (n === 1 ? '' : 's') + ' — the style cards are back to Pulse\'s own previews.');
     });
