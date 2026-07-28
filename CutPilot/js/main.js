@@ -5327,11 +5327,12 @@
   // the gallery/sheet now preview the template's REAL render — so what you pick is
   // exactly what lands on the timeline. (The owner always wants editable; 🖼 PNG /
   // ⚡ libass remain available but are never the default.)
-  var _capOut = 'editable';
+  var _capOut = 'png';   // Pulse-rendered by default (see btn-magic handler)
   function updateMagicLabel() {
     var b = $('btn-magic'); if (!b) return;
-    // Output is always EDITABLE — one label, no modes.
-    b.innerHTML = '✏️ Add captions <span class="dim">(editable clips — the style you picked)</span>';
+    b.innerHTML = (_capOut === 'editable')
+      ? '✏️ Add captions <span class="dim">(editable template clips)</span>'
+      : '✨ Add captions <span class="dim">(Pulse-rendered — exact look, always aligned)</span>';
   }
   (function wireCapOutput() {
     var box = $('cap-output'); if (!box) return;
@@ -5383,10 +5384,26 @@
     });
   })();
   $('btn-magic').addEventListener('click', function () {
-    // EVERY caption goes onto the timeline as an EDITABLE native clip (one .mogrt
-    // per line, re-editable in Premiere's Essential Graphics) — always, no baked
-    // PNG / libass. (The owner wants editable captions every single time.)
-    return applyEditableStyle();
+    // DEFAULT = PULSE-RENDERED captions. The third-party .mogrt engine kept
+    // failing on the owner's machine in ways nothing on our side could fix
+    // (box and words are separate layers → misalignment; its own colour blob
+    // overrides the colour controls; the Index/Duration highlight rig is
+    // fragile). Pulse's own renderer draws box + words + highlight together in
+    // ONE image, so alignment, colour and the word animation are guaranteed —
+    // and tools/style-quality-audit.js verifies every style at true output
+    // size on every build. The editable-template path stays available.
+    if (_capOut === 'editable') return applyEditableStyle();
+    if (!ensureTranscriptThen('magic')) return;
+    var mCues;
+    try { mCues = readSelectedTranscript(); } catch (eM) { return toast(eM.message, true); }
+    if (!mCues || !mCues.length) return toast('No caption lines to add.', true);
+    var reuse = null;
+    try {
+      var pj = state.lastCaptionJob;
+      var sameSeqM = !!(pj && pj.seq && state.env && pj.seq === state.env.sequenceName);
+      if (pj && pj.mode !== 'editable' && pj.track && sameSeqM) reuse = pj.track;
+    } catch (eRj) {}
+    return runCaptionPipeline(mCues, reuse ? { replaceTrack: reuse } : {});
   });
 
   /* Persist the last caption job so the edit/restyle buttons stay available even
