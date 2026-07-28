@@ -2096,6 +2096,42 @@ function CP_sigNorm(s) {
    name starts with a known template basename). An empty track passes (clearing
    it is a no-op). Any failure to inspect returns FALSE — we never clear what
    we cannot verify. */
+/* Remove EVERY video track that holds only Pulse captions (template graphics
+   or rendered caption images). Weeks of debug builds left the user's sequence
+   with a dozen stacked caption tracks; this clears them in one action. Tracks
+   holding any non-caption clip are never touched. */
+function CP_removePulseCaptionTracks(argsJson) {
+  try {
+    var args = {};
+    try { if (argsJson) args = JSON.parse(argsJson) || {}; } catch (eA) {}
+    var seq = CP_activeSequence();
+    app.enableQE();
+    var qseq = qe.project.getActiveSequence();
+    var pat = /(flux|subtitle|shorts_text|text_animation|pulse|cutpilot|cap[-_]?\d)/i;
+    var cleared = 0, tracks = [];
+    for (var ti = seq.videoTracks.numTracks - 1; ti >= 0; ti--) {
+      var track = seq.videoTracks[ti];
+      if (!track.clips.numItems) continue;
+      var allCaps = true;
+      for (var ci = 0; ci < track.clips.numItems; ci++) {
+        var nm = String(track.clips[ci].name || '');
+        if (!pat.test(nm)) { allCaps = false; break; }
+      }
+      if (!allCaps) continue;
+      var qt = null;
+      try { qt = qseq.getVideoTrackAt(ti); } catch (eQ) {}
+      if (!qt) continue;
+      var removed = 0;
+      for (var k = qt.numItems - 1; k >= 0; k--) {
+        var it = qt.getItemAt(k);
+        if (it && it.type !== 'Empty') { try { it.remove(0, 0); removed++; } catch (eR) {} }
+      }
+      if (removed) { cleared += removed; tracks.push(ti + 1); }
+    }
+    return CP_ok({ cleared: cleared, tracks: tracks });
+  } catch (e) { return CP_fail(e.message); }
+}
+
 function CP_trackIsPulseCaptions(ti, names) {
   try {
     app.enableQE();

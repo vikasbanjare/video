@@ -3359,6 +3359,20 @@
     });
     if ($('btn-true-prev')) $('btn-true-prev').addEventListener('click', renderTruePreviews);
     if ($('btn-selftest')) $('btn-selftest').addEventListener('click', runSelfTest);
+    // 🧹 clear every caption track Pulse ever added (debug builds stacked many)
+    if ($('btn-clean-caps')) $('btn-clean-caps').addEventListener('click', function () {
+      if (!CPBridge.isCEP()) return toast('This needs Premiere.', true);
+      confirmInline('Delete every caption track Pulse has added to this sequence?\n\nYour video and audio clips are NOT touched — only caption tracks are cleared.', 'Delete them', function (yes) {
+        if (!yes) return;
+        CPBridge.callHost('CP_removePulseCaptionTracks', {}).then(function (r) {
+          state.lastCaptionJob = null; saveLastCaptionJob(); reflectCaptionsPlaced();
+          toast(r.cleared ? ('🧹 Removed ' + r.cleared + ' caption clip' + (r.cleared === 1 ? '' : 's') +
+                             ' from track' + (r.tracks.length === 1 ? ' V' : 's V') + r.tracks.join(', V') +
+                             '. Add captions again for a clean set.')
+                          : 'No Pulse caption tracks found in this sequence.');
+        }).catch(function (e) { toast('Cleanup failed: ' + e.message, true); });
+      });
+    });
     // ↺ Reset previews — wipe every rendered frame and go back to the drawn
     // style previews (recovery for "all the previews are gone")
     if ($('btn-reset-prev')) $('btn-reset-prev').addEventListener('click', function () {
