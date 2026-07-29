@@ -148,6 +148,36 @@ function resolveBrowser(pptr) {
       };
     }
 
+    /* Does the style ACTUALLY animate? Render its first frames and compare all
+       colour channels: identical frames mean the word-by-word animation does
+       nothing on screen ("animation is not working"). */
+    function animates(t) {
+      const carry = D.carryableStyle(t);
+      let frames = null;
+      try {
+        frames = C.buildCaptionFrames([{ start: 0, end: 2.5, text: 'Make every word count today' }], {
+          anim: C.animIdForConcept(carry.anim), wordsPerCue: carry.wordsPerCue || 0,
+          uppercase: carry.uppercase, keyword: { on: !!carry.keyword, mode: 'auto' }, build: !!t.build
+        });
+      } catch (e) { return { ok: false, why: 'frame build threw: ' + e.message }; }
+      if (!frames || frames.length < 2) return { ok: false, why: 'only ' + (frames ? frames.length : 0) + ' frame — the caption never animates' };
+      const w = 540, h = 960, shots = [];
+      for (let i = 0; i < Math.min(3, frames.length); i++) {
+        const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+        try { R.drawFrame(cv, frames[i], R.styleForFrame(t, h, { yPct: 0.74 }, w)); } catch (e) { return { ok: false, why: 'draw threw on frame ' + i }; }
+        shots.push(cv.getContext('2d').getImageData(0, 0, w, h).data);
+      }
+      let diff = 0;
+      for (let i = 1; i < shots.length; i++) {
+        const a = shots[0], c = shots[i];
+        for (let k = 0; k < a.length; k += 8) {
+          if (Math.abs(a[k] - c[k]) > 10 || Math.abs(a[k + 1] - c[k + 1]) > 10 ||
+              Math.abs(a[k + 2] - c[k + 2]) > 10 || Math.abs(a[k + 3] - c[k + 3]) > 10) { diff++; }
+        }
+      }
+      return diff > 60 ? { ok: true } : { ok: false, why: 'animation frames look identical (' + diff + ' px change) — the spoken word is not emphasised' };
+    }
+
     const out = [];
     (C.TEMPLATES || []).forEach(t => {
       if (t.mogrt) return;
@@ -172,6 +202,7 @@ function resolveBrowser(pptr) {
         if (m.wantY != null && Math.abs(m.centerY - m.wantY) > 0.18)
           fails.push('caption sits at ' + (m.centerY * 100).toFixed(0) + '% but the style says ' + (m.wantY * 100).toFixed(0) + '%');
       }
+      try { const an = animates(t); if (!an.ok) fails.push(an.why); } catch (eAn) { fails.push('animation check threw: ' + eAn.message); }
       out.push({ id: t.id, name: t.name, cat: t.category, fails: fails, m: m });
     });
     return { styles: out };

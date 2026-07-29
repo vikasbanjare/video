@@ -752,7 +752,7 @@
     { id: 'pro-elevate', name: 'Elevate', category: '⭐ Premium', popularity: 91, layout: 'center', keyword: false,
       font: 'Playfair Display', fallbackFonts: ['Lora', 'Georgia', 'serif'],
       fontSize: 60, fill: '#F6F2EC', highlight: '#E8C77A', glow: '#000000', stroke: null, strokeWidth: 0, letterSpacing: 0.5,
-      uppercase: false, wordsPerCue: 4, anim: 'fade' },
+      uppercase: false, wordsPerCue: 4, anim: 'karaoke' },
     // Quintessence — elegant warm-gold serif, centered (Captions.ai "Quintessence")
     { id: 'pro-quint', name: 'Quintessence', category: '⭐ Premium', popularity: 90, layout: 'center', keyword: false,
       font: 'Playfair Display', fallbackFonts: ['Lora', 'Georgia', 'serif'],
@@ -862,19 +862,19 @@
       font: 'Archivo Black', fallbackFonts: ['Montserrat', 'Poppins', 'Arial Black'],
       fontSize: 62, fill: '#FFFFFF', fill2: '#D2D7DE', highlight: '#FFE45C', highlight2: '#EF6C0A', highlightStyle: 'color', glossy: true,
       stroke: '#2A1A06', strokeWidth: 5, glow: '#000000', glowBlur: 0.5,
-      weight: 900, uppercase: false, wordsPerLine: 3, wordsPerCue: 6, lineGap: 1.04, anim: 'pop' },
+      weight: 900, uppercase: false, wordsPerLine: 3, wordsPerCue: 6, lineGap: 1.04, build: true, anim: 'pop' },
     // Cool glossy blue keyword
     { id: 'pro-coolpop', name: 'Cool Pop', category: '⭐ Premium', popularity: 99, layout: 'center', keyword: true, wordHl: false, highlightScale: 1.5,
       font: 'Archivo Black', fallbackFonts: ['Montserrat', 'Poppins', 'Arial Black'],
       fontSize: 62, fill: '#FFFFFF', fill2: '#D2D7DE', highlight: '#BFE3FF', highlight2: '#1E63E6', highlightStyle: 'color', glossy: true,
       stroke: '#06101A', strokeWidth: 5, glow: '#000000', glowBlur: 0.5,
-      weight: 900, uppercase: false, wordsPerLine: 3, wordsPerCue: 6, lineGap: 1.04, anim: 'pop' },
+      weight: 900, uppercase: false, wordsPerLine: 3, wordsPerCue: 6, lineGap: 1.04, build: true, anim: 'pop' },
     // Clean all-white — the keyword just pops bigger with a subtle sheen + shadow
     { id: 'pro-cleanbold', name: 'Clean Bold', category: '⭐ Premium', popularity: 98, layout: 'center', keyword: true, wordHl: false, highlightScale: 1.5,
       font: 'Archivo Black', fallbackFonts: ['Montserrat', 'Poppins', 'Arial Black'],
       fontSize: 62, fill: '#FFFFFF', fill2: '#CED2D8', highlight: '#FFFFFF', highlightStyle: 'color',
       glow: '#000000', glowBlur: 0.55, stroke: null, strokeWidth: 0, boxColor: null,
-      weight: 900, uppercase: false, wordsPerLine: 3, wordsPerCue: 6, lineGap: 1.04, anim: 'pop' },
+      weight: 900, uppercase: false, wordsPerLine: 3, wordsPerCue: 6, lineGap: 1.04, build: true, anim: 'pop' },
 
     // ---- Extracted from reference video #2: an EDITORIAL/anchor caption — a big
     //      bold grotesque headline line over a smaller second line (two-tier), the
@@ -888,7 +888,7 @@
       highlightItalic: true, highlightWeight: 800, highlightGlow: '#FFFFFF', highlightGlowBlur: 0.4,
       subScale: 0.62, build: true,
       glow: '#000000', glowBlur: 0.6, stroke: null, strokeWidth: 0, boxColor: null,
-      weight: 700, uppercase: false, wordsPerLine: 3, wordsPerCue: 6, lineGap: 0.95, anim: 'pop' }
+      weight: 700, uppercase: false, wordsPerLine: 3, wordsPerCue: 6, lineGap: 0.95, build: true, anim: 'pop' }
   ];
 
   /* "Buttons" pack — caption pills recreated from the user's SVG button set
@@ -1442,7 +1442,7 @@
       "letterSpacing": 0.5,
       "uppercase": false,
       "wordsPerCue": 4,
-      "anim": "fade"
+      "anim": "karaoke"
     },
     {
       "id": "v1-beast",
@@ -2001,6 +2001,7 @@
       "wordsPerLine": 3,
       "wordsPerCue": 6,
       "lineGap": 1.04,
+      "build": true,
       "anim": "pop"
     },
     {
@@ -2035,6 +2036,7 @@
       "wordsPerLine": 3,
       "wordsPerCue": 6,
       "lineGap": 1.04,
+      "build": true,
       "anim": "pop"
     }
   ];
