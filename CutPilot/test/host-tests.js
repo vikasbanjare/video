@@ -902,6 +902,79 @@ console.log('host.jsx — CP_placeCaptionImages (the default rendered-caption pa
   assert(track[1].end.seconds > track[1].start.seconds, 'a zero-length cue still gets a visible clip');
 }
 
+// ═══ EDIT ONE WORD / RESTYLE A RANGE — surgical, never collateral ═══
+console.log('host.jsx — fixing ONE caption must not disturb its neighbours');
+{
+  const w = makeWorld({ vTracks: 1, aTracks: 1 });
+  const host = loadHost(w);
+  const base = [
+    { path: '/tmp/cap_001.png', start: 0.0, end: 1.0 },
+    { path: '/tmp/cap_002.png', start: 1.0, end: 2.0 },
+    { path: '/tmp/cap_003.png', start: 2.0, end: 3.0 },
+    { path: '/tmp/cap_004.png', start: 3.0, end: 4.0 }
+  ];
+  const first = call(host, 'CP_placeCaptionImages', { items: base });
+  const tIx = first.track;
+  const before = w.model.vTracks[tIx - 1].map(c => [c.start.seconds, c.end.seconds, c.name]);
+  assert(before.length === 4, 'four captions placed');
+  // the user fixes a word in caption #2 → re-render THAT caption only
+  const fix = call(host, 'CP_placeCaptionImages', {
+    items: [{ path: '/tmp/cap_002b.png', start: 1.0, end: 2.0 }],
+    overwriteOnTrack: tIx, exact: true
+  });
+  assert(fix.ok && fix.placed === 1, 'the single corrected caption is placed');
+  const after = w.model.vTracks[tIx - 1].map(c => [c.start.seconds, c.end.seconds, c.name]);
+  assert(after.length === 4, 'still exactly four captions — no clip was destroyed (got ' + after.length + ')');
+  assert(after[0][2] === before[0][2] && after[2][2] === before[2][2] && after[3][2] === before[3][2],
+    'the neighbouring captions are the ORIGINAL clips, untouched: ' + JSON.stringify(after.map(a => a[2])));
+  assert(after[1][2].indexOf('cap_002b') === 0, 'the fixed caption really was replaced (' + after[1][2] + ')');
+  assert(Math.abs(after[1][0] - 1.0) < 1e-6 && Math.abs(after[1][1] - 2.0) < 1e-6,
+    'the fixed caption keeps its exact slot (' + after[1][0] + '–' + after[1][1] + ')');
+}
+{
+  // RESTYLE A RANGE: only the clips inside the selection change; the rest stay
+  const w = makeWorld({ vTracks: 1, aTracks: 1 });
+  const host = loadHost(w);
+  const first = call(host, 'CP_placeCaptionImages', {
+    items: [{ path: '/tmp/cap_001.png', start: 0, end: 1 }, { path: '/tmp/cap_002.png', start: 1, end: 2 },
+            { path: '/tmp/cap_003.png', start: 2, end: 3 }, { path: '/tmp/cap_004.png', start: 3, end: 4 }]
+  });
+  const tIx = first.track;
+  call(host, 'CP_placeCaptionImages', {
+    items: [{ path: '/tmp/new_002.png', start: 1, end: 2 }, { path: '/tmp/new_003.png', start: 2, end: 3 }],
+    overwriteOnTrack: tIx, exact: true
+  });
+  const names = w.model.vTracks[tIx - 1].map(c => c.name);
+  assert(names.length === 4, 'the track still holds four captions after a range restyle');
+  assert(names[0].indexOf('cap_001') === 0 && names[3].indexOf('cap_004') === 0,
+    'captions OUTSIDE the range keep their original styling: ' + JSON.stringify(names));
+  assert(names[1].indexOf('new_002') === 0 && names[2].indexOf('new_003') === 0,
+    'captions INSIDE the range were restyled: ' + JSON.stringify(names));
+}
+
+{
+  // WORD-BY-WORD density: 12 captions packed 0.15s apart (fast Hindi speech at
+  // one word per caption). Fixing one in the middle must still not eat its
+  // neighbours — the tightest case the overwrite logic ever sees.
+  const w = makeWorld({ vTracks: 1, aTracks: 1 });
+  const host = loadHost(w);
+  const dense = [];
+  for (let i = 0; i < 12; i++) dense.push({ path: '/tmp/w_' + i + '.png', start: i * 0.15, end: i * 0.15 + 0.15 });
+  const r0 = call(host, 'CP_placeCaptionImages', { items: dense });
+  const tIx = r0.track;
+  assert(w.model.vTracks[tIx - 1].length === 12, 'all 12 tightly packed captions placed (got ' + w.model.vTracks[tIx - 1].length + ')');
+  const midName = '/tmp/w_6_fixed.png';
+  call(host, 'CP_placeCaptionImages', {
+    items: [{ path: midName, start: 6 * 0.15, end: 6 * 0.15 + 0.15 }],
+    overwriteOnTrack: tIx, exact: true
+  });
+  const names = w.model.vTracks[tIx - 1].map(c => c.name);
+  assert(names.length === 12, 'still 12 captions after fixing one in the middle (got ' + names.length + ')');
+  assert(names[5] === 'w_5.png' && names[7] === 'w_7.png',
+    'the words either side survive a 0.15s-tight fix: ' + names[5] + ' / ' + names[7]);
+  assert(names[6].indexOf('w_6_fixed') === 0, 'the middle word was the one replaced');
+}
+
 // ═══ THE OVERLAY PATH (long videos now route here automatically) ═══
 console.log('host.jsx — CP_placeOverlay (one caption clip for a whole video)');
 {
