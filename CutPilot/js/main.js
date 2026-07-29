@@ -5571,7 +5571,7 @@
     try {
       var pj = state.lastCaptionJob;
       var sameSeqM = !!(pj && pj.seq && state.env && pj.seq === state.env.sequenceName);
-      if (pj && pj.mode !== 'editable' && pj.track && sameSeqM) reuse = pj.track;
+      if (pj && pj.mode !== 'editable' && pj.mode !== 'overlay' && pj.track && sameSeqM) reuse = pj.track;
     } catch (eRj) {}
     return runCaptionPipeline(mCues, reuse ? { replaceTrack: reuse } : {});
   });
@@ -5670,7 +5670,11 @@
     if ($('btn-cap-segment')) $('btn-cap-segment').classList.toggle('hidden', !on);
     var hint = $('cap-restyle-hint');
     if (hint) {
-      if (editable) {
+      if (job && job.mode === 'overlay') {
+        hint.innerHTML = '✅ Your captions are ONE overlay clip (chosen automatically because this video is long — thousands of separate caption clips would bog your project down). ' +
+          'They stay editable from Pulse: <b>✏️ Edit words</b> re-renders them, and picking another style + <b>Add captions</b> replaces the overlay.';
+        hint.classList.remove('hidden');
+      } else if (editable) {
         hint.innerHTML = 'Editable captions are on your timeline — click any caption clip and edit its <b>text or styling</b> in Window → Essential Graphics. Running “Add captions” again replaces this set.';
         hint.classList.remove('hidden');
       } else {
@@ -6086,11 +6090,24 @@
         if (code !== 0 || !ok) { return fallbackBurnedIn('render ' + code); }
         capProgress('Placing the caption overlay…');
         var placeArgs = { path: outPath, startSec: 0 };
+        // REPLACE the previous overlay instead of stacking a new one on every
+        // run (long videos route here automatically now, so re-running after a
+        // wording/style change would otherwise pile up overlay tracks).
+        var prevOv = state.lastCaptionJob;
+        var sameSeqOv = !!(prevOv && prevOv.seq && state.env && prevOv.seq === state.env.sequenceName);
         if (opts.replaceTrack) placeArgs.replaceTrack = opts.replaceTrack;
+        else if (prevOv && prevOv.mode === 'overlay' && prevOv.track && sameSeqOv) placeArgs.replaceTrack = prevOv.track;
         CPBridge.callHost('CP_placeOverlay', placeArgs).then(function (r) {
           setCaptionBusy(false); capProgress(null);
           state.lastLibassJob = { cues: cues, track: r.track };
-          toast('🎉 Reliable captions added on V' + r.track + ' — word-by-word, baked in. ⌘Z/Ctrl+Z undoes it.');
+          // Record it as the current caption job too: since long videos now
+          // route here automatically, the caption tools (edit words, restyle,
+          // regenerate) must stay available instead of silently disappearing.
+          state.lastCaptionJob = { cues: cues, track: r.track, mode: 'overlay',
+                                   seq: (state.env && state.env.sequenceName) || '' };
+          saveLastCaptionJob();
+          reflectCaptionsPlaced();
+          toast('🎉 Captions added on V' + r.track + ' as ONE overlay clip — word-by-word animation baked in. Edit words or restyle any time from Pulse; ⌘Z undoes it.');
         }).catch(function (e) {
           // SAFETY NET: if placing the single overlay clip ever fails in this
           // Premiere, fall back to the burned-in PNG path the user has already used

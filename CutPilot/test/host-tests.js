@@ -902,6 +902,26 @@ console.log('host.jsx — CP_placeCaptionImages (the default rendered-caption pa
   assert(track[1].end.seconds > track[1].start.seconds, 'a zero-length cue still gets a visible clip');
 }
 
+// ═══ THE OVERLAY PATH (long videos now route here automatically) ═══
+console.log('host.jsx — CP_placeOverlay (one caption clip for a whole video)');
+{
+  const w = makeWorld({ vTracks: 1, aTracks: 1 });
+  w.model.addClip('vTracks', 0, 0, 600, { name: 'Podcast.mp4' });
+  const host = loadHost(w);
+  const r = call(host, 'CP_placeOverlay', { path: '/tmp/captions.mov', startSec: 0 });
+  assert(r.ok, 'the overlay places: ' + JSON.stringify(r).slice(0, 80));
+  assert(w.model.vTracks[0].length === 1 && w.model.vTracks[0][0].name === 'Podcast.mp4',
+    'the footage track is untouched');
+  const trk = w.model.vTracks[r.track - 1];
+  assert(trk.length === 1, 'ONE clip carries the whole video\'s captions (got ' + trk.length + ')');
+  // re-running must REPLACE that overlay, never stack a second one
+  const again = call(host, 'CP_placeOverlay', { path: '/tmp/captions2.mov', startSec: 0, replaceTrack: r.track });
+  assert(again.ok && again.track === r.track, 're-render reuses the same overlay track');
+  assert(w.model.vTracks[again.track - 1].length === 1,
+    'the previous overlay was replaced, not stacked (got ' + w.model.vTracks[again.track - 1].length + ')');
+  assert(w.model.vTracks.length === 2, 'no extra video track per re-render (got ' + w.model.vTracks.length + ')');
+}
+
 // ═══ TRUE previews: Premiere renders each style's card frame itself ═══
 console.log('host.jsx — CP_renderStylePreviews (cards show the ENGINE\'s own render)');
 {
