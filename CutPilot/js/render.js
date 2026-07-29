@@ -308,18 +308,37 @@
           lineR.width = lw; lineR.height = hMax; lineR.scale = sub;
         }
       }
-      return { meta: m, lines: ls, eff: eff, hlSize: Math.round(eff * hlScale), spaceW: sp };
+      var widest = 0;
+      for (var lw2 = 0; lw2 < ls.length; lw2++) if (ls[lw2].width > widest) widest = ls[lw2].width;
+      return { meta: m, lines: ls, eff: eff, hlSize: Math.round(eff * hlScale), spaceW: sp, widest: widest };
     }
 
     // Enforce the line limit (1 = single, 2 = double) by shrinking the font
     // until it fits — this kills the ugly "one stray word on a 2nd line" look.
     var lay = layout(1);
-    if (style.maxLines) {
-      var fit = 1, guard = 0;
-      while (lay.lines.length > style.maxLines && fit > 0.5 && guard < 16) {
-        fit *= 0.93; guard++;
-        lay = layout(fit);
+    // Shrink until the caption fits BOTH ways:
+    //  · within the allowed number of lines (kills the stray-word second line)
+    //  · within the frame's width — a single unbreakable word (a long URL, a
+    //    compound German/medical word) forms its own line that wrapping cannot
+    //    split, and used to run straight off both edges of the video.
+    var fit = 1, guard = 0;
+    while (((style.maxLines && lay.lines.length > style.maxLines) || lay.widest > maxW) &&
+           fit > 0.34 && guard < 30) {
+      fit *= 0.93; guard++;
+      lay = layout(fit);
+    }
+    // Still wider than the frame at the smallest sane size (an extreme word):
+    // break it across lines rather than let it bleed off screen.
+    if (lay.widest > maxW) {
+      var broken = [], bi;
+      for (bi = 0; bi < words.length; bi++) {
+        var wOne = words[bi];
+        setFont(lay.eff);
+        if (ctx.measureText(wOne).width <= maxW || wOne.length < 6) { broken.push(wOne); continue; }
+        var per = Math.max(3, Math.floor(wOne.length * maxW / ctx.measureText(wOne).width) - 1);
+        for (var cpos = 0; cpos < wOne.length; cpos += per) broken.push(wOne.substr(cpos, per));
       }
+      if (broken.length !== words.length) { words = broken; lay = layout(fit); }
     }
     base = lay.eff;
     var meta = lay.meta, lines = lay.lines, hlSize = lay.hlSize, spaceW = lay.spaceW;

@@ -61,6 +61,10 @@ function resolveBrowser(pptr) {
     if (!D || !R || !C) return { fatal: 'panel globals missing' };
     const W = 1080, H = 1920;
     const SAMPLE = 'Make every word count';
+    // text that CANNOT be wrapped between words — a long URL and a monster
+    // compound word. These used to run off both edges of the frame because the
+    // shrink loop only counted lines, never measured width.
+    const UNBREAKABLE = 'visit pulse.aifloh.com/get-started Pneumonoultramicroscopicsilicovolcanoconiosis';
 
     // Render one style to a TRUE-SIZE transparent canvas (drawFrame clears the
     // canvas, so the backdrop must be composited AFTER), then measure what a
@@ -203,6 +207,17 @@ function resolveBrowser(pptr) {
           fails.push('caption sits at ' + (m.centerY * 100).toFixed(0) + '% but the style says ' + (m.wantY * 100).toFixed(0) + '%');
       }
       try { const an = animates(t); if (!an.ok) fails.push(an.why); } catch (eAn) { fails.push('animation check threw: ' + eAn.message); }
+      // unbreakable text must still fit inside the frame
+      try {
+        const cv2 = document.createElement('canvas'); cv2.width = W; cv2.height = H;
+        R.drawFrame(cv2, { words: UNBREAKABLE.split(' '), active: 0 }, R.styleForFrame(t, H, { yPct: 0.74 }, W));
+        const d2 = cv2.getContext('2d').getImageData(0, 0, W, H).data;
+        let mnX = W, mxX = -1;
+        for (let y = 0; y < H; y += 3) for (let x = 0; x < W; x += 3) {
+          if (d2[(y * W + x) * 4 + 3] > 24) { if (x < mnX) mnX = x; if (x > mxX) mxX = x; }
+        }
+        if (mxX > 0 && (mnX < 6 || mxX > W - 6)) fails.push('a long URL / very long word runs off the frame edge (' + mnX + '–' + mxX + 'px)');
+      } catch (eU) { fails.push('unbreakable-text check threw: ' + eU.message); }
       out.push({ id: t.id, name: t.name, cat: t.category, fails: fails, m: m });
     });
     return { styles: out };
