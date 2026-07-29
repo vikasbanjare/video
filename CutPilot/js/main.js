@@ -5421,6 +5421,7 @@
   }
 
   function textCues(cues, words, caseMode) {
+    if (!cues || !cues.length) return [];   // no transcript → no captions, never a crash
     var mode = (caseMode === true) ? 'upper' : (caseMode === false ? 'as-spoken' : (caseMode || 'as-spoken'));
     // Keep whole sentences together. A caption wraps to ~2 lines, so the width
     // budget is per-CAPTION (2 lines) — NOT per-line. That's why a short sentence
