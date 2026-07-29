@@ -1585,6 +1585,37 @@ console.log('bundled engine expressions (author-original, never our rewrite)');
   }
 }
 
+// ---- word-highlight sync + render-frame scale -----------------------------
+console.log('word highlight rides the SPOKEN word (and the frame count stays sane)');
+{
+  const words = [
+    { start: 0.00, end: 0.30, text: 'money' }, { start: 0.30, end: 0.75, text: 'grows' },
+    { start: 0.75, end: 1.10, text: 'when' }, { start: 1.10, end: 1.60, text: 'you' },
+    { start: 1.60, end: 2.10, text: 'invest' }, { start: 2.10, end: 2.60, text: 'early' }
+  ];
+  const cues = [{ start: 0, end: 2.6, text: words.map(w => w.text).join(' ') }];
+  const frames = CPCaptions.buildCaptionFrames(cues, {
+    anim: 'karaoke', wordsPerCue: 3, keyword: { on: false, mode: 'auto' }, wordCues: words
+  });
+  let wrong = 0, cover = 0;
+  frames.forEach(f => {
+    cover += (f.end - f.start);
+    const mid = (f.start + f.end) / 2;
+    const spoken = words.find(w => mid >= w.start - 1e-9 && mid < w.end + 1e-9) || words[words.length - 1];
+    if (String((f.words || [])[f.active]) !== String(spoken.text)) wrong++;
+  });
+  assert(wrong === 0, 'every frame highlights the word actually being spoken (' + wrong + ' mismatched)');
+  assert(Math.abs(cover - 2.6) < 0.08, 'frames cover the whole cue with no gap (' + cover.toFixed(2) + 's of 2.60s)');
+
+  // SCALE: word-by-word rendering writes one image per word. Measure what a
+  // real video costs so the panel can switch to a single overlay clip instead
+  // of dumping thousands of files on the timeline.
+  const long = [];
+  for (let i = 0; i < 215; i++) long.push({ start: i * 2.8, end: i * 2.8 + 2.6, text: 'this is caption line number ' + i + ' here' });
+  const lf = CPCaptions.buildCaptionFrames(long, { anim: 'karaoke', wordsPerCue: 3, keyword: { on: false, mode: 'auto' } });
+  assert(lf.length > 600, 'a 10-minute video really does exceed the 600-frame switch point (' + lf.length + ') — the auto-overlay guard is not theoretical');
+}
+
 // ---- caption timing floor (unreadable flashes / overlapping captions) -----
 console.log('caption timing (no flashes, no two captions at once)');
 {

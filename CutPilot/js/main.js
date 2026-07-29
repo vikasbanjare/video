@@ -5547,6 +5547,26 @@
     var mCues;
     try { mCues = readSelectedTranscript(); } catch (eM) { return toast(eM.message, true); }
     if (!mCues || !mCues.length) return toast('No caption lines to add.', true);
+    // SCALE GUARD (measured, not guessed): word-by-word captions render ONE
+    // image per word — a 10-minute video is ~1,500 files and 1,500 timeline
+    // clips, a 60-minute podcast ~9,000 (≈1.6 GB). That is unusable. Past a
+    // threshold, switch to the single transparent OVERLAY render: one file,
+    // one clip, identical look and word animation, and it falls back to the
+    // per-image path by itself if this machine can't do it.
+    try {
+      var lastCue = mCues[mCues.length - 1];
+      var spanMin = ((lastCue && lastCue.end) || 0) / 60;
+      var estFrames = 0;
+      try {
+        var tcEst = textCues(mCues, parseInt($('c-words').value, 10) || 0, state.mogrtCase || 'as-spoken');
+        estFrames = tcEst.reduce(function (n, c) { return n + Math.max(1, String(c.text || '').split(/\s+/).length); }, 0);
+      } catch (eEst) { estFrames = mCues.length * 6; }
+      if (estFrames > 600 && resolveFfmpeg() && typeof CPAss !== 'undefined') {
+        diag('captions', 'auto overlay: ' + estFrames + ' word-frames over ' + spanMin.toFixed(1) + ' min — one overlay clip instead of ' + estFrames + ' images');
+        toast('This video needs ~' + estFrames + ' caption frames — Pulse is rendering ONE caption overlay clip instead of ' + estFrames + ' images (same look, far lighter on your project).');
+        return runLibassCaptions(mCues, {});
+      }
+    } catch (eScale) {}
     var reuse = null;
     try {
       var pj = state.lastCaptionJob;
