@@ -5441,6 +5441,9 @@
     // default only broke on scene-length silences — "captions don't follow
     // when someone takes a pause"). Breaths (~0.2–0.4s) still never split.
     var out = CPCaptions.regroupWords(src, perCap, { maxChars: maxChars, sentenceBreak: true, hardGap: 0.7 });
+    // no caption may flash by too fast to read (0.08s cues are common with
+    // one-word styles on fast speech) — grow into silence, merge the rest
+    out = CPCaptions.enforceMinDuration(out);
     if (mode !== 'as-spoken') out = out.map(function (c) { return { start: c.start, end: c.end, text: applyCase(c.text, mode) }; });
     return applySmartEmphasis(out);
   }

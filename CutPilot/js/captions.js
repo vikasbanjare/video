@@ -397,6 +397,65 @@
   }
 
   /*
+   * Give every caption enough time on screen to be READ.
+   * ASR word timings routinely produce 0.08–0.2s cues (fast speech, one word
+   * per caption) — on a 25fps timeline that is a 2-frame flash nobody can
+   * read, and it is what makes word-by-word styles feel broken.
+   * Rules, in order, and never destructive:
+   *   1. extend a short cue into the SILENCE that follows it (never over the
+   *      next caption, so nothing desyncs from the voice),
+   *   2. if it is still under hardMin, merge it into the previous caption
+   *      (their words simply share one card),
+   *   3. leave everything else untouched.
+   * Pure + tested.
+   */
+  function enforceMinDuration(cues, opts) {
+    opts = opts || {};
+    var min = (opts.min != null) ? opts.min : 0.32;        // comfortable read floor
+    var hardMin = (opts.hardMin != null) ? opts.hardMin : 0.12;   // below this: merge
+    if (!cues || !cues.length) return cues || [];
+    var out = [], i;
+    for (i = 0; i < cues.length; i++) out.push({ start: cues[i].start, end: cues[i].end, text: cues[i].text });
+    // sort first — overlapping SOURCE cues can regroup out of order, and every
+    // rule below assumes neighbours really are neighbours in time
+    out.sort(function (a, b) { return (a.start - b.start) || (a.end - b.end); });
+    // 0. NO TWO CAPTIONS ON SCREEN AT ONCE: ASR (and hand-edited SRTs) emit
+    //    overlapping cues; left alone they stack two captions over each other.
+    for (i = 0; i + 1 < out.length; i++) {
+      if (out[i].end > out[i + 1].start) out[i].end = out[i + 1].start;
+      if (out[i].end < out[i].start) out[i].end = out[i].start;
+    }
+    // 1. grow into following silence
+    for (i = 0; i < out.length; i++) {
+      var dur = out[i].end - out[i].start;
+      if (dur >= min) continue;
+      var limit = (i + 1 < out.length) ? out[i + 1].start : (out[i].end + min);
+      var want = out[i].start + min;
+      out[i].end = Math.min(want, limit);
+      if (out[i].end < out[i].start) out[i].end = out[i].start;
+    }
+    // 2. merge what is still too short into its neighbour
+    var merged = [];
+    for (i = 0; i < out.length; i++) {
+      var c = out[i], d = c.end - c.start;
+      if (d < hardMin && merged.length) {
+        var prev = merged[merged.length - 1];
+        prev.end = Math.max(prev.end, c.end);
+        prev.text = (String(prev.text || '') + ' ' + String(c.text || '')).replace(/\s+/g, ' ').replace(/^ | $/g, '');
+        continue;
+      }
+      if (d < hardMin && !merged.length && i + 1 < out.length) {
+        // first caption too short: hand its words to the next one
+        out[i + 1].start = c.start;
+        out[i + 1].text = (String(c.text || '') + ' ' + String(out[i + 1].text || '')).replace(/\s+/g, ' ').replace(/^ | $/g, '');
+        continue;
+      }
+      merged.push(c);
+    }
+    return merged;
+  }
+
+  /*
    * Style presets — the catalog the panel UI shows. Each preset carries:
    *  - native:  recommended settings for Premiere's built-in caption styling
    *  - mogrt:   parameter hints applied when inserting a .mogrt per cue
@@ -2826,6 +2885,7 @@
     psFontName: psFontName,
     psIsBoldFace: psIsBoldFace,
     dedupeRepeatedCues: dedupeRepeatedCues,
+    enforceMinDuration: enforceMinDuration,
     mergeStyle: mergeStyle,
     ANIMATIONS: ANIMATIONS,
     getAnimation: getAnimation,

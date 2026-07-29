@@ -1096,7 +1096,10 @@ footer { border-top: 1px solid var(--line); background: var(--card); max-height:
 /* ═══ ONE-LINE NAV — "push all the navigation tabs into one line, left to
    right": each tab becomes a horizontal icon+label chip, the row never wraps,
    and overflow scrolls sideways. Saves ~60px of vertical space at any width. */
-.tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 8px; }
+/* WRAP, don't hide: with nowrap the last tabs (Safe Zone, Settings) sat
+   beyond the panel edge at 300–420px — invisible unless you knew to drag
+   the strip sideways. Wrapping keeps every tab reachable at any width. */
+.tabs { flex-wrap: wrap; overflow-x: visible; row-gap: 6px; padding-bottom: 8px; }
 .tabs::-webkit-scrollbar { display: none; }
 .tab { flex: 0 0 auto; flex-direction: row; align-items: center; gap: 6px; padding: 7px 11px; white-space: nowrap; }
 .tab span { font-size: 14px; }

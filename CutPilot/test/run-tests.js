@@ -1585,6 +1585,32 @@ console.log('bundled engine expressions (author-original, never our rewrite)');
   }
 }
 
+// ---- caption timing floor (unreadable flashes / overlapping captions) -----
+console.log('caption timing (no flashes, no two captions at once)');
+{
+  const E = CPCaptions.enforceMinDuration;
+  // normal speech is left exactly as it was
+  const norm = [{ start: 0, end: 2, text: 'one two three' }, { start: 2, end: 4, text: 'four five six' }];
+  assert(JSON.stringify(E(norm)) === JSON.stringify(norm), 'comfortable captions are never touched');
+  // a 0.1s cue grows into the silence after it (voice sync kept: start unchanged)
+  const grow = E([{ start: 0, end: 0.1, text: 'hi' }, { start: 3, end: 4, text: 'later' }]);
+  assert(grow[0].start === 0 && Math.abs(grow[0].end - 0.32) < 1e-9,
+    'a 0.1s flash grows into the following silence (0 → ' + grow[0].end + ')');
+  // …but never past the next caption
+  const cap = E([{ start: 0, end: 0.1, text: 'hi' }, { start: 0.2, end: 1, text: 'next' }]);
+  assert(cap[0].end <= 0.2 + 1e-9, 'growth stops at the next caption (' + cap[0].end + ')');
+  // a sub-0.12s blip with no room merges into its neighbour instead of flashing
+  const merged = E([{ start: 0, end: 1, text: 'hello' }, { start: 1, end: 1.05, text: 'x' }, { start: 1.05, end: 2, text: 'world' }]);
+  assert(merged.length === 2 && /hello/.test(merged[0].text),
+    'an unfixable blip merges into the previous caption: ' + JSON.stringify(merged.map(c => c.text)));
+  // OVERLAPPING cues never put two captions on screen at once
+  const ov = E([{ start: 0, end: 3, text: 'first' }, { start: 2, end: 5, text: 'second' }]);
+  assert(ov[0].end <= ov[1].start + 1e-9, 'overlap clamped: ' + ov[0].end + ' <= ' + ov[1].start);
+  // out-of-order input is sorted before any of the above is applied
+  const unsorted = E([{ start: 5, end: 6, text: 'late' }, { start: 0, end: 1, text: 'early' }]);
+  assert(unsorted[0].text === 'early' && unsorted[1].text === 'late', 'cues are time-ordered');
+}
+
 // ---- script alignment ("fix all the script") ------------------------------
 console.log('script alignment (your script\'s words + the transcript\'s timing)');
 {
