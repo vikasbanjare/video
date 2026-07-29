@@ -1413,6 +1413,17 @@
       if (this.dataset.tab === 'safezone' && window.CPSafezone) { try { CPSafezone.onShow(); } catch (eSZ) {} }
       // Re-check for a transcript when returning to Captions (e.g. after
       // exporting one), and refresh the preview now the frame has a size.
+      // OPENING CAPTIONS LANDS ON THE ACTION, not on a wall of styles: the
+      // primary "Add captions" button lives in the style editor, so a user who
+      // opened this tab saw only the gallery and no way to proceed until they
+      // happened to click a card. Land on the editor (with "≡ Browse styles"
+      // one tap away) whenever a style is already chosen.
+      if (this.dataset.tab === 'captions') {
+        try {
+          var vt = $('view-templates');
+          if (vt && !vt.classList.contains('hidden') && state.presetId) showView('style');
+        } catch (eVw) {}
+      }
       if (this.dataset.tab === 'captions' && CPBridge.isCEP()) {
         // refresh the active-sequence info (it may have been opened/switched
         // after boot) so Add captions never wrongly says "Open a sequence first"

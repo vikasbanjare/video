@@ -632,6 +632,25 @@ function fluxProps() {
     ok('🧪 self-test report card: clean/warned/failing machines each get the right plain-language verdict');
   else bad('self-test report wrong: ' + JSON.stringify(st));
 
+  // ---- O. THE MAIN ACTION IS REACHABLE: opening the Captions tab must show
+  // "Add captions", not a wall of style cards with no way to proceed --------
+  const act = await page.evaluate(() => {
+    const tab = document.querySelector('.tab[data-tab="captions"]');
+    if (!tab) return { fatal: 'no Captions tab' };
+    tab.click();
+    const b = document.getElementById('btn-magic');
+    if (!b) return { fatal: 'no Add-captions button in the DOM' };
+    const r = b.getBoundingClientRect();
+    const browse = document.getElementById('btn-browse-styles');
+    return { visible: b.offsetParent !== null && r.width > 40 && r.height > 20,
+             label: (b.textContent || '').trim().slice(0, 40),
+             browseReachable: !!(browse && browse.offsetParent !== null) };
+  });
+  if (act.fatal) bad('primary action: ' + act.fatal);
+  else if (act.visible && act.browseReachable)
+    ok('opening Captions shows the primary action ("' + act.label + '") with ≡ Browse styles one tap away');
+  else bad('primary action not reachable on the Captions tab: ' + JSON.stringify(act));
+
   await browser.close();
   console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');
   process.exit(failed ? 1 : 0);
