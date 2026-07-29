@@ -33,6 +33,7 @@ function makeWorld(opts) {
   opts = opts || {};
   const fps = opts.fps || 25;
   const model = {
+    bins: [], imported: [],
     fps,
     w: opts.w || 1920, h: opts.h || 1080,
     vTracks: [], aTracks: [],
@@ -116,8 +117,36 @@ function makeWorld(opts) {
     };
   }
 
+  // Real track surface: clips are the model's own arrays, and overwriteClip
+  // behaves like Premiere's (drops the item at a time, replacing overlap) so the
+  // DEFAULT caption path (rendered images) can be tested end to end.
   const domTracks = (arr) => {
-    const list = arr.map(() => ({ clips: { get numItems() { return 0; } } }));
+    const list = arr.map((items) => {
+      const clips = new Proxy({}, {
+        get(t, k) {
+          if (k === 'numItems') return items.length;
+          const n = Number(k);
+          return Number.isInteger(n) ? items[n] : undefined;
+        },
+        has(t, k) { return k === 'numItems' || Number.isInteger(Number(k)); }
+      });
+      return {
+        clips: clips,
+        overwriteClip(pItem, startSec) {
+          const st = Number(startSec) || 0;
+          const durIn = (pItem && pItem._in != null && pItem._out != null)
+            ? (Number(pItem._out) - Number(pItem._in)) / TICKS : 5;   // stills default long
+          const en = st + Math.max(0.01, durIn);
+          for (let i = items.length - 1; i >= 0; i--) {               // overwrite what it lands on
+            if (items[i].start.seconds < en - 1e-9 && items[i].end.seconds > st + 1e-9) items.splice(i, 1);
+          }
+          const clip = mkClip(st, en, { name: (pItem && pItem.name) || 'clip' });
+          items.push(clip);
+          items.sort((a, b) => a.start.seconds - b.start.seconds);
+          return clip;
+        }
+      };
+    });
     Object.defineProperty(list, 'numTracks', { get() { return arr.length; } });
     return list;
   };
@@ -323,7 +352,39 @@ function makeWorld(opts) {
     Date,
     app: {
       enableQE() {},
-      project: { activeSequence: seq, rootItem: null }
+      project: {
+        activeSequence: seq,
+        // enough of the project model to exercise CP_placeCaptionImages: a bin
+        // that remembers imported stills, and importFiles that fills it.
+        rootItem: {
+          createBin(name) {
+            const kids = [];
+            const bin = { name: name, children: { get numItems() { return kids.length; } }, _kids: kids };
+            const proxy = new Proxy(bin.children, {
+              get(t, k) {
+                if (k === 'numItems') return kids.length;
+                const n = Number(k);
+                return Number.isInteger(n) ? kids[n] : t[k];
+              }
+            });
+            bin.children = proxy;
+            model.bins.push(bin);
+            return bin;
+          }
+        },
+        importFiles(paths, suppress, bin, asNumbered) {
+          paths.forEach(pth => {
+            const nm = String(pth).split(/[\\/]/).pop();
+            bin._kids.push({
+              name: nm, _in: null, _out: null,
+              setInPoint(t) { this._in = t; }, setOutPoint(t) { this._out = t; },
+              clearInPoint() { this._in = null; }, clearOutPoint() { this._out = null; }
+            });
+          });
+          model.imported.push(paths.length);
+          return true;
+        }
+      }
     },
     qe: {
       project: {
@@ -777,6 +838,68 @@ console.log('host.jsx — as-spoken fallback (sweep failed → text forced visib
   const f2 = w2.model.vTracks[w2.model.vTracks.length - 1][0]._flux;
   assert(r2.ok && r2.swept === 1 && f2.tOpacity.v === 0 && r2.spokenFallbacks === 0,
     'sweep engaged → reveal stays (opacity 0, no fallback)');
+}
+
+// ═══ THE DEFAULT CAPTION PATH: rendered caption images on the timeline ═══
+// CP_placeCaptionImages had ZERO coverage while being the path every caption
+// now takes. These pin the behaviour users actually feel: right count, right
+// times, no caption lingering over the next one, no stacking on regenerate.
+console.log('host.jsx — CP_placeCaptionImages (the default rendered-caption path)');
+{
+  const w = makeWorld({ vTracks: 1, aTracks: 1 });
+  w.model.addClip('vTracks', 0, 0, 60, { name: 'A-roll.mp4' });
+  const host = loadHost(w);
+  const items = [
+    { path: '/tmp/cap_001.png', start: 0.5, end: 1.5 },
+    { path: '/tmp/cap_002.png', start: 1.5, end: 2.2 },
+    { path: '/tmp/cap_003.png', start: 2.2, end: 4.0 }
+  ];
+  const r = call(host, 'CP_placeCaptionImages', { items: items });
+  assert(r.ok && r.placed === 3, 'all three captions are placed: ' + JSON.stringify(r).slice(0, 90));
+  const track = w.model.vTracks[w.model.vTracks.length - 1];
+  assert(track.length === 3, 'one clip per caption on the caption track (got ' + track.length + ')');
+  assert(w.model.vTracks[0].length === 1 && w.model.vTracks[0][0].name === 'A-roll.mp4',
+    'the footage track is untouched — captions go to a FRESH top track');
+  const spans = track.map(c => [c.start.seconds, c.end.seconds]);
+  assert(Math.abs(spans[0][0] - 0.5) < 1e-6 && Math.abs(spans[2][0] - 2.2) < 1e-6,
+    'each caption starts exactly on its cue: ' + JSON.stringify(spans));
+  for (let i = 0; i + 1 < spans.length; i++) {
+    assert(spans[i][1] <= spans[i + 1][0] + 1e-6,
+      'caption ' + i + ' never lingers over the next one (' + spans[i][1] + ' <= ' + spans[i + 1][0] + ')');
+  }
+  assert(Math.abs(spans[2][1] - 4.0) < 1e-6, 'the last caption honours its cue end (' + spans[2][1] + ')');
+}
+{
+  // REGENERATE must replace the previous set, never stack a second one
+  const w = makeWorld({ vTracks: 1, aTracks: 1 });
+  w.model.addClip('vTracks', 0, 0, 60, { name: 'A-roll.mp4' });
+  const host = loadHost(w);
+  const first = call(host, 'CP_placeCaptionImages', {
+    items: [{ path: '/tmp/cap_001.png', start: 0, end: 1 }, { path: '/tmp/cap_002.png', start: 1, end: 2 }]
+  });
+  const tIx = first.track;
+  const again = call(host, 'CP_placeCaptionImages', {
+    items: [{ path: '/tmp/cap_101.png', start: 0, end: 1 }, { path: '/tmp/cap_102.png', start: 1, end: 2 }],
+    replaceTrack: tIx
+  });
+  assert(again.ok && again.track === tIx, 'regenerate reuses the SAME caption track');
+  assert(w.model.vTracks.length === 2, 'no extra video track is created on regenerate (got ' + w.model.vTracks.length + ')');
+  const trk = w.model.vTracks[tIx - 1];
+  assert(trk.length === 2, 'the old captions were replaced, not stacked (got ' + trk.length + ' clips)');
+}
+{
+  // a caption whose cue END overruns the next cue is clamped, and a zero-length
+  // cue still gets a visible frame instead of vanishing
+  const w = makeWorld({ vTracks: 1, aTracks: 1 });
+  const host = loadHost(w);
+  const r = call(host, 'CP_placeCaptionImages', {
+    items: [{ path: '/tmp/cap_001.png', start: 0, end: 9 },     // overruns the next
+            { path: '/tmp/cap_002.png', start: 1, end: 1 }]      // zero length
+  });
+  const track = w.model.vTracks[w.model.vTracks.length - 1];
+  assert(r.ok && r.placed === 2, 'both captions placed');
+  assert(track[0].end.seconds <= 1 + 1e-6, 'an overrunning caption is clamped to the next one (' + track[0].end.seconds + ')');
+  assert(track[1].end.seconds > track[1].start.seconds, 'a zero-length cue still gets a visible clip');
 }
 
 // ═══ TRUE previews: Premiere renders each style's card frame itself ═══
