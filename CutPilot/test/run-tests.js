@@ -119,6 +119,17 @@ console.log('captions.js');
   assert(CPCaptions.devanagariToLatin('hello दोस्तों') === 'hello doston', 'romanize keeps English, romanizes Hindi');
   assert(CPCaptions.devanagariToLatin('आज') === 'aaj', 'word-final schwa dropped (aaj)');
   assert(CPCaptions.devanagariToLatin('plain english') === 'plain english', 'romanize leaves pure English untouched');
+  // Nukta consonants (ज़ ड़ फ़ क़ …) — everyday Hindi. Both Unicode encodings must
+  // romanize identically; before the nukta lookahead the raw Devanagari leaked
+  // into the caption ("रोज़" → "roज़"), which renders as tofu in a Latin font.
+  assert(CPCaptions.devanagariToLatin('ज़्यादा') === 'zyaadaa', 'nukta zyaadaa (decomposed)');
+  assert(CPCaptions.devanagariToLatin('ज़्यादा') === 'zyaadaa', 'nukta zyaadaa (precomposed)');
+  assert(CPCaptions.devanagariToLatin('रोज़') === 'roz', 'nukta roz (decomposed)');
+  assert(CPCaptions.devanagariToLatin('रोज़') === 'roz', 'nukta roz (precomposed)');
+  assert(CPCaptions.devanagariToLatin('बड़ा') === 'baraa', 'nukta baraa');
+  assert(CPCaptions.devanagariToLatin('फ़िल्म') === 'film', 'nukta film');
+  assert(!/[ऀ-ॿ]/.test(CPCaptions.devanagariToLatin('ये video रोज़ देखो')),
+    'no Devanagari survives romanization of mixed Hinglish');
 
   const words = CPCaptions.explodeWords([cues[0]], { wordsPerCue: 1, uppercase: true });
   assert(words.length === 4, 'explodes into 4 word cues');
