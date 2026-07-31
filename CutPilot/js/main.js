@@ -9369,8 +9369,25 @@
     var w = $('mc-center-wrap2'); if (w) w.style.display = ((state.mcMap || []).indexOf(-1) >= 0) ? '' : 'none';
   }
 
-  /* AutoPod-style setup: one row per camera — name the speaker and pick the mic
-     that's on them. "When this mic is talking, show this camera." */
+  /* Put a camera into "speaker" or "centre / wide" mode. A centre camera holds
+     no mic (map entry -1), which is the value the planner reads as "this is the
+     wide" — so it is never a candidate for "who is talking" and can't steal a
+     shot from the person actually speaking. */
+  function mcApplyRole(angle, roleVal, micSel) {
+    state.mcRoles[angle] = roleVal;
+    if (roleVal === 'center') {
+      state.mcMap[angle] = -1;
+      if (micSel) { micSel.disabled = true; micSel.style.opacity = '0.4'; }
+    } else {
+      if (micSel) { micSel.disabled = false; micSel.style.opacity = ''; }
+      if (micSel) state.mcMap[angle] = parseInt(micSel.value, 10);
+    }
+    syncCenterCtrl();
+  }
+
+  /* AutoPod-style setup: one row per camera — name the speaker, say what the
+     camera is for, and pick the mic that's on them. "When this mic is talking,
+     show this camera." */
   function renderMcMap() {
     ensureAudioTracks().then(function (tracks) {
       var n = parseInt($('mc-angles').value, 10) || 2;
@@ -9378,6 +9395,7 @@
       box.innerHTML = '';
       state.mcMap = state.mcMap || [];
       state.mcSpeakers = state.mcSpeakers || [];
+      state.mcRoles = state.mcRoles || [];
       for (var i = 0; i < n; i++) {
         var row = document.createElement('div');
         row.className = 'map-row';
@@ -9398,6 +9416,35 @@
         name.addEventListener('input', function () { state.mcSpeakers[parseInt(this.dataset.angle, 10)] = this.value; });
         row.appendChild(name);
 
+        /* WHAT THIS CAMERA IS FOR. Previously a camera was silently married to
+           the mic sitting at the same index (V1→A1, V2→A2, V3→A3), so on a
+           three-camera podcast the centre camera was handed A3 whether or not
+           A3 was anyone's mic. If A3 is a room mic or a mix it hears everybody,
+           wins "loudest" constantly, and the edit cuts to centre while someone
+           else is speaking. The role is now stated, not inferred. */
+        var role = document.createElement('select');
+        role.dataset.angle = String(i);
+        role.className = 'map-role';
+        role.style.cssText = 'font-size:11.5px;padding:3px 4px';
+        var roleOpts = [
+          { v: 'speaker', t: '🎤 Speaker' },
+          { v: 'center',  t: '📹 Centre / wide' }
+        ];
+        roleOpts.forEach(function (ro) {
+          var o = document.createElement('option');
+          o.value = ro.v; o.textContent = ro.t;
+          role.appendChild(o);
+        });
+        // Remembered choice wins; otherwise a camera with no mic track left to
+        // claim is a wide, and everything else starts as a speaker.
+        var defRole = state.mcRoles[i];
+        if (defRole !== 'speaker' && defRole !== 'center') {
+          defRole = (state.mcMap[i] === -1 || i >= tracks.length) ? 'center' : 'speaker';
+        }
+        role.value = defRole;
+        state.mcRoles[i] = defRole;
+        row.appendChild(role);
+
         var micLab = document.createElement('span');
         micLab.className = 'dim'; micLab.textContent = '🎙️';
         micLab.style.cssText = 'margin:0 2px';
@@ -9411,16 +9458,22 @@
           o.textContent = t.name || ('A' + (t.index + 1));
           sel.appendChild(o);
         });
-        var oc = document.createElement('option');
-        oc.value = '-1';
-        oc.textContent = 'No mic (wide / cutaway)';
-        sel.appendChild(oc);
 
-        var def = (state.mcMap[i] != null) ? state.mcMap[i] : (i < tracks.length ? i : -1);
-        sel.value = String(def);
-        state.mcMap[i] = def;
+        // A centre camera has no mic by definition, so its picker is inert and
+        // its map entry is -1 — the value the planner reads as "this is the wide".
+        var def = (state.mcMap[i] != null && state.mcMap[i] >= 0)
+          ? state.mcMap[i]
+          : (i < tracks.length ? i : 0);
+        sel.value = String(Math.min(def, Math.max(0, tracks.length - 1)));
+        mcApplyRole(i, defRole, sel);
+
+        role.addEventListener('change', function () {
+          var a = parseInt(this.dataset.angle, 10);
+          mcApplyRole(a, this.value, this.parentNode.querySelector('select:not(.map-role)'));
+        });
         sel.addEventListener('change', function () {
-          state.mcMap[parseInt(this.dataset.angle, 10)] = parseInt(this.value, 10);
+          var a = parseInt(this.dataset.angle, 10);
+          if (state.mcRoles[a] !== 'center') state.mcMap[a] = parseInt(this.value, 10);
           syncCenterCtrl();
         });
         row.appendChild(sel);
@@ -9428,6 +9481,7 @@
       }
       state.mcMap.length = n;
       state.mcSpeakers.length = n;
+      state.mcRoles.length = n;
       syncCenterCtrl();
     }).catch(function (e) {
       $('mc-map').innerHTML = '<p class="hint">' +
@@ -9780,12 +9834,18 @@
     return CPBridge.callHost('CP_applyMulticamPlan', {
       plan: state.plan,
       numAngles: parseInt($('mc-angles').value, 10),
-      dropFrame: !!settings.dropFrame
+      dropFrame: !!settings.dropFrame,
+      // Cut the audio at the same points so linked A/V keeps its link. Without
+      // this the video is razored and its linked audio is not, and Premiere
+      // drops the link — the edit comes out unlinked.
+      linkAudio: settings.mcLinkAudio !== false
     }).then(function (r) {
       capMcProgress(null);
       state.mcApplied = true;
       $('btn-mc-redo').classList.remove('hidden');
       $('mc-redo-hint').classList.remove('hidden');
+      if ($('btn-mc-reset')) $('btn-mc-reset').classList.remove('hidden');
+      if ($('mc-reset-hint')) $('mc-reset-hint').classList.remove('hidden');
       // If the plan didn't reach the later clips, say so plainly + show the
       // numbers in the diag box (this is the "only cuts the first clip" case).
       if (r.coveredPct != null && r.coveredPct < 85) {
@@ -9801,7 +9861,9 @@
         toast('⚠️ Multicam only covered ' + r.coveredPct + '% of the timeline (the first take). See the box for why.', true);
       } else {
         toast('🎬 Multicam applied — ' + r.razored + ' cuts, ' + r.toggled +
-              ' angle toggles across the full ' + fmt(r.seqEnd) + ' timeline.');
+              ' angle toggles across the full ' + fmt(r.seqEnd) + ' timeline' +
+              (r.audioRazored ? ' · audio cut in step on ' + r.audioTracksCut +
+                ' track' + (r.audioTracksCut === 1 ? '' : 's') + ', so A/V stays linked' : '') + '.');
       }
       return r;
     });
@@ -9821,17 +9883,36 @@
     }).catch(mcBuildFailed);
   });
 
-  // One-click "redo": rebuild the plan from the current controls AND apply it,
-  // so the user can re-run the entire multicam in a single tap (no clicking
-  // through Plan → Apply again). Used after a first apply / after an Undo.
+  /* Re-apply the SAME plan. This used to rebuild the plan from scratch and then
+     apply it, which is what made repeated presses destructive: each rebuild
+     analyses the audio again and lands on slightly different boundaries, so the
+     new razors fell BETWEEN the old ones and every press shredded the timeline
+     further. Re-running the analysis is a deliberate act now — that's the
+     "Auto multicam" button — and this one only re-states a decision already
+     made. Apply re-enables every camera first, so it is idempotent. */
   $('btn-mc-redo').addEventListener('click', function () {
-    capMcProgress('Redoing all the cuts…');
-    buildMcPlan().then(function () {
-      renderMcPlan(parseInt($('mc-angles').value, 10));
-      // apply errors are handled here so they don't fall through to the build
-      // diagnostic box (which would be misleading for a Premiere-side failure)
-      return applyMcPlan().catch(function (e) { capMcProgress(null); toast('Multicam failed: ' + e.message, true); });
-    }).catch(mcBuildFailed);
+    if (!state.plan || !state.plan.length) {
+      return toast('No cut list to re-apply yet — tap 🎬 Auto multicam first.', true);
+    }
+    applyMcPlan().catch(function (e) { capMcProgress(null); toast('Multicam failed: ' + e.message, true); });
+  });
+
+  /* Put the picture back: re-enable every camera clip. Deliberately does not
+     claim to remove the cuts — see CP_resetMulticam for why that is impossible
+     through Premiere's scripting API. */
+  $('btn-mc-reset').addEventListener('click', function () {
+    capMcProgress('Re-enabling every camera…');
+    CPBridge.callHost('CP_resetMulticam', {
+      numAngles: parseInt($('mc-angles').value, 10)
+    }).then(function (r) {
+      capMcProgress(null);
+      state.mcApplied = false;
+      toast('↩️ ' + r.reenabled + ' of ' + r.scanned + ' camera clip' + (r.scanned === 1 ? '' : 's') +
+            ' switched back on. The cut lines stay — Ctrl/Cmd+Z is the only true undo.');
+    }).catch(function (e) {
+      capMcProgress(null);
+      toast('Reset failed: ' + e.message, true);
+    });
   });
 
   $('btn-mc-test').addEventListener('click', testAudioEngine);
@@ -9874,7 +9955,11 @@
     }
     $('mc-plan-card').classList.remove('hidden');
     $('btn-mc-apply').classList.remove('hidden');
-    if (state.mcApplied) { $('btn-mc-redo').classList.remove('hidden'); $('mc-redo-hint').classList.remove('hidden'); }
+    if (state.mcApplied) {
+      $('btn-mc-redo').classList.remove('hidden'); $('mc-redo-hint').classList.remove('hidden');
+      if ($('btn-mc-reset')) $('btn-mc-reset').classList.remove('hidden');
+      if ($('mc-reset-hint')) $('mc-reset-hint').classList.remove('hidden');
+    }
     toast(shortfall
       ? ('⚠️ Plan only reaches ' + fmt(planEnd) + ' of ' + fmt(timeline) + ' — later clips not covered.')
       : (stats.segments + ' segments, ' + stats.switches + ' switches across the full ' + fmt(timeline) + ' timeline.'), shortfall);

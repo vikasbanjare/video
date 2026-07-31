@@ -1521,5 +1521,117 @@ console.log('host.jsx — CP_previewMogrt trims a 30s template to the preview wi
   assert(blob.textEditValue === 'Make every word count', 'preview clip carries the sample words');
 }
 
+// ══════════════════════════════════════════════ CP_applyMulticamPlan ═══════
+// This function shipped with NO host coverage, which is how three separate
+// faults reached a finished podcast edit: the razor cut video only (so Premiere
+// dropped the A/V link), a second pass inherited the first pass's disabled
+// flags (so cameras silently vanished and every re-apply made it worse), and
+// there was no way at all to put the picture back.
+console.log('host.jsx — multicam apply (A/V link, idempotent re-apply, reset)');
+{
+  const mkWorld = () => {
+    const w = makeWorld({ vTracks: 3, aTracks: 2, fps: 25 });
+    for (let t = 0; t < 3; t++) w.model.addClip('vTracks', t, 0, 12, { name: 'CAM' + (t + 1) });
+    for (let a = 0; a < 2; a++) w.model.addClip('aTracks', a, 0, 12, { name: 'MIC' + (a + 1) });
+    return w;
+  };
+  const planA = [
+    { start: 0, end: 4, angle: 0 },
+    { start: 4, end: 8, angle: 1 },
+    { start: 8, end: 12, angle: 2 }
+  ];
+  // which camera is showing at time t? (exactly one should be)
+  const liveAt = (w, t) => {
+    const on = [];
+    for (let v = 0; v < 3; v++) {
+      for (const c of w.model.vTracks[v]) {
+        if (c.start.seconds <= t && c.end.seconds > t && !c.disabled) { on.push(v); break; }
+      }
+    }
+    return on;
+  };
+
+  // --- the plan is actually honoured, one camera live at a time -------------
+  {
+    const w = mkWorld();
+    const host = loadHost(w);
+    const r = call(host, 'CP_applyMulticamPlan', { plan: planA, numAngles: 3 });
+    assert(r.ok === true, 'apply succeeds: ' + JSON.stringify(r).slice(0, 120));
+    assert(JSON.stringify(liveAt(w, 2)) === '[0]', 'at 2s only V1 is live (plan says angle 0)');
+    assert(JSON.stringify(liveAt(w, 6)) === '[1]', 'at 6s only V2 is live (plan says angle 1)');
+    assert(JSON.stringify(liveAt(w, 10)) === '[2]', 'at 10s only V3 is live (plan says angle 2)');
+  }
+
+  // --- REGRESSION: audio must be cut in step or Premiere unlinks A/V --------
+  {
+    const w = mkWorld();
+    const host = loadHost(w);
+    const r = call(host, 'CP_applyMulticamPlan', { plan: planA, numAngles: 3 });
+    assert(r.audioRazored > 0, 'audio tracks are razored too (was 0 — what broke the A/V link)');
+    assert(w.model.aTracks[0].length === 3,
+      'A1 is cut at the SAME two boundaries as the cameras (3 pieces, got ' + w.model.aTracks[0].length + ')');
+    const vEdges = w.model.vTracks[0].map(c => +c.end.seconds.toFixed(3));
+    const aEdges = w.model.aTracks[0].map(c => +c.end.seconds.toFixed(3));
+    assert(JSON.stringify(vEdges) === JSON.stringify(aEdges),
+      'video and audio boundaries line up exactly, so the link survives: ' +
+      JSON.stringify(vEdges) + ' vs ' + JSON.stringify(aEdges));
+  }
+
+  // --- opting out leaves audio untouched -----------------------------------
+  {
+    const w = mkWorld();
+    const host = loadHost(w);
+    const r = call(host, 'CP_applyMulticamPlan', { plan: planA, numAngles: 3, linkAudio: false });
+    assert(r.audioRazored === 0, 'linkAudio:false razors no audio');
+    assert(w.model.aTracks[0].length === 1, 'A1 is left whole when the caller opts out');
+  }
+
+  // --- REGRESSION: a second pass must not inherit the first pass's flags ----
+  // The "I pressed it again and everything got cut / cameras disappeared" bug.
+  {
+    const w = mkWorld();
+    const host = loadHost(w);
+    call(host, 'CP_applyMulticamPlan', { plan: planA, numAngles: 3 });
+    // A NEW, SHORTER plan — the realistic case, because re-analysing the audio
+    // rarely reproduces the previous boundaries exactly. It says "show V1 for
+    // the first 6s" and says nothing at all about 6→12s.
+    //
+    // Old behaviour: clips outside the new plan were never re-examined, so that
+    // stretch silently kept whatever the PREVIOUS run decided (here V3 alone,
+    // from planA). The timeline then showed a camera the current plan never
+    // asked for, and each further pass layered another run's leftovers on top —
+    // which is what made repeated presses feel like the edit was falling apart.
+    //
+    // New behaviour: every camera is switched back on first, so an un-planned
+    // stretch is NEUTRAL (all angles live, topmost wins in Premiere) instead of
+    // haunted by a previous run.
+    const planB = [{ start: 0, end: 6, angle: 0 }];
+    const r2 = call(host, 'CP_applyMulticamPlan', { plan: planB, numAngles: 3 });
+    assert(r2.ok === true, 're-apply succeeds');
+    assert(r2.reenabled > 0, 'the second pass re-enables what the first pass switched off');
+    assert(JSON.stringify(liveAt(w, 2)) === '[0]', 'after re-apply V1 is live inside the new plan');
+    assert(liveAt(w, 8).length === 3,
+      'the stretch the new plan never mentions is reset to neutral, not left holding the ' +
+      'previous run\'s pick (want all 3 cameras live, got ' + JSON.stringify(liveAt(w, 8)) + ')');
+    assert(liveAt(w, 11).length === 3, 'same for the tail of the timeline');
+    assert(w.model.vTracks[0].every(c => !c.disabled), 'no stale disabled piece survives on the live camera');
+  }
+
+  // --- reset puts every camera back on -------------------------------------
+  {
+    const w = mkWorld();
+    const host = loadHost(w);
+    call(host, 'CP_applyMulticamPlan', { plan: planA, numAngles: 3 });
+    const r = call(host, 'CP_resetMulticam', { numAngles: 3 });
+    assert(r.ok === true, 'reset succeeds: ' + JSON.stringify(r).slice(0, 120));
+    assert(r.reenabled > 0, 'reset actually switched clips back on (' + r.reenabled + ')');
+    let anyOff = false;
+    for (let v = 0; v < 3; v++) for (const c of w.model.vTracks[v]) if (c.disabled) anyOff = true;
+    assert(!anyOff, 'not one camera clip is left disabled after reset');
+    // honest about its limits: the cuts are still there
+    assert(w.model.vTracks[0].length > 1, 'reset does NOT pretend to un-razor — the cut lines remain');
+  }
+}
+
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

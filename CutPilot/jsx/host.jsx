@@ -793,10 +793,32 @@ function CP_applyMulticamPlan(argsJson) {
     var piecesBefore = [];
     for (var pb = 0; pb < n; pb++) piecesBefore.push(seq.videoTracks[pb].clips.numItems);
 
+    // Re-enable EVERY camera clip before we start. Without this, a second run
+    // inherits the first run's disabled flags: any piece the new plan never
+    // matches stays switched off, so cameras silently vanish and each re-apply
+    // leaves the timeline worse than the last.
+    var reenabled = 0;
+    for (var rt = 0; rt < n; rt++) {
+      var rtrack = seq.videoTracks[rt];
+      for (var rc = 0; rc < rtrack.clips.numItems; rc++) {
+        try {
+          if (rtrack.clips[rc].disabled) { rtrack.clips[rc].disabled = false; reenabled++; }
+        } catch (eRe) {}
+      }
+    }
+
     // razor each camera track at every boundary (QE must be enabled). razor cuts
     // whichever clip spans that timecode, so it works across ALL clips on the
     // track — not just the first take.
-    var razored = 0;
+    //
+    // The AUDIO tracks get razored at the SAME timecodes. That is not a nicety:
+    // a clip whose video is cut while its linked audio is left whole no longer
+    // has matching boundaries, and Premiere responds by dropping the A/V link —
+    // which is why finished multicam edits were arriving unlinked. Cutting both
+    // sides is exactly what Premiere's own razor does to a linked pair, and it
+    // keeps the link intact. Audio-only tracks just gain harmless through-edits.
+    var razored = 0, audioRazored = 0;
+    var nAudio = (args.linkAudio === false) ? 0 : seq.audioTracks.numTracks;
     try {
       try { app.enableQE(); } catch (eEn) {}
       var qseq = CP_qeSequence();
@@ -805,6 +827,13 @@ function CP_applyMulticamPlan(argsJson) {
         if (!qtrack) continue;
         for (var b = 0; b < bounds.length; b++) {
           try { qtrack.razor(CP_timecode(bounds[b], fps, !!args.dropFrame)); razored++; } catch (eRz) {}
+        }
+      }
+      for (var at = 0; at < nAudio; at++) {
+        var qatrack = qseq.getAudioTrackAt(at);
+        if (!qatrack) continue;
+        for (var ab = 0; ab < bounds.length; ab++) {
+          try { qatrack.razor(CP_timecode(bounds[ab], fps, !!args.dropFrame)); audioRazored++; } catch (eRa) {}
         }
       }
     } catch (eQE) {}
@@ -833,11 +862,46 @@ function CP_applyMulticamPlan(argsJson) {
       }
     }
     return CP_ok({
-      toggled: toggled, razored: razored, cuts: bounds.length, tracksUsed: n,
+      toggled: toggled, razored: razored, audioRazored: audioRazored,
+      reenabled: reenabled, cuts: bounds.length, tracksUsed: n,
+      audioTracksCut: nAudio,
       seqEnd: seqEnd, planStart: planStart, planEnd: planEnd,
       coveredPct: seqEnd > 0 ? Math.round((planEnd / seqEnd) * 100) : 100,
       outOfPlanClips: outOfPlan, piecesBefore: piecesBefore, piecesAfter: piecesAfter
     });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/*
+ * Undo the VISIBLE half of a multicam pass: re-enable every camera clip so all
+ * angles play again, which is what "my timeline is a mess, put it back" means
+ * in practice.
+ *
+ * It deliberately does NOT try to remove the razor cuts. Premiere's scripting
+ * API can add a cut but cannot merge two clips back into one, so there is no
+ * honest way to un-razor — claiming otherwise would leave the user thinking the
+ * timeline was restored when it was not. The cuts that remain are through-edits:
+ * with every angle re-enabled they play back seamlessly. Ctrl/Cmd+Z remains the
+ * only true undo, and the panel says so.
+ *
+ * argsJson: { numAngles }
+ */
+function CP_resetMulticam(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+    var n = Math.min(args.numAngles || seq.videoTracks.numTracks, seq.videoTracks.numTracks);
+    var reenabled = 0, scanned = 0;
+    for (var t = 0; t < n; t++) {
+      var track = seq.videoTracks[t];
+      for (var i = 0; i < track.clips.numItems; i++) {
+        scanned++;
+        try {
+          if (track.clips[i].disabled) { track.clips[i].disabled = false; reenabled++; }
+        } catch (eD) {}
+      }
+    }
+    return CP_ok({ reenabled: reenabled, scanned: scanned, tracksUsed: n });
   } catch (e) { return CP_fail(e.message); }
 }
 
