@@ -1812,5 +1812,95 @@ console.log('host.jsx — markers carry an ownership tag (clear must not eat the
   }
 }
 
+// ════════════════════════════════ CP_removePulseCaptionTracks (blast radius) ═
+// "Remove all Pulse captions" wipes whole video tracks, decided by a substring
+// match on clip NAMES. That is the same shape as the marker bug, so the guard
+// that stops it eating footage — a track is only cleared when EVERY clip on it
+// looks like a caption — needs to be pinned down, and its limits stated.
+console.log('host.jsx — remove-caption-tracks only clears tracks that are entirely captions');
+{
+  const mkWorld = (tracks) => {
+    const w = makeWorld({ vTracks: tracks.length, aTracks: 1 });
+    tracks.forEach((clipNames, ti) => {
+      clipNames.forEach((nm, i) => w.model.addClip('vTracks', ti, i * 2, i * 2 + 1.5, { name: nm }));
+    });
+    return w;
+  };
+
+  // --- a pure caption track is cleared --------------------------------------
+  {
+    const w = mkWorld([['Podcast.mp4'], ['cap_001.png', 'cap_002.png', 'cap_003.png']]);
+    const host = loadHost(w);
+    const r = call(host, 'CP_removePulseCaptionTracks', {});
+    assert(r.ok === true, 'call succeeds: ' + JSON.stringify(r));
+    assert(r.cleared === 3, 'all three caption images are removed (got ' + r.cleared + ')');
+    assert(w.model.vTracks[0].length === 1 && w.model.vTracks[0][0].name === 'Podcast.mp4',
+      'the footage track is untouched');
+  }
+
+  // --- SAFETY: one real clip on the track and the whole track is spared -----
+  {
+    const w = mkWorld([['Podcast.mp4'], ['cap_001.png', 'BRoll_city.mov', 'cap_002.png']]);
+    const host = loadHost(w);
+    const r = call(host, 'CP_removePulseCaptionTracks', {});
+    assert(r.cleared === 0,
+      'a track holding ANY non-caption clip is left completely alone (got ' + r.cleared + ')');
+    assert(w.model.vTracks[1].length === 3,
+      'including the caption clips on it — better to leave tidy-up undone than eat footage');
+  }
+
+  // --- the template families are recognised --------------------------------
+  {
+    const w = mkWorld([['Podcast.mp4'], ['Flux_Halo2_r3'], ['Subtitle_4_r3'], ['Shorts_Text 1']]);
+    const host = loadHost(w);
+    const r = call(host, 'CP_removePulseCaptionTracks', {});
+    assert(r.cleared === 3, 'Flux / Subtitle / Shorts_Text graphics are all recognised (got ' + r.cleared + ')');
+    assert(w.model.vTracks[0].length === 1, 'and the footage is still there');
+  }
+
+  // --- KNOWN LIMIT, pinned deliberately -------------------------------------
+  // Ownership is guessed from the name, so footage that happens to contain one
+  // of those words is indistinguishable from a caption. The all-or-nothing
+  // guard is the only thing keeping this safe: alone on its own track, this
+  // user clip IS destroyed. Recorded so the risk is visible rather than
+  // discovered on someone's timeline.
+  {
+    const w = mkWorld([['Podcast.mp4'], ['pulse-of-the-city.mp4']]);
+    const host = loadHost(w);
+    const r = call(host, 'CP_removePulseCaptionTracks', {});
+    assert(r.cleared === 1,
+      'DOCUMENTED FALSE POSITIVE: user footage named "pulse-…" alone on a track is ' +
+      'cleared, because ownership is inferred from the name (got ' + r.cleared + ')');
+  }
+
+  // --- an empty timeline is a no-op, not a crash ---------------------------
+  {
+    const w = makeWorld({ vTracks: 2, aTracks: 1 });
+    const host = loadHost(w);
+    const r = call(host, 'CP_removePulseCaptionTracks', {});
+    assert(r.ok === true && r.cleared === 0, 'nothing to do on an empty sequence');
+  }
+
+  // --- dryRun answers "what would go?" and deletes nothing -----------------
+  // The confirmation used to promise "your video and audio clips are NOT
+  // touched", which the name-matching cannot guarantee. Now the user is shown
+  // the actual list first.
+  {
+    const w = mkWorld([['Podcast.mp4'], ['cap_001.png', 'cap_002.png'], ['pulse-of-the-city.mp4']]);
+    const host = loadHost(w);
+    const d = call(host, 'CP_removePulseCaptionTracks', { dryRun: true });
+    assert(d.ok === true && d.dryRun === true, 'dry run reports itself as one');
+    assert(d.cleared === 3, 'it counts everything that would go, across tracks (got ' + d.cleared + ')');
+    assert(w.model.vTracks[1].length === 2 && w.model.vTracks[2].length === 1,
+      'and NOTHING is actually deleted by the dry run');
+    assert(/pulse-of-the-city\.mp4/.test((d.sample || []).join('\n')),
+      'the user\'s own misnamed clip is NAMED in the preview, so they can veto it: ' +
+      JSON.stringify(d.sample));
+    // and the real call still does the deed
+    const r = call(host, 'CP_removePulseCaptionTracks', {});
+    assert(r.cleared === 3 && w.model.vTracks[1].length === 0, 'the real call still clears');
+  }
+}
+
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

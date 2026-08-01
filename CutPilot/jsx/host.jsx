@@ -2220,7 +2220,13 @@ function CP_removePulseCaptionTracks(argsJson) {
     app.enableQE();
     var qseq = qe.project.getActiveSequence();
     var pat = /(flux|subtitle|shorts_text|text_animation|pulse|cutpilot|cap[-_]?\d)/i;
-    var cleared = 0, tracks = [];
+    var cleared = 0, tracks = [], sample = [];
+    // A dry run answers "what would this delete?" without deleting it. What
+    // counts as a caption is GUESSED from the clip name, so footage that
+    // happens to be called "pulse-something" and sits alone on a track is
+    // indistinguishable from a caption graphic and would be removed. The panel
+    // shows this list first rather than promising that no video is touched.
+    var dryRun = !!args.dryRun;
     for (var ti = seq.videoTracks.numTracks - 1; ti >= 0; ti--) {
       var track = seq.videoTracks[ti];
       if (!track.clips.numItems) continue;
@@ -2230,6 +2236,14 @@ function CP_removePulseCaptionTracks(argsJson) {
         if (!pat.test(nm)) { allCaps = false; break; }
       }
       if (!allCaps) continue;
+      if (dryRun) {
+        cleared += track.clips.numItems;
+        tracks.push(ti + 1);
+        for (var sc = 0; sc < track.clips.numItems && sample.length < 6; sc++) {
+          sample.push('V' + (ti + 1) + ': ' + String(track.clips[sc].name || ''));
+        }
+        continue;
+      }
       var qt = null;
       try { qt = qseq.getVideoTrackAt(ti); } catch (eQ) {}
       if (!qt) continue;
@@ -2240,7 +2254,7 @@ function CP_removePulseCaptionTracks(argsJson) {
       }
       if (removed) { cleared += removed; tracks.push(ti + 1); }
     }
-    return CP_ok({ cleared: cleared, tracks: tracks });
+    return CP_ok({ cleared: cleared, tracks: tracks, sample: sample, dryRun: dryRun });
   } catch (e) { return CP_fail(e.message); }
 }
 

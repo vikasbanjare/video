@@ -3414,16 +3414,33 @@
     // 🧹 clear every caption track Pulse ever added (debug builds stacked many)
     if ($('btn-clean-caps')) $('btn-clean-caps').addEventListener('click', function () {
       if (!CPBridge.isCEP()) return toast('This needs Premiere.', true);
-      confirmInline('Delete every caption track Pulse has added to this sequence?\n\nYour video and audio clips are NOT touched — only caption tracks are cleared.', 'Delete them', function (yes) {
-        if (!yes) return;
-        CPBridge.callHost('CP_removePulseCaptionTracks', {}).then(function (r) {
-          state.lastCaptionJob = null; saveLastCaptionJob(); reflectCaptionsPlaced();
-          toast(r.cleared ? ('🧹 Removed ' + r.cleared + ' caption clip' + (r.cleared === 1 ? '' : 's') +
-                             ' from track' + (r.tracks.length === 1 ? ' V' : 's V') + r.tracks.join(', V') +
-                             '. Add captions again for a clean set.')
-                          : 'No Pulse caption tracks found in this sequence.');
-        }).catch(function (e) { toast('Cleanup failed: ' + e.message, true); });
-      });
+      /* Ask the host what it WOULD delete, and show that, instead of promising
+         "your video and audio clips are NOT touched". Pulse decides what is a
+         caption by matching the clip's name, so a video clip named something
+         like "pulse-city.mp4" sitting alone on its own track looks exactly like
+         a caption graphic and would go with them. Naming the tracks and clips
+         up front lets the user catch that; the old wording guaranteed
+         something the code cannot actually guarantee. */
+      CPBridge.callHost('CP_removePulseCaptionTracks', { dryRun: true }).then(function (d) {
+        if (!d.cleared) return toast('No Pulse caption tracks found in this sequence.');
+        var msg = 'Delete ' + d.cleared + ' clip' + (d.cleared === 1 ? '' : 's') +
+                  ' from track' + (d.tracks.length === 1 ? ' V' : 's V') + d.tracks.join(', V') + '?\n\n' +
+                  (d.sample || []).join('\n') +
+                  ((d.cleared > (d.sample || []).length) ? '\n…and ' + (d.cleared - d.sample.length) + ' more' : '') +
+                  '\n\nOnly tracks where EVERY clip looks like a Pulse caption are cleared. ' +
+                  'Check the list above — anything of yours named like a caption would be in it. ' +
+                  '⌘Z / Ctrl+Z undoes this.';
+        confirmInline(msg, 'Delete them', function (yes) {
+          if (!yes) return;
+          CPBridge.callHost('CP_removePulseCaptionTracks', {}).then(function (r) {
+            state.lastCaptionJob = null; saveLastCaptionJob(); reflectCaptionsPlaced();
+            toast(r.cleared ? ('🧹 Removed ' + r.cleared + ' caption clip' + (r.cleared === 1 ? '' : 's') +
+                               ' from track' + (r.tracks.length === 1 ? ' V' : 's V') + r.tracks.join(', V') +
+                               '. ⌘Z / Ctrl+Z undoes it. Add captions again for a clean set.')
+                            : 'No Pulse caption tracks found in this sequence.');
+          }).catch(function (e) { toast('Cleanup failed: ' + e.message, true); });
+        });
+      }).catch(function (e) { toast('Could not check the sequence: ' + e.message, true); });
     });
     // ↺ Reset previews — wipe every rendered frame and go back to the drawn
     // style previews (recovery for "all the previews are gone")
