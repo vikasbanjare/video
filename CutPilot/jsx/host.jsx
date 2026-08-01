@@ -1514,16 +1514,34 @@ function CP_placeSfx(argsJson) {
     var idx = firstEmptyAudio();
     if (idx < 0) {
       try { var q = CP_qeSequence(); if (q && q.addTracks) { q.addTracks(0, 0, 1); seq = CP_activeSequence(); idx = firstEmptyAudio(); } } catch (eAdd) {}
-      if (idx < 0) idx = seq.audioTracks.numTracks - 1;   // last resort
+    }
+    // NO "last resort" fallback. This used to fall back to the LAST audio track
+    // when every track was occupied and adding one failed — and overwriteClip
+    // does exactly what it says, so the SFX punched a hole in whatever was
+    // already there. On a podcast that is a mic track: the guest's audio
+    // silently replaced by a whoosh at every hit point. Refusing is the only
+    // safe answer; the user can make room in one click.
+    if (idx < 0) {
+      return CP_fail('Every audio track already has clips on it, and Premiere would not let ' +
+                     'Pulse add a new one. Add an empty audio track (right-click an audio ' +
+                     'track header → Add Track) and run this again — otherwise the SFX would ' +
+                     'overwrite the audio that is already there.');
     }
     var track = seq.audioTracks[idx];
     if (!track) return CP_fail('No audio track available for SFX.');
 
-    var placed = 0;
+    var placed = 0, failedPl = 0, placeReasons = [];
     for (var i = 0; i < args.times.length; i++) {
-      try { track.overwriteClip(item, args.times[i]); placed++; } catch (ePl) {}
+      try { track.overwriteClip(item, args.times[i]); placed++; }
+      catch (ePl) {
+        failedPl++;
+        if (placeReasons.length < 3) placeReasons.push('at ' + args.times[i] + 's: ' + ePl.message);
+      }
     }
-    return CP_ok({ placed: placed, track: idx + 1, bin: bin.name });
+    return CP_ok({
+      placed: placed, requested: args.times.length, failed: failedPl,
+      failReasons: placeReasons, track: idx + 1, bin: bin.name
+    });
   } catch (e) { return CP_fail(e.message); }
 }
 

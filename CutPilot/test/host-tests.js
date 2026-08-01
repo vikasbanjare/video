@@ -1964,5 +1964,62 @@ console.log('host.jsx — remove-guide matches the guide exactly, not anything n
   }
 }
 
+// ══════════════════════════════════════════════════════════ CP_placeSfx ═════
+// SFX go on with overwriteClip, which replaces whatever is already at that
+// point. The old code, when every audio track was occupied AND adding one
+// failed, fell back to "the last audio track" — which on a podcast is a mic.
+console.log('host.jsx — SFX never overwrite an occupied audio track');
+{
+  // The harness's own overwriteClip already models Premiere's behaviour — it
+  // splices out whatever the new clip lands on — so the damage is measured on
+  // the real track model rather than through a spy.
+  const mkWorld = (audioTrackClipCounts, canAddTracks) => {
+    const w = makeWorld({ vTracks: 1, aTracks: audioTrackClipCounts.length });
+    audioTrackClipCounts.forEach((n, ti) => {
+      for (let i = 0; i < n; i++) {
+        w.model.addClip('aTracks', ti, i * 10, i * 10 + 8, { name: 'MIC' + (ti + 1) + '-' + i });
+      }
+    });
+    w.sandbox.app.project.rootItem.createBin = (name) => {
+      const kids = [{ name: 'sfx.wav', type: 1 }];
+      return { name, _kids: kids, children: { numItems: kids.length, 0: kids[0] } };
+    };
+    w.sandbox.app.project.importFiles = () => true;
+    if (!canAddTracks) w.sandbox.qe.project.getActiveSequence = () => ({ addTracks: () => {} });
+    return w;
+  };
+  const namesOn = (w, ti) => w.model.aTracks[ti].map(c => c.name);
+
+  // --- a free track is used --------------------------------------------------
+  {
+    const w = mkWorld([2, 0], true);                     // A2 is empty
+    const host = loadHost(w);
+    const before = namesOn(w, 0);
+    const r = call(host, 'CP_placeSfx', { wavPath: '/tmp/s.wav', times: [1, 5, 9] });
+    assert(r.ok === true, 'placement succeeds: ' + JSON.stringify(r).slice(0, 120));
+    assert(r.track === 2, 'the EMPTY audio track is chosen (got A' + r.track + ')');
+    assert(r.placed === 3 && r.requested === 3 && r.failed === 0, 'all three hits land');
+    assert(JSON.stringify(namesOn(w, 0)) === JSON.stringify(before),
+      'the occupied mic track A1 is byte-for-byte unchanged');
+  }
+
+  // --- REGRESSION: refuse rather than overwrite a mic ------------------------
+  {
+    const w = mkWorld([3, 2, 4], false);                 // every track busy, cannot add
+    const host = loadHost(w);
+    const beforeLast = namesOn(w, 2);                    // A3 — 4 mic clips
+    const r = call(host, 'CP_placeSfx', { wavPath: '/tmp/s.wav', times: [1, 5] });
+    assert(r.ok === false,
+      'with every audio track occupied and no new track possible, the call REFUSES ' +
+      '(it used to fall back to the last track and overwrite it): ' + JSON.stringify(r));
+    assert(/overwrite the audio that is already there|Add an empty audio track/i.test(r.error || ''),
+      'and says how to fix it: ' + r.error);
+    assert(JSON.stringify(namesOn(w, 2)) === JSON.stringify(beforeLast),
+      'A3 still holds exactly the user\'s four mic clips — the old fallback dropped SFX ' +
+      'onto this track and Premiere\'s overwrite deleted what they landed on: ' +
+      JSON.stringify(namesOn(w, 2)));
+  }
+}
+
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

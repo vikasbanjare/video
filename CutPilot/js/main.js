@@ -5919,7 +5919,18 @@
     } catch (e) { return toast('Could not create the SFX file: ' + e.message, true); }
     toast('Placing ' + times.length + ' ' + CPSfx.getSfx(id).name + ' hit' + (times.length === 1 ? '' : 's') + '…');
     CPBridge.callHost('CP_placeSfx', { wavPath: wavPath, times: times, label: id }).then(function (r) {
-      toast('🔊 Added ' + r.placed + ' ' + CPSfx.getSfx(id).name + ' SFX on audio track A' + r.track + '. ⌘Z / Ctrl+Z undoes it.');
+      var nm = CPSfx.getSfx(id).name;
+      if (r.failed) {
+        // Say which hits didn't land. Reporting only the successes made a
+        // partial placement look complete.
+        toast('⚠️ Placed ' + r.placed + ' of ' + r.requested + ' ' + nm + ' hits on A' + r.track +
+              ' — ' + r.failed + ' could not be placed. ⌘Z / Ctrl+Z undoes it.', true);
+        if (r.failReasons && r.failReasons.length) {
+          console.log('[Pulse] SFX placement failures:\n  ' + r.failReasons.join('\n  '));
+        }
+        return;
+      }
+      toast('🔊 Added ' + r.placed + ' ' + nm + ' SFX on audio track A' + r.track + '. ⌘Z / Ctrl+Z undoes it.');
     }).catch(function (e) { toast('SFX failed: ' + e.message, true); });
   }
 
