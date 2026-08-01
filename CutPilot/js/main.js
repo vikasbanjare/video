@@ -5505,7 +5505,13 @@
   // the gallery/sheet now preview the template's REAL render — so what you pick is
   // exactly what lands on the timeline. (The owner always wants editable; 🖼 PNG /
   // ⚡ libass remain available but are never the default.)
-  var _capOut = 'png';   // Pulse-rendered by default (see btn-magic handler)
+  /* Caption output type. This was a plain variable, so it reset to 'png' on
+     every panel reload — and a CEP panel reloads whenever Premiere feels like
+     it. Someone who works in editable templates had to re-pick it each time,
+     with no hint that it had silently gone back. It rides settings now, like
+     every other choice the user makes. */
+  var CAP_OUT_VALUES = { png: 1, editable: 1 };
+  var _capOut = CAP_OUT_VALUES[settings.capOut] ? settings.capOut : 'png';
   function updateMagicLabel() {
     var b = $('btn-magic'); if (!b) return;
     b.innerHTML = (_capOut === 'editable')
@@ -5516,11 +5522,19 @@
     var box = $('cap-output'); if (!box) return;
     var btns = box.querySelectorAll('button');
     for (var i = 0; i < btns.length; i++) btns[i].addEventListener('click', function () {
-      _capOut = this.dataset.out || 'editable';
+      _capOut = CAP_OUT_VALUES[this.dataset.out] ? this.dataset.out : 'png';
+      settings.capOut = _capOut;
+      saveSettings();
       var on = box.querySelector('button.on'); if (on) on.classList.remove('on');
       this.classList.add('on');
       updateMagicLabel();
     });
+    // Reflect the remembered choice in the buttons — the markup hard-codes
+    // "on" onto Pulse-rendered, so without this the panel would show one thing
+    // and do another after a reload.
+    for (var j = 0; j < btns.length; j++) {
+      btns[j].classList.toggle('on', btns[j].dataset.out === _capOut);
+    }
     updateMagicLabel();
   })();
   // Word-animation mode: 'highlight' (whole line, active word lights up) vs

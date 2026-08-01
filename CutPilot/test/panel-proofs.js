@@ -651,6 +651,45 @@ function fluxProps() {
     ok('opening Captions shows the primary action ("' + act.label + '") with ≡ Browse styles one tap away');
   else bad('primary action not reachable on the Captions tab: ' + JSON.stringify(act));
 
+  // ---- P. the caption OUTPUT TYPE survives a panel reload -----------------
+  // _capOut used to be a plain variable, so it snapped back to Pulse-rendered
+  // every time the panel reloaded — which CEP does on its own. Someone working
+  // in editable templates re-picked it constantly, with nothing to say it had
+  // reverted. Boot the real panel with the choice already remembered and check
+  // that the segmented control and the button label both agree with it.
+  await page.evaluate(() => {
+    localStorage.setItem('cutpilot.settings', JSON.stringify({ capOut: 'editable' }));
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await new Promise(r => setTimeout(r, 400));
+  const remembered = await page.evaluate(() => {
+    const tab = document.querySelector('.tab[data-tab="captions"]');
+    if (tab) tab.click();
+    const box = document.getElementById('cap-output');
+    if (!box) return { fatal: 'no cap-output control' };
+    const on = box.querySelector('button.on');
+    const b = document.getElementById('btn-magic');
+    return { picked: on ? on.dataset.out : null, label: (b ? b.textContent : '').trim() };
+  });
+  if (remembered.fatal) bad('caption output: ' + remembered.fatal);
+  else if (remembered.picked === 'editable' && /editable/i.test(remembered.label))
+    ok('the caption output type survives a panel reload (restored "editable", button reads "' +
+       remembered.label.slice(0, 34) + '")');
+  else bad('caption output did NOT survive the reload: ' + JSON.stringify(remembered));
+
+  // and a fresh install is still Pulse-rendered
+  await page.evaluate(() => localStorage.removeItem('cutpilot.settings'));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await new Promise(r => setTimeout(r, 400));
+  const fresh = await page.evaluate(() => {
+    const tab = document.querySelector('.tab[data-tab="captions"]');
+    if (tab) tab.click();
+    const on = document.querySelector('#cap-output button.on');
+    return on ? on.dataset.out : null;
+  });
+  if (fresh === 'png') ok('a fresh install still defaults to Pulse-rendered');
+  else bad('fresh-install default changed: ' + JSON.stringify(fresh));
+
   await browser.close();
   console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');
   process.exit(failed ? 1 : 0);
