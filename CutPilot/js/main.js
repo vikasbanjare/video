@@ -2123,9 +2123,17 @@
     }
     var cues = CPCaptions.parseSRT(text);
     if (!cues.length) throw new Error('No captions found inside ' + state.transcript.label);
-    // clean OVERLAPPING duplicate lines here too, so transcripts saved by older
-    // builds (the doubles already baked into the cache) come out right
-    cues = CPCaptions.dedupeRepeatedCues(cues);
+    // Clean OVERLAPPING duplicate lines, so transcripts saved by older builds
+    // (the doubles already baked into the cache) come out right.
+    //
+    // NOT for a transcript the user typed in the editor. The dedupe drops a cue
+    // when the text matches AND the starts are within 2s AND the windows nearly
+    // touch — which is exactly what two deliberate consecutive lines look like.
+    // Hindi and Hinglish repeat constantly ("haan haan", "nahi nahi", "achha
+    // achha"), so someone typing that in and pressing Save watched one of their
+    // own lines silently vanish. ASR doubles are a guess worth correcting; the
+    // words a person just typed are not.
+    if (!state.transcript.edited) cues = CPCaptions.dedupeRepeatedCues(cues);
     if (censorEnabled()) cues = cues.map(function (c) { c.text = maskProfanity(c.text); return c; });
     // Attach the REAL per-word timing so grouping can follow pauses inside a
     // line. Every site that changes state.transcript keeps transcriptWords in
@@ -2528,7 +2536,11 @@
       var fs = nodeReq('fs'), os = nodeReq('os'), pathMod = nodeReq('path');
       var p = pathMod.join(os.tmpdir(), 'cutpilot-transcript-edited-' + Date.now() + '.srt');
       fs.writeFileSync(p, CPCaptions.toSRT(cues), 'utf8');
-      state.transcript = { label: 'Edited transcript (' + cues.length + ' lines)', path: p, mtime: 1e16 };
+      // `edited: true` rides on the transcript object, so it is dropped
+      // automatically the moment anything replaces the transcript. It tells
+      // readSelectedTranscript that a human typed these lines and they are not
+      // to be second-guessed — see the dedupe skip there.
+      state.transcript = { label: 'Edited transcript (' + cues.length + ' lines)', path: p, mtime: 1e16, edited: true };
       state.transcriptWords = null;    // edits change the words → fall back to envelope sync
       state.transcriptManual = true;
     } catch (e) { return toast('Couldn\'t save edits: ' + e.message, true); }

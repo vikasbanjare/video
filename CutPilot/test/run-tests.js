@@ -1553,6 +1553,63 @@ console.log('duplicate-cue cleanup (linked-clip double mapping / whisper repeats
     { start: 0, end: 2, text: 'pehli baat' }, { start: 0.5, end: 2.5, text: 'doosri baat' }
   ]);
   assert(dx.length === 2, 'different overlapping text stays');
+
+  /* THE HAZARD this creates for hand-typed lines. The rule fires when the text
+     matches AND the starts are within 2s AND the windows nearly touch — which
+     is precisely the shape of two DELIBERATE consecutive lines. Hindi and
+     Hinglish repeat constantly, so this is not a corner case. Pinned here so
+     the reason readSelectedTranscript skips dedupe on an edited transcript is
+     visible from the test file. */
+  const doubled = CPCaptions.dedupeRepeatedCues([
+    { start: 1.0, end: 2.0, text: 'haan' },
+    { start: 2.0, end: 3.0, text: 'haan' },
+    { start: 3.2, end: 4.2, text: 'bilkul' }
+  ]);
+  assert(doubled.length === 2,
+    'two consecutive identical lines ARE collapsed by the dedupe — which is right for ' +
+    'ASR doubles and wrong for words a person typed (got ' + doubled.length + ')');
+}
+
+// ---- transcript editor round-trip (handoff gap: never tested end to end) ----
+// Save writes SRT with CPCaptions.toSRT and readSelectedTranscript parses it
+// back with parseSRT. Everything the editor promises rides on that pair being
+// lossless, and on the read side not "correcting" what the user typed.
+{
+  const edited = [
+    { start: 0.0, end: 1.8, text: 'aaj hum baat karenge' },
+    { start: 1.9, end: 3.4, text: 'market ke baare mein' },      // the corrected line
+    { start: 3.5, end: 5.0, text: 'to chaliye shuru karte hain' }
+  ];
+  const back = CPCaptions.parseSRT(CPCaptions.toSRT(edited));
+  assert(back.length === 3, 'every edited line survives the save→read round-trip (got ' + back.length + ')');
+  assert(back[1].text === 'market ke baare mein', 'the corrected line comes back exactly as typed');
+  assert(back[0].text === edited[0].text && back[2].text === edited[2].text,
+    'and the NEIGHBOURS are byte-identical — fixing one line must not disturb the others: ' +
+    JSON.stringify([back[0].text, back[2].text]));
+  for (let i = 0; i < 3; i++) {
+    assert(Math.abs(back[i].start - edited[i].start) < 0.002 && Math.abs(back[i].end - edited[i].end) < 0.002,
+      'line ' + (i + 1) + ' keeps its timing through SRT (±1ms): ' +
+      back[i].start.toFixed(3) + '→' + back[i].end.toFixed(3));
+  }
+
+  // Devanagari / Hinglish and punctuation must survive the file round-trip —
+  // the editor is used mostly to fix exactly these.
+  const uni = CPCaptions.parseSRT(CPCaptions.toSRT([
+    { start: 0, end: 2, text: 'ये video रोज़ देखो' },
+    { start: 2.1, end: 4, text: '"arre yaar" — 50% off, na?' }
+  ]));
+  assert(uni[0].text === 'ये video रोज़ देखो', 'Devanagari survives the round-trip: ' + uni[0].text);
+  assert(uni[1].text === '"arre yaar" — 50% off, na?', 'quotes, em dash and % survive: ' + uni[1].text);
+
+  // Deliberate consecutive repetition — what the dedupe would eat. The round
+  // trip itself must keep both; skipping dedupe on an edited transcript is what
+  // makes that reach the timeline.
+  const rep = CPCaptions.parseSRT(CPCaptions.toSRT([
+    { start: 1.0, end: 2.0, text: 'haan' },
+    { start: 2.0, end: 3.0, text: 'haan' }
+  ]));
+  assert(rep.length === 2 && rep[0].text === 'haan' && rep[1].text === 'haan',
+    'both halves of a deliberate "haan haan" survive the file itself (got ' + rep.length + ')');
 }
 
 // ---- engine expression integrity (ship the AUTHOR'S engine, untouched) ----
