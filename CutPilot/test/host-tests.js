@@ -1902,5 +1902,67 @@ console.log('host.jsx — remove-caption-tracks only clears tracks that are enti
   }
 }
 
+// ═══════════════════════════════════════ CP_removeOverlay (blast radius) ════
+// "Remove guide" deleted any clip whose name CONTAINED "guide", "pulse" or
+// "brand" — individual clips, on every video track, with no all-or-nothing
+// guard and no confirmation. Its caller passes the track it placed the guide
+// on, but that lives in panel state, and a CEP panel reloads constantly: after
+// a reload it is null and the sweep covers the whole timeline.
+console.log('host.jsx — remove-guide matches the guide exactly, not anything named "brand"');
+{
+  const mkWorld = (tracks) => {
+    const w = makeWorld({ vTracks: tracks.length, aTracks: 1 });
+    tracks.forEach((names, ti) => names.forEach((nm, i) =>
+      w.model.addClip('vTracks', ti, i * 3, i * 3 + 2, { name: nm })));
+    return w;
+  };
+
+  // --- REGRESSION: the editor's own branded assets survive ------------------
+  {
+    const w = mkWorld([
+      ['Podcast.mp4'],
+      ['Brand logo.png', 'Brand intro.mp4', 'Style Guide.png'],
+      ['pulse-safezone-guide.png']
+    ]);
+    const host = loadHost(w);
+    const r = call(host, 'CP_removeOverlay', {});          // no track — the post-reload case
+    assert(r.ok === true, 'remove succeeds: ' + JSON.stringify(r));
+    assert(r.removed === 1, 'only the guide itself goes (got ' + r.removed + ')');
+    assert(w.model.vTracks[1].length === 3,
+      'the user\'s "Brand logo.png", "Brand intro.mp4" and "Style Guide.png" are ALL still ' +
+      'there — every one of them used to be deleted: ' +
+      JSON.stringify(w.model.vTracks[1].map(c => c.name)));
+    assert(w.model.vTracks[0].length === 1, 'and the footage track is untouched');
+  }
+
+  // --- the legacy guide name still cleans up -------------------------------
+  {
+    const w = mkWorld([['Podcast.mp4'], ['guide.png']]);
+    const host = loadHost(w);
+    const r = call(host, 'CP_removeOverlay', {});
+    assert(r.removed === 1 && w.model.vTracks[1].length === 0,
+      'a guide placed by an older build (guide.png) is still removed');
+  }
+
+  // --- but only as an EXACT name -------------------------------------------
+  {
+    const w = mkWorld([['Podcast.mp4'], ['Style Guide.png', 'guide-for-editing.png']]);
+    const host = loadHost(w);
+    const r = call(host, 'CP_removeOverlay', {});
+    assert(r.removed === 0,
+      'names that merely contain "guide" are not touched (got ' + r.removed + ')');
+    assert(w.model.vTracks[1].length === 2, 'both of the user\'s files survive');
+  }
+
+  // --- a track argument still narrows the search ---------------------------
+  {
+    const w = mkWorld([['pulse-safezone-guide.png'], ['pulse-safezone-guide.png']]);
+    const host = loadHost(w);
+    const r = call(host, 'CP_removeOverlay', { track: 2 });
+    assert(r.removed === 1 && w.model.vTracks[0].length === 1 && w.model.vTracks[1].length === 0,
+      'only the named track is swept when the caller knows which one it used');
+  }
+}
+
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

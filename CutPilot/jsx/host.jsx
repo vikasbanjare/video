@@ -1448,16 +1448,35 @@ function CP_removeOverlay(argsJson) {
     var removed = 0;
     var t0 = 0, t1 = seq.videoTracks.numTracks - 1;
     if (args.track != null && args.track >= 1 && args.track <= seq.videoTracks.numTracks) { t0 = args.track - 1; t1 = args.track - 1; }
+    /* Match the safe-zone guide EXACTLY by the filename Pulse writes.
+     *
+     * This used to delete any clip whose name merely CONTAINED "guide", "pulse"
+     * or "brand", on every video track. Its only caller passes the track it
+     * placed the guide on — but that is remembered in panel state, and a CEP
+     * panel reloads constantly, so after a reload the track is null and the
+     * sweep covered the whole timeline. Place a guide, reload the panel, press
+     * Remove guide, and the user's "Brand logo.png" and "Brand intro.mp4" were
+     * deleted along with it. There is no all-or-nothing guard here like the
+     * caption-track cleaner has, and no confirmation either.
+     *
+     * "guide.png" is the legacy name (matched exactly, so "Style Guide.png"
+     * survives); newer builds write pulse-safezone-guide.png. */
+    var GUIDE_NAMES = ['pulse-safezone-guide.png', 'guide.png'];
+    var removedNames = [];
     for (var ti = t1; ti >= t0; ti--) {
       var qt = qseq.getVideoTrackAt(ti);
       for (var i = qt.numItems - 1; i >= 0; i--) {
         var it = qt.getItemAt(i);
         if (!it || it.type === 'Empty') continue;
         var nm = ''; try { nm = String(it.name).toLowerCase(); } catch (eN) {}
-        if (nm.indexOf('guide') >= 0 || nm.indexOf('pulse') >= 0 || nm.indexOf('brand') >= 0) { try { it.remove(0, 0); removed++; } catch (eR) {} }
+        var hit = false;
+        for (var g = 0; g < GUIDE_NAMES.length; g++) if (nm === GUIDE_NAMES[g]) { hit = true; break; }
+        if (hit) {
+          try { it.remove(0, 0); removed++; if (removedNames.length < 6) removedNames.push('V' + (ti + 1) + ': ' + nm); } catch (eR) {}
+        }
       }
     }
-    return CP_ok({ removed: removed });
+    return CP_ok({ removed: removed, removedNames: removedNames });
   } catch (e) { return CP_fail(e.message); }
 }
 
