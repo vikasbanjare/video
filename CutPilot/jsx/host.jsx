@@ -653,6 +653,8 @@ function CP_rebuildTrimmed(argsJson) {
     var aTrack = newSeq.audioTracks[0];
     var cursor = 0;
     var placed = 0;
+    var failed = 0;
+    var failReasons = [];
     for (i = 0; i < args.keeps.length; i++) {
       var k = args.keeps[i];
       try {
@@ -660,14 +662,30 @@ function CP_rebuildTrimmed(argsJson) {
         pItem.setOutPoint(CP_ticksFromSeconds(k.end), 4);
         if (vTrack) vTrack.overwriteClip(pItem, cursor);
         else if (aTrack) aTrack.overwriteClip(pItem, cursor);
+        // Advance only after the insert actually landed, so a refused segment
+        // never leaves a hole. This was already correct; the tests below pin it
+        // down rather than change it.
         cursor += (k.end - k.start);
         placed++;
-      } catch (eIns) {}
+      } catch (eIns) {
+        // Never swallow this. A dropped keep means the rebuilt sequence is NOT
+        // the edit the user asked for, and the caller remaps the transcript on
+        // the assumption that every keep landed — so a silent failure desyncs
+        // the captions against the timeline with no visible cause.
+        failed++;
+        if (failReasons.length < 3) {
+          failReasons.push('segment ' + (i + 1) + ' (' + k.start + '→' + k.end + 's): ' + eIns.message);
+        }
+      }
     }
     try { pItem.clearInPoint(4); } catch (ec1) {}
     try { pItem.clearOutPoint(4); } catch (ec2) {}
 
-    return CP_ok({ sequence: seqName, segmentsPlaced: placed, finalDuration: cursor });
+    return CP_ok({
+      sequence: seqName, segmentsPlaced: placed, finalDuration: cursor,
+      segmentsRequested: args.keeps.length, segmentsFailed: failed,
+      failReasons: failReasons
+    });
   } catch (e) { return CP_fail(e.message); }
 }
 

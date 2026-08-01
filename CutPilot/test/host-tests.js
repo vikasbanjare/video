@@ -1633,5 +1633,77 @@ console.log('host.jsx — multicam apply (A/V link, idempotent re-apply, reset)'
   }
 }
 
+// ═══════════════════════════════════════════════════ CP_rebuildTrimmed ═════
+// "Build a trimmed sequence" had no coverage at all. It swallowed every failed
+// insert whole — no count, no reason — and still reported success, at which
+// point the caller remapped the transcript as if every keep had landed, sliding
+// the captions against a timeline short by the dropped pieces.
+//
+// The write cursor was already handled correctly (it advances only after a
+// successful insert, so a refused segment never left a hole). The gap-related
+// assertions below therefore pass against the old code on purpose: they pin
+// down behaviour worth keeping, they are not the regression.
+console.log('host.jsx — CP_rebuildTrimmed (partial builds must not be reported as success)');
+{
+  // A project item that records its in/out points, plus a destination sequence
+  // whose overwriteClip can be told to refuse a particular insert.
+  const mkWorld = (refuseNth) => {
+    const w = makeWorld({ vTracks: 1, aTracks: 1, fps: 25 });
+    const placedAt = [];
+    let call = 0;
+    const pItem = {
+      nodeId: 'clip-1', type: 1, _in: null, _out: null,
+      setInPoint(t) { this._in = t; }, setOutPoint(t) { this._out = t; },
+      clearInPoint() { this._in = null; }, clearOutPoint() { this._out = null; },
+      getMediaPath: () => '/m/podcast.mp4'
+    };
+    w.sandbox.app.project.rootItem.children = { numItems: 1, 0: pItem };
+    w.sandbox.app.project.createNewSequenceFromClips = (name) => ({
+      name,
+      videoTracks: { numTracks: 1, 0: { overwriteClip(item, at) {
+        call++;
+        if (call === refuseNth) throw new Error('media offline');
+        placedAt.push(at);
+      } } },
+      audioTracks: { numTracks: 1, 0: { overwriteClip() {} } }
+    });
+    return { w, placedAt };
+  };
+  const keeps = [{ start: 0, end: 4 }, { start: 10, end: 13 }, { start: 20, end: 25 }];
+
+  // --- the happy path still behaves -----------------------------------------
+  {
+    const { w, placedAt } = mkWorld(0);
+    const host = loadHost(w);
+    const r = call(host, 'CP_rebuildTrimmed', { nodeId: 'clip-1', keeps, name: 'Trim A' });
+    assert(r.ok === true, 'rebuild succeeds: ' + JSON.stringify(r).slice(0, 140));
+    assert(r.segmentsPlaced === 3 && r.segmentsFailed === 0, 'all three keeps land, none failed');
+    assert(r.segmentsRequested === 3, 'the call reports how many were ASKED for, not just placed');
+    assert(Math.abs(r.finalDuration - 12) < 1e-9, 'duration is 4+3+5 = 12s (got ' + r.finalDuration + ')');
+    assert(JSON.stringify(placedAt) === '[0,4,7]',
+      'segments are butted together with no gaps: ' + JSON.stringify(placedAt));
+  }
+
+  // --- REGRESSION: a refused segment is reported, and leaves NO hole ---------
+  {
+    const { w, placedAt } = mkWorld(2);          // the middle keep is refused
+    const host = loadHost(w);
+    const r = call(host, 'CP_rebuildTrimmed', { nodeId: 'clip-1', keeps, name: 'Trim B' });
+    assert(r.ok === true, 'the call still returns rather than throwing');
+    assert(r.segmentsFailed === 1,
+      'the refused segment is COUNTED, not swallowed (was silently discarded)');
+    assert(r.segmentsPlaced === 2 && r.segmentsRequested === 3,
+      'placed vs requested makes the shortfall visible to the caller (2 of 3)');
+    assert(/media offline/.test((r.failReasons || []).join(' ')),
+      'the reason Premiere gave is carried back: ' + JSON.stringify(r.failReasons));
+    // (these two already held before the fix — kept so they cannot regress)
+    assert(Math.abs(r.finalDuration - 9) < 1e-9,
+      'duration counts only what landed: 4+5 = 9s, not 12 (got ' + r.finalDuration + ')');
+    assert(JSON.stringify(placedAt) === '[0,4]',
+      'the surviving segments stay butted together — a refused insert leaves no ' +
+      'hole: ' + JSON.stringify(placedAt));
+  }
+}
+
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

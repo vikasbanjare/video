@@ -8482,14 +8482,34 @@
         name: name
       });
     }).then(function (r) {
+      // the old silence list belongs to the previous timeline — clear it.
+      state.silencesSeq = []; if ($('results')) $('results').classList.add('hidden');
+
+      /* PARTIAL BUILD. If Premiere refused any segment, the new sequence is NOT
+         the edit that was asked for. The transcript remap below assumes every
+         keep landed, so running it here would slide the words against a
+         timeline that is short by the dropped pieces — captions drift with
+         nothing on screen to explain it. Say so plainly and leave the
+         transcript alone rather than quietly corrupting the alignment. */
+      if (r.segmentsFailed) {
+        var box = $('results');
+        toast('⚠️ Built "' + r.sequence + '" but ' + r.segmentsFailed + ' of ' +
+              r.segmentsRequested + ' segments did NOT land. The transcript was left alone — ' +
+              're-syncing it against an incomplete rebuild would put every caption in the wrong place. ' +
+              'Check the sequence before using it.', true);
+        if (r.failReasons && r.failReasons.length) {
+          console.log('[Pulse] rebuildTrimmed failures:\n  ' + r.failReasons.join('\n  '));
+        }
+        return r;
+      }
+
       // The rebuilt sequence is the keeps concatenated from 0 — remap the
       // transcript onto it so "Remove repeated takes" / captions line up with
       // the trimmed clip, no re-transcribe needed.
       remapTranscriptToRebuild(state.keepsSeq);
-      // the old silence list belongs to the previous timeline — clear it.
-      state.silencesSeq = []; if ($('results')) $('results').classList.add('hidden');
       toast('🎉 Built "' + r.sequence + '" — ' + r.segmentsPlaced + ' segments, ' + fmt(r.finalDuration) +
             ' long. Transcript auto-synced to the trimmed clip — go straight to “Remove repeated takes” or captions.');
+      return r;
     }).catch(function (e) { toast('Rebuild failed: ' + e.message, true); });
   });
 
