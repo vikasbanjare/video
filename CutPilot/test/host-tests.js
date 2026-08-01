@@ -1705,5 +1705,112 @@ console.log('host.jsx — CP_rebuildTrimmed (partial builds must not be reported
   }
 }
 
+// ══════════════════════════════════════ markers: add / clear ownership ═════
+// Marker identity was inferred from the visible NAME ("does it start with the
+// label?"). That was wrong both ways: markers Pulse creates with a supplied
+// name (chapter titles, Shorts titles) carried no trace of the label and could
+// never be cleaned up, while a marker the USER named "Silence in the room"
+// matched the prefix and got deleted by Clear markers.
+console.log('host.jsx — markers carry an ownership tag (clear must not eat the user\'s own)');
+{
+  const mkMarkers = () => {
+    const list = [];
+    return {
+      _list: list,
+      createMarker(sec) {
+        const m = { start: { seconds: sec }, end: null, name: '', comments: '',
+                    setColorByIndex() {} };
+        list.push(m);
+        return m;
+      },
+      getFirstMarker() { return list[0] || null; },
+      getNextMarker(m) { const i = list.indexOf(m); return (i >= 0 && list[i + 1]) ? list[i + 1] : null; },
+      deleteMarker(m) { const i = list.indexOf(m); if (i >= 0) list.splice(i, 1); }
+    };
+  };
+  const mkWorld = () => {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    const markers = mkMarkers();
+    w.sandbox.app.project.activeSequence.markers = markers;
+    return { w, markers };
+  };
+  const names = () => undefined;
+
+  // --- the tag is written, the visible name is left alone -------------------
+  {
+    const { w, markers } = mkWorld();
+    const host = loadHost(w);
+    const r = call(host, 'CP_addMarkers', {
+      ranges: [{ start: 0, end: 1 }, { start: 5, end: 6 }],
+      label: 'Chapter', names: ['Introduction', 'The main point']
+    });
+    assert(r.ok && r.created === 2, 'two chapter markers created');
+    assert(markers._list[0].name === 'Introduction' && markers._list[1].name === 'The main point',
+      'the human-facing names are exactly what the caller asked for (chapter export depends on it)');
+    assert(/\[pulse:chapter\]/.test(markers._list[0].comments),
+      'ownership is stamped in the COMMENT, not smuggled into the name: ' + markers._list[0].comments);
+  }
+
+  // --- REGRESSION: the user's own marker survives Clear ---------------------
+  {
+    const { w, markers } = mkWorld();
+    const host = loadHost(w);
+    call(host, 'CP_addMarkers', { ranges: [{ start: 1, end: 2 }, { start: 8, end: 9 }], label: 'Silence' });
+    // the editor's own note, which happens to begin with the word Silence
+    const mine = markers.createMarker(20);
+    mine.name = 'Silence in the room — re-record this bit';
+    assert(markers._list.length === 3, 'two Pulse markers plus one of the user\'s');
+
+    const r = call(host, 'CP_clearPulseMarkers', { label: 'Silence' });
+    assert(r.ok === true, 'clear succeeds: ' + JSON.stringify(r));
+    assert(r.removed === 2, 'exactly the two Pulse markers are removed (got ' + r.removed + ')');
+    assert(markers._list.length === 1 && markers._list[0].name === mine.name,
+      'the user\'s own marker SURVIVES — it was being deleted because the name ' +
+      'started with "Silence": ' + JSON.stringify(markers._list.map(m => m.name)));
+  }
+
+  // --- REGRESSION: custom-named Pulse markers are now cleanable -------------
+  {
+    const { w, markers } = mkWorld();
+    const host = loadHost(w);
+    call(host, 'CP_addMarkers', {
+      ranges: [{ start: 0, end: 0 }, { start: 30, end: 30 }],
+      label: 'Chapter', names: ['Cold open', 'Guest intro']
+    });
+    const r = call(host, 'CP_clearPulseMarkers', { label: 'Chapter' });
+    assert(r.removed === 2,
+      'chapter markers named by TITLE can finally be cleared — nothing about ' +
+      '"Cold open" ever started with "Chapter" (got ' + r.removed + ')');
+    assert(markers._list.length === 0, 'the timeline is left clean');
+  }
+
+  // --- clearing one kind must not touch another ----------------------------
+  {
+    const { w, markers } = mkWorld();
+    const host = loadHost(w);
+    call(host, 'CP_addMarkers', { ranges: [{ start: 1, end: 2 }], label: 'Silence' });
+    call(host, 'CP_addMarkers', { ranges: [{ start: 9, end: 9 }], label: 'Chapter', names: ['Act two'] });
+    const r = call(host, 'CP_clearPulseMarkers', { label: 'Silence' });
+    assert(r.removed === 1 && markers._list.length === 1 && markers._list[0].name === 'Act two',
+      'clearing Silence leaves Chapter markers alone: ' + JSON.stringify(markers._list.map(m => m.name)));
+  }
+
+  // --- back-compat: markers from older builds have no tag ------------------
+  {
+    const { w, markers } = mkWorld();
+    const host = loadHost(w);
+    const old1 = markers.createMarker(3); old1.name = 'Silence 1';   // pre-tag build
+    const old2 = markers.createMarker(7); old2.name = 'Silence 12';
+    const mine = markers.createMarker(9); mine.name = 'Silence here is deliberate';
+    const r = call(host, 'CP_clearPulseMarkers', { label: 'Silence' });
+    assert(r.removed === 2 && r.byLegacy === 2,
+      'untagged markers from older builds still get cleaned, matched strictly as ' +
+      '"<label> <number>" (got ' + JSON.stringify(r) + ')');
+    assert(markers._list.length === 1 && markers._list[0].name === mine.name,
+      'and the strict shape still spares the user\'s prose: ' +
+      JSON.stringify(markers._list.map(m => m.name)));
+  }
+}
+
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

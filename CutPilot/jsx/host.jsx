@@ -415,20 +415,41 @@ function CP_findInstalledMogrts() {
  * Dry-run: drop a sequence marker over every detected silence so the user
  * can audition before cutting. argsJson: {ranges:[{start,end}], label}
  */
+/* Machine-readable ownership stamp, written into a marker's COMMENT field.
+ *
+ * Identity used to be inferred from the visible name — "does it start with the
+ * label?" — which was wrong in both directions. Markers Pulse creates with a
+ * caller-supplied name (chapter titles, Shorts clip titles) carry no trace of
+ * the label at all, so they could never be cleaned up; and a marker the USER
+ * named "Silence in the room" starts with "Silence", so Clear markers deleted
+ * their work. The name is for the human, this tag is for us. */
+var CP_MARK_TAG = '[pulse:';
+function CP_markerTag(label) {
+  return CP_MARK_TAG + String(label || 'silence').toLowerCase() + ']';
+}
+
 function CP_addMarkers(argsJson) {
   try {
     var args = JSON.parse(argsJson);
     var seq = CP_activeSequence();
+    var label = args.label || 'Silence';
+    var tag = CP_markerTag(label);
     var n = 0;
     for (var i = 0; i < args.ranges.length; i++) {
       var r = args.ranges[i];
       var m = seq.markers.createMarker(r.start);
-      m.name = (args.names && args.names[i]) ? args.names[i] : ((args.label || 'Silence') + ' ' + (i + 1));
+      m.name = (args.names && args.names[i]) ? args.names[i] : (label + ' ' + (i + 1));
       m.end = r.end;
+      // Stamp ownership without disturbing anything the caller wants the user
+      // to read — the tag goes on its own line after any real comment.
+      try {
+        var note = (args.comments && args.comments[i]) ? String(args.comments[i]) : '';
+        m.comments = note ? (note + '\n' + tag) : tag;
+      } catch (eCm) {}
       try { m.setColorByIndex(1); } catch (eColor) {}
       n++;
     }
-    return CP_ok({ created: n });
+    return CP_ok({ created: n, tag: tag });
   } catch (e) { return CP_fail(e.message); }
 }
 
@@ -436,15 +457,24 @@ function CP_clearPulseMarkers(argsJson) {
   try {
     var args = JSON.parse(argsJson || '{}');
     var label = args.label || 'Silence';
+    var tag = CP_markerTag(label);
     var seq = CP_activeSequence();
     var doomed = [];
+    var byTag = 0, byLegacy = 0;
+    // Markers written before the tag existed have to be matched by name, but
+    // STRICTLY — exactly "<label> <number>", the shape CP_addMarkers generates.
+    // A loose prefix test is what made "Silence in the room" collateral damage.
+    var legacy = new RegExp('^' + label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' \\d+$');
     var m = seq.markers.getFirstMarker();
     while (m) {
-      if (m.name && m.name.indexOf(label) === 0) doomed.push(m);
+      var cm = '';
+      try { cm = m.comments || ''; } catch (eC) {}
+      if (cm.indexOf(tag) >= 0) { doomed.push(m); byTag++; }
+      else if (cm.indexOf(CP_MARK_TAG) < 0 && m.name && legacy.test(m.name)) { doomed.push(m); byLegacy++; }
       m = seq.markers.getNextMarker(m);
     }
     for (var i = 0; i < doomed.length; i++) seq.markers.deleteMarker(doomed[i]);
-    return CP_ok({ removed: doomed.length });
+    return CP_ok({ removed: doomed.length, byTag: byTag, byLegacy: byLegacy });
   } catch (e) { return CP_fail(e.message); }
 }
 
