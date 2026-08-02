@@ -173,19 +173,25 @@ is recoverable; a false success is not.
 `CP_applyMulticamPlan` shipped four faults into a finished podcast edit because
 it had **no host coverage at all**. That is the pattern to watch.
 
-20 of 35 panel-callable host functions are now covered. **15 are not:**
+21 of 35 panel-callable host functions are now covered. **14 are not:**
 
 ```
 CP_captureSequenceFrame  CP_findInstalledMogrts  CP_findProjectSrts
-CP_getAudioTracks        CP_getEnv               CP_getMarkers
-CP_getPlayheadSeconds    CP_getProjectInfo       CP_getSelectedClip
-CP_importClip            CP_inspectMogrt         CP_probeRealSequence
-CP_saveProject           CP_selectedRange        CP_testMgrtFill
+CP_getAudioTracks        CP_getEnv               CP_getPlayheadSeconds
+CP_getProjectInfo        CP_getSelectedClip      CP_importClip
+CP_inspectMogrt          CP_probeRealSequence    CP_saveProject
+CP_selectedRange         CP_testMgrtFill
 ```
 
 Every function that **deletes, overwrites, restyles or sets a range** is now
 covered. What's left is read-only getters plus `CP_importClip`, which only
 adds.
+
+Read-only does not mean harmless: `CP_getMarkers` returned every marker on the
+sequence, and multicam's "switch on markers" mode turned each one into a camera
+cut — including the hook and silence markers Pulse had just placed itself.
+`CP_selectedRange`, `CP_getPlayheadSeconds` and `CP_saveProject` were read and
+are clean.
 
 Two audited functions turned out to have no bug at all:
 `CP_removePulseCaptionTracks` (its all-or-nothing guard genuinely holds) and

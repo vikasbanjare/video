@@ -9671,7 +9671,21 @@
     }
     if (src === 'markers') {
       return CPBridge.callHost('CP_getMarkers').then(function (r) {
-        if (!r.times || r.times.length < 1) throw new Error('No timeline markers found. Add markers, or use "Every few seconds".');
+        if (!r.times || r.times.length < 1) {
+          // Distinguish "you have no markers" from "the only markers here are
+          // Pulse's own", which is a different problem with a different fix.
+          if (r.excludedPulseMarkers) {
+            throw new Error('The only markers on this sequence are ones Pulse added (' +
+                            r.excludedPulseMarkers + ' of them) — those are skipped, or every ' +
+                            'hook and silence marker would become a camera switch. Add your own ' +
+                            'markers where you want the cuts, or use another switch mode.');
+          }
+          throw new Error('No timeline markers found. Add markers, or use "Every few seconds".');
+        }
+        if (r.excludedPulseMarkers) {
+          toast('Using your ' + r.times.length + ' marker' + (r.times.length === 1 ? '' : 's') +
+                ' — skipped ' + r.excludedPulseMarkers + ' that Pulse added itself.');
+        }
         return CPMulticam.segmentsFromBoundaries(r.times, r.end || (state.env && state.env.endSeconds) || 0);
       });
     }

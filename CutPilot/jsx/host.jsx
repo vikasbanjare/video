@@ -3380,11 +3380,26 @@ function CP_captureSequenceFrame(argsJson) {
 function CP_getMarkers() {
   try {
     var seq = CP_activeSequence();
-    var out = [];
+    var out = [], mine = 0;
     var m = seq.markers.getFirstMarker();
-    while (m) { out.push(m.start.seconds); m = seq.markers.getNextMarker(m); }
+    while (m) {
+      // Skip markers PULSE placed. This feeds multicam's "switch on markers"
+      // mode, and a user who ran hook detection or previewed silences with
+      // markers then got a camera switch on every one of them — cuts they never
+      // asked for, from markers they did not place. "Markers" means theirs.
+      // Untagged markers from older builds still count, so nothing that worked
+      // before stops working.
+      var cm = '';
+      try { cm = m.comments || ''; } catch (eC) {}
+      if (cm.indexOf(CP_MARK_TAG) >= 0) { mine++; }
+      else { out.push(m.start.seconds); }
+      m = seq.markers.getNextMarker(m);
+    }
     out.sort(function (a, b) { return a - b; });
-    return CP_ok({ times: out, end: parseFloat(seq.end) / CP_TICKS_PER_SECOND });
+    return CP_ok({
+      times: out, end: parseFloat(seq.end) / CP_TICKS_PER_SECOND,
+      excludedPulseMarkers: mine
+    });
   } catch (e) { return CP_fail(e.message); }
 }
 

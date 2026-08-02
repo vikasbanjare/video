@@ -2334,5 +2334,71 @@ console.log('host.jsx — In/Out and SRT import stop claiming success they did n
   }
 }
 
+// ═══════════════════════════ CP_getMarkers: the user's markers, not ours ════
+// This feeds multicam's "switch on markers" mode. It returned EVERY sequence
+// marker, so anyone who ran hook detection or previewed silences with markers
+// got a camera switch on each one — cuts from markers they never placed.
+console.log('host.jsx — marker-driven multicam uses the user\'s markers, not Pulse\'s own');
+{
+  const mkWorld = () => {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    const list = [];
+    w.sandbox.app.project.activeSequence.markers = {
+      _list: list,
+      createMarker(sec) {
+        const m = { start: { seconds: sec }, end: null, name: '', comments: '', setColorByIndex() {} };
+        list.push(m); return m;
+      },
+      getFirstMarker() { return list[0] || null; },
+      getNextMarker(m) { const i = list.indexOf(m); return (i >= 0 && list[i + 1]) ? list[i + 1] : null; },
+      deleteMarker(m) { const i = list.indexOf(m); if (i >= 0) list.splice(i, 1); }
+    };
+    return { w, markers: w.sandbox.app.project.activeSequence.markers };
+  };
+
+  // --- REGRESSION: Pulse's own markers are not switch points ---------------
+  {
+    const { w, markers } = mkWorld();
+    const host = loadHost(w);
+    // the editor's own two markers, where they want the cuts
+    const a = markers.createMarker(10); a.name = 'cut here';
+    const b = markers.createMarker(40); b.name = 'and here';
+    // plus everything Pulse dropped on the way
+    call(host, 'CP_addHookMarkers', { markers: [{ time: 3, label: 'Hook', comment: 'punchy line' }] });
+    call(host, 'CP_addMarkers', { ranges: [{ start: 22, end: 23 }], label: 'Silence' });
+    assert(markers._list.length === 4, 'four markers on the sequence in total');
+
+    const r = call(host, 'CP_getMarkers', {});
+    assert(r.ok === true, 'read succeeds: ' + JSON.stringify(r));
+    assert(JSON.stringify(r.times) === '[10,40]',
+      'only the two the USER placed become switch points — the hook at 3s and the ' +
+      'silence marker at 22s used to be cuts too: ' + JSON.stringify(r.times));
+    assert(r.excludedPulseMarkers === 2,
+      'and how many were skipped is reported, so the panel can say so: ' + JSON.stringify(r));
+  }
+
+  // --- untagged markers from older builds still count ----------------------
+  {
+    const { w, markers } = mkWorld();
+    const host = loadHost(w);
+    const old = markers.createMarker(7); old.name = 'Silence 1';   // pre-tag build, no comment
+    const r = call(host, 'CP_getMarkers', {});
+    assert(JSON.stringify(r.times) === '[7]' && r.excludedPulseMarkers === 0,
+      'a marker with no tag is treated as the user\'s — nothing that worked before ' +
+      'stops working: ' + JSON.stringify(r));
+  }
+
+  // --- a sequence with only Pulse markers reports the distinction ----------
+  {
+    const { w } = mkWorld();
+    const host = loadHost(w);
+    call(host, 'CP_addMarkers', { ranges: [{ start: 5, end: 6 }, { start: 9, end: 10 }], label: 'Silence' });
+    const r = call(host, 'CP_getMarkers', {});
+    assert(r.times.length === 0 && r.excludedPulseMarkers === 2,
+      '"no usable markers" and "only Pulse markers here" are distinguishable, so the ' +
+      'panel can explain the difference: ' + JSON.stringify(r));
+  }
+}
+
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
