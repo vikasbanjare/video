@@ -2094,5 +2094,85 @@ console.log('host.jsx — hook markers are removable, and keep the line that jus
   }
 }
 
+// ═════════════════════════════════════════════════════ CP_addZoomPunches ════
+// Writes Motion/Scale keyframes onto the user's OWN footage. Untested until
+// now, and the only feature in the panel that edits footage clips directly.
+console.log('host.jsx — zoom punches land on the right clip, at the right media time');
+{
+  const mkT = (s) => ({ seconds: s, get secs() { return this.seconds; } });
+  const mkComps = (arr) => { Object.defineProperty(arr, 'numItems', { get() { return arr.length; } }); return arr; };
+  const kfProp = (store, name) => ({
+    displayName: name,
+    setTimeVarying(v) { (store[name] = store[name] || { keys: [] }).tv = v; },
+    addKey(t) { (store[name] = store[name] || { keys: [] }).keys.push({ t }); },
+    setValueAtKey(t, v) {
+      const K = (store[name] = store[name] || { keys: [] }).keys;
+      for (const k of K) if (Math.abs(k.t - t) < 1e-9) { k.v = v; return; }
+      K.push({ t, v });
+    }
+  });
+  // start/end on the timeline, inPoint = where the clip starts inside its media
+  const addFootage = (w, ti, start, end, inPoint, withMotion) => {
+    const store = {};
+    const extra = { name: 'Podcast.mp4', inPoint: mkT(inPoint), _keys: store };
+    extra.components = withMotion
+      ? mkComps([{ displayName: 'Motion', properties: mkComps([kfProp(store, 'Scale')]) }])
+      : mkComps([]);
+    return w.model.addClip('vTracks', ti, start, end, extra);
+  };
+
+  // --- the punch shape, and media-time offset -------------------------------
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    const clip = addFootage(w, 0, 10, 40, 100, true);   // timeline 10-40 shows media 100-130
+    const host = loadHost(w);
+    const r = call(host, 'CP_addZoomPunches', {
+      videoTrack: 0, times: [16], amount: 108, hold: 1.0, ramp: 0.5
+    });
+    assert(r.ok && r.applied === 1 && r.skipped === 0, 'one punch applied: ' + JSON.stringify(r));
+    const K = clip._keys.Scale.keys;
+    assert(K.length === 4, 'four Scale keyframes — in, hold, hold, out (got ' + K.length + ')');
+    assert(K[0].v === 100 && K[3].v === 100, 'it starts and ends at 100% — the punch returns the shot');
+    assert(K[1].v === 108 && K[2].v === 108, 'and holds the peak between (got ' + K[1].v + '/' + K[2].v + ')');
+    // 16s on the timeline is 6s into a clip that starts at media 100 → 106
+    assert(Math.abs(K[0].t - 106) < 1e-9,
+      'the keyframes are placed in MEDIA time, not timeline time — 16s on a clip ' +
+      'starting at 10s whose media starts at 100 is 106, not 16 (got ' + K[0].t + ')');
+    assert(Math.abs(K[1].t - 106.5) < 1e-9 && Math.abs(K[2].t - 107.5) < 1e-9 &&
+           Math.abs(K[3].t - 108) < 1e-9,
+      'ramp/hold/ramp spacing follows the arguments: ' + JSON.stringify(K.map(k => +k.t.toFixed(2))));
+  }
+
+  // --- a time with no clip under it is skipped, not crashed on --------------
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    addFootage(w, 0, 0, 10, 0, true);
+    const host = loadHost(w);
+    const r = call(host, 'CP_addZoomPunches', { videoTrack: 0, times: [5, 500] });
+    assert(r.ok && r.applied === 1 && r.skipped === 1,
+      'the time beyond the end of the footage is counted as skipped, not applied: ' + JSON.stringify(r));
+  }
+
+  // --- a clip with no Motion/Scale is skipped -------------------------------
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    addFootage(w, 0, 0, 10, 0, false);          // no Motion component at all
+    const host = loadHost(w);
+    const r = call(host, 'CP_addZoomPunches', { videoTrack: 0, times: [5] });
+    assert(r.ok && r.applied === 0 && r.skipped === 1,
+      'a clip with no Motion/Scale is skipped rather than throwing: ' + JSON.stringify(r));
+  }
+
+  // --- an out-of-range track is refused, not silently ignored ---------------
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    addFootage(w, 0, 0, 10, 0, true);
+    const host = loadHost(w);
+    const r = call(host, 'CP_addZoomPunches', { videoTrack: 5, times: [5] });
+    assert(r.ok === false && /not found/i.test(r.error || ''),
+      'asking for a track that does not exist fails loudly: ' + JSON.stringify(r));
+  }
+}
+
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

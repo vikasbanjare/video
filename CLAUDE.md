@@ -153,22 +153,27 @@ put a thing, refuse and say how to make room.
 `CP_applyMulticamPlan` shipped four faults into a finished podcast edit because
 it had **no host coverage at all**. That is the pattern to watch.
 
-15 of 35 panel-callable host functions are now covered. **20 are not:**
+17 of 35 panel-callable host functions are now covered. **18 are not:**
 
 ```
-CP_addHookMarkers      CP_addZoomPunches       CP_captureSequenceFrame
-CP_copyStyleSelectedToTrack                    CP_findInstalledMogrts
-CP_findProjectSrts     CP_getAudioTracks       CP_getEnv
-CP_getMarkers          CP_getPlayheadSeconds   CP_getProjectInfo
-CP_getSelectedClip     CP_importClip           CP_importSrtCaptions
-CP_inspectMogrt        CP_probeRealSequence    CP_saveProject
-CP_selectedRange       CP_setInOut             CP_testMgrtFill
+CP_captureSequenceFrame  CP_copyStyleSelectedToTrack  CP_findInstalledMogrts
+CP_findProjectSrts       CP_getAudioTracks            CP_getEnv
+CP_getMarkers            CP_getPlayheadSeconds        CP_getProjectInfo
+CP_getSelectedClip       CP_importClip                CP_importSrtCaptions
+CP_inspectMogrt          CP_probeRealSequence         CP_saveProject
+CP_selectedRange         CP_setInOut                  CP_testMgrtFill
 ```
 
-Most are read-only getters that cannot damage a timeline. The ones that mutate
-— `CP_addHookMarkers`, `CP_addZoomPunches`, `CP_copyStyleSelectedToTrack`,
-`CP_importClip`, `CP_importSrtCaptions` — were read and looked sound, but are
+Every function that **deletes or overwrites** anything is now covered. What's
+left is mostly read-only getters. The four that still mutate —
+`CP_copyStyleSelectedToTrack`, `CP_importClip`, `CP_importSrtCaptions`,
+`CP_setInOut` — only add or restyle, were read and looked sound, but are
 unproven.
+
+Two audited functions turned out to have no bug at all:
+`CP_removePulseCaptionTracks` (its all-or-nothing guard genuinely holds) and
+`CP_addZoomPunches` (which correctly places keyframes in MEDIA time, not
+timeline time — the easy thing to get wrong). Both are now pinned by tests.
 
 `test/host-tests.js` runs `host.jsx` against a mini-Premiere VM (`makeWorld`)
 that models tracks, clips, QE, project bins, and an `overwriteClip` which
