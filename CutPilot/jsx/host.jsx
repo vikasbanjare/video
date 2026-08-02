@@ -2149,28 +2149,51 @@ function CP_captureMgrtStyle(comp) {
   if (!comp || !comp.properties) return out;
   for (var i = 0; i < comp.properties.numItems; i++) {
     var p = comp.properties[i];
+    // The property's NAME is captured alongside its index. The style is copied
+    // by index, which is only meaningful when source and target are the same
+    // template — and a caption track can hold two, because regenerating with a
+    // different template reuses the same track. Copying index-by-index across
+    // different layouts writes a colour into a size slider and a font name into
+    // a position field. The name lets the apply side notice and refuse.
+    var pname = ''; try { pname = String(p.displayName || ''); } catch (eNm) {}
     var v = null; try { v = p.getValue(); } catch (e) { continue; }
     if (typeof v === 'string' &&
         (v.indexOf('capProp') !== -1 || v.indexOf('textEditValue') !== -1 ||
          v.indexOf('"strDB"') !== -1 || CP_isUuidList(v))) continue;        // text / group
     var col = null;
     try { if (typeof p.getColorValue === 'function') { var cv = p.getColorValue(); if (cv && cv.length >= 4) col = [cv[0], cv[1], cv[2], cv[3]]; } } catch (eC) {}
-    if (col) { out.push({ i: i, kind: 'color', color: col }); continue; }
-    if (typeof v === 'number' || typeof v === 'boolean') { out.push({ i: i, kind: 'val', value: v }); continue; }
-    if (typeof v === 'object' && v && v.x != null) { out.push({ i: i, kind: 'point', x: v.x, y: v.y }); continue; }
-    if (typeof v === 'string') { out.push({ i: i, kind: 'str', value: v }); continue; }   // font names etc.
+    if (col) { out.push({ i: i, n: pname, kind: 'color', color: col }); continue; }
+    if (typeof v === 'number' || typeof v === 'boolean') { out.push({ i: i, n: pname, kind: 'val', value: v }); continue; }
+    if (typeof v === 'object' && v && v.x != null) { out.push({ i: i, n: pname, kind: 'point', x: v.x, y: v.y }); continue; }
+    if (typeof v === 'string') { out.push({ i: i, n: pname, kind: 'str', value: v }); continue; }   // font names etc.
   }
   return out;
 }
 
+/* Properties skipped by the last run of CP_applyCapturedStyle because the slot
+   at that index held a DIFFERENT property than the one captured — i.e. the
+   target graphic is a different template from the source. The caller resets it
+   and reports the total, so "nothing changed on half my captions" has a visible
+   cause instead of looking like the feature is broken. */
+var CP_STYLE_MISMATCH = 0;
+
 /* Apply a captured style onto a MOGRT component (best effort, never throws). */
 function CP_applyCapturedStyle(comp, style) {
   if (!comp || !comp.properties || !style) return 0;
-  var n = 0;
+  var n = 0, mismatched = 0;
   for (var k = 0; k < style.length; k++) {
     var s = style[k];
     if (s.i == null || s.i < 0 || s.i >= comp.properties.numItems) continue;
     var p = comp.properties[s.i];
+    // Refuse to write when the slot at this index is not the property that was
+    // captured. Without this, restyling a track that holds two different
+    // caption templates copied values straight across mismatched layouts.
+    // Names are only compared when BOTH sides have one, so a template that
+    // exposes no displayName behaves exactly as before.
+    if (s.n) {
+      var tname = ''; try { tname = String(p.displayName || ''); } catch (eTn) {}
+      if (tname && tname !== s.n) { mismatched++; continue; }
+    }
     try {
       if (s.kind === 'color' && typeof p.setColorValue === 'function') {
         // getColorValue is [a,r,g,b]; replicate the colour, force opaque alpha
@@ -2185,6 +2208,7 @@ function CP_applyCapturedStyle(comp, style) {
       }
     } catch (e) {}
   }
+  CP_STYLE_MISMATCH += mismatched;
   return n;
 }
 
@@ -2208,13 +2232,23 @@ function CP_copyStyleSelectedToTrack() {
     if (!srcComp || !srcComp.properties) return CP_fail('The selected clip isn\'t a Motion Graphics template — select one of Pulse\'s caption graphics.');
     var style = CP_captureMgrtStyle(srcComp);
     if (!style.length) return CP_fail('Could not read any style from the selected graphic.');
-    var track = seq.videoTracks[selTrack], applied = 0;
+    var track = seq.videoTracks[selTrack], applied = 0, skippedDifferent = 0;
+    CP_STYLE_MISMATCH = 0;
     for (var c = 0; c < track.clips.numItems; c++) {
       if (c === selIdx) continue;
       var comp = null; try { comp = track.clips[c].getMGTComponent(); } catch (eG) {}
-      if (comp && comp.properties) { if (CP_applyCapturedStyle(comp, style) > 0) applied++; }
+      if (comp && comp.properties) {
+        var before = CP_STYLE_MISMATCH;
+        if (CP_applyCapturedStyle(comp, style) > 0) applied++;
+        if (CP_STYLE_MISMATCH > before) skippedDifferent++;
+      }
     }
-    return CP_ok({ applied: applied, captured: style.length, track: selTrack + 1 });
+    return CP_ok({
+      applied: applied, captured: style.length, track: selTrack + 1,
+      // graphics on the track built from a DIFFERENT template, whose properties
+      // were left alone rather than written to by index
+      differentTemplate: skippedDifferent, propsSkipped: CP_STYLE_MISMATCH
+    });
   } catch (e) { return CP_fail(e.message); }
 }
 

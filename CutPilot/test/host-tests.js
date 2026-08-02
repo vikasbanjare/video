@@ -2174,5 +2174,88 @@ console.log('host.jsx — zoom punches land on the right clip, at the right medi
   }
 }
 
+// ══════════════════════════════════ CP_copyStyleSelectedToTrack ═════════════
+// "Match all captions to the one I styled" copies property values BY INDEX from
+// the selected graphic onto every other graphic on the track. That is only
+// meaningful when they are the same template — and a caption track can hold
+// two, because regenerating with a different template reuses the same track.
+console.log('host.jsx — match-styles refuses to write across different templates');
+{
+  const mkProps = (defs) => {
+    const arr = defs.map(d => ({
+      displayName: d.name,
+      _v: d.value,
+      getValue() { return this._v; },
+      setValue(v) { this._v = v; }
+    }));
+    Object.defineProperty(arr, 'numItems', { get() { return arr.length; } });
+    return arr;
+  };
+  const mkClip = (w, ti, start, name, defs, selected) => {
+    const props = defs ? mkProps(defs) : null;
+    const c = w.model.addClip('vTracks', ti, start, start + 2, {
+      name, isSelected: () => !!selected
+    });
+    c.getMGTComponent = () => (props ? { properties: props } : null);
+    c._props = props;
+    return c;
+  };
+
+  // --- same template: the style propagates --------------------------------
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    const layout = (size, font) => [
+      { name: 'Text Scale', value: size }, { name: 'Font', value: font }
+    ];
+    mkClip(w, 0, 0, 'cap_001', layout(140, 'BebasNeue-Regular'), true);   // styled by the user
+    const b = mkClip(w, 0, 4, 'cap_002', layout(90, 'ArialMT'), false);
+    const host = loadHost(w);
+    const r = call(host, 'CP_copyStyleSelectedToTrack', {});
+    assert(r.ok === true && r.applied === 1, 'the other caption is restyled: ' + JSON.stringify(r));
+    assert(b._props[0]._v === 140 && b._props[1]._v === 'BebasNeue-Regular',
+      'it takes the selected graphic\'s size AND font: ' + JSON.stringify(b._props.map(p => p._v)));
+    assert(r.differentTemplate === 0, 'nothing was flagged as a different template');
+  }
+
+  // --- REGRESSION: a DIFFERENT template on the same track is left alone -----
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    mkClip(w, 0, 0, 'Flux_Halo2_r3', [
+      { name: 'Text Scale', value: 140 }, { name: 'Font', value: 'BebasNeue-Regular' }
+    ], true);
+    // a caption from another template: same property COUNT, different meanings
+    const other = mkClip(w, 0, 4, 'Subtitle_4_r3', [
+      { name: 'Corner Radius', value: 12 }, { name: 'Box Opacity', value: 80 }
+    ], false);
+    const host = loadHost(w);
+    const r = call(host, 'CP_copyStyleSelectedToTrack', {});
+    assert(other._props[0]._v === 12 && other._props[1]._v === 80,
+      'the other template keeps its own values — 140 used to be written into ' +
+      '"Corner Radius" and a font name into "Box Opacity": ' +
+      JSON.stringify(other._props.map(p => p._v)));
+    assert(r.differentTemplate === 1 && r.propsSkipped === 2,
+      'and the mismatch is REPORTED, so "half my captions did not change" has a ' +
+      'visible cause: ' + JSON.stringify(r));
+  }
+
+  // --- nothing selected / not a graphic → helpful refusals -----------------
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    mkClip(w, 0, 0, 'cap_001', [{ name: 'Text Scale', value: 100 }], false);
+    const host = loadHost(w);
+    const r = call(host, 'CP_copyStyleSelectedToTrack', {});
+    assert(r.ok === false && /select one caption/i.test(r.error || ''),
+      'with nothing selected it says what to click: ' + JSON.stringify(r));
+  }
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    mkClip(w, 0, 0, 'Podcast.mp4', null, true);        // footage, no MGT component
+    const host = loadHost(w);
+    const r = call(host, 'CP_copyStyleSelectedToTrack', {});
+    assert(r.ok === false && /Motion Graphics/i.test(r.error || ''),
+      'selecting footage explains what was expected: ' + JSON.stringify(r));
+  }
+}
+
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

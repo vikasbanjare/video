@@ -6256,7 +6256,19 @@
       capProgress('Reading the selected graphic & matching all captions…');
       CPBridge.callHost('CP_copyStyleSelectedToTrack').then(function (r) {
         capProgress(null);
-        toast('🎯 Matched ' + r.applied + ' caption' + (r.applied === 1 ? '' : 's') + ' to your selected graphic (' + r.captured + ' properties copied). ⌘Z undoes it.');
+        var msg = '🎯 Matched ' + r.applied + ' caption' + (r.applied === 1 ? '' : 's') +
+                  ' to your selected graphic (' + r.captured + ' properties copied).';
+        /* Some graphics on this track come from a DIFFERENT template. The style
+           is copied slot-by-slot, so writing it onto a different layout would
+           put a size into a corner-radius and a font name into an opacity.
+           Those are skipped — say so, otherwise "half of them didn't change"
+           looks like the feature is broken. */
+        if (r.differentTemplate) {
+          msg += ' ' + r.differentTemplate + ' graphic' + (r.differentTemplate === 1 ? ' was' : 's were') +
+                 ' built from a different template and left alone — re-generate the captions ' +
+                 'so the whole track uses one template, then match again.';
+        }
+        toast(msg + ' ⌘Z undoes it.', !!r.differentTemplate);
       }).catch(function (e) { capProgress(null); toast(e.message, true); });
     });
     if ($('btn-native-apply')) $('btn-native-apply').addEventListener('click', applyNative);

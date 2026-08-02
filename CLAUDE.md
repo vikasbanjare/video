@@ -84,8 +84,9 @@ Both files, and note the count:
 
 ## The mistake this codebase keeps making
 
-**Deciding what belongs to Pulse by pattern-matching a name the user also
-controls.** Found in four places, all of which destroyed or hid user work:
+**Identifying things by something the user controls, or by a positional index
+that only holds if nothing else changed.** Found in six places, all of which
+destroyed, hid, or corrupted user work:
 
 | Where | What it matched | What it did |
 |---|---|---|
@@ -93,6 +94,8 @@ controls.** Found in four places, all of which destroyed or hid user work:
 | `CP_removeOverlay` | name *contains* `guide`/`pulse`/`brand` | deleted "Brand logo.png", "Brand intro.mp4", "Style Guide.png" |
 | `CP_removePulseCaptionTracks` | name matches a template pattern | still guesses; only safe because it refuses any track holding a non-caption clip |
 | `CP_placeSfx` | — | fell back to "the last audio track" and `overwriteClip` ate a mic |
+| `CP_addHookMarkers` | nothing — no tag at all | markers Pulse placed that nothing could remove, and a second identical set on every re-run |
+| `CP_applyCapturedStyle` | property INDEX, not name | copied a size into "Corner Radius" and a font name into "Box Opacity" when a track held two different caption templates |
 
 The fix each time: put a machine-readable tag where the user does not type
 (marker **comments**, a filename only Pulse writes), match it exactly, and keep
@@ -153,22 +156,21 @@ put a thing, refuse and say how to make room.
 `CP_applyMulticamPlan` shipped four faults into a finished podcast edit because
 it had **no host coverage at all**. That is the pattern to watch.
 
-17 of 35 panel-callable host functions are now covered. **18 are not:**
+18 of 35 panel-callable host functions are now covered. **17 are not:**
 
 ```
-CP_captureSequenceFrame  CP_copyStyleSelectedToTrack  CP_findInstalledMogrts
-CP_findProjectSrts       CP_getAudioTracks            CP_getEnv
-CP_getMarkers            CP_getPlayheadSeconds        CP_getProjectInfo
-CP_getSelectedClip       CP_importClip                CP_importSrtCaptions
-CP_inspectMogrt          CP_probeRealSequence         CP_saveProject
-CP_selectedRange         CP_setInOut                  CP_testMgrtFill
+CP_captureSequenceFrame  CP_findInstalledMogrts  CP_findProjectSrts
+CP_getAudioTracks        CP_getEnv               CP_getMarkers
+CP_getPlayheadSeconds    CP_getProjectInfo       CP_getSelectedClip
+CP_importClip            CP_importSrtCaptions    CP_inspectMogrt
+CP_probeRealSequence     CP_saveProject          CP_selectedRange
+CP_setInOut              CP_testMgrtFill
 ```
 
-Every function that **deletes or overwrites** anything is now covered. What's
-left is mostly read-only getters. The four that still mutate —
-`CP_copyStyleSelectedToTrack`, `CP_importClip`, `CP_importSrtCaptions`,
-`CP_setInOut` — only add or restyle, were read and looked sound, but are
-unproven.
+Every function that **deletes, overwrites or restyles** anything is now
+covered. What's left is mostly read-only getters. The three that still mutate —
+`CP_importClip`, `CP_importSrtCaptions`, `CP_setInOut` — only add, were read
+and looked sound, but are unproven.
 
 Two audited functions turned out to have no bug at all:
 `CP_removePulseCaptionTracks` (its all-or-nothing guard genuinely holds) and
