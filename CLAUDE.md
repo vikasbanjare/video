@@ -190,8 +190,22 @@ adds.
 Read-only does not mean harmless: `CP_getMarkers` returned every marker on the
 sequence, and multicam's "switch on markers" mode turned each one into a camera
 cut — including the hook and silence markers Pulse had just placed itself.
-`CP_selectedRange`, `CP_getPlayheadSeconds` and `CP_saveProject` were read and
-are clean.
+
+**Every remaining function has now been read.** These are clean, and were
+deliberately left without tests rather than asserting that correct code is
+correct: `CP_selectedRange`, `CP_getPlayheadSeconds`, `CP_saveProject`,
+`CP_getEnv`, `CP_getProjectInfo`, `CP_getSelectedClip`, `CP_getAudioTracks`,
+`CP_findProjectSrts`, `CP_importClip`, `CP_probeRealSequence`,
+`CP_inspectMogrt`, `CP_captureSequenceFrame`, `CP_findInstalledMogrts`,
+`CP_testMgrtFill`.
+
+Two known papercuts left alone as deliberate behaviour, not bugs:
+
+- `CP_findInstalledMogrts` caps at 600 templates and truncates silently.
+- `CP_testMgrtFill` leaves its test clip on purpose (you are meant to look at
+  it) but **adds a video track on every run**. The report now says ⌘Z removes
+  both. This is a plausible contributor to the owner's sequence collecting a
+  stack of debug tracks.
 
 Two audited functions turned out to have no bug at all:
 `CP_removePulseCaptionTracks` (its all-or-nothing guard genuinely holds) and

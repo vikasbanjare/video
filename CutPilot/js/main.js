@@ -6346,6 +6346,12 @@
       L.push('   • shows the template default → text is STORED but not re-rendered;');
       L.push('     click the clip → click its Text field → press Enter. Updates now?');
       L.push('');
+      // The clip is left on purpose so the render can be eyeballed — but each
+      // run also ADDS a video track, and nothing ever said to clean up. Repeated
+      // diagnostics are how a sequence ends up with a stack of debug tracks.
+      L.push('🧹 When you are done looking: ⌘Z / Ctrl+Z removes the test clip AND');
+      L.push('   the track it created. Each run of this adds another one.');
+      L.push('');
       L.push('— copy everything below back to me —');
       L.push('before: ' + (r.beforeSample || ''));
       L.push('after:  ' + (r.afterSample || ''));
