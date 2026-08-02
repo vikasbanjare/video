@@ -2257,5 +2257,82 @@ console.log('host.jsx — match-styles refuses to write across different templat
   }
 }
 
+// ════════════════════════════ success that was never verified ══════════════
+// Three untested functions all reported success they had not checked. Same
+// family as CP_rebuildTrimmed's swallowed inserts: the call returns ok, the
+// panel announces it worked, and the timeline says otherwise.
+console.log('host.jsx — In/Out and SRT import stop claiming success they did not check');
+{
+  // --- CP_setInOut: both attempts refused → the call must FAIL --------------
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    const seq = w.sandbox.app.project.activeSequence;
+    seq.setInPoint = () => { throw new Error('no focus'); };
+    seq.setOutPoint = () => { throw new Error('no focus'); };
+    const host = loadHost(w);
+    const r = call(host, 'CP_setInOut', { start: 3, end: 9 });
+    assert(r.ok === false,
+      'when Premiere refuses both In and Out the call FAILS — it used to return ok ' +
+      'with the numbers it was asked for, so the panel said "In/Out set" and nothing ' +
+      'had moved: ' + JSON.stringify(r));
+    assert(/timeline once to give it focus/i.test(r.error || ''),
+      'and it says what to do about it: ' + r.error);
+  }
+
+  // --- CP_setInOut: the normal path still reports what took ----------------
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    const seen = {};
+    const seq = w.sandbox.app.project.activeSequence;
+    seq.setInPoint = (t) => { seen.in = t; };
+    seq.setOutPoint = (t) => { seen.out = t; };
+    const host = loadHost(w);
+    const r = call(host, 'CP_setInOut', { start: 3, end: 9 });
+    assert(r.ok === true && r.inSet === true && r.outSet === true,
+      'a working host reports both points set: ' + JSON.stringify(r));
+    assert(seen.in != null && seen.out != null, 'and both were actually pushed to the sequence');
+  }
+
+  // --- CP_setInOut: ticks refused, seconds accepted ------------------------
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    const seq = w.sandbox.app.project.activeSequence;
+    let calls = 0;
+    seq.setInPoint = (t) => { calls++; if (calls === 1) throw new Error('ticks unsupported'); };
+    seq.setOutPoint = () => {};
+    const host = loadHost(w);
+    const r = call(host, 'CP_setInOut', { start: 3, end: 9 });
+    assert(r.ok === true && r.inSet === true,
+      'the seconds fallback still counts as set, for older hosts: ' + JSON.stringify(r));
+  }
+
+  // --- CP_importSrtCaptions: undefined is NOT success ----------------------
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    const item = { name: 'caps.srt', getMediaPath: () => '/tmp/caps.srt' };
+    w.sandbox.app.project.rootItem.children = { numItems: 1, 0: item };
+    w.sandbox.app.project.importFiles = () => true;
+    const seq = w.sandbox.app.project.activeSequence;
+    seq.createCaptionTrack = () => undefined;          // did nothing, said nothing
+    const host = loadHost(w);
+    const r = call(host, 'CP_importSrtCaptions', { srtPath: '/tmp/caps.srt' });
+    assert(r.ok === true && r.captionTrackCreated === false,
+      'a createCaptionTrack that returns undefined is NOT reported as created — ' +
+      '`okCt !== false` used to call that success: ' + JSON.stringify(r));
+  }
+
+  // --- CP_importSrtCaptions: a real true still counts ----------------------
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    const item = { name: 'caps.srt', getMediaPath: () => '/tmp/caps.srt' };
+    w.sandbox.app.project.rootItem.children = { numItems: 1, 0: item };
+    w.sandbox.app.project.importFiles = () => true;
+    w.sandbox.app.project.activeSequence.createCaptionTrack = () => true;
+    const host = loadHost(w);
+    const r = call(host, 'CP_importSrtCaptions', { srtPath: '/tmp/caps.srt' });
+    assert(r.ok === true && r.captionTrackCreated === true, 'the working case is unchanged');
+  }
+}
+
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

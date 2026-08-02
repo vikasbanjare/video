@@ -106,6 +106,23 @@ them veto it (`dryRun`) rather than promising safety the code cannot deliver.
 **And: never fall back to something destructive.** If there is no safe place to
 put a thing, refuse and say how to make room.
 
+## The other recurring mistake: announcing success nobody checked
+
+A `catch {}` around a Premiere call, or a truthiness test loose enough to count
+`undefined`, and the panel cheerfully reports the job done:
+
+| Where | What it claimed |
+|---|---|
+| `CP_rebuildTrimmed` | segments that never inserted were discarded, and the transcript was then remapped as if they had |
+| `CP_placeSfx` | reported only the hits that landed, never the ones that did not |
+| `CP_setInOut` | returned the range it was ASKED for even when both attempts threw — "In/Out set to this cut", playhead unmoved |
+| `CP_importSrtCaptions` | `okCt !== false` counted `undefined` as a caption track; the panel ignored the result and said "✓ added" regardless |
+| `CP_importClip` | `sequence: null` fell back to the requested name, announcing a sequence that was never created |
+
+Premiere's scripting API fails quietly and often. Count what worked, carry the
+reason back, and let the panel say "3 of 5" — a partial result the user can see
+is recoverable; a false success is not.
+
 ## Decisions locked in
 
 1. **Pulse renders captions itself by default** (`_capOut = 'png'`); the
@@ -156,21 +173,19 @@ put a thing, refuse and say how to make room.
 `CP_applyMulticamPlan` shipped four faults into a finished podcast edit because
 it had **no host coverage at all**. That is the pattern to watch.
 
-18 of 35 panel-callable host functions are now covered. **17 are not:**
+20 of 35 panel-callable host functions are now covered. **15 are not:**
 
 ```
 CP_captureSequenceFrame  CP_findInstalledMogrts  CP_findProjectSrts
 CP_getAudioTracks        CP_getEnv               CP_getMarkers
 CP_getPlayheadSeconds    CP_getProjectInfo       CP_getSelectedClip
-CP_importClip            CP_importSrtCaptions    CP_inspectMogrt
-CP_probeRealSequence     CP_saveProject          CP_selectedRange
-CP_setInOut              CP_testMgrtFill
+CP_importClip            CP_inspectMogrt         CP_probeRealSequence
+CP_saveProject           CP_selectedRange        CP_testMgrtFill
 ```
 
-Every function that **deletes, overwrites or restyles** anything is now
-covered. What's left is mostly read-only getters. The three that still mutate —
-`CP_importClip`, `CP_importSrtCaptions`, `CP_setInOut` — only add, were read
-and looked sound, but are unproven.
+Every function that **deletes, overwrites, restyles or sets a range** is now
+covered. What's left is read-only getters plus `CP_importClip`, which only
+adds.
 
 Two audited functions turned out to have no bug at all:
 `CP_removePulseCaptionTracks` (its all-or-nothing guard genuinely holds) and

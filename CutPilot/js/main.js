@@ -7417,8 +7417,15 @@
       var out = pathMod.join(nodeReq('os').tmpdir(), 'cutpilot-' + Date.now() + '.srt');
       nodeReq('fs').writeFileSync(out, CPCaptions.toSRT(ncues), 'utf8');
       capProgress('Creating caption track');
-      CPBridge.callHost('CP_importSrtCaptions', { srtPath: out }).then(function () {
+      CPBridge.callHost('CP_importSrtCaptions', { srtPath: out }).then(function (r) {
         capProgress(null);
+        // The result used to be ignored, so "✓ added" appeared even when
+        // Premiere never made the track and there was nothing on the timeline.
+        if (r && r.captionTrackCreated === false) {
+          return toast('The SRT imported into your project, but Premiere did not create the ' +
+                       'caption track. Find it in the Project panel and drag it onto the ' +
+                       'timeline — the ' + ncues.length + ' lines are all there.', true);
+        }
         var rec = $('native-recipe');
         if (rec) { rec.textContent = templateStyleRecipe(preset); rec.classList.remove('hidden'); }
         toast('✓ Editable caption track added (' + ncues.length + ' lines) — edit any line in ' +
@@ -9110,6 +9117,14 @@
       return CPBridge.callHost('CP_importClip', { path: outPath, name: name });
     }).then(function (res) {
       prog.classList.add('hidden');
+      /* res.sequence is null when the clip imported but Premiere refused to
+         build a sequence from it. Falling back to the requested name announced
+         a sequence that does not exist, and the user went looking for it. */
+      if (res && res.imported && !res.sequence) {
+        return toast('The clip rendered and imported, but Premiere did not create a sequence ' +
+                     'for it. It is in your Project panel as “' + name + '” — drag it onto a ' +
+                     'new sequence.', true);
+      }
       toast('🎬 Created “' + (res && res.sequence ? res.sequence : name) + '”' + (rt ? ' — ' + rt.label + ' vertical.' : '.'));
     }).catch(function (e) { prog.classList.add('hidden'); toast('Make clip failed: ' + e.message, true); });
   }

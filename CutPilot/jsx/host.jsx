@@ -733,13 +733,22 @@ function CP_setInOut(argsJson) {
   try {
     var args = JSON.parse(argsJson);
     var seq = CP_activeSequence();
-    try { seq.setInPoint(CP_ticksFromSeconds(args.start)); } catch (eIn) {
-      try { seq.setInPoint(args.start); } catch (eIn2) {}
+    // Ticks first, seconds as a fallback for older hosts. Both failing used to
+    // be swallowed and the call still returned ok with the requested numbers,
+    // so the panel said "In/Out set to this cut" when the playhead range had
+    // not moved at all. Report what actually took.
+    var inSet = false, outSet = false;
+    try { seq.setInPoint(CP_ticksFromSeconds(args.start)); inSet = true; } catch (eIn) {
+      try { seq.setInPoint(args.start); inSet = true; } catch (eIn2) {}
     }
-    try { seq.setOutPoint(CP_ticksFromSeconds(args.end)); } catch (eOut) {
-      try { seq.setOutPoint(args.end); } catch (eOut2) {}
+    try { seq.setOutPoint(CP_ticksFromSeconds(args.end)); outSet = true; } catch (eOut) {
+      try { seq.setOutPoint(args.end); outSet = true; } catch (eOut2) {}
     }
-    return CP_ok({ start: args.start, end: args.end });
+    if (!inSet && !outSet) {
+      return CP_fail('Premiere would not accept an In/Out range on this sequence. ' +
+                     'Click the timeline once to give it focus and try again.');
+    }
+    return CP_ok({ start: args.start, end: args.end, inSet: inSet, outSet: outSet });
   } catch (e) { return CP_fail(e.message); }
 }
 
@@ -983,8 +992,13 @@ function CP_importSrtCaptions(argsJson) {
     if (typeof seq.createCaptionTrack !== 'function') {
       return CP_fail('This Premiere version has no createCaptionTrack scripting API (needs 22.0+). The SRT is imported — drag it onto the timeline manually.');
     }
+    // `okCt !== false` counted undefined as success, so a call that quietly did
+    // nothing was reported as a caption track appearing on the timeline — and
+    // the panel ignored the result entirely and said "✓ Editable caption track
+    // added" either way. Only an explicitly non-false, non-null answer counts.
     var okCt = seq.createCaptionTrack(item, 0);
-    return CP_ok({ captionTrackCreated: okCt !== false });
+    var created = (okCt !== false && okCt !== undefined && okCt !== null);
+    return CP_ok({ captionTrackCreated: created });
   } catch (e) { return CP_fail(e.message); }
 }
 
