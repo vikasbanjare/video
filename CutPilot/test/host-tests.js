@@ -2021,5 +2021,78 @@ console.log('host.jsx — SFX never overwrite an occupied audio track');
   }
 }
 
+// ═══════════════════════════════════ hook markers carry the same stamp ══════
+// CP_addHookMarkers writes through its own path and was left without the
+// ownership tag when CP_addMarkers gained one — so Pulse could put hook markers
+// on the timeline and then had no way to take them off.
+console.log('host.jsx — hook markers are removable, and keep the line that justified them');
+{
+  const mkMarkers = () => {
+    const list = [];
+    return {
+      _list: list,
+      createMarker(sec) {
+        const m = { start: { seconds: sec }, end: null, name: '', comments: '', setColorByIndex() {} };
+        list.push(m); return m;
+      },
+      getFirstMarker() { return list[0] || null; },
+      getNextMarker(m) { const i = list.indexOf(m); return (i >= 0 && list[i + 1]) ? list[i + 1] : null; },
+      deleteMarker(m) { const i = list.indexOf(m); if (i >= 0) list.splice(i, 1); }
+    };
+  };
+  const mkWorld = () => {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    const markers = mkMarkers();
+    w.sandbox.app.project.activeSequence.markers = markers;
+    return { w, markers };
+  };
+
+  // --- tag written, spoken line kept and kept FIRST -------------------------
+  {
+    const { w, markers } = mkWorld();
+    const host = loadHost(w);
+    const r = call(host, 'CP_addHookMarkers', {
+      markers: [
+        { time: 12.5, label: 'Hook', comment: 'aur yahi sabse badi galti hai' },
+        { time: 48.0, label: 'Hook', comment: 'ab main aapko dikhata hoon' }
+      ]
+    });
+    assert(r.ok && r.added === 2 && r.requested === 2 && r.skipped === 0,
+      'both hook markers land, and the count asked for is reported: ' + JSON.stringify(r));
+    assert(/\[pulse:hook\]/.test(markers._list[0].comments),
+      'the ownership tag is written (was absent, making these unremovable): ' + markers._list[0].comments);
+    assert(markers._list[0].comments.indexOf('aur yahi sabse badi galti hai') === 0,
+      'the spoken line still comes FIRST — it is the reason the marker is useful: ' +
+      JSON.stringify(markers._list[0].comments));
+    assert(markers._list[0].name === 'Hook', 'the visible name is untouched');
+  }
+
+  // --- REGRESSION: they can now actually be cleared -------------------------
+  {
+    const { w, markers } = mkWorld();
+    const host = loadHost(w);
+    call(host, 'CP_addHookMarkers', { markers: [{ time: 5, label: 'Hook', comment: 'line one' }] });
+    const r = call(host, 'CP_clearPulseMarkers', { label: 'hook' });
+    assert(r.removed === 1 && markers._list.length === 0,
+      'a hook marker Pulse placed can be removed again (got ' + r.removed + ')');
+  }
+
+  // --- clearing hooks leaves everything else alone -------------------------
+  {
+    const { w, markers } = mkWorld();
+    const host = loadHost(w);
+    call(host, 'CP_addHookMarkers', { markers: [{ time: 5, label: 'Hook', comment: 'hooky' }] });
+    call(host, 'CP_addMarkers', { ranges: [{ start: 20, end: 21 }], label: 'Silence' });
+    const mine = markers.createMarker(30); mine.name = 'my own note'; mine.comments = 'do not touch';
+    const r = call(host, 'CP_clearPulseMarkers', { label: 'hook' });
+    assert(r.removed === 1, 'only the hook goes (got ' + r.removed + ')');
+    assert(markers._list.length === 2 &&
+           markers._list.some(m => m.name === 'Silence 1') &&
+           markers._list.some(m => m.name === 'my own note'),
+      'the Silence marker and the user\'s own note both survive: ' +
+      JSON.stringify(markers._list.map(m => m.name)));
+  }
+}
+
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

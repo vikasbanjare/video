@@ -2010,8 +2010,25 @@
     var hooks = CPTranscript.detectHooks(cues);
     if (!hooks.length) return toast('No obvious hook phrases found in this transcript.');
     if (!CPBridge.isCEP()) return toast('Open inside Premiere to add markers.', true);
-    CPBridge.callHost('CP_addHookMarkers', { markers: hooks.map(function (h) { return { time: h.time, label: h.label, comment: h.text }; }) })
-      .then(function (r) { toast('🔖 Added ' + r.added + ' hook marker' + (r.added === 1 ? '' : 's') + ' — open the timeline to see them.'); })
+    /* Clear the hook markers from a previous run FIRST. Pressing this twice used
+       to stack a second identical set on the timeline, and nothing anywhere
+       could take them off again — the markers carried no ownership tag, so
+       "Clear markers" never saw them. Replacing rather than accumulating also
+       means re-running after editing the transcript gives the hooks for what
+       the transcript says NOW. */
+    CPBridge.callHost('CP_clearPulseMarkers', { label: 'hook' })
+      .catch(function () { return { removed: 0 }; })   // first run has nothing to clear
+      .then(function (cleared) {
+        return CPBridge.callHost('CP_addHookMarkers', {
+          markers: hooks.map(function (h) { return { time: h.time, label: h.label, comment: h.text }; })
+        }).then(function (r) {
+          var replaced = (cleared && cleared.removed) ? (' (replaced ' + cleared.removed + ' from the last run)') : '';
+          var missed = (r.skipped ? ' · ' + r.skipped + ' could not be placed' : '');
+          toast('🔖 Added ' + r.added + ' hook marker' + (r.added === 1 ? '' : 's') + replaced + missed +
+                ' — open the timeline to see them. Run this again to refresh them; ⌘Z / Ctrl+Z undoes it.',
+                !!r.skipped);
+        });
+      })
       .catch(function (e) { toast(e.message, true); });
   }
 

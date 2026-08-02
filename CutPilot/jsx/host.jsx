@@ -3347,19 +3347,28 @@ function CP_addHookMarkers(argsJson) {
     var args = JSON.parse(argsJson);
     var seq = CP_activeSequence();
     var list = args.markers || [];
-    var added = 0;
+    // Same ownership stamp CP_addMarkers writes. Without it these markers were
+    // invisible to CP_clearPulseMarkers — Pulse could put a hook marker on the
+    // timeline and then had no way to take it off again. The tag goes AFTER the
+    // comment, which here is the spoken line the hook was found in and is the
+    // whole point of the marker for the user.
+    var hookTag = CP_markerTag('hook');
+    var added = 0, skipped = 0;
     for (var i = 0; i < list.length; i++) {
       var t = Number(list[i].time) || 0;
       try {
         var mk = seq.markers.createMarker(t);
         if (mk) {
           try { mk.name = String(list[i].label || 'Hook'); } catch (eN) {}
-          try { if (list[i].comment) mk.comments = String(list[i].comment); } catch (eC) {}
+          try {
+            var note = list[i].comment ? String(list[i].comment) : '';
+            mk.comments = note ? (note + '\n' + hookTag) : hookTag;
+          } catch (eC) {}
           try { mk.setColorByIndex(1); } catch (eCol) {}   // red = attention (best effort)
           added++;
-        }
-      } catch (eM) {}
+        } else { skipped++; }
+      } catch (eM) { skipped++; }
     }
-    return CP_ok({ added: added });
+    return CP_ok({ added: added, requested: list.length, skipped: skipped, tag: hookTag });
   } catch (e) { return CP_fail(e.message); }
 }
