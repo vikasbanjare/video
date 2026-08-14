@@ -1249,9 +1249,19 @@ console.log('host.jsx — Flux engine (Halo2 control set): text, exact-name para
   const fg0 = JSON.parse(f0.fgText.v), fg1 = JSON.parse(f1.fgText.v);
   assert(fg0.fontEditValue[0] === 'Archivo Black' && fg1.fontEditValue[0] === 'Archivo Black',
     'the "(Change font only)" gradient mirror wears the SAME face (highlight stays aligned)');
-  assert(fg0.textEditValue === 'Flux Halo' && fg0.capPropTextRunLength[0] === 9 &&
-         fg0.fontSizeEditValue[0] === 90,
-    'the tagged overlay is FONT-ONLY again — its words stay expression-driven (the author\'s Note; the v0.9.321 words-write was the untested insert-path difference)');
+  // The overlay now carries the CAPTION's words, not the template's authored
+  // sample. Flux_Halo2 ships "Text" AND "Gradient FG Text (Change font only)"
+  // both defaulted to the literal "Flux Halo"; the FG layer is kept out of
+  // tprops by name, so when the template's expression link does not hold on a
+  // given machine that sample burned itself over every caption — the owner's
+  // "in some captions, there are two texts / you have to change only one text".
+  assert(fg0.textEditValue === 'the pollution levels' && fg1.textEditValue === 'are rising fast',
+    'the tagged overlay carries THIS clip\'s caption words — the authored "Flux Halo" sample no longer renders over the caption as a second text');
+  assert(fg0.capPropTextRunLength[0] === 20 && fg1.capPropTextRunLength[0] === 15,
+    'and its run-length follows those words (no "bad any cast" on the overlay)');
+  assert(fg0.fontSizeEditValue[0] === 90 &&
+         JSON.stringify(fg0.fillColorEditValue) === JSON.stringify([[1, 1, 1]]),
+    'the overlay takes ONLY words + face — size and fill stay the template\'s, so the gradient it exists to draw is not flattened');
   assert(r.fgFontSet === 2, 'both clips report the mirror re-face (fgFontSet=' + r.fgFontSet + ')');
   assert(caps[0]._fluxWrites.note === 0 && caps[1]._fluxWrites.note === 0,
     'the author Note is NEVER written');
@@ -1313,8 +1323,15 @@ console.log('host.jsx — Flux engine (Halo2 control set): text, exact-name para
          f.shOpacity.v === 60 && near2(f.shColor.v, [0x00, 0xE5, 0xFF]),
     'glow rides the shadow controls as a centred halo (on/colour/opacity/dist 0/softness 100)');
   assert(f.bgOpacity.v === 0, 'boxless style hides the engine\'s box');
-  assert(JSON.parse(f.text.v).fontEditValue[0] === 'Inter-SemiBold' && r.fgFontSet === 0,
-    'no textStyle → the baked face is untouched and no mirror re-face');
+  assert(JSON.parse(f.text.v).fontEditValue[0] === 'Inter-SemiBold' &&
+         JSON.parse(f.fgText.v).fontEditValue[0] === 'Inter-SemiBold',
+    'no textStyle → the baked face is untouched on BOTH layers (no font was asked for)');
+  // …but the overlay's WORDS still sync. Picking no font is the commonest path,
+  // and it used to leave the tagged overlay entirely untouched — so the
+  // template's "Flux Halo" sample stayed burned over the caption. The words
+  // fix must not be gated on a font being chosen.
+  assert(JSON.parse(f.fgText.v).textEditValue === 'neon nights' && r.fgFontSet === 1,
+    'the overlay still takes the caption words with NO textStyle at all (fgFontSet=' + r.fgFontSet + ')');
   function near2(v, want) { return v.every((x, i) => Math.abs(x - want[i]) <= 2); }
 }
 
