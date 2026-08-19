@@ -369,7 +369,12 @@
       var png = renderOverlayPng().split(',')[1];
       var dir = pathMod.join(osMod.tmpdir(), 'pulse-guide-' + Date.now());
       try { fs.mkdirSync(dir, { recursive: true }); } catch (e0) {}
-      var pngPath = pathMod.join(dir, 'guide.png');
+      /* The clip on the timeline takes this filename, and "Remove guide" finds
+         it by that name. It used to be plain "guide.png", which forced the
+         remover to match the substring "guide" — and that also matched the
+         user's own "Style Guide.png". A name only Pulse writes lets the
+         removal be an exact match instead of a guess. */
+      var pngPath = pathMod.join(dir, 'pulse-safezone-guide.png');
       try { fs.writeFileSync(pngPath, Buffer.from(png, 'base64')); } catch (eW) { try { toast('Could not write overlay: ' + eW.message, true); } catch (e3) {} return; }
       var durSec = state.dur === 'full' ? Math.max(2, (state.env && +state.env.endSeconds) || 10) : (parseFloat(state.dur) || 5);
       var prog = $('sz-progress'); if (prog) { prog.classList.remove('hidden'); prog.textContent = 'Placing guide on timeline…'; }

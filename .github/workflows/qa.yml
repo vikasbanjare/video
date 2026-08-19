@@ -27,8 +27,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      # unzip is ALREADY on the ubuntu-latest image, and the battery only needs
+      # the binary (panel-proofs reads definition.json straight out of a .mogrt).
+      # This used to run `apt-get update` unconditionally — a full mirror refresh
+      # for a tool that is already installed — and on 2026-08-19 that stalled on
+      # two different runners back to back, eating the job budget before a single
+      # test ran. Only reach the network if the binary is genuinely missing, and
+      # cap it so a mirror stall fails fast instead of starving the battery.
       - name: System deps (unzip for .mogrt inspection)
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq unzip
+        timeout-minutes: 3
+        run: command -v unzip >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq unzip; }
       - name: Headless Chrome (for the simulation + panel proofs)
         run: npm i --no-save puppeteer@23
       - name: Full battery

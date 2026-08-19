@@ -2010,8 +2010,25 @@
     var hooks = CPTranscript.detectHooks(cues);
     if (!hooks.length) return toast('No obvious hook phrases found in this transcript.');
     if (!CPBridge.isCEP()) return toast('Open inside Premiere to add markers.', true);
-    CPBridge.callHost('CP_addHookMarkers', { markers: hooks.map(function (h) { return { time: h.time, label: h.label, comment: h.text }; }) })
-      .then(function (r) { toast('🔖 Added ' + r.added + ' hook marker' + (r.added === 1 ? '' : 's') + ' — open the timeline to see them.'); })
+    /* Clear the hook markers from a previous run FIRST. Pressing this twice used
+       to stack a second identical set on the timeline, and nothing anywhere
+       could take them off again — the markers carried no ownership tag, so
+       "Clear markers" never saw them. Replacing rather than accumulating also
+       means re-running after editing the transcript gives the hooks for what
+       the transcript says NOW. */
+    CPBridge.callHost('CP_clearPulseMarkers', { label: 'hook' })
+      .catch(function () { return { removed: 0 }; })   // first run has nothing to clear
+      .then(function (cleared) {
+        return CPBridge.callHost('CP_addHookMarkers', {
+          markers: hooks.map(function (h) { return { time: h.time, label: h.label, comment: h.text }; })
+        }).then(function (r) {
+          var replaced = (cleared && cleared.removed) ? (' (replaced ' + cleared.removed + ' from the last run)') : '';
+          var missed = (r.skipped ? ' · ' + r.skipped + ' could not be placed' : '');
+          toast('🔖 Added ' + r.added + ' hook marker' + (r.added === 1 ? '' : 's') + replaced + missed +
+                ' — open the timeline to see them. Run this again to refresh them; ⌘Z / Ctrl+Z undoes it.',
+                !!r.skipped);
+        });
+      })
       .catch(function (e) { toast(e.message, true); });
   }
 
@@ -2123,9 +2140,17 @@
     }
     var cues = CPCaptions.parseSRT(text);
     if (!cues.length) throw new Error('No captions found inside ' + state.transcript.label);
-    // clean OVERLAPPING duplicate lines here too, so transcripts saved by older
-    // builds (the doubles already baked into the cache) come out right
-    cues = CPCaptions.dedupeRepeatedCues(cues);
+    // Clean OVERLAPPING duplicate lines, so transcripts saved by older builds
+    // (the doubles already baked into the cache) come out right.
+    //
+    // NOT for a transcript the user typed in the editor. The dedupe drops a cue
+    // when the text matches AND the starts are within 2s AND the windows nearly
+    // touch — which is exactly what two deliberate consecutive lines look like.
+    // Hindi and Hinglish repeat constantly ("haan haan", "nahi nahi", "achha
+    // achha"), so someone typing that in and pressing Save watched one of their
+    // own lines silently vanish. ASR doubles are a guess worth correcting; the
+    // words a person just typed are not.
+    if (!state.transcript.edited) cues = CPCaptions.dedupeRepeatedCues(cues);
     if (censorEnabled()) cues = cues.map(function (c) { c.text = maskProfanity(c.text); return c; });
     // Attach the REAL per-word timing so grouping can follow pauses inside a
     // line. Every site that changes state.transcript keeps transcriptWords in
@@ -2528,7 +2553,11 @@
       var fs = nodeReq('fs'), os = nodeReq('os'), pathMod = nodeReq('path');
       var p = pathMod.join(os.tmpdir(), 'cutpilot-transcript-edited-' + Date.now() + '.srt');
       fs.writeFileSync(p, CPCaptions.toSRT(cues), 'utf8');
-      state.transcript = { label: 'Edited transcript (' + cues.length + ' lines)', path: p, mtime: 1e16 };
+      // `edited: true` rides on the transcript object, so it is dropped
+      // automatically the moment anything replaces the transcript. It tells
+      // readSelectedTranscript that a human typed these lines and they are not
+      // to be second-guessed — see the dedupe skip there.
+      state.transcript = { label: 'Edited transcript (' + cues.length + ' lines)', path: p, mtime: 1e16, edited: true };
       state.transcriptWords = null;    // edits change the words → fall back to envelope sync
       state.transcriptManual = true;
     } catch (e) { return toast('Couldn\'t save edits: ' + e.message, true); }
@@ -3414,16 +3443,33 @@
     // 🧹 clear every caption track Pulse ever added (debug builds stacked many)
     if ($('btn-clean-caps')) $('btn-clean-caps').addEventListener('click', function () {
       if (!CPBridge.isCEP()) return toast('This needs Premiere.', true);
-      confirmInline('Delete every caption track Pulse has added to this sequence?\n\nYour video and audio clips are NOT touched — only caption tracks are cleared.', 'Delete them', function (yes) {
-        if (!yes) return;
-        CPBridge.callHost('CP_removePulseCaptionTracks', {}).then(function (r) {
-          state.lastCaptionJob = null; saveLastCaptionJob(); reflectCaptionsPlaced();
-          toast(r.cleared ? ('🧹 Removed ' + r.cleared + ' caption clip' + (r.cleared === 1 ? '' : 's') +
-                             ' from track' + (r.tracks.length === 1 ? ' V' : 's V') + r.tracks.join(', V') +
-                             '. Add captions again for a clean set.')
-                          : 'No Pulse caption tracks found in this sequence.');
-        }).catch(function (e) { toast('Cleanup failed: ' + e.message, true); });
-      });
+      /* Ask the host what it WOULD delete, and show that, instead of promising
+         "your video and audio clips are NOT touched". Pulse decides what is a
+         caption by matching the clip's name, so a video clip named something
+         like "pulse-city.mp4" sitting alone on its own track looks exactly like
+         a caption graphic and would go with them. Naming the tracks and clips
+         up front lets the user catch that; the old wording guaranteed
+         something the code cannot actually guarantee. */
+      CPBridge.callHost('CP_removePulseCaptionTracks', { dryRun: true }).then(function (d) {
+        if (!d.cleared) return toast('No Pulse caption tracks found in this sequence.');
+        var msg = 'Delete ' + d.cleared + ' clip' + (d.cleared === 1 ? '' : 's') +
+                  ' from track' + (d.tracks.length === 1 ? ' V' : 's V') + d.tracks.join(', V') + '?\n\n' +
+                  (d.sample || []).join('\n') +
+                  ((d.cleared > (d.sample || []).length) ? '\n…and ' + (d.cleared - d.sample.length) + ' more' : '') +
+                  '\n\nOnly tracks where EVERY clip looks like a Pulse caption are cleared. ' +
+                  'Check the list above — anything of yours named like a caption would be in it. ' +
+                  '⌘Z / Ctrl+Z undoes this.';
+        confirmInline(msg, 'Delete them', function (yes) {
+          if (!yes) return;
+          CPBridge.callHost('CP_removePulseCaptionTracks', {}).then(function (r) {
+            state.lastCaptionJob = null; saveLastCaptionJob(); reflectCaptionsPlaced();
+            toast(r.cleared ? ('🧹 Removed ' + r.cleared + ' caption clip' + (r.cleared === 1 ? '' : 's') +
+                               ' from track' + (r.tracks.length === 1 ? ' V' : 's V') + r.tracks.join(', V') +
+                               '. ⌘Z / Ctrl+Z undoes it. Add captions again for a clean set.')
+                            : 'No Pulse caption tracks found in this sequence.');
+          }).catch(function (e) { toast('Cleanup failed: ' + e.message, true); });
+        });
+      }).catch(function (e) { toast('Could not check the sequence: ' + e.message, true); });
     });
     // ↺ Reset previews — wipe every rendered frame and go back to the drawn
     // style previews (recovery for "all the previews are gone")
@@ -5488,7 +5534,13 @@
   // the gallery/sheet now preview the template's REAL render — so what you pick is
   // exactly what lands on the timeline. (The owner always wants editable; 🖼 PNG /
   // ⚡ libass remain available but are never the default.)
-  var _capOut = 'png';   // Pulse-rendered by default (see btn-magic handler)
+  /* Caption output type. This was a plain variable, so it reset to 'png' on
+     every panel reload — and a CEP panel reloads whenever Premiere feels like
+     it. Someone who works in editable templates had to re-pick it each time,
+     with no hint that it had silently gone back. It rides settings now, like
+     every other choice the user makes. */
+  var CAP_OUT_VALUES = { png: 1, editable: 1 };
+  var _capOut = CAP_OUT_VALUES[settings.capOut] ? settings.capOut : 'png';
   function updateMagicLabel() {
     var b = $('btn-magic'); if (!b) return;
     b.innerHTML = (_capOut === 'editable')
@@ -5499,11 +5551,19 @@
     var box = $('cap-output'); if (!box) return;
     var btns = box.querySelectorAll('button');
     for (var i = 0; i < btns.length; i++) btns[i].addEventListener('click', function () {
-      _capOut = this.dataset.out || 'editable';
+      _capOut = CAP_OUT_VALUES[this.dataset.out] ? this.dataset.out : 'png';
+      settings.capOut = _capOut;
+      saveSettings();
       var on = box.querySelector('button.on'); if (on) on.classList.remove('on');
       this.classList.add('on');
       updateMagicLabel();
     });
+    // Reflect the remembered choice in the buttons — the markup hard-codes
+    // "on" onto Pulse-rendered, so without this the panel would show one thing
+    // and do another after a reload.
+    for (var j = 0; j < btns.length; j++) {
+      btns[j].classList.toggle('on', btns[j].dataset.out === _capOut);
+    }
     updateMagicLabel();
   })();
   // Word-animation mode: 'highlight' (whole line, active word lights up) vs
@@ -5902,7 +5962,18 @@
     } catch (e) { return toast('Could not create the SFX file: ' + e.message, true); }
     toast('Placing ' + times.length + ' ' + CPSfx.getSfx(id).name + ' hit' + (times.length === 1 ? '' : 's') + '…');
     CPBridge.callHost('CP_placeSfx', { wavPath: wavPath, times: times, label: id }).then(function (r) {
-      toast('🔊 Added ' + r.placed + ' ' + CPSfx.getSfx(id).name + ' SFX on audio track A' + r.track + '. ⌘Z / Ctrl+Z undoes it.');
+      var nm = CPSfx.getSfx(id).name;
+      if (r.failed) {
+        // Say which hits didn't land. Reporting only the successes made a
+        // partial placement look complete.
+        toast('⚠️ Placed ' + r.placed + ' of ' + r.requested + ' ' + nm + ' hits on A' + r.track +
+              ' — ' + r.failed + ' could not be placed. ⌘Z / Ctrl+Z undoes it.', true);
+        if (r.failReasons && r.failReasons.length) {
+          console.log('[Pulse] SFX placement failures:\n  ' + r.failReasons.join('\n  '));
+        }
+        return;
+      }
+      toast('🔊 Added ' + r.placed + ' ' + nm + ' SFX on audio track A' + r.track + '. ⌘Z / Ctrl+Z undoes it.');
     }).catch(function (e) { toast('SFX failed: ' + e.message, true); });
   }
 
@@ -6185,7 +6256,19 @@
       capProgress('Reading the selected graphic & matching all captions…');
       CPBridge.callHost('CP_copyStyleSelectedToTrack').then(function (r) {
         capProgress(null);
-        toast('🎯 Matched ' + r.applied + ' caption' + (r.applied === 1 ? '' : 's') + ' to your selected graphic (' + r.captured + ' properties copied). ⌘Z undoes it.');
+        var msg = '🎯 Matched ' + r.applied + ' caption' + (r.applied === 1 ? '' : 's') +
+                  ' to your selected graphic (' + r.captured + ' properties copied).';
+        /* Some graphics on this track come from a DIFFERENT template. The style
+           is copied slot-by-slot, so writing it onto a different layout would
+           put a size into a corner-radius and a font name into an opacity.
+           Those are skipped — say so, otherwise "half of them didn't change"
+           looks like the feature is broken. */
+        if (r.differentTemplate) {
+          msg += ' ' + r.differentTemplate + ' graphic' + (r.differentTemplate === 1 ? ' was' : 's were') +
+                 ' built from a different template and left alone — re-generate the captions ' +
+                 'so the whole track uses one template, then match again.';
+        }
+        toast(msg + ' ⌘Z undoes it.', !!r.differentTemplate);
       }).catch(function (e) { capProgress(null); toast(e.message, true); });
     });
     if ($('btn-native-apply')) $('btn-native-apply').addEventListener('click', applyNative);
@@ -6262,6 +6345,12 @@
       L.push('   • shows "' + r.sample + '"  → fill works ✅');
       L.push('   • shows the template default → text is STORED but not re-rendered;');
       L.push('     click the clip → click its Text field → press Enter. Updates now?');
+      L.push('');
+      // The clip is left on purpose so the render can be eyeballed — but each
+      // run also ADDS a video track, and nothing ever said to clean up. Repeated
+      // diagnostics are how a sequence ends up with a stack of debug tracks.
+      L.push('🧹 When you are done looking: ⌘Z / Ctrl+Z removes the test clip AND');
+      L.push('   the track it created. Each run of this adds another one.');
       L.push('');
       L.push('— copy everything below back to me —');
       L.push('before: ' + (r.beforeSample || ''));
@@ -7334,8 +7423,15 @@
       var out = pathMod.join(nodeReq('os').tmpdir(), 'cutpilot-' + Date.now() + '.srt');
       nodeReq('fs').writeFileSync(out, CPCaptions.toSRT(ncues), 'utf8');
       capProgress('Creating caption track');
-      CPBridge.callHost('CP_importSrtCaptions', { srtPath: out }).then(function () {
+      CPBridge.callHost('CP_importSrtCaptions', { srtPath: out }).then(function (r) {
         capProgress(null);
+        // The result used to be ignored, so "✓ added" appeared even when
+        // Premiere never made the track and there was nothing on the timeline.
+        if (r && r.captionTrackCreated === false) {
+          return toast('The SRT imported into your project, but Premiere did not create the ' +
+                       'caption track. Find it in the Project panel and drag it onto the ' +
+                       'timeline — the ' + ncues.length + ' lines are all there.', true);
+        }
         var rec = $('native-recipe');
         if (rec) { rec.textContent = templateStyleRecipe(preset); rec.classList.remove('hidden'); }
         toast('✓ Editable caption track added (' + ncues.length + ' lines) — edit any line in ' +
@@ -8482,14 +8578,34 @@
         name: name
       });
     }).then(function (r) {
+      // the old silence list belongs to the previous timeline — clear it.
+      state.silencesSeq = []; if ($('results')) $('results').classList.add('hidden');
+
+      /* PARTIAL BUILD. If Premiere refused any segment, the new sequence is NOT
+         the edit that was asked for. The transcript remap below assumes every
+         keep landed, so running it here would slide the words against a
+         timeline that is short by the dropped pieces — captions drift with
+         nothing on screen to explain it. Say so plainly and leave the
+         transcript alone rather than quietly corrupting the alignment. */
+      if (r.segmentsFailed) {
+        var box = $('results');
+        toast('⚠️ Built "' + r.sequence + '" but ' + r.segmentsFailed + ' of ' +
+              r.segmentsRequested + ' segments did NOT land. The transcript was left alone — ' +
+              're-syncing it against an incomplete rebuild would put every caption in the wrong place. ' +
+              'Check the sequence before using it.', true);
+        if (r.failReasons && r.failReasons.length) {
+          console.log('[Pulse] rebuildTrimmed failures:\n  ' + r.failReasons.join('\n  '));
+        }
+        return r;
+      }
+
       // The rebuilt sequence is the keeps concatenated from 0 — remap the
       // transcript onto it so "Remove repeated takes" / captions line up with
       // the trimmed clip, no re-transcribe needed.
       remapTranscriptToRebuild(state.keepsSeq);
-      // the old silence list belongs to the previous timeline — clear it.
-      state.silencesSeq = []; if ($('results')) $('results').classList.add('hidden');
       toast('🎉 Built "' + r.sequence + '" — ' + r.segmentsPlaced + ' segments, ' + fmt(r.finalDuration) +
             ' long. Transcript auto-synced to the trimmed clip — go straight to “Remove repeated takes” or captions.');
+      return r;
     }).catch(function (e) { toast('Rebuild failed: ' + e.message, true); });
   });
 
@@ -9007,6 +9123,14 @@
       return CPBridge.callHost('CP_importClip', { path: outPath, name: name });
     }).then(function (res) {
       prog.classList.add('hidden');
+      /* res.sequence is null when the clip imported but Premiere refused to
+         build a sequence from it. Falling back to the requested name announced
+         a sequence that does not exist, and the user went looking for it. */
+      if (res && res.imported && !res.sequence) {
+        return toast('The clip rendered and imported, but Premiere did not create a sequence ' +
+                     'for it. It is in your Project panel as “' + name + '” — drag it onto a ' +
+                     'new sequence.', true);
+      }
       toast('🎬 Created “' + (res && res.sequence ? res.sequence : name) + '”' + (rt ? ' — ' + rt.label + ' vertical.' : '.'));
     }).catch(function (e) { prog.classList.add('hidden'); toast('Make clip failed: ' + e.message, true); });
   }
@@ -9369,8 +9493,25 @@
     var w = $('mc-center-wrap2'); if (w) w.style.display = ((state.mcMap || []).indexOf(-1) >= 0) ? '' : 'none';
   }
 
-  /* AutoPod-style setup: one row per camera — name the speaker and pick the mic
-     that's on them. "When this mic is talking, show this camera." */
+  /* Put a camera into "speaker" or "centre / wide" mode. A centre camera holds
+     no mic (map entry -1), which is the value the planner reads as "this is the
+     wide" — so it is never a candidate for "who is talking" and can't steal a
+     shot from the person actually speaking. */
+  function mcApplyRole(angle, roleVal, micSel) {
+    state.mcRoles[angle] = roleVal;
+    if (roleVal === 'center') {
+      state.mcMap[angle] = -1;
+      if (micSel) { micSel.disabled = true; micSel.style.opacity = '0.4'; }
+    } else {
+      if (micSel) { micSel.disabled = false; micSel.style.opacity = ''; }
+      if (micSel) state.mcMap[angle] = parseInt(micSel.value, 10);
+    }
+    syncCenterCtrl();
+  }
+
+  /* AutoPod-style setup: one row per camera — name the speaker, say what the
+     camera is for, and pick the mic that's on them. "When this mic is talking,
+     show this camera." */
   function renderMcMap() {
     ensureAudioTracks().then(function (tracks) {
       var n = parseInt($('mc-angles').value, 10) || 2;
@@ -9378,6 +9519,7 @@
       box.innerHTML = '';
       state.mcMap = state.mcMap || [];
       state.mcSpeakers = state.mcSpeakers || [];
+      state.mcRoles = state.mcRoles || [];
       for (var i = 0; i < n; i++) {
         var row = document.createElement('div');
         row.className = 'map-row';
@@ -9398,6 +9540,35 @@
         name.addEventListener('input', function () { state.mcSpeakers[parseInt(this.dataset.angle, 10)] = this.value; });
         row.appendChild(name);
 
+        /* WHAT THIS CAMERA IS FOR. Previously a camera was silently married to
+           the mic sitting at the same index (V1→A1, V2→A2, V3→A3), so on a
+           three-camera podcast the centre camera was handed A3 whether or not
+           A3 was anyone's mic. If A3 is a room mic or a mix it hears everybody,
+           wins "loudest" constantly, and the edit cuts to centre while someone
+           else is speaking. The role is now stated, not inferred. */
+        var role = document.createElement('select');
+        role.dataset.angle = String(i);
+        role.className = 'map-role';
+        role.style.cssText = 'font-size:11.5px;padding:3px 4px';
+        var roleOpts = [
+          { v: 'speaker', t: '🎤 Speaker' },
+          { v: 'center',  t: '📹 Centre / wide' }
+        ];
+        roleOpts.forEach(function (ro) {
+          var o = document.createElement('option');
+          o.value = ro.v; o.textContent = ro.t;
+          role.appendChild(o);
+        });
+        // Remembered choice wins; otherwise a camera with no mic track left to
+        // claim is a wide, and everything else starts as a speaker.
+        var defRole = state.mcRoles[i];
+        if (defRole !== 'speaker' && defRole !== 'center') {
+          defRole = (state.mcMap[i] === -1 || i >= tracks.length) ? 'center' : 'speaker';
+        }
+        role.value = defRole;
+        state.mcRoles[i] = defRole;
+        row.appendChild(role);
+
         var micLab = document.createElement('span');
         micLab.className = 'dim'; micLab.textContent = '🎙️';
         micLab.style.cssText = 'margin:0 2px';
@@ -9411,16 +9582,22 @@
           o.textContent = t.name || ('A' + (t.index + 1));
           sel.appendChild(o);
         });
-        var oc = document.createElement('option');
-        oc.value = '-1';
-        oc.textContent = 'No mic (wide / cutaway)';
-        sel.appendChild(oc);
 
-        var def = (state.mcMap[i] != null) ? state.mcMap[i] : (i < tracks.length ? i : -1);
-        sel.value = String(def);
-        state.mcMap[i] = def;
+        // A centre camera has no mic by definition, so its picker is inert and
+        // its map entry is -1 — the value the planner reads as "this is the wide".
+        var def = (state.mcMap[i] != null && state.mcMap[i] >= 0)
+          ? state.mcMap[i]
+          : (i < tracks.length ? i : 0);
+        sel.value = String(Math.min(def, Math.max(0, tracks.length - 1)));
+        mcApplyRole(i, defRole, sel);
+
+        role.addEventListener('change', function () {
+          var a = parseInt(this.dataset.angle, 10);
+          mcApplyRole(a, this.value, this.parentNode.querySelector('select:not(.map-role)'));
+        });
         sel.addEventListener('change', function () {
-          state.mcMap[parseInt(this.dataset.angle, 10)] = parseInt(this.value, 10);
+          var a = parseInt(this.dataset.angle, 10);
+          if (state.mcRoles[a] !== 'center') state.mcMap[a] = parseInt(this.value, 10);
           syncCenterCtrl();
         });
         row.appendChild(sel);
@@ -9428,6 +9605,7 @@
       }
       state.mcMap.length = n;
       state.mcSpeakers.length = n;
+      state.mcRoles.length = n;
       syncCenterCtrl();
     }).catch(function (e) {
       $('mc-map').innerHTML = '<p class="hint">' +
@@ -9499,7 +9677,21 @@
     }
     if (src === 'markers') {
       return CPBridge.callHost('CP_getMarkers').then(function (r) {
-        if (!r.times || r.times.length < 1) throw new Error('No timeline markers found. Add markers, or use "Every few seconds".');
+        if (!r.times || r.times.length < 1) {
+          // Distinguish "you have no markers" from "the only markers here are
+          // Pulse's own", which is a different problem with a different fix.
+          if (r.excludedPulseMarkers) {
+            throw new Error('The only markers on this sequence are ones Pulse added (' +
+                            r.excludedPulseMarkers + ' of them) — those are skipped, or every ' +
+                            'hook and silence marker would become a camera switch. Add your own ' +
+                            'markers where you want the cuts, or use another switch mode.');
+          }
+          throw new Error('No timeline markers found. Add markers, or use "Every few seconds".');
+        }
+        if (r.excludedPulseMarkers) {
+          toast('Using your ' + r.times.length + ' marker' + (r.times.length === 1 ? '' : 's') +
+                ' — skipped ' + r.excludedPulseMarkers + ' that Pulse added itself.');
+        }
         return CPMulticam.segmentsFromBoundaries(r.times, r.end || (state.env && state.env.endSeconds) || 0);
       });
     }
@@ -9780,12 +9972,18 @@
     return CPBridge.callHost('CP_applyMulticamPlan', {
       plan: state.plan,
       numAngles: parseInt($('mc-angles').value, 10),
-      dropFrame: !!settings.dropFrame
+      dropFrame: !!settings.dropFrame,
+      // Cut the audio at the same points so linked A/V keeps its link. Without
+      // this the video is razored and its linked audio is not, and Premiere
+      // drops the link — the edit comes out unlinked.
+      linkAudio: settings.mcLinkAudio !== false
     }).then(function (r) {
       capMcProgress(null);
       state.mcApplied = true;
       $('btn-mc-redo').classList.remove('hidden');
       $('mc-redo-hint').classList.remove('hidden');
+      if ($('btn-mc-reset')) $('btn-mc-reset').classList.remove('hidden');
+      if ($('mc-reset-hint')) $('mc-reset-hint').classList.remove('hidden');
       // If the plan didn't reach the later clips, say so plainly + show the
       // numbers in the diag box (this is the "only cuts the first clip" case).
       if (r.coveredPct != null && r.coveredPct < 85) {
@@ -9801,7 +9999,9 @@
         toast('⚠️ Multicam only covered ' + r.coveredPct + '% of the timeline (the first take). See the box for why.', true);
       } else {
         toast('🎬 Multicam applied — ' + r.razored + ' cuts, ' + r.toggled +
-              ' angle toggles across the full ' + fmt(r.seqEnd) + ' timeline.');
+              ' angle toggles across the full ' + fmt(r.seqEnd) + ' timeline' +
+              (r.audioRazored ? ' · audio cut in step on ' + r.audioTracksCut +
+                ' track' + (r.audioTracksCut === 1 ? '' : 's') + ', so A/V stays linked' : '') + '.');
       }
       return r;
     });
@@ -9821,17 +10021,36 @@
     }).catch(mcBuildFailed);
   });
 
-  // One-click "redo": rebuild the plan from the current controls AND apply it,
-  // so the user can re-run the entire multicam in a single tap (no clicking
-  // through Plan → Apply again). Used after a first apply / after an Undo.
+  /* Re-apply the SAME plan. This used to rebuild the plan from scratch and then
+     apply it, which is what made repeated presses destructive: each rebuild
+     analyses the audio again and lands on slightly different boundaries, so the
+     new razors fell BETWEEN the old ones and every press shredded the timeline
+     further. Re-running the analysis is a deliberate act now — that's the
+     "Auto multicam" button — and this one only re-states a decision already
+     made. Apply re-enables every camera first, so it is idempotent. */
   $('btn-mc-redo').addEventListener('click', function () {
-    capMcProgress('Redoing all the cuts…');
-    buildMcPlan().then(function () {
-      renderMcPlan(parseInt($('mc-angles').value, 10));
-      // apply errors are handled here so they don't fall through to the build
-      // diagnostic box (which would be misleading for a Premiere-side failure)
-      return applyMcPlan().catch(function (e) { capMcProgress(null); toast('Multicam failed: ' + e.message, true); });
-    }).catch(mcBuildFailed);
+    if (!state.plan || !state.plan.length) {
+      return toast('No cut list to re-apply yet — tap 🎬 Auto multicam first.', true);
+    }
+    applyMcPlan().catch(function (e) { capMcProgress(null); toast('Multicam failed: ' + e.message, true); });
+  });
+
+  /* Put the picture back: re-enable every camera clip. Deliberately does not
+     claim to remove the cuts — see CP_resetMulticam for why that is impossible
+     through Premiere's scripting API. */
+  $('btn-mc-reset').addEventListener('click', function () {
+    capMcProgress('Re-enabling every camera…');
+    CPBridge.callHost('CP_resetMulticam', {
+      numAngles: parseInt($('mc-angles').value, 10)
+    }).then(function (r) {
+      capMcProgress(null);
+      state.mcApplied = false;
+      toast('↩️ ' + r.reenabled + ' of ' + r.scanned + ' camera clip' + (r.scanned === 1 ? '' : 's') +
+            ' switched back on. The cut lines stay — Ctrl/Cmd+Z is the only true undo.');
+    }).catch(function (e) {
+      capMcProgress(null);
+      toast('Reset failed: ' + e.message, true);
+    });
   });
 
   $('btn-mc-test').addEventListener('click', testAudioEngine);
@@ -9874,7 +10093,11 @@
     }
     $('mc-plan-card').classList.remove('hidden');
     $('btn-mc-apply').classList.remove('hidden');
-    if (state.mcApplied) { $('btn-mc-redo').classList.remove('hidden'); $('mc-redo-hint').classList.remove('hidden'); }
+    if (state.mcApplied) {
+      $('btn-mc-redo').classList.remove('hidden'); $('mc-redo-hint').classList.remove('hidden');
+      if ($('btn-mc-reset')) $('btn-mc-reset').classList.remove('hidden');
+      if ($('mc-reset-hint')) $('mc-reset-hint').classList.remove('hidden');
+    }
     toast(shortfall
       ? ('⚠️ Plan only reaches ' + fmt(planEnd) + ' of ' + fmt(timeline) + ' — later clips not covered.')
       : (stats.segments + ' segments, ' + stats.switches + ' switches across the full ' + fmt(timeline) + ' timeline.'), shortfall);

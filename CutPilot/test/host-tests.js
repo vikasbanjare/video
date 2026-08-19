@@ -220,12 +220,26 @@ function makeWorld(opts) {
                                           fontFSBoldValue: [false], fontFSAllCapsValue: [false],
                                           fontFSItalicValue: [false], fillColorEditValue: [[1, 1, 1]] }) },
           // the gradient overlay mirror is rich too; its WORDS are expression-
-          // driven from the main Text, only its FONT is meant to be edited
-          fgText: { v: JSON.stringify({ capPropFontEdit: true, capPropTextRunCount: 1,
-                                        textEditValue: 'Flux Halo', capPropTextRunLength: [9],
-                                        fontEditValue: ['Inter-SemiBold'], fontSizeEditValue: [90],
-                                        fontFSBoldValue: [false], fontFSAllCapsValue: [false],
-                                        fontFSItalicValue: [false], fillColorEditValue: [[1, 1, 1]] }) },
+          // driven from the main Text, only its FONT is meant to be edited.
+          // opts.fgMultiRun models the overlay as a MULTI-RUN blob (styled per
+          // word, which is what a gradient/highlight layer normally is). This is
+          // the shape the single-run seed below could never model — and the one
+          // that made v0.9.349 blank every caption: CP_setMgrtText's run-length
+          // fixup only matches a SINGLE-element array, so a multi-run overlay
+          // kept runLengths summing to 9 while the text grew, and Premiere
+          // renders a source text whose runs don't add up as nothing at all.
+          fgText: { v: opts.fgMultiRun
+                       ? JSON.stringify({ capPropFontEdit: true, capPropTextRunCount: 3,
+                                          textEditValue: 'Flux Halo', capPropTextRunLength: [4, 1, 4],
+                                          fontEditValue: ['Inter-SemiBold', 'Inter-SemiBold', 'Inter-SemiBold'],
+                                          fontSizeEditValue: [90, 90, 90],
+                                          fontFSBoldValue: [false, false, false], fontFSAllCapsValue: [false, false, false],
+                                          fontFSItalicValue: [false, false, false], fillColorEditValue: [[1, 1, 1], [1, 1, 1], [1, 1, 1]] })
+                       : JSON.stringify({ capPropFontEdit: true, capPropTextRunCount: 1,
+                                          textEditValue: 'Flux Halo', capPropTextRunLength: [9],
+                                          fontEditValue: ['Inter-SemiBold'], fontSizeEditValue: [90],
+                                          fontFSBoldValue: [false], fontFSAllCapsValue: [false],
+                                          fontFSItalicValue: [false], fillColorEditValue: [[1, 1, 1]] }) },
           note:   { v: 'If you change the font, match the Gradient FG text.' },
           hl1: { v: [197, 255, 0] }, hl2: { v: [197, 255, 0] },
           textColor: { v: [255, 255, 255] }, bgColor: { v: [0, 60, 255] }, shColor: { v: [0, 0, 0] },
@@ -1288,6 +1302,49 @@ console.log('host.jsx — Flux engine (Halo2 control set): text, exact-name para
     'each caption gets its own FULL-COVERAGE sweep window (' + JSON.stringify(f0.sweepDur) + ')');
 }
 
+console.log('host.jsx — MULTI-RUN gradient overlay stays structurally valid ("everything is blank")');
+// v0.9.349 made the tagged "(Change font only)" overlay take the caption WORDS,
+// to kill the template's authored "Flux Halo" sample showing as a second text.
+// On the owner's Premiere that blanked EVERY caption, and this is why:
+// CP_setMgrtText rewrites *RunLength to the new text length, but its regex only
+// matches a SINGLE-element array (\[\s*\d+\s*\]). A gradient/highlight overlay
+// is normally styled per word — multi-run — so its runLengths were left summing
+// to 9 while textEditValue grew to 20 chars. Premiere renders a source text
+// whose runs don't add up as NOTHING, so the whole graphic disappeared.
+// The main "Text" prop can never hit this: the probe only grants richSafe on a
+// verified round-trip or an explicit capPropTextRunCount:1. The overlay had no
+// such guard. The seed fixture is single-run, so the mock could not model it —
+// that, not the missing test, is why an all-green battery shipped a blank build.
+// Words on this overlay are now FONT-ONLY again (second revert; do not try a
+// third time without a multi-run round-trip probe on a real machine).
+{
+  const w = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true, fgMultiRun: true });
+  const host = loadHost(w);
+  const r = call(host, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt',
+    cues: [{ start: 1.0, end: 2.2, text: 'the pollution levels' }],
+    videoTrack: null, audioTrack: 0,
+    params: [{ i: 19, kind: 'color', value: '#FFFFFF' }],
+    textStyle: { font: 'Archivo Black', bold: true, sizeScale: 1 },
+    stretch: false
+  });
+  assert(r.ok === true && r.inserted === 1, 'insert succeeds against a multi-run overlay');
+  const f = w.model.vTracks[w.model.vTracks.length - 1][0]._flux;
+  const fg = JSON.parse(f.fgText.v);
+  const sum = fg.capPropTextRunLength.reduce((a, b) => a + b, 0);
+  assert(sum === fg.textEditValue.length,
+    'the overlay blob stays CONSISTENT — run-lengths still sum to the text length (' +
+    sum + ' vs ' + fg.textEditValue.length + '); v0.9.349 left 9 against 20 and Premiere drew nothing');
+  assert(fg.textEditValue === 'Flux Halo',
+    'the overlay keeps its expression-driven words — a words-write on a multi-run overlay is what blanked the captions');
+  assert(fg.fontEditValue.length === 3 && fg.fontEditValue.every(x => x === 'Archivo Black'),
+    'the FONT still syncs on EVERY run (the author\'s Note), because that write preserves run structure');
+  const main = JSON.parse(f.text.v);
+  assert(main.textEditValue === 'the pollution levels' &&
+         main.capPropTextRunLength.reduce((a, b) => a + b, 0) === main.textEditValue.length,
+    'and the real caption text still lands, consistent, on the main Text layer');
+}
+
 // glow styles: the engine's soft shadow becomes a centred halo
 {
   const w = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true });
@@ -1519,6 +1576,885 @@ console.log('host.jsx — CP_previewMogrt trims a 30s template to the preview wi
     'preview clip trimmed to the 4s window (' + track[0].end.seconds.toFixed(2) + 's) — was left at 30s');
   const blob = JSON.parse(track[0]._flux.text.v);
   assert(blob.textEditValue === 'Make every word count', 'preview clip carries the sample words');
+}
+
+// ══════════════════════════════════════════════ CP_applyMulticamPlan ═══════
+// This function shipped with NO host coverage, which is how three separate
+// faults reached a finished podcast edit: the razor cut video only (so Premiere
+// dropped the A/V link), a second pass inherited the first pass's disabled
+// flags (so cameras silently vanished and every re-apply made it worse), and
+// there was no way at all to put the picture back.
+console.log('host.jsx — multicam apply (A/V link, idempotent re-apply, reset)');
+{
+  const mkWorld = () => {
+    const w = makeWorld({ vTracks: 3, aTracks: 2, fps: 25 });
+    for (let t = 0; t < 3; t++) w.model.addClip('vTracks', t, 0, 12, { name: 'CAM' + (t + 1) });
+    for (let a = 0; a < 2; a++) w.model.addClip('aTracks', a, 0, 12, { name: 'MIC' + (a + 1) });
+    return w;
+  };
+  const planA = [
+    { start: 0, end: 4, angle: 0 },
+    { start: 4, end: 8, angle: 1 },
+    { start: 8, end: 12, angle: 2 }
+  ];
+  // which camera is showing at time t? (exactly one should be)
+  const liveAt = (w, t) => {
+    const on = [];
+    for (let v = 0; v < 3; v++) {
+      for (const c of w.model.vTracks[v]) {
+        if (c.start.seconds <= t && c.end.seconds > t && !c.disabled) { on.push(v); break; }
+      }
+    }
+    return on;
+  };
+
+  // --- the plan is actually honoured, one camera live at a time -------------
+  {
+    const w = mkWorld();
+    const host = loadHost(w);
+    const r = call(host, 'CP_applyMulticamPlan', { plan: planA, numAngles: 3 });
+    assert(r.ok === true, 'apply succeeds: ' + JSON.stringify(r).slice(0, 120));
+    assert(JSON.stringify(liveAt(w, 2)) === '[0]', 'at 2s only V1 is live (plan says angle 0)');
+    assert(JSON.stringify(liveAt(w, 6)) === '[1]', 'at 6s only V2 is live (plan says angle 1)');
+    assert(JSON.stringify(liveAt(w, 10)) === '[2]', 'at 10s only V3 is live (plan says angle 2)');
+  }
+
+  // --- REGRESSION: audio must be cut in step or Premiere unlinks A/V --------
+  {
+    const w = mkWorld();
+    const host = loadHost(w);
+    const r = call(host, 'CP_applyMulticamPlan', { plan: planA, numAngles: 3 });
+    assert(r.audioRazored > 0, 'audio tracks are razored too (was 0 — what broke the A/V link)');
+    assert(w.model.aTracks[0].length === 3,
+      'A1 is cut at the SAME two boundaries as the cameras (3 pieces, got ' + w.model.aTracks[0].length + ')');
+    const vEdges = w.model.vTracks[0].map(c => +c.end.seconds.toFixed(3));
+    const aEdges = w.model.aTracks[0].map(c => +c.end.seconds.toFixed(3));
+    assert(JSON.stringify(vEdges) === JSON.stringify(aEdges),
+      'video and audio boundaries line up exactly, so the link survives: ' +
+      JSON.stringify(vEdges) + ' vs ' + JSON.stringify(aEdges));
+  }
+
+  // --- opting out leaves audio untouched -----------------------------------
+  {
+    const w = mkWorld();
+    const host = loadHost(w);
+    const r = call(host, 'CP_applyMulticamPlan', { plan: planA, numAngles: 3, linkAudio: false });
+    assert(r.audioRazored === 0, 'linkAudio:false razors no audio');
+    assert(w.model.aTracks[0].length === 1, 'A1 is left whole when the caller opts out');
+  }
+
+  // --- REGRESSION: a second pass must not inherit the first pass's flags ----
+  // The "I pressed it again and everything got cut / cameras disappeared" bug.
+  {
+    const w = mkWorld();
+    const host = loadHost(w);
+    call(host, 'CP_applyMulticamPlan', { plan: planA, numAngles: 3 });
+    // A NEW, SHORTER plan — the realistic case, because re-analysing the audio
+    // rarely reproduces the previous boundaries exactly. It says "show V1 for
+    // the first 6s" and says nothing at all about 6→12s.
+    //
+    // Old behaviour: clips outside the new plan were never re-examined, so that
+    // stretch silently kept whatever the PREVIOUS run decided (here V3 alone,
+    // from planA). The timeline then showed a camera the current plan never
+    // asked for, and each further pass layered another run's leftovers on top —
+    // which is what made repeated presses feel like the edit was falling apart.
+    //
+    // New behaviour: every camera is switched back on first, so an un-planned
+    // stretch is NEUTRAL (all angles live, topmost wins in Premiere) instead of
+    // haunted by a previous run.
+    const planB = [{ start: 0, end: 6, angle: 0 }];
+    const r2 = call(host, 'CP_applyMulticamPlan', { plan: planB, numAngles: 3 });
+    assert(r2.ok === true, 're-apply succeeds');
+    assert(r2.reenabled > 0, 'the second pass re-enables what the first pass switched off');
+    assert(JSON.stringify(liveAt(w, 2)) === '[0]', 'after re-apply V1 is live inside the new plan');
+    assert(liveAt(w, 8).length === 3,
+      'the stretch the new plan never mentions is reset to neutral, not left holding the ' +
+      'previous run\'s pick (want all 3 cameras live, got ' + JSON.stringify(liveAt(w, 8)) + ')');
+    assert(liveAt(w, 11).length === 3, 'same for the tail of the timeline');
+    assert(w.model.vTracks[0].every(c => !c.disabled), 'no stale disabled piece survives on the live camera');
+  }
+
+  // --- reset puts every camera back on -------------------------------------
+  {
+    const w = mkWorld();
+    const host = loadHost(w);
+    call(host, 'CP_applyMulticamPlan', { plan: planA, numAngles: 3 });
+    const r = call(host, 'CP_resetMulticam', { numAngles: 3 });
+    assert(r.ok === true, 'reset succeeds: ' + JSON.stringify(r).slice(0, 120));
+    assert(r.reenabled > 0, 'reset actually switched clips back on (' + r.reenabled + ')');
+    let anyOff = false;
+    for (let v = 0; v < 3; v++) for (const c of w.model.vTracks[v]) if (c.disabled) anyOff = true;
+    assert(!anyOff, 'not one camera clip is left disabled after reset');
+    // honest about its limits: the cuts are still there
+    assert(w.model.vTracks[0].length > 1, 'reset does NOT pretend to un-razor — the cut lines remain');
+  }
+}
+
+// ═══════════════════════════════════════════════════ CP_rebuildTrimmed ═════
+// "Build a trimmed sequence" had no coverage at all. It swallowed every failed
+// insert whole — no count, no reason — and still reported success, at which
+// point the caller remapped the transcript as if every keep had landed, sliding
+// the captions against a timeline short by the dropped pieces.
+//
+// The write cursor was already handled correctly (it advances only after a
+// successful insert, so a refused segment never left a hole). The gap-related
+// assertions below therefore pass against the old code on purpose: they pin
+// down behaviour worth keeping, they are not the regression.
+console.log('host.jsx — CP_rebuildTrimmed (partial builds must not be reported as success)');
+{
+  // A project item that records its in/out points, plus a destination sequence
+  // whose overwriteClip can be told to refuse a particular insert.
+  const mkWorld = (refuseNth) => {
+    const w = makeWorld({ vTracks: 1, aTracks: 1, fps: 25 });
+    const placedAt = [];
+    let call = 0;
+    const pItem = {
+      nodeId: 'clip-1', type: 1, _in: null, _out: null,
+      setInPoint(t) { this._in = t; }, setOutPoint(t) { this._out = t; },
+      clearInPoint() { this._in = null; }, clearOutPoint() { this._out = null; },
+      getMediaPath: () => '/m/podcast.mp4'
+    };
+    w.sandbox.app.project.rootItem.children = { numItems: 1, 0: pItem };
+    w.sandbox.app.project.createNewSequenceFromClips = (name) => ({
+      name,
+      videoTracks: { numTracks: 1, 0: { overwriteClip(item, at) {
+        call++;
+        if (call === refuseNth) throw new Error('media offline');
+        placedAt.push(at);
+      } } },
+      audioTracks: { numTracks: 1, 0: { overwriteClip() {} } }
+    });
+    return { w, placedAt };
+  };
+  const keeps = [{ start: 0, end: 4 }, { start: 10, end: 13 }, { start: 20, end: 25 }];
+
+  // --- the happy path still behaves -----------------------------------------
+  {
+    const { w, placedAt } = mkWorld(0);
+    const host = loadHost(w);
+    const r = call(host, 'CP_rebuildTrimmed', { nodeId: 'clip-1', keeps, name: 'Trim A' });
+    assert(r.ok === true, 'rebuild succeeds: ' + JSON.stringify(r).slice(0, 140));
+    assert(r.segmentsPlaced === 3 && r.segmentsFailed === 0, 'all three keeps land, none failed');
+    assert(r.segmentsRequested === 3, 'the call reports how many were ASKED for, not just placed');
+    assert(Math.abs(r.finalDuration - 12) < 1e-9, 'duration is 4+3+5 = 12s (got ' + r.finalDuration + ')');
+    assert(JSON.stringify(placedAt) === '[0,4,7]',
+      'segments are butted together with no gaps: ' + JSON.stringify(placedAt));
+  }
+
+  // --- REGRESSION: a refused segment is reported, and leaves NO hole ---------
+  {
+    const { w, placedAt } = mkWorld(2);          // the middle keep is refused
+    const host = loadHost(w);
+    const r = call(host, 'CP_rebuildTrimmed', { nodeId: 'clip-1', keeps, name: 'Trim B' });
+    assert(r.ok === true, 'the call still returns rather than throwing');
+    assert(r.segmentsFailed === 1,
+      'the refused segment is COUNTED, not swallowed (was silently discarded)');
+    assert(r.segmentsPlaced === 2 && r.segmentsRequested === 3,
+      'placed vs requested makes the shortfall visible to the caller (2 of 3)');
+    assert(/media offline/.test((r.failReasons || []).join(' ')),
+      'the reason Premiere gave is carried back: ' + JSON.stringify(r.failReasons));
+    // (these two already held before the fix — kept so they cannot regress)
+    assert(Math.abs(r.finalDuration - 9) < 1e-9,
+      'duration counts only what landed: 4+5 = 9s, not 12 (got ' + r.finalDuration + ')');
+    assert(JSON.stringify(placedAt) === '[0,4]',
+      'the surviving segments stay butted together — a refused insert leaves no ' +
+      'hole: ' + JSON.stringify(placedAt));
+  }
+}
+
+// ══════════════════════════════════════ markers: add / clear ownership ═════
+// Marker identity was inferred from the visible NAME ("does it start with the
+// label?"). That was wrong both ways: markers Pulse creates with a supplied
+// name (chapter titles, Shorts titles) carried no trace of the label and could
+// never be cleaned up, while a marker the USER named "Silence in the room"
+// matched the prefix and got deleted by Clear markers.
+console.log('host.jsx — markers carry an ownership tag (clear must not eat the user\'s own)');
+{
+  const mkMarkers = () => {
+    const list = [];
+    return {
+      _list: list,
+      createMarker(sec) {
+        const m = { start: { seconds: sec }, end: null, name: '', comments: '',
+                    setColorByIndex() {} };
+        list.push(m);
+        return m;
+      },
+      getFirstMarker() { return list[0] || null; },
+      getNextMarker(m) { const i = list.indexOf(m); return (i >= 0 && list[i + 1]) ? list[i + 1] : null; },
+      deleteMarker(m) { const i = list.indexOf(m); if (i >= 0) list.splice(i, 1); }
+    };
+  };
+  const mkWorld = () => {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    const markers = mkMarkers();
+    w.sandbox.app.project.activeSequence.markers = markers;
+    return { w, markers };
+  };
+  const names = () => undefined;
+
+  // --- the tag is written, the visible name is left alone -------------------
+  {
+    const { w, markers } = mkWorld();
+    const host = loadHost(w);
+    const r = call(host, 'CP_addMarkers', {
+      ranges: [{ start: 0, end: 1 }, { start: 5, end: 6 }],
+      label: 'Chapter', names: ['Introduction', 'The main point']
+    });
+    assert(r.ok && r.created === 2, 'two chapter markers created');
+    assert(markers._list[0].name === 'Introduction' && markers._list[1].name === 'The main point',
+      'the human-facing names are exactly what the caller asked for (chapter export depends on it)');
+    assert(/\[pulse:chapter\]/.test(markers._list[0].comments),
+      'ownership is stamped in the COMMENT, not smuggled into the name: ' + markers._list[0].comments);
+  }
+
+  // --- REGRESSION: the user's own marker survives Clear ---------------------
+  {
+    const { w, markers } = mkWorld();
+    const host = loadHost(w);
+    call(host, 'CP_addMarkers', { ranges: [{ start: 1, end: 2 }, { start: 8, end: 9 }], label: 'Silence' });
+    // the editor's own note, which happens to begin with the word Silence
+    const mine = markers.createMarker(20);
+    mine.name = 'Silence in the room — re-record this bit';
+    assert(markers._list.length === 3, 'two Pulse markers plus one of the user\'s');
+
+    const r = call(host, 'CP_clearPulseMarkers', { label: 'Silence' });
+    assert(r.ok === true, 'clear succeeds: ' + JSON.stringify(r));
+    assert(r.removed === 2, 'exactly the two Pulse markers are removed (got ' + r.removed + ')');
+    assert(markers._list.length === 1 && markers._list[0].name === mine.name,
+      'the user\'s own marker SURVIVES — it was being deleted because the name ' +
+      'started with "Silence": ' + JSON.stringify(markers._list.map(m => m.name)));
+  }
+
+  // --- REGRESSION: custom-named Pulse markers are now cleanable -------------
+  {
+    const { w, markers } = mkWorld();
+    const host = loadHost(w);
+    call(host, 'CP_addMarkers', {
+      ranges: [{ start: 0, end: 0 }, { start: 30, end: 30 }],
+      label: 'Chapter', names: ['Cold open', 'Guest intro']
+    });
+    const r = call(host, 'CP_clearPulseMarkers', { label: 'Chapter' });
+    assert(r.removed === 2,
+      'chapter markers named by TITLE can finally be cleared — nothing about ' +
+      '"Cold open" ever started with "Chapter" (got ' + r.removed + ')');
+    assert(markers._list.length === 0, 'the timeline is left clean');
+  }
+
+  // --- clearing one kind must not touch another ----------------------------
+  {
+    const { w, markers } = mkWorld();
+    const host = loadHost(w);
+    call(host, 'CP_addMarkers', { ranges: [{ start: 1, end: 2 }], label: 'Silence' });
+    call(host, 'CP_addMarkers', { ranges: [{ start: 9, end: 9 }], label: 'Chapter', names: ['Act two'] });
+    const r = call(host, 'CP_clearPulseMarkers', { label: 'Silence' });
+    assert(r.removed === 1 && markers._list.length === 1 && markers._list[0].name === 'Act two',
+      'clearing Silence leaves Chapter markers alone: ' + JSON.stringify(markers._list.map(m => m.name)));
+  }
+
+  // --- back-compat: markers from older builds have no tag ------------------
+  {
+    const { w, markers } = mkWorld();
+    const host = loadHost(w);
+    const old1 = markers.createMarker(3); old1.name = 'Silence 1';   // pre-tag build
+    const old2 = markers.createMarker(7); old2.name = 'Silence 12';
+    const mine = markers.createMarker(9); mine.name = 'Silence here is deliberate';
+    const r = call(host, 'CP_clearPulseMarkers', { label: 'Silence' });
+    assert(r.removed === 2 && r.byLegacy === 2,
+      'untagged markers from older builds still get cleaned, matched strictly as ' +
+      '"<label> <number>" (got ' + JSON.stringify(r) + ')');
+    assert(markers._list.length === 1 && markers._list[0].name === mine.name,
+      'and the strict shape still spares the user\'s prose: ' +
+      JSON.stringify(markers._list.map(m => m.name)));
+  }
+}
+
+// ════════════════════════════════ CP_removePulseCaptionTracks (blast radius) ═
+// "Remove all Pulse captions" wipes whole video tracks, decided by a substring
+// match on clip NAMES. That is the same shape as the marker bug, so the guard
+// that stops it eating footage — a track is only cleared when EVERY clip on it
+// looks like a caption — needs to be pinned down, and its limits stated.
+console.log('host.jsx — remove-caption-tracks only clears tracks that are entirely captions');
+{
+  const mkWorld = (tracks) => {
+    const w = makeWorld({ vTracks: tracks.length, aTracks: 1 });
+    tracks.forEach((clipNames, ti) => {
+      clipNames.forEach((nm, i) => w.model.addClip('vTracks', ti, i * 2, i * 2 + 1.5, { name: nm }));
+    });
+    return w;
+  };
+
+  // --- a pure caption track is cleared --------------------------------------
+  {
+    const w = mkWorld([['Podcast.mp4'], ['cap_001.png', 'cap_002.png', 'cap_003.png']]);
+    const host = loadHost(w);
+    const r = call(host, 'CP_removePulseCaptionTracks', {});
+    assert(r.ok === true, 'call succeeds: ' + JSON.stringify(r));
+    assert(r.cleared === 3, 'all three caption images are removed (got ' + r.cleared + ')');
+    assert(w.model.vTracks[0].length === 1 && w.model.vTracks[0][0].name === 'Podcast.mp4',
+      'the footage track is untouched');
+  }
+
+  // --- SAFETY: one real clip on the track and the whole track is spared -----
+  {
+    const w = mkWorld([['Podcast.mp4'], ['cap_001.png', 'BRoll_city.mov', 'cap_002.png']]);
+    const host = loadHost(w);
+    const r = call(host, 'CP_removePulseCaptionTracks', {});
+    assert(r.cleared === 0,
+      'a track holding ANY non-caption clip is left completely alone (got ' + r.cleared + ')');
+    assert(w.model.vTracks[1].length === 3,
+      'including the caption clips on it — better to leave tidy-up undone than eat footage');
+  }
+
+  // --- the template families are recognised --------------------------------
+  {
+    const w = mkWorld([['Podcast.mp4'], ['Flux_Halo2_r3'], ['Subtitle_4_r3'], ['Shorts_Text 1']]);
+    const host = loadHost(w);
+    const r = call(host, 'CP_removePulseCaptionTracks', {});
+    assert(r.cleared === 3, 'Flux / Subtitle / Shorts_Text graphics are all recognised (got ' + r.cleared + ')');
+    assert(w.model.vTracks[0].length === 1, 'and the footage is still there');
+  }
+
+  // --- KNOWN LIMIT, pinned deliberately -------------------------------------
+  // Ownership is guessed from the name, so footage that happens to contain one
+  // of those words is indistinguishable from a caption. The all-or-nothing
+  // guard is the only thing keeping this safe: alone on its own track, this
+  // user clip IS destroyed. Recorded so the risk is visible rather than
+  // discovered on someone's timeline.
+  {
+    const w = mkWorld([['Podcast.mp4'], ['pulse-of-the-city.mp4']]);
+    const host = loadHost(w);
+    const r = call(host, 'CP_removePulseCaptionTracks', {});
+    assert(r.cleared === 1,
+      'DOCUMENTED FALSE POSITIVE: user footage named "pulse-…" alone on a track is ' +
+      'cleared, because ownership is inferred from the name (got ' + r.cleared + ')');
+  }
+
+  // --- an empty timeline is a no-op, not a crash ---------------------------
+  {
+    const w = makeWorld({ vTracks: 2, aTracks: 1 });
+    const host = loadHost(w);
+    const r = call(host, 'CP_removePulseCaptionTracks', {});
+    assert(r.ok === true && r.cleared === 0, 'nothing to do on an empty sequence');
+  }
+
+  // --- dryRun answers "what would go?" and deletes nothing -----------------
+  // The confirmation used to promise "your video and audio clips are NOT
+  // touched", which the name-matching cannot guarantee. Now the user is shown
+  // the actual list first.
+  {
+    const w = mkWorld([['Podcast.mp4'], ['cap_001.png', 'cap_002.png'], ['pulse-of-the-city.mp4']]);
+    const host = loadHost(w);
+    const d = call(host, 'CP_removePulseCaptionTracks', { dryRun: true });
+    assert(d.ok === true && d.dryRun === true, 'dry run reports itself as one');
+    assert(d.cleared === 3, 'it counts everything that would go, across tracks (got ' + d.cleared + ')');
+    assert(w.model.vTracks[1].length === 2 && w.model.vTracks[2].length === 1,
+      'and NOTHING is actually deleted by the dry run');
+    assert(/pulse-of-the-city\.mp4/.test((d.sample || []).join('\n')),
+      'the user\'s own misnamed clip is NAMED in the preview, so they can veto it: ' +
+      JSON.stringify(d.sample));
+    // and the real call still does the deed
+    const r = call(host, 'CP_removePulseCaptionTracks', {});
+    assert(r.cleared === 3 && w.model.vTracks[1].length === 0, 'the real call still clears');
+  }
+}
+
+// ═══════════════════════════════════════ CP_removeOverlay (blast radius) ════
+// "Remove guide" deleted any clip whose name CONTAINED "guide", "pulse" or
+// "brand" — individual clips, on every video track, with no all-or-nothing
+// guard and no confirmation. Its caller passes the track it placed the guide
+// on, but that lives in panel state, and a CEP panel reloads constantly: after
+// a reload it is null and the sweep covers the whole timeline.
+console.log('host.jsx — remove-guide matches the guide exactly, not anything named "brand"');
+{
+  const mkWorld = (tracks) => {
+    const w = makeWorld({ vTracks: tracks.length, aTracks: 1 });
+    tracks.forEach((names, ti) => names.forEach((nm, i) =>
+      w.model.addClip('vTracks', ti, i * 3, i * 3 + 2, { name: nm })));
+    return w;
+  };
+
+  // --- REGRESSION: the editor's own branded assets survive ------------------
+  {
+    const w = mkWorld([
+      ['Podcast.mp4'],
+      ['Brand logo.png', 'Brand intro.mp4', 'Style Guide.png'],
+      ['pulse-safezone-guide.png']
+    ]);
+    const host = loadHost(w);
+    const r = call(host, 'CP_removeOverlay', {});          // no track — the post-reload case
+    assert(r.ok === true, 'remove succeeds: ' + JSON.stringify(r));
+    assert(r.removed === 1, 'only the guide itself goes (got ' + r.removed + ')');
+    assert(w.model.vTracks[1].length === 3,
+      'the user\'s "Brand logo.png", "Brand intro.mp4" and "Style Guide.png" are ALL still ' +
+      'there — every one of them used to be deleted: ' +
+      JSON.stringify(w.model.vTracks[1].map(c => c.name)));
+    assert(w.model.vTracks[0].length === 1, 'and the footage track is untouched');
+  }
+
+  // --- the legacy guide name still cleans up -------------------------------
+  {
+    const w = mkWorld([['Podcast.mp4'], ['guide.png']]);
+    const host = loadHost(w);
+    const r = call(host, 'CP_removeOverlay', {});
+    assert(r.removed === 1 && w.model.vTracks[1].length === 0,
+      'a guide placed by an older build (guide.png) is still removed');
+  }
+
+  // --- but only as an EXACT name -------------------------------------------
+  {
+    const w = mkWorld([['Podcast.mp4'], ['Style Guide.png', 'guide-for-editing.png']]);
+    const host = loadHost(w);
+    const r = call(host, 'CP_removeOverlay', {});
+    assert(r.removed === 0,
+      'names that merely contain "guide" are not touched (got ' + r.removed + ')');
+    assert(w.model.vTracks[1].length === 2, 'both of the user\'s files survive');
+  }
+
+  // --- a track argument still narrows the search ---------------------------
+  {
+    const w = mkWorld([['pulse-safezone-guide.png'], ['pulse-safezone-guide.png']]);
+    const host = loadHost(w);
+    const r = call(host, 'CP_removeOverlay', { track: 2 });
+    assert(r.removed === 1 && w.model.vTracks[0].length === 1 && w.model.vTracks[1].length === 0,
+      'only the named track is swept when the caller knows which one it used');
+  }
+}
+
+// ══════════════════════════════════════════════════════════ CP_placeSfx ═════
+// SFX go on with overwriteClip, which replaces whatever is already at that
+// point. The old code, when every audio track was occupied AND adding one
+// failed, fell back to "the last audio track" — which on a podcast is a mic.
+console.log('host.jsx — SFX never overwrite an occupied audio track');
+{
+  // The harness's own overwriteClip already models Premiere's behaviour — it
+  // splices out whatever the new clip lands on — so the damage is measured on
+  // the real track model rather than through a spy.
+  const mkWorld = (audioTrackClipCounts, canAddTracks) => {
+    const w = makeWorld({ vTracks: 1, aTracks: audioTrackClipCounts.length });
+    audioTrackClipCounts.forEach((n, ti) => {
+      for (let i = 0; i < n; i++) {
+        w.model.addClip('aTracks', ti, i * 10, i * 10 + 8, { name: 'MIC' + (ti + 1) + '-' + i });
+      }
+    });
+    w.sandbox.app.project.rootItem.createBin = (name) => {
+      const kids = [{ name: 'sfx.wav', type: 1 }];
+      return { name, _kids: kids, children: { numItems: kids.length, 0: kids[0] } };
+    };
+    w.sandbox.app.project.importFiles = () => true;
+    if (!canAddTracks) w.sandbox.qe.project.getActiveSequence = () => ({ addTracks: () => {} });
+    return w;
+  };
+  const namesOn = (w, ti) => w.model.aTracks[ti].map(c => c.name);
+
+  // --- a free track is used --------------------------------------------------
+  {
+    const w = mkWorld([2, 0], true);                     // A2 is empty
+    const host = loadHost(w);
+    const before = namesOn(w, 0);
+    const r = call(host, 'CP_placeSfx', { wavPath: '/tmp/s.wav', times: [1, 5, 9] });
+    assert(r.ok === true, 'placement succeeds: ' + JSON.stringify(r).slice(0, 120));
+    assert(r.track === 2, 'the EMPTY audio track is chosen (got A' + r.track + ')');
+    assert(r.placed === 3 && r.requested === 3 && r.failed === 0, 'all three hits land');
+    assert(JSON.stringify(namesOn(w, 0)) === JSON.stringify(before),
+      'the occupied mic track A1 is byte-for-byte unchanged');
+  }
+
+  // --- REGRESSION: refuse rather than overwrite a mic ------------------------
+  {
+    const w = mkWorld([3, 2, 4], false);                 // every track busy, cannot add
+    const host = loadHost(w);
+    const beforeLast = namesOn(w, 2);                    // A3 — 4 mic clips
+    const r = call(host, 'CP_placeSfx', { wavPath: '/tmp/s.wav', times: [1, 5] });
+    assert(r.ok === false,
+      'with every audio track occupied and no new track possible, the call REFUSES ' +
+      '(it used to fall back to the last track and overwrite it): ' + JSON.stringify(r));
+    assert(/overwrite the audio that is already there|Add an empty audio track/i.test(r.error || ''),
+      'and says how to fix it: ' + r.error);
+    assert(JSON.stringify(namesOn(w, 2)) === JSON.stringify(beforeLast),
+      'A3 still holds exactly the user\'s four mic clips — the old fallback dropped SFX ' +
+      'onto this track and Premiere\'s overwrite deleted what they landed on: ' +
+      JSON.stringify(namesOn(w, 2)));
+  }
+}
+
+// ═══════════════════════════════════ hook markers carry the same stamp ══════
+// CP_addHookMarkers writes through its own path and was left without the
+// ownership tag when CP_addMarkers gained one — so Pulse could put hook markers
+// on the timeline and then had no way to take them off.
+console.log('host.jsx — hook markers are removable, and keep the line that justified them');
+{
+  const mkMarkers = () => {
+    const list = [];
+    return {
+      _list: list,
+      createMarker(sec) {
+        const m = { start: { seconds: sec }, end: null, name: '', comments: '', setColorByIndex() {} };
+        list.push(m); return m;
+      },
+      getFirstMarker() { return list[0] || null; },
+      getNextMarker(m) { const i = list.indexOf(m); return (i >= 0 && list[i + 1]) ? list[i + 1] : null; },
+      deleteMarker(m) { const i = list.indexOf(m); if (i >= 0) list.splice(i, 1); }
+    };
+  };
+  const mkWorld = () => {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    const markers = mkMarkers();
+    w.sandbox.app.project.activeSequence.markers = markers;
+    return { w, markers };
+  };
+
+  // --- tag written, spoken line kept and kept FIRST -------------------------
+  {
+    const { w, markers } = mkWorld();
+    const host = loadHost(w);
+    const r = call(host, 'CP_addHookMarkers', {
+      markers: [
+        { time: 12.5, label: 'Hook', comment: 'aur yahi sabse badi galti hai' },
+        { time: 48.0, label: 'Hook', comment: 'ab main aapko dikhata hoon' }
+      ]
+    });
+    assert(r.ok && r.added === 2 && r.requested === 2 && r.skipped === 0,
+      'both hook markers land, and the count asked for is reported: ' + JSON.stringify(r));
+    assert(/\[pulse:hook\]/.test(markers._list[0].comments),
+      'the ownership tag is written (was absent, making these unremovable): ' + markers._list[0].comments);
+    assert(markers._list[0].comments.indexOf('aur yahi sabse badi galti hai') === 0,
+      'the spoken line still comes FIRST — it is the reason the marker is useful: ' +
+      JSON.stringify(markers._list[0].comments));
+    assert(markers._list[0].name === 'Hook', 'the visible name is untouched');
+  }
+
+  // --- REGRESSION: they can now actually be cleared -------------------------
+  {
+    const { w, markers } = mkWorld();
+    const host = loadHost(w);
+    call(host, 'CP_addHookMarkers', { markers: [{ time: 5, label: 'Hook', comment: 'line one' }] });
+    const r = call(host, 'CP_clearPulseMarkers', { label: 'hook' });
+    assert(r.removed === 1 && markers._list.length === 0,
+      'a hook marker Pulse placed can be removed again (got ' + r.removed + ')');
+  }
+
+  // --- clearing hooks leaves everything else alone -------------------------
+  {
+    const { w, markers } = mkWorld();
+    const host = loadHost(w);
+    call(host, 'CP_addHookMarkers', { markers: [{ time: 5, label: 'Hook', comment: 'hooky' }] });
+    call(host, 'CP_addMarkers', { ranges: [{ start: 20, end: 21 }], label: 'Silence' });
+    const mine = markers.createMarker(30); mine.name = 'my own note'; mine.comments = 'do not touch';
+    const r = call(host, 'CP_clearPulseMarkers', { label: 'hook' });
+    assert(r.removed === 1, 'only the hook goes (got ' + r.removed + ')');
+    assert(markers._list.length === 2 &&
+           markers._list.some(m => m.name === 'Silence 1') &&
+           markers._list.some(m => m.name === 'my own note'),
+      'the Silence marker and the user\'s own note both survive: ' +
+      JSON.stringify(markers._list.map(m => m.name)));
+  }
+}
+
+// ═════════════════════════════════════════════════════ CP_addZoomPunches ════
+// Writes Motion/Scale keyframes onto the user's OWN footage. Untested until
+// now, and the only feature in the panel that edits footage clips directly.
+console.log('host.jsx — zoom punches land on the right clip, at the right media time');
+{
+  const mkT = (s) => ({ seconds: s, get secs() { return this.seconds; } });
+  const mkComps = (arr) => { Object.defineProperty(arr, 'numItems', { get() { return arr.length; } }); return arr; };
+  const kfProp = (store, name) => ({
+    displayName: name,
+    setTimeVarying(v) { (store[name] = store[name] || { keys: [] }).tv = v; },
+    addKey(t) { (store[name] = store[name] || { keys: [] }).keys.push({ t }); },
+    setValueAtKey(t, v) {
+      const K = (store[name] = store[name] || { keys: [] }).keys;
+      for (const k of K) if (Math.abs(k.t - t) < 1e-9) { k.v = v; return; }
+      K.push({ t, v });
+    }
+  });
+  // start/end on the timeline, inPoint = where the clip starts inside its media
+  const addFootage = (w, ti, start, end, inPoint, withMotion) => {
+    const store = {};
+    const extra = { name: 'Podcast.mp4', inPoint: mkT(inPoint), _keys: store };
+    extra.components = withMotion
+      ? mkComps([{ displayName: 'Motion', properties: mkComps([kfProp(store, 'Scale')]) }])
+      : mkComps([]);
+    return w.model.addClip('vTracks', ti, start, end, extra);
+  };
+
+  // --- the punch shape, and media-time offset -------------------------------
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    const clip = addFootage(w, 0, 10, 40, 100, true);   // timeline 10-40 shows media 100-130
+    const host = loadHost(w);
+    const r = call(host, 'CP_addZoomPunches', {
+      videoTrack: 0, times: [16], amount: 108, hold: 1.0, ramp: 0.5
+    });
+    assert(r.ok && r.applied === 1 && r.skipped === 0, 'one punch applied: ' + JSON.stringify(r));
+    const K = clip._keys.Scale.keys;
+    assert(K.length === 4, 'four Scale keyframes — in, hold, hold, out (got ' + K.length + ')');
+    assert(K[0].v === 100 && K[3].v === 100, 'it starts and ends at 100% — the punch returns the shot');
+    assert(K[1].v === 108 && K[2].v === 108, 'and holds the peak between (got ' + K[1].v + '/' + K[2].v + ')');
+    // 16s on the timeline is 6s into a clip that starts at media 100 → 106
+    assert(Math.abs(K[0].t - 106) < 1e-9,
+      'the keyframes are placed in MEDIA time, not timeline time — 16s on a clip ' +
+      'starting at 10s whose media starts at 100 is 106, not 16 (got ' + K[0].t + ')');
+    assert(Math.abs(K[1].t - 106.5) < 1e-9 && Math.abs(K[2].t - 107.5) < 1e-9 &&
+           Math.abs(K[3].t - 108) < 1e-9,
+      'ramp/hold/ramp spacing follows the arguments: ' + JSON.stringify(K.map(k => +k.t.toFixed(2))));
+  }
+
+  // --- a time with no clip under it is skipped, not crashed on --------------
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    addFootage(w, 0, 0, 10, 0, true);
+    const host = loadHost(w);
+    const r = call(host, 'CP_addZoomPunches', { videoTrack: 0, times: [5, 500] });
+    assert(r.ok && r.applied === 1 && r.skipped === 1,
+      'the time beyond the end of the footage is counted as skipped, not applied: ' + JSON.stringify(r));
+  }
+
+  // --- a clip with no Motion/Scale is skipped -------------------------------
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    addFootage(w, 0, 0, 10, 0, false);          // no Motion component at all
+    const host = loadHost(w);
+    const r = call(host, 'CP_addZoomPunches', { videoTrack: 0, times: [5] });
+    assert(r.ok && r.applied === 0 && r.skipped === 1,
+      'a clip with no Motion/Scale is skipped rather than throwing: ' + JSON.stringify(r));
+  }
+
+  // --- an out-of-range track is refused, not silently ignored ---------------
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    addFootage(w, 0, 0, 10, 0, true);
+    const host = loadHost(w);
+    const r = call(host, 'CP_addZoomPunches', { videoTrack: 5, times: [5] });
+    assert(r.ok === false && /not found/i.test(r.error || ''),
+      'asking for a track that does not exist fails loudly: ' + JSON.stringify(r));
+  }
+}
+
+// ══════════════════════════════════ CP_copyStyleSelectedToTrack ═════════════
+// "Match all captions to the one I styled" copies property values BY INDEX from
+// the selected graphic onto every other graphic on the track. That is only
+// meaningful when they are the same template — and a caption track can hold
+// two, because regenerating with a different template reuses the same track.
+console.log('host.jsx — match-styles refuses to write across different templates');
+{
+  const mkProps = (defs) => {
+    const arr = defs.map(d => ({
+      displayName: d.name,
+      _v: d.value,
+      getValue() { return this._v; },
+      setValue(v) { this._v = v; }
+    }));
+    Object.defineProperty(arr, 'numItems', { get() { return arr.length; } });
+    return arr;
+  };
+  const mkClip = (w, ti, start, name, defs, selected) => {
+    const props = defs ? mkProps(defs) : null;
+    const c = w.model.addClip('vTracks', ti, start, start + 2, {
+      name, isSelected: () => !!selected
+    });
+    c.getMGTComponent = () => (props ? { properties: props } : null);
+    c._props = props;
+    return c;
+  };
+
+  // --- same template: the style propagates --------------------------------
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    const layout = (size, font) => [
+      { name: 'Text Scale', value: size }, { name: 'Font', value: font }
+    ];
+    mkClip(w, 0, 0, 'cap_001', layout(140, 'BebasNeue-Regular'), true);   // styled by the user
+    const b = mkClip(w, 0, 4, 'cap_002', layout(90, 'ArialMT'), false);
+    const host = loadHost(w);
+    const r = call(host, 'CP_copyStyleSelectedToTrack', {});
+    assert(r.ok === true && r.applied === 1, 'the other caption is restyled: ' + JSON.stringify(r));
+    assert(b._props[0]._v === 140 && b._props[1]._v === 'BebasNeue-Regular',
+      'it takes the selected graphic\'s size AND font: ' + JSON.stringify(b._props.map(p => p._v)));
+    assert(r.differentTemplate === 0, 'nothing was flagged as a different template');
+  }
+
+  // --- REGRESSION: a DIFFERENT template on the same track is left alone -----
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    mkClip(w, 0, 0, 'Flux_Halo2_r3', [
+      { name: 'Text Scale', value: 140 }, { name: 'Font', value: 'BebasNeue-Regular' }
+    ], true);
+    // a caption from another template: same property COUNT, different meanings
+    const other = mkClip(w, 0, 4, 'Subtitle_4_r3', [
+      { name: 'Corner Radius', value: 12 }, { name: 'Box Opacity', value: 80 }
+    ], false);
+    const host = loadHost(w);
+    const r = call(host, 'CP_copyStyleSelectedToTrack', {});
+    assert(other._props[0]._v === 12 && other._props[1]._v === 80,
+      'the other template keeps its own values — 140 used to be written into ' +
+      '"Corner Radius" and a font name into "Box Opacity": ' +
+      JSON.stringify(other._props.map(p => p._v)));
+    assert(r.differentTemplate === 1 && r.propsSkipped === 2,
+      'and the mismatch is REPORTED, so "half my captions did not change" has a ' +
+      'visible cause: ' + JSON.stringify(r));
+  }
+
+  // --- nothing selected / not a graphic → helpful refusals -----------------
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    mkClip(w, 0, 0, 'cap_001', [{ name: 'Text Scale', value: 100 }], false);
+    const host = loadHost(w);
+    const r = call(host, 'CP_copyStyleSelectedToTrack', {});
+    assert(r.ok === false && /select one caption/i.test(r.error || ''),
+      'with nothing selected it says what to click: ' + JSON.stringify(r));
+  }
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    mkClip(w, 0, 0, 'Podcast.mp4', null, true);        // footage, no MGT component
+    const host = loadHost(w);
+    const r = call(host, 'CP_copyStyleSelectedToTrack', {});
+    assert(r.ok === false && /Motion Graphics/i.test(r.error || ''),
+      'selecting footage explains what was expected: ' + JSON.stringify(r));
+  }
+}
+
+// ════════════════════════════ success that was never verified ══════════════
+// Three untested functions all reported success they had not checked. Same
+// family as CP_rebuildTrimmed's swallowed inserts: the call returns ok, the
+// panel announces it worked, and the timeline says otherwise.
+console.log('host.jsx — In/Out and SRT import stop claiming success they did not check');
+{
+  // --- CP_setInOut: both attempts refused → the call must FAIL --------------
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    const seq = w.sandbox.app.project.activeSequence;
+    seq.setInPoint = () => { throw new Error('no focus'); };
+    seq.setOutPoint = () => { throw new Error('no focus'); };
+    const host = loadHost(w);
+    const r = call(host, 'CP_setInOut', { start: 3, end: 9 });
+    assert(r.ok === false,
+      'when Premiere refuses both In and Out the call FAILS — it used to return ok ' +
+      'with the numbers it was asked for, so the panel said "In/Out set" and nothing ' +
+      'had moved: ' + JSON.stringify(r));
+    assert(/timeline once to give it focus/i.test(r.error || ''),
+      'and it says what to do about it: ' + r.error);
+  }
+
+  // --- CP_setInOut: the normal path still reports what took ----------------
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    const seen = {};
+    const seq = w.sandbox.app.project.activeSequence;
+    seq.setInPoint = (t) => { seen.in = t; };
+    seq.setOutPoint = (t) => { seen.out = t; };
+    const host = loadHost(w);
+    const r = call(host, 'CP_setInOut', { start: 3, end: 9 });
+    assert(r.ok === true && r.inSet === true && r.outSet === true,
+      'a working host reports both points set: ' + JSON.stringify(r));
+    assert(seen.in != null && seen.out != null, 'and both were actually pushed to the sequence');
+  }
+
+  // --- CP_setInOut: ticks refused, seconds accepted ------------------------
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    const seq = w.sandbox.app.project.activeSequence;
+    let calls = 0;
+    seq.setInPoint = (t) => { calls++; if (calls === 1) throw new Error('ticks unsupported'); };
+    seq.setOutPoint = () => {};
+    const host = loadHost(w);
+    const r = call(host, 'CP_setInOut', { start: 3, end: 9 });
+    assert(r.ok === true && r.inSet === true,
+      'the seconds fallback still counts as set, for older hosts: ' + JSON.stringify(r));
+  }
+
+  // --- CP_importSrtCaptions: undefined is NOT success ----------------------
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    const item = { name: 'caps.srt', getMediaPath: () => '/tmp/caps.srt' };
+    w.sandbox.app.project.rootItem.children = { numItems: 1, 0: item };
+    w.sandbox.app.project.importFiles = () => true;
+    const seq = w.sandbox.app.project.activeSequence;
+    seq.createCaptionTrack = () => undefined;          // did nothing, said nothing
+    const host = loadHost(w);
+    const r = call(host, 'CP_importSrtCaptions', { srtPath: '/tmp/caps.srt' });
+    assert(r.ok === true && r.captionTrackCreated === false,
+      'a createCaptionTrack that returns undefined is NOT reported as created — ' +
+      '`okCt !== false` used to call that success: ' + JSON.stringify(r));
+  }
+
+  // --- CP_importSrtCaptions: a real true still counts ----------------------
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    const item = { name: 'caps.srt', getMediaPath: () => '/tmp/caps.srt' };
+    w.sandbox.app.project.rootItem.children = { numItems: 1, 0: item };
+    w.sandbox.app.project.importFiles = () => true;
+    w.sandbox.app.project.activeSequence.createCaptionTrack = () => true;
+    const host = loadHost(w);
+    const r = call(host, 'CP_importSrtCaptions', { srtPath: '/tmp/caps.srt' });
+    assert(r.ok === true && r.captionTrackCreated === true, 'the working case is unchanged');
+  }
+}
+
+// ═══════════════════════════ CP_getMarkers: the user's markers, not ours ════
+// This feeds multicam's "switch on markers" mode. It returned EVERY sequence
+// marker, so anyone who ran hook detection or previewed silences with markers
+// got a camera switch on each one — cuts from markers they never placed.
+console.log('host.jsx — marker-driven multicam uses the user\'s markers, not Pulse\'s own');
+{
+  const mkWorld = () => {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    const list = [];
+    w.sandbox.app.project.activeSequence.markers = {
+      _list: list,
+      createMarker(sec) {
+        const m = { start: { seconds: sec }, end: null, name: '', comments: '', setColorByIndex() {} };
+        list.push(m); return m;
+      },
+      getFirstMarker() { return list[0] || null; },
+      getNextMarker(m) { const i = list.indexOf(m); return (i >= 0 && list[i + 1]) ? list[i + 1] : null; },
+      deleteMarker(m) { const i = list.indexOf(m); if (i >= 0) list.splice(i, 1); }
+    };
+    return { w, markers: w.sandbox.app.project.activeSequence.markers };
+  };
+
+  // --- REGRESSION: Pulse's own markers are not switch points ---------------
+  {
+    const { w, markers } = mkWorld();
+    const host = loadHost(w);
+    // the editor's own two markers, where they want the cuts
+    const a = markers.createMarker(10); a.name = 'cut here';
+    const b = markers.createMarker(40); b.name = 'and here';
+    // plus everything Pulse dropped on the way
+    call(host, 'CP_addHookMarkers', { markers: [{ time: 3, label: 'Hook', comment: 'punchy line' }] });
+    call(host, 'CP_addMarkers', { ranges: [{ start: 22, end: 23 }], label: 'Silence' });
+    assert(markers._list.length === 4, 'four markers on the sequence in total');
+
+    const r = call(host, 'CP_getMarkers', {});
+    assert(r.ok === true, 'read succeeds: ' + JSON.stringify(r));
+    assert(JSON.stringify(r.times) === '[10,40]',
+      'only the two the USER placed become switch points — the hook at 3s and the ' +
+      'silence marker at 22s used to be cuts too: ' + JSON.stringify(r.times));
+    assert(r.excludedPulseMarkers === 2,
+      'and how many were skipped is reported, so the panel can say so: ' + JSON.stringify(r));
+  }
+
+  // --- untagged markers from older builds still count ----------------------
+  {
+    const { w, markers } = mkWorld();
+    const host = loadHost(w);
+    const old = markers.createMarker(7); old.name = 'Silence 1';   // pre-tag build, no comment
+    const r = call(host, 'CP_getMarkers', {});
+    assert(JSON.stringify(r.times) === '[7]' && r.excludedPulseMarkers === 0,
+      'a marker with no tag is treated as the user\'s — nothing that worked before ' +
+      'stops working: ' + JSON.stringify(r));
+  }
+
+  // --- a sequence with only Pulse markers reports the distinction ----------
+  {
+    const { w } = mkWorld();
+    const host = loadHost(w);
+    call(host, 'CP_addMarkers', { ranges: [{ start: 5, end: 6 }, { start: 9, end: 10 }], label: 'Silence' });
+    const r = call(host, 'CP_getMarkers', {});
+    assert(r.times.length === 0 && r.excludedPulseMarkers === 2,
+      '"no usable markers" and "only Pulse markers here" are distinguishable, so the ' +
+      'panel can explain the difference: ' + JSON.stringify(r));
+  }
 }
 
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');

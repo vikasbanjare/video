@@ -73,13 +73,29 @@
   var _DEV_V = { 'अ':'a','आ':'aa','इ':'i','ई':'ee','उ':'u','ऊ':'oo','ऋ':'ri','ए':'e','ऐ':'ai','ओ':'o','औ':'au','ऑ':'o','ॐ':'om' };
   var _DEV_M = { 'ा':'aa','ि':'i','ी':'ee','ु':'u','ू':'oo','ृ':'ri','े':'e','ै':'ai','ो':'o','ौ':'au','ॉ':'o','ॅ':'e' };
   var _DEV_VIRAMA = '्', _DEV_ANUSVARA = 'ं', _DEV_CHANDRA = 'ँ', _DEV_VISARGA = 'ः';
+  /* Nukta (U+093C) consonants — the Perso-Arabic loan sounds of everyday Hindi
+     (ज़्यादा, रोज़, बड़ा, फ़िल्म…). These cannot work as _DEV_C keys: the loop reads
+     ONE UTF-16 unit at a time, so a two-character key ('ज' + nukta) never matches
+     and the raw Devanagari leaked into a supposedly-Latin caption ("रोज़" → "roज़").
+     Input is normalised to NFC first — U+0958–095F are Unicode composition
+     exclusions, so every precomposed nukta letter decomposes to base + U+093C and
+     this single lookahead then covers both encodings. */
+  var _DEV_NUKTA = '़';
+  var _DEV_NUKTA_C = { 'क':'q','ख':'kh','ग':'gh','ज':'z','ड':'r','ढ':'rh','फ':'f','य':'y' };
   function devanagariToLatin(input) {
     if (!input || !/[ऀ-ॿ]/.test(input)) return input;   // no Devanagari → leave as-is
-    var chars = String(input).split(''), out = '';
+    var str = String(input);
+    if (typeof str.normalize === 'function') str = str.normalize('NFC');
+    var chars = str.split(''), out = '';
     for (var i = 0; i < chars.length; i++) {
       var ch = chars[i], nxt = chars[i + 1];
       if (_DEV_C[ch] != null) {
         var base = _DEV_C[ch];
+        if (nxt === _DEV_NUKTA) {                                      // ज़ ड़ फ़ …
+          if (_DEV_NUKTA_C[ch] != null) base = _DEV_NUKTA_C[ch];
+          i++;                                                         // consume the nukta
+          nxt = chars[i + 1];                                          // re-read what follows it
+        }
         if (nxt === _DEV_VIRAMA) { out += base; i++; }                 // halant: bare consonant
         else if (_DEV_M[nxt] != null) { out += base + _DEV_M[nxt]; i++; }
         else {

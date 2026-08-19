@@ -415,20 +415,41 @@ function CP_findInstalledMogrts() {
  * Dry-run: drop a sequence marker over every detected silence so the user
  * can audition before cutting. argsJson: {ranges:[{start,end}], label}
  */
+/* Machine-readable ownership stamp, written into a marker's COMMENT field.
+ *
+ * Identity used to be inferred from the visible name — "does it start with the
+ * label?" — which was wrong in both directions. Markers Pulse creates with a
+ * caller-supplied name (chapter titles, Shorts clip titles) carry no trace of
+ * the label at all, so they could never be cleaned up; and a marker the USER
+ * named "Silence in the room" starts with "Silence", so Clear markers deleted
+ * their work. The name is for the human, this tag is for us. */
+var CP_MARK_TAG = '[pulse:';
+function CP_markerTag(label) {
+  return CP_MARK_TAG + String(label || 'silence').toLowerCase() + ']';
+}
+
 function CP_addMarkers(argsJson) {
   try {
     var args = JSON.parse(argsJson);
     var seq = CP_activeSequence();
+    var label = args.label || 'Silence';
+    var tag = CP_markerTag(label);
     var n = 0;
     for (var i = 0; i < args.ranges.length; i++) {
       var r = args.ranges[i];
       var m = seq.markers.createMarker(r.start);
-      m.name = (args.names && args.names[i]) ? args.names[i] : ((args.label || 'Silence') + ' ' + (i + 1));
+      m.name = (args.names && args.names[i]) ? args.names[i] : (label + ' ' + (i + 1));
       m.end = r.end;
+      // Stamp ownership without disturbing anything the caller wants the user
+      // to read — the tag goes on its own line after any real comment.
+      try {
+        var note = (args.comments && args.comments[i]) ? String(args.comments[i]) : '';
+        m.comments = note ? (note + '\n' + tag) : tag;
+      } catch (eCm) {}
       try { m.setColorByIndex(1); } catch (eColor) {}
       n++;
     }
-    return CP_ok({ created: n });
+    return CP_ok({ created: n, tag: tag });
   } catch (e) { return CP_fail(e.message); }
 }
 
@@ -436,15 +457,24 @@ function CP_clearPulseMarkers(argsJson) {
   try {
     var args = JSON.parse(argsJson || '{}');
     var label = args.label || 'Silence';
+    var tag = CP_markerTag(label);
     var seq = CP_activeSequence();
     var doomed = [];
+    var byTag = 0, byLegacy = 0;
+    // Markers written before the tag existed have to be matched by name, but
+    // STRICTLY — exactly "<label> <number>", the shape CP_addMarkers generates.
+    // A loose prefix test is what made "Silence in the room" collateral damage.
+    var legacy = new RegExp('^' + label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' \\d+$');
     var m = seq.markers.getFirstMarker();
     while (m) {
-      if (m.name && m.name.indexOf(label) === 0) doomed.push(m);
+      var cm = '';
+      try { cm = m.comments || ''; } catch (eC) {}
+      if (cm.indexOf(tag) >= 0) { doomed.push(m); byTag++; }
+      else if (cm.indexOf(CP_MARK_TAG) < 0 && m.name && legacy.test(m.name)) { doomed.push(m); byLegacy++; }
       m = seq.markers.getNextMarker(m);
     }
     for (var i = 0; i < doomed.length; i++) seq.markers.deleteMarker(doomed[i]);
-    return CP_ok({ removed: doomed.length });
+    return CP_ok({ removed: doomed.length, byTag: byTag, byLegacy: byLegacy });
   } catch (e) { return CP_fail(e.message); }
 }
 
@@ -653,6 +683,8 @@ function CP_rebuildTrimmed(argsJson) {
     var aTrack = newSeq.audioTracks[0];
     var cursor = 0;
     var placed = 0;
+    var failed = 0;
+    var failReasons = [];
     for (i = 0; i < args.keeps.length; i++) {
       var k = args.keeps[i];
       try {
@@ -660,14 +692,30 @@ function CP_rebuildTrimmed(argsJson) {
         pItem.setOutPoint(CP_ticksFromSeconds(k.end), 4);
         if (vTrack) vTrack.overwriteClip(pItem, cursor);
         else if (aTrack) aTrack.overwriteClip(pItem, cursor);
+        // Advance only after the insert actually landed, so a refused segment
+        // never leaves a hole. This was already correct; the tests below pin it
+        // down rather than change it.
         cursor += (k.end - k.start);
         placed++;
-      } catch (eIns) {}
+      } catch (eIns) {
+        // Never swallow this. A dropped keep means the rebuilt sequence is NOT
+        // the edit the user asked for, and the caller remaps the transcript on
+        // the assumption that every keep landed — so a silent failure desyncs
+        // the captions against the timeline with no visible cause.
+        failed++;
+        if (failReasons.length < 3) {
+          failReasons.push('segment ' + (i + 1) + ' (' + k.start + '→' + k.end + 's): ' + eIns.message);
+        }
+      }
     }
     try { pItem.clearInPoint(4); } catch (ec1) {}
     try { pItem.clearOutPoint(4); } catch (ec2) {}
 
-    return CP_ok({ sequence: seqName, segmentsPlaced: placed, finalDuration: cursor });
+    return CP_ok({
+      sequence: seqName, segmentsPlaced: placed, finalDuration: cursor,
+      segmentsRequested: args.keeps.length, segmentsFailed: failed,
+      failReasons: failReasons
+    });
   } catch (e) { return CP_fail(e.message); }
 }
 
@@ -685,13 +733,22 @@ function CP_setInOut(argsJson) {
   try {
     var args = JSON.parse(argsJson);
     var seq = CP_activeSequence();
-    try { seq.setInPoint(CP_ticksFromSeconds(args.start)); } catch (eIn) {
-      try { seq.setInPoint(args.start); } catch (eIn2) {}
+    // Ticks first, seconds as a fallback for older hosts. Both failing used to
+    // be swallowed and the call still returned ok with the requested numbers,
+    // so the panel said "In/Out set to this cut" when the playhead range had
+    // not moved at all. Report what actually took.
+    var inSet = false, outSet = false;
+    try { seq.setInPoint(CP_ticksFromSeconds(args.start)); inSet = true; } catch (eIn) {
+      try { seq.setInPoint(args.start); inSet = true; } catch (eIn2) {}
     }
-    try { seq.setOutPoint(CP_ticksFromSeconds(args.end)); } catch (eOut) {
-      try { seq.setOutPoint(args.end); } catch (eOut2) {}
+    try { seq.setOutPoint(CP_ticksFromSeconds(args.end)); outSet = true; } catch (eOut) {
+      try { seq.setOutPoint(args.end); outSet = true; } catch (eOut2) {}
     }
-    return CP_ok({ start: args.start, end: args.end });
+    if (!inSet && !outSet) {
+      return CP_fail('Premiere would not accept an In/Out range on this sequence. ' +
+                     'Click the timeline once to give it focus and try again.');
+    }
+    return CP_ok({ start: args.start, end: args.end, inSet: inSet, outSet: outSet });
   } catch (e) { return CP_fail(e.message); }
 }
 
@@ -793,10 +850,32 @@ function CP_applyMulticamPlan(argsJson) {
     var piecesBefore = [];
     for (var pb = 0; pb < n; pb++) piecesBefore.push(seq.videoTracks[pb].clips.numItems);
 
+    // Re-enable EVERY camera clip before we start. Without this, a second run
+    // inherits the first run's disabled flags: any piece the new plan never
+    // matches stays switched off, so cameras silently vanish and each re-apply
+    // leaves the timeline worse than the last.
+    var reenabled = 0;
+    for (var rt = 0; rt < n; rt++) {
+      var rtrack = seq.videoTracks[rt];
+      for (var rc = 0; rc < rtrack.clips.numItems; rc++) {
+        try {
+          if (rtrack.clips[rc].disabled) { rtrack.clips[rc].disabled = false; reenabled++; }
+        } catch (eRe) {}
+      }
+    }
+
     // razor each camera track at every boundary (QE must be enabled). razor cuts
     // whichever clip spans that timecode, so it works across ALL clips on the
     // track — not just the first take.
-    var razored = 0;
+    //
+    // The AUDIO tracks get razored at the SAME timecodes. That is not a nicety:
+    // a clip whose video is cut while its linked audio is left whole no longer
+    // has matching boundaries, and Premiere responds by dropping the A/V link —
+    // which is why finished multicam edits were arriving unlinked. Cutting both
+    // sides is exactly what Premiere's own razor does to a linked pair, and it
+    // keeps the link intact. Audio-only tracks just gain harmless through-edits.
+    var razored = 0, audioRazored = 0;
+    var nAudio = (args.linkAudio === false) ? 0 : seq.audioTracks.numTracks;
     try {
       try { app.enableQE(); } catch (eEn) {}
       var qseq = CP_qeSequence();
@@ -805,6 +884,13 @@ function CP_applyMulticamPlan(argsJson) {
         if (!qtrack) continue;
         for (var b = 0; b < bounds.length; b++) {
           try { qtrack.razor(CP_timecode(bounds[b], fps, !!args.dropFrame)); razored++; } catch (eRz) {}
+        }
+      }
+      for (var at = 0; at < nAudio; at++) {
+        var qatrack = qseq.getAudioTrackAt(at);
+        if (!qatrack) continue;
+        for (var ab = 0; ab < bounds.length; ab++) {
+          try { qatrack.razor(CP_timecode(bounds[ab], fps, !!args.dropFrame)); audioRazored++; } catch (eRa) {}
         }
       }
     } catch (eQE) {}
@@ -833,11 +919,46 @@ function CP_applyMulticamPlan(argsJson) {
       }
     }
     return CP_ok({
-      toggled: toggled, razored: razored, cuts: bounds.length, tracksUsed: n,
+      toggled: toggled, razored: razored, audioRazored: audioRazored,
+      reenabled: reenabled, cuts: bounds.length, tracksUsed: n,
+      audioTracksCut: nAudio,
       seqEnd: seqEnd, planStart: planStart, planEnd: planEnd,
       coveredPct: seqEnd > 0 ? Math.round((planEnd / seqEnd) * 100) : 100,
       outOfPlanClips: outOfPlan, piecesBefore: piecesBefore, piecesAfter: piecesAfter
     });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/*
+ * Undo the VISIBLE half of a multicam pass: re-enable every camera clip so all
+ * angles play again, which is what "my timeline is a mess, put it back" means
+ * in practice.
+ *
+ * It deliberately does NOT try to remove the razor cuts. Premiere's scripting
+ * API can add a cut but cannot merge two clips back into one, so there is no
+ * honest way to un-razor — claiming otherwise would leave the user thinking the
+ * timeline was restored when it was not. The cuts that remain are through-edits:
+ * with every angle re-enabled they play back seamlessly. Ctrl/Cmd+Z remains the
+ * only true undo, and the panel says so.
+ *
+ * argsJson: { numAngles }
+ */
+function CP_resetMulticam(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+    var n = Math.min(args.numAngles || seq.videoTracks.numTracks, seq.videoTracks.numTracks);
+    var reenabled = 0, scanned = 0;
+    for (var t = 0; t < n; t++) {
+      var track = seq.videoTracks[t];
+      for (var i = 0; i < track.clips.numItems; i++) {
+        scanned++;
+        try {
+          if (track.clips[i].disabled) { track.clips[i].disabled = false; reenabled++; }
+        } catch (eD) {}
+      }
+    }
+    return CP_ok({ reenabled: reenabled, scanned: scanned, tracksUsed: n });
   } catch (e) { return CP_fail(e.message); }
 }
 
@@ -871,8 +992,13 @@ function CP_importSrtCaptions(argsJson) {
     if (typeof seq.createCaptionTrack !== 'function') {
       return CP_fail('This Premiere version has no createCaptionTrack scripting API (needs 22.0+). The SRT is imported — drag it onto the timeline manually.');
     }
+    // `okCt !== false` counted undefined as success, so a call that quietly did
+    // nothing was reported as a caption track appearing on the timeline — and
+    // the panel ignored the result entirely and said "✓ Editable caption track
+    // added" either way. Only an explicitly non-false, non-null answer counts.
     var okCt = seq.createCaptionTrack(item, 0);
-    return CP_ok({ captionTrackCreated: okCt !== false });
+    var created = (okCt !== false && okCt !== undefined && okCt !== null);
+    return CP_ok({ captionTrackCreated: created });
   } catch (e) { return CP_fail(e.message); }
 }
 
@@ -1336,16 +1462,35 @@ function CP_removeOverlay(argsJson) {
     var removed = 0;
     var t0 = 0, t1 = seq.videoTracks.numTracks - 1;
     if (args.track != null && args.track >= 1 && args.track <= seq.videoTracks.numTracks) { t0 = args.track - 1; t1 = args.track - 1; }
+    /* Match the safe-zone guide EXACTLY by the filename Pulse writes.
+     *
+     * This used to delete any clip whose name merely CONTAINED "guide", "pulse"
+     * or "brand", on every video track. Its only caller passes the track it
+     * placed the guide on — but that is remembered in panel state, and a CEP
+     * panel reloads constantly, so after a reload the track is null and the
+     * sweep covered the whole timeline. Place a guide, reload the panel, press
+     * Remove guide, and the user's "Brand logo.png" and "Brand intro.mp4" were
+     * deleted along with it. There is no all-or-nothing guard here like the
+     * caption-track cleaner has, and no confirmation either.
+     *
+     * "guide.png" is the legacy name (matched exactly, so "Style Guide.png"
+     * survives); newer builds write pulse-safezone-guide.png. */
+    var GUIDE_NAMES = ['pulse-safezone-guide.png', 'guide.png'];
+    var removedNames = [];
     for (var ti = t1; ti >= t0; ti--) {
       var qt = qseq.getVideoTrackAt(ti);
       for (var i = qt.numItems - 1; i >= 0; i--) {
         var it = qt.getItemAt(i);
         if (!it || it.type === 'Empty') continue;
         var nm = ''; try { nm = String(it.name).toLowerCase(); } catch (eN) {}
-        if (nm.indexOf('guide') >= 0 || nm.indexOf('pulse') >= 0 || nm.indexOf('brand') >= 0) { try { it.remove(0, 0); removed++; } catch (eR) {} }
+        var hit = false;
+        for (var g = 0; g < GUIDE_NAMES.length; g++) if (nm === GUIDE_NAMES[g]) { hit = true; break; }
+        if (hit) {
+          try { it.remove(0, 0); removed++; if (removedNames.length < 6) removedNames.push('V' + (ti + 1) + ': ' + nm); } catch (eR) {}
+        }
       }
     }
-    return CP_ok({ removed: removed });
+    return CP_ok({ removed: removed, removedNames: removedNames });
   } catch (e) { return CP_fail(e.message); }
 }
 
@@ -1383,16 +1528,34 @@ function CP_placeSfx(argsJson) {
     var idx = firstEmptyAudio();
     if (idx < 0) {
       try { var q = CP_qeSequence(); if (q && q.addTracks) { q.addTracks(0, 0, 1); seq = CP_activeSequence(); idx = firstEmptyAudio(); } } catch (eAdd) {}
-      if (idx < 0) idx = seq.audioTracks.numTracks - 1;   // last resort
+    }
+    // NO "last resort" fallback. This used to fall back to the LAST audio track
+    // when every track was occupied and adding one failed — and overwriteClip
+    // does exactly what it says, so the SFX punched a hole in whatever was
+    // already there. On a podcast that is a mic track: the guest's audio
+    // silently replaced by a whoosh at every hit point. Refusing is the only
+    // safe answer; the user can make room in one click.
+    if (idx < 0) {
+      return CP_fail('Every audio track already has clips on it, and Premiere would not let ' +
+                     'Pulse add a new one. Add an empty audio track (right-click an audio ' +
+                     'track header → Add Track) and run this again — otherwise the SFX would ' +
+                     'overwrite the audio that is already there.');
     }
     var track = seq.audioTracks[idx];
     if (!track) return CP_fail('No audio track available for SFX.');
 
-    var placed = 0;
+    var placed = 0, failedPl = 0, placeReasons = [];
     for (var i = 0; i < args.times.length; i++) {
-      try { track.overwriteClip(item, args.times[i]); placed++; } catch (ePl) {}
+      try { track.overwriteClip(item, args.times[i]); placed++; }
+      catch (ePl) {
+        failedPl++;
+        if (placeReasons.length < 3) placeReasons.push('at ' + args.times[i] + 's: ' + ePl.message);
+      }
     }
-    return CP_ok({ placed: placed, track: idx + 1, bin: bin.name });
+    return CP_ok({
+      placed: placed, requested: args.times.length, failed: failedPl,
+      failReasons: placeReasons, track: idx + 1, bin: bin.name
+    });
   } catch (e) { return CP_fail(e.message); }
 }
 
@@ -2000,28 +2163,51 @@ function CP_captureMgrtStyle(comp) {
   if (!comp || !comp.properties) return out;
   for (var i = 0; i < comp.properties.numItems; i++) {
     var p = comp.properties[i];
+    // The property's NAME is captured alongside its index. The style is copied
+    // by index, which is only meaningful when source and target are the same
+    // template — and a caption track can hold two, because regenerating with a
+    // different template reuses the same track. Copying index-by-index across
+    // different layouts writes a colour into a size slider and a font name into
+    // a position field. The name lets the apply side notice and refuse.
+    var pname = ''; try { pname = String(p.displayName || ''); } catch (eNm) {}
     var v = null; try { v = p.getValue(); } catch (e) { continue; }
     if (typeof v === 'string' &&
         (v.indexOf('capProp') !== -1 || v.indexOf('textEditValue') !== -1 ||
          v.indexOf('"strDB"') !== -1 || CP_isUuidList(v))) continue;        // text / group
     var col = null;
     try { if (typeof p.getColorValue === 'function') { var cv = p.getColorValue(); if (cv && cv.length >= 4) col = [cv[0], cv[1], cv[2], cv[3]]; } } catch (eC) {}
-    if (col) { out.push({ i: i, kind: 'color', color: col }); continue; }
-    if (typeof v === 'number' || typeof v === 'boolean') { out.push({ i: i, kind: 'val', value: v }); continue; }
-    if (typeof v === 'object' && v && v.x != null) { out.push({ i: i, kind: 'point', x: v.x, y: v.y }); continue; }
-    if (typeof v === 'string') { out.push({ i: i, kind: 'str', value: v }); continue; }   // font names etc.
+    if (col) { out.push({ i: i, n: pname, kind: 'color', color: col }); continue; }
+    if (typeof v === 'number' || typeof v === 'boolean') { out.push({ i: i, n: pname, kind: 'val', value: v }); continue; }
+    if (typeof v === 'object' && v && v.x != null) { out.push({ i: i, n: pname, kind: 'point', x: v.x, y: v.y }); continue; }
+    if (typeof v === 'string') { out.push({ i: i, n: pname, kind: 'str', value: v }); continue; }   // font names etc.
   }
   return out;
 }
 
+/* Properties skipped by the last run of CP_applyCapturedStyle because the slot
+   at that index held a DIFFERENT property than the one captured — i.e. the
+   target graphic is a different template from the source. The caller resets it
+   and reports the total, so "nothing changed on half my captions" has a visible
+   cause instead of looking like the feature is broken. */
+var CP_STYLE_MISMATCH = 0;
+
 /* Apply a captured style onto a MOGRT component (best effort, never throws). */
 function CP_applyCapturedStyle(comp, style) {
   if (!comp || !comp.properties || !style) return 0;
-  var n = 0;
+  var n = 0, mismatched = 0;
   for (var k = 0; k < style.length; k++) {
     var s = style[k];
     if (s.i == null || s.i < 0 || s.i >= comp.properties.numItems) continue;
     var p = comp.properties[s.i];
+    // Refuse to write when the slot at this index is not the property that was
+    // captured. Without this, restyling a track that holds two different
+    // caption templates copied values straight across mismatched layouts.
+    // Names are only compared when BOTH sides have one, so a template that
+    // exposes no displayName behaves exactly as before.
+    if (s.n) {
+      var tname = ''; try { tname = String(p.displayName || ''); } catch (eTn) {}
+      if (tname && tname !== s.n) { mismatched++; continue; }
+    }
     try {
       if (s.kind === 'color' && typeof p.setColorValue === 'function') {
         // getColorValue is [a,r,g,b]; replicate the colour, force opaque alpha
@@ -2036,6 +2222,7 @@ function CP_applyCapturedStyle(comp, style) {
       }
     } catch (e) {}
   }
+  CP_STYLE_MISMATCH += mismatched;
   return n;
 }
 
@@ -2059,13 +2246,23 @@ function CP_copyStyleSelectedToTrack() {
     if (!srcComp || !srcComp.properties) return CP_fail('The selected clip isn\'t a Motion Graphics template — select one of Pulse\'s caption graphics.');
     var style = CP_captureMgrtStyle(srcComp);
     if (!style.length) return CP_fail('Could not read any style from the selected graphic.');
-    var track = seq.videoTracks[selTrack], applied = 0;
+    var track = seq.videoTracks[selTrack], applied = 0, skippedDifferent = 0;
+    CP_STYLE_MISMATCH = 0;
     for (var c = 0; c < track.clips.numItems; c++) {
       if (c === selIdx) continue;
       var comp = null; try { comp = track.clips[c].getMGTComponent(); } catch (eG) {}
-      if (comp && comp.properties) { if (CP_applyCapturedStyle(comp, style) > 0) applied++; }
+      if (comp && comp.properties) {
+        var before = CP_STYLE_MISMATCH;
+        if (CP_applyCapturedStyle(comp, style) > 0) applied++;
+        if (CP_STYLE_MISMATCH > before) skippedDifferent++;
+      }
     }
-    return CP_ok({ applied: applied, captured: style.length, track: selTrack + 1 });
+    return CP_ok({
+      applied: applied, captured: style.length, track: selTrack + 1,
+      // graphics on the track built from a DIFFERENT template, whose properties
+      // were left alone rather than written to by index
+      differentTemplate: skippedDifferent, propsSkipped: CP_STYLE_MISMATCH
+    });
   } catch (e) { return CP_fail(e.message); }
 }
 
@@ -2108,7 +2305,13 @@ function CP_removePulseCaptionTracks(argsJson) {
     app.enableQE();
     var qseq = qe.project.getActiveSequence();
     var pat = /(flux|subtitle|shorts_text|text_animation|pulse|cutpilot|cap[-_]?\d)/i;
-    var cleared = 0, tracks = [];
+    var cleared = 0, tracks = [], sample = [];
+    // A dry run answers "what would this delete?" without deleting it. What
+    // counts as a caption is GUESSED from the clip name, so footage that
+    // happens to be called "pulse-something" and sits alone on a track is
+    // indistinguishable from a caption graphic and would be removed. The panel
+    // shows this list first rather than promising that no video is touched.
+    var dryRun = !!args.dryRun;
     for (var ti = seq.videoTracks.numTracks - 1; ti >= 0; ti--) {
       var track = seq.videoTracks[ti];
       if (!track.clips.numItems) continue;
@@ -2118,6 +2321,14 @@ function CP_removePulseCaptionTracks(argsJson) {
         if (!pat.test(nm)) { allCaps = false; break; }
       }
       if (!allCaps) continue;
+      if (dryRun) {
+        cleared += track.clips.numItems;
+        tracks.push(ti + 1);
+        for (var sc = 0; sc < track.clips.numItems && sample.length < 6; sc++) {
+          sample.push('V' + (ti + 1) + ': ' + String(track.clips[sc].name || ''));
+        }
+        continue;
+      }
       var qt = null;
       try { qt = qseq.getVideoTrackAt(ti); } catch (eQ) {}
       if (!qt) continue;
@@ -2128,7 +2339,7 @@ function CP_removePulseCaptionTracks(argsJson) {
       }
       if (removed) { cleared += removed; tracks.push(ti + 1); }
     }
-    return CP_ok({ cleared: cleared, tracks: tracks });
+    return CP_ok({ cleared: cleared, tracks: tracks, sample: sample, dryRun: dryRun });
   } catch (e) { return CP_fail(e.message); }
 }
 
@@ -3169,11 +3380,26 @@ function CP_captureSequenceFrame(argsJson) {
 function CP_getMarkers() {
   try {
     var seq = CP_activeSequence();
-    var out = [];
+    var out = [], mine = 0;
     var m = seq.markers.getFirstMarker();
-    while (m) { out.push(m.start.seconds); m = seq.markers.getNextMarker(m); }
+    while (m) {
+      // Skip markers PULSE placed. This feeds multicam's "switch on markers"
+      // mode, and a user who ran hook detection or previewed silences with
+      // markers then got a camera switch on every one of them — cuts they never
+      // asked for, from markers they did not place. "Markers" means theirs.
+      // Untagged markers from older builds still count, so nothing that worked
+      // before stops working.
+      var cm = '';
+      try { cm = m.comments || ''; } catch (eC) {}
+      if (cm.indexOf(CP_MARK_TAG) >= 0) { mine++; }
+      else { out.push(m.start.seconds); }
+      m = seq.markers.getNextMarker(m);
+    }
     out.sort(function (a, b) { return a - b; });
-    return CP_ok({ times: out, end: parseFloat(seq.end) / CP_TICKS_PER_SECOND });
+    return CP_ok({
+      times: out, end: parseFloat(seq.end) / CP_TICKS_PER_SECOND,
+      excludedPulseMarkers: mine
+    });
   } catch (e) { return CP_fail(e.message); }
 }
 
@@ -3184,19 +3410,28 @@ function CP_addHookMarkers(argsJson) {
     var args = JSON.parse(argsJson);
     var seq = CP_activeSequence();
     var list = args.markers || [];
-    var added = 0;
+    // Same ownership stamp CP_addMarkers writes. Without it these markers were
+    // invisible to CP_clearPulseMarkers — Pulse could put a hook marker on the
+    // timeline and then had no way to take it off again. The tag goes AFTER the
+    // comment, which here is the spoken line the hook was found in and is the
+    // whole point of the marker for the user.
+    var hookTag = CP_markerTag('hook');
+    var added = 0, skipped = 0;
     for (var i = 0; i < list.length; i++) {
       var t = Number(list[i].time) || 0;
       try {
         var mk = seq.markers.createMarker(t);
         if (mk) {
           try { mk.name = String(list[i].label || 'Hook'); } catch (eN) {}
-          try { if (list[i].comment) mk.comments = String(list[i].comment); } catch (eC) {}
+          try {
+            var note = list[i].comment ? String(list[i].comment) : '';
+            mk.comments = note ? (note + '\n' + hookTag) : hookTag;
+          } catch (eC) {}
           try { mk.setColorByIndex(1); } catch (eCol) {}   // red = attention (best effort)
           added++;
-        }
-      } catch (eM) {}
+        } else { skipped++; }
+      } catch (eM) { skipped++; }
     }
-    return CP_ok({ added: added });
+    return CP_ok({ added: added, requested: list.length, skipped: skipped, tag: hookTag });
   } catch (e) { return CP_fail(e.message); }
 }
