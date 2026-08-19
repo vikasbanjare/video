@@ -220,12 +220,26 @@ function makeWorld(opts) {
                                           fontFSBoldValue: [false], fontFSAllCapsValue: [false],
                                           fontFSItalicValue: [false], fillColorEditValue: [[1, 1, 1]] }) },
           // the gradient overlay mirror is rich too; its WORDS are expression-
-          // driven from the main Text, only its FONT is meant to be edited
-          fgText: { v: JSON.stringify({ capPropFontEdit: true, capPropTextRunCount: 1,
-                                        textEditValue: 'Flux Halo', capPropTextRunLength: [9],
-                                        fontEditValue: ['Inter-SemiBold'], fontSizeEditValue: [90],
-                                        fontFSBoldValue: [false], fontFSAllCapsValue: [false],
-                                        fontFSItalicValue: [false], fillColorEditValue: [[1, 1, 1]] }) },
+          // driven from the main Text, only its FONT is meant to be edited.
+          // opts.fgMultiRun models the overlay as a MULTI-RUN blob (styled per
+          // word, which is what a gradient/highlight layer normally is). This is
+          // the shape the single-run seed below could never model — and the one
+          // that made v0.9.349 blank every caption: CP_setMgrtText's run-length
+          // fixup only matches a SINGLE-element array, so a multi-run overlay
+          // kept runLengths summing to 9 while the text grew, and Premiere
+          // renders a source text whose runs don't add up as nothing at all.
+          fgText: { v: opts.fgMultiRun
+                       ? JSON.stringify({ capPropFontEdit: true, capPropTextRunCount: 3,
+                                          textEditValue: 'Flux Halo', capPropTextRunLength: [4, 1, 4],
+                                          fontEditValue: ['Inter-SemiBold', 'Inter-SemiBold', 'Inter-SemiBold'],
+                                          fontSizeEditValue: [90, 90, 90],
+                                          fontFSBoldValue: [false, false, false], fontFSAllCapsValue: [false, false, false],
+                                          fontFSItalicValue: [false, false, false], fillColorEditValue: [[1, 1, 1], [1, 1, 1], [1, 1, 1]] })
+                       : JSON.stringify({ capPropFontEdit: true, capPropTextRunCount: 1,
+                                          textEditValue: 'Flux Halo', capPropTextRunLength: [9],
+                                          fontEditValue: ['Inter-SemiBold'], fontSizeEditValue: [90],
+                                          fontFSBoldValue: [false], fontFSAllCapsValue: [false],
+                                          fontFSItalicValue: [false], fillColorEditValue: [[1, 1, 1]] }) },
           note:   { v: 'If you change the font, match the Gradient FG text.' },
           hl1: { v: [197, 255, 0] }, hl2: { v: [197, 255, 0] },
           textColor: { v: [255, 255, 255] }, bgColor: { v: [0, 60, 255] }, shColor: { v: [0, 0, 0] },
@@ -1249,19 +1263,9 @@ console.log('host.jsx — Flux engine (Halo2 control set): text, exact-name para
   const fg0 = JSON.parse(f0.fgText.v), fg1 = JSON.parse(f1.fgText.v);
   assert(fg0.fontEditValue[0] === 'Archivo Black' && fg1.fontEditValue[0] === 'Archivo Black',
     'the "(Change font only)" gradient mirror wears the SAME face (highlight stays aligned)');
-  // The overlay now carries the CAPTION's words, not the template's authored
-  // sample. Flux_Halo2 ships "Text" AND "Gradient FG Text (Change font only)"
-  // both defaulted to the literal "Flux Halo"; the FG layer is kept out of
-  // tprops by name, so when the template's expression link does not hold on a
-  // given machine that sample burned itself over every caption — the owner's
-  // "in some captions, there are two texts / you have to change only one text".
-  assert(fg0.textEditValue === 'the pollution levels' && fg1.textEditValue === 'are rising fast',
-    'the tagged overlay carries THIS clip\'s caption words — the authored "Flux Halo" sample no longer renders over the caption as a second text');
-  assert(fg0.capPropTextRunLength[0] === 20 && fg1.capPropTextRunLength[0] === 15,
-    'and its run-length follows those words (no "bad any cast" on the overlay)');
-  assert(fg0.fontSizeEditValue[0] === 90 &&
-         JSON.stringify(fg0.fillColorEditValue) === JSON.stringify([[1, 1, 1]]),
-    'the overlay takes ONLY words + face — size and fill stay the template\'s, so the gradient it exists to draw is not flattened');
+  assert(fg0.textEditValue === 'Flux Halo' && fg0.capPropTextRunLength[0] === 9 &&
+         fg0.fontSizeEditValue[0] === 90,
+    'the tagged overlay is FONT-ONLY again — its words stay expression-driven (the author\'s Note; the v0.9.321 words-write was the untested insert-path difference)');
   assert(r.fgFontSet === 2, 'both clips report the mirror re-face (fgFontSet=' + r.fgFontSet + ')');
   assert(caps[0]._fluxWrites.note === 0 && caps[1]._fluxWrites.note === 0,
     'the author Note is NEVER written');
@@ -1298,6 +1302,49 @@ console.log('host.jsx — Flux engine (Halo2 control set): text, exact-name para
     'each caption gets its own FULL-COVERAGE sweep window (' + JSON.stringify(f0.sweepDur) + ')');
 }
 
+console.log('host.jsx — MULTI-RUN gradient overlay stays structurally valid ("everything is blank")');
+// v0.9.349 made the tagged "(Change font only)" overlay take the caption WORDS,
+// to kill the template's authored "Flux Halo" sample showing as a second text.
+// On the owner's Premiere that blanked EVERY caption, and this is why:
+// CP_setMgrtText rewrites *RunLength to the new text length, but its regex only
+// matches a SINGLE-element array (\[\s*\d+\s*\]). A gradient/highlight overlay
+// is normally styled per word — multi-run — so its runLengths were left summing
+// to 9 while textEditValue grew to 20 chars. Premiere renders a source text
+// whose runs don't add up as NOTHING, so the whole graphic disappeared.
+// The main "Text" prop can never hit this: the probe only grants richSafe on a
+// verified round-trip or an explicit capPropTextRunCount:1. The overlay had no
+// such guard. The seed fixture is single-run, so the mock could not model it —
+// that, not the missing test, is why an all-green battery shipped a blank build.
+// Words on this overlay are now FONT-ONLY again (second revert; do not try a
+// third time without a multi-run round-trip probe on a real machine).
+{
+  const w = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true, fgMultiRun: true });
+  const host = loadHost(w);
+  const r = call(host, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2.mogrt',
+    cues: [{ start: 1.0, end: 2.2, text: 'the pollution levels' }],
+    videoTrack: null, audioTrack: 0,
+    params: [{ i: 19, kind: 'color', value: '#FFFFFF' }],
+    textStyle: { font: 'Archivo Black', bold: true, sizeScale: 1 },
+    stretch: false
+  });
+  assert(r.ok === true && r.inserted === 1, 'insert succeeds against a multi-run overlay');
+  const f = w.model.vTracks[w.model.vTracks.length - 1][0]._flux;
+  const fg = JSON.parse(f.fgText.v);
+  const sum = fg.capPropTextRunLength.reduce((a, b) => a + b, 0);
+  assert(sum === fg.textEditValue.length,
+    'the overlay blob stays CONSISTENT — run-lengths still sum to the text length (' +
+    sum + ' vs ' + fg.textEditValue.length + '); v0.9.349 left 9 against 20 and Premiere drew nothing');
+  assert(fg.textEditValue === 'Flux Halo',
+    'the overlay keeps its expression-driven words — a words-write on a multi-run overlay is what blanked the captions');
+  assert(fg.fontEditValue.length === 3 && fg.fontEditValue.every(x => x === 'Archivo Black'),
+    'the FONT still syncs on EVERY run (the author\'s Note), because that write preserves run structure');
+  const main = JSON.parse(f.text.v);
+  assert(main.textEditValue === 'the pollution levels' &&
+         main.capPropTextRunLength.reduce((a, b) => a + b, 0) === main.textEditValue.length,
+    'and the real caption text still lands, consistent, on the main Text layer');
+}
+
 // glow styles: the engine's soft shadow becomes a centred halo
 {
   const w = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true });
@@ -1323,15 +1370,8 @@ console.log('host.jsx — Flux engine (Halo2 control set): text, exact-name para
          f.shOpacity.v === 60 && near2(f.shColor.v, [0x00, 0xE5, 0xFF]),
     'glow rides the shadow controls as a centred halo (on/colour/opacity/dist 0/softness 100)');
   assert(f.bgOpacity.v === 0, 'boxless style hides the engine\'s box');
-  assert(JSON.parse(f.text.v).fontEditValue[0] === 'Inter-SemiBold' &&
-         JSON.parse(f.fgText.v).fontEditValue[0] === 'Inter-SemiBold',
-    'no textStyle → the baked face is untouched on BOTH layers (no font was asked for)');
-  // …but the overlay's WORDS still sync. Picking no font is the commonest path,
-  // and it used to leave the tagged overlay entirely untouched — so the
-  // template's "Flux Halo" sample stayed burned over the caption. The words
-  // fix must not be gated on a font being chosen.
-  assert(JSON.parse(f.fgText.v).textEditValue === 'neon nights' && r.fgFontSet === 1,
-    'the overlay still takes the caption words with NO textStyle at all (fgFontSet=' + r.fgFontSet + ')');
+  assert(JSON.parse(f.text.v).fontEditValue[0] === 'Inter-SemiBold' && r.fgFontSet === 0,
+    'no textStyle → the baked face is untouched and no mirror re-face');
   function near2(v, want) { return v.every((x, i) => Math.abs(x - want[i]) <= 2); }
 }
 

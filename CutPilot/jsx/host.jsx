@@ -2770,37 +2770,31 @@ function CP_insertMogrtCaptions(argsJson) {
           // on a given machine the correct words render instead of the sample.
           // The UN-TAGGED Prism mirror stays FONT-ONLY: its words are
           // expression-driven and writing them desynced the highlight.
-          if (allowRich) {
+          if (allowRich && args.textStyle && args.textStyle.font) {
             try {
               var fgTagged = null;
               for (var fgI = 0; fgI < props.numItems; fgI++) {
                 if (String(props[fgI].displayName || '').toLowerCase().indexOf('change font only') >= 0) { fgTagged = props[fgI]; break; }
               }
-              // WORDS + FACE on the tagged overlay. The author's Note says the
-              // FG layer follows the main text by expression, so only its font
-              // needs syncing — and v0.9.321's full-words write was reverted as
-              // an untested insert-path step. But the owner has now reported the
-              // same failure twice ("there are 2 text boxes, you have to change
-              // both" / "in some captions, there are two texts"): on their
-              // machine that expression link does NOT hold, so the FG layer keeps
-              // rendering the template's authored sample — Flux_Halo2 ships
-              // BOTH "Text" and "Gradient FG Text (Change font only)" defaulted
-              // to the literal string "Flux Halo" (verified in the shipped
-              // definition.json), which is the second text burned over every
-              // caption. The name filter in CP_isTextValue deliberately keeps
-              // this prop out of tprops, so nothing else ever writes it.
-              //
-              // Writing the caption words here is safe in BOTH worlds: where the
-              // expression link is healthy it overrides the static string and the
-              // write is a no-op; where it is broken the correct words render
-              // instead of "Flux Halo". Only the FONT rides along (per the
-              // author's Note) — never fill/box/size, which would flatten the
-              // gradient the FG layer exists to draw. This time it is covered by
-              // host tests that exercise the insert path.
+              // FONT-ONLY on the tagged overlay — the template author's own
+              // Note: "If you changing only the text then you don't need to
+              // touch Gradient FG Text." The v0.9.321 full-words write was the
+              // ONE insert-path step the all-green test ladder never exercised
+              // — reverted: words stay expression-driven, only the face syncs.
               if (fgTagged) {
-                var fgStyle = (args.textStyle && args.textStyle.font) ? { font: args.textStyle.font } : null;
-                if (CP_setMgrtText(fgTagged, grp[0].text, true, fgStyle)) fgFontSet++;
-              } else if (probe.mirrorText && tprops.length > 1 && args.textStyle && args.textStyle.font) {
+                var ftV = null; try { ftV = fgTagged.getValue(); } catch (eFtV) {}
+                if (typeof ftV === 'string' &&
+                    (ftV.indexOf('fontEditValue') !== -1 || ftV.indexOf('capProp') !== -1)) {
+                  var ftE = String(args.textStyle.font).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+                  var ftOut = CP_rewriteBlobField(ftV, 'fontEditValue', CP_runStringsAll(ftE));
+                  ftOut = ftOut.replace(/("fontName"\s*:\s*")(?:[^"\\]|\\.)*(")/g,
+                    function (m, a, b) { return a + ftE + b; });
+                  if (ftOut !== ftV) {
+                    try { fgTagged.setValue(ftOut, true); fgFontSet++; }
+                    catch (eFtS1) { try { fgTagged.setValue(ftOut); fgFontSet++; } catch (eFtS2) {} }
+                  }
+                }
+              } else if (probe.mirrorText && tprops.length > 1 && args.textStyle.font) {
                 var fgP = tprops[1];
                 var fgV = null; try { fgV = fgP.getValue(); } catch (eFgV) {}
                 if (typeof fgV === 'string' &&
