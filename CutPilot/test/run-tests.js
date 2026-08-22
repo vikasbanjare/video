@@ -290,6 +290,26 @@ console.log('captions.js (style customizer)');
   assert(sf.size === 50, 'styleForFrame scales font to frame height');
   assert(sf.boxColor === '#abcdef', 'styleForFrame honors boxColor override');
   assert(sf.strokeWidth === 0, 'styleForFrame honors strokeWidth 0 override');
+
+  // SCRIPT SAFETY NET. A serif chain (Didot → Playfair → Georgia → Merriweather
+  // → Times) can resolve to faces with no Devanagari, and Hindi then renders as
+  // NOTHING — cap-editorial drew 0 px in CI while twelve sans-chained styles
+  // drew real glyphs. Which font a machine actually picks cannot be asserted
+  // here, but that the safety net is WIRED, ordered last, and does not disturb
+  // the style's own chain can be — deterministically, on any machine.
+  const serif = CPRender2.styleForFrame(
+    { font: 'Didot', fallbackFonts: ['Playfair Display', 'Georgia'], fontSize: 60 }, 1920, {}, 1080);
+  const chain = String(serif.fallbacks);
+  assert(/Playfair Display/.test(chain) && /Georgia/.test(chain),
+    'the style\'s own fallback fonts survive in the chain');
+  assert(chain.indexOf('Playfair Display') < chain.indexOf('Kohinoor Devanagari'),
+    'the Devanagari safety net comes AFTER the style\'s own fonts (never changes a Latin caption)');
+  ['Kohinoor Devanagari', 'Devanagari MT', 'Nirmala UI', 'Mangal', 'Noto Sans Devanagari'].forEach(function (f) {
+    assert(chain.indexOf(f) >= 0, 'font chain carries the Devanagari fallback "' + f + '"');
+  });
+  const noFb = CPRender2.styleForFrame({ font: 'Impact', fontSize: 90 }, 1920, {}, 1080);
+  assert(String(noFb.fallbacks).indexOf('Noto Sans Devanagari') >= 0,
+    'a style with NO declared fallbacks still gets the Devanagari safety net');
 }
 
 // --------------------------------------------------------------- render ----
