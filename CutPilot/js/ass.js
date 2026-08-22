@@ -184,15 +184,25 @@
 
   /* Escape an .ass path for use inside ffmpeg's subtitles filter (the filter
      graph treats ':' and '\' specially; Windows backslashes must become '/'). */
+  /* Escape a path for use as the subtitles filter's VALUE.
+     ffmpeg parses this at two levels: the filtergraph splits on , and ; and
+     treats [ ] specially, then the filter's own parser splits key=value on '='.
+     Quoting handles the first level, but not the second — measured against real
+     ffmpeg, a folder named "a=b" still failed with "Error applying option
+     '/tmp/.../a' to filter 'subtitles': Option not found". Callers therefore
+     name the option explicitly (subtitles=filename=<this>), which is what makes
+     '=' safe. Verified rendering: "Reels, Final", "take [1]", "semi;colon",
+     "a=b" and "with space" all pass; see assertFilterPath tests. */
   function escFilterPath(p) {
-    return String(p).replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
+    var s = String(p).replace(/\\/g, '/');          // Windows separators
+    return "'" + s.replace(/'/g, "\\'") + "'";
   }
 
   /* Build the ffmpeg burn-in command args (caller supplies in/out paths). The
      subtitles filter path must be escaped for the platform; fontsdir pins the
      bundled font so the burn matches the preview. Returns an argv array. */
   function ffmpegBurnArgs(inPath, assPath, outPath, fontsDir) {
-    var filter = 'subtitles=' + escFilterPath(assPath);
+    var filter = 'subtitles=filename=' + escFilterPath(assPath);
     if (fontsDir) filter += ':fontsdir=' + escFilterPath(fontsDir);
     return ['-y', '-i', inPath, '-vf', filter, '-c:a', 'copy', outPath];
   }
@@ -204,7 +214,7 @@
   function ffmpegOverlayArgs(assPath, width, height, durSec, outPath, fontsDir, fps) {
     var dur = (durSec > 0) ? Math.ceil(durSec * 100) / 100 : 1;
     var rate = fps || 30;
-    var sub = 'subtitles=' + escFilterPath(assPath) + ':alpha=1';
+    var sub = 'subtitles=filename=' + escFilterPath(assPath) + ':alpha=1';
     if (fontsDir) sub += ':fontsdir=' + escFilterPath(fontsDir);
     return ['-y', '-f', 'lavfi',
       '-i', 'color=c=black@0.0:s=' + width + 'x' + height + ':d=' + dur + ':r=' + rate + ',format=rgba',

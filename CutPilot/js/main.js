@@ -6442,6 +6442,19 @@
       var assStr = CPAss.buildAss(events, assOpts);   // reuse the auto-fit opts computed above
       var lastEnd = events[events.length - 1].end || 0;
       var dir = pathMod.join(osMod.tmpdir(), 'pulse-libass-' + Date.now());
+      // ffmpeg's subtitles filter cannot take a path containing an apostrophe —
+      // measured against five different escaping strategies, all of them fail.
+      // Pulse's own folder name never has one, but the OS temp dir belongs to
+      // the machine, so move to a clean directory rather than lose a whole
+      // podcast to somebody's username.
+      if (dir.indexOf("'") >= 0) {
+        try {
+          var _cleanRoot = (typeof process !== 'undefined' && process.platform === 'win32')
+            ? ((process.env && (process.env.TEMP || process.env.TMP)) || 'C:/Temp') : '/tmp';
+          var _alt = pathMod.join(_cleanRoot, 'pulse-libass-' + Date.now());
+          if (_alt.indexOf("'") < 0) { fs.mkdirSync(_alt, { recursive: true }); dir = _alt; }
+        } catch (eAlt) {}
+      }
       try { fs.mkdirSync(dir, { recursive: true }); } catch (eD) {}
       var assPath = pathMod.join(dir, 'cap.ass');
       var outPath = pathMod.join(dir, 'captions.mov');

@@ -1312,6 +1312,23 @@ console.log('ass.js (libass karaoke generator)');
     'static mode never recolours a word — word-by-word is off');
   assert(/money grows fast/.test(staticAss), 'static mode still shows the whole caption');
 
+  // FILTER PATHS. Real folder names break ffmpeg's filtergraph: it splits on
+  // , and ; treats [ ] specially, and its filter parser splits key=value on '='.
+  // Measured against real ffmpeg — "Reels, Final", "take [1]", "semi;colon" and
+  // "a=b" all failed before this; all four render now.
+  const fp = CPAss.escFilterPath;
+  assert(/^'.*'$/.test(fp('/tmp/a/b.ass')), 'a filter path is quoted so separators stay literal');
+  assert(fp('/tmp/Reels, Final/b.ass') === "'/tmp/Reels, Final/b.ass'", 'a comma survives inside the quotes');
+  assert(fp('/tmp/take [1]/b.ass') === "'/tmp/take [1]/b.ass'", 'brackets survive inside the quotes');
+  assert(fp('C:\\Users\\v\\b.ass') === "'C:/Users/v/b.ass'", 'Windows separators become forward slashes');
+  assert(fp("/tmp/vikas's/b.ass") === "'/tmp/vikas\\'s/b.ass'", 'an apostrophe is backslash-escaped');
+  const ovArgs = CPAss.ffmpegOverlayArgs('/tmp/a=b/cap.ass', 320, 180, 1, '/tmp/out.mov', null, 10);
+  const vf = ovArgs[ovArgs.indexOf('-vf') + 1];
+  assert(/^subtitles=filename=/.test(vf),
+    'the subtitles filter names its option, so an = in the path is not read as a key');
+  const burn = CPAss.ffmpegBurnArgs('/in.mp4', '/tmp/a=b/cap.ass', '/out.mp4');
+  assert(burn.join(' ').indexOf('subtitles=filename=') >= 0, 'the burn-in path names its option too');
+
   const caps = CPAss.buildAss(cues, { allCaps: true });
   assert(/WHAT/.test(caps) && !/What/.test(caps), 'allCaps uppercases the caption text');
   // reveal mode: words appear one at a time (first Dialogue shows ONLY the first word)
