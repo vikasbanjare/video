@@ -2529,7 +2529,15 @@
       var p = pathMod.join(os.tmpdir(), 'cutpilot-transcript-edited-' + Date.now() + '.srt');
       fs.writeFileSync(p, CPCaptions.toSRT(cues), 'utf8');
       state.transcript = { label: 'Edited transcript (' + cues.length + ' lines)', path: p, mtime: 1e16 };
-      state.transcriptWords = null;    // edits change the words → fall back to envelope sync
+      // KEEP the word-level timing. Discarding it dropped every caption back to
+      // estimated sync after a single typo fix — the AI-fix path already
+      // reflows instead, and the manual editor must behave the same. Words on
+      // untouched lines keep their real spoken times; a line whose word count
+      // changed is redistributed within its own span.
+      try {
+        var rw = reflowWordTimingFromLines(cues, state.transcriptWords);
+        state.transcriptWords = rw && rw.length ? rw : null;
+      } catch (eRw) { state.transcriptWords = null; }
       state.transcriptManual = true;
     } catch (e) { return toast('Couldn\'t save edits: ' + e.message, true); }
     $('tr-editor').classList.add('hidden');
@@ -10275,6 +10283,7 @@
       editorFont: function () { return resolvedEditorFont(styledPreset()); },   // the exact face Apply/preview will send
       customCount: function () { return (state.customTemplates || []).length; },
       capOut: function () { return _capOut; },
+      reflowWordTiming: reflowWordTimingFromLines,
       libCategory: function () { return state.libCategory; },
       buildSelfTestReport: buildSelfTestReport,
 

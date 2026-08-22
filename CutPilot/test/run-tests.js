@@ -1740,6 +1740,17 @@ try {
 // PANEL PROOFS: the real panel driven headless — mapping (every style → the
 // real engine layout), tile==preview parity, live font/weight controls,
 // smart-emphasis on/off. The other half of the autonomous QA system.
+// ------------------------------------------ overlay RENDER check ----
+// Long videos render ONE transparent caption overlay instead of thousands of
+// images. This actually runs ffmpeg+libass and decodes the frames: transparent
+// background, readable text, correct band, and the animation alive.
+console.log('\nRunning overlay render check…');
+var overlayOk = true;
+try {
+  require('child_process').execSync('node "' + require('path').join(__dirname, '..', '..', 'tools', 'overlay-render-check.js') + '"',
+    { stdio: 'inherit' });
+} catch (e) { if (e.status === 2) console.log('(overlay render check skipped — no ffmpeg with libass here)'); else overlayOk = false; }
+
 // ------------------------------------------- style QUALITY audit ----
 // Renders EVERY caption style at true 1080×1920 through the shipped renderer
 // and measures it like a viewer: readable contrast, phone-legible size, inside
@@ -1784,10 +1795,11 @@ try {
   else thumbsOk = false;
 }
 
-var allOk = !failed && auditOk && hostOk && simOk && proofsOk && thumbsOk && styleQualityOk;
+var allOk = !failed && auditOk && hostOk && simOk && proofsOk && thumbsOk && styleQualityOk && overlayOk;
 console.log('\n' + (allOk ? '════ ALL GATES GREEN ════' : '════ SOME GATES FAILED ════') +
   '  (js:' + (failed ? 'FAIL' : 'ok') + ' audit:' + (auditOk ? 'ok' : 'FAIL') +
   ' host:' + (hostOk ? 'ok' : 'FAIL') + ' sim:' + (simOk ? 'ok' : 'FAIL') +
   ' proofs:' + (proofsOk ? 'ok' : 'FAIL') + ' blank-scan:' + (thumbsOk ? 'ok' : 'FAIL') +
-  ' style-quality:' + (styleQualityOk ? 'ok' : 'FAIL') + ')');
+  ' style-quality:' + (styleQualityOk ? 'ok' : 'FAIL') +
+  ' overlay:' + (overlayOk ? 'ok' : 'FAIL') + ')');
 process.exit(allOk ? 0 : 1);

@@ -1,0 +1,165 @@
+/*
+ * overlay-render-check.js — actually RENDER the caption overlay and look at it.
+ *
+ * Long videos route to the single-overlay path (one transparent .mov for the
+ * whole video) instead of one image per word. That path had never been
+ * executed anywhere: no test, and the owner's machine never exercised it.
+ * This runs the REAL pipeline — CPAss.buildAss → CPAss.ffmpegOverlayArgs →
+ * ffmpeg+libass — then decodes frames and asserts what a viewer would see:
+ *
+ *   1. ffmpeg exits 0 and writes a non-trivial .mov
+ *   2. the frame is mostly TRANSPARENT (it is an overlay, not a black card)
+ *   3. real glyph pixels exist, and they are bright enough to read
+ *   4. the caption sits in the band the style asked for
+ *   5. two different moments differ → the word-by-word animation is alive
+ *
+ * Skips (exit 2) when no ffmpeg with libass is present, so CI without it is
+ * not a false failure.
+ */
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const cp = require('child_process');
+const ROOT = path.join(__dirname, '..');
+const CPAss = require(path.join(ROOT, 'CutPilot', 'js', 'ass.js'));
+
+let failed = 0;
+const ok = m => console.log('  ✓ ' + m);
+const bad = m => { console.log('  ✗ ' + m); failed++; };
+
+function findFfmpeg() {
+  const cands = [];
+  try { cands.push(require('imageio_ffmpeg')); } catch (e) {}
+  try {
+    const py = cp.execSync('python3 -c "import imageio_ffmpeg;print(imageio_ffmpeg.get_ffmpeg_exe())" 2>/dev/null',
+      { encoding: 'utf8' }).trim();
+    if (py) cands.push(py);
+  } catch (e) {}
+  for (const c of ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/opt/homebrew/bin/ffmpeg']) cands.push(c);
+  for (const c of cands) {
+    if (!c || typeof c !== 'string' || !fs.existsSync(c)) continue;
+    try {
+      const out = cp.execSync(JSON.stringify(c) + ' -hide_banner -filters 2>&1', { encoding: 'utf8', maxBuffer: 1 << 24 });
+      if (/subtitles/.test(out)) return c;      // needs libass
+    } catch (e) {}
+  }
+  return null;
+}
+
+/* Minimal PNG reader (no deps): returns {w,h,channels,pixels} with filters undone. */
+function readPng(file) {
+  const zlib = require('zlib');
+  const d = fs.readFileSync(file);
+  let pos = 8, w = 0, h = 0, ct = 6;
+  const idat = [];
+  while (pos < d.length) {
+    const len = d.readUInt32BE(pos), type = d.toString('ascii', pos + 4, pos + 8);
+    const body = d.slice(pos + 8, pos + 8 + len);
+    if (type === 'IHDR') { w = body.readUInt32BE(0); h = body.readUInt32BE(4); ct = body[9]; }
+    else if (type === 'IDAT') idat.push(body);
+    pos += 12 + len;
+  }
+  const raw = zlib.inflateSync(Buffer.concat(idat));
+  const ch = (ct === 6) ? 4 : 3;
+  const stride = w * ch + 1;
+  const out = Buffer.alloc(w * h * ch);
+  let prev = Buffer.alloc(w * ch);
+  for (let y = 0; y < h; y++) {
+    const f = raw[y * stride];
+    const line = Buffer.from(raw.slice(y * stride + 1, (y + 1) * stride));
+    for (let x = 0; x < line.length; x++) {
+      const a = x >= ch ? line[x - ch] : 0, b = prev[x], c = x >= ch ? prev[x - ch] : 0;
+      if (f === 1) line[x] = (line[x] + a) & 255;
+      else if (f === 2) line[x] = (line[x] + b) & 255;
+      else if (f === 3) line[x] = (line[x] + ((a + b) >> 1)) & 255;
+      else if (f === 4) {
+        const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
+        line[x] = (line[x] + (pa <= pb && pa <= pc ? a : (pb <= pc ? b : c))) & 255;
+      }
+    }
+    line.copy(out, y * w * ch);
+    prev = line;
+  }
+  return { w, h, ch, px: out };
+}
+
+function analyse(png) {
+  const { w, h, ch, px } = png;
+  let opaque = 0, bright = 0, minY = h, maxY = -1, minX = w, maxX = -1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * ch;
+      const a = ch === 4 ? px[i + 3] : 255;
+      if (a <= 40) continue;
+      opaque++;
+      if ((px[i] + px[i + 1] + px[i + 2]) / 3 > 120) bright++;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+    }
+  }
+  return { opaque, bright, minY, maxY, minX, maxX, w, h, coverage: opaque / (w * h) };
+}
+
+(function main() {
+  console.log('overlay render check (real ffmpeg + libass, frames decoded)');
+  const ff = findFfmpeg();
+  if (!ff) { console.log('  ? no ffmpeg with libass here — overlay render check skipped'); process.exit(2); }
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-ovcheck-'));
+  const assPath = path.join(dir, 'cap.ass');
+  const movPath = path.join(dir, 'captions.mov');
+  const W = 540, H = 960, DUR = 3.2;
+  const wantBandTop = 0.6, wantBandBottom = 0.9;          // bottom-positioned captions
+
+  const cues = [
+    { start: 0.0, end: 0.6, text: 'money' }, { start: 0.6, end: 1.2, text: 'grows' },
+    { start: 1.2, end: 1.8, text: 'when' }, { start: 1.8, end: 2.4, text: 'you' },
+    { start: 2.4, end: 3.0, text: 'invest' }
+  ];
+  fs.writeFileSync(assPath, CPAss.buildAss(cues, {
+    width: W, height: H, font: 'DejaVu Sans', fontSize: Math.round(H * 0.06),
+    fill: '#FFFFFF', highlight: '#FFD400', outlineColor: '#000000', outline: 4,
+    align: 2, marginV: Math.round(H * 0.18), bold: true
+  }), 'utf8');
+
+  const args = CPAss.ffmpegOverlayArgs(assPath, W, H, DUR, movPath, null, 30);
+  const r = cp.spawnSync(ff, args, { encoding: 'utf8', maxBuffer: 1 << 26 });
+  if (r.status !== 0 || !fs.existsSync(movPath)) {
+    bad('ffmpeg overlay render failed (exit ' + r.status + '): ' + String(r.stderr || '').slice(-200));
+    process.exit(1);
+  }
+  const size = fs.statSync(movPath).size;
+  if (size > 20000) ok('overlay .mov rendered (' + Math.round(size / 1024) + ' KB)');
+  else bad('overlay .mov is suspiciously small (' + size + ' bytes)');
+
+  const ex = cp.spawnSync(ff, ['-y', '-loglevel', 'error', '-i', movPath,
+    '-vf', "select='eq(n\\,20)+eq(n\\,70)'", '-vsync', '0', '-pix_fmt', 'rgba',
+    path.join(dir, 'f-%d.png')], { encoding: 'utf8' });
+  const frames = fs.readdirSync(dir).filter(f => /^f-\d+\.png$/.test(f)).sort();
+  if (ex.status !== 0 || frames.length < 2) {
+    bad('could not extract frames from the overlay (' + frames.length + ')');
+    process.exit(1);
+  }
+
+  const stats = frames.map(f => analyse(readPng(path.join(dir, f))));
+  stats.forEach((s, i) => {
+    if (s.coverage > 0.35) bad('frame ' + i + ' is not transparent — ' + Math.round(s.coverage * 100) + '% opaque (a black card would hide the video)');
+    if (s.opaque < 300) bad('frame ' + i + ' has almost no caption pixels (' + s.opaque + ')');
+    if (s.bright < 100) bad('frame ' + i + ' text is too dim to read (' + s.bright + ' bright px)');
+    const cy = ((s.minY + s.maxY) / 2) / s.h;
+    if (!(cy > wantBandTop && cy < wantBandBottom))
+      bad('frame ' + i + ' caption sits at ' + Math.round(cy * 100) + '% — outside the requested bottom band');
+    if (s.minX < 4 || s.maxX > s.w - 4) bad('frame ' + i + ' caption touches the frame edge');
+  });
+  if (!failed) {
+    const s0 = stats[0];
+    ok('overlay frames are transparent (' + Math.round(s0.coverage * 1000) / 10 + '% ink) with readable text in the requested band (' +
+       Math.round(((s0.minY + s0.maxY) / 2) / s0.h * 100) + '% height)');
+  }
+  if (stats[0].opaque !== stats[1].opaque) ok('the word-by-word animation is alive (two moments differ)');
+  else bad('two different moments render identically — the overlay is not animating');
+
+  try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
+  console.log(failed ? ('OVERLAY RENDER: ' + failed + ' FAILURE(S)') : 'OVERLAY RENDER: the caption overlay really renders readable, animated, transparent captions ✓');
+  process.exit(failed ? 1 : 0);
+})();
