@@ -4235,8 +4235,18 @@
     $('c-pos').value = (p.posPct != null) ? p.posPct
                      : (p.layout === 'top') ? 18 : (p.layout === 'center') ? 50 : 76;
     setLayoutButton($('c-pos').value);
-    // each style carries its own entrance identity (user can still override)
-    state.captionEntrance = entranceForPreset(p);
+    // Each style carries its own entrance identity, but an entrance the USER
+    // explicitly chose outranks it — otherwise picking a style silently undoes
+    // their choice (🎬 As spoken reverting to None).
+    // EXCEPTION: loading a SAVED template (＋ Save / My Templates) is the user
+    // deliberately restoring a whole look, entrance included — that look
+    // becomes the new baseline.
+    if (p && (p.custom || p.entrance != null)) {
+      state.captionEntrance = entranceForPreset(p);
+      state.entranceUserSet = false;
+    } else if (!state.entranceUserSet) {
+      state.captionEntrance = entranceForPreset(p);
+    }
     setEntranceButtons(state.captionEntrance);
     $('c-fill').value = toHex(p.fill, '#ffffff');
     $('c-hl').value = toHex(p.highlight, '#ffd400');
@@ -4565,6 +4575,8 @@
         for (var ej = 0; ej < ent.length; ej++) ent[ej].classList.remove('on');
         this.classList.add('on');
         state.captionEntrance = this.dataset.e || 'none';
+        state.entranceUserSet = true;   // explicit: keep it when switching styles
+        saveLook();
       });
     }
     // gradient-text + multi-colour reveal their colour swatches
@@ -5162,7 +5174,13 @@
         letter: $('c-letter').value, shadowOn: $('c-shadow-on').checked,
         shadow: $('c-shadow').value, shadowBlur: $('c-shadow-blur').value,
         weight: $('c-weight').value, align: readAlign(), maxLines: readLines(),
-        wordHl: $('c-wordhl') ? $('c-wordhl').checked : true, reveal: readReveal()
+        wordHl: $('c-wordhl') ? $('c-wordhl').checked : true, reveal: readReveal(),
+        // A choice the user made must survive closing Premiere. capOut (which
+        // KIND of caption) and the entrance (e.g. 🎬 As spoken) were both reset
+        // on every panel reload — "I set it and it went back".
+        capOut: _capOut,
+        entrance: state.captionEntrance || 'none',
+        entranceUserSet: !!state.entranceUserSet
       }));
     } catch (e) {}
   }
@@ -5208,6 +5226,12 @@
         if ($('c-off-num')) $('c-off-num').textContent = (ms > 0 ? '+' : '') + (ms / 1000).toFixed(2) + 's';
       }
       if (look.words != null) setWordCount(parseInt(look.words, 10) || 0);
+      if (look.capOut) setCapOut(look.capOut);
+      if (look.entrance) {
+        state.captionEntrance = look.entrance;
+        state.entranceUserSet = !!look.entranceUserSet;
+        setEntranceButtons(look.entrance);
+      }
       if (look.animId) selectAnim(look.animId);
       if (look.presetId) {
         state.presetId = look.presetId;
@@ -5495,14 +5519,23 @@
       ? '✏️ Add captions <span class="dim">(editable template clips)</span>'
       : '✨ Add captions <span class="dim">(Pulse-rendered — exact look, always aligned)</span>';
   }
+  /* Single source of truth for the caption type: sets the value, lights the
+     right chip and relabels the main button. Used by clicks AND by restore. */
+  function setCapOut(v) {
+    _capOut = (v === 'editable') ? 'editable' : 'png';
+    var box = $('cap-output');
+    if (box) {
+      var bs = box.querySelectorAll('button');
+      for (var i = 0; i < bs.length; i++) bs[i].classList.toggle('on', (bs[i].dataset.out || '') === _capOut);
+    }
+    updateMagicLabel();
+  }
   (function wireCapOutput() {
     var box = $('cap-output'); if (!box) return;
     var btns = box.querySelectorAll('button');
     for (var i = 0; i < btns.length; i++) btns[i].addEventListener('click', function () {
-      _capOut = this.dataset.out || 'editable';
-      var on = box.querySelector('button.on'); if (on) on.classList.remove('on');
-      this.classList.add('on');
-      updateMagicLabel();
+      setCapOut(this.dataset.out || 'editable');
+      saveLook();                       // the choice sticks across reloads
     });
     updateMagicLabel();
   })();
@@ -10228,6 +10261,7 @@
       psFontName: CPCaptions.psFontName,
       editorFont: function () { return resolvedEditorFont(styledPreset()); },   // the exact face Apply/preview will send
       customCount: function () { return (state.customTemplates || []).length; },
+      capOut: function () { return _capOut; },
       libCategory: function () { return state.libCategory; },
       buildSelfTestReport: buildSelfTestReport,
 

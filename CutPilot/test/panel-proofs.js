@@ -651,6 +651,34 @@ function fluxProps() {
     ok('opening Captions shows the primary action ("' + act.label + '") with ≡ Browse styles one tap away');
   else bad('primary action not reachable on the Captions tab: ' + JSON.stringify(act));
 
+  // ---- P. CHOICES SURVIVE A RESTART: caption type and entrance were reset on
+  // every panel reload, and picking a style silently undid an explicit
+  // entrance choice ("I set it and it went back") ------------------------------
+  await page.evaluate(() => {
+    document.querySelector('.tab[data-tab="captions"]').click();
+    const o = document.querySelector('#cap-output button[data-out="editable"]'); if (o) o.click();
+    const e = document.querySelector('#c-entrance button[data-e="spoken"]'); if (e) e.click();
+  });
+  await new Promise(r => setTimeout(r, 200));
+  await page.reload({ waitUntil: 'networkidle0' });
+  await new Promise(r => setTimeout(r, 900));
+  const persist = await page.evaluate(() => {
+    document.querySelector('.tab[data-tab="captions"]').click();
+    const D = window.CP_DEBUG;
+    const before = { capOut: D.capOut(), entrance: D.snapshot().entrance };
+    // switching STYLE must not throw away the entrance the user chose
+    const T = (window.CPCaptions && window.CPCaptions.TEMPLATES) || [];
+    const other = T.find(t => !t.mogrt && t.id !== D.snapshot().presetId);
+    if (other && D.applyTemplateById) D.applyTemplateById(other.id);
+    return { before, afterStyleSwitch: D.snapshot().entrance,
+             chip: (document.querySelector('#cap-output button.on') || {}).dataset };
+  });
+  if (persist.before.capOut === 'editable' && persist.before.entrance === 'spoken')
+    ok('caption type and entrance survive a panel restart (' + persist.before.capOut + ' / ' + persist.before.entrance + ')');
+  else bad('settings did not survive a restart: ' + JSON.stringify(persist.before));
+  // restore defaults so later runs start clean
+  await page.evaluate(() => { try { localStorage.removeItem('cutpilot.look'); } catch (e) {} });
+
   await browser.close();
   console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');
   process.exit(failed ? 1 : 0);
