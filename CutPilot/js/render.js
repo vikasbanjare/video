@@ -37,6 +37,14 @@
    * Resolve a preset + user overrides into concrete pixel values for a
    * given frame height. Override precedence matches CPCaptions.mergeStyle.
    */
+  /* Last-resort families for scripts a display face won't carry. Only ever
+     reached for glyphs the style's own fonts cannot draw. */
+  var SCRIPT_FALLBACKS = [
+    'Kohinoor Devanagari', 'Devanagari MT', 'ITF Devanagari',   // macOS
+    'Nirmala UI', 'Mangal',                                     // Windows
+    'Noto Sans Devanagari', 'Noto Sans', 'Arial Unicode MS'     // Linux / broad
+  ];
+
   function styleForFrame(preset, frameH, o, frameW) {
     o = o || {};
     preset = preset || {};   // never deref a null preset (stale id / missing base)
@@ -75,7 +83,15 @@
     }
     return {
       font: o.font || preset.font,
-      fallbacks: (preset.fallbackFonts || []).join('", "'),
+      // SCRIPT SAFETY NET. A style's chain is chosen for its Latin look, and a
+      // serif chain can resolve to a face with no Devanagari at all — in which
+      // case Hindi text renders as LITERALLY NOTHING, not even boxes. (Caught in
+      // CI: cap-editorial's Didot→Playfair→Georgia→Merriweather→Times chain drew
+      // 0 px for Devanagari while twelve sans-chained styles drew real glyphs on
+      // the same machine.) These are appended LAST, so they never change a Latin
+      // caption — a browser only reaches them for glyphs every earlier font
+      // lacks — and they cover macOS, Windows and Linux.
+      fallbacks: (preset.fallbackFonts || []).concat(SCRIPT_FALLBACKS).join('", "'),
       // LEGIBILITY FLOOR on real output frames (never on gallery tiles, which
       // pass their own band-relative fontSize and no frameW): a style authored
       // small must still be readable on a phone. The floor is 5% of the frame's
