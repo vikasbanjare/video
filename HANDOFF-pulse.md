@@ -1,7 +1,7 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.9.381** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.9.382** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
@@ -24,7 +24,7 @@ Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels
 - Script alignment feature (`📄 Fix the words with MY script`) — 7 unit tests.
 - Hostile-input sweep: 17 malformed inputs, 0 crashes, 0 page errors.
 
-### v0.9.350 → v0.9.381 (this session)
+### v0.9.350 → v0.9.382 (this session)
 
 **The preview could not have matched the render — it was structural.** The export
 path is handed the full `{preset, overrides}`; the preview was handed
@@ -107,7 +107,7 @@ text (16 inputs). 33 total.
   preview/render match. A build that behaves differently from the source
   fails and does not package. `CP_SKIP_BUILD_PROOFS=1` skips them while
   iterating on packaging only.
-- Verified at v0.9.381: the built panel passes all 30 proofs.
+- Verified at v0.9.382: the built panel passes all 30 proofs.
 
 ### DONE-BUT-UNVERIFIED (no confirmation from the owner's machine)
 - **Nothing after v0.9.339 has ever run on the owner's Mac.** Everything above is
@@ -123,7 +123,7 @@ text (16 inputs). 33 total.
 
 ### IN PROGRESS (exact task when this session ended)
 - A `/loop`: audit → fix → test → commit, one theme per iteration, builds withheld
-  at the owner's request. ~23 iterations complete through v0.9.381.
+  at the owner's request. ~23 iterations complete through v0.9.382.
 - No iteration is half-finished; the tree is clean and CI is green.
 
 ## Files
@@ -176,6 +176,15 @@ Absolute paths. Only files touched in this session are listed.
 - `tools/ffmpeg-find.js` — the ONE ffmpeg finder. `CP_NO_FFMPEG=1` simulates a machine
   without ffmpeg (exercises graceful degradation and the battery's skip reporting).
 - `tools/sim-preview-check.js`, `tools/thumb-scan.js` — pre-existing gates, still run.
+- `tools/pipeline-contract-check.js` — runs the REAL renderFrames in Chromium and
+  feeds exactly what it returns into the REAL CP_placeCaptionImages in the host
+  harness. Tests the seam between the two runtimes; no fixture in between.
+- `tools/mutation-check.js` — **run this before shipping and after writing any new
+  gate.** Breaks one thing in the shipped code per entry and asserts the named gate
+  goes red. Three gates written in one session could not fail until this habit was
+  applied by hand; it is automated now. Not in the default battery (it runs whole
+  gates repeatedly). `node tools/mutation-check.js [name]`. A mutation whose anchor
+  has drifted reports "needs updating" rather than passing.
 - `tools/make-final.js` — build → `Pulse-Mac.zip` + `Install Pulse (Windows).hta` +
   `CutPilot-protected/`. Runs the panel gates against the OBFUSCATED output before
   packaging; `CP_SKIP_BUILD_PROOFS=1` skips that while iterating on packaging.
