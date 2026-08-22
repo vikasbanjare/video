@@ -975,6 +975,44 @@ console.log('host.jsx — fixing ONE caption must not disturb its neighbours');
   assert(names[6].indexOf('w_6_fixed') === 0, 'the middle word was the one replaced');
 }
 
+// ═══ REMOVING CAPTIONS (the undo for a whole job) ═══
+console.log('host.jsx — CP_removePulseCaptionTracks (must find the OVERLAY too)');
+{
+  // A long video's captions are ONE clip named after the rendered file. That
+  // file used to be "captions.mov", which matched none of the cleanup patterns,
+  // so "🧹 Remove all Pulse captions" silently left a podcast's captions on the
+  // timeline — the exact case the overlay path exists for.
+  const w = makeWorld({ vTracks: 3, aTracks: 1 });
+  w.model.addClip('vTracks', 0, 0, 600, { name: 'Podcast.mp4' });      // footage — keep
+  w.model.addClip('vTracks', 1, 0, 600, { name: 'pulse-captions.mov' });// overlay — remove
+  w.model.addClip('vTracks', 2, 0, 3, { name: 'cap_0001.png' });        // images — remove
+  const host = loadHost(w);
+  const r = call(host, 'CP_removePulseCaptionTracks', {});
+  assert(r.ok, 'the cleanup runs: ' + JSON.stringify(r).slice(0, 80));
+  assert(w.model.vTracks[0].length === 1 && w.model.vTracks[0][0].name === 'Podcast.mp4',
+    'the footage track is never touched');
+  assert(w.model.vTracks[1].length === 0, 'the long-video OVERLAY clip is removed');
+  assert(w.model.vTracks[2].length === 0, 'the per-image caption clips are removed');
+}
+{
+  // overlays placed by v0.9.344–v0.9.378 carry the old bare name
+  const w = makeWorld({ vTracks: 2, aTracks: 1 });
+  w.model.addClip('vTracks', 0, 0, 600, { name: 'Podcast.mp4' });
+  w.model.addClip('vTracks', 1, 0, 600, { name: 'captions.mov' });
+  const host = loadHost(w);
+  call(host, 'CP_removePulseCaptionTracks', {});
+  assert(w.model.vTracks[1].length === 0, 'an overlay from an older build is removed too');
+}
+{
+  // …but a clip of the user's that merely mentions captions must survive
+  const w = makeWorld({ vTracks: 2, aTracks: 1 });
+  w.model.addClip('vTracks', 0, 0, 600, { name: 'Podcast.mp4' });
+  w.model.addClip('vTracks', 1, 0, 600, { name: 'My Captions v2.mov' });
+  const host = loadHost(w);
+  call(host, 'CP_removePulseCaptionTracks', {});
+  assert(w.model.vTracks[1].length === 1, "a user's own clip named like captions is LEFT ALONE");
+}
+
 // ═══ THE OVERLAY PATH (long videos now route here automatically) ═══
 console.log('host.jsx — CP_placeOverlay (one caption clip for a whole video)');
 {

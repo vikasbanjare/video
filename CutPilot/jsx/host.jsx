@@ -2107,7 +2107,13 @@ function CP_removePulseCaptionTracks(argsJson) {
     var seq = CP_activeSequence();
     app.enableQE();
     var qseq = qe.project.getActiveSequence();
+    // 'pulse' covers everything Pulse writes now (pulse-captions.mov). The
+    // anchored 'captions.mov' is for overlays placed by v0.9.344-v0.9.378, which
+    // named the file without any Pulse marker and were therefore invisible to
+    // this cleanup. Anchored on purpose: a user clip called "My Captions v2.mov"
+    // must not be swept up.
     var pat = /(flux|subtitle|shorts_text|text_animation|pulse|cutpilot|cap[-_]?\d)/i;
+    var legacyOverlay = /^captions\.mov$/i;
     var cleared = 0, tracks = [];
     for (var ti = seq.videoTracks.numTracks - 1; ti >= 0; ti--) {
       var track = seq.videoTracks[ti];
@@ -2115,7 +2121,7 @@ function CP_removePulseCaptionTracks(argsJson) {
       var allCaps = true;
       for (var ci = 0; ci < track.clips.numItems; ci++) {
         var nm = String(track.clips[ci].name || '');
-        if (!pat.test(nm)) { allCaps = false; break; }
+        if (!pat.test(nm) && !legacyOverlay.test(nm)) { allCaps = false; break; }
       }
       if (!allCaps) continue;
       var qt = null;

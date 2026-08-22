@@ -6457,7 +6457,10 @@
       }
       try { fs.mkdirSync(dir, { recursive: true }); } catch (eD) {}
       var assPath = pathMod.join(dir, 'cap.ass');
-      var outPath = pathMod.join(dir, 'captions.mov');
+      // The clip Premiere shows is named after this file, and "🧹 Remove all
+      // Pulse captions" identifies its own clips BY NAME. "captions.mov" matched
+      // none of its patterns, so a long podcast's overlay survived the cleanup.
+      var outPath = pathMod.join(dir, 'pulse-captions.mov');
       var fontsDir = bundledFontsDir();
       try { fs.writeFileSync(assPath, assStr, 'utf8'); } catch (eW) { setCaptionBusy(false); capProgress(null); return toast('Could not write caption file: ' + eW.message, true); }
 
