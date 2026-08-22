@@ -5938,7 +5938,15 @@
       });
 
       if (frames.length > 600 && !state._bigOk) {
-        confirmInline(frames.length + ' caption graphics will be created. That many can be slow to render and import — Premiere may look stuck near the end of its import bar. Tip: raise "Words per caption" or pick a shorter clip for fewer graphics.\n\nContinue anyway?', 'Continue', function (yes) {
+        // A job this size normally routes to the single-overlay render. Reaching
+        // here means that path was unavailable — almost always a missing ffmpeg —
+        // so name the actual fix instead of only offering to make the job smaller.
+        var whyNoOverlay = !resolveFfmpeg()
+          ? '\n\nPulse would normally render ONE caption overlay clip for a video this long (same look, one file instead of ' +
+            frames.length + '). That needs ffmpeg — add it in Settings and run this again.'
+          : '';
+        confirmInline(frames.length + ' caption graphics will be created. That many can be slow to render and import — Premiere may look stuck near the end of its import bar. Tip: raise "Words per caption" or pick a shorter clip for fewer graphics.' +
+          whyNoOverlay + '\n\nContinue anyway?', 'Continue', function (yes) {
           if (!yes) { setCaptionBusy(false); capProgress(null); return; }
           state._bigOk = true;
           try { runCaptionPipeline(cues, opts); } finally { state._bigOk = false; }
@@ -6167,6 +6175,11 @@
       highlight: ov.highlight || preset.highlight || '#FFD400',
       outlineColor: ov.stroke || '#000000',
       outline: (ov.strokeWidth != null ? ov.strokeWidth : Math.max(2, Math.round(fontSize * 0.06))),
+      // the caption BOX — carried onto the overlay path so a boxed style keeps
+      // its box on long videos instead of degrading to bare outlined text
+      boxColor: (ov.boxColor !== undefined ? ov.boxColor : (preset.boxColor || null)),
+      boxOpacity: (ov.boxOpacity != null ? ov.boxOpacity : (preset.boxOpacity != null ? preset.boxOpacity : 1)),
+      boxPad: (ov.boxPad != null ? ov.boxPad : (preset.boxPad != null ? preset.boxPad : 1)),
       bold: (ov.weight || preset.weight || 800) >= 600,
       allCaps: !!ov.uppercase,
       letterSpacing: ov.letterSpacing || 0,

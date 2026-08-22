@@ -142,7 +142,63 @@ function analyse(png) {
   if (stats[0].opaque !== stats[1].opaque) ok('the word-by-word animation is alive (two moments differ)');
   else bad('two different moments render identically — the overlay is not animating');
 
+    // ---- BOXED style: the box must actually render ---------------------------
+  // assOptsFromStyle never passed the caption box, so every boxed style came out
+  // as bare outlined text on the overlay path — the path LONG videos take. ASS
+  // draws a box with BorderStyle 3 (OutlineColour = box colour, Outline =
+  // padding); this proves libass really paints it.
+  const BOX = '#1133CC';
+  const assBox = path.join(dir, 'box.ass'), movBox = path.join(dir, 'box.mov');
+  fs.writeFileSync(assBox, CPAss.buildAss(cues, {
+    width: W, height: H, font: 'DejaVu Sans', fontSize: Math.round(H * 0.06),
+    fill: '#FFFFFF', highlight: '#FFD400', outlineColor: '#000000', outline: 4,
+    align: 2, marginV: Math.round(H * 0.18), bold: true,
+    boxColor: BOX, boxOpacity: 1, boxPad: 1
+  }), 'utf8');
+  const rb = cp.spawnSync(ff, CPAss.ffmpegOverlayArgs(assBox, W, H, DUR, movBox, null, 30),
+    { encoding: 'utf8', maxBuffer: 1 << 26 });
+  if (rb.status !== 0 || !fs.existsSync(movBox)) {
+    bad('boxed overlay render failed (exit ' + rb.status + '): ' + String(rb.stderr || '').slice(-200));
+  } else {
+    const bdir = path.join(dir, 'box');
+    try { fs.mkdirSync(bdir); } catch (e) {}
+    cp.spawnSync(ff, ['-y', '-loglevel', 'error', '-i', movBox,
+      '-vf', "select='eq(n\\,20)'", '-vsync', '0', '-pix_fmt', 'rgba',
+      path.join(bdir, 'b-%d.png')], { encoding: 'utf8' });
+    const bf = fs.readdirSync(bdir).filter(f => /^b-\d+\.png$/.test(f));
+    if (!bf.length) bad('could not extract a frame from the boxed overlay');
+    else {
+      const img = readPng(path.join(bdir, bf[0]));
+      const px = img.px, ch = img.ch, iw = img.w, ih = img.h;
+      const want = [0x11, 0x33, 0xCC];
+      // A BOX and a thick coloured OUTLINE both paint the box colour, so colour
+      // alone cannot tell them apart (verified by mutation). What separates them
+      // is shape: a box FILLS its bounding rectangle, an outline hugs the glyphs
+      // and leaves gaps between letters and words.
+      let boxPx = 0, opaque = 0, x0 = iw, x1 = -1, y0 = ih, y1 = -1;
+      for (let y = 0; y < ih; y++) for (let x = 0; x < iw; x++) {
+        const i = (y * iw + x) * ch;
+        if (ch > 3 && px[i + 3] < 128) continue;
+        opaque++;
+        if (x < x0) x0 = x; if (x > x1) x1 = x;
+        if (y < y0) y0 = y; if (y > y1) y1 = y;
+        if (Math.abs(px[i] - want[0]) + Math.abs(px[i + 1] - want[1]) +
+            Math.abs(px[i + 2] - want[2]) <= 60) boxPx++;
+      }
+      const bboxArea = (x1 > x0 && y1 > y0) ? (x1 - x0 + 1) * (y1 - y0 + 1) : 0;
+      const fill = bboxArea ? opaque / bboxArea : 0;
+      if (boxPx < 500)
+        bad('the caption BOX did not render on the overlay path (' + boxPx + ' box pixels of ' + opaque + ' opaque)');
+      else if (fill < 0.9)
+        bad('the box colour painted an OUTLINE, not a box — it fills only ' +
+            Math.round(fill * 100) + '% of the caption\'s bounding rectangle (a real box fills ~100%)');
+      else ok('a boxed style keeps its box on the overlay path (' + boxPx + ' box pixels, ' +
+              Math.round(fill * 100) + '% of the caption rectangle filled)');
+    }
+  }
+
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
-  console.log(failed ? ('OVERLAY RENDER: ' + failed + ' FAILURE(S)') : 'OVERLAY RENDER: the caption overlay really renders readable, animated, transparent captions ✓');
+
+console.log(failed ? ('OVERLAY RENDER: ' + failed + ' FAILURE(S)') : 'OVERLAY RENDER: the caption overlay really renders readable, animated, transparent captions ✓');
   process.exit(failed ? 1 : 0);
 })();

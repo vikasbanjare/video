@@ -33,6 +33,17 @@
   }
 
   /* '#RRGGBB' -> ASS '&HBBGGRR&'  (ASS colour is BGR and dropped the '#'). */
+  /* ASS colours carry alpha in the HIGH byte, and it is INVERTED: 00 = opaque,
+     FF = fully transparent. Used for the caption box, whose opacity is a real
+     control in the editor. */
+  function assColorA(hex, opacity) {
+    var base = assColor(hex);                       // '&HBBGGRR&'
+    var o = (opacity == null) ? 1 : Math.max(0, Math.min(1, opacity));
+    var a = Math.round((1 - o) * 255).toString(16).toUpperCase();
+    if (a.length < 2) a = '0' + a;
+    return '&H' + a + base.slice(2, 8) + '&';
+  }
+
   function assColor(hex) {
     hex = String(hex == null ? '#FFFFFF' : hex).replace(/[^0-9a-fA-F]/g, '');
     if (hex.length === 3) hex = hex.charAt(0) + hex.charAt(0) + hex.charAt(1) + hex.charAt(1) + hex.charAt(2) + hex.charAt(2);
@@ -80,6 +91,16 @@
     var outlineCol = assColor(opts.outlineColor || '#000000');
     var outline = (opts.outline != null) ? opts.outline : Math.max(2, Math.round(fontSize * 0.06));
     var shadow = (opts.shadow != null) ? opts.shadow : 0;
+    // BOX. libass draws an opaque caption box with BorderStyle 3, where
+    // OutlineColour becomes the BOX colour and Outline becomes its padding.
+    // Without this, every boxed style (most of the Buttons and Caption packs)
+    // rendered as bare outlined text on the overlay path — which is the path
+    // long videos take, so a podcast lost the look its preview promised.
+    var boxCol = opts.boxColor || null;
+    var borderStyle = boxCol ? 3 : 1;
+    var boxPadPx = boxCol
+      ? Math.max(1, Math.round(fontSize * 0.22 * (opts.boxPad != null ? opts.boxPad : 1)))
+      : 0;
     var bold = opts.bold ? -1 : 0;            // ASS booleans: -1 = true, 0 = false
     var italic = opts.italic ? -1 : 0;
     var spacing = opts.letterSpacing || 0;
@@ -107,8 +128,10 @@
       'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, ' +
         'Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, ' +
         'Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-      'Style: Pulse,' + font + ',' + fontSize + ',' + fill + ',' + hi + ',' + outlineCol + ',&H64000000&,' +
-        bold + ',' + italic + ',0,0,100,100,' + spacing + ',0,1,' + outline + ',' + shadow + ',' +
+      'Style: Pulse,' + font + ',' + fontSize + ',' + fill + ',' + hi + ',' +
+        (boxCol ? assColorA(boxCol, opts.boxOpacity) : outlineCol) + ',&H64000000&,' +
+        bold + ',' + italic + ',0,0,100,100,' + spacing + ',0,' + borderStyle + ',' +
+        (boxCol ? boxPadPx : outline) + ',' + shadow + ',' +
         align + ',' + marginLR + ',' + marginLR + ',' + marginV + ',1',
       '',
       '[Events]',
