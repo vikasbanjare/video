@@ -67,6 +67,30 @@ const MUTANTS = [
     why: 'Remove-all-captions stops finding a long video\'s overlay'
   },
   {
+    name: 'legibility-floor',
+    file: 'CutPilot/js/render.js',
+    find: '          px = Math.max(px, Math.round(shortSide * 0.05));',
+    repl: '          px = px;',
+    gate: 'tools/style-quality-audit.js',
+    why: 'small styles render below the phone-legible floor'
+  },
+  {
+    name: 'motion-parity',
+    file: 'CutPilot/js/main.js',
+    find: '    var pvAnimId = currentAnim();   // the EXACT call the render pipeline makes',
+    repl: "    var pvAnimId = CPCaptions.animIdForConcept((carry.entrance && carry.entrance !== 'none') ? carry.entrance : carry.anim);",
+    gate: 'CutPilot/test/panel-proofs.js',
+    why: 'the editor preview animates differently from the gallery tile again'
+  },
+  {
+    name: 'band-calibration',
+    file: 'CutPilot/js/main.js',
+    find: '      var pov = { fontSize: Math.round(191 * ratio),',
+    repl: '      var pov = { fontSize: Math.round(400 * ratio),',
+    gate: 'tools/sim-preview-check.js',
+    why: 'gallery tiles drift from the engine\'s authored proportions'
+  },
+  {
     name: 'dead-control',
     file: 'CutPilot/js/main.js',
     find: '    if (ov.wordsPerCue != null && isFinite(ov.wordsPerCue)) eff.wordsPerCue = ov.wordsPerCue;',
@@ -81,6 +105,7 @@ const list = only ? MUTANTS.filter(m => m.name.indexOf(only) >= 0) : MUTANTS;
 if (!list.length) { console.error('no mutant matches "' + only + '"'); process.exit(1); }
 
 let survived = 0, checked = 0, skipped = 0;
+const touched = new Set();
 console.log('mutation check (a gate that cannot fail is not a gate)');
 
 for (const m of list) {
@@ -92,6 +117,7 @@ for (const m of list) {
     continue;
   }
   try {
+    touched.add(m.file);
     fs.writeFileSync(abs, original.split(m.find).join(m.repl));
     const r = cp.spawnSync(process.execPath, [path.join(ROOT, m.gate)],
       { encoding: 'utf8', maxBuffer: 1 << 26 });
@@ -112,13 +138,18 @@ for (const m of list) {
 }
 
 // never leave the tree dirty, whatever happened above
-// Only TRACKED changes mean a restore failed. Untracked files (this tool
-// before it is committed, build output) are not evidence of a bad restore.
-const dirty = cp.spawnSync('git', ['-C', ROOT, 'status', '--porcelain'], { encoding: 'utf8' })
-  .stdout.split('\n').filter(l => l.trim() && !/^\?\?/.test(l)).join('\n').trim();
-if (dirty) {
-  console.log('  ✗ the working tree is DIRTY after mutating — restore failed:\n' + dirty);
-  survived++;
+// Check the files this run actually MUTATED are back as they were. Checking the
+// whole tree instead flagged unrelated work in progress — including this tool's
+// own uncommitted edits — as a failed restore, which would train someone to
+// ignore the one line that means the repo was corrupted.
+if (touched.size) {
+  const dirty = cp.spawnSync('git', ['-C', ROOT, 'status', '--porcelain', '--'].concat([...touched]),
+    { encoding: 'utf8' }).stdout.split('\n')
+    .filter(l => l.trim() && !/^\?\?/.test(l)).join('\n').trim();
+  if (dirty) {
+    console.log('  ✗ a mutated file was NOT restored — the repo is corrupted:\n' + dirty);
+    survived++;
+  }
 }
 
 console.log(survived

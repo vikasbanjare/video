@@ -1,7 +1,7 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.9.382** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.9.383** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
@@ -24,7 +24,7 @@ Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels
 - Script alignment feature (`📄 Fix the words with MY script`) — 7 unit tests.
 - Hostile-input sweep: 17 malformed inputs, 0 crashes, 0 page errors.
 
-### v0.9.350 → v0.9.382 (this session)
+### v0.9.350 → v0.9.383 (this session)
 
 **The preview could not have matched the render — it was structural.** The export
 path is handed the full `{preset, overrides}`; the preview was handed
@@ -107,7 +107,7 @@ text (16 inputs). 33 total.
   preview/render match. A build that behaves differently from the source
   fails and does not package. `CP_SKIP_BUILD_PROOFS=1` skips them while
   iterating on packaging only.
-- Verified at v0.9.382: the built panel passes all 30 proofs.
+- Verified at v0.9.383: the built panel passes all 30 proofs.
 
 ### DONE-BUT-UNVERIFIED (no confirmation from the owner's machine)
 - **Nothing after v0.9.339 has ever run on the owner's Mac.** Everything above is
@@ -123,7 +123,7 @@ text (16 inputs). 33 total.
 
 ### IN PROGRESS (exact task when this session ended)
 - A `/loop`: audit → fix → test → commit, one theme per iteration, builds withheld
-  at the owner's request. ~23 iterations complete through v0.9.382.
+  at the owner's request. ~23 iterations complete through v0.9.383.
 - No iteration is half-finished; the tree is clean and CI is green.
 
 ## Files
