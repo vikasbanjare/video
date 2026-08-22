@@ -1316,6 +1316,34 @@ console.log('ass.js (libass karaoke generator)');
   // , and ; treats [ ] specially, and its filter parser splits key=value on '='.
   // Measured against real ffmpeg — "Reels, Final", "take [1]", "semi;colon" and
   // "a=b" all failed before this; all four render now.
+  // SRT times — user-facing via the SRT export button. A silent round-trip
+  // drift would move every caption in an exported file, so check the boundaries
+  // that usually break: zero, sub-millisecond, the minute and hour rollovers.
+  [0, 0.001, 0.5, 59.999, 60, 61.25, 3599.9, 3600, 3661.123, 12345.678].forEach(function (t) {
+    const back = CPCaptions.srtTimeToSeconds(CPCaptions.secondsToSrtTime(t));
+    assert(Math.abs(back - t) < 0.0011, 'SRT time survives a round trip at ' + t + 's (got ' + back + ')');
+  });
+  assert(CPCaptions.secondsToSrtTime(3661.123) === '01:01:01,123', 'SRT time formats hh:mm:ss,mmm');
+  assert(CPCaptions.srtTimeToSeconds('00:00:01.500') === 1.5, 'SRT parser accepts a period as well as a comma');
+  assert(CPCaptions.srtTimeToSeconds('garbage') === 0, 'a malformed SRT time degrades to 0 instead of NaN');
+
+  // framesKeywordBuild — the frame builder behind the four build:true styles
+  // (pro-boldpop, pro-editorial, pro-coolpop, pro-cleanbold). It had no test.
+  const kbWords = ['one', 'two', 'three', 'four', 'five', 'six']
+    .map(function (t, i) { return { text: t, start: i * 0.5, end: i * 0.5 + 0.45 }; });
+  const kb = CPCaptions.framesKeywordBuild(kbWords, 4, null, false);
+  assert(kb.length === 6, 'the build shows one frame per word (' + kb.length + ')');
+  assert(kb[0].words.join(' ') === 'one two three four',
+    'every frame carries the FULL phrase so the layout never shifts');
+  assert(kb[0].reveal === 1 && kb[3].reveal === 4, 'reveal grows one word at a time');
+  assert(kb[4].words.join(' ') === 'five six', 'a new group starts after `per` words');
+  const kbStop = CPCaptions.framesKeywordBuild(
+    [{ text: 'stop.', start: 0, end: 0.4 }, { text: 'then', start: 0.5, end: 0.9 }], 4, null, false);
+  assert(kbStop[0].words.join(' ') === 'stop.', 'a group ends early at sentence punctuation');
+  assert(CPCaptions.framesKeywordBuild([], 4, null, false).length === 0, 'no words → no frames');
+  assert(CPCaptions.framesKeywordBuild(kbWords, 1, null, false)[0].words.length === 2,
+    'words-per-group is clamped to at least 2');
+
   const fp = CPAss.escFilterPath;
   assert(/^'.*'$/.test(fp('/tmp/a/b.ass')), 'a filter path is quoted so separators stay literal');
   assert(fp('/tmp/Reels, Final/b.ass') === "'/tmp/Reels, Final/b.ass'", 'a comma survives inside the quotes');
