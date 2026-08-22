@@ -2992,6 +2992,45 @@
         : (_ffx ? 'this ffmpeg has no subtitles filter — a long video would create one image per word'
                 : 'no ffmpeg — a long video would create one image per word'));
   } catch (eLa) { row('Long videos → ONE caption clip', 'warn', eLa.message); }
+
+    // The EXPORT chain, not just the drawing. A caption becomes a file by
+    // canvas → base64 PNG → node fs write, and that can fail on a real machine
+    // for reasons the canvas never sees: no node in this CEP build, a temp dir
+    // that is not writable, a sandbox refusing the write. Everything above said
+    // the renderer works; none of it said the file lands. Done synchronously
+    // with the same three steps renderFrames() uses, so the report stays a
+    // single pass.
+    try {
+      // Outside Premiere there is no file system to write to. That is the
+      // environment, not a defect — say so rather than reporting a failure the
+      // owner cannot act on.
+      var _fsx = null, _pathx = null, _osx = null;
+      try { _fsx = nodeReq('fs'); _pathx = nodeReq('path'); _osx = nodeReq('os'); } catch (eNode) {}
+      if (!_fsx || !_osx) {
+        row('Caption files reach the disk', 'warn',
+          'needs Premiere — there is no file system when the panel runs in a browser');
+        return;
+      }
+      var _q = document.createElement('canvas');
+      _q.width = Math.min(1080, _sw); _q.height = Math.min(1920, _sh);
+      CPRender.drawFrame(_q, { words: ['Pulse', 'writes', 'a', 'frame'], active: 1 },
+        CPRender.styleForFrame(styledPreset(), _q.height, readOverrides(), _q.width));
+      var _b64 = _q.toDataURL('image/png').split(',')[1];
+      var _dir = _pathx.join(_osx.tmpdir(), 'pulse-selftest');
+      try { _fsx.mkdirSync(_dir, { recursive: true }); } catch (eMk2) {}
+      var _f = _pathx.join(_dir, 'cap-write-probe.png');
+      _fsx.writeFileSync(_f, Buffer.from(_b64, 'base64'));
+      var _size = 0;
+      try { _size = _fsx.statSync(_f).size; } catch (eSt) {}
+      try { _fsx.unlinkSync(_f); } catch (eU) {}
+      row('Caption files reach the disk', _size > 2000 ? 'ok' : 'fail',
+        _size > 2000 ? Math.round(_size / 1024) + ' KB written under ' + _osx.tmpdir()
+          : (_size ? 'the PNG came out suspiciously small (' + _size + ' bytes)'
+                   : 'nothing was written — check that ' + _osx.tmpdir() + ' is writable'));
+    } catch (eDisk) {
+      row('Caption files reach the disk', 'fail',
+        'could not write a caption frame: ' + (eDisk && eDisk.message));
+    }
   }
 
   var _selfTestBusy = false;

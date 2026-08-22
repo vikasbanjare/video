@@ -1003,7 +1003,9 @@ function fluxProps() {
     const missing = wants.filter(w => t.indexOf(w[0]) < 0);
     if (!t) bad('self-test: produced no report at all');
     else if (missing.length) missing.forEach(w => bad('self-test: never checks ' + w[1] + ' ("' + w[0] + '")'));
-    else if (t.indexOf('needs Premiere') >= 0) bad('self-test: still refuses to run the checks that do not need Premiere');
+    // match the OLD refusal exactly — individual rows may legitimately say a
+    // check needs Premiere (the disk write has no file system in a browser)
+    else if (/Self-test needs Premiere/.test(t)) bad('self-test: still refuses to run the checks that do not need Premiere');
     else if (/❌ Caption renderer/.test(t)) bad('self-test: reports the Pulse renderer as broken — ' + t.split('\n').find(l => /Caption renderer/.test(l)));
     else ok('self-test reports on the real caption paths (renderer, preview agreement, long-video overlay) and runs the machine-side checks even outside Premiere');
   }
@@ -1148,6 +1150,64 @@ function fluxProps() {
   });
   if (adv.bad.length) adv.bad.slice(0, 8).forEach(f => bad('adversarial text: ' + f));
   else ok('adversarial text: ' + adv.count + ' hostile inputs (Hinglish+emoji, ₹ amounts, RTL, combining marks, 1000-word cue, reversed/zero-length times) — no crash, nothing off-frame, no empty captions');
+
+  // ---- Y. the EXPORT chain, not just the drawing ---------------------------
+  // renderFrames() is how a caption becomes a file on the timeline: draw →
+  // toDataURL → base64 → fs write, once per frame. Every other gate tests
+  // drawFrame and stops there, so the orchestration that actually produces the
+  // deliverable had NO coverage. render.js resolves its modules through
+  // window.require, so an in-memory fs exercises the real function.
+  const exp = await page.evaluate(async () => {
+    const R = window.CPRender;
+    const written = {};
+    const prevRequire = window.require;
+    const prevBuffer = window.Buffer;
+    window.Buffer = { from: function (b64) {
+      const bin = atob(b64), u = new Uint8Array(bin.length);
+      for (let k = 0; k < bin.length; k++) u[k] = bin.charCodeAt(k);
+      return u;
+    } };
+    window.require = function (m) {
+      if (m === 'fs') return {
+        existsSync: () => true,
+        mkdirSync: () => {},
+        writeFileSync: (f, buf) => { written[f] = buf; }
+      };
+      if (m === 'path') return { join: function () { return Array.prototype.join.call(arguments, '/'); } };
+      // the browser has no Buffer; render.js only needs Buffer.from(b64,'base64')
+      if (m === 'buffer') return { Buffer: {
+        from: function (b64) {
+          const bin = atob(b64), u = new Uint8Array(bin.length);
+          for (let k = 0; k < bin.length; k++) u[k] = bin.charCodeAt(k);
+          return u;
+        }
+      } };
+      return prevRequire ? prevRequire(m) : {};
+    };
+    let out, err = null;
+    try {
+      out = await R.renderFrames(
+        [{ words: ['one'], active: 0 }, { words: ['two', 'words'], active: 1 }],
+        { width: 540, height: 960, preset: { fontSize: 90, fill: '#ffffff' }, overrides: {}, outDir: '/tmp/x' });
+    } catch (e) { err = e.message; }
+    window.require = prevRequire;
+    window.Buffer = prevBuffer;
+    const files = Object.keys(written);
+    const sizes = files.map(f => (written[f] && (written[f].length || written[f].byteLength)) || 0);
+    // a real PNG starts with the 8-byte signature
+    const sigOk = files.every(f => {
+      const b = written[f];
+      return b && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47;
+    });
+    return { err, items: (out || []).length, files: files.length, sizes, sigOk };
+  });
+  if (exp.err) bad('export chain: renderFrames threw — ' + exp.err);
+  else if (exp.items !== 2) bad('export chain: 2 frames in, ' + exp.items + ' items out');
+  else if (exp.files !== 2) bad('export chain: 2 frames in, ' + exp.files + ' files written');
+  else if (!exp.sigOk) bad('export chain: what was written is not a PNG (bad signature)');
+  else if (exp.sizes.some(n => n < 1000)) bad('export chain: a written frame is suspiciously small (' + exp.sizes.join(', ') + ' bytes)');
+  else ok('export chain: renderFrames really encodes and writes one valid PNG per frame (' +
+          exp.sizes.map(n => Math.round(n / 1024) + 'KB').join(', ') + ')');
 
   await browser.close();
   console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');
