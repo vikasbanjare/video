@@ -2953,7 +2953,8 @@
         var n = 0; for (var k = 0; k < g2.length; k += 4) if (g2[k + 3] >= 96) n++;
         return n;
       };
-      var _h1 = _hi('भारत'), _h2 = _hi('कमलम');
+      // three spacing consonants each, so tofu boxes render identically
+      var _h1 = _hi('कमल'), _h2 = _hi('नमन');
       var _hiOk = (_h1 > 150 && _h2 > 150 && Math.abs(_h1 - _h2) >= Math.max(40, _h1 * 0.04));
       row('Hindi captions (Devanagari)', _hiOk ? 'ok' : 'fail',
         (_h1 < 150 || _h2 < 150)
@@ -10588,6 +10589,9 @@
       // in front of a vertical reel and a landscape podcast alike
       env: function () { return state.env ? { width: state.env.width, height: state.env.height } : null; },
       assOpts: function (w, h) { try { return assOptsFromStyle(w, h); } catch (e) { return { _threw: String(e && e.message) }; } },
+      // lets a test stand the caption-text editor up with a realistic job
+      setLastCaptionJob: function (cues) { state.lastCaptionJob = { cues: cues, track: 1 }; },
+      openCaptionTextEditor: function () { try { openCaptionTextEditor(); } catch (e) { return String(e && e.message); } },
       setEnv: function (w, h) { state.env = { width: w, height: h }; try { renderPreview(); } catch (e) {} },
       styledPreset: function () { try { return styledPreset(); } catch (e) { return { _threw: String(e && e.message) }; } },
       customCount: function () { return (state.customTemplates || []).length; },

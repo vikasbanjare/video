@@ -211,7 +211,10 @@ function analyse(png) {
   // Two DIFFERENT words of the same length: tofu boxes would produce nearly
   // identical ink, real glyphs do not.
   const devInk = [];
-  for (const [tag, word] of [['dev1', 'भारत'], ['dev2', 'कमलम']]) {
+  // कमल / नमन — three spacing consonants each, so tofu boxes render identically.
+  // (भारत vs कमलम shape into different cluster counts, so their ink differs even
+  // as boxes and the check would pass with no Hindi font present at all.)
+  for (const [tag, word] of [['dev1', 'कमल'], ['dev2', 'नमन']]) {
     const ap = path.join(dir, tag + '.ass'), mp = path.join(dir, tag + '.mov');
     fs.writeFileSync(ap, CPAss.buildAss([{ start: 0, end: 1.5, text: word }], {
       width: W, height: H, font: 'DejaVu Sans', fontSize: Math.round(H * 0.06),

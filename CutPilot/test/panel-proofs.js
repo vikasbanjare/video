@@ -984,16 +984,21 @@ function fluxProps() {
 
   // ---- V. Hindi renders in the canvas path, across styles -------------------
   // The owner's content is Hindi/Hinglish and most styles use Latin-only display
-  // faces, so every Devanagari glyph comes from a fallback. Two DIFFERENT words
-  // of equal length: tofu boxes render near-identically, real glyphs do not.
+  // faces, so every Devanagari glyph comes from a fallback font.
   //
-  // A CONTROL render (no style font at all) separates the two things that look
-  // alike from the outside: a machine with no Devanagari font anywhere, which
-  // this gate cannot test and must not fail on, versus one style's font chain
-  // resolving to a face without Devanagari — which is a real defect, because
-  // the caption then renders as LITERALLY NOTHING rather than as boxes.
+  // The word pair matters. भारत vs कमलम looks like a fair comparison but is not:
+  // भारत is भ + ा + र + त, where ा is a combining vowel sign, so it shapes into
+  // fewer clusters than कमलम's four spacing consonants. Rendered as tofu the two
+  // still differ in ink, and the check would pass on a machine with no Hindi
+  // font at all. कमल and नमन are three spacing consonants each — identical as
+  // boxes, clearly different as real glyphs (measured 4635 vs 3663 px).
+  //
+  // A CONTROL in a plain style runs the same test first. If the machine itself
+  // cannot draw Devanagari, this gate cannot judge the styles and says so
+  // instead of failing — the failure would be about the machine, not the panel.
   const hindi = await page.evaluate(async () => {
     const R = window.CPRender, C = window.CPCaptions;
+    const A = 'कमल', B = 'नमन';
     const ink = (words, style) => {
       const cv = document.createElement('canvas'); cv.width = 1080; cv.height = 600;
       R.drawFrame(cv, { words: words, active: 0 }, style);
@@ -1002,7 +1007,7 @@ function fluxProps() {
       return n;
     };
     const plain = R.styleForFrame({ fill: '#ffffff', fontSize: 90 }, 600, { yPct: 0.5, vCenter: true }, 1080);
-    const control = { a: ink(['भारत'], plain), b: ink(['कमलम'], plain) };
+    const control = { a: ink([A], plain), b: ink([B], plain) };
     const out = [];
     const T = (C.TEMPLATES || []);
     const step = Math.max(1, Math.floor(T.length / 12));
@@ -1010,24 +1015,57 @@ function fluxProps() {
       const t = T[i];
       const st = R.styleForFrame(t, 600, { yPct: 0.5, vCenter: true, fontSize: t.fontSize || 90 }, 1080);
       out.push({ id: t.id, font: t.font, chain: st.fallbacks,
-                 a: ink(['भारत'], st), b: ink(['कमलम'], st), lat: ink(['Hello'], st) });
+                 a: ink([A], st), b: ink([B], st), lat: ink(['Hello'], st) });
     }
     return { control, out };
   });
-  const hCtl = hindi.control;
-  if (hCtl.a < 200 || hCtl.b < 200) {
-    console.log('  · Hindi: this machine has no Devanagari font at all (control drew ' +
-                hCtl.a + '/' + hCtl.b + ' px) — the styles cannot be judged here');
+  const looksTofu = (a, b) => a >= 200 && Math.abs(a - b) < Math.max(60, a * 0.06);
+  const hC = hindi.control;
+  if (hC.a < 200 || hC.b < 200 || looksTofu(hC.a, hC.b)) {
+    console.log('  · Hindi: this machine cannot draw Devanagari at all (control ' + hC.a + '/' + hC.b +
+                ' px) — the styles cannot be judged here, so this check is skipped rather than failed');
   } else {
     const rows = hindi.out;
     const hBlank = rows.filter(h => h.a < 200 || h.b < 200);
-    const hTofu = rows.filter(h => h.a >= 200 && Math.abs(h.a - h.b) < Math.max(60, h.a * 0.04));
+    const hTofu = rows.filter(h => !looksTofu(h.a, h.b) ? false : true);
     if (hBlank.length) hBlank.slice(0, 5).forEach(h => bad('Hindi: ' + h.id + ' draws NOTHING for Devanagari (' +
       h.a + '/' + h.b + ' px, Latin ' + h.lat + ') — font chain "' + h.font + '", ' + h.chain));
     else if (hTofu.length) hTofu.slice(0, 5).forEach(h => bad('Hindi: ' + h.id + ' renders two different Devanagari words identically (' +
       h.a + ' vs ' + h.b + ') — tofu boxes, not Hindi'));
     else ok('Hindi (Devanagari) renders real glyphs in ' + rows.length + ' styles, including Latin-only display faces');
   }
+
+  // ---- W. the transcript editor survives a 60-minute podcast ---------------
+  // It builds a DOM row with four buttons and listeners per cue, no
+  // virtualization, and EVERY merge/delete rebuilds the whole list. Measured at
+  // podcast scale it is fine — 1500 cues build in ~150ms, a delete ~45ms, and
+  // the cost scales linearly — so this is a guard against a future O(n²)
+  // regression, not a fix. Thresholds are deliberately loose (10x headroom over
+  // measured) so a slow CI box cannot make it flaky.
+  const tre = await page.evaluate(async () => {
+    const D = window.CP_DEBUG;
+    if (!D || !D.setLastCaptionJob || !D.openCaptionTextEditor) return { skip: 'editor hooks missing' };
+    const mk = n => { const c = []; let t = 0;
+      for (let i = 0; i < n; i++) { c.push({ start: t, end: t + 2.4, text: 'yeh line number ' + i + ' hai bhai' }); t += 2.6; }
+      return c; };
+    const out = {};
+    for (const n of [200, 1500]) {
+      D.setLastCaptionJob(mk(n));
+      const s = performance.now(); D.openCaptionTextEditor();
+      out[n] = { ms: Math.round(performance.now() - s),
+                 rows: document.querySelectorAll('#tre-list .tre-row').length };
+      const del = document.querySelector('#tre-list .tre-del');
+      const s2 = performance.now(); if (del) del.click();
+      out[n].delMs = Math.round(performance.now() - s2);
+    }
+    return out;
+  });
+  if (tre.skip) bad('transcript editor: ' + tre.skip);
+  else if (tre[1500].rows !== 1500) bad('transcript editor: 1500 cues produced ' + tre[1500].rows + ' rows');
+  else if (tre[1500].ms > 1500) bad('transcript editor: 1500 cues took ' + tre[1500].ms + 'ms to open (podcast-length transcripts would freeze the panel)');
+  else if (tre[1500].delMs > 500) bad('transcript editor: deleting one line of 1500 took ' + tre[1500].delMs + 'ms');
+  else if (tre[1500].ms > tre[200].ms * 20) bad('transcript editor: cost is growing faster than linearly (' + tre[200].ms + 'ms at 200 → ' + tre[1500].ms + 'ms at 1500)');
+  else ok('transcript editor handles a 60-min podcast: 1500 lines open in ' + tre[1500].ms + 'ms, a delete costs ' + tre[1500].delMs + 'ms');
 
   await browser.close();
   console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');
