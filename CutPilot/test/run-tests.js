@@ -1788,6 +1788,29 @@ console.log('script alignment (your script\'s words + the transcript\'s timing)'
   const drop = S.alignToScript([{ start: 0, end: 3, text: 'we build for creators' }],
                                'We build tools for creators');
   assert(drop.cues[0].text === 'We build tools for creators', 'a word the transcriber missed is restored: ' + drop.cues[0].text);
+
+  // The panel prints `replaced` back to the owner in three places ("Script
+  // applied — N words corrected"). It counted matched-but-DIFFERENT pairs, and
+  // matchPairs only ever pairs words that are EQUAL — so it printed 0 after a
+  // run that had just fixed four mishearings, which reads as "it did nothing".
+  const hinglish = [
+    { start: 0.0, end: 1.8, text: 'namaste doston aaj hum baat karenge' },
+    { start: 1.9, end: 3.6, text: 'phase ke bare mein jo aapko pata hona chahiye' },
+    { start: 3.7, end: 5.4, text: 'to chaliye suru karte hai bina time waste kiye' },
+    { start: 5.5, end: 7.0, text: 'sabse pehle ye samajh lo ki market kaise chalta he' }
+  ];
+  const hinScript = 'namaste doston aaj hum baat karenge paise ke bare mein jo aapko pata hona chahiye ' +
+    'to chaliye shuru karte hain bina time waste kiye sabse pehle ye samajh lo ki market kaise chalta hai';
+  const hin = S.alignToScript(hinglish, hinScript);
+  assert(hin.replaced === 4, 'four Hinglish mishearings are reported as four corrections (got ' + hin.replaced + ')');
+  assert(/paise/.test(hin.cues[1].text) && /shuru/.test(hin.cues[2].text) && /hain/.test(hin.cues[2].text),
+    'the mishearings are actually fixed: ' + hin.cues[1].text + ' | ' + hin.cues[2].text);
+  const noDrift = hin.cues.every(function (c, i) {
+    return Math.abs(c.start - hinglish[i].start) < 1e-9 && Math.abs(c.end - hinglish[i].end) < 1e-9;
+  });
+  assert(noDrift, 'every caption keeps its exact timing through a script fix');
+  const identical = S.alignToScript(hinglish, hinglish.map(function (c) { return c.text; }).join(' '));
+  assert(identical.replaced === 0, 'a script that matches the transcript reports 0 corrections');
 }
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

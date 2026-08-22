@@ -138,9 +138,14 @@
         // to the cue of the next match — otherwise the corrected words jump a
         // caption forward.
         var fillCue = (gapOwner >= 0) ? gapOwner : cueIx;
-        for (var fill = lastB + 1; fill < bIx; fill++) perCue[fillCue].push(sw[fill]);
+        // Every word taken from the SCRIPT here is a word the transcript got
+        // wrong — that is the correction the owner asked for and the number the
+        // panel reports back. Counting matched-but-different pairs instead
+        // always gave 0, because matchPairs only pairs words that are EQUAL, so
+        // "Script applied — 0 words corrected" was printed after a run that had
+        // just fixed four mishearings.
+        for (var fill = lastB + 1; fill < bIx; fill++) { perCue[fillCue].push(sw[fill]); replaced++; }
         perCue[cueIx].push(sw[bIx]);
-        if (sw[bIx] !== tw[t]) replaced++;
         lastB = bIx; pi++; gapOwner = -1;
       } else if (gapOwner < 0) {
         gapOwner = cueIx;      // misheard word: its cue owns the coming fill
@@ -150,7 +155,7 @@
     if (lastB < sw.length - 1) {
       var lastCue = perCue.length - 1;
       while (lastCue > 0 && !perCue[lastCue].length) lastCue--;
-      for (var r = lastB + 1; r < sw.length; r++) perCue[lastCue].push(sw[r]);
+      for (var r = lastB + 1; r < sw.length; r++) { perCue[lastCue].push(sw[r]); replaced++; }
     }
     var out = [];
     for (i = 0; i < src.length; i++) {
