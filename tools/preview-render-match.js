@@ -53,25 +53,37 @@ function resolveBrowser(pptr) {
   await page.goto(PANEL, { waitUntil: 'networkidle0' });
   await new Promise(r => setTimeout(r, 1600));
 
-  const res = await page.evaluate(async (SAMPLE) => {
+  const FRAMES = [
+    { name: 'vertical reel 1080x1920', w: 1080, h: 1920 },
+    { name: 'landscape podcast 1920x1080', w: 1920, h: 1080 }
+  ];
+  let mismatched = 0, checked = 0;
+  for (const FRAME of FRAMES) {
+  const res = await page.evaluate(async (SAMPLE, FRAME) => {
     const sleep = ms => new Promise(r => setTimeout(r, ms));
     document.querySelector('.tab[data-tab="captions"]').click(); await sleep(300);
     const b = document.getElementById('btn-browse-styles'); if (b) b.click(); await sleep(800);
     const D = window.CP_DEBUG;
     if (!D || !D.styledPreset || !D.readOverrides) return { fatal: 'CP_DEBUG hooks missing' };
+    // stand the panel in front of THIS sequence shape — the preview is a crop
+    // of the real frame, so a vertical reel and a landscape podcast must each
+    // be previewed as they will actually render.
+    if (!D.setEnv) return { fatal: 'CP_DEBUG.setEnv missing' };
+    D.setEnv(FRAME.w, FRAME.h); await sleep(250);
 
     /* ink analysis shared by both images: quantised palette + line-band count */
     const analyse = (ctx, w, h) => {
       const d = ctx.getImageData(0, 0, w, h).data;
       const pal = new Map();
       const rowInk = new Array(h).fill(0);
-      let ink = 0;
+      let ink = 0, x0 = w, x1 = -1;
       const step = Math.max(1, Math.round(Math.min(w, h) / 220));   // same sampling density either size
       for (let y = 0; y < h; y += step) {
         for (let x = 0; x < w; x += step) {
           const i = (y * w + x) * 4;
           if (d[i + 3] < 96) continue;               // solid ink only
           ink++; rowInk[y]++;
+          if (x < x0) x0 = x; if (x > x1) x1 = x;
           const k = ((d[i] >> 4) << 8) | ((d[i + 1] >> 4) << 4) | (d[i + 2] >> 4);   // 4 bits/channel
           pal.set(k, (pal.get(k) || 0) + 1);
         }
@@ -102,7 +114,10 @@ function resolveBrowser(pptr) {
         else merged.push([r[0], r[1]]);
       }
       const lines = merged.filter(r => (r[1] - r[0]) >= minRunR).length;
-      return { sig, ink, lines };
+      // how wide the caption is relative to its frame — the measure that makes
+      // this gate sensitive to SIZE and to the sequence shape, not just colour
+      const wFrac = (x1 > x0) ? (x1 - x0) / w : 0;
+      return { sig, ink, lines, wFrac };
     };
     const near = (a, z) => Math.abs(a.r - z.r) + Math.abs(a.g - z.g) + Math.abs(a.b - z.b) <= 90;
 
@@ -131,12 +146,12 @@ function resolveBrowser(pptr) {
 
       // the EXACT call the export path makes
       const cv = document.createElement('canvas');
-      cv.width = 1080; cv.height = 1920;
+      cv.width = FRAME.w; cv.height = FRAME.h;
       let rnA;
       try {
-        const st = CPRender.styleForFrame(D.styledPreset(), 1920, D.readOverrides(), 1080);
+        const st = CPRender.styleForFrame(D.styledPreset(), FRAME.h, D.readOverrides(), FRAME.w);
         CPRender.drawFrame(cv, last, st);
-        rnA = analyse(cv.getContext('2d'), 1080, 1920);
+        rnA = analyse(cv.getContext('2d'), FRAME.w, FRAME.h);
       } catch (e) { out.push({ id: t.id, err: 'render threw: ' + e.message }); continue; }
 
       // The DOMINANT colour is the honest comparison. Comparing every
@@ -150,40 +165,55 @@ function resolveBrowser(pptr) {
       const rnTopSeen = !!(rnTop && pvA.sig.some(p => near(p, rnTop)));
       const pvTopSeen = !!(pvTop && rnA.sig.some(r => near(r, pvTop)));
       out.push({ id: t.id, pvLines: pvA.lines, rnLines: rnA.lines,
+                 pvW: +(pvA.wFrac * 100).toFixed(1), rnW: +(rnA.wFrac * 100).toFixed(1),
                  pvInk: pvA.ink, rnInk: rnA.ink, domMatch, rnTopSeen, pvTopSeen,
                  pvTop: top(pvA), rnTop: top(rnA),
                  pvPal: pvA.sig.slice(0, 3).map(x => [x.r, x.g, x.b]),
                  rnPal: rnA.sig.slice(0, 3).map(x => [x.r, x.g, x.b]) });
     }
     return { out };
-  }, SAMPLE);
+  }, SAMPLE, FRAME);
 
-  await browser.close();
-
-  if (res.fatal) { bad(res.fatal); process.exit(1); }
+  if (res.fatal) { bad(res.fatal); break; }
   const rows = res.out || [];
-  if (rows.length < 8) bad('only ' + rows.length + ' styles compared — the sweep is not reaching the gallery');
-
-  let mismatched = 0;
+  if (rows.length < 8) bad('only ' + rows.length + ' styles compared on ' + FRAME.name + ' — the sweep is not reaching the gallery');
+  checked += rows.length;
+  let frameBad = 0;
   for (const r of rows) {
-    if (r.err) { bad(r.id + ': ' + r.err); continue; }
-    if (!r.pvInk) { bad(r.id + ': the PREVIEW drew nothing'); mismatched++; continue; }
-    if (!r.rnInk) { bad(r.id + ': the RENDER drew nothing'); mismatched++; continue; }
+    if (r.err) { bad(FRAME.name + ' / ' + r.id + ': ' + r.err); frameBad++; continue; }
+    if (!r.pvInk) { bad(FRAME.name + ' / ' + r.id + ': the PREVIEW drew nothing'); frameBad++; continue; }
+    if (!r.rnInk) { bad(FRAME.name + ' / ' + r.id + ': the RENDER drew nothing'); frameBad++; continue; }
     const rgb = c => c ? ('rgb(' + c.join(',') + ')') : 'none';
     if (!r.rnTopSeen || !r.pvTopSeen) {
-      bad(r.id + ': the preview and the render do not share a main colour — preview ' +
+      bad(FRAME.name + ' / ' + r.id + ': the preview and the render do not share a main colour — preview ' +
           rgb(r.pvTop) + ' [' + r.pvPal.map(rgb).join(' ') + '] vs render ' +
           rgb(r.rnTop) + ' [' + r.rnPal.map(rgb).join(' ') + ']');
-      mismatched++; continue;
+      frameBad++; continue;
     }
-    if (Math.abs(r.pvLines - r.rnLines) > 1) {
-      bad(r.id + ': preview breaks into ' + r.pvLines + ' line(s), the render into ' + r.rnLines);
-      mismatched++; continue;
+    // EXACT: the preview is a true crop of the frame, so the caption wraps into
+    // the same number of lines. A tolerance of 1 here used to hide a real
+    // difference (a two-line preview of a one-line caption).
+    if (r.pvLines !== r.rnLines) {
+      bad(FRAME.name + ' / ' + r.id + ': preview breaks into ' + r.pvLines + ' line(s), the render into ' + r.rnLines);
+      frameBad++; continue;
+    }
+    // SIZE fidelity: the caption must fill the same share of the frame's width
+    // in the preview as it does in the render. Without this the gate passed
+    // even when the preview ignored the sequence shape entirely (verified by
+    // mutation), because colour and line count survive that mistake.
+    if (Math.abs(r.pvW - r.rnW) > 8) {
+      bad(FRAME.name + ' / ' + r.id + ': caption fills ' + r.pvW + '% of the width in the preview but ' +
+          r.rnW + '% in the render');
+      frameBad++; continue;
     }
   }
-  if (!mismatched && rows.length >= 8)
-    ok(rows.length + ' styles: the preview and a true 1080×1920 render agree on colours and line breaks');
+  mismatched += frameBad;
+  if (!frameBad && rows.length >= 8)
+    ok(FRAME.name + ': ' + rows.length + ' styles agree on colours and line breaks');
+  }
+  await browser.close();
   if (pageErrors.length) bad('page errors: ' + pageErrors.slice(0, 3).join(' | '));
+  if (!failed) ok('the preview follows the sequence shape — ' + checked + ' style-checks across both orientations');
 
   console.log(failed ? 'PREVIEW/RENDER MATCH: mismatches above' : 'PREVIEW/RENDER MATCH: what you see is what renders ✓');
   process.exit(failed ? 1 : 0);

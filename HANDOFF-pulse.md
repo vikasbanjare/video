@@ -1,7 +1,7 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.9.356** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.9.357** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
@@ -24,7 +24,7 @@ Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels
 - Script alignment feature (`📄 Fix the words with MY script`) — 7 unit tests.
 - Hostile-input sweep: 17 malformed inputs, 0 crashes, 0 page errors.
 
-### v0.9.350 → v0.9.356 (this session) — preview/render fidelity
+### v0.9.350 → v0.9.357 (this session) — preview/render fidelity
 - **The preview was structurally not WYSIWYG.** The render is handed the full
   `{preset, overrides}`; the preview was handed `carryableStyle()`, which narrows a
   style to what the mogrt ENGINE can express (~20 fields). ~30 controls that really do
@@ -209,7 +209,7 @@ Absolute paths. Only files touched in this session are listed.
 
 ## Next 3 actions
 
-1. **Get v0.9.356 confirmed on the owner's machine** — nothing after v0.9.339 has been
+1. **Get v0.9.357 confirmed on the owner's machine** — nothing after v0.9.339 has been
    validated outside this repo. Have them run `🧹 Remove all Pulse captions` in a FRESH
    sequence, then `✨ Add captions`, then paste `📋 Copy diagnostics`.
 2. **Overlay render has never run on their Mac** — `/home/user/video/CutPilot/js/main.js`

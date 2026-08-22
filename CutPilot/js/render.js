@@ -78,11 +78,23 @@
       fallbacks: (preset.fallbackFonts || []).join('", "'),
       // LEGIBILITY FLOOR on real output frames (never on gallery tiles, which
       // pass their own band-relative fontSize and no frameW): a style authored
-      // small must still be readable on a phone — measured floor is 5% of the
-      // frame width. Styles above it keep their own authored character.
+      // small must still be readable on a phone. The floor is 5% of the frame's
+      // SMALLER side.
+      //
+      // It used to be 5% of the WIDTH, which is the same thing for vertical and
+      // square frames but wrong for landscape: at 1920x1080 the floor came to
+      // 96px while every style computes 48-90px, so the floor bound on ALL of
+      // them — every caption rendered at exactly 96px (8.9% of frame height,
+      // oversized for a podcast) and all size differences between styles
+      // vanished. Measured across 10 styles: 10/10 identical at 1920x1080,
+      // varied at 1080x1920. Using the smaller side leaves vertical and square
+      // output byte-identical and gives landscape its styles back.
       size: (function () {
         var px = Math.round((o.fontSize || preset.fontSize) * scale);
-        if (frameW && frameW > 0) px = Math.max(px, Math.round(frameW * 0.05));
+        if (frameW && frameW > 0) {
+          var shortSide = (frameH && frameH > 0) ? Math.min(frameW, frameH) : frameW;
+          px = Math.max(px, Math.round(shortSide * 0.05));
+        }
         return px;
       })(),
       fill: fill,

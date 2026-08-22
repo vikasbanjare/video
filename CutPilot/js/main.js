@@ -5371,7 +5371,18 @@
       var _ov = readOverrides();
       for (var _k in _ov) if (_ov.hasOwnProperty(_k)) povOpts[_k] = _ov[_k];
     } catch (eOv) { povOpts = {}; }
-    povOpts.fontSize = pov.fontSize;
+    // TRUE CROP. The preview canvas width maps to the FRAME width, at the real
+    // sequence aspect, so the caption occupies the same fraction of width it
+    // will on the timeline — and therefore breaks into the SAME lines. The old
+    // band-relative font size made preview text ~35% wider relative to its
+    // canvas than the render, so captions wrapped onto two lines here and
+    // rendered as one (measured: cap-clarity 43% wide over 2 lines in the
+    // preview vs 63% on one line in the render). What is shown is a vertical
+    // slice of that frame, centred on the caption.
+    var _envW = (state.env && state.env.width) || 1080;
+    var _envH = (state.env && state.env.height) || 1920;
+    var cropW = canvas.width;
+    var cropH = Math.max(1, Math.round(cropW * _envH / _envW));
     povOpts.vCenter = pov.vCenter;
     // maxLines comes from the Lines buttons (readOverrides) and falls back to
     // the style's own cap — forcing the band default here made the Lines
@@ -5383,7 +5394,7 @@
       // engine mode: only what a .mogrt can carry, so the preview cannot promise
       // effects the template engine will drop on the timeline.
       pStyle = engineMode ? CPRender.styleForFrame(carry, canvas.height, pov)
-                          : CPRender.styleForFrame(styled, canvas.height, povOpts);
+                          : CPRender.styleForFrame(styled, cropH, povOpts, cropW);
     } catch (eStyle) {
       // a style that trips the engine must NEVER blank the preview — fall back to
       // a minimal look and record which template + why in Diagnostics.
@@ -10429,6 +10440,10 @@
       psFontName: CPCaptions.psFontName,
       editorFont: function () { return resolvedEditorFont(styledPreset()); },   // the exact face Apply/preview will send
       readOverrides: function () { try { return readOverrides(); } catch (e) { return { _threw: String(e && e.message) }; } },
+      // the preview is a true crop of the SEQUENCE, so tests need to stand it
+      // in front of a vertical reel and a landscape podcast alike
+      env: function () { return state.env ? { width: state.env.width, height: state.env.height } : null; },
+      setEnv: function (w, h) { state.env = { width: w, height: h }; try { renderPreview(); } catch (e) {} },
       styledPreset: function () { try { return styledPreset(); } catch (e) { return { _threw: String(e && e.message) }; } },
       customCount: function () { return (state.customTemplates || []).length; },
       capOut: function () { return _capOut; },
