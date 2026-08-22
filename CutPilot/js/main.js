@@ -3887,12 +3887,30 @@
   function drawCardTickFrame(canvas, tick) {
     var frames = canvas._animFrames, style = canvas._animStyle;
     if (!frames || !style) return;
+    // A GALLERY tile is for comparing styles, so it must never sit on a
+    // half-built phrase. Build styles reveal one word at a time, which left
+    // cards reading "Make" or "HEAT" — impossible to judge a style from, and it
+    // looks broken next to cards showing a whole sentence. Cycle only the
+    // frames where the phrase is complete; the highlight still sweeps across
+    // them, so the style's motion and colours are both visible. The frames
+    // themselves are untouched — this is which one is SHOWN, so the tile still
+    // matches the editor and the render (proof B2 compares the frame list).
+    var shown = frames;
+    if (frames.length > 1) {
+      var full = [];
+      for (var fi = 0; fi < frames.length; fi++) {
+        var fr = frames[fi];
+        var wn = (fr.words || []).length;
+        if (fr.reveal == null || fr.reveal >= wn) full.push(fr);
+      }
+      if (full.length) shown = full;
+    }
     var f;
-    if (frames.length <= 1) {
-      f = frames[0] || { words: [] };
+    if (shown.length <= 1) {
+      f = shown[0] || { words: [] };
       if (f.reveal != null) { var bb = {}; for (var bk in f) if (f.hasOwnProperty(bk)) bb[bk] = f[bk]; bb.reveal = null; f = bb; }
     } else {
-      f = frames[((tick % frames.length) + frames.length) % frames.length];
+      f = shown[((tick % shown.length) + shown.length) % shown.length];
     }
     try { CPRender.drawFrame(canvas, f, style); }
     catch (e) {

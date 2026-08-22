@@ -1209,6 +1209,37 @@ function fluxProps() {
   else ok('export chain: renderFrames really encodes and writes one valid PNG per frame (' +
           exp.sizes.map(n => Math.round(n / 1024) + 'KB').join(', ') + ')');
 
+  // ---- Z. a gallery tile never shows a half-built phrase --------------------
+  // Build styles reveal one word at a time. The tile animator cycled every
+  // frame, so cards sat on "Make" or "HEAT" — you cannot judge a style from one
+  // word, and it reads as broken beside a card showing a whole sentence. Only
+  // complete-phrase frames are DISPLAYED now; the frame list is unchanged, so
+  // the tile still matches the editor and the render.
+  const tiles = await page.evaluate(async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    document.querySelector('.tab[data-tab="captions"]').click(); await sleep(250);
+    const b = document.getElementById('btn-browse-styles'); if (b) b.click(); await sleep(900);
+    const cvs = Array.from(document.querySelectorAll('#tpl-grid .tpl-thumb-canvas')).filter(c => c._tpl);
+    for (const c of cvs) { if (!c._animFrames) { c.scrollIntoView({ block: 'center' }); await sleep(20); } }
+    await sleep(500);
+    const bad = [];
+    let builders = 0;
+    for (const c of cvs) {
+      const fr = c._animFrames;
+      if (!fr || !fr.length) continue;
+      const partial = fr.filter(f => f.reveal != null && f.reveal < (f.words || []).length);
+      if (!partial.length) continue;            // not a build style
+      builders++;
+      // every frame the animator can land on must be complete
+      const full = fr.filter(f => f.reveal == null || f.reveal >= (f.words || []).length);
+      if (!full.length) bad.push(c._tpl.id + ': has no complete-phrase frame to show');
+    }
+    return { builders, bad, total: cvs.length };
+  });
+  if (tiles.bad.length) tiles.bad.slice(0, 5).forEach(f => bad('gallery tile: ' + f));
+  else if (!tiles.builders) bad('gallery tile: no build styles found — the check exercised nothing');
+  else ok('gallery tiles show complete phrases: ' + tiles.builders + ' build styles among ' + tiles.total + ' cards each have a full-phrase frame to display');
+
   await browser.close();
   console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');
   process.exit(failed ? 1 : 0);
