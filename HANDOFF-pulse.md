@@ -1,15 +1,16 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.9.349** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.9.354** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
 
 ### DONE (verified by automated gates, all green)
 - Full battery: `node CutPilot/test/run-tests.js` → exit 0.
-  Gates: `js:ok audit:ok host:ok sim:ok proofs:ok blank-scan:ok style-quality:ok`.
-  Counts: ~570 JS asserts, 199 host tests, 16 headless panel proofs, 74/74 style-quality.
+  Gates: `js audit host sim proofs blank-scan style-quality overlay dead-controls` — all ok.
+  Counts: ~570 JS asserts, 199 host tests, 23 headless panel proofs, 74/74 style-quality,
+  63/64 controls swept by the dead-control audit.
 - Caption rendering path (Pulse's own canvas renderer) is the DEFAULT (`_capOut = 'png'`).
   Every style verified at true 1080×1920: text present, readable contrast, phone-legible
   size, inside frame, at declared position, animation frames visibly differ.
@@ -21,6 +22,29 @@ Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels
   packed 0.15s apart.
 - Script alignment feature (`📄 Fix the words with MY script`) — 7 unit tests.
 - Hostile-input sweep: 17 malformed inputs, 0 crashes, 0 page errors.
+
+### v0.9.350 → v0.9.354 (this session) — preview/render fidelity
+- **The preview was structurally not WYSIWYG.** The render is handed the full
+  `{preset, overrides}`; the preview was handed `carryableStyle()`, which narrows a
+  style to what the mogrt ENGINE can express (~20 fields). ~30 controls that really do
+  change the exported PNGs had no path into the preview. New `renderableStyle()` +
+  passing the real overrides fixed it. (`main.js`, search `renderableStyle`.)
+- **~40 controls were invisible.** `.png-only { display:none !important }` was added at
+  v0.9.299 when EDITABLE was the default caption type; the default became Pulse-rendered
+  PNG later and this was never revisited. Now scoped to `body.cap-editable`.
+- Frame animation followed the ENTRANCE; the pipeline uses `currentAnim()` and Premiere
+  applies the entrance as clip motion. Both preview surfaces now use the pipeline's rule.
+- Reveal mode was sticky across template clicks (same style looked different depending on
+  what you clicked before). Deterministic unless the user picks a mode.
+- The band `pov` forced `maxLines:2` / `maxWidthPct:0.86` over the style's own values.
+- Preview pinned keyword/speaker/emoji/case/censor/strip-punct OFF; now mirrors the pipeline.
+- Manual transcript edits no longer discard word timing (reflow instead).
+- New gates: `tools/overlay-render-check.js` (really runs ffmpeg+libass and decodes the
+  frames), `tools/dead-control-audit.js` (every bound control must change the preview;
+  fails if fewer than 45 are exercised), `tools/ffmpeg-find.js` (one shared finder — the
+  two gates disagreed and thumb-scan silently skipped all 14 animated previews).
+- Proofs added: B2 motion-parity, B3 words-per-line live, Q mode-scoped controls + narrow
+  panel layout. B2/B3 were mutation-tested (reverting the fix turns them red).
 
 ### DONE-BUT-UNVERIFIED (no confirmation from the owner's machine since these landed)
 - Everything from v0.9.340 → v0.9.347 has NOT been installed/tested by the owner.
@@ -184,7 +208,7 @@ Absolute paths. Only files touched in this session are listed.
 
 ## Next 3 actions
 
-1. **Get v0.9.349 confirmed on the owner's machine** — nothing after v0.9.339 has been
+1. **Get v0.9.354 confirmed on the owner's machine** — nothing after v0.9.339 has been
    validated outside this repo. Have them run `🧹 Remove all Pulse captions` in a FRESH
    sequence, then `✨ Add captions`, then paste `📋 Copy diagnostics`.
 2. **Overlay render has never run on their Mac** — `/home/user/video/CutPilot/js/main.js`

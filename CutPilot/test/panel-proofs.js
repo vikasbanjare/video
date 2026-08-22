@@ -774,6 +774,45 @@ function fluxProps() {
   // restore defaults so later runs start clean
   await page.evaluate(() => { try { localStorage.removeItem('cutpilot.look'); } catch (e) {} });
 
+  // ---- Q. mode-scoped controls + narrow-panel layout ------------------------
+  // The .png-only controls (letter spacing, outline, words per line, max width,
+  // line gap, all the box effects, case/emphasis/censor, word sync) do not
+  // carry into EDITABLE captions, so they hide in that mode — and MUST show in
+  // the Pulse-rendered mode, which is the default. They were hidden in both for
+  // ~50 builds. Also checks a NARROW Premiere panel: nothing may spill past the
+  // right edge now that those blocks are back on screen.
+  await page.reload({ waitUntil: 'networkidle0' });
+  await page.setViewport({ width: 340, height: 900 });
+  await new Promise(r => setTimeout(r, 1200));
+  const modeUi = await page.evaluate(async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    document.querySelector('.tab[data-tab="captions"]').click(); await sleep(300);
+    const b = document.getElementById('btn-browse-styles'); if (b) b.click(); await sleep(600);
+    const c = document.querySelector('#tpl-grid .tpl-card'); if (c) c.click(); await sleep(600);
+    const vis = () => Array.from(document.querySelectorAll('.png-only')).filter(e => e.offsetParent !== null).length;
+    const png1 = vis();
+    const eb = document.querySelector('#cap-output button[data-out="editable"]');
+    if (eb) { eb.click(); await sleep(350); }
+    const editable = vis();
+    const pb = document.querySelector('#cap-output button[data-out="png"]');
+    if (pb) { pb.click(); await sleep(350); }
+    const png2 = vis();
+    const de = document.documentElement, over = [];
+    document.querySelectorAll('#cust-pane-style *, #cust-pane-pro *').forEach(el => {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.right > de.clientWidth + 2) over.push(el.id || el.className || el.tagName);
+    });
+    return { png1, editable, png2, overflow: over.slice(0, 6), overflowCount: over.length,
+             scrollX: de.scrollWidth > de.clientWidth + 1 };
+  });
+  if (modeUi.png1 < 10) bad('mode controls: only ' + modeUi.png1 + ' Pulse-only controls visible in the DEFAULT mode');
+  else if (modeUi.editable !== 0) bad('mode controls: ' + modeUi.editable + ' Pulse-only controls still showing in editable mode');
+  else if (modeUi.png2 !== modeUi.png1) bad('mode controls: switching back restored ' + modeUi.png2 + ' of ' + modeUi.png1);
+  else if (modeUi.overflowCount || modeUi.scrollX)
+    bad('narrow panel: ' + modeUi.overflowCount + ' element(s) spill past the edge — ' + modeUi.overflow.join(', '));
+  else ok('caption-type controls: ' + modeUi.png1 + ' Pulse-only controls show in the default mode, hide in editable, come back — and nothing spills at 340px');
+  await page.evaluate(() => { try { localStorage.removeItem('cutpilot.look'); } catch (e) {} });
+
   await browser.close();
   console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');
   process.exit(failed ? 1 : 0);
