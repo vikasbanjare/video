@@ -813,6 +813,53 @@ function fluxProps() {
   else ok('caption-type controls: ' + modeUi.png1 + ' Pulse-only controls show in the default mode, hide in editable, come back — and nothing spills at 340px');
   await page.evaluate(() => { try { localStorage.removeItem('cutpilot.look'); } catch (e) {} });
 
+  // ---- R. the preview tells the truth about the CAPTION TYPE ----------------
+  // Pulse-rendered captions can do real font weights and outlines; the .mogrt
+  // engine cannot. Previewing at full fidelity in editable mode would promise
+  // effects the timeline then drops. Both surfaces must narrow together when
+  // the caption type is editable, and widen again when it is not.
+  const truth = await page.evaluate(async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    document.querySelector('.tab[data-tab="captions"]').click(); await sleep(250);
+    const T = (window.CPCaptions && window.CPCaptions.TEMPLATES) || [];
+    const t = T.find(x => x.strokeWidth > 0 && x.weight && x.weight !== 800 && x.weight !== 500) ||
+              T.find(x => x.strokeWidth > 0);
+    if (!t) return { skip: 'no style with an outline + a non-engine weight' };
+    const open = async () => { const g = document.getElementById('btn-browse-styles'); if (g) g.click(); await sleep(650); };
+    await open();
+    const cvs = () => Array.from(document.querySelectorAll('#tpl-grid .tpl-thumb-canvas')).find(x => x._tpl && x._tpl.id === t.id);
+    const c = cvs(); if (!c) return { skip: 'style tile not found' };
+    c.scrollIntoView({ block: 'center' }); await sleep(150);
+    let el = c; while (el && !(el.classList && el.classList.contains('tpl-card'))) el = el.parentNode;
+    (el || c).click(); await sleep(550);
+    const read = async () => {
+      await open();     // the gallery closes on pick; reopen so tiles can repaint
+      const pv = (document.getElementById('preview-canvas') || {})._pvStyle || {};
+      const tl = (cvs() || {})._animStyle || {};
+      return { pvW: pv.weight, pvS: pv.strokeWidth, tlW: tl.weight, tlS: tl.strokeWidth };
+    };
+    const png = await read();
+    const eb = document.querySelector('#cap-output button[data-out="editable"]'); if (eb) eb.click(); await sleep(850);
+    const editable = await read();
+    const pb = document.querySelector('#cap-output button[data-out="png"]'); if (pb) pb.click(); await sleep(850);
+    const back = await read();
+    return { id: t.id, weight: t.weight, png, editable, back };
+  });
+  if (truth.skip) console.log('  · caption-type truth: ' + truth.skip);
+  else if (truth.png.pvW !== truth.weight)
+    bad('caption-type truth: Pulse mode should show the real weight ' + truth.weight + ', showed ' + truth.png.pvW);
+  else if (!(truth.editable.pvW === 800 && truth.editable.tlW === 800))
+    bad('caption-type truth: editable mode did not clamp weight on both surfaces (' +
+        truth.editable.pvW + '/' + truth.editable.tlW + ')');
+  else if (!(truth.editable.pvS === 0 && truth.editable.tlS === 0))
+    bad('caption-type truth: editable mode still promises an outline (' +
+        truth.editable.pvS + '/' + truth.editable.tlS + ')');
+  else if (truth.back.pvW !== truth.weight)
+    bad('caption-type truth: switching back did not restore the real weight (' + truth.back.pvW + ')');
+  else ok('caption-type truth: ' + truth.id + ' previews its real weight ' + truth.weight +
+          ' + outline for Pulse renders, and both surfaces narrow to the engine\'s 800/no-outline for editable');
+  await page.evaluate(() => { try { localStorage.removeItem('cutpilot.look'); } catch (e) {} });
+
   await browser.close();
   console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');
   process.exit(failed ? 1 : 0);

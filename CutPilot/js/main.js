@@ -3671,7 +3671,7 @@
   function drawCardPreview(canvas, t) {
     try {
       var raw = t;
-      t = renderableStyle(t);          // full fidelity — the tile is a Pulse render, not an engine clip
+      t = previewBasis(t);             // full fidelity for Pulse renders, engine-shaped for editable
       var sample = tileSampleText(raw);
       if (t.uppercase) sample = sample.toUpperCase();
       var sw = sample.split(' '), DUR = 0.35;
@@ -3693,6 +3693,7 @@
         frames = CPCaptions.buildCaptionFrames([{ start: 0, end: sw.length * DUR, text: sample }], {
           anim: animId, wordsPerCue: (t.wordsPerCue || 4), uppercase: !!t.uppercase,
           keyword: { on: false }, speaker: { on: false },   // sweep (active word) supplies the highlight, like the backbone
+          build: !!raw.build,                               // same flag the pipeline and the editor preview pass
           wordCues: wordCues, window: 0
         });
       } catch (eF) { frames = null; }
@@ -5343,7 +5344,8 @@
     // at Size=default, scaled by the Size slider) and at the Position slider's
     // real spot — a shrunken version of the final frame, not a zoomed swatch.
     var styled = styledPreset();
-    var carry = renderableStyle(styled);   // same full-fidelity basis as the tile
+    var engineMode = (_capOut === 'editable');
+    var carry = previewBasis(styled);      // same basis as the tile, in both modes
 
     // CAPTION-BAND preview: the region of the frame around the caption, at a
     // readable size (the full 9:16 frame wasted the panel on empty backdrop).
@@ -5378,7 +5380,10 @@
     if (povOpts.maxWidthPct == null) povOpts.maxWidthPct = pov.maxWidthPct;
     var pStyle;
     try {
-      pStyle = CPRender.styleForFrame(styled, canvas.height, povOpts);
+      // engine mode: only what a .mogrt can carry, so the preview cannot promise
+      // effects the template engine will drop on the timeline.
+      pStyle = engineMode ? CPRender.styleForFrame(carry, canvas.height, pov)
+                          : CPRender.styleForFrame(styled, canvas.height, povOpts);
     } catch (eStyle) {
       // a style that trips the engine must NEVER blank the preview — fall back to
       // a minimal look and record which template + why in Diagnostics.
@@ -5635,6 +5640,15 @@
       for (var i = 0; i < bs.length; i++) bs[i].classList.toggle('on', (bs[i].dataset.out || '') === _capOut);
     }
     updateMagicLabel();
+    // The caption type decides which style basis the previews use, so both
+    // surfaces have to be repainted when it changes — otherwise the gallery
+    // keeps showing effects the engine mode can't deliver.
+    try {
+      var cvs = document.querySelectorAll('.tpl-thumb-canvas');
+      for (var ci = 0; ci < cvs.length; ci++) cvs[ci]._painted = false;
+      schedulePaintThumbs();
+    } catch (ePt) {}
+    try { renderPreview(); } catch (ePv) {}
   }
   (function wireCapOutput() {
     var box = $('cap-output'); if (!box) return;
@@ -7656,6 +7670,16 @@
     out.yPct = (p.yPct != null && isFinite(p.yPct)) ? Math.max(0.1, Math.min(0.92, p.yPct)) : 0.5;
     out.vCenter = false;                 // the band pov re-centres; a style flag must not
     return out;
+  }
+
+  /* Which style basis the PREVIEW SURFACES use, decided by the caption type the
+     user will actually get. Pulse-rendered (the default) → full fidelity.
+     Editable (.mogrt) → the engine's narrower carry-set, so the preview stops
+     promising outline / padding / real weights that the template engine cannot
+     express. Both the gallery tile and the editor preview go through here, so
+     they can never disagree with each other in either mode. */
+  function previewBasis(p) {
+    return (_capOut === 'editable') ? carryableStyle(p) : renderableStyle(p);
   }
 
   function carryableStyle(p) {

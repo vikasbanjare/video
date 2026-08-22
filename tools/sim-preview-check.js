@@ -97,6 +97,16 @@ function groundTruth() {
     for (const c of cvs) {
       if (!c._tpl || want.indexOf(c._tpl.id) < 0) continue;
       c.scrollIntoView({ block: 'center' }); await sleep(140);
+      // Measure the FULLY-BUILT frame, not whatever tick the shared animator
+      // happens to be showing. Build/reveal styles spend their first frames on
+      // one or two words, so sampling "now" measured a partial caption and the
+      // result depended on animation phase — racy, and it read as drift.
+      try {
+        const fr = c._animFrames;
+        if (fr && fr.length && c._animStyle && window.CPRender && CPRender.drawFrame) {
+          CPRender.drawFrame(c, fr[fr.length - 1], c._animStyle);
+        }
+      } catch (eLast) {}
       const t = c._tpl, w = c.width, h = c.height;
       const px = c.getContext('2d').getImageData(0, 0, w, h).data;
       // TWO thresholds on purpose. Anything faint (alpha>12) counts as "painted"
@@ -114,7 +124,8 @@ function groundTruth() {
         }
       }
       // what the STYLE ITSELF declares about how tall its block should be
-      const sampleWords = ((c._animFrames && c._animFrames[0] && c._animFrames[0].words) || []).length || 3;
+      const _fr = c._animFrames || [];
+      const sampleWords = ((_fr[_fr.length - 1] && _fr[_fr.length - 1].words) || []).length || 3;
       let lines = t.wordsPerLine ? Math.ceil(sampleWords / t.wordsPerLine) : 1;
       if (t.maxLines) lines = Math.min(lines, t.maxLines);
       out.push({ id: t.id, hasBox: !!t.boxColor, painted: n,
