@@ -127,6 +127,19 @@ function CP_getEnv() {
       fps: fps,
       width: seq.frameSizeHorizontal,
       height: seq.frameSizeVertical,
+      // PIXEL ASPECT RATIO. Captions are rendered as square-pixel PNGs sized to
+      // the frame, which is right for PAR 1.0 (every modern 16:9 / 9:16
+      // sequence). An anamorphic sequence — HDV 1440x1080 at 1.333, DV at 1.2 —
+      // displays those pixels stretched, so the text would come out wider than
+      // drawn. That case is NOT handled; report the number so a diagnostic can
+      // say so plainly instead of the captions just looking wrong.
+      pixelAspect: (function () {
+        try {
+          var st = seq.getSettings ? seq.getSettings() : null;
+          var par = st && (st.videoPixelAspectRatio || st.videoPixelaspectratio);
+          return par ? parseFloat(par) : 1;
+        } catch (ePar) { return 1; }
+      })(),
       videoTracks: seq.videoTracks.numTracks,
       audioTracks: seq.audioTracks.numTracks,
       endSeconds: parseFloat(seq.end) / CP_TICKS_PER_SECOND

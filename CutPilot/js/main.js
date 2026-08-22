@@ -2942,6 +2942,16 @@
       if (_x < _x0) _x0 = _x; if (_x > _x1) _x1 = _x;
     }
     var _inFrame = (_x0 > 2 && _x1 < _sw - 3 && _y0 > 2 && _y1 < _sh - 3);
+    // Anamorphic sequences (HDV 1440x1080 at 1.333, DV at 1.2) display their
+    // pixels stretched. Captions are square-pixel PNGs sized to the frame, so
+    // they would come out wider than drawn. Pulse does not correct for this —
+    // say so rather than let the owner wonder why the text looks fat.
+    var _par = (state.env && state.env.pixelAspect) || 1;
+    if (_par && Math.abs(_par - 1) > 0.01) {
+      row('Sequence pixel shape', 'warn',
+        'non-square pixels (' + _par.toFixed(3) + ') — captions will look about ' +
+        Math.round((_par - 1) * 100) + '% wider than drawn. Use a square-pixel sequence for captions.');
+    }
     row('Caption renderer (Pulse)', (_ink > 400 && _inFrame) ? 'ok' : 'fail',
       !_ink ? 'nothing was drawn — your captions would come out blank'
         : (!_inFrame ? 'the caption touches the frame edge at ' + _sw + '×' + _sh

@@ -155,6 +155,7 @@ function makeWorld(opts) {
     get timebase() { return String(TICKS / fps); },   // ticks per frame (string, like Premiere)
     get frameSizeHorizontal() { return model.w; },
     get frameSizeVertical() { return model.h; },
+    getSettings() { return { videoPixelAspectRatio: (model.par == null ? 1 : model.par) }; },
     get videoTracks() { return domTracks(model.vTracks); },
     get audioTracks() { return domTracks(model.aTracks); },
     clone() { model.cloned++; },
@@ -973,6 +974,39 @@ console.log('host.jsx — fixing ONE caption must not disturb its neighbours');
   assert(names[5] === 'w_5.png' && names[7] === 'w_7.png',
     'the words either side survive a 0.15s-tight fix: ' + names[5] + ' / ' + names[7]);
   assert(names[6].indexOf('w_6_fixed') === 0, 'the middle word was the one replaced');
+}
+
+// ═══ CP_getEnv — 9 panel call sites, no test until now ═══
+console.log('host.jsx — CP_getEnv (every caption is sized from this)');
+{
+  const w = makeWorld({ vTracks: 2, aTracks: 1 });
+  w.model.w = 1080; w.model.h = 1920;
+  const host = loadHost(w);
+  const r = call(host, 'CP_getEnv', {});
+  assert(r.ok, 'CP_getEnv answers: ' + JSON.stringify(r).slice(0, 90));
+  assert(r.width === 1080 && r.height === 1920,
+    'a vertical sequence reports 1080x1920 (got ' + r.width + 'x' + r.height + ')');
+  assert(r.videoTracks === 2 && r.audioTracks === 1, 'track counts come back');
+  assert(typeof r.fps === 'number' && r.fps > 0, 'fps is a real number (got ' + r.fps + ')');
+  assert(r.pixelAspect === 1, 'a normal sequence reports square pixels');
+}
+{
+  // landscape must not be reported as vertical — the caption size, the legibility
+  // floor and the preview crop all branch on this
+  const w = makeWorld({ vTracks: 1, aTracks: 1 });
+  w.model.w = 1920; w.model.h = 1080;
+  const r = call(loadHost(w), 'CP_getEnv', {});
+  assert(r.width === 1920 && r.height === 1080, 'a landscape sequence reports 1920x1080');
+  assert(r.width > r.height, 'orientation is not flipped');
+}
+{
+  // anamorphic: square-pixel captions would display stretched. Pulse does not
+  // correct for it, so the number must at least reach the diagnostics.
+  const w = makeWorld({ vTracks: 1, aTracks: 1 });
+  w.model.w = 1440; w.model.h = 1080; w.model.par = 1.333;
+  const r = call(loadHost(w), 'CP_getEnv', {});
+  assert(Math.abs(r.pixelAspect - 1.333) < 0.001,
+    'an anamorphic sequence reports its pixel aspect (got ' + r.pixelAspect + ')');
 }
 
 // ═══ REMOVING CAPTIONS (the undo for a whole job) ═══
