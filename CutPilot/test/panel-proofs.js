@@ -102,9 +102,15 @@ function fluxProps() {
       const byI = {}; params.forEach(p => { byI[p.i] = p; });
       const b = m => fails.push(t.id + ': ' + m);
       if (!byI[I('text color')] || lc(byI[I('text color')].value) !== lc(cs.fill)) b('fill mismatch');
-      const wantHl = cs.keyword ? cs.highlight : cs.fill;
+      // carryableStyle().highlight IS the promise: it already resolves to the
+      // fill when nothing will paint with it. Deriving the expectation from
+      // cs.keyword instead re-implemented the rule here, and encoded the OLD
+      // one — that the colour is only used by the word SWEEP. It also paints an
+      // auto-detected keyword, which is exactly what a wordHl:false style like
+      // pro-boldpop exists to do.
+      const wantHl = cs.highlight;
       if (!byI[I('highlighted word color 1')] || lc(byI[I('highlighted word color 1')].value) !== lc(wantHl)) b('hl1 mismatch');
-      const wantHl2 = (cs.keyword && cs.highlight2) ? cs.highlight2 : wantHl;
+      const wantHl2 = cs.highlight2 ? cs.highlight2 : wantHl;
       if (!byI[I('highlighted word color 2')] || lc(byI[I('highlighted word color 2')].value) !== lc(wantHl2)) b('hl2 mismatch');
       if (!byI[I('text opacity')] || byI[I('text opacity')].value !== 100) b('text opacity not 100');
       if (cs.boxColor) {

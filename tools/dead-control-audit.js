@@ -64,6 +64,16 @@ function resolveBrowser(pptr) {
 
 /* The whole sweep, run inside the page. `only` limits it to a subset (used for
    the two-tier second pass). */
+async function setCapOut(page, kind) {
+  return page.evaluate(async (k) => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const b = document.querySelector('#cap-output button[data-out="' + k + '"]');
+    if (!b) return false;
+    b.click(); await sleep(600);
+    return true;
+  }, kind);
+}
+
 async function sweep(page, only) {
   return page.evaluate(async (onlyIds) => {
     const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -108,10 +118,15 @@ async function sweep(page, only) {
         const g = GATE[id];
         if (g) { const ge = el(g); if (ge) { if (ge.type === 'checkbox') { ge.checked = true; } else { ge.value = ge.max || '50'; } fire(ge); await sleep(120); } }
         await sleep(60);
-        // hidden BACKING inputs (a visible stepper or colour picker drives them)
-        // are reachable; a control with no box at all belongs to another pane.
-        const backing = e.type === 'hidden' || e.classList.contains('hidden');
-        if (e.offsetParent === null && !backing) continue;
+        // A hidden BACKING input (a visible stepper or colour picker drives it)
+        // is reachable only if the thing that drives it is on screen. Treating
+        // every hidden input as reachable made this report controls as DEAD in
+        // editable mode that are correctly HIDDEN there — c-stroke is already
+        // marked .png-only, and the engine cannot draw an outline at all.
+        const box = e.closest('label, .swatches, .ctrl-row, .cust-group') || e.parentElement;
+        const visible = (e.offsetParent !== null) ||
+                        (!!box && box !== e && box.offsetParent !== null);
+        if (!visible) continue;
         const before = snap();
         let how = '', changed = false;
         if (e.tagName === 'SELECT') {
@@ -181,6 +196,18 @@ async function sweep(page, only) {
     return t.id;
   });
   const second = twoTierPicked ? await sweep(page, TWO_TIER) : { bound: 0, results: [] };
+
+  // ---- the OTHER caption type ------------------------------------------------
+  // Everything above ran in the default Pulse-rendered mode. Editable (.mogrt)
+  // captions hide the controls that cannot carry into the template engine, but
+  // the ones still on screen must keep working — they had never been swept in
+  // that mode at all.
+  let editable = { bound: 0, results: [] }, editableRan = false;
+  if (await setCapOut(page, 'editable')) {
+    editableRan = true;
+    editable = await sweep(page);
+  }
+  await setCapOut(page, 'png');
   await browser.close();
 
   // merge: a control counts as LIVE if either pass saw it change
@@ -213,6 +240,16 @@ async function sweep(page, only) {
   const stillSkipped = skipped.filter(r => !CANNOT_SHOW[r.id]);
   for (const r of stillSkipped) bad('UNREACHABLE: ' + r.id + ' — ' + r.skip);
 
+  if (editableRan) {
+    const eTested = editable.results.filter(r => !r.skip);
+    const eDead = eTested.filter(r => r.changed === false && !CANNOT_SHOW[r.id]);
+    if (!eTested.length) bad('editable mode: no controls were exercised at all');
+    else if (eDead.length) eDead.slice(0, 6).forEach(r =>
+      bad('editable mode DEAD: ' + r.id + ' [' + r.how + '] changes nothing'));
+    else ok('editable (.mogrt) mode: ' + eTested.length + ' still-visible controls all change the preview');
+  } else {
+    bad('editable mode: could not switch caption type, so that half was never swept');
+  }
   if (pageErrors.length) bad('page errors: ' + pageErrors.slice(0, 3).join(' | '));
 
   console.log(failed ? 'DEAD-CONTROL AUDIT: failures above' : 'DEAD-CONTROL AUDIT: every control the panel binds does something ✓');

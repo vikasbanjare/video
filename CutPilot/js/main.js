@@ -7871,6 +7871,9 @@
     // classic yellow pop (shown in the preview too, so it stays WYSIWYG).
     var hl = p.highlight || null;
     if (hasHl && (!hl || String(hl).toLowerCase() === String(p.fill || '').toLowerCase())) hl = '#ffd400';
+    // the highlight colour is also the KEYWORD colour, so keep it whenever
+    // either will use it (mirrors mapPresetToFlux)
+    var usesHlColour = hasHl || !!p.keyword;
     return {
       id: p.id, name: p.name,
       // Per-style FONTS are real on the timeline again: the engine's live text
@@ -7882,10 +7885,10 @@
       weight: (p.weight || 800) >= 600 ? 800 : 500,   // the rich write only knows bold vs regular
       uppercase: !!p.uppercase,
       fill: p.fill || '#FFFFFF',
-      highlight: hasHl ? hl : (p.fill || '#FFFFFF'),
+      highlight: usesHlColour ? hl : (p.fill || '#FFFFFF'),
       // a TWO-TONE highlight is real on the timeline (the gradient backbone has
       // Highlighted Word Color 1 + 2) — keep it so those styles stay distinct
-      highlight2: hasHl ? (p.highlight2 || null) : null,
+      highlight2: usesHlColour ? (p.highlight2 || null) : null,
       keyword: hasHl,
       boxColor: p.boxColor || null,
       boxOpacity: (p.boxOpacity != null ? p.boxOpacity : 1),
@@ -8059,14 +8062,21 @@
     var fill = preset.fill || '#FFFFFF';
     color(textC, fill);
     var wantsHighlight = preset.wordHl !== false;
-    // same visible-colour guarantee as carryableStyle: never sweep invisibly
+    // The highlight colour paints the SWEPT word AND an auto-detected keyword.
+    // Keyword-emphasis styles set wordHl:false precisely so the keyword is the
+    // thing that stands out, so forcing the colour to the fill for all of them
+    // erased the emphasis those styles exist for (pro-boldpop's #FFE45C,
+    // pro-coolpop's #BFE3FF) and left the Highlight picker doing nothing.
+    var usesHlColour = wantsHighlight || !!preset.keyword;
     var hlHex = preset.highlight;
-    if (!hlHex || String(hlHex).toLowerCase() === String(fill).toLowerCase()) hlHex = '#ffd400';
-    if (!wantsHighlight) hlHex = fill;             // static style: the "highlight" paints like the text
+    // "never sweep invisibly" only applies to the SWEEP — a style that
+    // deliberately sets highlight == fill must not be given a yellow keyword.
+    if (wantsHighlight && (!hlHex || String(hlHex).toLowerCase() === String(fill).toLowerCase())) hlHex = '#ffd400';
+    if (!usesHlColour) hlHex = fill;               // nothing will use it: paint like the text
     color(hl1, hlHex);
     // second stop: a real two-tone gradient when the style has one, otherwise
     // the SAME colour (solid) — the engine always renders colour1→colour2.
-    color(P('highlighted word color 2'), (wantsHighlight && preset.highlight2) ? preset.highlight2 : hlHex);
+    color(P('highlighted word color 2'), (usesHlColour && preset.highlight2) ? preset.highlight2 : hlHex);
     // ✨ "As spoken": base text INVISIBLE (0) — each word only paints when the
     // highlight sweep reaches it, so text appears exactly when it's said.
     // Otherwise 100: never inherit a dimmed default.
