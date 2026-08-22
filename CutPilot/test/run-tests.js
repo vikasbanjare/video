@@ -1926,7 +1926,25 @@ try {
   }
 } catch (e) { if (e && e.status === 2) { console.log('(preview/render match skipped — no browser)'); pvMatchSkipped = true; } else pvMatchOk = false; }
 
-var allOk = !failed && auditOk && hostOk && simOk && proofsOk && thumbsOk && styleQualityOk && overlayOk && deadCtrlOk && pvMatchOk;
+// ------------------------------------------ PIPELINE CONTRACT ----
+// A caption reaches the timeline in two runtimes: renderFrames() (browser)
+// writes the files and returns items; CP_placeCaptionImages() (ExtendScript)
+// places them. Nothing checked the seam, and nearly every defect this session
+// was two halves disagreeing. Runs the REAL producer, feeds exactly what it
+// returns to the REAL consumer in the mini-Premiere harness.
+console.log('\nRunning pipeline contract check…');
+var contractOk = true, contractSkipped = false;
+try {
+  if (hasChromium) {
+    require('child_process').execSync('node "' + require('path').join(__dirname, '..', '..', 'tools', 'pipeline-contract-check.js') + '"',
+      { stdio: 'inherit' });
+  } else {
+    console.log('(pipeline contract check skipped — no headless Chromium here)');
+    contractSkipped = true;
+  }
+} catch (e) { if (e && e.status === 2) { console.log('(pipeline contract check skipped — no browser)'); contractSkipped = true; } else contractOk = false; }
+
+var allOk = !failed && auditOk && hostOk && simOk && proofsOk && thumbsOk && styleQualityOk && overlayOk && deadCtrlOk && pvMatchOk && contractOk;
 console.log('\n' + (allOk ? '════ ALL GATES GREEN ════' : '════ SOME GATES FAILED ════') +
   '  (js:' + (failed ? 'FAIL' : 'ok') + ' audit:' + (auditOk ? 'ok' : 'FAIL') +
   ' host:' + (hostOk ? 'ok' : 'FAIL') + ' sim:' + (simOk ? 'ok' : 'FAIL') +
@@ -1937,12 +1955,14 @@ console.log('\n' + (allOk ? '════ ALL GATES GREEN ════' : '═�
   ' style-quality:' + (styleQualityOk ? (styleQualitySkipped ? 'skip' : 'ok') : 'FAIL') +
   ' overlay:' + (overlayOk ? (overlaySkipped ? 'skip' : 'ok') : 'FAIL') +
   ' dead-controls:' + (deadCtrlOk ? (deadCtrlSkipped ? 'skip' : 'ok') : 'FAIL') +
-  ' preview-match:' + (pvMatchOk ? (pvMatchSkipped ? 'skip' : 'ok') : 'FAIL') + ')');
+  ' preview-match:' + (pvMatchOk ? (pvMatchSkipped ? 'skip' : 'ok') : 'FAIL') +
+  ' contract:' + (contractOk ? (contractSkipped ? 'skip' : 'ok') : 'FAIL') + ')');
 var _skips = [];
 if (styleQualitySkipped) _skips.push('style-quality');
 if (overlaySkipped) _skips.push('overlay');
 if (deadCtrlSkipped) _skips.push('dead-controls');
 if (pvMatchSkipped) _skips.push('preview-match');
+if (contractSkipped) _skips.push('contract');
 if (_skips.length) console.log('NOTE: ' + _skips.length + ' gate(s) SKIPPED on this machine (' +
   _skips.join(', ') + ') — they guarded nothing in this run.');
 process.exit(allOk ? 0 : 1);
