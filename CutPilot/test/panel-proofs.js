@@ -162,6 +162,87 @@ function fluxProps() {
   if (par.fails.length) par.fails.slice(0, 10).forEach(f => bad('parity: ' + f));
   else ok('parity: tile == editor preview for all ' + par.checked + '/' + par.total + ' styles');
 
+  // ---- B2. MOTION PARITY tile == editor preview -----------------------------
+  // Proof B compares the STATIC look (colours, face, box). It passed happily
+  // while the two surfaces played DIFFERENT ANIMATIONS and grouped words
+  // DIFFERENTLY — the tile used the style's entrance and its wordsPerCue, the
+  // editor used only `anim` and crammed every word into one cue. Same colours,
+  // different movement and different line breaks: exactly the "preview changes
+  // when I open it to customise" report. This proof compares the MOTION.
+  const mot = await page.evaluate(async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const grid = document.getElementById('tpl-grid');
+    const ids = new Set(((window.CPCaptions && window.CPCaptions.TEMPLATES) || []).map(t => t.id));
+    const canvases = Array.from(grid.querySelectorAll('.tpl-thumb-canvas')).filter(c => c._tpl && ids.has(c._tpl.id));
+    for (const c of canvases) { if (!c._animFrames) { c.scrollIntoView({ block: 'center' }); await sleep(25); } }
+    await sleep(600);
+    // word grouping signature: how buildCaptionFrames split the sample phrase
+    const groups = frames => {
+      if (!frames) return null;
+      const seen = []; let last = null;
+      for (const f of frames) {
+        const key = (f.words || []).join(' ');
+        if (key !== last) { seen.push(key); last = key; }
+      }
+      return seen.join(' | ');
+    };
+    const fails = []; let checked = 0;
+    for (const cvs of canvases) {
+      const t = cvs._tpl;
+      if (!cvs._animFrames) { fails.push(t.id + ': tile never painted'); continue; }
+      let el = cvs; while (el && el !== grid && !(el.classList && el.classList.contains('tpl-card'))) el = el.parentNode;
+      (el && el !== grid ? el : cvs).click();
+      await sleep(60);
+      const pv = document.getElementById('preview-canvas') || {};
+      if (!pv._pvFrames) { fails.push(t.id + ': no preview frames'); continue; }
+      checked++;
+      if (pv._pvAnimId !== cvs._animId) fails.push(t.id + ': anim ' + cvs._animId + ' vs ' + pv._pvAnimId);
+      if (pv._pvWpc !== cvs._animWpc) fails.push(t.id + ': wordsPerCue ' + cvs._animWpc + ' vs ' + pv._pvWpc);
+      const gt = groups(cvs._animFrames), gp = groups(pv._pvFrames);
+      if (gt !== gp) fails.push(t.id + ': grouping [' + gt + '] vs [' + gp + ']');
+    }
+    return { total: canvases.length, checked, fails };
+  });
+  if (mot.fails.length) mot.fails.slice(0, 10).forEach(f => bad('motion-parity: ' + f));
+  else ok('motion-parity: tile and editor play the SAME animation + grouping for all ' + mot.checked + '/' + mot.total + ' styles');
+
+  // ---- B3. WORDS-PER-LINE is live in the preview ----------------------------
+  // The editor used to force every word into a single cue, so dragging
+  // "Words per line" changed the OUTPUT but never the PREVIEW — the control
+  // read as dead. Assert the grouping the preview shows actually tracks it.
+  const wpc = await page.evaluate(async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const el = document.getElementById('c-words');
+    if (!el) return { skip: 'no c-words control' };
+    const groups = () => {
+      const f = (document.getElementById('preview-canvas') || {})._pvFrames;
+      if (!f) return null;
+      const seen = []; let last = null;
+      for (const fr of f) { const k = (fr.words || []).join(' '); if (k !== last) { seen.push(k); last = k; } }
+      return seen.join(' | ');
+    };
+    // B2 clicked 74 cards; each click schedules a deferred re-render that would
+    // clobber a value set too soon. Let the queue drain first, and report the
+    // control's own value so a future failure says WHICH half broke.
+    await sleep(500);
+    const read = async v => {
+      el.value = String(v);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      await sleep(250);
+      return { wpc: (document.getElementById('preview-canvas') || {})._pvWpc, g: groups(), el: el.value };
+    };
+    const one = await read(1), four = await read(4);
+    return { one, four };
+  });
+  if (wpc.skip) bad('words-per-line: ' + wpc.skip);
+  else if (wpc.one.wpc !== 1 || wpc.four.wpc !== 4)
+    bad('words-per-line: preview ignored the control (preview ' + wpc.one.wpc + '/' + wpc.four.wpc +
+        ', control ' + wpc.one.el + '/' + wpc.four.el + ')');
+  else if (wpc.one.g === wpc.four.g)
+    bad('words-per-line: preview grouping identical at 1 and 4 words [' + wpc.one.g + ']');
+  else ok('words-per-line: preview regroups live — 1/line [' + wpc.one.g + '] vs 4/line [' + wpc.four.g + ']');
+
   // ---- C. FONT + WEIGHT controls are live -----------------------------------
   const fw = await page.evaluate(async () => {
     const sleep = ms => new Promise(r => setTimeout(r, ms));

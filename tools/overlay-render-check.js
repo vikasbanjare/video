@@ -27,24 +27,7 @@ let failed = 0;
 const ok = m => console.log('  ✓ ' + m);
 const bad = m => { console.log('  ✗ ' + m); failed++; };
 
-function findFfmpeg() {
-  const cands = [];
-  try { cands.push(require('imageio_ffmpeg')); } catch (e) {}
-  try {
-    const py = cp.execSync('python3 -c "import imageio_ffmpeg;print(imageio_ffmpeg.get_ffmpeg_exe())" 2>/dev/null',
-      { encoding: 'utf8' }).trim();
-    if (py) cands.push(py);
-  } catch (e) {}
-  for (const c of ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/opt/homebrew/bin/ffmpeg']) cands.push(c);
-  for (const c of cands) {
-    if (!c || typeof c !== 'string' || !fs.existsSync(c)) continue;
-    try {
-      const out = cp.execSync(JSON.stringify(c) + ' -hide_banner -filters 2>&1', { encoding: 'utf8', maxBuffer: 1 << 24 });
-      if (/subtitles/.test(out)) return c;      // needs libass
-    } catch (e) {}
-  }
-  return null;
-}
+const { findFfmpeg } = require(__dirname + '/ffmpeg-find.js');
 
 /* Minimal PNG reader (no deps): returns {w,h,channels,pixels} with filters undone. */
 function readPng(file) {
@@ -102,7 +85,7 @@ function analyse(png) {
 
 (function main() {
   console.log('overlay render check (real ffmpeg + libass, frames decoded)');
-  const ff = findFfmpeg();
+  const ff = findFfmpeg({ libass: true });
   if (!ff) { console.log('  ? no ffmpeg with libass here — overlay render check skipped'); process.exit(2); }
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-ovcheck-'));

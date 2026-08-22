@@ -43,15 +43,7 @@ function findChromium() {
 // preview mp4s, so the browser video path is a no-op in CI — a blank .mp4 would
 // slip past a green gate (audit finding). Extract a mid-frame with ffmpeg (which
 // HAS the codecs) to a PNG, then measure that still like any other image.
-function findFfmpeg() {
-  if (process.env.CP_FFMPEG && fs.existsSync(process.env.CP_FFMPEG)) return process.env.CP_FFMPEG;
-  for (const c of ['/usr/bin/ffmpeg', '/opt/pw-browsers/ffmpeg-linux', '/usr/local/bin/ffmpeg']) {
-    try { if (fs.existsSync(c)) return c; } catch (e) {}
-  }
-  // last resort: rely on PATH
-  const probe = spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' });
-  return (probe.status === 0) ? 'ffmpeg' : null;
-}
+const { findFfmpeg } = require(__dirname + '/ffmpeg-find.js');
 
 function videoDuration(ffmpeg, video) {
   try {

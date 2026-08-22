@@ -3698,6 +3698,8 @@
       var pov = { fontSize: Math.round(191 * ratio), maxWidthPct: 0.86, maxLines: 2,
                   vCenter: true };
       canvas._animFrames = frames;
+      canvas._animId = animId;                    // exposed for the motion-parity proof
+      canvas._animWpc = (t.wordsPerCue || 4);
       canvas._animStyle = CPRender.styleForFrame(t, canvas.height, pov);
       canvas._animLen = frames.length;
       drawCardTickFrame(canvas, _cardTick);
@@ -4676,7 +4678,10 @@
   /* Single source of truth for words-per-caption; keeps the hidden input,
      the slider, its label, and the quick buttons all in sync. */
   function setWordCount(w) {
-    w = isNaN(w) ? 1 : Math.max(0, Math.min(10, w));
+    // Missing value -> 4, the SAME fallback the gallery tile and carryableStyle
+    // use. It defaulted to 1 here, so a custom template saved before this field
+    // existed showed 1 word/line in the editor and 4 in its own tile.
+    w = (w == null || isNaN(w)) ? 4 : Math.max(0, Math.min(10, w));
     $('c-words').value = w;
     refreshWordMirrors();
   }
@@ -5106,7 +5111,13 @@
       brandColor: cchk('c-brandon') ? $('c-brand').value : null,
       brandWords: cchk('c-brandon') ? ($('c-brand-words').value || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean) : null,
       textCase: ($('c-case') ? $('c-case').value : 'original'),
-      censor: cchk('c-censor')
+      censor: cchk('c-censor'),
+      // Words-per-line and Entrance are read by the APPLY path but were never
+      // part of readOverrides, so styledPreset() (and therefore the preview)
+      // kept showing the template's originals no matter what the user set.
+      // 0 = "auto", which must stay distinguishable from "unset".
+      wordsPerCue: (function () { var w = parseInt($('c-words').value, 10); return isFinite(w) ? w : null; })(),
+      entrance: state.captionEntrance || null
     };
   }
   function readAlign() {
@@ -5328,17 +5339,28 @@
     var sample = tileSampleText(styled);
     if (carry.uppercase) sample = sample.toUpperCase();
     var sw = sample.split(' ');
-    var DUR = 0.42;                                   // seconds per word (preview pacing)
+    // MOTION PARITY with the gallery tile. These three inputs used to differ
+    // (tile: entrance-or-anim + the style's wordsPerCue; editor: anim only +
+    // every word in one cue), which is why a card could move one way in the
+    // gallery and another way once opened — and why the Words-per-line control
+    // looked dead in the editor preview. Both surfaces now derive motion the
+    // same way, and proof B2 fails the build if they ever drift apart again.
+    var pvAnimId = CPCaptions.animIdForConcept(
+      (carry.entrance && carry.entrance !== 'none') ? carry.entrance : carry.anim);
+    var pvWpc = (styled.wordsPerCue || 4);
+    canvas._pvAnimId = pvAnimId; canvas._pvWpc = pvWpc;
+    var DUR = 0.35;                                   // seconds per word — same pacing as the tile
     var wordCues = sw.map(function (w, i) { return { start: i * DUR, end: (i + 1) * DUR, text: w }; });
     var frames;
     try {
       frames = CPCaptions.buildCaptionFrames([{ start: 0, end: sw.length * DUR, text: sample }], {
-        anim: CPCaptions.animIdForConcept(carry.anim), wordsPerCue: sw.length, uppercase: carry.uppercase,
+        anim: pvAnimId, wordsPerCue: pvWpc, uppercase: carry.uppercase,
         keyword: { on: false }, speaker: { on: false },   // the sweep (active word) IS the highlight, like the backbone
         wordCues: wordCues, window: 0
       });
     } catch (eF) { frames = null; }
     if (!frames || !frames.length) frames = [{ words: sw }];
+    canvas._pvFrames = frames;                      // exposed for the motion-parity proof
 
     // tiny 9:16 frame gauge (top-right): the marker = the Position slider's
     // real spot, so geometry stays visible without wasting the whole preview
@@ -6829,7 +6851,10 @@
       var frames;
       try {
         frames = CPCaptions.buildCaptionFrames([{ start: 0, end: sw2.length * DUR2, text: sample }], {
-          anim: CPCaptions.animIdForConcept(carry.anim), wordsPerCue: sw2.length, uppercase: carry.uppercase,
+          // entrance-or-anim, same rule as the gallery tile and the editor preview
+          anim: CPCaptions.animIdForConcept(
+            (carry.entrance && carry.entrance !== 'none') ? carry.entrance : carry.anim),
+          wordsPerCue: sw2.length, uppercase: carry.uppercase,
           keyword: { on: false }, speaker: { on: false }, wordCues: wc2, window: 0
         });
       } catch (eF2) { frames = null; }
@@ -7480,6 +7505,14 @@
     // vertical position (the Position slider / Top-Center-Bottom / Safe-zone
     // presets) — drives the engine's real Text Position control
     if (ov.yPct != null && isFinite(ov.yPct)) eff.yPct = ov.yPct;
+    // Words-per-line and Entrance were READ from the UI but never copied here,
+    // so both controls moved the OUTPUT while the preview kept showing the
+    // template's original values — the same hole the Size slider and the
+    // gradient 2nd stop had. state.captionEntrance is always a RESOLVED
+    // entrance (a template loads via entranceForPreset), so carrying it can
+    // never blank a style's derived motion.
+    if (ov.wordsPerCue != null && isFinite(ov.wordsPerCue)) eff.wordsPerCue = ov.wordsPerCue;
+    if (ov.entrance) eff.entrance = ov.entrance;
     return eff;
   }
 
@@ -10281,6 +10314,8 @@
       asrLang: function () { return settings.whisperLang || 'auto'; },   // must NEVER default to 'en' again (garbled Hindi)
       psFontName: CPCaptions.psFontName,
       editorFont: function () { return resolvedEditorFont(styledPreset()); },   // the exact face Apply/preview will send
+      readOverrides: function () { try { return readOverrides(); } catch (e) { return { _threw: String(e && e.message) }; } },
+      styledPreset: function () { try { return styledPreset(); } catch (e) { return { _threw: String(e && e.message) }; } },
       customCount: function () { return (state.customTemplates || []).length; },
       capOut: function () { return _capOut; },
       reflowWordTiming: reflowWordTimingFromLines,
