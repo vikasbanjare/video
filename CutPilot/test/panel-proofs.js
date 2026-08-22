@@ -925,6 +925,15 @@ function fluxProps() {
         // on the overlay path, so the slider did nothing on long videos
         const wantPop = Math.max(100, Math.round((st.highlightScale || 1) * 100));
         if (a.popScale !== wantPop) fails.push(t.id + ' @' + F.n + ': pop ' + a.popScale + ' vs ' + wantPop);
+        // POSITION: the overlay is bottom/middle/top-anchored by margin, the
+        // canvas positions by yPct. They must describe the same spot, or a
+        // long video puts captions somewhere the preview never showed.
+        const wantMargin = Math.max(Math.round(F.h * 0.04), Math.round((1 - st.yPct) * F.h));
+        if (a.marginV !== wantMargin)
+          fails.push(t.id + ' @' + F.n + ': marginV ' + a.marginV + ' vs ' + wantMargin + ' for yPct ' + st.yPct);
+        const wantAlign = (st.yPct < 0.4) ? 8 : (st.yPct < 0.66 ? 5 : 2);
+        if (a.align !== wantAlign)
+          fails.push(t.id + ' @' + F.n + ': align ' + a.align + ' vs ' + wantAlign + ' for yPct ' + st.yPct);
       }
     }
     return { checked, fails };

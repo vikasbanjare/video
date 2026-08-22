@@ -92,7 +92,12 @@ function analyse(png) {
   const assPath = path.join(dir, 'cap.ass');
   const movPath = path.join(dir, 'captions.mov');
   const W = 540, H = 960, DUR = 3.2;
-  const wantBandTop = 0.6, wantBandBottom = 0.9;          // bottom-positioned captions
+  // The caption is asked for at this height; libass positions from the bottom
+  // margin, so the measured CENTRE lands a little above it. Measured drift on
+  // the real chain is under 2 points (74.2% for a requested 76%), and the canvas
+  // renderer sits within ~1 point of the same spot — so 4 points is a real
+  // guard against a placement regression without chasing sub-pixel noise.
+  const wantYPct = 0.76, posTol = 0.04;
 
   const cues = [
     { start: 0.0, end: 0.6, text: 'money' }, { start: 0.6, end: 1.2, text: 'grows' },
@@ -102,7 +107,7 @@ function analyse(png) {
   fs.writeFileSync(assPath, CPAss.buildAss(cues, {
     width: W, height: H, font: 'DejaVu Sans', fontSize: Math.round(H * 0.06),
     fill: '#FFFFFF', highlight: '#FFD400', outlineColor: '#000000', outline: 4,
-    align: 2, marginV: Math.round(H * 0.18), bold: true
+    align: 2, marginV: Math.max(Math.round(H * 0.04), Math.round((1 - wantYPct) * H)), bold: true
   }), 'utf8');
 
   const args = CPAss.ffmpegOverlayArgs(assPath, W, H, DUR, movPath, null, 30);
@@ -130,14 +135,15 @@ function analyse(png) {
     if (s.opaque < 300) bad('frame ' + i + ' has almost no caption pixels (' + s.opaque + ')');
     if (s.bright < 100) bad('frame ' + i + ' text is too dim to read (' + s.bright + ' bright px)');
     const cy = ((s.minY + s.maxY) / 2) / s.h;
-    if (!(cy > wantBandTop && cy < wantBandBottom))
-      bad('frame ' + i + ' caption sits at ' + Math.round(cy * 100) + '% — outside the requested bottom band');
+    if (Math.abs(cy - wantYPct) > posTol)
+      bad('frame ' + i + ' caption sits at ' + (cy * 100).toFixed(1) + '% but was asked for ' +
+          (wantYPct * 100).toFixed(0) + '% (drift ' + ((cy - wantYPct) * 100).toFixed(1) + ' points)');
     if (s.minX < 4 || s.maxX > s.w - 4) bad('frame ' + i + ' caption touches the frame edge');
   });
   if (!failed) {
     const s0 = stats[0];
-    ok('overlay frames are transparent (' + Math.round(s0.coverage * 1000) / 10 + '% ink) with readable text in the requested band (' +
-       Math.round(((s0.minY + s0.maxY) / 2) / s0.h * 100) + '% height)');
+    ok('overlay frames are transparent (' + Math.round(s0.coverage * 1000) / 10 + '% ink), readable, and land at ' +
+       (((s0.minY + s0.maxY) / 2) / s0.h * 100).toFixed(1) + '% for a requested ' + (wantYPct * 100).toFixed(0) + '%');
   }
   if (stats[0].opaque !== stats[1].opaque) ok('the word-by-word animation is alive (two moments differ)');
   else bad('two different moments render identically — the overlay is not animating');
