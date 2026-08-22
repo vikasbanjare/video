@@ -1,7 +1,7 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.9.372** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.9.373** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
@@ -24,28 +24,75 @@ Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels
 - Script alignment feature (`📄 Fix the words with MY script`) — 7 unit tests.
 - Hostile-input sweep: 17 malformed inputs, 0 crashes, 0 page errors.
 
-### v0.9.350 → v0.9.372 (this session) — preview/render fidelity
-- **The preview was structurally not WYSIWYG.** The render is handed the full
-  `{preset, overrides}`; the preview was handed `carryableStyle()`, which narrows a
-  style to what the mogrt ENGINE can express (~20 fields). ~30 controls that really do
-  change the exported PNGs had no path into the preview. New `renderableStyle()` +
-  passing the real overrides fixed it. (`main.js`, search `renderableStyle`.)
-- **~40 controls were invisible.** `.png-only { display:none !important }` was added at
-  v0.9.299 when EDITABLE was the default caption type; the default became Pulse-rendered
-  PNG later and this was never revisited. Now scoped to `body.cap-editable`.
-- Frame animation followed the ENTRANCE; the pipeline uses `currentAnim()` and Premiere
-  applies the entrance as clip motion. Both preview surfaces now use the pipeline's rule.
-- Reveal mode was sticky across template clicks (same style looked different depending on
-  what you clicked before). Deterministic unless the user picks a mode.
-- The band `pov` forced `maxLines:2` / `maxWidthPct:0.86` over the style's own values.
-- Preview pinned keyword/speaker/emoji/case/censor/strip-punct OFF; now mirrors the pipeline.
-- Manual transcript edits no longer discard word timing (reflow instead).
-- New gates: `tools/overlay-render-check.js` (really runs ffmpeg+libass and decodes the
-  frames), `tools/dead-control-audit.js` (every bound control must change the preview;
-  fails if fewer than 45 are exercised), `tools/ffmpeg-find.js` (one shared finder — the
-  two gates disagreed and thumb-scan silently skipped all 14 animated previews).
-- Proofs added: B2 motion-parity, B3 words-per-line live, Q mode-scoped controls + narrow
-  panel layout. B2/B3 were mutation-tested (reverting the fix turns them red).
+### v0.9.350 → v0.9.373 (this session)
+
+**The preview could not have matched the render — it was structural.** The export
+path is handed the full `{preset, overrides}`; the preview was handed
+`carryableStyle()`, which narrows a style to what the mogrt ENGINE can express
+(~20 fields, weight clamped to bold-or-regular). ~30 controls that really do
+change the exported PNGs had no path into the preview at all. New
+`renderableStyle()` + passing the real overrides fixed it. Search `renderableStyle`
+and `previewBasis` in main.js.
+
+**~40 controls were invisible in the mode they work in.**
+`.png-only { display:none !important }` was added at v0.9.299 when EDITABLE was the
+default caption type; the default became Pulse-rendered PNG later and this was never
+revisited. Now scoped to `body.cap-editable`, which `setCapOut()` maintains.
+
+Other real defects fixed:
+- Frame animation followed the ENTRANCE; the pipeline uses `currentAnim()` and
+  Premiere applies the entrance as CLIP motion, so the preview showed motion the
+  frames never contain and hid the word sweep. Both surfaces use the pipeline's rule.
+- Reveal mode was sticky across template clicks (a style looked different depending
+  on what you clicked before it). Deterministic unless the user picks a mode.
+- The band `pov` forced `maxLines:2` / `maxWidthPct:0.86` over each style's own values.
+- The preview pinned keyword / speaker / emoji / case / censor / strip-punct OFF.
+- Manual transcript edits discarded word timing (now reflows, like the AI-fix path).
+- **Landscape captions all rendered at ONE size** — the legibility floor was 5% of the
+  frame WIDTH, which at 1920x1080 exceeded every style's own size, so all 74 came out
+  identical at 96px. Now 5% of the SHORT side; vertical/square output is byte-identical.
+- The preview is now a TRUE CROP of the sequence (canvas width maps to frame width at
+  the real aspect), so captions wrap into the same lines and a landscape sequence
+  previews as landscape.
+- **The long-video overlay (libass) disagreed with the canvas renderer** on four
+  counts: it dropped the caption BOX entirely (every boxed style became bare outlined
+  text on the path podcasts take), sized captions 25% larger on vertical video (no
+  portrait boost), pinned the spoken-word pop at 116%, and read a DIFFERENT reveal
+  control than the per-image path. All four now derive from `CPRender.styleForFrame`
+  and `currentAnim()` — one resolved style, two rasterizers.
+- Devanagari safety net appended to every font chain (Kohinoor/Devanagari MT/Nirmala
+  UI/Mangal/Noto), so a serif chain cannot leave Hindi with no font to draw with.
+- The auto-overlay decision probes `ffmpegHasLibass()` before routing, so a minimal
+  ffmpeg no longer costs a failed render before falling back.
+
+New gates (all wired into `run-tests.js`):
+- `tools/preview-render-match.js` — renders the SAME frame at true output size through
+  the export path's own call and compares PIXELS (dominant colour, exact line count,
+  caption width as a share of the frame) across BOTH orientations.
+- `tools/dead-control-audit.js` — every control the panel binds must change the
+  preview. 63/64 exercised; FAILS if fewer than 45 are, because a harness that stops
+  exercising things is the failure mode that hid the whole bug class.
+- `tools/overlay-render-check.js` — really runs ffmpeg+libass and decodes frames:
+  transparency, band position, animation alive, the BOX renders (by fill-ratio, not
+  colour — a thick outline paints the same colour), and Hindi renders.
+- `tools/ffmpeg-find.js` — one shared finder. The two gates disagreed and thumb-scan
+  silently skipped all 14 animated previews.
+
+Proofs added: B2 motion-parity, B3 words-per-line live, Q mode-scoped controls +
+narrow-panel layout, R caption-type truth, S reveal sync, T renderer agreement,
+U self-test coverage, V Hindi glyphs, W transcript editor at 1500 lines, X adversarial
+text (16 inputs). 33 total.
+
+**Testing lessons that cost real time — do not repeat them:**
+- Three gates I wrote here initially COULD NOT FAIL. Mutation-test every new gate:
+  break the fix on purpose and confirm the gate goes red, with real numbers.
+- A skipped gate is not a passing gate. The battery used to print `overlay:ok` while
+  skipping; it now prints `overlay:skip` plus a NOTE. CI had been skipping the overlay
+  check, the 14 animated previews AND Hindi for the project's entire history.
+- My Hindi check compared भारत vs कमलम — different cluster counts after shaping, so
+  tofu boxes produce different ink and the test passed on a machine with NO Hindi font.
+  Use कमल vs नमन (three spacing consonants each). A control render distinguishes
+  "this machine cannot draw the script" (skip) from "this style is broken" (fail).
 
 ### BUILD — read before producing an installer
 - `export CP_WHITELABEL=1 CP_GROQ_KEY="$(cat $SCRATCH/gk)" CP_SARVAM_KEY="$(cat $SCRATCH/sk)"; unset CP_TRIAL_DAYS CP_EXPIRY_DAYS; node tools/make-final.js`
@@ -60,23 +107,24 @@ Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels
   preview/render match. A build that behaves differently from the source
   fails and does not package. `CP_SKIP_BUILD_PROOFS=1` skips them while
   iterating on packaging only.
-- Verified at v0.9.372: the built panel passes all 30 proofs.
+- Verified at v0.9.373: the built panel passes all 30 proofs.
 
-### DONE-BUT-UNVERIFIED (no confirmation from the owner's machine since these landed)
-- Everything from v0.9.340 → v0.9.347 has NOT been installed/tested by the owner.
-  Installers were built at v0.9.347 but only v0.9.339 and earlier were ever sent to them.
-- The `🎬 As spoken` reveal, `✨ Auto` words-per-caption default, `🧹 Remove all Pulse
-  captions`, `📄 script fix`, `🎬 From My Videos` tab: implemented + tested locally,
-  never confirmed working in the owner's Premiere.
-- The auto-overlay path for long videos: host tests pass, but ffmpeg+libass rendering has
-  never been exercised on the owner's Mac in this configuration.
+### DONE-BUT-UNVERIFIED (no confirmation from the owner's machine)
+- **Nothing after v0.9.339 has ever run on the owner's Mac.** Everything above is
+  verified by automated gates here and in CI only. This is the single biggest open
+  risk and the reason the self-test was rewritten (below).
+- The self-test now reports the paths captions ACTUALLY take, measured on their
+  machine at their sequence size with their fonts: `Caption renderer (Pulse)`,
+  `Preview matches the render`, `Hindi captions (Devanagari)`, and
+  `Long videos → ONE caption clip`. One paste of 📋 Copy diagnostics should now
+  say what is wrong. It also runs the machine-side checks OUTSIDE Premiere.
+- ffmpeg install path verified live (all three URLs serve real binaries, and the
+  build is `--enable-libass --enable-fontconfig`), but not on their Mac.
 
 ### IN PROGRESS (exact task when this session ended)
-- A `/loop` was running: audit → fix → test → commit, one theme per iteration, builds
-  withheld at owner's request. Iterations 1–9 complete.
-- Iterations 10-11 DONE: settings persistence (caption type + entrance survive a restart,
-  proof P) and the transcript-editor round trip (edit re-renders the SAME caption kind;
-  4 new tests). Iteration 12 NOT started.
+- A `/loop`: audit → fix → test → commit, one theme per iteration, builds withheld
+  at the owner's request. ~23 iterations complete through v0.9.373.
+- No iteration is half-finished; the tree is clean and CI is green.
 
 ## Files
 
@@ -110,19 +158,29 @@ Absolute paths. Only files touched in this session are listed.
 - `/home/user/video/CutPilot/mogrts/index.json` — maps files → display names/categories.
 
 ### Tests / tools
-- `/home/user/video/CutPilot/test/run-tests.js` — battery entry point + all JS unit tests.
-  Exit code is the gate. Runs the sub-suites below.
-- `/home/user/video/CutPilot/test/host-tests.js` — 199 tests against a mini-Premiere VM
-  harness (`makeWorld`). Models tracks, clips, QE, project bins, `overwriteClip`.
-- `/home/user/video/CutPilot/test/panel-proofs.js` — 15 proofs; boots the REAL panel in
-  headless Chromium (proofs A–O).
-- `/home/user/video/tools/style-quality-audit.js` — NEW this session. Renders all 74 styles
-  at 1080×1920 and measures them like a viewer. Also checks dead animations and unbreakable
-  text. Wired into the battery as `style-quality`.
-- `/home/user/video/tools/sim-preview-check.js`, `/home/user/video/tools/thumb-scan.js` —
-  pre-existing gates, still run.
-- `/home/user/video/tools/make-final.js` — build script → `Pulse-Mac.zip` +
-  `Install Pulse (Windows).hta` + `CutPilot-protected/`.
+- `CutPilot/test/run-tests.js` — battery entry point + all JS unit tests. Exit code is
+  the gate; it runs everything below. A SKIPPED gate now prints `skip`, not `ok`, plus a
+  closing NOTE naming what guarded nothing.
+- `CutPilot/test/host-tests.js` — 199 tests against a mini-Premiere VM harness
+  (`makeWorld`). Models tracks, clips, QE, project bins, `overwriteClip`.
+- `CutPilot/test/panel-proofs.js` — 33 proofs (A–X); boots the REAL panel in headless
+  Chromium. Honours `CP_PANEL_DIR` so it can run against the BUILT panel.
+- `tools/style-quality-audit.js` — renders all 74 styles at true output size in BOTH
+  orientations (148 combinations) and measures them like a viewer; also checks dead
+  animations and unbreakable text.
+- `tools/preview-render-match.js` — preview vs a true-size render, compared as PIXELS
+  across both orientations. `CP_PANEL_DIR`-aware.
+- `tools/dead-control-audit.js` — every bound control must change the preview.
+  `CP_PANEL_DIR`-aware.
+- `tools/overlay-render-check.js` — real ffmpeg+libass render, frames decoded.
+- `tools/ffmpeg-find.js` — the ONE ffmpeg finder. `CP_NO_FFMPEG=1` simulates a machine
+  without ffmpeg (exercises graceful degradation and the battery's skip reporting).
+- `tools/sim-preview-check.js`, `tools/thumb-scan.js` — pre-existing gates, still run.
+- `tools/make-final.js` — build → `Pulse-Mac.zip` + `Install Pulse (Windows).hta` +
+  `CutPilot-protected/`. Runs the panel gates against the OBFUSCATED output before
+  packaging; `CP_SKIP_BUILD_PROOFS=1` skips that while iterating on packaging.
+- `.github/workflows/qa.yml` — installs `fonts-indic` + `ffmpeg` so the Hindi and
+  overlay gates actually RUN there instead of skipping.
 
 ### DO NOT TOUCH
 - The `.aep` payload inside any `.mogrt`. Two attempts to "repair" it made things worse
@@ -224,13 +282,16 @@ Absolute paths. Only files touched in this session are listed.
 
 ## Next 3 actions
 
-1. **Get v0.9.372 confirmed on the owner's machine** — nothing after v0.9.339 has been
-   validated outside this repo. Have them run `🧹 Remove all Pulse captions` in a FRESH
-   sequence, then `✨ Add captions`, then paste `📋 Copy diagnostics`.
-2. **Overlay render has never run on their Mac** — `/home/user/video/CutPilot/js/main.js`
-   (`runLibassCaptions`). Long videos now route there automatically; ffmpeg+libass with the
-   bundled font dir is unexercised on macOS. Worth a deliberate long-video test.
-3. **Word timing is discarded on any transcript edit** — `/home/user/video/CutPilot/js/main.js`
-   (`saveTranscriptEditor` sets `state.transcriptWords = null`). After fixing one word the
-   whole caption falls back to envelope-estimated sync. Re-align the unchanged words instead
-   (`CPScript.matchPairs` already does exactly this kind of mapping).
+1. **Get a build onto the owner's Mac and read the self-test.** Nothing after v0.9.339
+   has ever run there. Blocked on two things: the owner asked for no builds while the
+   loop runs, and the bundled API keys were wiped by a container restart (see BUILD).
+   When it happens: fresh sequence → `🧹 Remove all Pulse captions` → `✨ Add captions`
+   → paste `📋 Copy diagnostics`. The four new self-test rows should localise almost
+   anything that is wrong in one paste.
+2. **Exercise a LONG video on their Mac.** The one-clip overlay is what a 60-minute
+   podcast takes, and it has never run on macOS. It is now fully checked here (box,
+   size, position, pop, Hindi, transparency) and in CI, but macOS font resolution
+   through libass/fontconfig is the one part no gate here can reach.
+3. **Pick up the loop.** No iteration is half-finished. Good next themes: the editable
+   (.mogrt) path has had far less scrutiny than the Pulse renderer this session; and
+   `assOptsFromStyle` still hardcodes `anim:'pop'` rather than following the style.
