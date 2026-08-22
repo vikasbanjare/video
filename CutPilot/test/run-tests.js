@@ -1258,6 +1258,22 @@ console.log('ass.js (libass karaoke generator)');
   // timing of the first word
   assert(/Dialogue: 0,0:00:00.00,0:00:00.30,Pulse/.test(ass), 'first word Dialogue spans its own time');
   // ALL CAPS option
+  // the spoken-word pop must follow the "Spoken-word size" control, not a
+  // constant — it was pinned at 116% on the overlay path, so long videos
+  // ignored the slider entirely
+  const pop150 = CPAss.buildAss(cues, { popScale: 150 });
+  assert(pop150.indexOf('\\fscx150') >= 0, 'buildAss pops the active word by the requested scale');
+  const popDefault = CPAss.buildAss(cues, {});
+  assert(popDefault.indexOf('\\fscx116') >= 0, 'buildAss keeps its 116% pop when no scale is given');
+  // a boxed style must use ASS BorderStyle 3 (box), not 1 (outline)
+  const boxed = CPAss.buildAss(cues, { boxColor: '#1133CC', boxOpacity: 1 });
+  assert(/,0,3,/.test(boxed), 'buildAss switches to BorderStyle 3 so the caption box really renders');
+  assert(boxed.indexOf('&H00CC3311&') >= 0, 'buildAss writes the box colour as opaque ASS BGR with inverted alpha');
+  const boxedHalf = CPAss.buildAss(cues, { boxColor: '#1133CC', boxOpacity: 0.5 });
+  assert(/&H8[0-9A-F]CC3311&/.test(boxedHalf), 'buildAss maps box opacity onto the inverted ASS alpha byte');
+  const noBox = CPAss.buildAss(cues, {});
+  assert(/,0,1,/.test(noBox), 'buildAss stays on BorderStyle 1 (outline) when the style has no box');
+
   const caps = CPAss.buildAss(cues, { allCaps: true });
   assert(/WHAT/.test(caps) && !/What/.test(caps), 'allCaps uppercases the caption text');
   // reveal mode: words appear one at a time (first Dialogue shows ONLY the first word)

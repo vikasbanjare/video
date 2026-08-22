@@ -921,6 +921,10 @@ function fluxProps() {
         if (!!a.boxColor !== !!st.boxColor) fails.push(t.id + ' @' + F.n + ': box ' + a.boxColor + ' vs ' + st.boxColor);
         if (String(a.fill).toLowerCase() !== String(st.fill).toLowerCase())
           fails.push(t.id + ' @' + F.n + ': fill ' + a.fill + ' vs ' + st.fill);
+        // the spoken-word pop is a real control; it used to be pinned at 116%
+        // on the overlay path, so the slider did nothing on long videos
+        const wantPop = Math.max(100, Math.round((st.highlightScale || 1) * 100));
+        if (a.popScale !== wantPop) fails.push(t.id + ' @' + F.n + ': pop ' + a.popScale + ' vs ' + wantPop);
       }
     }
     return { checked, fails };

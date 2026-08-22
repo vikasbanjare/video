@@ -6217,6 +6217,12 @@
       align: align, marginV: marginV,
       marginLR: Math.round(W * 0.06),
       anim: 'pop',
+      // "Spoken-word size" is a real control and the canvas path scales the
+      // active word by it. The overlay ignored it and always popped to 116%,
+      // so on long videos that slider did nothing.
+      popScale: Math.max(100, Math.round(((st && st.highlightScale) || 1) * 100)),
+      // a drop shadow the ASS style CAN express (offset, not a soft glow)
+      shadow: Math.max(0, Math.round(Math.abs((st && st.shadowDY) || 0))),
       mode: captionRevealMode()          // 'highlight' | 'reveal'
     };
   }
