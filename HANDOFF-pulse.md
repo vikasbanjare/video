@@ -1,7 +1,7 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.9.386** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.9.387** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
@@ -24,7 +24,7 @@ Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels
 - Script alignment feature (`📄 Fix the words with MY script`) — 7 unit tests.
 - Hostile-input sweep: 17 malformed inputs, 0 crashes, 0 page errors.
 
-### v0.9.350 → v0.9.386 (this session)
+### v0.9.350 → v0.9.387 (this session)
 
 **The preview could not have matched the render — it was structural.** The export
 path is handed the full `{preset, overrides}`; the preview was handed
@@ -94,6 +94,42 @@ text (16 inputs). 33 total.
   Use कमल vs नमन (three spacing consonants each). A control render distinguishes
   "this machine cannot draw the script" (skip) from "this style is broken" (fail).
 
+**v0.9.373 → v0.9.387 — the two-halves theme, and coverage holes**
+
+Nearly every defect found after v0.9.372 was the SAME shape: two code paths
+answering the same question separately. Worth checking first whenever something
+"works sometimes":
+- The long-video overlay disagreed with the canvas renderer on FIVE counts — it
+  dropped the caption BOX, sized captions 25% larger on vertical video, pinned
+  the spoken-word pop at 116%, read a DIFFERENT reveal control, and kept
+  sweeping when word-by-word was turned OFF. All five now derive from
+  `styleForFrame` / `currentAnim()`. Proof T fails if they diverge again.
+- `CP_removePulseCaptionTracks` could not remove its own long-video overlay: the
+  clip was named `captions.mov` and the pattern matched none of it. New jobs
+  render to `pulse-captions.mov`; the cleanup also matches an anchored legacy
+  name. Five host tests, mutation-tested.
+- `escFilterPath` escaped only ':'. Measured against real ffmpeg, folder names
+  "Reels, Final", "take [1]", "semi;colon" and "a=b" all failed. ffmpeg parses at
+  TWO levels — the filtergraph splits on , and ; the filter parser splits on '='
+  — so quoting alone is not enough; the option must be named
+  (`subtitles=filename=…`). An apostrophe cannot be escaped at all (five
+  strategies tried), so Pulse writes to a clean directory instead.
+- Script-fix reported "0 words corrected" after correcting four, because it
+  counted matched-but-DIFFERENT pairs and the matcher only pairs EQUAL words.
+  A silent success that reports failure is indistinguishable from a failure.
+- Gallery tiles sat on half-built phrases ("Make", "HEAT"). Only complete-phrase
+  frames are DISPLAYED now; the frame list is unchanged so parity holds.
+
+**Coverage sweep — run this again; it pays.** "Which shipped functions does no
+test ever call?" found `renderFrames` (the function that writes every caption
+file — no coverage at all), `escFilterPath` (broken), `CP_removePulseCaptionTracks`
+(broken), and cleared `srtTimeToSeconds`/`secondsToSrtTime` and
+`framesKeywordBuild`. `CP_getEnv` had nine call sites and no test.
+
+**New gates:** `pipeline-contract-check.js` (the panel↔Premiere seam: real
+producer output fed to the real consumer, no fixture between them) and
+`mutation-check.js` (below).
+
 ### BUILD — read before producing an installer
 - `export CP_WHITELABEL=1 CP_GROQ_KEY="$(cat $SCRATCH/gk)" CP_SARVAM_KEY="$(cat $SCRATCH/sk)"; unset CP_TRIAL_DAYS CP_EXPIRY_DAYS; node tools/make-final.js`
 - **The scratchpad keys are GONE** — a container restart wiped
@@ -107,7 +143,7 @@ text (16 inputs). 33 total.
   preview/render match. A build that behaves differently from the source
   fails and does not package. `CP_SKIP_BUILD_PROOFS=1` skips them while
   iterating on packaging only.
-- Verified at v0.9.386: the built panel passes all 30 proofs.
+- Verified at v0.9.387: the built panel passes all 30 proofs.
 
 ### WHAT THE VISUAL GATES CANNOT SEE (read before trusting a green run)
 - **The typefaces are not the owner's.** Many styles specify macOS fonts —
@@ -122,7 +158,7 @@ text (16 inputs). 33 total.
 - Same shape as the Hindi problem: a gate can only judge what the machine can
   draw. When a check cannot be made here, it must SKIP loudly (see the battery's
   `skip` reporting), never pass quietly.
-- Verified faithful at v0.9.386: the two styles learned from the owner's own
+- Verified faithful at v0.9.387: the two styles learned from the owner's own
   videos are present, in 🎬 From My Videos, and render as described —
   `pack-orange-word-pop` (white on a tight black bar, spoken word in an orange
   pill) and `pack-script-glow` (white script with a soft halo, no box).
@@ -141,8 +177,11 @@ text (16 inputs). 33 total.
 
 ### IN PROGRESS (exact task when this session ended)
 - A `/loop`: audit → fix → test → commit, one theme per iteration, builds withheld
-  at the owner's request. ~23 iterations complete through v0.9.386.
-- No iteration is half-finished; the tree is clean and CI is green.
+  at the owner's request. ~38 iterations through v0.9.387. Nothing half-finished;
+  tree clean, CI green.
+- Returns are diminishing — the last passes found a wrong number in a message and
+  a card showing one word. The substantial caption work is done. The highest-value
+  next step is not another audit, it is getting a build onto the owner's Mac.
 
 ## Files
 
