@@ -203,6 +203,45 @@ function analyse(png) {
     }
   }
 
+  // ---- HINDI / DEVANAGARI must survive the overlay path ---------------------
+  // The owner's content is Hindi/Hinglish and most caption styles use Latin-only
+  // display faces, so every Devanagari glyph comes from a fallback font. If that
+  // resolution fails, libass renders nothing and a whole podcast gets an EMPTY
+  // caption overlay — a silent failure nobody would notice until export.
+  // Two DIFFERENT words of the same length: tofu boxes would produce nearly
+  // identical ink, real glyphs do not.
+  const devInk = [];
+  for (const [tag, word] of [['dev1', 'भारत'], ['dev2', 'कमलम']]) {
+    const ap = path.join(dir, tag + '.ass'), mp = path.join(dir, tag + '.mov');
+    fs.writeFileSync(ap, CPAss.buildAss([{ start: 0, end: 1.5, text: word }], {
+      width: W, height: H, font: 'DejaVu Sans', fontSize: Math.round(H * 0.06),
+      fill: '#FFFFFF', highlight: '#FFD400', outlineColor: '#000000', outline: 4,
+      align: 5, marginV: Math.round(H * 0.4), bold: true
+    }), 'utf8');
+    const rr = cp.spawnSync(ff, CPAss.ffmpegOverlayArgs(ap, W, H, 2, mp, null, 25),
+      { encoding: 'utf8', maxBuffer: 1 << 26 });
+    if (rr.status !== 0) { devInk.push(-1); continue; }
+    const dd = path.join(dir, tag + 'f');
+    try { fs.mkdirSync(dd); } catch (e) {}
+    cp.spawnSync(ff, ['-y', '-loglevel', 'error', '-i', mp,
+      '-vf', "select='eq(n\\,10)'", '-vsync', '0', '-pix_fmt', 'rgba',
+      path.join(dd, 'z-%d.png')], { encoding: 'utf8' });
+    const zf = fs.readdirSync(dd).filter(f => /\.png$/.test(f))[0];
+    if (!zf) { devInk.push(-1); continue; }
+    const im = readPng(path.join(dd, zf));
+    let n = 0;
+    for (let i = 0; i < im.px.length; i += im.ch) if (im.ch > 3 && im.px[i + 3] >= 96) n++;
+    devInk.push(n);
+  }
+  if (devInk.some(n => n < 0)) bad('Hindi caption render failed on the overlay path');
+  else if (devInk.some(n => n < 400))
+    bad('Devanagari renders (almost) NOTHING through libass (' + devInk.join(', ') +
+        ' px) — a Hindi podcast would get an empty caption overlay');
+  else if (Math.abs(devInk[0] - devInk[1]) < 200)
+    bad('two different Devanagari words render identically (' + devInk.join(' vs ') +
+        ') — the glyphs are almost certainly tofu boxes, not Hindi');
+  else ok('Hindi (Devanagari) really renders through libass (' + devInk.join(' vs ') + ' px for two different words)');
+
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
 
 console.log(failed ? ('OVERLAY RENDER: ' + failed + ' FAILURE(S)') : 'OVERLAY RENDER: the caption overlay really renders readable, animated, transparent captions ✓');

@@ -977,6 +977,35 @@ function fluxProps() {
     else ok('self-test reports on the real caption paths (renderer, preview agreement, long-video overlay) and runs the machine-side checks even outside Premiere');
   }
 
+  // ---- V. Hindi renders in the canvas path, across styles -------------------
+  // The owner's content is Hindi/Hinglish and most styles use Latin-only display
+  // faces, so every Devanagari glyph comes from a fallback. Two DIFFERENT words
+  // of equal length: tofu boxes render near-identically, real glyphs do not.
+  const hindi = await page.evaluate(async () => {
+    const R = window.CPRender, C = window.CPCaptions;
+    const ink = (words, style) => {
+      const cv = document.createElement('canvas'); cv.width = 1080; cv.height = 600;
+      R.drawFrame(cv, { words: words, active: 0 }, style);
+      const d = cv.getContext('2d').getImageData(0, 0, 1080, 600).data;
+      let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] >= 96) n++;
+      return n;
+    };
+    const out = [];
+    const T = (C.TEMPLATES || []);
+    const step = Math.max(1, Math.floor(T.length / 12));
+    for (let i = 0; i < T.length; i += step) {
+      const t = T[i];
+      const st = R.styleForFrame(t, 600, { yPct: 0.5, vCenter: true, fontSize: t.fontSize || 90 }, 1080);
+      out.push({ id: t.id, a: ink(['भारत'], st), b: ink(['कमलम'], st) });
+    }
+    return out;
+  });
+  const hBlank = hindi.filter(h => h.a < 200 || h.b < 200);
+  const hTofu = hindi.filter(h => h.a >= 200 && Math.abs(h.a - h.b) < Math.max(60, h.a * 0.04));
+  if (hBlank.length) hBlank.slice(0, 5).forEach(h => bad('Hindi: ' + h.id + ' renders (almost) nothing for Devanagari (' + h.a + '/' + h.b + ' px)'));
+  else if (hTofu.length) hTofu.slice(0, 5).forEach(h => bad('Hindi: ' + h.id + ' renders two different Devanagari words identically (' + h.a + ' vs ' + h.b + ') — tofu boxes, not Hindi'));
+  else ok('Hindi (Devanagari) renders real glyphs in ' + hindi.length + ' styles, including Latin-only display faces');
+
   await browser.close();
   console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');
   process.exit(failed ? 1 : 0);

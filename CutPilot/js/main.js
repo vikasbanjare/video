@@ -2940,6 +2940,27 @@
               : 'preview shows ' + _pv._cpLines + ' line(s), the render ' + _cv2._cpLines +
                 ' — send this report and I\'ll fix it');
     }
+    // HINDI. The owner's content is Hindi/Hinglish and most styles use
+    // Latin-only display faces, so every Devanagari glyph comes from a fallback
+    // font on THIS machine. Two different words of equal length: tofu boxes
+    // render near-identically, real glyphs do not.
+    try {
+      var _hi = function (w) {
+        var q = document.createElement('canvas'); q.width = 900; q.height = 400;
+        CPRender.drawFrame(q, { words: [w], active: 0 },
+          CPRender.styleForFrame(styledPreset(), 400, { yPct: 0.5, vCenter: true }, 900));
+        var g2 = q.getContext('2d').getImageData(0, 0, 900, 400).data;
+        var n = 0; for (var k = 0; k < g2.length; k += 4) if (g2[k + 3] >= 96) n++;
+        return n;
+      };
+      var _h1 = _hi('भारत'), _h2 = _hi('कमलम');
+      var _hiOk = (_h1 > 150 && _h2 > 150 && Math.abs(_h1 - _h2) >= Math.max(40, _h1 * 0.04));
+      row('Hindi captions (Devanagari)', _hiOk ? 'ok' : 'fail',
+        (_h1 < 150 || _h2 < 150)
+          ? 'Devanagari draws nothing with this font — Hindi captions would come out blank'
+          : (_hiOk ? 'real Devanagari glyphs with this font'
+                   : 'Devanagari shows as empty boxes — pick a font that supports Hindi'));
+    } catch (eHi) { row('Hindi captions (Devanagari)', 'warn', eHi.message); }
   } catch (eRen) { row('Caption renderer (Pulse)', 'fail', eRen.message); }
 
   try {
