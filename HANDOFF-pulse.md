@@ -1,7 +1,7 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.9.347** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.9.349** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
@@ -9,7 +9,7 @@ Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels
 ### DONE (verified by automated gates, all green)
 - Full battery: `node CutPilot/test/run-tests.js` → exit 0.
   Gates: `js:ok audit:ok host:ok sim:ok proofs:ok blank-scan:ok style-quality:ok`.
-  Counts: ~560 JS asserts, 199 host tests, 15 headless panel proofs, 74/74 style-quality.
+  Counts: ~570 JS asserts, 199 host tests, 16 headless panel proofs, 74/74 style-quality.
 - Caption rendering path (Pulse's own canvas renderer) is the DEFAULT (`_capOut = 'png'`).
   Every style verified at true 1080×1920: text present, readable contrast, phone-legible
   size, inside frame, at declared position, animation frames visibly differ.
@@ -34,8 +34,9 @@ Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels
 ### IN PROGRESS (exact task when this session ended)
 - A `/loop` was running: audit → fix → test → commit, one theme per iteration, builds
   withheld at owner's request. Iterations 1–9 complete.
-- Iteration 10 was NOT started. Planned scope: transcript-editor round-trip (edit words →
-  save → captions match) and settings persistence across panel restarts.
+- Iterations 10-11 DONE: settings persistence (caption type + entrance survive a restart,
+  proof P) and the transcript-editor round trip (edit re-renders the SAME caption kind;
+  4 new tests). Iteration 12 NOT started.
 
 ## Files
 
@@ -183,14 +184,13 @@ Absolute paths. Only files touched in this session are listed.
 
 ## Next 3 actions
 
-1. **Transcript-editor round-trip test** — `/home/user/video/CutPilot/test/panel-proofs.js`
-   (new proof) + `/home/user/video/CutPilot/js/main.js` (`saveTranscriptEdits`, `_treMode`
-   path). Verify: edit a word → save → `readSelectedTranscript()` returns it → the caption
-   re-render carries the edit and neighbours are untouched. Currently untested end-to-end.
-2. **Settings persistence across restarts** — `/home/user/video/CutPilot/js/main.js`
-   (`loadSettings`/`saveSettings`, `settings.useRealPreviews`, `_capOut`, entrance mode,
-   words-per-caption). `_capOut` is a plain variable and is NOT persisted, so the caption-type
-   choice resets to Pulse-rendered on every panel reload. Decide: persist it or document it.
-3. **Get v0.9.347 confirmed on the owner's machine** — send `Pulse-Mac.zip`, have them run
-   `🧹 Remove all Pulse captions` in a FRESH sequence, then `✨ Add captions`, then paste
-   `📋 Copy diagnostics`. Nothing after v0.9.339 has been validated outside this repo.
+1. **Get v0.9.349 confirmed on the owner's machine** — nothing after v0.9.339 has been
+   validated outside this repo. Have them run `🧹 Remove all Pulse captions` in a FRESH
+   sequence, then `✨ Add captions`, then paste `📋 Copy diagnostics`.
+2. **Overlay render has never run on their Mac** — `/home/user/video/CutPilot/js/main.js`
+   (`runLibassCaptions`). Long videos now route there automatically; ffmpeg+libass with the
+   bundled font dir is unexercised on macOS. Worth a deliberate long-video test.
+3. **Word timing is discarded on any transcript edit** — `/home/user/video/CutPilot/js/main.js`
+   (`saveTranscriptEditor` sets `state.transcriptWords = null`). After fixing one word the
+   whole caption falls back to envelope-estimated sync. Re-align the unchanged words instead
+   (`CPScript.matchPairs` already does exactly this kind of mapping).
