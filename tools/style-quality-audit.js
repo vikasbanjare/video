@@ -39,7 +39,7 @@ function resolveBrowser(pptr) {
 }
 
 (async () => {
-  console.log('style quality audit (every style rendered at 1080×1920, measured like a viewer)');
+  console.log('style quality audit (every style rendered at true output size, measured like a viewer)');
   let pptr;
   try { pptr = requirePuppeteer(); }
   catch (e) { console.log('  ? ' + e.message + ' — audit skipped'); process.exit(2); }
@@ -56,10 +56,20 @@ function resolveBrowser(pptr) {
   await new Promise(r => setTimeout(r, 900));
   try { await page.evaluate(() => document.fonts && document.fonts.ready); } catch (e) {}
 
-  const results = await page.evaluate(async () => {
+  const FRAMES = [
+    { name: 'vertical reel 1080×1920', W: 1080, H: 1920 },
+    { name: 'landscape podcast 1920×1080', W: 1920, H: 1080 }
+  ];
+  let anyBad = 0, totalStyles = 0;
+  for (const FRAME of FRAMES) {
+  const results = await page.evaluate(async (FRAME) => {
     const D = window.CP_DEBUG, R = window.CPRender, C = window.CPCaptions;
     if (!D || !R || !C) return { fatal: 'panel globals missing' };
-    const W = 1080, H = 1920;
+    const W = FRAME.W, H = FRAME.H;
+    // Legibility scales with the frame's SHORTER side (the same basis the
+    // renderer's floor uses), so one set of thresholds is meaningful for a
+    // vertical reel and a landscape podcast alike.
+    const SHORT = Math.min(W, H);
     const SAMPLE = 'Make every word count';
     // text that CANNOT be wrapped between words — a long URL and a monster
     // compound word. These used to run off both edges of the frame because the
@@ -194,10 +204,10 @@ function resolveBrowser(pptr) {
         if (m.contrast < 45) fails.push('unreadable contrast (' + m.contrast + ' — text blends into its box/footage)');
         // font size is exact; glyph bbox varies with x-height, so judge size by
         // the rendered font size and keep the bbox for a "not microscopic" check
-        const sizeOfW = m.sizePx / 1080;
+        const sizeOfW = m.sizePx / SHORT;
         if (sizeOfW < 0.048) fails.push('text too small for a phone: ' + Math.round(m.sizePx) +
-          'px = ' + (sizeOfW * 100).toFixed(1) + '% of frame width (want ≥5%)');
-        if (m.capPx / 1080 < 0.018) fails.push('glyphs render microscopic (' + Math.round(m.capPx) + 'px tall)');
+          'px = ' + (sizeOfW * 100).toFixed(1) + '% of the frame\'s short side (want ≥5%)');
+        if (m.capPx / SHORT < 0.018) fails.push('glyphs render microscopic (' + Math.round(m.capPx) + 'px tall)');
         if (m.left < 0.03 || m.right > 0.97) fails.push('text clipped by the frame edge (' +
           (m.left * 100).toFixed(1) + '%–' + (m.right * 100).toFixed(1) + '%)');
         if (m.textW > 0.96) fails.push('text spans ' + (m.textW * 100).toFixed(0) + '% of the width (overflowing)');
@@ -221,9 +231,8 @@ function resolveBrowser(pptr) {
       out.push({ id: t.id, name: t.name, cat: t.category, fails: fails, m: m });
     });
     return { styles: out };
-  });
+  }, FRAME);
 
-  await browser.close();
   if (results.fatal) { console.log('  ✗ ' + results.fatal); process.exit(1); }
 
   const bad = results.styles.filter(s => s.fails.length);
@@ -239,7 +248,13 @@ function resolveBrowser(pptr) {
     s.fails.forEach(f => console.log('      · ' + f));
   });
   console.log(bad.length
-    ? ('STYLE QUALITY: ' + bad.length + ' of ' + results.styles.length + ' styles FAIL the viewer test')
-    : ('STYLE QUALITY: all ' + results.styles.length + ' styles render readable, in-frame, correctly placed captions ✓'));
-  process.exit(bad.length ? 1 : 0);
+    ? ('  ✗ ' + FRAME.name + ': ' + bad.length + ' of ' + results.styles.length + ' styles FAIL the viewer test')
+    : ('  ✓ ' + FRAME.name + ': all ' + results.styles.length + ' styles render readable, in-frame, correctly placed'));
+  anyBad += bad.length; totalStyles += results.styles.length;
+  }
+  await browser.close();
+  console.log(anyBad
+    ? ('STYLE QUALITY: ' + anyBad + ' style/frame combination(s) FAIL the viewer test')
+    : ('STYLE QUALITY: ' + totalStyles + ' style/frame combinations render readable, in-frame, correctly placed captions ✓'));
+  process.exit(anyBad ? 1 : 0);
 })().catch(e => { console.log('  ✗ harness error: ' + e.message); process.exit(1); });

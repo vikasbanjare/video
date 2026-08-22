@@ -354,6 +354,11 @@
     }
     base = lay.eff;
     var meta = lay.meta, lines = lay.lines, hlSize = lay.hlSize, spaceW = lay.spaceW;
+    // Record the line count the layout ACTUALLY produced. Counting lines from
+    // pixels afterwards is unreliable for tight-leading styles (pro-boldpop has
+    // lineGap 1.04, so its two lines nearly touch and merge into one blob at
+    // some scales but not others) — the renderer already knows the answer.
+    try { canvas._cpLines = lines.length; } catch (eLn) {}
 
     var lineStep = hlSize * style.lineGap;
     var blockH = lines.length * lineStep;

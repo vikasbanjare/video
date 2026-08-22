@@ -143,6 +143,7 @@ function resolveBrowser(pptr) {
       // is not against whatever tick the animator is on
       try { CPRender.drawFrame(pv, last, pv._pvStyle); } catch (e) {}
       const pvA = analyse(pv.getContext('2d'), pv.width, pv.height);
+      const pvLinesReal = pv._cpLines;
 
       // the EXACT call the export path makes
       const cv = document.createElement('canvas');
@@ -152,6 +153,7 @@ function resolveBrowser(pptr) {
         const st = CPRender.styleForFrame(D.styledPreset(), FRAME.h, D.readOverrides(), FRAME.w);
         CPRender.drawFrame(cv, last, st);
         rnA = analyse(cv.getContext('2d'), FRAME.w, FRAME.h);
+        rnA.realLines = cv._cpLines;
       } catch (e) { out.push({ id: t.id, err: 'render threw: ' + e.message }); continue; }
 
       // The DOMINANT colour is the honest comparison. Comparing every
@@ -164,7 +166,11 @@ function resolveBrowser(pptr) {
       // …and the render's main colour must appear SOMEWHERE in the preview
       const rnTopSeen = !!(rnTop && pvA.sig.some(p => near(p, rnTop)));
       const pvTopSeen = !!(pvTop && rnA.sig.some(r => near(r, pvTop)));
-      out.push({ id: t.id, pvLines: pvA.lines, rnLines: rnA.lines,
+      out.push({ id: t.id,
+                 // the renderer's OWN line counts — exact, and immune to the
+                 // pixel-merging that tight leading causes at small scales
+                 pvLines: (pvLinesReal != null ? pvLinesReal : pvA.lines),
+                 rnLines: (rnA.realLines != null ? rnA.realLines : rnA.lines),
                  pvW: +(pvA.wFrac * 100).toFixed(1), rnW: +(rnA.wFrac * 100).toFixed(1),
                  pvInk: pvA.ink, rnInk: rnA.ink, domMatch, rnTopSeen, pvTopSeen,
                  pvTop: top(pvA), rnTop: top(rnA),
