@@ -2896,14 +2896,85 @@
              : '✅ Everything works on this machine.';
     return head + '\n' + lines.join('\n');
   }
+  /* The checks that matter for how captions are made TODAY — Pulse's own
+     renderer, the preview agreeing with it, and whether long videos can use
+     the single-overlay path. None of them need Premiere, so they run even
+     when the panel is opened outside it, and a test can call them directly. */
+  function captionPathRows(row) {
+  // ---- the paths captions ACTUALLY take on this machine --------------------
+  // The rest of this report grew around the .mogrt engine, which stopped being
+  // the default. These three check what a caption really goes through now:
+  // Pulse's own renderer, the preview agreeing with it, and whether long
+  // videos can use the single-overlay path. All of it runs at THIS machine's
+  // sequence size, with THIS machine's fonts — the parts CI cannot know.
+  var _sw = (state.env && state.env.width) || 1080;
+  var _sh = (state.env && state.env.height) || 1920;
+  try {
+    var _cv = document.createElement('canvas'); _cv.width = _sw; _cv.height = _sh;
+    var _st = CPRender.styleForFrame(styledPreset(), _sh, readOverrides(), _sw);
+    CPRender.drawFrame(_cv, { words: ['Pulse', 'caption', 'test'], active: 1 }, _st);
+    var _d = _cv.getContext('2d').getImageData(0, 0, _sw, _sh).data;
+    var _ink = 0, _y0 = _sh, _y1 = -1, _x0 = _sw, _x1 = -1;
+    for (var _y = 0; _y < _sh; _y += 3) for (var _x = 0; _x < _sw; _x += 3) {
+      var _i = (_y * _sw + _x) * 4;
+      if (_d[_i + 3] < 96) continue;
+      _ink++;
+      if (_y < _y0) _y0 = _y; if (_y > _y1) _y1 = _y;
+      if (_x < _x0) _x0 = _x; if (_x > _x1) _x1 = _x;
+    }
+    var _inFrame = (_x0 > 2 && _x1 < _sw - 3 && _y0 > 2 && _y1 < _sh - 3);
+    row('Caption renderer (Pulse)', (_ink > 400 && _inFrame) ? 'ok' : 'fail',
+      !_ink ? 'nothing was drawn — your captions would come out blank'
+        : (!_inFrame ? 'the caption touches the frame edge at ' + _sw + '×' + _sh
+                     : 'draws ' + _ink + ' px, inside a ' + _sw + '×' + _sh + ' frame'));
+
+    // does what you SEE match what will RENDER? same frame, both sizes.
+    var _pv = $('preview-canvas');
+    if (_pv && _pv._pvFrames && _pv._pvFrames.length && _pv._cpLines != null) {
+      var _lf = _pv._pvFrames[_pv._pvFrames.length - 1];
+      var _cv2 = document.createElement('canvas'); _cv2.width = _sw; _cv2.height = _sh;
+      CPRender.drawFrame(_cv2, _lf, CPRender.styleForFrame(styledPreset(), _sh, readOverrides(), _sw));
+      var _same = (_cv2._cpLines != null) && (_pv._cpLines === _cv2._cpLines);
+      row('Preview matches the render', _same ? 'ok' : 'warn',
+        _same ? 'same line breaks at your sequence size'
+              : 'preview shows ' + _pv._cpLines + ' line(s), the render ' + _cv2._cpLines +
+                ' — send this report and I\'ll fix it');
+    }
+  } catch (eRen) { row('Caption renderer (Pulse)', 'fail', eRen.message); }
+
+  try {
+    var _hasLibass = false, _ffx = resolveFfmpeg();
+    if (_ffx) {
+      var _cpm = nodeReq('child_process');
+      var _flt = _cpm.execSync(JSON.stringify(_ffx) + ' -hide_banner -filters 2>&1',
+        { encoding: 'utf8', maxBuffer: 1 << 24 });
+      _hasLibass = /\bsubtitles\b/.test(_flt);
+    }
+    row('Long videos → ONE caption clip', _hasLibass ? 'ok' : 'warn',
+      _hasLibass ? 'a long podcast becomes one overlay clip instead of thousands of images'
+        : (_ffx ? 'this ffmpeg has no subtitles filter — a long video would create one image per word'
+                : 'no ffmpeg — a long video would create one image per word'));
+  } catch (eLa) { row('Long videos → ONE caption clip', 'warn', eLa.message); }
+  }
+
   var _selfTestBusy = false;
   function runSelfTest() {
     if (_selfTestBusy) return toast('Self-test already running — hang tight…');
     var out = $('selftest-out');
     if (out) out.classList.remove('hidden');
-    if (!CPBridge.isCEP()) { if (out) out.textContent = 'Self-test needs Premiere (open Pulse inside Premiere).'; return; }
     var rows = [];
     function row(name, state, note) { rows.push({ name: name, state: state, note: note || '' }); }
+    // Outside Premiere the timeline checks can't run — but the renderer, the
+    // preview agreement and the long-video path can, and those are the ones that
+    // decide how a caption looks. Report them instead of refusing outright.
+    if (!CPBridge.isCEP()) {
+      captionPathRows(row);
+      row('Premiere checks', 'warn', 'skipped — open Pulse inside Premiere to test the timeline side');
+      var quick = buildSelfTestReport(rows);
+      if (out) out.textContent = quick;
+      try { diag('selftest', quick.replace(/\n/g, ' | ')); } catch (eDq) {}
+      return;
+    }
     function finish() {
       _selfTestBusy = false;
       var report = buildSelfTestReport(rows);
@@ -2929,6 +3000,8 @@
     row('Indian Voices key', cpSarvamKey() ? 'ok' : 'warn', cpSarvamKey() ? 'set' : 'none');
     var styles = CPCaptions.TEMPLATES.filter(function (t) { return !t.mogrt; });
     row('Caption styles loaded', styles.length >= 60 ? 'ok' : 'fail', styles.length + ' styles');
+
+    captionPathRows(row);
     var bb = bundledBackbone(currentPreset() || {});
     if (!bb) { try { loadBundledMogrts(); } catch (eB) {} bb = bundledBackbone(currentPreset() || {}); }
     row('Caption engine template', bb ? 'ok' : 'fail', bb ? (bb.name || 'found') : 'missing — reinstall Pulse');

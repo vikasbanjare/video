@@ -944,6 +944,39 @@ function fluxProps() {
           both.checked + ' style/frame checks');
   await page.evaluate(() => { try { localStorage.removeItem('cutpilot.look'); } catch (e) {} });
 
+  // ---- U. the self-test checks the paths captions ACTUALLY take -------------
+  // The report grew around the .mogrt engine, which stopped being the default,
+  // so it could come back all-green while saying nothing about Pulse's own
+  // renderer, whether the preview agrees with it, or whether long videos can
+  // use the one-clip overlay. It also refused to run at all outside Premiere,
+  // even for the checks that never needed it.
+  const selfT = await page.evaluate(async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    document.querySelector('.tab[data-tab="captions"]').click(); await sleep(250);
+    const b = document.getElementById('btn-browse-styles'); if (b) b.click(); await sleep(600);
+    const c = document.querySelector('#tpl-grid .tpl-card'); if (c) c.click(); await sleep(500);
+    const btn = document.getElementById('btn-selftest');
+    if (!btn) return { skip: 'no self-test button' };
+    btn.click(); await sleep(2500);
+    const o = document.getElementById('selftest-out');
+    return { text: (o && (o.textContent || '')) || '' };
+  });
+  if (selfT.skip) bad('self-test: ' + selfT.skip);
+  else {
+    const t = selfT.text;
+    const wants = [
+      ['Caption renderer (Pulse)', 'the default renderer'],
+      ['Preview matches the render', 'preview/render agreement'],
+      ['Long videos → ONE caption clip', 'the overlay path']
+    ];
+    const missing = wants.filter(w => t.indexOf(w[0]) < 0);
+    if (!t) bad('self-test: produced no report at all');
+    else if (missing.length) missing.forEach(w => bad('self-test: never checks ' + w[1] + ' ("' + w[0] + '")'));
+    else if (t.indexOf('needs Premiere') >= 0) bad('self-test: still refuses to run the checks that do not need Premiere');
+    else if (/❌ Caption renderer/.test(t)) bad('self-test: reports the Pulse renderer as broken — ' + t.split('\n').find(l => /Caption renderer/.test(l)));
+    else ok('self-test reports on the real caption paths (renderer, preview agreement, long-video overlay) and runs the machine-side checks even outside Premiere');
+  }
+
   await browser.close();
   console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');
   process.exit(failed ? 1 : 0);
