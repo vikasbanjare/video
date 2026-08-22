@@ -2537,10 +2537,23 @@
     setTranscriptBar('ok', '✅', 'Words ready — ' + cues.length + ' lines (edited)', 'Change');
     // editing placed captions: update them in place with the corrected wording
     if (_treMode === 'captions' && state.lastCaptionJob) {
+      var jobMode = state.lastCaptionJob.mode;
       _treMode = 'transcript';
       state.lastCaptionJob.cues = cues;
       var tb = document.querySelector('.tab[data-tab="captions"]'); if (tb) tb.click();
       showView('style');
+      // Re-render the SAME KIND of captions the timeline already has. An
+      // overlay job is one clip: sending it down the per-image path would
+      // leave the old overlay in place (its clip isn't named cap_*) AND add
+      // one image per word — the very explosion the overlay path avoids.
+      if (jobMode === 'overlay') {
+        runLibassCaptions(cues, { replaceTrack: state.lastCaptionJob.track });
+        return;
+      }
+      if (jobMode === 'editable') {
+        applyEditableStyle();
+        return;
+      }
       runCaptionPipeline(cues, { replaceTrack: state.lastCaptionJob.track });
       return;
     }

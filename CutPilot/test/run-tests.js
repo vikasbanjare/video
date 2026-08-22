@@ -1585,6 +1585,26 @@ console.log('bundled engine expressions (author-original, never our rewrite)');
   }
 }
 
+// ---- transcript edit round-trip (fix a word → it reaches the captions) ----
+console.log('transcript editor round-trip (the fix a user types must survive)');
+{
+  const edited = [{ start: 0, end: 2, text: 'my name is Akshay Uddeshi' },
+                  { start: 2, end: 4, text: 'welcome to the channel' }];
+  const back = CPCaptions.parseSRT(CPCaptions.toSRT(edited));
+  assert(back.length === edited.length, 'saving and reloading keeps every line (' + back.length + ')');
+  assert(back[0].text === edited[0].text, 'the corrected wording survives the save: "' + back[0].text + '"');
+  assert(Math.abs(back[0].start - 0) < 0.002 && Math.abs(back[0].end - 2) < 0.002,
+    'timing is not disturbed by an edit (' + back[0].start + '–' + back[0].end + ')');
+  // unicode + punctuation (Hindi transcripts routinely carry both)
+  const uni = [{ start: 0, end: 2, text: 'मेरा नाम "विकास" है — 100% सही' }];
+  assert(CPCaptions.parseSRT(CPCaptions.toSRT(uni))[0].text === uni[0].text,
+    'Devanagari, quotes, em-dash and % survive the round trip');
+  // a line the user emptied must not become a blank caption
+  const kept = [{ start: 0, end: 1, text: 'hello' }, { start: 1, end: 2, text: '   ' }, { start: 2, end: 3, text: 'world' }]
+    .filter(c => c.text && c.text.trim());
+  assert(kept.length === 2, 'emptied lines are dropped, never saved as blank captions');
+}
+
 // ---- word-highlight sync + render-frame scale -----------------------------
 console.log('word highlight rides the SPOKEN word (and the frame count stays sane)');
 {
