@@ -5182,8 +5182,18 @@
     return on ? on.dataset.r : 'karaoke';
   }
   function setRevealButton(r) {
+    r = r || 'karaoke';
     var b = document.querySelectorAll('#c-reveal button');
-    for (var i = 0; i < b.length; i++) b[i].classList.toggle('on', b[i].dataset.r === (r || 'karaoke'));
+    for (var i = 0; i < b.length; i++) b[i].classList.toggle('on', b[i].dataset.r === r);
+    // The SAME setting also lives on the main Captions screen (#cap-reveal:
+    // "Highlight word" / "Reveal as spoken"). They were independent switches
+    // feeding DIFFERENT renderers — #c-reveal drove the per-image path and
+    // #cap-reveal drove the long-video overlay — so a podcast could animate
+    // one way while its preview showed the other. One state, both controls.
+    var wantMode = (r === 'reveal') ? 'reveal' : 'highlight';
+    _revealMode = wantMode;
+    var cb = document.querySelectorAll('#cap-reveal button');
+    for (var j = 0; j < cb.length; j++) cb[j].classList.toggle('on', (cb[j].dataset.mode || 'highlight') === wantMode);
   }
   /* The animation actually used: when "highlight each word as spoken" is on, the
      word sweep IS the animation (karaoke = all words together, reveal = one by
@@ -5674,14 +5684,21 @@
   // 'reveal' (words pop in as spoken). Drives both the Reliable output and the
   // live preview so they always match.
   var _revealMode = 'highlight';
-  function captionRevealMode() { return _revealMode; }
+  /* The overlay (long-video) path used to read _revealMode straight from the
+     main-screen buttons while the per-image path used currentAnim(). Both now
+     ask the SAME question the render pipeline asks, so the two renderers can
+     never disagree about how words animate. */
+  function captionRevealMode() {
+    try { return (currentAnim() === 'reveal') ? 'reveal' : 'highlight'; }
+    catch (e) { return _revealMode; }
+  }
   (function wireCapReveal() {
     var box = $('cap-reveal'); if (!box) return;
     var btns = box.querySelectorAll('button');
     for (var i = 0; i < btns.length; i++) btns[i].addEventListener('click', function () {
-      _revealMode = this.dataset.mode || 'highlight';
-      var on = box.querySelector('button.on'); if (on) on.classList.remove('on');
-      this.classList.add('on');
+      var mode = this.dataset.mode || 'highlight';
+      state.revealExplicit = true;                  // the user's own choice sticks
+      setRevealButton(mode === 'reveal' ? 'reveal' : 'karaoke');   // lights BOTH controls
       try { renderPreview(); } catch (e) {}
       try { if (_mogrtPrevCanvas) renderMogrtPreview(); } catch (e2) {}
     });

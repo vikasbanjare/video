@@ -860,6 +860,38 @@ function fluxProps() {
           ' + outline for Pulse renders, and both surfaces narrow to the engine\'s 800/no-outline for editable');
   await page.evaluate(() => { try { localStorage.removeItem('cutpilot.look'); } catch (e) {} });
 
+  // ---- S. one reveal setting, not two ---------------------------------------
+  // "Highlight word / Reveal as spoken" on the Captions screen and "All
+  // together / One by one" in the editor are the same choice. They were
+  // independent switches feeding DIFFERENT renderers — the editor's drove the
+  // per-image path, the main screen's drove the long-video overlay — so a
+  // podcast could animate one way while its preview showed the other.
+  const rev = await page.evaluate(async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    document.querySelector('.tab[data-tab="captions"]').click(); await sleep(250);
+    const b = document.getElementById('btn-browse-styles'); if (b) b.click(); await sleep(600);
+    const c = document.querySelector('#tpl-grid .tpl-card'); if (c) c.click(); await sleep(450);
+    const read = () => ({
+      editor: ((document.querySelector('#c-reveal button.on') || {}).dataset || {}).r,
+      screen: ((document.querySelector('#cap-reveal button.on') || {}).dataset || {}).mode
+    });
+    if (!read().editor || !read().screen) return { skip: 'reveal controls not present' };
+    const capR = document.querySelector('#cap-reveal button[data-mode="reveal"]');
+    if (capR) capR.click(); await sleep(250);
+    const afterScreen = read();
+    const cusK = document.querySelector('#c-reveal button[data-r="karaoke"]');
+    if (cusK) cusK.click(); await sleep(250);
+    const afterEditor = read();
+    return { afterScreen, afterEditor };
+  });
+  if (rev.skip) bad('reveal sync: ' + rev.skip);
+  else if (!(rev.afterScreen.editor === 'reveal' && rev.afterScreen.screen === 'reveal'))
+    bad('reveal sync: the Captions screen set reveal but the editor shows ' + JSON.stringify(rev.afterScreen));
+  else if (!(rev.afterEditor.editor === 'karaoke' && rev.afterEditor.screen === 'highlight'))
+    bad('reveal sync: the editor set all-together but the Captions screen shows ' + JSON.stringify(rev.afterEditor));
+  else ok('reveal sync: both reveal controls are one setting — changing either moves the other, so the overlay and per-image renderers cannot disagree');
+  await page.evaluate(() => { try { localStorage.removeItem('cutpilot.look'); } catch (e) {} });
+
   await browser.close();
   console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');
   process.exit(failed ? 1 : 0);
