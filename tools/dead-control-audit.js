@@ -20,7 +20,12 @@
 const path = require('path');
 const fs = require('fs');
 const ROOT = path.join(__dirname, '..');
-const PANEL = 'file://' + path.join(ROOT, 'CutPilot', 'index.html');
+// CP_PANEL_DIR lets these run against the BUILT, obfuscated panel
+// (CutPilot-protected) instead of the source — the build is what the owner
+// installs, and obfuscation is a real chance to break behaviour that every
+// source-side gate would still call green.
+const PANEL_DIR = process.env.CP_PANEL_DIR || path.join(ROOT, 'CutPilot');
+const PANEL = 'file://' + path.join(PANEL_DIR, 'index.html');
 
 let failed = 0;
 const ok = m => console.log('  ✓ ' + m);

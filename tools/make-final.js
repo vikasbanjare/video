@@ -66,6 +66,33 @@ async function verify() {
     else { console.log('  ✗ broken seed: ' + JSON.stringify(r.probe) + (r.errs.length ? ('  errs=' + r.errs.join('|')) : '') + ' — retrying'); }
   }
   if (!good) { console.error('\nCould not produce a working obfuscated build in ' + MAX + ' tries.'); process.exit(1); }
+
+  // ===== prove the BUILT panel still behaves ==================================
+  // "20 buttons rendered" only says it booted. Everything else — the gallery,
+  // the preview matching the render, every control doing something, Hindi
+  // glyphs — was only ever checked against the SOURCE. Obfuscation rewrites all
+  // of that code, so the artifact the owner installs deserves the same gates.
+  // CP_SKIP_BUILD_PROOFS=1 skips them when iterating on packaging.
+  if (!process.env.CP_SKIP_BUILD_PROOFS) {
+    console.log('\n===== verifying the BUILT panel (same gates as the source) =====');
+    const gates = [
+      ['panel proofs', path.join(__dirname, '..', 'CutPilot', 'test', 'panel-proofs.js')],
+      ['dead-control audit', path.join(__dirname, 'dead-control-audit.js')],
+      ['preview/render match', path.join(__dirname, 'preview-render-match.js')]
+    ];
+    for (const [name, script] of gates) {
+      const g = cp.spawnSync(process.execPath, [script],
+        { stdio: 'inherit', env: Object.assign({}, process.env, { CP_PANEL_DIR: OUT }) });
+      if (g.status === 2) { console.log('  ? ' + name + ' skipped (no browser here)'); continue; }
+      if (g.status !== 0) {
+        console.error('\n✗ the BUILT panel fails "' + name + '" — not shipping a build that behaves ' +
+                      'differently from the source.');
+        process.exit(1);
+      }
+    }
+    console.log('  ✓ the built panel passes the same gates as the source');
+  }
+
   console.log('\n===== packaging self-contained one-click installers =====');
   cp.execSync('node ' + JSON.stringify(path.join(__dirname, 'make-installers.js')), { cwd: ROOT, stdio: 'inherit' });
   console.log('\n✅ FINAL verified installers ready: Pulse-Mac.zip  +  "Install Pulse (Windows).hta"');

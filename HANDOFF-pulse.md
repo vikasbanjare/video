@@ -1,7 +1,7 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.9.365** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.9.366** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
@@ -24,7 +24,7 @@ Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels
 - Script alignment feature (`📄 Fix the words with MY script`) — 7 unit tests.
 - Hostile-input sweep: 17 malformed inputs, 0 crashes, 0 page errors.
 
-### v0.9.350 → v0.9.365 (this session) — preview/render fidelity
+### v0.9.350 → v0.9.366 (this session) — preview/render fidelity
 - **The preview was structurally not WYSIWYG.** The render is handed the full
   `{preset, overrides}`; the preview was handed `carryableStyle()`, which narrows a
   style to what the mogrt ENGINE can express (~20 fields). ~30 controls that really do
@@ -46,6 +46,21 @@ Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels
   two gates disagreed and thumb-scan silently skipped all 14 animated previews).
 - Proofs added: B2 motion-parity, B3 words-per-line live, Q mode-scoped controls + narrow
   panel layout. B2/B3 were mutation-tested (reverting the fix turns them red).
+
+### BUILD — read before producing an installer
+- `export CP_WHITELABEL=1 CP_GROQ_KEY="$(cat $SCRATCH/gk)" CP_SARVAM_KEY="$(cat $SCRATCH/sk)"; unset CP_TRIAL_DAYS CP_EXPIRY_DAYS; node tools/make-final.js`
+- **The scratchpad keys are GONE** — a container restart wiped
+  `$SCRATCH/gk` and `$SCRATCH/sk`. The build still runs and produces working
+  installers, but with `bundledKey:no` / `bundledSarvam:no`, so transcription
+  would need the owner to paste their own key in Settings. Ask the owner to
+  re-supply the keys (and rotate them — they were pasted in chat) before
+  shipping a keyed build.
+- Every build now runs the SAME gates against the OBFUSCATED output
+  (`CP_PANEL_DIR=CutPilot-protected`): panel proofs, dead-control audit,
+  preview/render match. A build that behaves differently from the source
+  fails and does not package. `CP_SKIP_BUILD_PROOFS=1` skips them while
+  iterating on packaging only.
+- Verified at v0.9.366: the built panel passes all 30 proofs.
 
 ### DONE-BUT-UNVERIFIED (no confirmation from the owner's machine since these landed)
 - Everything from v0.9.340 → v0.9.347 has NOT been installed/tested by the owner.
@@ -209,7 +224,7 @@ Absolute paths. Only files touched in this session are listed.
 
 ## Next 3 actions
 
-1. **Get v0.9.365 confirmed on the owner's machine** — nothing after v0.9.339 has been
+1. **Get v0.9.366 confirmed on the owner's machine** — nothing after v0.9.339 has been
    validated outside this repo. Have them run `🧹 Remove all Pulse captions` in a FRESH
    sequence, then `✨ Add captions`, then paste `📋 Copy diagnostics`.
 2. **Overlay render has never run on their Mac** — `/home/user/video/CutPilot/js/main.js`
