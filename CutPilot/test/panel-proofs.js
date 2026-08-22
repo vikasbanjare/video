@@ -1067,6 +1067,62 @@ function fluxProps() {
   else if (tre[1500].ms > tre[200].ms * 20) bad('transcript editor: cost is growing faster than linearly (' + tre[200].ms + 'ms at 200 → ' + tre[1500].ms + 'ms at 1500)');
   else ok('transcript editor handles a 60-min podcast: 1500 lines open in ' + tre[1500].ms + 'ms, a delete costs ' + tre[1500].delMs + 'ms');
 
+  // ---- X. adversarial text the pipeline will really meet -------------------
+  // The existing hostile-input sweep covers the ExtendScript INSERT path. The JS
+  // caption pipeline — textCues → buildCaptionFrames → drawFrame — had none, and
+  // it is what every caption now goes through. These are the shapes this owner's
+  // transcripts actually produce (Hinglish with emoji, rupee amounts, Devanagari
+  // with combining marks) plus the classic breakers.
+  const adv = await page.evaluate(() => {
+    const C = window.CPCaptions, D = window.CP_DEBUG, R = window.CPRender;
+    const CASES = [
+      ['empty text', [{ start: 0, end: 1, text: '' }]],
+      ['only punctuation', [{ start: 0, end: 1, text: '... !!! ???' }]],
+      ['only Devanagari danda', [{ start: 0, end: 1, text: '।।।' }]],
+      ['emoji only', [{ start: 0, end: 1, text: '🔥🔥🔥' }]],
+      ['hinglish + emoji', [{ start: 0, end: 2, text: 'yeh 🔥 bilkul सही hai bhai' }]],
+      ['rupee + numbers', [{ start: 0, end: 2, text: '₹1,00,000 ka profit 25% zyada' }]],
+      ['very long word', [{ start: 0, end: 2, text: 'Pneumonoultramicroscopicsilicovolcanoconiosis' }]],
+      ['url', [{ start: 0, end: 2, text: 'visit https://pulse.aifloh.com/get-started now' }]],
+      ['zero-length cue', [{ start: 1, end: 1, text: 'same time' }]],
+      ['reversed times', [{ start: 2, end: 1, text: 'backwards' }]],
+      ['negative start', [{ start: -5, end: 1, text: 'before zero' }]],
+      ['whitespace runs', [{ start: 0, end: 1, text: 'a  b\tc   d' }]],
+      ['RTL arabic', [{ start: 0, end: 1, text: 'مرحبا بالعالم' }]],
+      ['combining marks', [{ start: 0, end: 1, text: 'क़्ष्म्य् नमस्ते' }]],
+      ['single char', [{ start: 0, end: 1, text: 'a' }]],
+      ['1000 words', [{ start: 0, end: 60, text: Array.from({ length: 1000 }, (_, i) => 'w' + i).join(' ') }]]
+    ];
+    const bad = [];
+    for (const [name, cues] of CASES) {
+      try {
+        const tc = D.textCues(cues, 4, 'as-spoken');
+        if (tc.some(c => !String(c.text || '').trim())) bad.push(name + ': emitted an EMPTY caption');
+      } catch (e) { bad.push(name + ': textCues threw — ' + e.message); }
+      try {
+        const f = C.buildCaptionFrames(cues, { anim: 'karaoke', wordsPerCue: 4, uppercase: false,
+          keyword: { on: false }, speaker: { on: false }, window: 0 });
+        if (f.some(x => !x || !Array.isArray(x.words))) bad.push(name + ': malformed frame');
+      } catch (e) { bad.push(name + ': buildCaptionFrames threw — ' + e.message); }
+      try {
+        const cv = document.createElement('canvas'); cv.width = 540; cv.height = 960;
+        R.drawFrame(cv, { words: String(cues[0].text || '').split(/\s+/).filter(Boolean), active: 0 },
+          R.styleForFrame({ fontSize: 90, fill: '#fff' }, 960, {}, 540));
+        const d = cv.getContext('2d').getImageData(0, 0, 540, 960).data;
+        let ink = 0, x0 = 540, x1 = -1;
+        for (let y = 0; y < 960; y += 2) for (let x = 0; x < 540; x += 2) {
+          const i = (y * 540 + x) * 4;
+          if (d[i + 3] < 96) continue;
+          ink++; if (x < x0) x0 = x; if (x > x1) x1 = x;
+        }
+        if (ink > 0 && (x0 < 3 || x1 > 537)) bad.push(name + ': text runs off the frame edge');
+      } catch (e) { bad.push(name + ': drawFrame threw — ' + e.message); }
+    }
+    return { bad, count: CASES.length };
+  });
+  if (adv.bad.length) adv.bad.slice(0, 8).forEach(f => bad('adversarial text: ' + f));
+  else ok('adversarial text: ' + adv.count + ' hostile inputs (Hinglish+emoji, ₹ amounts, RTL, combining marks, 1000-word cue, reversed/zero-length times) — no crash, nothing off-frame, no empty captions');
+
   await browser.close();
   console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');
   process.exit(failed ? 1 : 0);
