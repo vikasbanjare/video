@@ -1811,12 +1811,29 @@ try {
   }
 } catch (e) { if (e && e.status === 2) console.log('(dead-control audit skipped — no browser)'); else deadCtrlOk = false; }
 
-var allOk = !failed && auditOk && hostOk && simOk && proofsOk && thumbsOk && styleQualityOk && overlayOk && deadCtrlOk;
+// --------------------------------------- PREVIEW vs RENDER match ----
+// Field-level parity can pass while the two look nothing alike. This renders
+// the SAME caption frame at a true 1080x1920 through the export path's own call
+// and compares PIXELS with the editor preview: dominant colours and line breaks.
+// The direct test of "the preview is different from what lands on the timeline".
+console.log('\nRunning preview/render match…');
+var pvMatchOk = true;
+try {
+  if (hasChromium) {
+    require('child_process').execSync('node "' + require('path').join(__dirname, '..', '..', 'tools', 'preview-render-match.js') + '"',
+      { stdio: 'inherit' });
+  } else {
+    console.log('(preview/render match skipped — no headless Chromium here)');
+  }
+} catch (e) { if (e && e.status === 2) console.log('(preview/render match skipped — no browser)'); else pvMatchOk = false; }
+
+var allOk = !failed && auditOk && hostOk && simOk && proofsOk && thumbsOk && styleQualityOk && overlayOk && deadCtrlOk && pvMatchOk;
 console.log('\n' + (allOk ? '════ ALL GATES GREEN ════' : '════ SOME GATES FAILED ════') +
   '  (js:' + (failed ? 'FAIL' : 'ok') + ' audit:' + (auditOk ? 'ok' : 'FAIL') +
   ' host:' + (hostOk ? 'ok' : 'FAIL') + ' sim:' + (simOk ? 'ok' : 'FAIL') +
   ' proofs:' + (proofsOk ? 'ok' : 'FAIL') + ' blank-scan:' + (thumbsOk ? 'ok' : 'FAIL') +
   ' style-quality:' + (styleQualityOk ? 'ok' : 'FAIL') +
   ' overlay:' + (overlayOk ? 'ok' : 'FAIL') +
-  ' dead-controls:' + (deadCtrlOk ? 'ok' : 'FAIL') + ')');
+  ' dead-controls:' + (deadCtrlOk ? 'ok' : 'FAIL') +
+  ' preview-match:' + (pvMatchOk ? 'ok' : 'FAIL') + ')');
 process.exit(allOk ? 0 : 1);
