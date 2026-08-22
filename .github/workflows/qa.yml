@@ -27,8 +27,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: System deps (unzip for .mogrt inspection)
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq unzip
+      - name: System deps (unzip for .mogrt inspection, Hindi + libass for the caption gates)
+        run: |
+          sudo apt-get update -qq
+          # fonts-indic gives the runner a Devanagari face. Without one the Hindi
+          # gate can only SKIP — the owner's content is Hindi/Hinglish, and a
+          # skipped check guards nothing.
+          # ffmpeg gives the overlay render check its libass, so the long-video
+          # caption path is really exercised instead of skipped too.
+          sudo apt-get install -y -qq unzip fonts-indic ffmpeg
+          fc-cache -f >/dev/null 2>&1 || true
       - name: Headless Chrome (for the simulation + panel proofs)
         run: npm i --no-save puppeteer@23
       - name: Full battery

@@ -1781,11 +1781,11 @@ try {
 // images. This actually runs ffmpeg+libass and decodes the frames: transparent
 // background, readable text, correct band, and the animation alive.
 console.log('\nRunning overlay render check…');
-var overlayOk = true;
+var overlayOk = true, overlaySkipped = false;
 try {
   require('child_process').execSync('node "' + require('path').join(__dirname, '..', '..', 'tools', 'overlay-render-check.js') + '"',
     { stdio: 'inherit' });
-} catch (e) { if (e.status === 2) console.log('(overlay render check skipped — no ffmpeg with libass here)'); else overlayOk = false; }
+} catch (e) { if (e.status === 2) { console.log('(overlay render check skipped — no ffmpeg with libass here)'); overlaySkipped = true; } else overlayOk = false; }
 
 // ------------------------------------------- style QUALITY audit ----
 // Renders EVERY caption style at true 1080×1920 through the shipped renderer
@@ -1794,11 +1794,11 @@ try {
 // to generate text and are not showing properly" — this is the gate that keeps
 // that honest, style by style.)
 console.log('\nRunning style quality audit…');
-var styleQualityOk = true;
+var styleQualityOk = true, styleQualitySkipped = false;
 try {
   require('child_process').execSync('node "' + require('path').join(__dirname, '..', '..', 'tools', 'style-quality-audit.js') + '"',
     { stdio: 'inherit' });
-} catch (e) { if (e.status === 2) console.log('(style quality audit skipped — no headless Chromium here)'); else styleQualityOk = false; }
+} catch (e) { if (e.status === 2) { console.log('(style quality audit skipped — no headless Chromium here)'); styleQualitySkipped = true; } else styleQualityOk = false; }
 
 var proofsOk = true;
 try {
@@ -1837,7 +1837,7 @@ try {
 // preview was built on the narrow engine carry-set while the render gets the
 // full {preset, overrides}. This gate keeps that class of bug loud.
 console.log('\nRunning dead-control audit…');
-var deadCtrlOk = true;
+var deadCtrlOk = true, deadCtrlSkipped = false;
 try {
   if (hasChromium) {
     require('child_process').execSync('node "' + require('path').join(__dirname, '..', '..', 'tools', 'dead-control-audit.js') + '"',
@@ -1845,7 +1845,7 @@ try {
   } else {
     console.log('(dead-control audit skipped — no headless Chromium here)');
   }
-} catch (e) { if (e && e.status === 2) console.log('(dead-control audit skipped — no browser)'); else deadCtrlOk = false; }
+} catch (e) { if (e && e.status === 2) { console.log('(dead-control audit skipped — no browser)'); deadCtrlSkipped = true; } else deadCtrlOk = false; }
 
 // --------------------------------------- PREVIEW vs RENDER match ----
 // Field-level parity can pass while the two look nothing alike. This renders
@@ -1853,7 +1853,7 @@ try {
 // and compares PIXELS with the editor preview: dominant colours and line breaks.
 // The direct test of "the preview is different from what lands on the timeline".
 console.log('\nRunning preview/render match…');
-var pvMatchOk = true;
+var pvMatchOk = true, pvMatchSkipped = false;
 try {
   if (hasChromium) {
     require('child_process').execSync('node "' + require('path').join(__dirname, '..', '..', 'tools', 'preview-render-match.js') + '"',
@@ -1861,15 +1861,25 @@ try {
   } else {
     console.log('(preview/render match skipped — no headless Chromium here)');
   }
-} catch (e) { if (e && e.status === 2) console.log('(preview/render match skipped — no browser)'); else pvMatchOk = false; }
+} catch (e) { if (e && e.status === 2) { console.log('(preview/render match skipped — no browser)'); pvMatchSkipped = true; } else pvMatchOk = false; }
 
 var allOk = !failed && auditOk && hostOk && simOk && proofsOk && thumbsOk && styleQualityOk && overlayOk && deadCtrlOk && pvMatchOk;
 console.log('\n' + (allOk ? '════ ALL GATES GREEN ════' : '════ SOME GATES FAILED ════') +
   '  (js:' + (failed ? 'FAIL' : 'ok') + ' audit:' + (auditOk ? 'ok' : 'FAIL') +
   ' host:' + (hostOk ? 'ok' : 'FAIL') + ' sim:' + (simOk ? 'ok' : 'FAIL') +
   ' proofs:' + (proofsOk ? 'ok' : 'FAIL') + ' blank-scan:' + (thumbsOk ? 'ok' : 'FAIL') +
-  ' style-quality:' + (styleQualityOk ? 'ok' : 'FAIL') +
-  ' overlay:' + (overlayOk ? 'ok' : 'FAIL') +
-  ' dead-controls:' + (deadCtrlOk ? 'ok' : 'FAIL') +
-  ' preview-match:' + (pvMatchOk ? 'ok' : 'FAIL') + ')');
+  // A SKIPPED gate is not a passing gate. Reporting both as "ok" is how a
+  // machine missing ffmpeg or a font quietly stops guarding anything while the
+  // summary still reads green.
+  ' style-quality:' + (styleQualityOk ? (styleQualitySkipped ? 'skip' : 'ok') : 'FAIL') +
+  ' overlay:' + (overlayOk ? (overlaySkipped ? 'skip' : 'ok') : 'FAIL') +
+  ' dead-controls:' + (deadCtrlOk ? (deadCtrlSkipped ? 'skip' : 'ok') : 'FAIL') +
+  ' preview-match:' + (pvMatchOk ? (pvMatchSkipped ? 'skip' : 'ok') : 'FAIL') + ')');
+var _skips = [];
+if (styleQualitySkipped) _skips.push('style-quality');
+if (overlaySkipped) _skips.push('overlay');
+if (deadCtrlSkipped) _skips.push('dead-controls');
+if (pvMatchSkipped) _skips.push('preview-match');
+if (_skips.length) console.log('NOTE: ' + _skips.length + ' gate(s) SKIPPED on this machine (' +
+  _skips.join(', ') + ') — they guarded nothing in this run.');
 process.exit(allOk ? 0 : 1);

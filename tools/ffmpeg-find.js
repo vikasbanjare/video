@@ -45,6 +45,10 @@ function usable(bin, needLibass) {
 }
 
 function findFfmpeg(opts) {
+  // CP_NO_FFMPEG=1 simulates a machine without ffmpeg, so the graceful-degradation
+  // path (and the battery's "skip" reporting) can be exercised on a machine that
+  // does have it. This is a real user situation, not only a test one.
+  if (process.env.CP_NO_FFMPEG === '1') return null;
   const needLibass = !!(opts && opts.libass);
   for (const c of candidates()) {
     if (!c) continue;
