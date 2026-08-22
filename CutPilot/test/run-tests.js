@@ -1294,6 +1294,24 @@ console.log('ass.js (libass karaoke generator)');
   const noBox = CPAss.buildAss(cues, {});
   assert(/,0,1,/.test(noBox), 'buildAss stays on BorderStyle 1 (outline) when the style has no box');
 
+  // STATIC mode = word-by-word turned OFF. The canvas path stops sweeping in
+  // that case; buildAss always swept, so a long video ignored the toggle.
+  const wcues = [{ words: [
+    { text: 'money', start: 0, end: 0.6 },
+    { text: 'grows', start: 0.6, end: 1.2 },
+    { text: 'fast', start: 1.2, end: 1.8 }] }];
+  const dialogues = a => (String(a).match(/^Dialogue:/gm) || []).length;
+  const recolours = a => ((String(a).split('[Events]')[1] || '').match(/\\1c/g) || []).length;
+  const sweepAss = CPAss.buildAss(wcues, { mode: 'highlight' });
+  const staticAss = CPAss.buildAss(wcues, { mode: 'static' });
+  assert(dialogues(sweepAss) === 3 && recolours(sweepAss) > 0,
+    'highlight mode emits one event per word and recolours the spoken one');
+  assert(dialogues(staticAss) === 1,
+    'static mode emits ONE event for the whole caption (no per-word sweep)');
+  assert(recolours(staticAss) === 0,
+    'static mode never recolours a word — word-by-word is off');
+  assert(/money grows fast/.test(staticAss), 'static mode still shows the whole caption');
+
   const caps = CPAss.buildAss(cues, { allCaps: true });
   assert(/WHAT/.test(caps) && !/What/.test(caps), 'allCaps uppercases the caption text');
   // reveal mode: words appear one at a time (first Dialogue shows ONLY the first word)

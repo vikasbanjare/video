@@ -79,7 +79,8 @@
    * Build a complete .ass document from word-timed cues.
    * opts: width, height, font, fontSize, fill, highlight, outline, outlineColor,
    *       shadow, bold, italic, marginLR, marginV, align (2=bottom,5=middle),
-   *       allCaps, anim ('pop'|'none'), popScale (default 116), letterSpacing.
+   *       allCaps, anim ('pop'|'none'), popScale (default 116), letterSpacing,
+   *       mode ('highlight' | 'reveal' | 'static').
    */
   function buildAss(cues, opts) {
     opts = opts || {};
@@ -114,6 +115,11 @@
     // spoken word; 'reveal' adds words one at a time as they're spoken (newest
     // word is the active/popped one). Pick per template so each looks right.
     var reveal = (opts.mode === 'reveal');
+    // 'static' = no per-word sweep at all: the whole caption shows for its full
+    // duration with no recolouring. This is what the canvas path does when the
+    // user turns "highlight each word as spoken" OFF — without it the overlay
+    // kept sweeping, so a long video ignored that toggle entirely.
+    var staticMode = (opts.mode === 'static');
 
     var head = [
       '[Script Info]',
@@ -143,6 +149,15 @@
     var events = toEvents(cues), lines = [];
     for (var c = 0; c < events.length; c++) {
       var ws = events[c];
+      if (staticMode) {
+        var sAll = +ws[0].start || 0;
+        var eAll = +ws[ws.length - 1].end || 0;
+        if (!(eAll > sAll)) eAll = sAll + 0.04;
+        var flat = [];
+        for (var q = 0; q < ws.length; q++) flat.push(assText(caseIt(ws[q].text)));
+        lines.push('Dialogue: 0,' + assTime(sAll) + ',' + assTime(eAll) + ',Pulse,,0,0,0,,' + flat.join(' '));
+        continue;
+      }
       for (var k = 0; k < ws.length; k++) {
         var start = +ws[k].start || 0;
         var end = (k + 1 < ws.length) ? (+ws[k + 1].start || 0) : (+ws[k].end || 0);

@@ -5799,8 +5799,13 @@
      ask the SAME question the render pipeline asks, so the two renderers can
      never disagree about how words animate. */
   function captionRevealMode() {
-    try { return (currentAnim() === 'reveal') ? 'reveal' : 'highlight'; }
-    catch (e) { return _revealMode; }
+    try {
+      // word-by-word OFF means no sweep at all — the same thing currentAnim()
+      // expresses for the per-image path by returning the style's own animation
+      // instead of karaoke/reveal.
+      if ($('c-wordhl') && !$('c-wordhl').checked) return 'static';
+      return (currentAnim() === 'reveal') ? 'reveal' : 'highlight';
+    } catch (e) { return _revealMode; }
   }
   (function wireCapReveal() {
     var box = $('cap-reveal'); if (!box) return;
@@ -6333,7 +6338,7 @@
       popScale: Math.max(100, Math.round(((st && st.highlightScale) || 1) * 100)),
       // a drop shadow the ASS style CAN express (offset, not a soft glow)
       shadow: Math.max(0, Math.round(Math.abs((st && st.shadowDY) || 0))),
-      mode: captionRevealMode()          // 'highlight' | 'reveal'
+      mode: captionRevealMode()          // 'highlight' | 'reveal' | 'static'
     };
   }
 

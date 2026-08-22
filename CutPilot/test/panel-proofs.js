@@ -943,6 +943,26 @@ function fluxProps() {
     }
     return { checked, fails };
   });
+  // word-by-word OFF must silence the sweep on BOTH paths, not just the canvas
+  const sweepOff = await page.evaluate(async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const D = window.CP_DEBUG, w = document.getElementById('c-wordhl');
+    if (!D || !D.assOpts || !w) return { skip: 'hooks missing' };
+    w.checked = true; w.dispatchEvent(new Event('change', { bubbles: true })); await sleep(200);
+    const on = D.assOpts(1080, 1920).mode;
+    w.checked = false; w.dispatchEvent(new Event('change', { bubbles: true })); await sleep(200);
+    const off = D.assOpts(1080, 1920).mode;
+    w.checked = true; w.dispatchEvent(new Event('change', { bubbles: true })); await sleep(200);
+    return { on, off };
+  });
+  if (sweepOff.skip) bad('sweep off: ' + sweepOff.skip);
+  else if (sweepOff.off !== 'static')
+    bad('sweep off: word-by-word OFF still asks the overlay for "' + sweepOff.off +
+        '" — a long video would keep sweeping while the preview does not');
+  else if (sweepOff.on === 'static')
+    bad('sweep off: word-by-word ON asked for static');
+  else ok('word-by-word OFF silences the sweep on the overlay path too (' + sweepOff.on + ' → ' + sweepOff.off + ')');
+
   if (both.skip) bad('renderer agreement: ' + both.skip);
   else if (both.fails.length) both.fails.slice(0, 8).forEach(f => bad('renderer agreement: ' + f));
   else ok('renderer agreement: the long-video overlay and the per-image render resolve the same size, box and colour — ' +
