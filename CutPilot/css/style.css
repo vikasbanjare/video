@@ -698,10 +698,18 @@ input[type="range"]::-webkit-slider-thumb {
 .mp-row input, .mp-row select, .mp-row .cp-dd-btn { font-size: 12px; }
 .mp-row input[type="number"] { width: 100%; }
 .mp-row select.mp-ctrl { max-width: none; width: 100%; }
-/* PNG-era controls that do NOT carry into editable (.mogrt) captions — hidden so
-   the editor only shows what actually changes the output. The inputs stay in the
-   DOM (readOverrides/applyTemplate still read/write them), they're just not shown. */
-.png-only { display: none !important; }
+/* Controls that do NOT carry into EDITABLE (.mogrt) captions — hidden in that
+   mode so the editor only shows what actually changes the output. The inputs
+   stay in the DOM (readOverrides/applyTemplate still read/write them).
+
+   This used to hide them UNCONDITIONALLY, from back when editable was the
+   default caption type. The default is Pulse-rendered PNG now, where every one
+   of these DOES change the output — so ~40 real controls (letter spacing,
+   outline, words per line, max width, line gap, box padding/radius/border/
+   glow/3D/gloss, case, emphasis, censor, number + brand colours, word sync)
+   were unreachable in the mode they work in. Now it's scoped to the mode it
+   was written for; body.cap-editable is set by setCapOut(). */
+body.cap-editable .png-only { display: none !important; }
 
 /* collapsible customizer sections — header toggles the controls beneath it */
 .mp-collapsible { cursor: pointer; user-select: none; }

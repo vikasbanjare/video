@@ -1795,11 +1795,28 @@ try {
   else thumbsOk = false;
 }
 
-var allOk = !failed && auditOk && hostOk && simOk && proofsOk && thumbsOk && styleQualityOk && overlayOk;
+// ------------------------------------------- DEAD-CONTROL audit ----
+// Every control the customizer binds to the preview must actually change it.
+// A mechanical sweep of all 64 once found 47 that changed nothing, because the
+// preview was built on the narrow engine carry-set while the render gets the
+// full {preset, overrides}. This gate keeps that class of bug loud.
+console.log('\nRunning dead-control audit…');
+var deadCtrlOk = true;
+try {
+  if (hasChromium) {
+    require('child_process').execSync('node "' + require('path').join(__dirname, '..', '..', 'tools', 'dead-control-audit.js') + '"',
+      { stdio: 'inherit' });
+  } else {
+    console.log('(dead-control audit skipped — no headless Chromium here)');
+  }
+} catch (e) { if (e && e.status === 2) console.log('(dead-control audit skipped — no browser)'); else deadCtrlOk = false; }
+
+var allOk = !failed && auditOk && hostOk && simOk && proofsOk && thumbsOk && styleQualityOk && overlayOk && deadCtrlOk;
 console.log('\n' + (allOk ? '════ ALL GATES GREEN ════' : '════ SOME GATES FAILED ════') +
   '  (js:' + (failed ? 'FAIL' : 'ok') + ' audit:' + (auditOk ? 'ok' : 'FAIL') +
   ' host:' + (hostOk ? 'ok' : 'FAIL') + ' sim:' + (simOk ? 'ok' : 'FAIL') +
   ' proofs:' + (proofsOk ? 'ok' : 'FAIL') + ' blank-scan:' + (thumbsOk ? 'ok' : 'FAIL') +
   ' style-quality:' + (styleQualityOk ? 'ok' : 'FAIL') +
-  ' overlay:' + (overlayOk ? 'ok' : 'FAIL') + ')');
+  ' overlay:' + (overlayOk ? 'ok' : 'FAIL') +
+  ' dead-controls:' + (deadCtrlOk ? 'ok' : 'FAIL') + ')');
 process.exit(allOk ? 0 : 1);

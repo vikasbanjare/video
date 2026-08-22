@@ -4333,10 +4333,17 @@
     // keyword italic-serif + glow (editorial style); two-tier stacked sizing
     if ($('c-hlserif')) $('c-hlserif').checked = !!p.highlightFont;
     if ($('c-hlglow')) $('c-hlglow').checked = !!p.highlightGlow;
-    var twoTier = (p.subScale != null);   // only the stacked editorial style exposes these
+    // Stacked-layout controls. The wrapper used to appear only when a style
+    // declared subScale — but wordsPerLine is a separate, more common field
+    // (pro-boldpop / pro-coolpop / pro-cleanbold all stack 3 words a line), so
+    // those three forced a layout the user could not adjust. Each slider now
+    // follows its OWN field.
+    var hasSub = (p.subScale != null), hasWpl = (p.wordsPerLine != null);
     if ($('c-subscale')) $('c-subscale').value = Math.round(((p.subScale != null ? p.subScale : 0.62)) * 100);
     if ($('c-wordsperline')) $('c-wordsperline').value = (p.wordsPerLine != null ? p.wordsPerLine : 3);
-    if ($('c-twotier-wrap')) $('c-twotier-wrap').style.display = twoTier ? '' : 'none';
+    if ($('c-subscale-wrap')) $('c-subscale-wrap').style.display = hasSub ? '' : 'none';
+    if ($('c-wordsperline-wrap')) $('c-wordsperline-wrap').style.display = hasWpl ? '' : 'none';
+    if ($('c-twotier-wrap')) $('c-twotier-wrap').style.display = (hasSub || hasWpl) ? '' : 'none';
     // ---- restore the rest of the saved look (was missing → these settings were
     // lost on restore AND leaked from the previous template into the next one) ----
     // gradient text fill + multi-colour highlight
@@ -5396,9 +5403,20 @@
     var wordCues = sw.map(function (w, i) { return { start: i * DUR, end: (i + 1) * DUR, text: w }; });
     var frames;
     try {
+      // Mirror the PIPELINE's frame options (see runCaptionPipeline). Keyword
+      // highlighting, speaker labels, text case, censoring, auto-emoji and
+      // strip-punctuation were all pinned off here, so those controls changed
+      // the OUTPUT while the preview sat still — the same dead-control class
+      // the style fields had.
+      var pvOv = povOpts;
       frames = CPCaptions.buildCaptionFrames([{ start: 0, end: sw.length * DUR, text: sample }], {
         anim: pvAnimId, wordsPerCue: pvWpc, uppercase: carry.uppercase,
-        keyword: { on: false }, speaker: { on: false },   // the sweep (active word) IS the highlight, like the backbone
+        keyword: readKeyword(), speaker: readSpeaker(),
+        emoji: !!($('c-emoji') && $('c-emoji').checked),
+        stripPunctuation: pvOv.stripPunctuation,
+        textCase: pvOv.textCase,
+        censor: pvOv.censor,
+        build: !!styled.build,
         wordCues: wordCues, window: 0
       });
     } catch (eF) { frames = null; }
@@ -5609,6 +5627,8 @@
      right chip and relabels the main button. Used by clicks AND by restore. */
   function setCapOut(v) {
     _capOut = (v === 'editable') ? 'editable' : 'png';
+    // Show/hide the controls that only exist for the Pulse-rendered path.
+    try { document.body.classList.toggle('cap-editable', _capOut === 'editable'); } catch (eCls) {}
     var box = $('cap-output');
     if (box) {
       var bs = box.querySelectorAll('button');
@@ -5623,7 +5643,7 @@
       setCapOut(this.dataset.out || 'editable');
       saveLook();                       // the choice sticks across reloads
     });
-    updateMagicLabel();
+    setCapOut(_capOut);   // sync chip, label AND the body mode class on first paint
   })();
   // Word-animation mode: 'highlight' (whole line, active word lights up) vs
   // 'reveal' (words pop in as spoken). Drives both the Reliable output and the
