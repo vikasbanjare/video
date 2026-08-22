@@ -263,7 +263,11 @@ function fluxProps() {
     res.afterWeight = ((document.getElementById('preview-canvas') || {})._pvStyle || {}).weight;
     return res;
   });
-  if (fw.clickable && fw.afterFont === 'Impact' && fw.afterWeight === 500)
+  // 400, not 500: the preview used to run through carryableStyle(), which
+  // clamps weight to the mogrt engine's bold-or-regular (>=600 ? 800 : 500).
+  // The Pulse renderer draws REAL weights and the preview now reports the
+  // weight the user actually picked.
+  if (fw.clickable && fw.afterFont === 'Impact' && fw.afterWeight === 400)
     ok('font/weight controls live (picker ' + fw.listCount + ' faces → preview follows)');
   else bad('font/weight dead: ' + JSON.stringify(fw));
 
@@ -351,7 +355,17 @@ function fluxProps() {
     await expect('Shadow colour', () => set('c-shadow', '#00ff88'), () => pv().glow, true);
     await expect('Shadow strength', () => set('c-shadow-blur', '90'), () => pv().glowBlur, true);
     await expect('ALL CAPS', () => tick('c-upper', true), () => pv().uppercase, true);
-    await expect('Word-by-word OFF', () => tick('c-wordhl', false), () => pv().highlight, true);
+    // Observable = the FRAMES, not the highlight colour. The old check only
+    // passed because carryableStyle() blanked the highlight to the fill; the
+    // real effect is that no word is marked active and the style's own
+    // animation plays instead of the sweep — exactly what the render does.
+    const sweepSig = () => {
+      const c = document.getElementById('preview-canvas') || {};
+      return (c._pvAnimId || '?') + ':' + ((c._pvFrames || []).map(f => f.active == null ? '-' : f.active).join(''));
+    };
+    tick('c-wordhl', true); await sleep(120);
+    await expect('Word-by-word OFF', () => tick('c-wordhl', false), sweepSig, true);
+    tick('c-wordhl', true); await sleep(120);
     await expect('Weight', () => set('c-weight', pv().weight === 800 ? '300' : '900'), () => pv().weight, true);
     await expect('Gradient highlight', () => { tick('c-wordhl', true); return tick('c-hlgrad', true) && set('c-hl2g', '#ff00aa'); }, () => pv().highlight2, true);
     // entrance buttons: observable via the CP_DEBUG snapshot

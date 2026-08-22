@@ -3671,14 +3671,23 @@
   function drawCardPreview(canvas, t) {
     try {
       var raw = t;
-      t = carryableStyle(t);
+      t = renderableStyle(t);          // full fidelity — the tile is a Pulse render, not an engine clip
       var sample = tileSampleText(raw);
       if (t.uppercase) sample = sample.toUpperCase();
       var sw = sample.split(' '), DUR = 0.35;
       var wordCues = sw.map(function (w, i) { return { start: i * DUR, end: (i + 1) * DUR, text: w }; });
-      // the tile plays the style's OWN motion: its entrance when it has one
-      // (that's what the inserted clip does too), else the word sweep
-      var animId = CPCaptions.animIdForConcept((t.entrance && t.entrance !== 'none') ? t.entrance : t.anim);
+      // FRAME CONTENT follows the RENDER's rule — the pipeline builds frames with
+      // currentAnim() = word-by-word ? karaoke : the style's own animation. The
+      // ENTRANCE is a CLIP-level motion Premiere applies at the caption's start;
+      // it is never baked into the frames, so playing it here showed the tile
+      // moving in a way the rendered PNGs never do (and hid the word sweep,
+      // which is the thing that actually plays for most of the caption).
+      // …and "all together vs one by one" follows the style exactly as selecting
+      // it does (a build/reveal style sets the Reveal button to 'reveal').
+      var rawAnimId = CPCaptions.animIdForConcept(raw.anim);
+      var animId = (raw.wordHl !== false)
+        ? ((rawAnimId === 'reveal') ? 'reveal' : 'karaoke')
+        : rawAnimId;
       var frames;
       try {
         frames = CPCaptions.buildCaptionFrames([{ start: 0, end: sw.length * DUR, text: sample }], {
@@ -3695,7 +3704,12 @@
       // height → 17.7% of the band → fontSize 191 in 1080-units. (Was 227,
       // based on a 90px guess — previews drew ~20% too big.)
       var ratio = ((raw.fontSize || 90) / 90);
-      var pov = { fontSize: Math.round(191 * ratio), maxWidthPct: 0.86, maxLines: 2,
+      // 2 lines and 86% width are BAND DEFAULTS, not overrides: a style that
+      // declares its own single-line cap (btn-neon/neo/glass) or width must
+      // keep it, or the tile shows a two-line caption the render never makes.
+      var pov = { fontSize: Math.round(191 * ratio),
+                  maxWidthPct: (raw.maxWidthPct != null ? raw.maxWidthPct : 0.86),
+                  maxLines: (raw.maxLines != null ? raw.maxLines : 2),
                   vCenter: true };
       canvas._animFrames = frames;
       canvas._animId = animId;                    // exposed for the motion-parity proof
@@ -4373,6 +4387,12 @@
     // the user's current choice.
     if (aId === 'reveal') setRevealButton('reveal');
     else if (aId === 'karaoke') setRevealButton('karaoke');
+    // A style whose animation is NEITHER used to inherit whatever the last
+    // style left behind, so the same template looked different depending on
+    // what you clicked before it. Deterministic now: fall back to 'karaoke'
+    // (all-together) unless the user picked a mode themselves this session —
+    // the same rule the entrance buttons already follow.
+    else if (!state.revealExplicit) setRevealButton('karaoke');
     syncWordHlUI();
     syncColorFields();
     updateVals();
@@ -4529,6 +4549,10 @@
                'c-box3d-depth', 'c-box3d', 'c-boxgloss',
                // auto-emoji was read by the preview but never triggered a repaint
                'c-emoji'];
+    // Exposed so the dead-control audit enumerates the REAL bound list instead
+    // of a hand-written copy that silently goes stale (Words-per-line sat
+    // outside the old 16-control list and was dead for months).
+    window._cpPreviewControlIds = ids.slice();
     ids.forEach(function (id) {
       if (!$(id)) return;
       $(id).addEventListener('input', function () { updateVals(); renderPreview(); });
@@ -4575,7 +4599,10 @@
     });
     var rev = document.querySelectorAll('#c-reveal button');
     for (var rv = 0; rv < rev.length; rv++) {
-      rev[rv].addEventListener('click', function () { setRevealButton(this.dataset.r); renderPreview(); });
+      rev[rv].addEventListener('click', function () {
+        state.revealExplicit = true;                 // the user's own choice now sticks
+        setRevealButton(this.dataset.r); renderPreview();
+      });
     }
     // highlight look: colour / pill / bar / underline / marker / circle
     var hb = document.querySelectorAll('#c-hlstyle button');
@@ -5309,7 +5336,7 @@
     // at Size=default, scaled by the Size slider) and at the Position slider's
     // real spot — a shrunken version of the final frame, not a zoomed swatch.
     var styled = styledPreset();
-    var carry = carryableStyle(styled);
+    var carry = renderableStyle(styled);   // same full-fidelity basis as the tile
 
     // CAPTION-BAND preview: the region of the frame around the caption, at a
     // readable size (the full 9:16 frame wasted the panel on empty backdrop).
@@ -5325,9 +5352,26 @@
     // tools/sim-preview-check.js, which re-verifies this on every build)
     var pov = { fontSize: Math.round(191 * ratio), maxWidthPct: 0.86, maxLines: 2,
                 vCenter: true };
+    // The real render calls CPRender.renderFrames({preset, overrides}); the
+    // preview must call styleForFrame with the SAME pair or it silently drops
+    // every control the narrow carry-set omits. `pov` keeps only the
+    // preview-specific sizing (band-scaled font, 2-line cap, centred block) —
+    // the Size slider is already folded into that font size via `ratio`.
+    var povOpts = {};
+    try {
+      var _ov = readOverrides();
+      for (var _k in _ov) if (_ov.hasOwnProperty(_k)) povOpts[_k] = _ov[_k];
+    } catch (eOv) { povOpts = {}; }
+    povOpts.fontSize = pov.fontSize;
+    povOpts.vCenter = pov.vCenter;
+    // maxLines comes from the Lines buttons (readOverrides) and falls back to
+    // the style's own cap — forcing the band default here made the Lines
+    // control do nothing in the preview.
+    if (povOpts.maxLines == null) povOpts.maxLines = (styled.maxLines != null ? styled.maxLines : pov.maxLines);
+    if (povOpts.maxWidthPct == null) povOpts.maxWidthPct = pov.maxWidthPct;
     var pStyle;
     try {
-      pStyle = CPRender.styleForFrame(carry, canvas.height, pov);
+      pStyle = CPRender.styleForFrame(styled, canvas.height, povOpts);
     } catch (eStyle) {
       // a style that trips the engine must NEVER blank the preview — fall back to
       // a minimal look and record which template + why in Diagnostics.
@@ -5345,8 +5389,7 @@
     // gallery and another way once opened — and why the Words-per-line control
     // looked dead in the editor preview. Both surfaces now derive motion the
     // same way, and proof B2 fails the build if they ever drift apart again.
-    var pvAnimId = CPCaptions.animIdForConcept(
-      (carry.entrance && carry.entrance !== 'none') ? carry.entrance : carry.anim);
+    var pvAnimId = currentAnim();   // the EXACT call the render pipeline makes
     var pvWpc = (styled.wordsPerCue || 4);
     canvas._pvAnimId = pvAnimId; canvas._pvWpc = pvWpc;
     var DUR = 0.35;                                   // seconds per word — same pacing as the tile
@@ -7566,6 +7609,33 @@
   function setEntranceButtons(v) {
     var bs = document.querySelectorAll('#c-entrance button');
     for (var i = 0; i < bs.length; i++) bs[i].classList.toggle('on', (bs[i].dataset.e || 'none') === v);
+  }
+
+  /* The WYSIWYG style for the PULSE-RENDERED path — the DEFAULT caption type.
+     carryableStyle() below deliberately narrows a preset to what the mogrt
+     ENGINE can express (~20 fields, weight clamped to bold-or-regular). The
+     gallery tile and the editor preview were both built on it, so ~30 controls
+     that really do change the rendered PNGs — outline colour + width, letter
+     spacing, box padding / radius / gradient / border / neon / 3D / gloss,
+     shadow offset, line gap, max width, word spacing, number + brand colours,
+     per-word entrance, dim-upcoming — could not show up in the preview at all,
+     no matter what the user did. The real render is handed {preset, overrides}
+     and honours every one of them; the preview now gets the same thing. */
+  function renderableStyle(p) {
+    p = p || {};
+    var out = {};
+    for (var k in p) if (p.hasOwnProperty(k)) out[k] = p[k];
+    out.font = p.font || 'Inter';
+    out.fallbackFonts = p.fallbackFonts ||
+      ['Hanken Grotesk', 'Segoe UI', 'Helvetica Neue', 'Arial', 'sans-serif'];
+    out.entrance = entranceForPreset(p);
+    out.uppercase = !!p.uppercase;       // coerce: a style with no flag must read false, not undefined
+    var hasHl = p.wordHl !== false;      // the sweep is on unless a style opts out
+    out.anim = p.anim || (hasHl ? 'karaoke' : 'fade');   // keep the style's OWN animation
+    out.keyword = hasHl;
+    out.yPct = (p.yPct != null && isFinite(p.yPct)) ? Math.max(0.1, Math.min(0.92, p.yPct)) : 0.5;
+    out.vCenter = false;                 // the band pov re-centres; a style flag must not
+    return out;
   }
 
   function carryableStyle(p) {

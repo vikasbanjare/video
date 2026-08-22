@@ -99,19 +99,31 @@ function groundTruth() {
       c.scrollIntoView({ block: 'center' }); await sleep(140);
       const t = c._tpl, w = c.width, h = c.height;
       const px = c.getContext('2d').getImageData(0, 0, w, h).data;
-      let minY = h, maxY = 0, n = 0, colored = 0;
+      // TWO thresholds on purpose. Anything faint (alpha>12) counts as "painted"
+      // for the blank check. The block EXTENT is measured on SOLID ink only
+      // (alpha>=96): a neon style's glow halo is real but soft, and letting it
+      // set the block height made a correctly-rendered style look like drift.
+      let minY = h, maxY = 0, n = 0, colored = 0, solid = 0;
       for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) {
         const i = (y * w + x) * 4;
         if (px[i + 3] > 12) {
-          n++; if (y < minY) minY = y; if (y > maxY) maxY = y;
+          n++;
           const r = px[i], g = px[i + 1], b = px[i + 2];
           if (Math.max(r, g, b) - Math.min(r, g, b) > 40) colored++;   // non-grayscale = box/highlight ink
+          if (px[i + 3] >= 96) { solid++; if (y < minY) minY = y; if (y > maxY) maxY = y; }
         }
       }
+      // what the STYLE ITSELF declares about how tall its block should be
+      const sampleWords = ((c._animFrames && c._animFrames[0] && c._animFrames[0].words) || []).length || 3;
+      let lines = t.wordsPerLine ? Math.ceil(sampleWords / t.wordsPerLine) : 1;
+      if (t.maxLines) lines = Math.min(lines, t.maxLines);
       out.push({ id: t.id, hasBox: !!t.boxColor, painted: n,
+                 lines: Math.max(1, lines),
+                 hlScale: Math.max(1, t.highlightScale || 1),
+                 boxPad: t.boxColor ? (t.boxPad || 1) : 1,
                  fSize: t.fontSize || 90,
                  paintedFrac: n / ((w / 2) * (h / 2)),
-                 blockFrac: n ? (maxY - minY) / h : 0, colored });
+                 blockFrac: solid ? (maxY - minY) / h : 0, colored });
     }
     return out;
   });
@@ -125,8 +137,13 @@ function groundTruth() {
     // authored size (its fontSize relative to the engine's 90px default). A
     // bare single-line caption measures cap-height (~0.6x em); a box + two
     // lines legitimately add height.
-    const wantThis = wantBandFrac * (r.fSize / 90);
-    const lo = wantThis * 0.55, hi = wantThis * 2.6;
+    // The authored truth models ONE bare line. A style that declares stacked
+    // lines (wordsPerLine), an enlarged spoken word (highlightScale) or extra
+    // box padding really is taller — the RENDER makes it taller too, so the
+    // tile matching it is correct, not drift. Fold those declared multipliers
+    // into the expectation instead of loosening the guard for everyone.
+    const wantThis = wantBandFrac * (r.fSize / 90) * r.lines * r.hlScale;
+    const lo = wantThis * 0.55, hi = wantThis * 2.6 * r.boxPad;
     if (r.blockFrac < lo || r.blockFrac > hi) {
       fail(r.id + ': caption block is ' + (r.blockFrac * 100).toFixed(0) + '% of the tile — authored truth says ' +
            (wantThis * 100).toFixed(0) + '% (band-relative), tolerance ' + (lo * 100).toFixed(0) + '–' + (hi * 100).toFixed(0) + '%');
