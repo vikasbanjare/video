@@ -6174,32 +6174,46 @@
   function assOptsFromStyle(W, H) {
     var ov = readOverrides();
     var preset = currentPreset() || {};
-    // Size the font to the SHORTER frame dimension, not the height — otherwise a
-    // tall portrait frame (1080×1920) gets a huge font that fits only ~8 chars per
-    // line, which forces even a 4-word question to split. Scaling by min(W,H) keeps
-    // the font readable AND lets a short sentence stay on one caption in any aspect.
+    // ONE resolved style for BOTH renderers. This used to compute its own font
+    // size — round(sliderSize * min(W,H)/1080), clamped 4.5%–11.5% — which has
+    // no portrait boost, so on a 1080×1920 reel the overlay drew captions 25%
+    // larger than the canvas path and than the preview (measured: 90px vs
+    // 72px). Landscape happened to agree, which is why it went unnoticed.
+    // Deriving from styleForFrame makes the long-video path and the per-image
+    // path resolve the same size, colours, box, outline, weight and case.
+    var st = null;
+    try { st = CPRender.styleForFrame(preset, H, ov, W); } catch (eSt) { st = null; }
     var base = Math.min(W, H);
-    var fontSize = Math.round((parseInt(ov.fontSize, 10) || 120) * (base / 1080));
-    fontSize = Math.max(Math.round(base * 0.045), Math.min(fontSize, Math.round(base * 0.115)));
-    var yPct = (ov.yPct != null) ? ov.yPct : 0.85;                  // 0 top … 1 bottom
+    var fontSize = (st && st.size > 0)
+      ? st.size
+      : Math.max(Math.round(base * 0.045),
+                 Math.min(Math.round((parseInt(ov.fontSize, 10) || 120) * (base / 1080)),
+                          Math.round(base * 0.115)));
+    var yPct = (st && st.yPct != null) ? st.yPct : ((ov.yPct != null) ? ov.yPct : 0.85);
     var marginV = Math.max(Math.round(H * 0.04), Math.round((1 - yPct) * H));
     var align = (yPct < 0.4) ? 8 : (yPct < 0.66 ? 5 : 2);          // top / middle / bottom-centre
+    var boxColor = st ? st.boxColor : (ov.boxColor !== undefined ? ov.boxColor : (preset.boxColor || null));
+    var strokeCol = st ? st.stroke : ov.stroke;
+    var strokeW = st ? st.strokeWidth : ov.strokeWidth;
     return {
       width: W, height: H,
-      font: ov.font || preset.font || 'Arial',
+      font: (st && st.font) || ov.font || preset.font || 'Arial',
       fontSize: fontSize,
-      fill: ov.fill || preset.fill || '#FFFFFF',
-      highlight: ov.highlight || preset.highlight || '#FFD400',
-      outlineColor: ov.stroke || '#000000',
-      outline: (ov.strokeWidth != null ? ov.strokeWidth : Math.max(2, Math.round(fontSize * 0.06))),
+      fill: (st && st.fill) || ov.fill || preset.fill || '#FFFFFF',
+      highlight: (st && st.highlight) || ov.highlight || preset.highlight || '#FFD400',
+      outlineColor: strokeCol || '#000000',
+      // with no box AND no authored outline, keep a thin dark edge so text stays
+      // legible over busy footage — the same guarantee the canvas path makes
+      outline: (strokeW != null && strokeW > 0) ? strokeW
+             : (boxColor ? 0 : Math.max(2, Math.round(fontSize * 0.06))),
       // the caption BOX — carried onto the overlay path so a boxed style keeps
       // its box on long videos instead of degrading to bare outlined text
-      boxColor: (ov.boxColor !== undefined ? ov.boxColor : (preset.boxColor || null)),
-      boxOpacity: (ov.boxOpacity != null ? ov.boxOpacity : (preset.boxOpacity != null ? preset.boxOpacity : 1)),
-      boxPad: (ov.boxPad != null ? ov.boxPad : (preset.boxPad != null ? preset.boxPad : 1)),
-      bold: (ov.weight || preset.weight || 800) >= 600,
-      allCaps: !!ov.uppercase,
-      letterSpacing: ov.letterSpacing || 0,
+      boxColor: boxColor,
+      boxOpacity: st ? st.boxOpacity : (ov.boxOpacity != null ? ov.boxOpacity : 1),
+      boxPad: st ? st.boxPad : (ov.boxPad != null ? ov.boxPad : 1),
+      bold: ((st ? st.weight : (ov.weight || preset.weight || 800)) >= 600),
+      allCaps: !!(st ? st.uppercase : ov.uppercase),
+      letterSpacing: (st && st.letterSpacing) || ov.letterSpacing || 0,
       align: align, marginV: marginV,
       marginLR: Math.round(W * 0.06),
       anim: 'pop',
@@ -10473,6 +10487,7 @@
       // the preview is a true crop of the SEQUENCE, so tests need to stand it
       // in front of a vertical reel and a landscape podcast alike
       env: function () { return state.env ? { width: state.env.width, height: state.env.height } : null; },
+      assOpts: function (w, h) { try { return assOptsFromStyle(w, h); } catch (e) { return { _threw: String(e && e.message) }; } },
       setEnv: function (w, h) { state.env = { width: w, height: h }; try { renderPreview(); } catch (e) {} },
       styledPreset: function () { try { return styledPreset(); } catch (e) { return { _threw: String(e && e.message) }; } },
       customCount: function () { return (state.customTemplates || []).length; },

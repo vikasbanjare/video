@@ -892,6 +892,45 @@ function fluxProps() {
   else ok('reveal sync: both reveal controls are one setting — changing either moves the other, so the overlay and per-image renderers cannot disagree');
   await page.evaluate(() => { try { localStorage.removeItem('cutpilot.look'); } catch (e) {} });
 
+  // ---- T. both renderers resolve the SAME style -----------------------------
+  // Long videos burn one libass overlay; short ones place per-word PNGs. They
+  // are different rasterizers, and the overlay used to compute its own font
+  // size with no portrait boost — 25% larger than the canvas path on a 1080x1920
+  // reel (90px vs 72px), which landscape happened to match, hiding it. Both now
+  // resolve from styleForFrame, so a podcast looks like its preview.
+  const both = await page.evaluate(async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const D = window.CP_DEBUG;
+    if (!D || !D.assOpts || !D.styledPreset) return { skip: 'assOpts hook missing' };
+    document.querySelector('.tab[data-tab="captions"]').click(); await sleep(250);
+    const b = document.getElementById('btn-browse-styles'); if (b) b.click(); await sleep(600);
+    const cards = Array.from(document.querySelectorAll('#tpl-grid .tpl-thumb-canvas')).filter(c => c._tpl);
+    const step = Math.max(1, Math.floor(cards.length / 10));
+    const picked = []; for (let i = 0; i < cards.length && picked.length < 10; i += step) picked.push(cards[i]);
+    const fails = []; let checked = 0;
+    for (const c of picked) {
+      const t = c._tpl;
+      c.scrollIntoView({ block: 'center' }); await sleep(90);
+      let el = c; while (el && !(el.classList && el.classList.contains('tpl-card'))) el = el.parentNode;
+      (el || c).click(); await sleep(260);
+      for (const F of [{ w: 1080, h: 1920, n: '1080x1920' }, { w: 1920, h: 1080, n: '1920x1080' }]) {
+        const a = D.assOpts(F.w, F.h);
+        const st = CPRender.styleForFrame(D.styledPreset(), F.h, D.readOverrides(), F.w);
+        checked++;
+        if (a.fontSize !== st.size) fails.push(t.id + ' @' + F.n + ': size ' + a.fontSize + ' vs ' + st.size);
+        if (!!a.boxColor !== !!st.boxColor) fails.push(t.id + ' @' + F.n + ': box ' + a.boxColor + ' vs ' + st.boxColor);
+        if (String(a.fill).toLowerCase() !== String(st.fill).toLowerCase())
+          fails.push(t.id + ' @' + F.n + ': fill ' + a.fill + ' vs ' + st.fill);
+      }
+    }
+    return { checked, fails };
+  });
+  if (both.skip) bad('renderer agreement: ' + both.skip);
+  else if (both.fails.length) both.fails.slice(0, 8).forEach(f => bad('renderer agreement: ' + f));
+  else ok('renderer agreement: the long-video overlay and the per-image render resolve the same size, box and colour — ' +
+          both.checked + ' style/frame checks');
+  await page.evaluate(() => { try { localStorage.removeItem('cutpilot.look'); } catch (e) {} });
+
   await browser.close();
   console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');
   process.exit(failed ? 1 : 0);
