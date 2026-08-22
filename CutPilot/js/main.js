@@ -318,6 +318,25 @@
     return null;  // not found — re-probe next call (picks up a fresh install)
   }
 
+  /* Does THIS machine's ffmpeg carry libass (the `subtitles` filter)? The
+     one-clip overlay for long videos needs it. The build Pulse installs itself
+     has it (--enable-libass, verified against the shipped release), but a
+     pre-existing minimal ffmpeg may not — and without this check a podcast
+     would be routed to the overlay, fail mid-render and fall back, after the
+     user had already waited. Probed once and cached. */
+  var _libassOk = null;
+  function ffmpegHasLibass() {
+    if (_libassOk !== null) return _libassOk;
+    var ff = resolveFfmpeg();
+    if (!ff) { _libassOk = false; return false; }
+    try {
+      var out = nodeReq('child_process').execSync(JSON.stringify(ff) + ' -hide_banner -filters 2>&1',
+        { encoding: 'utf8', maxBuffer: 1 << 24 });
+      _libassOk = /\bsubtitles\b/.test(out);
+    } catch (e) { _libassOk = false; }
+    return _libassOk;
+  }
+
   /* ---- one-time, in-app ffmpeg setup (no Terminal) -----------------------
      The shipped panel is tiny; the first time a feature needs ffmpeg we fetch
      a static build for this OS/CPU straight from GitHub into ~/.cutpilot/bin
@@ -2965,13 +2984,9 @@
   } catch (eRen) { row('Caption renderer (Pulse)', 'fail', eRen.message); }
 
   try {
-    var _hasLibass = false, _ffx = resolveFfmpeg();
-    if (_ffx) {
-      var _cpm = nodeReq('child_process');
-      var _flt = _cpm.execSync(JSON.stringify(_ffx) + ' -hide_banner -filters 2>&1',
-        { encoding: 'utf8', maxBuffer: 1 << 24 });
-      _hasLibass = /\bsubtitles\b/.test(_flt);
-    }
+    // the SAME probe the auto-overlay decision uses, so the report cannot
+    // disagree with what the panel will actually do
+    var _ffx = resolveFfmpeg(), _hasLibass = ffmpegHasLibass();
     row('Long videos → ONE caption clip', _hasLibass ? 'ok' : 'warn',
       _hasLibass ? 'a long podcast becomes one overlay clip instead of thousands of images'
         : (_ffx ? 'this ffmpeg has no subtitles filter — a long video would create one image per word'
@@ -5848,7 +5863,7 @@
         var tcEst = textCues(mCues, parseInt($('c-words').value, 10) || 0, state.mogrtCase || 'as-spoken');
         estFrames = tcEst.reduce(function (n, c) { return n + Math.max(1, String(c.text || '').split(/\s+/).length); }, 0);
       } catch (eEst) { estFrames = mCues.length * 6; }
-      if (estFrames > 600 && resolveFfmpeg() && typeof CPAss !== 'undefined') {
+      if (estFrames > 600 && ffmpegHasLibass() && typeof CPAss !== 'undefined') {
         diag('captions', 'auto overlay: ' + estFrames + ' word-frames over ' + spanMin.toFixed(1) + ' min — one overlay clip instead of ' + estFrames + ' images');
         toast('This video needs ~' + estFrames + ' caption frames — Pulse is rendering ONE caption overlay clip instead of ' + estFrames + ' images (same look, far lighter on your project).');
         return runLibassCaptions(mCues, {});
