@@ -841,14 +841,125 @@
   /* Call Groq's chat-completions API (same free key as cloud transcription) and
      return the assistant text. Body goes via a temp file (--data-binary @file) so
      unicode/quotes/newlines in the transcript never break shell escaping. */
+  /* Groq retires models on a rolling schedule. The panel pinned
+     llama-3.3-70b-versatile, and when Groq decommissioned it EVERY AI fix died
+     with "The model ... does not exist or you do not have access to it" — the
+     owner's v0.9.350 diagnostic caught it twice in four seconds. Pinning one id
+     is the bug, so this never pins one again: ask Groq which models it actually
+     serves (authoritative, uses the user's own key), prefer the best one we know
+     how to drive, remember it, and if a model disappears mid-flight fall through
+     to the next candidate instead of failing the user's transcript.
+
+     Ordered by suitability for these jobs (strict-JSON transcript repair and
+     short titles), best first. The list only has to contain ONE model Groq still
+     serves — discovery and fall-through handle the rest. */
+  var GROQ_CHAT_MODELS = [
+    'openai/gpt-oss-120b',
+    'moonshotai/kimi-k2-instruct',
+    'meta-llama/llama-4-maverick-17b-128e-instruct',
+    'meta-llama/llama-4-scout-17b-16e-instruct',
+    'qwen/qwen3-32b',
+    'openai/gpt-oss-20b',
+    'llama-3.1-8b-instant',
+    'llama-3.3-70b-versatile'   // legacy, decommissioned for some accounts — last
+  ];
+  var _groqModelOk = null;      // proven to answer this session
+  var _groqModelDead = {};      // ids Groq rejected this session
+  var _groqServed = null;       // ids Groq says it serves (null = not asked yet)
+
+  function groqModelGone(msg) {
+    return /does not exist|do not have access|decommission|deprecat|model_not_found/i.test(String(msg || ''));
+  }
+
+  /* Preference order, minus anything already known dead. A model Groq's own
+     /models list confirms is served jumps ahead of one we merely hope exists. */
+  function groqModelOrder() {
+    var out = [], i, m;
+    function add(x) { if (x && !_groqModelDead[x] && out.indexOf(x) < 0) out.push(x); }
+    add(_groqModelOk);
+    add(settings.groqModel);
+    if (_groqServed && _groqServed.length) {
+      for (i = 0; i < GROQ_CHAT_MODELS.length; i++) {
+        m = GROQ_CHAT_MODELS[i];
+        if (_groqServed.indexOf(m) >= 0) add(m);
+      }
+      // anything Groq serves that we didn't list — better than a known-dead id
+      for (i = 0; i < _groqServed.length; i++) add(_groqServed[i]);
+    }
+    for (i = 0; i < GROQ_CHAT_MODELS.length; i++) add(GROQ_CHAT_MODELS[i]);
+    return out;
+  }
+
+  /* GET /models once per session. Never rejects — discovery is an optimisation,
+     not a gate; if it fails we still fall through the static candidates. */
+  function groqDiscoverModels() {
+    if (_groqServed) return Promise.resolve(_groqServed);
+    return new Promise(function (resolve) {
+      var key = cpKey();
+      if (!key) { _groqServed = []; return resolve(_groqServed); }
+      var cp; try { cp = nodeReq('child_process'); } catch (e) { _groqServed = []; return resolve(_groqServed); }
+      var p;
+      try {
+        p = curlWithSecret(cp, ['-sS', '--max-time', '20', 'https://api.groq.com/openai/v1/models'],
+                           ['Authorization: Bearer ' + key]);
+      } catch (eS) { _groqServed = []; return resolve(_groqServed); }
+      var out = '';
+      if (p.stdout) p.stdout.on('data', function (d) { out += d.toString(); });
+      p.on('error', function () { _groqServed = []; resolve(_groqServed); });
+      p.on('close', function () {
+        var ids = [];
+        try {
+          var j = JSON.parse(out);
+          if (j && j.data && j.data.length) {
+            for (var i = 0; i < j.data.length; i++) if (j.data[i] && j.data[i].id) ids.push(String(j.data[i].id));
+          }
+        } catch (e) { ids = []; }
+        _groqServed = ids;
+        resolve(_groqServed);
+      });
+    });
+  }
+
+  /* Resolve a model, run the call, and on "that model is gone" advance to the
+     next candidate rather than surfacing a dead id to the user. */
   function groqChat(messages, opts) {
+    opts = opts || {};
+    if (opts.model) return groqChatOnce(messages, opts, opts.model);
+    return groqDiscoverModels().then(function () {
+      var order = groqModelOrder();
+      var idx = 0;
+      function attempt() {
+        var m = order[idx];
+        if (!m) return Promise.reject(new Error('Groq has no usable chat model for this key — check console.groq.com/keys.'));
+        return groqChatOnce(messages, opts, m).then(function (txt) {
+          if (_groqModelOk !== m) {
+            _groqModelOk = m;
+            try { settings.groqModel = m; saveSettings(); } catch (eSv) {}
+          }
+          return txt;
+        }, function (err) {
+          if (groqModelGone(err && err.message) && idx + 1 < order.length) {
+            _groqModelDead[m] = 1;
+            if (_groqModelOk === m) _groqModelOk = null;
+            try { if (settings.groqModel === m) { settings.groqModel = ''; saveSettings(); } } catch (eSv2) {}
+            idx++;
+            return attempt();
+          }
+          throw err;
+        });
+      }
+      return attempt();
+    });
+  }
+
+  function groqChatOnce(messages, opts, model) {
     opts = opts || {};
     return new Promise(function (resolve, reject) {
       var key = cpKey();
       if (!key) return reject(new Error('This uses your free Groq key — add it in Settings → Auto-transcribe (console.groq.com/keys).'));
       var cp, fs, os, pathMod;
       try { cp = nodeReq('child_process'); fs = nodeReq('fs'); os = nodeReq('os'); pathMod = nodeReq('path'); } catch (e) { return reject(e); }
-      var body = { model: opts.model || 'llama-3.3-70b-versatile',
+      var body = { model: model || opts.model || GROQ_CHAT_MODELS[0],
                    temperature: (opts.temperature != null ? opts.temperature : 0.2), messages: messages };
       if (opts.json) body.response_format = { type: 'json_object' };
       if (opts.maxTokens) body.max_tokens = opts.maxTokens;   // cap response → stay under tokens-per-minute

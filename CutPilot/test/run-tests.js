@@ -1002,7 +1002,15 @@ console.log('smartedit.js (AI cleanup)');
   assert(ch.length === 3 && ch[0].length === 1000 && ch[2].length === 500, 'chunk splits 2500 items into 1000/1000/500');
   assert(CPSmart.chunk([], 1000).length === 0, 'chunk of empty is empty');
   assert(CPSmart.chatBody({ system: 's', user: 'u' }, 'm', 2048).max_tokens === 2048, 'chatBody caps max_tokens');
-  assert(CPSmart.chatBody({ system: 's', user: 'u' }).max_tokens === undefined, 'chatBody omits max_tokens when not set');
+  assert(CPSmart.chatBody({ system: 's', user: 'u' }, 'm').max_tokens === undefined, 'chatBody omits max_tokens when not set');
+  // The model id must come from main.js resolving one against Groq's live
+  // /models list. A pinned id here is exactly what broke EVERY AI fix when Groq
+  // decommissioned llama-3.3-70b-versatile ("does not exist or you do not have
+  // access to it", twice in four seconds in the owner's v0.9.350 diagnostic).
+  let pinRefused = false;
+  try { CPSmart.chatBody({ system: 's', user: 'u' }, null, 2048); }
+  catch (e) { pinRefused = /do not pin/i.test(e.message); }
+  assert(pinRefused, 'chatBody REFUSES to build a body with no model — no id can be silently re-pinned here');
 
   // auto title for new sequences
   assert(/TRANSCRIPT:/.test(CPSmart.buildTitlePrompt('hello world').user), 'buildTitlePrompt includes the transcript');

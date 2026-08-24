@@ -224,8 +224,12 @@
      maxTokens caps the RESPONSE so the request total stays under the tier's
      tokens-per-minute limit (the whole transcript in one shot blew past it). */
   function chatBody(prompt, model, maxTokens) {
+    // No hardcoded id here either — main.js resolves a live model against Groq's
+    // own /models list and passes it in. A stale pin is what broke every AI fix
+    // when Groq decommissioned llama-3.3-70b-versatile.
+    if (!model) throw new Error('chatBody: pass the model main.js resolved via groqChat — do not pin one here.');
     var b = {
-      model: model || 'llama-3.3-70b-versatile',
+      model: model,
       temperature: 0,
       response_format: { type: 'json_object' },
       messages: [
