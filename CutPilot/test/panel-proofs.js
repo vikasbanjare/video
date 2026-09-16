@@ -1288,6 +1288,54 @@ function fluxProps() {
     else ok('Deepgram is a first-class engine in the picker, alongside ' + keys.options.filter(o => /^cloud-/.test(o)).length + ' cloud engines');
   }
 
+  // ---- a retired provider model must not kill every AI feature -----------
+  // Reported: "Translate failed: Cloud: The model `llama-3.3-70b-versatile`
+  // does not exist or you do not have access to it." One hardcoded id backed
+  // translate, fix-wording, viral hooks, B-roll, speaker detection and smart
+  // cleanup, so all six died together when the provider retired it.
+  const mdl = await page.evaluate(() => {
+    const D = window.CP_DEBUG;
+    if (!D || !D.pickGroqModel) return { fatal: 'model hooks missing' };
+    const P = D.groqPrefs();
+    const REAL_ERR = 'The model `llama-3.3-70b-versatile` does not exist or you do not have access to it.';
+    return {
+      prefs: P,
+      // the reported message must be recognised as "pick another model"
+      detects: D.groqModelGone(REAL_ERR),
+      detectsVariants: ['model_not_found', 'has been decommissioned', 'The model foo was not found']
+        .map(m => D.groqModelGone(m)),
+      // a bad key / rate limit must NOT be mistaken for a dead model
+      ignoresOther: ['Invalid API Key', 'Rate limit reached', 'Couldn\'t reach Groq'].map(m => D.groqModelGone(m)),
+      // the top preference being gone must fall through to a live one
+      topGone: D.pickGroqModel(P.slice(1), '', P),
+      // an entirely unrecognised catalogue still yields a usable model
+      unknownCatalogue: D.pickGroqModel(['brand-new-llm-42b', 'whisper-large-v3'], '', P),
+      // …but never a model that cannot hold a chat turn
+      unusable: ['whisper-large-v3', 'llama-guard-4-12b', 'playai-tts', 'text-embedding-3'].map(m => D.groqModelUnusable(m)),
+      keepsWorking: D.pickGroqModel(['x', P[2], P[1]], P[1], P),   // remembered choice wins if still live
+      droppedSaved: D.pickGroqModel([P[2]], P[0], P)               // remembered choice gone → next live pref
+    };
+  });
+  if (mdl.fatal) bad('ai model: ' + mdl.fatal);
+  else {
+    if (!mdl.detects) bad('ai model: the exact reported error is not recognised as a retired model — the panel would keep re-sending it');
+    else ok('the reported "model does not exist" error is recognised as a dead model, not a dead key');
+    if (mdl.detectsVariants.some(v => !v)) bad('ai model: some provider phrasings of a dead model are missed: ' + JSON.stringify(mdl.detectsVariants));
+    else ok('other phrasings (model_not_found / decommissioned / not found) are caught too');
+    if (mdl.ignoresOther.some(v => v)) bad('ai model: a bad key or rate limit is being misread as a dead model — it would swap models instead of telling the user');
+    else ok('a bad key or a rate limit is NOT mistaken for a dead model');
+    if (!mdl.topGone || mdl.topGone === mdl.prefs[0]) bad('ai model: with the top preference retired, the picker did not move on (' + mdl.topGone + ')');
+    else ok('with the top preference retired the picker moves to the next live one (' + mdl.topGone + ')');
+    if (!mdl.unknownCatalogue || mdl.unknownCatalogue === 'whisper-large-v3') bad('ai model: an unfamiliar catalogue yields no usable model (' + mdl.unknownCatalogue + ')');
+    else ok('an entirely unfamiliar catalogue still yields a usable chat model (' + mdl.unknownCatalogue + ')');
+    if (mdl.unusable.some(v => !v)) bad('ai model: a speech/guard/embedding model could be chosen for chat: ' + JSON.stringify(mdl.unusable));
+    else ok('speech, guard and embedding models are never chosen for chat');
+    if (mdl.keepsWorking !== mdl.prefs[1]) bad('ai model: a remembered working model is not reused (' + mdl.keepsWorking + ')');
+    else ok('a model that worked last time is reused while it stays available');
+    if (mdl.droppedSaved !== mdl.prefs[2]) bad('ai model: a remembered model that vanished is not replaced (' + mdl.droppedSaved + ')');
+    else ok('a remembered model that has vanished is replaced by the next live preference');
+  }
+
   await browser.close();
   console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');
   process.exit(failed ? 1 : 0);

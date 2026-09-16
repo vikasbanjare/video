@@ -252,6 +252,10 @@
     try { row('Platform: ' + ((typeof navigator !== 'undefined' && navigator.platform) || '?') + ' · in Premiere: ' + (typeof CPBridge !== 'undefined' && CPBridge.isCEP() ? 'yes' : 'no')); } catch (e) {}
     try { row('ffmpeg: ' + (resolveFfmpeg() || 'NOT FOUND')); } catch (e) {}
     try { row('Transcribe key: ' + (cpKey() ? 'set' : 'none') + ' · Deepgram: ' + (cpDeepgramKey() ? 'set' : 'none') + ' · Indian Voices: ' + (cpSarvamKey() ? 'set' : 'none') + ' · engine: ' + resolveQuality()); } catch (e) {}
+    // Which text model the AI features settled on. A retired model broke every
+    // one of them at once and the panel could not say which model it had asked
+    // for, so the report had to name it.
+    try { row('AI text model: ' + (_groqModel || (settings && settings.groqTextModel) || 'not resolved yet') + (_groqModels ? ' · ' + _groqModels.length + ' available to this key' : '')); } catch (e) {}
     try { row('Transcript: ' + (state.transcriptWords && state.transcriptWords.length ? (state.transcriptWords.length + ' words') : 'none') + ' · clip: ' + (state.clip ? (state.clip.name || 'yes') : 'none')); } catch (e) {}
     return L.join('\n');
   }
@@ -881,17 +885,125 @@
       return cues;
     });
   }
+  /* ---- which text model to use --------------------------------------------
+     This used to be one hardcoded id. Groq retires models on its own schedule,
+     and when `llama-3.3-70b-versatile` went away EVERY AI feature died at once
+     with "the model does not exist" — translate, fix-wording, viral hooks,
+     B-roll, speaker detection, smart cleanup — because they all call groqChat.
+     A hardcoded name means the panel breaks whenever the provider moves.
+
+     So: ask the account what it can actually use (GET /v1/models), pick the best
+     match from a preference list, and remember it. If none of the preferred ids
+     are live, fall back to ANY general-purpose chat model the key can see. The
+     panel then survives a decommission with no rebuild. */
+  // Ordered best-first. `llama-3.3-70b-versatile` is deliberately NOT here: the
+  // owner's account reported it retired, and leading with a known-dead id costs
+  // a wasted request on every cold start with no network. Discovery via
+  // /v1/models is the real mechanism; this list is only the offline fallback.
+  var GROQ_TEXT_MODELS = [
+    'meta-llama/llama-4-maverick-17b-128e-instruct',
+    'meta-llama/llama-4-scout-17b-16e-instruct',
+    'openai/gpt-oss-120b',
+    'moonshotai/kimi-k2-instruct',
+    'qwen/qwen3-32b',
+    'deepseek-r1-distill-llama-70b',
+    'openai/gpt-oss-20b',
+    'llama-3.1-8b-instant'
+  ];
+  /* Models that exist but cannot do a normal chat turn — never pick these as a
+     generic fallback, or the panel would "work" and return nonsense. */
+  function groqModelUnusable(id) {
+    return /whisper|tts|guard|embed|moderation|vision-preview|distil-whisper/i.test(String(id || ''));
+  }
+  var _groqModels = null;        // ids the key can see (null = not asked yet)
+  var _groqModel = null;         // the id we settled on this session
+  /* GET /v1/models — the list this key may use. Resolves to [] on any failure,
+     so a network hiccup falls back to the preference list instead of blocking. */
+  function groqListModels() {
+    var key = cpKey();
+    if (!key) return Promise.resolve([]);
+    return _curlJson(['-sS', '--max-time', '20', 'https://api.groq.com/openai/v1/models'],
+      ['Authorization: Bearer ' + key])
+      .then(function (j) {
+        var d = (j && j.data) || [];
+        return d.map(function (m) { return m && m.id; }).filter(Boolean);
+      })
+      .catch(function () { return []; });
+  }
+  /* The model to send. Cached per session and remembered in settings, but never
+     trusted blindly: groqChat re-resolves if the provider says it is gone. */
+  /* Pure pick: given what the key can see, what it used last time, and our
+     preference order, choose a model. Kept free of network/settings so it can be
+     tested directly — this is the decision that broke every AI feature. */
+  function pickGroqModel(ids, saved, prefs) {
+    ids = ids || []; prefs = prefs || [];
+    if (!ids.length) return saved || prefs[0] || '';        // could not ask — use what we know
+    if (saved && ids.indexOf(saved) >= 0) return saved;      // the one that worked last time
+    for (var i = 0; i < prefs.length; i++) {
+      if (ids.indexOf(prefs[i]) >= 0) return prefs[i];
+    }
+    // nothing recognised: take any usable chat model rather than fail outright
+    var any = ids.filter(function (id) { return !groqModelUnusable(id); });
+    return any[0] || prefs[0] || '';
+  }
+  function resolveGroqTextModel() {
+    if (_groqModel) return Promise.resolve(_groqModel);
+    var saved = (settings.groqTextModel || '').trim();
+    return groqListModels().then(function (ids) {
+      _groqModels = ids;
+      _groqModel = pickGroqModel(ids, saved, GROQ_TEXT_MODELS);
+      if (_groqModel !== saved) { settings.groqTextModel = _groqModel; saveSettings(); }
+      try { diag('ai', 'text model: ' + _groqModel + (ids.length ? ' (of ' + ids.length + ' available)' : ' (model list unavailable)')); } catch (e) {}
+      return _groqModel;
+    });
+  }
+  /* "does not exist or you do not have access to it" — the provider retired the
+     model, or this key cannot use it. Distinct from a bad key or a rate limit:
+     the fix is a DIFFERENT model, not a different key. */
+  function groqModelGone(msg) {
+    var m = String(msg || '');
+    return /does not exist or you do not have access/i.test(m) ||
+           /model_not_found/i.test(m) ||
+           /decommissioned/i.test(m) ||
+           (/\bmodel\b/i.test(m) && /not found/i.test(m));
+  }
   /* Call Groq's chat-completions API (same free key as cloud transcription) and
      return the assistant text. Body goes via a temp file (--data-binary @file) so
-     unicode/quotes/newlines in the transcript never break shell escaping. */
+     unicode/quotes/newlines in the transcript never break shell escaping.
+     Resolves the model first, and if the provider says that model is gone,
+     re-resolves once and retries — a retired model must not surface to the user
+     as a dead feature. */
   function groqChat(messages, opts) {
+    opts = opts || {};
+    if (opts.model) return groqChatRaw(messages, opts);
+    function withModel(o, m) { var r = {}; for (var k in o) if (o.hasOwnProperty(k)) r[k] = o[k]; r.model = m; return r; }
+    return resolveGroqTextModel().then(function (mdl) {
+      return groqChatRaw(messages, withModel(opts, mdl));
+    }).catch(function (e) {
+      if (!groqModelGone(e && e.message)) throw e;
+      // the remembered/derived model is gone — forget it and ask again
+      var dead = _groqModel;
+      _groqModel = null; _groqModels = null;
+      settings.groqTextModel = ''; saveSettings();
+      GROQ_TEXT_MODELS = GROQ_TEXT_MODELS.filter(function (m) { return m !== dead; });
+      try { diag('ai', 'model ' + dead + ' is gone — re-resolving'); } catch (e2) {}
+      return resolveGroqTextModel().then(function (mdl2) {
+        if (!mdl2 || mdl2 === dead) {
+          throw new Error('The AI model this panel used has been retired by the provider and no replacement was available on your account. ' +
+                          'Check your internet connection and try again — the panel picks a current model automatically. (was: ' + dead + ')');
+        }
+        return groqChatRaw(messages, withModel(opts, mdl2));
+      });
+    });
+  }
+  function groqChatRaw(messages, opts) {
     opts = opts || {};
     return new Promise(function (resolve, reject) {
       var key = cpKey();
       if (!key) return reject(new Error('This uses your free Groq key — add it in Settings → Auto-transcribe (console.groq.com/keys).'));
       var cp, fs, os, pathMod;
       try { cp = nodeReq('child_process'); fs = nodeReq('fs'); os = nodeReq('os'); pathMod = nodeReq('path'); } catch (e) { return reject(e); }
-      var body = { model: opts.model || 'llama-3.3-70b-versatile',
+      var body = { model: opts.model || GROQ_TEXT_MODELS[0],
                    temperature: (opts.temperature != null ? opts.temperature : 0.2), messages: messages };
       if (opts.json) body.response_format = { type: 'json_object' };
       if (opts.maxTokens) body.max_tokens = opts.maxTokens;   // cap response → stay under tokens-per-minute
@@ -10840,6 +10952,11 @@
                  setSwara: vis('set-swara-key') };
       },
       whisperStatus: function () { var e = document.getElementById('whisper-status'); return e ? e.textContent : null; },
+      // the AI text model decision — a retired model took out every AI feature
+      pickGroqModel: pickGroqModel,
+      groqModelGone: groqModelGone,
+      groqModelUnusable: groqModelUnusable,
+      groqPrefs: function () { return GROQ_TEXT_MODELS.slice(); },
       engineOptions: function () { return WHISPER_QUALITIES.map(function (q) { return q.value; }); },
       // the preview is a true crop of the SEQUENCE, so tests need to stand it
       // in front of a vertical reel and a landscape podcast alike
