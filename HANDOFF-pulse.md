@@ -1,7 +1,7 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.9.387** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.9.388** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
@@ -130,6 +130,40 @@ file — no coverage at all), `escFilterPath` (broken), `CP_removePulseCaptionTr
 producer output fed to the real consumer, no fixture between them) and
 `mutation-check.js` (below).
 
+**v0.9.388 — the transcription key was unenterable (owner-reported)**
+The first real bug report from the owner's Mac, and the gates had all been green
+through it. The panel said *"Add your free Cloud account in Settings →
+Auto-transcribe"* after a Deepgram key was added; diagnostics read
+`Transcribe key: none · Verbatim: deepgram`. Three faults compounded:
+- **A control referenced into the void.** `set-groq-key` — six `$()` call sites
+  in `main.js`, zero definitions in `index.html`. Every call site was guarded
+  (`if ($('set-groq-key')) …`), so nothing threw and nothing logged. The message
+  pointed at a field that did not exist.
+- **The one real key box appeared only after it was needed.** With no key,
+  `resolveQuality()` fell back to a local whisper model → `usingCloud` false →
+  `tr-groq-wrap` stayed `hidden`. The box showed up only once a key was set. A
+  cloud-only (white-label) build ships no local-engine UI, so that fallback
+  selected an engine the user could never configure.
+- **The copy said there was nothing to do.** `"Cloud transcription is built in"`
+  printed on a build bundling no key, and the white-label table rewrote the
+  Groq signup URL to `cutpilot.app` — naming neither the service nor where to
+  get a key. That is what sent the owner to a different provider.
+
+Fixed by adding the three key inputs to Settings, making `resolveQuality()`
+follow whichever key exists (and never leave cloud on a cloud-only build),
+promoting **Deepgram to a full transcription engine** (it already returned
+word-level timings; `wordsToCues()` gives the same cue shape the other engines
+produce, and a key in either box feeds both transcription and retake-finding),
+and keeping white-label branding while leaving the *how to get a key* strings
+truthful on a keyless build.
+
+**New gate:** `dom-id-check.js` — every id the JS reaches for must exist in the
+DOM or be created at runtime. It is the exact mirror of the dead-control audit:
+that gate proves every control **in** the DOM does something, and is structurally
+blind to a control the code calls for that the DOM no longer has. 13 known-dead
+ids are listed with reasons; the gate also fails if one silently comes back.
+Five new panel proofs stand in the reported state, all mutation-verified.
+
 ### BUILD — read before producing an installer
 - `export CP_WHITELABEL=1 CP_GROQ_KEY="$(cat $SCRATCH/gk)" CP_SARVAM_KEY="$(cat $SCRATCH/sk)"; unset CP_TRIAL_DAYS CP_EXPIRY_DAYS; node tools/make-final.js`
 - **The scratchpad keys are GONE** — a container restart wiped
@@ -143,7 +177,7 @@ producer output fed to the real consumer, no fixture between them) and
   preview/render match. A build that behaves differently from the source
   fails and does not package. `CP_SKIP_BUILD_PROOFS=1` skips them while
   iterating on packaging only.
-- Verified at v0.9.387: the built panel passes all 30 proofs.
+- Verified at v0.9.388: the built panel passes all 37 proofs.
 
 ### WHAT THE VISUAL GATES CANNOT SEE (read before trusting a green run)
 - **The typefaces are not the owner's.** Many styles specify macOS fonts —
@@ -348,12 +382,14 @@ Absolute paths. Only files touched in this session are listed.
 
 ## Next 3 actions
 
-1. **Get a build onto the owner's Mac and read the self-test.** Nothing after v0.9.339
-   has ever run there. Blocked on two things: the owner asked for no builds while the
-   loop runs, and the bundled API keys were wiped by a container restart (see BUILD).
-   When it happens: fresh sequence → `🧹 Remove all Pulse captions` → `✨ Add captions`
-   → paste `📋 Copy diagnostics`. The four new self-test rows should localise almost
-   anything that is wrong in one paste.
+1. **Confirm the key path on the owner's Mac.** v0.9.388 went over; the owner has a
+   Deepgram key and can now pick Deepgram as the engine outright — no Groq account
+   needed. What to check in their next diagnostics paste: the line now reads
+   `Transcribe key: … · Deepgram: … · Indian Voices: … · engine: …`, so one paste
+   says which keys landed AND which engine resolved. Then: fresh sequence →
+   `🧹 Remove all Pulse captions` → `✨ Add captions` → `📋 Copy diagnostics`.
+   Note the Deepgram request path itself (curl → api.deepgram.com) has never run
+   against the live API from here — only its URL builder and parser are tested.
 2. **Exercise a LONG video on their Mac.** The one-clip overlay is what a 60-minute
    podcast takes, and it has never run on macOS. It is now fully checked here (box,
    size, position, pop, Hindi, transparency) and in CI, but macOS font resolution
