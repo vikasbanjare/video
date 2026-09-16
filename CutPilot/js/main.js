@@ -120,6 +120,18 @@
     var k = (settings && settings.sarvamKey || '').trim();
     return k || (BUNDLED_SARVAM_KEY || '').trim();
   }
+  /* The effective Deepgram key. Deepgram was only ever wired to "Find retakes"
+     (settings.verbatimKey), so a user who pasted a Deepgram key still got
+     "add your Cloud account" from Auto-transcribe. It returns word-level timings
+     just like the other engines, so it is now a first-class transcription engine
+     and BOTH slots feed it - whichever box the key was pasted into. */
+  function cpDeepgramKey() {
+    var k = (settings && settings.deepgramKey || '').trim();
+    if (k) return k;
+    var vp = (settings && settings.verbatimProvider) || 'deepgram';
+    if (vp === 'deepgram') return (settings && settings.verbatimKey || '').trim();
+    return '';
+  }
 
   // ---------------------------------------------------------------- dom ----
   function $(id) { return document.getElementById(id); }
@@ -239,7 +251,7 @@
     try { row('Pulse ' + (($('ver') && $('ver').textContent) || '?')); } catch (e) {}
     try { row('Platform: ' + ((typeof navigator !== 'undefined' && navigator.platform) || '?') + ' · in Premiere: ' + (typeof CPBridge !== 'undefined' && CPBridge.isCEP() ? 'yes' : 'no')); } catch (e) {}
     try { row('ffmpeg: ' + (resolveFfmpeg() || 'NOT FOUND')); } catch (e) {}
-    try { row('Transcribe key: ' + (cpKey() ? 'set' : 'none') + ' · Verbatim: ' + ((settings && settings.verbatimKey || '').trim() ? (settings.verbatimProvider || 'set') : 'none')); } catch (e) {}
+    try { row('Transcribe key: ' + (cpKey() ? 'set' : 'none') + ' · Deepgram: ' + (cpDeepgramKey() ? 'set' : 'none') + ' · Indian Voices: ' + (cpSarvamKey() ? 'set' : 'none') + ' · engine: ' + resolveQuality()); } catch (e) {}
     try { row('Transcript: ' + (state.transcriptWords && state.transcriptWords.length ? (state.transcriptWords.length + ' words') : 'none') + ' · clip: ' + (state.clip ? (state.clip.name || 'yes') : 'none')); } catch (e) {}
     return L.join('\n');
   }
@@ -504,6 +516,7 @@
     { value: 'auto-best', label: '✨ Auto — best engine for me (recommended)' },
     { value: 'cloud-groq', label: '☁️ Cloud · Groq (most accurate · free key)' },
     { value: 'cloud-swara', label: '🇮🇳 Indian Voices (all Indian languages)' },
+    { value: 'cloud-deepgram', label: '🎧 Cloud · Deepgram (nova-3 · own key)' },
     { value: 'large-v3-turbo-q5_0', label: '★ Best free · large-v3-turbo (~574MB · multilingual)' },
     { value: 'tiny', label: 'Local · Fastest · tiny (~75MB)' },
     { value: 'base', label: 'Local · Fast · base (~150MB)' },
@@ -516,7 +529,8 @@
   // cloud option (the bundled key makes it work out of the box).
   if (WHITE_LABEL) WHISPER_QUALITIES = [
     { value: 'cloud-groq', label: '✨ Pulse Cloud — best accuracy' },
-    { value: 'cloud-swara', label: '🇮🇳 Indian Voices — all languages' }
+    { value: 'cloud-swara', label: '🇮🇳 Indian Voices — all languages' },
+    { value: 'cloud-deepgram', label: '🎧 Deepgram — your own key' }
   ];
   var WHISPER_LANGS = [
     // AUTO first and default: the old 'en' default FORCED English on every
@@ -577,7 +591,17 @@
      check, and model file all agree. */
   function resolveQuality() {
     var q = settings.whisperQuality || 'auto-best';
-    if (q === 'auto-best') return cpKey() ? 'cloud-groq' : 'large-v3-turbo-q5_0';
+    if (q === 'auto-best') {
+      if (cpKey()) return 'cloud-groq';
+      if (cpDeepgramKey()) return 'cloud-deepgram';   // a Deepgram key alone is enough to transcribe
+      if (cpSarvamKey()) return 'cloud-swara';
+      // A cloud-only (white-label) build ships NO local-engine UI - no way to
+      // install whisper or point at a model. Falling back to a local model left
+      // the user on an engine they could not set up AND hid the key box (it only
+      // showed for cloud), so the key could never be entered. Stay on cloud and
+      // ask for the key instead.
+      return WHITE_LABEL ? 'cloud-groq' : 'large-v3-turbo-q5_0';
+    }
     return q;
   }
   function modelFileName() {
@@ -1021,6 +1045,37 @@
     } catch (e) { return null; }
   }
 
+  /* Deepgram as a FULL transcription engine (not just "find retakes").
+     Deepgram returns word-level timings + confidence, which is exactly what the
+     rest of the pipeline wants, so the only work here is: POST the audio, parse,
+     group into sentence-ish cues, and hand back the same shape the Groq/Sarvam
+     paths return -> cues array with an attached .words list. */
+  function transcribeViaDeepgram(audioPath, lang) {
+    var key = cpDeepgramKey();
+    if (!key) return Promise.reject(new Error('Add your Deepgram key in Settings → Auto-transcribe.'));
+    var opts = {};
+    // 'hinglish' is our own UI mode, not a Deepgram language code; nova-3 reads
+    // Hindi natively and the caller romanises afterwards.
+    if (lang && lang !== 'auto' && lang !== 'hinglish') opts.language = lang;
+    return _curlJson(['-sS', '--max-time', '900', CPVerbatim.deepgramUrl(opts),
+      '-H', 'Content-Type: audio/mpeg', '--data-binary', '@' + audioPath],
+      ['Authorization: Token ' + key])
+      .then(function (j) {
+        if (j.err_code || j.error) throw new Error('Deepgram: ' + (j.err_msg || j.error || j.reason || 'request rejected — check the key'));
+        var words = CPVerbatim.parseDeepgram(j);
+        if (!words.length) throw new Error('Deepgram returned no speech — check the key and that the clip has a voice in it.');
+        var cues = CPVerbatim.wordsToCues(words, 0.7);
+        if (!cues.length) throw new Error('Deepgram returned no speech.');
+        cues.words = words;
+        return cues;
+      });
+  }
+  /* Deepgram takes the whole file in one POST (no 25MB ceiling like Groq), so
+     there is no chunking to do — but keep the same signature as the other
+     engines so the dispatch site stays uniform. */
+  function deepgramTranscribe(audioPath, lang, ff, durSec) {
+    return transcribeViaDeepgram(audioPath, lang);
+  }
   /* Auto-transcribe the selected clip locally (ffmpeg → whisper.cpp → SRT) so
      the user never needs Premiere's Transcribe/Export. Produces a sequence-time
      transcript and loads it as the current transcript. */
@@ -1105,7 +1160,8 @@
     if (state.transcribing) return toast('Already transcribing — hang tight, this can take a minute…');
     var cloud = (resolveQuality() === 'cloud-groq');
     var swara = (resolveQuality() === 'cloud-swara');     // Sarvam AI (Indian languages)
-    var useCloud = cloud || swara;                         // both upload audio to a cloud API
+    var dgram = (resolveQuality() === 'cloud-deepgram');  // Deepgram nova-3 (user's own key)
+    var useCloud = cloud || swara || dgram;                // all upload audio to a cloud API
     var ff = resolveFfmpeg();
     if (!ff) {
       // no ffmpeg yet → fetch it once (no Terminal), then start transcribing
@@ -1114,9 +1170,11 @@
     }
     var wbin = null;
     if (cloud) {
-      if (!cpKey()) return toast('Add your free Groq API key in Settings → Auto-transcribe (console.groq.com/keys).', true);
+      if (!cpKey()) return toast('Add your free Groq API key in Settings → Auto-transcribe (console.groq.com/keys) — or switch the engine there to Deepgram / Indian Voices if you have one of those keys.', true);
     } else if (swara) {
       if (!cpSarvamKey()) return toast('Add your Indian Voices key in Settings → Auto-transcribe to use Indian-language transcription.', true);
+    } else if (dgram) {
+      if (!cpDeepgramKey()) return toast('Add your Deepgram key in Settings → Auto-transcribe.', true);
     } else {
       wbin = resolveWhisper();
       if (!wbin) return toast('Set the whisper engine in Settings → Auto-transcribe (brew install whisper-cpp).', true);
@@ -1131,18 +1189,18 @@
     //   • local English-ONLY (.en) model → can't read Hindi; it writes phonetic
     //     Latin (-l en). Weaker (drops Hindi-heavy stretches) — only a fallback.
     var wlang = lang, romanize = false;
-    if (lang === 'hinglish' && cloud) { wlang = 'hi'; romanize = true; }
+    if (lang === 'hinglish' && (cloud || dgram)) { wlang = 'hi'; romanize = true; }
     // Indian Voices Hinglish: transcribe Hindi (hi-IN), then romanise Devanagari→Latin.
     if (lang === 'hinglish' && swara) { wlang = 'hi-IN'; romanize = true; }
-    var ico = swara ? '🇮🇳' : cloud ? '☁️' : '🎙️';
+    var ico = swara ? '🇮🇳' : dgram ? '🎧' : cloud ? '☁️' : '🎙️';
     setTranscriptBar('', ico, useCloud ? 'Connecting to the cloud…' : 'Preparing the speech model…', null);
     (useCloud ? Promise.resolve(null) : resolveTranscribeModel()).then(function (model) {
       // local Hinglish: pick the mode that matches the model we actually resolved
-      if (!cloud && lang === 'hinglish') {
+      if (!cloud && !dgram && lang === 'hinglish') {
         if (/\.en\.bin$/i.test(String(model))) { wlang = 'en'; romanize = false; }   // English-only fallback
         else { wlang = 'hi'; romanize = true; }                                       // multilingual: transcribe + romanise
       }
-      var modelLabel = swara ? 'Indian Voices (Sarvam)' : cloud ? 'Cloud · Groq (large-v3)' : String(model).split(/[\\/]/).pop();
+      var modelLabel = swara ? 'Indian Voices (Sarvam)' : dgram ? 'Cloud · Deepgram (nova-3)' : cloud ? 'Cloud · Groq (large-v3)' : String(model).split(/[\\/]/).pop();
       // Does this media file actually CONTAIN an audio stream? A podcast setup
       // often has a video file with NO embedded sound + the mic recording as a
       // separate audio clip — extracting from the video then fails with ffmpeg's
@@ -1274,6 +1332,9 @@
           setTranscriptBar('', ico, useCloud ? 'Transcribing in the cloud…' : ('Transcribing with ' + modelLabel + ' — this can take a minute…'), null);
           if (swara) {
             return swaraTranscribe(cloudMp3, wlang, ff, dur);   // Sarvam AI (Indian languages)
+          }
+          if (dgram) {
+            return deepgramTranscribe(cloudMp3, wlang, ff, dur); // Deepgram nova-3 (own key)
           }
           if (cloud) {
             var okOpus = false; try { okOpus = fs.existsSync(cloudOpus) && fs.statSync(cloudOpus).size > 2000; } catch (eO) {}
@@ -1805,7 +1866,7 @@
     if (TRIAL_DAYS_MS) { var _dl = trialDaysLeft(); if ($('ver')) $('ver').textContent = $('ver').textContent + ' · trial ' + _dl + 'd'; }
     // a bundled (shared) key is hidden from the tester — don't show the key fields
     if (KEY_BUNDLED) {
-      ['tr-groq-wrap', 'set-groq-key'].forEach(function (id) {
+      ['tr-groq-wrap', 'set-groq-row'].forEach(function (id) {
         var el = $(id); if (el) { var row = el.closest ? el.closest('label,div') : el; if (row) row.style.display = 'none'; }
       });
     }
@@ -1818,6 +1879,8 @@
     if ($('set-whisper')) $('set-whisper').value = settings.whisperPath || '';
     if ($('set-whisper-model')) $('set-whisper-model').value = settings.whisperModel || '';
     if ($('set-groq-key')) $('set-groq-key').value = settings.groqKey || '';
+    if ($('set-swara-key')) $('set-swara-key').value = settings.sarvamKey || '';
+    if ($('set-dg-key')) $('set-dg-key').value = cpDeepgramKey();
     loadLibraryPrefs();
     buildFontSelect();
     buildAnimRail();
@@ -10409,14 +10472,19 @@
     var resolved = resolveQuality();
     var usingCloud = (resolved === 'cloud-groq');
     var usingSwara = (resolved === 'cloud-swara');
+    var usingDg = (resolved === 'cloud-deepgram');
     if ($('tr-groq-wrap')) $('tr-groq-wrap').classList.toggle('hidden', !usingCloud);
     if ($('tr-swara-wrap')) $('tr-swara-wrap').classList.toggle('hidden', !usingSwara);
+    if ($('tr-dg-wrap')) $('tr-dg-wrap').classList.toggle('hidden', !usingDg);
     // Swara picks its own Indian language, so hide the generic whisper/Groq language row
     if ($('tr-lang-row')) $('tr-lang-row').classList.toggle('hidden', usingSwara);
     var k = settings.groqKey || '';
     setIfNotFocused('tr-groq-key', k);
     setIfNotFocused('set-groq-key', k);
     setIfNotFocused('tr-swara-key', settings.sarvamKey || '');
+    setIfNotFocused('set-swara-key', settings.sarvamKey || '');
+    setIfNotFocused('tr-dg-key', cpDeepgramKey());
+    setIfNotFocused('set-dg-key', cpDeepgramKey());
   }
   /* One place to accept the key from either input: save + mirror + refresh. */
   function onGroqKeyInput(v) {
@@ -10424,6 +10492,28 @@
     saveSettings();
     setIfNotFocused('tr-groq-key', settings.groqKey);
     setIfNotFocused('set-groq-key', settings.groqKey);
+    refreshWhisperStatus();
+  }
+  /* One place to accept the Indian Voices key from either input. */
+  function onSwaraKeyInput(v) {
+    settings.sarvamKey = (v || '').trim();
+    saveSettings();
+    setIfNotFocused('tr-swara-key', settings.sarvamKey);
+    setIfNotFocused('set-swara-key', settings.sarvamKey);
+    refreshWhisperStatus();
+  }
+  /* One place to accept the Deepgram key. It also feeds "Find retakes", so keep
+     the verbatim slot in step - a user should never have to paste it twice. */
+  function onDeepgramKeyInput(v) {
+    var k = (v || '').trim();
+    settings.deepgramKey = k;
+    if (!(settings.verbatimKey || '').trim() || (settings.verbatimProvider || 'deepgram') === 'deepgram') {
+      settings.verbatimKey = k; settings.verbatimProvider = 'deepgram';
+      if ($('set-vb-key')) setIfNotFocused('set-vb-key', k);
+    }
+    saveSettings();
+    setIfNotFocused('tr-dg-key', k);
+    setIfNotFocused('set-dg-key', k);
     refreshWhisperStatus();
   }
   function refreshWhisperStatus() {
@@ -10441,15 +10531,25 @@
     if (resolved === 'cloud-swara') {
       el.textContent = cpSarvamKey()
         ? '🇮🇳 Indian Voices ready — pick your language above.' + autoTag
-        : '🇮🇳 Indian Voices selected — paste your key in the box that just appeared.';
+        : '🇮🇳 Indian Voices selected — paste your key in the 🇮🇳 box below.';
+      return;
+    }
+    if (resolved === 'cloud-deepgram') {
+      el.textContent = cpDeepgramKey()
+        ? '🎧 Deepgram ready — nova-3, keeps every word.' + autoTag
+        : '🎧 Deepgram selected — paste your key in the 🎧 box below.';
       return;
     }
     var w = resolveWhisper(), m = resolveWhisperModel();
     var willUse = modelFileName();   // what accuracy+language will fetch/use
     if (w) { el.textContent = '✅ Engine ready · will use ' + willUse + (m ? '' : ' (downloads on first use)') + autoTag; }
-    else { el.textContent = 'Cloud transcription is built in — pick a language above and transcribe.'; }
+    // "Cloud transcription is built in" was printed even when the build bundles
+    // NO key - so the panel told the user there was nothing to set up, then
+    // refused to transcribe without a key. Only say "built in" when it is true.
+    else if (KEY_BUNDLED) { el.textContent = 'Cloud transcription is built in — pick a language above and transcribe.'; }
+    else { el.textContent = 'Pick a cloud engine above, then paste its key in the matching box below.'; }
     var note = $('set-quality-note');
-    if (note) { var q = (settings.whisperQuality || 'large-v3-turbo-q5_0'); var qo = WHISPER_QUALITIES.filter(function (x) { return x.value === q; })[0]; note.textContent = qo ? '· ' + qo.label.replace(/^[^·]*· /, '') : ''; }
+    if (note) { var q = (settings.whisperQuality || 'auto-best'); var qo = WHISPER_QUALITIES.filter(function (x) { return x.value === q; })[0]; note.textContent = qo ? '· ' + qo.label.replace(/^[^·]*· /, '') : ''; }
   }
   /* Mount the custom Accuracy + Language dropdowns (native <select> can fail in CEP).
      They appear in BOTH the Transcribe tab and Settings; changing one syncs the
@@ -10460,7 +10560,11 @@
     function mountInto(id, kind) {
       var host = $(id); if (!host || host.firstChild) return;
       var opts = (kind === 'q') ? WHISPER_QUALITIES : WHISPER_LANGS;
-      var cur = (kind === 'q') ? (settings.whisperQuality || 'large-v3-turbo-q5_0') : (settings.whisperLang || 'auto');
+      // Default to the SAVED value, else the first option this build actually
+      // offers. The old default named a local model that a cloud-only build does
+      // not list, so the picker opened showing an option that was not in it.
+      var cur = (kind === 'q') ? (settings.whisperQuality || (WHISPER_QUALITIES[0] && WHISPER_QUALITIES[0].value) || 'auto-best')
+                               : (settings.whisperLang || 'auto');
       var dd = makeDropdown(opts, cur, function (v) {
         if (kind === 'q') settings.whisperQuality = v; else settings.whisperLang = v;
         saveSettings(); refreshWhisperStatus();
@@ -10488,6 +10592,10 @@
   });
   // save the Groq key as you type too (so it persists even without "Save & check")
   if ($('set-groq-key')) $('set-groq-key').addEventListener('input', function () { onGroqKeyInput(this.value); });
+  if ($('tr-swara-key')) $('tr-swara-key').addEventListener('input', function () { onSwaraKeyInput(this.value); });
+  if ($('set-swara-key')) $('set-swara-key').addEventListener('input', function () { onSwaraKeyInput(this.value); });
+  if ($('tr-dg-key')) $('tr-dg-key').addEventListener('input', function () { onDeepgramKeyInput(this.value); });
+  if ($('set-dg-key')) $('set-dg-key').addEventListener('input', function () { onDeepgramKeyInput(this.value); });
   if ($('tr-groq-key')) $('tr-groq-key').addEventListener('input', function () { onGroqKeyInput(this.value); });
   // Indian Voices: mount the Indian-language picker (custom dropdown — native
   // <select> doesn't open in CEP) + persist key/language.
@@ -10698,6 +10806,41 @@
       psFontName: CPCaptions.psFontName,
       editorFont: function () { return resolvedEditorFont(styledPreset()); },   // the exact face Apply/preview will send
       readOverrides: function () { try { return readOverrides(); } catch (e) { return { _threw: String(e && e.message) }; } },
+      // ---- transcription key/engine wiring ----------------------------------
+      // The panel once asked for a key in a Settings field that did not exist,
+      // while the only real field was hidden until an engine resolved to cloud —
+      // which needed a key. These hooks let a test stand in that deadlock.
+      keyState: function () {
+        return {
+          groq: !!cpKey(), deepgram: !!cpDeepgramKey(), swara: !!cpSarvamKey(),
+          engine: resolveQuality(), whiteLabel: !!WHITE_LABEL, bundled: !!KEY_BUNDLED
+        };
+      },
+      setKeys: function (o) {
+        o = o || {};
+        if ('groq' in o) settings.groqKey = o.groq || '';
+        if ('swara' in o) settings.sarvamKey = o.swara || '';
+        if ('deepgram' in o) settings.deepgramKey = o.deepgram || '';
+        if ('verbatimKey' in o) settings.verbatimKey = o.verbatimKey || '';
+        if ('verbatimProvider' in o) settings.verbatimProvider = o.verbatimProvider || 'deepgram';
+        if ('quality' in o) settings.whisperQuality = o.quality || '';
+        try { refreshWhisperStatus(); } catch (e) {}
+        return window.CP_DEBUG.keyState();
+      },
+      keyBoxVisible: function () {
+        function vis(id) {
+          var el = document.getElementById(id); if (!el) return false;
+          var box = el.closest ? (el.closest('.groq-inline') || el.closest('label') || el) : el;
+          if (box && box.classList && box.classList.contains('hidden')) return false;
+          if (box && box.style && box.style.display === 'none') return false;
+          return true;
+        }
+        return { trGroq: vis('tr-groq-key'), setGroq: vis('set-groq-key'),
+                 trDg: vis('tr-dg-key'), setDg: vis('set-dg-key'),
+                 setSwara: vis('set-swara-key') };
+      },
+      whisperStatus: function () { var e = document.getElementById('whisper-status'); return e ? e.textContent : null; },
+      engineOptions: function () { return WHISPER_QUALITIES.map(function (q) { return q.value; }); },
       // the preview is a true crop of the SEQUENCE, so tests need to stand it
       // in front of a vertical reel and a landscape podcast alike
       env: function () { return state.env ? { width: state.env.width, height: state.env.height } : null; },

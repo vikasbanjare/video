@@ -1240,6 +1240,54 @@ function fluxProps() {
   else if (!tiles.builders) bad('gallery tile: no build styles found — the check exercised nothing');
   else ok('gallery tiles show complete phrases: ' + tiles.builders + ' build styles among ' + tiles.total + ' cards each have a full-phrase frame to display');
 
+  // ---- the transcription key must be enterable, always -------------------
+  // The reported bug: "Add your Cloud account in Settings → Auto-transcribe"
+  // pointed at a field that did not exist, and the one real field was hidden
+  // until the engine resolved to cloud — which only happened once a key was
+  // already set. The key was literally unenterable. Stand in that state.
+  const keys = await page.evaluate(async () => {
+    const D = window.CP_DEBUG;
+    if (!D || !D.setKeys) return { fatal: 'key hooks missing' };
+    const out = {};
+    // a brand-new install: no key of any kind, engine on Auto
+    out.fresh = D.setKeys({ groq: '', swara: '', deepgram: '', verbatimKey: '', quality: '' });
+    out.freshBoxes = D.keyBoxVisible();
+    out.freshStatus = D.whisperStatus();
+    // a user who pasted a Deepgram key into the "Find retakes" slot (the only
+    // box that named Deepgram) — it must now drive transcription too
+    out.viaVerbatim = D.setKeys({ verbatimKey: 'dg-test-key', verbatimProvider: 'deepgram' });
+    // and via the new dedicated box
+    out.viaOwnBox = D.setKeys({ verbatimKey: '', deepgram: 'dg-test-key' });
+    out.dgBoxes = D.keyBoxVisible();
+    out.options = D.engineOptions();
+    D.setKeys({ groq: '', swara: '', deepgram: '', verbatimKey: '', quality: '' });
+    return out;
+  });
+  if (keys.fatal) bad('key wiring: ' + keys.fatal);
+  else {
+    // 1. with NO key, there must be a visible box to type one into
+    const anyBox = keys.freshBoxes.setGroq || keys.freshBoxes.trGroq;
+    if (!anyBox) bad('key wiring: a fresh install shows NO box to paste a transcription key into — the key is unenterable');
+    else ok('a fresh install (no keys at all) shows a visible box to paste the key into');
+    // 2. the engine must not silently sit on something the panel cannot set up
+    if (keys.fresh.whiteLabel && !/^cloud-/.test(keys.fresh.engine)) {
+      bad('key wiring: a cloud-only build resolved to "' + keys.fresh.engine + '" — an engine it ships no UI for');
+    } else ok('with no key the engine stays on one the panel can actually set up (' + keys.fresh.engine + ')');
+    // 3. the status line must not claim there is nothing to do
+    if (!keys.fresh.bundled && /built in/i.test(String(keys.freshStatus || ''))) {
+      bad('key wiring: status claims cloud is "built in" on a build that bundles no key — ' + keys.freshStatus);
+    } else ok('the status line does not promise a key that this build does not bundle');
+    // 4. a Deepgram key — in EITHER box — transcribes
+    if (!keys.viaVerbatim.deepgram || keys.viaVerbatim.engine !== 'cloud-deepgram') {
+      bad('key wiring: a Deepgram key in the retakes slot still does not transcribe (engine=' + keys.viaVerbatim.engine + ')');
+    } else ok('a Deepgram key pasted in the "Find retakes" box now drives Auto-transcribe too');
+    if (!keys.viaOwnBox.deepgram || keys.viaOwnBox.engine !== 'cloud-deepgram') {
+      bad('key wiring: a Deepgram key in its own box does not select the Deepgram engine');
+    } else ok('a Deepgram key in its own box selects the Deepgram engine (' + keys.viaOwnBox.engine + ')');
+    if (keys.options.indexOf('cloud-deepgram') < 0) bad('key wiring: Deepgram is not offered in the engine picker');
+    else ok('Deepgram is a first-class engine in the picker, alongside ' + keys.options.filter(o => /^cloud-/.test(o)).length + ' cloud engines');
+  }
+
   await browser.close();
   console.log(failed ? ('panel proofs: ' + failed + ' FAILURE(S)') : 'panel proofs: ALL GREEN ✓');
   process.exit(failed ? 1 : 0);

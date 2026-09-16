@@ -1071,6 +1071,28 @@ console.log('verbatim.js (Deepgram / AssemblyAI)');
   const cues = CPV.wordsToCues([{ text: 'a', start: 0, end: 0.3 }, { text: 'b.', start: 0.3, end: 0.6 }, { text: 'c', start: 2.0, end: 2.3 }]);
   assert(cues.length === 2, 'wordsToCues splits on sentence end / long pause');
 
+  // Deepgram is now a FULL transcription engine, not just "find retakes", so the
+  // cue shape it produces has to be the shape the caption pipeline consumes:
+  // an array of {text,start,end} that is ordered, non-empty and time-sane.
+  const dgWords = CPV.parseDeepgram({ results: { channels: [{ alternatives: [{ words: [
+    { punctuated_word: 'Aaj', start: 0.0, end: 0.4, confidence: 0.97 },
+    { punctuated_word: 'hum', start: 0.4, end: 0.7, confidence: 0.96 },
+    { punctuated_word: 'baat', start: 0.7, end: 1.1, confidence: 0.95 },
+    { punctuated_word: 'karenge.', start: 1.1, end: 1.6, confidence: 0.94 },
+    { punctuated_word: 'चलिए', start: 2.9, end: 3.4, confidence: 0.9 }
+  ] }] }] } });
+  const dgCues = CPV.wordsToCues(dgWords, 0.7);
+  assert(dgCues.length === 2, 'deepgram → cues: splits the Hinglish sentence from the pause-separated one');
+  assert(dgCues[0].text === 'Aaj hum baat karenge.', 'deepgram → cues: words join in order with punctuation intact');
+  assert(dgCues[1].text === 'चलिए', 'deepgram → cues: Devanagari survives the word→cue join');
+  assert(dgCues.every(c => typeof c.text === 'string' && c.text.length > 0), 'deepgram → cues: no empty cue reaches the caption pipeline');
+  assert(dgCues.every(c => isFinite(c.start) && isFinite(c.end) && c.end > c.start), 'deepgram → cues: every cue has a finite, forward duration');
+  assert(dgCues[0].start === 0 && close(dgCues[1].start, 2.9), 'deepgram → cues: cue times come from the real word timings');
+  // a language the user picked must reach the request; our UI-only "hinglish"
+  // mode must NOT (Deepgram would reject it) — nova-3 reads Hindi natively.
+  assert(/language=hi/.test(CPV.deepgramUrl({ language: 'hi' })), 'deepgram URL carries a chosen language');
+  assert(!/language=/.test(CPV.deepgramUrl({})), 'deepgram URL omits language when auto-detecting');
+
   // best-take selection: keep the COMPLETE high-confidence take, not the last (truncated) one
   function mk(words, t) { var o = [], x = t; words.split(' ').forEach(function (w) { o.push({ start: +x.toFixed(2), end: +(x + 0.28).toFixed(2), text: w, conf: 0.9 }); x += 0.3; }); return o; }
   const w1 = mk('the plan is to grow the business fast', 0);            // complete, conf 0.9
@@ -1967,7 +1989,20 @@ try {
   }
 } catch (e) { if (e && e.status === 2) { console.log('(pipeline contract check skipped — no browser)'); contractSkipped = true; } else contractOk = false; }
 
-var allOk = !failed && auditOk && hostOk && simOk && proofsOk && thumbsOk && styleQualityOk && overlayOk && deadCtrlOk && pvMatchOk && contractOk;
+// ------------------------------------------------ DOM ID check ----
+// The mirror of the dead-control audit. That one proves every control IN the
+// DOM does something; it is blind to a control the code calls for that the DOM
+// no longer has. The panel asked for a transcription key in `set-groq-key` —
+// six references in main.js, zero in index.html — so the key was unenterable
+// and every gate stayed green. Needs no browser: it is a static cross-check.
+console.log('\nRunning dom id check…');
+var domIdOk = true;
+try {
+  require('child_process').execSync('node "' + require('path').join(__dirname, '..', '..', 'tools', 'dom-id-check.js') + '"',
+    { stdio: 'inherit' });
+} catch (e) { domIdOk = false; }
+
+var allOk = !failed && auditOk && hostOk && simOk && proofsOk && thumbsOk && styleQualityOk && overlayOk && deadCtrlOk && pvMatchOk && contractOk && domIdOk;
 console.log('\n' + (allOk ? '════ ALL GATES GREEN ════' : '════ SOME GATES FAILED ════') +
   '  (js:' + (failed ? 'FAIL' : 'ok') + ' audit:' + (auditOk ? 'ok' : 'FAIL') +
   ' host:' + (hostOk ? 'ok' : 'FAIL') + ' sim:' + (simOk ? 'ok' : 'FAIL') +
@@ -1979,7 +2014,8 @@ console.log('\n' + (allOk ? '════ ALL GATES GREEN ════' : '═�
   ' overlay:' + (overlayOk ? (overlaySkipped ? 'skip' : 'ok') : 'FAIL') +
   ' dead-controls:' + (deadCtrlOk ? (deadCtrlSkipped ? 'skip' : 'ok') : 'FAIL') +
   ' preview-match:' + (pvMatchOk ? (pvMatchSkipped ? 'skip' : 'ok') : 'FAIL') +
-  ' contract:' + (contractOk ? (contractSkipped ? 'skip' : 'ok') : 'FAIL') + ')');
+  ' contract:' + (contractOk ? (contractSkipped ? 'skip' : 'ok') : 'FAIL') +
+  ' dom-ids:' + (domIdOk ? 'ok' : 'FAIL') + ')');
 var _skips = [];
 if (styleQualitySkipped) _skips.push('style-quality');
 if (overlaySkipped) _skips.push('overlay');
