@@ -1176,3 +1176,23 @@ footer { border-top: 1px solid var(--line); background: var(--card); max-height:
 .cp-field { display: inline-flex; align-items: center; position: relative; }
 /* emphasis / feature toggles: one clean line each, never word-per-line columns */
 .check { display: flex; align-items: center; gap: 6px; grid-column: 1 / -1; }
+
+/* .mogrt cards show how many controls their author actually exposed, so "why
+   does this one have no options?" is answerable before the click, not after. */
+.tpl-ctrls {
+  margin-left: auto;
+  font-size: 9px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .07);
+  color: var(--dim, #9aa0a6);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.tpl-ctrls.few { background: rgba(240, 173, 78, .16); color: #f0ad4e; }
+
+/* The mirror of .png-only: shown ONLY in editable (.mogrt) caption type, to
+   explain why the Pulse-only controls are not on screen. */
+.editable-only { display: none; }
+body.cap-editable .editable-only { display: block; }

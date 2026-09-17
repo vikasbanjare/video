@@ -2390,11 +2390,6 @@
 
   // Case-insensitive replace of the FIRST occurrence of `from` with `to`. Used to
   // apply surgical word fixes without disturbing the rest of the line.
-  function replaceOnceCI(text, from, to) {
-    var idx = String(text).toLowerCase().indexOf(String(from).toLowerCase());
-    if (idx < 0) return text;
-    return text.slice(0, idx) + to + text.slice(idx + String(from).length);
-  }
 
   // Multilingual-safe tokenizer: split on whitespace, strip edge punctuation,
   // keep unicode letters (so Hindi/Arabic/etc. words survive).
@@ -2407,12 +2402,6 @@
   // isn't treated as 7 real words that must survive.
   function realToks(s) { return tok(s).filter(function (t) { return t.length >= 2; }); }
   // Fraction of the ORIGINAL real words that survive in a candidate correction.
-  function wordOverlap(orig, cand) {
-    var o = realToks(orig); if (!o.length) return 1;
-    var set = {}; tok(cand).forEach(function (w) { set[w] = 1; });
-    var hit = 0; for (var i = 0; i < o.length; i++) if (set[o[i]]) hit++;
-    return hit / o.length;
-  }
   // Optional user vocabulary (names/brands) so the AI nails recurring proper nouns.
   function getVocab() { var el = $('tr-vocab'); return el ? (el.value || '').trim() : ''; }
 
@@ -4210,6 +4199,22 @@
     nm.textContent = t.name; nm.title = t.name;
     head.appendChild(nm);
 
+    // .mogrt cards carry only what their author exposed. Showing the count on the
+    // card answers "why does this one have no options?" BEFORE the click, instead
+    // of after. Cached — reading it shells out to unzip.
+    if (isMogrt && t.path) {
+      var _n = null; try { _n = mogrtControlCountCached(t.path); } catch (eN) {}
+      if (_n != null) {
+        var cb = document.createElement('span');
+        cb.className = 'tpl-ctrls' + (_n <= 3 ? ' few' : '');
+        cb.textContent = _n === 0 ? 'no options' : (_n + ' option' + (_n === 1 ? '' : 's'));
+        cb.title = _n <= 3
+          ? 'This template only exposes ' + _n + ' editable control' + (_n === 1 ? '' : 's') + ' — that is all its designer built in. Pulse styles give you full control.'
+          : _n + ' editable controls, read from the template itself';
+        head.appendChild(cb);
+      }
+    }
+
     var fav = document.createElement('button');
     fav.className = 'tpl-fav' + (state.favs[t.id] ? ' on' : '');
     fav.textContent = state.favs[t.id] ? '★' : '☆';
@@ -4411,7 +4416,23 @@
       }
     } catch (ePv) {}
     // show THIS template's real capabilities (read from its definition.json)
-    if ($('ms-hint')) $('ms-hint').textContent = '';   // guidance text removed — space wins
+    // An .mogrt exposes ONLY the controls its author built in After Effects — some
+    // have 27, some have 2 — so "why does this one have no options?" had no answer
+    // on screen. mogrtCapsSummary() computed exactly that and was never called.
+    // Say it here, and be plain when the template barely customises at all.
+    if ($('ms-hint')) {
+      var _caps = null, _nctl = null;
+      try { _caps = mogrtCapsCached(t.path); _nctl = mogrtControlCountCached(t.path); } catch (eC) {}
+      if (_nctl === 0) {
+        $('ms-hint').textContent = 'This template exposes no editable controls — it will be inserted exactly as its designer built it. For full control over colours, font, size and animation, use a Pulse style instead (≡ Browse styles).';
+      } else if (_nctl != null && _nctl <= 3) {
+        $('ms-hint').textContent = 'This template only exposes ' + _nctl + ' control' + (_nctl === 1 ? '' : 's') +
+          ' — that is all its designer made editable' + (_caps ? ' (' + _caps + ')' : '') +
+          '. For full control, use a Pulse style instead (≡ Browse styles).';
+      } else {
+        $('ms-hint').textContent = _caps ? ('This template can edit: ' + _caps + '.') : '';
+      }
+    }
     $('ms-inspect-out').classList.add('hidden');
     refreshWordMirrors();
     $('mogrt-sheet').classList.remove('hidden');
@@ -5576,8 +5597,6 @@
   /* Obsolete: the font picker is now a click-to-open dropdown whose own search
      box (makeDropdown) filters the list — no separate filter field. Kept as a
      no-op so any older call site stays safe. */
-  function applyFontFilter() {}
-
   /* Inline readability warning under the preview — captions over unknown
      footage need an outline/box/glow, not just a fill color. */
   function updateLegibilityNote(st) {
@@ -5672,15 +5691,6 @@
     } catch (e) {}
   }
 
-  function fontStack(font, fallbacks) {
-    return '"' + font + '", "' + (fallbacks || []).join('", "') + '", sans-serif';
-  }
-  function hexToRgba(hex, a) {
-    var m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '#000000'));
-    if (!m) return hex;
-    var n = parseInt(m[1], 16);
-    return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + (a == null ? 1 : a) + ')';
-  }
 
   // --------------------------------------------------------- live preview ----
   var previewTimer = null;
@@ -5689,11 +5699,6 @@
   var PREVIEW_REF_SIZE = 120;
   var SAMPLE = ['THIS', 'LOOKS', 'INSANE'];
   var SAMPLE_SENTENCE = ['THIS', 'IS', 'EXACTLY', 'HOW', 'YOUR', 'CAPTIONS', 'WILL', 'LOOK'];
-  function longestIdx(arr) {
-    var best = 0, bl = 0;
-    for (var i = 0; i < arr.length; i++) { var l = arr[i].replace(/[^A-Za-z]/g, '').length; if (l > bl) { bl = l; best = i; } }
-    return best;
-  }
 
   function renderPreview() {
     if (previewTimer) { clearInterval(previewTimer); previewTimer = null; }
@@ -5708,6 +5713,10 @@
     var styled = styledPreset();
     var engineMode = (_capOut === 'editable');
     var carry = previewBasis(styled);      // same basis as the tile, in both modes
+    // The legibility warning had an element, an exported check and this updater,
+    // and nothing ever called it — so it never once appeared. It belongs on every
+    // repaint: the moment a style has no outline/box/glow, say so.
+    try { updateLegibilityNote(styled); } catch (eLg) {}
 
     // CAPTION-BAND preview: the region of the frame around the caption, at a
     // readable size (the full 9:16 frame wasted the panel on empty backdrop).
@@ -7238,7 +7247,6 @@
     } catch (e) { return null; }
   }
   function ctrlName(c) { try { return c.uiName.strDB[0].str; } catch (e) { return ''; } }
-  function intToHexJS(n) { n = (Math.round(Number(n)) >>> 0) & 0xFFFFFF; var s = n.toString(16); while (s.length < 6) s = '0' + s; return '#' + s; }
   /* type-4 colour value is [r,g,b,a] floats 0..1 → "#rrggbb". */
   function rgbaArrayToHex(a) {
     function h(x) { x = Math.round(Math.max(0, Math.min(1, Number(x))) * 255); var s = x.toString(16); return s.length < 2 ? '0' + s : s; }
@@ -7280,6 +7288,38 @@
   /* Live Essential-Graphics fields per template, keyed by .mogrt path. Filled the
      first time a card is opened so we never re-import the same template twice. */
   var _inspectCache = {};
+  /* mogrtCapsSummary() shells out to unzip, so cache per path — a gallery repaint
+     must never spawn 19 processes. */
+  var _capsCache = {};
+  function mogrtCapsCached(path) {
+    if (!path) return null;
+    if (!_capsCache.hasOwnProperty(path)) {
+      try { _capsCache[path] = mogrtCapsSummary(path); } catch (e) { _capsCache[path] = null; }
+    }
+    return _capsCache[path];
+  }
+  /* How many controls this template's author actually exposed. An .mogrt can only
+     offer what was built into it in After Effects — some expose 27, some expose 2 —
+     and until now the panel made you click each one to find out. */
+  function mogrtControlCount(path) {
+    var defs = null; try { defs = readMogrtDefinition(path); } catch (e) { return null; }
+    if (!defs || !defs.length) return 0;
+    var n = 0;
+    for (var i = 0; i < defs.length; i++) {
+      var c = defs[i], t = c.type, nm = (ctrlName(c) || '').toLowerCase();
+      if (t === MT.GROUP || t === MT.NOTE || /readonly|\bnote\b/.test(nm)) continue;
+      n++;
+    }
+    return n;
+  }
+  var _ctrlCountCache = {};
+  function mogrtControlCountCached(path) {
+    if (!path) return null;
+    if (!_ctrlCountCache.hasOwnProperty(path)) {
+      try { _ctrlCountCache[path] = mogrtControlCount(path); } catch (e) { _ctrlCountCache[path] = null; }
+    }
+    return _ctrlCountCache[path];
+  }
 
   // ---- live colour/font preview for the .mogrt customizer --------------------
   // A real MOGRT animation can only play on the timeline, but users still want to
@@ -7302,11 +7342,6 @@
     if (/background|\bbg\b|\bbox\b|pill|panel|behind/.test(n)) return 'box';
     if (/\btext\b|\bword\b|\bfont\b|title|caption|subtitle|\bfill\b/.test(n)) return 'fill';
     return null;   // shadow / stroke / border / outline don't map to the simple preview
-  }
-  function _hexLum(h) {
-    var m = /^#?([0-9a-f]{6})$/i.exec(String(h || '')); if (!m) return 1;
-    var n = parseInt(m[1], 16);
-    return (0.299 * (n >> 16 & 255) + 0.587 * (n >> 8 & 255) + 0.114 * (n & 255)) / 255;
   }
   function renderMogrtPreview() {
     var cv = _mogrtPrevCanvas;
@@ -7683,7 +7718,14 @@
     });
     var richProp = null;
     for (var ri = 0; ri < props.length; ri++) if (props[ri].rich) { richProp = props[ri]; break; }
-    if (!editable.length && !richProp) { box.appendChild(document.createTextNode('No editable controls found.')); return; }
+    if (!editable.length && !richProp) {
+      // Was a bare text node: "No editable controls found." - true, but it never
+      // said WHY or what to do, which read as the panel being broken.
+      var np = document.createElement('p'); np.className = 'hint';
+      np.textContent = 'This template has no editable controls. An .mogrt can only offer what its designer built into it in After Effects — this one exposes nothing, so it will be inserted exactly as authored. For full control over colours, font, size, outline and animation, use a Pulse style instead (≡ Browse styles).';
+      box.appendChild(np);
+      return;
+    }
     if (richProp) {
       var blob = null; try { blob = JSON.parse(richProp.sample); } catch (eB) { blob = null; }
       mpHeader(box, 'Text style');

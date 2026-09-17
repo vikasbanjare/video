@@ -70,8 +70,7 @@
     for (var i = 0; i < paths.length; i++) { var p = new Path2D(paths[i]); if (fill) c.fill(p); else c.stroke(p); }
     c.restore();
   }
-  function icPlus(c, x, y, s) { c.beginPath(); c.moveTo(x - s, y); c.lineTo(x + s, y); c.moveTo(x, y - s); c.lineTo(x, y + s); c.stroke(); }
-  function icDots(c, x, y, s) { for (var i = -1; i <= 1; i++) { c.beginPath(); c.arc(x + i * s * 1.7, y, s, 0, Math.PI * 2); c.fill(); } }   // horizontal 3-dots
+  function icPlus(c, x, y, s) { c.beginPath(); c.moveTo(x - s, y); c.lineTo(x + s, y); c.moveTo(x, y - s); c.lineTo(x, y + s); c.stroke(); }   // horizontal 3-dots
   function icDotsV(c, x, y, s) { for (var i = -1; i <= 1; i++) { c.beginPath(); c.arc(x, y + i * s * 1.7, s, 0, Math.PI * 2); c.fill(); } } // vertical 3-dots
   function avatar(c, x, y, r, ring) {
     if (ring) { c.save(); var g = c.createLinearGradient(x - r, y - r, x + r, y + r); g.addColorStop(0, '#feda75'); g.addColorStop(.5, '#d62976'); g.addColorStop(1, '#962fbf'); c.strokeStyle = g; c.lineWidth = r * 0.18; c.beginPath(); c.arc(x, y, r * 1.12, 0, Math.PI * 2); c.stroke(); c.restore(); }

@@ -2002,7 +2002,20 @@ try {
     { stdio: 'inherit' });
 } catch (e) { domIdOk = false; }
 
-var allOk = !failed && auditOk && hostOk && simOk && proofsOk && thumbsOk && styleQualityOk && overlayOk && deadCtrlOk && pvMatchOk && contractOk && domIdOk;
+// ------------------------------------------ DEAD FUNCTION check ----
+// Third of the family. dead-control-audit: every control IN the DOM does
+// something. dom-id-check: every id the JS reaches for EXISTS. This one: every
+// function defined is CALLED. mogrtCapsSummary() answered "why does this
+// template have no options?" and was never invoked; updateLegibilityNote() had
+// its element and its check and never once ran.
+console.log('\nRunning dead function check…');
+var deadFnOk = true;
+try {
+  require('child_process').execSync('node "' + require('path').join(__dirname, '..', '..', 'tools', 'dead-function-check.js') + '"',
+    { stdio: 'inherit' });
+} catch (e) { deadFnOk = false; }
+
+var allOk = !failed && auditOk && hostOk && simOk && proofsOk && thumbsOk && styleQualityOk && overlayOk && deadCtrlOk && pvMatchOk && contractOk && domIdOk && deadFnOk;
 console.log('\n' + (allOk ? '════ ALL GATES GREEN ════' : '════ SOME GATES FAILED ════') +
   '  (js:' + (failed ? 'FAIL' : 'ok') + ' audit:' + (auditOk ? 'ok' : 'FAIL') +
   ' host:' + (hostOk ? 'ok' : 'FAIL') + ' sim:' + (simOk ? 'ok' : 'FAIL') +
@@ -2015,7 +2028,8 @@ console.log('\n' + (allOk ? '════ ALL GATES GREEN ════' : '═�
   ' dead-controls:' + (deadCtrlOk ? (deadCtrlSkipped ? 'skip' : 'ok') : 'FAIL') +
   ' preview-match:' + (pvMatchOk ? (pvMatchSkipped ? 'skip' : 'ok') : 'FAIL') +
   ' contract:' + (contractOk ? (contractSkipped ? 'skip' : 'ok') : 'FAIL') +
-  ' dom-ids:' + (domIdOk ? 'ok' : 'FAIL') + ')');
+  ' dom-ids:' + (domIdOk ? 'ok' : 'FAIL') +
+  ' dead-fns:' + (deadFnOk ? 'ok' : 'FAIL') + ')');
 var _skips = [];
 if (styleQualitySkipped) _skips.push('style-quality');
 if (overlaySkipped) _skips.push('overlay');
