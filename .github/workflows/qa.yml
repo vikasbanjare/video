@@ -1,0 +1,45 @@
+# Pulse autonomous QA battery — runs WITHOUT any human:
+#   · on every push (any branch)
+#   · every night at 02:17 UTC (catches environment/dependency rot)
+#
+# What it runs (CutPilot/test/run-tests.js drives all of it):
+#   1. 450+ unit tests (caption grouping, takes cleanup, alignment, transcript)
+#   2. 70+ host tests — the REAL jsx/host.jsx against a mini-Premiere
+#   3. Template audit — every style has a loadable font, valid colours, legible
+#   4. Ground-truth preview simulation — previews measured against the caption
+#      engine's own authored numbers (from inside the .mogrt)
+#   5. Panel proofs — the real panel in headless Chromium: style→engine
+#      mapping, tile==preview parity, live controls, smart emphasis
+#
+# A red run means something the user would see is broken — fix before shipping.
+name: QA battery
+on:
+  push:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+jobs:
+  battery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: System deps (unzip for .mogrt inspection, Hindi + libass for the caption gates)
+        run: |
+          sudo apt-get update -qq
+          # fonts-indic gives the runner a Devanagari face. Without one the Hindi
+          # gate can only SKIP — the owner's content is Hindi/Hinglish, and a
+          # skipped check guards nothing.
+          # ffmpeg gives the overlay render check its libass, so the long-video
+          # caption path is really exercised instead of skipped too.
+          sudo apt-get install -y -qq unzip fonts-indic ffmpeg
+          fc-cache -f >/dev/null 2>&1 || true
+      - name: Headless Chrome (for the simulation + panel proofs)
+        run: npm i --no-save puppeteer@23
+      - name: Full battery
+        env:
+          CI: 'true'
+        run: node CutPilot/test/run-tests.js
