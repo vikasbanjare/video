@@ -698,17 +698,17 @@
               'Switch “Accuracy / engine” (Transcribe tab) from “Cloud · Groq” to a local model ' +
               '(e.g. Base or Large v3) to transcribe offline.'));
           }
-          return reject(new Error('Cloud request failed (curl ' + code + '): ' + err.slice(-160)));
+          return reject(CPApiErr.toError('groq', { curl: code, raw: err.slice(-160) }));
         }
         var j; try { j = JSON.parse(out); } catch (e) { return reject(new Error('Cloud returned unexpected data: ' + out.slice(0, 160))); }
-        if (j.error) return reject(new Error('Groq: ' + (j.error.message || JSON.stringify(j.error))));
+        if (j.error) return reject(CPApiErr.toError('groq', { body: j }));
         var cues = [];
         if (j.segments && j.segments.length) {
           j.segments.forEach(function (s) { if (s.text && s.text.trim()) cues.push({ start: +s.start || 0, end: +s.end || 0, text: s.text.trim() }); });
         } else if (j.text && j.text.trim()) {
           cues.push({ start: 0, end: 5, text: j.text.trim() });
         }
-        if (!cues.length) return reject(new Error('Cloud returned no speech.'));
+        if (!cues.length) return reject(CPApiErr.toError('groq', { raw: 'no speech' }));
         // Real per-word timestamps (timestamp_granularities[]=word) → accurate
         // highlight that rides the actual spoken word (not audio-onset guessing).
         if (j.words && j.words.length) {
@@ -822,10 +822,10 @@
             return reject(new Error('Indian Voices needs internet and couldn\'t reach the server. ' +
               'Switch “Accuracy / engine” to a local model to transcribe offline.'));
           }
-          return reject(new Error('Indian Voices request failed (curl ' + code + '): ' + err.slice(-160)));
+          return reject(CPApiErr.toError('sarvam', { curl: code, raw: err.slice(-160) }));
         }
         var j; try { j = JSON.parse(out); } catch (e) { return reject(new Error('Indian Voices returned unexpected data: ' + out.slice(0, 160))); }
-        if (j.error) return reject(new Error('Indian Voices: ' + (j.error.message || JSON.stringify(j.error))));
+        if (j.error) return reject(CPApiErr.toError('sarvam', { body: j }));
         var text = String(j.transcript != null ? j.transcript : (j.text != null ? j.text : '')).trim();
         var words = [];
         function pushWord(tx, st, en) { tx = String(tx == null ? '' : tx).trim(); if (tx) words.push({ start: +st || 0, end: +en || 0, text: tx, conf: null }); }
@@ -837,7 +837,7 @@
         }
         var cues = [];
         if (text || words.length) cues.push({ start: words.length ? words[0].start : 0, end: words.length ? words[words.length - 1].end : 5, text: text || words.map(function (w) { return w.text; }).join(' ') });
-        if (!cues.length) return reject(new Error('Indian Voices returned no speech.'));
+        if (!cues.length) return reject(CPApiErr.toError('sarvam', { raw: 'no speech' }));
         if (words.length) cues.words = words;
         resolve(cues);
       });
@@ -961,6 +961,13 @@
      model, or this key cannot use it. Distinct from a bad key or a rate limit:
      the fix is a DIFFERENT model, not a different key. */
   function groqModelGone(msg) {
+    // Provider errors are classified now, so the retired-model case arrives as a
+    // stable kind. Check that FIRST — the raw provider wording no longer reaches
+    // e.message, and matching on prose would silently stop retrying.
+    if (msg && typeof msg === 'object') {
+      if (msg.cpKind) return msg.cpKind === 'model_gone';
+      msg = msg.message;
+    }
     var m = String(msg || '');
     return /does not exist or you do not have access/i.test(m) ||
            /model_not_found/i.test(m) ||
@@ -980,7 +987,7 @@
     return resolveGroqTextModel().then(function (mdl) {
       return groqChatRaw(messages, withModel(opts, mdl));
     }).catch(function (e) {
-      if (!groqModelGone(e && e.message)) throw e;
+      if (!groqModelGone(e)) throw e;
       // the remembered/derived model is gone — forget it and ask again
       var dead = _groqModel;
       _groqModel = null; _groqModels = null;
@@ -1019,11 +1026,10 @@
       p.on('close', function (code) {
         try { fs.unlinkSync(tmp); } catch (eU) {}
         if (code !== 0) {
-          if (code === 6 || code === 7 || code === 28 || code === 5) return reject(new Error('Couldn\'t reach Groq — this needs internet.'));
-          return reject(new Error('Groq request failed (curl ' + code + '): ' + err.slice(-160)));
+          return reject(CPApiErr.toError('groq', { curl: code, raw: err.slice(-160) }));
         }
         var j; try { j = JSON.parse(out); } catch (e) { return reject(new Error('Groq returned unexpected data: ' + out.slice(0, 160))); }
-        if (j.error) return reject(new Error('Groq: ' + (j.error.message || JSON.stringify(j.error))));
+        if (j.error) return reject(CPApiErr.toError('groq', { body: j }));
         var c = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
         if (!c) return reject(new Error('Groq returned no content.'));
         resolve(c);
@@ -1173,7 +1179,7 @@
       '-H', 'Content-Type: audio/mpeg', '--data-binary', '@' + audioPath],
       ['Authorization: Token ' + key])
       .then(function (j) {
-        if (j.err_code || j.error) throw new Error('Deepgram: ' + (j.err_msg || j.error || j.reason || 'request rejected — check the key'));
+        if (j.err_code || j.error) throw CPApiErr.toError('deepgram', { body: j });
         var words = CPVerbatim.parseDeepgram(j);
         if (!words.length) throw new Error('Deepgram returned no speech — check the key and that the clip has a voice in it.');
         var cues = CPVerbatim.wordsToCues(words, 0.7);
@@ -9465,9 +9471,9 @@
     return _curlJson(['-sS', '--max-time', '600', CPVerbatim.deepgramUrl({}),
       '-H', 'Content-Type: audio/mpeg', '--data-binary', '@' + audioPath], ['Authorization: Token ' + key])
       .then(function (j) {
-        if (j.err_code || j.error) throw new Error('Deepgram: ' + (j.err_msg || j.error || j.reason || 'error'));
+        if (j.err_code || j.error) throw CPApiErr.toError('deepgram', { body: j });
         var ws = CPVerbatim.parseDeepgram(j);
-        if (!ws.length) throw new Error('Deepgram returned no words — check the key and that the clip has speech.');
+        if (!ws.length) throw CPApiErr.toError('deepgram', { raw: 'no speech' });
         return ws;
       });
   }
@@ -11009,6 +11015,8 @@
       openCaptionTextEditor: function () { try { openCaptionTextEditor(); } catch (e) { return String(e && e.message); } },
       setEnv: function (w, h) { state.env = { width: w, height: h }; try { renderPreview(); } catch (e) {} },
       styledPreset: function () { try { return styledPreset(); } catch (e) { return { _threw: String(e && e.message) }; } },
+      // the preview repaint fires on every slider drag — the perf probe times it
+      renderPreviewNow: function () { try { renderPreview(); return true; } catch (e) { return String(e && e.message); } },
       customCount: function () { return (state.customTemplates || []).length; },
       capOut: function () { return _capOut; },
       reflowWordTiming: reflowWordTimingFromLines,

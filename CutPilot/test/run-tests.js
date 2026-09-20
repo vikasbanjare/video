@@ -1054,6 +1054,61 @@ console.log('reframe.js (speaker-aware vertical)');
 }
 
 // ------------------------------------------ verbatim ASR (retake capture) ----
+console.log('apierr.js (provider failure → plain language + what to do)');
+{
+  const E = require(path.join(__dirname, '..', 'js', 'apierr.js'));
+  // Real payload shapes, as each provider actually returns them. Every one has
+  // to yield a stable kind AND a next step — the whole point is that a raw API
+  // string never reaches the owner again.
+  const CASES = [
+    ['groq',     { body: { error: { message: 'The model `llama-3.3-70b-versatile` does not exist or you do not have access to it.', type: 'invalid_request_error', code: 'model_not_found' } } }, 'model_gone'],
+    ['groq',     { status: 401, body: { error: { message: 'Invalid API Key' } } },                       'bad_key'],
+    ['groq',     { status: 429, body: { error: { message: 'Rate limit reached for model ... tokens per minute' } } }, 'rate_limit'],
+    ['groq',     { status: 413, body: { error: { message: 'Payload Too Large: file exceeds maximum' } } }, 'too_large'],
+    ['groq',     { curl: 6 },                                                                            'network'],
+    ['groq',     { curl: 28 },                                                                           'network'],
+    ['deepgram', { body: { err_code: 'INVALID_AUTH', err_msg: 'Invalid credentials' } },                 'bad_key'],
+    ['deepgram', { status: 429, body: { err_msg: 'Too many requests' } },                                'rate_limit'],
+    ['deepgram', { raw: 'Deepgram returned no words' },                                                  'no_speech'],
+    ['sarvam',   { status: 403, body: { error: { message: 'unauthorized' } } },                          'bad_key'],
+    ['sarvam',   { status: 503, body: { error: { message: 'Service Unavailable' } } },                   'provider_down'],
+    ['sarvam',   { curl: 7 },                                                                            'network'],
+    ['groq',     { status: 402, body: { error: { message: 'insufficient credit' } } },                   'no_credit'],
+    ['groq',     { status: 415, body: { error: { message: 'unsupported media type' } } },                'bad_audio']
+  ];
+  for (const [prov, info, want] of CASES) {
+    const c = E.classify(prov, info);
+    assert(c.kind === want, 'classify ' + prov + '/' + want + ' → got "' + c.kind + '"');
+    assert(c.message && c.message.length > 10, want + ': has a plain-language message');
+    assert(E.KINDS.indexOf(c.kind) >= 0, want + ': kind is one of the declared set');
+  }
+  // Everything the user can act on must SAY what to do. provider_down is the one
+  // honest exception-free case: it still tells them to wait, so all of them do.
+  for (const [prov, info, want] of CASES) {
+    const c = E.classify(prov, info);
+    assert(c.action && c.action.length > 10, want + ': tells the user what to do next');
+  }
+  // The raw provider text must survive for diagnostics, never for the toast.
+  const modelErr = E.classify('groq', { body: { error: { message: 'The model `x` does not exist or you do not have access to it.' } } });
+  assert(/does not exist/.test(modelErr.detail), 'the raw provider text is kept on .detail for diagnostics');
+  assert(!/does not exist/.test(modelErr.message), 'the raw provider text does NOT leak into the message the user reads');
+  assert(!/llama|gsk_|api[_ ]key=/i.test(modelErr.message), 'no model ids or key-shaped text in a user-facing message');
+  // A bad key and a dead model need OPPOSITE responses — never conflate them.
+  const badKey = E.classify('groq', { status: 401, body: { error: { message: 'Invalid API Key' } } });
+  assert(badKey.kind !== modelErr.kind, 'a bad key and a retired model classify differently');
+  assert(/key/i.test(badKey.action), 'the bad-key action points at the key');
+  // toError carries the kind so callers branch on a code, not on prose.
+  const err = E.toError('groq', { body: { error: { message: 'model_not_found' } } });
+  assert(err instanceof Error && err.cpKind === 'model_gone', 'toError carries cpKind for callers to branch on');
+  assert(err.cpProvider === 'groq', 'toError records which provider failed');
+  // An empty/unknown failure still produces something actionable.
+  const blank = E.classify('deepgram', {});
+  assert(blank.kind === 'unknown' && blank.action, 'an unrecognised failure still tells the user what to do');
+  // Each provider is named in words the owner recognises, never by internal id.
+  assert(/Indian Voices/.test(E.classify('sarvam', { curl: 6 }).message), 'sarvam is called "Indian Voices", its name in the UI');
+  assert(!/sarvam/i.test(E.classify('sarvam', { curl: 6 }).message), 'the internal provider id never reaches the user');
+}
+
 console.log('verbatim.js (Deepgram / AssemblyAI)');
 {
   const CPV = require(path.join(__dirname, '..', 'js', 'verbatim.js'));
@@ -2015,7 +2070,25 @@ try {
     { stdio: 'inherit' });
 } catch (e) { deadFnOk = false; }
 
-var allOk = !failed && auditOk && hostOk && simOk && proofsOk && thumbsOk && styleQualityOk && overlayOk && deadCtrlOk && pvMatchOk && contractOk && domIdOk && deadFnOk;
+// ------------------------------------------------ PERF budget ----
+// Thirteen gates proved the panel CORRECT and none of them failed when it got
+// SLOW. This measures the paths the owner waits on — cue building for a 60-min
+// podcast, one caption graphic's draw+PNG-encode, the gallery's live canvases,
+// the whole-file ASS build — against ceilings in tools/perf-budget.json.
+// Deliberately generous: it catches a regression, not a busy CI box.
+console.log('\nRunning perf budget…');
+var perfOk = true, perfSkipped = false;
+try {
+  if (hasChromium) {
+    require('child_process').execSync('node "' + require('path').join(__dirname, '..', '..', 'tools', 'perf-probe.js') + '" --budget',
+      { stdio: 'inherit' });
+  } else {
+    console.log('(perf budget skipped — no headless Chromium here)');
+    perfSkipped = true;
+  }
+} catch (e) { if (e && e.status === 2) { console.log('(perf budget skipped — no browser)'); perfSkipped = true; } else perfOk = false; }
+
+var allOk = !failed && auditOk && hostOk && simOk && proofsOk && thumbsOk && styleQualityOk && overlayOk && deadCtrlOk && pvMatchOk && contractOk && domIdOk && deadFnOk && perfOk;
 console.log('\n' + (allOk ? '════ ALL GATES GREEN ════' : '════ SOME GATES FAILED ════') +
   '  (js:' + (failed ? 'FAIL' : 'ok') + ' audit:' + (auditOk ? 'ok' : 'FAIL') +
   ' host:' + (hostOk ? 'ok' : 'FAIL') + ' sim:' + (simOk ? 'ok' : 'FAIL') +
@@ -2029,13 +2102,15 @@ console.log('\n' + (allOk ? '════ ALL GATES GREEN ════' : '═�
   ' preview-match:' + (pvMatchOk ? (pvMatchSkipped ? 'skip' : 'ok') : 'FAIL') +
   ' contract:' + (contractOk ? (contractSkipped ? 'skip' : 'ok') : 'FAIL') +
   ' dom-ids:' + (domIdOk ? 'ok' : 'FAIL') +
-  ' dead-fns:' + (deadFnOk ? 'ok' : 'FAIL') + ')');
+  ' dead-fns:' + (deadFnOk ? 'ok' : 'FAIL') +
+  ' perf:' + (perfOk ? (perfSkipped ? 'skip' : 'ok') : 'FAIL') + ')');
 var _skips = [];
 if (styleQualitySkipped) _skips.push('style-quality');
 if (overlaySkipped) _skips.push('overlay');
 if (deadCtrlSkipped) _skips.push('dead-controls');
 if (pvMatchSkipped) _skips.push('preview-match');
 if (contractSkipped) _skips.push('contract');
+if (perfSkipped) _skips.push('perf');
 if (_skips.length) console.log('NOTE: ' + _skips.length + ' gate(s) SKIPPED on this machine (' +
   _skips.join(', ') + ') — they guarded nothing in this run.');
 process.exit(allOk ? 0 : 1);
