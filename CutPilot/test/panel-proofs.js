@@ -36,17 +36,28 @@ let failed = 0;
 function ok(m) { console.log('  ✓ ' + m); }
 function bad(m) { console.log('  ✗ ' + m); failed++; }
 
+/* A MISSING TOOL IS NOT A CODE FAILURE.
+   Every other gate exits 2 ("skipped") when its tool is absent; these two
+   exited 1, so a container that had never run `npm i puppeteer` reported
+   "sim:FAIL proofs:FAIL" on a commit CI had just passed. Red that means "you
+   forgot to install something" teaches people to ignore red. Exit 2 so the
+   run-tests summary counts it as SKIPPED and names it in the NOTE. */
+function skipMissingTool(what) {
+  console.log('  ? ' + what + ' — panel proofs SKIPPED (not a code failure)');
+  console.log('    fix: node tools/doctor.js');
+  process.exit(2);
+}
 function requirePuppeteer() {
   const tries = [path.join(ROOT, 'node_modules', 'puppeteer'), 'puppeteer', 'puppeteer-core'];
   for (const t of tries) { try { return require(t); } catch (e) {} }
-  throw new Error('no puppeteer/puppeteer-core available');
+  skipMissingTool('no puppeteer installed');
 }
 function resolveBrowser(pptr) {
   if (process.env.CP_CHROMIUM && fs.existsSync(process.env.CP_CHROMIUM)) return process.env.CP_CHROMIUM;
   for (const c of ['/opt/pw-browsers/chromium', '/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome'])
     if (fs.existsSync(c)) return c;
   try { const p = pptr.executablePath(); if (p && fs.existsSync(p)) return p; } catch (e) {}
-  throw new Error('no Chromium found (set CP_CHROMIUM)');
+  skipMissingTool('no Chromium found (set CP_CHROMIUM)');
 }
 
 // live-prop records exactly as CP_inspectMogrt reports them, from the REAL engine

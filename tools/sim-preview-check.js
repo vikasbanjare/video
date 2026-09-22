@@ -69,9 +69,19 @@ function groundTruth() {
   for (const t of [path.join(ROOT, 'node_modules', 'puppeteer'), 'puppeteer', 'puppeteer-core']) {
     try { puppeteer = require(t); break; } catch (e) {}
   }
+  /* A MISSING TOOL IS NOT A CODE FAILURE — exit 2 so the summary records this
+     as SKIPPED, the way every other gate already does. Reporting it as FAIL
+     made a perfectly good commit look broken on a fresh container. */
+  function skipMissingTool(what) {
+    console.log('  ? ' + what + ' — preview simulation SKIPPED (not a code failure)');
+    console.log('    fix: node tools/doctor.js');
+    process.exit(2);
+  }
+  if (!puppeteer) skipMissingTool('no puppeteer installed');
   let chromium = process.env.CP_CHROMIUM;
   if (!chromium) for (const c of ['/opt/pw-browsers/chromium', '/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome']) if (fs.existsSync(c)) { chromium = c; break; }
   if (!chromium) { try { chromium = puppeteer.executablePath(); } catch (e) {} }
+  if (!chromium) skipMissingTool('no Chromium found (set CP_CHROMIUM)');
   const _lopts = { headless: 'new', executablePath: chromium,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--allow-file-access-from-files'] };
   let browser = null;

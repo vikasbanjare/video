@@ -1919,7 +1919,7 @@ try {
 // in definition.json), renders the real panel headless, pixel-measures the
 // tiles, and fails if previews drift from the engine truth. Skipped only
 // where headless Chromium isn't available (the sim needs a browser).
-var simOk = true;
+var simOk = true, simSkipped = false;
 var hasChromium = (function () {
   var fsSim = require('fs');
   if (process.env.CP_CHROMIUM && fsSim.existsSync(process.env.CP_CHROMIUM)) return true;
@@ -1934,7 +1934,7 @@ try {
   } else {
     console.log('\n(preview simulation skipped — no headless Chromium here)');
   }
-} catch (e) { simOk = false; }
+} catch (e) { if (e && e.status === 2) { simSkipped = true; } else simOk = false; }
 
 // PANEL PROOFS: the real panel driven headless — mapping (every style → the
 // real engine layout), tile==preview parity, live font/weight controls,
@@ -1963,7 +1963,7 @@ try {
     { stdio: 'inherit' });
 } catch (e) { if (e.status === 2) { console.log('(style quality audit skipped — no headless Chromium here)'); styleQualitySkipped = true; } else styleQualityOk = false; }
 
-var proofsOk = true;
+var proofsOk = true, proofsSkipped = false;
 try {
   if (hasChromium) {
     console.log('\nRunning panel proofs…');
@@ -1972,7 +1972,7 @@ try {
   } else {
     console.log('(panel proofs skipped — no headless Chromium here)');
   }
-} catch (e) { proofsOk = false; }
+} catch (e) { if (e && e.status === 2) { proofsSkipped = true; } else proofsOk = false; }
 
 // BLANK-PREVIEW GATE: no shipped template preview may be an empty/black frame.
 // This is the "some of the text isn't showing — the video section is blank" bug:
@@ -2089,10 +2089,19 @@ try {
 } catch (e) { if (e && e.status === 2) { console.log('(perf budget skipped — no browser)'); perfSkipped = true; } else perfOk = false; }
 
 var allOk = !failed && auditOk && hostOk && simOk && proofsOk && thumbsOk && styleQualityOk && overlayOk && deadCtrlOk && pvMatchOk && contractOk && domIdOk && deadFnOk && perfOk;
-console.log('\n' + (allOk ? '════ ALL GATES GREEN ════' : '════ SOME GATES FAILED ════') +
+// "ALL GATES GREEN" printed while 7 of 14 gates had skipped. The NOTE below
+// said so, but a headline that reads green is what people act on — and a
+// skipped gate guards nothing. Say it in the banner, not only the footnote.
+var _nSkip = 0;
+[simSkipped, proofsSkipped, styleQualitySkipped, overlaySkipped, deadCtrlSkipped,
+ pvMatchSkipped, contractSkipped, perfSkipped].forEach(function (x) { if (x) _nSkip++; });
+var _banner = !allOk ? '════ SOME GATES FAILED ════'
+  : (_nSkip ? '════ NOTHING FAILED — but ' + _nSkip + ' of 14 gates SKIPPED ════'
+            : '════ ALL GATES GREEN ════');
+console.log('\n' + _banner +
   '  (js:' + (failed ? 'FAIL' : 'ok') + ' audit:' + (auditOk ? 'ok' : 'FAIL') +
-  ' host:' + (hostOk ? 'ok' : 'FAIL') + ' sim:' + (simOk ? 'ok' : 'FAIL') +
-  ' proofs:' + (proofsOk ? 'ok' : 'FAIL') + ' blank-scan:' + (thumbsOk ? 'ok' : 'FAIL') +
+  ' host:' + (hostOk ? 'ok' : 'FAIL') + ' sim:' + (simOk ? (simSkipped ? 'skip' : 'ok') : 'FAIL') +
+  ' proofs:' + (proofsOk ? (proofsSkipped ? 'skip' : 'ok') : 'FAIL') + ' blank-scan:' + (thumbsOk ? 'ok' : 'FAIL') +
   // A SKIPPED gate is not a passing gate. Reporting both as "ok" is how a
   // machine missing ffmpeg or a font quietly stops guarding anything while the
   // summary still reads green.
@@ -2105,12 +2114,17 @@ console.log('\n' + (allOk ? '════ ALL GATES GREEN ════' : '═�
   ' dead-fns:' + (deadFnOk ? 'ok' : 'FAIL') +
   ' perf:' + (perfOk ? (perfSkipped ? 'skip' : 'ok') : 'FAIL') + ')');
 var _skips = [];
+if (simSkipped) _skips.push('sim');
+if (proofsSkipped) _skips.push('proofs');
 if (styleQualitySkipped) _skips.push('style-quality');
 if (overlaySkipped) _skips.push('overlay');
 if (deadCtrlSkipped) _skips.push('dead-controls');
 if (pvMatchSkipped) _skips.push('preview-match');
 if (contractSkipped) _skips.push('contract');
 if (perfSkipped) _skips.push('perf');
-if (_skips.length) console.log('NOTE: ' + _skips.length + ' gate(s) SKIPPED on this machine (' +
-  _skips.join(', ') + ') — they guarded nothing in this run.');
+if (_skips.length) {
+  console.log('NOTE: ' + _skips.length + ' gate(s) SKIPPED on this machine (' +
+    _skips.join(', ') + ') — they guarded nothing in this run.');
+  console.log('      Run `node tools/doctor.js` — it names exactly what to install.');
+}
 process.exit(allOk ? 0 : 1);
