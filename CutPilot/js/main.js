@@ -6326,7 +6326,10 @@
         wordCues: wordCues, window: (currentPreset().window || 0)
       });
 
-      if (frames.length > 600 && !state._bigOk) {
+      // The approval travels WITH this job (opts.bigOk). It used to be a global
+      // flag set around a re-run and reset in a `finally` — which ran before this
+      // async check did, so "Continue" showed the same question forever.
+      if (frames.length > 600 && !opts.bigOk) {
         // A job this size normally routes to the single-overlay render. Reaching
         // here means that path was unavailable — almost always a missing ffmpeg —
         // so name the actual fix instead of only offering to make the job smaller.
@@ -6337,8 +6340,7 @@
         confirmInline(frames.length + ' caption graphics will be created. That many can be slow to render and import — Premiere may look stuck near the end of its import bar. Tip: raise "Words per caption" or pick a shorter clip for fewer graphics.' +
           whyNoOverlay + '\n\nContinue anyway?', 'Continue', function (yes) {
           if (!yes) { setCaptionBusy(false); capProgress(null); return; }
-          state._bigOk = true;
-          try { runCaptionPipeline(cues, opts); } finally { state._bigOk = false; }
+          runCaptionPipeline(cues, withOpts(opts, { bigOk: true }));
         });
         return;
       }
@@ -6606,6 +6608,16 @@
       shadow: Math.max(0, Math.round(Math.abs((st && st.shadowDY) || 0))),
       mode: captionRevealMode()          // 'highlight' | 'reveal' | 'static'
     };
+  }
+
+  /* A copy of opts with extra fields. A re-run or a fallback must never change
+     the caller's object — the "Continue anyway?" loop was a shared flag being
+     flipped underneath a job that was still waiting to read it. */
+  function withOpts(opts, extra) {
+    var o = {}, k;
+    for (k in (opts || {})) if (Object.prototype.hasOwnProperty.call(opts, k)) o[k] = opts[k];
+    for (k in (extra || {})) if (Object.prototype.hasOwnProperty.call(extra, k)) o[k] = extra[k];
+    return o;
   }
 
   function runLibassCaptions(cues, opts) {
