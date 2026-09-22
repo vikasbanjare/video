@@ -165,7 +165,8 @@ async function cleanUp(page, calls, opts) {
   opts = opts || {};
   const r = await page.evaluate(async (o) => {
     const tab = document.querySelector('[data-tab="silence"]'); if (tab) tab.click();
-    const b = document.querySelector('#ac-strength button[data-s="' + (o.strength || 'balanced') + '"]'); if (b) b.click();
+    // no strength given = leave the panel's current setting (and Fine-tune) alone
+    const b = o.strength ? document.querySelector('#ac-strength button[data-s="' + o.strength + '"]') : null; if (b) b.click();
     if (o.takes != null) document.getElementById('ac-do-takes').checked = !!o.takes;
     if (o.fillers != null) document.getElementById('ac-do-fillers').checked = !!o.fillers;
     const t0 = document.getElementById('toast'); if (t0) { t0.textContent = ''; t0.className = 'toast hidden'; }

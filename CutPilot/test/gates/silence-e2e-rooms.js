@@ -70,6 +70,30 @@ const secs = (x) => x.toFixed(2) + 's';
     ok(got.strong.removed >= got.balanced.removed - 0.02 && got.balanced.removed >= got.gentle.removed - 0.02 && got.strong.removed > got.gentle.removed + 0.5,
       'presets are ordered: Reel ' + secs(got.strong.removed) + ' ≥ YouTube ' + secs(got.balanced.removed) + ' ≥ Podcast ' + secs(got.gentle.removed));
 
+    // one strength setting shown in two places, and Fine-tune → Manual is
+    // honoured by the one-tap button (it used to ignore every Fine-tune value)
+    {
+      const { page, calls } = await P.openPanel(browser, SC.soloTimeline(S.floor60.file));
+      const synced = await page.evaluate(() => {
+        document.querySelector('[data-tab="silence"]').click();
+        document.querySelector('#sil-strength button[data-s="strong"]').click();
+        return document.querySelector('#ac-strength button[data-s="strong"]').classList.contains('on');
+      });
+      ok(synced, 'the two strength rows are ONE setting (Reel picked in the step-by-step tools is Reel on the one-tap card)');
+      await page.evaluate(() => {
+        document.getElementById('opt-threshold-manual').checked = true;
+        document.getElementById('opt-threshold').value = -45;
+        document.getElementById('opt-minsilence').value = 2.5;     // only pauses of 2.5 s or more
+        document.getElementById('opt-padding').value = 0.2;
+      });
+      const m = await P.cleanUp(page, calls, { takes: false });
+      await page.close();
+      const cuts = m.razor.length ? m.razor[0].ranges : [];
+      ok(cuts.length === 1 && cuts[0].start >= 19.8 && cuts[0].end <= 22.8,
+        'Fine-tune → Manual (min pause 2.5 s) is used by "Clean up my video": only the 3 s pause is cut (' +
+        JSON.stringify(cuts.map(c => [+c.start.toFixed(2), +c.end.toFixed(2)])) + ')');
+    }
+
     // one tap with the DEFAULT ticks (Repeated takes on) and no key/engine
     r = await run('floor45', 'balanced', { takes: true });
     judge('default ticks, no transcription key', r);
