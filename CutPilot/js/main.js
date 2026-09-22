@@ -6562,8 +6562,17 @@
                  Math.min(Math.round((parseInt(ov.fontSize, 10) || 120) * (base / 1080)),
                           Math.round(base * 0.115)));
     var yPct = (st && st.yPct != null) ? st.yPct : ((ov.yPct != null) ? ov.yPct : 0.85);
+    // ALWAYS bottom-anchored (ASS alignment 2), because that is the canvas rule:
+    // yPct is where the caption's LAST line sits, measured from the top, and the
+    // block grows upward from there. This used to switch to alignment 8 below
+    // 40% — where libass measures MarginV from the TOP, so "Top" captions landed
+    // near the bottom — and to 5 between 40% and 66%, where libass ignores
+    // MarginV entirely, so every slider value and all three safe-zone presets
+    // (64/62/58) rendered at dead centre over the speaker's face.
     var marginV = Math.max(Math.round(H * 0.04), Math.round((1 - yPct) * H));
-    var align = (yPct < 0.4) ? 8 : (yPct < 0.66 ? 5 : 2);          // top / middle / bottom-centre
+    var align = 2;
+    // the same text column the canvas wraps in (maxWidthPct of the frame)
+    var colPct = (st && st.maxWidthPct > 0 && st.maxWidthPct <= 1) ? st.maxWidthPct : 0.88;
     var boxColor = st ? st.boxColor : (ov.boxColor !== undefined ? ov.boxColor : (preset.boxColor || null));
     var strokeCol = st ? st.stroke : ov.stroke;
     var strokeW = st ? st.strokeWidth : ov.strokeWidth;
@@ -6587,7 +6596,7 @@
       allCaps: !!(st ? st.uppercase : ov.uppercase),
       letterSpacing: (st && st.letterSpacing) || ov.letterSpacing || 0,
       align: align, marginV: marginV,
-      marginLR: Math.round(W * 0.06),
+      marginLR: Math.round(W * (1 - colPct) / 2),
       anim: 'pop',
       // "Spoken-word size" is a real control and the canvas path scales the
       // active word by it. The overlay ignored it and always popped to 116%,

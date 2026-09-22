@@ -947,15 +947,18 @@ function fluxProps() {
         // on the overlay path, so the slider did nothing on long videos
         const wantPop = Math.max(100, Math.round((st.highlightScale || 1) * 100));
         if (a.popScale !== wantPop) fails.push(t.id + ' @' + F.n + ': pop ' + a.popScale + ' vs ' + wantPop);
-        // POSITION: the overlay is bottom/middle/top-anchored by margin, the
-        // canvas positions by yPct. They must describe the same spot, or a
-        // long video puts captions somewhere the preview never showed.
+        // POSITION: the canvas puts the caption's LAST line at yPct and grows
+        // it upward — a bottom anchor. The overlay must use the same anchor:
+        // ASS alignment 2 with MarginV = (1 - yPct) * H. (This used to expect 8
+        // below 40% and 5 up to 66% — but libass measures MarginV from the TOP
+        // with 8 and ignores it with 5, so Top captions rendered at the bottom
+        // and every middle position at dead centre. Rendered and measured in
+        // test/gates/overlay-libass-position.js.)
         const wantMargin = Math.max(Math.round(F.h * 0.04), Math.round((1 - st.yPct) * F.h));
         if (a.marginV !== wantMargin)
           fails.push(t.id + ' @' + F.n + ': marginV ' + a.marginV + ' vs ' + wantMargin + ' for yPct ' + st.yPct);
-        const wantAlign = (st.yPct < 0.4) ? 8 : (st.yPct < 0.66 ? 5 : 2);
-        if (a.align !== wantAlign)
-          fails.push(t.id + ' @' + F.n + ': align ' + a.align + ' vs ' + wantAlign + ' for yPct ' + st.yPct);
+        if (a.align !== 2)
+          fails.push(t.id + ' @' + F.n + ': align ' + a.align + ' vs 2 (bottom anchor, like the canvas) for yPct ' + st.yPct);
       }
     }
     return { checked, fails };
