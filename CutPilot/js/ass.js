@@ -182,20 +182,30 @@
     return head.join('\n') + '\n' + lines.join('\n') + '\n';
   }
 
-  /* Escape an .ass path for use inside ffmpeg's subtitles filter (the filter
-     graph treats ':' and '\' specially; Windows backslashes must become '/'). */
   /* Escape a path for use as the subtitles filter's VALUE.
-     ffmpeg parses this at two levels: the filtergraph splits on , and ; and
-     treats [ ] specially, then the filter's own parser splits key=value on '='.
-     Quoting handles the first level, but not the second — measured against real
-     ffmpeg, a folder named "a=b" still failed with "Error applying option
-     '/tmp/.../a' to filter 'subtitles': Option not found". Callers therefore
-     name the option explicitly (subtitles=filename=<this>), which is what makes
-     '=' safe. Verified rendering: "Reels, Final", "take [1]", "semi;colon",
-     "a=b" and "with space" all pass; see assertFilterPath tests. */
+     ffmpeg unescapes it TWICE, and each level has its own special characters:
+       1. the filtergraph (-vf) strips one level of '…' quoting / \-escaping and
+          splits on , ; [ ]
+       2. the filter's option parser then splits the result on ':' and strips a
+          second level of \-escaping.
+     Quoting alone only survives level 1, so a ':' reached level 2 bare and cut
+     the path in two. Every Windows path has one after its drive letter, so on
+     Windows the long-video overlay failed for EVERY file with "Error applying
+     option 'original_size' to filter 'subtitles': Invalid argument" (reproduced
+     with real ffmpeg on a folder named "a:b") and silently fell back to one
+     image per word. Same for an apostrophe ("Vikas's Reels").
+     So: escape \ ' : for level 2 first, then quote for level 1 — a quote cannot
+     sit inside '…', so each one closes the quote, adds an escaped \' and
+     reopens. Callers still name the option (subtitles=filename=<this>) so an
+     '=' in a folder name is never read as a key. Verified against real ffmpeg
+     in test/gates/overlay-escfilterpath.js. */
   function escFilterPath(p) {
-    var s = String(p).replace(/\\/g, '/');          // Windows separators
-    return "'" + s.replace(/'/g, "\\'") + "'";
+    var s = String(p);
+    // Windows separators become '/', which ffmpeg accepts. Only for a Windows
+    // path: on macOS a backslash is a legal character in a folder name.
+    if (/^[A-Za-z]:[\\\/]/.test(s) || /^\\\\/.test(s)) s = s.replace(/\\/g, '/');
+    var level2 = s.replace(/[\\':]/g, '\\$&');
+    return "'" + level2.replace(/'/g, "'\\''") + "'";
   }
 
   /* Build the ffmpeg burn-in command args (caller supplies in/out paths). The
