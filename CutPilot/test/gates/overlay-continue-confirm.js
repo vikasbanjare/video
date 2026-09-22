@@ -10,8 +10,14 @@
  *  1. No Node here (so no one-clip overlay is possible): restyle a 400-line job
  *     (1,200 caption frames), press Continue ONCE — the question must go away
  *     and the job must move on to rendering.
+ *  2. With Node + ffmpeg (the bridge): restyling a long job must not ask at all
+ *     — it becomes ONE overlay clip on the same track, replacing the images.
  */
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const L = require('./overlay-lib.cjs');
+const { findFfmpeg } = require(path.join(L.ROOT, 'tools', 'ffmpeg-find.js'));
 
 let failed = 0;
 const ok = m => console.log('  ✓ ' + m);
@@ -64,6 +70,51 @@ const state = () => ({
     await P.close();
   }
 
-  console.log(failed ? ('CONTINUE: ' + failed + ' FAILURE(S)') : 'CONTINUE: one Continue continues ✓');
+  // ---- 2. with Node + ffmpeg: a long restyle becomes one overlay, no question ------
+  const ff = findFfmpeg({});
+  if (!ff) { console.log('  ? no ffmpeg — the overlay half is skipped'); process.exit(failed ? 1 : 2); }
+  {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-ovconfirm-'));
+    const env = { tmpdir: path.join(root, 'tmp'), homedir: path.join(root, 'home'), platform: process.platform };
+    fs.mkdirSync(env.tmpdir, { recursive: true });
+    fs.mkdirSync(path.join(env.homedir, '.cutpilot', 'bin'), { recursive: true });
+    fs.symlinkSync(ff, path.join(env.homedir, '.cutpilot', 'bin', 'ffmpeg'));
+    const P = await L.launchPanel({ env });
+    const page = P.page;
+    const H = L.loadHostHarness();
+    // V1 holds the previous job's caption images (CP_DEBUG.setLastCaptionJob says track 1), V2 the footage
+    const w = H.makeWorld({ vTracks: 2, aTracks: 1, fps: 25 });
+    w.model.w = 1080; w.model.h = 1920;
+    for (let i = 0; i < 30; i++) w.model.addClip('vTracks', 0, i * 1.5, i * 1.5 + 1.3, { name: 'cap_' + (10000 + i) + '.png' });
+    w.model.addClip('vTracks', 1, 0, 700, { name: 'Podcast.mp4' });
+    w.sandbox.app.project.activeSequence.name = 'Episode 12';
+    P.bridge.state.premiere = { world: w, host: H.loadHost(w) };
+    await page.evaluate(c => {
+      window.CP_DEBUG.setEnv(1080, 1920);
+      window.CP_DEBUG.setLastCaptionJob(c);
+      const tab = document.querySelector('.tab[data-tab="captions"]'); if (tab) tab.click();
+      document.getElementById('btn-cap-restyle').click();
+    }, cues400());
+    let asked = false, placed = null;
+    for (let i = 0; i < 1200 && !placed; i++) {
+      await sleep(100);
+      const s = await page.evaluate(state);
+      if (s.confirm) { asked = true; break; }
+      placed = P.bridge.state.hostCalls.find(c => c.fn === 'CP_placeOverlay' || c.fn === 'CP_placeCaptionImages') || null;
+    }
+    if (asked) bad('restyling a long job asked "Continue anyway?" even though one overlay clip can be made here');
+    else if (!placed) bad('restyling a long job placed nothing');
+    else if (placed.fn !== 'CP_placeOverlay') bad('restyling a long job placed ' + placed.fn + ' instead of one overlay clip');
+    else {
+      await page.waitForFunction(() => !document.getElementById('btn-magic').disabled, { timeout: 120000 }).catch(() => {});
+      const left = w.model.vTracks[0].filter(c => /^cap_/.test(c.name)).length;
+      if (placed.args.replaceTrack === 1 && !left) ok('a long restyle becomes ONE overlay clip on the same track, replacing the images, with no question');
+      else bad('overlay placed with replaceTrack ' + placed.args.replaceTrack + ', ' + left + ' old caption images left on the track');
+    }
+    await P.close();
+    try { fs.rmSync(root, { recursive: true, force: true }); } catch (e) {}
+  }
+
+  console.log(failed ? ('CONTINUE: ' + failed + ' FAILURE(S)') : 'CONTINUE: one Continue continues, and long restyles need no question at all ✓');
   process.exit(failed ? 1 : 0);
 })().catch(e => { console.log('  ✗ crashed: ' + (e && e.stack || e)); process.exit(1); });

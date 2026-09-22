@@ -2,10 +2,12 @@
  * overlay-render-check.js — actually RENDER the caption overlay and look at it.
  *
  * Long videos route to the single-overlay path (one transparent .mov for the
- * whole video) instead of one image per word. That path had never been
- * executed anywhere: no test, and the owner's machine never exercised it.
- * This runs the REAL pipeline — CPAss.buildAss → CPAss.ffmpegOverlayArgs →
- * ffmpeg+libass — then decodes frames and asserts what a viewer would see:
+ * whole video) instead of one image per word. Pulse's own canvas renderer now
+ * draws that overlay (test/gates/overlay-canvas-parity.js proves it matches the
+ * per-image look); libass is the FALLBACK when it cannot run. This keeps the
+ * fallback honest: it runs CPAss.buildAss → CPAss.ffmpegOverlayArgs →
+ * ffmpeg+libass, then decodes frames and asserts what a viewer would see
+ * (where it is positioned for each setting: test/gates/overlay-libass-position.js):
  *
  *   1. ffmpeg exits 0 and writes a non-trivial .mov
  *   2. the frame is mostly TRANSPARENT (it is an overlay, not a black card)
