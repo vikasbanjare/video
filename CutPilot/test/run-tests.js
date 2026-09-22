@@ -2088,15 +2088,38 @@ try {
   }
 } catch (e) { if (e && e.status === 2) { console.log('(perf budget skipped — no browser)'); perfSkipped = true; } else perfOk = false; }
 
-var allOk = !failed && auditOk && hostOk && simOk && proofsOk && thumbsOk && styleQualityOk && overlayOk && deadCtrlOk && pvMatchOk && contractOk && domIdOk && deadFnOk && perfOk;
+// --------------------------------------------- discovered gates ----
+// Every file in test/gates/*.js is a gate: exit 0 = pass, 2 = skipped (tool
+// missing — see tools/doctor.js), anything else = FAIL. New work adds a gate by
+// adding a FILE, never by editing this runner, so parallel changes do not all
+// collide on the same lines here.
+var _extGates = [];
+(function () {
+  var fs = require('fs'), p = require('path'), cp = require('child_process');
+  var dir = p.join(__dirname, 'gates');
+  if (!fs.existsSync(dir)) return;
+  fs.readdirSync(dir).filter(function (f) { return /\.js$/.test(f); }).sort().forEach(function (f) {
+    var name = f.replace(/\.js$/, '');
+    console.log('\nRunning gate ' + name + '…');
+    var st = 'ok';
+    try { cp.execSync('node "' + p.join(dir, f) + '"', { stdio: 'inherit', timeout: 20 * 60 * 1000 }); }
+    catch (e) { st = (e && e.status === 2) ? 'skip' : 'FAIL'; }
+    _extGates.push({ name: name, status: st });
+  });
+})();
+var _extOk = _extGates.every(function (g) { return g.status !== 'FAIL'; });
+
+var allOk = !failed && auditOk && hostOk && simOk && proofsOk && thumbsOk && styleQualityOk && overlayOk && deadCtrlOk && pvMatchOk && contractOk && domIdOk && deadFnOk && perfOk && _extOk;
 // "ALL GATES GREEN" printed while 7 of 14 gates had skipped. The NOTE below
 // said so, but a headline that reads green is what people act on — and a
 // skipped gate guards nothing. Say it in the banner, not only the footnote.
 var _nSkip = 0;
 [simSkipped, proofsSkipped, styleQualitySkipped, overlaySkipped, deadCtrlSkipped,
  pvMatchSkipped, contractSkipped, perfSkipped].forEach(function (x) { if (x) _nSkip++; });
+_extGates.forEach(function (g) { if (g.status === 'skip') _nSkip++; });
+var _nGates = 14 + _extGates.length;
 var _banner = !allOk ? '════ SOME GATES FAILED ════'
-  : (_nSkip ? '════ NOTHING FAILED — but ' + _nSkip + ' of 14 gates SKIPPED ════'
+  : (_nSkip ? '════ NOTHING FAILED — but ' + _nSkip + ' of ' + _nGates + ' gates SKIPPED ════'
             : '════ ALL GATES GREEN ════');
 console.log('\n' + _banner +
   '  (js:' + (failed ? 'FAIL' : 'ok') + ' audit:' + (auditOk ? 'ok' : 'FAIL') +
@@ -2112,7 +2135,8 @@ console.log('\n' + _banner +
   ' contract:' + (contractOk ? (contractSkipped ? 'skip' : 'ok') : 'FAIL') +
   ' dom-ids:' + (domIdOk ? 'ok' : 'FAIL') +
   ' dead-fns:' + (deadFnOk ? 'ok' : 'FAIL') +
-  ' perf:' + (perfOk ? (perfSkipped ? 'skip' : 'ok') : 'FAIL') + ')');
+  ' perf:' + (perfOk ? (perfSkipped ? 'skip' : 'ok') : 'FAIL') +
+  _extGates.map(function (g) { return ' ' + g.name + ':' + g.status; }).join('') + ')');
 var _skips = [];
 if (simSkipped) _skips.push('sim');
 if (proofsSkipped) _skips.push('proofs');
@@ -2122,6 +2146,7 @@ if (deadCtrlSkipped) _skips.push('dead-controls');
 if (pvMatchSkipped) _skips.push('preview-match');
 if (contractSkipped) _skips.push('contract');
 if (perfSkipped) _skips.push('perf');
+_extGates.forEach(function (g) { if (g.status === 'skip') _skips.push(g.name); });
 if (_skips.length) {
   console.log('NOTE: ' + _skips.length + ' gate(s) SKIPPED on this machine (' +
     _skips.join(', ') + ') — they guarded nothing in this run.');
