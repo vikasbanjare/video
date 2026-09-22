@@ -6700,7 +6700,8 @@
     return info.then(function (r) {
       var cands = [];
       var proj = (r && r.path) ? String(r.path) : '';
-      if (proj && /\.prproj$/i.test(proj)) cands.push(pathMod.join(pathMod.dirname(proj), 'Pulse Media'));
+      // only a real saved location — an unsaved project can report a bare name
+      if (proj && /\.prproj$/i.test(proj) && pathMod.isAbsolute(proj)) cands.push(pathMod.join(pathMod.dirname(proj), 'Pulse Media'));
       var pname = String((r && r.name) || (state.env && state.env.projectName) || '').replace(/\.prproj$/i, '');
       cands.push(pathMod.join(os.homedir(), 'Documents', 'Pulse', 'Media', mediaSafeName(pname)));
       for (var i = 0; i < cands.length; i++) {
@@ -6788,6 +6789,7 @@
     var W = state.env.width || 1920, H = state.env.height || 1080;
     var fps = (state.env.fps > 0) ? state.env.fps : 30;
     var seqKey = overlaySeqKey((state.env && state.env.sequenceName) || '');
+    if (!frames.length) { setCaptionBusy(false); capProgress(null); toast('No words to caption.', true); return Promise.resolve(); }
     overlayProgress('Preparing your caption overlay…', 0);
     return overlayMediaDir().then(function (dir) {
       clearStaleOverlayWork(dir);

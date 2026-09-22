@@ -44,6 +44,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const show = path.join(root, 'Show');
   fs.mkdirSync(show);
   const media = path.join(show, 'Pulse Media');
+  process.chdir(root);
   const P = await L.launchPanel({ env });
   if (P.skip) { console.log('  ? ' + P.skip + ' — skipped'); process.exit(2); }
   const { page, bridge } = P;
@@ -163,6 +164,20 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const tmpLeft = fs.readdirSync(env.tmpdir).filter(n => /pulse-libass|\.mov$/.test(n));
     if (tmpLeft.length) bad('overlay media was written to the OS temp folder: ' + tmpLeft.join(', '));
     else ok('nothing lands in the OS temp folder (macOS purges it — that was the "Media Offline")');
+
+    // a project that was never saved reports a bare name, no folder:
+    // ~/Documents/Pulse/Media/<project>, never a path relative to wherever
+    // Premiere happens to run (cwd is the temp root here, so a miss stays there)
+    bridge.state.premiere = L.newPremiere(H, { width: 1080, height: 1920, fps: 25, projectPath: 'Untitled.prproj' });
+    const from = bridge.state.hostCalls.length;
+    await page.evaluate(j => window.CP_DEBUG_EXT.overlay.run(j.cues, { wordCues: j.wordCues }), job);
+    for (let i = 0; i < 600 && !placed(from).length; i++) await sleep(50);
+    for (let i = 0; i < 200; i++) { await sleep(50); if (!(await ui()).busy) break; }
+    const p = placed(from)[0];
+    const want = path.join(env.homedir, 'Documents', 'Pulse', 'Media', 'Untitled');
+    if (!p) bad('an unsaved project got no overlay');
+    else if (path.dirname(p.args.path) !== want) bad('an unsaved project\'s overlay went to ' + path.dirname(p.args.path) + ', want ' + want);
+    else ok('an unsaved project\'s overlay goes to ~/Documents/Pulse/Media/Untitled, not a temp folder');
   }
 
   if (page.__errors && page.__errors.length) bad('page errors: ' + page.__errors.slice(0, 3).join(' | '));
