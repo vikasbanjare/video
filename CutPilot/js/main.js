@@ -1171,10 +1171,13 @@
   function transcribeViaDeepgram(audioPath, lang) {
     var key = cpDeepgramKey();
     if (!key) return Promise.reject(new Error('Add your Deepgram key in Settings → Auto-transcribe.'));
-    var opts = {};
-    // 'hinglish' is our own UI mode, not a Deepgram language code; nova-3 reads
-    // Hindi natively and the caller romanises afterwards.
-    if (lang && lang !== 'auto' && lang !== 'hinglish') opts.language = lang;
+    // Deepgram assumes ENGLISH when no language is sent — it does not detect.
+    // Auto-detect and Hinglish go to nova-3's multilingual model (Hindi and
+    // English mixed in one sentence; the caller romanises Hinglish after);
+    // an explicit pick is sent as is. autoTranscribe hands Hinglish in as
+    // 'hi', so the panel's own choice decides here.
+    var ui = settings.whisperLang || 'auto';
+    var opts = { language: (ui === 'auto' || ui === 'hinglish') ? ui : (lang || ui) };
     return _curlJson(['-sS', '--max-time', '900', CPVerbatim.deepgramUrl(opts),
       '-H', 'Content-Type: audio/mpeg', '--data-binary', '@' + audioPath],
       ['Authorization: Token ' + key])
@@ -8921,8 +8924,18 @@
   function fillerMediaRanges(clip, force) {
     if ((!force && !$('opt-fillers').checked) || typeof CPTranscript === 'undefined') return [];
     var cues;
-    try { cues = readSelectedTranscript(); }
-    catch (e) { toast('Filler removal skipped — ' + e.message, true); return []; }
+    if (state.transcriptWords && state.transcriptWords.length) {
+      // REAL word timing, re-timed after every cut — the fillers are cut on
+      // the words themselves. (The .srt on disk is never re-timed, so after a
+      // first clean-up it put every filler cut seconds away from its "um".)
+      cues = [];
+      cues.words = CPCaptions.dedupeRepeatedCues(state.transcriptWords, { word: true });
+    } else if (transcriptIsStale()) {
+      toast('Filler removal skipped — ' + STALE_TRANSCRIPT_MSG, true); return [];
+    } else {
+      try { cues = readSelectedTranscript(); }
+      catch (e) { toast('Filler removal skipped — ' + e.message, true); return []; }
+    }
     var res = CPTranscript.findFillerRanges(cues, { extra: $('opt-fillers-extra').checked, padding: 0.02 });
     var out = [];
     res.ranges.forEach(function (fr) {
@@ -9258,6 +9271,10 @@
     }
     if (state.lastCaptionJob && state.lastCaptionJob.cues) state.lastCaptionJob.cues = remapFn(state.lastCaptionJob.cues);
     if (typeof _treCues !== 'undefined' && _treCues && _treCues.length) _treCues = remapFn(_treCues);
+    // the transcript FILE is not re-timed — remember that its times are now
+    // stale, so the retake/filler passes never cut at them (a new transcript
+    // is a new object and starts clean)
+    if (state.transcript) state.transcript.timelineEdited = true;
     return dropped;
   }
 
@@ -9286,30 +9303,57 @@
 
   // ---- Auto-Edit: remove repeated takes (uses the transcript) ----
   state.takeDeletes = [];
+  /* After any cut the word list and the caption cues are re-timed; the
+     transcript FILE is not (resyncTranscripts marks it). Its times now point
+     at the wrong speech, so the retake and filler passes refuse it. */
+  var STALE_TRANSCRIPT_MSG = 'your timeline changed since this transcript was made, and it has no word timing to follow the cuts. ' +
+    'Tap 🎙️ Auto-transcribe again (about a minute), then run this again.';
+  function transcriptIsStale() { return !!(state.transcript && state.transcript.timelineEdited); }
+  /* Words for the retake passes, always in the CURRENT timeline's time. */
   function takesGetWords() {
     if (state.transcriptWords && state.transcriptWords.length) return state.transcriptWords.slice();
     var cues = (state.lastCaptionJob && state.lastCaptionJob.cues) || null;
-    if (!cues) { try { cues = readSelectedTranscript(); } catch (e) { cues = null; } }
+    if (!cues && !transcriptIsStale()) { try { cues = readSelectedTranscript(); } catch (e) { cues = null; } }
     return (cues && cues.length) ? CPTakes.flatten(cues) : null;
+  }
+  function takesNoWordsMsg(what) {
+    return transcriptIsStale() ? 'Can’t ' + what + ' — ' + STALE_TRANSCRIPT_MSG
+                               : 'Transcribe your clip first (Transcribe tab) — I need the words to ' + what + '.';
   }
   function takeChip(label) {
     return label === 'false_start' ? '⏮' : label === 'filler' ? '🗯'
          : label === 'dead_air' ? '💭' : label === 'tangent' ? '↗' : '✂';
   }
+  /* The review list: every proposed cut has a tick box (on by default; an
+     unusually long AI cut starts unticked), so ONE wrong cut — a host's
+     question, say — can be kept without throwing away the other eleven. */
+  function takesStats(dels) {
+    var stats = $('takes-stats');
+    var on = dels.filter(function (d) { return !d.skip; });
+    var total = on.reduce(function (a, d) { return a + (d.end - d.start); }, 0);
+    var off = dels.length - on.length;
+    stats.innerHTML = 'Found <b>' + dels.length + '</b> cut' + (dels.length > 1 ? 's' : '') +
+      ' — about <b>' + total.toFixed(1) + 's</b> to remove' + (off ? ' (' + off + ' unticked — kept)' : '') +
+      '. Untick anything you want to keep, then apply.';
+    $('btn-takes-apply').classList.toggle('hidden', !on.length);
+  }
   function renderTakes(dels) {
-    var stats = $('takes-stats'), list = $('takes-list');
+    var list = $('takes-list');
     $('takes-results').classList.remove('hidden');
     list.innerHTML = '';
     if (!dels.length) {
-      stats.textContent = 'Nothing to remove — the transcript reads clean. (Tip: lower “Match sensitivity”, or try ✨ Smart Cleanup for false starts, fillers & dead-air.)';
+      $('takes-stats').textContent = 'Nothing to remove — the transcript reads clean. (Tip: lower “Match sensitivity”, or try ✨ Smart Cleanup for false starts, fillers & dead-air.)';
       $('btn-takes-apply').classList.add('hidden');
       return;
     }
-    var total = dels.reduce(function (a, d) { return a + (d.end - d.start); }, 0);
-    stats.innerHTML = 'Found <b>' + dels.length + '</b> cut' + (dels.length > 1 ? 's' : '') +
-      ' — about <b>' + total.toFixed(1) + 's</b> to remove. Review, then apply.';
+    dels.forEach(function (d) { if (d.skip == null) d.skip = !!d.needsReview; });
+    takesStats(dels);
     dels.forEach(function (d, i) {
       var item = document.createElement('div'); item.className = 'seg-item';
+      var cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !d.skip;
+      cb.title = 'Untick to KEEP this part';
+      cb.addEventListener('change', function () { d.skip = !cb.checked; takesStats(dels); });
+      item.appendChild(cb);
       var play = document.createElement('button'); play.className = 'angle-chip'; play.textContent = '▶';
       play.title = 'Preview this cut on the timeline';
       play.style.cursor = 'pointer';
@@ -9323,16 +9367,16 @@
       var span = document.createElement('span');
       var txt = d.text.length > 38 ? d.text.slice(0, 38) + '…' : d.text;
       span.textContent = '#' + (i + 1) + '  ' + fmt(d.start) + '→' + fmt(d.end) + '  “' + txt + '”' +
-        (d.label && d.reason ? '  · ' + d.reason : '');
+        (d.label && d.reason ? '  · ' + d.reason : '') + (d.needsReview ? '  · unusually long — play it first' : '');
+      span.title = d.text;                                   // the whole phrase on hover
       item.appendChild(span);
       list.appendChild(item);
     });
-    $('btn-takes-apply').classList.remove('hidden');
   }
   if ($('tk-sim')) $('tk-sim').addEventListener('input', function () { $('tk-sim-val').textContent = this.value + '%'; });
   if ($('btn-takes-find')) $('btn-takes-find').addEventListener('click', function () {
     var words = takesGetWords();
-    if (!words || words.length < 6) return toast('Transcribe your clip first (Transcribe tab) — I need the words to find retakes.', true);
+    if (!words || words.length < 6) return toast(takesNoWordsMsg('find retakes'), true);
     var prog = $('takes-progress'); prog.classList.remove('hidden'); prog.textContent = 'Scanning the transcript for retakes…';
     setTimeout(function () {
       var res = CPTakes.findRepeatedTakes(words, {
@@ -9346,8 +9390,8 @@
     }, 30);
   });
   function applyTakes(safeCopy) {
-    var dels = state.takeDeletes || [];
-    if (!dels.length) return toast('Nothing to remove.', true);
+    var dels = (state.takeDeletes || []).filter(function (d) { return !d.skip; });   // only the ticked rows
+    if (!dels.length) return toast((state.takeDeletes || []).length ? 'Nothing is ticked — every cut is being kept.' : 'Nothing to remove.', true);
     var ranges = dels.map(function (d) { return { start: d.start, end: d.end }; });
     ranges = snapRangesToWords(ranges, state.transcriptWords);   // keep edges off mid-word
     var backup = safeCopy ? true : ($('tk-backup') ? $('tk-backup').checked : true);
@@ -9417,34 +9461,40 @@
   }
 
   /* Chunked AI cleanup → cut ranges (sequence time, via the words' own times).
-     opts:{aggressive,scripted}. Shared by the review-first Smart Cleanup button
-     and the one-tap "Clean up my video". Resolves {cuts, truncated, maxw}. */
+     opts:{aggressive,scripted,fillers,tangents} (fillers/tangents === false
+     leave that category out). Shared by the review-first Smart Cleanup button
+     and the one-tap "Clean up my video". Resolves {cuts, truncated, maxw}.
+     EVERY word is read (it used to stop at 5,000 — the second half of a long
+     podcast kept all its retakes, silently), in 1,000-word chunks that overlap
+     by 150 so a retake straddling a chunk boundary is seen whole. */
   function aiCleanupCuts(words, opts, prog, label) {
     opts = opts || {};
-    var MAXW = 5000;
-    var truncated = words.length > MAXW;
-    var use = truncated ? words.slice(0, MAXW) : words;
-    var chunks = CPSmartEdit.chunk(use, 1000);
-    return processChunks(chunks, function (cw) {
-      var prompt = CPSmartEdit.buildCleanupPrompt(cw, { aggressive: !!opts.aggressive, scripted: !!opts.scripted });
+    var plan = CPSmartEdit.planChunks(words.length, 1000, 150);
+    var cats = CPSmartEdit.cleanupCategories(opts);
+    return processChunks(plan, function (pc) {
+      var cw = words.slice(pc.from, pc.to);
+      var prompt = CPSmartEdit.buildCleanupPrompt(cw, { aggressive: !!opts.aggressive, scripted: !!opts.scripted,
+                                                        fillers: opts.fillers, tangents: opts.tangents });
       return aiChatRetry(prompt, { maxTokens: 2048 }).then(function (content) {
-        return CPSmartEdit.parseCleanupResponse(content, cw, { minConfidence: 0 });
+        return [CPSmartEdit.parseCleanupResponse(content, cw, { minConfidence: 0, categories: cats })];   // one entry per chunk
       });
-    }, prog, label || '✨ AI is reading your transcript').then(function (cuts) {
-      return { cuts: cuts, truncated: truncated, maxw: MAXW };
+    }, prog, label || '✨ AI is reading your transcript').then(function (perChunk) {
+      return { cuts: CPSmartEdit.mergeChunkCuts(plan, perChunk), truncated: false, maxw: words.length };
     });
   }
   function runSmartCleanup() {
     if (typeof CPSmartEdit === 'undefined') return toast('Smart Cleanup module missing.', true);
     var words = takesGetWords();
-    if (!words || words.length < 6) return toast('Transcribe your clip first (Transcribe tab) — Smart Cleanup reads the words.', true);
+    if (!words || words.length < 6) return toast(takesNoWordsMsg('run Smart Cleanup'), true);
     var aggressive = !!($('sc-aggressive') && $('sc-aggressive').checked);
     var prog = $('takes-progress'); prog.classList.remove('hidden');
     aiCleanupCuts(words, { aggressive: aggressive, scripted: true }, prog, '✨ Reading your transcript with AI').then(function (r) {
       state.takeDeletes = r.cuts;          // reuse the same review → apply pipeline
       prog.classList.add('hidden');
       renderTakes(r.cuts);
-      if (r.cuts.length) toast('✨ Smart Cleanup found ' + r.cuts.length + ' cut' + (r.cuts.length === 1 ? '' : 's') + (r.truncated ? ' (first ' + r.maxw + ' words)' : '') + ' — review them, then apply.');
+      var big = r.cuts.filter(function (c) { return c.needsReview; }).length;
+      if (r.cuts.length) toast('✨ Smart Cleanup found ' + r.cuts.length + ' cut' + (r.cuts.length === 1 ? '' : 's') + ' — review them, then apply.' +
+        (big ? ' ' + big + ' unusually long one' + (big === 1 ? ' is' : 's are') + ' left unticked — play it (▶) before you tick it.' : ''));
     }).catch(function (e) { prog.classList.add('hidden'); toast('Smart Cleanup failed: ' + e.message, true); });
   }
   if ($('btn-smart-cleanup')) $('btn-smart-cleanup').addEventListener('click', runSmartCleanup);
@@ -9467,8 +9517,11 @@
       });
     });
   }
+  /* The verbatim engines get the panel's language too — with none they both
+     transcribe as English, which turned Hindi retakes into gibberish. */
+  function verbatimLang() { return settings.whisperLang || 'auto'; }
   function verbatimDeepgram(audioPath, key) {
-    return _curlJson(['-sS', '--max-time', '600', CPVerbatim.deepgramUrl({}),
+    return _curlJson(['-sS', '--max-time', '600', CPVerbatim.deepgramUrl({ language: verbatimLang(), diarize: true }),
       '-H', 'Content-Type: audio/mpeg', '--data-binary', '@' + audioPath], ['Authorization: Token ' + key])
       .then(function (j) {
         if (j.err_code || j.error) throw CPApiErr.toError('deepgram', { body: j });
@@ -9482,9 +9535,15 @@
       '-H', 'Content-Type: application/octet-stream', '--data-binary', '@' + audioPath], ['authorization: ' + key])
       .then(function (up) {
         if (!up.upload_url) throw new Error('AssemblyAI upload failed' + (up.error ? ': ' + up.error : '.'));
-        return _curlJson(['-sS', '--max-time', '60', 'https://api.assemblyai.com/v2/transcript',
-          '-H', 'Content-Type: application/json',
-          '-d', JSON.stringify(CPVerbatim.assemblySubmitBody(up.upload_url, {}))], ['authorization: ' + key]);
+        function submit(disfl) {
+          return _curlJson(['-sS', '--max-time', '60', 'https://api.assemblyai.com/v2/transcript',
+            '-H', 'Content-Type: application/json',
+            '-d', JSON.stringify(CPVerbatim.assemblySubmitBody(up.upload_url, { language: verbatimLang(), speakerLabels: true, disfluencies: disfl }))],
+            ['authorization: ' + key]);
+        }
+        // "disfluencies" is English-only on AssemblyAI; if a Hindi request is
+        // refused because of it, ask once more without it.
+        return submit(true).then(function (sub) { return (sub && sub.id) ? sub : submit(false); });
       }).then(function (sub) {
         if (!sub.id) throw new Error('AssemblyAI submit failed' + (sub.error ? ': ' + sub.error : '.'));
         return new Promise(function (resolve, reject) {
@@ -9523,7 +9582,13 @@
         if (code !== 0 || !fs.existsSync(audio)) return reject(new Error('Could not extract audio: ' + exErr.slice(-140)));
         function cleanup() { try { fs.unlinkSync(audio); } catch (e) {} }
         var off = (clip.seqStart || 0);   // word time is relative to inPoint → seq = seqStart + t
-        function toSeq(ws) { return ws.map(function (w) { return { start: off + w.start, end: off + w.end, text: w.text, conf: w.conf }; }); }
+        function toSeq(ws) {
+          return ws.map(function (w) {
+            var o = { start: off + w.start, end: off + w.end, text: w.text, conf: w.conf };
+            if (w.speaker != null) o.speaker = w.speaker;   // who said it — an echo by the other person is never a retake
+            return o;
+          });
+        }
         var engine = (settings.verbatimProvider === 'assemblyai') ? verbatimAssembly : verbatimDeepgram;
         engine(audio, key).then(function (ws) { cleanup(); resolve(toSeq(ws)); }).catch(function (e) { cleanup(); reject(e); });
       });
@@ -9542,7 +9607,10 @@
       state.clip = res.clip;
       prog.textContent = '🎙 Transcribing verbatim (keeps every take)… this can take a minute';
       return verbatimTranscribe(res.clip, ff).then(function (words) {
-        state.transcriptWords = words;                       // adopt the verbatim transcript
+        // Adopt the verbatim words only when the panel has none: they may be in
+        // another script than the caption transcript (Devanagari vs Hinglish),
+        // and captions time their words from state.transcriptWords.
+        if (!(state.transcriptWords && state.transcriptWords.length)) state.transcriptWords = words;
         prog.textContent = 'Finding the best take of each line…';
         var tp = TAKE_PRESETS[state.takeStrength || 'balanced'] || TAKE_PRESETS.balanced;
         var det = CPTakes.findRepeatedTakes(words, { minRun: tp.minrun, sim: tp.sim / 100, keep: 'best' });
@@ -9561,6 +9629,32 @@
     }).catch(function (e) { prog.classList.add('hidden'); toast('Verbatim retakes failed: ' + e.message, true); });
   }
   if ($('btn-verbatim-retakes')) $('btn-verbatim-retakes').addEventListener('click', runVerbatimRetakes);
+
+  // Test-only hooks for the retake / filler / verbatim gates
+  // (test/gates/retakes-*.js). Nothing inside Premiere calls these.
+  try {
+    window.CP_DEBUG_EXT = window.CP_DEBUG_EXT || {};
+    window.CP_DEBUG_EXT.retakes = {
+      setLang: function (l) { settings.whisperLang = l; },
+      setTranscript: function (o) {
+        o = o || {};
+        if ('words' in o) state.transcriptWords = o.words;
+        if ('transcript' in o) state.transcript = o.transcript;
+        if ('captionCues' in o) state.lastCaptionJob = o.captionCues ? { cues: o.captionCues, track: 1 } : null;
+      },
+      transcriptWords: function () { return state.transcriptWords; },
+      ripple: function (ranges) { return rippleTranscriptByRanges(ranges); },
+      fillerMediaRanges: function (clip) { return fillerMediaRanges(clip, true); },
+      takesGetWords: takesGetWords,
+      snapRangesToWords: snapRangesToWords,
+      takeDeletes: function () { return state.takeDeletes; },
+      renderTakes: function (dels) { state.takeDeletes = dels; renderTakes(dels); },
+      aiCleanupCuts: aiCleanupCuts,
+      verbatimDeepgram: verbatimDeepgram,
+      verbatimAssembly: verbatimAssembly,
+      transcribeViaDeepgram: transcribeViaDeepgram
+    };
+  } catch (eDbgR) {}
 
   // =========================================================== VIRAL SHORTS ====
   /* Sentence-level segments for the highlight finder: prefer the caption job's

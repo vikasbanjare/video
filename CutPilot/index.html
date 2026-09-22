@@ -849,8 +849,9 @@
       <div class="card">
         <div class="step-head"><span class="step-title">🔁 Remove repeated takes</span></div>
         <p class="hint">Did a few retakes of the same line? Pulse reads your
-           transcript, finds where you <b>restarted a phrase</b>, keeps the best
-           take and ripple-deletes the earlier ones. Transcribe your clip first
+           transcript — English, Hindi, Hinglish or a mix — finds where you <b>restarted a phrase</b>,
+           keeps the last <b>complete</b> take and ripple-deletes the earlier ones. On a podcast, one
+           person repeating the other’s words is never cut. Transcribe your clip first
            (Transcribe tab) — word timing makes the cuts tight.</p>
         <p style="margin:4px 0 4px;font-weight:700;font-size:12px">How hard to look for retakes?</p>
         <div class="subview-switch" id="tk-strength">
@@ -859,7 +860,8 @@
           <button data-s="strong">⚡ Strong</button>
         </div>
         <p class="hint" style="margin-top:5px"><b>Strong</b> also catches reworded retakes;
-           <b>Gentle</b> only obvious repeats. Always keeps your last (best) take.</p>
+           <b>Gentle</b> only obvious repeats. Keeps the last <b>complete</b> take of each line — an
+           attempt that stops short is cut even if it came last. You tick which cuts to apply.</p>
         <details class="advanced" style="margin-top:8px">
           <summary>Fine-tune (for power users)</summary>
           <div class="grid2" style="margin-top:6px">
@@ -868,7 +870,8 @@
           </div>
           <label class="fld-full" style="margin-top:6px">Keep which take?
             <select id="tk-keep">
-              <option value="last">The last attempt (usually the good one)</option>
+              <option value="best" selected>The last complete attempt (recommended)</option>
+              <option value="last">Always the very last attempt</option>
               <option value="confident">The most confident attempt</option>
             </select>
           </label>
@@ -876,13 +879,13 @@
       </div>
       <button id="btn-takes-find" class="hero-btn alt">🔎 Find repeated takes</button>
       <p class="hint" style="margin-top:10px">🎯 <b>Find retakes (Verbatim AI)</b> is the accurate one for a <b>script re-read many
-         times</b>: it re-transcribes with a verbatim engine (keeps every take Groq throws away),
-         keeps your <b>best</b> take of each line, snaps cuts to the pauses, and lists them to review.
-         Needs a Deepgram/AssemblyAI key (Settings).</p>
+         times</b>: it re-transcribes with a verbatim engine (keeps every take Groq throws away) in
+         your chosen language, tells speakers apart, keeps the last <b>complete</b> take of each line,
+         snaps cuts to the pauses, and lists them to review. Needs a Deepgram/AssemblyAI key (Settings).</p>
       <button id="btn-verbatim-retakes" class="hero-btn">🎯 Find retakes (Verbatim AI)</button>
       <p class="hint" style="margin-top:10px">✨ <b>Smart Cleanup (AI)</b> goes further — it reads the whole
-         transcript and also removes <b>false starts</b>, fillers (“um”, “you know”) and
-         <b>“let me think” dead-air</b> that silence-cutting can’t see, then keeps the best take.
+         transcript and also removes <b>false starts</b>, fillers (“um”, “aa”, a stand-alone “matlab”) and
+         <b>“let me think” dead-air</b> that silence-cutting can’t see, then keeps the last complete take.
          You review every cut before anything is removed.</p>
       <label class="check" style="margin:2px 0 8px"><input type="checkbox" id="sc-aggressive"> Aggressive cut <span class="dim">(tighter — still never mid-sentence)</span></label>
       <button id="btn-smart-cleanup" class="hero-btn">✨ Smart Cleanup (AI)</button>
