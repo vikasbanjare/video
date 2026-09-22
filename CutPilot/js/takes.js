@@ -147,11 +147,13 @@
     'me', 'mine', 'myself', 'we', "we're", 'our', 'us',
     'मैं', 'मैंने', 'मेरा', 'मेरी', 'मेरे', 'मुझे', 'मुझसे', 'हम', 'हमने', 'हमारा', 'हमारी', 'हमारे', 'हमको', 'हमें']);
 
-  /* Hindi question words that are (almost) never used outside a question.
-     Kept narrow on purpose: kya/kaise/what/how also appear in statements. */
+  /* Hindi question words. One take of a line keeps them when the speaker
+     re-reads it; an ANSWER replaces them ("kitne saal?" → "do saal"). English
+     what/how/when are left out: they open statements too ("what I learned…"). */
   var ASK = wordSet(['kab', 'kitna', 'kitne', 'kitni', 'kahan', 'kahaan', 'kaha', 'kaun', 'kaunsa', 'kaunsi', 'kaunse', 'kyun',
-    'kyon', 'kyu', 'kyoon',
-    'कब', 'कितना', 'कितने', 'कितनी', 'कहाँ', 'कहां', 'कौन', 'कौनसा', 'कौनसी', 'कौनसे', 'क्यों', 'क्यूं', 'क्यूँ']);
+    'kyon', 'kyu', 'kyoon', 'kya', 'kaise', 'kaisa', 'kaisi',
+    'कब', 'कितना', 'कितने', 'कितनी', 'कहाँ', 'कहां', 'कौन', 'कौनसा', 'कौनसी', 'कौनसे', 'क्यों', 'क्यूं', 'क्यूँ', 'क्या', 'कैसे',
+    'कैसा', 'कैसी']);
 
   /* Acknowledgements ("haan bilkul.", "right.", "जी हाँ") — on a podcast the
      other person says them right before their own sentence that starts the

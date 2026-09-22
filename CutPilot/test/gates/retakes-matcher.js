@@ -152,7 +152,8 @@ const PODCASTS = {
     ['Aur sabse mushkil kya tha pehle saal mein?', 'Sabse mushkil tha paise ka intezaam karna.'],
     ['Paise ka intezaam aapne kaise kiya?', 'Paise ka intezaam maine doston se udhaar lekar kiya.'],
     ['Haan bilkul.', 'Haan bilkul, doston ne bahut help ki.'],
-    ['Aapka pehla customer kaun tha?', 'Mera pehla customer mere hi college ka ek professor tha.']
+    ['Aapka pehla customer kaun tha?', 'Mera pehla customer mere hi college ka ek professor tha.'],
+    ['Us din sabse bada sabak kya tha?', 'Us din sabse bada sabak patience tha.']
   ],
   english: [
     ['So Priya, when did you start your first business?', 'I started my first business when I was in college.'],
