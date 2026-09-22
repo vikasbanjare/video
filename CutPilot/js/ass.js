@@ -1,10 +1,12 @@
 /*
  * Pulse — ASS (Advanced SubStation Alpha) karaoke caption generator.
  *
- * The reliable, word-accurate animated-caption engine: turn word-timed cues into
- * ONE .ass file that ffmpeg+libass burns into the video in a single pass. Because
- * the SAME .ass can be rendered by libass-in-WASM for the on-panel preview,
- * preview == output by construction (no second rasterizer, no MOGRT/AE).
+ * Turn word-timed cues into ONE .ass file that ffmpeg+libass renders into a
+ * transparent caption overlay. This is now only the FALLBACK for long videos:
+ * the preview and the per-image path are drawn by render.js, and the one-clip
+ * overlay is drawn by that same engine (CPRender.renderOverlay). libass is a
+ * different rasterizer and cannot draw pills, gradients, neon, 3D or highlight
+ * shapes — lostEffects() names what a given style loses when it has to run.
  *
  * Per-word highlight uses the "one Dialogue event per active-word state" pattern:
  * for each spoken word we emit a Dialogue spanning that word's time, showing the
@@ -231,7 +233,45 @@
       '-vf', sub, '-c:v', 'qtrle', outPath];
   }
 
+  /* What a libass overlay CANNOT draw for a style resolved by
+     CPRender.styleForFrame, named the way the owner sees them in the editor.
+     libass is now only the fallback for machines where Pulse's own renderer
+     cannot make the overlay; when it runs, the panel says exactly what this
+     style will lose instead of promising "same look". Pure. */
+  function lostEffects(st) {
+    var out = [];
+    function add(x) { for (var i = 0; i < out.length; i++) if (out[i] === x) return; out.push(x); }
+    if (!st) return out;
+    var boxed = !!st.boxColor;
+    if (boxed && st.boxRadius > 2) add('rounded box');
+    if ((st.boxStops && st.boxStops.length) || (boxed && st.boxColor2)) add('gradient box');
+    if (st.boxStroke && st.boxStrokeWidth > 0) add('box border');
+    if (st.boxGlow) add('neon glow');
+    if (st.box3d && st.box3dDepth > 0) add('3D edge');
+    if (st.boxGloss > 0) add('gloss');
+    if (st.boxShadow) add('box shadow');
+    if (st.glow) add('soft glow');
+    if (st.fill2) add('gradient text');
+    var hs = st.highlightStyle || 'color';
+    if (hs === 'box') add('pill highlight');
+    else if (hs === 'bar') add('bar highlight');
+    else if (hs !== 'color') add(hs + ' highlight');
+    if (st.highlight2) add(st.glossy ? 'metallic highlight' : 'gradient highlight');
+    if (st.highlightFont) add('keyword font');
+    if (st.highlightGlow) add('keyword glow');
+    if (st.highlightColors && st.highlightColors.length) add('colour-cycling highlight');
+    if (st.upcomingOpacity != null && st.upcomingOpacity < 1) add('dimmed upcoming words');
+    if (st.maxLines) add(st.maxLines === 1 ? 'one-line limit' : st.maxLines + '-line limit');
+    if (st.align === 'left' || st.align === 'right') add(st.align + ' alignment');
+    if (st.subScale && st.subScale < 1) add('two-size lines');
+    if (st.wordsPerLine) add('stacked words');
+    if (st.stagger) add('diagonal cascade');
+    if (st.numberColor || st.brandColor) add('number/brand colours');
+    return out;
+  }
+
   return {
+    lostEffects: lostEffects,
     assTime: assTime,
     assColor: assColor,
     assText: assText,
