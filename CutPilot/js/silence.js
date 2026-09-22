@@ -145,39 +145,68 @@
   // after an edit, so silence-cut → remove-takes → captions all compose. Pure,
   // so they're unit-tested in Node and shared by every edit path in the panel.
 
-  /* Copy the optional metadata fields a remapped item should carry forward. */
+  /* Copy a remapped item forward with EVERY field it had (caption cues carry
+     their per-word timings, emphasis, speaker…) — only start/end change. */
   function carry(src, start, end) {
-    var o = { start: start, end: end, text: src.text };
-    if (src.conf != null) o.conf = src.conf;
-    if (src.speaker != null) o.speaker = src.speaker;
-    if (src.word != null) o.word = src.word;
+    var o = {};
+    for (var k in src) { if (Object.prototype.hasOwnProperty.call(src, k)) o[k] = src[k]; }
+    o.start = start; o.end = end;
     return o;
   }
 
   /*
-   * Ripple a list of timed items through a set of CUT ranges (same time base).
-   * Items whose midpoint lands inside a cut are dropped; items after a cut slide
-   * left by the total removed time before them — exactly what a ripple-delete
-   * does on the timeline. closeGaps:false drops in-cut items WITHOUT shifting
-   * (the gap stays open, so downstream clips don't move).
-   * items: [{start,end,text,conf?,speaker?,word?}], ranges: [{start,end}].
+   * Ripple a list of timed items through a set of CUT ranges (same time base) —
+   * exactly what a ripple-delete does on the timeline. START and END are mapped
+   * separately: a time after a cut slides left by the cut's length, a time
+   * inside a cut collapses onto the cut's start. So an item is dropped only when
+   * NOTHING of it survives (it lay entirely inside cuts); a caption line that
+   * merely spans a removed pause keeps its words and just gets shorter. Because
+   * the mapping never reverses order, lines that did not overlap before cannot
+   * overlap after (the old midpoint rule dropped whole lines whose words were
+   * still spoken, and left the next line overlapping the previous one).
+   * Nested per-word timings (cue.words) are remapped the same way.
+   * closeGaps:false leaves the gap open: nothing shifts, fully-cut items drop,
+   * edges inside a cut are pulled back to the surviving side.
+   * items: [{start,end,…}], ranges: [{start,end}].
    */
   function rippleItems(items, ranges, closeGaps) {
     if (!items || !items.length) return items ? items.slice() : [];
     var merged = mergeRanges((ranges || []).filter(function (r) { return r.end > r.start; }), 0.0001);
     if (!merged.length) return items.slice();
     if (closeGaps === undefined) closeGaps = true;
-    var out = [];
-    for (var k = 0; k < items.length; k++) {
-      var it = items[k], mid = (it.start + it.end) / 2, inside = false, shift = 0;
+    function removedBefore(t) {
+      var s = 0;
       for (var i = 0; i < merged.length; i++) {
         var r = merged[i];
-        if (mid >= r.start - 0.001 && mid < r.end + 0.001) { inside = true; break; }
-        if (r.end <= it.start + 0.001) shift += (r.end - r.start);
+        if (r.start >= t) break;
+        s += Math.min(t, r.end) - r.start;
       }
-      if (inside) continue;                       // word/line was cut out
-      if (!closeGaps) shift = 0;                  // gap left open → nothing moves
-      out.push(carry(it, Math.max(0, it.start - shift), Math.max(0, it.end - shift)));
+      return s;
+    }
+    function cutAt(t) {   // the cut strictly containing t, if any
+      for (var i = 0; i < merged.length; i++) {
+        if (merged[i].start > t) return null;
+        if (t > merged[i].start && t < merged[i].end) return merged[i];
+      }
+      return null;
+    }
+    var out = [];
+    for (var k = 0; k < items.length; k++) {
+      var it = items[k], ns, ne;
+      var kept = (it.end - it.start) - (removedBefore(it.end) - removedBefore(it.start));
+      if (kept <= 0.01) continue;                          // entirely inside cuts → gone
+      if (closeGaps) {
+        ns = it.start - removedBefore(it.start);
+        ne = it.end - removedBefore(it.end);
+      } else {                                             // gap stays open: nothing slides
+        var cs = cutAt(it.start), ce = cutAt(it.end);
+        ns = cs ? cs.end : it.start;
+        ne = ce ? ce.start : it.end;
+        if (ne <= ns) { ns = it.start; ne = it.end; }
+      }
+      var o = carry(it, Math.max(0, ns), Math.max(0, ne));
+      if (it.words && it.words.length) o.words = rippleItems(it.words, merged, closeGaps);
+      out.push(o);
     }
     return out;
   }
@@ -206,7 +235,9 @@
           var ns = cum[k] + Math.min(len, Math.max(0, it.start - seg.start));
           var ne = cum[k] + Math.min(len, Math.max(0, it.end - seg.start));
           if (ne <= ns) ne = Math.min(cum[k] + len, ns + 0.02);
-          out.push(carry(it, ns, ne));
+          var o = carry(it, ns, ne);
+          if (it.words && it.words.length) o.words = remapThroughKeeps(it.words, ks);
+          out.push(o);
           break;
         }
       }
