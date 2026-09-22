@@ -35,3 +35,8 @@ CutPilot-Mac/
 # Pulse one-click installers (generated)
 Pulse-Mac/
 Pulse-Mac.zip
+
+# The repo deliberately has no package.json — CI installs puppeteer ad-hoc with
+# `npm i --no-save puppeteer@23`. A lockfile appearing beside no manifest is a
+# byproduct of running that locally, not something to ship.
+package-lock.json
