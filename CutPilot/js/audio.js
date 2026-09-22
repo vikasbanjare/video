@@ -1,12 +1,14 @@
 /*
  * Pulse — audio analysis engines (CEP panel side).
- * Two interchangeable detectors:
- *   1. webAudioDetect — decodes the media file with Chromium's Web Audio
- *      decoder (no external dependencies; fine for clips up to ~20 min).
- *   2. ffmpegDetect  — shells out to a user-configured ffmpeg binary and
- *      parses `silencedetect` output (fast, any format, any length).
- * Both resolve to raw silence ranges in media-relative seconds; the caller
- * pipes them through CPSilence.refineSilences().
+ * The dead-air detector hears through ONE loudness envelope (30 ms RMS every
+ * 10 ms, see CPSilence.makeEnvelopeBuilder), produced two interchangeable ways:
+ *   1. ffmpegRmsEnvelope — ffmpeg decodes any format/length to PCM (every audio
+ *      stream mixed) and the envelope is built while it streams;
+ *   2. webAudioEnvelope  — Chromium's Web Audio decoder, when there is no
+ *      ffmpeg (fine for clips up to ~20 min).
+ * What counts as dead air is decided by the caller (CPSilence.micLevels →
+ * combineMics → planCuts). ffmpegEnvelope is the coarser astats envelope the
+ * multicam "who is talking" analysis uses.
  */
 (function (root, factory) {
   var lib = factory();
@@ -49,10 +51,11 @@
   }
 
   /*
-   * Detector 1: Web Audio. Returns a Promise of
-   * { silences: [{start,end}], duration, sampleRate }.
+   * Web Audio fallback (no ffmpeg): decode the whole file with Chromium's own
+   * decoder and build the same envelope the ffmpeg path produces.
+   * Resolves { db, hop, start, duration, streams, complete:true }.
    */
-  function webAudioDetect(mediaPath, detectOpts, CPSilenceLib) {
+  function webAudioEnvelope(mediaPath, CPSilenceLib) {
     return new Promise(function (resolve, reject) {
       var ab;
       try {
@@ -64,13 +67,11 @@
       var ctx = new Ctx();
       ctx.decodeAudioData(ab, function (audioBuffer) {
         try {
-          var mono = toMono(audioBuffer);
-          var silences = CPSilenceLib.detectSilences(mono, audioBuffer.sampleRate, detectOpts);
-          resolve({
-            silences: silences,
-            duration: audioBuffer.duration,
-            sampleRate: audioBuffer.sampleRate
-          });
+          var b = CPSilenceLib.makeEnvelopeBuilder(audioBuffer.sampleRate);
+          b.pushFloats(toMono(audioBuffer));
+          var env = b.finish();
+          env.start = 0; env.streams = 1; env.complete = true; env.reason = '';
+          resolve(env);
         } catch (e2) {
           reject(e2);
         } finally {
@@ -86,51 +87,98 @@
     });
   }
 
-  /*
-   * Detector 2: ffmpeg silencedetect. Returns a Promise of
-   * { silences, duration }.
-   * thresholdDb e.g. -40, minSilence in seconds.
-   */
-  function ffmpegDetect(mediaPath, ffmpegPath, thresholdDb, minSilence, CPSilenceLib) {
+  /* How many audio streams a file carries (a Zoom/OBS/recorder file can hold
+     one per mic) and its duration, read from ffmpeg's header dump. */
+  function ffmpegAudioInfo(mediaPath, ffmpegPath) {
     return new Promise(function (resolve, reject) {
       var cp = nodeRequire('child_process');
-      // -vn skips video decoding (huge speedup for .MOV/.MP4 camera files);
-      // downmix to mono so silencedetect runs on the combined level.
-      var args = [
-        '-hide_banner', '-nostats',
-        '-i', mediaPath,
-        '-vn', '-ac', '1',
-        '-af', 'silencedetect=noise=' + thresholdDb + 'dB:d=' + minSilence,
-        '-f', 'null', '-'
-      ];
-      var proc = cp.spawn(ffmpegPath, args);
-      var stderr = '', settled = false;
-      var timer = setTimeout(function () {
-        if (settled) return;
-        try { proc.kill(); } catch (eK) {}
-        // partial result is still usable — parse what we have
-        var d2 = /Duration:\s*(\d+):(\d+):(\d+\.?\d*)/.exec(stderr);
-        var dur2 = d2 ? (+d2[1]) * 3600 + (+d2[2]) * 60 + (+d2[3]) : null;
-        settled = true;
-        resolve({ silences: CPSilenceLib.parseFfmpegSilences(stderr, dur2), duration: dur2, timedOut: true });
-      }, 240000);
-      proc.stderr.on('data', function (d) { stderr += d.toString(); });
+      var proc, err = '', settled = false;
+      try { proc = cp.spawn(ffmpegPath, ['-hide_banner', '-nostdin', '-i', mediaPath]); }
+      catch (e) { return reject(new Error('Could not launch ffmpeg at "' + ffmpegPath + '": ' + e.message)); }
+      var timer = setTimeout(function () { try { proc.kill(); } catch (eK) {} done(); }, 30000);
+      function done() {
+        if (settled) return; settled = true; clearTimeout(timer);
+        var streams = (err.match(/Stream #\d+:\d+[^\n]*?: Audio:/g) || []).length;
+        var dm = /Duration:\s*(\d+):(\d+):(\d+\.?\d*)/.exec(err);
+        resolve({ streams: streams, duration: dm ? (+dm[1]) * 3600 + (+dm[2]) * 60 + (+dm[3]) : null });
+      }
+      if (proc.stderr) proc.stderr.on('data', function (d) { err += d.toString(); });
       proc.on('error', function (e) {
         if (settled) return; settled = true; clearTimeout(timer);
         reject(new Error('Could not launch ffmpeg at "' + ffmpegPath + '": ' + e.message));
       });
+      proc.on('close', function () { done(); });   // exits non-zero by design: no output was named
+    });
+  }
+
+  /*
+   * The dead-air detector's ears: decode [start, start+duration] of a file to
+   * 16 kHz mono PCM (every audio stream mixed, rumble under 80 Hz removed) and
+   * build the envelope while it streams, so nothing big is held in memory.
+   * opts: { start, duration, streams (from ffmpegAudioInfo), stallMs, onProgress(sec) }
+   * Resolves { db, hop, start, duration, streams, complete, reason }.
+   * complete:false means the scan did NOT finish (ffmpeg stalled on a slow or
+   * external drive, or crashed) and the caller must cut nothing. The old scan
+   * closed a still-open pause at the end of the file on a timeout, so a slow
+   * drive deleted the rest of the episode. There is no wall-clock limit, only
+   * a STALL limit (no audio for stallMs), so a long file on a slow disk finishes.
+   */
+  function ffmpegRmsEnvelope(mediaPath, ffmpegPath, opts, CPSilenceLib) {
+    opts = opts || {};
+    return new Promise(function (resolve, reject) {
+      var cp = nodeRequire('child_process');
+      var RATE = 16000;
+      var nStreams = opts.streams || 1;
+      var args = ['-hide_banner', '-nostdin', '-nostats'];
+      if (opts.start > 0) args.push('-ss', String(opts.start));
+      if (opts.duration > 0) args.push('-t', String(opts.duration));
+      args.push('-i', mediaPath);
+      if (nStreams > 1) {
+        // every mic in the file counts: mix all streams (loud if ANY mic is loud)
+        var pads = '';
+        for (var s = 0; s < nStreams; s++) pads += '[0:a:' + s + ']';
+        args.push('-filter_complex', pads + 'amix=inputs=' + nStreams + ':duration=longest,highpass=f=80[m]', '-map', '[m]');
+      } else {
+        args.push('-map', '0:a:0', '-af', 'highpass=f=80');
+      }
+      args.push('-ac', '1', '-ar', String(RATE), '-acodec', 'pcm_s16le', '-f', 's16le', 'pipe:1');
+      var builder = CPSilenceLib.makeEnvelopeBuilder(RATE);
+      var proc, err = '', settled = false, timer = null;
+      var stallMs = opts.stallMs || 60000;
+      try { proc = cp.spawn(ffmpegPath, args); }
+      catch (e) { return reject(new Error('Could not launch ffmpeg at "' + ffmpegPath + '": ' + e.message)); }
+      function finish(complete, reason) {
+        if (settled) return; settled = true;
+        if (timer) clearTimeout(timer);
+        var env = builder.finish();
+        env.start = opts.start > 0 ? opts.start : 0;
+        env.streams = nStreams;
+        env.complete = complete;
+        env.reason = reason || '';
+        resolve(env);
+      }
+      function arm() {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(function () {
+          try { proc.kill(); } catch (eK) {}
+          finish(false, 'no audio arrived for ' + Math.round(stallMs / 1000) + 's (slow or external drive?)');
+        }, stallMs);
+      }
+      arm();
+      proc.stdout.on('data', function (d) {
+        if (settled) return;
+        builder.pushBytes(d);
+        arm();
+        if (opts.onProgress) { try { opts.onProgress(builder.seconds()); } catch (eP) {} }
+      });
+      if (proc.stderr) proc.stderr.on('data', function (d) { err += d.toString(); if (err.length > 20000) err = err.slice(-8000); });
+      proc.on('error', function (e) {
+        if (settled) return; settled = true; if (timer) clearTimeout(timer);
+        reject(new Error('Could not launch ffmpeg at "' + ffmpegPath + '": ' + e.message));
+      });
       proc.on('close', function (code) {
-        if (settled) return; settled = true; clearTimeout(timer);
-        if (code !== 0 && stderr.indexOf('silence_') === -1) {
-          return reject(new Error('ffmpeg exited with code ' + code + ':\n' + stderr.slice(-400)));
-        }
-        var dur = null;
-        var dm = /Duration:\s*(\d+):(\d+):(\d+\.?\d*)/.exec(stderr);
-        if (dm) dur = (+dm[1]) * 3600 + (+dm[2]) * 60 + (+dm[3]);
-        resolve({
-          silences: CPSilenceLib.parseFfmpegSilences(stderr, dur),
-          duration: dur
-        });
+        if (code !== 0) finish(false, 'ffmpeg stopped (code ' + code + '): ' + err.slice(-300));
+        else finish(true, '');
       });
     });
   }
@@ -186,8 +234,9 @@
   return {
     readFileArrayBuffer: readFileArrayBuffer,
     toMono: toMono,
-    webAudioDetect: webAudioDetect,
-    ffmpegDetect: ffmpegDetect,
+    webAudioEnvelope: webAudioEnvelope,
+    ffmpegAudioInfo: ffmpegAudioInfo,
+    ffmpegRmsEnvelope: ffmpegRmsEnvelope,
     ffmpegEnvelope: ffmpegEnvelope
   };
 });

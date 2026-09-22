@@ -8721,28 +8721,34 @@
     show(parseFloat(num.value));
   })();
 
-  // ---- "Strength" presets: one plain-language control drives the technical
-  //      numbers (which now live in Advanced). Gentle keeps more, Strong cuts more.
-  var SIL_PRESETS = {
-    gentle:   { thr: -45, min: 0.8,  pad: 0.15, keep: 0.30 },
-    balanced: { thr: -40, min: 0.5,  pad: 0.12, keep: 0.25 },
-    strong:   { thr: -32, min: 0.35, pad: 0.10, keep: 0.20 }
-  };
+  // ---- "Strength" presets: ONE plain-language setting, shown on both the
+  //      one-tap card (#ac-strength) and the step-by-step tools (#sil-strength)
+  //      and kept in step. What each means lives in CPSilence.tuning():
+  //      strong = ⚡ Reel (tight), balanced = ▶️ YouTube (balanced),
+  //      gentle = 🎙 Podcast (natural). There is no fixed dB any more — every
+  //      mic is judged against its OWN room noise.
   var TAKE_PRESETS = {
     gentle:   { minrun: 4, sim: 75 },
     balanced: { minrun: 3, sim: 60 },
     strong:   { minrun: 2, sim: 50 }
   };
   state.silStrength = 'balanced';
+  state.acStrength = 'balanced';
   state.takeStrength = 'balanced';
+  state.silPlan = null;
   function applySilStrength(name) {
-    var p = SIL_PRESETS[name] || SIL_PRESETS.balanced; state.silStrength = name;
-    if ($('opt-threshold')) $('opt-threshold').value = p.thr;
-    if ($('opt-minsilence')) $('opt-minsilence').value = p.min;
-    if ($('opt-padding')) $('opt-padding').value = p.pad;
-    if ($('opt-minkeep')) $('opt-minkeep').value = p.keep;
-    if ($('opt-threshold-range')) $('opt-threshold-range').value = p.thr;
-    if ($('opt-threshold-val')) $('opt-threshold-val').textContent = '−' + Math.abs(p.thr) + ' dB';
+    if (name !== 'gentle' && name !== 'strong') name = 'balanced';
+    var t = CPSilence.tuning(name);
+    state.silStrength = state.acStrength = name;
+    ['ac-strength', 'sil-strength'].forEach(function (gid) {
+      var g = $(gid); if (!g) return;
+      var btns = g.getElementsByTagName('button');
+      for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('on', btns[i].getAttribute('data-s') === name);
+    });
+    // Fine-tune shows this preset's timing, so ticking Manual starts from it
+    if ($('opt-minsilence')) $('opt-minsilence').value = t.minPause;
+    if ($('opt-padding')) $('opt-padding').value = t.pre;
+    if ($('opt-minkeep')) $('opt-minkeep').value = t.breathIsland;
     if ($('opt-threshold-manual')) $('opt-threshold-manual').checked = false;   // preset = "let Pulse decide"
   }
   function applyTakeStrength(name) {
@@ -8761,48 +8767,248 @@
     });
   }
   wireStrength('sil-strength', applySilStrength);
+  wireStrength('ac-strength', applySilStrength);
   wireStrength('tk-strength', applyTakeStrength);
   applySilStrength('balanced'); applyTakeStrength('balanced');   // sensible defaults on load
 
-  // ============================ ONE-TAP "CLEAN UP MY VIDEO" ================
-  // Detect ALL dead air (start / middle / end) + every repeated take + optional
-  // fillers, merge them into ONE cut list, and ripple-cut once — so the
-  // transcript only re-syncs a single time (no re-transcribing between steps).
-  state.acStrength = 'balanced';
-  (function () {
-    var g = $('ac-strength'); if (!g) return;
-    g.addEventListener('click', function (e) {
-      var b = e.target; while (b && b !== g && b.tagName !== 'BUTTON') b = b.parentNode;
-      if (!b || b.tagName !== 'BUTTON' || !b.getAttribute('data-s')) return;
-      var btns = g.getElementsByTagName('button');
-      for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('on', btns[i] === b);
-      state.acStrength = b.getAttribute('data-s');
-    });
-  })();
-  function silOptsFromPreset(strength) {
-    var p = SIL_PRESETS[strength] || SIL_PRESETS.balanced;
-    return { thresholdDb: p.thr, minSilence: p.min, padding: p.pad, minKeep: p.keep, manual: false };
+  /* The detector settings for a strength. With Fine-tune → Manual ticked, the
+     owner's own numbers win everywhere — the one-tap button used to ignore them. */
+  function silTune(strength) {
+    var t = CPSilence.tuning(strength);
+    if ($('opt-threshold-manual') && $('opt-threshold-manual').checked) {
+      var num = function (id, d) { var el = $(id), v = el ? parseFloat(el.value) : NaN; return isFinite(v) ? v : d; };
+      t.manualDb = num('opt-threshold', -40);
+      t.minPause = Math.max(0.1, num('opt-minsilence', t.minPause));
+      t.pre = t.post = Math.max(0, num('opt-padding', t.pre));
+      t.breathIsland = Math.max(0, num('opt-minkeep', t.breathIsland));
+      t.manual = true;
+    }
+    return t;
   }
-  /* Map a clip's MEDIA-time range list → sequence time. */
-  function mediaRangesToSeq(ranges, clip) {
-    return ranges.map(function (r) { return { start: clip.seqStart + (r.start - clip.inPoint), end: clip.seqStart + (r.end - clip.inPoint) }; });
+
+  // ---- listening to EVERY mic --------------------------------------------
+  function silBase(p) { return String(p || '').split(/[\\/]/).pop(); }
+  function silClock(sec) {
+    sec = Math.max(0, Math.round(sec));
+    var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (s < 10 ? '0' : '') + s;
   }
-  /* Detect the silence (+optional filler) ranges to REMOVE, in sequence time. */
-  function detectSilenceCutRanges(clip, opts, includeFillers) {
-    return detectSilencesRobust(clip, resolveFfmpeg(), opts).then(function (det) {
-      var mediaDuration = det.duration || clip.outPoint;
-      var usedMin = det._usedMinSilence != null ? det._usedMinSilence : opts.minSilence;
-      var refined = CPSilence.refineSilences(det.silences, { minSilence: usedMin, padding: opts.padding, totalDuration: mediaDuration });
-      var media = [];
-      for (var i = 0; i < refined.length; i++) {
-        var s = Math.max(refined[i].start, clip.inPoint), e = Math.min(refined[i].end, clip.outPoint);
-        if (e > s) media.push({ start: s, end: e, kind: 'silence' });
+  function silTrackLabel(tr) {
+    var lab = 'A' + (tr.index + 1);
+    return lab + (tr.name && tr.name !== lab ? ' “' + tr.name + '”' : '');
+  }
+
+  /* One media file's used span → loudness envelope. Rejects, cutting NOTHING,
+     when the scan could not finish (the old scan closed an open pause at the
+     end of the file on a timeout and deleted the rest of the episode). */
+  function listenTo(mediaPath, lo, hi, onProg, ffArg) {
+    var ff = ffArg || resolveFfmpeg();
+    var name = silBase(mediaPath);
+    if (!ff) return CPAudio.webAudioEnvelope(mediaPath, CPSilence);
+    return CPAudio.ffmpegAudioInfo(mediaPath, ff).then(function (info) {
+      if (!info.streams) throw new Error('“' + name + '” has no sound in it — Pulse can’t listen to it.');
+      var start = Math.max(0, lo - 0.5);
+      return CPAudio.ffmpegRmsEnvelope(mediaPath, ff, { start: start, duration: (hi - start) + 0.5, streams: info.streams, onProgress: onProg }, CPSilence);
+    }).then(function (env) {
+      if (!env.complete) {
+        throw new Error('Pulse couldn’t finish listening to “' + name + '” (' + env.reason + '). Nothing was cut. ' +
+          'If the file is on an external or network drive, copy it to your Mac’s internal drive and try again.');
       }
-      media = protectSpeechMedia(media, clip, usedMin);
-      if (includeFillers) media = media.concat(fillerMediaRanges(clip, true));
-      return mediaRangesToSeq(media, clip);
+      return env;
     });
   }
+
+  /*
+   * Listen to the whole timeline the way the cut will see it: every audio
+   * clip on every track (muted tracks left out when a live one exists), each
+   * media file decoded once with its OWN room-noise gate, then a moment counts
+   * as dead air only when EVERY mic under it is quiet. A 2-mic podcast never
+   * loses the guest's answers; a music bed on its own track is recognised as
+   * steady sound and left out of the vote (it is still cut, so it stays in
+   * sync). src = CP_getCutSources(); tune = silTune(). Resolves a plan:
+   * { cuts, range, selection, mics, notes, tooLoud, sequenceId, sequenceName,
+   *   fingerprint, sources }.
+   */
+  function analyzeTimeline(src, tune, prog) {
+    var tracks = (src && src.audio) || [];
+    var notes = [], sources = [];
+    var anyLive = tracks.some(function (t) { return !t.muted && t.items.some(function (it) { return !it.disabled; }); });
+    tracks.forEach(function (t) {
+      var live = t.items.filter(function (it) { return !it.disabled; });
+      if (!live.length) return;
+      if (t.muted && anyLive) { notes.push(silTrackLabel(t) + ' is muted, so Pulse didn’t listen to it.'); return; }
+      live.forEach(function (it) {
+        sources.push({ track: t, item: it, seqStart: it.seqStart, seqEnd: it.seqEnd, inPoint: it.inPoint,
+                       speed: it.speed > 0 ? it.speed : 1, mediaPath: it.mediaPath,
+                       unreadable: !it.mediaPath ? 'a nested sequence' : (it.reversed ? 'a reversed clip' : '') });
+      });
+    });
+    if (!sources.length) return Promise.reject(new Error('There’s no audio on this timeline to listen to. Put your video or audio clip on the timeline first.'));
+    var lo = Infinity, hi = -Infinity;
+    sources.forEach(function (s) { lo = Math.min(lo, s.seqStart); hi = Math.max(hi, s.seqEnd); });
+    var sel = (src.selection && src.selection.end > src.selection.start) ? src.selection : null;
+    // whole timeline: pad by one step so the head/tail of the voice read as
+    // "no mic here" (no margin needed) rather than as the edge of a selection
+    var range = sel ? { start: Math.max(lo, sel.start), end: Math.min(hi, sel.end) }
+                    : { start: lo - CPSilence.HOP, end: hi + CPSilence.HOP };
+    if (!(range.end > range.start)) return Promise.reject(new Error('There’s no audio under the selected clip. Deselect it to clean the whole timeline.'));
+    sources = sources.filter(function (s) { return s.seqEnd > range.start && s.seqStart < range.end; });
+    sources.forEach(function (s) {
+      if (s.unreadable) notes.push(silTrackLabel(s.track) + ': “' + s.item.name + '” is ' + s.unreadable + ' — Pulse can’t hear inside it, so nothing under it is cut.');
+    });
+    function mediaSpan(s) {
+      return [s.inPoint + (Math.max(s.seqStart, range.start) - s.seqStart) * s.speed,
+              s.inPoint + (Math.min(s.seqEnd, range.end) - s.seqStart) * s.speed];
+    }
+    var media = {}, order = [];
+    sources.forEach(function (s) {
+      if (s.unreadable) return;
+      var sp = mediaSpan(s), m = media[s.mediaPath];
+      if (!m) { m = media[s.mediaPath] = { path: s.mediaPath, lo: sp[0], hi: sp[1], sources: [], tracks: [] }; order.push(s.mediaPath); }
+      m.lo = Math.min(m.lo, sp[0]); m.hi = Math.max(m.hi, sp[1]); m.sources.push(s);
+      var lab = 'A' + (s.track.index + 1);
+      if (m.tracks.indexOf(lab) < 0) m.tracks.push(lab);
+    });
+    var total = order.reduce(function (acc, p) { return acc + (media[p].hi - media[p].lo); }, 0), done = 0;
+    var chain = Promise.resolve();
+    order.forEach(function (p, idx) {
+      chain = chain.then(function () {
+        var m = media[p];
+        var say = function (sec) {
+          if (prog) prog.textContent = 'Listening to ' + (order.length > 1 ? 'mic ' + (idx + 1) + ' of ' + order.length + ' (' + silBase(p) + ')' : silBase(p)) +
+            '… ' + silClock(done + Math.min(sec, m.hi - m.lo)) + ' of ' + silClock(total);
+        };
+        say(0);
+        return listenTo(p, m.lo, m.hi, say).then(function (env) {
+          done += (m.hi - m.lo);
+          m.env = env;
+          var spans = m.sources.map(function (s) {
+            var sp = mediaSpan(s);
+            return [(sp[0] - env.start) / env.hop, (sp[1] - env.start) / env.hop];
+          });
+          m.levels = CPSilence.micLevels(env.db, spans, tune);
+          m.flags = CPSilence.loudFlags(env.db, m.levels.threshold);
+        });
+      });
+    });
+    return chain.then(function () {
+      var voices = order.filter(function (p) { return !media[p].levels.continuous; });
+      order.forEach(function (p) {
+        var m = media[p];
+        if (!m.levels.continuous || !voices.length) return;
+        m.excluded = true;
+        notes.push(m.tracks.join(', ') + ' “' + silBase(p) + '” is steady sound (music or noise), so it was left out when judging silence — it is still cut with everything else, so it stays in sync.');
+      });
+      var voting = [];
+      sources.forEach(function (s) {
+        if (s.unreadable) { voting.push({ seqStart: s.seqStart, seqEnd: s.seqEnd, inPoint: s.inPoint, speed: s.speed, env: null }); return; }
+        var m = media[s.mediaPath];
+        if (m.excluded) return;
+        voting.push({ seqStart: s.seqStart, seqEnd: s.seqEnd, inPoint: s.inPoint, speed: s.speed, env: m.env, flags: m.flags,
+                      strongDb: m.levels.speech != null ? m.levels.speech - 20 : null });
+      });
+      var cuts = CPSilence.planCuts(CPSilence.combineMics(voting, range), tune);
+      var mics = order.map(function (p) {
+        var m = media[p], L = m.levels;
+        return { path: p, name: silBase(p), tracks: m.tracks.join(', '), floor: L.floor, speech: L.speech, threshold: L.threshold,
+                 continuous: L.continuous, digital: L.digital, excluded: !!m.excluded };
+      });
+      return { cuts: cuts, range: range, selection: !!sel, mics: mics, notes: notes,
+               tooLoud: !voices.length && order.length > 0 && !sources.some(function (s) { return s.unreadable; }),
+               sequenceId: src.sequenceId, sequenceName: src.sequenceName, fingerprint: src.fingerprint,
+               sources: sources.map(function (s) { return { name: s.item.name, track: 'A' + (s.track.index + 1), mediaPath: s.mediaPath, nodeId: s.item.nodeId,
+                                                             seqStart: s.seqStart, seqEnd: s.seqEnd, inPoint: s.inPoint, outPoint: s.item.outPoint,
+                                                             speed: s.speed, unreadable: s.unreadable }; }),
+               tune: tune };
+    });
+  }
+
+  /* What Pulse heard, in plain words — shown before anything is cut. */
+  function hearingSummary(plan) {
+    if (!plan) return '';
+    var lines = [], voices = plan.mics.filter(function (m) { return !m.excluded; });
+    if (voices.length) {
+      lines.push('Listened to ' + voices.length + ' mic' + (voices.length > 1 ? 's' : '') + ': ' + voices.map(function (m) {
+        return m.tracks + ' ' + m.name + (m.digital ? ' (silent)' : m.continuous ? ' (steady background — only true silence counts)'
+          : ' (room noise ≈ ' + Math.round(m.floor) + ' dB, quiet below ' + Math.round(m.threshold) + ' dB)');
+      }).join('; ') + '.');
+    }
+    plan.notes.forEach(function (n) { lines.push(n); });
+    if (voices.length > 1 && plan.tune && plan.tune.key !== 'podcast' && !plan.tune.manual) {
+      lines.push('Tip: this sounds like a podcast (' + voices.length + ' mics) — 🎙 Podcast keeps a more natural rhythm.');
+    }
+    if (plan.selection) lines.push('Only the selected clip (' + fmt(plan.range.start) + '–' + fmt(plan.range.end) + ') was checked — deselect it to clean the whole timeline.');
+    return lines.join('\n');
+  }
+
+  /* Can words be fetched automatically right now? The same test
+     ensureTranscriptThen makes, so the one-tap clean only waits for a
+     transcript that can actually arrive. */
+  function autoTranscribeAvailable() {
+    var ff = resolveFfmpeg();
+    return !!ff && ((resolveQuality() === 'cloud-groq' && !!cpKey()) || (resolveQuality() === 'cloud-swara' && !!cpSarvamKey()) || !!resolveWhisper());
+  }
+
+  /* Filler-word cut ranges (sequence time) inside [lo, hi], from the transcript. */
+  function fillerSeqRanges(lo, hi) {
+    if (typeof CPTranscript === 'undefined') return { ranges: [], why: 'filler removal is unavailable' };
+    var cues;
+    try { cues = readSelectedTranscript(); } catch (e) { return { ranges: [], why: e.message }; }
+    var res = CPTranscript.findFillerRanges(cues, { extra: !!($('opt-fillers-extra') && $('opt-fillers-extra').checked), padding: 0.02 });
+    var out = [];
+    res.ranges.forEach(function (fr) {
+      var s = Math.max(fr.start, lo), e = Math.min(fr.end, hi);
+      if (e > s) out.push({ start: s, end: e, kind: 'filler', word: fr.word });
+    });
+    return { ranges: out, why: '' };
+  }
+
+  /* The deterministic matcher decides BETWEEN repeated takes (it keeps the
+     best take of every group); the AI adds what the matcher can't see — false
+     starts, "let me think" dead air, tangents, and fillers when that box is
+     ticked. An AI "repetition" cut near a matcher group is dropped: if the two
+     picked different keepers, applying both would delete EVERY take of a line. */
+  function mergeAiCuts(matcherDeletes, aiCuts, doFill) {
+    var NEAR = 20;
+    return (aiCuts || []).filter(function (c) {
+      if (c.label === 'filler' && !doFill) return false;
+      if (c.label === 'repetition' || c.label === 'cut') {
+        for (var i = 0; i < matcherDeletes.length; i++) {
+          if (c.start < matcherDeletes[i].end + NEAR && c.end > matcherDeletes[i].start - NEAR) return false;
+        }
+      }
+      return true;
+    }).map(function (c) { return { start: c.start, end: c.end }; });
+  }
+
+  /* Apply a cut list to the timeline the analysis heard, then re-sync every
+     transcript copy with the exact (frame-snapped) ranges the host removed. */
+  function applyCleanCuts(ranges, guard, opts) {
+    var args = { ranges: ranges, closeGaps: opts.closeGaps !== false, backup: !!opts.backup,
+                 dropFrame: !!settings.dropFrame, previewLabel: 'Silence' };
+    if (guard) { args.expectSequenceId = guard.sequenceId; args.expectSequenceName = guard.sequenceName; args.expectFingerprint = guard.fingerprint; }
+    return CPBridge.callHost('CP_razorRipple', args).then(function (rr) {
+      var removed = (rr && rr.removed && rr.removed.length) ? rr.removed : ranges;
+      rippleTranscriptByRanges(removed, args.closeGaps);
+      state.silencesSeq = []; state.silPlan = null;
+      if ($('results')) $('results').classList.add('hidden');
+      state.takeDeletes = [];                                   // a take list from before the cut is stale now
+      if ($('takes-results')) $('takes-results').classList.add('hidden');
+      return rr || {};
+    });
+  }
+  function cutDoneText(rr, ranges) {
+    var n = rr.cuts != null ? rr.cuts : ranges.length;
+    var secs = rr.removedSeconds != null ? rr.removedSeconds : ranges.reduce(function (a, x) { return a + (x.end - x.start); }, 0);
+    var tr = (rr.tracks || []).map(function (t) { return t.track; });
+    return n + ' section' + (n === 1 ? '' : 's') + ' (' + secs.toFixed(1) + 's)' +
+      (tr.length ? ' from every track — ' + tr.join(', ') + ' stay in sync' : '');
+  }
+
+  // ============================ ONE-TAP "CLEAN UP MY VIDEO" ================
+  // Hear ALL dead air (start / middle / end, every mic) + every repeated take
+  // + optional fillers, merge them into ONE cut list, and cut once — so the
+  // transcript only re-syncs a single time (no re-transcribing between steps).
   function mergeSeqRanges(ranges) {
     var s = ranges.filter(function (r) { return r.end > r.start; }).sort(function (a, b) { return a.start - b.start; });
     var out = [];
@@ -8816,304 +9022,223 @@
     var strength = state.acStrength || 'balanced';
     var doSil = !$('ac-do-silence') || $('ac-do-silence').checked;
     var doTakes = !$('ac-do-takes') || $('ac-do-takes').checked;
-    var doFill = $('ac-do-fillers') && $('ac-do-fillers').checked;
+    var doFill = !!($('ac-do-fillers') && $('ac-do-fillers').checked);
     if (!doSil && !doTakes && !doFill) return toast('Tick at least one thing to remove.', true);
-    var prog = $('autoclean-progress'); prog.classList.remove('hidden'); prog.textContent = 'Reading your clip…';
-    CPBridge.callHost('CP_getSelectedClip').then(
-      function (res) { return (res && res.clip) ? res : CPBridge.callHost('CP_getTranscribeSource'); },
-      function () { return CPBridge.callHost('CP_getTranscribeSource'); }
-    ).then(function (res) {
-      if (!res || !res.clip) throw new Error('Put your video or audio clip on the timeline first.');
-      state.clip = res.clip;
-      var clip = res.clip, opts = silOptsFromPreset(strength);
-      var pSil;
-      if (doSil) { prog.textContent = 'Listening for dead air…'; pSil = detectSilenceCutRanges(clip, opts, !!doFill); }
-      else if (doFill) pSil = Promise.resolve(mediaRangesToSeq(fillerMediaRanges(clip, true), clip));
-      else pSil = Promise.resolve([]);
-      return pSil.then(function (silRanges) {
-        silRanges = silRanges.slice();
-        var tp = TAKE_PRESETS[strength] || TAKE_PRESETS.balanced;
-
-        function takesOn(words) {
-          // keep:'best' — completeness + per-word confidence + recency picks the
-          // take that actually got finished cleanly, not blindly the last one.
-          var tk = CPTakes.findRepeatedTakes(words, { minRun: tp.minrun, sim: tp.sim / 100, keep: 'best' });
-          var out = silRanges.slice();
-          tk.deletes.forEach(function (d) { out.push({ start: d.start, end: d.end }); });
-          return out;
-        }
-
-        // BEST PATH — the verbatim engine. The normal transcript (Groq) CLEANS
-        // the speech: it silently drops the re-reads and stumbles, so neither the
-        // matcher nor the AI can even SEE the retakes in it — that's why cleanup
-        // felt ~10% accurate. When a Deepgram/AssemblyAI key is set, the one
-        // button now transcribes VERBATIM (every retake kept, per-word
-        // confidence) and runs the take-picker on that. Falls back below if the
-        // engine errors.
-        if (doTakes && (settings.verbatimKey || '').trim() && typeof verbatimTranscribe === 'function') {
-          var ffV = resolveFfmpeg();
-          if (ffV) {
-            prog.textContent = '🎯 Reading every word (verbatim engine)…';
-            return verbatimTranscribe(clip, ffV).then(function (vw) {
-              prog.textContent = 'Picking the best take of every line…';
-              return { ranges: takesOn(vw), needTranscript: false, ai: false, verbatim: true, vWords: vw };
-            }).catch(function (eV) {
-              try { diag('autoclean', 'verbatim failed, falling back: ' + (eV && eV.message)); } catch (e0) {}
-              return fallbackPath();
-            });
-          }
-        }
-        return fallbackPath();
-
-        function fallbackPath() {
-          var haveT = state.transcriptWords && state.transcriptWords.length;
-          if (!doTakes) return { ranges: silRanges, needTranscript: false, ai: false };
-          if (!haveT) {
-            // ONE button = do the whole job: no words yet → kick transcription and
-            // this same clean re-runs automatically the moment words are ready.
-            if (!state.transcript && !state.pendingCaptionAction) {
-              prog.classList.add('hidden');
-              if (!ensureTranscriptThen('autoclean')) return { pending: true };
-            }
-            return { ranges: silRanges, needTranscript: true, ai: false };
-          }
-          // AI pass on the normal transcript (it may still catch sentence-level
-          // repeats); the deterministic matcher is the floor either way.
-          if (cpKey() && typeof CPSmartEdit !== 'undefined' && typeof aiCleanupCuts === 'function') {
-            return aiCleanupCuts(state.transcriptWords, { aggressive: (strength === 'strong'), scripted: true }, prog, '✨ AI finding retakes & off-script talk')
-              .then(function (rr) {
-                var out = silRanges.concat(rr.cuts.map(function (c) { return { start: c.start, end: c.end }; }));
-                return { ranges: out, needTranscript: false, ai: true };
-              })
-              .catch(function () { return { ranges: takesOn(state.transcriptWords), needTranscript: false, ai: false }; });
-          }
-          prog.textContent = 'Finding repeated takes…';
-          return { ranges: takesOn(state.transcriptWords), needTranscript: false, ai: false };
-        }
-      });
-    }).then(function (r) {
-      if (r && r.pending) return;   // transcription kicked off; the clean re-runs itself when words land
-      var ranges = mergeSeqRanges(snapRangesToWords(r.ranges, r.vWords || state.transcriptWords));
+    var prog = $('autoclean-progress'); prog.classList.remove('hidden'); prog.textContent = 'Reading your timeline…';
+    var tune = silTune(strength);
+    var plan = null, clip = null, extraNotes = [];
+    // set when a transcription this clean was waiting for FAILED: do not try
+    // again (that would loop) — remove the dead air and say retakes were skipped
+    var noWords = !!state.autocleanNoWords; state.autocleanNoWords = false;
+    if (doTakes && !noWords && !(settings.verbatimKey || '').trim() && !(state.transcriptWords && state.transcriptWords.length) &&
+        !state.transcript && !state.pendingCaptionAction && autoTranscribeAvailable()) {
+      // retakes need words and they CAN be fetched: get them first (this same
+      // clean re-runs by itself when they land) instead of listening twice
       prog.classList.add('hidden');
-      if (!ranges.length) return toast('Nothing to clean — your video is already tight!' + (r.needTranscript ? ' (Transcribe first to also remove repeated takes.)' : ''));
-      var total = ranges.reduce(function (a, x) { return a + (x.end - x.start); }, 0);
-      var msg = 'Clean up your video?\n\nRemove ' + ranges.length + ' dead-air / retake section' + (ranges.length > 1 ? 's' : '') +
-        ' — about ' + total.toFixed(1) + 's.\n\n✅ A backup of your sequence is made first.' +
-        (r.needTranscript ? '\n\n(Tip: transcribe first to also catch repeated takes — this pass did silences only.)' : '');
-      return new Promise(function (res) { confirmInline(msg, 'Clean it up', res); }).then(function (yes) {
-      if (!yes) return;
-      prog.classList.remove('hidden'); prog.textContent = 'Cleaning your timeline…';
-      return CPBridge.callHost('CP_razorRipple', { ranges: ranges, closeGaps: true, backup: true, dropFrame: !!settings.dropFrame }).then(function (rr) {
-        rippleTranscriptByRanges(ranges);                       // transcript follows the cut — no re-transcribe
-        state.silencesSeq = []; if ($('results')) $('results').classList.add('hidden');
-        prog.classList.add('hidden');
-        toast('✨ Cleaned! Removed ' + (rr.removedClips != null ? rr.removedClips : ranges.length) + ' section' + ((rr.removedClips || ranges.length) === 1 ? '' : 's') +
-          '. Captions & takes stay in sync — run any other step or add captions with no re-transcribe. ⌘Z / Ctrl+Z undoes it.');
+      ensureTranscriptThen('autoclean');
+      return;
+    }
+    CPBridge.callHost('CP_getCutSources', {}).then(function (src) {
+      // the talking clip (retakes / verbatim words) — same pick captions use;
+      // it skips graphics and stills, so a selected title can't derail it
+      return CPBridge.callHost('CP_getTranscribeSource').then(function (res) { return res; }, function () { return null; }).then(function (res) {
+        if (res && res.clip) { clip = res.clip; state.clip = res.clip; }
+        if (!doSil) {
+          plan = { cuts: [], range: { start: 0, end: Infinity }, selection: false, mics: [], notes: [], tooLoud: false,
+                   sequenceId: src.sequenceId, sequenceName: src.sequenceName, fingerprint: src.fingerprint, sources: [] };
+          return plan;
+        }
+        prog.textContent = 'Listening for dead air…';
+        return analyzeTimeline(src, tune, prog).then(function (p) { plan = state.silLastPlan = p; return p; });
       });
+    }).then(function () {
+      var fills = [];
+      if (doFill) {
+        var fr = fillerSeqRanges(plan.range.start, plan.range.end);
+        fills = fr.ranges;
+        if (fr.why) extraNotes.push('Filler words skipped — ' + fr.why);
+      }
+      var tp = TAKE_PRESETS[strength] || TAKE_PRESETS.balanced;
+      function takesOn(words) {
+        // keep:'best' — completeness + per-word confidence + recency picks the
+        // take that actually got finished cleanly, not blindly the last one.
+        var tk = CPTakes.findRepeatedTakes(words, { minRun: tp.minrun, sim: tp.sim / 100, keep: 'best' });
+        return tk.deletes.map(function (d) { return { start: d.start, end: d.end }; });
+      }
+      function result(other, extra) {
+        var r = { sil: plan.cuts, other: fills.concat(other || []) };
+        for (var k in (extra || {})) { if (extra.hasOwnProperty(k)) r[k] = extra[k]; }
+        return r;
+      }
+      if (!doTakes) return result([]);
+
+      // BEST PATH — the verbatim engine. The normal transcript (Groq) CLEANS
+      // the speech: it silently drops the re-reads and stumbles, so neither the
+      // matcher nor the AI can even SEE the retakes in it. When a
+      // Deepgram/AssemblyAI key is set, the one button transcribes VERBATIM
+      // (every retake kept, per-word confidence) and runs the take-picker on it.
+      if ((settings.verbatimKey || '').trim() && typeof verbatimTranscribe === 'function' && clip) {
+        var ffV = resolveFfmpeg();
+        if (ffV) {
+          prog.textContent = '🎯 Reading every word (verbatim engine)…';
+          return verbatimTranscribe(clip, ffV).then(function (vw) {
+            prog.textContent = 'Picking the best take of every line…';
+            return result(takesOn(vw), { verbatim: true, vWords: vw });
+          }).catch(function (eV) {
+            try { diag('autoclean', 'verbatim failed, falling back: ' + (eV && eV.message)); } catch (e0) {}
+            return fallbackPath();
+          });
+        }
+      }
+      return fallbackPath();
+
+      function fallbackPath() {
+        var words = state.transcriptWords;
+        if (!words || !words.length) {
+          // ONE button = the whole job: when words CAN be fetched, fetch them and
+          // this same clean re-runs by itself the moment they land…
+          if (!noWords && !state.transcript && !state.pendingCaptionAction && autoTranscribeAvailable()) {
+            prog.classList.add('hidden');
+            ensureTranscriptThen('autoclean');
+            return { pending: true };
+          }
+          // …and when they can't (no key / engine yet, or it just failed), still
+          // remove the dead air that was already found instead of throwing it away.
+          return result([], { needTranscript: noWords ? 'failed' : 'none' });
+        }
+        var base = takesOn(words);
+        if (cpKey() && typeof CPSmartEdit !== 'undefined' && typeof aiCleanupCuts === 'function') {
+          return aiCleanupCuts(words, { aggressive: (strength === 'strong'), scripted: true }, prog, '✨ AI finding retakes & off-script talk')
+            .then(function (rr) {
+              if (rr.truncated) extraNotes.push('The AI read the first ' + rr.maxw + ' words; the built-in retake finder covered the whole video.');
+              return result(base.concat(mergeAiCuts(base, rr.cuts, doFill)), { ai: true });
+            })
+            .catch(function () { return result(base); });
+        }
+        prog.textContent = 'Finding repeated takes…';
+        return result(base);
+      }
+    }).then(function (r) {
+      if (!r || r.pending) return;   // transcription kicked off; the clean re-runs itself when words land
+      var words = r.vWords || state.transcriptWords;
+      // a spoken word is never cut to remove a pause (ASR timing drift allowed for)
+      var sil = CPSilence.protectCutsFromWords(r.sil, words, { minCut: tune.minCut });
+      var ranges = mergeSeqRanges(snapRangesToWords(sil.concat(r.other), words));
+      prog.classList.add('hidden');
+      var notes = [];
+      if (r.needTranscript === 'failed') notes.push('Pulse couldn’t get your words, so repeated takes were skipped — this pass removes dead air only.');
+      else if (r.needTranscript) notes.push('Repeated takes need your words and no transcription engine is set up yet (Settings → add a free key), so this pass removes dead air only.');
+      notes = notes.concat(extraNotes);
+      if (!ranges.length) {
+        var why = (plan && plan.tooLoud)
+          ? 'Background music or noise is as loud as your voice, so Pulse can’t find dead air by sound — nothing was cut. Transcribe first and it can cut the pauses between words.'
+          : 'Nothing to clean — your video is already tight!';
+        return toast(why + (notes.length ? ' ' + notes.join(' ') : ''));
+      }
+      var total = ranges.reduce(function (a, x) { return a + (x.end - x.start); }, 0);
+      var span = (plan && isFinite(plan.range.end)) ? (plan.range.end - plan.range.start) : 0;
+      var big = ranges.reduce(function (a, x) { return (x.end - x.start) > (a ? a.end - a.start : 0) ? x : a; }, null);
+      var msg = 'Clean up your video?\n\nRemove ' + ranges.length + ' dead-air / retake section' + (ranges.length > 1 ? 's' : '') +
+        ' — about ' + total.toFixed(1) + 's' + (span > 0 ? ' (' + Math.round(100 * total / span) + '% of ' + silClock(span) + ')' : '') + '.';
+      var heard = hearingSummary(plan);
+      if (heard) msg += '\n\n' + heard;
+      if (notes.length) msg += '\n\n' + notes.join('\n');
+      if (big && big.end - big.start > 30) msg += '\n\n⚠️ The longest single cut is ' + Math.round(big.end - big.start) + 's (at ' + fmt(big.start) + ') — preview it if that looks wrong.';
+      if (span > 0 && total > span * 0.5) msg += '\n\n⚠️ That is more than half of your video.';
+      msg += '\n\n✅ A backup of your sequence is made first.';
+      return new Promise(function (res) { confirmInline(msg, 'Clean it up', res); }).then(function (yes) {
+        if (!yes) return;
+        prog.classList.remove('hidden'); prog.textContent = 'Cleaning your timeline…';
+        return applyCleanCuts(ranges, plan, { closeGaps: true, backup: true }).then(function (rr) {
+          prog.classList.add('hidden');
+          toast('✨ Cleaned! Removed ' + cutDoneText(rr, ranges) + '. Captions & takes follow the cut — run any other step or add captions with no re-transcribe. ⌘Z / Ctrl+Z undoes it.');
+        });
       });
     }).catch(function (e) { prog.classList.add('hidden'); toast('Auto-clean failed: ' + e.message, true); });
   }
   if ($('btn-autoclean')) $('btn-autoclean').addEventListener('click', runAutoCleanAll);
 
-  /* Filler-word cut ranges in the selected clip's MEDIA time, from the
-     transcript. Sequence time T maps to media (T − seqStart + inPoint), the
-     inverse of the silence mapping. Returns [] when disabled/unavailable. */
-  function fillerMediaRanges(clip, force) {
-    if ((!force && !$('opt-fillers').checked) || typeof CPTranscript === 'undefined') return [];
-    var cues;
-    try { cues = readSelectedTranscript(); }
-    catch (e) { toast('Filler removal skipped — ' + e.message, true); return []; }
-    var res = CPTranscript.findFillerRanges(cues, { extra: $('opt-fillers-extra').checked, padding: 0.02 });
-    var out = [];
-    res.ranges.forEach(function (fr) {
-      var ms = Math.max((fr.start - clip.seqStart) + clip.inPoint, clip.inPoint);
-      var me = Math.min((fr.end - clip.seqStart) + clip.inPoint, clip.outPoint);
-      if (me > ms) out.push({ start: ms, end: me, kind: 'filler', word: fr.word });
-    });
-    return out;
-  }
-
-  /* Detect silences at a threshold; if NOTHING is found, automatically retry at
-     progressively more lenient thresholds (louder room tone needs a higher
-     gate). This fixes "finds no silences" on quiet-but-not-silent rooms. */
+  /* Quiet stretches (MEDIA time) inside one clip, heard with the same adaptive
+     detector (its own room noise, no easing ladder) — used to snap retake cuts
+     onto the real pauses. Resolves { silences, duration, levels }. */
   function detectSilencesRobust(clip, ff, opts) {
-    // Escalate BOTH the gate (louder room tone needs a higher threshold) AND the
-    // min-pause (a fast talker's pauses can be shorter than the default) — the
-    // old ladder only raised the threshold, so loud-room + short-pause clips
-    // still reported "no pauses". Each step is strictly more lenient.
-    var base = opts.thresholdDb, minS = opts.minSilence;
-    // Manual mode: one pass at exactly the dB/min-pause the user dialled in — no
-    // auto-easing, so the result is predictable and fully under their control.
-    var ladder = opts.manual ? [ { thr: base, min: minS } ] : [
-      { thr: base,      min: minS },
-      { thr: base + 8,  min: minS },
-      { thr: base + 16, min: minS },
-      { thr: base + 16, min: Math.min(minS, 0.4) },
-      { thr: base + 22, min: Math.min(minS, 0.3) },
-      { thr: base + 28, min: Math.min(minS, 0.25) }
-    ];
-    var idx = 0, prog = $('analyze-progress');
-    function attempt() {
-      var a = ladder[idx];
-      var p = ff
-        ? CPAudio.ffmpegDetect(clip.mediaPath, ff, a.thr, Math.min(a.min, 0.25), CPSilence)
-        : CPAudio.webAudioDetect(clip.mediaPath, { thresholdDb: a.thr }, CPSilence);
-      return p.then(function (det) {
-        var refined = CPSilence.refineSilences(det.silences, {
-          minSilence: a.min, padding: opts.padding,
-          totalDuration: det.duration || clip.outPoint
-        });
-        if (!refined.length && idx < ladder.length - 1) {
-          idx++;
-          if (prog) prog.textContent = 'No pauses at ' + a.thr + 'dB / ' + a.min + 's — easing to ' +
-            ladder[idx].thr + 'dB / ' + ladder[idx].min + 's…';
-          return attempt();
-        }
-        det._usedThreshold = a.thr;
-        det._usedMinSilence = a.min;       // the handler must refine with THIS, not the strict default
-        return det;
+    opts = opts || {};
+    var tune = CPSilence.tuning('balanced');
+    var lo = clip.inPoint || 0, hi = (clip.outPoint > lo) ? clip.outPoint : lo + 3600;
+    return listenTo(clip.mediaPath, lo, hi, null, ff).then(function (env) {
+      var lv = CPSilence.micLevels(env.db, [[(lo - env.start) / env.hop, (hi - env.start) / env.hop]], tune);
+      var flags = CPSilence.loudFlags(env.db, lv.threshold);
+      var sil = [];
+      CPSilence.quietRuns(flags, env, opts.minSilence != null ? opts.minSilence : 0.12).forEach(function (r) {
+        var s = Math.max(lo, r.start), e = Math.min(hi, r.end);
+        if (e > s) sil.push({ start: s, end: e });
       });
-    }
-    return attempt();
+      return { silences: sil, duration: env.start + env.duration, levels: lv };
+    });
   }
 
-  /* Clip 'silence' ranges so they never overlap a spoken WORD (from the
-     transcript). Quiet speech and soft endings register as low-dB "silence" but
-     the transcript proves words are there — so we carve those word spans (± a
-     margin) out of the silence ranges, keeping that audio. Filler-word ranges
-     are untouched (they're meant to cut a word). Media time. */
-  function protectSpeechMedia(silences, clip, minSilence) {
-    var words = state.transcriptWords;
-    if (!words || !words.length) return silences;
-    var margin = 0.12, lo = clip.inPoint, hi = clip.outPoint;
-    // transcript is SEQUENCE time → convert to this clip's MEDIA time, expand, merge
-    var prot = [];
-    for (var i = 0; i < words.length; i++) {
-      var mS = words[i].start - clip.seqStart + clip.inPoint;
-      var mE = words[i].end - clip.seqStart + clip.inPoint;
-      if (mE <= lo || mS >= hi) continue;                 // word not in this clip
-      prot.push({ start: mS - margin, end: mE + margin });
-    }
-    if (!prot.length) return silences;
-    prot.sort(function (a, b) { return a.start - b.start; });
-    var mp = [];
-    prot.forEach(function (p) {
-      if (mp.length && p.start <= mp[mp.length - 1].end) mp[mp.length - 1].end = Math.max(mp[mp.length - 1].end, p.end);
-      else mp.push({ start: p.start, end: p.end });
-    });
-    var minLen = Math.max(0.2, (minSilence || 0.6) * 0.6);
-    var out = [];
-    silences.forEach(function (s) {
-      var segs = [{ start: s.start, end: s.end }];
-      mp.forEach(function (p) {
-        var ns = [];
-        segs.forEach(function (seg) {
-          if (p.end <= seg.start || p.start >= seg.end) { ns.push(seg); return; }   // no overlap
-          if (p.start > seg.start) ns.push({ start: seg.start, end: p.start });      // keep left
-          if (p.end < seg.end) ns.push({ start: p.end, end: seg.end });              // keep right
-          // the overlap (a word) is removed from the silence range → protected
-        });
-        segs = ns;
-      });
-      segs.forEach(function (seg) { if (seg.end - seg.start >= minLen) out.push({ start: seg.start, end: seg.end, kind: 'silence' }); });
-    });
-    // Safety net: a coarse, line-level transcript (few cues spanning long spans)
-    // can interpolate "words" right across a real pause and protect ALL of them
-    // away — which looks like "No pauses found" after you transcribe. If
-    // protection wiped out every silence, keep the unprotected set rather than
-    // cutting nothing; speech-protection is a refinement, not a hard gate.
-    if (!out.length && silences.length) return silences.slice();
-    return out;
-  }
+  // test hooks for the dead-air gates (test/gates/silence-*.js)
+  window.CP_DEBUG_EXT = window.CP_DEBUG_EXT || {};
+  window.CP_DEBUG_EXT.silence = {
+    plan: function () {
+      var p = state.silLastPlan;
+      return p ? { cuts: p.cuts, range: p.range, mics: p.mics, notes: p.notes, tooLoud: p.tooLoud, sequenceId: p.sequenceId } : null;
+    },
+    mergeAiCuts: mergeAiCuts
+  };
 
   $('btn-analyze').addEventListener('click', function () {
-    var opts = {
-      thresholdDb: parseFloat($('opt-threshold').value),
-      minSilence: parseFloat($('opt-minsilence').value),
-      padding: parseFloat($('opt-padding').value),
-      minKeep: parseFloat($('opt-minkeep').value),
-      manual: !!($('opt-threshold-manual') && $('opt-threshold-manual').checked)
-    };
+    var tune = silTune(state.silStrength || 'balanced');
     var prog = $('analyze-progress');
     prog.classList.remove('hidden');
-    prog.textContent = 'Reading selected clip';
-
-    // Use the SELECTED clip if there is one; otherwise auto-find the talking clip
-    // on the timeline (same as captions) so "Find the silences" works in one tap
-    // without forcing the user to click the clip first.
-    CPBridge.callHost('CP_getSelectedClip').then(
-      function (res) { return (res && res.clip) ? res : CPBridge.callHost('CP_getTranscribeSource'); },
-      function () { return CPBridge.callHost('CP_getTranscribeSource'); }
-    ).then(function (res) {
-      if (!res || !res.clip) throw new Error('Put your video or audio clip on the timeline first, then tap “Find the silences”.');
-      state.clip = res.clip;
-      $('clip-badge').textContent = res.clip.name;
+    prog.textContent = 'Reading your timeline…';
+    // Every mic on the timeline is heard (a selected clip only narrows WHERE
+    // to look) — the same detector the one-tap button uses.
+    CPBridge.callHost('CP_getCutSources', {}).then(function (src) {
+      return analyzeTimeline(src, tune, prog);
+    }).then(function (plan) {
+      state.silPlan = state.silLastPlan = plan;
+      var lo = plan.range.start, hi = plan.range.end, span = hi - lo;
+      // a spoken word is never cut to remove a pause (ASR timing drift allowed for)
+      var sil = CPSilence.protectCutsFromWords(plan.cuts, state.transcriptWords, { minCut: tune.minCut })
+        .map(function (c) { return { start: c.start, end: c.end, kind: 'silence' }; });
+      var fillers = $('opt-fillers').checked ? fillerSeqRanges(lo, hi) : { ranges: [], why: '' };
+      if (fillers.why) toast('Filler removal skipped — ' + fillers.why, true);
+      var all = sil.concat(fillers.ranges).sort(function (a, b) { return a.start - b.start; });
+      state.silencesSeq = all.map(function (r) { return { start: r.start, end: r.end, keep: true, kind: r.kind, word: r.word }; });
+      // keep-segments (sequence time): Multicam's "Smart Cut" switch points
+      state.keepsSeq = CPSilence.invertToKeep(all.map(function (r) { return { start: r.start - lo, end: r.end - lo }; }), span, 0)
+        .map(function (k) { return { start: k.start + lo, end: k.end + lo }; });
+      // "Remove silences (safe copy)" rebuilds ONE clip of ONE file; only offer
+      // it when that is what the timeline is (a second mic would be lost)
+      var one = (plan.sources.length === 1 && !plan.sources[0].unreadable) ? plan.sources[0] : null;
+      state.keepsMedia = one ? state.keepsSeq.map(function (k) {
+        return { start: one.inPoint + (k.start - one.seqStart) * one.speed, end: one.inPoint + (k.end - one.seqStart) * one.speed };
+      }).filter(function (k) { return k.end - k.start > 0.02; }) : [];
+      if (one) state.clip = { name: one.name, mediaPath: one.mediaPath, nodeId: one.nodeId, seqStart: one.seqStart,
+                              seqEnd: one.seqEnd, inPoint: one.inPoint, outPoint: one.outPoint };
+      var nMics = plan.mics.filter(function (m) { return !m.excluded; }).length;
+      $('clip-badge').textContent = nMics + ' mic' + (nMics === 1 ? '' : 's') + ' · ' + plan.sources.length + ' clip' + (plan.sources.length === 1 ? '' : 's') +
+        (plan.selection ? ' (selection)' : '');
       $('clip-badge').className = 'badge ok';
-      prog.textContent = 'Listening for silences';
-      return detectSilencesRobust(state.clip, resolveFfmpeg(), opts);
-    }).then(function (det) {
-      var clip = state.clip;
-      var mediaDuration = det.duration || clip.outPoint;
-      // Refine with the min-pause that actually surfaced pauses during the
-      // robust ladder (det._usedMinSilence) — refining with the strict default
-      // here would silently throw the eased results away again.
-      var usedMin = det._usedMinSilence != null ? det._usedMinSilence : opts.minSilence;
-      var refined = CPSilence.refineSilences(det.silences, {
-        minSilence: usedMin,
-        padding: opts.padding,
-        totalDuration: mediaDuration
-      });
-
-      var silencesMedia = [];
-      for (var i = 0; i < refined.length; i++) {
-        var s = Math.max(refined[i].start, clip.inPoint);
-        var e = Math.min(refined[i].end, clip.outPoint);
-        if (e > s) silencesMedia.push({ start: s, end: e, kind: 'silence' });
+      // Fine-tune shows the loudest room's gate, so "Manual" starts from what Pulse measured
+      var gates = plan.mics.filter(function (m) { return !m.excluded && !m.digital && !m.continuous; }).map(function (m) { return m.threshold; });
+      if (gates.length && !tune.manual) {
+        var g = Math.round(Math.max.apply(null, gates));
+        if ($('opt-threshold')) $('opt-threshold').value = g;
+        if ($('opt-threshold-range')) $('opt-threshold-range').value = g;
+        if ($('opt-threshold-val')) $('opt-threshold-val').textContent = '−' + Math.abs(g) + ' dB';
       }
-      // PROTECT SPEECH: never cut a stretch that has spoken WORDS in it, even if
-      // it's quiet (a soft trailing-off ending reads as low-dB "silence" but the
-      // transcript proves there are words there). Clip silence ranges around the
-      // transcript words so quiet speech / endings survive.
-      silencesMedia = protectSpeechMedia(silencesMedia, clip, usedMin);
-      // fold in transcript filler-word cuts (already in media time), then sort
-      // so the combined cut list stays ordered for invertToKeep.
-      var fillers = fillerMediaRanges(clip);
-      silencesMedia = silencesMedia.concat(fillers)
-        .sort(function (a, b) { return a.start - b.start; });
-
-      state.silencesSeq = silencesMedia.map(function (r) {
-        return { start: clip.seqStart + (r.start - clip.inPoint),
-                 end: clip.seqStart + (r.end - clip.inPoint), keep: true,
-                 kind: r.kind, word: r.word };
-      });
-
-      var clipRangeSil = silencesMedia.map(function (r) {
-        return { start: r.start - clip.inPoint, end: r.end - clip.inPoint };
-      });
-      var clipDur = clip.outPoint - clip.inPoint;
-      state.keepsMedia = CPSilence.invertToKeep(clipRangeSil, clipDur, opts.minKeep)
-        .map(function (k) { return { start: k.start + clip.inPoint, end: k.end + clip.inPoint }; });
-      state.keepsSeq = state.keepsMedia.map(function (k) {
-        return { start: clip.seqStart + (k.start - clip.inPoint),
-                 end: clip.seqStart + (k.end - clip.inPoint) };
-      });
-
-      renderResults(clipDur);
+      renderResults(isFinite(span) ? span : 0);
       prog.classList.add('hidden');
-      var nFill = fillers.length;
-      var nSil = silencesMedia.length - nFill;
+      var nFill = fillers.ranges.length, nSil = sil.length;
       if (nSil === 0 && nFill === 0) {
-        var why = opts.manual
-          ? 'No pauses found at ' + opts.thresholdDb + ' dB / ' + opts.minSilence + 's (Manual). Drag the threshold higher (toward −20 dB), lower “Min pause”, or untick Manual to let Pulse auto-ease. '
-          : 'No pauses found — even after easing the threshold. Your room tone may be loud: drag “Silence threshold” higher (toward −20 dB), or lower “Min pause”. ';
-        toast(why + (resolveFfmpeg() ? '' : '(Also: ffmpeg isn’t set up — Settings → ffmpeg path — needed to read audio inside video files.)'), true);
+        toast(plan.tooLoud
+          ? 'Background music or noise is as loud as your voice, so Pulse can’t find dead air by sound. Transcribe first and it can cut the pauses between words.'
+          : (tune.manual ? 'No pauses found at ' + tune.manualDb + ' dB / ' + tune.minPause + 's (Manual). Untick Manual to let Pulse measure your room.'
+                         : 'No pauses long enough to cut — your clip is already tight. (Try ⚡ Reel for tighter cuts.)'), !!plan.tooLoud);
       } else {
-        var eased = [];
-        if (det._usedThreshold != null && det._usedThreshold !== opts.thresholdDb) eased.push(det._usedThreshold + 'dB');
-        if (det._usedMinSilence != null && det._usedMinSilence !== opts.minSilence) eased.push(det._usedMinSilence + 's pause');
-        toast('Found ' + nSil + ' silence' + (nSil === 1 ? '' : 's') +
-              (eased.length ? ' (auto-eased to ' + eased.join(' / ') + ')' : '') +
-              (nFill ? ' + ' + nFill + ' filler cuts' : '') + '.');
+        toast('Found ' + nSil + ' pause' + (nSil === 1 ? '' : 's') + (nFill ? ' + ' + nFill + ' filler cuts' : '') + '. ' + hearingSummary(plan).split('\n')[0]);
       }
     }).catch(function (e) {
       prog.classList.add('hidden');
@@ -9164,8 +9289,13 @@
   });
 
   $('btn-rebuild').addEventListener('click', function () {
-    if (!state.clip) return toast('Run the analysis first.', true);
-    if (!state.keepsMedia.length) return toast('No keep segments computed.', true);
+    if (!state.silPlan) return toast('Run the analysis first.', true);
+    if (!state.keepsMedia.length) {
+      return toast(state.silPlan.sources.length > 1
+        ? 'The safe copy can only rebuild a single clip, and this timeline has ' + state.silPlan.sources.length +
+          ' audio clips (more than one mic or piece) — they would be lost. Use “Cut directly in this sequence” below instead; a backup is made first.'
+        : 'No keep segments computed.', true);
+    }
     // Name the new sequence after the video's detected title (falls back to the clip name).
     detectTitle(highlightSegments(), 'Pulse · ' + state.clip.name).then(function (name) {
       return CPBridge.callHost('CP_rebuildTrimmed', {
@@ -9180,7 +9310,7 @@
       // the trimmed clip, no re-transcribe needed.
       remapTranscriptToRebuild(state.keepsSeq);
       // the old silence list belongs to the previous timeline — clear it.
-      state.silencesSeq = []; if ($('results')) $('results').classList.add('hidden');
+      state.silencesSeq = []; state.silPlan = null; if ($('results')) $('results').classList.add('hidden');
       toast('🎉 Built "' + r.sequence + '" — ' + r.segmentsPlaced + ' segments, ' + fmt(r.finalDuration) +
             ' long. Transcript auto-synced to the trimmed clip — go straight to “Remove repeated takes” or captions.');
     }).catch(function (e) { toast('Rebuild failed: ' + e.message, true); });
@@ -9191,23 +9321,16 @@
     // protect word edges when we have word timing (snap cut bounds to words)
     ranges = snapRangesToWords(ranges, state.transcriptWords);
     if (!ranges.length) return toast('Nothing selected to cut.', true);
-    var backup = $('opt-backup').checked;
-    var msg = 'Cut ' + ranges.length + ' silent range' + (ranges.length > 1 ? 's' : '') + ' directly in this sequence?';
+    var backup = $('opt-backup').checked, closeGaps = $('opt-closegaps').checked;
+    var msg = 'Cut ' + ranges.length + ' silent range' + (ranges.length > 1 ? 's' : '') + ' directly in this sequence?' +
+      (closeGaps ? '' : '\n\nGaps stay open (“Close gaps” is off) — nothing slides left.');
     msg += backup ? '\n\n✅ A backup of the sequence will be made first.'
                   : '\n\n⚠️ Backup is OFF — this edits your live sequence with no safety copy. Tick “Back up sequence first” if you’re unsure.';
     confirmInline(msg, 'Cut them', function (yes) {
-    if (!yes) return;
-    CPBridge.callHost('CP_razorRipple', {
-      ranges: ranges,
-      closeGaps: $('opt-closegaps').checked,
-      backup: $('opt-backup').checked,
-      dropFrame: !!settings.dropFrame
-    }).then(function (r) {
-      rippleTranscriptByRanges(ranges);   // keep transcript aligned to the trimmed timeline
-      // the on-screen silence list is now stale (timeline moved) — clear it
-      state.silencesSeq = []; if ($('results')) $('results').classList.add('hidden');
-      toast('Cut done — removed ' + r.removedClips + ' pieces. Transcript auto-synced — go straight to “Remove repeated takes” or captions, no re-transcribe needed.');
-    }).catch(function (e) { toast('Cut failed: ' + e.message, true); });
+      if (!yes) return;
+      applyCleanCuts(ranges, state.silPlan, { closeGaps: closeGaps, backup: backup }).then(function (rr) {
+        toast('Cut done — removed ' + cutDoneText(rr, ranges) + '. Transcript auto-synced — go straight to “Remove repeated takes” or captions, no re-transcribe needed.');
+      }).catch(function (e) { toast('Cut failed: ' + e.message, true); });
     });
   });
 
