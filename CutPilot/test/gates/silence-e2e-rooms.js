@@ -56,6 +56,8 @@ const secs = (x) => x.toFixed(2) + 's';
 
     r = await run('music30', 'balanced', { score: { audibleDb: -35 } });
     ok(r.clipped <= 0.02, 'music bed −30 dB under the voice: no word audible above the music is cut (' + secs(r.clipped) + ')');
+    ok(/background under A1 is loud/i.test(r.confirm || '') && /jump at every cut/i.test(r.confirm || ''),
+      'music bed mixed into the voice: the confirm warns that the music will jump at every cut');
 
     r = await run('music24', 'strong');
     ok(r.razor.length === 0 && /as loud as your voice/i.test(r.toast || ''),

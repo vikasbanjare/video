@@ -62,6 +62,16 @@ const tune = (st) => (CPSilence.tuning ? CPSilence.tuning(st) : { minPause: 0.5,
     ok(/couldn.t finish listening/i.test(r.toast || '') && /Nothing was cut/i.test(r.toast || ''),
       'stalled scan: the owner is told in plain words ("' + String(r.toast || r.confirm || '').slice(0, 100) + '")');
 
+    // 3b) a mic file that went offline (moved drive): say so, cut nothing
+    const gone = '/Volumes/Unplugged/guest.wav';
+    ({ page, calls } = await P.openPanel(browser, { seqId: 's3b', video: [{}], audio: [
+      { name: 'Host', items: [{ name, mediaPath: fx.file, seqStart: 0, seqEnd: 27.5, inPoint: 0, outPoint: 27.5 }] },
+      { name: 'Guest', items: [{ name: 'guest.wav', mediaPath: gone, seqStart: 0, seqEnd: 27.5, inPoint: 0, outPoint: 27.5 }] }] }));
+    r = await P.cleanUp(page, calls, { strength: 'balanced', takes: false });
+    await page.close();
+    ok(r.razor.length === 0 && /offline/i.test(r.toast || '') && /Link Media/.test(r.toast || ''),
+      'an offline mic file: nothing is cut and the owner is told to relink it ("' + String(r.toast || r.confirm || '').slice(0, 90) + '")');
+
     // 4) retakes: the matcher decides between takes; the AI only adds the rest
     ({ page, calls } = await P.openPanel(browser, SC.soloTimeline(fx.file)));
     const m = await page.evaluate(() => {

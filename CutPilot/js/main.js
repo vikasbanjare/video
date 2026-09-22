@@ -8806,7 +8806,8 @@
     var name = silBase(mediaPath);
     if (!ff) return CPAudio.webAudioEnvelope(mediaPath, CPSilence);
     return CPAudio.ffmpegAudioInfo(mediaPath, ff).then(function (info) {
-      if (!info.streams) throw new Error('“' + name + '” has no sound in it — Pulse can’t listen to it.');
+      if (info.missing) throw new Error('“' + name + '” is offline — the file isn’t where Premiere says it is. Relink it (right-click the clip → Link Media) and try again. Nothing was cut.');
+      if (!info.streams) throw new Error('“' + name + '” has no sound in it — Pulse can’t listen to it. Nothing was cut.');
       var start = Math.max(0, lo - 0.5);
       return CPAudio.ffmpegRmsEnvelope(mediaPath, ff, { start: start, duration: (hi - start) + 0.5, streams: info.streams, onProgress: onProg }, CPSilence);
     }).then(function (env) {
@@ -8840,7 +8841,7 @@
       live.forEach(function (it) {
         sources.push({ track: t, item: it, seqStart: it.seqStart, seqEnd: it.seqEnd, inPoint: it.inPoint,
                        speed: it.speed > 0 ? it.speed : 1, mediaPath: it.mediaPath,
-                       unreadable: !it.mediaPath ? 'a nested sequence' : (it.reversed ? 'a reversed clip' : '') });
+                       unreadable: !it.mediaPath ? 'not a plain media file (a nested sequence?)' : (it.reversed ? 'a reversed clip' : '') });
       });
     });
     if (!sources.length) return Promise.reject(new Error('There’s no audio on this timeline to listen to. Put your video or audio clip on the timeline first.'));
@@ -8934,6 +8935,11 @@
       }).join('; ') + '.');
     }
     plan.notes.forEach(function (n) { lines.push(n); });
+    var loudBed = voices.filter(function (m) { return !m.digital && !m.continuous && m.floor > -40; })[0];
+    if (loudBed) {
+      lines.push('The background under ' + loudBed.tracks + ' is loud (≈ ' + Math.round(loudBed.floor) + ' dB). If that is music mixed into the voice, ' +
+        'it will jump at every cut — cut the pauses first, then add the music on its own track.');
+    }
     if (voices.length > 1 && plan.tune && plan.tune.key !== 'podcast' && !plan.tune.manual) {
       lines.push('Tip: this sounds like a podcast (' + voices.length + ' mics) — 🎙 Podcast keeps a more natural rhythm.');
     }

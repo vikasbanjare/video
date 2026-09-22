@@ -100,7 +100,8 @@
         if (settled) return; settled = true; clearTimeout(timer);
         var streams = (err.match(/Stream #\d+:\d+[^\n]*?: Audio:/g) || []).length;
         var dm = /Duration:\s*(\d+):(\d+):(\d+\.?\d*)/.exec(err);
-        resolve({ streams: streams, duration: dm ? (+dm[1]) * 3600 + (+dm[2]) * 60 + (+dm[3]) : null });
+        resolve({ streams: streams, duration: dm ? (+dm[1]) * 3600 + (+dm[2]) * 60 + (+dm[3]) : null,
+                  missing: /No such file or directory|does not exist/i.test(err) });
       }
       if (proc.stderr) proc.stderr.on('data', function (d) { err += d.toString(); });
       proc.on('error', function (e) {
