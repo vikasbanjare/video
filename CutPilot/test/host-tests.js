@@ -42,14 +42,63 @@ function makeWorld(opts) {
   };
   for (let i = 0; i < (opts.vTracks || 1); i++) model.vTracks.push([]);
   for (let i = 0; i < (opts.aTracks || 1); i++) model.aTracks.push([]);
+  // track state the cut path must respect: model.locked.A3 = true;
+  // model.broken.A2 = 'throw' | 'noop' (razor/remove/move fail loudly or silently)
+  model.locked = {}; model.muted = {}; model.broken = {}; model.names = {};
+  model.reads = 0;                   // every item read through QE or the DOM (cost probe)
+  model.linkedMove = !!opts.linkedMove;
 
   function Time() { this.seconds = 0; }
   // QE items read .secs; DOM clips read .seconds — one object serves both.
   Object.defineProperty(Time.prototype, 'secs', { get() { return this.seconds; } });
   const mkT = (s) => { const t = new Time(); t.seconds = s; return t; };
+  const labelOf = (clip) => {
+    for (let i = 0; i < model.vTracks.length; i++) if (model.vTracks[i].indexOf(clip) >= 0) return { label: 'V' + (i + 1), arr: model.vTracks[i] };
+    for (let i = 0; i < model.aTracks.length; i++) if (model.aTracks[i].indexOf(clip) >= 0) return { label: 'A' + (i + 1), arr: model.aTracks[i] };
+    return null;
+  };
 
   function mkClip(start, end, extra) {
     const clip = Object.assign({ type: 'Clip', name: 'clip' }, extra || {});
+    // DOM TrackItem.remove(inRipple, inAlignToVideo) and QE item.remove(ripple, 0)
+    // share one meaning: take it off its track; ripple closes the gap on THAT track.
+    clip.remove = function (rippleFlag) {
+      const where = labelOf(clip);
+      if (!where) return;
+      if (model.broken[where.label] === 'throw') throw new Error('track is locked');
+      if (model.broken[where.label] === 'noop') return false;
+      const items = where.arr, ix = items.indexOf(clip);
+      items.splice(ix, 1);
+      if (rippleFlag) {
+        const dur = clip.end.seconds - clip.start.seconds;
+        for (const later of items) {
+          if (later.start.seconds >= clip.end.seconds - 1e-9) {
+            later.start = mkT(later.start.seconds - dur);
+            later.end = mkT(later.end.seconds - dur);
+          }
+        }
+      }
+      return true;
+    };
+    // DOM TrackItem.move(Time): shift by an OFFSET (Premiere's documented
+    // meaning). opts.linkedMove models Premiere dragging the linked partner too.
+    clip.move = function (t, _partner) {
+      const where = labelOf(clip);
+      if (where && model.broken[where.label] === 'throw') throw new Error('track is locked');
+      if (where && (model.broken[where.label] === 'noop' || model.broken[where.label] === 'nomove')) return false;
+      const d = (t && t.seconds != null) ? t.seconds : Number(t);
+      model.allowEndSet = true;
+      clip.start = mkT(clip.start.seconds + d);
+      clip.end = mkT(clip.end.seconds + d);
+      model.allowEndSet = false;
+      if (where) where.arr.sort((a, b) => a.start.seconds - b.start.seconds);
+      if (model.linkedMove && clip._link && !_partner) {
+        for (const arr of model.vTracks.concat(model.aTracks)) {
+          for (const o of arr.slice()) if (o !== clip && o._link === clip._link) o.move(t, true);
+        }
+      }
+      return true;
+    };
     clip.start = mkT(start);
     if (opts.endSetterBroken) {
       let endT = mkT(end);
@@ -69,18 +118,25 @@ function makeWorld(opts) {
     return c;
   };
 
-  const parseTc = (tc) => {   // inverse of host CP_timecode (integer fps in tests)
-    const p = String(tc).split(/[:;]/).map(Number);
+  // Premiere's reading of a timecode: ';' = SMPTE drop-frame labels at 29.97 /
+  // 59.94 (labels 0,1 — 0..3 at 59.94 — skipped every minute but each tenth)
+  const parseTc = (tc) => {
+    const s = String(tc), p = s.split(/[:;]/).map(Number);
     const fRate = Math.round(fps);
-    const frames = ((p[0] * 3600 + p[1] * 60 + p[2]) * fRate) + p[3];
+    let frames = ((p[0] * 3600 + p[1] * 60 + p[2]) * fRate) + p[3];
+    if (s.indexOf(';') >= 0 && (fRate === 30 || fRate === 60) && Math.abs(fps - fRate) > 0.001) {
+      const drop = fRate === 60 ? 4 : 2, mins = p[0] * 60 + p[1];
+      frames -= drop * (mins - Math.floor(mins / 10));
+    }
     return frames / fps;
   };
   const snap = (s) => Math.round(s * fps) / fps;
 
-  function qeTrack(items) {
+  function qeTrack(items, label) {
     return {
       get numItems() { return items.length; },
       getItemAt(i) {
+        model.reads++;
         const it = items[i];
         if (!it) return it;
         if (!it.remove) it.remove = (rippleFlag) => {
@@ -100,13 +156,22 @@ function makeWorld(opts) {
         return it;
       },
       razor(tc) {
+        if (label && model.broken[label] === 'throw') throw new Error('track is locked');
+        if (label && model.broken[label] === 'noop') return;
+        model.razors = (model.razors || 0) + 1;
         const cut = snap(parseTc(tc));            // Premiere snaps razors to the frame grid
         for (let i = 0; i < items.length; i++) {
           const it = items[i];
           if (it.type === 'Empty') continue;
           if (it.start.seconds < cut - 1e-9 && it.end.seconds > cut + 1e-9) {
             model.allowEndSet = true;                 // a razor cut always lands
-            const right = mkClip(cut, it.end.seconds, { name: it.name });
+            // the right-hand piece plays on from where the left one stopped
+            const right = mkClip(cut, it.end.seconds, {
+              name: it.name,
+              _mIn: it._mIn != null ? it._mIn + (cut - it.start.seconds) : undefined,
+              _link: it._link ? it._link + '@' + cut.toFixed(4) : undefined
+            });
+            if (it._link) it._link = it._link + '<' + cut.toFixed(4);
             it.end = mkT(cut);
             model.allowEndSet = false;
             items.splice(i + 1, 0, right);
@@ -120,18 +185,23 @@ function makeWorld(opts) {
   // Real track surface: clips are the model's own arrays, and overwriteClip
   // behaves like Premiere's (drops the item at a time, replacing overlap) so the
   // DEFAULT caption path (rendered images) can be tested end to end.
-  const domTracks = (arr) => {
-    const list = arr.map((items) => {
+  const domTracks = (arr, pre) => {
+    const list = arr.map((items, ti) => {
       const clips = new Proxy({}, {
         get(t, k) {
           if (k === 'numItems') return items.length;
           const n = Number(k);
+          if (Number.isInteger(n)) model.reads++;
           return Number.isInteger(n) ? items[n] : undefined;
         },
         has(t, k) { return k === 'numItems' || Number.isInteger(Number(k)); }
       });
+      const label = (pre || '?') + (ti + 1);
       return {
         clips: clips,
+        name: model.names[label] || label,
+        isLocked() { return !!model.locked[label]; },
+        isMuted() { return !!model.muted[label]; },
         overwriteClip(pItem, startSec) {
           const st = Number(startSec) || 0;
           const durIn = (pItem && pItem._in != null && pItem._out != null)
@@ -155,10 +225,44 @@ function makeWorld(opts) {
     get timebase() { return String(TICKS / fps); },   // ticks per frame (string, like Premiere)
     get frameSizeHorizontal() { return model.w; },
     get frameSizeVertical() { return model.h; },
-    getSettings() { return { videoPixelAspectRatio: (model.par == null ? 1 : model.par) }; },
-    get videoTracks() { return domTracks(model.vTracks); },
-    get audioTracks() { return domTracks(model.aTracks); },
-    clone() { model.cloned++; },
+    getSettings() {
+      const st = { videoPixelAspectRatio: (model.par == null ? 1 : model.par) };
+      if (opts.videoDisplayFormat != null) st.videoDisplayFormat = opts.videoDisplayFormat;
+      return st;
+    },
+    get videoTracks() { return domTracks(model.vTracks, 'V'); },
+    get audioTracks() { return domTracks(model.aTracks, 'A'); },
+    sequenceID: opts.sequenceID || 'seq-main',
+    name: opts.seqName || 'Episode 12',
+    get end() {                                  // ticks string, like Premiere
+      let e = 0;
+      for (const arr of model.vTracks.concat(model.aTracks)) for (const c of arr) e = Math.max(e, c.end.seconds);
+      return String(Math.round(e * TICKS));
+    },
+    clone() {
+      if (opts.cloneThrows) throw new Error('disk full');
+      if (opts.cloneReturnsFalse) return false;
+      model.cloned++;
+      if (opts.cloneSwitchesActive) sandbox.app.project.activeSequence = { sequenceID: 'seq-copy', name: 'Episode 12 Copy' };
+      return true;
+    },
+    // sequence markers with Premiere's surface: Time objects, first/next walk
+    markers: (() => {
+      const list = model.markers = [];
+      const mkMarker = (s) => {
+        const m = { name: '' };
+        let st = mkT(s), en = mkT(s);
+        Object.defineProperty(m, 'start', { get() { return st; }, set(v) { st = (v && v.seconds != null) ? mkT(v.seconds) : mkT(Number(v)); } });
+        Object.defineProperty(m, 'end', { get() { return en; }, set(v) { en = (v && v.seconds != null) ? mkT(v.seconds) : mkT(Number(v)); } });
+        return m;
+      };
+      return {
+        createMarker(s) { const m = mkMarker(Number(s)); list.push(m); list.sort((a, b) => a.start.seconds - b.start.seconds); return m; },
+        getFirstMarker() { return list[0] || null; },
+        getNextMarker(m) { const i = list.indexOf(m); return (i >= 0 && i + 1 < list.length) ? list[i + 1] : null; },
+        deleteMarker(m) { const i = list.indexOf(m); if (i >= 0) list.splice(i, 1); }
+      };
+    })(),
     importMGT(mogrtPath, ticks, vTrack, aTrack) {
       if (opts.importMGTFails) return null;           // simulate a template Premiere can't place
       const start = Number(ticks) / TICKS;
@@ -393,8 +497,8 @@ function makeWorld(opts) {
           return {
             get numVideoTracks() { return model.vTracks.length; },
             get numAudioTracks() { return model.aTracks.length; },
-            getVideoTrackAt(i) { return qeTrack(model.vTracks[i]); },
-            getAudioTrackAt(i) { return qeTrack(model.aTracks[i]); },
+            getVideoTrackAt(i) { return qeTrack(model.vTracks[i], 'V' + (i + 1)); },
+            getAudioTrackAt(i) { return qeTrack(model.aTracks[i], 'A' + (i + 1)); },
             addTracks(nV) { if (opts.qeAddTracksFails) return; for (let i = 0; i < (nV || 1); i++) model.vTracks.push([]); }
           };
         }
@@ -468,6 +572,218 @@ console.log('host.jsx — CP_razorRipple (razor + ripple delete on a real geomet
   const r = call(host, 'CP_razorRipple', { ranges: [{ start: 10.017, end: 12.983 }] });   // off-grid @25fps
   assert(r.removedClips === 1, 'off-frame-grid range still removes its piece (midpoint membership)');
   assert(close(totalDur(w.model.vTracks[0]), 60 - 2.96, 2 / 25), 'duration removed ≈ the requested span (± a frame)');
+}
+
+// ═══ CP_razorRipple on REAL podcast/reel timelines: several mics, sparse
+//     b-roll, music, locked or refusing tracks, another sequence, drop-frame ═══
+console.log('host.jsx — CP_razorRipple keeps EVERY track in sync (mics, b-roll, music, locks, guard, DF)');
+// Each clip remembers which moment of the original recording it starts on
+// (_mIn); razors carry that forward. "In sync" = at any timeline time, every
+// track plays the SAME original moment.
+const mediaAt = (items, t) => {
+  for (const c of items) if (c.start.seconds <= t + 1e-9 && t < c.end.seconds - 1e-9) return c._mIn + (t - c.start.seconds);
+  return null;
+};
+const removedBeforeT = (ranges, t) => ranges.reduce((a, r) => a + Math.max(0, Math.min(t, r.end) - r.start), 0);
+function podcastWorld(extra) {
+  const w = makeWorld(Object.assign({ vTracks: 2, aTracks: 3, fps: 25 }, extra || {}));
+  w.model.addClip('vTracks', 0, 0, 60, { name: 'camera', _mIn: 0, _link: 'L1' });
+  w.model.addClip('aTracks', 0, 0, 60, { name: 'host mic', _mIn: 0, _link: 'L1' });
+  w.model.addClip('aTracks', 1, 0, 60, { name: 'guest mic', _mIn: 0 });
+  w.model.addClip('aTracks', 2, 0, 60, { name: 'music bed', _mIn: 0 });
+  // sparse b-roll: two inserts with a long gap between them
+  w.model.addClip('vTracks', 1, 0, 3, { name: 'broll-A', _mIn: 0 });
+  w.model.addClip('vTracks', 1, 20, 23, { name: 'broll-B', _mIn: 20 });
+  return w;
+}
+const snapshotAll = (w) => JSON.stringify(w.model.vTracks.concat(w.model.aTracks).map(trackSpans));
+{
+  const w = podcastWorld();
+  const host = loadHost(w);
+  const cuts = [{ start: 5, end: 7 }, { start: 10, end: 12 }, { start: 30, end: 33 }, { start: 45, end: 45.52 }];
+  const r = call(host, 'CP_razorRipple', { ranges: cuts, backup: true, closeGaps: true });
+  assert(r.ok === true && r.cuts === 4, 'multi-track cut succeeds: ' + JSON.stringify(r).slice(0, 160));
+  const cam = w.model.vTracks[0], broll = w.model.vTracks[1];
+  const [host1, guest, music] = w.model.aTracks;
+  assert(close(totalDur(cam), 52.48, 1e-6) && close(totalDur(host1), 52.48, 1e-6) && close(totalDur(guest), 52.48, 1e-6) && close(totalDur(music), 52.48, 1e-6),
+    'camera, host mic, guest mic and music each lose exactly the 7.52s cut');
+  let syncOk = true, where = '';
+  for (let t = 0.05; t < 52.48; t += 0.1) {
+    let want = t;                                   // the original moment that should play at t
+    for (const c of cuts) if (want >= c.start - 1e-9) want += c.end - c.start;
+    const m = [cam, host1, guest, music].map(tr => mediaAt(tr, t));
+    if (m.some(x => x == null || Math.abs(x - m[0]) > 1e-6)) { syncOk = false; where = t.toFixed(2) + ' ' + JSON.stringify(m); break; }
+    if (Math.abs(m[0] - want) > 1e-6) { syncOk = false; where = 'at ' + t.toFixed(2) + ' plays ' + m[0] + ', want ' + want; break; }
+  }
+  assert(syncOk, 'every track plays the SAME original moment at every point of the timeline ' + where);
+  const bB = broll.filter(c => c.name === 'broll-B')[0];
+  assert(!!bB && close(bB.start.seconds, 16, 1e-6) && close(mediaAt(cam, bB.start.seconds), 20, 1e-6),
+    'sparse b-roll (a GAP spanning the cuts) moves with the camera: broll-B plays with the moment it was placed on (' +
+    (bB ? bB.start.seconds.toFixed(2) : 'gone') + 's, want 16s) — the old per-track ripple left it ~4s late');
+  assert(r.tracks && r.tracks.length === 5 && r.tracks.every(t => typeof t.lifted === 'number'),
+    'the result reports what happened on EACH track: ' + JSON.stringify(r.tracks));
+  assert(Array.isArray(r.removed) && r.removed.length === 4 && close(r.removedSeconds, 7.52, 1e-6),
+    'the result returns the frame-snapped ranges it removed (the panel remaps captions with exactly these)');
+}
+{
+  // a locked music track: refuse, touch nothing, say which track
+  const w = podcastWorld();
+  w.model.locked.A3 = true; w.model.names.A3 = 'Music';
+  const host = loadHost(w);
+  const before = snapshotAll(w);
+  const r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }], backup: true });
+  assert(r.ok === false && /A3/.test(r.error) && /lock/i.test(r.error) && /Nothing was cut/i.test(r.error),
+    'locked track → plain refusal naming it: ' + r.error);
+  assert(snapshotAll(w) === before && w.model.cloned === 0, 'locked track → the timeline is untouched (not even a razor)');
+}
+for (const mode of ['noop', 'throw']) {
+  // a track that refuses the razor — silently (noop) or loudly (throw)
+  const w = podcastWorld();
+  w.model.broken.A2 = mode;
+  const host = loadHost(w);
+  const r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }, { start: 30, end: 33 }] });
+  const cam = w.model.vTracks[0], guest = w.model.aTracks[1];
+  assert(r.ok === false && /A2/.test(r.error), 'a track that refuses the cut (' + mode + ') is reported, not "ok": ' + r.error);
+  assert(close(totalDur(cam), 60, 1e-6) && close(totalDur(guest), 60, 1e-6) && contiguousFromZero(cam),
+    'refused cut (' + mode + ') → nothing removed or moved, so nothing is out of sync');
+}
+{
+  // razor + lift work, but one track silently refuses to MOVE: never "ok"
+  const w = podcastWorld();
+  w.model.broken.A2 = 'nomove';
+  const host = loadHost(w);
+  const r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }], backup: true });
+  assert(r.ok === false && /A2/.test(r.error) && /OUT OF SYNC/.test(r.error) && /Z/.test(r.error),
+    'a track that did not move with the rest is reported as out of sync (with how to undo), never as done: ' + r.error);
+}
+{
+  // the sequence guard: the cut list belongs to ONE timeline
+  const w = podcastWorld();
+  const host = loadHost(w);
+  const before = snapshotAll(w);
+  let r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }], expectSequenceId: 'seq-other', expectSequenceName: 'Episode 11', backup: true });
+  assert(r.ok === false && /Nothing was cut/.test(r.error) && /Episode 11/.test(r.error),
+    'cut list from ANOTHER sequence is refused in plain words: ' + r.error);
+  assert(snapshotAll(w) === before && w.model.cloned === 0, 'refused → timeline untouched');
+  const src = call(host, 'CP_getCutSources', {});
+  w.model.addClip('vTracks', 1, 40, 42, { name: 'late insert', _mIn: 40 });   // the owner edits after listening
+  r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }], expectSequenceId: src.sequenceId, expectFingerprint: src.fingerprint });
+  assert(r.ok === false && /changed/.test(r.error), 'timeline edited after the analysis → refused: ' + r.error);
+  const src2 = call(host, 'CP_getCutSources', {});
+  r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }], expectSequenceId: src2.sequenceId, expectFingerprint: src2.fingerprint });
+  assert(r.ok === true && close(totalDur(w.model.vTracks[0]), 58, 1e-6), 'same sequence, unchanged → the cut goes through');
+}
+{
+  // the promised backup must exist before anything is cut
+  for (const o of [{ cloneThrows: true }, { cloneReturnsFalse: true }]) {
+    const w = podcastWorld(o);
+    const host = loadHost(w);
+    const before = snapshotAll(w);
+    const r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }], backup: true });
+    assert(r.ok === false && /backup/i.test(r.error) && /Nothing was cut/.test(r.error) && snapshotAll(w) === before,
+      'backup failed (' + Object.keys(o)[0] + ') → nothing cut, and it says so: ' + r.error);
+  }
+  const w = podcastWorld({ cloneSwitchesActive: true });
+  const host = loadHost(w);
+  const r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }], backup: true });
+  assert(r.ok === true && w.sandbox.app.project.activeSequence.sequenceID === 'seq-main' && close(totalDur(w.model.vTracks[0]), 58, 1e-6),
+    'a clone that switches the active sequence is switched back before cutting — the cut lands on the ORIGINAL');
+}
+{
+  // Premiere dragging linked partners along must not double-move them
+  const w = podcastWorld({ linkedMove: true });
+  const host = loadHost(w);
+  const cuts = [{ start: 10, end: 12 }, { start: 30, end: 33 }];
+  const r = call(host, 'CP_razorRipple', { ranges: cuts });
+  const cam = w.model.vTracks[0], hostMic = w.model.aTracks[0];
+  let ok = r.ok === true;
+  for (let t = 0; t < 55 && ok; t += 0.25) if (Math.abs(mediaAt(cam, t) - mediaAt(hostMic, t)) > 1e-6) ok = false;
+  assert(ok && contiguousFromZero(cam) && contiguousFromZero(hostMic), 'linked camera+mic moved together are not moved twice');
+}
+{
+  // an already jump-cut timeline: several pieces of one recording per track
+  const w = makeWorld({ vTracks: 1, aTracks: 1, fps: 25 });
+  w.model.addClip('vTracks', 0, 0, 10, { _mIn: 0 }); w.model.addClip('vTracks', 0, 10, 20, { _mIn: 15 });
+  w.model.addClip('aTracks', 0, 0, 10, { _mIn: 0 }); w.model.addClip('aTracks', 0, 10, 20, { _mIn: 15 });
+  const host = loadHost(w);
+  const r = call(host, 'CP_razorRipple', { ranges: [{ start: 3, end: 4 }, { start: 14, end: 16 }] });
+  let ok = r.ok === true;
+  for (let t = 0; t < 17 && ok; t += 0.2) if (Math.abs(mediaAt(w.model.vTracks[0], t) - mediaAt(w.model.aTracks[0], t)) > 1e-6) ok = false;
+  assert(ok && close(totalDur(w.model.vTracks[0]), 17, 1e-6) && contiguousFromZero(w.model.aTracks[0]),
+    'cuts inside BOTH pieces of an already-cut timeline land, V and A stay in sync');
+}
+{
+  // markers follow the edit; the orange "Silence" preview markers go away
+  const w = podcastWorld();
+  const host = loadHost(w);
+  const ch = w.sandbox.app.project.activeSequence.markers.createMarker(30); ch.name = 'Chapter 2';
+  const pv = w.sandbox.app.project.activeSequence.markers.createMarker(10); pv.name = 'Silence 1'; pv.end = 12;
+  const r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }, { start: 20, end: 21 }] });
+  const list = w.model.markers;
+  assert(r.ok && list.length === 1 && list[0].name === 'Chapter 2' && close(list[0].start.seconds, 27, 1e-6),
+    'a chapter marker at 30s moves to 27s with the content; the Silence preview marker is removed (' +
+    JSON.stringify(list.map(m => [m.name, m.start.seconds])) + ')');
+}
+{
+  // "Close gaps after deleting" unticked: lift only, nothing slides
+  const w = podcastWorld();
+  const host = loadHost(w);
+  const r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }], closeGaps: false });
+  const cam = w.model.vTracks[0];
+  assert(r.ok && close(totalDur(cam), 58, 1e-6) && cam.some(c => close(c.start.seconds, 12, 1e-6)) && r.closedGaps === 0,
+    'closeGaps:false leaves the gap open (the checkbox used to be ignored)');
+}
+{
+  // drop-frame 29.97: the razor lands where the audio said, even an hour in
+  const DF = 30000 / 1001;
+  const host0 = loadHost(makeWorld({ fps: DF }));
+  assert(host0.CP_timecode(600, DF, true) === '00;10;00;00' && host0.CP_timecode(3600, DF, true) === '01;00;00;00',
+    'CP_timecode speaks real SMPTE drop-frame (600s → 00;10;00;00, 3600s → 01;00;00;00; was 00;09;59;12 / 00;59;56;12)');
+  assert(host0.CP_timecode(600, 25, true) === '00:10:00:00', 'drop-frame is ignored where it does not exist (25 fps)');
+  for (const o of [{ args: { dropFrame: true }, name: 'Settings tick' }, { world: { videoDisplayFormat: 102 }, args: {}, name: 'sequence reports DF' }]) {
+    const w = makeWorld(Object.assign({ vTracks: 1, aTracks: 0, fps: DF }, o.world || {}));
+    w.model.addClip('vTracks', 0, 0, 3700, { _mIn: 0 });
+    const host = loadHost(w);
+    const r = call(host, 'CP_razorRipple', Object.assign({ ranges: [{ start: 3000, end: 3002 }] }, o.args));
+    const first = w.model.vTracks[0][0];
+    assert(r.ok && close(first.end.seconds, 3000, 1 / DF),
+      'DF (' + o.name + '): the cut at 50:00 lands at ' + first.end.seconds.toFixed(3) + 's (want 3000 ± 1 frame; the old timecode razored ~3s early)');
+  }
+}
+{
+  // cost: a 1-hour podcast with 200 pauses on 6 tracks must not freeze Premiere
+  const w = makeWorld({ vTracks: 3, aTracks: 3, fps: 25 });
+  for (let k = 0; k < 3; k++) { w.model.addClip('vTracks', k, 0, 3600, { _mIn: 0 }); w.model.addClip('aTracks', k, 0, 3600, { _mIn: 0 }); }
+  const host = loadHost(w);
+  const cuts = []; for (let i = 0; i < 200; i++) cuts.push({ start: 10 + i * 17, end: 10 + i * 17 + 1.2 });
+  w.model.reads = 0;
+  const t0 = Date.now();
+  const r = call(host, 'CP_razorRipple', { ranges: cuts });
+  assert(r.ok && r.cuts === 200 && close(totalDur(w.model.aTracks[2]), 3600 - 240, 1e-6), '200 cuts on 6 tracks all land');
+  assert(w.model.reads < 20000, '200 cuts × 6 tracks cost ' + w.model.reads + ' item reads (the old loop needed ~123,000 — O(n²)) in ' + (Date.now() - t0) + 'ms');
+}
+{
+  // what the analysis reads: every mic, its mapping (speed!), the selection
+  const w = makeWorld({ vTracks: 1, aTracks: 3, fps: 25 });
+  const pi = (p) => ({ getMediaPath: () => p, nodeId: 'n' + p });
+  w.model.addClip('vTracks', 0, 0, 20, { name: 'cam', projectItem: pi('/m/cam.mp4'), inPoint: { seconds: 0 }, outPoint: { seconds: 24 }, isSelected: () => true });
+  w.model.addClip('aTracks', 0, 0, 20, { name: 'host', projectItem: pi('/m/host.wav'), inPoint: { seconds: 2 }, outPoint: { seconds: 26 }, getSpeed: () => 1.2 });
+  w.model.addClip('aTracks', 1, 5, 15, { name: 'guest', projectItem: pi('/m/guest.wav'), inPoint: { seconds: 0 }, outPoint: { seconds: 10 } });
+  w.model.addClip('aTracks', 2, 0, 20, { name: 'title', projectItem: pi('/m/title.mogrt'), inPoint: { seconds: 0 }, outPoint: { seconds: 20 } });
+  w.model.muted.A2 = true; w.model.locked.A1 = true;
+  const host = loadHost(w);
+  const r = call(host, 'CP_getCutSources', {});
+  assert(r.ok && r.audio.length === 3 && r.sequenceId === 'seq-main' && typeof r.fingerprint === 'string', 'CP_getCutSources lists every audio track + the sequence identity');
+  assert(close(r.audio[0].items[0].speed, 1.2, 1e-9) && r.audio[0].locked === true, 'clip speed (120%) and the lock are reported: ' + JSON.stringify(r.audio[0]));
+  assert(r.audio[1].muted === true && r.audio[1].items[0].mediaPath === '/m/guest.wav', 'a muted mic is flagged, not hidden');
+  assert(r.audio[2].items.length === 0, 'graphics (.mogrt) on an audio track are not treated as a mic');
+  assert(r.selection && close(r.selection.start, 0) && close(r.selection.end, 20), 'the selected span is reported');
+  const w2 = makeWorld({ vTracks: 2, aTracks: 1, fps: 25 });
+  w2.model.addClip('vTracks', 0, 0, 60, { name: 'cam', projectItem: pi('/m/cam.mp4'), inPoint: { seconds: 0 }, outPoint: { seconds: 60 } });
+  w2.model.addClip('vTracks', 1, 3, 6, { name: 'title', projectItem: pi('/m/Title.mogrt'), isSelected: () => true });
+  w2.model.addClip('aTracks', 0, 0, 60, { name: 'cam', projectItem: pi('/m/cam.mp4'), inPoint: { seconds: 0 }, outPoint: { seconds: 60 } });
+  const r2 = call(loadHost(w2), 'CP_getCutSources', {});
+  assert(r2.ok && r2.selection === null, 'a selected TITLE/caption does not shrink the clean-up to its 3 seconds');
 }
 
 // ══════════════════════════════════════════════ CP_insertMogrtCaptions ═════
