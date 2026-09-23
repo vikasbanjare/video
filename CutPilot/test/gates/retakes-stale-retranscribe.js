@@ -74,13 +74,17 @@ async function run() {
         };
       }, SAVED_SRT);
     }
+    /* Tap Auto-transcribe; done when the saved transcript is loaded, a new
+       transcription is requested, or the run stops with an error. */
     async function autoTranscribe(page) {
       const before = transcribed;
       await page.evaluate(() => { document.getElementById('toast').textContent = ''; document.getElementById('btn-tr-auto-main').click(); });
-      await H.waitFor(page, () => /saved transcript/i.test(document.getElementById('toast').textContent) ||
-        /transcri/i.test(document.getElementById('toast').textContent), 30000);
-      await new Promise(r => setTimeout(r, 1500));
-      const toast = await page.evaluate(() => document.getElementById('toast').textContent);
+      let toast = '';
+      for (let i = 0; i < 300; i++) {
+        toast = await page.evaluate(() => { const t = document.getElementById('toast'); return (/\berr\b/.test(t.className) ? 'ERROR: ' : '') + t.textContent; });
+        if (transcribed > before || /Loaded the saved transcript/.test(toast) || /^ERROR: /.test(toast)) break;
+        await new Promise(r => setTimeout(r, 100));
+      }
       return { toast, listened: transcribed > before };
     }
 
