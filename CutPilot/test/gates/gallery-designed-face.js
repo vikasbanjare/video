@@ -56,9 +56,10 @@ const LOCAL_FACES = ['DejaVu Sans Mono Bold', 'DejaVu Sans Mono', 'Liberation Mo
       Rn.drawFrame(cv, { words: WORDS }, st); return cv.getContext('2d').getImageData(0, 0, 1080, 1920).data; };
     const diff = (a, b) => { let n = 0; for (let i = 3; i < a.length; i += 4) if (Math.abs(a[i] - b[i]) > 24) n++; return n; };
     const rows = [];
+    let slowNet = false;          // after one timed-out font wait, don't wait long again
     for (const t of T) {
       const st = Object.assign({}, Rn.styleForFrame(t, 1920, { yPct: 0.5 }, 1080), { uppercase: false });
-      try { await Rn.preloadFaces(st, [{ words: WORDS }]); } catch (e) {}
+      try { const pr = await Rn.preloadFaces(st, [{ words: WORDS }], slowNet ? 500 : 4000); if (pr && pr.complete === false) slowNet = true; } catch (e) {}
       const got = px(st);
       const designed = px(Object.assign({}, st, { font: t.font, fallbacks: '__none__' }));
       const si = C.timelineFace(t.font) || (t.fallbackFonts || [])[0];

@@ -44,9 +44,10 @@ const G = require('./gallery-lib/panel.js');
     const rgba = (cv) => cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
     const WORDS_LO = ['hamburg', 'quest'], WORDS_UP = WORDS_LO.map(w => w.toUpperCase());
     // does the EXPORT render draw small letters differently from capitals?
+    let slowNet = false;          // after one timed-out font wait, don't wait long again
     const renderTellsCase = async () => {
       const st = Object.assign({}, GX.exportStyle(1080, 1920), { uppercase: false });
-      try { await RR.preloadFaces(st, [{ words: WORDS_LO.concat(WORDS_UP) }]); } catch (e) {}
+      try { const pr = await RR.preloadFaces(st, [{ words: WORDS_LO.concat(WORDS_UP) }], slowNet ? 500 : 4000); if (pr && pr.complete === false) slowNet = true; } catch (e) {}
       const draw = (ws) => { const cv = document.createElement('canvas'); cv.width = 1080; cv.height = 1920; RR.drawFrame(cv, { words: ws }, st); return rgba(cv); };
       const a = draw(WORDS_LO), b = draw(WORDS_UP);
       let d = 0;

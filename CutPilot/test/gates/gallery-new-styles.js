@@ -88,6 +88,7 @@ const TEXTS = [
     const box1 = drawWord(plain, NOTDEF, 1080, 600), box2 = drawWord(plain, NOTDEF2, 1080, 600);
     const selfTest = { ink: inkOf(box1), diff: pixDiff(box1, box2) };
     const out = [];
+    let slowNet = false;          // after one timed-out font wait, don't wait long again
     const T = C.TEMPLATES.filter(t => /^(tr|twin)-/.test(t.id));
     for (const t of T) {
       const wantY = (t.posPct != null) ? t.posPct / 100 : (t.layout === 'top' ? 0.2 : (t.layout === 'center' ? 0.5 : 0.74));
@@ -96,8 +97,8 @@ const TEXTS = [
         const st = R.styleForFrame(t, F.H, { yPct: wantY }, F.W);
         // the export path's own font wait, with every character judged below
         let pre = null;
-        try { pre = await R.preloadFaces(st, TEXTS.map(X => ({ text: X.text })).concat([{ words: ['कमल', 'नमन'] }])); } catch (e) {}
-        if (pre && pre.complete === false) row.preloadTimedOut = true;
+        try { pre = await R.preloadFaces(st, TEXTS.map(X => ({ text: X.text })).concat([{ words: ['कमल', 'नमन'] }]), slowNet ? 500 : 4000); } catch (e) {}
+        if (pre && pre.complete === false) { row.preloadTimedOut = true; slowNet = true; }
         for (const X of TEXTS) {
           let frames = null;
           try {
@@ -124,7 +125,7 @@ const TEXTS = [
     const spaced = [];
     for (const t of C.TEMPLATES.filter(x => (x.letterSpacing || 0) > 0)) {
       const st = R.styleForFrame(t, 1920, { yPct: 0.5 }, 1080);
-      try { await R.preloadFaces(st, [{ words: ['सबसे', 'आसान', 'WIDE'] }]); } catch (e) {}
+      try { await R.preloadFaces(st, [{ words: ['सबसे', 'आसान', 'WIDE'] }], slowNet ? 500 : 4000); } catch (e) {}
       const flat = Object.assign({}, st, { letterSpacing: 0 });
       const hi = pixDiff(drawWord(st, 'सबसे', 1080, 1920), drawWord(flat, 'सबसे', 1080, 1920)) +
                  pixDiff(drawWord(st, 'आसान', 1080, 1920), drawWord(flat, 'आसान', 1080, 1920));
