@@ -753,24 +753,56 @@ function fluxProps() {
     ok('🧪 self-test report card: clean/warned/failing machines each get the right plain-language verdict');
   else bad('self-test report wrong: ' + JSON.stringify(st));
 
-  // ---- O. THE MAIN ACTION IS REACHABLE: opening the Captions tab must show
-  // "Add captions", not a wall of style cards with no way to proceed --------
-  const act = await page.evaluate(() => {
+  // ---- O. THE MAIN ACTION IS REACHABLE — AND CAPTIONS OPENS ON THE STYLES.
+  // The owner asked for the landing to change: "when we open the Captions tab
+  // it's supposed to show different captions, not just one caption — I have to
+  // go back to check if we have any". So opening Captions must show the style
+  // GALLERY (many cards), with "Add captions" still there without scrolling.
+  // Stricter than before: the button must be INSIDE the visible page at the
+  // panel's default 400×640 and not covered (the old offsetParent test passed
+  // while it sat ~2,400px down), and a card must open the editor with a way
+  // back — the "≡ Browse styles one tap away" promise, now "‹ All styles".
+  await page.setViewport({ width: 400, height: 640 });
+  const act = await page.evaluate(async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
     const tab = document.querySelector('.tab[data-tab="captions"]');
     if (!tab) return { fatal: 'no Captions tab' };
-    tab.click();
+    const away = document.querySelector('.tab[data-tab="silence"]'); if (away) away.click();   // arrive from elsewhere
+    await sleep(100);
+    tab.click(); await sleep(400);
     const b = document.getElementById('btn-magic');
     if (!b) return { fatal: 'no Add-captions button in the DOM' };
-    const r = b.getBoundingClientRect();
-    const browse = document.getElementById('btn-browse-styles');
-    return { visible: b.offsetParent !== null && r.width > 40 && r.height > 20,
-             label: (b.textContent || '').trim().slice(0, 40),
-             browseReachable: !!(browse && browse.offsetParent !== null) };
+    const pg = document.getElementById('tab-captions');
+    const onScreen = () => {
+      const pr = pg.getBoundingClientRect(), r = b.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return r.width > 40 && r.height > 20 && r.top >= pr.top - 1 && r.bottom <= pr.bottom + 1 && !!hit && (hit === b || b.contains(hit));
+    };
+    const vt = document.getElementById('view-templates');
+    const pr = pg.getBoundingClientRect();
+    const cards = Array.from(document.querySelectorAll('#tpl-grid .tpl-card'))
+      .filter(c => { const q = c.getBoundingClientRect(); return q.width > 0 && q.bottom > pr.top && q.top < pr.bottom; });
+    const out = { gallery: !!vt && !vt.classList.contains('hidden'), cardsOnScreen: cards.length,
+                  magicOnGallery: onScreen(), label: (b.textContent || '').trim().slice(0, 40) };
+    const card = document.querySelector('#tpl-grid .tpl-card'); if (card) card.click();
+    await sleep(450);
+    const ed = document.getElementById('view-editor'), back = document.getElementById('btn-back-lib');
+    out.editorOpens = !!ed && !ed.classList.contains('hidden');
+    out.magicOnEditor = onScreen();
+    out.backShown = !!(back && back.offsetParent !== null && back.getBoundingClientRect().top >= pr.top - 1);
+    if (back) back.click();
+    await sleep(400);
+    out.backToGallery = !!vt && !vt.classList.contains('hidden');
+    return out;
   });
+  await page.setViewport({ width: 420, height: 900 });
   if (act.fatal) bad('primary action: ' + act.fatal);
-  else if (act.visible && act.browseReachable)
-    ok('opening Captions shows the primary action ("' + act.label + '") with ≡ Browse styles one tap away');
-  else bad('primary action not reachable on the Captions tab: ' + JSON.stringify(act));
+  // "different captions, not just one": at least two styles on screen (a
+  // category the owner picked earlier, e.g. My Templates, may hold only a few)
+  else if (act.gallery && act.cardsOnScreen >= 2 && act.magicOnGallery && act.editorOpens && act.magicOnEditor && act.backShown && act.backToGallery)
+    ok('opening Captions shows the style gallery (' + act.cardsOnScreen + ' styles on screen) with "' + act.label +
+       '" on screen; a style opens the editor (button still on screen) and ‹ All styles goes back');
+  else bad('Captions does not open on the gallery with its primary action on screen: ' + JSON.stringify(act));
 
   // ---- P. CHOICES SURVIVE A RESTART: caption type and entrance were reset on
   // every panel reload, and picking a style silently undid an explicit

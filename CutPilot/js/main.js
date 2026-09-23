@@ -1601,13 +1601,31 @@
   }
 
   // --------------------------------------------------------------- tabs ----
+  /* Pages. On a docked panel the Home screen is the menu and the app bar shows
+     "‹ + page name"; on a wide panel the .tab buttons are a sidebar. Every way
+     in (Home cards, ‹, ⚙, ⌘K, a finished job) clicks the page's .tab button,
+     so the per-page refreshes below run however the owner got there. */
+  var PAGE_TITLES = { home: '', transcribe: 'Transcript', captions: 'Captions', silence: 'Clean up',
+    shorts: 'Shorts', multicam: 'Podcast cameras', chapters: 'Chapters', organize: 'Organize',
+    safezone: 'Safe zone', settings: 'Settings' };
+  function showPage(name) {
+    var b = document.querySelector('.tab[data-tab="' + name + '"]');
+    if (b) b.click();
+  }
   var tabs = document.querySelectorAll('.tab');
   for (var t = 0; t < tabs.length; t++) {
     tabs[t].addEventListener('click', function () {
-      document.querySelector('.tab.active').classList.remove('active');
-      document.querySelector('.tab-page.active').classList.remove('active');
+      var page = $('tab-' + this.dataset.tab);
+      if (!page) return;
+      var wasActive = page.classList.contains('active');
+      var oldTab = document.querySelector('.tab.active'), oldPage = document.querySelector('.tab-page.active');
+      if (oldTab) oldTab.classList.remove('active');
+      if (oldPage) oldPage.classList.remove('active');
       this.classList.add('active');
-      $('tab-' + this.dataset.tab).classList.add('active');
+      page.classList.add('active');
+      document.body.setAttribute('data-page', this.dataset.tab);
+      if ($('nav-title')) $('nav-title').textContent = PAGE_TITLES[this.dataset.tab] || '';
+      if (!wasActive) page.scrollTop = 0;       // a page opens at its top
       // Leaving Captions? Stop the live-preview animation loop so it isn't
       // painting an off-screen canvas forever in the background.
       if (this.dataset.tab !== 'captions') { if (previewTimer) { clearInterval(previewTimer); previewTimer = null; } stopCardAnimator(); }
@@ -1615,15 +1633,20 @@
       if (this.dataset.tab === 'safezone' && window.CPSafezone) { try { CPSafezone.onShow(); } catch (eSZ) {} }
       // Re-check for a transcript when returning to Captions (e.g. after
       // exporting one), and refresh the preview now the frame has a size.
-      // OPENING CAPTIONS LANDS ON THE ACTION, not on a wall of styles: the
-      // primary "Add captions" button lives in the style editor, so a user who
-      // opened this tab saw only the gallery and no way to proceed until they
-      // happened to click a card. Land on the editor (with "≡ Browse styles"
-      // one tap away) whenever a style is already chosen.
+      // OPENING CAPTIONS SHOWS THE STYLES. "When we open the Captions tab it's
+      // supposed to show different captions, not just one caption — I have to
+      // go back to check if we have any." It used to land in the editor of the
+      // last style. Now it always opens on the gallery; "✨ Add captions" sits
+      // in a bar pinned under it, so the action is never more than one tap away.
       if (this.dataset.tab === 'captions') {
         try {
           var vt = $('view-templates');
-          if (vt && !vt.classList.contains('hidden') && state.presetId) showView('style');
+          _galleryScroll = 0;
+          if (vt && vt.classList.contains('hidden')) showView('templates');
+          // a template sheet left open when the owner went elsewhere (a
+          // keyboard shortcut can do that) must not cover the gallery on return
+          var ms = $('mogrt-sheet');
+          if (!wasActive && ms && !ms.classList.contains('hidden') && $('ms-close')) $('ms-close').click();
         } catch (eVw) {}
       }
       if (this.dataset.tab === 'captions' && CPBridge.isCEP()) {
@@ -1642,6 +1665,37 @@
         syncMcSource();
       }
     });
+  }
+
+  /* The shell around the pages: ‹ back / the logo → Home, ⚙ → Settings, the
+     Home task cards and More-tools buttons (data-go = the page they open), and
+     every small ⓘ, which shows or hides the longer explanation it names. */
+  function wireShell() {
+    if ($('nav-back')) $('nav-back').addEventListener('click', function () { showPage('home'); });
+    if ($('nav-home')) $('nav-home').addEventListener('click', function () { showPage('home'); });
+    if ($('nav-settings')) $('nav-settings').addEventListener('click', function () { showPage('settings'); });
+    var go = document.querySelectorAll('[data-go]');
+    for (var g = 0; g < go.length; g++) {
+      go[g].addEventListener('click', function () { showPage(this.getAttribute('data-go')); });
+    }
+    var infos = document.querySelectorAll('.info[data-info]');
+    for (var i = 0; i < infos.length; i++) {
+      infos[i].setAttribute('aria-expanded', 'false');
+      infos[i].addEventListener('click', function (e) {
+        e.preventDefault(); e.stopPropagation();    // an ⓘ inside a <summary>/<label> must not toggle it
+        var pop = $(this.getAttribute('data-info')); if (!pop) return;
+        var open = pop.classList.contains('hidden');
+        pop.classList.toggle('hidden', !open);
+        this.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+    }
+    // The sequence name is cut short on a narrow panel: its full text is always
+    // one hover away. (Many places write this label, so follow the element.)
+    var env = $('env-status');
+    if (env && window.MutationObserver) {
+      new MutationObserver(function () { env.title = env.textContent + ' — tap to look for your sequence again'; })
+        .observe(env, { childList: true, characterData: true, subtree: true });
+    }
   }
 
   // Tap the sequence indicator to re-detect the active sequence on demand
@@ -1706,14 +1760,19 @@
     function goTab(t) { return function () { var b = document.querySelector('.tab[data-tab="' + t + '"]'); if (b) b.click(); }; }
     function clickId(id) { return function () { var e = $(id); if (e) e.click(); }; }
     return [
-      { group: 'Go', label: 'Captions', keywords: 'subtitle text caption', run: goTab('captions') },
-      { group: 'Go', label: 'Auto-Edit', keywords: 'silence pause trim takes retakes', run: goTab('silence') },
-      { group: 'Go', label: 'Multicam', keywords: 'camera angle switch', run: goTab('multicam') },
+      { group: 'Go', label: 'Home', keywords: 'start menu back', run: goTab('home') },
+      { group: 'Go', label: 'Captions', keywords: 'subtitle text caption styles', run: goTab('captions') },
+      { group: 'Go', label: 'Clean up', keywords: 'auto-edit silence pause trim takes retakes fillers', run: goTab('silence') },
+      { group: 'Go', label: 'Podcast cameras', keywords: 'multicam camera angle switch', run: goTab('multicam') },
+      { group: 'Go', label: 'Transcript', keywords: 'transcribe words', run: goTab('transcribe') },
+      { group: 'Go', label: 'Shorts', keywords: 'viral clips reels', run: goTab('shorts') },
       { group: 'Go', label: 'Chapters', keywords: 'youtube timestamps markers', run: goTab('chapters') },
-      { group: 'Go', label: 'Settings', keywords: 'ffmpeg diagnostics path', run: goTab('settings') },
-      { group: 'Captions', label: 'Add captions', keywords: 'render burn animate', run: function () { goTab('captions')(); showView('style'); clickId('btn-magic')(); } },
-      { group: 'Captions', label: 'Open template library', keywords: 'styles gallery browse', run: function () { goTab('captions')(); showView('templates'); } },
-      { group: 'Captions', label: 'Open .mogrt Editor', keywords: 'mogrt premiere template upload', run: function () { goTab('captions')(); showView('editor'); } },
+      { group: 'Go', label: 'Organize', keywords: 'bins project folders', run: goTab('organize') },
+      { group: 'Go', label: 'Safe zone', keywords: 'guide branding reels tiktok', run: goTab('safezone') },
+      { group: 'Go', label: 'Settings', keywords: 'keys diagnostics theme text size', run: goTab('settings') },
+      { group: 'Captions', label: 'Add captions', keywords: 'render burn animate', run: function () { goTab('captions')(); clickId('btn-magic')(); } },
+      { group: 'Captions', label: 'Open the style gallery', keywords: 'styles gallery browse templates', run: function () { goTab('captions')(); showView('templates'); } },
+      { group: 'Captions', label: 'Use my own Premiere template', keywords: 'mogrt premiere template upload', run: function () { goTab('captions')(); showView('editor'); } },
       { group: 'Captions', label: 'Find my transcript again', keywords: 'srt vtt subtitle', run: function () { goTab('captions')(); findTranscript(); } },
       { group: 'Auto-Edit', label: 'Find the silences', keywords: 'analyze detect dead air', run: function () { goTab('silence')(); clickId('btn-analyze')(); } },
       { group: 'Auto-Edit', label: 'Remove silences (safe copy)', keywords: 'rebuild trim', run: function () { goTab('silence')(); clickId('btn-rebuild')(); } },
@@ -1782,7 +1841,7 @@
       if (_cmd.open) return;
       var tag = (e.target && e.target.tagName) || '';
       if (/INPUT|TEXTAREA|SELECT/.test(tag) || e.metaKey || e.ctrlKey || e.altKey) return;
-      var map = { '1': 'transcribe', '2': 'captions', '3': 'silence', '4': 'multicam', '5': 'chapters', '6': 'settings' };
+      var map = { '0': 'home', '1': 'transcribe', '2': 'captions', '3': 'silence', '4': 'multicam', '5': 'chapters', '6': 'settings' };
       if (map[e.key]) { var b = document.querySelector('.tab[data-tab="' + map[e.key] + '"]'); if (b) b.click(); }
     });
   }
@@ -1993,6 +2052,7 @@
       });
     }
     wireTheme();
+    wireShell();
     wireLicense();
     wireVerbatim();
     wireDiagnostics();
@@ -5456,30 +5516,10 @@
     });
   }
 
-  /* On WIDE panels the two primary actions dock under the sticky preview —
-     the dead space the user pointed at — and return to their normal spot when
-     the panel is narrow. Moving nodes preserves their listeners. */
-  function dockCapActions() {
-    var dock = $('cap-actions-dock'), home = $('cap-actions-home');
-    var magic = $('btn-magic'), viral = $('btn-viral-edit');
-    if (!dock || !home || !magic) return;
-    var wc = $('wc-block');
-    var wide = (window.innerWidth || 0) >= 620;
-    if (wide && magic.parentNode !== dock) {
-      if (wc && !$('wc-home')) {
-        var wcHome = document.createElement('span');
-        wcHome.id = 'wc-home'; wcHome.style.display = 'none';
-        wc.parentNode.insertBefore(wcHome, wc);
-      }
-      if (wc) dock.appendChild(wc);            // words-per-caption sits with the action
-      dock.appendChild(magic); if (viral) dock.appendChild(viral);
-    } else if (!wide && magic.parentNode === dock) {
-      var wcH = $('wc-home');
-      if (wc && wcH) wcH.parentNode.insertBefore(wc, wcH.nextSibling);
-      home.parentNode.insertBefore(magic, home.nextSibling);
-      if (viral) home.parentNode.insertBefore(viral, magic.nextSibling);
-    }
-  }
+  /* "✨ Add captions" and "⚡ Viral edit" no longer move between a narrow and
+     a wide spot (they used to dock under the preview only when the panel was
+     620 px or wider, and sat ~2,400 px down below that): they live in
+     #cap-action-bar, pinned to the bottom of the Captions page at every size. */
 
   function wireCustomizer() {
     wireCustomizerTabs();
@@ -5692,10 +5732,14 @@
        'style'     = editing one caption style (font / colour / animation) — still
                      part of the Templates section, so that tab stays lit
        'editor'    = the .mogrt Editor (upload + customise a Premiere template) */
+  var _galleryScroll = 0;      // where the owner was in the gallery before opening a style
   function showView(v) {
     var inStyleEdit = (v === 'style');
     var inMogrt = (v === 'editor');
     var inFlux = (v === 'flux');
+    var capPage = $('tab-captions');
+    var wasGallery = !$('view-templates').classList.contains('hidden');
+    if (capPage && wasGallery && v !== 'templates') _galleryScroll = capPage.scrollTop;
     $('view-templates').classList.toggle('hidden', v !== 'templates');
     $('view-editor').classList.toggle('hidden', !(inStyleEdit || inMogrt));
     if ($('view-flux')) $('view-flux').classList.toggle('hidden', !inFlux);
@@ -5707,6 +5751,15 @@
     if (inMogrt) { setCapMethod('mogrt'); renderMogrtEditor(); }
     if (v === 'templates') renderTemplateGrid();
     if (inFlux) renderFluxGrid();
+    // "✨ Add captions" stays pinned under the style gallery and the style
+    // editor; the Premium sheet and the upload section have their own button.
+    if ($('cap-action-bar')) $('cap-action-bar').classList.toggle('hidden', !(v === 'templates' || inStyleEdit));
+    // in the editor the ‹ All styles button is the way back — the switch
+    // would only take a row of a short panel
+    if ($('cap-view')) $('cap-view').classList.toggle('hidden', inStyleEdit);
+    // a style opens at its top; back in the gallery, the owner is where they left it
+    if (capPage && v !== 'templates') capPage.scrollTop = 0;
+    else if (capPage && !wasGallery) capPage.scrollTop = _galleryScroll;
   }
 
   /* The Flux section: premium, EDITABLE .mogrt templates (section:"flux" in
@@ -6652,9 +6705,13 @@
   var _capOut = 'png';   // Pulse-rendered by default (see btn-magic handler)
   function updateMagicLabel() {
     var b = $('btn-magic'); if (!b) return;
-    b.innerHTML = (_capOut === 'editable')
-      ? '✏️ Add captions <span class="dim">(editable template clips)</span>'
-      : '✨ Add captions <span class="dim">(Pulse-rendered — exact look, always aligned)</span>';
+    // One short label: the button is pinned under the gallery AND the editor at
+    // every panel width. Which kind of captions it makes is picked (and
+    // explained, behind its ⓘ) in the editor's "Caption type".
+    b.textContent = (_capOut === 'editable') ? '✏️ Add editable captions' : '✨ Add captions';
+    b.title = (_capOut === 'editable')
+      ? 'Adds Premiere graphics you can retype in Premiere'
+      : 'Adds your captions in the style you picked — exact look, always lined up';
   }
   /* Single source of truth for the caption type: sets the value, lights the
      right chip and relabels the main button. Used by clicks AND by restore. */
@@ -13465,14 +13522,6 @@
   // change; nothing inside Premiere uses this.
   try {
     if ($('btn-real-preview')) $('btn-real-preview').addEventListener('click', function () { realPreviewOnTimeline(this); });
-    try {
-      dockCapActions();
-      var _dockT = null;
-      window.addEventListener('resize', function () {
-        if (_dockT) clearTimeout(_dockT);
-        _dockT = setTimeout(dockCapActions, 120);
-      });
-    } catch (eDock) {}
     window.CP_DEBUG = {
       mapPresetToMogrt: mapPresetToMogrt,
       mapPresetToFlux: mapPresetToFlux,

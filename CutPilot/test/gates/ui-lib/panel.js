@@ -119,8 +119,14 @@ async function openPanel(browser, o) {
   page.on('pageerror', e => errors.push(String(e && e.message)));
   page._cpErrors = errors;
   if (o.storage) {
+    // seed the owner's saved settings on the FIRST load only — a reload is a
+    // restart, and must see whatever the panel itself saved since
     await page.evaluateOnNewDocument((kv) => {
-      try { Object.keys(kv).forEach(k => { if (kv[k] == null) localStorage.removeItem(k); else localStorage.setItem(k, kv[k]); }); } catch (e) {}
+      try {
+        if (sessionStorage.getItem('__cpSeeded')) return;
+        sessionStorage.setItem('__cpSeeded', '1');
+        Object.keys(kv).forEach(k => { if (kv[k] == null) localStorage.removeItem(k); else localStorage.setItem(k, kv[k]); });
+      } catch (e) {}
     }, o.storage);
   }
   if (o.host) {
