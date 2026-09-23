@@ -2259,8 +2259,12 @@
   var MONT = function (deva) { return devaChain(['Arial Black'], deva || 'Mukta'); };
   var TRENDING_TEMPLATES = [
     // ---- 🔥 / 💥 bold word-by-word caps ----
+    // The spoken word is METALLIC gold (bright band, darker gold edges). With
+    // a flat yellow it drew exactly like Bold Statement, and both sit in the
+    // same two chips. The flat colour (the editable sweep) stays clear of white.
     { id: 'tr-punch-gold', name: 'Punch Caps Gold', category: _T, alsoIn: [_B], popularity: 99, layout: 'center', posPct: 62,
-      font: 'Montserrat', weight: 900, fallbackFonts: MONT(), fontSize: 96, fill: '#FFFFFF', highlight: '#F7C204', highlightScale: 1.15,
+      font: 'Montserrat', weight: 900, fallbackFonts: MONT(), fontSize: 96, fill: '#FFFFFF', highlight: '#FFD75E', highlightScale: 1.15,
+      highlight2: '#B8860B', glossy: true,
       stroke: '#000000', strokeWidth: 10, glow: '#000000', glowBlur: 0.08, shadowDY: 7,
       uppercase: true, wordsPerCue: 2, anim: 'pop-scale', keyword: false },
     { id: 'tr-tritone', name: 'Tri-Tone Caps', category: _B, alsoIn: [_T], popularity: 95, layout: 'center',
