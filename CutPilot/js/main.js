@@ -11698,10 +11698,10 @@
   }
 
   /* "Switch on speech": one main/mixed mic → cut at each talk burst. */
-  function mcSpeechBurstSegments() {
+  function mcSpeechBurstSegments(onTrack) {
     return ensureAudioTracks().then(function (tracks) {
       var idx = parseInt($('mc-main-track').value, 10) || 0;
-      var track = tracks[idx] || tracks[0];
+      var track = onTrack || tracks[idx] || tracks[0];
       var dur = state.mcAudioEnd || (state.env && state.env.endSeconds) || 0;
       capMcProgress('Listening to ' + (track.name || 'the main track') + '…');
       // build the loudness across the WHOLE timeline (all clips on this track),
@@ -11762,18 +11762,29 @@
         // Two "mics" carrying the same audio (both tracks point at one mixed
         // file, or the Left and Right of a plain stereo camera mic) can never
         // say who is talking — stop and say how to fix it instead of reporting
-        // a one-camera success.
+        // a one-camera success. The Left and Right of ONE recording are only
+        // "the same" when no second voice shows up between them: two table
+        // mics that hear each other at about −6 dB sit close in level, yet
+        // each person is still louder on their own side and is followed fine.
         for (var p = 0; p < numAngles; p++) {
           for (var q = p + 1; q < numAngles; q++) {
             if (!micFor[p] || !micFor[q]) continue;
             var sep = CPMulticam.micSeparation(dbGrids[p], dbGrids[q]);
             var channelsOfOne = micFor[p].channel != null && micFor[q].channel != null && micFor[p].track.mediaPath === micFor[q].track.mediaPath;
-            if (sep.n < 50 || !(sep.p90 < 1.5 || (channelsOfOne && sep.p75 < 6))) continue;
-            var sameErr = new Error('V' + (p + 1) + ' (' + mcSourceName(micFor[p].track, micFor[p].channel) + ') and V' + (q + 1) +
-              ' (' + mcSourceName(micFor[q].track, micFor[q].channel) + ') hear the same audio, so Pulse can’t tell who is talking. ' +
-              'If host and guest were recorded on the Left and Right channels of one file, pick “… · Left” for one camera and “… · Right” for the other ' +
-              'in Step 2 (tap 🔄 Detect audio first). Otherwise give each camera the mic that is on that person.');
+            var same = sep.p90 < 1.5;
+            if (!same && channelsOfOne && sep.p75 < 6) same = CPMulticam.micGainOffsets([dbGrids[p], dbGrids[q]]).method[1] !== 'voices';
+            if (sep.n < 50 || !same) continue;
+            var nmP = mcSourceName(micFor[p].track, micFor[p].channel), nmQ = mcSourceName(micFor[q].track, micFor[q].channel);
+            var sameErr = new Error(channelsOfOne
+              ? ('V' + (p + 1) + ' (' + nmP + ') and V' + (q + 1) + ' (' + nmQ + ') are the two channels of one recording and sound almost the same ' +
+                 '(one stereo mic, or two mics that hear each other too much), so Pulse can’t tell who is talking from them. ' +
+                 'If each person has their own mic on another track, pick that mic for their camera in Step 2.')
+              : ('V' + (p + 1) + ' (' + nmP + ') and V' + (q + 1) + ' (' + nmQ + ') hear the same audio, so Pulse can’t tell who is talking. ' +
+                 'If host and guest were recorded on the Left and Right channels of one file, pick “… · Left” for one camera and “… · Right” for the other ' +
+                 'in Step 2 (tap 🔄 Detect audio first). Otherwise give each camera the mic that is on that person.'));
             sameErr.indistinct = true;
+            sameErr.channelsOfOne = channelsOfOne;
+            sameErr.track = micFor[p].track;
             throw sameErr;
           }
         }
@@ -11893,6 +11904,15 @@
       // recording (two wireless lavs on one recorder, a mixer's stereo file).
       // Otherwise (one mixed mic, a nest's combined audio) do the next best
       // thing — switch cameras on each talk burst — instead of dead-ending.
+      // The Left and Right of ONE recording that sound almost the same (one
+      // stereo mic) are one mic too: switch on each talk burst of that
+      // recording, and say why.
+      var oneMicInstead = function (e) {
+        var who = (e && e.track) ? ('The Left and Right of ' + (e.track.name || ('A' + (e.track.index + 1)))) : 'The Left and Right channels';
+        toast(who + ' sound almost the same (one stereo mic, or two mics that hear each other too much), so Pulse can’t tell who is ' +
+          'talking from them — switching cameras on each talk burst instead (one-mic mode).');
+        return patternPlan(numAngles, mcSpeechBurstSegments(e && e.track));
+      };
       if (src === 'follow' && tracks && tracks.length < 2) {
         return mcProbeTracks(tracks).then(function () {
           var chans = {};
@@ -11900,15 +11920,19 @@
           if (Object.keys(chans).length >= 2) {
             return mcSpeakerPlan(numAngles).catch(function (e) {
               if (!e || !e.indistinct) throw e;
-              toast('The Left and Right channels carry the same audio — switching cameras on each talk burst instead (one-mic mode).');
-              return patternPlan(numAngles, mcSpeechBurstSegments());
+              return oneMicInstead(e);
             });
           }
           toast('Only one audio track found — switching cameras on each talk burst instead (one-mic mode).');
           return patternPlan(numAngles, mcSpeechBurstSegments());
         });
       }
-      if (src === 'follow') return mcSpeakerPlan(numAngles);
+      if (src === 'follow') {
+        return mcSpeakerPlan(numAngles).catch(function (e) {
+          if (!e || !e.indistinct || !e.channelsOfOne) throw e;
+          return oneMicInstead(e);
+        });
+      }
       if (src === 'transcript') return mcTranscriptPlan(numAngles);
       if (src === 'speech') return patternPlan(numAngles, mcSpeechBurstSegments());
       return patternPlan(numAngles, mcSegments());
