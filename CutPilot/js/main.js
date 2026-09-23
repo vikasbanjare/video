@@ -4535,6 +4535,16 @@
   // hidden #c-font input that the rest of the editor reads.
   var _fontDD = null;          // the live dropdown { el, get, set }
   var _installedFonts = [];    // every font found on this computer (lazy)
+  /* What each installed family can DRAW (from its own cmap): lowercase name →
+     { latin, devanagari }. The owner's Mac sent "NotoSansCoptic-Bold" to
+     Premiere — a script-only face with no English or Hindi letters — and the
+     captions came out blank. Families that can draw neither are never offered,
+     and every send is checked against the words actually being captioned. */
+  var _fontCoverage = {};
+  var _hiddenScriptFonts = [];
+  function fontCoverage(family) {
+    return _fontCoverage[String(family || '').toLowerCase()] || null;
+  }
 
   /* All font options: Suggested faces, every installed face, then a
      "type any font" escape hatch. Each carries its own face for preview. */
@@ -4549,12 +4559,18 @@
       have = {};
       _installedFonts.forEach(function (f) { have[String(f).toLowerCase()] = 1; });
     }
+    function lbl(f) {
+      var c = fontCoverage(f);
+      if (c && c.devanagari && c.latin) return f + '  · हिंदी';        // draws Hindi AND English
+      if (c && c.devanagari && !c.latin) return f + '  · हिंदी only';  // Hinglish words would vanish
+      return f;
+    }
     CPCaptions.FONTS.forEach(function (f) {
       if (seen[f]) return; seen[f] = 1;
       if (have && !have[f.toLowerCase()]) return;   // not installed → don't offer it
-      opts.push({ value: f, label: f, font: f });
+      opts.push({ value: f, label: lbl(f), font: f });
     });
-    _installedFonts.forEach(function (f) { if (!seen[f]) { seen[f] = 1; opts.push({ value: f, label: f, font: f }); } });
+    _installedFonts.forEach(function (f) { if (!seen[f]) { seen[f] = 1; opts.push({ value: f, label: lbl(f), font: f }); } });
     opts.push({ value: '__custom__', label: '✏️ Type any installed font…' });
     return opts;
   }
@@ -4605,14 +4621,63 @@
     if (_installedFontsLoaded || typeof CPFonts === 'undefined' || !CPBridge.isCEP()) return;
     _installedFontsLoaded = true;
     setTimeout(function () {
-      var fonts = [];
-      try { fonts = CPFonts.listInstalledFonts(nodeReq('fs'), nodeReq('path'), {}); }
-      catch (e) { return; }
-      if (!fonts.length) return;
-      _installedFonts = fonts;
+      var detailed = [];
+      try {
+        detailed = CPFonts.listInstalledFontsDetailed
+          ? CPFonts.listInstalledFontsDetailed(nodeReq('fs'), nodeReq('path'), {})
+          : CPFonts.listInstalledFonts(nodeReq('fs'), nodeReq('path'), {}).map(function (n) { return { name: n, latin: null, devanagari: null }; });
+      } catch (e) { return; }
+      if (!detailed.length) return;
+      setInstalledFontCoverage(detailed);
       buildFontSelect($('c-font').value);   // rebuild with the full list, keep choice
+      repairUndrawableFont();
     }, 50);
   }
+
+  /* Take a detailed font scan ({name, latin, devanagari}) and keep only the
+     families that can draw English or Hindi. Unknown coverage (unreadable file)
+     is kept — never hide a font on a guess. */
+  function setInstalledFontCoverage(detailed) {
+    _fontCoverage = {}; _hiddenScriptFonts = [];
+    var usable = [];
+    detailed.forEach(function (f) {
+      var known = (f.latin != null || f.devanagari != null);
+      if (known) _fontCoverage[String(f.name).toLowerCase()] = { latin: !!f.latin, devanagari: !!f.devanagari };
+      if (known && !f.latin && !f.devanagari) _hiddenScriptFonts.push(f.name);
+      else usable.push(f.name);
+    });
+    _installedFonts = usable;
+    try {
+      diag('fonts', usable.length + ' fonts can draw English or Hindi; ' + _hiddenScriptFonts.length +
+        ' hidden (they draw neither' + (_hiddenScriptFonts.length ? ', e.g. ' + _hiddenScriptFonts.slice(0, 3).join(', ') : '') + ')');
+    } catch (eD) {}
+  }
+  /* A look saved before this check may already hold a face that draws nothing
+     (the owner's did: Noto Sans Coptic). Put the style's own font back, once,
+     and say why — silently keeping it is what made every caption blank. */
+  function repairUndrawableFont() {
+    var cur = $('c-font') && $('c-font').value;
+    var cov = fontCoverage(cur);
+    if (!cur || !cov || cov.latin || cov.devanagari) return;
+    var p = currentPreset && currentPreset();
+    var back = (p && p.font) ? p.font : CPCaptions.FONTS[0];
+    setFontValue(back);
+    try { saveLook(); } catch (eS) {}
+    try { diag('fonts', 'repaired saved font "' + cur + '" (no English or Hindi letters) → "' + back + '"'); } catch (eD) {}
+    toast('Your caption font “' + cur + '” has no English or Hindi letters, so captions came out blank. Switched back to “' + back + '”.', true);
+    try { renderPreview(); } catch (eR) {}
+  }
+
+  window.CP_DEBUG_EXT = window.CP_DEBUG_EXT || {};
+  window.CP_DEBUG_EXT.fonts = {
+    setCoverage: function (list) { setInstalledFontCoverage(list); buildFontSelect($('c-font').value); },
+    options: function () { return fontOptionList().map(function (o) { return { value: o.value, label: o.label }; }); },
+    resolve: function (font, text) { var p = {}; var sp = styledPreset(); for (var k in sp) p[k] = sp[k]; p.font = font; return resolvedEditorFont(p, text); },
+    setFont: function (f) { setFontValue(f); },
+    font: function () { return $('c-font').value; },
+    repair: function () { repairUndrawableFont(); return $('c-font').value; },
+    hidden: function () { return _hiddenScriptFonts.slice(); }
+  };
 
   /* Set the active font everywhere (hidden input + dropdown button). If the
      font isn't already an option, add it so the dropdown can display it. */
@@ -8082,12 +8147,43 @@
      Also decides whether synthetic bold is still needed: when the resolved
      name already IS a Bold face, stacking the bold flag on top rendered
      smudged. Used by Apply AND the real preview so both always match. */
-  function resolvedEditorFont(preset) {
+  function resolvedEditorFont(preset, text) {
     if (!preset || !preset.font) return null;
+    var family = drawableFamily(preset, text);
     var wantBold = (preset.weight || 800) >= 600;
-    var ps = CPCaptions.psFontName(preset.font, wantBold ? 'Bold' : 'Regular');
+    var ps = CPCaptions.psFontName(family, wantBold ? 'Bold' : 'Regular');
     if (!ps) return null;
-    return { font: ps, bold: wantBold && !CPCaptions.psIsBoldFace(ps) };
+    return { font: ps, bold: wantBold && !CPCaptions.psIsBoldFace(ps), family: family,
+             substitutedFrom: (family !== preset.font) ? preset.font : null };
+  }
+  /* The family to actually send: the chosen one when it can draw the words,
+     else the style's own font, else a system face that can. Only ever swaps on
+     KNOWN coverage — an unreadable font is sent as chosen, never guessed away. */
+  var _fontSwapToasted = {};
+  function drawableFamily(preset, text) {
+    var want = preset.font;
+    if (typeof CPFonts === 'undefined' || !CPFonts.canDraw) return want;
+    var needs = CPFonts.scriptNeeds(text || '');
+    var ok = CPFonts.canDraw(fontCoverage(want), needs);
+    if (ok !== false) return want;
+    var own = null;
+    try { var t = currentPreset && currentPreset(); own = t && t.font; } catch (e) {}
+    var cands = [own, needs.devanagari ? 'Kohinoor Devanagari' : null, needs.devanagari ? 'Nirmala UI' : null,
+                 needs.devanagari ? 'Noto Sans Devanagari' : null, 'Helvetica Neue', 'Arial'];
+    for (var i = 0; i < cands.length; i++) {
+      var c = cands[i];
+      if (c && c !== want && CPFonts.canDraw(fontCoverage(c), needs) === true) {
+        var key = want + '>' + c;
+        if (!_fontSwapToasted[key]) {
+          _fontSwapToasted[key] = 1;
+          try { diag('fonts', 'send-time swap: "' + want + '" cannot draw these words → "' + c + '"'); } catch (eD) {}
+          toast('“' + want + '” can’t draw ' + (needs.devanagari && !(fontCoverage(want) || {}).devanagari ? 'Hindi' : 'English') +
+                ' letters, so these captions use “' + c + '” instead.', true);
+        }
+        return c;
+      }
+    }
+    return want;
   }
 
   /* Templates saved by older builds stored the font as a FAMILY name —
@@ -8475,8 +8571,8 @@
       if (cues && cues[0]) sample = String(cues[0].text).split(/\s+/).slice(0, 5).join(' ');
     } catch (eTr) {}
     if (preset.uppercase || cchk('c-upper')) sample = sample.toUpperCase();
-    var rfPrev = resolvedEditorFont(preset);   // PostScript name — same resolve as Apply, so preview face == output face
-    fontInstallWarn(preset.font);
+    var rfPrev = resolvedEditorFont(preset, sample);   // PostScript name — same resolve as Apply, so preview face == output face
+    fontInstallWarn(rfPrev && rfPrev.family ? rfPrev.family : preset.font);
     var textStyle = rfPrev ? { font: rfPrev.font, bold: rfPrev.bold, sizeScale: 1 } : null;
     if (btn) btn.disabled = true;
     toast('Dropping a real preview at the playhead…');
@@ -8539,8 +8635,8 @@
     var isFluxBB = String((bb && bb.path) || '').toLowerCase().indexOf('flux_halo') >= 0;
     // rf.font is the POSTSCRIPT name — the family name the picker shows was
     // silently ignored by Premiere's text engine ("not able to change the fonts")
-    var rf = resolvedEditorFont(preset);
-    fontInstallWarn(preset.font);   // a missing font would be silently kept — say so up front
+    var rf = resolvedEditorFont(preset, tcues.map(function (c) { return c.text; }).join(' '));
+    fontInstallWarn(rf && rf.family ? rf.family : preset.font);   // a missing font would be silently kept — say so up front
     var textStyle = isFluxBB
                   ? { font: rf && rf.font, bold: rf ? rf.bold : false, sizeScale: 1,
                       // write the colour INTO the text as well as the param:
