@@ -60,15 +60,16 @@ const overlaps = (ranges, s, e) => ranges.some(r => r.end > s + 0.05 && r.start 
       return {};
     };
   }
-  async function oneTap(page, calls) {
+  async function oneTap(page, calls, o) {
     const t0 = calls.length;
-    await page.evaluate(() => {
+    await page.evaluate((fillers) => {
       document.querySelector('[data-tab="silence"]').click();
       document.querySelector('#ac-strength button[data-s="gentle"]').click();
       document.getElementById('ac-do-takes').checked = true;
+      document.getElementById('ac-do-fillers').checked = !!fillers;
       const t = document.getElementById('toast'); t.textContent = ''; t.className = 'toast hidden';
       document.getElementById('btn-autoclean').click();
-    });
+    }, !!(o && o.fillers));
     const shown = await H.waitFor(page, () => !!document.getElementById('cp-confirm-ov') ||
       (document.getElementById('autoclean-progress').classList.contains('hidden') && !!document.getElementById('toast').textContent), 90000);
     const confirm = await page.evaluate(() => { const o = document.getElementById('cp-confirm-ov'); return o ? o.innerText : null; });
@@ -113,14 +114,21 @@ const overlaps = (ranges, s, e) => ranges.some(r => r.end > s + 0.05 && r.start 
       JSON.stringify(r.ranges.map(x => [+x.start.toFixed(2), +x.end.toFixed(2)])) + ' · ' + (r.confirm || r.toast).slice(0, 200));
     C.check('…and the confirm does not claim no transcription engine is set up', !!r.confirm && !/no transcription engine/i.test(r.confirm), (r.confirm || r.toast).slice(0, 300));
 
-    // 3) a transcript whose times went stale after an earlier cut
+    // 3) a transcript whose times went stale after an earlier cut (with
+    //    "Filler words" ticked: its "um" is at a time that no longer exists)
+    const staleSrt = srt + '\n3\n00:00:12,500 --> 00:00:14,000\num what changed\n';
     p = await H.openPanel(browser, { host: hostFn({}), curl: () => '{}', ffmpeg: FF, settings: { ffmpegPath: FF, whisperLang: 'auto' } });
     await p.page.evaluate((text) => {
       window.require('fs').writeFileSync('/proj/episode4.srt', text);
       window.CP_DEBUG_EXT.retakes.setTranscript({ words: null, captionCues: null, transcript: { path: '/proj/episode4.srt', label: 'episode4.srt', timelineEdited: true } });
-    }, srt);
-    r = await oneTap(p.page, p.calls);
+    }, staleSrt);
+    r = await oneTap(p.page, p.calls, { fillers: true });
     await p.page.close();
+    // (resolved when ws/retakes was merged: fillerSeqRanges reads fillerCues();
+    //  this guards the one-tap path the review said an easy merge would lose)
+    C.check('…and "Filler words" refuses the stale file too: no filler cut at its old times, and it says why',
+      !overlaps(r.ranges, 12.5, 12.8) && /Filler words skipped/i.test(r.confirm || r.toast) && /timeline changed since this transcript/i.test(r.confirm || r.toast),
+      JSON.stringify(r.ranges.map(x => [+x.start.toFixed(2), +x.end.toFixed(2)])) + ' · ' + (r.confirm || r.toast).slice(0, 400));
     C.check('a transcript made before an earlier cut: no retake is cut at its stale times', !overlaps(r.ranges, 5.6, 7.0),
       JSON.stringify(r.ranges.map(x => [+x.start.toFixed(2), +x.end.toFixed(2)])));
     C.check('…and the owner is told to re-transcribe for word timing (not that no engine is set up)',
