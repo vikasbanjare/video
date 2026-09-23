@@ -163,7 +163,23 @@
     'हाँ', 'हां', 'जी', 'बिल्कुल', 'बिलकुल', 'सही', 'ठीक', 'अच्छा', 'हम्म']);
   function allIn(toks, set) { if (!toks.length) return false; for (var i = 0; i < toks.length; i++) if (!set[toks[i]]) return false; return true; }
 
+  /* Words that open a REPLY by agreeing: "Right, the algorithm rewards watch
+     time…" after the host's "The algorithm rewards watch time…". A line that
+     opens with one while the line before it does not is the other person
+     picking the thought up — not the same person starting again. ("okay",
+     "so", "acha" are left out: a lone speaker restarts with those.) */
+  var AGREE = wordSet(['yes', 'yeah', 'yep', 'yup', 'right', 'exactly', 'absolutely', 'totally', 'true', 'correct', 'sure',
+    'definitely', 'agreed', 'indeed', 'haan', 'haa', 'haanji', 'ji', 'jee', 'bilkul', 'sahi', 'ekdum', 'bilkulji',
+    'हाँ', 'हां', 'जी', 'बिल्कुल', 'बिलकुल', 'सही', 'एकदम']);
+
   function has(toks, set) { for (var i = 0; i < toks.length; i++) if (set[toks[i]]) return true; return false; }
+  /* Does a line open by agreeing ("Yes, …", "Oh right, …", "Haan bilkul, …")? */
+  var INTERJ = wordSet(['oh', 'ah', 'well', 'arre', 'arey', 'are', 'acha', 'achha', 'accha', 'ओह', 'अरे', 'अच्छा']);
+  function opensAgreeing(t) {
+    var i = 0;
+    while (i < t.length - 1 && i < 2 && (FILLERS[t[i]] || INTERJ[t[i]])) i++;
+    return !!AGREE[t[i]];
+  }
 
   function pTokens(p) { var a = []; for (var i = 0; i < p.length; i++) { var n = norm(p[i].text); if (n) a.push(n); } return a; }
   function pText(p) { var s = []; for (var i = 0; i < p.length; i++) s.push(p[i].text); return s.join(' '); }
@@ -242,6 +258,13 @@
    *   opts.pauseGap pause (s) that separates takes (default .45)
    *   opts.window   max phrases between two takes of a line (default 16)
    *   opts.maxGapSec max seconds between two takes of a line (default 60)
+   *   opts.people   who is talking, when the owner said so or the transcript's
+   *                 speaker labels show it: 'one' = a lone speaker (labels are
+   *                 then ignored — a diarizer that splits one voice in two must
+   *                 not hide a retake); 'many' = a conversation: two lines
+   *                 whose speaker is unknown are linked only when nearly
+   *                 identical (sim >= .8, no fragment links), and a finished
+   *                 sentence is never a false start; unset = not known.
    * Returns { deletes:[{start,end,text,reason}], kept:n, removedWords:n }.
    * Each delete spans a worse take INCLUDING its trailing pause (up to the next
    * phrase) so ripple-deleting it leaves no dangling silence.
@@ -262,7 +285,8 @@
     var toks = phrases.map(pTokens);
     var ct = toks.map(contentToks);   // what each phrase SAYS — "um", "uh" and "is is" don't make two takes differ
     var P = phrases.length;
-    var spk = phrases.map(pSpeaker);
+    var people = (opts.people === 'one' || opts.people === 'many') ? opts.people : null;
+    var spk = phrases.map(people === 'one' ? function () { return null; } : pSpeaker);
     var ends = phrases.map(lastText);
     var isQ = ends.map(function (s) { return QUESTION_END.test(s); });
     var isStmt = ends.map(function (s) { return STATEMENT_END.test(s); });
@@ -270,6 +294,7 @@
     var p1 = toks.map(function (t) { return has(t, FIRST); });
     var ask = toks.map(function (t) { return has(t, ASK); });
     var ack = toks.map(function (t) { return allIn(t, BACKCHANNEL); });
+    var agree = toks.map(opensAgreeing);
     function startOf(idx) { return phrases[idx][0].start; }
     function endOf(idx) { return phrases[idx][phrases[idx].length - 1].end; }
 
@@ -283,8 +308,15 @@
       // away. (A shorter FIRST attempt that stopped before reaching it is fine.)
       if (ask[a] && !ask[b]) return false;
       if (ask[b] && !ask[a] && ct[a].length >= ct[b].length) return false;
+      // "Right, the algorithm rewards…" after "The algorithm rewards…": the
+      // other person agreeing and picking the thought up — unless the labels
+      // say it is the same voice, or the owner said it is only them
+      if (people !== 'one' && (spk[a] == null || spk[b] == null) && agree[b] && !agree[a]) return false;
       return true;
     }
+    /* A conversation whose speakers are not labelled: only a near-identical
+       line can be the same person saying it again. */
+    function strict(a, b) { return people === 'many' && (spk[a] == null || spk[b] == null); }
 
     // Union-find: group phrases that are similar within a small window. This is
     // transitive, so a drifting run of 3–4 retakes (take1≈take2≈take3, even if
@@ -308,10 +340,11 @@
         // A long line followed straight away by an UNFINISHED start of itself
         // (no full stop — the speaker began again and gave up) is linked too;
         // keep:'best' then keeps the complete one.
-        if (phraseSim(ct[a], ct[b]) >= thresh ||
-            (b - a <= containWin && ct[a].length <= ct[b].length &&
+        var st = strict(a, b);
+        if (phraseSim(ct[a], ct[b]) >= (st ? Math.max(thresh, 0.8) : thresh) ||
+            (!st && b - a <= containWin && ct[a].length <= ct[b].length &&
              phraseContain(ct[a], ct[b]) >= containThresh) ||
-            (b === a + 1 && ct[b].length < ct[a].length && !SENT_END.test(ends[b]) &&
+            (!st && b === a + 1 && ct[b].length < ct[a].length && !SENT_END.test(ends[b]) &&
              isNearPrefix(ct[b], ct[a]) && phraseContain(ct[a], ct[b]) >= containThresh)) uni(a, b);
       }
     }
@@ -370,6 +403,7 @@
         if (deleted[fi]) continue;
         if (!ct[fi].length || ct[fi].length > maxFrag) continue;
         if (ack[fi] || !sameLine(fi, fi + 1)) continue;
+        if (strict(fi, fi + 1) && isStmt[fi]) continue;   // a finished sentence, then the other person going on from it
         if (isNearPrefix(ct[fi], ct[fi + 1], opts.prefixFrac)) {
           deletes.push({ start: startOf(fi), end: nextStart(fi), text: pText(phrases[fi]), reason: 'false start' });
           removedWords += phrases[fi].length;

@@ -9316,6 +9316,22 @@
     if (!cues && !transcriptIsStale()) { try { cues = readSelectedTranscript(); } catch (e) { cues = null; } }
     return (cues && cues.length) ? CPTakes.flatten(cues) : null;
   }
+  /* Who is talking: 'one', 'many' or null (not known). The owner's pick in
+     "Who is talking?" wins. On Auto the transcript's speaker labels decide: two
+     or more people each saying a real share of the words is a conversation,
+     one labelled voice is a lone speaker, no labels is not known. The retake
+     finder and the AI prompt both follow it. */
+  function takesPeople(words) {
+    var pick = $('tk-kind') ? $('tk-kind').value : 'auto';
+    if (pick === 'one' || pick === 'many') return pick;
+    var per = {}, n = 0, k, talkers = 0;
+    (words || []).forEach(function (w) {
+      if (w && w.speaker != null && w.speaker !== '') { per[w.speaker] = (per[w.speaker] || 0) + 1; n++; }
+    });
+    if (!n) return null;
+    for (k in per) if (per.hasOwnProperty(k) && per[k] >= Math.max(3, 0.1 * n)) talkers++;
+    return talkers >= 2 ? 'many' : 'one';
+  }
   function takesNoWordsMsg(what) {
     return transcriptIsStale() ? 'Can’t ' + what + ' — ' + STALE_TRANSCRIPT_MSG
                                : 'Transcribe your clip first (Transcribe tab) — I need the words to ' + what + '.';
@@ -9400,7 +9416,8 @@
       var res = CPTakes.findRepeatedTakes(words, {
         minRun: parseInt($('tk-minrun').value, 10) || 3,
         sim: (parseInt($('tk-sim').value, 10) || 60) / 100,
-        keep: $('tk-keep').value
+        keep: $('tk-keep').value,
+        people: takesPeople(words)
       });
       prog.classList.add('hidden');
       showTakeList(CPTakes.tidyDeletes(res.deletes, 0.1), cutGuardOf(src));
@@ -9487,20 +9504,28 @@
   }
 
   /* Chunked AI cleanup → cut ranges (sequence time, via the words' own times).
-     opts:{aggressive,scripted,fillers,tangents} (fillers/tangents === false
-     leave that category out). Shared by the review-first Smart Cleanup button
-     and the one-tap "Clean up my video". Resolves {cuts, truncated, maxw}.
+     opts:{aggressive, scripted, tangents, fillers, people} — fillers/tangents
+     === false leave that category out. Who is talking frames the prompt: one
+     person re-reading a script (scripted — keep only the last take of every
+     line), or a conversation (not scripted, and its side stories are content,
+     not tangents). opts.people, else takesPeople(): the "Who is talking?" pick
+     or the speaker labels. An explicit opts.scripted / opts.tangents wins.
+     Shared by the review-first Smart Cleanup button and the one-tap "Clean up
+     my video". Resolves {cuts, truncated, maxw}.
      EVERY word is read (it used to stop at 5,000 — the second half of a long
      podcast kept all its retakes, silently), in 1,000-word chunks that overlap
      by 150 so a retake straddling a chunk boundary is seen whole. */
   function aiCleanupCuts(words, opts, prog, label) {
     opts = opts || {};
+    var people = ('people' in opts) ? opts.people : takesPeople(words);
+    var scripted = (opts.scripted != null) ? !!opts.scripted : people !== 'many';
+    var tangents = (opts.tangents != null) ? opts.tangents : (people === 'many' ? false : undefined);
     var plan = CPSmartEdit.planChunks(words.length, 1000, 150);
-    var cats = CPSmartEdit.cleanupCategories(opts);
+    var cats = CPSmartEdit.cleanupCategories({ fillers: opts.fillers, tangents: tangents });
     return processChunks(plan, function (pc) {
       var cw = words.slice(pc.from, pc.to);
-      var prompt = CPSmartEdit.buildCleanupPrompt(cw, { aggressive: !!opts.aggressive, scripted: !!opts.scripted,
-                                                        fillers: opts.fillers, tangents: opts.tangents });
+      var prompt = CPSmartEdit.buildCleanupPrompt(cw, { aggressive: !!opts.aggressive, scripted: scripted,
+                                                        fillers: opts.fillers, tangents: tangents });
       return aiChatRetry(prompt, { maxTokens: 2048 }).then(function (content) {
         return [CPSmartEdit.parseCleanupResponse(content, cw, { minConfidence: 0, categories: cats })];   // one entry per chunk
       });
@@ -9517,7 +9542,7 @@
     var guard = null;
     readCutSources().then(function (src) {
       guard = cutGuardOf(src);   // the list is for THIS timeline
-      return aiCleanupCuts(words, { aggressive: aggressive, scripted: true }, prog, '✨ Reading your transcript with AI');
+      return aiCleanupCuts(words, { aggressive: aggressive }, prog, '✨ Reading your transcript with AI');
     }).then(function (r) {
       prog.classList.add('hidden');
       showTakeList(r.cuts, guard);         // reuse the same review → apply pipeline
@@ -9646,7 +9671,7 @@
         if (!(state.transcriptWords && state.transcriptWords.length)) state.transcriptWords = words;
         prog.textContent = 'Finding the best take of each line…';
         var tp = TAKE_PRESETS[state.takeStrength || 'balanced'] || TAKE_PRESETS.balanced;
-        var det = CPTakes.findRepeatedTakes(words, { minRun: tp.minrun, sim: tp.sim / 100, keep: 'best' });
+        var det = CPTakes.findRepeatedTakes(words, { minRun: tp.minrun, sim: tp.sim / 100, keep: 'best', people: takesPeople(words) });
         var deletes = CPTakes.tidyDeletes(det.deletes, 0.1);
         prog.textContent = 'Snapping cuts to the pauses…';
         return detectSilencesRobust(res.clip, ff, { thresholdDb: -35, minSilence: 0.12, padding: 0 }).then(function (sd) {
@@ -9682,6 +9707,7 @@
       takeDeletes: function () { return state.takeDeletes; },
       renderTakes: function (dels, guard) { showTakeList(dels, guard); },
       aiCleanupCuts: aiCleanupCuts,
+      takesPeople: takesPeople,
       verbatimDeepgram: verbatimDeepgram,
       verbatimAssembly: verbatimAssembly,
       transcribeViaDeepgram: transcribeViaDeepgram
