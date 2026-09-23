@@ -75,15 +75,16 @@ function startBridge() {
   // matching file fail the way Windows refuses a file another program still
   // holds; state.node8 makes mkdirSync ignore { recursive: true } like the
   // Node inside Premiere 14.0–14.3 (EEXIST on an existing folder, ENOENT on a
-  // missing parent).
-  const state = { premiere: null, hostCalls: [], failUnlink: null, node8: false };
+  // missing parent); state.hide (a RegExp) makes matching paths not exist (a
+  // machine without ffmpeg although this one has /usr/bin/ffmpeg).
+  const state = { premiere: null, hostCalls: [], failUnlink: null, node8: false, hide: null };
 
   function errOut(e) {
     return { error: { message: String(e && e.message || e), code: e && e.code, status: e && e.status,
                       stdout: e && e.stdout ? String(e.stdout) : undefined } };
   }
   const ops = {
-    existsSync: (p) => fs.existsSync(p),
+    existsSync: (p) => !(state.hide && state.hide.test(p)) && fs.existsSync(p),
     statSync: (p) => { const s = fs.statSync(p); return { size: s.size, mtimeMs: s.mtimeMs, dir: s.isDirectory() }; },
     mkdirSync: (p, o) => { fs.mkdirSync(p, state.node8 ? undefined : (o || undefined)); return null; },
     writeFileSync: (p, d) => { fs.writeFileSync(p, d.b64 != null ? Buffer.from(d.b64, 'base64') : d.str); return null; },

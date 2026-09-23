@@ -3078,6 +3078,25 @@
     } catch (e2) {}
   }
 
+  /* The self-test row for long videos. It asks exactly what the long-video
+     routing asks (✨ Add captions and runLibassCaptions): Pulse's own one-clip
+     overlay first, the simpler renderer second. It used to ask only about the
+     simpler renderer, so an audio engine without it read "a long video would
+     create one image per word" while the full overlay would actually run. */
+  function longVideoRow(row) {
+    var name = 'Long videos → ONE caption clip';
+    if (canvasOverlayReady()) {
+      return row(name, 'ok', 'a long podcast becomes one overlay clip drawn by the same renderer as the preview');
+    }
+    if (ffmpegHasLibass() && typeof CPAss !== 'undefined') {
+      return row(name, 'warn', 'only the simpler caption renderer works here — long videos become one clip but lose pills, ' +
+        'gradients and neon (Settings → ⬇️ Set up audio engine brings the full look)');
+    }
+    row(name, 'warn', resolveFfmpeg()
+      ? 'this audio engine cannot make the one overlay clip — a long video would create one image per word (Settings → ⬇️ Set up audio engine)'
+      : 'no audio engine (ffmpeg) — a long video would create one image per word (Settings → ⬇️ Set up audio engine)');
+  }
+
   function buildSelfTestReport(rows) {   // pure — proof-tested
     var lines = [], fails = 0, warns = 0;
     for (var i = 0; i < rows.length; i++) {
@@ -3170,15 +3189,7 @@
     } catch (eHi) { row('Hindi captions (Devanagari)', 'warn', eHi.message); }
   } catch (eRen) { row('Caption renderer (Pulse)', 'fail', eRen.message); }
 
-  try {
-    // the SAME probe the auto-overlay decision uses, so the report cannot
-    // disagree with what the panel will actually do
-    var _ffx = resolveFfmpeg(), _hasLibass = ffmpegHasLibass();
-    row('Long videos → ONE caption clip', _hasLibass ? 'ok' : 'warn',
-      _hasLibass ? 'a long podcast becomes one overlay clip instead of thousands of images'
-        : (_ffx ? 'this ffmpeg has no subtitles filter — a long video would create one image per word'
-                : 'no ffmpeg — a long video would create one image per word'));
-  } catch (eLa) { row('Long videos → ONE caption clip', 'warn', eLa.message); }
+  try { longVideoRow(row); } catch (eLa) { row('Long videos → ONE caption clip', 'warn', eLa.message); }
 
     // The EXPORT chain, not just the drawing. A caption becomes a file by
     // canvas → base64 PNG → node fs write, and that can fail on a real machine
