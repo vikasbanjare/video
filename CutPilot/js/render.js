@@ -45,6 +45,13 @@
     'Noto Sans Devanagari', 'Noto Sans', 'Arial Unicode MS'     // Linux / broad
   ];
 
+  /* Sizes are kept to 0.01 px, never whole pixels. The editor preview is a
+     scaled crop of the output frame: rounding 27.7 px up to 28 in the preview
+     but 56.3 px down to 56 in the render made a caption near the width limit
+     wrap onto two lines in the preview and stay on one on the timeline (gate:
+     gallery-preview-render). Canvas fonts take fractional sizes. */
+  function r2(v) { return Math.round(v * 100) / 100; }
+
   function styleForFrame(preset, frameH, o, frameW) {
     o = o || {};
     preset = preset || {};   // never deref a null preset (stale id / missing base)
@@ -106,22 +113,28 @@
       // varied at 1080x1920. Using the smaller side leaves vertical and square
       // output byte-identical and gives landscape its styles back.
       size: (function () {
-        var px = Math.round((o.fontSize || preset.fontSize) * scale);
+        var px = r2((o.fontSize || preset.fontSize) * scale);
         if (frameW && frameW > 0) {
           var shortSide = (frameH && frameH > 0) ? Math.min(frameW, frameH) : frameW;
-          px = Math.max(px, Math.round(shortSide * 0.05));
+          px = Math.max(px, r2(shortSide * 0.05));
         }
         return px;
       })(),
       fill: fill,
       highlight: highlight,
       stroke: (o.stroke !== undefined) ? o.stroke : (preset.stroke || null),
-      strokeWidth: Math.round(strokeW * scale),
+      // fractional, like letterSpacing below: a 4 px outline on an 18 px preview
+      // caption rounded to 1 px, and the preview lost the outline the render has
+      strokeWidth: Math.round(strokeW * scale * 100) / 100,
       boxColor: box,
       boxRadius: Math.round(((o.boxRadius != null ? o.boxRadius : preset.boxRadius) || 10) * scale),
       glow: (o.glow !== undefined) ? o.glow : (preset.glow || null),
       glowBlur: (o.glowBlur != null) ? o.glowBlur : (preset.glowBlur != null ? preset.glowBlur : 0.35),
-      letterSpacing: Math.round(((o.letterSpacing != null ? o.letterSpacing : (preset.letterSpacing || 0))) * scale),
+      // Fractional, not whole pixels: canvas letter spacing takes 0.01 px steps.
+      // Rounding gave a 2x editor preview 2 px on 27 px text but the render 3 px
+      // on 54 px text, so a letter-spaced caption wrapped onto two lines in the
+      // preview and stayed on one on the timeline (gate: gallery-preview-render).
+      letterSpacing: Math.round(((o.letterSpacing != null ? o.letterSpacing : (preset.letterSpacing || 0))) * scale * 100) / 100,
       highlightScale: hlScale,
       highlightStyle: o.highlightStyle || preset.highlightStyle || 'color',
       // --- premium customization additions ---
@@ -285,7 +298,7 @@
     // viral/long words grow. Pure measurement — called repeatedly to shrink the
     // caption until it fits the allowed line count.
     function layout(fit) {
-      var eff = Math.max(8, Math.round(base * fit));
+      var eff = Math.max(8, r2(base * fit));
       setFont(eff);
       var sp = ctx.measureText(' ').width + (style.wordSpacing || 0);
       var m = [];
@@ -295,7 +308,7 @@
         // a word-sync frame (where only the spoken word should stand out).
         var dyn = (style.emphasizeWords && !wordSync) ? wordScale(words[k]) : 1;
         var multk = Math.max(hpk ? hlScale : 1, dyn);
-        var pxk = Math.round(eff * multk);
+        var pxk = r2(eff * multk);
         setFontFor(pxk, hpk);
         m.push({ word: words[k], px: pxk, hl: hpk, w: ctx.measureText(words[k]).width });
       }
@@ -325,12 +338,12 @@
           var lineR = ls[lr], lw = 0, hMax = 0;
           for (var ir = 0; ir < lineR.items.length; ir++) {
             var itr = lineR.items[ir];
-            itr.px = Math.max(6, Math.round(itr.px * sub));
+            itr.px = Math.max(6, r2(itr.px * sub));
             setFontFor(itr.px, itr.hl);
             itr.w = ctx.measureText(itr.word).width;
             lw += itr.w; if (itr.px > hMax) hMax = itr.px;
           }
-          setFont(Math.max(6, Math.round(eff * sub)));
+          setFont(Math.max(6, r2(eff * sub)));
           lineR.spaceW = ctx.measureText(' ').width + (style.wordSpacing || 0);
           lw += lineR.spaceW * Math.max(0, lineR.items.length - 1);
           lineR.width = lw; lineR.height = hMax; lineR.scale = sub;
@@ -338,7 +351,7 @@
       }
       var widest = 0;
       for (var lw2 = 0; lw2 < ls.length; lw2++) if (ls[lw2].width > widest) widest = ls[lw2].width;
-      return { meta: m, lines: ls, eff: eff, hlSize: Math.round(eff * hlScale), spaceW: sp, widest: widest };
+      return { meta: m, lines: ls, eff: eff, hlSize: r2(eff * hlScale), spaceW: sp, widest: widest };
     }
 
     // Enforce the line limit (1 = single, 2 = double) by shrinking the font

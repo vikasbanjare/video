@@ -369,6 +369,10 @@ function fluxProps() {
     await expect('Position slider', () => set('c-pos', '20'), () => (window.CP_DEBUG.snapshot() || {}).yPct, true);
     await expect('Text colour', () => set('c-fill', '#123456'), () => pv().fill, true);
     await expect('Highlight colour', () => set('c-hl', '#654321'), () => pv().highlight, true);
+    // Known OFF state first, as for the shadow below: the style under test is the
+    // last card B2 clicked, and the gallery now ends on 🔘 Buttons — every one
+    // of which has a box — so the check must not start from ON.
+    tick('c-box-on', false); await sleep(60);
     await expect('Box toggle ON', () => tick('c-box-on', true), () => !!pv().boxColor, true);
     await expect('Box colour', () => set('c-box', '#abcdef'), () => pv().boxColor, true);
     await expect('Box opacity', () => set('c-box-opacity', '40'), () => pv().boxOpacity, true);

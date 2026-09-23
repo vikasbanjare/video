@@ -552,32 +552,55 @@
 
   function uc(s) { return String(s).toUpperCase(); }
 
-  /* The ten library categories the browser groups templates into. */
+  /* The library categories the gallery groups styles into, in chip order —
+     named for what a creator is making, not for how the style was built.
+     A style has ONE home (`category`) and may also be listed under others
+     (`alsoIn`): "🔥 Trending" gathers the current looks from every family,
+     and the owner's own "From My Videos" / "Your Styles" tabs stay whole while
+     their styles also show up under the look they belong to. Buttons stay last.
+     (The old chips — ⭐ Premium, Bold Creator, Dynamic Highlight, Social
+     Growth… — sorted by build history; nobody could guess what was inside.) */
+  var CAT_HINDI = '🇮🇳 Hindi (हिंदी)';
   var CATEGORIES = [
-    '⭐ Premium',
+    '🔥 Trending',
+    '💥 Bold & Viral',
+    '🎤 Karaoke',
+    '🎙️ Podcast',
+    '✨ Minimal & Clean',
+    '🎬 Cinematic & Editorial',
+    '🌈 Neon & Glow',
+    '😂 Fun & Meme',
+    CAT_HINDI,
     '🎬 From My Videos',
     '🎥 Your Styles',
-    '🔘 Buttons',
-    'Bold Creator', 'Minimal Professional', 'Dynamic Highlight', 'Social Growth',
-    'Podcast Pro', 'Storytelling', 'Gaming Stream', 'Cinematic', 'Motivation', 'Education'
+    '🔘 Buttons'
   ];
+  /* Does this style belong under this chip (home or cross-listed)? */
+  function inCategory(t, cat) {
+    if (!t || !cat) return false;
+    if (t.category === cat) return true;
+    var also = t.alsoIn;
+    if (!also || !also.length) return false;
+    for (var i = 0; i < also.length; i++) if (also[i] === cat) return true;
+    return false;
+  }
 
   /* Library metadata for the nine base presets (category / popularity /
      layout / keyword-highlight default). */
   var _baseMeta = {
-    hormozi:        { category: 'Bold Creator',          popularity: 99, layout: 'bottom', keyword: true, highlightScale: 1.14 },
-    karaoke:        { category: 'Dynamic Highlight',     popularity: 95, layout: 'bottom', keyword: false },
-    'highlight-box':{ category: 'Social Growth',         popularity: 92, layout: 'bottom', keyword: true },
-    minimal:        { category: 'Minimal Professional',  popularity: 80, layout: 'bottom', keyword: false },
-    neon:           { category: 'Gaming Stream',         popularity: 88, layout: 'center', keyword: true },
-    typewriter:     { category: 'Storytelling',          popularity: 70, layout: 'center', keyword: false },
-    boldyellow:     { category: 'Motivation',            popularity: 90, layout: 'bottom', keyword: true, highlightScale: 1.14 },
-    cleanwhite:     { category: 'Minimal Professional',  popularity: 78, layout: 'bottom', keyword: false },
-    tvnews:         { category: 'Podcast Pro',           popularity: 65, layout: 'bottom', keyword: false, speaker: true }
+    hormozi:        { category: '💥 Bold & Viral',          popularity: 99, layout: 'bottom', keyword: true, highlightScale: 1.14 },
+    karaoke:        { category: '🎤 Karaoke',               popularity: 95, layout: 'bottom', keyword: false },
+    'highlight-box':{ category: '🎤 Karaoke',               popularity: 92, layout: 'bottom', keyword: true },
+    minimal:        { category: '✨ Minimal & Clean',       popularity: 80, layout: 'bottom', keyword: false },
+    neon:           { category: '🌈 Neon & Glow',           popularity: 88, layout: 'center', keyword: true },
+    typewriter:     { category: '🎬 Cinematic & Editorial', popularity: 70, layout: 'center', keyword: false },
+    boldyellow:     { category: '💥 Bold & Viral',          popularity: 90, layout: 'bottom', keyword: true, highlightScale: 1.14 },
+    cleanwhite:     { category: '✨ Minimal & Clean',       popularity: 78, layout: 'bottom', keyword: false },
+    tvnews:         { category: '🎙️ Podcast',              popularity: 65, layout: 'bottom', keyword: false, speaker: true }
   };
   for (var _i = 0; _i < STYLE_PRESETS.length; _i++) {
     var _m = _baseMeta[STYLE_PRESETS[_i].id] || {};
-    STYLE_PRESETS[_i].category = _m.category || 'Bold Creator';
+    STYLE_PRESETS[_i].category = _m.category || '💥 Bold & Viral';
     STYLE_PRESETS[_i].popularity = _m.popularity || 60;
     STYLE_PRESETS[_i].layout = _m.layout || 'bottom';
     STYLE_PRESETS[_i].keyword = !!_m.keyword;
@@ -2101,6 +2124,336 @@
   ];
   CREATOR_PACK.forEach(function (t) { TEMPLATES.push(t); });
 
+  // ---- gallery reorganisation ------------------------------------------------
+  // Every existing style keeps its id (saved looks, recents and favourites are
+  // keyed by id); only its chip — and two names that were a creator's name and
+  // a trademark — change. [home, cross-listed…]
+  var _T = '🔥 Trending', _B = '💥 Bold & Viral', _K = '🎤 Karaoke', _P = '🎙️ Podcast',
+      _M = '✨ Minimal & Clean', _C = '🎬 Cinematic & Editorial', _N = '🌈 Neon & Glow',
+      _F = '😂 Fun & Meme', _H = CAT_HINDI, _MV = '🎬 From My Videos', _YS = '🎥 Your Styles', _BT = '🔘 Buttons';
+  var RECAT = {
+    hormozi: [_B, _T], karaoke: [_K], minimal: [_M, _P], typewriter: [_C], impact: [_B], lift: [_P],
+    chalk: [_F], y2k: [_N], elevate: [_C], quotepill: [_C], 'cap-motiv': [_F, _B], 'cap-pastel': [_K],
+    'cap-editorial': [_C], 'cap-ticker': [_P], 'cap-clean-sub': [_M, _P],
+    // the two former ⭐ Premium headline looks now head 🔥 Trending
+    'pro-boldpop': [_T, _B], 'pro-editorial': [_T, _C],
+    'pack-orange-word-pop': [_MV, _K], 'pack-script-glow': [_MV, _C],
+    'pack-neon': [_YS, _N], 'pro-spotlight': [_YS, _K], 'pro-subs-light': [_YS, _M], 'pro-clean-glow': [_YS, _M],
+    'pro-karaokebar': [_YS, _K, _P], 'pro-pulse': [_YS, _K], 'pro-thuban': [_YS, _K], 'pro-runway': [_YS, _K],
+    'pro-evo': [_YS, _M], 'pro-nova': [_YS, _B], 'pro-andromeda': [_YS, _P], 'pro-elevate': [_YS, _C],
+    'v1-beast': [_YS, _B], prime: [_YS, _B], focus: [_YS, _K], volt: [_YS, _B], rocket: [_YS, _K],
+    mars: [_YS, _B], ember: [_YS, _C], 'pack-cinema': [_YS, _C], align: [_YS, _C], prism: [_YS, _B],
+    stack: [_YS, _M], kai: [_YS, _B], linen: [_YS, _C], monolith: [_YS, _C], 'cap-core': [_YS, _K],
+    'cap-clarity': [_YS, _M], 'cap-hype': [_YS, _K], 'cap-aurora': [_YS, _N], 'cap-mono': [_YS, _N],
+    'cap-card': [_YS, _M, _P], 'cap-studio': [_YS, _P], 'pro-coolpop': [_YS, _B], 'pro-cleanbold': [_YS, _B]
+  };
+  var RENAME = { 'v1-beast': 'Red Punch Caps', 'btn-spotify': 'Green Pill' };
+  /* Near-duplicate Buttons: each has the same face, box shape and box effects
+     as the one it points at, so it differs only by what the editor changes in
+     one tap (colours, gradient on/off, border, weight, exact roundness).
+     Hidden from browsing, NOT deleted — a saved look, a favourite or a recent
+     that points at one still opens it. */
+  var GALLERY_HIDDEN = {
+    'btn-twitter': 'btn-blue',     // solid sky pill = Basic Blue without its gradient
+    'btn-figma':   'btn-twitch',   // radius-16 chip, only the colour differs
+    'btn-google':  'btn-twitch',   // radius-26 chip, colour + weight differ
+    'btn-3dred':   'btn-pop3d',    // extruded pill + a border
+    'btn-bios':    'btn-pixel'     // square mono box with a border
+  };
+  TEMPLATES.forEach(function (t) {
+    var rc = RECAT[t.id];
+    if (!rc && t.category === _BT) rc = [_BT];
+    if (rc) { t.category = rc[0]; t.alsoIn = rc.slice(1); }
+    if (RENAME[t.id]) t.name = RENAME[t.id];
+    if (GALLERY_HIDDEN[t.id]) { t.galleryHidden = true; t.dupOf = GALLERY_HIDDEN[t.id]; }
+  });
+
+  /* Fallback chains. A Latin display face has no Devanagari, so every chain
+     names a Devanagari face that suits the look (loaded from Google Fonts)
+     and the system Devanagari faces (macOS, Windows) after it. The Latin
+     system face comes FIRST so Latin letters never fall into a Devanagari
+     family's Latin glyphs; Devanagari skips the Latin faces (they have none)
+     and lands on the matching Devanagari design. */
+  var DEVA_SYSTEM = ['Kohinoor Devanagari', 'Nirmala UI'];
+  function devaChain(latin, deva, generic) {
+    return (latin || []).concat(deva ? [deva] : [], DEVA_SYSTEM, [generic || 'sans-serif']);
+  }
+
+  /* ---- Pulse twins of the bundled caption .mogrt looks ----------------------
+     The five caption templates shipped in mogrts/ (plus the Flux caption) only
+     expose the few colours their designer wired up. Each twin is the SAME look
+     — colours and face read from that template's own definition.json — drawn
+     by Pulse, so it opens the full editor: outline, glow, highlight look,
+     animation, position, everything. The .mogrt originals stay available under
+     "Premiere templates · advanced". */
+  var TWIN_TEMPLATES = [
+    // Subtitle_2.mogrt: Poppins-SemiBold, Text #000000 on a #FFFFFF BG (roundness 30), no word highlight
+    { id: 'twin-plain-subtitle', name: 'Plain Subtitle', category: _M, alsoIn: [_P], twinOf: 'Subtitle_2.mogrt',
+      popularity: 86, layout: 'center', keyword: false, wordHl: false,
+      font: 'Poppins', weight: 600, fallbackFonts: devaChain(['Arial'], 'Mukta'),
+      fontSize: 56, fill: '#000000', highlight: '#000000', stroke: null, strokeWidth: 0,
+      boxColor: '#FFFFFF', boxOpacity: 1, boxRadius: 30, boxPad: 1.2,
+      uppercase: false, wordsPerCue: 4, anim: 'fade' },
+    // Subtitle_1.mogrt: Arvo, Text #FFFAFA, Highlighted Word #FF0000, BG #000000 @60%, square bar
+    { id: 'twin-word-highlight', name: 'Word Highlight', category: _P, alsoIn: [_K], twinOf: 'Subtitle_1.mogrt',
+      popularity: 88, layout: 'center', keyword: false,
+      font: 'Arvo', weight: 400, fallbackFonts: devaChain(['Rockwell', 'Georgia'], 'Tiro Devanagari Hindi', 'serif'),
+      fontSize: 60, fill: '#FFFAFA', highlight: '#FF0000', stroke: null, strokeWidth: 0,
+      boxColor: '#000000', boxOpacity: 0.6, boxRadius: 2, boxPad: 1.3,
+      uppercase: false, wordsPerCue: 4, anim: 'karaoke' },
+    // Subtitle_3.mogrt: Inter-SemiBold, Text #FFFFFF, Highlighted Word #29FF00 at 120%, BG #000000 (roundness 40)
+    { id: 'twin-word-pop', name: 'Word Pop', category: _K, twinOf: 'Subtitle_3.mogrt',
+      popularity: 88, layout: 'center', keyword: false, highlightScale: 1.2,
+      font: 'Inter', weight: 600, fallbackFonts: devaChain(['Arial'], 'Mukta'),
+      fontSize: 60, fill: '#FFFFFF', highlight: '#29FF00', stroke: null, strokeWidth: 0,
+      boxColor: '#000000', boxOpacity: 1, boxRadius: 40, boxPad: 1.1,
+      uppercase: false, wordsPerCue: 4, anim: 'karaoke' },
+    // Subtitle_5.mogrt: SpaceMono-Bold, Text #FFFFFF, a #78FDBA box behind the spoken word, drop shadow 50%
+    { id: 'twin-active-box', name: 'Active-Word Box', category: _K, twinOf: 'Subtitle_5.mogrt',
+      popularity: 87, layout: 'center', keyword: false,
+      font: 'Space Mono', weight: 700, fallbackFonts: devaChain(['Courier New'], 'Mukta', 'monospace'),
+      fontSize: 54, fill: '#FFFFFF', highlight: '#78FDBA', highlightStyle: 'box', boxRadius: 10,
+      stroke: null, strokeWidth: 0, glow: '#000000', glowBlur: 0.25, shadowDX: 5, shadowDY: 5,
+      uppercase: false, wordsPerCue: 4, anim: 'karaoke' },
+    // Subtitle_4_r3.mogrt: Inter-SemiBold, Text #FFFFFF, highlight gradient #CC00FF → #0018FF, BG #000000
+    { id: 'twin-gradient-highlight', name: 'Gradient Highlight', category: _N, alsoIn: [_K], twinOf: 'Subtitle_4_r3.mogrt',
+      popularity: 86, layout: 'center', keyword: false,
+      font: 'Inter', weight: 600, fallbackFonts: devaChain(['Arial'], 'Mukta'),
+      fontSize: 60, fill: '#FFFFFF', highlight: '#CC00FF', highlight2: '#0018FF', stroke: null, strokeWidth: 0,
+      boxColor: '#000000', boxOpacity: 1, boxRadius: 2, boxPad: 1.2,
+      uppercase: false, wordsPerCue: 4, anim: 'karaoke' },
+    // Flux_Halo2_r3.mogrt: Inter-SemiBold, Text #FFFFFF, Highlighted Word #C5FF00, BG #003CFF
+    { id: 'twin-flux-halo', name: 'Halo Box', category: _K, alsoIn: [_B], twinOf: 'Flux_Halo2_r3.mogrt',
+      popularity: 89, layout: 'center', keyword: false,
+      font: 'Inter', weight: 600, fallbackFonts: devaChain(['Arial'], 'Mukta'),
+      fontSize: 62, fill: '#FFFFFF', highlight: '#C5FF00', stroke: null, strokeWidth: 0,
+      boxColor: '#003CFF', boxOpacity: 1, boxRadius: 2, boxPad: 1.2,
+      uppercase: false, wordsPerCue: 4, anim: 'karaoke' }
+  ];
+  TWIN_TEMPLATES.forEach(function (t) { TEMPLATES.push(t); });
+
+  /* Devanagari-first faces draw BOTH scripts themselves (Hinglish lines stay in
+     one family); offline, the system Devanagari faces also carry Latin. */
+  function devaFirstChain(extra, generic) {
+    return (extra || []).concat(DEVA_SYSTEM, ['Arial', generic || 'sans-serif']);
+  }
+
+  /* ---- Trending library -----------------------------------------------------
+     48 looks from the 2025-26 short-form research (52 specs; see NOT BUILT
+     below), each built ONLY from what the renderer already draws: word colour /
+     Pill / Bar / Underline highlight, gradient fill, glow + offset shadow,
+     box + border + 3D edge, dim-until-spoken, a different face for the spoken
+     word, stacked lines — and only the engine's existing animations (pop,
+     pop-scale, bounce, zoom, slide, wave, glitch, fade, reveal, karaoke,
+     typewriter). Names describe the look — never a creator, a brand or a font.
+     An offset "hard" shadow keeps a little blur (0.06–0.08): editable (.mogrt)
+     captions can only draw the shadow as a centred halo, and a 0-blur halo is
+     invisible there.
+     NOT BUILT: "Behind-Subject Hook" (needs person segmentation to put the text
+     behind the speaker — nothing in the renderer can do that); "Weight-Shift
+     Lowercase" (the spoken word would switch weight through the keyword-face
+     control, which the editor labels "italic serif"); "Emoji Pop Caps" (its
+     identity is a per-keyword emoji — without it, it duplicates Punch Caps
+     Gold; the ✨ Auto-emoji switch covers emoji); "Aftershock Shake" (the same
+     as Condensed Slam in everything the editor cannot change). */
+  var MONT = function (deva) { return devaChain(['Arial Black'], deva || 'Mukta'); };
+  var TRENDING_TEMPLATES = [
+    // ---- 🔥 / 💥 bold word-by-word caps ----
+    { id: 'tr-punch-gold', name: 'Punch Caps Gold', category: _T, alsoIn: [_B], popularity: 99, layout: 'center', posPct: 62,
+      font: 'Montserrat', weight: 900, fallbackFonts: MONT(), fontSize: 96, fill: '#FFFFFF', highlight: '#F7C204', highlightScale: 1.15,
+      stroke: '#000000', strokeWidth: 10, glow: '#000000', glowBlur: 0.08, shadowDY: 7,
+      uppercase: true, wordsPerCue: 2, anim: 'pop-scale', keyword: false },
+    { id: 'tr-tritone', name: 'Tri-Tone Caps', category: _B, alsoIn: [_T], popularity: 95, layout: 'center',
+      font: 'Montserrat', weight: 900, fallbackFonts: MONT(), fontSize: 86, fill: '#FFFFFF', highlight: '#22E55B', highlightScale: 1.1,
+      numberColor: '#FFE500', stroke: '#000000', strokeWidth: 9,
+      uppercase: true, wordsPerCue: 3, anim: 'pop', keyword: false },
+    { id: 'tr-purple-plate', name: 'Purple Active Plate', category: _T, alsoIn: [_K], popularity: 98, layout: 'center',
+      font: 'Montserrat', weight: 800, fallbackFonts: MONT(), fontSize: 80, fill: '#FFFFFF', highlight: '#7C3AED', highlightStyle: 'box', boxRadius: 14,
+      stroke: '#000000', strokeWidth: 5, uppercase: true, wordsPerCue: 3, anim: 'karaoke', keyword: false },
+    { id: 'tr-comic-burst', name: 'Comic Burst', category: _F, alsoIn: [_B], popularity: 92, layout: 'center',
+      font: 'Bangers', weight: 400, fallbackFonts: devaChain(['Impact'], 'Baloo 2'), fontSize: 100, fill: '#FFFFFF', highlight: '#FFD400', highlightScale: 1.15,
+      stroke: '#000000', strokeWidth: 12, glow: '#000000', glowBlur: 0.08, shadowDY: 8,
+      uppercase: true, wordsPerCue: 1, anim: 'bounce', keyword: false },
+    { id: 'tr-sticker', name: 'Double-Stroke Sticker', category: _F, popularity: 90, layout: 'center',
+      font: 'Luckiest Guy', weight: 400, fallbackFonts: devaChain(['Arial Black'], 'Baloo 2'), fontSize: 92, fill: '#FFFFFF', highlight: '#3BFF6A',
+      stroke: '#000000', strokeWidth: 12, glow: '#FFFFFF', glowBlur: 0.12,
+      uppercase: true, wordsPerCue: 2, anim: 'zoom', keyword: false },
+    { id: 'tr-slam', name: 'Condensed Slam', category: _T, alsoIn: [_B], popularity: 97, layout: 'center',
+      font: 'Anton', weight: 400, fallbackFonts: devaChain(['Impact'], 'Teko'), fontSize: 110, fill: '#FFFFFF', highlight: '#FF2E4D', highlightScale: 1.15,
+      stroke: '#000000', strokeWidth: 8, uppercase: true, wordsPerCue: 1, anim: 'zoom', keyword: false },
+    { id: 'tr-poster', name: 'Tall Poster', category: _B, popularity: 91, layout: 'center',
+      font: 'Bebas Neue', weight: 400, fallbackFonts: devaChain(['Impact'], 'Teko'), fontSize: 110, fill: '#FFFFFF', highlight: '#FFE600',
+      letterSpacing: 2, glow: '#000000', glowBlur: 0.45, shadowDY: 8, stroke: null, strokeWidth: 0,
+      uppercase: true, wordsPerCue: 1, anim: 'pop', keyword: false },
+    { id: 'tr-ghost-solid', name: 'Ghost to Solid', category: _B, popularity: 88, layout: 'center',
+      font: 'Archivo Black', weight: 400, fallbackFonts: devaChain(['Arial Black'], 'Baloo 2'), fontSize: 82, fill: '#FFFFFF', highlight: '#FFFFFF',
+      upcomingOpacity: 0.35, stroke: '#FFFFFF', strokeWidth: 2, glow: '#000000', glowBlur: 0.4, shadowDY: 5,
+      uppercase: true, wordsPerCue: 3, anim: 'pop', keyword: false },
+    { id: 'tr-extrude', name: '3D Extrude', category: _B, alsoIn: [_F], popularity: 90, layout: 'center',
+      font: 'Archivo Black', weight: 400, fallbackFonts: devaChain(['Arial Black'], 'Baloo 2'), fontSize: 96, fill: '#FFFFFF', highlight: '#FFE600', highlightScale: 1.1,
+      stroke: '#000000', strokeWidth: 6, glow: '#FF3B30', glowBlur: 0.06, shadowDX: 0, shadowDY: 9,
+      uppercase: true, wordsPerCue: 1, anim: 'bounce', keyword: false },
+    { id: 'tr-two-tone-stack', name: 'Two-Tone Stack', category: _T, alsoIn: [_B], popularity: 96, layout: 'center',
+      font: 'Montserrat', weight: 900, fallbackFonts: MONT(), fontSize: 80, fill: '#FFFFFF', highlight: '#FFD400', highlightScale: 1.3,
+      stroke: '#000000', strokeWidth: 8, wordsPerLine: 2, lineGap: 1.05,
+      uppercase: true, wordsPerCue: 4, anim: 'slide', keyword: false },
+    { id: 'tr-kinetic', name: 'Kinetic Size Pop', category: _B, popularity: 89, layout: 'center',
+      font: 'Poppins', weight: 900, fallbackFonts: devaChain(['Arial Black'], 'Mukta'), fontSize: 76, fill: '#FFFFFF', highlight: '#00E0FF', highlightScale: 1.5,
+      align: 'left', glow: '#000000', glowBlur: 0.4, stroke: null, strokeWidth: 0,
+      uppercase: false, wordsPerCue: 3, anim: 'zoom', keyword: false },
+    { id: 'tr-sunset', name: 'Sunset Gradient', category: _B, alsoIn: [_N], popularity: 90, layout: 'center',
+      font: 'Poppins', weight: 900, fallbackFonts: devaChain(['Arial Black'], 'Mukta'), fontSize: 88, fill: '#FF7A18', fill2: '#FF3D77', highlight: '#FFFFFF',
+      stroke: '#1A0B2E', strokeWidth: 7, uppercase: true, wordsPerCue: 2, anim: 'pop-scale', keyword: false },
+    // ---- 🎤 karaoke / highlight looks ----
+    { id: 'tr-dim-bright', name: 'Dim-to-Bright', category: _T, alsoIn: [_K], popularity: 98, layout: 'bottom', posPct: 70,
+      font: 'Montserrat', weight: 800, fallbackFonts: MONT(), fontSize: 70, fill: '#FFFFFF', highlight: '#FFFFFF', highlightScale: 1.06,
+      upcomingOpacity: 0.45, stroke: '#000000', strokeWidth: 5, maxLines: 2,
+      uppercase: false, wordsPerCue: 4, anim: 'karaoke', keyword: false },
+    { id: 'tr-yellow-wipe', name: 'Yellow Wipe', category: _K, alsoIn: [_T], popularity: 95, layout: 'bottom', posPct: 72,
+      font: 'Poppins', weight: 800, fallbackFonts: devaChain(['Arial Black'], 'Mukta'), fontSize: 76, fill: '#FFFFFF', highlight: '#FFD60A',
+      stroke: '#000000', strokeWidth: 6, glow: '#000000', glowBlur: 0.08, shadowDY: 4,
+      uppercase: false, wordsPerCue: 3, anim: 'karaoke', keyword: false },
+    { id: 'tr-highlighter', name: 'Highlighter Swipe', category: _T, alsoIn: [_K], popularity: 97, layout: 'bottom', posPct: 72,
+      font: 'Inter', weight: 800, fallbackFonts: devaChain(['Arial'], 'Mukta'), fontSize: 68, fill: '#FFFFFF', highlight: '#FFE14D', highlightStyle: 'bar',
+      stroke: '#000000', strokeWidth: 5, uppercase: false, wordsPerCue: 3, anim: 'karaoke', keyword: false },
+    { id: 'tr-acid-lime', name: 'Acid Lime Box', category: _T, alsoIn: [_K], popularity: 96, layout: 'bottom', posPct: 72,
+      font: 'Space Grotesk', weight: 700, fallbackFonts: devaChain(['Arial'], 'Mukta'), fontSize: 68, fill: '#FFFFFF', highlight: '#C6FF00', highlightStyle: 'box', boxRadius: 8,
+      stroke: '#000000', strokeWidth: 4, textCase: 'lower', uppercase: false, wordsPerCue: 3, anim: 'karaoke', keyword: false },
+    { id: 'tr-underline', name: 'Underline Sweep', category: _K, popularity: 90, layout: 'bottom', posPct: 74,
+      font: 'Space Grotesk', weight: 700, fallbackFonts: devaChain(['Arial'], 'Mukta'), fontSize: 64, fill: '#FFFFFF', highlight: '#FF5C39', highlightStyle: 'underline',
+      stroke: '#000000', strokeWidth: 4, uppercase: false, wordsPerCue: 4, anim: 'reveal', keyword: false },
+    // ---- 🎙️ podcast ----
+    { id: 'tr-podcast-bar', name: 'Podcast Dark Bar', category: _P, alsoIn: [_M], popularity: 94, layout: 'bottom', posPct: 78,
+      font: 'Inter', weight: 700, fallbackFonts: devaChain(['Arial'], 'Mukta'), fontSize: 56, fill: '#FFFFFF', highlight: '#FFC940',
+      boxColor: '#000000', boxOpacity: 0.6, boxRadius: 16, boxPad: 1.1, stroke: null, strokeWidth: 0, maxLines: 2,
+      uppercase: false, wordsPerCue: 5, anim: 'fade', keyword: false },
+    { id: 'tr-two-speaker', name: 'Two-Speaker Talk', category: _P, popularity: 88, layout: 'bottom', posPct: 74, speaker: true,
+      font: 'Montserrat', weight: 800, fallbackFonts: MONT(), fontSize: 70, fill: '#FFFFFF', highlight: '#FFD60A', highlightScale: 1.1,
+      stroke: '#000000', strokeWidth: 6, uppercase: false, wordsPerCue: 3, anim: 'pop', keyword: false },
+    { id: 'tr-news-bar', name: 'News Lower-Third', category: _P, popularity: 86, layout: 'bottom', posPct: 80,
+      font: 'Inter', weight: 800, fallbackFonts: devaChain(['Arial'], 'Mukta'), fontSize: 52, fill: '#FFFFFF', highlight: '#FFFFFF',
+      boxColor: '#E10600', boxOpacity: 1, boxRadius: 2, boxPad: 1.2, stroke: null, strokeWidth: 0,
+      uppercase: true, wordsPerCue: 5, anim: 'slide', keyword: false },
+    // ---- ✨ minimal & clean ----
+    { id: 'tr-frosted', name: 'Smoked Glass Card', category: _M, popularity: 90, layout: 'bottom', posPct: 76,
+      font: 'Inter', weight: 600, fallbackFonts: devaChain(['Arial'], 'Mukta'), fontSize: 54, fill: '#FFFFFF', highlight: '#A7F3D0',
+      boxColor: '#0B0B0B', boxOpacity: 0.45, boxRadius: 22, boxPad: 1.2, boxStroke: '#FFFFFF', boxStrokeWidth: 1,
+      stroke: null, strokeWidth: 0, maxLines: 2, uppercase: false, wordsPerCue: 5, anim: 'slide', keyword: false },
+    { id: 'tr-quiet-lower', name: 'Quiet Lowercase', category: _M, popularity: 87, layout: 'center',
+      font: 'Inter', weight: 500, fallbackFonts: devaChain(['Arial'], 'Mukta'), fontSize: 56, fill: '#FFFFFF', highlight: '#DCE8FF',
+      upcomingOpacity: 0.5, glow: '#000000', glowBlur: 0.4, stroke: null, strokeWidth: 0,
+      textCase: 'lower', uppercase: false, wordsPerCue: 3, anim: 'fade', keyword: false },
+    { id: 'tr-soft-explainer', name: 'Soft Explainer', category: _M, popularity: 89, layout: 'bottom', posPct: 76,
+      font: 'Poppins', weight: 700, fallbackFonts: devaChain(['Arial'], 'Mukta'), fontSize: 64, fill: '#FFFFFF', highlight: '#7DD3FC',
+      stroke: '#000000', strokeWidth: 4, glow: '#000000', glowBlur: 0.3,
+      uppercase: false, wordsPerCue: 3, anim: 'pop', keyword: false },
+    { id: 'tr-explainer-lower', name: 'Explainer Clean Lower', category: _M, alsoIn: [_H], popularity: 88, layout: 'bottom', posPct: 80,
+      font: 'Poppins', weight: 600, fallbackFonts: devaChain(['Arial'], 'Mukta'), fontSize: 56, fill: '#FFFFFF', highlight: '#FFB703', highlightStyle: 'underline',
+      glow: '#000000', glowBlur: 0.45, stroke: null, strokeWidth: 0, maxLines: 2,
+      uppercase: false, wordsPerCue: 5, anim: 'fade', keyword: false },
+    // ---- 🎬 cinematic & editorial ----
+    { id: 'tr-editorial-serif', name: 'Editorial Serif', category: _C, popularity: 92, layout: 'center',
+      font: 'Playfair Display', weight: 600, fallbackFonts: devaChain(['Georgia'], 'Tiro Devanagari Hindi', 'serif'), fontSize: 68,
+      fill: '#FFFFFF', highlight: '#F5D9A8', highlightFont: 'Playfair Display', highlightItalic: true, highlightWeight: 700,
+      highlightFallbacks: 'Georgia, "Tiro Devanagari Hindi", "Kohinoor Devanagari", serif',
+      glow: '#000000', glowBlur: 0.45, stroke: null, strokeWidth: 0,
+      uppercase: false, wordsPerCue: 4, anim: 'reveal', keyword: false },
+    { id: 'tr-serif-mix', name: 'Serif Keyword Mix', category: _T, alsoIn: [_C], popularity: 95, layout: 'center',
+      font: 'Inter', weight: 700, fallbackFonts: devaChain(['Arial'], 'Mukta'), fontSize: 70, fill: '#FFFFFF', highlight: '#FFD8A8', highlightScale: 1.2,
+      highlightFont: 'DM Serif Display', highlightItalic: true, highlightWeight: 400,
+      highlightFallbacks: 'Georgia, "Tiro Devanagari Hindi", "Kohinoor Devanagari", serif',
+      glow: '#000000', glowBlur: 0.4, stroke: null, strokeWidth: 0,
+      uppercase: false, wordsPerCue: 3, anim: 'slide', keyword: false },
+    { id: 'tr-cinema-sub', name: 'Cinema Subtitle', category: _C, alsoIn: [_P], popularity: 89, layout: 'bottom', posPct: 80,
+      font: 'EB Garamond', weight: 500, fallbackFonts: devaChain(['Georgia'], 'Tiro Devanagari Hindi', 'serif'), fontSize: 58,
+      fill: '#E6E6E6', highlight: '#FFFFFF', upcomingOpacity: 0.6, glow: '#000000', glowBlur: 0.5, stroke: null, strokeWidth: 0, maxLines: 2,
+      uppercase: false, wordsPerCue: 6, anim: 'fade', keyword: false },
+    { id: 'tr-luxe-wide', name: 'Luxe Wide', category: _C, popularity: 87, layout: 'center',
+      font: 'Syne', weight: 700, fallbackFonts: devaChain(['Arial'], 'Mukta'), fontSize: 56, fill: '#FFFFFF', highlight: '#D9C9A3',
+      letterSpacing: 6, glow: '#000000', glowBlur: 0.35, stroke: null, strokeWidth: 0,
+      uppercase: true, wordsPerCue: 2, anim: 'fade', keyword: false },
+    // ---- 🌈 neon & glow ----
+    { id: 'tr-neon-ignite', name: 'Neon Ignite', category: _T, alsoIn: [_N], popularity: 96, layout: 'center',
+      font: 'Montserrat', weight: 800, fallbackFonts: MONT(), fontSize: 76, fill: '#E6FFFB', highlight: '#00F0FF',
+      glow: '#00F0FF', glowBlur: 0.6, highlightGlow: '#00F0FF', stroke: null, strokeWidth: 0,
+      uppercase: false, wordsPerCue: 3, anim: 'karaoke', keyword: false },
+    { id: 'tr-magenta-night', name: 'Magenta Night', category: _N, popularity: 90, layout: 'center',
+      font: 'Poppins', weight: 800, fallbackFonts: devaChain(['Arial Black'], 'Mukta'), fontSize: 82, fill: '#FFFFFF', highlight: '#FF2BD6',
+      glow: '#FF2BD6', glowBlur: 0.55, highlightGlow: '#FF2BD6', stroke: null, strokeWidth: 0,
+      uppercase: true, wordsPerCue: 2, anim: 'pop', keyword: false },
+    { id: 'tr-chrome', name: 'Chrome Y2K', category: _N, popularity: 88, layout: 'center',
+      font: 'Unbounded', weight: 800, fallbackFonts: devaChain(['Arial Black'], 'Baloo 2'), fontSize: 80, fill: '#FFFFFF', fill2: '#9AA4B2', highlight: '#7DF9FF',
+      glow: '#7DF9FF', glowBlur: 0.4, stroke: '#0B0B0B', strokeWidth: 5,
+      uppercase: true, wordsPerCue: 1, anim: 'zoom', keyword: false },
+    { id: 'tr-terminal', name: 'Terminal Typewriter', category: _N, alsoIn: [_C], popularity: 87, layout: 'bottom', posPct: 78,
+      font: 'Space Mono', weight: 700, fallbackFonts: devaChain(['Courier New'], 'Mukta', 'monospace'), fontSize: 52, fill: '#EDEDED', highlight: '#39FF14',
+      boxColor: '#000000', boxOpacity: 0.75, boxRadius: 6, boxPad: 1.1, stroke: null, strokeWidth: 0, maxLines: 2,
+      uppercase: false, wordsPerCue: 6, anim: 'typewriter', keyword: false },
+    { id: 'tr-rgb-glitch', name: 'RGB Glitch', category: _N, alsoIn: [_F], popularity: 89, layout: 'center',
+      font: 'Space Grotesk', weight: 700, fallbackFonts: devaChain(['Arial'], 'Mukta'), fontSize: 90, fill: '#FFFFFF', highlight: '#FFFFFF',
+      stroke: '#FF0040', strokeWidth: 3, glow: '#00E5FF', glowBlur: 0.06, shadowDX: 5, shadowDY: 0,
+      uppercase: true, wordsPerCue: 1, anim: 'glitch', keyword: false },
+    // ---- 😂 fun & meme ----
+    { id: 'tr-hard-sticker', name: 'Hard Shadow Sticker', category: _F, popularity: 90, layout: 'center',
+      font: 'Rubik', weight: 900, fallbackFonts: devaChain(['Arial Black'], 'Baloo 2'), fontSize: 86, fill: '#FFFFFF', highlight: '#FFB800',
+      stroke: '#000000', strokeWidth: 6, glow: '#000000', glowBlur: 0.08, shadowDX: 7, shadowDY: 7,
+      uppercase: true, wordsPerCue: 2, anim: 'pop', keyword: false },
+    { id: 'tr-marker', name: 'Marker Scribble', category: _F, popularity: 88, layout: 'center',
+      font: 'Permanent Marker', weight: 400, fallbackFonts: devaChain(['Marker Felt', 'Comic Sans MS'], 'Kalam', 'cursive'), fontSize: 80, fill: '#FFFFFF', highlight: '#FF4D4D',
+      highlightStyle: 'underline', stroke: '#000000', strokeWidth: 4,
+      uppercase: false, wordsPerCue: 2, anim: 'pop', keyword: false },
+    { id: 'tr-meme', name: 'Top Text Meme', category: _F, popularity: 86, layout: 'top',
+      font: 'Anton', weight: 400, fallbackFonts: devaChain(['Impact'], 'Teko'), fontSize: 80, fill: '#FFFFFF', highlight: '#FFFFFF',
+      stroke: '#000000', strokeWidth: 10, maxLines: 2, uppercase: true, wordsPerCue: 6, anim: 'pop', keyword: false },
+    { id: 'tr-speech-bubble', name: 'Comic Speech Bubble', category: _F, popularity: 87, layout: 'top',
+      font: 'Bangers', weight: 400, fallbackFonts: devaChain(['Impact'], 'Baloo 2'), fontSize: 72, fill: '#111111', highlight: '#E4002B',
+      boxColor: '#FFFFFF', boxOpacity: 1, boxRadius: 28, boxPad: 1.2, boxStroke: '#111111', boxStrokeWidth: 5,
+      stroke: null, strokeWidth: 0, uppercase: true, wordsPerCue: 3, anim: 'bounce', keyword: false },
+    { id: 'tr-letter-wave', name: 'Letter Wave', category: _F, popularity: 86, layout: 'center',
+      font: 'Rubik', weight: 800, fallbackFonts: devaChain(['Arial Black'], 'Baloo 2'), fontSize: 82, fill: '#FFFFFF', highlight: '#7CF3FF',
+      stroke: '#0B1A3A', strokeWidth: 7, uppercase: false, wordsPerCue: 2, anim: 'wave', keyword: false },
+    // ---- 🔘 a button look ----
+    { id: 'tr-push-button', name: '3D Push Button', category: _BT, popularity: 90, layout: 'center',
+      font: 'Poppins', weight: 800, fallbackFonts: devaChain(['Arial Black'], 'Mukta'), fontSize: 64, fill: '#111111', highlight: '#111111', highlightScale: 1.12,
+      boxColor: '#FFE600', boxOpacity: 1, boxRadius: 18, boxPad: 1.3, box3d: '#C9A800', box3dDepth: 8,
+      stroke: null, strokeWidth: 0, maxLines: 1, maxWidthPct: 0.9,
+      uppercase: false, wordsPerCue: 2, anim: 'pop-scale', keyword: false },
+    // ---- 🇮🇳 Devanagari-first (the face itself draws Hindi AND English) ----
+    { id: 'tr-desi-punch', name: 'Desi Punch', category: _H, alsoIn: [_T, _B], script: 'deva', popularity: 97, layout: 'center',
+      font: 'Baloo 2', weight: 800, fallbackFonts: devaFirstChain(['Mukta']), fontSize: 84, fill: '#FFFFFF', highlight: '#FFD000', highlightScale: 1.12,
+      stroke: '#000000', strokeWidth: 6, letterSpacing: 0, lineGap: 1.4,
+      uppercase: false, wordsPerCue: 2, anim: 'pop-scale', keyword: false },
+    { id: 'tr-bubble-pop', name: 'Bubble Pop Rounded', category: _H, alsoIn: [_F], script: 'deva', popularity: 93, layout: 'center',
+      font: 'Baloo 2', weight: 800, fallbackFonts: devaFirstChain(['Mukta']), fontSize: 84, fill: '#FFFFFF', highlight: '#FF6FB5',
+      stroke: '#3A0CA3', strokeWidth: 7, lineGap: 1.35, uppercase: false, wordsPerCue: 2, anim: 'bounce', keyword: false },
+    { id: 'tr-hindi-podcast', name: 'Hindi Podcast Bar', category: _H, alsoIn: [_P], script: 'deva', popularity: 95, layout: 'bottom', posPct: 74,
+      font: 'Mukta', weight: 700, fallbackFonts: devaFirstChain(['Hind']), fontSize: 60, fill: '#FFFFFF', highlight: '#FFC940',
+      boxColor: '#000000', boxOpacity: 0.55, boxRadius: 14, boxPad: 1.15, upcomingOpacity: 0.5, lineGap: 1.3, maxLines: 2,
+      stroke: null, strokeWidth: 0, uppercase: false, wordsPerCue: 4, anim: 'karaoke', keyword: false },
+    { id: 'tr-hinglish-flip', name: 'Hinglish Flip', category: _H, script: 'deva', popularity: 92, layout: 'center',
+      font: 'Hind', weight: 700, fallbackFonts: devaFirstChain(['Mukta']), fontSize: 76, fill: '#FFFFFF', highlight: '#FFD60A', highlightScale: 1.1,
+      stroke: '#000000', strokeWidth: 6, lineGap: 1.3, uppercase: false, wordsPerCue: 3, anim: 'pop', keyword: false },
+    { id: 'tr-rozha-saffron', name: 'Saffron Title', category: _H, alsoIn: [_C], script: 'deva', popularity: 90, layout: 'center',
+      font: 'Rozha One', weight: 400, fallbackFonts: devaFirstChain(['Tiro Devanagari Hindi'], 'serif'), fontSize: 84, fill: '#FFF4E0', highlight: '#FF9933',
+      glow: '#000000', glowBlur: 0.55, shadowDY: 4, stroke: null, strokeWidth: 0, lineGap: 1.3,
+      uppercase: false, wordsPerCue: 2, anim: 'reveal', keyword: false },
+    { id: 'tr-kalam', name: 'Handwritten Hindi', category: _H, alsoIn: [_F], script: 'deva', popularity: 89, layout: 'center',
+      font: 'Kalam', weight: 700, fallbackFonts: devaFirstChain([], 'cursive'), fontSize: 78, fill: '#FFFFFF', highlight: '#FF5C8A',
+      stroke: '#000000', strokeWidth: 4, lineGap: 1.4, uppercase: false, wordsPerCue: 3, anim: 'pop', keyword: false },
+    { id: 'tr-teko-hype', name: 'Tall Hype', category: _H, alsoIn: [_B], script: 'deva', popularity: 91, layout: 'center',
+      font: 'Teko', weight: 600, fallbackFonts: devaFirstChain(['Mukta']), fontSize: 110, fill: '#FFFFFF', highlight: '#00E676',
+      stroke: '#000000', strokeWidth: 6, lineGap: 1.3, uppercase: true, wordsPerCue: 1, anim: 'zoom', keyword: false },
+    { id: 'tr-tiro-doc', name: 'Documentary Serif', category: _H, alsoIn: [_C], script: 'deva', popularity: 88, layout: 'bottom', posPct: 80,
+      font: 'Tiro Devanagari Hindi', weight: 400, fallbackFonts: devaFirstChain(['Georgia'], 'serif'), fontSize: 60, fill: '#E6E6E6', highlight: '#FFFFFF',
+      upcomingOpacity: 0.6, glow: '#000000', glowBlur: 0.55, stroke: null, strokeWidth: 0, lineGap: 1.3, maxLines: 2,
+      uppercase: false, wordsPerCue: 6, anim: 'fade', keyword: false },
+    { id: 'tr-anek-box', name: 'Warm Word Box', category: _H, alsoIn: [_K], script: 'deva', popularity: 92, layout: 'bottom', posPct: 74,
+      font: 'Anek Devanagari', weight: 700, fallbackFonts: devaFirstChain(['Mukta']), fontSize: 70, fill: '#FFFFFF', highlight: '#FF6B00', highlightStyle: 'box',
+      boxRadius: 10, boxPad: 1.15, stroke: '#000000', strokeWidth: 4, lineGap: 1.3,
+      uppercase: false, wordsPerCue: 3, anim: 'karaoke', keyword: false }
+  ];
+  TRENDING_TEMPLATES.forEach(function (t) { TEMPLATES.push(t); });
+
   TEMPLATES.forEach(function (t) {
     var safe = FONT_SAFE[t.font];
     if (!safe) return;
@@ -2133,11 +2486,15 @@
     'Helvetica Neue', 'Avenir Next', 'Arial Narrow', 'Trebuchet MS',
     'Menlo', 'Didot', 'Marker Felt', 'Snell Roundhand',
     // Serif
-    'Playfair Display', 'Merriweather', 'Lora', 'Georgia', 'Times New Roman',
+    'Playfair Display', 'Merriweather', 'Lora', 'Georgia', 'Times New Roman', 'Arvo',
     // Mono
     'JetBrains Mono', 'Roboto Mono', 'Space Mono', 'Courier New',
     // Handwriting / marker
-    'Caveat', 'Permanent Marker', 'Shadows Into Light', 'Pacifico', 'Bradley Hand', 'Comic Sans MS'
+    'Caveat', 'Permanent Marker', 'Shadows Into Light', 'Pacifico', 'Bradley Hand', 'Comic Sans MS',
+    // Trending display faces (loaded from Google Fonts, see index.html)
+    'Space Grotesk', 'Syne', 'Unbounded', 'DM Serif Display', 'EB Garamond',
+    // Devanagari faces — each draws Hindi AND English, so Hinglish stays in one family
+    'Baloo 2', 'Mukta', 'Hind', 'Anek Devanagari', 'Rozha One', 'Kalam', 'Tiro Devanagari Hindi'
   ];
 
   /*
@@ -2180,7 +2537,8 @@
   var PS_SINGLE_FACE = {
     'anton': 1, 'bebas neue': 1, 'archivo black': 1, 'bangers': 1,
     'luckiest guy': 1, 'alfa slab one': 1, 'bungee': 1, 'titan one': 1,
-    'permanent marker': 1, 'pacifico': 1, 'shadows into light': 1, 'fjalla one': 1
+    'permanent marker': 1, 'pacifico': 1, 'shadows into light': 1, 'fjalla one': 1,
+    'rozha one': 1, 'dm serif display': 1, 'tiro devanagari hindi': 1
   };
   function psFontName(family, weight, italic) {
     var f = String(family == null ? '' : family).replace(/^\s+|\s+$/g, '');
@@ -2270,6 +2628,60 @@
       uppercase: (o.uppercase != null) ? o.uppercase : !!preset.uppercase,
       yPct: (o.yPct != null) ? o.yPct : 0.76
     };
+  }
+
+  /*
+   * The spoken-word colour for EDITABLE (.mogrt) captions. The template engine
+   * can mark the spoken word only with a COLOUR, so a style whose highlight
+   * equals its text colour (Pulse makes that word pop by SIZE, which the engine
+   * cannot do) needs a colour of its own. The old rule forced #FFD400 on all of
+   * them — a yellow word on a yellow (Mars), gold (Gold Gloss) or pastel (Aura)
+   * pill measured 1.1:1 contrast, i.e. invisible. Now: keep the style's own
+   * highlight when it already differs from the text; otherwise take the first
+   * candidate that looks different from the text AND reads at >= 3:1 on the
+   * style's box (anything reads over footage when there is no box — the text's
+   * own outline/shadow carries it). Pure + tested.
+   */
+  var SWEEP_CANDIDATES = ['#FFD400', '#00E0FF', '#FF3B6B', '#2D7CFF', '#7C3AED', '#E10600', '#111111', '#FFFFFF'];
+  function _hexRgb(h) {
+    var m = /^#?([0-9a-f]{6})$/i.exec(String(h || ''));
+    if (!m) return null;
+    var n = parseInt(m[1], 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  function _relLum(h) {
+    var c = _hexRgb(h); if (!c) return 0;
+    var l = c.map(function (v) { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+    return 0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2];
+  }
+  function contrastRatio(a, b) {
+    var la = _relLum(a), lb = _relLum(b);
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+  }
+  function _rgbDist(a, b) {
+    var x = _hexRgb(a), y = _hexRgb(b);
+    if (!x || !y) return 999;
+    return Math.sqrt(Math.pow(x[0] - y[0], 2) + Math.pow(x[1] - y[1], 2) + Math.pow(x[2] - y[2], 2));
+  }
+  /* `hex` moved toward white (t > 0) or black (t < 0) by |t| (0..1). */
+  function shadeHex(hex, t) {
+    var c = _hexRgb(hex); if (!c) return hex;
+    var to = t >= 0 ? 255 : 0, a = Math.min(1, Math.abs(t));
+    function h(v) { v = Math.round(v + (to - v) * a); var s = v.toString(16); return s.length < 2 ? '0' + s : s; }
+    return '#' + h(c[0]) + h(c[1]) + h(c[2]);
+  }
+  function sweepColor(fill, highlight, box) {
+    var f = String(fill || '#FFFFFF');
+    if (highlight && String(highlight).toLowerCase() !== f.toLowerCase()) return highlight;
+    var best = null, bestC = -1;
+    for (var i = 0; i < SWEEP_CANDIDATES.length; i++) {
+      var c = SWEEP_CANDIDATES[i];
+      if (_rgbDist(c, f) < 120) continue;              // must look different from the words around it
+      var onBox = box ? contrastRatio(c, box) : 21;
+      if (onBox >= 3) return c;
+      if (onBox > bestC) { bestC = onBox; best = c; }
+    }
+    return best || '#FFD400';
   }
 
   /*
@@ -2877,6 +3289,11 @@
     STYLE_PRESETS: STYLE_PRESETS,
     TEMPLATES: TEMPLATES,
     CATEGORIES: CATEGORIES,
+    CAT_HINDI: CAT_HINDI,
+    inCategory: inCategory,
+    sweepColor: sweepColor,
+    contrastRatio: contrastRatio,
+    shadeHex: shadeHex,
     NICHES: NICHES,
     NICHE_RECOMMEND: NICHE_RECOMMEND,
     getPreset: getPreset,

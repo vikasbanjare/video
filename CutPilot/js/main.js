@@ -2762,7 +2762,10 @@
   }
 
   // ===================================================== TEMPLATE LIBRARY ====
-  var MOGRT_CAT = 'Premiere (.mogrt)';
+  // The .mogrt templates live in their OWN clearly-labelled section — never
+  // pinned into the style categories (every chip used to open on the same nine
+  // Premiere templates, four of them title cards with 2–8 colour-only controls).
+  var MOGRT_CAT = '🧩 Premiere templates · advanced';
   var LS = { fav: 'cutpilot.favs', recent: 'cutpilot.recent', custom: 'cutpilot.custom', mogrts: 'cutpilot.mogrts' };
 
   function loadLibraryPrefs() {
@@ -3661,11 +3664,16 @@
     var out = [];
     (state.bundledMogrts || []).forEach(function (m) {
       out.push({ id: 'mogrt:' + m.path, name: m.name, category: MOGRT_CAT, mogrt: true,
-                 path: m.path, popularity: 90, subcat: m.desc || m.category, desc: m.desc, bundled: true, thumb: m.thumb, video: m.video, premium: m.premium, flux: (m.section === 'flux') });
+                 path: m.path, popularity: 90, subcat: m.desc || m.category, desc: m.desc, bundled: true, thumb: m.thumb, video: m.video, premium: m.premium, flux: (m.section === 'flux'),
+                 // caption vs TITLE template (from index.json): a title has no word
+                 // highlight, so its card must not play a karaoke sweep it lacks
+                 kind: m.kind || 'caption' });
     });
+    // A user's template FOLDER is not "bundled": marking it so pinned a whole
+    // pack (the scan allows 800 files) into every category.
     (state.folderMogrts || []).forEach(function (m) {
       out.push({ id: 'mogrt:' + m.path, name: m.name, category: MOGRT_CAT, mogrt: true,
-                 path: m.path, popularity: 80, subcat: m.category, bundled: true, thumb: m.thumb });
+                 path: m.path, popularity: 80, subcat: m.category, fromFolder: true, thumb: m.thumb });
     });
     (state.installedMogrts || []).forEach(function (m) {
       out.push({ id: 'mogrt:' + m.path, name: m.name, category: MOGRT_CAT, mogrt: true,
@@ -3707,8 +3715,7 @@
     // ⭐ Premium leads; 🎥 Your Styles (the 35 styles learned from the user's
     // OWN videos) sits right up front — parked at the tail of a scrolling chip
     // row it was invisible in a narrow panel ("where are those captions?").
-    var cats = ['⭐ Premium', 'All', '🎬 From My Videos', '🎥 Your Styles', 'Favorites', 'Recent', 'My Templates']
-      .concat(CPCaptions.CATEGORIES.filter(function (c) { return c !== '⭐ Premium' && c !== '🎥 Your Styles' && c !== '🎬 From My Videos'; }));
+    var cats = galleryChips();
     var chipBox = $('lib-cats');
     cats.forEach(function (c) {
       var chip = document.createElement('button');
@@ -3828,61 +3835,182 @@
     toast('Added "' + name + '". Edit its colour / font / text below, then Add template captions.');
   }
 
-  function filteredTemplates() {
-    var mogrtMode = (state.libMode === 'mogrt');
-    // Styles view shows the built-in caption styles PLUS the bundled (shipped)
-    // .mogrt templates, so prebuilt editable templates are visible right in the
-    // main gallery. Installed/user .mogrts still live in the Editor tab.
-    var list = allTemplates().slice().filter(function (t) { return mogrtMode ? !!t.mogrt : (!t.mogrt || (t.bundled && !t.flux)); });
-    var cat = state.libCategory;
-    if (!mogrtMode) {
-      if (cat === 'Favorites') list = list.filter(function (t) { return state.favs[t.id]; });
-      else if (cat === 'Recent') list = state.recent.map(findTemplate).filter(function (t) { return t && !t.mogrt; });
-      else if (cat === 'My Templates') list = state.customTemplates.slice();
-      // The editable, shipped 🎬 templates are the headline feature (animated AND
-      // editable on the timeline). They used to be hidden behind the "All" chip,
-      // so a fresh open showed only burned-in PNG styles. Keep them visible in
-      // EVERY browse category alongside that category's styles.
-      else if (cat !== 'All' && cat !== MOGRT_CAT) list = list.filter(function (t) { return t.category === cat || (t.mogrt && t.bundled && !t.flux); });
-    }
+  /* Gallery chip row. The owner's own tabs stay right behind "All" and 🔥
+     Trending (parked at the tail of a scrolling row they were invisible in a
+     narrow panel — "where are those captions?"); the look categories follow in
+     the library's order; 🔘 Buttons is the last style chip; the Premiere .mogrt
+     templates get their own clearly-labelled chip after it. */
+  var PERSONAL_CATS = ['🎬 From My Videos', '🎥 Your Styles'];
+  function galleryChips() {
+    var C = CPCaptions.CATEGORIES || [];
+    var looks = C.filter(function (c) { return PERSONAL_CATS.indexOf(c) < 0 && c !== '🔘 Buttons' && c !== '🔥 Trending'; });
+    var head = ['All'];
+    if (C.indexOf('🔥 Trending') >= 0) head.push('🔥 Trending');
+    return head.concat(PERSONAL_CATS.filter(function (c) { return C.indexOf(c) >= 0; }),
+                       ['My Templates', 'Favorites', 'Recent'], looks, ['🔘 Buttons', MOGRT_CAT]);
+  }
 
-    if (state.libSearch) {
-      var q = state.libSearch;
-      list = list.filter(function (t) {
-        return (t.name + ' ' + t.category + ' ' + (t.font || '') + ' ' + (t.anim || '') + ' ' + (t.subcat || '')).toLowerCase().indexOf(q) >= 0;
-      });
-    }
+  /* The Premiere .mogrt cards the ADVANCED section offers: the shipped caption
+     and title templates plus any from the user's template folders. (Flux has
+     its own tab; installed / uploaded .mogrts live in the Editor tab.) */
+  function advancedMogrts() {
+    return mogrtTemplates().filter(function (t) { return (t.bundled && !t.flux) || t.fromFolder; });
+  }
+
+  function gallerySearchHit(t, q) {
+    return (t.name + ' ' + t.category + ' ' + ((t.alsoIn || []).join(' ')) + ' ' + (t.font || '') + ' ' +
+            (t.anim || '') + ' ' + (t.subcat || '')).toLowerCase().indexOf(q) >= 0;
+  }
+  function gallerySort(list, cat) {
     if (state.libSort === 'popular' && cat !== 'Recent') list.sort(function (a, b) { return (b.popularity || 0) - (a.popularity || 0); });
     else if (state.libSort === 'az') list.sort(function (a, b) { return a.name < b.name ? -1 : 1; });
     else if (state.libSort === 'favorites') list.sort(function (a, b) { return (state.favs[b.id] ? 1 : 0) - (state.favs[a.id] ? 1 : 0); });
-    // Pin the editable 🎬 templates first (keeps each group's sort order) so the
-    // "animated AND editable on the timeline" option is the first thing seen.
-    if (cat !== 'Favorites' && cat !== 'Recent' && cat !== 'My Templates') {
-      var ed = [], pl = [];
-      for (var k = 0; k < list.length; k++) (list[k].mogrt ? ed : pl).push(list[k]);
-      list = ed.concat(pl);
-    }
     return list;
   }
+
+  /* The STYLE cards for the current chip. Every card here is a Pulse style
+     that opens the full editor. .mogrt templates are never mixed in: they are
+     only returned for their own chip (and appended as a labelled section under
+     "All" by renderTemplateGrid). Near-duplicate Buttons (galleryHidden) are
+     left out of browsing but still come back through Favorites and Recent, so a
+     look the user kept never disappears. */
+  function filteredTemplates() {
+    var mogrtMode = (state.libMode === 'mogrt');
+    var cat = state.libCategory;
+    var list;
+    if (mogrtMode) list = allTemplates().filter(function (t) { return !!t.mogrt; });
+    else if (cat === MOGRT_CAT) list = advancedMogrts();
+    else if (cat === 'Favorites') list = allTemplates().filter(function (t) { return !t.mogrt && state.favs[t.id]; });
+    else if (cat === 'Recent') list = state.recent.map(findTemplate).filter(function (t) { return t && !t.mogrt; });
+    else if (cat === 'My Templates') list = state.customTemplates.slice();
+    else {
+      list = allTemplates().filter(function (t) { return !t.mogrt && !t.galleryHidden; });
+      if (cat !== 'All') list = list.filter(function (t) { return CPCaptions.inCategory(t, cat); });
+    }
+    if (state.libSearch) {
+      var q = state.libSearch;
+      list = list.filter(function (t) { return gallerySearchHit(t, q); });
+    }
+    // de-duplicate by id (a Recent entry can repeat after a fallback lookup)
+    var seen = {};
+    list = list.filter(function (t) { if (seen[t.id]) return false; seen[t.id] = 1; return true; });
+    return gallerySort(list, cat);
+  }
+
+  function gallerySectionHead(text, sub) {
+    var h = document.createElement('div');
+    h.className = 'lib-section';
+    h.style.gridColumn = '1 / -1';
+    h.style.margin = '6px 0 -4px';
+    h.style.fontSize = '11px';
+    h.style.fontWeight = '700';
+    h.style.opacity = '0.85';
+    h.textContent = text;
+    if (sub) {
+      var s = document.createElement('div');
+      s.className = 'hint';
+      s.style.fontWeight = '400';
+      s.style.margin = '2px 0 0';
+      s.textContent = sub;
+      h.appendChild(s);
+    }
+    return h;
+  }
+  var ADVANCED_NOTE = 'Premiere\'s own Motion Graphics templates. Each one only offers the few settings its designer built in — ' +
+    'the styles above give you every control. Caption looks from these templates are also above as full Pulse styles.';
 
   function renderTemplateGrid() {
     var grid = $('tpl-grid');
     grid.innerHTML = '';
+    var cat = state.libCategory;
     var list = filteredTemplates();
-    if (!list.length) {
+    var mogrtMode = (state.libMode === 'mogrt');
+    // the advanced .mogrt section under "All" — AFTER every style
+    var adv = (!mogrtMode && cat === 'All') ? advancedMogrts() : [];
+    if (adv.length && state.libSearch) adv = adv.filter(function (t) { return gallerySearchHit(t, state.libSearch); });
+    if (!list.length && !adv.length) {
       var e = document.createElement('div');
       e.className = 'lib-empty';
-      e.textContent = state.libMode === 'mogrt' ? 'No .mogrt files yet — tap ➕ Add .mogrt file below to upload your Premiere template.'
-        : state.libCategory === 'Favorites' ? 'No favorites yet — tap the ☆ on any template.'
-        : state.libCategory === 'My Templates' ? 'No custom templates yet. Open a style, tweak it, and hit ＋ Save.'
+      e.textContent = mogrtMode ? 'No .mogrt files yet — tap ➕ Add .mogrt file below to upload your Premiere template.'
+        : cat === MOGRT_CAT ? (CPBridge.isCEP() ? 'No Premiere templates found. Add a folder of .mogrt files in Settings.'
+                                                : 'Premiere templates (.mogrt) load inside Premiere.')
+        : cat === 'Favorites' ? 'No favorites yet — tap the ☆ on any template.'
+        : cat === 'My Templates' ? 'No custom templates yet. Open a style, tweak it, and hit ＋ Save.'
         : 'No templates match your search.';
       grid.appendChild(e);
       return;
     }
-    list.forEach(function (t) {
-      grid.appendChild(buildTemplateCard(t));
-    });
+    if (cat === MOGRT_CAT && !mogrtMode) {
+      grid.appendChild(gallerySectionHead(MOGRT_CAT, ADVANCED_NOTE));
+      appendMogrtGroups(grid, list);
+    } else if (cat === 'All' && !mogrtMode && !state.libSearch) {
+      // "All" reads as the library's sections, in chip order, each style once
+      // (under its home category), then the advanced .mogrt section.
+      var groups = [{ name: 'My Templates', items: [] }];
+      (CPCaptions.CATEGORIES || []).forEach(function (c) { groups.push({ name: c, items: [] }); });
+      var byName = {};
+      groups.forEach(function (g) { byName[g.name] = g; });
+      var other = { name: 'More styles', items: [] };
+      list.forEach(function (t) { (byName[t.category] || other).items.push(t); });
+      groups.push(other);
+      groups.forEach(function (g) {
+        if (!g.items.length) return;
+        grid.appendChild(gallerySectionHead(g.name + '  ·  ' + g.items.length));
+        g.items.forEach(function (t) { grid.appendChild(buildTemplateCard(t)); });
+      });
+    } else {
+      list.forEach(function (t) { grid.appendChild(buildTemplateCard(t)); });
+    }
+    if (adv.length) {
+      grid.appendChild(gallerySectionHead(MOGRT_CAT, ADVANCED_NOTE));
+      appendMogrtGroups(grid, adv);
+    }
     paintThumbs();
+    // Hindi tiles draw Devanagari: fetch those faces' Hindi glyphs, then repaint
+    list.forEach(function (t) { if (t.script === 'deva') preloadStyleFonts(t, repaintThumbsForFonts); });
+    preloadStyleFonts(currentPreset());
+  }
+
+  /* Web fonts arrive per script: Google Fonts serves each face in subsets
+     (latin, devanagari…), and a browser fetches a subset only for text it lays
+     out or text named in document.fonts.load(). A canvas draw never fetches
+     one, and the render's font wait names no text, so it gets Latin only — a
+     Hindi caption in Baloo 2 or Mukta was drawn in whatever system face had
+     Devanagari. Ask for every face in the style's chain with BOTH scripts. */
+  var _fontsAsked = {};
+  function preloadStyleFonts(p, then) {
+    if (!p || !document.fonts || !document.fonts.load) return;
+    var fams = [p.font].concat(p.fallbackFonts || []);
+    if (p.highlightFont) fams.push(p.highlightFont);
+    var w = p.weight || 800, pending = [];
+    fams.forEach(function (f) {
+      if (!f || /^(sans-serif|serif|monospace|cursive)$/.test(f)) return;
+      var key = f + '|' + w;
+      if (_fontsAsked[key]) return;
+      _fontsAsked[key] = 1;
+      try { pending.push(document.fonts.load(w + ' 40px "' + f + '"', 'Aa हिंदी')); } catch (e) {}
+    });
+    if (then && pending.length) Promise.all(pending).then(then, then);
+  }
+  var _thumbFontT = null;
+  function repaintThumbsForFonts() {
+    if (_thumbFontT) clearTimeout(_thumbFontT);
+    _thumbFontT = setTimeout(function () {
+      var cs = document.querySelectorAll('.tpl-thumb-canvas');
+      for (var k = 0; k < cs.length; k++) cs[k]._painted = false;
+      paintThumbs();
+    }, 60);
+  }
+
+  /* Caption templates first, title templates in their own group. */
+  function appendMogrtGroups(grid, list) {
+    var caps = list.filter(function (t) { return (t.kind || 'caption') !== 'title'; });
+    var titles = list.filter(function (t) { return (t.kind || 'caption') === 'title'; });
+    caps.forEach(function (t) { grid.appendChild(buildTemplateCard(t)); });
+    if (titles.length) {
+      grid.appendChild(gallerySectionHead('Title templates  ·  ' + titles.length, 'Titles, not captions — they place one styled title, with no word-by-word highlight.'));
+      titles.forEach(function (t) { grid.appendChild(buildTemplateCard(t)); });
+    }
   }
 
   /* Render every gallery card's canvas with the REAL caption engine, sized to
@@ -3921,11 +4049,15 @@
     var fill2 = null;
     if (gradStops.length >= 2) { fill = gradStops[0]; fill2 = gradStops[gradStops.length - 1]; }
     else if (gradStops.length === 1 && !fill) { fill = gradStops[0]; }
+    // A TITLE template, or one with no highlight control, has no word sweep:
+    // drawing one gave four title cards a yellow karaoke sweep the template
+    // never plays. Only a real highlight control earns a highlight colour.
+    var sweeps = !!hl && (t.kind || 'caption') !== 'title';
     var style = {
       id: t.id || 'mg', name: t.name, font: 'Inter', fontSize: 150, weight: 800,
       uppercase: false, fill: fill || first || '#FFFFFF', fill2: fill2,
-      highlight: hl || fill2 || '#FFD400', boxColor: box,
-      keyword: !!hl, wordsPerCue: 4, vCenter: true
+      highlight: sweeps ? hl : (fill || first || '#FFFFFF'), boxColor: box,
+      keyword: sweeps, wordHl: sweeps, anim: sweeps ? 'karaoke' : 'fade', wordsPerCue: 4, vCenter: true
     };
     t._cardStyle = style;
     return style;
@@ -3994,12 +4126,26 @@
      transcript words when loaded, else a per-style line so tiles differ. */
   var TILE_SAMPLES = ['Make every word count', 'Heat waves are rising', 'Grow your channel fast',
                       'This changes everything', 'Nobody tells you this', 'Start before you are ready'];
+  /* Devanagari-first styles preview in Hindi / Hinglish — the owner's own
+     language — so what the tile shows is the face's Hindi, not its Latin. */
+  var TILE_SAMPLES_HI = ['यह secret कोई नहीं बताता', 'पैसे बचाने का easy तरीका',
+                         'आज से start करो', 'Ye trick सच में काम करती'];
+  /* The sample holds at least TWO whole captions of this style: with a
+     four-word line, a 5- or 6-word style showed ONE caption whatever the
+     Words-per-caption stepper said (the dead-control audit measured "+"
+     doing nothing). Two whole captions keep the grouping visible, and the
+     last caption on a tile is never a stray single word. The tile and the
+     editor preview both come through here, so they stay identical. */
   function tileSampleText(p) {
+    // Auto (0) is grouped 4 at a time by both surfaces (drawCardPreview and
+    // renderPreview use `wordsPerCue || 4`), so size the sample the same way
+    var wpc = (p && p.wordsPerCue != null) ? (parseInt(p.wordsPerCue, 10) || 4) : 4;
+    var want = Math.max(5, Math.min(20, wpc * 2));
     try {
       var tw = state.transcriptWords;
       if (tw && tw.length >= 4) {
         var ws = [];
-        for (var i = 0; i < tw.length && ws.length < 5; i++) {
+        for (var i = 0; i < tw.length && ws.length < want; i++) {
           var wd = tw[i] && (tw[i].text || tw[i].word);
           if (wd) ws.push(String(wd));
         }
@@ -4008,7 +4154,16 @@
     } catch (eT) {}
     var h = 0, id = String((p && p.id) || '');
     for (var k = 0; k < id.length; k++) h = (h * 31 + id.charCodeAt(k)) & 0xffff;
-    return TILE_SAMPLES[h % TILE_SAMPLES.length];
+    var pool = (p && p.script === 'deva') ? TILE_SAMPLES_HI : TILE_SAMPLES;
+    var start = h % pool.length;
+    var words = pool[start].split(' ');
+    // extend with the next sample lines (never a filler word list) when a
+    // caption of this style holds more words than one sample line
+    for (var n = 1; words.length < wpc * 2 && n < pool.length * 3; n++) {
+      words = words.concat(pool[(start + n) % pool.length].split(' '));
+    }
+    if (words.length > wpc * 2) words = words.slice(0, Math.max(pool[start].split(' ').length, wpc * 2));
+    return words.join(' ');
   }
   function layoutYPct(p) {
     var l = p && p.layout;
@@ -4040,6 +4195,7 @@
           anim: animId, wordsPerCue: (t.wordsPerCue || 4), uppercase: !!t.uppercase,
           keyword: { on: false }, speaker: { on: false },   // sweep (active word) supplies the highlight, like the backbone
           build: !!raw.build,                               // same flag the pipeline and the editor preview pass
+          textCase: raw.textCase || 'original',             // a lowercase style reads lowercase on its card too
           wordCues: wordCues, window: 0
         });
       } catch (eF) { frames = null; }
@@ -4326,9 +4482,18 @@
     card.appendChild(thumb);
 
     if (isMogrt) card.addEventListener('click', function () { openMogrtSheet(t); });
-    else card.addEventListener('click', function () { applyTemplate(t); showView('style'); });
+    else card.addEventListener('click', function () { preloadStyleFonts(t, renderPreview); _pvDemo = null; applyTemplate(t); showView('style'); });
     return card;
   }
+
+  // Test hooks for the gallery gates (test/gates/gallery-*.js): read-only views
+  // of what the owner is looking at and of what the export path would render.
+  window.CP_DEBUG_EXT = window.CP_DEBUG_EXT || {};
+  window.CP_DEBUG_EXT.gallery = {
+    currentPreset: function () { return currentPreset(); },
+    // the style runCaptionPipeline hands the renderer: {preset, overrides}
+    exportStyle: function (w, h) { return CPRender.styleForFrame(currentPreset(), h, readOverrides(), w); }
+  };
 
   function trackRecent(id) {
     state.recent = [id].concat(state.recent.filter(function (x) { return x !== id; }));
@@ -4749,14 +4914,18 @@
     setEntranceButtons(state.captionEntrance);
     $('c-fill').value = toHex(p.fill, '#ffffff');
     $('c-hl').value = toHex(p.highlight, '#ffd400');
-    $('c-stroke').value = toHex(p.stroke, '#000000');
+    // With no colour of its own, an outline / shadow / 2nd box stop starts at
+    // one you can SEE on this style: black on a black box (Y2K, Neon, Orange
+    // Word Pop) — or a box gradient from #141414 to black — changed nothing.
+    var darkBox = !!p.boxColor && CPCaptions.contrastRatio(p.boxColor, '#000000') < 3;
+    $('c-stroke').value = toHex(p.stroke, darkBox ? '#ffffff' : '#000000');
     $('c-strokew').value = p.strokeWidth || 0;
     $('c-box-on').checked = !!p.boxColor;
     $('c-box').value = toHex(p.boxColor, '#ff3b6b');
     $('c-upper').checked = !!p.uppercase;
     // shadow (the preset's soft "glow") + letter spacing
     $('c-shadow-on').checked = !!p.glow;
-    $('c-shadow').value = toHex(p.glow, '#000000');
+    $('c-shadow').value = toHex(p.glow, darkBox ? '#ffffff' : '#000000');
     $('c-shadow-blur').value = Math.round(((p.glowBlur != null ? p.glowBlur : 0.35)) * 100);
     if ($('c-letter')) $('c-letter').value = p.letterSpacing || 0;
     if ($('c-weight')) $('c-weight').value = p.weight || 800;
@@ -4789,7 +4958,10 @@
     if ($('c-boxgloss')) $('c-boxgloss').value = Math.round(((p.boxGloss != null ? p.boxGloss : 0)) * 100);
     // gradient + glossy highlight controls
     if ($('c-hlgrad')) $('c-hlgrad').checked = !!p.highlight2;
-    if ($('c-hl2g')) $('c-hl2g').value = toHex(p.highlight2, '#ff6a00');
+    // no gradient of its own: the 2nd stop starts visibly apart from the
+    // highlight (a fixed #ff6a00 was invisible on orange highlights)
+    var hl1 = toHex(p.highlight, '#ffd400');
+    if ($('c-hl2g')) $('c-hl2g').value = toHex(p.highlight2, CPCaptions.shadeHex(hl1, CPCaptions.contrastRatio(hl1, '#000000') > 8 ? -0.5 : 0.5));
     if ($('c-hlgrad-opts')) $('c-hlgrad-opts').style.display = p.highlight2 ? '' : 'none';
     if ($('c-glossy')) $('c-glossy').checked = !!p.glossy;
     // keyword italic-serif + glow (editorial style); two-tier stacked sizing
@@ -4821,7 +4993,7 @@
     }
     // box gradient 2nd colour + padding
     if ($('c-boxgrad')) $('c-boxgrad').checked = !!p.boxColor2;
-    if ($('c-box2')) $('c-box2').value = toHex(p.boxColor2, '#000000');
+    if ($('c-box2')) $('c-box2').value = toHex(p.boxColor2, p.boxColor ? CPCaptions.shadeHex(p.boxColor, darkBox ? 0.45 : -0.35) : '#000000');
     if ($('c-boxgrad-opts')) $('c-boxgrad-opts').style.display = p.boxColor2 ? '' : 'none';
     if ($('c-box-pad')) $('c-box-pad').value = Math.round(((p.boxPad != null ? p.boxPad : 1)) * 100);
     // directional shadow offset
@@ -4842,6 +5014,12 @@
     if ($('c-brandon')) $('c-brandon').checked = !!p.brandColor;
     if ($('c-brand') && p.brandColor) $('c-brand').value = toHex(p.brandColor, '#ff2ea6');
     if ($('c-brand-words') && p.brandWords) $('c-brand-words').value = (p.brandWords || []).join(', ');
+    // the option rows these switches open must follow them — setting .checked
+    // fires no change event, so a row opened on the last style stayed on screen
+    // with its switch off, and its colour changed nothing
+    if ($('c-num-opts')) $('c-num-opts').style.display = p.numberColor ? '' : 'none';
+    if ($('c-brand-opts')) $('c-brand-opts').style.display = p.brandColor ? '' : 'none';
+    if ($('c-perword-style-wrap')) $('c-perword-style-wrap').style.display = p.perWordEntrance ? '' : 'none';
     $('c-speaker').checked = !!p.speaker;
     var aId = CPCaptions.animIdForConcept(p.anim);
     selectAnim(aId);
@@ -4887,7 +5065,16 @@
       chip.dataset.id = a.id;
       chip.textContent = a.name;
       chip.title = a.description;
-      chip.addEventListener('click', function () { selectAnim(a.id); renderPreview(); });
+      chip.addEventListener('click', function () {
+        // "Karaoke" and "One by one" ARE the word-by-word sweep: with ✨ Word-by-
+        // word off they could not play (currentAnim), so picking one turns it on
+        if ((a.id === 'karaoke' || a.id === 'reveal') && $('c-wordhl') && !$('c-wordhl').checked) {
+          $('c-wordhl').checked = true; state.wordHlOff = false;
+          setRevealButton(a.id === 'reveal' ? 'reveal' : 'karaoke');
+          syncWordHlUI();
+        }
+        selectAnim(a.id); renderPreview();
+      });
       rail.appendChild(chip);
     });
   }
@@ -4957,6 +5144,147 @@
     if ($('sw-box')) $('sw-box').style.display = boxOn ? '' : 'none';
     if ($('sw-stroke')) $('sw-stroke').style.display = strokeOn ? '' : 'none';
     if ($('sw-hl')) $('sw-hl').style.display = usesHighlight ? '' : 'none';
+  }
+
+  /* ---- controls that CANNOT act on the current look -------------------------
+     Measured by the pixel dead-control audit: some controls change nothing for
+     whole families of styles (a gradient on a word that sits on a solid Pill,
+     a glossy sheen with no gradient to shine, a box setting with no box, auto-
+     enlarge while word-by-word already pops the spoken word…). A control that
+     cannot act is DISABLED with a one-line reason right under it, and comes
+     back the moment the thing it needs is switched on. Runs on every preview
+     repaint, so it always describes the look on screen. */
+  var _whyEls = {}, _whyLast = {};
+  function _localShown(el) {
+    for (var n = el; n && n !== document.body; n = n.parentNode) {
+      if (n.classList && n.classList.contains('cust-pane')) return true;
+      if (n.style && n.style.display === 'none') return false;
+      if (n.classList && n.classList.contains('hidden')) return false;
+    }
+    return true;
+  }
+  function setWhy(id, reason) {
+    var e = $(id); if (!e) return;
+    var dis = !!reason;
+    var host = e.closest ? (e.closest('label') || e.parentNode) : e.parentNode;
+    var box = host && host.parentNode && host.parentNode.classList &&
+              (host.parentNode.classList.contains('ctrl-row') || host.parentNode.classList.contains('swatches'))
+              ? host.parentNode : host;
+    var w = _whyEls[id];
+    if (!w && dis && box && box.parentNode) {
+      w = document.createElement('div');
+      w.className = 'hint cp-why';
+      w.setAttribute('data-why-for', id);
+      w.style.margin = '1px 0 6px';
+      w.style.fontSize = '10.5px';
+      if ((host.classList && host.classList.contains('png-only')) || (box.classList && box.classList.contains('png-only'))) w.classList.add('png-only');
+      box.parentNode.insertBefore(w, box.nextSibling);
+      _whyEls[id] = w;
+    }
+    var shown = dis && !!box && _localShown(box);
+    var key = (dis ? reason : '') + '|' + shown;
+    if (_whyLast[id] === key) return;             // touch the DOM only when it changes
+    _whyLast[id] = key;
+    e.disabled = dis;
+    if (host && host.style) { host.style.opacity = dis ? '0.5' : ''; host.style.pointerEvents = dis ? 'none' : ''; }
+    if (w) { w.textContent = dis ? ('↳ ' + reason) : ''; w.style.display = shown ? '' : 'none'; }
+  }
+  function syncControlApplicability() {
+    var p = currentPreset() || {};
+    var editable = (_capOut === 'editable');
+    var wordHl = cchk('c-wordhl');
+    var build = !!p.build;
+    var reveal = wordHl && readReveal() === 'reveal';
+    var hls = readHlStyle();
+    var filled = !editable && (hls === 'box' || hls === 'bar');
+    var boxOn = cchk('c-box-on') || cchk('c-boxgrad') || cnum('c-box3d-depth', 0) > 0 || cnum('c-boxgloss', 0) > 0;
+    var borderOn = cchk('c-boxstroke-on');
+    var wpc = cnum('c-words', 0);
+    var PILL = 'Not with the Pill / Bar highlight look — the spoken word sits on a solid shape';
+    // a keyword-build style's frames ARE its word-by-word motion (they grow one
+    // word at a time and light the key word), so the sweep switch cannot act
+    setWhy('c-wordhl', build ? 'This style builds its caption word by word and lights its key word — that is its highlight' : null);
+    // with word-by-word off and no key words, no word is ever highlighted
+    var noneLit = !wordHl && !build && !cchk('c-kw');
+    var NONE_LIT = 'Nothing is highlighted in this style — turn on ✨ Word-by-word highlight first';
+    var hlgradWhy = noneLit ? NONE_LIT : filled ? PILL : (cchk('c-multicolor') && wordHl ? 'Cycle highlight colours is on — it replaces the gradient' : null);
+    setWhy('c-hlgrad', hlgradWhy);
+    setWhy('c-hl2g', hlgradWhy);
+    setWhy('c-glossy', hlgradWhy || (!cchk('c-hlgrad') ? 'Turn on 🌈 Gradient highlight first — the sheen runs between its two colours' : null));
+    setWhy('c-hlglow', noneLit ? NONE_LIT : (filled ? PILL : null));
+    setWhy('c-hlserif', noneLit ? NONE_LIT : null);
+    // 3D depth, gloss and the gradient box all draw ON the box face, so while
+    // any of them is set the face stays — the box switch alone cannot remove it
+    var boxForced = cchk('c-boxgrad') || cnum('c-box3d-depth', 0) > 0 || cnum('c-boxgloss', 0) > 0;
+    setWhy('c-box-on', boxForced ? 'The 3D edge, gloss or gradient box needs the box — set them to 0 / off to remove it' : null);
+    var sweepOwns = wordHl && !build;
+    setWhy('c-emphasize', sweepOwns ? 'Works when ✨ Word-by-word highlight is off — then the spoken word already pops' : null);
+    setWhy('c-kw', sweepOwns ? 'Used when ✨ Word-by-word highlight is off — the spoken word is the highlight' : null);
+    setWhy('c-kw-mode', sweepOwns ? 'Used when ✨ Word-by-word highlight is off' : null);
+    setWhy('c-hl-scale', wordHl ? 'Word-by-word is on — use Spoken-word size instead' : null);
+    setWhy('c-dimupcoming', build ? 'This style builds word by word — unspoken words are not on screen yet'
+                          : (reveal ? 'One by one already hides unspoken words — nothing to dim' : null));
+    setWhy('c-multicolor', build ? 'This style lights one keyword at a time — there is nothing to cycle' : null);
+    setWhy('c-hl3', (wordHl && (wpc === 1 || wpc === 2)) ? 'A caption holds 2 words here — raise Words per caption to 3+ to reach a 3rd colour' : null);
+    if (editable) {
+      setWhy('c-box-opacity', boxOn ? null : 'Needs 🟦 Background box');
+    } else {
+      setWhy('c-box-opacity', (boxOn || filled) ? null : 'Needs 🟦 Background box (or the Pill / Bar highlight look)');
+      setWhy('c-box-pad', (boxOn || hls === 'box') ? null : 'Needs 🟦 Background box (or the Pill highlight look)');
+      setWhy('c-box-radius', (boxOn || hls === 'box') ? null : 'Needs 🟦 Background box (or the Pill highlight look)');
+    }
+    setWhy('c-boxglow-on', (boxOn || borderOn) ? null : 'Needs 🟦 Background box or ⬜ Border — the glow comes off the box edge');
+    setWhy('c-box3d', cnum('c-box3d-depth', 0) > 0 ? null : 'Set 3D depth above 0 first');
+    var boxHex = ($('c-box') && $('c-box').value) || '#000000';
+    setWhy('c-boxgloss', (boxOn && !cchk('c-boxgrad') && CPCaptions.contrastRatio(boxHex, '#FFFFFF') < 1.3)
+      ? 'A white sheen cannot show on a white box — pick a darker Box colour first' : null);
+    setWhy('c-linegap', readLines() === 1 ? 'Lines on screen is Single — there is no second line to space' : null);
+    setWhy('c-wordspace', (!wordHl && !build && wpc === 1) ? 'One word per caption — there is no gap to space' : null);
+    setWhy('c-case', cchk('c-upper') ? 'ALL CAPS is on — turn it off to pick a text case' : null);
+    // key words in these modes already include every number, and a key word
+    // takes the Highlight colour — a separate number colour cannot show
+    var kwMode = ($('c-kw-mode') && $('c-kw-mode').value) || 'smart';
+    setWhy('c-numon', (!sweepOwns && cchk('c-kw') && /^(smart|numbers|all)$/.test(kwMode))
+      ? 'Your 🔑 key words already include numbers — they take the Highlight colour (turn key words off to colour numbers apart)' : null);
+  }
+
+  /* CONTENT DEMOS. Some controls act on what a caption SAYS: line spacing /
+     max width / lines on screen need a caption that wraps, auto-enlarge needs
+     punchy words, number colour needs numbers, keyword colour needs the words
+     the owner typed. The short sample phrase has none of those, so the preview
+     sat still and the controls read as dead. The moment the owner reaches for
+     one, the preview shows a caption that HAS it (in Hindi for a Hindi style)
+     — until another style is picked. */
+  var _pvDemo = null;                                  // { id: presetId, kind }
+  var PREVIEW_DEMOS = {
+    layout:   ['Everything changes tomorrow when remarkable storytelling transforms ordinary conversations completely',
+               'यह बेहद आसान तरीका आपकी पूरी ज़िंदगी हमेशा के लिए बदल सकता है'],
+    emphasis: ['Stop scrolling now because this secret changes everything instantly',
+               'Stop यह secret सच में everything बदल देगा'],
+    numbers:  ['I made $5,000 in 30 days with 3 simple edits',
+               'मैंने 30 दिन में ₹50,000 कमाए 3 आसान तरीकों से']
+  };
+  var DEMO_FOR = { 'c-linegap': 'layout', 'c-maxwidth': 'layout', 'c-lines': 'layout', 'c-emphasize': 'emphasis',
+                   'c-numon': 'numbers', 'c-num': 'numbers', 'c-brandon': 'brand', 'c-brand': 'brand', 'c-brand-words': 'brand' };
+  function previewDemoText(kind, p) {
+    var hi = !!(p && p.script === 'deva');
+    if (kind === 'brand') {
+      var bw = (($('c-brand-words') && $('c-brand-words').value) || '').split(',')
+        .map(function (s) { return s.trim(); }).filter(Boolean);
+      return (bw.length ? bw.slice(0, 2).join(' ') : (hi ? 'यह' : 'This')) + (hi ? ' सबके लिए मुफ़्त है' : ' is free for everyone today');
+    }
+    var d = PREVIEW_DEMOS[kind];
+    return d ? d[hi ? 1 : 0] : null;
+  }
+  function wirePreviewDemos() {
+    Object.keys(DEMO_FOR).forEach(function (id) {
+      var e = $(id); if (!e) return;
+      var kind = DEMO_FOR[id];
+      function on() { if (!_pvDemo || _pvDemo.id !== state.presetId || _pvDemo.kind !== kind) { _pvDemo = { id: state.presetId, kind: kind }; renderPreview(); } }
+      // colour inputs are hidden behind a swatch: listen on the label that holds both
+      var target = (e.type === 'hidden' && e.closest && e.closest('label')) || e;
+      ['pointerdown', 'mousedown', 'touchstart', 'focus', 'focusin', 'keydown'].forEach(function (ev) { target.addEventListener(ev, on); });
+    });
   }
 
   // Two-part customizer: 🎨 Style vs ✨ Effects & Pro, switched in the same panel.
@@ -5121,7 +5449,12 @@
     });
     $('wc-plus').addEventListener('click', function () {
       var w = parseInt($('c-words').value, 10) || 0;
-      setWordCount(w === 0 ? 1 : w + 1); renderPreview();
+      var next = (w === 0) ? 1 : w + 1;
+      // With word-by-word on, a caption always holds at least TWO words (the
+      // sweep needs a neighbour), so 1 and 2 look identical — step past 2 or
+      // the first "+" does nothing you can see.
+      if (w === 1 && cchk('c-wordhl')) next = 3;
+      setWordCount(next); renderPreview();
     });
     $('wc-full').addEventListener('click', function () {
       var w = parseInt($('c-words').value, 10) || 0;
@@ -5149,6 +5482,7 @@
       $('c-off-num').textContent = (ims > 0 ? '+' : '') + (ims / 1000).toFixed(2) + 's';
     }
     $('btn-replay').addEventListener('click', renderPreview);
+    wirePreviewDemos();
   }
 
   /* Highlight-timing nudge in seconds (positive = highlight later). */
@@ -5421,6 +5755,13 @@
   /* Build a template object from the current customizer state. */
   function styleFromControls(name, id) {
     var o = readOverrides();
+    var base = currentPreset() || {};
+    // The template's multi-stop box gradient (Aura's rainbow) belongs to the
+    // template's OWN box colour. Once the user recolours the box — or switches
+    // on the two-colour box gradient — the stops are gone from what they see
+    // (render drops them), so they must not come back from a saved look.
+    var keepStops = !!(base.boxStops && o.boxColor && !o.boxColor2 && base.boxColor &&
+                       String(o.boxColor).toLowerCase() === String(base.boxColor).toLowerCase());
     return {
       id: id || ('custom-' + Date.now()),
       name: name || 'My Template',
@@ -5435,9 +5776,12 @@
       // button-pack box effects so a saved/duplicated button keeps its look
       boxStroke: o.boxStroke, boxStrokeWidth: o.boxStrokeWidth, boxGlow: o.boxGlow,
       box3d: o.box3d, box3dDepth: o.box3dDepth, boxGloss: o.boxGloss,
-      boxGradient: currentPreset().boxGradient || 'v', boxStops: currentPreset().boxStops || null,
-      glow: o.glow || currentPreset().glow || null,
-      letterSpacing: o.letterSpacing || currentPreset().letterSpacing || 0,
+      boxGradient: base.boxGradient || 'v', boxStops: keepStops ? base.boxStops : null,
+      // EXACTLY what the user has: shadow OFF saves no shadow, spacing 0 saves 0.
+      // (`o.glow || preset.glow` and `o.letterSpacing || preset.letterSpacing`
+      // brought back the very shadow and tracking the user had turned off.)
+      glow: o.glow || null,
+      letterSpacing: o.letterSpacing || 0,
       highlightScale: o.highlightScale,
       uppercase: o.uppercase,
       weight: parseInt($('c-weight').value, 10) || 800,
@@ -5459,6 +5803,7 @@
       align: o.align, maxLines: o.maxLines, highlightStyle: o.highlightStyle,
       upcomingOpacity: o.upcomingOpacity, lineGap: o.lineGap,
       glossy: o.glossy, highlightFont: o.highlightFont, highlightGlow: o.highlightGlow,
+      highlightItalic: o.highlightItalic, highlightWeight: o.highlightWeight, highlightFallbacks: o.highlightFallbacks,
       subScale: o.subScale, wordsPerLine: o.wordsPerLine,
       fill2: o.fill2, highlightColors: o.highlightColors,
       shadowDX: o.shadowDX, shadowDY: o.shadowDY, wordSpacing: o.wordSpacing,
@@ -5541,6 +5886,11 @@
     // the "pop size" for the spoken/highlighted word — its own slider while
     // word-by-word is on, otherwise the keyword pop-size slider.
     var pop = wordHlOn ? cnum('c-wordpop', 100) : cnum('c-hl-scale', 100);
+    // "Keyword in its own face": a style that DESIGNS its keyword face (DM Serif
+    // italic, Playfair italic…) keeps that face when the toggle is on — the
+    // toggle used to swap every one of them for Playfair Display 800.
+    var _cp = currentPreset() || {};
+    var serifOn = cchk('c-hlserif'), ownFace = _cp.highlightFont || null;
     return {
       font: $('c-font').value,
       fontSize: parseInt($('c-size').value, 10),
@@ -5562,11 +5912,14 @@
       glossy: cchk('c-glossy'),                                  // shiny metallic sheen on the highlighted word
       // keyword in a different (italic serif) face + a soft glow halo — authoritative
       // so the toggles can turn a preset's own keyword font on/off.
-      highlightFont: cchk('c-hlserif') ? 'Playfair Display' : null,
-      highlightFallbacks: cchk('c-hlserif') ? 'Georgia, "Times New Roman", serif' : null,
-      highlightItalic: cchk('c-hlserif'),
-      highlightWeight: cchk('c-hlserif') ? 800 : 0,
-      highlightGlow: cchk('c-hlglow') ? '#FFFFFF' : null,
+      highlightFont: serifOn ? (ownFace || 'Playfair Display') : null,
+      highlightFallbacks: serifOn ? ((ownFace && _cp.highlightFallbacks) || 'Georgia, "Times New Roman", serif') : null,
+      // (a look saved before italic/weight were saved stays italic, as it was)
+      highlightItalic: serifOn ? ((ownFace && _cp.highlightItalic != null) ? !!_cp.highlightItalic : true) : false,
+      highlightWeight: serifOn ? (ownFace ? (_cp.highlightWeight || 800) : 800) : 0,
+      // the keyword halo glows in the keyword's OWN colour: a hard-coded white
+      // halo vanished on white boxes and overrode the neon styles' own glow
+      highlightGlow: cchk('c-hlglow') ? $('c-hl').value : null,
       // two-tier "stacked" sizing — only applied to styles that define it
       subScale: (currentPreset() && currentPreset().subScale != null) ? (cnum('c-subscale', 62) / 100) : null,
       wordsPerLine: (currentPreset() && currentPreset().wordsPerLine != null) ? cnum('c-wordsperline', currentPreset().wordsPerLine || 0) : null,
@@ -5603,6 +5956,10 @@
       boxGloss: cnum('c-boxgloss', 0) / 100,
       // --- smart text + segment ---
       boxColor2: cchk('c-boxgrad') ? $('c-box2').value : null,
+      // The two-colour box gradient must WIN over a template's own multi-stop
+      // fill (Aura): the renderer draws boxStops first, so without this the
+      // toggle changed nothing on those styles — in the preview or the render.
+      boxStops: cchk('c-boxgrad') ? [[0, $('c-box').value], [1, $('c-box2').value]] : undefined,
       numberColor: cchk('c-numon') ? $('c-num').value : null,
       brandColor: cchk('c-brandon') ? $('c-brand').value : null,
       brandWords: cchk('c-brandon') ? ($('c-brand-words').value || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean) : null,
@@ -5661,7 +6018,11 @@
      one); otherwise the chosen entrance animation. */
   function currentAnim() {
     if ($('c-wordhl') && $('c-wordhl').checked) return (readReveal() === 'reveal') ? 'reveal' : 'karaoke';
-    return state.animId;
+    // Word-by-word OFF is NO sweep — also on a style whose own animation IS the
+    // sweep (a third of the library: karaoke / reveal). Those kept sweeping in
+    // the preview and the per-image render, so the switch did nothing there,
+    // while the long-video overlay (captionRevealMode) already went static.
+    return (state.animId === 'karaoke' || state.animId === 'reveal') ? 'none' : state.animId;
   }
   /* Show the word-highlight options and hide the separate entrance-animation
      group while word-by-word is on (so there's only one obvious thing to set). */
@@ -5810,7 +6171,11 @@
     // readable size (the full 9:16 frame wasted the panel on empty backdrop).
     // A small frame gauge in the corner shows WHERE on screen it will sit.
     var boxW = frame.clientWidth || 300, boxH = frame.clientHeight || 168;
-    var dpr = Math.min(2, (window.devicePixelRatio || 1));
+    // Always draw at 2x and let CSS scale it down. At the screen's own 1x a
+    // landscape caption in a narrow panel came out 8 px tall — a thin serif with
+    // a soft shadow is then mostly antialiasing, and "Cinema" previewed as a
+    // grey smudge its render never contains (gate: gallery-preview-render).
+    var dpr = 2;
     canvas.width = Math.round(boxW * dpr); canvas.height = Math.round(boxH * dpr);
     canvas.style.width = boxW + 'px'; canvas.style.height = boxH + 'px';
 
@@ -5863,6 +6228,14 @@
     }
     canvas._pvStyle = pStyle;   // exposed so the parity harness can machine-compare tile vs preview
     var sample = tileSampleText(styled);
+    // content demo (see wirePreviewDemos) — the tile keeps its own sample
+    var demo = (_pvDemo && _pvDemo.id === state.presetId) ? _pvDemo.kind : null;
+    var demoText = demo ? previewDemoText(demo, styled) : null;
+    if (demoText) sample = demoText;
+    var wrapDemo = (demo === 'layout');
+    // a stacked style breaks lines by word count: show it TWO stacked lines of
+    // long words, which max width can still squeeze (more would only shrink)
+    if (wrapDemo && styled.wordsPerLine > 0) sample = sample.split(' ').slice(0, styled.wordsPerLine * 2).join(' ');
     if (carry.uppercase) sample = sample.toUpperCase();
     var sw = sample.split(' ');
     // MOTION PARITY with the gallery tile. These three inputs used to differ
@@ -5872,7 +6245,7 @@
     // looked dead in the editor preview. Both surfaces now derive motion the
     // same way, and proof B2 fails the build if they ever drift apart again.
     var pvAnimId = currentAnim();   // the EXACT call the render pipeline makes
-    var pvWpc = (styled.wordsPerCue || 4);
+    var pvWpc = wrapDemo ? sw.length : (styled.wordsPerCue || 4);
     canvas._pvAnimId = pvAnimId; canvas._pvWpc = pvWpc;
     var DUR = 0.35;                                   // seconds per word — same pacing as the tile
     var wordCues = sw.map(function (w, i) { return { start: i * DUR, end: (i + 1) * DUR, text: w }; });
@@ -5935,6 +6308,7 @@
     play();
     if (frames.length > 1) previewTimer = setInterval(play, Math.max(150, Math.round(DUR * 1000)));
 
+    try { syncControlApplicability(); } catch (eWhy) {}
     if (_booted) saveLook();
   }
 
@@ -8412,6 +8786,13 @@
     if (ov.fill2 !== undefined) eff.fill2 = ov.fill2;
     if (ov.highlight) eff.highlight = ov.highlight;
     eff.highlight2 = ov.highlight2;   // gradient 2nd stop (null = user turned the gradient off) — audit-caught: it was dropped here, making the toggle affect nothing
+    // A RECOLOURED box drops the template's multi-stop gradient — the same rule
+    // the renderer applies to the real render (render.js boxChanged). Copying
+    // the user's colour into the preset first made the preview compare the new
+    // colour with ITSELF, so Aura's preview kept its rainbow while the timeline
+    // got the new solid colour.
+    if (ov.boxColor != null && preset.boxColor != null && preset.boxStops &&
+        String(ov.boxColor).toLowerCase() !== String(preset.boxColor).toLowerCase()) eff.boxStops = null;
     if (ov.boxColor !== undefined) eff.boxColor = ov.boxColor;      // null = box turned off
     if (ov.boxColor2 !== undefined) eff.boxColor2 = ov.boxColor2;
     if (ov.boxOpacity != null) eff.boxOpacity = ov.boxOpacity;
@@ -8573,10 +8954,12 @@
     // ("word by word not working for most of the captions").
     var hasHl = p.wordHl !== false;
     // the sweep needs a VISIBLE colour — a style whose highlight is missing or
-    // identical to the text colour would sweep invisibly, so give those the
-    // classic yellow pop (shown in the preview too, so it stays WYSIWYG).
+    // identical to the text colour would sweep invisibly. It used to get a
+    // forced yellow, which vanished on yellow/gold/pastel pills (Mars 1.1:1);
+    // CPCaptions.sweepColor picks one that differs from the text AND reads on
+    // the style's own box (shown in the preview too, so it stays WYSIWYG).
     var hl = p.highlight || null;
-    if (hasHl && (!hl || String(hl).toLowerCase() === String(p.fill || '').toLowerCase())) hl = '#ffd400';
+    if (hasHl) hl = CPCaptions.sweepColor(p.fill || '#FFFFFF', hl, p.boxColor || null);
     // the highlight colour is also the KEYWORD colour, so keep it whenever
     // either will use it (mirrors mapPresetToFlux)
     var usesHlColour = hasHl || !!p.keyword;
@@ -8668,8 +9051,8 @@
       if (!hlP) { for (var hi = 0; hi < colorProps.length; hi++) { if (colorProps[hi] !== textP) { hlP = colorProps[hi]; break; } } }
       out._bind.hl = hlP ? hlP.name : null;
       // same visible-colour guarantee as carryableStyle: never sweep invisibly
-      var hlHex = preset.highlight;
-      if (!hlHex || String(hlHex).toLowerCase() === String(preset.fill || '').toLowerCase()) hlHex = '#ffd400';
+      // (and never a yellow word on a yellow pill)
+      var hlHex = CPCaptions.sweepColor(preset.fill || '#FFFFFF', preset.highlight, preset.boxColor || null);
       color(hlP, hlHex);
       // two-tone keyword gradient (preset.highlight2): the SECOND highlight-like
       // colour control (named "…2", "…colour 2", or the next colour control after
@@ -8777,7 +9160,7 @@
     var hlHex = preset.highlight;
     // "never sweep invisibly" only applies to the SWEEP — a style that
     // deliberately sets highlight == fill must not be given a yellow keyword.
-    if (wantsHighlight && (!hlHex || String(hlHex).toLowerCase() === String(fill).toLowerCase())) hlHex = '#ffd400';
+    if (wantsHighlight) hlHex = CPCaptions.sweepColor(fill, hlHex, preset.boxColor || null);
     if (!usesHlColour) hlHex = fill;               // nothing will use it: paint like the text
     color(hl1, hlHex);
     // second stop: a real two-tone gradient when the style has one, otherwise
