@@ -10266,32 +10266,51 @@
     return out;
   }
 
-  /* Transcript-driven: cut on speaker turns. Uses the transcript from the
-     Transcribe tab — true per-person switching when speakers were detected,
-     otherwise alternates cameras each sentence. */
+  /* Transcript-driven: cut on speaker turns. "🗣️ Detect speakers" (Transcribe
+     tab) writes "Speaker 2: …" only where the speaker CHANGES, as a text
+     prefix — the old check looked for a `speaker` field nothing sets, so it
+     always fell back to alternating cameras every line. Now the labels are read
+     from the text and carried forward (CPMulticam.transcriptSpeakers). A label
+     that matches a camera's speaker name goes to that camera, else "Speaker N"
+     → camera N; "⇄ Swap speakers" in the plan rotates that if the AI's
+     numbering is the other way round. The labelled transcript wins over
+     captions placed before Detect speakers ran (their text has no labels). */
   function mcTranscriptPlan(numAngles) {
-    var cues;
-    try { cues = state.lastCaptionJob && state.lastCaptionJob.cues; } catch (e) { cues = null; }
-    if (!cues || !cues.length) { try { cues = readSelectedTranscript(); } catch (e2) { cues = null; } }
-    if (!cues || !cues.length) {
+    var fromTranscript = null, fromCaptions = null;
+    try { fromTranscript = readSelectedTranscript(); } catch (e) { fromTranscript = null; }
+    try { fromCaptions = state.lastCaptionJob && state.lastCaptionJob.cues; } catch (e2) { fromCaptions = null; }
+    var sources = [fromTranscript, fromCaptions].filter(function (c) { return c && c.length; });
+    if (!sources.length) {
       return Promise.reject(new Error('No transcript found. Transcribe your clip in the Transcribe tab first (and run “Detect speakers” for per-person switching).'));
     }
-    var dur = state.mcAudioEnd || (state.env && state.env.endSeconds) || cues[cues.length - 1].end;
-    // build a stable speaker→camera map (first speaker → V1, next new speaker → V2…)
-    var speakerOrder = {}, nextCam = 0, hasSpeakers = false;
-    cues.forEach(function (c) { if (c.speaker) hasSpeakers = true; });
+    var sopts = { extract: CPCaptions.extractSpeaker, names: state.mcSpeakers || [], numAngles: numAngles };
+    var cues = null, who = null;
+    sources.forEach(function (src) {
+      if (cues) return;
+      var sp = CPMulticam.transcriptSpeakers(src, sopts);
+      if (sp.labelled) { cues = src; who = sp; }
+    });
+    var shift = (state.mcTranscriptShift || 0) % Math.max(1, numAngles);
     var mapFn;
-    if (hasSpeakers) {
-      mapFn = function (sp) {
-        if (sp == null) return -1;
-        if (speakerOrder[sp] == null) { speakerOrder[sp] = nextCam % numAngles; nextCam++; }
-        return speakerOrder[sp];
+    if (who) {
+      mapFn = function (sp, i) {
+        var a = who.angleOf[who.labels[i]];
+        return (a == null || a < 0) ? -1 : (a + shift) % numAngles;
       };
     } else {
-      // no diarization → alternate cameras each sentence
+      // no speaker labels anywhere → alternate cameras each line (the plan says so)
+      cues = fromCaptions && fromCaptions.length ? fromCaptions : sources[0];
       var idx = 0;
       mapFn = function () { return (idx++) % numAngles; };
     }
+    state.mcAnalysis = {
+      mode: 'transcript', labelled: !!who,
+      mapping: who ? who.order.map(function (lab) {
+        var a = who.angleOf[lab];
+        return { label: lab, angle: (a == null || a < 0) ? -1 : (a + shift) % numAngles };
+      }) : []
+    };
+    var dur = state.mcAudioEnd || (state.env && state.env.endSeconds) || cues[cues.length - 1].end;
     var regions = CPMulticam.speakerCuesToRegions(cues, numAngles, mapFn);
     var minSeg = mcMinHold();
     var plan = CPMulticam.directorPlan(regions, dur, {
@@ -10538,6 +10557,37 @@
       item.appendChild(span);
       view.appendChild(item);
     });
+    // transcript mode: say which speaker label went to which camera, with a
+    // one-tap swap (the AI's "Speaker 1" may be the person on V2)
+    var an = state.mcAnalysis;
+    if (an && an.mode === 'transcript' && an.labelled && an.mapping.length) {
+      var mapLine = document.createElement('div');
+      mapLine.className = 'hint mc-speaker-map';
+      mapLine.textContent = '🗣️ ' + an.mapping.map(function (m) {
+        if (m.angle < 0) return m.label + ' → no camera (holds the shot)';
+        var nm = mcAngleName(m.angle), cam = 'V' + (m.angle + 1);
+        return m.label + ' → ' + cam + (nm !== cam ? ' (' + nm + ')' : '');
+      }).join(' · ') + ' ';
+      var swap = document.createElement('button');
+      swap.className = 'chip-btn';
+      swap.id = 'btn-mc-swap';
+      swap.textContent = '⇄ Swap speakers';
+      swap.addEventListener('click', function () {
+        state.mcTranscriptShift = ((state.mcTranscriptShift || 0) + 1) % Math.max(1, numAngles);
+        buildMcPlan().then(function () { renderMcPlan(numAngles); }).catch(mcBuildFailed);
+      });
+      mapLine.appendChild(swap);
+      view.insertBefore(mapLine, view.firstChild);
+    }
+    var unlabelled = !!(an && an.mode === 'transcript' && !an.labelled);
+    var noLabelsMsg = '⚠️ No speaker labels in the transcript, so the cameras simply alternate each line. ' +
+      'For true per-person switching run 🗣️ Detect speakers on the Transcribe tab first.';
+    if (unlabelled) {
+      var nl = document.createElement('div');
+      nl.className = 'hint err';
+      nl.textContent = noLabelsMsg;
+      view.insertBefore(nl, view.firstChild);
+    }
     // Coverage check: does the plan span the WHOLE timeline, or only the first
     // clip? (A podcast recorded in 3 takes = 3 clips; if analysis stops after
     // clip 1 the switches never reach takes 2-3.) Surface it so it's obvious.
@@ -10559,7 +10609,8 @@
     if (state.mcApplied) { $('btn-mc-redo').classList.remove('hidden'); $('mc-redo-hint').classList.remove('hidden'); }
     toast(shortfall
       ? ('⚠️ Plan only reaches ' + fmt(planEnd) + ' of ' + fmt(timeline) + ' — later clips not covered.')
-      : (stats.segments + ' segments, ' + stats.switches + ' switches across the full ' + fmt(timeline) + ' timeline.'), shortfall);
+      : (unlabelled ? noLabelsMsg
+        : (stats.segments + ' segments, ' + stats.switches + ' switches across the full ' + fmt(timeline) + ' timeline.')), shortfall || unlabelled);
   }
 
   $('btn-mc-apply').addEventListener('click', function () {
