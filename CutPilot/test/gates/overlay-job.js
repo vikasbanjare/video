@@ -165,6 +165,27 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     if (tmpLeft.length) bad('overlay media was written to the OS temp folder: ' + tmpLeft.join(', '));
     else ok('nothing lands in the OS temp folder (macOS purges it — that was the "Media Offline")');
 
+    // a SHORT video's captions are separate images — every reel. They went to
+    // the OS temp folder (cutpilot-frames-*), with the same Media Offline days
+    // later; they belong beside the project too.
+    {
+      const tmpBefore = fs.readdirSync(env.tmpdir);
+      const from = bridge.state.hostCalls.length;
+      const short = cuesFor(3, 1.6, 3);
+      await page.evaluate(j => window.CP_DEBUG_EXT.overlay.runImages(j.cues, { wordCues: j.wordCues }), short);
+      let img = null;
+      for (let i = 0; i < 600 && !img; i++) { await sleep(50); img = bridge.state.hostCalls.slice(from).find(c => c.fn === 'CP_placeCaptionImages') || null; }
+      for (let i = 0; i < 200; i++) { await sleep(50); if (!(await ui()).busy) break; }
+      const newTmp = fs.readdirSync(env.tmpdir).filter(n => tmpBefore.indexOf(n) < 0);
+      const items = img ? img.args.items : [];
+      const outside = items.filter(it => path.dirname(path.dirname(it.path)) !== media);
+      if (!items.length) bad('a short (images) caption job placed nothing');
+      else if (outside.length || newTmp.length) bad('a short video\'s caption images were written outside Pulse Media (' +
+        (outside[0] ? path.dirname(outside[0].path) : newTmp.join(', ')) + ') — macOS clears the temp folder and the reel goes Media Offline');
+      else ok('a short video\'s ' + items.length + ' caption images go to Pulse Media beside the project (' +
+        path.basename(path.dirname(items[0].path)) + '), not the OS temp folder');
+    }
+
     // a project that was never saved reports a bare name, no folder:
     // ~/Documents/Pulse/Media/<project>, never a path relative to wherever
     // Premiere happens to run (cwd is the temp root here, so a miss stays there)
@@ -178,6 +199,53 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     if (!p) bad('an unsaved project got no overlay');
     else if (path.dirname(p.args.path) !== want) bad('an unsaved project\'s overlay went to ' + path.dirname(p.args.path) + ', want ' + want);
     else ok('an unsaved project\'s overlay goes to ~/Documents/Pulse/Media/Untitled, not a temp folder');
+
+    // no folder beside the project or in Documents takes a write: the captions
+    // still go on the timeline (from the temp folder), and the owner is told
+    // plainly that they can go missing and what to do
+    {
+      const blocker = path.join(root, 'not-a-folder');
+      fs.writeFileSync(blocker, 'x');                                      // "Pulse Media" cannot be made under it
+      const docs = path.join(env.homedir, 'Documents', 'Pulse', 'Media', 'Ep 3');
+      fs.mkdirSync(path.dirname(docs), { recursive: true });
+      fs.writeFileSync(docs, 'x');                                         // nor ~/Documents/Pulse/Media/Ep 3
+      bridge.state.premiere = L.newPremiere(H, { width: 1080, height: 1920, fps: 25, projectPath: path.join(blocker, 'Ep 3.prproj') });
+      const from2 = bridge.state.hostCalls.length;
+      const toasts = [];
+      await page.evaluate(j => window.CP_DEBUG_EXT.overlay.runImages(j.cues, { wordCues: j.wordCues }), cuesFor(2, 1.6, 2));
+      let img = null;
+      for (let i = 0; i < 600; i++) {
+        await sleep(50);
+        const s = await ui();
+        if (s.toast && toasts[toasts.length - 1] !== s.toast) toasts.push(s.toast);
+        img = img || bridge.state.hostCalls.slice(from2).find(c => c.fn === 'CP_placeCaptionImages') || null;
+        if (img && !s.busy && i > 3) break;
+      }
+      const said = toasts.join(' | ');
+      if (!img) bad('with no writable media folder, the captions were not placed at all (' + said.slice(0, 120) + ')');
+      else if (!/temporary folder/.test(said) || !/folder you can write to/.test(said)) bad('captions placed from the temp folder without telling the owner they can go missing: ' + said.slice(0, 200));
+      else ok('with no writable folder the captions still go on, and the owner is told they sit in a temporary folder and what to do');
+
+      // the same machine, a LONG-video job: neither overlay renderer has a
+      // folder to write to, so it must end as separate images (same warning),
+      // not stop with nothing on the timeline
+      const from3 = bridge.state.hostCalls.length;
+      const toasts3 = [];
+      await page.evaluate(j => window.CP_DEBUG_EXT.overlay.run(j.cues, { wordCues: j.wordCues }), cuesFor(3, 1.6, 3));
+      let img3 = null;
+      for (let i = 0; i < 600; i++) {
+        await sleep(50);
+        const s = await ui();
+        if (s.toast && toasts3[toasts3.length - 1] !== s.toast) toasts3.push(s.toast);
+        img3 = img3 || bridge.state.hostCalls.slice(from3).find(c => c.fn === 'CP_placeCaptionImages') || null;
+        if (img3 && !s.busy && i > 3) break;
+        if (!img3 && !s.busy && i > 40) break;
+      }
+      const said3 = toasts3.join(' | ');
+      if (!img3) bad('a long-video job with no writable folder ended with nothing on the timeline: ' + said3.slice(0, 200));
+      else if (!/temporary folder/.test(said3)) bad('a long-video job fell back to images in the temp folder without the warning: ' + said3.slice(0, 200));
+      else ok('a long-video job with no writable folder still ends as captions (separate images, with the same warning)');
+    }
   }
 
   if (page.__errors && page.__errors.length) bad('page errors: ' + page.__errors.slice(0, 3).join(' | '));

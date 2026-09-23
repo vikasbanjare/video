@@ -2631,9 +2631,11 @@
       var c = cues[idx];
       if ($('cap1-time')) $('cap1-time').textContent = '🕒 ' + fmt(c.start) + ' – ' + fmt(c.end);
       if ($('cap1-text')) $('cap1-text').value = c.text;
-      if ($('cap1-hint')) $('cap1-hint').textContent = spanning
-        ? 'This is the caption under your playhead. Fix the words and Save — only this one line re-renders.'
-        : 'Nothing sits exactly under the playhead, so this is the nearest caption. Move the playhead over the line you want and tap again, or just edit this one.';
+      var oneClip = state.lastCaptionJob.mode === 'overlay';
+      if ($('cap1-hint')) $('cap1-hint').textContent = (spanning
+        ? 'This is the caption under your playhead. Fix the words and Save — ' +
+          (oneClip ? 'your captions are one clip, so Pulse re-draws that clip with the change.' : 'only this one line re-renders.')
+        : 'Nothing sits exactly under the playhead, so this is the nearest caption. Move the playhead over the line you want and tap again, or just edit this one.');
       $('cap1-editor').classList.remove('hidden');
       if ($('cap1-text')) { $('cap1-text').focus(); $('cap1-text').select(); }
     }).catch(function (e) { capProgress(null); toast('Couldn\'t read the playhead: ' + e.message, true); });
@@ -2649,8 +2651,24 @@
     var cue = state.lastCaptionJob.cues[_cap1Idx];
     if (newText === cue.text) { closeOneCaptionEditor(); return toast('No change — caption left as-is.'); }
     cue.text = newText;            // persist the fix into the remembered job
+    // ...and into the word timing. Word-by-word captions are BUILT from it, so
+    // without this the next re-render ("Apply to all", or any overlay) brought
+    // the old word back. Lines whose word count is unchanged keep their exact
+    // spoken times (the same reflow "Edit words" uses).
+    try {
+      if (state.transcriptWords && state.transcriptWords.length) {
+        var rw = reflowWordTimingFromLines(state.lastCaptionJob.cues, state.transcriptWords);
+        if (rw && rw.length) state.transcriptWords = rw;
+      }
+    } catch (eRw) {}
     saveLastCaptionJob();
     closeOneCaptionEditor();
+    // A long video's captions are ONE overlay clip: a single caption image
+    // dropped onto it chopped the overlay in two. Re-draw the whole clip.
+    if (state.lastCaptionJob.mode === 'overlay') {
+      toast('✏️ Fixed — Pulse is re-drawing your caption clip with the change (a few minutes on a long video).');
+      return runLibassCaptions(state.lastCaptionJob.cues, { replaceTrack: state.lastCaptionJob.track });
+    }
     // re-render ONLY this cue and overwrite just that clip on the same track.
     // wordCues:null keeps it instant — no whole-audio re-analysis for one line.
     runCaptionPipeline(state.lastCaptionJob.cues, {
@@ -3078,6 +3096,25 @@
     } catch (e2) {}
   }
 
+  /* The self-test row for long videos. It asks exactly what the long-video
+     routing asks (✨ Add captions and runLibassCaptions): Pulse's own one-clip
+     overlay first, the simpler renderer second. It used to ask only about the
+     simpler renderer, so an audio engine without it read "a long video would
+     create one image per word" while the full overlay would actually run. */
+  function longVideoRow(row) {
+    var name = 'Long videos → ONE caption clip';
+    if (canvasOverlayReady()) {
+      return row(name, 'ok', 'a long podcast becomes one overlay clip drawn by the same renderer as the preview');
+    }
+    if (ffmpegHasLibass() && typeof CPAss !== 'undefined') {
+      return row(name, 'warn', 'only the simpler caption renderer works here — long videos become one clip but lose pills, ' +
+        'gradients and neon (Settings → ⬇️ Set up audio engine brings the full look)');
+    }
+    row(name, 'warn', resolveFfmpeg()
+      ? 'this audio engine cannot make the one overlay clip — a long video would create one image per word (Settings → ⬇️ Set up audio engine)'
+      : 'no audio engine (ffmpeg) — a long video would create one image per word (Settings → ⬇️ Set up audio engine)');
+  }
+
   function buildSelfTestReport(rows) {   // pure — proof-tested
     var lines = [], fails = 0, warns = 0;
     for (var i = 0; i < rows.length; i++) {
@@ -3170,15 +3207,7 @@
     } catch (eHi) { row('Hindi captions (Devanagari)', 'warn', eHi.message); }
   } catch (eRen) { row('Caption renderer (Pulse)', 'fail', eRen.message); }
 
-  try {
-    // the SAME probe the auto-overlay decision uses, so the report cannot
-    // disagree with what the panel will actually do
-    var _ffx = resolveFfmpeg(), _hasLibass = ffmpegHasLibass();
-    row('Long videos → ONE caption clip', _hasLibass ? 'ok' : 'warn',
-      _hasLibass ? 'a long podcast becomes one overlay clip instead of thousands of images'
-        : (_ffx ? 'this ffmpeg has no subtitles filter — a long video would create one image per word'
-                : 'no ffmpeg — a long video would create one image per word'));
-  } catch (eLa) { row('Long videos → ONE caption clip', 'warn', eLa.message); }
+  try { longVideoRow(row); } catch (eLa) { row('Long videos → ONE caption clip', 'warn', eLa.message); }
 
     // The EXPORT chain, not just the drawing. A caption becomes a file by
     // canvas → base64 PNG → node fs write, and that can fail on a real machine
@@ -6741,8 +6770,9 @@
       if (estFrames > 600 && (canvasOv || (ffmpegHasLibass() && typeof CPAss !== 'undefined'))) {
         diag('captions', 'auto overlay (' + (canvasOv ? 'Pulse renderer' : 'libass fallback') + '): ' + estFrames +
           ' word-frames over ' + spanMin.toFixed(1) + ' min — one overlay clip instead of ' + estFrames + ' images');
+        var motion = overlayMotionNote();
         if (canvasOv) toast('This video needs ~' + estFrames + ' caption frames — Pulse is drawing them into ONE caption overlay clip instead of ' +
-          estFrames + ' images. Same renderer as the preview, so it looks the same.');
+          estFrames + ' images. Same renderer as the preview' + (motion ? '.' + motion : ', so it looks the same.'));
         return runLibassCaptions(mCues, {});
       }
     } catch (eScale) {}
@@ -6809,6 +6839,11 @@
     if (!state.lastCaptionJob || !state.lastCaptionJob.cues) {
       return toast('Add captions first, then select a clip/range and use this.', true);
     }
+    // A long video's captions are ONE overlay clip — a part of it cannot take
+    // another style (images dropped on it chopped the clip). Say so.
+    if (state.lastCaptionJob.mode === 'overlay') {
+      return toast('These captions are one overlay clip, so a range cannot get its own style. Use "Apply to all" to restyle them all.', true);
+    }
     setCaptionBusy(true);
     CPBridge.callHost('CP_selectedRange', {}).then(function (rng) {
       setCaptionBusy(false);
@@ -6846,12 +6881,14 @@
     if ($('btn-cap-edit')) $('btn-cap-edit').classList.toggle('hidden', !on);
     if ($('btn-cap-fix1')) $('btn-cap-fix1').classList.toggle('hidden', !on);
     if ($('btn-cap-restyle')) $('btn-cap-restyle').classList.toggle('hidden', !on);
-    if ($('btn-cap-segment')) $('btn-cap-segment').classList.toggle('hidden', !on);
+    // one overlay clip cannot restyle just a range (see the btn-cap-segment handler)
+    if ($('btn-cap-segment')) $('btn-cap-segment').classList.toggle('hidden', !on || !!(job && job.mode === 'overlay'));
     var hint = $('cap-restyle-hint');
     if (hint) {
       if (job && job.mode === 'overlay') {
         hint.innerHTML = '✅ Your captions are ONE overlay clip (chosen automatically because this video is long — thousands of separate caption clips would bog your project down). ' +
-          'They stay editable from Pulse: <b>✏️ Edit words</b> re-renders them, and picking another style + <b>Add captions</b> replaces the overlay.';
+          'They stay editable from Pulse: <b>✏️ Edit words</b> or fixing one line re-draws the clip, and <b>Apply to all</b> (or another style + <b>Add captions</b>) restyles it. ' +
+          'A range cannot get its own style inside one clip.';
         hint.classList.remove('hidden');
       } else if (editable) {
         hint.innerHTML = 'Editable captions are on your timeline — click any caption clip and edit its <b>text or styling</b> in Window → Essential Graphics. Running “Add captions” again replaces this set.';
@@ -6961,11 +6998,12 @@
       if (frames.length > 600 && !opts.bigOk) {
         // Reaching here means the one-clip overlay could not be made: say why,
         // and name the actual fix, instead of only offering to shrink the job.
+        // (overlayFailed is already plain words — captionFailureCause)
         var whyNoOverlay = opts.overlayFailed
-          ? '\n\nPulse tried to make ONE caption overlay clip instead, but it failed on this machine (' + opts.overlayFailed + ').'
+          ? '\n\nPulse tried to make ONE caption overlay clip instead, but it could not here: ' + opts.overlayFailed + '.'
           : (!resolveFfmpeg()
             ? '\n\nPulse would normally render ONE caption overlay clip for a video this long (same look, one file instead of ' +
-              frames.length + '). That needs ffmpeg — add it in Settings and run this again.'
+              frames.length + '). That needs Pulse\'s audio engine — tap Settings → ⬇️ Set up audio engine, then run this again.'
             : '');
         confirmInline(frames.length + ' caption graphics will be created. That many can be slow to render and import — Premiere may look stuck near the end of its import bar. Tip: raise "Words per caption" or pick a shorter clip for fewer graphics.' +
           whyNoOverlay + '\n\nContinue anyway?', 'Continue', function (yes) {
@@ -6975,20 +7013,33 @@
         return;
       }
 
-      var outDir;
-      try {
-        var pm = nodeReq('path');
-        outDir = pm.join(nodeReq('os').tmpdir(), 'cutpilot-frames-' + Date.now());
-      } catch (e) { setCaptionBusy(false); capProgress(null); return toast('Node unavailable: ' + e.message, true); }
+      var pm;
+      try { pm = nodeReq('path'); nodeReq('fs'); }
+      catch (e) { setCaptionBusy(false); capProgress(null); return toast('Node unavailable: ' + e.message, true); }
 
-      capProgress('Rendering 0 / ' + frames.length);
-      return CPRender.renderFrames(frames, {
-        width: state.env.width || 1920,
-        height: state.env.height || 1080,
-        preset: preset,
-        overrides: overrides,
-        outDir: outDir,
-        onProgress: function (done, total) { capProgress('Rendering ' + done + ' / ' + total); }
+      // The caption images live beside the project (captionMediaPlace), like
+      // the long-video overlay — NOT in the OS temp folder, which macOS clears
+      // of files unused for a few days: every reel's captions then went red
+      // ("Media Offline") when the project was reopened later.
+      var inTemp = false;
+      return captionMediaPlace().then(function (place) {
+        return pm.join(place.dir, 'caption-images-' + captionJobKey(place, (state.env && state.env.sequenceName) || '') + '-' + overlayStamp());
+      }, function (eDir) {
+        // no folder beside the project or in Documents takes a write: captions
+        // still land on the timeline today, and the toast says what to do
+        inTemp = true;
+        diag('captions', 'no caption media folder (' + ((eDir && eDir.message) || eDir) + ') — caption images go to the temp folder');
+        return pm.join(nodeReq('os').tmpdir(), 'cutpilot-frames-' + Date.now());
+      }).then(function (outDir) {
+        capProgress('Rendering 0 / ' + frames.length);
+        return CPRender.renderFrames(frames, {
+          width: state.env.width || 1920,
+          height: state.env.height || 1080,
+          preset: preset,
+          overrides: overrides,
+          outDir: outDir,
+          onProgress: function (done, total) { capProgress('Rendering ' + done + ' / ' + total); }
+        });
       }).then(function (items) {
         capProgress((scoped ? 'Restyling ' : 'Placing ') + items.length + ' captions in your timeline…', items.length * 130);
         // build styles animate in word-by-word (like reveal), so the host must NOT
@@ -7007,19 +7058,28 @@
         // remember the full-video job (don't let a segment restyle shrink it)
         if (!range) { state.lastCaptionJob = { cues: cues, track: r.track }; saveLastCaptionJob(); }
         reflectCaptionsPlaced();
+        var tempNote = inTemp
+          ? ' ⚠️ Pulse could not save these caption images next to your project or in your Documents folder, so they are in a ' +
+            'temporary folder your computer clears after a few days — the captions would then show as missing (red) in Premiere. ' +
+            'Save your project in a folder you can write to, then add the captions again.'
+          : '';
         if (single) {
-          toast('✅ Caption updated on V' + r.track + ' — text changed in place. ⌘Z / Ctrl+Z undoes it.');
+          toast('✅ Caption updated on V' + r.track + ' — text changed in place. ⌘Z / Ctrl+Z undoes it.' + tempNote, !!inTemp);
         } else {
           toast((scoped ? (range ? '🎯 Restyled range — ' : '🔄 Restyled ') : '🎉 ') + r.placed + ' captions ' +
                 (scoped ? 'on V' : 'added on V') + r.track +
                 (wordCues ? (realWordTiming ? ' · 🎯 word-synced' : ' · audio-synced') : '') +
-                (r.animated ? ' · ' + CPCaptions.getAnimation(anim).name : ''));
+                (r.animated ? ' · ' + CPCaptions.getAnimation(anim).name : '') + tempNote, !!inTemp);
         }
       });
     }).catch(function (e) {
       setCaptionBusy(false);
       capProgress(null);
-      toast('Captions failed: ' + e.message, true);
+      // a full disk / missing permission / missing engine in plain words; any
+      // other message (Premiere's own, e.g. "Open a sequence first.") as is
+      var cause = captionFailureCause(e);
+      if (cause.known) diag('captions', 'caption images failed: ' + rawFailure(e));
+      toast('Captions failed: ' + (cause.known ? cause.plain + '.' : e.message), true);
     });
   }
 
@@ -7282,12 +7342,27 @@
   function mediaSafeName(s) {
     return String(s || '').replace(/[\\\/:*?"<>|\u0000-\u001f]+/g, '-').replace(/^[\s.-]+|[\s.-]+$/g, '').slice(0, 60) || 'Unsaved project';
   }
+  /* A short, stable ASCII hash, the same on every OS. */
+  function shortHash(s) {
+    s = String(s || '');
+    var h = 0;
+    for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    return h.toString(36);
+  }
   /* A stable, ASCII file-name key per sequence (Hindi names hash apart). */
   function overlaySeqKey(name) {
-    var s = String(name || 'sequence'), h = 0;
-    for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    var s = String(name || 'sequence');
     var slug = s.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'sequence';
-    return slug + '-' + h.toString(36);
+    return slug + '-' + shortHash(s);
+  }
+  /* The file-name key of one caption job: its sequence AND its project. A
+     "Save As" copy in the same folder keeps the bins, the timeline and the
+     sequence name, so a key by sequence alone made the copy treat the
+     original's overlay files as its own and delete them — the original then
+     opened with "Media Offline" captions. The project's saved path is part of
+     the key; an unsaved project is keyed by its name. */
+  function captionJobKey(place, seqName) {
+    return overlaySeqKey(seqName) + '-' + shortHash(place.projectPath || ('unsaved:' + (place.projectName || '')));
   }
   function overlayStamp() {
     var d = new Date();
@@ -7296,13 +7371,26 @@
       p(d.getSeconds()) + '-' + p(d.getMilliseconds(), 3);
   }
 
-  /* Where overlay media lives. NOT the OS temp folder: macOS clears files there
-     that go unused for a few days, and the project then reopens with red "Media
-     Offline" where a podcast's captions were. "Pulse Media" beside the .prproj
-     when Premiere says where the project is saved, else
+  /* mkdir -p that also works on the Node inside Premiere 14.0–14.3 (Node 8),
+     which ignores { recursive: true }: there an existing folder threw EEXIST
+     (the second long job in a project lost "Pulse Media") and a missing parent
+     threw ENOENT. One level at a time; folders that exist are left alone. */
+  function makeDirs(dir) {
+    var fs = nodeReq('fs'), pathMod = nodeReq('path');
+    if (fs.existsSync(dir)) return;
+    var parent = pathMod.dirname(dir);
+    if (parent && parent !== dir) makeDirs(parent);
+    try { fs.mkdirSync(dir); } catch (e) { if (!fs.existsSync(dir)) throw e; }
+  }
+
+  /* Where caption media lives — the long-video overlay AND the per-image
+     captions of every reel — and whose it is. NOT the OS temp folder: macOS
+     clears files there that go unused for a few days, and the project then
+     reopens with red "Media Offline" where the captions were. "Pulse Media"
+     beside the .prproj when Premiere says where the project is saved, else
      ~/Documents/Pulse/Media/<project>. Resolves to the first folder that
-     really accepts a write. */
-  function overlayMediaDir() {
+     really accepts a write: { dir, projectPath ('' = unsaved), projectName }. */
+  function captionMediaPlace() {
     var fs = nodeReq('fs'), pathMod = nodeReq('path'), os = nodeReq('os');
     var info = CPBridge.isCEP()
       ? CPBridge.callHost('CP_getProjectInfo').then(null, function () { return null; })
@@ -7311,16 +7399,17 @@
       var cands = [];
       var proj = (r && r.path) ? String(r.path) : '';
       // only a real saved location — an unsaved project can report a bare name
-      if (proj && /\.prproj$/i.test(proj) && pathMod.isAbsolute(proj)) cands.push(pathMod.join(pathMod.dirname(proj), 'Pulse Media'));
+      var saved = !!(proj && /\.prproj$/i.test(proj) && pathMod.isAbsolute(proj));
+      if (saved) cands.push(pathMod.join(pathMod.dirname(proj), 'Pulse Media'));
       var pname = String((r && r.name) || (state.env && state.env.projectName) || '').replace(/\.prproj$/i, '');
       cands.push(pathMod.join(os.homedir(), 'Documents', 'Pulse', 'Media', mediaSafeName(pname)));
       for (var i = 0; i < cands.length; i++) {
         try {
-          fs.mkdirSync(cands[i], { recursive: true });
+          makeDirs(cands[i]);
           var probe = pathMod.join(cands[i], '.pulse-write-test');
           fs.writeFileSync(probe, 'ok');
           fs.unlinkSync(probe);
-          return cands[i];
+          return { dir: cands[i], projectPath: saved ? proj : '', projectName: pname };
         } catch (e) {}
       }
       throw new Error('no folder Pulse can write caption media to');
@@ -7343,10 +7432,11 @@
     } catch (e3) {}
   }
 
-  /* Overlays this sequence got before (oldest first), never the new one. */
-  function previousOverlays(dir, seqKey, exceptPath) {
+  /* Overlays this project+sequence got before (oldest first), never the new one. */
+  var OVERLAY_FILE_RE = /^pulse-captions-.+-\d{8}-\d{6}-\d{3}\.mov$/;
+  function previousOverlays(dir, key, exceptPath) {
     var fs = nodeReq('fs'), pathMod = nodeReq('path'), out = [];
-    var prefix = 'pulse-captions-' + seqKey + '-';
+    var prefix = 'pulse-captions-' + key + '-';
     try {
       fs.readdirSync(dir).forEach(function (n) {
         if (n.indexOf(prefix) !== 0 || !/^\d{8}-\d{6}-\d{3}\.mov$/.test(n.slice(prefix.length))) return;
@@ -7357,15 +7447,97 @@
     out.sort();                               // the names carry a sortable timestamp
     return out;
   }
-  /* Delete overlay files the host confirmed no sequence uses any more — and only
-     our own files in our own folder, whatever the host answers. */
-  function removeUnusedOverlays(paths, dir, seqKey) {
-    var fs = nodeReq('fs'), pathMod = nodeReq('path'), n = 0;
-    (paths || []).forEach(function (p) {
-      if (pathMod.dirname(p) !== dir || pathMod.basename(p).indexOf('pulse-captions-' + seqKey + '-') !== 0) return;
-      try { fs.unlinkSync(p); n++; } catch (e) {}
+
+  /* ---- deleting superseded overlays without ever taking a project offline ----
+     An old overlay file is deleted only when BOTH hold:
+      1. Premiere says no open project uses it any more (CP_placeOverlay's
+         cleanup/recheck — it then drops the file's Pulse bin);
+      2. no Premiere project SAVED in the project's folder names it: the open
+         project's own last save (it can be reopened without the latest
+         changes, or after a crash), and a "Save As" / "Save a Copy" beside it.
+         A project file Pulse cannot read counts as naming every file.
+     A file that passes 1 but not yet 2 — or whose delete failed (Windows can
+     still hold a file Premiere just let go of) — waits in the folder's pending
+     list and is checked again on every later caption job, so nothing leaks for
+     good. Premiere's auto-save copies are NOT read: an auto-save opened after
+     the owner re-rendered twice can still miss an old overlay. */
+  var PENDING_DELETES = '.pulse-pending-delete.json';
+  function readPendingDeletes(dir) {
+    var fs = nodeReq('fs'), pathMod = nodeReq('path'), out = [];
+    try {
+      var j = JSON.parse(fs.readFileSync(pathMod.join(dir, PENDING_DELETES), 'utf8'));
+      ((j && j.files) || []).forEach(function (n) {
+        n = pathMod.basename(String(n));                 // only files in THIS folder
+        var full = pathMod.join(dir, n);
+        if (OVERLAY_FILE_RE.test(n) && out.indexOf(full) < 0 && fs.existsSync(full)) out.push(full);
+      });
+    } catch (e) {}
+    return out;
+  }
+  function writePendingDeletes(dir, paths) {
+    var fs = nodeReq('fs'), pathMod = nodeReq('path'), f = pathMod.join(dir, PENDING_DELETES);
+    try {
+      if (!paths.length) { if (fs.existsSync(f)) fs.unlinkSync(f); return; }
+      fs.writeFileSync(f, JSON.stringify({ files: paths.map(function (p) { return pathMod.basename(p); }) }), 'utf8');
+    } catch (e) {}
+  }
+  /* Which of `paths` a Premiere project saved in `projectDir` may still name
+     (→ { path: true }). A .prproj is gzip-compressed XML whose media entries
+     carry each file's path, so the file NAME (unique to the millisecond) is
+     searched for. Only projects saved after a file was made can name it. */
+  function savedProjectsNaming(projectDir, paths) {
+    var keep = {}, i;
+    if (!paths.length || !projectDir) return keep;      // unsaved: no saved copy can point here
+    var fs = nodeReq('fs'), pathMod = nodeReq('path'), zlib = null;
+    try { zlib = nodeReq('zlib'); } catch (eZ) { zlib = null; }
+    var made = {}, oldest = Infinity, SLACK = 3600 * 1000;
+    for (i = 0; i < paths.length; i++) {
+      try { made[paths[i]] = fs.statSync(paths[i]).mtimeMs; } catch (eS) { made[paths[i]] = 0; }
+      if (made[paths[i]] < oldest) oldest = made[paths[i]];
+    }
+    var names;
+    try { names = fs.readdirSync(projectDir); }
+    catch (eD) { for (i = 0; i < paths.length; i++) keep[paths[i]] = true; return keep; }
+    names.forEach(function (n) {
+      if (!/\.prproj$/i.test(n)) return;
+      var f = pathMod.join(projectDir, n), saved = Infinity;
+      try { saved = fs.statSync(f).mtimeMs; } catch (eM) { saved = Infinity; }
+      if (saved < oldest - SLACK) return;               // saved before any of these files existed
+      var text = '';
+      try {
+        var raw = fs.readFileSync(f), body = null;
+        try { body = zlib ? zlib.gunzipSync(raw) : null; } catch (eGz) { body = null; }
+        text = String((body || raw).toString('utf8'));
+      } catch (eR) { text = ''; }
+      var readable = text.indexOf('<PremiereData') >= 0;
+      for (var k = 0; k < paths.length; k++) {
+        if (made[paths[k]] > saved + SLACK) continue;   // this project was saved before that file existed
+        if (!readable || text.indexOf(pathMod.basename(paths[k])) >= 0) keep[paths[k]] = true;
+      }
     });
-    return n;
+    return keep;
+  }
+  /* After CP_placeOverlay: delete what is safe, keep the rest pending. Only
+     Pulse's own overlay files in this folder, whatever the host answers. */
+  function tidyOldOverlays(r, info, asked) {
+    var fs = nodeReq('fs'), pathMod = nodeReq('path');
+    if (asked && (!r || r.checked !== true)) return;     // the host could not look: change nothing
+    var free = [];
+    ((r && r.unused) || []).concat((r && r.free) || []).forEach(function (p) {
+      p = String(p);
+      if (pathMod.dirname(p) === info.dir && OVERLAY_FILE_RE.test(pathMod.basename(p)) &&
+          p !== info.path && free.indexOf(p) < 0) free.push(p);
+    });
+    var named = savedProjectsNaming(info.projectDir, free);
+    var waiting = [], gone = 0;
+    free.forEach(function (p) {
+      if (named[p]) { waiting.push(p); return; }
+      try { fs.unlinkSync(p); gone++; }
+      catch (e) { if (fs.existsSync(p)) waiting.push(p); else gone++; }
+    });
+    writePendingDeletes(info.dir, waiting);
+    if (gone || waiting.length) diag('captions', 'old caption overlays: ' + gone + ' deleted, ' + waiting.length +
+      ' kept until no saved project names them');
   }
 
   /* Real progress with a Cancel button, in the caption progress box. */
@@ -7394,20 +7566,32 @@
 
   /* Draw `frames` — the per-image path's own caption states — into ONE
      transparent .mov with the canvas engine, then place it. */
-  function runCanvasOverlay(cues, frames, opts, ctx) {
+  /* The files one overlay job writes, in the caption media folder. */
+  function overlayJobFiles(place) {
     var pathMod = nodeReq('path');
+    var key = captionJobKey(place, (state.env && state.env.sequenceName) || '');
+    var stamp = overlayStamp();
+    return {
+      dir: place.dir, key: key,
+      projectDir: place.projectPath ? pathMod.dirname(place.projectPath) : '',
+      work: pathMod.join(place.dir, '.pulse-work-' + stamp),
+      // "pulse" in the name: "🧹 Remove all Pulse captions" finds clips by name
+      path: pathMod.join(place.dir, 'pulse-captions-' + key + '-' + stamp + '.mov')
+    };
+  }
+
+  function runCanvasOverlay(cues, frames, opts, ctx) {
     var W = state.env.width || 1920, H = state.env.height || 1080;
     var fps = (state.env.fps > 0) ? state.env.fps : 30;
-    var seqKey = overlaySeqKey((state.env && state.env.sequenceName) || '');
     if (!frames.length) { setCaptionBusy(false); capProgress(null); toast('No words to caption.', true); return Promise.resolve(); }
     overlayProgress('Preparing your caption overlay…', 0);
-    return overlayMediaDir().then(function (dir) {
-      clearStaleOverlayWork(dir);
-      var stamp = overlayStamp();
+    return captionMediaPlace().then(function (place) {
+      clearStaleOverlayWork(place.dir);
+      var out = overlayJobFiles(place);
       var job = CPRender.renderOverlay(frames, {
         width: W, height: H, fps: fps, preset: ctx.preset, overrides: ctx.overrides,
-        workDir: pathMod.join(dir, '.pulse-work-' + stamp),
-        outPath: pathMod.join(dir, 'pulse-captions-' + seqKey + '-' + stamp + '.mov'),
+        workDir: out.work,
+        outPath: out.path,
         ffmpeg: resolveFfmpeg(),
         onProgress: function (p) {
           overlayProgress(p.phase === 'draw'
@@ -7419,7 +7603,7 @@
       return job.promise.then(function (res) {
         _ovJob = null;
         diag('captions', 'Pulse overlay: ' + frames.length + ' frames → ' + res.states + ' looks, ' + res.frames + ' video frames → ' + res.path);
-        return placeOverlayClip(cues, opts, { path: res.path, dir: dir, seqKey: seqKey, lost: null });
+        return placeOverlayClip(cues, opts, { path: res.path, dir: out.dir, key: out.key, projectDir: out.projectDir, lost: null });
       });
     }).catch(function (e) {
       _ovJob = null;
@@ -7428,19 +7612,63 @@
         toast('Stopped — no captions were added.');
         return;
       }
-      var why = String((e && e.message) || e).slice(0, 160);
-      diag('captions', 'Pulse overlay failed: ' + why);
-      return overlayFallback(cues, opts, why);
+      diag('captions', 'Pulse overlay failed: ' + rawFailure(e));
+      var cause = captionFailureCause(e);
+      if (cause.stop) return stopCaptions(cause);
+      return overlayFallback(cues, opts, cause.plain);
     });
   }
 
-  /* Pulse's own overlay could not be made: libass (a lesser look, and it says
-     what it loses), then separate images — each tried at most once. */
+  /* A caption-job failure in words the owner can act on. ffmpeg's own output
+     (the raw error) goes to 📋 Copy diagnostics only — the owner used to read
+     "ffmpeg exit 1: [concat @ 0x…] … No space left on device" in a toast.
+     stop: the next, simpler way would hit the same wall (a full disk refuses
+     every write), so the job stops instead of writing hundreds more files. */
+  function captionFailureCause(e) {
+    var raw = rawFailure(e);
+    if (/ENOSPC|No space left|disk (is )?full|quota exceeded/i.test(raw))
+      return { plain: 'your disk is full — free some space, then try again', stop: true, known: true };
+    if (/spawn\b[^\n]*(ENOENT|EACCES)|ENOENT[^\n]*ffmpeg|ffmpeg[^\n]*(not found|No such file)/i.test(raw))
+      return { plain: 'Pulse\'s audio engine is missing — tap Settings → ⬇️ Set up audio engine, then try again', stop: false, known: true };
+    if (/EACCES|EPERM|EROFS|Permission denied|Operation not permitted|read-only file system|no folder Pulse can write/i.test(raw))
+      return { plain: 'Pulse is not allowed to save files next to your project — save the project in a folder you can write to (for example Documents), then try again', stop: false, known: true };
+    return { plain: 'something on this computer stopped it (📋 Copy diagnostics in Settings has the details)', stop: false, known: false };
+  }
+  function rawFailure(e) {
+    return String(((e && e.message) || e || '') + ' ' + ((e && e.code) || '') + ' ' + ((e && e.stderr) || '')).slice(0, 2000);
+  }
+  function stopCaptions(cause) {
+    setCaptionBusy(false); capProgress(null);
+    toast('Captions were not added: ' + cause.plain + '.', true);
+  }
+
+  /* Pulse's own overlay could not be made: the simpler overlay renderer (a
+     lesser look, and it says what it loses), then separate images — each tried
+     at most once. The FIRST cause travels along: it is the one to fix. */
   function overlayFallback(cues, opts, why) {
+    var first = opts.overlayFailed || why;
     if (!opts.forceLibass && ffmpegHasLibass() && typeof CPAss !== 'undefined') {
-      return runLibassCaptions(cues, withOpts(opts, { forceLibass: true, overlay: false, overlayFailed: why }));
+      return runLibassCaptions(cues, withOpts(opts, { forceLibass: true, overlay: false, overlayFailed: first }));
     }
-    return runCaptionPipeline(cues, withOpts(opts, { noOverlay: true, overlay: false, overlayFailed: why }));
+    return runCaptionPipeline(cues, withOpts(opts, { noOverlay: true, overlay: false, overlayFailed: first }));
+  }
+
+  /* The per-image path gives each caption its entrance motion as Premiere
+     keyframes (CP_placeCaptionImages → CP_animateClip): a whole-line entrance
+     (pop, slide, …) unless the words themselves animate (word-by-word
+     highlight / reveal), plus the per-word entrance option. That motion is not
+     drawn into pixels, so the one overlay clip has none of it — say so instead
+     of "it looks the same". The same rule as the host's; '' = nothing lost. */
+  function overlayMotionNote() {
+    try {
+      var preset = currentPreset() || {}, ov = readOverrides();
+      var anim = preset.build ? 'reveal' : currentAnim();
+      if (!anim || anim === 'none' || anim === 'typewriter') return '';
+      var wordSync = (anim === 'karaoke' || anim === 'reveal');
+      if (wordSync && !ov.perWordEntrance) return '';
+      var nm = wordSync ? 'per-word entrance' : (((CPCaptions.getAnimation(anim) || {}).name) || 'entrance');
+      return ' Note: the "' + nm + '" entrance animation is not part of the one clip — each caption appears without it.';
+    } catch (e) { return ''; }
   }
 
   /* Place a finished overlay .mov (from either renderer) and record the job. */
@@ -7452,11 +7680,16 @@
     var sameSeqOv = !!(prevOv && prevOv.seq && state.env && prevOv.seq === state.env.sequenceName);
     if (opts.replaceTrack) placeArgs.replaceTrack = opts.replaceTrack;
     else if (prevOv && prevOv.mode === 'overlay' && prevOv.track && sameSeqOv) placeArgs.replaceTrack = prevOv.track;
-    // Tidy up this sequence's older overlays — except the newest one, so ⌘Z
-    // after a re-render still finds its file. The host deletes nothing: it says
-    // which ones no sequence uses any more, and only those files are removed.
-    var older = previousOverlays(info.dir, info.seqKey, info.path);
-    if (older.length > 1) placeArgs.cleanup = older.slice(0, older.length - 1);
+    // Tidy up this project+sequence's older overlays — except the newest one,
+    // so ⌘Z after a re-render still finds its file — and re-check the ones an
+    // earlier job had to leave (see tidyOldOverlays). The host deletes nothing:
+    // it says which ones no sequence uses any more.
+    var older = previousOverlays(info.dir, info.key, info.path);
+    var pending = readPendingDeletes(info.dir);
+    var cleanup = older.slice(0, Math.max(0, older.length - 1)).filter(function (p) { return pending.indexOf(p) < 0; });
+    if (cleanup.length) placeArgs.cleanup = cleanup;
+    if (pending.length) placeArgs.recheck = pending;
+    var asked = !!(cleanup.length || pending.length);
     return CPBridge.callHost('CP_placeOverlay', placeArgs).then(function (r) {
       setCaptionBusy(false); capProgress(null);
       // Recorded as the current caption job, so edit words / restyle keep
@@ -7465,18 +7698,21 @@
                                seq: (state.env && state.env.sequenceName) || '' };
       saveLastCaptionJob();
       reflectCaptionsPlaced();
-      removeUnusedOverlays(r && r.unused, info.dir, info.seqKey);
+      try { tidyOldOverlays(r, info, asked); } catch (eTidy) { diag('captions', 'tidying old overlays: ' + eTidy.message); }
+      var motion = overlayMotionNote();
       toast(info.lost
-        ? '🎉 Captions added on V' + r.track + ' as ONE overlay clip (simpler libass look' +
-          (info.lost.length ? ' — without ' + info.lost.join(', ') : '') + '). ⌘Z undoes it.'
-        : '🎉 Captions added on V' + r.track + ' as ONE overlay clip, drawn by the same renderer as your preview. Edit words or restyle any time from Pulse; ⌘Z undoes it.');
+        ? '🎉 Captions added on V' + r.track + ' as ONE overlay clip (simpler look' +
+          (info.lost.length ? ' — without ' + info.lost.join(', ') : '') + ').' + motion + ' ⌘Z undoes it.'
+        : '🎉 Captions added on V' + r.track + ' as ONE overlay clip, drawn by the same renderer as your preview.' + motion +
+          ' Edit words or restyle any time from Pulse; ⌘Z undoes it.');
     }, function (e) {
       // SAFETY NET: if this Premiere will not take the overlay clip, fall back
       // to separate caption images so Add captions never leaves nothing.
       try { nodeReq('fs').unlinkSync(info.path); } catch (eRm) {}
       diag('captions', 'overlay placement failed: ' + ((e && e.message) || e));
-      toast('Switched to separate caption images (the overlay clip could not be placed here).');
-      return runCaptionPipeline(cues, withOpts(opts, { noOverlay: true, overlay: false, overlayFailed: 'placing the clip failed' }));
+      toast('Switched to separate caption images (Premiere did not accept the one overlay clip here).');
+      return runCaptionPipeline(cues, withOpts(opts, { noOverlay: true, overlay: false,
+        overlayFailed: opts.overlayFailed || 'Premiere did not accept the overlay clip' }));
     });
   }
 
@@ -7517,8 +7753,8 @@
     // before rendering, instead of promising the same look.
     var lost = [];
     try { lost = CPAss.lostEffects(CPRender.styleForFrame(currentPreset(), H, ovr, W)); } catch (eL) { lost = []; }
-    toast('Long video: Pulse is using the simpler libass renderer for the one overlay clip' +
-      (opts.overlayFailed ? ' (its own renderer failed here: ' + opts.overlayFailed + ')' : '') + '. ' +
+    toast('Long video: Pulse is drawing the one caption overlay clip with its simpler caption renderer' +
+      (opts.overlayFailed ? ' (the full one could not run here: ' + opts.overlayFailed + ')' : '') + '. ' +
       (lost.length ? 'This style will LOSE: ' + lost.join(', ') + '.' : 'This style keeps its look.'));
     setCaptionBusy(true);
     capProgress('Listening for word timing…');
@@ -7554,34 +7790,39 @@
       if (!events.length) { setCaptionBusy(false); capProgress(null); return toast('No words to caption.', true); }
       var assStr = CPAss.buildAss(events, assOpts);   // reuse the auto-fit opts computed above
       var lastEnd = events[events.length - 1].end || 0;
-      var seqKey = overlaySeqKey((state.env && state.env.sequenceName) || '');
 
-      return overlayMediaDir().then(function (dir) {
-        clearStaleOverlayWork(dir);
-        var stamp = overlayStamp();
+      return captionMediaPlace().then(function (place) {
+        clearStaleOverlayWork(place.dir);
+        var out = overlayJobFiles(place);
         // ffmpeg can read the .ass from any folder now (escFilterPath escapes
         // ':' and apostrophes), so it sits in a work folder next to the output.
-        var work = pathMod.join(dir, '.pulse-work-' + stamp);
+        var work = out.work;
         var assPath = pathMod.join(work, 'cap.ass');
-        // "pulse" in the name: "🧹 Remove all Pulse captions" finds clips by name
-        var outPath = pathMod.join(dir, 'pulse-captions-' + seqKey + '-' + stamp + '.mov');
+        var outPath = out.path;
         function dropWork() { try { fs.unlinkSync(assPath); } catch (e1) {} try { fs.rmdirSync(work); } catch (e2) {} }
-        try { fs.mkdirSync(work, { recursive: true }); fs.writeFileSync(assPath, assStr, 'utf8'); }
-        catch (eW) { dropWork(); setCaptionBusy(false); capProgress(null); return toast('Could not write caption file: ' + eW.message, true); }
-
-        var args = CPAss.ffmpegOverlayArgs(assPath, W, H, lastEnd + 0.2, outPath, bundledFontsDir(), Math.round(state.env.fps || 30));
-        // If ANY step of the libass path fails on this machine, fall back to
-        // separate caption images so "Add captions" never fails outright.
+        // If ANY step of the libass path fails on this machine — writing its
+        // own caption file included — fall back to separate caption images so
+        // "Add captions" never fails outright, unless the cause would stop
+        // those too (a full disk). A refused caption-file write used to end
+        // the whole job instead.
         var done = false, cancelled = false, proc = null;
-        function fallbackImages(reason) {
+        function fallbackImages(err, step) {
           if (done) return; done = true; _ovJob = null; dropWork();
           try { fs.unlinkSync(outPath); } catch (eRm) {}
-          toast('The overlay clip could not be rendered here (' + reason + ') — using separate caption images instead.');
-          runCaptionPipeline(cues, withOpts(opts, { noOverlay: true, overlay: false, overlayFailed: 'libass ' + reason }));
+          diag('captions', 'simpler overlay failed' + (step ? ' (' + step + ')' : '') + ': ' + rawFailure(err));
+          var cause = captionFailureCause(err);
+          if (cause.stop) return stopCaptions(cause);
+          var first = opts.overlayFailed || cause.plain;       // the first cause is the one to fix
+          toast('The one caption overlay clip could not be made here (' + first + ') — using separate caption images instead.');
+          runCaptionPipeline(cues, withOpts(opts, { noOverlay: true, overlay: false, overlayFailed: first }));
         }
-        overlayProgress('Rendering captions with libass — 0%', 0);
+        try { makeDirs(work); fs.writeFileSync(assPath, assStr, 'utf8'); }
+        catch (eW) { return fallbackImages(eW, 'could not write its caption file'); }
+
+        var args = CPAss.ffmpegOverlayArgs(assPath, W, H, lastEnd + 0.2, outPath, bundledFontsDir(), Math.round(state.env.fps || 30));
+        overlayProgress('Rendering captions (simpler look) — 0%', 0);
         _ovJob = { cancel: function () { cancelled = true; if (proc) { try { proc.kill(); } catch (eK) {} } } };
-        try { proc = cpMod.spawn(ff, args); } catch (eS) { return fallbackImages('ffmpeg launch'); }
+        try { proc = cpMod.spawn(ff, args); } catch (eS) { return fallbackImages(eS); }
         var errBuf = '';
         proc.stderr.on('data', function (d) {
           errBuf += d.toString(); if (errBuf.length > 8000) errBuf = errBuf.slice(-8000);
@@ -7590,10 +7831,10 @@
           while ((mm = re.exec(tail))) m = mm;
           if (m && lastEnd > 0) {
             var t = (+m[1]) * 3600 + (+m[2]) * 60 + (+m[3]);
-            overlayProgress('Rendering captions with libass — ' + Math.min(99, Math.round(t / (lastEnd + 0.2) * 100)) + '%', t / (lastEnd + 0.2));
+            overlayProgress('Rendering captions (simpler look) — ' + Math.min(99, Math.round(t / (lastEnd + 0.2) * 100)) + '%', t / (lastEnd + 0.2));
           }
         });
-        proc.on('error', function () { fallbackImages('ffmpeg error'); });
+        proc.on('error', function (eP) { fallbackImages(eP || new Error('the render could not start')); });
         proc.on('close', function (code) {
           if (done) return;
           if (cancelled) {
@@ -7603,12 +7844,23 @@
             return toast('Stopped — no captions were added.');
           }
           var ok = false; try { ok = fs.existsSync(outPath) && fs.statSync(outPath).size > 1000; } catch (eE) {}
-          if (code !== 0 || !ok) { return fallbackImages('render ' + code); }
+          if (code !== 0 || !ok) { var eR = new Error('render exit ' + code); eR.stderr = errBuf; return fallbackImages(eR); }
           done = true; _ovJob = null; dropWork();
-          placeOverlayClip(cues, opts, { path: outPath, dir: dir, seqKey: seqKey, lost: lost });
+          placeOverlayClip(cues, opts, { path: outPath, dir: out.dir, key: out.key, projectDir: out.projectDir, lost: lost });
         });
       });
-    }).catch(function (e) { _ovJob = null; setCaptionBusy(false); capProgress(null); toast('Captions failed: ' + (e && e.message || e), true); });
+    }).catch(function (e) {
+      // before ffmpeg ran (word timing, the caption file, no media folder):
+      // separate images, like any other failure here — unless the cause
+      // would stop those too
+      _ovJob = null;
+      diag('captions', 'simpler overlay failed: ' + rawFailure(e));
+      var cause = captionFailureCause(e);
+      if (cause.stop) return stopCaptions(cause);
+      var first = opts.overlayFailed || cause.plain;
+      toast('The one caption overlay clip could not be made here (' + first + ') — using separate caption images instead.');
+      runCaptionPipeline(cues, withOpts(opts, { noOverlay: true, overlay: false, overlayFailed: first }));
+    });
   }
 
   // Hooks for test/gates/overlay-*.js (the shared CP_DEBUG block stays as is).
@@ -7627,6 +7879,20 @@
       runImages: function (cues, opts) { return runCaptionPipeline(cues, withOpts(opts, { noOverlay: true })); },
       running: function () { return !!_ovJob; },
       cancel: cancelOverlayJob,
+      // the transcript's word timing (what word-by-word captions are built from)
+      setWords: function (w) { state.transcriptWords = w && w.length ? w : null; },
+      words: function () { return state.transcriptWords ? state.transcriptWords.slice() : null; },
+      // pick a built-in style by id exactly as its gallery card click does —
+      // also for the near-duplicates the gallery hides (a saved look, favourite
+      // or recent still opens them). false when no style has that id: never a
+      // silent stand-in, so a gate cannot pass on the wrong style.
+      applyStyle: function (id) {
+        var all = allTemplates(), t = null;
+        for (var i = 0; i < all.length; i++) if (all[i].id === id && !all[i].mogrt) { t = all[i]; break; }
+        if (!t) return false;
+        preloadStyleFonts(t, renderPreview); _pvDemo = null; applyTemplate(t); showView('style');
+        return true;
+      },
       seqKey: overlaySeqKey,
       lastJob: function () { return state.lastCaptionJob ? { mode: state.lastCaptionJob.mode || null, track: state.lastCaptionJob.track } : null; }
     };

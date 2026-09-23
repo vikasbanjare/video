@@ -967,6 +967,31 @@
     });
   }
 
+  /* Let the page breathe between chunks of drawing WITHOUT a timer. A Pulse
+     panel docked behind another panel can count as a hidden page, and Chromium
+     throttles a hidden page's timers to one wake-up per second — after five
+     hidden minutes to one per MINUTE. The overlay of an hour-long podcast is
+     ~750 chunks, so setTimeout(chunk, 0) could stretch minutes of drawing into
+     hours. A MessageChannel message is a task, not a timer, and is not
+     throttled that way; setTimeout stays as the fallback. */
+  var _yieldPort = null, _yieldQueue = [];
+  function yieldThen(fn) {
+    try {
+      // pages only: in plain Node an open port would keep the process alive
+      if (typeof MessageChannel !== 'undefined' && typeof document !== 'undefined') {
+        if (!_yieldPort) {
+          var ch = new MessageChannel();
+          ch.port1.onmessage = function () { var next = _yieldQueue.shift(); if (next) next(); };
+          _yieldPort = ch.port2;
+        }
+        _yieldQueue.push(fn);
+        _yieldPort.postMessage(0);
+        return;
+      }
+    } catch (e) {}
+    setTimeout(fn, 0);
+  }
+
   /*
    * Draw every unique caption state with drawFrame, then have ffmpeg stitch
    * them into ONE transparent .mov. Returns { promise, cancel }.
@@ -1029,7 +1054,7 @@
             }
           } catch (e) { return reject(e); }
           progress('draw', i, n);
-          if (i < n) setTimeout(chunk, 0); else resolve();
+          if (i < n) yieldThen(chunk); else resolve();
         }
         chunk();
       });
@@ -1148,6 +1173,7 @@
     overlayConcatList: overlayConcatList,
     ffmpegCanvasOverlayArgs: ffmpegCanvasOverlayArgs,
     fpsRational: fpsRational,
+    yieldThen: yieldThen,
     renderOverlay: renderOverlay,
     relativeLuminance: relativeLuminance,
     contrastRatio: contrastRatio,

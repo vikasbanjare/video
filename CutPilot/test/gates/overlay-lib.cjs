@@ -6,7 +6,7 @@
  * Premiere (CP_* host calls). A headless page has neither, so this gives it
  * both, faithfully enough that the panel's OWN code runs unmodified:
  *
- *   • Node: window.require('fs' | 'path' | 'os' | 'child_process' | 'buffer')
+ *   • Node: window.require('fs' | 'path' | 'os' | 'child_process' | 'zlib' | 'buffer')
  *     is answered by a small HTTP server in this process. fs and execSync are
  *     SYNCHRONOUS (a synchronous XHR), exactly like the Node calls the panel
  *     makes in CEP; spawn streams stdout/stderr/close back by polling, and
@@ -30,7 +30,7 @@ const ROOT = path.join(__dirname, '..', '..', '..');
 const PANEL = 'file://' + path.join(ROOT, 'CutPilot', 'index.html');
 
 function requirePuppeteer() {
-  for (const t of [path.join(ROOT, 'node_modules', 'puppeteer'), '/home/user/video/node_modules/puppeteer', 'puppeteer', 'puppeteer-core']) {
+  for (const t of [path.join(ROOT, 'node_modules', 'puppeteer'), 'puppeteer', 'puppeteer-core']) {
     try { return require(t); } catch (e) {}
   }
   return null;
@@ -71,20 +71,39 @@ function newPremiere(harness, o) {
 function startBridge() {
   const procs = {};
   let nextId = 1;
-  const state = { premiere: null, hostCalls: [] };
+  // Machines the gates cannot be: state.failUnlink (a RegExp) makes deleting a
+  // matching file fail the way Windows refuses a file another program still
+  // holds; state.node8 makes mkdirSync ignore { recursive: true } like the
+  // Node inside Premiere 14.0–14.3 (EEXIST on an existing folder, ENOENT on a
+  // missing parent); state.hide (a RegExp) makes matching paths not exist (a
+  // machine without ffmpeg although this one has /usr/bin/ffmpeg);
+  // state.failWrite ({ re, code }) makes writing a matching file fail with
+  // that error code (a full disk: ENOSPC).
+  const state = { premiere: null, hostCalls: [], failUnlink: null, node8: false, hide: null, failWrite: null };
 
   function errOut(e) {
     return { error: { message: String(e && e.message || e), code: e && e.code, status: e && e.status,
                       stdout: e && e.stdout ? String(e.stdout) : undefined } };
   }
   const ops = {
-    existsSync: (p) => fs.existsSync(p),
+    existsSync: (p) => !(state.hide && state.hide.test(p)) && fs.existsSync(p),
     statSync: (p) => { const s = fs.statSync(p); return { size: s.size, mtimeMs: s.mtimeMs, dir: s.isDirectory() }; },
-    mkdirSync: (p, o) => { fs.mkdirSync(p, o || undefined); return null; },
-    writeFileSync: (p, d) => { fs.writeFileSync(p, d.b64 != null ? Buffer.from(d.b64, 'base64') : d.str); return null; },
+    mkdirSync: (p, o) => { fs.mkdirSync(p, state.node8 ? undefined : (o || undefined)); return null; },
+    writeFileSync: (p, d) => {
+      if (state.failWrite && state.failWrite.re.test(p)) {
+        const e = new Error(state.failWrite.code + ': write failed, open \'' + p + '\''); e.code = state.failWrite.code; throw e;
+      }
+      fs.writeFileSync(p, d.b64 != null ? Buffer.from(d.b64, 'base64') : d.str); return null;
+    },
     readFileSync: (p, enc) => { const b = fs.readFileSync(p); return enc ? { str: b.toString(enc) } : { b64: b.toString('base64') }; },
     readdirSync: (p) => fs.readdirSync(p),
-    unlinkSync: (p) => { fs.unlinkSync(p); return null; },
+    unlinkSync: (p) => {
+      if (state.failUnlink && state.failUnlink.test(p)) {
+        const e = new Error('EBUSY: resource busy or locked, unlink \'' + p + '\''); e.code = 'EBUSY'; throw e;
+      }
+      fs.unlinkSync(p); return null;
+    },
+    gunzip: (b64) => zlib.gunzipSync(Buffer.from(b64, 'base64')).toString('base64'),
     rmdirSync: (p) => { fs.rmdirSync(p); return null; },
     renameSync: (a, b) => { fs.renameSync(a, b); return null; },
     accessSync: (p, m) => { fs.accessSync(p, m); return null; },
@@ -211,6 +230,11 @@ function pageInstall(port, env) {
     extname: p => { const b = pathMod.basename(p); const i = b.lastIndexOf('.'); return i <= 0 ? '' : b.slice(i); }
   };
   const osMod = { tmpdir: () => env.tmpdir, homedir: () => env.homedir, platform: () => env.platform, EOL: '\n' };
+  // gunzipSync of a buffer read with fs.readFileSync (throws on non-gzip, like Node)
+  const zlibMod = { gunzipSync: b => new FakeBuf(rpc('gunzip', [(b && b.__b64 != null) ? b.__b64 : btoa(String(b))])) };
+  // the bridge's own polling keeps the page's ORIGINAL timer, so a gate that
+  // slows the page's timers (hidden-panel throttling) does not slow Node's side
+  const later = window.setTimeout.bind(window);
   function emitter() {
     const h = {};
     return { on: function (ev, fn) { (h[ev] = h[ev] || []).push(fn); return this; },
@@ -230,14 +254,14 @@ function pageInstall(port, env) {
             if (p.stderr) proc.stderr.emit('data', p.stderr);
             if (p.error) { proc.emit('error', new Error(p.error)); return; }
             if (p.exited) { proc.emit('exit', p.code); proc.emit('close', p.code); return; }
-            setTimeout(poll, 20);
-          }, () => setTimeout(poll, 50));
+            later(poll, 20);
+          }, () => later(poll, 50));
       }
-      setTimeout(poll, 0);
+      later(poll, 0);
       return proc;
     }
   };
-  const mods = { fs: fsMod, path: pathMod, os: osMod, child_process: cpMod, buffer: { Buffer: NodeBuffer } };
+  const mods = { fs: fsMod, path: pathMod, os: osMod, child_process: cpMod, zlib: zlibMod, buffer: { Buffer: NodeBuffer } };
   window.require = function (m) { if (mods[m]) return mods[m]; throw new Error('Cannot find module ' + m + ' (test bridge)'); };
   window.Buffer = NodeBuffer;
   window.__adobe_cep__ = {
@@ -249,7 +273,7 @@ function pageInstall(port, env) {
         const arg = m[2] ? JSON.parse(m[2]) : null;
         try { out = rpc('host', [m[1], arg]); } catch (e) { out = 'EvalScript error.'; }
       }
-      setTimeout(() => cb(out), 0);
+      later(() => cb(out), 0);
     },
     getSystemPath: () => ''
   };
@@ -291,6 +315,21 @@ async function pickStyle(page, id) {
     let el = cv; while (el && !(el.classList && el.classList.contains('tpl-card'))) el = el.parentNode;
     (el || cv).scrollIntoView({ block: 'center' }); await sleep(40);
     (el || cv).click();
+    await sleep(260);
+    return true;
+  }, id);
+}
+
+/* Select a style by id through window.CP_DEBUG_EXT.overlay.applyStyle — the
+   same steps as its card click, without needing the card to be on show (the
+   gallery hides near-duplicates such as btn-3dred). false = no such style. */
+async function applyStyle(page, id) {
+  return page.evaluate(async (id) => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const tab = document.querySelector('.tab[data-tab="captions"]'); if (tab) tab.click();
+    await sleep(120);
+    const X = window.CP_DEBUG_EXT && window.CP_DEBUG_EXT.overlay;
+    if (!X || !X.applyStyle || !X.applyStyle(id)) return false;
     await sleep(260);
     return true;
   }, id);
@@ -382,4 +421,4 @@ function visibleAt(frames, t) {
 }
 
 module.exports = { ROOT, PANEL, requirePuppeteer, resolveBrowser, loadHostHarness, newPremiere, startBridge, launchPanel,
-                   pickStyle, readPng, decodeFrames, diffRGBA, visibleAt };
+                   pickStyle, applyStyle, readPng, decodeFrames, diffRGBA, visibleAt };
