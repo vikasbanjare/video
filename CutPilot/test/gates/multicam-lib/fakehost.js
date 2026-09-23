@@ -32,6 +32,8 @@ function dfLabelToFrames(hh, mm, ss, ff, fRate) {
  *            mediaPath, speed, reversed, disabled, name }] }],
  *   razor: 'ok' | 'throws' | 'noop',  nested: bool (V1 clip is a nested sequence)
  *   qeParse: 'separator' | 'sequence' — how the QE razor reads a timecode (below)
+ *   startTime: s — the sequence's timecode starts here (01:00:00:00 = 3600), and
+ *     the QE razor reads timecodes as that absolute timecode
  *   linkedAudio: bool — each camera clip on Vn is LINKED to the clip with the
  *     same span on An (the camera's own audio): a razor on the video cuts the
  *     linked audio too, and switching the video off switches its audio off —
@@ -122,7 +124,7 @@ function makePremiere(spec) {
         model.razorCalls++; model.razorTimecodes.push(String(tc));
         if (spec.razor === 'throws') throw new Error('razor failed');
         if (spec.razor === 'noop' || t.locked) return;
-        const cut = snap(parseTc(tc));
+        const cut = snap(parseTc(tc) - (spec.startTime || 0));
         for (let i = 0; i < t.clips.length; i++) {
           const c = t.clips[i];
           if (c.start < cut - 1e-9 && c.end > cut + 1e-9) {
@@ -151,6 +153,7 @@ function makePremiere(spec) {
     sequenceID: 'seq-mc-1',
     get timebase() { return String(TICKS / fps); },
     get end() { return String(Math.round((spec.end || 60) * TICKS)); },
+    get zeroPoint() { return String(Math.round((spec.startTime || 0) * TICKS)); },
     frameSizeHorizontal: 1920, frameSizeVertical: 1080,
     getSettings() {
       return { videoPixelAspectRatio: 1, videoDisplayFormat: spec.dropFrameDisplay ? (fRate === 60 ? 106 : 102)

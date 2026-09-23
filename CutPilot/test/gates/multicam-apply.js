@@ -48,6 +48,15 @@ for (const mode of ['throws', 'noop']) {
     'QE razor ' + (mode === 'throws' ? 'throws' : 'silently does nothing') + ': Apply fails and changes nothing — got ' +
     JSON.stringify(r.ok ? { ok: true, razored: r.razored, toggled: r.toggled } : { ok: false, error: (r.error || '').slice(0, 70) }) + ', timeline ' + (unchanged(w) ? 'unchanged' : 'CHANGED'));
 }
+// ---- a timeline whose timecode starts at 01:00:00:00 -------------------------------
+// (if QE reads razor timecodes as the sequence's own timecode, no cut lands —
+// nothing may change, and the owner must be told the way out)
+{
+  const { w, host } = world({ startTime: 3600 });
+  const r = FH.call(host, 'CP_applyMulticamPlan', { plan: PLAN4, numAngles: 2, dropFrame: false });
+  report(r.ok === false && /starts at 01:00:00:00/.test(r.error || '') && /Start Time/.test(r.error || '') && unchanged(w),
+    'a timeline starting at 01:00:00:00: nothing changes and the owner is told how to fix it — got ' + JSON.stringify(r.ok ? { ok: true } : (r.error || '').slice(0, 150)));
+}
 // ---- a locked camera track --------------------------------------------------------
 {
   const { w, host } = world({ video: [{ name: 'V1', clips: [{ start: 0, end: 60, name: 'cam1' }] }, { name: 'V2', locked: true, clips: [{ start: 0, end: 60, name: 'cam2' }] }] });

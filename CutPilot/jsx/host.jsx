@@ -1322,6 +1322,15 @@ function CP_applyMulticamPlan(argsJson) {
       }
     }
     if (needed > 0 && landed === 0) {
+      // a timeline whose timecode starts later than 00:00:00:00 (01:00:00:00 is
+      // a common preset) may be cut at the wrong timecode — name the way out
+      var zeroSec = 0;
+      try { zeroSec = parseFloat(seq.zeroPoint) / CP_TICKS_PER_SECOND; } catch (eZ) {}
+      if (zeroSec > 0.5) {
+        return CP_fail('Premiere didn’t make any of the ' + needed + ' camera cuts, so nothing was switched — your timeline is unchanged. ' +
+          'This timeline’s timecode starts at ' + CP_timecode(zeroSec, fps, df).replace(/;/g, ':') + ' instead of 00:00:00:00: open the Timeline panel menu ' +
+          '(☰ next to the sequence name), choose Start Time…, set it to 00:00:00:00, then Apply again.');
+      }
       return CP_fail('Premiere didn’t make any of the ' + needed + ' camera cuts' + (qeProblem ? ' (' + qeProblem + ')' : '') +
         ', so nothing was switched — your timeline is unchanged. Click the timeline once and Apply again; if it keeps happening, restart Premiere.');
     }
