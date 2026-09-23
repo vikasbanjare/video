@@ -83,9 +83,14 @@ function accuracyBetween(world, sim, t0, t1) {
     {
       const ctx = await P.openPanel(browser, { premiere: smartCutTimeline([N, 200]), envelopes: recordings(sim) });
       const r = await P.runMulticam(ctx, { cameras: 2, source: 'follow' });
-      await ctx.page.close();
       const warned = /goes quiet for good at 18:40/.test(r.planView) && r.toasts.some(t => /18:40/.test(t));
       report(warned, 'guest mic stops at 18:40: the plan and the messages say so — ' + JSON.stringify((r.planView.split('\n').filter(l => /⏱|⚠️/.test(l)).join(' | ')).slice(0, 160)));
+      // the next plan, made another way, must not inherit that warning
+      const r2 = await P.runMulticam(ctx, { cameras: 2, source: 'interval' });
+      await ctx.page.close();
+      const lastToast = (r2.toasts[r2.toasts.length - 1] || '').split('|').pop();
+      report(!!r2.plan && !/18:40|goes quiet/.test(r2.planView) && !/18:40|but:/.test(lastToast),
+        'an "every few seconds" plan built next does not carry the old warning — ' + JSON.stringify((r2.planView.split('\n').filter(l => /⏱|⚠️/.test(l)).join(' | ')).slice(0, 100)));
     }
   });
   if (failed) { console.log('MULTICAM SMART CUT: ' + failed + ' check(s) failed'); process.exit(1); }

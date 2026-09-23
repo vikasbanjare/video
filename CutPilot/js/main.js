@@ -10652,6 +10652,10 @@
   function buildMcPlan() {
     var numAngles = parseInt($('mc-angles').value, 10);
     var src = $('mc-source').value;
+    // what the last build heard belongs to that build only (an interval plan
+    // made after a follow plan must not show the follow plan's coverage)
+    state.mcAnalysis = null;
+    state.mcPlanWarning = null;
     // follow/speech analyse audio → need ffmpeg; fetch it once if missing.
     var needFf = (src === 'follow' || src === 'speech');
     var pre = (needFf && !resolveFfmpeg() && CPBridge.isCEP()) ? ensureFfmpeg().then(function () {}) : Promise.resolve();
