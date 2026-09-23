@@ -7,7 +7,9 @@
  * "Nothing to clean — your video is already tight!". A beat never PAUSES the
  * way a voice does, and that is what now tells them apart. The owner can also
  * say which track is music (or a voice) under “What Pulse heard”, and
- * Fine-tune → Manual only replaces the gate of the tracks that vote.
+ * Fine-tune → Manual only replaces the gate of the tracks that vote. Music
+ * that plays while nobody talks (a jingle, an insert) is content, not a
+ * pause: it keeps its vote and is never cut away.
  * Real panel, real ffmpeg, stubbed Premiere. Exit 0 pass · 1 fail · 2 skipped.
  */
 'use strict';
@@ -66,6 +68,25 @@ const tune = (st) => CPSilence.tuning(st);
       ok(r.removed >= 0.9 * r.removable, label + ': the dead air goes as if the music were not there — ' + secs(r.removed) + ' of ' + secs(r.removable));
       ok(/A2[^\n]*left out/i.test(r.confirm || '') && !/sounds like a podcast/i.test(r.confirm || ''),
         label + ': the confirm says the music track was left out, and does not call it a second mic');
+    }
+
+    // a jingle on A2 that plays only while the voice pauses (12.5–17.5 s):
+    // content, not a pause — left out of the vote it was cut away whole
+    {
+      const speech = [[1.0, 3.2], [3.55, 5.8], [6.4, 9.0], [10.2, 12.5], [17.5, 20.0], [20.3, 22.8], [23.4, 26.0]];
+      const talk = F.makeWav(dir, 'talk_with_break.wav', { dur: SC.DUR, floorDb: -60, speech });
+      const jingle = F.makeWav(dir, 'jingle.wav', { dur: 5, beat: { bpm: 100, padDb: -30, kick: 0.5, hat: 0.06, snare: 0.25 }, seed: 5 });
+      const { page, calls } = await P.openPanel(browser, { seqId: 'seq-jingle', video: [{}], audio: [
+        { name: 'Voice', items: [whole(talk)] },
+        { name: 'Jingle', items: [{ name: 'jingle.wav', mediaPath: jingle, seqStart: 12.5, seqEnd: 17.5, inPoint: 0, outPoint: 5 }] }] });
+      const j = await P.cleanUp(page, calls, { strength: 'balanced', takes: false });
+      await page.close();
+      const cuts = j.razor.length ? j.razor[0].ranges : [];
+      const jingleCut = cuts.reduce((a, c) => a + Math.max(0, Math.min(17.5, c.end) - Math.max(12.5, c.start)), 0);
+      const v = SC.score([{ spec: { dur: SC.DUR, speech }, items: [{ seqStart: 0, seqEnd: SC.DUR, inPoint: 0, speed: 1 }] }], cuts, tune('balanced'));
+      ok(j.razor.length === 1 && jingleCut <= 0.02 && v.clipped <= 0.02,
+        'a jingle that plays while nobody talks is kept whole (' + secs(jingleCut) + ' of it cut), and no word is cut');
+      ok(/plays while nobody is talking/i.test(j.confirm || ''), '…and the confirm says why it was kept');
     }
 
     // Fine-tune → Manual on a podcast with a music bed: the owner's number is

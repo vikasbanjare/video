@@ -9585,6 +9585,21 @@
     return lab + (tr.name && tr.name !== lab ? ' “' + tr.name + '”' : '');
   }
 
+  /* How much of a track's time on the timeline somebody is talking over it
+     (grid = combineMics of the voices). A music BED plays under the talking;
+     a jingle or insert plays while nobody talks. */
+  var SIL_BED_UNDER_TALK = 0.25;
+  function silTalkShare(grid, srcs, range) {
+    if (!grid || !grid.n) return 0;
+    var loud = 0, all = 0;
+    srcs.forEach(function (s) {
+      var a = Math.max(0, Math.ceil((Math.max(s.seqStart, range.start) - grid.t0) / grid.hop - 0.5 - 1e-9));
+      var b = Math.min(grid.n, Math.ceil((Math.min(s.seqEnd, range.end) - grid.t0) / grid.hop - 0.5 - 1e-9));
+      for (var g = a; g < b; g++) { all++; if (grid.state[g] === 2) loud++; }
+    });
+    return all ? loud / all : 0;
+  }
+
   /* The owner's own word on what a track is, per sequence: 'mic' (always
      listen to it) or 'music' (never let it decide what is dead air). Set in
      “What Pulse heard” under the Clean up button; Pulse decides by itself
@@ -9744,11 +9759,32 @@
         m.music = own === 'music' || (own !== 'mic' && !!m.levels.bed);
       });
       // music is left out of the vote only when a real voice is there to
-      // decide instead (a lone track always decides for itself)
+      // decide instead (a lone track always decides for itself), and only
+      // while it plays UNDER that voice: a bed. Music that plays while nobody
+      // talks — a jingle, an insert, a sound bite — is content, not a pause,
+      // so it keeps its vote (left out, it was cut away whole).
       var voices = order.filter(function (p) { return !media[p].music && !media[p].levels.digital; });
+      var talk = null;
+      if (voices.length) {
+        var vv = [];
+        sources.forEach(function (s) {
+          if (s.unreadable || voices.indexOf(s.mediaPath) < 0) return;
+          var mv = media[s.mediaPath];
+          vv.push({ seqStart: s.seqStart, seqEnd: s.seqEnd, inPoint: s.inPoint, speed: s.speed, env: mv.env, flags: mv.flags });
+        });
+        talk = CPSilence.combineMics(vv, range);
+      }
       order.forEach(function (p) {
         var m = media[p];
         if (!m.music || !voices.length) return;
+        if (m.role !== 'music') {
+          m.talkShare = silTalkShare(talk, m.sources, range);
+          if (m.talkShare < SIL_BED_UNDER_TALK) {
+            m.insert = true;
+            notes.push(m.tracks.join(', ') + ' “' + silBase(p) + '” sounds like music, but it plays while nobody is talking, so Pulse kept listening to it — it is not cut as a pause.');
+            return;
+          }
+        }
         m.excluded = true;
         notes.push(m.tracks.join(', ') + ' “' + silBase(p) + '” ' + (m.role === 'music' ? 'is music (you marked it)' : 'sounds like music or steady background') +
           ', so it was left out when judging silence — it is still cut with everything else, so it stays in sync.');
@@ -9777,7 +9813,7 @@
         var m = media[p], L = m.levels;
         return { path: p, name: silBase(p), tracks: m.tracks.join(', ') + (m.nests.length ? ' (inside “' + m.nests.join('”, “') + '”)' : ''),
                  keys: m.keys.slice(), floor: L.floor, speech: L.speech, threshold: L.threshold,
-                 continuous: L.continuous, digital: L.digital, excluded: !!m.excluded, music: !!m.music, role: m.role,
+                 continuous: L.continuous, digital: L.digital, excluded: !!m.excluded, music: !!m.music, role: m.role, insert: !!m.insert,
                  range: L.range, pauses: L.pauses, manual: manual && !m.excluded };
       });
       return { cuts: cuts, range: range, selection: !!sel, mics: mics, notes: notes, manual: manual,
@@ -9796,8 +9832,10 @@
     if (!plan || !plan.mics) return '';
     var lines = [], heard = plan.mics.filter(function (m) { return !m.excluded; });
     if (heard.length) {
-      lines.push('Listened to ' + heard.length + ' mic' + (heard.length > 1 ? 's' : '') + ': ' + heard.map(function (m) {
+      var tracksWord = heard.some(function (m) { return m.music; }) ? ' track' : ' mic';
+      lines.push('Listened to ' + heard.length + tracksWord + (heard.length > 1 ? 's' : '') + ': ' + heard.map(function (m) {
         return m.tracks + ' ' + m.name + (m.digital ? ' (silent)'
+          : m.insert ? ' (music playing on its own — kept)'
           : (m.continuous && !m.manual) ? ' (steady background — only true silence counts)'
           : ' (room noise ≈ ' + Math.round(m.floor) + ' dB, quiet below ' + Math.round(m.threshold) + ' dB' + (m.manual ? ' — your Manual setting' : '') + ')');
       }).join('; ') + '.');
@@ -9872,7 +9910,8 @@
       var row = document.createElement('div');
       row.style.cssText = 'display:flex;gap:6px;align-items:center;justify-content:space-between;margin:3px 0;font-size:11px';
       var lab = document.createElement('span');
-      lab.textContent = m.tracks + ' · ' + m.name + ' — ' + (m.digital ? 'silent' : m.excluded ? 'music, left out of the vote' : m.music ? 'may be music (it still decides)' : 'a voice');
+      lab.textContent = m.tracks + ' · ' + m.name + ' — ' + (m.digital ? 'silent' : m.excluded ? 'music, left out of the vote'
+        : m.insert ? 'music playing on its own — kept' : m.music ? 'may be music (it still decides)' : 'a voice');
       var sel = document.createElement('select');
       sel.setAttribute('data-heard', m.keys.join('|'));
       sel.style.cssText = 'max-width:150px;font-size:11px';
