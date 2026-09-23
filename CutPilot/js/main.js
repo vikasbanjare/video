@@ -10294,7 +10294,7 @@
     list.innerHTML = '';
     if (!dels.length) {
       // never "reads clean" when part of it was not read at all
-      $('takes-stats').textContent = state.takeNote ? 'Nothing to remove in the parts that were read.'
+      $('takes-stats').textContent = state.takePartial ? 'Nothing to remove in the parts that were read.'
         : 'Nothing to remove — the transcript reads clean. (Tip: lower “Match sensitivity”, or try ✨ Smart Cleanup for false starts, fillers & dead-air.)';
       takesNote($('takes-stats'));
       $('btn-takes-apply').classList.add('hidden');
@@ -10341,11 +10341,13 @@
     return (src && src.sequenceId) ? { sequenceId: src.sequenceId, sequenceName: src.sequenceName, fingerprint: src.fingerprint } : null;
   }
   /* Show a take list for review, remembering the timeline it was made for.
-     `note` is a warning shown with the list (a part that was not read). */
-  function showTakeList(dels, guard, note) {
+     `note` is a warning shown with the list; `partial` = part of the timeline
+     or transcript was not read, so an empty list does not mean "clean". */
+  function showTakeList(dels, guard, note, partial) {
     state.takeDeletes = dels;
     state.takeGuard = guard || null;
     state.takeNote = note || '';
+    state.takePartial = !!partial;
     renderTakes(dels);
   }
   if ($('tk-sim')) $('tk-sim').addEventListener('input', function () { $('tk-sim-val').textContent = this.value + '%'; });
@@ -10580,7 +10582,7 @@
         'Run ✨ Smart Cleanup again, or use 🔎 Find repeated takes for that part.' : '';
       var guess = estimatedNote(r.cuts);
       if (guess) note = note ? note + ' ' + guess : guess;
-      showTakeList(r.cuts, guard, note);   // reuse the same review → apply pipeline
+      showTakeList(r.cuts, guard, note, miss.length > 0);   // reuse the same review → apply pipeline
       var big = r.cuts.filter(function (c) { return c.needsReview && !c.estimated; }).length;
       if (r.cuts.length) toast('✨ Smart Cleanup found ' + r.cuts.length + ' cut' + (r.cuts.length === 1 ? '' : 's') + ' — review them, then apply.' +
         (big ? ' ' + big + ' unusually long one' + (big === 1 ? ' is' : 's are') + ' left unticked — play it (▶) before you tick it.' : '') +
@@ -10673,30 +10675,92 @@
         var m = String((e && e.message) || '');
         if (!o.oneStream && /matches no streams|Stream specifier/i.test(m)) { o.oneStream = true; return run(); }
         if (file && o.flag !== '-/filter_complex' && /Unrecognized option|Option not found|filter_complex_script/i.test(m)) { o.flag = '-/filter_complex'; return run(); }
-        throw new Error('Could not read the timeline audio: ' + m.slice(-160));
+        // the owner reads a plain sentence; the tool's own words go to the diagnostic log
+        try { diag('verbatim', 'timeline mix failed: ' + m.slice(-400)); } catch (eD) {}
+        var err = new Error('Pulse couldn’t mix the sound of your timeline — one of its audio files may be damaged or in a format Pulse can’t open.');
+        err.cpDetail = m.slice(-400);
+        throw err;
       });
     }
     return run().then(function (r) { done(); return r; }, function (e) { done(); throw e; });
   }
   /* One clip's audio (in point to out point) — for a host that cannot list
-     the timeline's tracks. */
+     the timeline's tracks, and the fallback when the timeline mix fails. */
   function extractClipAudio(ff, clip, audio) {
     var inP = clip.inPoint || 0, outP = clip.outPoint || 0, dur = (outP > inP) ? (outP - inP) : 0;
     var args = ['-y', '-ss', String(inP), '-i', clip.mediaPath];
     if (dur > 0) args = args.concat(['-t', String(dur)]);
     return runProc(ff, args.concat(['-vn', '-ac', '1', '-ar', '16000', '-b:a', '64k', audio]))
-      .catch(function (e) { throw new Error('Could not extract audio: ' + String((e && e.message) || '').slice(-160)); });
+      .catch(function (e) {
+        try { diag('verbatim', 'clip read failed: ' + String((e && e.message) || '').slice(-400)); } catch (eD) {}
+        var err = new Error('Pulse couldn’t read the sound of “' + silBase(clip.mediaPath) + '” — the file may be offline (moved or renamed), ' +
+          'damaged, or in a format Pulse can’t open. Relink it in Premiere (right-click the clip → Link Media) and try again.');
+        err.cpDetail = String((e && e.message) || '').slice(-400);
+        throw err;
+      });
+  }
+  /* The mix the verbatim engine hears, with every file that would break it or
+     drown the voices left out, and one plain note for each: a file that is
+     offline (moved or renamed — ONE of those used to fail the whole run with
+     ffmpeg's "Error opening input files"), a file with no sound, and — when a
+     voice is left to hear — a track of steady music or noise (the same test
+     Clean up uses to leave a music bed out of its silence vote). A file that
+     cannot be checked is kept. Resolves { plan, notes, left } — plan null
+     when nothing is left to hear; left = the paths left out. */
+  function prepareTimelineMix(s, ff) {
+    var plan0 = CPVerbatim.timelineMixPlan(s);
+    if (!plan0) return Promise.resolve({ plan: null, notes: [], left: {} });
+    var where = {}, left = {}, offline = [], mute = [], voices = [], steady = [];
+    plan0.tracks.forEach(function (tr) {
+      tr.forEach(function (p) {
+        var t = (s.audio || [])[p.track] || {};
+        var lab = 'A' + ((t.index != null ? +t.index : p.track) + 1);
+        where[p.path] = where[p.path] || [];
+        if (where[p.path].indexOf(lab) < 0) where[p.path].push(lab);
+      });
+    });
+    function named(p) { return where[p].join(', ') + ' “' + silBase(p) + '”'; }
+    var chain = Promise.resolve();
+    plan0.inputs.forEach(function (inp) {
+      chain = chain.then(function () {
+        return CPAudio.ffmpegAudioInfo(inp.path, ff).then(function (info) {
+          if (info.missing) { left[inp.path] = 'offline'; offline.push(named(inp.path)); return; }
+          if (!info.streams) { left[inp.path] = 'no sound'; mute.push(named(inp.path)); return; }
+          if (plan0.inputs.length < 2) { voices.push(inp.path); return; }
+          return listenTo(inp.path, inp.from, inp.to, null, ff).then(function (env) {
+            var lv = CPSilence.micLevels(env.db, [[0, env.db.length]], CPSilence.tuning('balanced'));
+            (lv.continuous && !lv.digital ? steady : voices).push(inp.path);
+          }, function () { voices.push(inp.path); });
+        }, function () { voices.push(inp.path); });
+      });
+    });
+    return chain.then(function () {
+      var notes = [];
+      if (offline.length) notes.push(offline.join(', ') + (offline.length === 1 ? ' is' : ' are') + ' offline (moved or renamed), so ' +
+        (offline.length === 1 ? 'it was' : 'they were') + ' left out — relink in Premiere (right-click the clip → Link Media) to include ' + (offline.length === 1 ? 'it.' : 'them.'));
+      if (mute.length) notes.push(mute.join(', ') + ' has no sound in it, so it was left out.');
+      if (voices.length) steady.forEach(function (p) {
+        left[p] = 'music';
+        notes.push(named(p) + ' sounds like steady music or noise, not a voice, so it was left out of what the verbatim engine hears.');
+      });
+      var plan = Object.keys(left).length ? CPVerbatim.timelineMixPlan(s, { leaveOut: left }) : plan0;
+      return { plan: plan, notes: notes, left: left };
+    });
   }
   /* Transcribe the timeline VERBATIM (keeps every take) and return words in
      SEQUENCE time with per-word confidence and speaker. EVERY live voice track
-     is heard, mixed as it plays (CP_getCutSources): the old path read one clip,
+     is heard (CP_getCutSources), each piece at its timeline position and each
+     file at its own recorded level — Premiere's volume settings are not
+     applied, so a music bed is left out rather than mixed in at full level
+     (prepareTimelineMix), as are offline files. The old path read one clip,
      so on a two-mic podcast the other person's words — and their retakes —
      were never read, and on a timeline already cut into pieces only one
      piece was. `src` = CP_getCutSources() when the caller has it (else read
-     here); with no track list (an older host) the one `clip` is read.
-     opts.keepAudio leaves the mix on disk as words.audio = {path, seqStart,
-     duration} (the caller deletes it) — Verbatim retakes snaps its cuts to
-     the pauses heard in it. */
+     here); with no track list (an older host), or when the mix fails, the one
+     `clip` is read. words.notes = what was left out or read instead, in plain
+     words for the owner. opts.keepAudio leaves the audio on disk as
+     words.audio = {path, seqStart, duration} (the caller deletes it) —
+     Verbatim retakes snaps its cuts to the pauses heard in it. */
   function verbatimTranscribe(clip, ff, src, opts) {
     opts = opts || {};
     var key = (settings.verbatimKey || '').trim();
@@ -10705,14 +10769,34 @@
     try { fs = nodeReq('fs'); os = nodeReq('os'); pathMod = nodeReq('path'); } catch (e) { return Promise.reject(e); }
     var audio = pathMod.join(os.tmpdir(), 'pulse-vb-' + Date.now() + '.mp3');
     function cleanup() { try { fs.unlinkSync(audio); } catch (e) {} }
+    var notes = [], off = 0, dur = 0, partial = false;
     return (src !== undefined ? Promise.resolve(src) : readCutSources()).then(function (s) {
-      var plan = s ? CPVerbatim.timelineMixPlan(s) : null;
-      if (!plan && !(clip && clip.mediaPath)) throw new Error('Put your video on the timeline (select it) so I can read its audio.');
+      return s ? prepareTimelineMix(s, ff) : { plan: null, notes: [], left: {} };
+    }).then(function (mx) {
+      var plan = mx.plan;
+      notes = mx.notes.slice();
+      // the one clip — unless its own file is one that had to be left out
+      var one = (clip && clip.mediaPath && !mx.left[clip.mediaPath]) ? clip : null;
+      function readClip() {
+        off = one.seqStart || 0;
+        dur = Math.max(0, (one.outPoint || 0) - (one.inPoint || 0));
+        return extractClipAudio(ff, one, audio);
+      }
+      if (!plan && !one) {
+        throw new Error(notes.length ? 'Pulse couldn’t hear any voice on your timeline. ' + notes.join(' ')
+                                     : 'Put your video on the timeline (select it) so I can read its audio.');
+      }
       // word time is relative to the start of what was read → seq = off + t
-      var off = plan ? plan.span.start : (clip.seqStart || 0);
-      var dur = plan ? plan.span.end - plan.span.start : Math.max(0, (clip.outPoint || 0) - (clip.inPoint || 0));
-      return (plan ? extractTimelineMix(ff, plan, audio) : extractClipAudio(ff, clip, audio)).then(function () {
-        if (!fs.existsSync(audio)) throw new Error('Could not extract audio.');
+      var read = !plan ? readClip() : extractTimelineMix(ff, plan, audio).then(function () {
+        off = plan.span.start; dur = plan.span.end - plan.span.start;
+      }, function (e) {
+        if (!one) throw new Error(e.message + ' Select the talking clip on your timeline and try again — Pulse can then read just that clip.');
+        notes.push(e.message + ' So Pulse read only the selected clip, “' + silBase(one.mediaPath) + '” — words on other tracks were not heard.');
+        partial = true;
+        return readClip();
+      });
+      return read.then(function () {
+        if (!fs.existsSync(audio)) throw new Error('Pulse couldn’t get the sound out of your timeline. Try again, or select the talking clip first.');
         var engine = (settings.verbatimProvider === 'assemblyai') ? verbatimAssembly : verbatimDeepgram;
         return engine(audio, key);
       }).then(function (ws) {
@@ -10721,6 +10805,8 @@
           if (w.speaker != null) o.speaker = w.speaker;   // who said it — an echo by the other person is never a retake
           return o;
         });
+        words.notes = notes;
+        words.partial = partial;   // only the selected clip was read
         if (opts.keepAudio) words.audio = { path: audio, seqStart: off, duration: dur };
         else cleanup();
         return words;
@@ -10732,7 +10818,7 @@
     if (!ff) return toast('This needs ffmpeg (Settings → ffmpeg).', true);
     if (!(settings.verbatimKey || '').trim()) return toast('Add a Deepgram or AssemblyAI key in Settings → Verbatim transcription to use this.', true);
     var prog = $('takes-progress'); prog.classList.remove('hidden'); prog.textContent = 'Reading your timeline…';
-    var guard = null, src = null, clip = null;
+    var guard = null, src = null, clip = null, vbNotes = [], vbPartial = false;
     readCutSources().then(function (s) {
       src = s; guard = cutGuardOf(s);   // the timeline whose audio is read — the list is for it only
       return CPBridge.callHost('CP_getSelectedClip');
@@ -10747,6 +10833,8 @@
       function dropAudio() { if (heard) { try { nodeReq('fs').unlinkSync(heard.path); } catch (e) {} heard = null; } }
       return verbatimTranscribe(clip, ff, src, { keepAudio: true }).then(function (words) {
         heard = words.audio;
+        vbNotes = words.notes || [];
+        vbPartial = !!words.partial;
         words = words.slice();
         // Adopt the verbatim words only when the panel has none: they may be in
         // another script than the caption transcript (Devanagari vs Hinglish),
@@ -10776,8 +10864,10 @@
       }).then(function (cuts) { dropAudio(); return cuts; }, function (e) { dropAudio(); throw e; });
     }).then(function (cuts) {
       prog.classList.add('hidden');
-      showTakeList(cuts, guard);
-      toast(cuts.length ? ('🎯 Found ' + cuts.length + ' retake/off-script cut' + (cuts.length === 1 ? '' : 's') + ' — review (▶ to preview), then apply.') : 'No clear retakes found in the verbatim transcript.');
+      var note = vbNotes.join(' ');
+      showTakeList(cuts, guard, note, vbPartial);
+      toast((cuts.length ? ('🎯 Found ' + cuts.length + ' retake/off-script cut' + (cuts.length === 1 ? '' : 's') + ' — review (▶ to preview), then apply.') : 'No clear retakes found in the verbatim transcript.') +
+        (note ? ' ⚠️ ' + note : ''));
     }).catch(function (e) { prog.classList.add('hidden'); toast('Verbatim retakes failed: ' + e.message, true); });
   }
   if ($('btn-verbatim-retakes')) $('btn-verbatim-retakes').addEventListener('click', runVerbatimRetakes);
