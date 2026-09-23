@@ -4417,6 +4417,15 @@
     return card;
   }
 
+  // Test hooks for the gallery gates (test/gates/gallery-*.js): read-only views
+  // of what the owner is looking at and of what the export path would render.
+  window.CP_DEBUG_EXT = window.CP_DEBUG_EXT || {};
+  window.CP_DEBUG_EXT.gallery = {
+    currentPreset: function () { return currentPreset(); },
+    // the style runCaptionPipeline hands the renderer: {preset, overrides}
+    exportStyle: function (w, h) { return CPRender.styleForFrame(currentPreset(), h, readOverrides(), w); }
+  };
+
   function trackRecent(id) {
     state.recent = [id].concat(state.recent.filter(function (x) { return x !== id; }));
     saveRecent();
@@ -5458,8 +5467,11 @@
       boxStroke: o.boxStroke, boxStrokeWidth: o.boxStrokeWidth, boxGlow: o.boxGlow,
       box3d: o.box3d, box3dDepth: o.box3dDepth, boxGloss: o.boxGloss,
       boxGradient: currentPreset().boxGradient || 'v', boxStops: currentPreset().boxStops || null,
-      glow: o.glow || currentPreset().glow || null,
-      letterSpacing: o.letterSpacing || currentPreset().letterSpacing || 0,
+      // EXACTLY what the user has: shadow OFF saves no shadow, spacing 0 saves 0.
+      // (`o.glow || preset.glow` and `o.letterSpacing || preset.letterSpacing`
+      // brought back the very shadow and tracking the user had turned off.)
+      glow: o.glow || null,
+      letterSpacing: o.letterSpacing || 0,
       highlightScale: o.highlightScale,
       uppercase: o.uppercase,
       weight: parseInt($('c-weight').value, 10) || 800,
