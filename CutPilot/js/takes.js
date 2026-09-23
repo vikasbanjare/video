@@ -245,15 +245,15 @@
   function isRemark(u, rawA, rawB) {
     var last = u[u.length - 1];
     if (VERB_END[last]) return true;                                   // "theek hai", "ho gaya"
+    if (OPEN_END[last]) return false;                                  // "I see the, I see the problem": left hanging
     var remark = 0, i;
     for (i = 0; i < u.length; i++) {
       if (REMARK[u[i]] || INTERJ[u[i]]) remark++;
       else if (!FUNC[u[i]] && !FIRST[u[i]] && !SECOND[u[i]] && !EMPHATIC[u[i]]) break;
     }
     if (i === u.length && remark) return true;                         // "bahut accha", "I know", "oh my god"
-    // each copy stands alone — a pause mark after BOTH ("…, …, and then") —
-    // and the unit does not end where a line cannot ("so the, so the,")
-    return CLOSED.test(rawA) && CLOSED.test(rawB) && !OPEN_END[last];
+    // each copy stands alone — a pause mark after BOTH ("…, …, and then")
+    return CLOSED.test(rawA) && CLOSED.test(rawB);
   }
 
   function pTokens(p) { var a = []; for (var i = 0; i < p.length; i++) { var n = norm(p[i].text); if (n) a.push(n); } return a; }

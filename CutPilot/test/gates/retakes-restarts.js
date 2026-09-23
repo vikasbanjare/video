@@ -63,7 +63,8 @@ const CUT = [
   ['with an "um" between: "so the um so the main thing"', ['so the um so the main thing is consistency.', 'Post daily.'], 0, 3, 'so the um'],
   ['mid-line: "the secret is the secret is patience"', ['honestly the secret is the secret is patience.', 'Wait for it.'], 1, 4, 'the secret is'],
   ['mid-line Hinglish "paise kaise, paise kaise bachaye"', ['aaj main aapko bataunga ki paise kaise, paise kaise bachaye jaate hain.', 'Chalo shuru karte hain.'], 5, 7, 'paise kaise,'],
-  ['unpunctuated "toh main toh main kya bol raha tha"', ['toh main toh main kya bol raha tha ki paise bachao', 'Budget banao.'], 0, 2, 'toh main']
+  ['unpunctuated "toh main toh main kya bol raha tha"', ['toh main toh main kya bol raha tha ki paise bachao', 'Budget banao.'], 0, 2, 'toh main'],
+  ['a remark word left hanging: "I see the, I see the problem"', ['I see the, I see the problem with this plan.', 'Let me fix it.'], 0, 3, 'I see the,']
 ];
 for (const c of CUT) {
   for (const p of ['balanced', 'strong']) {
