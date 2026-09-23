@@ -1848,22 +1848,91 @@
 
   // --------------------------------------------------------------- boot ----
   // ---- Light / Dark theme -------------------------------------------------
+  /* The theme FOLLOWS PREMIERE. On load the panel reads Premiere's own panel
+     colour (CEP appSkinInfo.panelBackgroundColor) and goes dark or light by its
+     brightness; when the owner changes Premiere's Appearance, Premiere fires
+     com.adobe.csxs.events.ThemeColorChanged and the panel follows again. It
+     used to open white inside Premiere's dark UI, always. The 🌙/☀️ button and
+     Settings → Look are an override that sticks until "Match Premiere" is
+     picked. Outside Premiere the computer's light/dark setting stands in.
+     (The old 'cutpilot.theme' key was written on every boot, not only by a
+     choice, so it cannot tell an override from a default — it is not read.) */
+  var THEME_MODE_KEY = 'cutpilot.themeMode';     // 'auto' | 'light' | 'dark'
+  var THEME_EVENT = 'com.adobe.csxs.events.ThemeColorChanged';
+  var _themeMode = 'auto';
+  function hostPanelColor() {
+    try {
+      var cep = window.__adobe_cep__;
+      if (!cep || typeof cep.getHostEnvironment !== 'function') return null;
+      var env = cep.getHostEnvironment();
+      if (typeof env === 'string') env = JSON.parse(env);
+      var skin = env && env.appSkinInfo;
+      var c = skin && skin.panelBackgroundColor && skin.panelBackgroundColor.color;
+      if (!c || c.red == null || c.green == null || c.blue == null) return null;
+      return { r: +c.red, g: +c.green, b: +c.blue };
+    } catch (e) { return null; }
+  }
+  function hostTheme() {
+    var c = hostPanelColor();
+    if (c) return ((0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b) / 255) < 0.5 ? 'dark' : 'light';
+    try { if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark'; } catch (e) {}
+    return 'light';
+  }
   function applyTheme(t) {
     t = (t === 'dark') ? 'dark' : 'light';
     document.body.classList.remove('theme-light', 'theme-dark');
     document.body.classList.add('theme-' + t);
-    var b = $('theme-toggle'); if (b) b.textContent = (t === 'dark') ? '☀️' : '🌙';
-    try { localStorage.setItem('cutpilot.theme', t); } catch (e) {}
+    var b = $('theme-toggle');
+    if (b) { b.textContent = (t === 'dark') ? '☀️' : '🌙'; b.title = 'Switch to ' + (t === 'dark' ? 'light' : 'dark') + ' (overrides Premiere’s look)'; }
+  }
+  function setThemeMode(mode, persist) {
+    _themeMode = (mode === 'light' || mode === 'dark') ? mode : 'auto';
+    if (persist) { try { localStorage.setItem(THEME_MODE_KEY, _themeMode); } catch (e) {} }
+    applyTheme(_themeMode === 'auto' ? hostTheme() : _themeMode);
+    var box = $('set-theme');
+    if (box) {
+      var bs = box.querySelectorAll('button');
+      for (var i = 0; i < bs.length; i++) bs[i].classList.toggle('on', bs[i].getAttribute('data-theme') === _themeMode);
+    }
   }
   function wireTheme() {
-    var saved = 'light';
-    try { saved = localStorage.getItem('cutpilot.theme') || 'light'; } catch (e) {}
-    applyTheme(saved);
+    var saved = 'auto';
+    try { saved = localStorage.getItem(THEME_MODE_KEY) || 'auto'; } catch (e) {}
+    setThemeMode(saved, false);
+    // Premiere's Appearance changed → follow it (unless the owner overrode it)
+    try {
+      var cep = window.__adobe_cep__;
+      if (cep && typeof cep.addEventListener === 'function') {
+        cep.addEventListener(THEME_EVENT, function () { if (_themeMode === 'auto') setThemeMode('auto', false); });
+      }
+    } catch (eEv) {}
+    // outside Premiere, the computer's light/dark switch does the same job
+    try {
+      var mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+      var onOs = function () { if (_themeMode === 'auto' && !hostPanelColor()) setThemeMode('auto', false); };
+      if (mq && mq.addEventListener) mq.addEventListener('change', onOs);
+      else if (mq && mq.addListener) mq.addListener(onOs);
+    } catch (eMq) {}
     var b = $('theme-toggle');
     if (b) b.addEventListener('click', function () {
-      applyTheme(document.body.classList.contains('theme-dark') ? 'light' : 'dark');
+      setThemeMode(document.body.classList.contains('theme-dark') ? 'light' : 'dark', true);
+    });
+    var box = $('set-theme');
+    if (box) box.addEventListener('click', function (e) {
+      var t = e.target;
+      while (t && t !== box && !(t.getAttribute && t.getAttribute('data-theme'))) t = t.parentNode;
+      if (t && t !== box) setThemeMode(t.getAttribute('data-theme'), true);
     });
   }
+
+  window.CP_DEBUG_EXT = window.CP_DEBUG_EXT || {};
+  window.CP_DEBUG_EXT.ui = {
+    theme: function () { return document.body.classList.contains('theme-dark') ? 'dark' : 'light'; },
+    themeMode: function () { return _themeMode; },
+    hostTheme: hostTheme,
+    page: function () { return document.body.getAttribute('data-page'); },
+    showPage: showPage
+  };
 
   /* Trial kill-switch: a build can bake in a hard expiry. We compare the clock
      to the expiry AND to the latest time we've ever recorded (persisted in the
