@@ -3962,6 +3962,40 @@
       appendMogrtGroups(grid, adv);
     }
     paintThumbs();
+    // Hindi tiles draw Devanagari: fetch those faces' Hindi glyphs, then repaint
+    list.forEach(function (t) { if (t.script === 'deva') preloadStyleFonts(t, repaintThumbsForFonts); });
+    preloadStyleFonts(currentPreset());
+  }
+
+  /* Web fonts arrive per script: Google Fonts serves each face in subsets
+     (latin, devanagari…), and a browser fetches a subset only for text it lays
+     out or text named in document.fonts.load(). A canvas draw never fetches
+     one, and the render's font wait names no text, so it gets Latin only — a
+     Hindi caption in Baloo 2 or Mukta was drawn in whatever system face had
+     Devanagari. Ask for every face in the style's chain with BOTH scripts. */
+  var _fontsAsked = {};
+  function preloadStyleFonts(p, then) {
+    if (!p || !document.fonts || !document.fonts.load) return;
+    var fams = [p.font].concat(p.fallbackFonts || []);
+    if (p.highlightFont) fams.push(p.highlightFont);
+    var w = p.weight || 800, pending = [];
+    fams.forEach(function (f) {
+      if (!f || /^(sans-serif|serif|monospace|cursive)$/.test(f)) return;
+      var key = f + '|' + w;
+      if (_fontsAsked[key]) return;
+      _fontsAsked[key] = 1;
+      try { pending.push(document.fonts.load(w + ' 40px "' + f + '"', 'Aa हिंदी')); } catch (e) {}
+    });
+    if (then && pending.length) Promise.all(pending).then(then, then);
+  }
+  var _thumbFontT = null;
+  function repaintThumbsForFonts() {
+    if (_thumbFontT) clearTimeout(_thumbFontT);
+    _thumbFontT = setTimeout(function () {
+      var cs = document.querySelectorAll('.tpl-thumb-canvas');
+      for (var k = 0; k < cs.length; k++) cs[k]._painted = false;
+      paintThumbs();
+    }, 60);
   }
 
   /* Caption templates first, title templates in their own group. */
@@ -4431,7 +4465,7 @@
     card.appendChild(thumb);
 
     if (isMogrt) card.addEventListener('click', function () { openMogrtSheet(t); });
-    else card.addEventListener('click', function () { _pvDemo = null; applyTemplate(t); showView('style'); });
+    else card.addEventListener('click', function () { preloadStyleFonts(t, renderPreview); _pvDemo = null; applyTemplate(t); showView('style'); });
     return card;
   }
 
