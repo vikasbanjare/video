@@ -11725,11 +11725,14 @@
         // only moments the mic was actually heard (no clip there = no data, not silence)
         var seqSamples = [];
         grid.forEach(function (db, k) { if (db > -99) seqSamples.push({ t: k * MC_STEP, db: db }); });
-        // floor = the quietest 5% (room tone in the pauses): in a conversation
-        // someone is talking most of the time, so a 40th-percentile "floor" was
-        // speech itself and no talk burst was ever found
-        var starts = CPMulticam.burstStarts(seqSamples, { offset: 8, minGap: 0.6, floorPct: 0.05 })
-          .filter(function (t) { return t > 0.3 && t < dur; });   // already sequence time
+        // The mic's own "quiet" level is its 40th percentile, as it always was.
+        // Only when that finds no talk bursts — someone talks nearly all the
+        // time, so the 40th percentile is speech itself — the quietest 5% (room
+        // tone in the pauses) is used instead. Using the 5% floor everywhere
+        // made a burst of every phrase: 271 shots in a 10-minute interview.
+        var inside = function (t) { return t > 0.3 && t < dur; };   // already sequence time
+        var starts = CPMulticam.burstStarts(seqSamples, { offset: 8, minGap: 0.6, floorPct: 0.4 }).filter(inside);
+        if (starts.length < 2) starts = CPMulticam.burstStarts(seqSamples, { offset: 8, minGap: 0.6, floorPct: 0.05 }).filter(inside);
         var segs = CPMulticam.segmentsFromBoundaries(starts, dur);
         if (segs.length < 2) throw new Error('Couldn\'t hear distinct talk bursts on that track. Try the "Every few seconds" mode.');
         return segs;
@@ -11934,9 +11937,15 @@
     el.classList.remove('hidden'); el.textContent = msg;
   }
 
-  function patternPlan(numAngles, segmentsPromise) {
+  /* A plan cut on switch points (talk bursts, a fixed interval, markers).
+     Every shot holds at least `minHold` s and the first shot is never a
+     flash — the same rule the follow and transcript plans keep. The default
+     is the pace's minimum shot; "every N seconds" keeps the owner's own
+     interval (only its short last piece joins the one before). */
+  function patternPlan(numAngles, segmentsPromise, minHold) {
     return segmentsPromise.then(function (segments) {
       if (!segments.length) throw new Error('Could not work out any switch points.');
+      segments = CPMulticam.holdSegments(segments, minHold != null ? minHold : mcMinHold());
       return CPMulticam.buildAnglePlan(segments, numAngles, {
         mode: state.mcMode,
         holdCuts: parseInt($('mc-hold').value, 10),
@@ -12024,7 +12033,8 @@
       }
       if (src === 'transcript') return mcTranscriptPlan(numAngles);
       if (src === 'speech') return patternPlan(numAngles, mcSpeechBurstSegments());
-      return patternPlan(numAngles, mcSegments());
+      return patternPlan(numAngles, mcSegments(),
+        src === 'interval' ? Math.min(mcMinHold(), parseFloat($('mc-interval').value) || 3) : null);
     }).then(function (plan) {
       if (!plan || !plan.length) throw new Error('No camera switches were produced.');
       state.plan = plan;

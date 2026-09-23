@@ -99,6 +99,24 @@
   }
 
   /*
+   * The minimum shot hold for plans cut on switch points (talk bursts,
+   * markers, a fixed interval): a segment shorter than minHold joins the one
+   * before it, and a too-short FIRST segment joins the one after it (no flash
+   * of a camera at 0:00) — the same rule directorPlan keeps for every audio
+   * or transcript plan. segs: [{start,end}] sorted. Returns new segments.
+   */
+  function holdSegments(segs, minHold) {
+    var out = [], i;
+    for (i = 0; i < (segs || []).length; i++) {
+      var s = { start: segs[i].start, end: segs[i].end };
+      if (out.length && (s.end - s.start) < minHold) out[out.length - 1].end = s.end;
+      else out.push(s);
+    }
+    if (out.length > 1 && (out[0].end - out[0].start) < minHold) { out[1].start = out[0].start; out.shift(); }
+    return out;
+  }
+
+  /*
    * Turn a list of boundary times (e.g. markers) into segments spanning
    * [0, duration]. Boundaries outside the range are ignored.
    */
@@ -815,6 +833,7 @@
     planStats: planStats,
     segmentsByInterval: segmentsByInterval,
     segmentsFromBoundaries: segmentsFromBoundaries,
+    holdSegments: holdSegments,
     directorPlan: directorPlan,
     loudnessToRegions: loudnessToRegions,
     twoModes: twoModes,
