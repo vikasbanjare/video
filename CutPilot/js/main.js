@@ -9132,7 +9132,8 @@
       weight: (p.weight || 800) >= 600 ? 800 : 500,   // the rich write only knows bold vs regular
       uppercase: !!p.uppercase,
       fill: p.fill || '#FFFFFF',
-      highlight: usesHlColour ? CPCaptions.liftDark(hl) : (p.fill || '#FFFFFF'),   // == what mapPresetToFlux sends
+      // == what mapPresetToFlux sends, including the unused slot (never near-black)
+      highlight: CPCaptions.liftDark(usesHlColour ? hl : (p.fill || '#FFFFFF')),
       // a TWO-TONE highlight is real on the timeline (the gradient backbone has
       // Highlighted Word Color 1 + 2) — keep it so those styles stay distinct.
       // Never near-black, like the sweep colour (CPCaptions.sweepColor): the
