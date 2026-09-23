@@ -2758,7 +2758,10 @@
   }
 
   // ===================================================== TEMPLATE LIBRARY ====
-  var MOGRT_CAT = 'Premiere (.mogrt)';
+  // The .mogrt templates live in their OWN clearly-labelled section — never
+  // pinned into the style categories (every chip used to open on the same nine
+  // Premiere templates, four of them title cards with 2–8 colour-only controls).
+  var MOGRT_CAT = '🧩 Premiere templates · advanced';
   var LS = { fav: 'cutpilot.favs', recent: 'cutpilot.recent', custom: 'cutpilot.custom', mogrts: 'cutpilot.mogrts' };
 
   function loadLibraryPrefs() {
@@ -3657,11 +3660,16 @@
     var out = [];
     (state.bundledMogrts || []).forEach(function (m) {
       out.push({ id: 'mogrt:' + m.path, name: m.name, category: MOGRT_CAT, mogrt: true,
-                 path: m.path, popularity: 90, subcat: m.desc || m.category, desc: m.desc, bundled: true, thumb: m.thumb, video: m.video, premium: m.premium, flux: (m.section === 'flux') });
+                 path: m.path, popularity: 90, subcat: m.desc || m.category, desc: m.desc, bundled: true, thumb: m.thumb, video: m.video, premium: m.premium, flux: (m.section === 'flux'),
+                 // caption vs TITLE template (from index.json): a title has no word
+                 // highlight, so its card must not play a karaoke sweep it lacks
+                 kind: m.kind || 'caption' });
     });
+    // A user's template FOLDER is not "bundled": marking it so pinned a whole
+    // pack (the scan allows 800 files) into every category.
     (state.folderMogrts || []).forEach(function (m) {
       out.push({ id: 'mogrt:' + m.path, name: m.name, category: MOGRT_CAT, mogrt: true,
-                 path: m.path, popularity: 80, subcat: m.category, bundled: true, thumb: m.thumb });
+                 path: m.path, popularity: 80, subcat: m.category, fromFolder: true, thumb: m.thumb });
     });
     (state.installedMogrts || []).forEach(function (m) {
       out.push({ id: 'mogrt:' + m.path, name: m.name, category: MOGRT_CAT, mogrt: true,
@@ -3704,7 +3712,8 @@
     // OWN videos) sits right up front — parked at the tail of a scrolling chip
     // row it was invisible in a narrow panel ("where are those captions?").
     var cats = ['⭐ Premium', 'All', '🎬 From My Videos', '🎥 Your Styles', 'Favorites', 'Recent', 'My Templates']
-      .concat(CPCaptions.CATEGORIES.filter(function (c) { return c !== '⭐ Premium' && c !== '🎥 Your Styles' && c !== '🎬 From My Videos'; }));
+      .concat(CPCaptions.CATEGORIES.filter(function (c) { return c !== '⭐ Premium' && c !== '🎥 Your Styles' && c !== '🎬 From My Videos'; }))
+      .concat([MOGRT_CAT]);   // the Premiere .mogrt templates: their own chip, last
     var chipBox = $('lib-cats');
     cats.forEach(function (c) {
       var chip = document.createElement('button');
@@ -3824,61 +3833,116 @@
     toast('Added "' + name + '". Edit its colour / font / text below, then Add template captions.');
   }
 
-  function filteredTemplates() {
-    var mogrtMode = (state.libMode === 'mogrt');
-    // Styles view shows the built-in caption styles PLUS the bundled (shipped)
-    // .mogrt templates, so prebuilt editable templates are visible right in the
-    // main gallery. Installed/user .mogrts still live in the Editor tab.
-    var list = allTemplates().slice().filter(function (t) { return mogrtMode ? !!t.mogrt : (!t.mogrt || (t.bundled && !t.flux)); });
-    var cat = state.libCategory;
-    if (!mogrtMode) {
-      if (cat === 'Favorites') list = list.filter(function (t) { return state.favs[t.id]; });
-      else if (cat === 'Recent') list = state.recent.map(findTemplate).filter(function (t) { return t && !t.mogrt; });
-      else if (cat === 'My Templates') list = state.customTemplates.slice();
-      // The editable, shipped 🎬 templates are the headline feature (animated AND
-      // editable on the timeline). They used to be hidden behind the "All" chip,
-      // so a fresh open showed only burned-in PNG styles. Keep them visible in
-      // EVERY browse category alongside that category's styles.
-      else if (cat !== 'All' && cat !== MOGRT_CAT) list = list.filter(function (t) { return t.category === cat || (t.mogrt && t.bundled && !t.flux); });
-    }
+  /* The Premiere .mogrt cards the ADVANCED section offers: the shipped caption
+     and title templates plus any from the user's template folders. (Flux has
+     its own tab; installed / uploaded .mogrts live in the Editor tab.) */
+  function advancedMogrts() {
+    return mogrtTemplates().filter(function (t) { return (t.bundled && !t.flux) || t.fromFolder; });
+  }
 
-    if (state.libSearch) {
-      var q = state.libSearch;
-      list = list.filter(function (t) {
-        return (t.name + ' ' + t.category + ' ' + (t.font || '') + ' ' + (t.anim || '') + ' ' + (t.subcat || '')).toLowerCase().indexOf(q) >= 0;
-      });
-    }
+  function gallerySearchHit(t, q) {
+    return (t.name + ' ' + t.category + ' ' + ((t.alsoIn || []).join(' ')) + ' ' + (t.font || '') + ' ' +
+            (t.anim || '') + ' ' + (t.subcat || '')).toLowerCase().indexOf(q) >= 0;
+  }
+  function gallerySort(list, cat) {
     if (state.libSort === 'popular' && cat !== 'Recent') list.sort(function (a, b) { return (b.popularity || 0) - (a.popularity || 0); });
     else if (state.libSort === 'az') list.sort(function (a, b) { return a.name < b.name ? -1 : 1; });
     else if (state.libSort === 'favorites') list.sort(function (a, b) { return (state.favs[b.id] ? 1 : 0) - (state.favs[a.id] ? 1 : 0); });
-    // Pin the editable 🎬 templates first (keeps each group's sort order) so the
-    // "animated AND editable on the timeline" option is the first thing seen.
-    if (cat !== 'Favorites' && cat !== 'Recent' && cat !== 'My Templates') {
-      var ed = [], pl = [];
-      for (var k = 0; k < list.length; k++) (list[k].mogrt ? ed : pl).push(list[k]);
-      list = ed.concat(pl);
-    }
     return list;
   }
+
+  /* The STYLE cards for the current chip. Every card here is a Pulse style
+     that opens the full editor. .mogrt templates are never mixed in: they are
+     only returned for their own chip (and appended as a labelled section under
+     "All" by renderTemplateGrid). */
+  function filteredTemplates() {
+    var mogrtMode = (state.libMode === 'mogrt');
+    var cat = state.libCategory;
+    var list;
+    if (mogrtMode) list = allTemplates().filter(function (t) { return !!t.mogrt; });
+    else if (cat === MOGRT_CAT) list = advancedMogrts();
+    else if (cat === 'Favorites') list = allTemplates().filter(function (t) { return !t.mogrt && state.favs[t.id]; });
+    else if (cat === 'Recent') list = state.recent.map(findTemplate).filter(function (t) { return t && !t.mogrt; });
+    else if (cat === 'My Templates') list = state.customTemplates.slice();
+    else {
+      list = allTemplates().filter(function (t) { return !t.mogrt; });
+      if (cat !== 'All') list = list.filter(function (t) { return t.category === cat; });
+    }
+    if (state.libSearch) {
+      var q = state.libSearch;
+      list = list.filter(function (t) { return gallerySearchHit(t, q); });
+    }
+    // de-duplicate by id (a Recent entry can repeat after a fallback lookup)
+    var seen = {};
+    list = list.filter(function (t) { if (seen[t.id]) return false; seen[t.id] = 1; return true; });
+    return gallerySort(list, cat);
+  }
+
+  function gallerySectionHead(text, sub) {
+    var h = document.createElement('div');
+    h.className = 'lib-section';
+    h.style.gridColumn = '1 / -1';
+    h.style.margin = '6px 0 -4px';
+    h.style.fontSize = '11px';
+    h.style.fontWeight = '700';
+    h.style.opacity = '0.85';
+    h.textContent = text;
+    if (sub) {
+      var s = document.createElement('div');
+      s.className = 'hint';
+      s.style.fontWeight = '400';
+      s.style.margin = '2px 0 0';
+      s.textContent = sub;
+      h.appendChild(s);
+    }
+    return h;
+  }
+  var ADVANCED_NOTE = 'Premiere\'s own Motion Graphics templates. Each one only offers the few settings its designer built in — ' +
+    'the styles above give you every control.';
 
   function renderTemplateGrid() {
     var grid = $('tpl-grid');
     grid.innerHTML = '';
+    var cat = state.libCategory;
     var list = filteredTemplates();
-    if (!list.length) {
+    var mogrtMode = (state.libMode === 'mogrt');
+    // the advanced .mogrt section under "All" — AFTER every style
+    var adv = (!mogrtMode && cat === 'All') ? advancedMogrts() : [];
+    if (adv.length && state.libSearch) adv = adv.filter(function (t) { return gallerySearchHit(t, state.libSearch); });
+    if (!list.length && !adv.length) {
       var e = document.createElement('div');
       e.className = 'lib-empty';
-      e.textContent = state.libMode === 'mogrt' ? 'No .mogrt files yet — tap ➕ Add .mogrt file below to upload your Premiere template.'
-        : state.libCategory === 'Favorites' ? 'No favorites yet — tap the ☆ on any template.'
-        : state.libCategory === 'My Templates' ? 'No custom templates yet. Open a style, tweak it, and hit ＋ Save.'
+      e.textContent = mogrtMode ? 'No .mogrt files yet — tap ➕ Add .mogrt file below to upload your Premiere template.'
+        : cat === MOGRT_CAT ? (CPBridge.isCEP() ? 'No Premiere templates found. Add a folder of .mogrt files in Settings.'
+                                                : 'Premiere templates (.mogrt) load inside Premiere.')
+        : cat === 'Favorites' ? 'No favorites yet — tap the ☆ on any template.'
+        : cat === 'My Templates' ? 'No custom templates yet. Open a style, tweak it, and hit ＋ Save.'
         : 'No templates match your search.';
       grid.appendChild(e);
       return;
     }
-    list.forEach(function (t) {
-      grid.appendChild(buildTemplateCard(t));
-    });
+    if (cat === MOGRT_CAT && !mogrtMode) {
+      grid.appendChild(gallerySectionHead(MOGRT_CAT, ADVANCED_NOTE));
+      appendMogrtGroups(grid, list);
+    } else {
+      list.forEach(function (t) { grid.appendChild(buildTemplateCard(t)); });
+    }
+    if (adv.length) {
+      grid.appendChild(gallerySectionHead(MOGRT_CAT, ADVANCED_NOTE));
+      appendMogrtGroups(grid, adv);
+    }
     paintThumbs();
+  }
+
+  /* Caption templates first, title templates in their own group. */
+  function appendMogrtGroups(grid, list) {
+    var caps = list.filter(function (t) { return (t.kind || 'caption') !== 'title'; });
+    var titles = list.filter(function (t) { return (t.kind || 'caption') === 'title'; });
+    caps.forEach(function (t) { grid.appendChild(buildTemplateCard(t)); });
+    if (titles.length) {
+      grid.appendChild(gallerySectionHead('Title templates  ·  ' + titles.length, 'Titles, not captions — they place one styled title, with no word-by-word highlight.'));
+      titles.forEach(function (t) { grid.appendChild(buildTemplateCard(t)); });
+    }
   }
 
   /* Render every gallery card's canvas with the REAL caption engine, sized to
@@ -3917,11 +3981,15 @@
     var fill2 = null;
     if (gradStops.length >= 2) { fill = gradStops[0]; fill2 = gradStops[gradStops.length - 1]; }
     else if (gradStops.length === 1 && !fill) { fill = gradStops[0]; }
+    // A TITLE template, or one with no highlight control, has no word sweep:
+    // drawing one gave four title cards a yellow karaoke sweep the template
+    // never plays. Only a real highlight control earns a highlight colour.
+    var sweeps = !!hl && (t.kind || 'caption') !== 'title';
     var style = {
       id: t.id || 'mg', name: t.name, font: 'Inter', fontSize: 150, weight: 800,
       uppercase: false, fill: fill || first || '#FFFFFF', fill2: fill2,
-      highlight: hl || fill2 || '#FFD400', boxColor: box,
-      keyword: !!hl, wordsPerCue: 4, vCenter: true
+      highlight: sweeps ? hl : (fill || first || '#FFFFFF'), boxColor: box,
+      keyword: sweeps, wordHl: sweeps, anim: sweeps ? 'karaoke' : 'fade', wordsPerCue: 4, vCenter: true
     };
     t._cardStyle = style;
     return style;
