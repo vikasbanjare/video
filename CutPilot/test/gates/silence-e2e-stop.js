@@ -39,8 +39,9 @@ const ok = (c, m) => { if (c) console.log('  ✓ ' + m); else { failed++; consol
         if (shown) document.getElementById(b).click();
         for (let i = 0; i < 60 && !document.getElementById('toast').textContent; i++) await new Promise((res) => setTimeout(res, 50));
         await new Promise((res) => setTimeout(res, 300));
+        const btn = document.getElementById(b);   // (an older panel has no Stop button at all)
         return { shown, listening, toast: document.getElementById('toast').textContent, err: document.getElementById('toast').classList.contains('err'),
-                 hidden: document.getElementById(b).classList.contains('hidden'), progHidden: document.getElementById(pr).classList.contains('hidden'),
+                 hidden: !btn || btn.classList.contains('hidden'), progHidden: document.getElementById(pr).classList.contains('hidden'),
                  confirm: !!document.getElementById('cp-confirm-ov') };
       }, startId, stopId, progId);
     }
@@ -65,7 +66,7 @@ const ok = (c, m) => { if (c) console.log('  ✓ ' + m); else { failed++; consol
     // 3) left alone, the slow scan finishes and cuts as usual
     ({ page, calls } = await P.openPanel(browser, tl, fakes));
     r = await P.cleanUp(page, calls, { strength: 'balanced', takes: false });
-    const btnHidden = await page.evaluate(() => document.getElementById('btn-autoclean-stop').classList.contains('hidden'));
+    const btnHidden = await page.evaluate(() => { const b = document.getElementById('btn-autoclean-stop'); return !b || b.classList.contains('hidden'); });
     await page.close();
     ok(r.razor.length === 1 && r.razor[0].ranges.length > 0 && btnHidden, 'without Stop, the slow scan finishes and the cut is made (' + (r.razor[0] ? r.razor[0].ranges.length + ' sections' : r.toast) + ')');
   });
