@@ -10470,11 +10470,15 @@
 
   /* Chunked AI cleanup → cut ranges (sequence time, via the words' own times).
      opts:{aggressive, scripted, tangents, fillers, people} — fillers/tangents
-     === false leave that category out. Who is talking frames the prompt: one
-     person re-reading a script (scripted — keep only the last take of every
-     line), or a conversation (not scripted, and its side stories are content,
-     not tangents). opts.people, else takesPeople(): the "Who is talking?" pick
-     or the speaker labels. An explicit opts.scripted / opts.tangents wins.
+     === false leave that category out. Who is talking frames the prompt: only
+     ONE person ("Just me", or labels showing one voice) is framed as a script
+     being re-recorded (keep only the last take of every line) and asked for
+     tangents. A conversation, and a transcript whose speakers are not known
+     (Auto on any transcript without speaker labels — every Groq/Whisper one,
+     the owner's usual engine), get neutral framing and no tangent cuts: a
+     podcast's side stories are content. opts.people, else takesPeople(): the
+     "Who is talking?" pick or the speaker labels. An explicit opts.scripted /
+     opts.tangents wins.
      Shared by the review-first Smart Cleanup button and the one-tap "Clean up
      my video". Resolves {cuts, unread} — unread = [{start, end}], the
      stretches no usable answer came back for (nothing is listed there).
@@ -10485,8 +10489,8 @@
   function aiCleanupCuts(words, opts, prog, label) {
     opts = opts || {};
     var people = ('people' in opts) ? opts.people : takesPeople(words);
-    var scripted = (opts.scripted != null) ? !!opts.scripted : people !== 'many';
-    var tangents = (opts.tangents != null) ? opts.tangents : (people === 'many' ? false : undefined);
+    var scripted = (opts.scripted != null) ? !!opts.scripted : people === 'one';
+    var tangents = (opts.tangents != null) ? opts.tangents : (people === 'one' ? undefined : false);
     var plan = CPSmartEdit.planChunks(words.length, 1000, 150);
     var cats = CPSmartEdit.cleanupCategories({ fillers: opts.fillers, tangents: tangents });
     var unread = [], answered = 0;

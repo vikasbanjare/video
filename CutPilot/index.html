@@ -866,14 +866,15 @@
            attempt that stops short is cut even if it came last. You tick which cuts to apply.</p>
         <label class="fld-full" style="margin-top:8px">Who is talking?
           <select id="tk-kind">
-            <option value="auto" selected>Auto — tell from the speaker labels</option>
+            <option value="auto" selected>Auto — tell from speaker labels (Verbatim)</option>
             <option value="one">Just me (a reel, a script I re-recorded)</option>
             <option value="many">Two or more people (podcast, interview)</option>
           </select>
         </label>
-        <p class="hint" style="margin-top:4px">A retake is the <b>same person</b> saying a line again. The Verbatim engine
-           labels who speaks; with a plain transcript, pick <b>Two or more people</b> for a podcast so an answer that
-           echoes the question is never cut, or <b>Just me</b> so every restart of yours is caught.</p>
+        <p class="hint" style="margin-top:4px">A retake is the <b>same person</b> saying a line again. Auto can only
+           tell who is talking on a Verbatim transcript (it labels each speaker); on any other transcript Auto plays
+           safe. So pick <b>Two or more people</b> for a podcast so an answer that echoes the question is never cut, or
+           <b>Just me</b> for a reel so every restart of yours is caught.</p>
         <details class="advanced" style="margin-top:8px">
           <summary>Fine-tune (for power users)</summary>
           <div class="grid2" style="margin-top:6px">

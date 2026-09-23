@@ -13,7 +13,9 @@
  *   1. "Two or more people" → no "script being re-recorded" framing and no
  *      "tangent" category; "Just me" → both;
  *   2. Auto + a transcript whose labels show two people → conversation
- *      framing; Auto + no labels → the scripted framing as before;
+ *      framing; Auto + labels showing one voice → scripted framing; Auto +
+ *      no labels (not known) → neutral: no script framing, no tangents — and
+ *      the card says Auto only tells speakers apart on Verbatim transcripts;
  *   3. "Find repeated takes" on an unlabelled podcast whose guest agrees in the
  *      host's words cuts nothing on Strong with "Two or more people", while
  *      "Just me" catches a lone speaker's "right, …" restart.
@@ -78,8 +80,18 @@ async function run() {
     C.check('"Just me": the scripted re-record framing and tangents are kept', one.sent > 0 && one.scripted && one.tangent, JSON.stringify(one));
     const labelled = await smart('auto', stream(POD.map((l, i) => [l, i % 2])));
     C.check('Auto + speaker labels showing two people → conversation framing', labelled.sent > 0 && !labelled.scripted && !labelled.tangent, JSON.stringify(labelled));
+    // Auto on a transcript with no speaker labels (every Groq/Whisper one —
+    // the owner's usual engine) does not know who is talking. This check used
+    // to pin "the scripted framing as before": a podcast on the default path
+    // was framed to the AI as a re-recorded script and cut for tangents. Only
+    // the owner's "Just me" (or labels showing one voice) says it is a script.
     const plain = await smart('auto', stream(POD));
-    C.check('Auto + no labels → the scripted framing as before', plain.sent > 0 && plain.scripted, JSON.stringify(plain));
+    C.check('Auto + no labels (speakers not known) → neutral: NOT told it is a script being re-recorded, no tangent cuts',
+      plain.sent > 0 && !plain.scripted && !plain.tangent, JSON.stringify(plain));
+    const oneVoice = await smart('auto', stream(POD.map((l) => [l, 0])));
+    C.check('Auto + labels showing ONE voice → the scripted re-record framing', oneVoice.sent > 0 && oneVoice.scripted && oneVoice.tangent, JSON.stringify(oneVoice));
+    const card = await page.evaluate(() => { const s = document.getElementById('tk-kind'); return s ? s.closest('.card').textContent : ''; });
+    C.check('the takes card says Auto can only tell who is talking on a Verbatim transcript', /Auto[^.]*only[^.]*Verbatim/i.test(card.replace(/\s+/g, ' ')), card.replace(/\s+/g, ' ').slice(0, 600));
 
     async function find(kind, strength, words) {
       return page.evaluate(async (k, s, ws) => {
