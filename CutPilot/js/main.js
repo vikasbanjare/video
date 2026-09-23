@@ -10760,7 +10760,7 @@
       var notes = [];
       if (offline.length) notes.push(offline.join(', ') + (offline.length === 1 ? ' is' : ' are') + ' offline (moved or renamed), so ' +
         (offline.length === 1 ? 'it was' : 'they were') + ' left out — relink in Premiere (right-click the clip → Link Media) to include ' + (offline.length === 1 ? 'it.' : 'them.'));
-      if (mute.length) notes.push(mute.join(', ') + ' has no sound in it, so it was left out.');
+      if (mute.length) notes.push(mute.join(', ') + (mute.length === 1 ? ' has no sound in it, so it was' : ' have no sound in them, so they were') + ' left out.');
       if (voices.length) steady.forEach(function (p) {
         left[p] = 'music';
         notes.push(named(p) + ' sounds like steady music or noise, not a voice, so it was left out of what the verbatim engine hears.');

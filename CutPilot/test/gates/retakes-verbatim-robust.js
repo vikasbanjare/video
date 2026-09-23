@@ -166,6 +166,19 @@ async function main() {
     C.check('the takes card tells the owner to mute a music track before Verbatim retakes', /mute your music track/i.test(hint), hint);
     await a.page.close();
 
+    // 2b ─ files with no sound in them (a video file with no audio stream)
+    const silent = (name) => { const f = path.join(DIR, name); cp.execFileSync(FF, ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=black:s=64x64:d=2', '-an', f]); return f; };
+    const SILENT_SRC = Object.assign({}, SRC, { audio: [SRC.audio[0],
+      { index: 1, name: 'B-roll', muted: false, items: [{ mediaPath: silent('broll-a.mp4'), seqStart: 12, seqEnd: 13, inPoint: 0, outPoint: 1, speed: 1 }] },
+      { index: 2, name: 'B-roll 2', muted: false, items: [{ mediaPath: silent('broll-b.mp4'), seqStart: 14, seqEnd: 15, inPoint: 0, outPoint: 1, speed: 1 }] }] });
+    sent.length = 0;
+    const s2 = await H.openPanel(browser, { host: hostFor(SILENT_SRC, null), curl, settings, ffmpeg: FF });
+    const r2 = await run(s2.page);
+    C.check('files with no sound in them are left out, and the run still reads the voice',
+      r2.shown && !/failed/.test(r2.toast) && r2.words.length === 4 && /broll-a\.mp4/.test(r2.stats) && /broll-b\.mp4/.test(r2.stats) && /have no sound in them/.test(r2.stats),
+      JSON.stringify(r2));
+    await s2.page.close();
+
     // 3 ─ the mix fails anyway: read the selected clip instead
     sent.length = 0;
     const clip = { name: 'voice', mediaPath: VOICE, seqStart: 10, seqEnd: 20, inPoint: 0, outPoint: 10, nodeId: 'n1' };
