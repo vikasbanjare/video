@@ -10249,11 +10249,52 @@
         if (fr.why) extraNotes.push('Filler words skipped — ' + fr.why);
       }
       var tp = TAKE_PRESETS[strength] || TAKE_PRESETS.balanced;
-      function takesOn(words) {
+      /* The one tap has no list to review, so it only makes a retake cut
+         whose edges are REAL times: never one the retake finder marks as
+         estimated, and — when the words are caption lines spread evenly
+         (no word-by-word timing, `edges` = each line's start and end) — only
+         one that starts and ends on a line's own start or end. The rest are
+         left in and named in the confirm (guessedNote). */
+      var guessed = [], matcherAll = [], guessedSaid = false;
+      function onEdge(edges, t) {
+        for (var i = 0; i < edges.length; i++) if (Math.abs(edges[i] - t) <= 0.02) return true;
+        return false;
+      }
+      function sureCut(d, edges) {
+        if (d.needsReview || d.estimated) return false;
+        return !edges || (onEdge(edges, d.start) && onEdge(edges, d.end));
+      }
+      function takesOn(words, edges) {
         // keep:'best' — completeness + per-word confidence + recency picks the
         // take that actually got finished cleanly, not blindly the last one.
         var tk = CPTakes.findRepeatedTakes(words, { minRun: tp.minrun, sim: tp.sim / 100, keep: 'best', people: takesPeople(words) });
-        return tk.deletes.map(function (d) { return { start: d.start, end: d.end }; });
+        var out = [];
+        tk.deletes.forEach(function (d) {
+          matcherAll.push({ start: d.start, end: d.end });
+          if (sureCut(d, edges)) out.push({ start: d.start, end: d.end }); else guessed.push(d);
+        });
+        return out;
+      }
+      /* The only real times in a transcript with no word-by-word timing: the
+         start and end of each caption line (the same lines takesGetWords
+         spreads into words). null when the words carry their own timing. */
+      function lineEdges() {
+        if (state.transcriptWords && state.transcriptWords.length) return null;
+        var cues = (state.lastCaptionJob && state.lastCaptionJob.cues) || null;
+        if (!cues && !transcriptIsStale()) { try { cues = readSelectedTranscript(); } catch (e) { cues = null; } }
+        var out = [];
+        (cues || []).forEach(function (c) { out.push(+c.start, +c.end); });
+        return out;
+      }
+      function guessedNote() {
+        if (!guessed.length || guessedSaid) return;
+        guessedSaid = true;
+        var g = mergeSeqRanges(guessed), many = g.length > 1;   // the finder and the AI can name the same one
+        extraNotes.push(g.length + ' possible retake' + (many ? 's were' : ' was') + ' left in (' +
+          g.slice(0, 3).map(function (c) { return fmt(c.start) + '–' + fmt(c.end); }).join(', ') + (g.length > 3 ? ', …' : '') +
+          ') — your transcript has no word-by-word timing, so where ' + (many ? 'they start and end' : 'it starts and ends') +
+          ' inside a caption line is only a guess. To check ' + (many ? 'them' : 'it') + ' first, tap Cancel and open 🔁 Remove repeated takes ' +
+          '(▶ plays each one), or re-transcribe (Transcribe tab) for exact word timing.');
       }
       function result(other, extra) {
         var r = { sil: plan.cuts, other: fills.concat(other || []) };
@@ -10275,7 +10316,9 @@
           prog.textContent = '🎯 Reading every word (verbatim engine)…';
           return verbatimTranscribe(clip, ffV, cutSrc).then(function (vw) {
             prog.textContent = 'Picking the best take of every line…';
-            return result(takesOn(vw), { verbatim: true, vWords: vw });
+            var vSure = takesOn(vw, null);
+            guessedNote();
+            return result(vSure, { verbatim: true, vWords: vw });
           }).catch(function (eV) {
             try { diag('autoclean', 'verbatim failed, falling back: ' + (eV && eV.message)); } catch (e0) {}
             return fallbackPath();
@@ -10304,7 +10347,8 @@
           return result([], { needTranscript: noWords ? 'failed' : (state.transcript && transcriptIsStale()) ? 'stale'
                                                  : state.transcript ? 'unreadable' : 'none' });
         }
-        var base = takesOn(words);
+        var edges = lineEdges();
+        var base = takesOn(words, edges);
         if (cpKey() && typeof CPSmartEdit !== 'undefined' && typeof aiCleanupCuts === 'function') {
           return aiCleanupCuts(words, { aggressive: (strength === 'strong') }, prog, '✨ AI finding retakes & off-script talk')
             .then(function (rr) {
@@ -10318,11 +10362,18 @@
                   ') — play ' + (long.length > 1 ? 'them' : 'it') + ' first: 🔁 Remove repeated takes → ✨ Smart Cleanup (AI).');
               }
               var sure = (rr.cuts || []).filter(function (c) { return !c.needsReview; });
-              return result(base.concat(mergeAiCuts(base, sure, doFill)), { ai: true });
+              // an AI cut on guessed word times is left in like the matcher's
+              var ai = mergeAiCuts(matcherAll, sure, doFill).filter(function (c) {
+                if (sureCut(c, edges)) return true;
+                guessed.push(c); return false;
+              });
+              guessedNote();
+              return result(base.concat(ai), { ai: true });
             })
-            .catch(function () { return result(base); });
+            .catch(function () { guessedNote(); return result(base); });
         }
         prog.textContent = 'Finding repeated takes…';
+        guessedNote();
         return result(base);
       }
     }).then(function (r) {
