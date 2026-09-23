@@ -37,7 +37,9 @@ function hasFfmpeg() { try { cp.execFileSync('ffmpeg', ['-hide_banner', '-versio
  * timeline: { seqId, seqName, audio:[{ name, muted, locked, items:[{ name, mediaPath,
  *             seqStart, seqEnd, inPoint, outPoint, speed }] }], video:[…], selection,
  *             host(fn, argJson) → a JSON reply string, or undefined for the stub's
- *             own answer (lets a gate answer with the REAL host.jsx) }
+ *             own answer (lets a gate answer with the REAL host.jsx),
+ *             noFfmpeg: true → the panel finds no ffmpeg and reads the media
+ *             files itself (its Web Audio fallback) }
  * fakes: { '<mediaPath>': 'stall' } → that file's decode sends ~5 s of audio, then hangs;
  *        'crash' → it sends ~5 s of audio, then the decoder quits with an error;
  *        'slow'  → it trickles the real audio in over ~4 s (a long file on a slow disk).
@@ -159,6 +161,15 @@ async function openPanel(browser, timeline, fakes) {
   await page.goto('file://' + path.join(PANEL_DIR, 'index.html'), { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => !!document.getElementById('btn-autoclean') && typeof window.CPSilence !== 'undefined', { timeout: 20000 });
   await new Promise((r) => setTimeout(r, 1200));
+  if (timeline.noFfmpeg) {
+    // no ffmpeg on this machine: the panel reads each media file's bytes itself
+    const files = {};
+    for (const t of timeline.audio) for (const it of t.items) if (it.mediaPath && fs.existsSync(it.mediaPath)) files[it.mediaPath] = fs.readFileSync(it.mediaPath).toString('base64');
+    await page.evaluate((f) => {
+      window.__noFfmpeg = true; window.__files = {};
+      for (const k of Object.keys(f)) { const b = atob(f[k]), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); window.__files[k] = u; }
+    }, files);
+  }
   await page.evaluate(() => {
     // a slow disk / watchdog in seconds instead of minutes (both the old 240 s
     // silencedetect limit and the new 60 s stall limit)
@@ -174,7 +185,8 @@ async function openPanel(browser, timeline, fakes) {
       else if (kind === 'error') h.error.forEach(f => f(new Error(payload)));
     };
     window.require = function (mod) {
-      if (mod === 'fs') return { existsSync: (p) => p === '/usr/bin/ffmpeg', readFileSync() { throw new Error('no fs in test'); } };
+      if (mod === 'fs') return { existsSync: (p) => !window.__noFfmpeg && p === '/usr/bin/ffmpeg',
+                                 readFileSync(p) { if (window.__files && window.__files[p]) return window.__files[p]; throw new Error('no fs in test'); } };
       if (mod === 'os') return { homedir: () => '/nonexistent', tmpdir: () => '/tmp', platform: () => 'darwin' };
       if (mod === 'path') return { join: (...a) => a.join('/'), basename: (p) => String(p).split('/').pop() };
       if (mod === 'child_process') return {
