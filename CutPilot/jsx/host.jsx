@@ -949,28 +949,36 @@ function CP_applyMulticamPlan(argsJson) {
     }
 
     // check every shot on the timeline: near its start, middle and end, only
-    // the planned camera may be switched on
-    var good = 0, total = 0, after = [];
+    // the planned camera may be switched on. A planned camera with NO clip
+    // there (it started late, or stops early) is not a failed switch — it is
+    // reported apart, because applying again can't fix it.
+    var good = 0, total = 0, after = [], noFootage = 0, noFootageAt = [];
     for (t = 0; t < n; t++) after.push(CP_mcTrackRows(seq.videoTracks[t]));
     for (p = 0; p < plan.length; p++) {
       var sh = plan[p], len = sh.end - sh.start;
       if (!(len > 0)) continue;
-      total += len;
-      var inset = Math.min(len / 4, Math.max(2 * half, 0.1)), ok = true;
+      var inset = Math.min(len / 4, Math.max(2 * half, 0.1)), ok = true, bare = false;
       var probes = [sh.start + inset, (sh.start + sh.end) / 2, sh.end - inset];
       for (var q = 0; q < 3 && ok; q++) {
         for (t = 0; t < n && ok; t++) {
           var r = CP_mcRowAt(after[t], probes[q]);
-          if (t === sh.angle) { if (!r || r[2]) ok = false; }
+          if (t === sh.angle) { if (!r) bare = true; else if (r[2]) ok = false; }
           else if (r && !r[2]) ok = false;
         }
       }
+      if (bare && ok) {
+        noFootage += len;
+        if (noFootageAt.length < 3) noFootageAt.push({ camera: 'V' + (sh.angle + 1), start: sh.start, end: sh.end });
+        continue;
+      }
+      total += len;
       if (ok) good += len;
     }
     return CP_ok({
       toggled: toggled, razored: landed, cuts: bounds.length, cutsNeeded: needed, missedCuts: needed - landed,
       missedAt: missedAt, razorErrors: razorErrors, toggleErrors: toggleErrors,
       verifiedPct: total > 0 ? Math.floor((good / total) * 1000) / 10 : 100,
+      noFootageSec: Math.round(noFootage * 10) / 10, noFootageAt: noFootageAt,
       dropFrame: df, tracksUsed: n,
       seqEnd: seqEnd, planStart: planStart, planEnd: planEnd,
       coveredPct: seqEnd > 0 ? Math.round((planEnd / seqEnd) * 100) : 100,

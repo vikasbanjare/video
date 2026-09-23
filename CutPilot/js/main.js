@@ -10744,6 +10744,18 @@
         toast('⚠️ Multicam applied only partly — ' + partly[0] + '. See the box below.', true);
         return r;
       }
+      // the plan put a camera on screen where that camera has no clip (it
+      // started late or stops early) — applying again can't fix that
+      if (r.noFootageSec > 0 && r.noFootageAt && r.noFootageAt.length) {
+        var nf = r.noFootageAt[0];
+        var nfMsg = nf.camera + ' has no video at ' + fmt(nf.start) + '–' + fmt(nf.end) +
+          (r.noFootageSec > (nf.end - nf.start) + 0.05 ? ' (' + fmt(r.noFootageSec) + ' of the plan in all)' : '') +
+          ' — viewers see black or the camera below there. Line the camera clips up so each covers the whole episode, then build again.';
+        var nbox = $('mc-diag');
+        if (nbox) { nbox.classList.remove('hidden'); nbox.className = 'diag-out err'; nbox.textContent = 'Multicam applied, but:\n' + nfMsg; }
+        toast('⚠️ Multicam applied, but ' + nfMsg, true);
+        return r;
+      }
       // If the plan didn't reach the later clips, say so plainly + show the
       // numbers in the diag box (this is the "only cuts the first clip" case).
       if (r.coveredPct != null && r.coveredPct < 85) {

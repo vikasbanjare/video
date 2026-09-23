@@ -67,6 +67,15 @@ for (const mode of ['throws', 'noop']) {
   report(r.ok === true && r.missedCuts > 0 && Array.isArray(r.missedAt) && r.missedAt.length > 0 && r.verifiedPct < 99,
     'every third razor refused: the result counts the cuts that did not land — missedCuts ' + r.missedCuts + ' at ' + JSON.stringify(r.missedAt) + ', verified ' + r.verifiedPct + '%');
 }
+// ---- a camera with no footage where the plan wants it: reported apart ------------------
+{
+  const { w, host } = world({ video: [{ name: 'V1', clips: [{ start: 0, end: 60, name: 'cam1' }] }, { name: 'V2', clips: [{ start: 10, end: 60, name: 'cam2' }] }] });
+  const plan = [{ start: 0, end: 12, angle: 1 }, { start: 12, end: 30, angle: 0 }, { start: 30, end: 60, angle: 1 }];
+  const r = FH.call(host, 'CP_applyMulticamPlan', { plan, numAngles: 2, dropFrame: false });
+  report(r.ok && r.noFootageSec === 12 && r.noFootageAt && r.noFootageAt[0].camera === 'V2' && r.verifiedPct === 100 && r.missedCuts === 0,
+    'V2 starts at 0:10 but the plan wants it from 0:00: reported as missing footage, not a failed apply — ' +
+    JSON.stringify({ noFootageSec: r.noFootageSec, at: r.noFootageAt, verified: r.verifiedPct, missed: r.missedCuts }));
+}
 // ---- the normal case: every shot verified on the timeline ------------------------------
 {
   const { w, host } = world({});
@@ -101,8 +110,9 @@ for (const mode of ['throws', 'noop']) {
       env['/media/mic' + (m + 1) + '.wav'] = g.slice();
       audio.push({ name: 'A' + (m + 1), clips: [{ start: 0, end: 60, inPoint: 0, outPoint: 60, mediaPath: '/media/mic' + (m + 1) + '.wav', name: 'mic' + (m + 1) }] });
     });
-    for (const mode of ['throws', 'flaky']) {
-      const ctx = await P.openPanel(browser, { premiere: { fps: 25, end: 60, video: FH.cameras(2, 60), audio, razor: mode === 'throws' ? 'throws' : 'ok' }, envelopes: env });
+    for (const mode of ['throws', 'flaky', 'late']) {
+      const video = mode === 'late' ? [{ name: 'V1', clips: [{ start: 10, end: 60, name: 'cam1' }] }, { name: 'V2', clips: [{ start: 0, end: 60, name: 'cam2' }] }] : FH.cameras(2, 60);
+      const ctx = await P.openPanel(browser, { premiere: { fps: 25, end: 60, video, audio, razor: mode === 'throws' ? 'throws' : 'ok' }, envelopes: env });
       if (mode === 'flaky') {
         let calls = 0;
         const q = ctx.world.sandbox.qe.project.getActiveSequence;
@@ -117,9 +127,10 @@ for (const mode of ['throws', 'noop']) {
       const last = r.toasts[r.toasts.length - 1] || '';
       const isErr = /\berr\b/.test(last.split('|')[0]);
       const msg = last.split('|').slice(1).join('|');
-      const want = mode === 'throws' ? /nothing was switched/i : /only partly/i;
+      const want = mode === 'throws' ? /nothing was switched/i : (mode === 'flaky' ? /only partly/i : /V1 has no video at 0:00/);
+      const what = mode === 'throws' ? 'razor refused' : (mode === 'flaky' ? 'razor failing half the time' : 'host camera (V1) starts at 0:10 while the host speaks first');
       report(isErr && want.test(msg) && !/^🎬 Multicam applied — \d+ cuts, \d+ angle toggles/.test(msg),
-        'panel, razor ' + (mode === 'throws' ? 'refused' : 'failing half the time') + ': the owner sees ' + JSON.stringify(msg.slice(0, 110)) + (isErr ? ' (as an error)' : ' (as success)'));
+        'panel, ' + what + ': the owner sees ' + JSON.stringify(msg.slice(0, 110)) + (isErr ? ' (as an error)' : ' (as success)'));
     }
   });
   if (failed) { console.log('MULTICAM APPLY: ' + failed + ' check(s) failed'); process.exit(1); }
