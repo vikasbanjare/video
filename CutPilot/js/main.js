@@ -11823,6 +11823,24 @@
           ? 'The clip on V1 is a NESTED sequence — multicam can\'t switch the cameras hidden inside it. Double-click that clip to open the nest (your cameras are on V1, V2, V3 in there), then run multicam on THAT timeline.'
           : 'Multicam needs each camera on its OWN video track (V1, V2, V3…). This sequence has just one video track. Stack each camera on its own track (or open your nested clip), tap 🔄 Detect audio, and try again.');
       }
+      // More cameras picked than the timeline has video tracks: the extra
+      // camera's shots would play as black. Count again first (a track may have
+      // been added since Detect audio), then say so plainly.
+      if (state.mcVideoTracks && numAngles > state.mcVideoTracks) {
+        return CPBridge.callHost('CP_getEnv').then(function (env) {
+          if (env && env.videoTracks) state.mcVideoTracks = env.videoTracks;
+        }, function () {}).then(function () {
+          var nV = state.mcVideoTracks;
+          if (numAngles > nV) {
+            throw new Error('You picked ' + numAngles + ' cameras, but your timeline has only ' + nV + ' video track' + (nV === 1 ? '' : 's') +
+              ' (V1–V' + nV + '), so camera ' + (nV + 1) + ' would show black. Pick ' + nV + ' in Step 1 “How many cameras?”, ' +
+              'or put each camera on its own video track and tap 🔄 Detect audio.');
+          }
+          return tracks;
+        });
+      }
+      return tracks;
+    }).then(function (tracks) {
       // "Follow the speaker" needs one mic PER person. A single audio track can
       // still be two mics: host and guest on the Left and Right channels of one
       // recording (two wireless lavs on one recorder, a mixer's stereo file).

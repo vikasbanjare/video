@@ -1181,10 +1181,26 @@ function CP_applyMulticamPlan(argsJson) {
   try {
     var args = JSON.parse(argsJson);
     var seq = CP_activeSequence();
-    var n = Math.min(args.numAngles, seq.videoTracks.numTracks);
+    var nTracks = seq.videoTracks.numTracks;
+    var n = Math.min(args.numAngles, nTracks);
     var fps = CP_sequenceFps(seq);
     var half = 0.5 / fps;
     var plan = args.plan || [];
+
+    // A shot on a camera with no video track here would play as BLACK (every
+    // camera track below it is switched off) while every shot on the real
+    // tracks still checks out — refuse before changing anything.
+    var topAngle = -1;
+    for (var pa = 0; pa < plan.length; pa++) if (plan[pa].angle > topAngle) topAngle = plan[pa].angle;
+    if (topAngle >= nTracks) {
+      return CP_fail('The plan uses camera V' + (topAngle + 1) + ', but this timeline has only ' + nTracks + ' video track' +
+        (nTracks === 1 ? '' : 's') + ', so those shots would be black. Nothing was changed. Put each camera on its own video ' +
+        'track (V1, V2, V3…) or pick fewer cameras in Step 1, then build again.');
+    }
+    if (topAngle >= n) {
+      return CP_fail('The plan uses camera V' + (topAngle + 1) + ' but was made for ' + n + ' camera' + (n === 1 ? '' : 's') +
+        '. Nothing was changed — tap Auto multicam to build it again.');
+    }
     var df = !!args.dropFrame;
     try {
       var sset = seq.getSettings ? seq.getSettings() : null;
