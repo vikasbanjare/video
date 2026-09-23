@@ -25,7 +25,7 @@
 const G = require('./gallery-lib/panel.js');
 
 const REQUIRED = ['🔥 Trending', '💥 Bold & Viral', '🎤 Karaoke', '🎙️ Podcast', '✨ Minimal & Clean',
-                  '🎬 Cinematic & Editorial', '🌈 Neon & Glow', '😂 Fun & Meme'];
+                  '🎬 Cinematic & Editorial', '🌈 Neon & Glow', '😂 Fun & Meme', '🇮🇳 Hindi (हिंदी)'];
 const BUTTONS = '🔘 Buttons';
 const OLD_CHIPS = ['⭐ Premium', 'Bold Creator', 'Minimal Professional', 'Dynamic Highlight', 'Social Growth',
                    'Podcast Pro', 'Storytelling', 'Gaming Stream', 'Cinematic', 'Motivation', 'Education'];

@@ -116,7 +116,9 @@
       fill: fill,
       highlight: highlight,
       stroke: (o.stroke !== undefined) ? o.stroke : (preset.stroke || null),
-      strokeWidth: Math.round(strokeW * scale),
+      // fractional, like letterSpacing below: a 4 px outline on an 18 px preview
+      // caption rounded to 1 px, and the preview lost the outline the render has
+      strokeWidth: Math.round(strokeW * scale * 100) / 100,
       boxColor: box,
       boxRadius: Math.round(((o.boxRadius != null ? o.boxRadius : preset.boxRadius) || 10) * scale),
       glow: (o.glow !== undefined) ? o.glow : (preset.glow || null),

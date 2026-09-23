@@ -4075,6 +4075,10 @@
      transcript words when loaded, else a per-style line so tiles differ. */
   var TILE_SAMPLES = ['Make every word count', 'Heat waves are rising', 'Grow your channel fast',
                       'This changes everything', 'Nobody tells you this', 'Start before you are ready'];
+  /* Devanagari-first styles preview in Hindi / Hinglish — the owner's own
+     language — so what the tile shows is the face's Hindi, not its Latin. */
+  var TILE_SAMPLES_HI = ['यह secret कोई नहीं बताता', 'पैसे बचाने का आसान तरीका',
+                         'आज से शुरुआत करो', 'Ye trick सच में काम करती'];
   function tileSampleText(p) {
     try {
       var tw = state.transcriptWords;
@@ -4089,7 +4093,8 @@
     } catch (eT) {}
     var h = 0, id = String((p && p.id) || '');
     for (var k = 0; k < id.length; k++) h = (h * 31 + id.charCodeAt(k)) & 0xffff;
-    return TILE_SAMPLES[h % TILE_SAMPLES.length];
+    var pool = (p && p.script === 'deva') ? TILE_SAMPLES_HI : TILE_SAMPLES;
+    return pool[h % pool.length];
   }
   function layoutYPct(p) {
     var l = p && p.layout;
@@ -4121,6 +4126,7 @@
           anim: animId, wordsPerCue: (t.wordsPerCue || 4), uppercase: !!t.uppercase,
           keyword: { on: false }, speaker: { on: false },   // sweep (active word) supplies the highlight, like the backbone
           build: !!raw.build,                               // same flag the pipeline and the editor preview pass
+          textCase: raw.textCase || 'original',             // a lowercase style reads lowercase on its card too
           wordCues: wordCues, window: 0
         });
       } catch (eF) { frames = null; }

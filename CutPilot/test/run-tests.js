@@ -401,8 +401,11 @@ console.log('captions.js (template library)');
   // curation policy: a style reachable from another via the customization tab
   // (colours/box/shadow/caps/gradient/size/position/entrance) is a duplicate.
   // Identity = font family x weight class x box-corner class -> 22 keepers.
-  assert(CPCaptions.TEMPLATES.length >= 18 && CPCaptions.TEMPLATES.length <= 90,
-         'catalog stays curated (18..90 incl. the 🎥 Your Styles tab, currently ' + CPCaptions.TEMPLATES.length + ')');
+  // The ceiling moved 90 -> 140 for the 48-style trending library and the six
+  // .mogrt twins (owner asked for 45+ current looks); it still stops runaway
+  // growth, and near-duplicate Buttons are held off by gates/gallery-categories.
+  assert(CPCaptions.TEMPLATES.length >= 18 && CPCaptions.TEMPLATES.length <= 140,
+         'catalog stays curated (18..140 incl. the 🎥 Your Styles tab, currently ' + CPCaptions.TEMPLATES.length + ')');
   // every template carries the library metadata the browser needs
   CPCaptions.TEMPLATES.forEach(function (t) {
     if (!t.category || t.popularity == null || !t.layout) {
