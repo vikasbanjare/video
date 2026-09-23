@@ -11659,12 +11659,42 @@
       }) : []
     };
     var dur = state.mcAudioEnd || (state.env && state.env.endSeconds) || cues[cues.length - 1].end;
+    state.mcAnalysis.coverage = mcTranscriptCoverage(cues, dur);
     var regions = CPMulticam.speakerCuesToRegions(cues, numAngles, mapFn);
     var minSeg = mcMinHold();
     var plan = CPMulticam.directorPlan(regions, dur, {
       minSegment: minSeg, leadIn: mcLeadIn(), maxShot: mcMaxShot(), centerHold: minSeg, cutawayHold: mcCutawayHold()
     });
     return Promise.resolve(plan);
+  }
+
+  /* How much of the timeline the transcript speaks for. The plan itself always
+     spans 0:00 → end, so "Covers 0:00 → 10:00" was said even when the
+     transcript stopped at 0:24 and everything after was held shots and timed
+     cutaways. Stretches of 20 s or more with no line (after the last line, or
+     a hole in the middle) are where Pulse can't know who is talking.
+     Returns { share, line, warn } like mcCoverage. */
+  function mcTranscriptCoverage(cues, dur) {
+    var GAP = 20, gaps = [], reach = 0, missing = 0, i;
+    var sorted = cues.slice().sort(function (a, b) { return a.start - b.start; });
+    for (i = 0; i < sorted.length && sorted[i].start < dur; i++) {
+      if (sorted[i].start - reach >= GAP) gaps.push({ start: reach, end: sorted[i].start });
+      if (sorted[i].end > reach) reach = Math.min(dur, sorted[i].end);
+    }
+    if (dur - reach >= GAP) gaps.push({ start: reach, end: dur, tail: true });
+    gaps.forEach(function (g) { missing += g.end - g.start; });
+    var share = dur > 0 ? Math.max(0, 1 - missing / dur) : 1;
+    var res = { share: share, warn: null,
+      line: share >= 0.995 ? ('⏱ Your transcript covers the whole ' + fmt(dur) + ' timeline')
+                           : ('⏱ Your transcript covers ' + Math.round(share * 100) + '% of your ' + fmt(dur) + ' timeline') };
+    if (share < 0.85 && gaps.length) {
+      var big = gaps.slice().sort(function (a, b) { return (b.end - b.start) - (a.end - a.start); })[0];
+      res.warn = (big.tail
+        ? ('⚠️ Your transcript ends at ' + fmt(big.start) + ' of your ' + fmt(dur) + ' timeline — after that')
+        : ('⚠️ Your transcript has no lines from ' + fmt(big.start) + ' to ' + fmt(big.end) + ' — there')) +
+        ' Pulse can’t tell who is talking, so the camera just holds. Transcribe the whole timeline, then build again.';
+    }
+    return res;
   }
 
   /* "Switch on speech": one main/mixed mic → cut at each talk burst. */
@@ -12094,15 +12124,16 @@
       nl.textContent = noLabelsMsg;
       view.insertBefore(nl, view.firstChild);
     }
-    // Coverage: how much of the timeline the analysis HEARD (audio modes), or
-    // the span the plan reaches (transcript / interval modes). Timed cutaways
-    // are counted apart so they can't pass for real speaker switches.
+    // Coverage: how much of the timeline the analysis HEARD (audio modes) or
+    // the transcript speaks for (transcript mode), else the span the plan
+    // reaches (interval modes). Timed cutaways are counted apart so they can't
+    // pass for real speaker switches.
     var planStart = state.plan.length ? state.plan[0].start : 0;
     var planEnd = state.plan.length ? state.plan[state.plan.length - 1].end : 0;
     var timeline = state.mcAudioEnd || (state.env && state.env.endSeconds) || planEnd;
     var cutaways = state.plan.filter(function (p) { return p.cutaway; }).length;
     var swText = stats.switches + ' switches' + (cutaways ? ' (' + cutaways + ' of them timed cutaways)' : '');
-    var heardInfo = (an && (an.mode === 'follow' || an.mode === 'speech') && an.coverage) ? an.coverage : null;
+    var heardInfo = (an && an.coverage) ? an.coverage : null;
     var warn = null;
     var cov = document.createElement('div');
     cov.className = 'hint'; cov.style.marginTop = '6px';

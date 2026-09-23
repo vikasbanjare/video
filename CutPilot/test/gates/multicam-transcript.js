@@ -147,6 +147,14 @@ const show = (seen) => seen.map(a => (a < 0 ? '-' : 'V' + (a + 1))).join(' ');
       'a new transcript starts from Speaker 1 → V1, Speaker 2 → V2 (the last episode\'s swap is not carried over) — ' + pNew + '% ' +
       JSON.stringify((x3.newLine || '').slice(0, 60)));
 
+    // ---- a transcript that stops at 0:24 of a 10-minute timeline: say so -------
+    const c = await run(browser, HINGLISH, null, { dur: 600 });
+    const covLine = (c.planView.split('\n').filter(l => /⏱|⚠️/.test(l)).join(' | '));
+    const lastMsg = (c.toasts[c.toasts.length - 1] || '').split('|').slice(1).join('|');
+    report(/ends at 0:24/.test(c.planView) && !/Covers 0:00\.00 → 10:00/.test(c.planView) && /but:.*ends at 0:24/.test(lastMsg),
+      'a transcript that ends at 0:24 of a 10:00 timeline is not reported as covering it — plan: ' + JSON.stringify(covLine.slice(0, 150)) +
+      ', after Apply: ' + JSON.stringify(lastMsg.slice(0, 90)));
+
     // a Hinglish line that starts "Dekho: …" / "Suno: …" is words, not a speaker
     const f = await run(browser, FALSE_LABELS, null, { dur: 40 });
     const saidF = /No speaker labels/i.test(f.planView) && !/Dekho →|Suno →/.test(f.planView);
