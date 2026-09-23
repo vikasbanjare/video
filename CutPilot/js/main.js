@@ -1951,8 +1951,48 @@
     if (box) box.addEventListener('click', function (e) {
       var t = e.target;
       while (t && t !== box && !(t.getAttribute && t.getAttribute('data-size'))) t = t.parentNode;
-      if (t && t !== box) { applyTextSize(t.getAttribute('data-size'), true); try { renderPreview(); } catch (eP) {} }
+      if (t && t !== box) { applyTextSize(t.getAttribute('data-size'), true); repaintCanvases(); }
     });
+  }
+
+  // ---- Crisp canvases on every screen ---------------------------------------
+  /* Every canvas sizes its backing store from devicePixelRatio when it paints.
+     A new ratio — the panel dragged from a Retina screen to a 1x monitor, or
+     Windows scaling set to 125 / 150 % — changes no CSS size, so no resize
+     event or ResizeObserver fires and the canvases stayed at the old ratio
+     (blurry, or wastefully large). Watch the resolution itself and repaint.
+     A resolution media query only matches ONE ratio, so it is re-armed after
+     every change. */
+  var _dprMq = null;
+  function repaintCanvases() {
+    try {
+      var cs = document.querySelectorAll('.tpl-thumb-canvas');
+      for (var i = 0; i < cs.length; i++) cs[i]._painted = false;
+      schedulePaintThumbs();
+    } catch (e) {}
+    try { renderPreview(); } catch (e2) {}
+    try { if (_mogrtPrevCanvas) renderMogrtPreview(); } catch (e3) {}
+    try { if (window.CPSafezone && CPSafezone.render) CPSafezone.render(); } catch (e4) {}
+  }
+  function watchPixelRatio() {
+    function onChange() { arm(); repaintCanvases(); }
+    function arm() {
+      try {
+        if (_dprMq) {
+          if (_dprMq.removeEventListener) _dprMq.removeEventListener('change', onChange);
+          else if (_dprMq.removeListener) _dprMq.removeListener(onChange);
+        }
+        _dprMq = window.matchMedia('(resolution: ' + (window.devicePixelRatio || 1) + 'dppx)');
+        if (_dprMq.addEventListener) _dprMq.addEventListener('change', onChange);
+        else if (_dprMq.addListener) _dprMq.addListener(onChange);
+      } catch (e) {}
+    }
+    if (window.matchMedia) arm();
+    // CEP's own scale hook (Mac only) — the same repaint
+    try {
+      var cep = window.__adobe_cep__;
+      if (cep && typeof cep.setScaleFactorChangedHandler === 'function') cep.setScaleFactorChangedHandler(repaintCanvases);
+    } catch (eSf) {}
   }
 
   window.CP_DEBUG_EXT = window.CP_DEBUG_EXT || {};
@@ -2154,6 +2194,7 @@
     wireTheme();
     wireTextSize();
     wireShell();
+    watchPixelRatio();
     wireLicense();
     wireVerbatim();
     wireDiagnostics();
@@ -4279,7 +4320,10 @@
   function paintThumbs() {
     if (!window.CPRender || !CPRender.drawFrame) return;
     var canvases = document.querySelectorAll('.tpl-thumb-canvas');
-    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    // backing store = on-screen size × the screen's pixel ratio (up to 3x), so a
+    // tile is sharp at 125 / 150 / 200 / 300 %; repaintCanvases() re-runs this
+    // when the ratio changes (watchPixelRatio)
+    var dpr = Math.min(3, window.devicePixelRatio || 1);
     for (var i = 0; i < canvases.length; i++) {
       var cvs = canvases[i], t = cvs._tpl;
       if (!t && cvs._mogrtTpl) t = cvs._tpl = mogrtCardStyle(cvs._mogrtTpl);   // animated card → style from its colours
@@ -6513,7 +6557,8 @@
     // landscape caption in a narrow panel came out 8 px tall — a thin serif with
     // a soft shadow is then mostly antialiasing, and "Cinema" previewed as a
     // grey smudge its render never contains (gate: gallery-preview-render).
-    var dpr = 2;
+    // On a screen denser than 2x, follow the screen so it stays sharp there too.
+    var dpr = Math.max(2, window.devicePixelRatio || 1);
     canvas.width = Math.round(boxW * dpr); canvas.height = Math.round(boxH * dpr);
     canvas.style.width = boxW + 'px'; canvas.style.height = boxH + 'px';
 
@@ -8689,7 +8734,7 @@
     var par = cv.parentNode;
     var W = par.clientWidth || 280, Hpx = par.clientHeight || 96;
     if (Hpx < 50) Hpx = 96;
-    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    var dpr = Math.min(3, window.devicePixelRatio || 1);
     cv.width = Math.round(W * dpr); cv.height = Math.round(Hpx * dpr);
     cv.style.width = W + 'px'; cv.style.height = Hpx + 'px';
     // SAME pipeline as every other preview: the template's base look (from its
