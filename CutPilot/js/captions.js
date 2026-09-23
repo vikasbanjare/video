@@ -552,32 +552,53 @@
 
   function uc(s) { return String(s).toUpperCase(); }
 
-  /* The ten library categories the browser groups templates into. */
+  /* The library categories the gallery groups styles into, in chip order —
+     named for what a creator is making, not for how the style was built.
+     A style has ONE home (`category`) and may also be listed under others
+     (`alsoIn`): "🔥 Trending" gathers the current looks from every family,
+     and the owner's own "From My Videos" / "Your Styles" tabs stay whole while
+     their styles also show up under the look they belong to. Buttons stay last.
+     (The old chips — ⭐ Premium, Bold Creator, Dynamic Highlight, Social
+     Growth… — sorted by build history; nobody could guess what was inside.) */
   var CATEGORIES = [
-    '⭐ Premium',
+    '🔥 Trending',
+    '💥 Bold & Viral',
+    '🎤 Karaoke',
+    '🎙️ Podcast',
+    '✨ Minimal & Clean',
+    '🎬 Cinematic & Editorial',
+    '🌈 Neon & Glow',
+    '😂 Fun & Meme',
     '🎬 From My Videos',
     '🎥 Your Styles',
-    '🔘 Buttons',
-    'Bold Creator', 'Minimal Professional', 'Dynamic Highlight', 'Social Growth',
-    'Podcast Pro', 'Storytelling', 'Gaming Stream', 'Cinematic', 'Motivation', 'Education'
+    '🔘 Buttons'
   ];
+  /* Does this style belong under this chip (home or cross-listed)? */
+  function inCategory(t, cat) {
+    if (!t || !cat) return false;
+    if (t.category === cat) return true;
+    var also = t.alsoIn;
+    if (!also || !also.length) return false;
+    for (var i = 0; i < also.length; i++) if (also[i] === cat) return true;
+    return false;
+  }
 
   /* Library metadata for the nine base presets (category / popularity /
      layout / keyword-highlight default). */
   var _baseMeta = {
-    hormozi:        { category: 'Bold Creator',          popularity: 99, layout: 'bottom', keyword: true, highlightScale: 1.14 },
-    karaoke:        { category: 'Dynamic Highlight',     popularity: 95, layout: 'bottom', keyword: false },
-    'highlight-box':{ category: 'Social Growth',         popularity: 92, layout: 'bottom', keyword: true },
-    minimal:        { category: 'Minimal Professional',  popularity: 80, layout: 'bottom', keyword: false },
-    neon:           { category: 'Gaming Stream',         popularity: 88, layout: 'center', keyword: true },
-    typewriter:     { category: 'Storytelling',          popularity: 70, layout: 'center', keyword: false },
-    boldyellow:     { category: 'Motivation',            popularity: 90, layout: 'bottom', keyword: true, highlightScale: 1.14 },
-    cleanwhite:     { category: 'Minimal Professional',  popularity: 78, layout: 'bottom', keyword: false },
-    tvnews:         { category: 'Podcast Pro',           popularity: 65, layout: 'bottom', keyword: false, speaker: true }
+    hormozi:        { category: '💥 Bold & Viral',          popularity: 99, layout: 'bottom', keyword: true, highlightScale: 1.14 },
+    karaoke:        { category: '🎤 Karaoke',               popularity: 95, layout: 'bottom', keyword: false },
+    'highlight-box':{ category: '🎤 Karaoke',               popularity: 92, layout: 'bottom', keyword: true },
+    minimal:        { category: '✨ Minimal & Clean',       popularity: 80, layout: 'bottom', keyword: false },
+    neon:           { category: '🌈 Neon & Glow',           popularity: 88, layout: 'center', keyword: true },
+    typewriter:     { category: '🎬 Cinematic & Editorial', popularity: 70, layout: 'center', keyword: false },
+    boldyellow:     { category: '💥 Bold & Viral',          popularity: 90, layout: 'bottom', keyword: true, highlightScale: 1.14 },
+    cleanwhite:     { category: '✨ Minimal & Clean',       popularity: 78, layout: 'bottom', keyword: false },
+    tvnews:         { category: '🎙️ Podcast',              popularity: 65, layout: 'bottom', keyword: false, speaker: true }
   };
   for (var _i = 0; _i < STYLE_PRESETS.length; _i++) {
     var _m = _baseMeta[STYLE_PRESETS[_i].id] || {};
-    STYLE_PRESETS[_i].category = _m.category || 'Bold Creator';
+    STYLE_PRESETS[_i].category = _m.category || '💥 Bold & Viral';
     STYLE_PRESETS[_i].popularity = _m.popularity || 60;
     STYLE_PRESETS[_i].layout = _m.layout || 'bottom';
     STYLE_PRESETS[_i].keyword = !!_m.keyword;
@@ -2101,6 +2122,50 @@
   ];
   CREATOR_PACK.forEach(function (t) { TEMPLATES.push(t); });
 
+  // ---- gallery reorganisation ------------------------------------------------
+  // Every existing style keeps its id (saved looks, recents and favourites are
+  // keyed by id); only its chip — and two names that were a creator's name and
+  // a trademark — change. [home, cross-listed…]
+  var _T = '🔥 Trending', _B = '💥 Bold & Viral', _K = '🎤 Karaoke', _P = '🎙️ Podcast',
+      _M = '✨ Minimal & Clean', _C = '🎬 Cinematic & Editorial', _N = '🌈 Neon & Glow',
+      _F = '😂 Fun & Meme', _MV = '🎬 From My Videos', _YS = '🎥 Your Styles', _BT = '🔘 Buttons';
+  var RECAT = {
+    hormozi: [_B, _T], karaoke: [_K], minimal: [_M, _P], typewriter: [_C], impact: [_B], lift: [_P],
+    chalk: [_F], y2k: [_N], elevate: [_C], quotepill: [_C], 'cap-motiv': [_F, _B], 'cap-pastel': [_K],
+    'cap-editorial': [_C], 'cap-ticker': [_P], 'cap-clean-sub': [_M, _P],
+    // the two former ⭐ Premium headline looks now head 🔥 Trending
+    'pro-boldpop': [_T, _B], 'pro-editorial': [_T, _C],
+    'pack-orange-word-pop': [_MV, _K], 'pack-script-glow': [_MV, _C],
+    'pack-neon': [_YS, _N], 'pro-spotlight': [_YS, _K], 'pro-subs-light': [_YS, _M], 'pro-clean-glow': [_YS, _M],
+    'pro-karaokebar': [_YS, _K, _P], 'pro-pulse': [_YS, _K], 'pro-thuban': [_YS, _K], 'pro-runway': [_YS, _K],
+    'pro-evo': [_YS, _M], 'pro-nova': [_YS, _B], 'pro-andromeda': [_YS, _P], 'pro-elevate': [_YS, _C],
+    'v1-beast': [_YS, _B], prime: [_YS, _B], focus: [_YS, _K], volt: [_YS, _B], rocket: [_YS, _K],
+    mars: [_YS, _B], ember: [_YS, _C], 'pack-cinema': [_YS, _C], align: [_YS, _C], prism: [_YS, _B],
+    stack: [_YS, _M], kai: [_YS, _B], linen: [_YS, _C], monolith: [_YS, _C], 'cap-core': [_YS, _K],
+    'cap-clarity': [_YS, _M], 'cap-hype': [_YS, _K], 'cap-aurora': [_YS, _N], 'cap-mono': [_YS, _N],
+    'cap-card': [_YS, _M, _P], 'cap-studio': [_YS, _P], 'pro-coolpop': [_YS, _B], 'pro-cleanbold': [_YS, _B]
+  };
+  var RENAME = { 'v1-beast': 'Red Punch Caps', 'btn-spotify': 'Green Pill' };
+  /* Near-duplicate Buttons: each has the same face, box shape and box effects
+     as the one it points at, so it differs only by what the editor changes in
+     one tap (colours, gradient on/off, border, weight, exact roundness).
+     Hidden from browsing, NOT deleted — a saved look, a favourite or a recent
+     that points at one still opens it. */
+  var GALLERY_HIDDEN = {
+    'btn-twitter': 'btn-blue',     // solid sky pill = Basic Blue without its gradient
+    'btn-figma':   'btn-twitch',   // radius-16 chip, only the colour differs
+    'btn-google':  'btn-twitch',   // radius-26 chip, colour + weight differ
+    'btn-3dred':   'btn-pop3d',    // extruded pill + a border
+    'btn-bios':    'btn-pixel'     // square mono box with a border
+  };
+  TEMPLATES.forEach(function (t) {
+    var rc = RECAT[t.id];
+    if (!rc && t.category === _BT) rc = [_BT];
+    if (rc) { t.category = rc[0]; t.alsoIn = rc.slice(1); }
+    if (RENAME[t.id]) t.name = RENAME[t.id];
+    if (GALLERY_HIDDEN[t.id]) { t.galleryHidden = true; t.dupOf = GALLERY_HIDDEN[t.id]; }
+  });
+
   TEMPLATES.forEach(function (t) {
     var safe = FONT_SAFE[t.font];
     if (!safe) return;
@@ -2877,6 +2942,7 @@
     STYLE_PRESETS: STYLE_PRESETS,
     TEMPLATES: TEMPLATES,
     CATEGORIES: CATEGORIES,
+    inCategory: inCategory,
     NICHES: NICHES,
     NICHE_RECOMMEND: NICHE_RECOMMEND,
     getPreset: getPreset,

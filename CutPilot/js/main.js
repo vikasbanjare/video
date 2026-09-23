@@ -3711,9 +3711,7 @@
     // ⭐ Premium leads; 🎥 Your Styles (the 35 styles learned from the user's
     // OWN videos) sits right up front — parked at the tail of a scrolling chip
     // row it was invisible in a narrow panel ("where are those captions?").
-    var cats = ['⭐ Premium', 'All', '🎬 From My Videos', '🎥 Your Styles', 'Favorites', 'Recent', 'My Templates']
-      .concat(CPCaptions.CATEGORIES.filter(function (c) { return c !== '⭐ Premium' && c !== '🎥 Your Styles' && c !== '🎬 From My Videos'; }))
-      .concat([MOGRT_CAT]);   // the Premiere .mogrt templates: their own chip, last
+    var cats = galleryChips();
     var chipBox = $('lib-cats');
     cats.forEach(function (c) {
       var chip = document.createElement('button');
@@ -3833,6 +3831,21 @@
     toast('Added "' + name + '". Edit its colour / font / text below, then Add template captions.');
   }
 
+  /* Gallery chip row. The owner's own tabs stay right behind "All" and 🔥
+     Trending (parked at the tail of a scrolling row they were invisible in a
+     narrow panel — "where are those captions?"); the look categories follow in
+     the library's order; 🔘 Buttons is the last style chip; the Premiere .mogrt
+     templates get their own clearly-labelled chip after it. */
+  var PERSONAL_CATS = ['🎬 From My Videos', '🎥 Your Styles'];
+  function galleryChips() {
+    var C = CPCaptions.CATEGORIES || [];
+    var looks = C.filter(function (c) { return PERSONAL_CATS.indexOf(c) < 0 && c !== '🔘 Buttons' && c !== '🔥 Trending'; });
+    var head = ['All'];
+    if (C.indexOf('🔥 Trending') >= 0) head.push('🔥 Trending');
+    return head.concat(PERSONAL_CATS.filter(function (c) { return C.indexOf(c) >= 0; }),
+                       ['My Templates', 'Favorites', 'Recent'], looks, ['🔘 Buttons', MOGRT_CAT]);
+  }
+
   /* The Premiere .mogrt cards the ADVANCED section offers: the shipped caption
      and title templates plus any from the user's template folders. (Flux has
      its own tab; installed / uploaded .mogrts live in the Editor tab.) */
@@ -3854,7 +3867,9 @@
   /* The STYLE cards for the current chip. Every card here is a Pulse style
      that opens the full editor. .mogrt templates are never mixed in: they are
      only returned for their own chip (and appended as a labelled section under
-     "All" by renderTemplateGrid). */
+     "All" by renderTemplateGrid). Near-duplicate Buttons (galleryHidden) are
+     left out of browsing but still come back through Favorites and Recent, so a
+     look the user kept never disappears. */
   function filteredTemplates() {
     var mogrtMode = (state.libMode === 'mogrt');
     var cat = state.libCategory;
@@ -3865,8 +3880,8 @@
     else if (cat === 'Recent') list = state.recent.map(findTemplate).filter(function (t) { return t && !t.mogrt; });
     else if (cat === 'My Templates') list = state.customTemplates.slice();
     else {
-      list = allTemplates().filter(function (t) { return !t.mogrt; });
-      if (cat !== 'All') list = list.filter(function (t) { return t.category === cat; });
+      list = allTemplates().filter(function (t) { return !t.mogrt && !t.galleryHidden; });
+      if (cat !== 'All') list = list.filter(function (t) { return CPCaptions.inCategory(t, cat); });
     }
     if (state.libSearch) {
       var q = state.libSearch;
@@ -3924,6 +3939,21 @@
     if (cat === MOGRT_CAT && !mogrtMode) {
       grid.appendChild(gallerySectionHead(MOGRT_CAT, ADVANCED_NOTE));
       appendMogrtGroups(grid, list);
+    } else if (cat === 'All' && !mogrtMode && !state.libSearch) {
+      // "All" reads as the library's sections, in chip order, each style once
+      // (under its home category), then the advanced .mogrt section.
+      var groups = [{ name: 'My Templates', items: [] }];
+      (CPCaptions.CATEGORIES || []).forEach(function (c) { groups.push({ name: c, items: [] }); });
+      var byName = {};
+      groups.forEach(function (g) { byName[g.name] = g; });
+      var other = { name: 'More styles', items: [] };
+      list.forEach(function (t) { (byName[t.category] || other).items.push(t); });
+      groups.push(other);
+      groups.forEach(function (g) {
+        if (!g.items.length) return;
+        grid.appendChild(gallerySectionHead(g.name + '  ·  ' + g.items.length));
+        g.items.forEach(function (t) { grid.appendChild(buildTemplateCard(t)); });
+      });
     } else {
       list.forEach(function (t) { grid.appendChild(buildTemplateCard(t)); });
     }
