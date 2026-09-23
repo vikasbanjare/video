@@ -4408,6 +4408,15 @@
     });
     head.appendChild(fav);
     card.appendChild(head);
+    // editable captions only (.editable-only): the one-line reliability note
+    if (!isMogrt && CPCaptions.isDarkOnLight(t)) {
+      var dk = document.createElement('div');
+      dk.className = 'tpl-dark-note editable-only';
+      dk.style.cssText = 'font-size:9.5px;line-height:1.25;color:#ffcf5c;margin:1px 0 2px;';
+      dk.textContent = '⚠️ Dark words may not show as editable';
+      dk.title = DARK_EDITABLE_NOTE;
+      card.appendChild(dk);
+    }
 
     // Preview box. Templates that SHIP a real render show it — the Flux cards'
     // looping .mp4 previews ("flux preview is gone" when these were dropped) and
@@ -6117,6 +6126,27 @@
      no-op so any older call site stays safe. */
   /* Inline readability warning under the preview — captions over unknown
      footage need an outline/box/glow, not just a fill color. */
+  /* Editable captions + dark words on a light box: on the owner's Mac the
+     editable engine drew these with NO visible words (only the box). Until a
+     test there says otherwise, the editor says so in one line whenever the
+     edited style is that look (hidden in Pulse-rendered mode by .editable-only),
+     and Add captions offers Pulse-rendered instead (applyEditableStyle). */
+  var DARK_EDITABLE_NOTE = '⚠️ Dark words on a light box may not show up as editable captions — Premiere can show just the box. ' +
+    'Use ✨ Pulse-rendered captions for this style (same look, always visible), or pick a light text colour.';
+  function updateDarkEditableNote(styled) {
+    var n = $('editable-dark-note');
+    if (!n) {
+      var anchor = $('editable-note');
+      if (!anchor || !anchor.parentNode) return;
+      n = document.createElement('p');
+      n.id = 'editable-dark-note';
+      n.className = 'hint editable-only';
+      n.style.color = '#ffcf5c';
+      n.textContent = DARK_EDITABLE_NOTE;
+      anchor.parentNode.insertBefore(n, anchor.nextSibling);
+    }
+    n.style.display = CPCaptions.isDarkOnLight(styled) ? '' : 'none';
+  }
   function updateLegibilityNote(st) {
     var ln = $('legibility-note');
     if (!ln) return;
@@ -6235,6 +6265,7 @@
     // and nothing ever called it — so it never once appeared. It belongs on every
     // repaint: the moment a style has no outline/box/glow, say so.
     try { updateLegibilityNote(styled); } catch (eLg) {}
+    try { updateDarkEditableNote(styled); } catch (eDk) {}
 
     // CAPTION-BAND preview: the region of the frame around the caption, at a
     // readable size (the full 9:16 frame wasted the panel on empty backdrop).
@@ -9043,10 +9074,12 @@
       weight: (p.weight || 800) >= 600 ? 800 : 500,   // the rich write only knows bold vs regular
       uppercase: !!p.uppercase,
       fill: p.fill || '#FFFFFF',
-      highlight: usesHlColour ? hl : (p.fill || '#FFFFFF'),
+      highlight: usesHlColour ? CPCaptions.liftDark(hl) : (p.fill || '#FFFFFF'),   // == what mapPresetToFlux sends
       // a TWO-TONE highlight is real on the timeline (the gradient backbone has
-      // Highlighted Word Color 1 + 2) — keep it so those styles stay distinct
-      highlight2: usesHlColour ? (p.highlight2 || null) : null,
+      // Highlighted Word Color 1 + 2) — keep it so those styles stay distinct.
+      // Never near-black, like the sweep colour (CPCaptions.sweepColor): the
+      // engine may not draw it — the stop is lifted just enough, same hue.
+      highlight2: usesHlColour ? (p.highlight2 ? CPCaptions.liftDark(p.highlight2) : null) : null,
       keyword: hasHl,
       boxColor: p.boxColor || null,
       boxOpacity: (p.boxOpacity != null ? p.boxOpacity : 1),
@@ -9130,7 +9163,7 @@
       if (preset.highlight2) {
         hl2P = find([/highlight.*2|2.*highlight|colou?r\s*2\b/], COL, [textP, hlP]);
         if (!hl2P) { for (var h2 = 0; h2 < colorProps.length; h2++) { if (colorProps[h2] !== textP && colorProps[h2] !== hlP) { hl2P = colorProps[h2]; break; } } }
-        color(hl2P, preset.highlight2);
+        color(hl2P, CPCaptions.liftDark(preset.highlight2));   // never near-black (see sweepColor)
       }
     } else {
       // NO-SWEEP backbone: its "Text Opacity" ships at 25 (a designed dim for its
@@ -9231,10 +9264,15 @@
     // deliberately sets highlight == fill must not be given a yellow keyword.
     if (wantsHighlight) hlHex = CPCaptions.sweepColor(fill, hlHex, preset.boxColor || null);
     if (!usesHlColour) hlHex = fill;               // nothing will use it: paint like the text
+    // NEVER near-black on the engine's highlight controls — on the owner's Mac
+    // this engine drew no visible words for dark text on light boxes, cause
+    // unknown (CPCaptions.sweepColor). A keyword colour or an unused slot that
+    // is near-black is lifted just enough, keeping its hue.
+    hlHex = CPCaptions.liftDark(hlHex);
     color(hl1, hlHex);
     // second stop: a real two-tone gradient when the style has one, otherwise
     // the SAME colour (solid) — the engine always renders colour1→colour2.
-    color(P('highlighted word color 2'), (usesHlColour && preset.highlight2) ? preset.highlight2 : hlHex);
+    color(P('highlighted word color 2'), (usesHlColour && preset.highlight2) ? CPCaptions.liftDark(preset.highlight2) : hlHex);
     // ✨ "As spoken": base text INVISIBLE (0) — each word only paints when the
     // highlight sweep reaches it, so text appears exactly when it's said.
     // Otherwise 100: never inherit a dimmed default.
@@ -9312,6 +9350,8 @@
     var preset = styledPreset();
     var bb = bundledBackbone(preset);
     if (!bb) return toast('No caption engine loaded — reinstall the full Pulse folder.', true);
+    // the check the owner's Mac has to make: say what a blank result means
+    if (CPCaptions.isDarkOnLight(preset)) toast('This style has dark words on a light box. If the caption on the timeline shows no words, use ✨ Pulse-rendered captions for it.', true);
     var basePreset = currentPreset() || {};
     var sizeScale = 1;
     try {
@@ -9358,6 +9398,18 @@
         (state.bundledDiag ? ' [' + state.bundledDiag + ']' : '') +
         '. Your install may be missing the “mogrts” folder' + (where ? ' (looked in ' + where + '\\mogrts)' : '') +
         '. Reinstall the full Pulse folder, or copy Diagnostics and send it over.', true);
+    }
+    // Dark words on a light box: never place captions that may show no words
+    // (see updateDarkEditableNote) — offer the Pulse-rendered path instead.
+    if (CPCaptions.isDarkOnLight(preset)) {
+      confirmInline('“' + (preset.name || 'This style') + '” has dark words on a light box. As editable captions, Premiere can show just the box with no words.\n\n' +
+        'Add it as ✨ Pulse-rendered captions instead? Same look, always visible.', 'Use Pulse-rendered', function (yes) {
+        if (!yes) return toast('No captions added. To keep editable captions for this style, pick a light text colour.');
+        setCapOut('png'); saveLook();
+        toast('Caption type is now ✨ Pulse-rendered — adding your captions.');
+        $('btn-magic').click();
+      });
+      return;
     }
     if (!ensureTranscriptThen('editstyle')) return;
     var cues;
