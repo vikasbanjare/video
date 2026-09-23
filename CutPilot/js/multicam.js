@@ -603,21 +603,18 @@
   }
 
   /*
-   * Do two mics carry the SAME audio (both tracks point at one mixed file, or
-   * at one stereo file read as a mono mix)? Then nobody can be told apart.
-   * True when, over the moments either is well above its floor, they stay
-   * within 3 dB of each other 90% of the time.
+   * How different two mics sound, window by window: percentiles of
+   * |level(A) - level(B)| over every moment both were heard. The SAME audio
+   * (two tracks pointing at one mixed file) stays within a fraction of a dB
+   * (p90 under 1.5); host and guest on their own mics — or on the Left and
+   * Right of one recording — sit their isolation apart whenever someone talks
+   * (p75 well over 6). Returns { n, p50, p75, p90 } (n = 0: never both heard).
    */
-  function indistinctMics(g1, g2) {
-    var v1 = [], v2 = [], w;
-    for (w = 0; w < Math.min(g1.length, g2.length); w++) if (heard(g1[w]) && heard(g2[w])) { v1.push(g1[w]); v2.push(g2[w]); }
-    if (v1.length < 50) return false;
-    var s1 = v1.slice().sort(byNum), s2 = v2.slice().sort(byNum);
-    var f1 = pct(s1, 0.05), f2 = pct(s2, 0.05), d = [];
-    for (w = 0; w < v1.length; w++) if (v1[w] - f1 >= 6 || v2[w] - f2 >= 6) d.push(Math.abs(v1[w] - v2[w]));
-    if (d.length < 25) return false;
+  function micSeparation(g1, g2) {
+    var d = [];
+    for (var w = 0; w < Math.min(g1.length, g2.length); w++) if (heard(g1[w]) && heard(g2[w])) d.push(Math.abs(g1[w] - g2[w]));
     d.sort(byNum);
-    return pct(d, 0.9) < 3;
+    return { n: d.length, p50: pct(d, 0.5), p75: pct(d, 0.75), p90: pct(d, 0.9) };
   }
 
   /*
@@ -806,7 +803,7 @@
     speakerActivity: speakerActivity,
     seqGridFromClips: seqGridFromClips,
     gridCoverage: gridCoverage,
-    indistinctMics: indistinctMics,
+    micSeparation: micSeparation,
     transcriptSpeakers: transcriptSpeakers,
     parseAudioStreams: parseAudioStreams,
     parseChannelLevels: parseChannelLevels,
