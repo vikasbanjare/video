@@ -134,6 +134,18 @@ check('a third speaker with two cameras gets no camera (the shot holds); a cue\'
   const r = MC.transcriptSpeakers(cues, { extract: CAP.extractSpeaker, numAngles: 2 });
   return { ok: r.angleOf['Speaker 3'] === -1 && r.labels[3] === 'Speaker 2', got: JSON.stringify({ a: r.angleOf, l: r.labels }) };
 });
+check('a Hinglish line that starts "Dekho:" or "Suno:" is words, not a speaker (no labels, no switching)', () => {
+  const lines = ['Namaste doston.', 'Aaj ka topic podcasts hai.', 'Dekho: yeh bahut important hai.', 'Haan bilkul.', 'Pehla sawaal.',
+                 'Achha.', 'Suno: main batata hoon.', 'Matlab: simple hai.', 'Note: yeh likh lo.', 'Q: kya hai?'];
+  const cues = lines.map((t, i) => ({ start: i * 4, end: i * 4 + 4, text: t }));
+  const r = MC.transcriptSpeakers(cues, { extract: CAP.extractSpeaker, numAngles: 2 });
+  return { ok: !r.labelled && r.order.length === 0, got: JSON.stringify({ labelled: r.labelled, order: r.order, angleOf: r.angleOf }) };
+});
+check('a camera name the owner typed counts as a speaker in any script ("आरव: …"); "speaker 2" is Speaker 2', () => {
+  const cues = [{ start: 0, end: 2, text: 'आरव: नमस्ते दोस्तों' }, { start: 2, end: 4, text: 'मीरा: शुक्रिया' }, { start: 4, end: 6, text: 'speaker 2: haan' }];
+  const r = MC.transcriptSpeakers(cues, { extract: CAP.extractSpeaker, names: ['मीरा', 'आरव'], numAngles: 3 });
+  return { ok: r.labelled && r.angleOf['आरव'] === 1 && r.angleOf['मीरा'] === 0 && r.labels[2] === 'Speaker 2', got: JSON.stringify({ a: r.angleOf, l: r.labels }) };
+});
 
 // ---- ffmpeg parsers ---------------------------------------------------------------
 check('parseAudioStreams reads mono / stereo / "2 channels" / 5.1 / two mono streams', () => {

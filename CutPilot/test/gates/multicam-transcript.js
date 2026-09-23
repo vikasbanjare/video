@@ -39,17 +39,20 @@ const DEVANAGARI = srt([
   'Speaker 1: तो शुरू करते हैं।'
 ]);
 const UNLABELLED = srt(['Namaste doston.', 'Aaj ka topic hai podcasts.', 'Chaliye shuru karte hain.', 'Bilkul.', 'Pehla sawaal.', 'Achha.']);
+const FALSE_LABELS = srt(['Namaste doston.', 'Aaj ka topic podcasts hai.', 'Dekho: yeh bahut important hai.', 'Haan bilkul.', 'Pehla sawaal.',
+                          'Achha.', 'Suno: main batata hoon.', 'Theek hai.', 'Aur batao.', 'Bas itna hi.']);
 const EXPECT = (t) => (t < 12 ? 0 : (t < 20 ? 1 : 0));          // V1 0–12, V2 12–20, V1 20–24
 
-async function run(browser, text, extra) {
-  const dur = 24;
+async function run(browser, text, extra, opts) {
+  opts = opts || {};
+  const dur = opts.dur || 24, cams = opts.cameras || 2;
   const ctx = await P.openPanel(browser, {
-    premiere: { fps: 25, end: dur, video: FH.cameras(2, dur),
+    premiere: { fps: 25, end: dur, video: FH.cameras(cams, dur),
                 audio: [{ name: 'A1', clips: [{ start: 0, end: dur, inPoint: 0, outPoint: dur, mediaPath: '/media/mix.wav', name: 'mix' }] }] },
     envelopes: { '/media/mix.wav': new Array(dur * 5).fill(-30) }
   });
   await ctx.page.evaluate((t) => { window.CP_DEBUG.setLastCaptionJob(CPCaptions.parseSRT(t)); }, text);
-  const r = await P.runMulticam(ctx, { cameras: 2, source: 'transcript' });
+  const r = await P.runMulticam(ctx, { cameras: cams, source: 'transcript' });
   const seen = [];
   for (let t = 0.5; t < dur; t += 1) seen.push(ctx.world.model.visibleAngle(t));
   r.seen = seen;
@@ -98,6 +101,11 @@ const show = (seen) => seen.map(a => (a < 0 ? '-' : 'V' + (a + 1))).join(' ');
     const said = /No speaker labels/i.test(u.planView) && /No speaker labels/i.test((u.toasts.filter(t => !/applied/i.test(t)).pop() || ''));
     report(said, 'a transcript with no speaker labels says, in the plan and its message, that the cameras will only alternate (plan: ' +
       JSON.stringify(u.planView.split('\n')[0].slice(0, 70)) + ')');
+    // a Hinglish line that starts "Dekho: …" / "Suno: …" is words, not a speaker
+    const f = await run(browser, FALSE_LABELS, null, { dur: 40 });
+    const saidF = /No speaker labels/i.test(f.planView) && !/Dekho →|Suno →/.test(f.planView);
+    report(saidF, 'an unlabelled transcript with "Dekho:" and "Suno:" lines is still unlabelled, not two speakers — plan: ' +
+      JSON.stringify(f.planView.split('\n')[0].slice(0, 80)));
   });
   if (failed) { console.log('MULTICAM TRANSCRIPT: ' + failed + ' check(s) failed'); process.exit(1); }
   console.log('MULTICAM TRANSCRIPT: detected speakers drive the cameras ✓');
