@@ -10187,13 +10187,11 @@
         name.placeholder = 'Speaker ' + (i + 1);
         name.value = state.mcSpeakers[i] || '';
         name.dataset.angle = String(i);
-        name.style.cssText = 'flex:1;min-width:54px;font-size:11.5px;padding:3px 6px';
         name.addEventListener('input', function () { state.mcSpeakers[parseInt(this.dataset.angle, 10)] = this.value; });
         row.appendChild(name);
 
         var micLab = document.createElement('span');
-        micLab.className = 'dim'; micLab.textContent = '🎙️';
-        micLab.style.cssText = 'margin:0 2px';
+        micLab.className = 'dim map-mic'; micLab.textContent = '🎙️';
         row.appendChild(micLab);
 
         var sel = document.createElement('select');
