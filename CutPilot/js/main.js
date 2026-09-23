@@ -7882,16 +7882,28 @@
       // the transcript's word timing (what word-by-word captions are built from)
       setWords: function (w) { state.transcriptWords = w && w.length ? w : null; },
       words: function () { return state.transcriptWords ? state.transcriptWords.slice() : null; },
-      // pick a built-in style by id exactly as its gallery card click does —
-      // also for the near-duplicates the gallery hides (a saved look, favourite
-      // or recent still opens them). false when no style has that id: never a
-      // silent stand-in, so a gate cannot pass on the wrong style.
+      // pick a built-in style by id through its gallery card's OWN click
+      // handler: a card is built for it and clicked, so this can never drift
+      // from what the owner's click does (a copy of the card's steps missed
+      // the word-by-word reset the card gained later). Works for the
+      // near-duplicates the gallery hides, too (a saved look, favourite or
+      // recent still opens them). false when no style has that id or the
+      // click left another style in force: never a silent stand-in, so a gate
+      // cannot pass on the wrong style.
       applyStyle: function (id) {
         var all = allTemplates(), t = null;
         for (var i = 0; i < all.length; i++) if (all[i].id === id && !all[i].mogrt) { t = all[i]; break; }
         if (!t) return false;
-        preloadStyleFonts(t, renderPreview); _pvDemo = null; applyTemplate(t); showView('style');
-        return true;
+        buildTemplateCard(t).click();
+        return currentPreset().id === id;
+      },
+      // everything a caption job reads from the Captions screen once a style
+      // is picked: which style, its resolved look, and how the words animate
+      jobInputs: function (w, h) {
+        var p = currentPreset();
+        return { id: p.id, style: CPRender.styleForFrame(p, h, readOverrides(), w), anim: currentAnim(),
+                 reveal: captionRevealMode(), entrance: state.captionEntrance, words: $('c-words').value,
+                 motionNote: overlayMotionNote() };
       },
       seqKey: overlaySeqKey,
       lastJob: function () { return state.lastCaptionJob ? { mode: state.lastCaptionJob.mode || null, track: state.lastCaptionJob.track } : null; }
