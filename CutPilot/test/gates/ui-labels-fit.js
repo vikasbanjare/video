@@ -17,6 +17,10 @@
  * on hover (and a tap looks for the sequence again) — but it may not shrink
  * to a stray letter ("H…"): too narrow for a few letters, it becomes a dot.
  *
+ * The owner may pick the large text size (Settings → Look → Text size L) on
+ * a narrow docked panel: every screen is measured again at L, at 260 and
+ * 320 px ("PODCAST CAM…" in the bar, "Pick a look, add in…" on Home).
+ *
  * The caption-words editor is measured too: at 260 px each line's text box
  * showed eleven letters ("yeh line nu"), so a caption could not be read,
  * let alone fixed. Each box must show a whole, typical caption line.
@@ -68,6 +72,10 @@ function measure(args) {
   let total = 0;
   try {
     const page = await U.openPanel(browser, { viewport: { width: 400, height: 800 } });
+    // text size M at every docked width, then L at the two narrowest
+    const PASSES = [{ size: 'm', widths: WIDTHS }, { size: 'l', widths: [260, 320] }];
+    for (const pass of PASSES) {
+    await page.evaluate(sz => { const b = document.querySelector('#set-text-size button[data-size="' + sz + '"]'); if (b) b.click(); }, pass.size);
     for (const s of U.SCREENS) {
       if (!(await U.go(page, s))) continue;
       // edit the style whose name is the longest: that is where a name is cut
@@ -83,16 +91,18 @@ function measure(args) {
         });
       }
       const bad = [];
-      for (const W of WIDTHS) {
+      for (const W of pass.widths) {
         await page.setViewport({ width: W, height: 800 });
         await sleep(200);
         const m = await page.evaluate(measure, { EXEMPT });
         total += m.n;
         m.out.forEach(x => bad.push(W + 'px ' + x));
       }
-      if (bad.length) R.bad(s.label + ': ' + bad.length + ' cut-off label(s) — ' + bad.slice(0, 5).join('; ') + (bad.length > 5 ? ' …' : ''));
+      if (bad.length) R.bad(s.label + (pass.size === 'l' ? ' at text size L' : '') + ': ' + bad.length + ' cut-off label(s) — ' + bad.slice(0, 5).join('; ') + (bad.length > 5 ? ' …' : ''));
       await page.setViewport({ width: 400, height: 800 });
     }
+    }
+    await page.evaluate(() => { const b = document.querySelector('#set-text-size button[data-size="m"]'); if (b) b.click(); });
     // the caption-words editor: every line's words readable in their box
     const LINE = 'yeh line number 12 hai bhai';
     const tre = [];
@@ -119,6 +129,6 @@ function measure(args) {
     if (page._cpErrors.length) R.bad('page errors: ' + page._cpErrors.slice(0, 3).join(' | '));
   } finally { await browser.close(); }
   if (total < 500) R.bad('only ' + total + ' labels measured — the check is not reaching the screens');
-  else if (!R.failed) R.ok(total + ' labels on ' + U.SCREENS.length + ' screens and in the caption-words editor at ' + WIDTHS.join(' / ') + ' px: every one shows in full (' + Object.keys(EXEMPT).map(k => '#' + k + ': ' + EXEMPT[k]).join('; ') + ')');
+  else if (!R.failed) R.ok(total + ' labels on ' + U.SCREENS.length + ' screens and in the caption-words editor at ' + WIDTHS.join(' / ') + ' px (and at text size L at 260 / 320 px): every one shows in full (' + Object.keys(EXEMPT).map(k => '#' + k + ': ' + EXEMPT[k]).join('; ') + ')');
   R.done('UI LABELS FIT: nothing is cut short on a docked panel ✓', 'UI LABELS FIT: ' + R.failed + ' problem(s) above');
 })().catch(e => { console.error('  ✗ harness error: ' + (e && e.stack || e)); process.exit(1); });

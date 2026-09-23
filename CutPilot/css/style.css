@@ -115,9 +115,12 @@ button { color: inherit; }
 .brand .logo-mark { flex: none; display: block; transform: translateY(-1px); }
 .brand .brand-name { line-height: 1; }
 .brand .brand-by { font-size: var(--fs-xs); font-weight: 600; color: var(--dim); letter-spacing: 0; align-self: flex-end; margin: 0 0 6px 2px; white-space: nowrap; }
+/* the page name; with big text on a narrow panel it takes a second line
+   (the 44 px bar has room) instead of "Podcast cam…" */
 .nav-title {
   flex: 0 1 auto; min-width: 0; font-weight: 800; font-size: var(--fs-lg); letter-spacing: -0.2px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  line-height: 1.15; overflow: hidden; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
 }
 .env-status {
   flex: 1 1 0; min-width: 0; text-align: right; color: var(--dim); font-size: var(--fs-xs);
@@ -198,7 +201,7 @@ body[data-page="home"] .nav-back, body[data-page="home"] .nav-title { display: n
 .task-ic svg { width: 20px; height: 20px; display: block; }
 .task-txt { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
 .task-name { font-size: var(--fs-lg); font-weight: 800; letter-spacing: -0.2px; }
-.task-sub { font-size: var(--fs-sm); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.task-sub { font-size: var(--fs-sm); color: var(--dim); }   /* wraps with big text on a narrow panel */
 .task-card.primary .task-sub { color: rgba(20,24,10,.72); }
 .task-go { flex: none; font-size: var(--fs-xl); opacity: .5; }
 .more-tools { margin-top: 12px; }
