@@ -8311,10 +8311,12 @@
     // ("word by word not working for most of the captions").
     var hasHl = p.wordHl !== false;
     // the sweep needs a VISIBLE colour — a style whose highlight is missing or
-    // identical to the text colour would sweep invisibly, so give those the
-    // classic yellow pop (shown in the preview too, so it stays WYSIWYG).
+    // identical to the text colour would sweep invisibly. It used to get a
+    // forced yellow, which vanished on yellow/gold/pastel pills (Mars 1.1:1);
+    // CPCaptions.sweepColor picks one that differs from the text AND reads on
+    // the style's own box (shown in the preview too, so it stays WYSIWYG).
     var hl = p.highlight || null;
-    if (hasHl && (!hl || String(hl).toLowerCase() === String(p.fill || '').toLowerCase())) hl = '#ffd400';
+    if (hasHl) hl = CPCaptions.sweepColor(p.fill || '#FFFFFF', hl, p.boxColor || null);
     // the highlight colour is also the KEYWORD colour, so keep it whenever
     // either will use it (mirrors mapPresetToFlux)
     var usesHlColour = hasHl || !!p.keyword;
@@ -8406,8 +8408,8 @@
       if (!hlP) { for (var hi = 0; hi < colorProps.length; hi++) { if (colorProps[hi] !== textP) { hlP = colorProps[hi]; break; } } }
       out._bind.hl = hlP ? hlP.name : null;
       // same visible-colour guarantee as carryableStyle: never sweep invisibly
-      var hlHex = preset.highlight;
-      if (!hlHex || String(hlHex).toLowerCase() === String(preset.fill || '').toLowerCase()) hlHex = '#ffd400';
+      // (and never a yellow word on a yellow pill)
+      var hlHex = CPCaptions.sweepColor(preset.fill || '#FFFFFF', preset.highlight, preset.boxColor || null);
       color(hlP, hlHex);
       // two-tone keyword gradient (preset.highlight2): the SECOND highlight-like
       // colour control (named "…2", "…colour 2", or the next colour control after
@@ -8515,7 +8517,7 @@
     var hlHex = preset.highlight;
     // "never sweep invisibly" only applies to the SWEEP — a style that
     // deliberately sets highlight == fill must not be given a yellow keyword.
-    if (wantsHighlight && (!hlHex || String(hlHex).toLowerCase() === String(fill).toLowerCase())) hlHex = '#ffd400';
+    if (wantsHighlight) hlHex = CPCaptions.sweepColor(fill, hlHex, preset.boxColor || null);
     if (!usesHlColour) hlHex = fill;               // nothing will use it: paint like the text
     color(hl1, hlHex);
     // second stop: a real two-tone gradient when the style has one, otherwise

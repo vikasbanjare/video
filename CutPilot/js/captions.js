@@ -2631,6 +2631,53 @@
   }
 
   /*
+   * The spoken-word colour for EDITABLE (.mogrt) captions. The template engine
+   * can mark the spoken word only with a COLOUR, so a style whose highlight
+   * equals its text colour (Pulse makes that word pop by SIZE, which the engine
+   * cannot do) needs a colour of its own. The old rule forced #FFD400 on all of
+   * them — a yellow word on a yellow (Mars), gold (Gold Gloss) or pastel (Aura)
+   * pill measured 1.1:1 contrast, i.e. invisible. Now: keep the style's own
+   * highlight when it already differs from the text; otherwise take the first
+   * candidate that looks different from the text AND reads at >= 3:1 on the
+   * style's box (anything reads over footage when there is no box — the text's
+   * own outline/shadow carries it). Pure + tested.
+   */
+  var SWEEP_CANDIDATES = ['#FFD400', '#00E0FF', '#FF3B6B', '#2D7CFF', '#7C3AED', '#E10600', '#111111', '#FFFFFF'];
+  function _hexRgb(h) {
+    var m = /^#?([0-9a-f]{6})$/i.exec(String(h || ''));
+    if (!m) return null;
+    var n = parseInt(m[1], 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  function _relLum(h) {
+    var c = _hexRgb(h); if (!c) return 0;
+    var l = c.map(function (v) { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+    return 0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2];
+  }
+  function contrastRatio(a, b) {
+    var la = _relLum(a), lb = _relLum(b);
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+  }
+  function _rgbDist(a, b) {
+    var x = _hexRgb(a), y = _hexRgb(b);
+    if (!x || !y) return 999;
+    return Math.sqrt(Math.pow(x[0] - y[0], 2) + Math.pow(x[1] - y[1], 2) + Math.pow(x[2] - y[2], 2));
+  }
+  function sweepColor(fill, highlight, box) {
+    var f = String(fill || '#FFFFFF');
+    if (highlight && String(highlight).toLowerCase() !== f.toLowerCase()) return highlight;
+    var best = null, bestC = -1;
+    for (var i = 0; i < SWEEP_CANDIDATES.length; i++) {
+      var c = SWEEP_CANDIDATES[i];
+      if (_rgbDist(c, f) < 120) continue;              // must look different from the words around it
+      var onBox = box ? contrastRatio(c, box) : 21;
+      if (onBox >= 3) return c;
+      if (onBox > bestC) { bestC = onBox; best = c; }
+    }
+    return best || '#FFD400';
+  }
+
+  /*
    * Built-in animation catalog (Pulse's own engine — no MOGRTs needed).
    * 'keyframed' anims are realized as Premiere Motion/Opacity keyframes on
    * rendered caption images; 'framed' anims are realized as a sequence of
@@ -3237,6 +3284,8 @@
     CATEGORIES: CATEGORIES,
     CAT_HINDI: CAT_HINDI,
     inCategory: inCategory,
+    sweepColor: sweepColor,
+    contrastRatio: contrastRatio,
     NICHES: NICHES,
     NICHE_RECOMMEND: NICHE_RECOMMEND,
     getPreset: getPreset,
