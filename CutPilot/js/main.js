@@ -5296,8 +5296,12 @@
      the owner typed. The short sample phrase has none of those, so the preview
      sat still and the controls read as dead. The moment the owner reaches for
      one, the preview shows a caption that HAS it (in Hindi for a Hindi style)
-     — until another style is picked. */
+     — until another style is picked, or the owner reaches for a control the
+     demo is not about. (It used to stay until another style was picked: after
+     one touch of Lines on screen the preview was a single 10-word caption, so
+     the Words-per-caption stepper changed the output but never the preview.) */
   var _pvDemo = null;                                  // { id: presetId, kind }
+  var _demoTargets = [];
   var PREVIEW_DEMOS = {
     layout:   ['Everything changes tomorrow when remarkable storytelling transforms ordinary conversations completely',
                'यह बेहद आसान तरीका आपकी पूरी ज़िंदगी हमेशा के लिए बदल सकता है'],
@@ -5325,7 +5329,30 @@
       function on() { if (!_pvDemo || _pvDemo.id !== state.presetId || _pvDemo.kind !== kind) { _pvDemo = { id: state.presetId, kind: kind }; renderPreview(); } }
       // colour inputs are hidden behind a swatch: listen on the label that holds both
       var target = (e.type === 'hidden' && e.closest && e.closest('label')) || e;
+      _demoTargets.push(target);
       ['pointerdown', 'mousedown', 'touchstart', 'focus', 'focusin', 'keydown'].forEach(function (ev) { target.addEventListener(ev, on); });
+    });
+    // Any OTHER control ends the demo, and the preview goes straight back to
+    // the style's own caption — BEFORE that control acts, so what it changes
+    // (words per caption, size, colour…) shows against the real caption.
+    // Capture phase: this runs before the control's own handlers.
+    var root = $('method-animated');
+    if (!root) return;
+    function isDemo(n) {
+      for (var i = 0; i < _demoTargets.length; i++) if (_demoTargets[i] === n || _demoTargets[i].contains(n)) return true;
+      return false;
+    }
+    function endDemo(ev) {
+      if (!_pvDemo) return;
+      var t = ev.target;
+      if (!t || !t.closest || isDemo(t)) return;
+      if (!t.closest('input, select, textarea, button, label, .sw, .seg-control')) return;   // a control, not empty space
+      if (t.closest('#cust-tabs') || t.closest('#btn-browse-styles')) return;              // switching tabs changes nothing
+      _pvDemo = null;
+      renderPreview();
+    }
+    ['pointerdown', 'mousedown', 'touchstart', 'focusin', 'keydown', 'click', 'input', 'change'].forEach(function (ev) {
+      root.addEventListener(ev, endDemo, true);
     });
   }
 
