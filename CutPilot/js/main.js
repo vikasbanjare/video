@@ -5311,7 +5311,7 @@
     var boxForced = cchk('c-boxgrad') || cnum('c-box3d-depth', 0) > 0 || cnum('c-boxgloss', 0) > 0;
     setWhy('c-box-on', boxForced ? 'The 3D edge, gloss or gradient box needs the box — set them to 0 / off to remove it' : null);
     var sweepOwns = wordHl && !build;
-    setWhy('c-emphasize', sweepOwns ? 'Works when ✨ Word-by-word highlight is off — then the spoken word already pops' : null);
+    setWhy('c-emphasize', sweepOwns ? 'Only works while ✨ Word-by-word is off (the spoken word already pops while it is on)' : null);
     setWhy('c-kw', sweepOwns ? 'Used when ✨ Word-by-word highlight is off — the spoken word is the highlight' : null);
     setWhy('c-kw-mode', sweepOwns ? 'Used when ✨ Word-by-word highlight is off' : null);
     setWhy('c-hl-scale', wordHl ? 'Word-by-word is on — use Spoken-word size instead' : null);

@@ -17,7 +17,11 @@
  *   · A STYLE PICKED FROM ITS CARD opens as designed: switching ✨ Word-by-word
  *     off on one style used to keep it off for every style picked afterwards,
  *     so 41 karaoke / reveal styles (Dim-to-Bright…) opened static while their
- *     tiles swept. The opt-out still holds on the style it was made on.
+ *     tiles swept. The opt-out still holds on the style it was made on;
+ *   · THE AUTO-ENLARGE REASON read backwards ("Works when ✨ Word-by-word
+ *     highlight is off — then the spoken word already pops"): the spoken word
+ *     pops while word-by-word is ON. With word-by-word on, the reason under the
+ *     disabled switch must say it only works while word-by-word is off, and why.
  * Exit 0 pass, 1 fail, 2 skipped (no browser / puppeteer / unzip).
  */
 'use strict';
@@ -82,6 +86,10 @@ const G = require('./gallery-lib/panel.js');
       await pick('tr-dim-bright');
       out.optOut.nextPickOn = wh();
       out.optOut.nextAnim = (document.getElementById('preview-canvas') || {})._pvAnimId || null;
+      // Dim-to-Bright sweeps word by word, so auto-enlarge is disabled with a reason
+      const em = document.getElementById('c-emphasize');
+      const why = document.querySelector('[data-why-for="c-emphasize"]');
+      out.optOut.emph = { wordHl: wh(), disabled: !!(em && em.disabled), why: why ? why.textContent : '' };
     }
     // ---- All: section order ---------------------------------------------------
     const all = chip('All'); if (all) { all.click(); await sleep(500); }
@@ -116,6 +124,14 @@ const G = require('./gallery-lib/panel.js');
   if (!oo.offOnFirst) R.bad('could not switch ✨ Word-by-word off on Yellow Wipe to set up the check');
   else if (oo.nextPickOn !== true) R.bad('after switching ✨ Word-by-word off on one style, Dim-to-Bright picked from its card opens static (word-by-word ' + oo.nextPickOn + ', animation ' + oo.nextAnim + ') while its tile sweeps');
   else R.ok('a style picked from its card opens as designed: Dim-to-Bright sweeps (' + oo.nextAnim + ') although word-by-word was switched off on the previous style');
+
+  // the auto-enlarge reason, with word-by-word on
+  const em = res.optOut && res.optOut.emph;
+  if (!em || em.wordHl !== true) R.bad('could not open a word-by-word style to read the auto-enlarge reason');
+  else if (!em.disabled || !em.why) R.bad('with ✨ Word-by-word on, auto-enlarge is not disabled with a reason (reason: "' + (em && em.why) + '")');
+  else if (!/only works while ✨ Word-by-word is off/i.test(em.why) || !/already pops while it is on/i.test(em.why))
+    R.bad('the auto-enlarge reason does not say it only works while ✨ Word-by-word is off because the spoken word already pops while it is on: "' + em.why + '"');
+  else R.ok('the auto-enlarge reason reads the right way round: "' + em.why.replace(/^↳\s*/, '') + '"');
 
   // All order == chip order
   const chipCats = res.chipOrder.filter(c => res.allSections.indexOf(c) >= 0);
