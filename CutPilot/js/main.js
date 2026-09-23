@@ -1925,11 +1925,42 @@
     });
   }
 
+  // ---- Text size ------------------------------------------------------------
+  /* Premiere has no UI text-size setting of its own, so Pulse has one:
+     Settings → Look → Text size S / M / L. Every font size in the stylesheet
+     is in rem, so one class on <html> scales all of it (nothing under 11 px). */
+  var TEXT_SIZE_KEY = 'cutpilot.textSize';
+  function applyTextSize(s, persist) {
+    s = (s === 's' || s === 'l') ? s : 'm';
+    var h = document.documentElement;
+    h.classList.remove('text-s', 'text-l');
+    if (s !== 'm') h.classList.add('text-' + s);
+    if (persist) { try { localStorage.setItem(TEXT_SIZE_KEY, s); } catch (e) {} }
+    var box = $('set-text-size');
+    if (box) {
+      var bs = box.querySelectorAll('button');
+      for (var i = 0; i < bs.length; i++) bs[i].classList.toggle('on', bs[i].getAttribute('data-size') === s);
+    }
+    return s;
+  }
+  function wireTextSize() {
+    var s = 'm';
+    try { s = localStorage.getItem(TEXT_SIZE_KEY) || 'm'; } catch (e) {}
+    applyTextSize(s, false);
+    var box = $('set-text-size');
+    if (box) box.addEventListener('click', function (e) {
+      var t = e.target;
+      while (t && t !== box && !(t.getAttribute && t.getAttribute('data-size'))) t = t.parentNode;
+      if (t && t !== box) { applyTextSize(t.getAttribute('data-size'), true); try { renderPreview(); } catch (eP) {} }
+    });
+  }
+
   window.CP_DEBUG_EXT = window.CP_DEBUG_EXT || {};
   window.CP_DEBUG_EXT.ui = {
     theme: function () { return document.body.classList.contains('theme-dark') ? 'dark' : 'light'; },
     themeMode: function () { return _themeMode; },
     hostTheme: hostTheme,
+    textSize: function () { var h = document.documentElement; return h.classList.contains('text-s') ? 's' : h.classList.contains('text-l') ? 'l' : 'm'; },
     page: function () { return document.body.getAttribute('data-page'); },
     showPage: showPage
   };
@@ -2121,6 +2152,7 @@
       });
     }
     wireTheme();
+    wireTextSize();
     wireShell();
     wireLicense();
     wireVerbatim();
