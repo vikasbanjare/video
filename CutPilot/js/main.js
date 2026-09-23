@@ -11603,9 +11603,26 @@
      always fell back to alternating cameras every line. Now the labels are read
      from the text and carried forward (CPMulticam.transcriptSpeakers). A label
      that matches a camera's speaker name goes to that camera, else "Speaker N"
-     → camera N; "⇄ Swap speakers" in the plan rotates that if the AI's
-     numbering is the other way round. The labelled transcript wins over
+     → camera N; "⇄ Swap speakers" in the plan swaps the speakers' cameras if
+     the AI's numbering is the other way round (and with 3+ cameras each
+     speaker gets a camera picker). The labelled transcript wins over
      captions placed before Detect speakers ran (their text has no labels). */
+  /* The camera for each speaker label: the owner's own picks (⇄ Swap speakers
+     or a speaker's camera picker), else Pulse's guess. Picks belong to the
+     transcript they were made on — another transcript or episode starts
+     again from the guess instead of inheriting a swap. */
+  function mcTranscriptAngles(who, cues, numAngles) {
+    var first = cues[0], last = cues[cues.length - 1];
+    var sig = [cues.length, Math.round((first.start || 0) * 100), Math.round((last.end || 0) * 100), who.order.join('/'),
+               String(first.text || '').slice(0, 40), String(last.text || '').slice(0, 40)].join('|');
+    if (!state.mcTrPicks || state.mcTrPicks.sig !== sig) state.mcTrPicks = { sig: sig, map: {} };
+    var out = {};
+    who.order.forEach(function (lab) {
+      var own = state.mcTrPicks.map[lab];
+      out[lab] = (own != null && own < numAngles) ? own : who.angleOf[lab];
+    });
+    return out;
+  }
   function mcTranscriptPlan(numAngles) {
     var fromTranscript = null, fromCaptions = null;
     try { fromTranscript = readSelectedTranscript(); } catch (e) { fromTranscript = null; }
@@ -11621,12 +11638,12 @@
       var sp = CPMulticam.transcriptSpeakers(src, sopts);
       if (sp.labelled) { cues = src; who = sp; }
     });
-    var shift = (state.mcTranscriptShift || 0) % Math.max(1, numAngles);
-    var mapFn;
+    var mapFn, angleOf = null;
     if (who) {
+      angleOf = mcTranscriptAngles(who, cues, numAngles);
       mapFn = function (sp, i) {
-        var a = who.angleOf[who.labels[i]];
-        return (a == null || a < 0) ? -1 : (a + shift) % numAngles;
+        var a = angleOf[who.labels[i]];
+        return (a == null || a < 0) ? -1 : a;
       };
     } else {
       // no speaker labels anywhere → alternate cameras each line (the plan says so)
@@ -11637,8 +11654,8 @@
     state.mcAnalysis = {
       mode: 'transcript', labelled: !!who,
       mapping: who ? who.order.map(function (lab) {
-        var a = who.angleOf[lab];
-        return { label: lab, angle: (a == null || a < 0) ? -1 : (a + shift) % numAngles };
+        var a = angleOf[lab];
+        return { label: lab, angle: (a == null || a < 0) ? -1 : a };
       }) : []
     };
     var dur = state.mcAudioEnd || (state.env && state.env.endSeconds) || cues[cues.length - 1].end;
@@ -12013,16 +12030,60 @@
         var nm = mcAngleName(m.angle), cam = 'V' + (m.angle + 1);
         return m.label + ' → ' + cam + (nm !== cam ? ' (' + nm + ')' : '');
       }).join(' · ') + ' ';
-      var swap = document.createElement('button');
-      swap.className = 'chip-btn';
-      swap.id = 'btn-mc-swap';
-      swap.textContent = '⇄ Swap speakers';
-      swap.addEventListener('click', function () {
-        state.mcTranscriptShift = ((state.mcTranscriptShift || 0) + 1) % Math.max(1, numAngles);
-        buildMcPlan().then(function () { renderMcPlan(numAngles); }).catch(mcBuildFailed);
-      });
-      mapLine.appendChild(swap);
+      var rebuild = function () { buildMcPlan().then(function () { renderMcPlan(numAngles); }).catch(mcBuildFailed); };
+      // the speakers that have a camera swap cameras among THEMSELVES (two
+      // speakers trade places) — a camera no speaker is on (the wide) is never
+      // pulled in, however many cameras there are
+      var onCam = an.mapping.filter(function (m) { return m.angle >= 0; });
+      if (onCam.length >= 2) {
+        var swap = document.createElement('button');
+        swap.className = 'chip-btn';
+        swap.id = 'btn-mc-swap';
+        swap.textContent = '⇄ Swap speakers';
+        swap.addEventListener('click', function () {
+          var picks = state.mcTrPicks && state.mcTrPicks.map;
+          if (!picks) return;
+          onCam.forEach(function (m, k) { picks[m.label] = onCam[(k + 1) % onCam.length].angle; });
+          rebuild();
+        });
+        mapLine.appendChild(swap);
+      }
       view.insertBefore(mapLine, view.firstChild);
+      // 3+ cameras or speakers: one swap can't reach every pairing, so each
+      // speaker gets a camera picker (taking a camera another speaker has
+      // trades the two)
+      if (numAngles >= 3 || an.mapping.length >= 3) {
+        var pickRow = document.createElement('div');
+        pickRow.className = 'hint mc-speaker-pick';
+        pickRow.appendChild(document.createTextNode('Camera for each speaker: '));
+        an.mapping.forEach(function (m) {
+          var wrap = document.createElement('span');
+          wrap.className = 'mc-pick';
+          wrap.appendChild(document.createTextNode(m.label + ' '));
+          var sel = document.createElement('select');
+          sel.dataset.label = m.label;
+          for (var a = -1; a < numAngles; a++) {
+            var o = document.createElement('option');
+            o.value = String(a);
+            var nm = a >= 0 ? mcAngleName(a) : '';
+            o.textContent = a < 0 ? 'no camera (hold the shot)' : ('V' + (a + 1) + (nm !== ('V' + (a + 1)) ? ' (' + nm + ')' : ''));
+            sel.appendChild(o);
+          }
+          sel.value = String(m.angle);
+          sel.addEventListener('change', function () {
+            var picks = state.mcTrPicks && state.mcTrPicks.map;
+            if (!picks) return;
+            var lab = this.dataset.label, to = parseInt(this.value, 10), from = -1;
+            an.mapping.forEach(function (x) { if (x.label === lab) from = x.angle; });
+            if (to >= 0) an.mapping.forEach(function (x) { if (x.label !== lab && x.angle === to) picks[x.label] = from; });
+            picks[lab] = to;
+            rebuild();
+          });
+          wrap.appendChild(sel);
+          pickRow.appendChild(wrap);
+        });
+        mapLine.parentNode.insertBefore(pickRow, mapLine.nextSibling);
+      }
     }
     var unlabelled = !!(an && an.mode === 'transcript' && !an.labelled);
     var noLabelsMsg = '⚠️ No speaker labels in the transcript, so the cameras simply alternate each line. ' +

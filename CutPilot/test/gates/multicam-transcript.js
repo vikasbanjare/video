@@ -101,6 +101,52 @@ const show = (seen) => seen.map(a => (a < 0 ? '-' : 'V' + (a + 1))).join(' ');
     const said = /No speaker labels/i.test(u.planView) && /No speaker labels/i.test((u.toasts.filter(t => !/applied/i.test(t)).pop() || ''));
     report(said, 'a transcript with no speaker labels says, in the plan and its message, that the cameras will only alternate (plan: ' +
       JSON.stringify(u.planView.split('\n')[0].slice(0, 70)) + ')');
+    // ---- 3 cameras (V3 = the wide, no speaker): ⇄ Swap trades the two speakers'
+    // cameras and never pulls V3 in; each speaker also gets a camera picker; a
+    // new transcript starts again from Pulse's own guess
+    const r3 = await run(browser, HINGLISH, async (ctx) => {
+      const seenNow = () => { const s = []; for (let t = 0.5; t < 24; t += 1) s.push(ctx.world.model.visibleAngle(t)); return s; };
+      const act = (what) => ctx.page.evaluate(async (w) => {
+        const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+        if (w === 'swap') { const b = document.getElementById('btn-mc-swap'); if (b) b.click(); }
+        let picker = null;
+        if (w === 'pick') {
+          const s = document.querySelector('#mc-plan-view select[data-label="Speaker 2"]');
+          picker = !!s;
+          if (s) { s.value = '2'; s.dispatchEvent(new Event('change')); }
+        }
+        if (w === 'build') document.getElementById('btn-mc-plan').click();
+        await sleep(700);
+        const line = (document.querySelector('#mc-plan-view .mc-speaker-map') || {}).textContent || '';
+        document.getElementById('btn-mc-apply').click();
+        await sleep(700);
+        return picker === false ? '(no camera picker) ' + line : line;
+      }, what);
+      const out = { first: seenNow() };
+      out.swapLine = await act('swap');
+      out.swapped = seenNow();
+      out.pickLine = await act('pick');
+      out.picked = seenNow();
+      await ctx.page.evaluate((t) => { window.CP_DEBUG.setLastCaptionJob(CPCaptions.parseSRT(t)); }, DEVANAGARI);
+      out.newLine = await act('build');
+      out.fresh = seenNow();
+      return out;
+    }, { cameras: 3 });
+    const x3 = r3.extra || {};
+    const onV3 = (s) => (s || []).filter(a => a === 2).length;
+    const pSw = score(x3.swapped || [], (t) => 1 - EXPECT(t));
+    report(pSw >= 95 && onV3(x3.swapped) === 0 && /Speaker 1 → V2/.test(x3.swapLine || '') && /Speaker 2 → V1/.test(x3.swapLine || ''),
+      '3 cameras: ⇄ Swap speakers trades Speaker 1 and 2 (V1 ⇄ V2) and never shows the unassigned V3 — ' + pSw + '% right, ' +
+      JSON.stringify((x3.swapLine || '').slice(0, 60)) + ' — ' + show(x3.swapped || []));
+    const pPick = score(x3.picked || [], (t) => (EXPECT(t) === 0 ? 1 : 2));
+    report(pPick >= 95 && !/no camera picker/.test(x3.pickLine || '') && /Speaker 1 → V2/.test(x3.pickLine || '') && /Speaker 2 → V3/.test(x3.pickLine || ''),
+      '3 cameras: picking V3 for Speaker 2 puts Speaker 2 on V3 and keeps Speaker 1 on V2 — ' + pPick + '% ' +
+      JSON.stringify((x3.pickLine || '').slice(0, 70)) + ' — ' + show(x3.picked || []));
+    const pNew = score(x3.fresh || [], EXPECT);
+    report(pNew >= 95 && /Speaker 1 → V1/.test(x3.newLine || '') && /Speaker 2 → V2/.test(x3.newLine || ''),
+      'a new transcript starts from Speaker 1 → V1, Speaker 2 → V2 (the last episode\'s swap is not carried over) — ' + pNew + '% ' +
+      JSON.stringify((x3.newLine || '').slice(0, 60)));
+
     // a Hinglish line that starts "Dekho: …" / "Suno: …" is words, not a speaker
     const f = await run(browser, FALSE_LABELS, null, { dur: 40 });
     const saidF = /No speaker labels/i.test(f.planView) && !/Dekho →|Suno →/.test(f.planView);

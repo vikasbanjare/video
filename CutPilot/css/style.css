@@ -1212,5 +1212,9 @@ body.cap-editable .editable-only { display: block; }
 /* the plan's speaker mapping line (transcript mode) and the wide-camera box */
 #tab-multicam .mc-speaker-map { margin: 0 0 6px; }
 #tab-multicam .mc-speaker-map .chip-btn { margin-left: 4px; }
+/* transcript mode with 3+ cameras or speakers: a camera picker per speaker */
+#tab-multicam .mc-speaker-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0 0 6px; }
+#tab-multicam .mc-speaker-pick .mc-pick { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+#tab-multicam .mc-speaker-pick select { width: auto; max-width: 160px; margin: 0; padding: 3px 6px; font-size: 11.5px; }
 #tab-multicam .mc-wide-box { margin-top: 6px; }
 #tab-multicam .mc-plan-warn { margin-top: 4px; }
