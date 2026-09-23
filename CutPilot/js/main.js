@@ -5452,6 +5452,13 @@
   /* Build a template object from the current customizer state. */
   function styleFromControls(name, id) {
     var o = readOverrides();
+    var base = currentPreset() || {};
+    // The template's multi-stop box gradient (Aura's rainbow) belongs to the
+    // template's OWN box colour. Once the user recolours the box — or switches
+    // on the two-colour box gradient — the stops are gone from what they see
+    // (render drops them), so they must not come back from a saved look.
+    var keepStops = !!(base.boxStops && o.boxColor && !o.boxColor2 && base.boxColor &&
+                       String(o.boxColor).toLowerCase() === String(base.boxColor).toLowerCase());
     return {
       id: id || ('custom-' + Date.now()),
       name: name || 'My Template',
@@ -5466,7 +5473,7 @@
       // button-pack box effects so a saved/duplicated button keeps its look
       boxStroke: o.boxStroke, boxStrokeWidth: o.boxStrokeWidth, boxGlow: o.boxGlow,
       box3d: o.box3d, box3dDepth: o.box3dDepth, boxGloss: o.boxGloss,
-      boxGradient: currentPreset().boxGradient || 'v', boxStops: currentPreset().boxStops || null,
+      boxGradient: base.boxGradient || 'v', boxStops: keepStops ? base.boxStops : null,
       // EXACTLY what the user has: shadow OFF saves no shadow, spacing 0 saves 0.
       // (`o.glow || preset.glow` and `o.letterSpacing || preset.letterSpacing`
       // brought back the very shadow and tracking the user had turned off.)
@@ -5637,6 +5644,10 @@
       boxGloss: cnum('c-boxgloss', 0) / 100,
       // --- smart text + segment ---
       boxColor2: cchk('c-boxgrad') ? $('c-box2').value : null,
+      // The two-colour box gradient must WIN over a template's own multi-stop
+      // fill (Aura): the renderer draws boxStops first, so without this the
+      // toggle changed nothing on those styles — in the preview or the render.
+      boxStops: cchk('c-boxgrad') ? [[0, $('c-box').value], [1, $('c-box2').value]] : undefined,
       numberColor: cchk('c-numon') ? $('c-num').value : null,
       brandColor: cchk('c-brandon') ? $('c-brand').value : null,
       brandWords: cchk('c-brandon') ? ($('c-brand-words').value || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean) : null,
@@ -8163,6 +8174,13 @@
     if (ov.fill2 !== undefined) eff.fill2 = ov.fill2;
     if (ov.highlight) eff.highlight = ov.highlight;
     eff.highlight2 = ov.highlight2;   // gradient 2nd stop (null = user turned the gradient off) — audit-caught: it was dropped here, making the toggle affect nothing
+    // A RECOLOURED box drops the template's multi-stop gradient — the same rule
+    // the renderer applies to the real render (render.js boxChanged). Copying
+    // the user's colour into the preset first made the preview compare the new
+    // colour with ITSELF, so Aura's preview kept its rainbow while the timeline
+    // got the new solid colour.
+    if (ov.boxColor != null && preset.boxColor != null && preset.boxStops &&
+        String(ov.boxColor).toLowerCase() !== String(preset.boxColor).toLowerCase()) eff.boxStops = null;
     if (ov.boxColor !== undefined) eff.boxColor = ov.boxColor;      // null = box turned off
     if (ov.boxColor2 !== undefined) eff.boxColor2 = ov.boxColor2;
     if (ov.boxOpacity != null) eff.boxOpacity = ov.boxOpacity;
