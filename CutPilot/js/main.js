@@ -10924,7 +10924,9 @@
     var segs = [], cur = [];
     for (var i = 0; i < w.length; i++) {
       cur.push(w[i]);
-      var endsSentence = /[.!?]["')\]]?$/.test(w[i].text);
+      // the Hindi danda "।" / "॥", the Urdu "۔" / "؟" and an ellipsis end a
+      // sentence too — a Devanagari transcript used to run on 14 words at a time
+      var endsSentence = /[.!?।॥۔؟…]["'”’)\]]*$/.test(w[i].text);
       var gap = (i + 1 < w.length) ? (w[i + 1].start - w[i].end) : 99;
       if (endsSentence || gap > 0.8 || cur.length >= 14) {
         segs.push({ text: cur.map(function (x) { return x.text; }).join(' '), start: cur[0].start, end: cur[cur.length - 1].end });
