@@ -10177,6 +10177,10 @@
     // stale, so the retake/filler passes never cut at them (a new transcript
     // is a new object and starts clean)
     if (state.transcript) state.transcript.timelineEdited = true;
+    // …and the transcript SAVED for this clip is stale too: its cache key (the
+    // media file + lowest in / highest out point) survives a cut inside the
+    // clip, so the next transcription must listen again, not reload it
+    state._forceRetranscribe = true;
     return dropped;
   }
 
@@ -10209,7 +10213,7 @@
      transcript FILE is not (resyncTranscripts marks it). Its times now point
      at the wrong speech, so the retake and filler passes refuse it. */
   var STALE_TRANSCRIPT_MSG = 'your timeline changed since this transcript was made, and it has no word timing to follow the cuts. ' +
-    'Tap 🎙️ Auto-transcribe again (about a minute), then run this again.';
+    'Tap ↻ Re-transcribe (Transcribe tab) — it listens to your clip again, about a minute — then run this again.';
   function transcriptIsStale() { return !!(state.transcript && state.transcript.timelineEdited); }
   /* What the filler pass cuts on, always in the CURRENT timeline's time:
      the word list with its REAL timing, re-timed after every cut (the fillers
