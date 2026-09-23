@@ -31,6 +31,7 @@ function dfLabelToFrames(hh, mm, ss, ff, fRate) {
  *   audio: [{ name, muted, locked, clips: [{ start, end, inPoint, outPoint,
  *            mediaPath, speed, reversed, disabled, name }] }],
  *   razor: 'ok' | 'throws' | 'noop',  nested: bool (V1 clip is a nested sequence)
+ *   qeParse: 'separator' | 'sequence' — how the QE razor reads a timecode (below)
  *   linkedAudio: bool — each camera clip on Vn is LINKED to the clip with the
  *     same span on An (the camera's own audio): a razor on the video cuts the
  *     linked audio too, and switching the video off switches its audio off —
@@ -60,11 +61,15 @@ function makePremiere(spec) {
     }));
   }
 
+  // How QE reads a razor timecode is not known for sure: by its separator
+  // (';' = drop-frame labels), or always in the sequence's own timecode format.
+  // spec.qeParse: 'separator' (default) | 'sequence' — a host that is right
+  // must land its cuts on the frame under both.
   function parseTc(tc) {
     const p = String(tc).split(/[:;]/).map(Number);
-    let frames;
-    if (/;/.test(tc) && (fRate === 30 || fRate === 60) && Math.abs(fps - fRate) > 1e-3) frames = dfLabelToFrames(p[0], p[1], p[2], p[3], fRate);
-    else frames = (p[0] * 3600 + p[1] * 60 + p[2]) * fRate + p[3];
+    const dfRate = (fRate === 30 || fRate === 60) && Math.abs(fps - fRate) > 1e-3;
+    const asDf = dfRate && (spec.qeParse === 'sequence' ? !!spec.dropFrameDisplay : /;/.test(tc));
+    const frames = asDf ? dfLabelToFrames(p[0], p[1], p[2], p[3], fRate) : (p[0] * 3600 + p[1] * 60 + p[2]) * fRate + p[3];
     return frames / fps;
   }
   const snap = (s) => Math.round(s * fps) / fps;

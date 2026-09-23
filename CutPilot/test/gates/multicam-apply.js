@@ -96,13 +96,18 @@ for (const mode of ['throws', 'noop']) {
                    { fps: 60000 / 1001, df: false, tick: true, name: '59.94 NON-drop sequence, setting on' },
                    { fps: 30000 / 1001, df: false, tick: true, name: '29.97 NON-drop sequence, setting on' },
                    { fps: 25, df: false, tick: true, name: '25 fps sequence, setting on' }]) {
-    const { w, host } = world({ fps: c.fps, dropFrameDisplay: c.df, end: 3660, video: FH.cameras(2, 3660) });
-    const r = FH.call(host, 'CP_applyMulticamPlan', { plan, numAngles: 2, dropFrame: c.tick });
-    // where did each cut land? the first clip edge after each boundary
-    const edges = w.model.video[0].clips.map(x => x.start).filter(x => x > 0);
-    const err = [600, 1800, 3599].map(b => Math.min.apply(null, edges.map(e => Math.abs(e - b))));
-    const worst = Math.max.apply(null, err);
-    report(r.ok && worst <= 1 / c.fps + 1e-6, c.name + ': worst cut off by ' + worst.toFixed(3) + ' s (need ≤ 1 frame) — timecodes ' + w.model.razorTimecodes.slice(0, 3).join(' '));
+    // whichever way QE reads the timecode (by its ';' or in the sequence's own format)
+    const runs = ['separator', 'sequence'].map(qeParse => {
+      const { w, host } = world({ fps: c.fps, dropFrameDisplay: c.df, qeParse, end: 3660, video: FH.cameras(2, 3660) });
+      const r = FH.call(host, 'CP_applyMulticamPlan', { plan, numAngles: 2, dropFrame: c.tick });
+      // where did each cut land? the first clip edge after each boundary
+      const edges = w.model.video[0].clips.map(x => x.start).filter(x => x > 0);
+      const err = [600, 1800, 3599].map(b => Math.min.apply(null, edges.map(e => Math.abs(e - b))));
+      return { ok: r.ok, worst: Math.max.apply(null, err), tcs: w.model.razorTimecodes.slice(0, 3).join(' ') };
+    });
+    const worst = Math.max(runs[0].worst, runs[1].worst);
+    report(runs[0].ok && runs[1].ok && worst <= 1 / c.fps + 1e-6, c.name + ': worst cut off by ' + worst.toFixed(3) + ' s (need ≤ 1 frame, QE reading ' +
+      'the timecode either way) — timecodes ' + runs[0].tcs);
   }
 }
 
