@@ -185,6 +185,51 @@
     return !!AGREE[t[i]];
   }
 
+  /* A few words said twice can be a whole REMARK repeated for emphasis —
+     agreeing, praising, exclaiming: "theek hai, theek hai, …", "bahut accha,
+     bahut accha, …", "I know, I know, but…", "oh my god, oh my god, …",
+     "no worries, no worries". Never a restart. Words such a remark is made
+     of (with glue words and pronouns around them): */
+  var REMARK = wordSet(['theek', 'thik', 'sahi', 'accha', 'acha', 'achha', 'acchha', 'bahut', 'bohot', 'bahot', 'baat', 'kamaal',
+    'kamal', 'mast', 'zabardast', 'jabardast', 'badhiya', 'badiya', 'shandaar', 'bilkul', 'ekdum', 'haan', 'haa', 'ji', 'nahi',
+    'nahin', 'arre', 'arey', 'wah', 'waah', 'sach', 'sachchi', 'pakka', 'suno', 'dekho', 'ruko', 'chalo', 'bas', 'shabash', 'yaar',
+    'know', 'course', 'worries', 'worry', 'god', 'gosh', 'wow', 'great', 'good', 'nice', 'cool', 'amazing', 'awesome', 'perfect',
+    'done', 'fine', 'sure', 'true', 'really', 'seriously', 'totally', 'absolutely', 'exactly', 'right', 'yes', 'yeah', 'no', 'okay',
+    'ok', 'oh', 'ah', 'see', 'look', 'listen', 'wait', 'hold', 'stop', 'never', 'love', 'beautiful', 'brilliant', 'excellent',
+    'wonderful', 'incredible', 'crazy', 'insane', 'lovely', 'fantastic', 'correct', 'agreed', 'indeed', 'definitely', 'obviously',
+    'man', 'bro', 'dude',
+    'ठीक', 'सही', 'अच्छा', 'बहुत', 'बात', 'कमाल', 'मस्त', 'ज़बरदस्त', 'जबरदस्त', 'बढ़िया', 'शानदार', 'बिल्कुल', 'बिलकुल', 'एकदम',
+    'हाँ', 'हां', 'जी', 'नहीं', 'अरे', 'वाह', 'सच', 'पक्का', 'सुनो', 'देखो', 'रुको', 'चलो', 'बस', 'शाबाश', 'यार']);
+  /* Hindi puts the verb last, so a unit that ENDS in one is a finished
+     clause said twice ("sahi hai", "kya baat hai", "ho gaya", "kar diya"),
+     not a line broken off and started again. */
+  var VERB_END = wordSet(['hai', 'hain', 'hoon', 'hun', 'ho', 'tha', 'thi', 'gaya', 'gayi', 'gaye', 'gai', 'hua', 'hui', 'hue',
+    'diya', 'liya', 'kiya',
+    'है', 'हैं', 'हूँ', 'हूं', 'हो', 'था', 'थी', 'थे', 'गया', 'गई', 'गयी', 'गए', 'गये', 'हुआ', 'हुई', 'हुए', 'दिया', 'लिया', 'किया']);
+  /* …while a unit that ends in one of these is plainly unfinished ("so the,",
+     "we need to,", "what we do is,", "paise ke,"), however it is punctuated. */
+  var OPEN_END = wordSet(['the', 'a', 'an', 'of', 'to', 'in', 'on', 'at', 'for', 'and', 'or', 'but', 'with', 'from', 'by', 'into',
+    'about', 'my', 'your', 'our', 'their', 'his', 'her', 'its', 'is', 'are', 'was', 'were', 'be', 'am', 'if', 'because', 'when',
+    'ka', 'ki', 'ke', 'ko', 'se', 'mein', 'ne', 'par', 'pe', 'aur', 'ya', 'lekin', 'magar', 'agar', 'jab', 'jo',
+    'का', 'की', 'के', 'को', 'से', 'में', 'ने', 'पर', 'पे', 'और', 'या', 'लेकिन', 'मगर', 'अगर', 'जब', 'जो', 'कि']);
+  /* A word followed by a pause mark: comma, dash, sentence end. */
+  var CLOSED = /[,;:…—–.!?।॥۔؟،？！-]["'”’)\]]*$/;
+  /* Is the unit u (normalized tokens) said twice a repeated remark, not a
+     restart? rawA / rawB = how each copy's last word is written. */
+  function isRemark(u, rawA, rawB) {
+    var last = u[u.length - 1];
+    if (VERB_END[last]) return true;                                   // "theek hai", "ho gaya"
+    var remark = 0, i;
+    for (i = 0; i < u.length; i++) {
+      if (REMARK[u[i]] || INTERJ[u[i]]) remark++;
+      else if (!FUNC[u[i]] && !FIRST[u[i]] && !SECOND[u[i]] && !EMPHATIC[u[i]]) break;
+    }
+    if (i === u.length && remark) return true;                         // "bahut accha", "I know", "oh my god"
+    // each copy stands alone — a pause mark after BOTH ("…, …, and then") —
+    // and the unit does not end where a line cannot ("so the, so the,")
+    return CLOSED.test(rawA) && CLOSED.test(rawB) && !OPEN_END[last];
+  }
+
   function pTokens(p) { var a = []; for (var i = 0; i < p.length; i++) { var n = norm(p[i].text); if (n) a.push(n); } return a; }
   function pText(p) { var s = []; for (var i = 0; i < p.length; i++) s.push(p[i].text); return s.join(' '); }
   function pConf(p) { var s = 0, c = 0; for (var i = 0; i < p.length; i++) { if (p[i].conf != null) { s += p[i].conf; c++; } } return c ? s / c : null; }
@@ -490,13 +535,16 @@
           var hit = 0;
           for (var rn = Math.min(maxN, Math.floor((tw.length - k0 - 1) / 2)); rn >= minN && !hit; rn--) {
             var same = true, kinds = {}, nk = 0, polite = true;
+            var unit = [];
             for (var rq = 0; rq < rn && same; rq++) {
               var tk1 = tw[k0 + rq].t;
               if (tk1 !== tw[k0 + rn + rq].t) same = false;
               if (!kinds[tk1]) { kinds[tk1] = 1; nk++; }
               if (!EMPHATIC[tk1] && !AGREE[tk1] && !BACKCHANNEL[tk1]) polite = false;
+              unit.push(tk1);
             }
-            if (same && nk >= 2 && !polite) hit = rn;
+            if (same && nk >= 2 && !polite &&
+                !isRemark(unit, ph[tw[k0 + rn - 1].w].text, ph[tw[k0 + 2 * rn - 1].w].text)) hit = rn;
           }
           if (!hit) { k0++; continue; }
           var first = ph[tw[k0].w], again = ph[tw[k0 + hit].w], said = [];
