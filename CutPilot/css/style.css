@@ -274,7 +274,7 @@ input[type="number"], input[type="text"], input[type="password"], select, textar
 textarea { line-height: 1.45; }
 select option { background: var(--card); color: var(--fg); }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0 10px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0 10px; }
 .row { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin: 8px 0 0; min-width: 0; }
 .row.tight { margin-top: 8px; }
 .row > input { flex: 1 1 140px; min-width: 0; width: auto; }
