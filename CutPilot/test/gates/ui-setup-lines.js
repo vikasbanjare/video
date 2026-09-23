@@ -73,7 +73,8 @@ function readSettings(args) {
   let checked = 0;
   try {
     for (const st of STATES) {
-      const ctx = await browser.createBrowserContext();
+      // a fresh profile per state (puppeteer 22+ names it createBrowserContext)
+      const ctx = await (browser.createBrowserContext || browser.createIncognitoBrowserContext).call(browser);
       try {
         const page = await U.openPanel(ctx, { viewport: { width: 400, height: 800 },
           storage: { 'cutpilot.settings': JSON.stringify(st.settings) } });
