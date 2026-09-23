@@ -1741,6 +1741,10 @@ function CP_placeCaptionImages(argsJson) {
  * inspected — then nothing is reported. Anything that cannot be verified
  * counts as used — deleting a file a timeline still shows is exactly the
  * "Media Offline" this is meant to prevent.
+ * The tidy-up runs BEFORE the new clip is placed, so the last scripted step is
+ * the placement and the first ⌘Z takes the new captions off the timeline (a
+ * bin deletion as the last step made the first ⌘Z restore an item whose file
+ * was already gone).
  */
 function CP_placeOverlay(argsJson) {
   function normPath(p) { return String(p || '').replace(/\\/g, '/').toLowerCase(); }
@@ -1848,6 +1852,14 @@ function CP_placeOverlay(argsJson) {
     }
     if (!item) return CP_fail('Overlay import failed (the .mov did not import).');
 
+    // Tidy BEFORE placing (see above): the new clip's placement stays the last
+    // step, so ⌘Z undoes the captions first.
+    var tidy = { unused: [], free: [], checked: true };
+    var cl = args.cleanup || [], rc = args.recheck || [];
+    if (cl.length || rc.length) {
+      try { tidy = tidyOverlays(cl, rc); } catch (eCl) { tidy = { unused: [], free: [], checked: false }; }
+    }
+
     var trackIndex;
     if (args.replaceTrack != null && args.replaceTrack >= 1 && args.replaceTrack <= seq.videoTracks.numTracks) {
       // reuse the existing caption track, clearing Pulse's prior captions off it:
@@ -1890,11 +1902,6 @@ function CP_placeOverlay(argsJson) {
         if (!oc) oc = track.clips[track.clips.numItems - 1];
         if (oc) { try { oc.end = CP_timeFromSeconds(startSec + args.durSec); } catch (eEnd) {} }
       } catch (eDur) {}
-    }
-    var tidy = { unused: [], free: [], checked: true };
-    var cl = args.cleanup || [], rc = args.recheck || [];
-    if (cl.length || rc.length) {
-      try { tidy = tidyOverlays(cl, rc); } catch (eCl) { tidy = { unused: [], free: [], checked: false }; }
     }
     return CP_ok({ placed: 1, track: trackIndex + 1, bin: bin.name,
                    unused: tidy.unused, free: tidy.free, checked: tidy.checked });
