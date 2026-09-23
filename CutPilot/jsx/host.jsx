@@ -538,28 +538,6 @@ function CP_deleteClipsInRange(qseq, startSec, endSec, ripple) {
   return removed;
 }
 
-/* Ripple-close remaining gaps on ALL tracks (video + audio). Used as a safety
-   net; the ripple delete above already closes the spans it removes. */
-function CP_closeGaps(qseq) {
-  var closed = 0;
-  var groups = [
-    { count: qseq.numVideoTracks, get: function (i) { return qseq.getVideoTrackAt(i); } },
-    { count: qseq.numAudioTracks, get: function (i) { return qseq.getAudioTrackAt(i); } }
-  ];
-  for (var g = 0; g < groups.length; g++) {
-    for (var t = 0; t < groups[g].count; t++) {
-      var track = groups[g].get(t);
-      for (var i = track.numItems - 1; i >= 0; i--) {
-        var item = track.getItemAt(i);
-        if (item && item.type === 'Empty') {
-          try { item.remove(1, 0); closed++; } catch (e) {}
-        }
-      }
-    }
-  }
-  return closed;
-}
-
 /* Merge overlapping or touching ranges so the razor/ripple never double-cuts the
    same spot (overlaps were a source of stray gaps + abrupt cuts). */
 function CP_mergeRanges(ranges) {
