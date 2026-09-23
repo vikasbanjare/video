@@ -10269,14 +10269,26 @@
     stats.innerHTML = 'Found <b>' + dels.length + '</b> cut' + (dels.length > 1 ? 's' : '') +
       ' — about <b>' + total.toFixed(1) + 's</b> to remove' + (off ? ' (' + off + ' unticked — kept)' : '') +
       '. Untick anything you want to keep, then apply.';
+    takesNote(stats);
     $('btn-takes-apply').classList.toggle('hidden', !on.length);
+  }
+  /* A warning that belongs with the list (a part of the transcript the AI
+     could not read) — shown under the summary every time it is redrawn. */
+  function takesNote(stats) {
+    if (!state.takeNote) return;
+    var n = document.createElement('div'); n.className = 'hint';
+    n.textContent = '⚠️ ' + state.takeNote;
+    stats.appendChild(n);
   }
   function renderTakes(dels) {
     var list = $('takes-list');
     $('takes-results').classList.remove('hidden');
     list.innerHTML = '';
     if (!dels.length) {
-      $('takes-stats').textContent = 'Nothing to remove — the transcript reads clean. (Tip: lower “Match sensitivity”, or try ✨ Smart Cleanup for false starts, fillers & dead-air.)';
+      // never "reads clean" when part of it was not read at all
+      $('takes-stats').textContent = state.takeNote ? 'Nothing to remove in the parts that were read.'
+        : 'Nothing to remove — the transcript reads clean. (Tip: lower “Match sensitivity”, or try ✨ Smart Cleanup for false starts, fillers & dead-air.)';
+      takesNote($('takes-stats'));
       $('btn-takes-apply').classList.add('hidden');
       return;
     }
@@ -10319,10 +10331,12 @@
   function cutGuardOf(src) {
     return (src && src.sequenceId) ? { sequenceId: src.sequenceId, sequenceName: src.sequenceName, fingerprint: src.fingerprint } : null;
   }
-  /* Show a take list for review, remembering the timeline it was made for. */
-  function showTakeList(dels, guard) {
+  /* Show a take list for review, remembering the timeline it was made for.
+     `note` is a warning shown with the list (a part that was not read). */
+  function showTakeList(dels, guard, note) {
     state.takeDeletes = dels;
     state.takeGuard = guard || null;
+    state.takeNote = note || '';
     renderTakes(dels);
   }
   if ($('tk-sim')) $('tk-sim').addEventListener('input', function () { $('tk-sim-val').textContent = this.value + '%'; });
@@ -10389,21 +10403,38 @@
     opts = opts || {};
     return groqChat(
       [{ role: 'system', content: prompt.system }, { role: 'user', content: prompt.user }],
-      { json: true, model: opts.model, maxTokens: opts.maxTokens || 2048, temperature: 0 }
+      { json: opts.json !== false, model: opts.model, maxTokens: opts.maxTokens || 2048, temperature: 0 }
     );
+  }
+  /* The provider's own words behind a failed AI call. The Error's message is
+     written for the owner ("Cloud transcription is busy…") and never carries
+     them — CPApiErr keeps them on .cpDetail, so that is what is read here. */
+  function aiErrText(e) { return String((e && e.cpDetail) || '') + ' ' + String((e && e.message) || ''); }
+  /* The answer did not fit in the reply. In JSON mode Groq does not send back
+     a reply cut off at the token limit: it answers HTTP 400
+     json_validate_failed ("max completion tokens reached before generating a
+     valid document") — the same code as for JSON that does not parse. */
+  function aiReplyUnfinished(e) {
+    return /json_validate_failed|failed to generate json|valid document|max(imum)?[ _]completion[ _]tokens/i.test(aiErrText(e));
+  }
+  /* The REQUEST alone is over the per-minute token limit (or the model's
+     context): waiting cannot help, a smaller request can. */
+  function aiRequestTooBig(e) {
+    return /request too large|reduce your message|too large for model|maximum context length|context_length_exceeded/i.test(aiErrText(e));
   }
   /* aiChat with a wait-and-retry when the org's tokens-per-minute limit is hit
      across chunks (Groq says "try again in Xs"). Doesn't retry a single
-     too-large request (retrying the same size can't help). */
+     too-large request (retrying the same size can't help), nor a limit that
+     lifts only in minutes (the daily one). */
   function aiChatRetry(prompt, opts, tries) {
     tries = tries || 0;
     return aiChat(prompt, opts).catch(function (e) {
-      var m = String((e && e.message) || '');
-      var tooBig = /too large|reduce your message/i.test(m);
-      var rateLimited = /rate.?limit|try again in|tokens per minute|TPM/i.test(m);
-      if (tries < 3 && rateLimited && !tooBig) {
-        var waitS = 22, mm = /try again in ([\d.]+)s/i.exec(m);
-        if (mm) waitS = Math.min(60, Math.ceil(parseFloat(mm[1])) + 2);
+      var m = aiErrText(e);
+      var rateLimited = (e && e.cpKind === 'rate_limit') || /rate.?limit|try again in|tokens per minute|TPM/i.test(m);
+      if (tries < 3 && rateLimited && !aiRequestTooBig(e)) {
+        var waitS = 22, mm = /try again in (?:(\d+)h)?(?:(\d+)m)?([\d.]+)s/i.exec(m);
+        if (mm) waitS = Math.ceil(parseInt(mm[1] || '0', 10) * 3600 + parseInt(mm[2] || '0', 10) * 60 + parseFloat(mm[3])) + 2;
+        if (waitS > 90) throw e;
         return new Promise(function (res) { setTimeout(res, waitS * 1000); }).then(function () { return aiChatRetry(prompt, opts, tries + 1); });
       }
       throw e;
@@ -10429,7 +10460,9 @@
      not tangents). opts.people, else takesPeople(): the "Who is talking?" pick
      or the speaker labels. An explicit opts.scripted / opts.tangents wins.
      Shared by the review-first Smart Cleanup button and the one-tap "Clean up
-     my video". Resolves {cuts, truncated, maxw}.
+     my video". Resolves {cuts, unread} — unread = [{start, end}], the
+     stretches no usable answer came back for (nothing is listed there).
+     Rejects (cpKind 'ai_unreadable') when no part got a usable answer.
      EVERY word is read (it used to stop at 5,000 — the second half of a long
      podcast kept all its retakes, silently), in 1,000-word chunks that overlap
      by 150 so a retake straddling a chunk boundary is seen whole. */
@@ -10440,30 +10473,78 @@
     var tangents = (opts.tangents != null) ? opts.tangents : (people === 'many' ? false : undefined);
     var plan = CPSmartEdit.planChunks(words.length, 1000, 150);
     var cats = CPSmartEdit.cleanupCategories({ fillers: opts.fillers, tangents: tangents });
-    /* One chunk → its cuts (indices local to the chunk). A reply cut off by
-       the token limit keeps only the cuts before the cut-off point, silently —
-       so that chunk is asked again in two overlapping halves (twice at most). */
-    function ask(pc, depth) {
+    var unread = [], answered = 0;
+    /* One chunk → its cuts (indices local to the chunk). An answer that did
+       not fit — a reply cut off at the token limit, or Groq's JSON-mode HTTP
+       400 json_validate_failed, which is how Groq really reports it — and a
+       request over the per-minute limit are asked again in two overlapping
+       halves (twice at most); the smallest pieces then once more without the
+       JSON switch, where a reply cut off at the limit still keeps its
+       complete cuts. A piece that still gets no usable answer is reported as
+       unread: never silently dropped, and never the whole run lost for it.
+       No key, no internet or a used-up limit still stops the run — every
+       piece would fail the same way. */
+    function ask(pc, depth, plain) {
       var cw = words.slice(pc.from, pc.to);
       var prompt = CPSmartEdit.buildCleanupPrompt(cw, { aggressive: !!opts.aggressive, scripted: scripted,
                                                         fillers: opts.fillers, tangents: tangents });
-      return aiChatRetry(prompt, { maxTokens: 2048 }).then(function (content) {
-        if (depth < 2 && pc.to - pc.from >= 200 && CPSmartEdit.replyTruncated(content)) {
-          var halves = CPSmartEdit.splitChunk(pc, 150);
-          return ask(halves[0], depth + 1).then(function (a) {
-            return ask(halves[1], depth + 1).then(function (b) {
-              return CPSmartEdit.mergeChunkCuts(halves, [a, b]).map(function (c) { c.fromIdx -= pc.from; c.toIdx -= pc.from; return c; });
-            });
+      var canSplit = depth < 2 && pc.to - pc.from >= 200;
+      function inHalves() {
+        var halves = CPSmartEdit.splitChunk(pc, 150);
+        return ask(halves[0], depth + 1, plain).then(function (a) {
+          return ask(halves[1], depth + 1, plain).then(function (b) {
+            return CPSmartEdit.mergeChunkCuts(halves, [a, b]).map(function (c) { c.fromIdx -= pc.from; c.toIdx -= pc.from; return c; });
           });
-        }
+        });
+      }
+      return aiChatRetry(prompt, { maxTokens: 2048, json: !plain }).then(function (content) {
+        if (canSplit && CPSmartEdit.replyTruncated(content)) return inHalves();
+        answered++;
         return CPSmartEdit.parseCleanupResponse(content, cw, { minConfidence: 0, categories: cats });
+      }, function (e) {
+        var unfinished = aiReplyUnfinished(e);
+        if (!unfinished && !aiRequestTooBig(e)) throw e;
+        if (canSplit) return inHalves();
+        if (unfinished && !plain) return ask(pc, depth, true);
+        var a = (pc.ownFrom != null) ? pc.ownFrom : pc.from, b = ((pc.ownTo != null) ? pc.ownTo : pc.to) - 1;
+        if (b >= a && words[a] && words[b]) unread.push({ start: +words[a].start, end: +words[b].end });
+        try { diag('ai', 'Smart Cleanup: no usable answer for words ' + a + '–' + b + ' — ' + aiErrText(e).slice(0, 200)); } catch (eD) {}
+        return [];
       });
     }
     return processChunks(plan, function (pc) {
-      return ask(pc, 0).then(function (cuts) { return [cuts]; });   // one entry per chunk
+      return ask(pc, 0, false).then(function (cuts) { return [cuts]; });   // one entry per chunk
     }, prog, label || '✨ AI is reading your transcript').then(function (perChunk) {
-      return { cuts: CPSmartEdit.mergeChunkCuts(plan, perChunk), truncated: false, maxw: words.length };
+      if (!answered && unread.length) {
+        var none = new Error('The AI did not send back a usable answer for any part of your transcript.');
+        none.cpKind = 'ai_unreadable';
+        throw none;
+      }
+      unread.sort(function (x, y) { return x.start - y.start; });
+      var spans = [];
+      unread.forEach(function (u) {
+        var last = spans[spans.length - 1];
+        if (last && u.start - last.end < 2) last.end = Math.max(last.end, u.end);
+        else spans.push({ start: u.start, end: u.end });
+      });
+      return { cuts: CPSmartEdit.mergeChunkCuts(plan, perChunk), unread: spans };
     });
+  }
+  /* Smart Cleanup's own words for a failed AI call. The shared messages say
+     "Cloud transcription …", which sent the owner to the transcription
+     settings for a problem with the AI's answer. */
+  function smartCleanupErrMsg(e) {
+    var k = e && e.cpKind;
+    if (k === 'network' || k === 'request_failed') return 'Smart Cleanup could not reach the AI, so nothing was cut. Check your internet connection and try again.';
+    if (k === 'bad_key') return 'Smart Cleanup uses your free Groq key, and Groq did not accept it. Check the key in Settings → Auto-transcribe (the ☁️ box) — copy it again, with no spaces at the ends.';
+    if (k === 'rate_limit') return 'Smart Cleanup stopped: your free Groq limit is used up for now, so nothing was cut. Wait a few minutes (the daily limit resets the next day) and try again.';
+    if (k === 'no_credit') return 'Smart Cleanup stopped: your Groq account is out of credit, so nothing was cut. Top it up, then try again.';
+    if (k === 'provider_down') return 'Smart Cleanup stopped: the AI service is having trouble on its end, so nothing was cut. This is not your setup — try again in a few minutes.';
+    if (k === 'ai_unreadable' || k === 'unknown' || k === 'too_large' || k === 'bad_audio' || k === 'no_speech') {
+      return 'Smart Cleanup could not finish — the AI did not send back a usable answer, so nothing was cut. ' +
+             'Try again in a minute; if it keeps happening, use 🔎 Find repeated takes instead.';
+    }
+    return 'Smart Cleanup failed: ' + ((e && e.message) || 'something went wrong') + ' Nothing was cut.';
   }
   function runSmartCleanup() {
     if (typeof CPSmartEdit === 'undefined') return toast('Smart Cleanup module missing.', true);
@@ -10477,11 +10558,16 @@
       return aiCleanupCuts(words, { aggressive: aggressive }, prog, '✨ Reading your transcript with AI');
     }).then(function (r) {
       prog.classList.add('hidden');
-      showTakeList(r.cuts, guard);         // reuse the same review → apply pipeline
+      var miss = (r.unread || []).map(function (u) { return CPSmartEdit.mmss(Math.floor(u.start)) + '–' + CPSmartEdit.mmss(Math.ceil(u.end)); });
+      var note = miss.length ? 'The AI could not read ' + miss.join(', ') + ' of your transcript, so nothing is listed there. ' +
+        'Run ✨ Smart Cleanup again, or use 🔎 Find repeated takes for that part.' : '';
+      showTakeList(r.cuts, guard, note);   // reuse the same review → apply pipeline
       var big = r.cuts.filter(function (c) { return c.needsReview; }).length;
       if (r.cuts.length) toast('✨ Smart Cleanup found ' + r.cuts.length + ' cut' + (r.cuts.length === 1 ? '' : 's') + ' — review them, then apply.' +
-        (big ? ' ' + big + ' unusually long one' + (big === 1 ? ' is' : 's are') + ' left unticked — play it (▶) before you tick it.' : ''));
-    }).catch(function (e) { prog.classList.add('hidden'); toast('Smart Cleanup failed: ' + e.message, true); });
+        (big ? ' ' + big + ' unusually long one' + (big === 1 ? ' is' : 's are') + ' left unticked — play it (▶) before you tick it.' : '') +
+        (note ? ' ⚠️ ' + note : ''));
+      else if (note) toast('⚠️ ' + note, true);
+    }).catch(function (e) { prog.classList.add('hidden'); toast(smartCleanupErrMsg(e), true); });
   }
   if ($('btn-smart-cleanup')) $('btn-smart-cleanup').addEventListener('click', runSmartCleanup);
 
