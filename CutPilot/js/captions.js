@@ -2166,6 +2166,70 @@
     if (GALLERY_HIDDEN[t.id]) { t.galleryHidden = true; t.dupOf = GALLERY_HIDDEN[t.id]; }
   });
 
+  /* Fallback chains. A Latin display face has no Devanagari, so every chain
+     names a Devanagari face that suits the look (loaded from Google Fonts)
+     and the system Devanagari faces (macOS, Windows) after it. The Latin
+     system face comes FIRST so Latin letters never fall into a Devanagari
+     family's Latin glyphs; Devanagari skips the Latin faces (they have none)
+     and lands on the matching Devanagari design. */
+  var DEVA_SYSTEM = ['Kohinoor Devanagari', 'Nirmala UI'];
+  function devaChain(latin, deva, generic) {
+    return (latin || []).concat(deva ? [deva] : [], DEVA_SYSTEM, [generic || 'sans-serif']);
+  }
+
+  /* ---- Pulse twins of the bundled caption .mogrt looks ----------------------
+     The five caption templates shipped in mogrts/ (plus the Flux caption) only
+     expose the few colours their designer wired up. Each twin is the SAME look
+     — colours and face read from that template's own definition.json — drawn
+     by Pulse, so it opens the full editor: outline, glow, highlight look,
+     animation, position, everything. The .mogrt originals stay available under
+     "Premiere templates · advanced". */
+  var TWIN_TEMPLATES = [
+    // Subtitle_2.mogrt: Poppins-SemiBold, Text #000000 on a #FFFFFF BG (roundness 30), no word highlight
+    { id: 'twin-plain-subtitle', name: 'Plain Subtitle', category: _M, alsoIn: [_P], twinOf: 'Subtitle_2.mogrt',
+      popularity: 86, layout: 'center', keyword: false, wordHl: false,
+      font: 'Poppins', weight: 600, fallbackFonts: devaChain(['Arial'], 'Mukta'),
+      fontSize: 56, fill: '#000000', highlight: '#000000', stroke: null, strokeWidth: 0,
+      boxColor: '#FFFFFF', boxOpacity: 1, boxRadius: 30, boxPad: 1.2,
+      uppercase: false, wordsPerCue: 4, anim: 'fade' },
+    // Subtitle_1.mogrt: Arvo, Text #FFFAFA, Highlighted Word #FF0000, BG #000000 @60%, square bar
+    { id: 'twin-word-highlight', name: 'Word Highlight', category: _P, alsoIn: [_K], twinOf: 'Subtitle_1.mogrt',
+      popularity: 88, layout: 'center', keyword: false,
+      font: 'Arvo', weight: 400, fallbackFonts: devaChain(['Rockwell', 'Georgia'], 'Tiro Devanagari Hindi', 'serif'),
+      fontSize: 60, fill: '#FFFAFA', highlight: '#FF0000', stroke: null, strokeWidth: 0,
+      boxColor: '#000000', boxOpacity: 0.6, boxRadius: 2, boxPad: 1.3,
+      uppercase: false, wordsPerCue: 4, anim: 'karaoke' },
+    // Subtitle_3.mogrt: Inter-SemiBold, Text #FFFFFF, Highlighted Word #29FF00 at 120%, BG #000000 (roundness 40)
+    { id: 'twin-word-pop', name: 'Word Pop', category: _K, twinOf: 'Subtitle_3.mogrt',
+      popularity: 88, layout: 'center', keyword: false, highlightScale: 1.2,
+      font: 'Inter', weight: 600, fallbackFonts: devaChain(['Arial'], 'Mukta'),
+      fontSize: 60, fill: '#FFFFFF', highlight: '#29FF00', stroke: null, strokeWidth: 0,
+      boxColor: '#000000', boxOpacity: 1, boxRadius: 40, boxPad: 1.1,
+      uppercase: false, wordsPerCue: 4, anim: 'karaoke' },
+    // Subtitle_5.mogrt: SpaceMono-Bold, Text #FFFFFF, a #78FDBA box behind the spoken word, drop shadow 50%
+    { id: 'twin-active-box', name: 'Active-Word Box', category: _K, twinOf: 'Subtitle_5.mogrt',
+      popularity: 87, layout: 'center', keyword: false,
+      font: 'Space Mono', weight: 700, fallbackFonts: devaChain(['Courier New'], 'Mukta', 'monospace'),
+      fontSize: 54, fill: '#FFFFFF', highlight: '#78FDBA', highlightStyle: 'box', boxRadius: 10,
+      stroke: null, strokeWidth: 0, glow: '#000000', glowBlur: 0.25, shadowDX: 5, shadowDY: 5,
+      uppercase: false, wordsPerCue: 4, anim: 'karaoke' },
+    // Subtitle_4_r3.mogrt: Inter-SemiBold, Text #FFFFFF, highlight gradient #CC00FF → #0018FF, BG #000000
+    { id: 'twin-gradient-highlight', name: 'Gradient Highlight', category: _N, alsoIn: [_K], twinOf: 'Subtitle_4_r3.mogrt',
+      popularity: 86, layout: 'center', keyword: false,
+      font: 'Inter', weight: 600, fallbackFonts: devaChain(['Arial'], 'Mukta'),
+      fontSize: 60, fill: '#FFFFFF', highlight: '#CC00FF', highlight2: '#0018FF', stroke: null, strokeWidth: 0,
+      boxColor: '#000000', boxOpacity: 1, boxRadius: 2, boxPad: 1.2,
+      uppercase: false, wordsPerCue: 4, anim: 'karaoke' },
+    // Flux_Halo2_r3.mogrt: Inter-SemiBold, Text #FFFFFF, Highlighted Word #C5FF00, BG #003CFF
+    { id: 'twin-flux-halo', name: 'Halo Box', category: _K, alsoIn: [_B], twinOf: 'Flux_Halo2_r3.mogrt',
+      popularity: 89, layout: 'center', keyword: false,
+      font: 'Inter', weight: 600, fallbackFonts: devaChain(['Arial'], 'Mukta'),
+      fontSize: 62, fill: '#FFFFFF', highlight: '#C5FF00', stroke: null, strokeWidth: 0,
+      boxColor: '#003CFF', boxOpacity: 1, boxRadius: 2, boxPad: 1.2,
+      uppercase: false, wordsPerCue: 4, anim: 'karaoke' }
+  ];
+  TWIN_TEMPLATES.forEach(function (t) { TEMPLATES.push(t); });
+
   TEMPLATES.forEach(function (t) {
     var safe = FONT_SAFE[t.font];
     if (!safe) return;
@@ -2198,7 +2262,7 @@
     'Helvetica Neue', 'Avenir Next', 'Arial Narrow', 'Trebuchet MS',
     'Menlo', 'Didot', 'Marker Felt', 'Snell Roundhand',
     // Serif
-    'Playfair Display', 'Merriweather', 'Lora', 'Georgia', 'Times New Roman',
+    'Playfair Display', 'Merriweather', 'Lora', 'Georgia', 'Times New Roman', 'Arvo',
     // Mono
     'JetBrains Mono', 'Roboto Mono', 'Space Mono', 'Courier New',
     // Handwriting / marker

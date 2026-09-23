@@ -3913,7 +3913,7 @@
     return h;
   }
   var ADVANCED_NOTE = 'Premiere\'s own Motion Graphics templates. Each one only offers the few settings its designer built in — ' +
-    'the styles above give you every control.';
+    'the styles above give you every control. Caption looks from these templates are also above as full Pulse styles.';
 
   function renderTemplateGrid() {
     var grid = $('tpl-grid');
