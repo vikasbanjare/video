@@ -9664,11 +9664,12 @@
     sources.forEach(function (s) {
       if (s.unreadable) return;
       var sp = mediaSpan(s), m = media[s.mediaPath];
-      if (!m) { m = media[s.mediaPath] = { path: s.mediaPath, lo: sp[0], hi: sp[1], sources: [], tracks: [], keys: [] }; order.push(s.mediaPath); }
+      if (!m) { m = media[s.mediaPath] = { path: s.mediaPath, lo: sp[0], hi: sp[1], sources: [], tracks: [], keys: [], nests: [] }; order.push(s.mediaPath); }
       m.lo = Math.min(m.lo, sp[0]); m.hi = Math.max(m.hi, sp[1]); m.sources.push(s);
-      var lab = silTrackLab(s.track), key = silTrackKey(s.track);
+      var lab = silTrackLab(s.track), key = silTrackKey(s.track), nest = s.track.nested || s.item.nested;
       if (m.tracks.indexOf(lab) < 0) m.tracks.push(lab);
       if (m.keys.indexOf(key) < 0) m.keys.push(key);
+      if (nest && m.nests.indexOf(String(nest)) < 0) m.nests.push(String(nest));
     });
     var total = order.reduce(function (acc, p) { return acc + (media[p].hi - media[p].lo); }, 0), done = 0;
     var chain = Promise.resolve();
@@ -9737,7 +9738,8 @@
       var cuts = CPSilence.planCuts(CPSilence.combineMics(voting, range), tune);
       var mics = order.map(function (p) {
         var m = media[p], L = m.levels;
-        return { path: p, name: silBase(p), tracks: m.tracks.join(', '), keys: m.keys.slice(), floor: L.floor, speech: L.speech, threshold: L.threshold,
+        return { path: p, name: silBase(p), tracks: m.tracks.join(', ') + (m.nests.length ? ' (inside “' + m.nests.join('”, “') + '”)' : ''),
+                 keys: m.keys.slice(), floor: L.floor, speech: L.speech, threshold: L.threshold,
                  continuous: L.continuous, digital: L.digital, excluded: !!m.excluded, music: !!m.music, role: m.role,
                  range: L.range, pauses: L.pauses, manual: manual && !m.excluded };
       });

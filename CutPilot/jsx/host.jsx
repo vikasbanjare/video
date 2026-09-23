@@ -597,25 +597,135 @@ function CP_seqDropFrame(seq, fallback) {
   return !!fallback;
 }
 
-/* The timeline's "shape": clip count, where every clip starts, and its end.
-   If it differs from what the analysis saw, the cut list no longer lines up
-   with the audio and must not be applied. */
-function CP_cutFingerprint(seq) {
-  var n = 0, sum = 0, groups = [seq.videoTracks, seq.audioTracks];
+/* The Sequence behind a nested-sequence clip's project item, or null. (The
+   same lookup CP_getTranscribeSource makes for the "only one word
+   transcribed" nest case: a nest has no media path, so it is found by the
+   node id of the sequence's own project item.) */
+function CP_nestedSeqOf(pItem) {
+  if (!pItem) return null;
+  try { if (pItem.isSequence && !pItem.isSequence()) return null; } catch (eIs) {}
+  try {
+    var sqs = app.project.sequences;
+    for (var i = 0; i < sqs.numSequences; i++) {
+      var cand = sqs[i];
+      try {
+        if (cand && cand.projectItem && pItem.nodeId != null && String(cand.projectItem.nodeId) === String(pItem.nodeId)) return cand;
+      } catch (eCmp) {}
+    }
+  } catch (eSq) {}
+  return null;
+}
+
+/* The timeline's "shape": clip count, where every clip starts, and its end —
+   and the same for every sequence nested in it (depth-limited), because the
+   dead-air plan is made from the audio INSIDE a nest too. If it differs from
+   what the analysis saw, the cut list no longer lines up with the audio and
+   must not be applied. A timeline without nests gives the same string as
+   before. */
+function CP_cutFingerprint(seq, depth, seen) {
+  depth = depth || 0; seen = seen || {};
+  var n = 0, sum = 0, groups = [seq.videoTracks, seq.audioTracks], nests = '';
+  var id = CP_seqId(seq);
+  seen[id] = 1;
   for (var g = 0; g < groups.length; g++) {
     for (var t = 0; t < groups[g].numTracks; t++) {
       var clips = groups[g][t].clips, k = clips.numItems;
       n += k;
-      for (var i = 0; i < k; i++) { try { sum += Math.round(clips[i].start.seconds * 1000); } catch (e) {} }
+      for (var i = 0; i < k; i++) {
+        try { sum += Math.round(clips[i].start.seconds * 1000); } catch (e) {}
+        if (depth >= 4) continue;
+        var mp = null; try { mp = clips[i].projectItem ? clips[i].projectItem.getMediaPath() : null; } catch (eM) {}
+        if (mp) continue;
+        var inner = null; try { inner = CP_nestedSeqOf(clips[i].projectItem); } catch (eN) {}
+        var iid = inner ? CP_seqId(inner) : '';
+        if (inner && !seen[iid]) {
+          var sub = {}; for (var sk in seen) { if (seen.hasOwnProperty(sk)) sub[sk] = 1; }
+          nests += '|[' + CP_cutFingerprint(inner, depth + 1, sub) + ']';
+        }
+      }
     }
   }
   var end = '';
   try { end = String(seq.end); } catch (eE) {}
-  return n + '|' + sum + '|' + end;
+  return n + '|' + sum + '|' + end + nests;
 }
 
 function CP_trackIs(track, fn) {
   try { return !!(track && typeof track[fn] === 'function' && track[fn]()); } catch (e) { return false; }
+}
+
+/* Media seconds played per timeline second: Premiere's own number when it
+   reports one, else what the media span vs the timeline span says. A 120%
+   reel clip plays 1.2 s of media per second of timeline — ignoring that put
+   cuts on the wrong words and even onto the next clip. */
+function CP_clipSpeed(c, ip, op, st, en) {
+  var speed = null;
+  try { if (typeof c.getSpeed === 'function') speed = parseFloat(c.getSpeed()); } catch (eSp) {}
+  if (speed && speed > 20) speed = speed / 100;                    // reported as a percentage
+  if (!(speed > 0)) speed = (op > ip && en > st) ? (op - ip) / (en - st) : 1;
+  return speed;
+}
+function CP_clipReversed(c) { try { return typeof c.isSpeedReversed === 'function' && !!c.isSpeedReversed(); } catch (eR) { return false; } }
+function CP_clipDisabled(c) { try { return !!c.disabled; } catch (eD) { return false; } }
+
+var CP_NOT_A_MIC = /\.(aegraphic|mogrt|prproj|psd|ai|png|jpe?g|gif|tiff?|svg|eps|bmp|webp|heic)$/i;
+
+/*
+ * The audio INSIDE a nested sequence, mapped to where it plays on the master
+ * timeline — a nest (or a multicam source) has no media file of its own, so
+ * the old list gave it mediaPath null and nothing under it was ever cut, with
+ * "already tight". win = { st, en: master span of the nest clip, inT: the
+ * nested sequence's time at st, sp: its seconds per master second, muted,
+ * dis, rev }. Every inner audio track becomes one entry of `tracks`
+ * (keyed, so the pieces of a razored nest land on the same one). Nests inside
+ * nests are followed (depth ≤ 4, never into a sequence already on the path).
+ */
+function CP_cutNestTracks(sq, win, depth, seen, key, label, name, tracks, order) {
+  if (!sq || depth > 4) return;
+  var id = CP_seqId(sq);
+  if (seen[id]) return;
+  var path = {}; for (var pk in seen) { if (seen.hasOwnProperty(pk)) path[pk] = 1; }
+  path[id] = 1;
+  var winOut = win.inT + (win.en - win.st) * win.sp;
+  var aTracks = sq.audioTracks;
+  for (var t = 0; t < aTracks.numTracks; t++) {
+    var track = aTracks[t], lab = 'A' + (t + 1);
+    var tKey = key + '/' + id + '/' + lab;
+    var tName = name + ' › ' + ((track && track.name && String(track.name) !== lab) ? String(track.name) : lab);
+    var tMuted = win.muted || CP_trackIs(track, 'isMuted');
+    var clips = track.clips, n = clips.numItems;
+    for (var i = 0; i < n; i++) {
+      var c = clips[i];
+      var s2 = c.start.seconds, e2 = c.end.seconds;
+      var vs = s2 > win.inT ? s2 : win.inT, ve = e2 < winOut ? e2 : winOut;
+      if (!(ve - vs > 0.01)) continue;                 // outside what the nest clip shows
+      var mp = null; try { mp = c.projectItem ? c.projectItem.getMediaPath() : null; } catch (eM) {}
+      if (mp && CP_NOT_A_MIC.test(mp)) continue;
+      var ip2 = 0, op2 = 0; try { ip2 = c.inPoint.seconds; op2 = c.outPoint.seconds; } catch (eIO) {}
+      var sp2 = CP_clipSpeed(c, ip2, op2, s2, e2);
+      var mSt = win.st + (vs - win.inT) / win.sp, mEn = win.st + (ve - win.inT) / win.sp;
+      var rev = win.rev || CP_clipReversed(c), dis = win.dis || CP_clipDisabled(c);
+      var inner = mp ? null : CP_nestedSeqOf(c.projectItem);
+      if (inner) {
+        CP_cutNestTracks(inner, { st: mSt, en: mEn, inT: ip2 + (vs - s2) * sp2, sp: sp2 * win.sp, muted: tMuted, dis: dis, rev: rev },
+                         depth + 1, path, tKey, label, tName + ' › ' + String(c.name), tracks, order);
+        continue;
+      }
+      var tr = tracks[tKey];
+      if (!tr) { tr = tracks[tKey] = { label: label, key: tKey, name: tName, muted: tMuted, items: [], clips: 0, nested: name }; order.push(tKey); }
+      tr.clips++;
+      tr.items.push({ name: String(c.name), mediaPath: mp, seqStart: mSt, seqEnd: mEn,
+                      inPoint: ip2 + (vs - s2) * sp2, outPoint: ip2 + (ve - s2) * sp2,
+                      speed: sp2 * win.sp, reversed: rev, disabled: dis, selected: false, nested: name,
+                      nodeId: (c.projectItem && c.projectItem.nodeId != null) ? String(c.projectItem.nodeId) : null });
+    }
+  }
+}
+
+function CP_countNestItems(tracks, order) {
+  var n = 0;
+  for (var q = 0; q < order.length; q++) n += tracks[order[q]].items.length;
+  return n;
 }
 
 /*
@@ -623,20 +733,26 @@ function CP_trackIs(track, fn) {
  * track's clips with their media file and exact media↔timeline mapping
  * (speed included), whether the track is muted/locked, the selected span, and
  * the sequence identity + fingerprint the cut is later checked against.
+ * A nested sequence on an audio track is opened up: each of ITS audio tracks
+ * is listed as a track of its own ({ label: 'A1', key, name: 'Nest › A2',
+ * nested }) holding its clips mapped to the master timeline. The cut itself
+ * still razors the nest clip on the master timeline, whole.
  */
 function CP_getCutSources(argsJson) {
   try {
     var seq = CP_activeSequence();
-    var bad = /\.(aegraphic|mogrt|prproj|psd|ai|png|jpe?g|gif|tiff?|svg|eps|bmp|webp|heic)$/i;
+    var bad = CP_NOT_A_MIC;
     var out = { sequenceId: CP_seqId(seq), sequenceName: seq.name, fps: CP_sequenceFps(seq),
                 fingerprint: CP_cutFingerprint(seq), audio: [], video: [], selection: null };
-    var selLo = null, selHi = null;
+    var selLo = null, selHi = null, masterId = CP_seqId(seq), seen = {};
+    seen[masterId] = 1;
     for (var g = 0; g < 2; g++) {
       var tracks = g === 0 ? seq.audioTracks : seq.videoTracks;
       for (var t = 0; t < tracks.numTracks; t++) {
         var track = tracks[t];
         var tr = { index: t, name: (track && track.name) ? String(track.name) : ((g === 0 ? 'A' : 'V') + (t + 1)),
                    muted: CP_trackIs(track, 'isMuted'), locked: CP_trackIs(track, 'isLocked'), items: [], clips: 0 };
+        var nestTracks = {}, nestOrder = [];
         var clips = track.clips, k = clips.numItems;
         for (var i = 0; i < k; i++) {
           var c = clips[i];
@@ -644,28 +760,34 @@ function CP_getCutSources(argsJson) {
           if (!(en - st > 0.01)) continue;
           tr.clips++;
           var mp = null; try { mp = c.projectItem ? c.projectItem.getMediaPath() : null; } catch (eM) {}
+          var nest = mp ? null : CP_nestedSeqOf(c.projectItem);
           var sel = false; try { sel = !!c.isSelected(); } catch (eS) {}
-          // only a selected real clip narrows the clean-up — a caption, title
-          // or photo the owner last clicked must not shrink it to that span
-          if (sel && mp && !bad.test(mp)) { selLo = (selLo == null || st < selLo) ? st : selLo; selHi = (selHi == null || en > selHi) ? en : selHi; }
+          // only a selected real clip (or nest) narrows the clean-up — a
+          // caption, title or photo the owner last clicked must not shrink it
+          if (sel && ((mp && !bad.test(mp)) || nest)) { selLo = (selLo == null || st < selLo) ? st : selLo; selHi = (selHi == null || en > selHi) ? en : selHi; }
           if (g !== 0) continue;
           if (mp && bad.test(mp)) continue;
           var ip = 0, op = 0; try { ip = c.inPoint.seconds; op = c.outPoint.seconds; } catch (eIO) {}
-          // Speed: Premiere's own number when it reports one; else what the
-          // media span vs timeline span says. A 120% reel clip plays 1.2 s of
-          // media per second of timeline — ignoring that put cuts on the
-          // wrong words and even onto the next clip.
-          var speed = null;
-          try { if (typeof c.getSpeed === 'function') speed = parseFloat(c.getSpeed()); } catch (eSp) {}
-          if (speed && speed > 20) speed = speed / 100;                    // reported as a percentage
-          if (!(speed > 0)) speed = (op > ip) ? (op - ip) / (en - st) : 1;
-          var rev = false; try { rev = typeof c.isSpeedReversed === 'function' && !!c.isSpeedReversed(); } catch (eR) {}
-          var dis = false; try { dis = !!c.disabled; } catch (eD) {}
+          var speed = CP_clipSpeed(c, ip, op, st, en);
+          var rev = CP_clipReversed(c), dis = CP_clipDisabled(c);
+          if (nest && !seen[CP_seqId(nest)]) {
+            var had = CP_countNestItems(nestTracks, nestOrder);
+            CP_cutNestTracks(nest, { st: st, en: en, inT: ip, sp: speed, muted: false, dis: dis, rev: rev }, 1, seen,
+                             'A' + (t + 1), 'A' + (t + 1), String(c.name), nestTracks, nestOrder);
+            if (CP_countNestItems(nestTracks, nestOrder) > had) continue;   // heard through its own tracks
+          }
           tr.items.push({ name: String(c.name), mediaPath: mp, seqStart: st, seqEnd: en, inPoint: ip, outPoint: op,
                           speed: speed, reversed: rev, disabled: dis, selected: sel,
                           nodeId: (c.projectItem && c.projectItem.nodeId != null) ? String(c.projectItem.nodeId) : null });
         }
-        (g === 0 ? out.audio : out.video).push(tr);
+        if (g === 0) {
+          out.audio.push(tr);
+          for (var nq = 0; nq < nestOrder.length; nq++) {
+            var nt = nestTracks[nestOrder[nq]];
+            nt.index = t; nt.locked = tr.locked; nt.muted = nt.muted || tr.muted;
+            out.audio.push(nt);
+          }
+        } else out.video.push(tr);
       }
     }
     if (selLo != null && selHi > selLo) out.selection = { start: selLo, end: selHi };

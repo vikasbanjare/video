@@ -1057,6 +1057,95 @@ console.log('host.jsx — transcribe source resolves nested sequences ("only one
     'piece 2 time-mapped + clipped to the nest window (media 45→75 at master 35s): ' + JSON.stringify(i1));
 }
 
+// ═══ NESTED SEQUENCES in the dead-air listing: every inner clip, mapped to
+//     the master timeline (the old list gave the nest mediaPath null, so
+//     nothing under it was ever cut and the owner heard "already tight") ═══
+console.log('host.jsx — CP_getCutSources opens nested sequences (dead air under a nest)');
+{
+  const w = makeWorld({ vTracks: 1, aTracks: 1 });
+  const host = loadHost(w);
+  const T = s => ({ seconds: s, get secs() { return this.seconds; } });
+  const mkTracks = list => { const o = {}; list.forEach((tr, i) => { o[i] = tr; }); o.numTracks = list.length; return o; };
+  const mkClips = arr => { const c = { numItems: arr.length }; arr.forEach((x, i) => { c[i] = x; }); return c; };
+  const real = (name, path, st, en, ip, extra) => Object.assign({
+    name, start: T(st), end: T(en), inPoint: T(ip), outPoint: T(ip + (en - st)),
+    isSelected: () => false, projectItem: { getMediaPath: () => path, nodeId: 'n_' + name } }, extra || {});
+  const nest = (name, nodeId, st, en, ip, extra) => Object.assign({
+    name, start: T(st), end: T(en), inPoint: T(ip), outPoint: T(ip + (en - st)),
+    isSelected: () => false, projectItem: { getMediaPath: () => null, nodeId } }, extra || {});
+  // the repo's nested fixture: ONE voice jump-cut into two pieces inside the
+  // nest, plus a guest mic on the nest's A2 that is muted in there
+  const innerSeq = {
+    sequenceID: 'sq-inner', name: 'ETF inner', projectItem: { nodeId: 'nest1' },
+    audioTracks: mkTracks([
+      { name: 'A1', clips: mkClips([real('voice a', '/m/voice.wav', 0, 40, 0), real('voice b', '/m/voice.wav', 40, 80, 45)]) },
+      { name: 'Guest', isMuted: () => true, clips: mkClips([real('guest', '/m/guest.wav', 20, 60, 0)]) }
+    ]),
+    videoTracks: mkTracks([])
+  };
+  const master = {
+    sequenceID: 'sq-master', name: 'Master',
+    audioTracks: mkTracks([{ name: 'A1', clips: mkClips([nest('ETF nest', 'nest1', 5, 65, 10)]) }]),
+    videoTracks: mkTracks([{ clips: mkClips([real('Stray.mp4', '/m/stray.mp4', 0, 3, 0)]) }])
+  };
+  w.sandbox.app.project.activeSequence = master;
+  w.sandbox.app.project.sequences = { numSequences: 2, 0: master, 1: innerSeq };
+  const r = call(host, 'CP_getCutSources', {});
+  const voice = (r.audio || []).find(t => (t.items || []).some(it => it.mediaPath === '/m/voice.wav'));
+  const guest = (r.audio || []).find(t => (t.items || []).some(it => it.mediaPath === '/m/guest.wav'));
+  assert(r.ok && !(r.audio || []).some(t => (t.items || []).some(it => it.mediaPath == null)),
+    'a nest is not listed as a clip with no media (nothing under it could be heard): ' + JSON.stringify(r.audio && r.audio.map(t => [t.label || t.index, t.items.length])));
+  assert(!!voice && voice.items.length === 2 && voice.label === 'A1' && /ETF nest/.test(voice.name) && voice.key !== 'A1',
+    'the voice inside the nest is listed on its own track, labelled with the master track and the nest: ' + (voice && JSON.stringify([voice.label, voice.key, voice.name])));
+  const [p1, p2] = voice ? voice.items : [];
+  assert(!!p1 && close(p1.seqStart, 5) && close(p1.seqEnd, 35) && close(p1.inPoint, 10) && close(p1.outPoint, 40) && close(p1.speed, 1),
+    'piece 1 mapped to the master timeline (media 10→40 plays at 5–35 s): ' + JSON.stringify(p1));
+  assert(!!p2 && close(p2.seqStart, 35) && close(p2.seqEnd, 65) && close(p2.inPoint, 45) && close(p2.outPoint, 75),
+    'piece 2 mapped and clipped to what the nest shows (media 45→75 at 35–65 s): ' + JSON.stringify(p2));
+  assert(!!guest && guest.muted === true && close(guest.items[0].seqStart, 15) && close(guest.items[0].inPoint, 0),
+    'a track muted INSIDE the nest is flagged muted (the guest at master 15 s): ' + JSON.stringify(guest && [guest.muted, guest.items[0]]));
+
+  // a nest sped up to 200% on the master, holding a nest of its own
+  const deep = { sequenceID: 'sq-deep', name: 'Deep', projectItem: { nodeId: 'nest3' },
+    audioTracks: mkTracks([{ name: 'A1', clips: mkClips([real('vo', '/m/vo.wav', 0, 30, 100)]) }]), videoTracks: mkTracks([]) };
+  const mid = { sequenceID: 'sq-mid', name: 'Mid', projectItem: { nodeId: 'nest2' },
+    audioTracks: mkTracks([{ name: 'A1', clips: mkClips([nest('Deep nest', 'nest3', 10, 40, 0)]) }]), videoTracks: mkTracks([]) };
+  const top = { sequenceID: 'sq-top', name: 'Top',
+    audioTracks: mkTracks([{ name: 'A1', clips: mkClips([nest('Mid nest', 'nest2', 0, 10, 10, { getSpeed: () => 2 })]) }]), videoTracks: mkTracks([]) };
+  w.sandbox.app.project.activeSequence = top;
+  w.sandbox.app.project.sequences = { numSequences: 3, 0: top, 1: mid, 2: deep };
+  const r2 = call(host, 'CP_getCutSources', {});
+  const vo = (r2.audio || []).map(t => t.items).reduce((a, b) => a.concat(b), []).find(it => it.mediaPath === '/m/vo.wav');
+  // top 0–10 s shows Mid 10–30 at 2×; Mid 10–30 is Deep 0–20 → vo media 100–120
+  assert(!!vo && close(vo.seqStart, 0) && close(vo.seqEnd, 10) && close(vo.inPoint, 100) && close(vo.outPoint, 120) && close(vo.speed, 2),
+    'a nest inside a 200% nest: media 100→120 plays at master 0–10 s, 2 s of media per second: ' + JSON.stringify(vo));
+
+  // editing INSIDE the nest after listening changes the fingerprint → the cut is refused
+  w.sandbox.app.project.activeSequence = master;
+  w.sandbox.app.project.sequences = { numSequences: 2, 0: master, 1: innerSeq };
+  const fp1 = call(host, 'CP_getCutSources', {}).fingerprint;
+  innerSeq.audioTracks[0].clips[1].start = T(41); innerSeq.audioTracks[0].clips[1].end = T(81);
+  const fp2 = call(host, 'CP_getCutSources', {}).fingerprint;
+  assert(fp1 !== fp2, 'moving a clip inside the nest changes the timeline fingerprint (a stale cut list is refused): ' + fp1 + ' vs ' + fp2);
+  // a nest that contains itself is not followed forever
+  const loop = { sequenceID: 'sq-loop', name: 'Loop', projectItem: { nodeId: 'nestL' },
+    audioTracks: mkTracks([{ name: 'A1', clips: mkClips([nest('Loop nest', 'nestL', 0, 10, 0)]) }]), videoTracks: mkTracks([]) };
+  w.sandbox.app.project.activeSequence = loop;
+  w.sandbox.app.project.sequences = { numSequences: 1, 0: loop };
+  const r3 = call(host, 'CP_getCutSources', {});
+  assert(r3.ok === true, 'a sequence nested in itself is listed without looping (' + (r3.error || 'ok') + ')');
+}
+{
+  // a flat timeline lists exactly what it did before (no nest → no new tracks)
+  const w = makeWorld({ vTracks: 1, aTracks: 2, fps: 25 });
+  const pi = (p) => ({ getMediaPath: () => p, nodeId: 'n' + p });
+  w.model.addClip('aTracks', 0, 0, 20, { name: 'host', projectItem: pi('/m/host.wav'), inPoint: { seconds: 0 }, outPoint: { seconds: 20 } });
+  w.model.addClip('aTracks', 1, 0, 20, { name: 'guest', projectItem: pi('/m/guest.wav'), inPoint: { seconds: 0 }, outPoint: { seconds: 20 } });
+  const r = call(loadHost(w), 'CP_getCutSources', {});
+  assert(r.ok && r.audio.length === 2 && r.audio.every(t => !t.key && !t.nested) && /^\d+\|\d+\|\d+$/.test(r.fingerprint),
+    'a timeline without nests: the same two tracks and the same fingerprint shape as before (' + r.fingerprint + ')');
+}
+
 // ═══ FLAT jump-cuts: many short voice pieces must beat one long b-roll ═══
 console.log('host.jsx — transcribe source picks by coverage ("multiple cut audio, still one word")');
 {

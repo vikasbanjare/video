@@ -35,7 +35,9 @@ function hasFfmpeg() { try { cp.execFileSync('ffmpeg', ['-hide_banner', '-versio
 
 /*
  * timeline: { seqId, seqName, audio:[{ name, muted, locked, items:[{ name, mediaPath,
- *             seqStart, seqEnd, inPoint, outPoint, speed }] }], video:[…], selection }
+ *             seqStart, seqEnd, inPoint, outPoint, speed }] }], video:[…], selection,
+ *             host(fn, argJson) → a JSON reply string, or undefined for the stub's
+ *             own answer (lets a gate answer with the REAL host.jsx) }
  * fakes: { '<mediaPath>': 'stall' } → that file's decode sends ~5 s of audio, then hangs;
  *        'crash' → it sends ~5 s of audio, then the decoder quits with an error.
  */
@@ -45,12 +47,14 @@ async function openPanel(browser, timeline, fakes) {
   const calls = [];
   const procs = {};
   fakes = fakes || {};
+  timeline.audio = timeline.audio || [];
   const first = timeline.audio.find(t => t.items.length);
   const primary = first ? first.items[0] : null;
   const fingerprint = 'fp-' + JSON.stringify(timeline.audio.map(t => t.items.length));
   await page.exposeFunction('__hostCall', (fn, argJson) => {
     let args = null; try { args = JSON.parse(argJson); } catch (e) {}
     calls.push({ fn, args });
+    if (timeline.host) { const own = timeline.host(fn, argJson); if (own !== undefined) return own; }
     const ok = (o) => JSON.stringify(Object.assign({ ok: true }, o));
     if (fn === 'CP_getCutSources') {
       return ok({
