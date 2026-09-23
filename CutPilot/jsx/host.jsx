@@ -1731,31 +1731,58 @@ function CP_placeCaptionImages(argsJson) {
  * The whole word-by-word animation is baked into one full-frame alpha .mov, so
  * there is NO per-cue stacking, NO clip.end trimming, and what renders is
  * exactly what plays.
- * argsJson: { path, startSec, replaceTrack?, durSec?, cleanup?: [paths] }
- * cleanup lists this sequence's OLDER overlay files. After placing, the ones no
- * clip in ANY sequence still uses have their Pulse bin removed and come back in
- * `unused`, so the panel can delete those files. Anything that cannot be
- * verified counts as used — deleting a file a timeline still shows is exactly
- * the "Media Offline" this is meant to prevent.
+ * argsJson: { path, startSec, replaceTrack?, durSec?, cleanup?: [paths], recheck?: [paths] }
+ * cleanup lists this project+sequence's OLDER overlay files. The ones no clip
+ * in ANY open project uses have their Pulse bin removed and come back in
+ * `unused`, so the panel can delete those files. recheck lists files an earlier
+ * job already reported unused that the panel has not deleted yet (a saved
+ * project still named them, or the delete failed); they come back in `free`
+ * while nothing uses them. `checked` is false when the project could not be
+ * inspected — then nothing is reported. Anything that cannot be verified
+ * counts as used — deleting a file a timeline still shows is exactly the
+ * "Media Offline" this is meant to prevent.
  */
 function CP_placeOverlay(argsJson) {
   function normPath(p) { return String(p || '').replace(/\\/g, '/').toLowerCase(); }
-  function unusedOverlays(paths) {
-    var want = {}, i, k, b;
-    for (i = 0; i < paths.length; i++) want[normPath(paths[i])] = paths[i];
-    // 1. the project items those files were imported as (only in Pulse's own bins)
-    var found = [];
-    var root = app.project.rootItem;
-    for (b = 0; b < root.children.numItems; b++) {
-      var bn = root.children[b];
-      if (!bn || bn.type !== 2 || String(bn.name).indexOf('Pulse Captions') !== 0) continue;
-      for (k = 0; k < bn.children.numItems; k++) {
-        var pi = bn.children[k], mp = '';
-        try { mp = pi.getMediaPath(); } catch (eMp) { mp = ''; }
-        if (want[normPath(mp)]) found.push({ path: want[normPath(mp)], item: pi, bin: bn });
+  function sameProject(a, b) {
+    try {
+      if (a === b) return true;
+      if (a.documentID && b.documentID) return String(a.documentID) === String(b.documentID);
+      return String(a.path) === String(b.path) && String(a.name) === String(b.name);
+    } catch (eSp) { return false; }
+  }
+  /* every project item (in any bin) whose media is one of `want`; rootBin is
+     the Pulse Captions bin at the project's top level it sits in, else null.
+     (Depth, not object identity: ExtendScript may hand back a new wrapper for
+     the same bin on every read.) */
+  function itemsFor(proj, want, visit) {
+    function walk(folder, depth, rootBin) {
+      for (var n = 0; n < folder.children.numItems; n++) {
+        var it = folder.children[n];
+        if (!it) continue;
+        if (it.type === 2) {
+          var pulse = (depth === 0 && String(it.name).indexOf('Pulse Captions') === 0);
+          walk(it, depth + 1, depth === 0 ? (pulse ? it : null) : rootBin);
+          continue;
+        }
+        var mp = '';
+        try { mp = it.getMediaPath(); } catch (eMp) { mp = ''; }
+        if (mp && want[normPath(mp)]) visit(want[normPath(mp)], it, rootBin);
       }
     }
-    if (!found.length) return [];
+    walk(proj.rootItem, 0, null);
+  }
+  function tidyOverlays(cleanup, recheck) {
+    var i, want = {}, isRecheck = {};
+    for (i = 0; i < cleanup.length; i++) want[normPath(cleanup[i])] = cleanup[i];
+    for (i = 0; i < recheck.length; i++) { want[normPath(recheck[i])] = recheck[i]; isRecheck[recheck[i]] = true; }
+    // 1. every item made from those files. Only Pulse's own root bins are ours
+    //    to judge: an item anywhere else means the owner filed it themselves.
+    var found = [], elsewhere = {}, inPulseBin = {};
+    itemsFor(app.project, want, function (p, it, pulseBin) {
+      found.push({ path: p, item: it, bin: pulseBin });
+      if (pulseBin) inPulseBin[p] = true; else elsewhere[p] = true;
+    });
     // 2. every project item any sequence's video tracks still show
     var inUse = {};
     var seqs = app.project.sequences;
@@ -1769,15 +1796,33 @@ function CP_placeOverlay(argsJson) {
         }
       }
     }
-    // 3. a FILE is unused only when every item made from it is unused
-    var usedPath = {};
-    for (i = 0; i < found.length; i++) if (inUse[String(found[i].item.nodeId)]) usedPath[found[i].path] = true;
-    var out = [], seen = {};
+    var used = {};
+    for (i = 0; i < found.length; i++) if (inUse[String(found[i].item.nodeId)]) used[found[i].path] = true;
+    // 3. another OPEN project holding the file at all keeps it
+    var all = null;
+    try { all = app.projects; } catch (eAp) { all = null; }
+    if (all && all.numProjects > 1) {
+      for (var pj = 0; pj < all.numProjects; pj++) {
+        var other = all[pj];
+        if (!other || sameProject(other, app.project)) continue;
+        itemsFor(other, want, function (p) { used[p] = true; });
+      }
+    }
+    // 4. a FILE is unused only when every item made from it is unused
+    var out = { unused: [], free: [], checked: true }, seen = {};
     for (i = 0; i < found.length; i++) {
       var f = found[i];
-      if (usedPath[f.path]) continue;
-      if (f.bin.children.numItems === 1) { try { f.bin.deleteBin(); } catch (eDel) {} }
-      if (!seen[f.path]) { seen[f.path] = true; out.push(f.path); }
+      if (used[f.path] || elsewhere[f.path]) continue;
+      if (f.bin && f.bin.children.numItems === 1) { try { f.bin.deleteBin(); } catch (eDel) {} }
+    }
+    for (var key in want) {
+      if (!want.hasOwnProperty(key)) continue;
+      var pth = want[key];
+      if (seen[pth] || used[pth] || elsewhere[pth]) continue;
+      seen[pth] = true;
+      // an older overlay the project never had: someone else's — leave it be
+      if (!isRecheck[pth] && !inPulseBin[pth]) continue;
+      if (isRecheck[pth]) out.free.push(pth); else out.unused.push(pth);
     }
     return out;
   }
@@ -1846,11 +1891,13 @@ function CP_placeOverlay(argsJson) {
         if (oc) { try { oc.end = CP_timeFromSeconds(startSec + args.durSec); } catch (eEnd) {} }
       } catch (eDur) {}
     }
-    var unused = [];
-    if (args.cleanup && args.cleanup.length) {
-      try { unused = unusedOverlays(args.cleanup); } catch (eCl) { unused = []; }
+    var tidy = { unused: [], free: [], checked: true };
+    var cl = args.cleanup || [], rc = args.recheck || [];
+    if (cl.length || rc.length) {
+      try { tidy = tidyOverlays(cl, rc); } catch (eCl) { tidy = { unused: [], free: [], checked: false }; }
     }
-    return CP_ok({ placed: 1, track: trackIndex + 1, bin: bin.name, unused: unused });
+    return CP_ok({ placed: 1, track: trackIndex + 1, bin: bin.name,
+                   unused: tidy.unused, free: tidy.free, checked: tidy.checked });
   } catch (e) { return CP_fail(e.message); }
 }
 

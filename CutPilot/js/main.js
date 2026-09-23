@@ -7127,12 +7127,27 @@
   function mediaSafeName(s) {
     return String(s || '').replace(/[\\\/:*?"<>|\u0000-\u001f]+/g, '-').replace(/^[\s.-]+|[\s.-]+$/g, '').slice(0, 60) || 'Unsaved project';
   }
+  /* A short, stable ASCII hash, the same on every OS. */
+  function shortHash(s) {
+    s = String(s || '');
+    var h = 0;
+    for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    return h.toString(36);
+  }
   /* A stable, ASCII file-name key per sequence (Hindi names hash apart). */
   function overlaySeqKey(name) {
-    var s = String(name || 'sequence'), h = 0;
-    for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    var s = String(name || 'sequence');
     var slug = s.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'sequence';
-    return slug + '-' + h.toString(36);
+    return slug + '-' + shortHash(s);
+  }
+  /* The file-name key of one caption job: its sequence AND its project. A
+     "Save As" copy in the same folder keeps the bins, the timeline and the
+     sequence name, so a key by sequence alone made the copy treat the
+     original's overlay files as its own and delete them — the original then
+     opened with "Media Offline" captions. The project's saved path is part of
+     the key; an unsaved project is keyed by its name. */
+  function captionJobKey(place, seqName) {
+    return overlaySeqKey(seqName) + '-' + shortHash(place.projectPath || ('unsaved:' + (place.projectName || '')));
   }
   function overlayStamp() {
     var d = new Date();
@@ -7141,13 +7156,14 @@
       p(d.getSeconds()) + '-' + p(d.getMilliseconds(), 3);
   }
 
-  /* Where overlay media lives. NOT the OS temp folder: macOS clears files there
-     that go unused for a few days, and the project then reopens with red "Media
-     Offline" where a podcast's captions were. "Pulse Media" beside the .prproj
-     when Premiere says where the project is saved, else
+  /* Where caption media lives — the long-video overlay AND the per-image
+     captions of every reel — and whose it is. NOT the OS temp folder: macOS
+     clears files there that go unused for a few days, and the project then
+     reopens with red "Media Offline" where the captions were. "Pulse Media"
+     beside the .prproj when Premiere says where the project is saved, else
      ~/Documents/Pulse/Media/<project>. Resolves to the first folder that
-     really accepts a write. */
-  function overlayMediaDir() {
+     really accepts a write: { dir, projectPath ('' = unsaved), projectName }. */
+  function captionMediaPlace() {
     var fs = nodeReq('fs'), pathMod = nodeReq('path'), os = nodeReq('os');
     var info = CPBridge.isCEP()
       ? CPBridge.callHost('CP_getProjectInfo').then(null, function () { return null; })
@@ -7156,7 +7172,8 @@
       var cands = [];
       var proj = (r && r.path) ? String(r.path) : '';
       // only a real saved location — an unsaved project can report a bare name
-      if (proj && /\.prproj$/i.test(proj) && pathMod.isAbsolute(proj)) cands.push(pathMod.join(pathMod.dirname(proj), 'Pulse Media'));
+      var saved = !!(proj && /\.prproj$/i.test(proj) && pathMod.isAbsolute(proj));
+      if (saved) cands.push(pathMod.join(pathMod.dirname(proj), 'Pulse Media'));
       var pname = String((r && r.name) || (state.env && state.env.projectName) || '').replace(/\.prproj$/i, '');
       cands.push(pathMod.join(os.homedir(), 'Documents', 'Pulse', 'Media', mediaSafeName(pname)));
       for (var i = 0; i < cands.length; i++) {
@@ -7165,7 +7182,7 @@
           var probe = pathMod.join(cands[i], '.pulse-write-test');
           fs.writeFileSync(probe, 'ok');
           fs.unlinkSync(probe);
-          return cands[i];
+          return { dir: cands[i], projectPath: saved ? proj : '', projectName: pname };
         } catch (e) {}
       }
       throw new Error('no folder Pulse can write caption media to');
@@ -7188,10 +7205,11 @@
     } catch (e3) {}
   }
 
-  /* Overlays this sequence got before (oldest first), never the new one. */
-  function previousOverlays(dir, seqKey, exceptPath) {
+  /* Overlays this project+sequence got before (oldest first), never the new one. */
+  var OVERLAY_FILE_RE = /^pulse-captions-.+-\d{8}-\d{6}-\d{3}\.mov$/;
+  function previousOverlays(dir, key, exceptPath) {
     var fs = nodeReq('fs'), pathMod = nodeReq('path'), out = [];
-    var prefix = 'pulse-captions-' + seqKey + '-';
+    var prefix = 'pulse-captions-' + key + '-';
     try {
       fs.readdirSync(dir).forEach(function (n) {
         if (n.indexOf(prefix) !== 0 || !/^\d{8}-\d{6}-\d{3}\.mov$/.test(n.slice(prefix.length))) return;
@@ -7202,15 +7220,97 @@
     out.sort();                               // the names carry a sortable timestamp
     return out;
   }
-  /* Delete overlay files the host confirmed no sequence uses any more — and only
-     our own files in our own folder, whatever the host answers. */
-  function removeUnusedOverlays(paths, dir, seqKey) {
-    var fs = nodeReq('fs'), pathMod = nodeReq('path'), n = 0;
-    (paths || []).forEach(function (p) {
-      if (pathMod.dirname(p) !== dir || pathMod.basename(p).indexOf('pulse-captions-' + seqKey + '-') !== 0) return;
-      try { fs.unlinkSync(p); n++; } catch (e) {}
+
+  /* ---- deleting superseded overlays without ever taking a project offline ----
+     An old overlay file is deleted only when BOTH hold:
+      1. Premiere says no open project uses it any more (CP_placeOverlay's
+         cleanup/recheck — it then drops the file's Pulse bin);
+      2. no Premiere project SAVED in the project's folder names it: the open
+         project's own last save (it can be reopened without the latest
+         changes, or after a crash), and a "Save As" / "Save a Copy" beside it.
+         A project file Pulse cannot read counts as naming every file.
+     A file that passes 1 but not yet 2 — or whose delete failed (Windows can
+     still hold a file Premiere just let go of) — waits in the folder's pending
+     list and is checked again on every later caption job, so nothing leaks for
+     good. Premiere's auto-save copies are NOT read: an auto-save opened after
+     the owner re-rendered twice can still miss an old overlay. */
+  var PENDING_DELETES = '.pulse-pending-delete.json';
+  function readPendingDeletes(dir) {
+    var fs = nodeReq('fs'), pathMod = nodeReq('path'), out = [];
+    try {
+      var j = JSON.parse(fs.readFileSync(pathMod.join(dir, PENDING_DELETES), 'utf8'));
+      ((j && j.files) || []).forEach(function (n) {
+        n = pathMod.basename(String(n));                 // only files in THIS folder
+        var full = pathMod.join(dir, n);
+        if (OVERLAY_FILE_RE.test(n) && out.indexOf(full) < 0 && fs.existsSync(full)) out.push(full);
+      });
+    } catch (e) {}
+    return out;
+  }
+  function writePendingDeletes(dir, paths) {
+    var fs = nodeReq('fs'), pathMod = nodeReq('path'), f = pathMod.join(dir, PENDING_DELETES);
+    try {
+      if (!paths.length) { if (fs.existsSync(f)) fs.unlinkSync(f); return; }
+      fs.writeFileSync(f, JSON.stringify({ files: paths.map(function (p) { return pathMod.basename(p); }) }), 'utf8');
+    } catch (e) {}
+  }
+  /* Which of `paths` a Premiere project saved in `projectDir` may still name
+     (→ { path: true }). A .prproj is gzip-compressed XML whose media entries
+     carry each file's path, so the file NAME (unique to the millisecond) is
+     searched for. Only projects saved after a file was made can name it. */
+  function savedProjectsNaming(projectDir, paths) {
+    var keep = {}, i;
+    if (!paths.length || !projectDir) return keep;      // unsaved: no saved copy can point here
+    var fs = nodeReq('fs'), pathMod = nodeReq('path'), zlib = null;
+    try { zlib = nodeReq('zlib'); } catch (eZ) { zlib = null; }
+    var made = {}, oldest = Infinity, SLACK = 3600 * 1000;
+    for (i = 0; i < paths.length; i++) {
+      try { made[paths[i]] = fs.statSync(paths[i]).mtimeMs; } catch (eS) { made[paths[i]] = 0; }
+      if (made[paths[i]] < oldest) oldest = made[paths[i]];
+    }
+    var names;
+    try { names = fs.readdirSync(projectDir); }
+    catch (eD) { for (i = 0; i < paths.length; i++) keep[paths[i]] = true; return keep; }
+    names.forEach(function (n) {
+      if (!/\.prproj$/i.test(n)) return;
+      var f = pathMod.join(projectDir, n), saved = Infinity;
+      try { saved = fs.statSync(f).mtimeMs; } catch (eM) { saved = Infinity; }
+      if (saved < oldest - SLACK) return;               // saved before any of these files existed
+      var text = '';
+      try {
+        var raw = fs.readFileSync(f), body = null;
+        try { body = zlib ? zlib.gunzipSync(raw) : null; } catch (eGz) { body = null; }
+        text = String((body || raw).toString('utf8'));
+      } catch (eR) { text = ''; }
+      var readable = text.indexOf('<PremiereData') >= 0;
+      for (var k = 0; k < paths.length; k++) {
+        if (made[paths[k]] > saved + SLACK) continue;   // this project was saved before that file existed
+        if (!readable || text.indexOf(pathMod.basename(paths[k])) >= 0) keep[paths[k]] = true;
+      }
     });
-    return n;
+    return keep;
+  }
+  /* After CP_placeOverlay: delete what is safe, keep the rest pending. Only
+     Pulse's own overlay files in this folder, whatever the host answers. */
+  function tidyOldOverlays(r, info, asked) {
+    var fs = nodeReq('fs'), pathMod = nodeReq('path');
+    if (asked && (!r || r.checked !== true)) return;     // the host could not look: change nothing
+    var free = [];
+    ((r && r.unused) || []).concat((r && r.free) || []).forEach(function (p) {
+      p = String(p);
+      if (pathMod.dirname(p) === info.dir && OVERLAY_FILE_RE.test(pathMod.basename(p)) &&
+          p !== info.path && free.indexOf(p) < 0) free.push(p);
+    });
+    var named = savedProjectsNaming(info.projectDir, free);
+    var waiting = [], gone = 0;
+    free.forEach(function (p) {
+      if (named[p]) { waiting.push(p); return; }
+      try { fs.unlinkSync(p); gone++; }
+      catch (e) { if (fs.existsSync(p)) waiting.push(p); else gone++; }
+    });
+    writePendingDeletes(info.dir, waiting);
+    if (gone || waiting.length) diag('captions', 'old caption overlays: ' + gone + ' deleted, ' + waiting.length +
+      ' kept until no saved project names them');
   }
 
   /* Real progress with a Cancel button, in the caption progress box. */
@@ -7239,20 +7339,32 @@
 
   /* Draw `frames` — the per-image path's own caption states — into ONE
      transparent .mov with the canvas engine, then place it. */
-  function runCanvasOverlay(cues, frames, opts, ctx) {
+  /* The files one overlay job writes, in the caption media folder. */
+  function overlayJobFiles(place) {
     var pathMod = nodeReq('path');
+    var key = captionJobKey(place, (state.env && state.env.sequenceName) || '');
+    var stamp = overlayStamp();
+    return {
+      dir: place.dir, key: key,
+      projectDir: place.projectPath ? pathMod.dirname(place.projectPath) : '',
+      work: pathMod.join(place.dir, '.pulse-work-' + stamp),
+      // "pulse" in the name: "🧹 Remove all Pulse captions" finds clips by name
+      path: pathMod.join(place.dir, 'pulse-captions-' + key + '-' + stamp + '.mov')
+    };
+  }
+
+  function runCanvasOverlay(cues, frames, opts, ctx) {
     var W = state.env.width || 1920, H = state.env.height || 1080;
     var fps = (state.env.fps > 0) ? state.env.fps : 30;
-    var seqKey = overlaySeqKey((state.env && state.env.sequenceName) || '');
     if (!frames.length) { setCaptionBusy(false); capProgress(null); toast('No words to caption.', true); return Promise.resolve(); }
     overlayProgress('Preparing your caption overlay…', 0);
-    return overlayMediaDir().then(function (dir) {
-      clearStaleOverlayWork(dir);
-      var stamp = overlayStamp();
+    return captionMediaPlace().then(function (place) {
+      clearStaleOverlayWork(place.dir);
+      var out = overlayJobFiles(place);
       var job = CPRender.renderOverlay(frames, {
         width: W, height: H, fps: fps, preset: ctx.preset, overrides: ctx.overrides,
-        workDir: pathMod.join(dir, '.pulse-work-' + stamp),
-        outPath: pathMod.join(dir, 'pulse-captions-' + seqKey + '-' + stamp + '.mov'),
+        workDir: out.work,
+        outPath: out.path,
         ffmpeg: resolveFfmpeg(),
         onProgress: function (p) {
           overlayProgress(p.phase === 'draw'
@@ -7264,7 +7376,7 @@
       return job.promise.then(function (res) {
         _ovJob = null;
         diag('captions', 'Pulse overlay: ' + frames.length + ' frames → ' + res.states + ' looks, ' + res.frames + ' video frames → ' + res.path);
-        return placeOverlayClip(cues, opts, { path: res.path, dir: dir, seqKey: seqKey, lost: null });
+        return placeOverlayClip(cues, opts, { path: res.path, dir: out.dir, key: out.key, projectDir: out.projectDir, lost: null });
       });
     }).catch(function (e) {
       _ovJob = null;
@@ -7297,11 +7409,16 @@
     var sameSeqOv = !!(prevOv && prevOv.seq && state.env && prevOv.seq === state.env.sequenceName);
     if (opts.replaceTrack) placeArgs.replaceTrack = opts.replaceTrack;
     else if (prevOv && prevOv.mode === 'overlay' && prevOv.track && sameSeqOv) placeArgs.replaceTrack = prevOv.track;
-    // Tidy up this sequence's older overlays — except the newest one, so ⌘Z
-    // after a re-render still finds its file. The host deletes nothing: it says
-    // which ones no sequence uses any more, and only those files are removed.
-    var older = previousOverlays(info.dir, info.seqKey, info.path);
-    if (older.length > 1) placeArgs.cleanup = older.slice(0, older.length - 1);
+    // Tidy up this project+sequence's older overlays — except the newest one,
+    // so ⌘Z after a re-render still finds its file — and re-check the ones an
+    // earlier job had to leave (see tidyOldOverlays). The host deletes nothing:
+    // it says which ones no sequence uses any more.
+    var older = previousOverlays(info.dir, info.key, info.path);
+    var pending = readPendingDeletes(info.dir);
+    var cleanup = older.slice(0, Math.max(0, older.length - 1)).filter(function (p) { return pending.indexOf(p) < 0; });
+    if (cleanup.length) placeArgs.cleanup = cleanup;
+    if (pending.length) placeArgs.recheck = pending;
+    var asked = !!(cleanup.length || pending.length);
     return CPBridge.callHost('CP_placeOverlay', placeArgs).then(function (r) {
       setCaptionBusy(false); capProgress(null);
       // Recorded as the current caption job, so edit words / restyle keep
@@ -7310,7 +7427,7 @@
                                seq: (state.env && state.env.sequenceName) || '' };
       saveLastCaptionJob();
       reflectCaptionsPlaced();
-      removeUnusedOverlays(r && r.unused, info.dir, info.seqKey);
+      try { tidyOldOverlays(r, info, asked); } catch (eTidy) { diag('captions', 'tidying old overlays: ' + eTidy.message); }
       toast(info.lost
         ? '🎉 Captions added on V' + r.track + ' as ONE overlay clip (simpler libass look' +
           (info.lost.length ? ' — without ' + info.lost.join(', ') : '') + '). ⌘Z undoes it.'
@@ -7399,17 +7516,15 @@
       if (!events.length) { setCaptionBusy(false); capProgress(null); return toast('No words to caption.', true); }
       var assStr = CPAss.buildAss(events, assOpts);   // reuse the auto-fit opts computed above
       var lastEnd = events[events.length - 1].end || 0;
-      var seqKey = overlaySeqKey((state.env && state.env.sequenceName) || '');
 
-      return overlayMediaDir().then(function (dir) {
-        clearStaleOverlayWork(dir);
-        var stamp = overlayStamp();
+      return captionMediaPlace().then(function (place) {
+        clearStaleOverlayWork(place.dir);
+        var out = overlayJobFiles(place);
         // ffmpeg can read the .ass from any folder now (escFilterPath escapes
         // ':' and apostrophes), so it sits in a work folder next to the output.
-        var work = pathMod.join(dir, '.pulse-work-' + stamp);
+        var work = out.work;
         var assPath = pathMod.join(work, 'cap.ass');
-        // "pulse" in the name: "🧹 Remove all Pulse captions" finds clips by name
-        var outPath = pathMod.join(dir, 'pulse-captions-' + seqKey + '-' + stamp + '.mov');
+        var outPath = out.path;
         function dropWork() { try { fs.unlinkSync(assPath); } catch (e1) {} try { fs.rmdirSync(work); } catch (e2) {} }
         try { fs.mkdirSync(work, { recursive: true }); fs.writeFileSync(assPath, assStr, 'utf8'); }
         catch (eW) { dropWork(); setCaptionBusy(false); capProgress(null); return toast('Could not write caption file: ' + eW.message, true); }
@@ -7450,7 +7565,7 @@
           var ok = false; try { ok = fs.existsSync(outPath) && fs.statSync(outPath).size > 1000; } catch (eE) {}
           if (code !== 0 || !ok) { return fallbackImages('render ' + code); }
           done = true; _ovJob = null; dropWork();
-          placeOverlayClip(cues, opts, { path: outPath, dir: dir, seqKey: seqKey, lost: lost });
+          placeOverlayClip(cues, opts, { path: outPath, dir: out.dir, key: out.key, projectDir: out.projectDir, lost: lost });
         });
       });
     }).catch(function (e) { _ovJob = null; setCaptionBusy(false); capProgress(null); toast('Captions failed: ' + (e && e.message || e), true); });
