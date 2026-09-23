@@ -18,6 +18,8 @@
  *     renderer is used and what it loses, then that separate images are used,
  *     and the "Continue anyway?" question carries the FIRST cause.
  *  3. The FIRST renderer breaks, the simpler one then hits a full disk: stop.
+ *  4. The simpler renderer cannot write its own caption file: a full disk
+ *     stops; a refused write goes on to separate images with the first cause.
  * In every case nothing the owner reads may contain ffmpeg's words (ffmpeg,
  * libass, concat, stderr, exit codes, 0x… addresses, ENOSPC). Linux/macOS
  * only (the stand-in is a shell script); skips (exit 2) without puppeteer,
@@ -92,6 +94,9 @@ const JARGON = /ffmpeg|libass|concat|stderr|exit \d|exit code|0x[0-9a-f]{4,}|ENO
     bridge.state.premiere = L.newPremiere(H, { width: 540, height: 960, fps: 25, projectPath: path.join(show, 'Ep ' + mode + '.prproj') });
     const from = bridge.state.hostCalls.length;
     const imgBefore = images().length;
+    // an error toast keeps its words after the job that showed it: without
+    // this, the previous case's "your disk is full" counted for this one
+    await page.evaluate(() => { const t = document.getElementById('toast'); if (t) { t.textContent = ''; t.classList.add('hidden'); } });
     await page.evaluate(j => window.CP_DEBUG_EXT.overlay.run(j.cues, { wordCues: j.wordCues }), job);
     const texts = [];
     let confirm = '';
@@ -147,6 +152,22 @@ const JARGON = /ffmpeg|libass|concat|stderr|exit \d|exit code|0x[0-9a-f]{4,}|ENO
     else ok('3: a disk that fills during the simpler render stops the job with the disk message');
     const j = jargon(r.texts);
     if (j.length) bad('3: the owner read ffmpeg\'s own words: ' + j[0].slice(0, 160));
+  }
+
+  // ---- 4. the simpler renderer cannot even write its caption file ------------------------
+  {
+    bridge.state.failWrite = { re: /cap\.ass$/, code: 'ENOSPC' };
+    const full = await scenario('broken');
+    bridge.state.failWrite = { re: /cap\.ass$/, code: 'EACCES' };
+    const denied = await scenario('broken');
+    bridge.state.failWrite = null;
+    const sf = full.texts.join(' | ');
+    if (!/disk is full/i.test(sf) || full.confirm || full.placed.length || full.newImages) bad('4: a full disk while writing the simpler renderer\'s caption file did not stop the job: ' + sf.slice(0, 200));
+    else ok('4: a full disk while writing the simpler renderer\'s own file stops the job with the disk message');
+    if (!denied.confirm || !/something on this computer|not allowed to save/.test(denied.confirm)) bad('4: a refused write of that file did not go on to separate images carrying the first cause; the owner ended with: ' + (denied.confirm || denied.texts[denied.texts.length - 1] || '(nothing)').slice(0, 200));
+    else ok('4: a refused write of that file goes on to separate images, the first cause carried');
+    const j = jargon(full.texts.concat(denied.texts));
+    if (j.length) bad('4: the owner read ffmpeg\'s own words: ' + j[0].slice(0, 160));
   }
 
   if (page.__errors && page.__errors.length) bad('page errors: ' + page.__errors.slice(0, 3).join(' | '));

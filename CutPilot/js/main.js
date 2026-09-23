@@ -7645,28 +7645,26 @@
         var assPath = pathMod.join(work, 'cap.ass');
         var outPath = out.path;
         function dropWork() { try { fs.unlinkSync(assPath); } catch (e1) {} try { fs.rmdirSync(work); } catch (e2) {} }
-        try { makeDirs(work); fs.writeFileSync(assPath, assStr, 'utf8'); }
-        catch (eW) {
-          dropWork();
-          diag('captions', 'simpler overlay: could not write its caption file: ' + rawFailure(eW));
-          return stopCaptions(captionFailureCause(eW));
-        }
-
-        var args = CPAss.ffmpegOverlayArgs(assPath, W, H, lastEnd + 0.2, outPath, bundledFontsDir(), Math.round(state.env.fps || 30));
-        // If ANY step of the libass path fails on this machine, fall back to
-        // separate caption images so "Add captions" never fails outright —
-        // unless the cause would stop those too (a full disk).
+        // If ANY step of the libass path fails on this machine — writing its
+        // own caption file included — fall back to separate caption images so
+        // "Add captions" never fails outright, unless the cause would stop
+        // those too (a full disk). A refused caption-file write used to end
+        // the whole job instead.
         var done = false, cancelled = false, proc = null;
-        function fallbackImages(err) {
+        function fallbackImages(err, step) {
           if (done) return; done = true; _ovJob = null; dropWork();
           try { fs.unlinkSync(outPath); } catch (eRm) {}
-          diag('captions', 'simpler overlay failed: ' + rawFailure(err));
+          diag('captions', 'simpler overlay failed' + (step ? ' (' + step + ')' : '') + ': ' + rawFailure(err));
           var cause = captionFailureCause(err);
           if (cause.stop) return stopCaptions(cause);
           var first = opts.overlayFailed || cause.plain;       // the first cause is the one to fix
           toast('The one caption overlay clip could not be made here (' + first + ') — using separate caption images instead.');
           runCaptionPipeline(cues, withOpts(opts, { noOverlay: true, overlay: false, overlayFailed: first }));
         }
+        try { makeDirs(work); fs.writeFileSync(assPath, assStr, 'utf8'); }
+        catch (eW) { return fallbackImages(eW, 'could not write its caption file'); }
+
+        var args = CPAss.ffmpegOverlayArgs(assPath, W, H, lastEnd + 0.2, outPath, bundledFontsDir(), Math.round(state.env.fps || 30));
         overlayProgress('Rendering captions (simpler look) — 0%', 0);
         _ovJob = { cancel: function () { cancelled = true; if (proc) { try { proc.kill(); } catch (eK) {} } } };
         try { proc = cpMod.spawn(ff, args); } catch (eS) { return fallbackImages(eS); }
@@ -7726,13 +7724,13 @@
       runImages: function (cues, opts) { return runCaptionPipeline(cues, withOpts(opts, { noOverlay: true })); },
       running: function () { return !!_ovJob; },
       cancel: cancelOverlayJob,
+      // the transcript's word timing (what word-by-word captions are built from)
+      setWords: function (w) { state.transcriptWords = w && w.length ? w : null; },
+      words: function () { return state.transcriptWords ? state.transcriptWords.slice() : null; },
       // pick a built-in style by id exactly as its gallery card click does —
       // also for the near-duplicates the gallery hides (a saved look, favourite
       // or recent still opens them). false when no style has that id: never a
       // silent stand-in, so a gate cannot pass on the wrong style.
-      // the transcript's word timing (what word-by-word captions are built from)
-      setWords: function (w) { state.transcriptWords = w && w.length ? w : null; },
-      words: function () { return state.transcriptWords ? state.transcriptWords.slice() : null; },
       applyStyle: function (id) {
         var all = allTemplates(), t = null;
         for (var i = 0; i < all.length; i++) if (all[i].id === id && !all[i].mogrt) { t = all[i]; break; }
