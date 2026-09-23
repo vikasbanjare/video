@@ -175,6 +175,10 @@
   function has(toks, set) { for (var i = 0; i < toks.length; i++) if (set[toks[i]]) return true; return false; }
   /* Does a line open by agreeing ("Yes, …", "Oh right, …", "Haan bilkul, …")? */
   var INTERJ = wordSet(['oh', 'ah', 'well', 'arre', 'arey', 'are', 'acha', 'achha', 'accha', 'ओह', 'अरे', 'अच्छा']);
+  /* Said twice on purpose ("thank you, thank you", "come on, come on"). */
+  var EMPHATIC = wordSet(['thank', 'thanks', 'you', 'please', 'bye', 'hello', 'hi', 'hey', 'wow', 'come', 'on', 'go', "let's", 'lets',
+    'okay', 'ok', 'sorry', 'namaste', 'namaskar', 'dhanyavaad', 'dhanyawad', 'shukriya', 'chalo', 'bas', 'wah', 'waah', 'kya', 'baat',
+    'नमस्ते', 'नमस्कार', 'धन्यवाद', 'शुक्रिया', 'चलो', 'बस', 'वाह', 'क्या', 'बात']);
   function opensAgreeing(t) {
     var i = 0;
     while (i < t.length - 1 && i < 2 && (FILLERS[t[i]] || INTERJ[t[i]])) i++;
@@ -459,6 +463,46 @@
           deletes.push({ start: startOf(ai), end: nextStart(ai), text: pText(phrases[ai]), reason: 'off-script aside' });
           removedWords += phrases[ai].length;
           deleted[ai] = true;
+        }
+      }
+    }
+
+    // Restarts INSIDE one breath: "so the, so the main thing is…", "toh main,
+    // toh main kya bol raha tha…" — the pause is too short to split a phrase,
+    // so the passes above never see two takes. Two to six words said and then
+    // said again straight away, with the line going on after them: the first
+    // copy is cut, from its first word to the first word of the second copy.
+    // Never cut: one word said twice (Hindi doubles words on purpose —
+    // "dheere dheere", "alag alag" — and English for emphasis, "very very"), a
+    // run of one word ("no no no", "haan haan"), agreement or courtesy said
+    // twice ("thank you, thank you"), or a repeat that ends the line.
+    if (opts.restarts !== false) {
+      var minN = Math.max(2, minRun - 1), maxN = 6;
+      for (var qi = 0; qi < P; qi++) {
+        if (deleted[qi]) continue;
+        var ph = phrases[qi], tw = [];
+        for (var wi = 0; wi < ph.length; wi++) { var nt = norm(ph[wi].text); if (nt && !FILLERS[nt]) tw.push({ t: nt, w: wi }); }
+        var k0 = 0;
+        while (k0 < tw.length) {
+          var hit = 0;
+          for (var rn = Math.min(maxN, Math.floor((tw.length - k0 - 1) / 2)); rn >= minN && !hit; rn--) {
+            var same = true, kinds = {}, nk = 0, polite = true;
+            for (var rq = 0; rq < rn && same; rq++) {
+              var tk1 = tw[k0 + rq].t;
+              if (tk1 !== tw[k0 + rn + rq].t) same = false;
+              if (!kinds[tk1]) { kinds[tk1] = 1; nk++; }
+              if (!EMPHATIC[tk1] && !AGREE[tk1] && !BACKCHANNEL[tk1]) polite = false;
+            }
+            if (same && nk >= 2 && !polite) hit = rn;
+          }
+          if (!hit) { k0++; continue; }
+          var first = ph[tw[k0].w], again = ph[tw[k0 + hit].w], said = [];
+          for (var sw = tw[k0].w; sw < tw[k0 + hit].w; sw++) said.push(ph[sw].text);
+          if (again.start > first.start) {
+            deletes.push({ start: first.start, end: again.start, text: said.join(' '), reason: 'false start' });
+            removedWords += tw[k0 + hit].w - tw[k0].w;
+          }
+          k0 += hit;
         }
       }
     }
