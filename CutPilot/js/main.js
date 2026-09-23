@@ -6615,8 +6615,9 @@
       if (estFrames > 600 && (canvasOv || (ffmpegHasLibass() && typeof CPAss !== 'undefined'))) {
         diag('captions', 'auto overlay (' + (canvasOv ? 'Pulse renderer' : 'libass fallback') + '): ' + estFrames +
           ' word-frames over ' + spanMin.toFixed(1) + ' min — one overlay clip instead of ' + estFrames + ' images');
+        var motion = overlayMotionNote();
         if (canvasOv) toast('This video needs ~' + estFrames + ' caption frames — Pulse is drawing them into ONE caption overlay clip instead of ' +
-          estFrames + ' images. Same renderer as the preview, so it looks the same.');
+          estFrames + ' images. Same renderer as the preview' + (motion ? '.' + motion : ', so it looks the same.'));
         return runLibassCaptions(mCues, {});
       }
     } catch (eScale) {}
@@ -7497,6 +7498,24 @@
     return runCaptionPipeline(cues, withOpts(opts, { noOverlay: true, overlay: false, overlayFailed: first }));
   }
 
+  /* The per-image path gives each caption its entrance motion as Premiere
+     keyframes (CP_placeCaptionImages → CP_animateClip): a whole-line entrance
+     (pop, slide, …) unless the words themselves animate (word-by-word
+     highlight / reveal), plus the per-word entrance option. That motion is not
+     drawn into pixels, so the one overlay clip has none of it — say so instead
+     of "it looks the same". The same rule as the host's; '' = nothing lost. */
+  function overlayMotionNote() {
+    try {
+      var preset = currentPreset() || {}, ov = readOverrides();
+      var anim = preset.build ? 'reveal' : currentAnim();
+      if (!anim || anim === 'none' || anim === 'typewriter') return '';
+      var wordSync = (anim === 'karaoke' || anim === 'reveal');
+      if (wordSync && !ov.perWordEntrance) return '';
+      var nm = wordSync ? 'per-word entrance' : (((CPCaptions.getAnimation(anim) || {}).name) || 'entrance');
+      return ' Note: the "' + nm + '" entrance animation is not part of the one clip — each caption appears without it.';
+    } catch (e) { return ''; }
+  }
+
   /* Place a finished overlay .mov (from either renderer) and record the job. */
   function placeOverlayClip(cues, opts, info) {
     capProgress('Placing the caption overlay…');
@@ -7525,10 +7544,12 @@
       saveLastCaptionJob();
       reflectCaptionsPlaced();
       try { tidyOldOverlays(r, info, asked); } catch (eTidy) { diag('captions', 'tidying old overlays: ' + eTidy.message); }
+      var motion = overlayMotionNote();
       toast(info.lost
         ? '🎉 Captions added on V' + r.track + ' as ONE overlay clip (simpler look' +
-          (info.lost.length ? ' — without ' + info.lost.join(', ') : '') + '). ⌘Z undoes it.'
-        : '🎉 Captions added on V' + r.track + ' as ONE overlay clip, drawn by the same renderer as your preview. Edit words or restyle any time from Pulse; ⌘Z undoes it.');
+          (info.lost.length ? ' — without ' + info.lost.join(', ') : '') + ').' + motion + ' ⌘Z undoes it.'
+        : '🎉 Captions added on V' + r.track + ' as ONE overlay clip, drawn by the same renderer as your preview.' + motion +
+          ' Edit words or restyle any time from Pulse; ⌘Z undoes it.');
     }, function (e) {
       // SAFETY NET: if this Premiere will not take the overlay clip, fall back
       // to separate caption images so Add captions never leaves nothing.
