@@ -15,6 +15,10 @@
  *   word — a Pill highlight in that box colour; no highlight at all where the
  *   template has none; the face and weight; a Devanagari fallback; the face
  *   is loaded by the Google Fonts link (or ships with the OS).
+ * The face is judged on t.font — the face actually drawn FIRST. It used to be
+ * accepted anywhere in the font list, which hid that on a Mac five of the six
+ * twins drew a system stand-in instead (Plain Subtitle in Futura, not
+ * Poppins; Active-Word Box in Courier New, not Space Mono).
  * Then it opens every twin from the gallery and requires the full style editor.
  * Exit 0 pass, 1 fail, 2 skipped (no browser / puppeteer / unzip).
  */
@@ -103,8 +107,8 @@ function templateLook(defText) {
       if (rd != null && Math.abs((t.boxRadius != null ? t.boxRadius : 10) - rd) > 4) why.push('bar roundness ' + t.boxRadius + ' vs template ' + rd);
     } else if (!wordBox && t.boxColor) why.push('adds a background bar the template does not have');
     if (look.font) {
-      const chain = [t.font].concat(t.fallbackFonts || []).map(F.norm);
-      if (chain.indexOf(F.norm(look.font.family)) < 0) why.push('face ' + look.font.family + ' is not in ' + [t.font].concat(t.fallbackFonts || []).join(', '));
+      if (F.norm(t.font) !== F.norm(look.font.family)) why.push('draws ' + t.font + ' first, not the template\'s face ' + look.font.family +
+        ' (font list: ' + [t.font].concat(t.fallbackFonts || []).join(', ') + ')');
       if (Math.abs((t.weight || 800) - look.font.weight) > 100) why.push('weight ' + t.weight + ' vs template ' + look.font.weight);
       if (!F.isSystem(look.font.family) && loaded.indexOf(F.norm(look.font.family)) < 0) why.push('face ' + look.font.family + ' is not loaded by the Google Fonts link in index.html');
     }

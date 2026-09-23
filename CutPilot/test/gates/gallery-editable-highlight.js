@@ -17,7 +17,17 @@
  *     text), the chosen colour differs visibly from the text and, on a style
  *     with a box, reads at >= 3:1 against that box;
  *   · a style whose own highlight already differs from its text keeps it —
- *     nothing is forced onto a designed look;
+ *     nothing is forced onto a designed look — EXCEPT a near-black one
+ *     (luminance < 0.1): on the owner's Mac the editable engine drew no visible
+ *     words for dark text on light boxes (cause unknown), so a near-black
+ *     spoken-word colour is never sent; it must come back lifted (same hue) or
+ *     replaced, and never near-black (gate gallery-editable-dark);
+ *   · the 3:1 rule holds wherever some colour that is not near-black and looks
+ *     different from the text can reach 3:1 on that box (searched over a
+ *     4096-colour grid). On a mid-tone box (Green Pill's green, Candy's pink)
+ *     only near-black could, so there the chosen colour must still read at
+ *     2:1 or better. (This gate used to demand 3:1 everywhere, which forced
+ *     #111111 onto those four styles.)
  *   · in the editable-mode preview the sweep still moves: two frames with
  *     different spoken words differ in pixels (Mars, Gold Gloss, Aura, Green
  *     Pill, Clean Minimal). The 3:1 is judged on the colours the engine is sent.
@@ -62,19 +72,34 @@ function dist(a, b) { const x = rgb(a), y = rgb(b); if (!x || !y) return 999; re
   await browser.close();
   if (res.fatal) { R.bad(res.fatal); return R.done('', 'GALLERY EDITABLE HIGHLIGHT: harness failure'); }
 
-  const invisible = [], lowBox = [], lostOwn = [];
+  const nearBlack = h => !!rgb(h) && lum(h) < 0.1;
+  // can ANY colour that is not near-black and looks different from the text
+  // reach 3:1 on this box? (4096-colour grid, the same "different" distance
+  // the engine's chooser uses)
+  const GRID = [];
+  for (let r = 0; r < 256; r += 17) for (let g = 0; g < 256; g += 17) for (let b = 0; b < 256; b += 17)
+    GRID.push('#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join(''));
+  const reachable = (box, fill) => GRID.some(c => !nearBlack(c) && dist(c, fill) >= 120 && contrast(c, box) >= 3);
+  const invisible = [], lowBox = [], lostOwn = [], darkSent = [];
   for (const r of res.rows) {
     const ownDiffers = r.ownHl && String(r.ownHl).toLowerCase() !== String(r.fill || '').toLowerCase();
-    if (ownDiffers && String(r.hl).toLowerCase() !== String(r.ownHl).toLowerCase()) lostOwn.push(r.id + ' (' + r.ownHl + ' → ' + r.hl + ')');
-    if (!ownDiffers && dist(r.hl, r.csFill) < 100) invisible.push(r.id + ' (' + r.hl + ' on text ' + r.csFill + ')');
-    if (r.csBox && !ownDiffers && contrast(r.hl, r.csBox) < 3)
-      lowBox.push(r.id + ' "' + r.name + '" (' + r.hl + ' on its ' + r.csBox + ' box = ' + contrast(r.hl, r.csBox).toFixed(2) + ':1)');
+    if (nearBlack(r.hl)) darkSent.push(r.id + ' (' + r.hl + ')');
+    if (ownDiffers && !nearBlack(r.ownHl) && String(r.hl).toLowerCase() !== String(r.ownHl).toLowerCase()) lostOwn.push(r.id + ' (' + r.ownHl + ' → ' + r.hl + ')');
+    const chosen = !ownDiffers || nearBlack(r.ownHl);
+    if (chosen && dist(r.hl, r.csFill) < 100) invisible.push(r.id + ' (' + r.hl + ' on text ' + r.csFill + ')');
+    if (r.csBox && chosen) {
+      const need = reachable(r.csBox, r.csFill) ? 3 : 2;
+      if (contrast(r.hl, r.csBox) < need)
+        lowBox.push(r.id + ' "' + r.name + '" (' + r.hl + ' on its ' + r.csBox + ' box = ' + contrast(r.hl, r.csBox).toFixed(2) + ':1, needs ' + need + ':1)');
+    }
   }
+  if (darkSent.length) R.bad('a near-black spoken-word colour is still chosen in editable mode: ' + darkSent.join(', '));
   if (lostOwn.length) R.bad('styles lose their own spoken-word colour in editable mode: ' + lostOwn.join(', '));
   if (invisible.length) R.bad('spoken word looks like the text in editable mode: ' + invisible.join(', '));
   if (lowBox.length) lowBox.forEach(m => R.bad('unreadable spoken word in editable mode: ' + m));
-  if (!lostOwn.length && !invisible.length && !lowBox.length)
-    R.ok('all ' + res.rows.length + ' sweeping styles: a chosen spoken-word colour differs from the text and reads at 3:1+ on its box; a designed one is kept');
+  if (!lostOwn.length && !invisible.length && !lowBox.length && !darkSent.length)
+    R.ok('all ' + res.rows.length + ' sweeping styles: a chosen spoken-word colour differs from the text, is never near-black, and reads at 3:1+ on its box ' +
+         '(2:1+ where only near-black could reach 3:1); a designed one is kept unless near-black');
 
   const dead = Object.keys(res.px).filter(id => res.px[id].diff < 150);
   if (dead.length) R.bad('the sweep does not show in the editable preview for: ' + dead.map(id => id + ' (' + res.px[id].diff + ' px)').join(', '));

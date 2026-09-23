@@ -38,7 +38,12 @@
  *     antialiasing noise is not something the owner can see;
  *   · a visible, enabled control that changes zero pixels is DEAD, unless it is
  *     in CANNOT_SHOW with a written reason (and, where one exists, its ENABLE
- *     recipe proves it acts once the missing thing is supplied).
+ *     recipe proves it acts once the missing thing is supplied);
+ *   · TWO IN A ROW: re-opening the style before every control hides a control
+ *     that leaves the preview stuck for the NEXT one, so each style is then
+ *     opened once more, a content-demo control (Lines on screen, Line spacing,
+ *     Max width) is used, and every Words-per-caption press that changes the
+ *     count must still change the pixels (SEQUENCES).
  *
  * Run: node tools/dead-control-audit.js   (wired into test/run-tests.js)
  *      node tools/dead-control-audit.js --verbose
@@ -118,6 +123,21 @@ const ENABLE = {
   'c-hlserif':     [['check', 'c-wordhl', true]],
   'c-box-on':      [['check', 'c-boxgrad', false], ['value', 'c-box3d-depth', '0'], ['value', 'c-boxgloss', '0']]
 };
+/* TWO CONTROLS IN A ROW. The sweep re-opens the style before EVERY control, so
+   a control that leaves the preview in a state where the NEXT one looks dead
+   could never show up. It did: the layout controls switch the preview to a
+   long demo caption, and after one touch of Lines on screen the preview stayed
+   a single 10-word caption, so the Words-per-caption stepper changed the
+   output but never the preview (measured on Podcast Dark Bar, Karaoke and
+   Bold Statement). Here each style is opened ONCE, a content-demo control is
+   used the way the owner uses it, and then every stepper button must still
+   change the pixels. Steps as in ENABLE. */
+const SEQUENCES = [
+  { name: 'Lines on screen', first: [['press', 'c-lines'], ['click', '#c-lines button:not(.on)']] },
+  { name: 'Line spacing', first: [['press', 'c-linegap'], ['value', 'c-linegap', '160']] },
+  { name: 'Max width', first: [['press', 'c-maxwidth'], ['value', 'c-maxwidth', '60']] }
+];
+const SEQ_THEN = ['wc-plus', 'wc-minus'];   // judged like DRIVERS: the stepper is live if a press shows
 /* Segmented button groups the user clicks — bound controls too. */
 const SEGS = ['#c-hlstyle', '#c-reveal', '#c-lines', '#c-align'];
 /* Hidden backing inputs and the on-screen buttons that drive them. */
@@ -376,6 +396,133 @@ async function sweepStyle(page, styleId, cfg, opts) {
   }, styleId, cfg, opts || {});
 }
 
+/* TWO CONTROLS IN A ROW for ONE style (see SEQUENCES): open the style once,
+   use the first control, then press each stepper button and require a visible
+   change. Pulse-rendered only — the layout controls are Pulse-only. */
+async function sequenceSweep(page, styleId, cfg) {
+  return page.evaluate(async (styleId, cfg) => {
+    const el = id => document.getElementById(id);
+    const fire = e => { e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); };
+    const press = e => {
+      try { e.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); } catch (x) {}
+      try { e.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); } catch (x) {}
+      try { e.dispatchEvent(new FocusEvent('focus')); e.dispatchEvent(new FocusEvent('focusin', { bubbles: true })); } catch (x) {}
+    };
+    const R = window.CPRender;
+    const grab = cv => { try { return cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; } catch (e) { return null; } };
+    const snap = () => {
+      const c = el('preview-canvas');
+      if (!c) return [];
+      const parts = [grab(c)];
+      const fr = c._pvFrames || [], st = c._pvStyle;
+      if (st && R && R.drawFrame) {
+        const off = document.createElement('canvas'); off.width = c.width; off.height = c.height;
+        for (const f of fr) { try { R.drawFrame(off, f, st); parts.push(grab(off)); } catch (e) { parts.push(null); } }
+      }
+      return parts;
+    };
+    const differs = (a, b) => {
+      if (a.length !== b.length) return true;
+      for (let k = 0; k < a.length; k++) {
+        const x = a[k], y = b[k];
+        if (!x || !y || x.length !== y.length) return true;
+        let n = 0;
+        for (let i = 0; i < x.length; i += 4) {
+          if (Math.abs(x[i] - y[i]) > 24 || Math.abs(x[i + 1] - y[i + 1]) > 24 ||
+              Math.abs(x[i + 2] - y[i + 2]) > 24 || Math.abs(x[i + 3] - y[i + 3]) > 24) { if (++n >= 16) return true; }
+        }
+      }
+      return false;
+    };
+    const card = () => {
+      const c = Array.from(document.querySelectorAll('#tpl-grid .tpl-thumb-canvas')).find(x => x._tpl && x._tpl.id === styleId);
+      if (!c) return null;
+      let n = c; while (n && !(n.classList && n.classList.contains('tpl-card'))) n = n.parentNode;
+      return n || c;
+    };
+    const showPane = which => {
+      const b = document.querySelector('#cust-tabs button[data-pane="' + which + '"]');
+      if (b && b.offsetParent !== null) b.click();
+    };
+    const paneOf = e => {
+      const p = e && e.closest && e.closest('#cust-pane-style, #cust-pane-pro');
+      return p ? (p.id === 'cust-pane-pro' ? 'pro' : 'style') : null;
+    };
+    const unstick = () => {
+      const w = el('c-wordhl'); if (w && !w.checked) { w.checked = true; fire(w); }
+      const k = document.querySelector('#c-reveal button[data-r="karaoke"]');
+      if (k && !k.classList.contains('on')) k.click();
+    };
+    if (!card()) return { err: 'style ' + styleId + ' has no card in the gallery grid' };
+    const out = [];
+    for (const seq of cfg.SEQUENCES) {
+      for (const bid of cfg.SEQ_THEN) {
+        unstick(); card().click();
+        // the first control, used the way a hand uses it (press, then change)
+        let usable = true;
+        for (const s of seq.first) {
+          if (s[0] === 'press') {
+            const e = el(s[1]); if (!e) { usable = false; break; }
+            const pane = paneOf(e); if (pane) showPane(pane);
+            if (e.offsetParent === null || e.disabled) { usable = false; break; }
+            press(e);
+          } else if (s[0] === 'click') {
+            const b = document.querySelector(s[1]); if (!b || b.disabled) { usable = false; break; }
+            b.click();
+          } else {
+            const g = el(s[1]); if (!g || g.disabled) { usable = false; break; }
+            g.value = String(s[2]); fire(g);
+          }
+        }
+        if (!usable) { out.push({ seq: seq.name, then: bid, skip: true }); continue; }
+        const btn = el(bid);
+        if (!btn || btn.offsetParent === null || btn.disabled) { out.push({ seq: seq.name, then: bid, skip: true }); continue; }
+        press(btn);
+        const before = snap();
+        const wordsBefore = el('c-words') ? el('c-words').value : '';
+        btn.click();
+        const wordsAfter = el('c-words') ? el('c-words').value : '';
+        out.push({ seq: seq.name, then: bid, changed: differs(before, snap()), words: wordsBefore + '→' + wordsAfter });
+      }
+    }
+    unstick();
+    return { rows: out };
+  }, styleId, cfg);
+}
+
+/* Run the two-controls-in-a-row pass over `reps` and judge it: after a
+   content-demo control, a stepper press that changes the words per caption
+   must change the pixels. Returns the failure count. */
+async function judgeSequences(page, reps, opts) {
+  const cfg = { SEQUENCES, SEQ_THEN };
+  let failed = 0, checked = 0;
+  const dead = new Map();
+  for (const r of reps) {
+    const res = await sequenceSweep(page, r.id, cfg);
+    if (res.err) { failed++; opts.bad('two in a row / ' + r.id + ': ' + res.err); continue; }
+    // per first control: the stepper is live when ANY press that changed the
+    // words per caption changed the pixels (the same rule DRIVERS uses)
+    const bySeq = new Map();
+    for (const x of res.rows) {
+      if (x.skip) continue;
+      const moved = x.words && x.words.split('→')[0] !== x.words.split('→')[1];
+      if (!moved) continue;
+      if (!bySeq.has(x.seq)) bySeq.set(x.seq, []);
+      bySeq.get(x.seq).push(x);
+    }
+    for (const [seqName, xs] of bySeq) {
+      checked += xs.length;
+      if (xs.some(x => x.changed)) continue;
+      if (!dead.has(seqName)) dead.set(seqName, []);
+      dead.get(seqName).push(r.id + ' (' + xs.map(x => x.then + ' ' + x.words).join(', ') + ')');
+    }
+  }
+  for (const [k, v] of dead) { failed++; opts.bad('DEAD AFTER ANOTHER CONTROL: after ' + k + ', the Words-per-caption stepper changes the count but no pixels on ' + v.length + ' style(s): ' + v.slice(0, 6).join(', ')); }
+  if (!checked) { failed++; opts.bad('two in a row: no sequence could be exercised — the pass is not reaching the customizer'); }
+  else if (!dead.size) opts.ok('two controls in a row: after Lines on screen, Line spacing or Max width, the Words-per-caption stepper still changes the preview (' + checked + ' presses on ' + reps.length + ' styles)');
+  return failed;
+}
+
 /* Sweep `reps` (in both caption types) and judge. Returns the failure count.
    opts: { log, ok, bad, minStyles, minLive, promise } */
 async function judgeSweep(page, reps, opts) {
@@ -517,12 +664,18 @@ async function runAudit(opts) {
   }
   failed += await judgeSweep(env.page, reps, { log, ok, bad: m => log('  ✗ ' + m), minStyles: opts.minStyles, minLive: opts.minLive,
                                               reachAll: !opts.pick });
+  // the same styles again, two controls in a row without re-opening the style
+  if (opts.sequences !== false) {
+    await setCapOut(env.page, 'png');
+    failed += await judgeSequences(env.page, reps, { ok, bad: m => log('  ✗ ' + m) });
+  }
   if (env.pageErrors.length) bad('page errors: ' + env.pageErrors.slice(0, 3).join(' | '));
   await env.browser.close();
   return { failed, styles: reps.length };
 }
 
-module.exports = { CANNOT_SHOW, GATE, ENABLE, SEGS, DRIVERS, EXTRA_IDS, runAudit, sweepStyle, pickReps, setCapOut };
+module.exports = { CANNOT_SHOW, GATE, ENABLE, SEGS, DRIVERS, EXTRA_IDS, SEQUENCES, SEQ_THEN, runAudit, sweepStyle,
+                   sequenceSweep, judgeSequences, openAuditPage, pickReps, setCapOut };
 
 if (require.main === module) {
   (async () => {

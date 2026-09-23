@@ -2259,8 +2259,12 @@
   var MONT = function (deva) { return devaChain(['Arial Black'], deva || 'Mukta'); };
   var TRENDING_TEMPLATES = [
     // ---- 🔥 / 💥 bold word-by-word caps ----
+    // The spoken word is METALLIC gold (bright band, darker gold edges). With
+    // a flat yellow it drew exactly like Bold Statement, and both sit in the
+    // same two chips. The flat colour (the editable sweep) stays clear of white.
     { id: 'tr-punch-gold', name: 'Punch Caps Gold', category: _T, alsoIn: [_B], popularity: 99, layout: 'center', posPct: 62,
-      font: 'Montserrat', weight: 900, fallbackFonts: MONT(), fontSize: 96, fill: '#FFFFFF', highlight: '#F7C204', highlightScale: 1.15,
+      font: 'Montserrat', weight: 900, fallbackFonts: MONT(), fontSize: 96, fill: '#FFFFFF', highlight: '#FFD75E', highlightScale: 1.15,
+      highlight2: '#B8860B', glossy: true,
       stroke: '#000000', strokeWidth: 10, glow: '#000000', glowBlur: 0.08, shadowDY: 7,
       uppercase: true, wordsPerCue: 2, anim: 'pop-scale', keyword: false },
     { id: 'tr-tritone', name: 'Tri-Tone Caps', category: _B, alsoIn: [_T], popularity: 95, layout: 'center',
@@ -2368,8 +2372,12 @@
       font: 'EB Garamond', weight: 500, fallbackFonts: devaChain(['Georgia'], 'Tiro Devanagari Hindi', 'serif'), fontSize: 58,
       fill: '#E6E6E6', highlight: '#FFFFFF', upcomingOpacity: 0.6, glow: '#000000', glowBlur: 0.5, stroke: null, strokeWidth: 0, maxLines: 2,
       uppercase: false, wordsPerCue: 6, anim: 'fade', keyword: false },
+    // 64, not 56: Syne's capitals are short (0.65 of the font size), so at 56
+    // this all-caps look drew the smallest caption in the gallery — its tile
+    // read as a thin line of 7-pixel capitals (sim-preview-check: 6% of the
+    // tile against 11% for its size, once the real Syne loaded).
     { id: 'tr-luxe-wide', name: 'Luxe Wide', category: _C, popularity: 87, layout: 'center',
-      font: 'Syne', weight: 700, fallbackFonts: devaChain(['Arial'], 'Mukta'), fontSize: 56, fill: '#FFFFFF', highlight: '#D9C9A3',
+      font: 'Syne', weight: 700, fallbackFonts: devaChain(['Arial'], 'Mukta'), fontSize: 64, fill: '#FFFFFF', highlight: '#D9C9A3',
       letterSpacing: 6, glow: '#000000', glowBlur: 0.35, stroke: null, strokeWidth: 0,
       uppercase: true, wordsPerCue: 2, anim: 'fade', keyword: false },
     // ---- 🌈 neon & glow ----
@@ -2454,14 +2462,51 @@
   ];
   TRENDING_TEMPLATES.forEach(function (t) { TEMPLATES.push(t); });
 
+  /* FONT_SAFE, decided on purpose (independent review: on a Mac 34 of the 54
+     new styles and 5 of the 6 .mogrt twins never drew their designed face —
+     Anton and Bebas Neue became Impact, Bangers became Marker Felt, the Plain
+     Subtitle twin Futura instead of Poppins).
+     The remap exists for EDITABLE captions: Premiere draws those with its own
+     text engine, which only has installed fonts. Pulse-rendered captions (the
+     default, and the long-video overlay) are drawn by the panel itself, which
+     loads the Google faces — so for them the designed face is the right one.
+       · the 54 new styles (trending + twins) keep their designed face FIRST and
+         put the Mac stand-in right after it: online it draws the designed
+         face, offline the stand-in (exactly what the remap gave before);
+       · the editable send swaps a face that is not installed for its stand-in
+         (timelineFace below; main.js drawableFamily), and for Hindi words for
+         an installed Devanagari face — Premiere cannot draw a missing font;
+       · the older styles keep the remap as it was: the owner has used them
+         with the Mac faces for months, and their tiles are what he knows. */
+  var DESIGNED_FACE = {};
+  TRENDING_TEMPLATES.concat(TWIN_TEMPLATES).forEach(function (t) { DESIGNED_FACE[t.id] = 1; });
   TEMPLATES.forEach(function (t) {
     var safe = FONT_SAFE[t.font];
     if (!safe) return;
-    var fb = [t.font].concat(t.fallbackFonts || []);
+    var fb;
+    if (DESIGNED_FACE[t.id]) {
+      fb = [safe].concat((t.fallbackFonts || []).filter(function (f) { return f !== safe; }));
+      if (fb.indexOf('sans-serif') < 0 && fb.indexOf('serif') < 0 && fb.indexOf('monospace') < 0) fb.push('sans-serif');
+      t.fallbackFonts = fb;
+      return;
+    }
+    fb = [t.font].concat(t.fallbackFonts || []);
     if (fb.indexOf('sans-serif') < 0 && fb.indexOf('serif') < 0 && fb.indexOf('monospace') < 0) fb.push('sans-serif');
     t.fallbackFonts = fb;
     t.font = safe;
   });
+  /* The installed Mac face that stands in for a Google face on the timeline
+     (editable captions), or null. */
+  function timelineFace(family) { return FONT_SAFE.hasOwnProperty(family) ? FONT_SAFE[family] : null; }
+  /* Faces that ship with macOS. The panel's installed-font scan skips font
+     files over 8 MB, and some macOS system collections are big, so on a Mac
+     "not found by the scan" never means "not installed" for these. */
+  var MAC_FACES = ['helvetica neue', 'helvetica', 'avenir next', 'avenir', 'futura', 'impact', 'arial', 'arial black',
+    'arial narrow', 'menlo', 'monaco', 'courier new', 'courier', 'didot', 'marker felt', 'snell roundhand', 'trebuchet ms',
+    'georgia', 'times new roman', 'times', 'verdana', 'tahoma', 'comic sans ms', 'bradley hand', 'palatino', 'gill sans',
+    'optima', 'baskerville', 'rockwell', 'american typewriter', 'chalkboard se', 'noteworthy', 'kohinoor devanagari',
+    'devanagari mt', 'itf devanagari'];
+  function isMacFace(family) { return MAC_FACES.indexOf(String(family || '').toLowerCase()) >= 0; }
 
   /* Niche → recommended template id (the "AI Caption Styling" suggester). */
   var NICHE_RECOMMEND = {
@@ -2641,8 +2686,20 @@
    * candidate that looks different from the text AND reads at >= 3:1 on the
    * style's box (anything reads over footage when there is no box — the text's
    * own outline/shadow carries it). Pure + tested.
+   *
+   * NEVER NEAR-BLACK. On the owner's Mac the editable (Flux Halo) engine drew
+   * NO visible text for the styles with dark text on a light box. What inside
+   * the template causes it is unknown; dark colours are the common factor. So
+   * until a test on that Mac clears them, no colour darker than SWEEP_MIN_LUM
+   * is sent as the spoken-word colour: #111111 was a candidate here (Green
+   * Pill, Candy, Sky and Chip got it), and a designed near-black highlight is
+   * lifted toward white just enough to leave the danger zone, keeping its hue
+   * (or, if that makes it look like the text, replaced by a candidate). On a
+   * mid-tone box (Green Pill's green) no colour that is not near-black reaches
+   * 3:1, so the best-reading one is used.
    */
-  var SWEEP_CANDIDATES = ['#FFD400', '#00E0FF', '#FF3B6B', '#2D7CFF', '#7C3AED', '#E10600', '#111111', '#FFFFFF'];
+  var SWEEP_CANDIDATES = ['#FFD400', '#00E0FF', '#FF3B6B', '#2D7CFF', '#7C3AED', '#E10600', '#FFFFFF'];
+  var SWEEP_MIN_LUM = 0.1;
   function _hexRgb(h) {
     var m = /^#?([0-9a-f]{6})$/i.exec(String(h || ''));
     if (!m) return null;
@@ -2670,9 +2727,25 @@
     function h(v) { v = Math.round(v + (to - v) * a); var s = v.toString(16); return s.length < 2 ? '0' + s : s; }
     return '#' + h(c[0]) + h(c[1]) + h(c[2]);
   }
+  /* Luminance below SWEEP_MIN_LUM (#111111, dark navy, pure blue…). */
+  function isNearBlack(h) { return !!_hexRgb(h) && _relLum(h) < SWEEP_MIN_LUM; }
+  /* A near-black colour moved toward white just enough to leave near-black
+     (same hue); any other colour, or a non-hex value, comes back unchanged. */
+  function liftDark(hex) {
+    if (!isNearBlack(hex)) return hex;
+    var lo = 0, hi = 1;
+    for (var i = 0; i < 14; i++) {
+      var mid = (lo + hi) / 2;
+      if (_relLum(shadeHex(hex, mid)) >= SWEEP_MIN_LUM) hi = mid; else lo = mid;
+    }
+    return shadeHex(hex, hi);
+  }
   function sweepColor(fill, highlight, box) {
     var f = String(fill || '#FFFFFF');
-    if (highlight && String(highlight).toLowerCase() !== f.toLowerCase()) return highlight;
+    if (highlight && String(highlight).toLowerCase() !== f.toLowerCase()) {
+      var own = liftDark(highlight);
+      if (own === highlight || _rgbDist(own, f) >= 120) return own;   // lifted but still its own colour
+    }
     var best = null, bestC = -1;
     for (var i = 0; i < SWEEP_CANDIDATES.length; i++) {
       var c = SWEEP_CANDIDATES[i];
@@ -2682,6 +2755,18 @@
       if (onBox > bestC) { bestC = onBox; best = c; }
     }
     return best || '#FFD400';
+  }
+  /* DARK TEXT ON A LIGHT BOX: the look the editable (Flux Halo) engine drew
+     with no visible words on the owner's Mac (10 styles; the 3 new ones
+     twin-plain-subtitle, tr-speech-bubble and tr-push-button make 13). The
+     editable path does not place these silently: it offers Pulse-rendered
+     captions, which draw them reliably. Judge the colours the owner will
+     actually get — pass the edited preset. */
+  function isDarkOnLight(p) {
+    if (!p || !p.boxColor || !_hexRgb(p.boxColor) || !_hexRgb(p.fill)) return false;
+    var op = (p.boxOpacity != null && isFinite(p.boxOpacity)) ? +p.boxOpacity : 1;
+    if (op > 1) op = op / 100;
+    return op >= 0.35 && _relLum(p.fill) < 0.2 && _relLum(p.boxColor) > 0.3;
   }
 
   /*
@@ -3289,9 +3374,13 @@
     STYLE_PRESETS: STYLE_PRESETS,
     TEMPLATES: TEMPLATES,
     CATEGORIES: CATEGORIES,
-    CAT_HINDI: CAT_HINDI,
     inCategory: inCategory,
     sweepColor: sweepColor,
+    isNearBlack: isNearBlack,
+    liftDark: liftDark,
+    isDarkOnLight: isDarkOnLight,
+    timelineFace: timelineFace,
+    isMacFace: isMacFace,
     contrastRatio: contrastRatio,
     shadeHex: shadeHex,
     NICHES: NICHES,

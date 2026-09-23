@@ -3711,10 +3711,11 @@
       this.value = '';
     });
 
-    // category chips (caption styles only — .mogrt lives in the Editor tab now).
-    // ⭐ Premium leads; 🎥 Your Styles (the 35 styles learned from the user's
-    // OWN videos) sits right up front — parked at the tail of a scrolling chip
-    // row it was invisible in a narrow panel ("where are those captions?").
+    // category chips, in galleryChips() order: All and 🔥 Trending lead, the
+    // owner's own 🎬 From My Videos / 🎥 Your Styles sit right behind them
+    // (parked at the tail of a scrolling chip row they were invisible in a
+    // narrow panel — "where are those captions?"), and Premiere's own .mogrt
+    // templates have their own chip at the end.
     var cats = galleryChips();
     var chipBox = $('lib-cats');
     cats.forEach(function (c) {
@@ -3869,18 +3870,24 @@
   }
 
   /* The STYLE cards for the current chip. Every card here is a Pulse style
-     that opens the full editor. .mogrt templates are never mixed in: they are
-     only returned for their own chip (and appended as a labelled section under
-     "All" by renderTemplateGrid). Near-duplicate Buttons (galleryHidden) are
-     left out of browsing but still come back through Favorites and Recent, so a
-     look the user kept never disappears. */
+     that opens the full editor. .mogrt templates are only returned for their
+     own chip (and appended as a labelled section under "All" by
+     renderTemplateGrid) — and under Favorites when the owner starred one: every
+     .mogrt card still shows a ☆, and a star that led nowhere read as broken
+     (they open their own template sheet from there, as everywhere).
+     Near-duplicate Buttons (galleryHidden) are left out of browsing but still
+     come back through Favorites and Recent, so a look the user kept never
+     disappears. */
   function filteredTemplates() {
     var mogrtMode = (state.libMode === 'mogrt');
     var cat = state.libCategory;
     var list;
     if (mogrtMode) list = allTemplates().filter(function (t) { return !!t.mogrt; });
     else if (cat === MOGRT_CAT) list = advancedMogrts();
-    else if (cat === 'Favorites') list = allTemplates().filter(function (t) { return !t.mogrt && state.favs[t.id]; });
+    else if (cat === 'Favorites') {
+      var advFav = advancedMogrts().filter(function (t) { return state.favs[t.id]; });
+      list = allTemplates().filter(function (t) { return !t.mogrt && state.favs[t.id]; }).concat(advFav);
+    }
     else if (cat === 'Recent') list = state.recent.map(findTemplate).filter(function (t) { return t && !t.mogrt; });
     else if (cat === 'My Templates') list = state.customTemplates.slice();
     else {
@@ -3916,8 +3923,11 @@
     }
     return h;
   }
-  var ADVANCED_NOTE = 'Premiere\'s own Motion Graphics templates. Each one only offers the few settings its designer built in — ' +
-    'the styles above give you every control. Caption looks from these templates are also above as full Pulse styles.';
+  /* Shown both under "All" (after every style) and alone in the 🧩 chip, so it
+     never says "above": in the chip nothing is above it. */
+  var ADVANCED_NOTE = 'Premiere\'s own Motion Graphics templates. Each one only offers the few settings its designer built in. ' +
+    'Every style in the gallery gives you every control — and the caption looks from these templates are there too, as full Pulse styles ' +
+    '(Plain Subtitle, Word Highlight, Word Pop, Active-Word Box, Gradient Highlight, Halo Box).';
 
   function renderTemplateGrid() {
     var grid = $('tpl-grid');
@@ -3944,10 +3954,20 @@
       grid.appendChild(gallerySectionHead(MOGRT_CAT, ADVANCED_NOTE));
       appendMogrtGroups(grid, list);
     } else if (cat === 'All' && !mogrtMode && !state.libSearch) {
-      // "All" reads as the library's sections, in chip order, each style once
-      // (under its home category), then the advanced .mogrt section.
-      var groups = [{ name: 'My Templates', items: [] }];
-      (CPCaptions.CATEGORIES || []).forEach(function (c) { groups.push({ name: c, items: [] }); });
+      // "All" reads as the library's sections IN CHIP ORDER (galleryChips:
+      // Trending, the owner's own From My Videos / Your Styles and My
+      // Templates, then the looks, Buttons last), each style once under its
+      // home category, then the advanced .mogrt section. It used to follow the
+      // library's own category order, which put the owner's own sections at
+      // cards 70–107 although the chips put them up front.
+      var groups = [];
+      galleryChips().forEach(function (c) {
+        if (c === 'My Templates' || (CPCaptions.CATEGORIES || []).indexOf(c) >= 0) groups.push({ name: c, items: [] });
+      });
+      (CPCaptions.CATEGORIES || []).forEach(function (c) {
+        for (var gi = 0; gi < groups.length; gi++) if (groups[gi].name === c) return;
+        groups.push({ name: c, items: [] });
+      });
       var byName = {};
       groups.forEach(function (g) { byName[g.name] = g; });
       var other = { name: 'More styles', items: [] };
@@ -3972,11 +3992,13 @@
   }
 
   /* Web fonts arrive per script: Google Fonts serves each face in subsets
-     (latin, devanagari…), and a browser fetches a subset only for text it lays
-     out or text named in document.fonts.load(). A canvas draw never fetches
-     one, and the render's font wait names no text, so it gets Latin only — a
-     Hindi caption in Baloo 2 or Mukta was drawn in whatever system face had
-     Devanagari. Ask for every face in the style's chain with BOTH scripts. */
+     (latin, devanagari…), and a browser fetches a subset only when text needs
+     it. A canvas draw DOES start that fetch, but draws that very frame in a
+     stand-in face while the piece downloads — so the first tiles (and, before
+     CPRender.preloadFaces, the first rendered frames) of a Hindi caption in
+     Baloo 2 or Mukta came out in whatever system face had Devanagari. Asking
+     up front for every face in the style's chain, with BOTH scripts, gets the
+     pieces in before the first draw. */
   var _fontsAsked = {};
   function preloadStyleFonts(p, then) {
     if (!p || !document.fonts || !document.fonts.load) return;
@@ -4408,6 +4430,15 @@
     });
     head.appendChild(fav);
     card.appendChild(head);
+    // editable captions only (.editable-only): the one-line reliability note
+    if (!isMogrt && CPCaptions.isDarkOnLight(t)) {
+      var dk = document.createElement('div');
+      dk.className = 'tpl-dark-note editable-only';
+      dk.style.cssText = 'font-size:9.5px;line-height:1.25;color:#ffcf5c;margin:1px 0 2px;';
+      dk.textContent = '⚠️ Dark words may not show as editable';
+      dk.title = DARK_EDITABLE_NOTE;
+      card.appendChild(dk);
+    }
 
     // Preview box. Templates that SHIP a real render show it — the Flux cards'
     // looping .mp4 previews ("flux preview is gone" when these were dropped) and
@@ -4482,7 +4513,16 @@
     card.appendChild(thumb);
 
     if (isMogrt) card.addEventListener('click', function () { openMogrtSheet(t); });
-    else card.addEventListener('click', function () { preloadStyleFonts(t, renderPreview); _pvDemo = null; applyTemplate(t); showView('style'); });
+    // Picking a style from its card opens it AS DESIGNED — the look its tile
+    // shows. The ✨ Word-by-word opt-out (state.wordHlOff) used to follow the
+    // owner to every style picked afterwards, so after switching it off once,
+    // 41 karaoke / reveal styles (Dim-to-Bright…) opened static while their
+    // tiles swept. The opt-out still holds for the style it was made on.
+    else card.addEventListener('click', function () {
+      preloadStyleFonts(t, renderPreview); _pvDemo = null;
+      state.wordHlOff = false;
+      applyTemplate(t); showView('style');
+    });
     return card;
   }
 
@@ -4544,6 +4584,12 @@
     state.selectedMogrtTpl = t;
     try { state.selectedMogrtBase = mogrtCardStyle(t); } catch (eBase) { state.selectedMogrtBase = null; }
     $('ms-name').textContent = t.name;
+    // "each word lights up exactly when it's spoken" is a CAPTION template's
+    // promise — a title template has no word highlight, so don't make it there
+    try {
+      var tl = $('ms-words') && $('ms-words').nextElementSibling;
+      if (tl && /Word-by-word timing/.test(tl.textContent || '')) tl.style.display = (t.kind === 'title') ? 'none' : '';
+    } catch (eTl) {}
     // PREVIEW: templates that ship a REAL render show it (the Flux .mp4 loop /
     // a title's still) — that's the template's true animation. The live
     // "your colours" canvas stays visible beneath it and reflects every edit.
@@ -4727,6 +4773,14 @@
   function fontCoverage(family) {
     return _fontCoverage[String(family || '').toLowerCase()] || null;
   }
+  /* Is this family installed? true / false once the installed-font scan has
+     run, null before (or where no scan is possible). Kept apart from
+     _installedFonts, which also collects faces typed into the picker. */
+  var _scanInstalled = null;
+  function fontInstalled(family) {
+    if (!_scanInstalled) return null;
+    return !!_scanInstalled[String(family || '').toLowerCase()];
+  }
 
   /* All font options: Suggested faces, every installed face, then a
      "type any font" escape hatch. Each carries its own face for preview. */
@@ -4821,8 +4875,10 @@
      is kept — never hide a font on a guess. */
   function setInstalledFontCoverage(detailed) {
     _fontCoverage = {}; _hiddenScriptFonts = [];
+    _scanInstalled = {};
     var usable = [];
     detailed.forEach(function (f) {
+      _scanInstalled[String(f.name).toLowerCase()] = 1;
       var known = (f.latin != null || f.devanagari != null);
       if (known) _fontCoverage[String(f.name).toLowerCase()] = { latin: !!f.latin, devanagari: !!f.devanagari };
       if (known && !f.latin && !f.devanagari) _hiddenScriptFonts.push(f.name);
@@ -5189,6 +5245,43 @@
     if (host && host.style) { host.style.opacity = dis ? '0.5' : ''; host.style.pointerEvents = dis ? 'none' : ''; }
     if (w) { w.textContent = dis ? ('↳ ' + reason) : ''; w.style.display = shown ? '' : 'none'; }
   }
+  /* Does the face the preview really draws have small letters at all? Display
+     faces like Bebas Neue draw 'a' with the SAME glyph as 'A', so on them the
+     ALL CAPS switch moved zero pixels (dead-control audit: Neon Pop and Tall
+     Poster, wherever their chain reaches Bebas Neue). Measured in pixels on the
+     preview's own font list — the canvas uses the first installed face, so a
+     Mac that draws Impact first keeps a working switch — and only remembered
+     once every web face in that list has loaded (before that the canvas is
+     still drawing a stand-in, and the answer is asked again on the next paint). */
+  var _capsOnlyCache = {};
+  function faceIsCapsOnly() {
+    if (typeof CPRender === 'undefined' || !CPRender.styleForFrame) return false;
+    var st;
+    try { st = CPRender.styleForFrame(previewBasis(styledPreset()), 1080, {}); } catch (e) { return false; }
+    if (!st || !st.font) return false;
+    var spec = (st.weight || 800) + ' 48px "' + st.font + '", "' + st.fallbacks + '", sans-serif';
+    if (_capsOnlyCache.hasOwnProperty(spec)) return _capsOnlyCache[spec];
+    var LOW = 'abdefghnqrty', UP = LOW.toUpperCase();
+    var ready = true;
+    try { if (document.fonts && document.fonts.check) ready = document.fonts.check(spec, LOW + UP); } catch (eC) {}
+    var caps = false;
+    try {
+      var cv = document.createElement('canvas'); cv.width = 520; cv.height = 72;
+      var g = cv.getContext('2d');
+      var pix = function (s) {
+        g.clearRect(0, 0, cv.width, cv.height);
+        g.font = spec; g.fillStyle = '#000'; g.textBaseline = 'alphabetic';
+        g.fillText(s, 4, 56);
+        return g.getImageData(0, 0, cv.width, cv.height).data;
+      };
+      var a = pix(LOW), b = pix(UP), diff = 0, ink = 0;
+      for (var i = 3; i < a.length; i += 4) { if (a[i] > 24) ink++; if (Math.abs(a[i] - b[i]) > 24) diff++; }
+      caps = ink > 200 && diff < 12;
+    } catch (eP) { return false; }
+    if (ready) _capsOnlyCache[spec] = caps;
+    return caps;
+  }
+
   function syncControlApplicability() {
     var p = currentPreset() || {};
     var editable = (_capOut === 'editable');
@@ -5218,7 +5311,7 @@
     var boxForced = cchk('c-boxgrad') || cnum('c-box3d-depth', 0) > 0 || cnum('c-boxgloss', 0) > 0;
     setWhy('c-box-on', boxForced ? 'The 3D edge, gloss or gradient box needs the box — set them to 0 / off to remove it' : null);
     var sweepOwns = wordHl && !build;
-    setWhy('c-emphasize', sweepOwns ? 'Works when ✨ Word-by-word highlight is off — then the spoken word already pops' : null);
+    setWhy('c-emphasize', sweepOwns ? 'Only works while ✨ Word-by-word is off (the spoken word already pops while it is on)' : null);
     setWhy('c-kw', sweepOwns ? 'Used when ✨ Word-by-word highlight is off — the spoken word is the highlight' : null);
     setWhy('c-kw-mode', sweepOwns ? 'Used when ✨ Word-by-word highlight is off' : null);
     setWhy('c-hl-scale', wordHl ? 'Word-by-word is on — use Spoken-word size instead' : null);
@@ -5240,7 +5333,12 @@
       ? 'A white sheen cannot show on a white box — pick a darker Box colour first' : null);
     setWhy('c-linegap', readLines() === 1 ? 'Lines on screen is Single — there is no second line to space' : null);
     setWhy('c-wordspace', (!wordHl && !build && wpc === 1) ? 'One word per caption — there is no gap to space' : null);
-    setWhy('c-case', cchk('c-upper') ? 'ALL CAPS is on — turn it off to pick a text case' : null);
+    // a face that only HAS capitals draws 'a' exactly like 'A', so neither
+    // ALL CAPS nor the text case can change a single pixel
+    var capsOnly = faceIsCapsOnly();
+    var CAPS_ONLY = 'This font only has capital letters — pick another font to use small letters';
+    setWhy('c-upper', capsOnly ? CAPS_ONLY : null);
+    setWhy('c-case', capsOnly ? CAPS_ONLY : (cchk('c-upper') ? 'ALL CAPS is on — turn it off to pick a text case' : null));
     // key words in these modes already include every number, and a key word
     // takes the Highlight colour — a separate number colour cannot show
     var kwMode = ($('c-kw-mode') && $('c-kw-mode').value) || 'smart';
@@ -5254,8 +5352,12 @@
      the owner typed. The short sample phrase has none of those, so the preview
      sat still and the controls read as dead. The moment the owner reaches for
      one, the preview shows a caption that HAS it (in Hindi for a Hindi style)
-     — until another style is picked. */
+     — until another style is picked, or the owner reaches for a control the
+     demo is not about. (It used to stay until another style was picked: after
+     one touch of Lines on screen the preview was a single 10-word caption, so
+     the Words-per-caption stepper changed the output but never the preview.) */
   var _pvDemo = null;                                  // { id: presetId, kind }
+  var _demoTargets = [];
   var PREVIEW_DEMOS = {
     layout:   ['Everything changes tomorrow when remarkable storytelling transforms ordinary conversations completely',
                'यह बेहद आसान तरीका आपकी पूरी ज़िंदगी हमेशा के लिए बदल सकता है'],
@@ -5283,7 +5385,30 @@
       function on() { if (!_pvDemo || _pvDemo.id !== state.presetId || _pvDemo.kind !== kind) { _pvDemo = { id: state.presetId, kind: kind }; renderPreview(); } }
       // colour inputs are hidden behind a swatch: listen on the label that holds both
       var target = (e.type === 'hidden' && e.closest && e.closest('label')) || e;
+      _demoTargets.push(target);
       ['pointerdown', 'mousedown', 'touchstart', 'focus', 'focusin', 'keydown'].forEach(function (ev) { target.addEventListener(ev, on); });
+    });
+    // Any OTHER control ends the demo, and the preview goes straight back to
+    // the style's own caption — BEFORE that control acts, so what it changes
+    // (words per caption, size, colour…) shows against the real caption.
+    // Capture phase: this runs before the control's own handlers.
+    var root = $('method-animated');
+    if (!root) return;
+    function isDemo(n) {
+      for (var i = 0; i < _demoTargets.length; i++) if (_demoTargets[i] === n || _demoTargets[i].contains(n)) return true;
+      return false;
+    }
+    function endDemo(ev) {
+      if (!_pvDemo) return;
+      var t = ev.target;
+      if (!t || !t.closest || isDemo(t)) return;
+      if (!t.closest('input, select, textarea, button, label, .sw, .seg-control')) return;   // a control, not empty space
+      if (t.closest('#cust-tabs') || t.closest('#btn-browse-styles')) return;              // switching tabs changes nothing
+      _pvDemo = null;
+      renderPreview();
+    }
+    ['pointerdown', 'mousedown', 'touchstart', 'focusin', 'keydown', 'click', 'input', 'change'].forEach(function (ev) {
+      root.addEventListener(ev, endDemo, true);
     });
   }
 
@@ -5879,6 +6004,11 @@
     var v = parseInt(e.value, 10); return isNaN(v) ? def : v;
   }
   function cchk(id) { var e = $(id); return !!(e && e.checked); }
+  // how far "Dim upcoming words" dims: the open style's (or saved copy's) own level
+  function designedDimLevel() {
+    var p = currentPreset();
+    return (p && p.upcomingOpacity != null && p.upcomingOpacity > 0 && p.upcomingOpacity < 1) ? p.upcomingOpacity : 0.4;
+  }
 
   /* Read the customizer into an overrides object for mergeStyle / render. */
   function readOverrides() {
@@ -5946,7 +6076,10 @@
       animSpeed: cnum('c-animspeed', 100) / 100,
       perWordEntrance: cchk('c-perword'),
       perWordEntranceStyle: ($('c-perword-style') ? $('c-perword-style').value : 'pop'),
-      upcomingOpacity: cchk('c-dimupcoming') ? 0.4 : 1,
+      // the style's OWN dim level (Ghost to Solid 0.35, Cinema Subtitle 0.6…):
+      // a fixed 0.4 changed every such look the moment it was opened, while
+      // its tile kept the designed level. 0.4 only when the style has none.
+      upcomingOpacity: cchk('c-dimupcoming') ? designedDimLevel() : 1,
       // --- button-pack box effects (border / neon glow / 3D / gloss) ---
       boxStroke: cchk('c-boxstroke-on') ? $('c-boxstroke').value : null,
       boxStrokeWidth: cnum('c-boxstrokew', 4),
@@ -6048,6 +6181,27 @@
      no-op so any older call site stays safe. */
   /* Inline readability warning under the preview — captions over unknown
      footage need an outline/box/glow, not just a fill color. */
+  /* Editable captions + dark words on a light box: on the owner's Mac the
+     editable engine drew these with NO visible words (only the box). Until a
+     test there says otherwise, the editor says so in one line whenever the
+     edited style is that look (hidden in Pulse-rendered mode by .editable-only),
+     and Add captions offers Pulse-rendered instead (applyEditableStyle). */
+  var DARK_EDITABLE_NOTE = '⚠️ Dark words on a light box may not show up as editable captions — Premiere can show just the box. ' +
+    'Use ✨ Pulse-rendered captions for this style (same look, always visible), or pick a light text colour.';
+  function updateDarkEditableNote(styled) {
+    var n = $('editable-dark-note');
+    if (!n) {
+      var anchor = $('editable-note');
+      if (!anchor || !anchor.parentNode) return;
+      n = document.createElement('p');
+      n.id = 'editable-dark-note';
+      n.className = 'hint editable-only';
+      n.style.color = '#ffcf5c';
+      n.textContent = DARK_EDITABLE_NOTE;
+      anchor.parentNode.insertBefore(n, anchor.nextSibling);
+    }
+    n.style.display = CPCaptions.isDarkOnLight(styled) ? '' : 'none';
+  }
   function updateLegibilityNote(st) {
     var ln = $('legibility-note');
     if (!ln) return;
@@ -6166,6 +6320,7 @@
     // and nothing ever called it — so it never once appeared. It belongs on every
     // repaint: the moment a style has no outline/box/glow, say so.
     try { updateLegibilityNote(styled); } catch (eLg) {}
+    try { updateDarkEditableNote(styled); } catch (eDk) {}
 
     // CAPTION-BAND preview: the region of the frame around the caption, at a
     // readable size (the full 9:16 frame wasted the panel on empty backdrop).
@@ -8843,30 +8998,73 @@
   }
   /* The family to actually send: the chosen one when it can draw the words,
      else the style's own font, else a system face that can. Only ever swaps on
-     KNOWN coverage — an unreadable font is sent as chosen, never guessed away. */
+     KNOWN coverage — an unreadable font is sent as chosen, never guessed away.
+     NOT INSTALLED is known too, once the installed-font scan has run: Premiere
+     cannot draw a font it does not have and silently keeps the template's own
+     (Inter — no Hindi letters), so the nine Devanagari-first styles (Baloo 2,
+     Mukta, Hind, Rozha One, Kalam, Teko, Tiro, Anek — web faces a stock Mac
+     does not have) would put blank Hindi on the timeline. A face that is not
+     installed goes out as its Mac stand-in (CPCaptions.timelineFace: Anton →
+     Impact, Poppins → Futura…) or, for Hindi words, as an installed face that
+     draws Devanagari (Kohinoor Devanagari on a Mac, Nirmala UI on Windows). */
   var _fontSwapToasted = {};
+  /* Pure: the family Premiere can really draw `needs` with, for a caption
+     asked to use `want` in a style whose own font is `own` (devaStyle = a
+     Hindi-first style, whose English words also stay in a Devanagari face).
+     { family, why: null | 'missing' | 'script', none: true when nothing
+     installed can draw the words }. Used by the send AND the editable preview,
+     so the preview shows the face the timeline will get. */
+  function editableFamily(want, needs, own, devaStyle) {
+    var out = { family: want, why: null, none: false, installed: null };
+    if (typeof CPFonts === 'undefined' || !CPFonts.canDraw || !want) return out;
+    var onMac = false;
+    try { onMac = /mac/i.test((typeof navigator !== 'undefined' && navigator.platform) || ''); } catch (eN) {}
+    // a macOS face can sit in a system file too big for the scan to read
+    var inst = (onMac && CPCaptions.isMacFace && CPCaptions.isMacFace(want)) ? null : fontInstalled(want);
+    out.installed = inst;
+    var ok = (inst === false) ? false : CPFonts.canDraw(fontCoverage(want), needs);
+    if (ok !== false) return out;
+    var deva = needs.devanagari || devaStyle;
+    var standIn = (CPCaptions.timelineFace && CPCaptions.timelineFace(want)) || null;
+    var cands = [standIn, own, deva ? 'Kohinoor Devanagari' : null, deva ? 'Nirmala UI' : null,
+                 deva ? 'Noto Sans Devanagari' : null, 'Helvetica Neue', 'Arial'];
+    for (var i = 0; i < cands.length; i++) {
+      var c = cands[i];
+      if (c && c !== want && fontInstalled(c) !== false && CPFonts.canDraw(fontCoverage(c), needs) === true) {
+        out.family = c; out.why = (inst === false) ? 'missing' : 'script';
+        return out;
+      }
+    }
+    var wantDeva = (inst === false) ? false : (fontCoverage(want) || {}).devanagari;
+    out.none = !!(needs.devanagari && wantDeva === false);
+    return out;
+  }
   function drawableFamily(preset, text) {
     var want = preset.font;
     if (typeof CPFonts === 'undefined' || !CPFonts.canDraw) return want;
     var needs = CPFonts.scriptNeeds(text || '');
-    var ok = CPFonts.canDraw(fontCoverage(want), needs);
-    if (ok !== false) return want;
-    var own = null;
-    try { var t = currentPreset && currentPreset(); own = t && t.font; } catch (e) {}
-    var cands = [own, needs.devanagari ? 'Kohinoor Devanagari' : null, needs.devanagari ? 'Nirmala UI' : null,
-                 needs.devanagari ? 'Noto Sans Devanagari' : null, 'Helvetica Neue', 'Arial'];
-    for (var i = 0; i < cands.length; i++) {
-      var c = cands[i];
-      if (c && c !== want && CPFonts.canDraw(fontCoverage(c), needs) === true) {
-        var key = want + '>' + c;
-        if (!_fontSwapToasted[key]) {
-          _fontSwapToasted[key] = 1;
-          try { diag('fonts', 'send-time swap: "' + want + '" cannot draw these words → "' + c + '"'); } catch (eD) {}
-          toast('“' + want + '” can’t draw ' + (needs.devanagari && !(fontCoverage(want) || {}).devanagari ? 'Hindi' : 'English') +
-                ' letters, so these captions use “' + c + '” instead.', true);
-        }
-        return c;
+    var own = null, devaStyle = false;
+    try { var t = currentPreset && currentPreset(); own = t && t.font; devaStyle = !!(t && t.script === 'deva'); } catch (e) {}
+    var pick = editableFamily(want, needs, own, devaStyle);
+    var c = pick.family;
+    if (c !== want) {
+      var key = want + '>' + c;
+      if (!_fontSwapToasted[key]) {
+        _fontSwapToasted[key] = 1;
+        var script = (needs.devanagari && !(fontCoverage(want) || {}).devanagari) ? 'Hindi' : 'English';
+        try { diag('fonts', 'send-time swap: "' + want + '" ' + (pick.why === 'missing' ? 'is not installed' : 'cannot draw these words') + ' → "' + c + '"'); } catch (eD) {}
+        toast(pick.why === 'missing'
+          ? '“' + want + '” isn’t installed on this computer, and Premiere can only use installed fonts — so these editable captions use “' + c + '” instead.'
+          : '“' + want + '” can’t draw ' + script + ' letters, so these captions use “' + c + '” instead.', true);
       }
+      return c;
+    }
+    // Nothing installed can draw these words: say so rather than let Premiere
+    // put blank Hindi on the timeline.
+    if (pick.none && !_fontSwapToasted[want + '>none']) {
+      _fontSwapToasted[want + '>none'] = 1;
+      try { diag('fonts', 'send-time: no installed font draws these Hindi words for "' + want + '"'); } catch (eD2) {}
+      toast('No font installed on this computer can draw these Hindi words in editable captions, so they may come out blank. Use ✨ Pulse-rendered captions for Hindi, or install a Hindi font such as Kohinoor Devanagari.', true);
     }
     return want;
   }
@@ -8969,15 +9167,21 @@
       // is rich AE source text (probeKind:"rich" in the user's own diagnostics,
       // probe-verified safe), so the insert writes each style's font/bold into
       // it — and the preview shows the same face. Styles keep their identity.
-      font: p.font || 'Inter',
+      // …and where that face is NOT installed (once the installed-font scan
+      // has run), the face the send swaps in (editableFamily): Premiere cannot
+      // draw a missing font, so the preview must not promise one.
+      font: editableFamily(p.font || 'Inter', { latin: true, devanagari: p.script === 'deva' }, p.font, p.script === 'deva').family,
       fallbackFonts: p.fallbackFonts || ['Hanken Grotesk', 'Segoe UI', 'Helvetica Neue', 'Arial', 'sans-serif'],
       weight: (p.weight || 800) >= 600 ? 800 : 500,   // the rich write only knows bold vs regular
       uppercase: !!p.uppercase,
       fill: p.fill || '#FFFFFF',
-      highlight: usesHlColour ? hl : (p.fill || '#FFFFFF'),
+      // == what mapPresetToFlux sends, including the unused slot (never near-black)
+      highlight: CPCaptions.liftDark(usesHlColour ? hl : (p.fill || '#FFFFFF')),
       // a TWO-TONE highlight is real on the timeline (the gradient backbone has
-      // Highlighted Word Color 1 + 2) — keep it so those styles stay distinct
-      highlight2: usesHlColour ? (p.highlight2 || null) : null,
+      // Highlighted Word Color 1 + 2) — keep it so those styles stay distinct.
+      // Never near-black, like the sweep colour (CPCaptions.sweepColor): the
+      // engine may not draw it — the stop is lifted just enough, same hue.
+      highlight2: usesHlColour ? (p.highlight2 ? CPCaptions.liftDark(p.highlight2) : null) : null,
       keyword: hasHl,
       boxColor: p.boxColor || null,
       boxOpacity: (p.boxOpacity != null ? p.boxOpacity : 1),
@@ -9061,7 +9265,7 @@
       if (preset.highlight2) {
         hl2P = find([/highlight.*2|2.*highlight|colou?r\s*2\b/], COL, [textP, hlP]);
         if (!hl2P) { for (var h2 = 0; h2 < colorProps.length; h2++) { if (colorProps[h2] !== textP && colorProps[h2] !== hlP) { hl2P = colorProps[h2]; break; } } }
-        color(hl2P, preset.highlight2);
+        color(hl2P, CPCaptions.liftDark(preset.highlight2));   // never near-black (see sweepColor)
       }
     } else {
       // NO-SWEEP backbone: its "Text Opacity" ships at 25 (a designed dim for its
@@ -9162,10 +9366,15 @@
     // deliberately sets highlight == fill must not be given a yellow keyword.
     if (wantsHighlight) hlHex = CPCaptions.sweepColor(fill, hlHex, preset.boxColor || null);
     if (!usesHlColour) hlHex = fill;               // nothing will use it: paint like the text
+    // NEVER near-black on the engine's highlight controls — on the owner's Mac
+    // this engine drew no visible words for dark text on light boxes, cause
+    // unknown (CPCaptions.sweepColor). A keyword colour or an unused slot that
+    // is near-black is lifted just enough, keeping its hue.
+    hlHex = CPCaptions.liftDark(hlHex);
     color(hl1, hlHex);
     // second stop: a real two-tone gradient when the style has one, otherwise
     // the SAME colour (solid) — the engine always renders colour1→colour2.
-    color(P('highlighted word color 2'), (usesHlColour && preset.highlight2) ? preset.highlight2 : hlHex);
+    color(P('highlighted word color 2'), (usesHlColour && preset.highlight2) ? CPCaptions.liftDark(preset.highlight2) : hlHex);
     // ✨ "As spoken": base text INVISIBLE (0) — each word only paints when the
     // highlight sweep reaches it, so text appears exactly when it's said.
     // Otherwise 100: never inherit a dimmed default.
@@ -9243,6 +9452,10 @@
     var preset = styledPreset();
     var bb = bundledBackbone(preset);
     if (!bb) return toast('No caption engine loaded — reinstall the full Pulse folder.', true);
+    // the check the owner's Mac has to make: say what a blank result means (in
+    // the toast that reports the preview — an earlier one is replaced by it)
+    var darkNote = CPCaptions.isDarkOnLight(preset)
+      ? ' This style has dark words on a light box: if the preview shows no words, use ✨ Pulse-rendered captions for it.' : '';
     var basePreset = currentPreset() || {};
     var sizeScale = 1;
     try {
@@ -9270,7 +9483,7 @@
       return CPBridge.callHost('CP_previewMogrt', { path: bb.path, seconds: 4, params: params, text: sample, textStyle: textStyle });
     }).then(function (r) {
       if (btn) btn.disabled = false;
-      toast('▶ Real preview on V' + r.track + ' at the playhead — scrub to see EXACTLY what your settings render. Delete the clip when done (or ⌘Z).');
+      toast('▶ Real preview on V' + r.track + ' at the playhead — scrub to see EXACTLY what your settings render. Delete the clip when done (or ⌘Z).' + darkNote, !!darkNote);
     }).catch(function (e) { if (btn) btn.disabled = false; toast(e.message, true); });
   }
 
@@ -9289,6 +9502,18 @@
         (state.bundledDiag ? ' [' + state.bundledDiag + ']' : '') +
         '. Your install may be missing the “mogrts” folder' + (where ? ' (looked in ' + where + '\\mogrts)' : '') +
         '. Reinstall the full Pulse folder, or copy Diagnostics and send it over.', true);
+    }
+    // Dark words on a light box: never place captions that may show no words
+    // (see updateDarkEditableNote) — offer the Pulse-rendered path instead.
+    if (CPCaptions.isDarkOnLight(preset)) {
+      confirmInline('“' + (preset.name || 'This style') + '” has dark words on a light box. As editable captions, Premiere can show just the box with no words.\n\n' +
+        'Add it as ✨ Pulse-rendered captions instead? Same look, always visible.', 'Use Pulse-rendered', function (yes) {
+        if (!yes) return toast('No captions added. To keep editable captions for this style, pick a light text colour.');
+        setCapOut('png'); saveLook();
+        toast('Caption type is now ✨ Pulse-rendered — adding your captions.');
+        $('btn-magic').click();
+      });
+      return;
     }
     if (!ensureTranscriptThen('editstyle')) return;
     var cues;
