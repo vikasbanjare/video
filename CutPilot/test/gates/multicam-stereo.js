@@ -11,6 +11,14 @@
  *   B. one stereo track                                        → Left/Right become two mics
  *   C. A1 and A2 both point at the same MONO mix              → a plain "can't tell" error, never success
  *   D. control: L.wav and R.wav as separate files              → follows the speaker
+ *   E. one plain stereo camera mic (Left ≈ Right)              → one-mic mode, said plainly
+ *   F/G. table mics that hear each other at about −6 dB, as one stereo track
+ *      and after Breakout to Mono                              → still two mics, followed
+ *   H. Breakout to Mono of a plain stereo camera mic           → one-mic mode, never the
+ *      circular "pick … · Left and … · Right" advice
+ *   I. a lav receiver's L/R on camera 1's audio + camera 2's scratch mic
+ *                                                              → Pulse pairs the L/R itself
+ *   J. the same, paired by the owner as A1 (mixed) / A2        → warned, never "applied" as fine
  * MC_PANEL_DIR=<dir> runs it against another copy of the panel.
  */
 'use strict';
@@ -81,12 +89,29 @@ function score(world) {
     wav(path.join(dir, 'mix.wav'), [M]);
     // a plain stereo camera mic: both channels hear the whole room
     wav(path.join(dir, 'cam.wav'), [M, M.map((v, i) => 0.97 * v + nL())]);
+    // two table mics about a metre apart into one stereo recorder: each hears
+    // the other person about 6 dB down, 2 ms late, plus a reflection off the
+    // table — the two channels sit only ~5–6 dB apart, yet each voice is
+    // clearly louder on its own side
+    const late = (x, d) => { const y = new Float32Array(x.length); for (let i = d; i < x.length; i++) y[i] = x[i - d]; return y; };
+    const g2 = late(guest, 32), h2 = late(host, 32), g16 = late(guest, 262), h16 = late(host, 262);
+    const T = [new Float32Array(SR * DUR), new Float32Array(SR * DUR)];
+    const tL = noise(13), tR = noise(15);
+    for (let i = 0; i < T[0].length; i++) {
+      T[0][i] = host[i] + 0.5 * g2[i] + 0.25 * g16[i] + tL();
+      T[1][i] = guest[i] + 0.5 * h2[i] + 0.25 * h16[i] + tR();
+    }
+    wav(path.join(dir, 'table.wav'), T);
+    // camera 2's own scratch mic: hears both people about equally, plus room noise
+    const nC = noise(9), S2 = new Float32Array(SR * DUR);
+    for (let i = 0; i < S2.length; i++) S2[i] = 0.35 * host[i] + 0.3 * guest[i] + 3 * nC();
+    wav(path.join(dir, 'cam2.wav'), [S2, S2]);
     const track = (name, file) => ({ name, clips: [{ start: 0, end: DUR, inPoint: 0, outPoint: DUR, mediaPath: path.join(dir, file), name }] });
 
     await P.withBrowser(async (browser) => {
-      const run = async (audio) => {
+      const run = async (audio, ui) => {
         const ctx = await P.openPanel(browser, { premiere: { fps: 25, end: DUR, video: FH.cameras(2, DUR), audio }, realFfmpeg: true });
-        const r = await P.runMulticam(ctx, { cameras: 2, source: 'follow' });
+        const r = await P.runMulticam(ctx, Object.assign({ cameras: 2, source: 'follow' }, ui || {}));
         await ctx.page.close();
         r.acc = r.plan ? score(ctx.world) : 0;
         return r;
@@ -108,6 +133,38 @@ function score(world) {
       report(!!E.plan && E.toasts.some(t => /one-mic mode/.test(t)),
         'E. one plain stereo camera mic (Left ≈ Right): falls back to one-mic mode with a plan — ' +
         JSON.stringify((E.toasts.find(t => /one-mic|same audio/.test(t)) || E.diag || '').split('|').pop().slice(0, 90)));
+      // table mics ~6 dB apart on the Left and Right of one recording are two
+      // mics, not "the same audio"
+      const F = await run([track('A1', 'table.wav')]);
+      report(F.acc >= 95 && !F.toasts.some(t => /one-mic mode/.test(t)),
+        'F. one stereo track, table mics ~6 dB apart: followed as two mics — right person on screen ' + F.acc + '% (need ≥95%)' +
+        (F.toasts.some(t => /one-mic mode/.test(t)) ? ', but it fell back to ONE-MIC MODE' : ''));
+      const G = await run([track('A1', 'table.wav'), track('A2', 'table.wav')]);
+      report(G.acc >= 95, 'G. Breakout to Mono of the same table-mic recording: right person on screen ' + G.acc + '% (need ≥95%)' +
+        (G.plan ? '' : ' — ' + JSON.stringify((G.diag || '').slice(0, 130))));
+      // Breakout to Mono of a plain stereo camera mic: the Left and Right really
+      // are one mic — never the circular "pick … · Left and … · Right" advice
+      // (they already are), and not a dead end either
+      const H = await run([track('A1', 'cam.wav'), track('A2', 'cam.wav')]);
+      const allH = H.toasts.join(' ') + ' ' + (H.diag || '');
+      report(!!H.plan && /one-mic mode/.test(allH) && !/pick “… · Left”/.test(allH),
+        'H. Breakout to Mono of a plain stereo camera mic: one-mic mode with a plan, no circular Left/Right advice — ' +
+        JSON.stringify((H.toasts.find(t => /one-mic|same/.test(t)) || H.diag || '').split('|').pop().slice(0, 110)));
+      // A lav receiver's host (Left) and guest (Right) on camera 1's audio (A1),
+      // camera 2's own scratch mic on A2 — a very common two-camera setup. With
+      // Pulse's own pairing it must follow the speaker and say which mics it used.
+      const I = await run([track('A1', 'lr.wav'), track('A2', 'cam2.wav')]);
+      const noteI = (I.planView.split('\n').find(l => /Left and Right/.test(l)) || '');
+      report(I.acc >= 95 && /A1 · Left/.test(noteI) && /A1 · Right/.test(noteI),
+        'I. lav receiver L/R on A1 + camera 2 scratch mic on A2, Pulse\'s own pairing: right person on screen ' + I.acc + '% (need ≥95%), the plan says ' +
+        JSON.stringify(noteI.slice(0, 120)));
+      // the same files with the owner's own pairing V1 → A1 (mixed), V2 → A2:
+      // no speaker switch is possible — it must never read as success
+      const J = await run([track('A1', 'lr.wav'), track('A2', 'cam2.wav')], { map: ['0', '1'] });
+      const lastJ = (J.toasts[J.toasts.length - 1] || '').split('|').slice(1).join('|');
+      const warnedJ = /⚠️/.test(J.planView) && /Left/.test(J.planView) && (!J.plan || /but:/.test(lastJ));
+      report(warnedJ, 'J. the owner pairs V1 → A1 (host and guest mixed) and V2 → the scratch mic: warned, never a plain success — plan: ' +
+        JSON.stringify((J.planView.split('\n').filter(l => /⚠️/.test(l)).join(' | ') || '(no warning)').slice(0, 120)) + ', after Apply: ' + JSON.stringify(lastJ.slice(0, 70)));
     }, { ffmpeg: true });
   } finally {
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}

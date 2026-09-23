@@ -99,6 +99,24 @@
   }
 
   /*
+   * The minimum shot hold for plans cut on switch points (talk bursts,
+   * markers, a fixed interval): a segment shorter than minHold joins the one
+   * before it, and a too-short FIRST segment joins the one after it (no flash
+   * of a camera at 0:00) — the same rule directorPlan keeps for every audio
+   * or transcript plan. segs: [{start,end}] sorted. Returns new segments.
+   */
+  function holdSegments(segs, minHold) {
+    var out = [], i;
+    for (i = 0; i < (segs || []).length; i++) {
+      var s = { start: segs[i].start, end: segs[i].end };
+      if (out.length && (s.end - s.start) < minHold) out[out.length - 1].end = s.end;
+      else out.push(s);
+    }
+    if (out.length > 1 && (out[0].end - out[0].start) < minHold) { out[1].start = out[0].start; out.shift(); }
+    return out;
+  }
+
+  /*
    * Turn a list of boundary times (e.g. markers) into segments spanning
    * [0, duration]. Boundaries outside the range are ignored.
    */
@@ -621,7 +639,11 @@
    * Who speaks each transcript line. Detect-speakers writes "Speaker 2: …"
    * only where the speaker CHANGES (subtitle convention), so a label carries
    * forward to the unlabelled lines after it. A cue's own `speaker` wins.
-   * opts: extract(text) -> {speaker} (CPCaptions.extractSpeaker),
+   * Only real speaker labels count: Detect speakers' own "Speaker N", or a
+   * camera name the owner typed (in any script, "आरव: …" too). Any other
+   * leading "Word:" is part of what was said — a Hinglish line that starts
+   * "Dekho: …" or "Matlab: …" is not a person, and must not switch cameras.
+   * opts: extract(text) -> {speaker} (CPCaptions.extractSpeaker, optional),
    *       names: camera names by angle (a label equal to a name → that camera),
    *       numAngles.
    * Label → camera: a matching camera name, else "Speaker N" → camera N, else
@@ -631,10 +653,25 @@
   function transcriptSpeakers(cues, opts) {
     opts = opts || {};
     var nA = opts.numAngles || 2, names = opts.names || [];
+    var typed = {};
+    for (var tn = 0; tn < names.length; tn++) {
+      var key = names[tn] != null ? String(names[tn]).trim().toLowerCase() : '';
+      if (key) typed[key] = true;
+    }
+    function isLabel(lab) { return !!lab && (/^speaker\s*\d+$/i.test(lab) || typed[lab.toLowerCase()] === true); }
+    // "speaker 2", "Speaker2" and a bare 2 in a cue's own field are all Speaker 2
+    function tidy(lab) { var sp = /^(?:speaker\s*)?(\d+)$/i.exec(lab); return sp ? 'Speaker ' + (+sp[1]) : lab; }
+    function labelOf(c) {
+      if (c.speaker != null && String(c.speaker).trim()) return tidy(String(c.speaker).trim());
+      var text = String(c.text || ''), m = /^\s*([^:：\n]{1,40}?)\s*[:：]\s*\S/.exec(text), lab = null;
+      if (m && isLabel(m[1].trim())) return tidy(m[1].trim());
+      if (opts.extract) { try { lab = opts.extract(text).speaker; } catch (e) { lab = null; } }
+      lab = lab ? String(lab).trim() : null;
+      return isLabel(lab) ? tidy(lab) : null;
+    }
     var labels = [], order = [], seen = {}, last = null, i;
     for (i = 0; i < (cues || []).length; i++) {
-      var c = cues[i], lab = c.speaker != null && String(c.speaker).trim() ? String(c.speaker).trim() : null;
-      if (!lab && opts.extract) { try { lab = opts.extract(c.text || '').speaker; } catch (e) { lab = null; } }
+      var c = cues[i], lab = labelOf(c);
       if (lab) last = lab;
       labels.push(last);
       if (last && !seen[last]) { seen[last] = true; order.push(last); }
@@ -796,6 +833,7 @@
     planStats: planStats,
     segmentsByInterval: segmentsByInterval,
     segmentsFromBoundaries: segmentsFromBoundaries,
+    holdSegments: holdSegments,
     directorPlan: directorPlan,
     loudnessToRegions: loudnessToRegions,
     twoModes: twoModes,

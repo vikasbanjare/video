@@ -8,7 +8,10 @@
  * sequence landed up to 3.6 s early by the hour.
  *
  * The real host.jsx runs on a mini-Premiere whose razor can throw, do nothing,
- * or fail now and then, and whose razor reads ';' timecode as SMPTE drop-frame.
+ * or fail now and then, and whose razor reads ';' timecode as SMPTE drop-frame
+ * (the sequence reports Premiere's own 29.97 / 59.94 drop-frame codes, 102 /
+ * 106). With linked camera audio, switching a camera's video off switches its
+ * audio off too — Apply must hand the owner's sound back untouched.
  * The panel checks go through the real panel as well.
  * MC_PANEL_DIR=<dir> runs it against another copy of the panel.
  */
@@ -44,6 +47,15 @@ for (const mode of ['throws', 'noop']) {
   report(r.ok === false && /nothing was switched|unchanged/i.test(r.error || '') && unchanged(w),
     'QE razor ' + (mode === 'throws' ? 'throws' : 'silently does nothing') + ': Apply fails and changes nothing — got ' +
     JSON.stringify(r.ok ? { ok: true, razored: r.razored, toggled: r.toggled } : { ok: false, error: (r.error || '').slice(0, 70) }) + ', timeline ' + (unchanged(w) ? 'unchanged' : 'CHANGED'));
+}
+// ---- a timeline whose timecode starts at 01:00:00:00 -------------------------------
+// (if QE reads razor timecodes as the sequence's own timecode, no cut lands —
+// nothing may change, and the owner must be told the way out)
+{
+  const { w, host } = world({ startTime: 3600 });
+  const r = FH.call(host, 'CP_applyMulticamPlan', { plan: PLAN4, numAngles: 2, dropFrame: false });
+  report(r.ok === false && /starts at 01:00:00:00/.test(r.error || '') && /Start Time/.test(r.error || '') && unchanged(w),
+    'a timeline starting at 01:00:00:00: nothing changes and the owner is told how to fix it — got ' + JSON.stringify(r.ok ? { ok: true } : (r.error || '').slice(0, 150)));
 }
 // ---- a locked camera track --------------------------------------------------------
 {
@@ -89,16 +101,47 @@ for (const mode of ['throws', 'noop']) {
   for (const c of [{ fps: 30000 / 1001, df: true, tick: true, name: '29.97 DF sequence, Drop-frame setting on' },
                    { fps: 30000 / 1001, df: true, tick: false, name: '29.97 DF sequence, setting off' },
                    { fps: 60000 / 1001, df: true, tick: true, name: '59.94 DF sequence, setting on' },
+                   { fps: 60000 / 1001, df: true, tick: false, name: '59.94 DF sequence, setting off (Premiere\'s own 59.94 DF code decides)' },
+                   { fps: 60000 / 1001, df: false, tick: true, name: '59.94 NON-drop sequence, setting on' },
                    { fps: 30000 / 1001, df: false, tick: true, name: '29.97 NON-drop sequence, setting on' },
                    { fps: 25, df: false, tick: true, name: '25 fps sequence, setting on' }]) {
-    const { w, host } = world({ fps: c.fps, dropFrameDisplay: c.df, end: 3660, video: FH.cameras(2, 3660) });
-    const r = FH.call(host, 'CP_applyMulticamPlan', { plan, numAngles: 2, dropFrame: c.tick });
-    // where did each cut land? the first clip edge after each boundary
-    const edges = w.model.video[0].clips.map(x => x.start).filter(x => x > 0);
-    const err = [600, 1800, 3599].map(b => Math.min.apply(null, edges.map(e => Math.abs(e - b))));
-    const worst = Math.max.apply(null, err);
-    report(r.ok && worst <= 1 / c.fps + 1e-6, c.name + ': worst cut off by ' + worst.toFixed(3) + ' s (need ≤ 1 frame) — timecodes ' + w.model.razorTimecodes.slice(0, 3).join(' '));
+    // whichever way QE reads the timecode (by its ';' or in the sequence's own format)
+    const runs = ['separator', 'sequence'].map(qeParse => {
+      const { w, host } = world({ fps: c.fps, dropFrameDisplay: c.df, qeParse, end: 3660, video: FH.cameras(2, 3660) });
+      const r = FH.call(host, 'CP_applyMulticamPlan', { plan, numAngles: 2, dropFrame: c.tick });
+      // where did each cut land? the first clip edge after each boundary
+      const edges = w.model.video[0].clips.map(x => x.start).filter(x => x > 0);
+      const err = [600, 1800, 3599].map(b => Math.min.apply(null, edges.map(e => Math.abs(e - b))));
+      return { ok: r.ok, worst: Math.max.apply(null, err), tcs: w.model.razorTimecodes.slice(0, 3).join(' ') };
+    });
+    const worst = Math.max(runs[0].worst, runs[1].worst);
+    report(runs[0].ok && runs[1].ok && worst <= 1 / c.fps + 1e-6, c.name + ': worst cut off by ' + worst.toFixed(3) + ' s (need ≤ 1 frame, QE reading ' +
+      'the timecode either way) — timecodes ' + runs[0].tcs);
   }
+}
+
+// ---- linked camera audio: switching a camera off must not silence the episode ----------
+// Premiere may switch a camera's LINKED audio off together with its video (and
+// cut it with the razor). The owner's sound must come through Apply untouched:
+// every audio clip that was on stays on, a clip they switched off stays off.
+{
+  const { w, host } = world({
+    linkedAudio: true,
+    audio: [
+      { name: 'A1', clips: [{ start: 0, end: 60, inPoint: 0, outPoint: 60, mediaPath: '/media/cam1.mov', name: 'cam1 audio' }] },
+      { name: 'A2', clips: [{ start: 0, end: 60, inPoint: 0, outPoint: 60, mediaPath: '/media/cam2.mov', name: 'cam2 audio' }] },
+      { name: 'A3', clips: [{ start: 0, end: 30, inPoint: 0, outPoint: 30, mediaPath: '/media/lav.wav', name: 'lav' },
+                            { start: 30, end: 40, inPoint: 30, outPoint: 40, mediaPath: '/media/lav.wav', name: 'lav', disabled: true },
+                            { start: 40, end: 60, inPoint: 40, outPoint: 60, mediaPath: '/media/lav.wav', name: 'lav' }] }
+    ]
+  });
+  const r = FH.call(host, 'CP_applyMulticamPlan', { plan: PLAN4, numAngles: 2, dropFrame: false });
+  let silent = 0;
+  w.model.audio.slice(0, 2).forEach(t => t.clips.forEach(c => { if (c.disabled) silent += c.end - c.start; }));
+  const lav = w.model.audio[2].clips.map(c => (c.disabled ? 'off' : 'on') + ' ' + c.start + '–' + c.end).join(', ');
+  report(r.ok && silent === 0 && lav === 'on 0–30, off 30–40, on 40–60' && r.verifiedPct === 100 && wrongSeconds(w, PLAN4, 25) === 0,
+    'linked camera audio: after Apply the cameras\' own sound is off for ' + silent.toFixed(1) + ' s (need 0), the lav reads "' + lav +
+    '" (the owner\'s own switched-off clip stays off), verified ' + r.verifiedPct + '%');
 }
 
 (async () => {
@@ -131,6 +174,39 @@ for (const mode of ['throws', 'noop']) {
       const what = mode === 'throws' ? 'razor refused' : (mode === 'flaky' ? 'razor failing half the time' : 'host camera (V1) starts at 0:10 while the host speaks first');
       report(isErr && want.test(msg) && !/^🎬 Multicam applied — \d+ cuts, \d+ angle toggles/.test(msg),
         'panel, ' + what + ': the owner sees ' + JSON.stringify(msg.slice(0, 110)) + (isErr ? ' (as an error)' : ' (as success)'));
+    }
+    // ---- applied only partly: the advice works — tapping Apply again finishes it -----------
+    // (one ⌘Z in Premiere undoes one of hundreds of scripted steps, and more
+    // presses walk back into the owner's earlier edits — Apply is safe to repeat)
+    {
+      const ctx = await P.openPanel(browser, { premiere: { fps: 25, end: 60, video: FH.cameras(2, 60), audio }, envelopes: env });
+      let calls = 0, flaky = true;
+      const q = ctx.world.sandbox.qe.project.getActiveSequence;
+      ctx.world.sandbox.qe.project.getActiveSequence = () => {
+        const s = q(); const get = s.getVideoTrackAt.bind(s);
+        s.getVideoTrackAt = (i) => { const tr = get(i); const raz = tr.razor.bind(tr); tr.razor = (tc) => { if (flaky && ++calls % 2 === 0) throw new Error('razor failed'); return raz(tc); }; return tr; };
+        return s;
+      };
+      const r = await P.runMulticam(ctx, { cameras: 2, source: 'follow' });
+      const advice = r.diag || '';
+      flaky = false;
+      const again = await ctx.page.evaluate(async () => {
+        const n = document.getElementById('log').children.length;
+        document.getElementById('btn-mc-apply').click();
+        for (let i = 0; i < 200 && document.getElementById('log').children.length === n; i++) await new Promise(res => setTimeout(res, 50));
+        await new Promise(res => setTimeout(res, 200));
+        const box = document.getElementById('mc-diag');
+        const last = document.getElementById('log').lastElementChild;
+        return { toast: last ? last.textContent : '', box: box.classList.contains('hidden') ? null : box.textContent };
+      });
+      await ctx.page.close();
+      const res2 = ctx.calls.filter(c => c.fn === 'CP_applyMulticamPlan').pop().result || {};
+      const plan = ctx.calls.filter(c => c.fn === 'CP_applyMulticamPlan').pop().args.plan;
+      report(/Tap Apply again/.test(advice) && !/⌘Z|Undo/.test(advice),
+        'panel, applied only partly: the advice is to tap Apply again, not ⌘Z — ' + JSON.stringify(advice.split('\n').slice(-1)[0].slice(0, 90)));
+      report(res2.missedCuts === 0 && res2.verifiedPct === 100 && wrongSeconds(ctx.world, plan, 25) === 0 && /Multicam applied/.test(again.toast) && !/only partly/.test(again.box || ''),
+        'panel, tapping Apply again finishes it: missed cuts ' + res2.missedCuts + ', verified ' + res2.verifiedPct + '%, wrong camera ' +
+        wrongSeconds(ctx.world, plan, 25) + ' s, the owner sees ' + JSON.stringify(again.toast.slice(0, 60)) + (again.box ? ' and the box still says ' + JSON.stringify(again.box.slice(0, 50)) : ''));
     }
   });
   if (failed) { console.log('MULTICAM APPLY: ' + failed + ' check(s) failed'); process.exit(1); }
