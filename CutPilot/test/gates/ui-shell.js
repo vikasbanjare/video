@@ -233,8 +233,35 @@ const click = (page, sel) => page.evaluate(sel => {
     });
     await sleep(200);
 
+    // Editing the words of captions already placed happens over Captions. The
+    // editor is an overlay on every page now, but opening it still jumped to
+    // the Transcribe page, so closing it left the owner there, and its title
+    // spoke of "the words" (the transcript) rather than the captions.
+    const cte = await page.evaluate(async () => {
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      const D = window.CP_DEBUG;
+      if (!D || !D.setLastCaptionJob || !D.openCaptionTextEditor) return { err: 'no caption-editor hooks' };
+      const pageNow = () => { const p = document.querySelector('.tab-page.active'); return p ? p.id.replace(/^tab-/, '') : null; };
+      document.querySelector('.tab[data-tab="captions"]').click(); await sleep(200);
+      D.setLastCaptionJob([{ start: 0, end: 2, text: 'yeh caption hai' }, { start: 2, end: 4, text: 'aur yeh bhi' }]);
+      D.openCaptionTextEditor(); await sleep(250);
+      const ed = document.getElementById('tr-editor'), head = ed && ed.querySelector('.tre-head');
+      const out = { open: !!ed && !ed.classList.contains('hidden'), under: pageNow(), title: head ? head.textContent.replace(/\s+/g, ' ').trim() : '' };
+      const cancel = document.getElementById('tre-cancel'); if (cancel) cancel.click(); await sleep(200);
+      out.after = pageNow();
+      const t = document.getElementById('toast'); if (t) t.classList.add('hidden');
+      return out;
+    });
+    if (cte.err) R.bad('caption words editor: ' + cte.err);
+    else if (cte.open && cte.under === 'captions' && cte.after === 'captions' && /caption/i.test(cte.title))
+      R.ok('editing placed captions\' words opens over Captions ("' + cte.title.split(' Cancel')[0] + '") and closing it stays on Captions');
+    else R.bad('editing placed captions\' words leaves Captions: ' + JSON.stringify(cte));
+
     // ---- 4. wide panel: a readable column, a wider gallery, a sidebar ----------
     const cols = async () => page.evaluate(() => {
+      // measured on the Captions page itself (a hidden grid reports its CSS text)
+      const cap = document.getElementById('tab-captions');
+      if (!cap.classList.contains('active')) document.querySelector('.tab[data-tab="captions"]').click();
       const g = document.getElementById('tpl-grid');
       return getComputedStyle(g).gridTemplateColumns.split(' ').filter(Boolean).length;
     });

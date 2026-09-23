@@ -2822,16 +2822,19 @@
     catch (e) { return toast(e.message, true); }
     _treMode = 'transcript';
     _treCues = cues.map(function (c) { return { start: c.start, end: c.end, text: c.text }; });
+    if ($('tre-title')) $('tre-title').textContent = '✏️ Review & edit the words';
     renderTrEditor();
     $('tr-editor').classList.remove('hidden');
   }
   /* Edit the wording of captions already on the timeline, then re-render them in
-     place. Reuses the transcript editor UI (which lives on the Transcribe tab). */
+     place. Reuses the transcript editor, an overlay over whichever page opened
+     it: this used to switch to the Transcribe page first, so closing the editor
+     left the owner there instead of on Captions. */
   function openCaptionTextEditor() {
     if (!state.lastCaptionJob || !state.lastCaptionJob.cues) return toast('Add captions first, then you can edit their text.', true);
     _treMode = 'captions';
     _treCues = state.lastCaptionJob.cues.map(function (c) { return { start: c.start, end: c.end, text: c.text }; });
-    var tb = document.querySelector('.tab[data-tab="transcribe"]'); if (tb) tb.click();
+    if ($('tre-title')) $('tre-title').textContent = '✏️ Edit your caption words';
     renderTrEditor();
     $('tr-editor').classList.remove('hidden');
     toast('✏️ Fix any wording, then tap Save — your captions update in place.');
