@@ -6,7 +6,7 @@
  * Premiere (CP_* host calls). A headless page has neither, so this gives it
  * both, faithfully enough that the panel's OWN code runs unmodified:
  *
- *   • Node: window.require('fs' | 'path' | 'os' | 'child_process' | 'buffer')
+ *   • Node: window.require('fs' | 'path' | 'os' | 'child_process' | 'zlib' | 'buffer')
  *     is answered by a small HTTP server in this process. fs and execSync are
  *     SYNCHRONOUS (a synchronous XHR), exactly like the Node calls the panel
  *     makes in CEP; spawn streams stdout/stderr/close back by polling, and
@@ -30,7 +30,7 @@ const ROOT = path.join(__dirname, '..', '..', '..');
 const PANEL = 'file://' + path.join(ROOT, 'CutPilot', 'index.html');
 
 function requirePuppeteer() {
-  for (const t of [path.join(ROOT, 'node_modules', 'puppeteer'), '/home/user/video/node_modules/puppeteer', 'puppeteer', 'puppeteer-core']) {
+  for (const t of [path.join(ROOT, 'node_modules', 'puppeteer'), 'puppeteer', 'puppeteer-core']) {
     try { return require(t); } catch (e) {}
   }
   return null;
