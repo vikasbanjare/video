@@ -1175,7 +1175,8 @@ console.log('transcript.js (filler removal)');
   assert(close(r1.removed, 1.3333, 1e-2), 'removed time sums the filler spans');
 
   // multi-word phrase "you know" is matched as one range
-  const r2 = CPTranscript.findFillerRanges([{ start: 0, end: 6, text: 'you know this is um great' }]);
+  // (a comma = a pause: "you know this" with no pause is the verb "know this")
+  const r2 = CPTranscript.findFillerRanges([{ start: 0, end: 6, text: 'you know, this is um great' }]);
   assert(r2.count === 2, 'phrase + single filler -> two ranges');
   assert(r2.ranges[0].word === 'you know' && close(r2.ranges[0].end, 2.1, 1e-2), 'matches the phrase "you know"');
   assert(r2.ranges[1].word === 'um', 'still catches the trailing "um"');

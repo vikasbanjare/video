@@ -1172,10 +1172,13 @@
   function transcribeViaDeepgram(audioPath, lang) {
     var key = cpDeepgramKey();
     if (!key) return Promise.reject(new Error('Add your Deepgram key in Settings → Auto-transcribe.'));
-    var opts = {};
-    // 'hinglish' is our own UI mode, not a Deepgram language code; nova-3 reads
-    // Hindi natively and the caller romanises afterwards.
-    if (lang && lang !== 'auto' && lang !== 'hinglish') opts.language = lang;
+    // Deepgram assumes ENGLISH when no language is sent — it does not detect.
+    // Auto-detect and Hinglish go to nova-3's multilingual model (Hindi and
+    // English mixed in one sentence; the caller romanises Hinglish after);
+    // an explicit pick is sent as is. autoTranscribe hands Hinglish in as
+    // 'hi', so the panel's own choice decides here.
+    var ui = settings.whisperLang || 'auto';
+    var opts = { language: (ui === 'auto' || ui === 'hinglish') ? ui : (lang || ui) };
     return _curlJson(['-sS', '--max-time', '900', CPVerbatim.deepgramUrl(opts),
       '-H', 'Content-Type: audio/mpeg', '--data-binary', '@' + audioPath],
       ['Authorization: Token ' + key])
@@ -9342,8 +9345,12 @@
   /* Filler-word cut ranges (sequence time) inside [lo, hi], from the transcript. */
   function fillerSeqRanges(lo, hi) {
     if (typeof CPTranscript === 'undefined') return { ranges: [], why: 'filler removal is unavailable' };
-    var cues;
-    try { cues = readSelectedTranscript(); } catch (e) { return { ranges: [], why: e.message }; }
+    // fillerCues(): the re-timed word list when there is one, and a refusal for a
+    // transcript file whose times went stale after an earlier cut — reading the
+    // .srt straight off disk here cut a SECOND Clean up at pre-cut times.
+    var fc = fillerCues();
+    if (fc.why) return { ranges: [], why: fc.why };
+    var cues = fc.cues;
     var res = CPTranscript.findFillerRanges(cues, { extra: !!($('opt-fillers-extra') && $('opt-fillers-extra').checked), padding: 0.02 });
     var out = [];
     res.ranges.forEach(function (fr) {
@@ -9378,7 +9385,7 @@
                  dropFrame: !!settings.dropFrame, previewLabel: 'Silence' };
     if (guard) { args.expectSequenceId = guard.sequenceId; args.expectSequenceName = guard.sequenceName; args.expectFingerprint = guard.fingerprint; }
     return CPBridge.callHost('CP_razorRipple', args).then(function (rr) {
-      var removed = (rr && rr.removed && rr.removed.length) ? rr.removed : ranges;
+      var removed = (rr && Array.isArray(rr.removed)) ? rr.removed : ranges;
       rippleTranscriptByRanges(removed, args.closeGaps);
       state.silencesSeq = []; state.silPlan = null;
       if ($('results')) $('results').classList.add('hidden');
@@ -9452,7 +9459,7 @@
       function takesOn(words) {
         // keep:'best' — completeness + per-word confidence + recency picks the
         // take that actually got finished cleanly, not blindly the last one.
-        var tk = CPTakes.findRepeatedTakes(words, { minRun: tp.minrun, sim: tp.sim / 100, keep: 'best' });
+        var tk = CPTakes.findRepeatedTakes(words, { minRun: tp.minrun, sim: tp.sim / 100, keep: 'best', people: takesPeople(words) });
         return tk.deletes.map(function (d) { return { start: d.start, end: d.end }; });
       }
       function result(other, extra) {
@@ -9498,9 +9505,8 @@
         }
         var base = takesOn(words);
         if (cpKey() && typeof CPSmartEdit !== 'undefined' && typeof aiCleanupCuts === 'function') {
-          return aiCleanupCuts(words, { aggressive: (strength === 'strong'), scripted: true }, prog, '✨ AI finding retakes & off-script talk')
+          return aiCleanupCuts(words, { aggressive: (strength === 'strong') }, prog, '✨ AI finding retakes & off-script talk')
             .then(function (rr) {
-              if (rr.truncated) extraNotes.push('The AI read the first ' + rr.maxw + ' words; the built-in retake finder covered the whole video.');
               return result(base.concat(mergeAiCuts(base, rr.cuts, doFill)), { ai: true });
             })
             .catch(function () { return result(base); });
@@ -9771,6 +9777,10 @@
     }
     if (state.lastCaptionJob && state.lastCaptionJob.cues) state.lastCaptionJob.cues = remapFn(state.lastCaptionJob.cues);
     if (typeof _treCues !== 'undefined' && _treCues && _treCues.length) _treCues = remapFn(_treCues);
+    // the transcript FILE is not re-timed — remember that its times are now
+    // stale, so the retake/filler passes never cut at them (a new transcript
+    // is a new object and starts clean)
+    if (state.transcript) state.transcript.timelineEdited = true;
     return dropped;
   }
 
@@ -9799,30 +9809,89 @@
 
   // ---- Auto-Edit: remove repeated takes (uses the transcript) ----
   state.takeDeletes = [];
+  /* After any cut the word list and the caption cues are re-timed; the
+     transcript FILE is not (resyncTranscripts marks it). Its times now point
+     at the wrong speech, so the retake and filler passes refuse it. */
+  var STALE_TRANSCRIPT_MSG = 'your timeline changed since this transcript was made, and it has no word timing to follow the cuts. ' +
+    'Tap 🎙️ Auto-transcribe again (about a minute), then run this again.';
+  function transcriptIsStale() { return !!(state.transcript && state.transcript.timelineEdited); }
+  /* What the filler pass cuts on, always in the CURRENT timeline's time:
+     the word list with its REAL timing, re-timed after every cut (the fillers
+     are cut on the words themselves); else the transcript file — but never a
+     file whose times went stale after a cut (the .srt on disk is not re-timed,
+     so it put every filler cut seconds away from its "um"). Returns {cues}
+     (cues.words = the timed words) or {why} — the plain reason there is none.
+     Every filler path uses this, so all of them follow the cuts. */
+  function fillerCues() {
+    if (state.transcriptWords && state.transcriptWords.length) {
+      var cues = [];
+      cues.words = CPCaptions.dedupeRepeatedCues(state.transcriptWords, { word: true });
+      return { cues: cues };
+    }
+    if (transcriptIsStale()) return { why: STALE_TRANSCRIPT_MSG };
+    try { return { cues: readSelectedTranscript() }; } catch (e) { return { why: e.message }; }
+  }
+  /* Words for the retake passes, always in the CURRENT timeline's time. */
   function takesGetWords() {
     if (state.transcriptWords && state.transcriptWords.length) return state.transcriptWords.slice();
     var cues = (state.lastCaptionJob && state.lastCaptionJob.cues) || null;
-    if (!cues) { try { cues = readSelectedTranscript(); } catch (e) { cues = null; } }
+    if (!cues && !transcriptIsStale()) { try { cues = readSelectedTranscript(); } catch (e) { cues = null; } }
     return (cues && cues.length) ? CPTakes.flatten(cues) : null;
+  }
+  /* Who is talking: 'one', 'many' or null (not known). The owner's pick in
+     "Who is talking?" wins. On Auto the transcript's speaker labels decide: two
+     or more people each saying a real share of the words is a conversation,
+     one labelled voice is a lone speaker, no labels is not known. The retake
+     finder and the AI prompt both follow it. */
+  function takesPeople(words) {
+    var pick = $('tk-kind') ? $('tk-kind').value : 'auto';
+    if (pick === 'one' || pick === 'many') return pick;
+    var per = {}, n = 0, k, talkers = 0;
+    (words || []).forEach(function (w) {
+      if (w && w.speaker != null && w.speaker !== '') { per[w.speaker] = (per[w.speaker] || 0) + 1; n++; }
+    });
+    if (!n) return null;
+    for (k in per) if (per.hasOwnProperty(k) && per[k] >= Math.max(3, 0.1 * n)) talkers++;
+    return talkers >= 2 ? 'many' : 'one';
+  }
+  function takesNoWordsMsg(what) {
+    return transcriptIsStale() ? 'Can’t ' + what + ' — ' + STALE_TRANSCRIPT_MSG
+                               : 'Transcribe your clip first (Transcribe tab) — I need the words to ' + what + '.';
   }
   function takeChip(label) {
     return label === 'false_start' ? '⏮' : label === 'filler' ? '🗯'
          : label === 'dead_air' ? '💭' : label === 'tangent' ? '↗' : '✂';
   }
+  /* The review list: every proposed cut has a tick box (on by default; an
+     unusually long AI cut starts unticked), so ONE wrong cut — a host's
+     question, say — can be kept without throwing away the other eleven. */
+  function takesStats(dels) {
+    var stats = $('takes-stats');
+    var on = dels.filter(function (d) { return !d.skip; });
+    var total = on.reduce(function (a, d) { return a + (d.end - d.start); }, 0);
+    var off = dels.length - on.length;
+    stats.innerHTML = 'Found <b>' + dels.length + '</b> cut' + (dels.length > 1 ? 's' : '') +
+      ' — about <b>' + total.toFixed(1) + 's</b> to remove' + (off ? ' (' + off + ' unticked — kept)' : '') +
+      '. Untick anything you want to keep, then apply.';
+    $('btn-takes-apply').classList.toggle('hidden', !on.length);
+  }
   function renderTakes(dels) {
-    var stats = $('takes-stats'), list = $('takes-list');
+    var list = $('takes-list');
     $('takes-results').classList.remove('hidden');
     list.innerHTML = '';
     if (!dels.length) {
-      stats.textContent = 'Nothing to remove — the transcript reads clean. (Tip: lower “Match sensitivity”, or try ✨ Smart Cleanup for false starts, fillers & dead-air.)';
+      $('takes-stats').textContent = 'Nothing to remove — the transcript reads clean. (Tip: lower “Match sensitivity”, or try ✨ Smart Cleanup for false starts, fillers & dead-air.)';
       $('btn-takes-apply').classList.add('hidden');
       return;
     }
-    var total = dels.reduce(function (a, d) { return a + (d.end - d.start); }, 0);
-    stats.innerHTML = 'Found <b>' + dels.length + '</b> cut' + (dels.length > 1 ? 's' : '') +
-      ' — about <b>' + total.toFixed(1) + 's</b> to remove. Review, then apply.';
+    dels.forEach(function (d) { if (d.skip == null) d.skip = !!d.needsReview; });
+    takesStats(dels);
     dels.forEach(function (d, i) {
       var item = document.createElement('div'); item.className = 'seg-item';
+      var cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !d.skip;
+      cb.title = 'Untick to KEEP this part';
+      cb.addEventListener('change', function () { d.skip = !cb.checked; takesStats(dels); });
+      item.appendChild(cb);
       var play = document.createElement('button'); play.className = 'angle-chip'; play.textContent = '▶';
       play.title = 'Preview this cut on the timeline';
       play.style.cursor = 'pointer';
@@ -9836,31 +9905,49 @@
       var span = document.createElement('span');
       var txt = d.text.length > 38 ? d.text.slice(0, 38) + '…' : d.text;
       span.textContent = '#' + (i + 1) + '  ' + fmt(d.start) + '→' + fmt(d.end) + '  “' + txt + '”' +
-        (d.label && d.reason ? '  · ' + d.reason : '');
+        (d.label && d.reason ? '  · ' + d.reason : '') + (d.needsReview ? '  · unusually long — play it first' : '');
+      span.title = d.text;                                   // the whole phrase on hover
       item.appendChild(span);
       list.appendChild(item);
     });
-    $('btn-takes-apply').classList.remove('hidden');
+  }
+  /* Which timeline a take list belongs to: the sequence ID, its name and a
+     fingerprint of every clip's position (CP_getCutSources), read when the list
+     is made and sent with the cut. The host then refuses to cut another
+     sequence — or this one after clips were added, moved or removed — instead
+     of cutting the list's times into the wrong speech. Resolves null when the
+     host cannot say (an older host script); the cut then goes ahead as before. */
+  function readCutSources() {
+    return CPBridge.callHost('CP_getCutSources', {}).then(function (src) { return src || null; }, function () { return null; });
+  }
+  function cutGuardOf(src) {
+    return (src && src.sequenceId) ? { sequenceId: src.sequenceId, sequenceName: src.sequenceName, fingerprint: src.fingerprint } : null;
+  }
+  /* Show a take list for review, remembering the timeline it was made for. */
+  function showTakeList(dels, guard) {
+    state.takeDeletes = dels;
+    state.takeGuard = guard || null;
+    renderTakes(dels);
   }
   if ($('tk-sim')) $('tk-sim').addEventListener('input', function () { $('tk-sim-val').textContent = this.value + '%'; });
   if ($('btn-takes-find')) $('btn-takes-find').addEventListener('click', function () {
     var words = takesGetWords();
-    if (!words || words.length < 6) return toast('Transcribe your clip first (Transcribe tab) — I need the words to find retakes.', true);
+    if (!words || words.length < 6) return toast(takesNoWordsMsg('find retakes'), true);
     var prog = $('takes-progress'); prog.classList.remove('hidden'); prog.textContent = 'Scanning the transcript for retakes…';
-    setTimeout(function () {
+    readCutSources().then(function (src) {
       var res = CPTakes.findRepeatedTakes(words, {
         minRun: parseInt($('tk-minrun').value, 10) || 3,
         sim: (parseInt($('tk-sim').value, 10) || 60) / 100,
-        keep: $('tk-keep').value
+        keep: $('tk-keep').value,
+        people: takesPeople(words)
       });
-      state.takeDeletes = CPTakes.tidyDeletes(res.deletes, 0.1);
       prog.classList.add('hidden');
-      renderTakes(state.takeDeletes);
-    }, 30);
+      showTakeList(CPTakes.tidyDeletes(res.deletes, 0.1), cutGuardOf(src));
+    });
   });
   function applyTakes(safeCopy) {
-    var dels = state.takeDeletes || [];
-    if (!dels.length) return toast('Nothing to remove.', true);
+    var dels = (state.takeDeletes || []).filter(function (d) { return !d.skip; });   // only the ticked rows
+    if (!dels.length) return toast((state.takeDeletes || []).length ? 'Nothing is ticked — every cut is being kept.' : 'Nothing to remove.', true);
     var ranges = dels.map(function (d) { return { start: d.start, end: d.end }; });
     ranges = snapRangesToWords(ranges, state.transcriptWords);   // keep edges off mid-word
     var backup = safeCopy ? true : ($('tk-backup') ? $('tk-backup').checked : true);
@@ -9874,14 +9961,23 @@
       });
       return;
     }
-    CPBridge.callHost('CP_razorRipple', { ranges: ranges, closeGaps: true, backup: backup, dropFrame: !!settings.dropFrame })
+    var args = { ranges: ranges, closeGaps: true, backup: backup, dropFrame: !!settings.dropFrame };
+    var g = state.takeGuard;   // the timeline this list was made for — the host refuses any other
+    if (g) { args.expectSequenceId = g.sequenceId; args.expectSequenceName = g.sequenceName; args.expectFingerprint = g.fingerprint; }
+    CPBridge.callHost('CP_razorRipple', args)
       .then(function (r) {
-        rippleTranscriptByRanges(ranges);   // keep the transcript in sync — no re-transcribe
-        state.takeDeletes = [];             // these are gone now
+        r = r || {};
+        // re-sync with what the host REALLY removed: it snaps every cut to the
+        // frame grid and merges neighbours, so the asked-for times drift by up
+        // to half a frame per cut (an older host doesn't say — then the asked)
+        var removed = Array.isArray(r.removed) ? r.removed : ranges;
+        rippleTranscriptByRanges(removed);  // keep the transcript in sync — no re-transcribe
+        state.takeDeletes = []; state.takeGuard = null;   // these are gone now
         if ($('takes-results')) $('takes-results').classList.add('hidden');
-        toast('🎬 Removed ' + (r.removedClips != null ? r.removedClips : ranges.length) + ' take piece' +
-              ((r.removedClips || ranges.length) === 1 ? '' : 's') + '. Transcript auto-synced — run any other Auto-Edit step or add captions, no re-transcribe needed. ⌘Z / Ctrl+Z undoes it.');
-      }).catch(function (e) { toast('Take cut failed: ' + e.message, true); });
+        var n = (r.cuts != null) ? r.cuts : removed.length;
+        var secs = (r.removedSeconds != null) ? r.removedSeconds : removed.reduce(function (a, x) { return a + (x.end - x.start); }, 0);
+        toast('🎬 Removed ' + n + ' take' + (n === 1 ? '' : 's') + ' (' + secs.toFixed(1) + 's). Transcript auto-synced — run any other Auto-Edit step or add captions, no re-transcribe needed. ⌘Z / Ctrl+Z undoes it.');
+      }).catch(function (e) { toast('Take cut failed: ' + e.message, true); });   // the list stays: nothing was cut
   }
   if ($('btn-takes-apply')) $('btn-takes-apply').addEventListener('click', function () { applyTakes(true); });
   if ($('btn-takes-cut')) $('btn-takes-cut').addEventListener('click', function () { applyTakes(false); });
@@ -9930,34 +10026,65 @@
   }
 
   /* Chunked AI cleanup → cut ranges (sequence time, via the words' own times).
-     opts:{aggressive,scripted}. Shared by the review-first Smart Cleanup button
-     and the one-tap "Clean up my video". Resolves {cuts, truncated, maxw}. */
+     opts:{aggressive, scripted, tangents, fillers, people} — fillers/tangents
+     === false leave that category out. Who is talking frames the prompt: one
+     person re-reading a script (scripted — keep only the last take of every
+     line), or a conversation (not scripted, and its side stories are content,
+     not tangents). opts.people, else takesPeople(): the "Who is talking?" pick
+     or the speaker labels. An explicit opts.scripted / opts.tangents wins.
+     Shared by the review-first Smart Cleanup button and the one-tap "Clean up
+     my video". Resolves {cuts, truncated, maxw}.
+     EVERY word is read (it used to stop at 5,000 — the second half of a long
+     podcast kept all its retakes, silently), in 1,000-word chunks that overlap
+     by 150 so a retake straddling a chunk boundary is seen whole. */
   function aiCleanupCuts(words, opts, prog, label) {
     opts = opts || {};
-    var MAXW = 5000;
-    var truncated = words.length > MAXW;
-    var use = truncated ? words.slice(0, MAXW) : words;
-    var chunks = CPSmartEdit.chunk(use, 1000);
-    return processChunks(chunks, function (cw) {
-      var prompt = CPSmartEdit.buildCleanupPrompt(cw, { aggressive: !!opts.aggressive, scripted: !!opts.scripted });
+    var people = ('people' in opts) ? opts.people : takesPeople(words);
+    var scripted = (opts.scripted != null) ? !!opts.scripted : people !== 'many';
+    var tangents = (opts.tangents != null) ? opts.tangents : (people === 'many' ? false : undefined);
+    var plan = CPSmartEdit.planChunks(words.length, 1000, 150);
+    var cats = CPSmartEdit.cleanupCategories({ fillers: opts.fillers, tangents: tangents });
+    /* One chunk → its cuts (indices local to the chunk). A reply cut off by
+       the token limit keeps only the cuts before the cut-off point, silently —
+       so that chunk is asked again in two overlapping halves (twice at most). */
+    function ask(pc, depth) {
+      var cw = words.slice(pc.from, pc.to);
+      var prompt = CPSmartEdit.buildCleanupPrompt(cw, { aggressive: !!opts.aggressive, scripted: scripted,
+                                                        fillers: opts.fillers, tangents: tangents });
       return aiChatRetry(prompt, { maxTokens: 2048 }).then(function (content) {
-        return CPSmartEdit.parseCleanupResponse(content, cw, { minConfidence: 0 });
+        if (depth < 2 && pc.to - pc.from >= 200 && CPSmartEdit.replyTruncated(content)) {
+          var halves = CPSmartEdit.splitChunk(pc, 150);
+          return ask(halves[0], depth + 1).then(function (a) {
+            return ask(halves[1], depth + 1).then(function (b) {
+              return CPSmartEdit.mergeChunkCuts(halves, [a, b]).map(function (c) { c.fromIdx -= pc.from; c.toIdx -= pc.from; return c; });
+            });
+          });
+        }
+        return CPSmartEdit.parseCleanupResponse(content, cw, { minConfidence: 0, categories: cats });
       });
-    }, prog, label || '✨ AI is reading your transcript').then(function (cuts) {
-      return { cuts: cuts, truncated: truncated, maxw: MAXW };
+    }
+    return processChunks(plan, function (pc) {
+      return ask(pc, 0).then(function (cuts) { return [cuts]; });   // one entry per chunk
+    }, prog, label || '✨ AI is reading your transcript').then(function (perChunk) {
+      return { cuts: CPSmartEdit.mergeChunkCuts(plan, perChunk), truncated: false, maxw: words.length };
     });
   }
   function runSmartCleanup() {
     if (typeof CPSmartEdit === 'undefined') return toast('Smart Cleanup module missing.', true);
     var words = takesGetWords();
-    if (!words || words.length < 6) return toast('Transcribe your clip first (Transcribe tab) — Smart Cleanup reads the words.', true);
+    if (!words || words.length < 6) return toast(takesNoWordsMsg('run Smart Cleanup'), true);
     var aggressive = !!($('sc-aggressive') && $('sc-aggressive').checked);
     var prog = $('takes-progress'); prog.classList.remove('hidden');
-    aiCleanupCuts(words, { aggressive: aggressive, scripted: true }, prog, '✨ Reading your transcript with AI').then(function (r) {
-      state.takeDeletes = r.cuts;          // reuse the same review → apply pipeline
+    var guard = null;
+    readCutSources().then(function (src) {
+      guard = cutGuardOf(src);   // the list is for THIS timeline
+      return aiCleanupCuts(words, { aggressive: aggressive }, prog, '✨ Reading your transcript with AI');
+    }).then(function (r) {
       prog.classList.add('hidden');
-      renderTakes(r.cuts);
-      if (r.cuts.length) toast('✨ Smart Cleanup found ' + r.cuts.length + ' cut' + (r.cuts.length === 1 ? '' : 's') + (r.truncated ? ' (first ' + r.maxw + ' words)' : '') + ' — review them, then apply.');
+      showTakeList(r.cuts, guard);         // reuse the same review → apply pipeline
+      var big = r.cuts.filter(function (c) { return c.needsReview; }).length;
+      if (r.cuts.length) toast('✨ Smart Cleanup found ' + r.cuts.length + ' cut' + (r.cuts.length === 1 ? '' : 's') + ' — review them, then apply.' +
+        (big ? ' ' + big + ' unusually long one' + (big === 1 ? ' is' : 's are') + ' left unticked — play it (▶) before you tick it.' : ''));
     }).catch(function (e) { prog.classList.add('hidden'); toast('Smart Cleanup failed: ' + e.message, true); });
   }
   if ($('btn-smart-cleanup')) $('btn-smart-cleanup').addEventListener('click', runSmartCleanup);
@@ -9980,8 +10107,11 @@
       });
     });
   }
+  /* The verbatim engines get the panel's language too — with none they both
+     transcribe as English, which turned Hindi retakes into gibberish. */
+  function verbatimLang() { return settings.whisperLang || 'auto'; }
   function verbatimDeepgram(audioPath, key) {
-    return _curlJson(['-sS', '--max-time', '600', CPVerbatim.deepgramUrl({}),
+    return _curlJson(['-sS', '--max-time', '600', CPVerbatim.deepgramUrl({ language: verbatimLang(), diarize: true }),
       '-H', 'Content-Type: audio/mpeg', '--data-binary', '@' + audioPath], ['Authorization: Token ' + key])
       .then(function (j) {
         if (j.err_code || j.error) throw CPApiErr.toError('deepgram', { body: j });
@@ -9995,9 +10125,15 @@
       '-H', 'Content-Type: application/octet-stream', '--data-binary', '@' + audioPath], ['authorization: ' + key])
       .then(function (up) {
         if (!up.upload_url) throw new Error('AssemblyAI upload failed' + (up.error ? ': ' + up.error : '.'));
-        return _curlJson(['-sS', '--max-time', '60', 'https://api.assemblyai.com/v2/transcript',
-          '-H', 'Content-Type: application/json',
-          '-d', JSON.stringify(CPVerbatim.assemblySubmitBody(up.upload_url, {}))], ['authorization: ' + key]);
+        function submit(disfl) {
+          return _curlJson(['-sS', '--max-time', '60', 'https://api.assemblyai.com/v2/transcript',
+            '-H', 'Content-Type: application/json',
+            '-d', JSON.stringify(CPVerbatim.assemblySubmitBody(up.upload_url, { language: verbatimLang(), speakerLabels: true, disfluencies: disfl }))],
+            ['authorization: ' + key]);
+        }
+        // "disfluencies" is English-only on AssemblyAI; if a Hindi request is
+        // refused because of it, ask once more without it.
+        return submit(true).then(function (sub) { return (sub && sub.id) ? sub : submit(false); });
       }).then(function (sub) {
         if (!sub.id) throw new Error('AssemblyAI submit failed' + (sub.error ? ': ' + sub.error : '.'));
         return new Promise(function (resolve, reject) {
@@ -10015,65 +10151,164 @@
         });
       });
   }
-  /* Extract the clip's audio, transcribe VERBATIM (keeps every take), return
-     words in SEQUENCE time with per-word confidence. */
-  function verbatimTranscribe(clip, ff) {
-    return new Promise(function (resolve, reject) {
-      var key = (settings.verbatimKey || '').trim();
-      if (!key) return reject(new Error('Add a Deepgram or AssemblyAI key in Settings → Verbatim transcription.'));
-      var cp, fs, os, pathMod;
-      try { cp = nodeReq('child_process'); fs = nodeReq('fs'); os = nodeReq('os'); pathMod = nodeReq('path'); } catch (e) { return reject(e); }
-      var audio = pathMod.join(os.tmpdir(), 'pulse-vb-' + Date.now() + '.mp3');
-      var inP = clip.inPoint || 0, outP = clip.outPoint || 0, dur = (outP > inP) ? (outP - inP) : 0;
-      var args = ['-y', '-ss', String(inP), '-i', clip.mediaPath];
-      if (dur > 0) args = args.concat(['-t', String(dur)]);
-      args = args.concat(['-vn', '-ac', '1', '-ar', '16000', '-b:a', '64k', audio]);
-      var ex; try { ex = cp.spawn(ff, args); } catch (e3) { return reject(e3); }
-      var exErr = '';
-      if (ex.stderr) ex.stderr.on('data', function (d) { exErr += d.toString(); });
-      ex.on('error', function (e) { reject(new Error('Audio extract failed: ' + e.message)); });
-      ex.on('close', function (code) {
-        if (code !== 0 || !fs.existsSync(audio)) return reject(new Error('Could not extract audio: ' + exErr.slice(-140)));
-        function cleanup() { try { fs.unlinkSync(audio); } catch (e) {} }
-        var off = (clip.seqStart || 0);   // word time is relative to inPoint → seq = seqStart + t
-        function toSeq(ws) { return ws.map(function (w) { return { start: off + w.start, end: off + w.end, text: w.text, conf: w.conf }; }); }
-        var engine = (settings.verbatimProvider === 'assemblyai') ? verbatimAssembly : verbatimDeepgram;
-        engine(audio, key).then(function (ws) { cleanup(); resolve(toSeq(ws)); }).catch(function (e) { cleanup(); reject(e); });
+  /* ffmpeg: every live audio track of the timeline, each piece at its own
+     timeline position, mixed to one mono mp3 (CPVerbatim.timelineMixPlan).
+     A long timeline's graph goes through a file — it would not fit on a
+     Windows command line. Retries: a file with fewer audio streams than the
+     tracks it sits on is read from its first stream; an ffmpeg that dropped
+     -filter_complex_script is given -/filter_complex. */
+  function extractTimelineMix(ff, plan, audio) {
+    var fs = nodeReq('fs'), graph = CPVerbatim.mixFilterGraph(plan);
+    var file = graph.length > 12000 ? audio.replace(/\.mp3$/, '') + '-graph.txt' : null;
+    function attempt(o) {
+      var opts = { oneStream: !!o.oneStream };
+      if (file) { fs.writeFileSync(file, CPVerbatim.mixFilterGraph(plan, opts)); opts.graphFile = file; opts.graphFlag = o.flag; }
+      return runProc(ff, CPVerbatim.mixFfmpegArgs(plan, audio, opts));
+    }
+    function done() { if (file) { try { fs.unlinkSync(file); } catch (e) {} } }
+    var o = { oneStream: false, flag: '-filter_complex_script' };
+    function run() {
+      return attempt(o).catch(function (e) {
+        var m = String((e && e.message) || '');
+        if (!o.oneStream && /matches no streams|Stream specifier/i.test(m)) { o.oneStream = true; return run(); }
+        if (file && o.flag !== '-/filter_complex' && /Unrecognized option|Option not found|filter_complex_script/i.test(m)) { o.flag = '-/filter_complex'; return run(); }
+        throw new Error('Could not read the timeline audio: ' + m.slice(-160));
       });
+    }
+    return run().then(function (r) { done(); return r; }, function (e) { done(); throw e; });
+  }
+  /* One clip's audio (in point to out point) — for a host that cannot list
+     the timeline's tracks. */
+  function extractClipAudio(ff, clip, audio) {
+    var inP = clip.inPoint || 0, outP = clip.outPoint || 0, dur = (outP > inP) ? (outP - inP) : 0;
+    var args = ['-y', '-ss', String(inP), '-i', clip.mediaPath];
+    if (dur > 0) args = args.concat(['-t', String(dur)]);
+    return runProc(ff, args.concat(['-vn', '-ac', '1', '-ar', '16000', '-b:a', '64k', audio]))
+      .catch(function (e) { throw new Error('Could not extract audio: ' + String((e && e.message) || '').slice(-160)); });
+  }
+  /* Transcribe the timeline VERBATIM (keeps every take) and return words in
+     SEQUENCE time with per-word confidence and speaker. EVERY live voice track
+     is heard, mixed as it plays (CP_getCutSources): the old path read one clip,
+     so on a two-mic podcast the other person's words — and their retakes —
+     were never read, and on a timeline already cut into pieces only one
+     piece was. `src` = CP_getCutSources() when the caller has it (else read
+     here); with no track list (an older host) the one `clip` is read.
+     opts.keepAudio leaves the mix on disk as words.audio = {path, seqStart,
+     duration} (the caller deletes it) — Verbatim retakes snaps its cuts to
+     the pauses heard in it. */
+  function verbatimTranscribe(clip, ff, src, opts) {
+    opts = opts || {};
+    var key = (settings.verbatimKey || '').trim();
+    if (!key) return Promise.reject(new Error('Add a Deepgram or AssemblyAI key in Settings → Verbatim transcription.'));
+    var fs, os, pathMod;
+    try { fs = nodeReq('fs'); os = nodeReq('os'); pathMod = nodeReq('path'); } catch (e) { return Promise.reject(e); }
+    var audio = pathMod.join(os.tmpdir(), 'pulse-vb-' + Date.now() + '.mp3');
+    function cleanup() { try { fs.unlinkSync(audio); } catch (e) {} }
+    return (src !== undefined ? Promise.resolve(src) : readCutSources()).then(function (s) {
+      var plan = s ? CPVerbatim.timelineMixPlan(s) : null;
+      if (!plan && !(clip && clip.mediaPath)) throw new Error('Put your video on the timeline (select it) so I can read its audio.');
+      // word time is relative to the start of what was read → seq = off + t
+      var off = plan ? plan.span.start : (clip.seqStart || 0);
+      var dur = plan ? plan.span.end - plan.span.start : Math.max(0, (clip.outPoint || 0) - (clip.inPoint || 0));
+      return (plan ? extractTimelineMix(ff, plan, audio) : extractClipAudio(ff, clip, audio)).then(function () {
+        if (!fs.existsSync(audio)) throw new Error('Could not extract audio.');
+        var engine = (settings.verbatimProvider === 'assemblyai') ? verbatimAssembly : verbatimDeepgram;
+        return engine(audio, key);
+      }).then(function (ws) {
+        var words = ws.map(function (w) {
+          var o = { start: off + w.start, end: off + w.end, text: w.text, conf: w.conf };
+          if (w.speaker != null) o.speaker = w.speaker;   // who said it — an echo by the other person is never a retake
+          return o;
+        });
+        if (opts.keepAudio) words.audio = { path: audio, seqStart: off, duration: dur };
+        else cleanup();
+        return words;
+      }, function (e) { cleanup(); throw e; });
     });
   }
   function runVerbatimRetakes() {
     var ff = resolveFfmpeg();
     if (!ff) return toast('This needs ffmpeg (Settings → ffmpeg).', true);
     if (!(settings.verbatimKey || '').trim()) return toast('Add a Deepgram or AssemblyAI key in Settings → Verbatim transcription to use this.', true);
-    var prog = $('takes-progress'); prog.classList.remove('hidden'); prog.textContent = 'Finding your clip…';
-    CPBridge.callHost('CP_getSelectedClip').then(
+    var prog = $('takes-progress'); prog.classList.remove('hidden'); prog.textContent = 'Reading your timeline…';
+    var guard = null, src = null, clip = null;
+    readCutSources().then(function (s) {
+      src = s; guard = cutGuardOf(s);   // the timeline whose audio is read — the list is for it only
+      return CPBridge.callHost('CP_getSelectedClip');
+    }).then(
       function (res) { return (res && res.clip && res.clip.mediaPath) ? res : CPBridge.callHost('CP_getTranscribeSource'); },
       function () { return CPBridge.callHost('CP_getTranscribeSource'); }
-    ).then(function (res) {
-      if (!res || !res.clip || !res.clip.mediaPath) throw new Error('Put your video on the timeline (select it) so I can read its audio.');
-      state.clip = res.clip;
+    ).then(null, function () { return null; }).then(function (res) {
+      // the one clip is only needed when the host cannot list every track
+      if (res && res.clip && res.clip.mediaPath) { clip = res.clip; state.clip = clip; }
       prog.textContent = '🎙 Transcribing verbatim (keeps every take)… this can take a minute';
-      return verbatimTranscribe(res.clip, ff).then(function (words) {
-        state.transcriptWords = words;                       // adopt the verbatim transcript
+      var heard = null;
+      function dropAudio() { if (heard) { try { nodeReq('fs').unlinkSync(heard.path); } catch (e) {} heard = null; } }
+      return verbatimTranscribe(clip, ff, src, { keepAudio: true }).then(function (words) {
+        heard = words.audio;
+        words = words.slice();
+        // Adopt the verbatim words only when the panel has none: they may be in
+        // another script than the caption transcript (Devanagari vs Hinglish),
+        // and captions time their words from state.transcriptWords. For a
+        // Hinglish owner they are adopted in Latin letters like the rest of the
+        // panel — the multilingual model writes Hindi words in Devanagari.
+        if (!(state.transcriptWords && state.transcriptWords.length)) {
+          state.transcriptWords = (settings.whisperLang === 'hinglish') ? words.map(function (w) {
+            var o = {}, k;
+            for (k in w) if (w.hasOwnProperty(k)) o[k] = w[k];
+            o.text = CPCaptions.devanagariToLatin(String(w.text));
+            return o;
+          }) : words;
+        }
         prog.textContent = 'Finding the best take of each line…';
         var tp = TAKE_PRESETS[state.takeStrength || 'balanced'] || TAKE_PRESETS.balanced;
-        var det = CPTakes.findRepeatedTakes(words, { minRun: tp.minrun, sim: tp.sim / 100, keep: 'best' });
+        var det = CPTakes.findRepeatedTakes(words, { minRun: tp.minrun, sim: tp.sim / 100, keep: 'best', people: takesPeople(words) });
         var deletes = CPTakes.tidyDeletes(det.deletes, 0.1);
         prog.textContent = 'Snapping cuts to the pauses…';
-        return detectSilencesRobust(res.clip, ff, { thresholdDb: -35, minSilence: 0.12, padding: 0 }).then(function (sd) {
-          var sils = (sd.silences || []).map(function (s) { return { start: (res.clip.seqStart || 0) + (s.start - res.clip.inPoint), end: (res.clip.seqStart || 0) + (s.end - res.clip.inPoint) }; });
+        // snap to the pauses in what was transcribed: the mix of every voice
+        // (a pause in one mic while the other person talks is not a pause)
+        var snapSrc = heard ? { mediaPath: heard.path, inPoint: 0, outPoint: heard.duration, seqStart: heard.seqStart } : clip;
+        return detectSilencesRobust(snapSrc, ff, { thresholdDb: -35, minSilence: 0.12, padding: 0 }).then(function (sd) {
+          var sils = (sd.silences || []).map(function (x) { return { start: (snapSrc.seqStart || 0) + (x.start - (snapSrc.inPoint || 0)), end: (snapSrc.seqStart || 0) + (x.end - (snapSrc.inPoint || 0)) }; });
           return CPSilence.snapCutsToSilence(deletes, sils, { window: 0.25, pad: 0.02 });
         }).then(function (snapped) { return CPTakes.tidyDeletes(snapped, 0.1); }, function () { return deletes; });
-      });
+      }).then(function (cuts) { dropAudio(); return cuts; }, function (e) { dropAudio(); throw e; });
     }).then(function (cuts) {
-      state.takeDeletes = cuts;
       prog.classList.add('hidden');
-      renderTakes(cuts);
+      showTakeList(cuts, guard);
       toast(cuts.length ? ('🎯 Found ' + cuts.length + ' retake/off-script cut' + (cuts.length === 1 ? '' : 's') + ' — review (▶ to preview), then apply.') : 'No clear retakes found in the verbatim transcript.');
     }).catch(function (e) { prog.classList.add('hidden'); toast('Verbatim retakes failed: ' + e.message, true); });
   }
   if ($('btn-verbatim-retakes')) $('btn-verbatim-retakes').addEventListener('click', runVerbatimRetakes);
+
+  // Test-only hooks for the retake / filler / verbatim gates
+  // (test/gates/retakes-*.js). Nothing inside Premiere calls these.
+  try {
+    window.CP_DEBUG_EXT = window.CP_DEBUG_EXT || {};
+    window.CP_DEBUG_EXT.retakes = {
+      setLang: function (l) { settings.whisperLang = l; },
+      setTranscript: function (o) {
+        o = o || {};
+        if ('words' in o) state.transcriptWords = o.words;
+        if ('transcript' in o) state.transcript = o.transcript;
+        if ('captionCues' in o) state.lastCaptionJob = o.captionCues ? { cues: o.captionCues, track: 1 } : null;
+      },
+      transcriptWords: function () { return state.transcriptWords; },
+      ripple: function (ranges) { return rippleTranscriptByRanges(ranges); },
+      fillerMediaRanges: function (clip) { var r = fillerSeqRanges(clip.seqStart || 0, (clip.seqStart || 0) + ((clip.outPoint || 0) - (clip.inPoint || 0))); if (r.why) toast('Filler removal skipped — ' + r.why, true); return r.ranges.map(function (x) { return { start: x.start - (clip.seqStart || 0) + (clip.inPoint || 0), end: x.end - (clip.seqStart || 0) + (clip.inPoint || 0), kind: 'filler', word: x.word }; }); },
+      fillerCues: fillerCues,
+      takesGetWords: takesGetWords,
+      snapRangesToWords: snapRangesToWords,
+      takeDeletes: function () { return state.takeDeletes; },
+      renderTakes: function (dels, guard) { showTakeList(dels, guard); },
+      aiCleanupCuts: aiCleanupCuts,
+      takesPeople: takesPeople,
+      verbatimDeepgram: verbatimDeepgram,
+      verbatimAssembly: verbatimAssembly,
+      verbatimTranscribe: verbatimTranscribe,
+      transcribeViaDeepgram: transcribeViaDeepgram
+    };
+  } catch (eDbgR) {}
 
   // =========================================================== VIRAL SHORTS ====
   /* Sentence-level segments for the highlight finder: prefer the caption job's
