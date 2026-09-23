@@ -292,7 +292,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .check input[type="checkbox"]:checked::after { left: 18px; }
 body.theme-light .check input[type="checkbox"]:not(:checked) { background: #dfe5d8; }
 /* pack standalone toggles left-to-right so the panel is shorter / less scrolling */
-.check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0 14px; align-items: start; }
+.check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 0 14px; align-items: start; }
 .check-grid .check { margin-top: 4px; }
 .switch-row { align-self: end; margin: 0 0 6px; }
 
@@ -1132,7 +1132,6 @@ footer { border: 1px solid var(--line); border-radius: 10px; background: var(--c
   .customizer .cust-group > .wc-row,
   .customizer .cust-group > label.full { grid-column: 1 / -1; }
   .customizer .cust-group > * { min-width: 0; }
-  .customizer .cust-group > label.check { grid-column: span 2; }
   .customizer .cust-group > label.check .dim { display: none; }
   .customizer .cust-group > span.dim { grid-column: span 2; font-size: var(--fs-xs); align-self: center; }
   .tpl-params { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
@@ -1151,11 +1150,6 @@ footer { border: 1px solid var(--line); border-radius: 10px; background: var(--c
   /* two groups side by side each get half the width — one control per row
      there, so no label spills into its neighbour */
   .customizer .cust-group { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .customizer .cust-group > label.check { grid-column: 1 / -1; }
-}
-@media (min-width: 1100px) {
-  .customizer .cust-group { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .customizer .cust-group > label.check { grid-column: span 2; }
 }
 
 /* ══ Photoshop-style colour picker (inside every colour swatch's popover) ══ */
@@ -1190,6 +1184,19 @@ footer { border: 1px solid var(--line); border-radius: 10px; background: var(--c
 .customizer .cust-group label { min-width: 0; }
 .customizer .cust-group label input[type="range"] { width: 100%; }
 
+/* One control per row — label left, value, then the slider or picker — so a
+   label never wraps inside a narrow cell or spills into its neighbour (they
+   did from 620 px up). Only colour swatches share a row. */
+.customizer .cust-group > label:not(.sw),
+.customizer .cust-group > .ctrl-row > label:not(.sw),
+.customizer .cust-group > div:not(.ctrl-row),
+.customizer .cust-group > .field-label { grid-column: 1 / -1; }
+.customizer .cust-group > label:not(.check):not(.full):not(.sw),
+.customizer .cust-group > .ctrl-row > label:not(.sw) { white-space: nowrap; }
+.customizer .cust-group > label:not(.check):not(.full) select { flex: 1 1 auto; width: auto; min-width: 0; margin: 0; }
+/* a switch's short explanation drops to its own quiet line under the words */
+.customizer .check { flex-wrap: wrap; }
+.customizer .check > .dim { flex: 0 0 100%; padding-left: 44px; margin-top: -6px; font-size: var(--fs-xs); white-space: normal; }
 /* SINGLE-LINE CONTROLS: label LEFT, control RIGHT — a cell is ONE line tall. */
 .customizer .cust-group > label:not(.check):not(.full),
 .customizer .cust-group > .ctrl-row > label {
