@@ -370,13 +370,15 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px 
 .page-actions > .row { flex: 1 1 100%; margin: 0; }
 
 /* ---------------------------------------------- caption sub-views --- */
+/* a pill of choices; like .seg-control, a choice keeps its whole label and
+   the pill takes a second row when the panel is too narrow ("▶️ YouT…") */
 .subview-switch {
-  display: flex; gap: 3px; background: var(--bg2); border: 1px solid var(--line); border-radius: 99px; padding: 3px; margin-bottom: 10px;
+  display: flex; flex-wrap: wrap; gap: 3px; background: var(--bg2); border: 1px solid var(--line); border-radius: 18px; padding: 3px; margin-bottom: 10px;
 }
 .subview-switch button {
-  flex: 1 1 0; min-width: 0; min-height: var(--tap); padding: 3px 4px; background: transparent; border: none; border-radius: 99px;
+  flex: 1 1 0; min-width: -webkit-max-content; min-width: max-content; min-height: var(--tap); padding: 3px 6px; background: transparent; border: none; border-radius: 99px;
   color: var(--dim); font-size: var(--fs-sm); font-weight: 800; cursor: pointer; transition: color .15s, background .15s;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .subview-switch button.on { background: var(--card3); color: var(--fg); box-shadow: var(--shadow-sm); }
 
@@ -403,16 +405,20 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px 
    Each card is a small label on top + one dark rounded preview box (the live
    caption canvas). As many columns as the panel has room for: 2 on a docked
    panel, 6–7 on a wide one. */
-.tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px 10px; align-items: start; }
-.tpl-card { position: relative; background: transparent; border: none; cursor: pointer; min-width: 0; }
+.tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px 10px; align-items: stretch; }
+/* a long style name wraps onto a second line instead of being cut short
+   ("PURPLE ACTIVE PL…" at 320 px); the thumbnail sits at the card's foot, so
+   every thumbnail in a row stays level */
+.tpl-card { position: relative; background: transparent; border: none; cursor: pointer; min-width: 0; display: flex; flex-direction: column; }
+.tpl-card > .tpl-thumb { margin-top: auto; }
 .lib-section { color: var(--fg); }
 .lib-section .hint { font-size: var(--fs-xs); }
 
 .tpl-head { display: flex; align-items: center; gap: 4px; margin: 0 1px 2px; min-height: var(--tap); }
 .tpl-name {
   flex: 1 1 auto; min-width: 0;
-  font-size: var(--fs-xs); font-weight: 700; letter-spacing: .03em; text-transform: uppercase;
-  color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--fs-xs); font-weight: 700; letter-spacing: .03em; text-transform: uppercase; line-height: 1.25;
+  color: var(--dim); overflow-wrap: anywhere;
 }
 .tpl-card.on .tpl-name { color: var(--accent-text); }
 .tpl-dark-note { font-size: var(--fs-xs) !important; color: var(--warn-text) !important; }
@@ -502,6 +508,12 @@ body.theme-light .tpl-card.on .tpl-thumb { box-shadow: 0 0 0 3px #7aa01f; }
 .editor-head .chip-btn { padding: 3px 9px; }
 .editor-head #btn-back-lib { padding: 3px 12px; font-size: var(--fs-sm); }
 .editor-tpl-name { font-size: var(--fs-md); font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 1 auto; }
+/* on a docked panel the style's name gets its own line under the buttons, so
+   a long one is never cut short ("EXPLAINER CLEAN LO…") */
+@media (max-width: 479px) {
+  .editor-head { flex-wrap: wrap; row-gap: 2px; }
+  .editor-head .editor-tpl-name { order: 9; flex: 1 1 100%; white-space: normal; overflow: visible; overflow-wrap: anywhere; padding: 0 2px; }
+}
 
 /* ----------------------------------------------- live preview --- */
 /* Pinned at the top of the editor while you scroll the controls — but only
@@ -596,7 +608,8 @@ body.theme-light .tpl-card.on .tpl-thumb { box-shadow: 0 0 0 3px #7aa01f; }
 .tr-bar.warn { border-color: var(--warn-line); }
 .tr-auto-btn { display: block; width: 100%; margin: 0 0 13px; text-align: center; }
 .tr-ico { font-size: var(--fs-lg); flex: none; }
-.tr-text { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+/* the whole message, however narrow the panel (two lines hid the end of it) */
+.tr-text { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
 
 .help-box {
   margin: 0 0 12px; padding: 10px 12px; background: var(--card2); border-left: 3px solid var(--accent-line);
@@ -690,7 +703,9 @@ body.theme-light .tpl-card.on .tpl-thumb { box-shadow: 0 0 0 3px #7aa01f; }
 
 /* segmented + mapping */
 .seg-control { display: flex; flex-wrap: wrap; gap: 3px; background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 3px; margin-top: 8px; }
-.seg-control button { flex: 1 1 0; min-width: 0; min-height: var(--tap); padding: 3px 3px; background: transparent; border: none; border-radius: 8px; color: var(--dim); font-size: var(--fs-xs); font-weight: 700; cursor: pointer; transition: color .12s, background .12s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* each choice keeps its whole label ("🎬 As spo…", "▶️ YouT…", "Match Prem…"
+   on a docked panel): equal widths while they fit, a second row when not */
+.seg-control button { flex: 1 1 0; min-width: -webkit-max-content; min-width: max-content; min-height: var(--tap); padding: 3px 6px; background: transparent; border: none; border-radius: 8px; color: var(--dim); font-size: var(--fs-xs); font-weight: 700; cursor: pointer; transition: color .12s, background .12s; white-space: nowrap; }
 .seg-control button.on { background: var(--accent); color: var(--accent-fg); box-shadow: var(--shadow-sm); }
 .seg-control.sub { margin: 0 0 10px; }
 .seg-control.mini { margin-top: 4px; }
