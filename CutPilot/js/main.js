@@ -10355,6 +10355,20 @@
     renderTakes(dels);
   }
   if ($('tk-sim')) $('tk-sim').addEventListener('input', function () { $('tk-sim-val').textContent = this.value + '%'; });
+  /* "Who is talking?" as the panel's own dropdown: a native <select> popup can
+     refuse to open inside Premiere's panel, and this pick turns the podcast
+     protection on. The hidden <select> keeps the value (takesPeople reads it). */
+  (function mountTakeKindDropdown() {
+    var sel = $('tk-kind'), host = $('tk-kind-dd');
+    if (!sel || !host || host.firstChild || typeof makeDropdown !== 'function') return;
+    var opts = Array.prototype.map.call(sel.options, function (o) { return { value: o.value, label: o.textContent }; });
+    var dd = makeDropdown(opts, sel.value, function (v) {
+      sel.value = v;
+      try { sel.dispatchEvent(new Event('change')); } catch (e) {}
+    });
+    host.appendChild(dd.el);
+    sel.addEventListener('change', function () { dd.set(sel.value); });
+  })();
   if ($('btn-takes-find')) $('btn-takes-find').addEventListener('click', function () {
     var words = takesGetWords();
     if (!words || words.length < 6) return toast(takesNoWordsMsg('find retakes'), true);
