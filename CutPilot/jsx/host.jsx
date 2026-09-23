@@ -594,15 +594,32 @@ function CP_nestedSeqOf(pItem) {
   return null;
 }
 
+/* What one listing (or one cut check) has already read, so a nest razored
+   into hundreds of pieces is read ONCE, not once per piece: after one Clean
+   up, a 100-piece nest cost ~470,000 Premiere reads per listing and ~360,000
+   per cut check, which runs again before every cut.
+     seqOf — a project item's node id → the sequence behind it (or null);
+     fp    — a nested sequence's fingerprint;
+     nest  — a nested sequence's audio clips (CP_nestAudio). */
+function CP_cutMemo() { return { seqOf: {}, fp: {}, nest: {} }; }
+function CP_nestedSeqOfMemo(pItem, memo) {
+  var nid = null;
+  try { nid = (pItem && pItem.nodeId != null) ? 'n' + String(pItem.nodeId) : null; } catch (eId) {}
+  if (!memo || nid == null) return CP_nestedSeqOf(pItem);
+  if (!memo.seqOf.hasOwnProperty(nid)) memo.seqOf[nid] = CP_nestedSeqOf(pItem);
+  return memo.seqOf[nid];
+}
+
 /* The timeline's "shape": clip count, where every clip starts, and its end —
-   and the same for every sequence nested in it (depth-limited), because the
+   and the same for every sequence nested in it (depth-limited; each nested
+   sequence once, however many pieces of it the timeline holds), because the
    dead-air plan is made from the audio INSIDE a nest too. If it differs from
    what the analysis saw, the cut list no longer lines up with the audio and
    must not be applied. A timeline without nests gives the same string as
    before. */
-function CP_cutFingerprint(seq, depth, seen) {
-  depth = depth || 0; seen = seen || {};
-  var n = 0, sum = 0, groups = [seq.videoTracks, seq.audioTracks], nests = '';
+function CP_cutFingerprint(seq, depth, seen, memo) {
+  depth = depth || 0; seen = seen || {}; memo = memo || CP_cutMemo();
+  var n = 0, sum = 0, groups = [seq.videoTracks, seq.audioTracks], nests = '', done = {};
   var id = CP_seqId(seq);
   seen[id] = 1;
   for (var g = 0; g < groups.length; g++) {
@@ -610,15 +627,22 @@ function CP_cutFingerprint(seq, depth, seen) {
       var clips = groups[g][t].clips, k = clips.numItems;
       n += k;
       for (var i = 0; i < k; i++) {
-        try { sum += Math.round(clips[i].start.seconds * 1000); } catch (e) {}
+        var c = clips[i];
+        try { sum += Math.round(c.start.seconds * 1000); } catch (e) {}
         if (depth >= 4) continue;
-        var mp = null; try { mp = clips[i].projectItem ? clips[i].projectItem.getMediaPath() : null; } catch (eM) {}
+        var pi = null; try { pi = c.projectItem; } catch (eP) {}
+        var mp = null; try { mp = pi ? pi.getMediaPath() : null; } catch (eM) {}
         if (mp) continue;
-        var inner = null; try { inner = CP_nestedSeqOf(clips[i].projectItem); } catch (eN) {}
+        var inner = null; try { inner = CP_nestedSeqOfMemo(pi, memo); } catch (eN) {}
         var iid = inner ? CP_seqId(inner) : '';
-        if (inner && !seen[iid]) {
-          var sub = {}; for (var sk in seen) { if (seen.hasOwnProperty(sk)) sub[sk] = 1; }
-          nests += '|[' + CP_cutFingerprint(inner, depth + 1, sub) + ']';
+        if (inner && !seen[iid] && !done[iid]) {
+          done[iid] = 1;
+          var fk = iid + '@' + depth;
+          if (!memo.fp.hasOwnProperty(fk)) {
+            var sub = {}; for (var sk in seen) { if (seen.hasOwnProperty(sk)) sub[sk] = 1; }
+            memo.fp[fk] = CP_cutFingerprint(inner, depth + 1, sub, memo);
+          }
+          nests += '|[' + memo.fp[fk] + ']';
         }
       }
     }
@@ -648,6 +672,47 @@ function CP_clipDisabled(c) { try { return !!c.disabled; } catch (eD) { return f
 
 var CP_NOT_A_MIC = /\.(aegraphic|mogrt|prproj|psd|ai|png|jpe?g|gif|tiff?|svg|eps|bmp|webp|heic)$/i;
 
+/* A nested sequence's audio clips as plain values, read from Premiere ONCE
+   per listing (memo.nest) and sorted by start: [{ lab, name, muted, clips:
+   [{ s2, e2, mp, ip2, op2, sp2, rev, dis, name, nodeId, inner }] }] (inner =
+   the sequence behind a nest inside the nest). Every piece of a razored nest
+   then just looks up the few clips its window shows. */
+function CP_nestAudio(sq, memo) {
+  var id = CP_seqId(sq);
+  if (memo && memo.nest.hasOwnProperty(id)) return memo.nest[id];
+  var out = [], aTracks = sq.audioTracks;
+  for (var t = 0; t < aTracks.numTracks; t++) {
+    var track = aTracks[t], lab = 'A' + (t + 1);
+    var at = { lab: lab, name: (track && track.name && String(track.name) !== lab) ? String(track.name) : lab,
+               muted: CP_trackIs(track, 'isMuted'), clips: [] };
+    var clips = track.clips, n = clips.numItems;
+    for (var i = 0; i < n; i++) {
+      var c = clips[i];
+      var s2 = c.start.seconds, e2 = c.end.seconds;
+      if (!(e2 - s2 > 0.01)) continue;
+      var pi = null; try { pi = c.projectItem; } catch (eP) {}
+      var mp = null; try { mp = pi ? pi.getMediaPath() : null; } catch (eM) {}
+      if (mp && CP_NOT_A_MIC.test(mp)) continue;
+      var ip2 = 0, op2 = 0; try { ip2 = c.inPoint.seconds; op2 = c.outPoint.seconds; } catch (eIO) {}
+      var nid = null; try { nid = (pi && pi.nodeId != null) ? String(pi.nodeId) : null; } catch (eN) {}
+      at.clips.push({ s2: s2, e2: e2, mp: mp, ip2: ip2, op2: op2, sp2: CP_clipSpeed(c, ip2, op2, s2, e2),
+                      rev: CP_clipReversed(c), dis: CP_clipDisabled(c), name: String(c.name), nodeId: nid,
+                      inner: mp ? null : CP_nestedSeqOfMemo(pi, memo) });
+    }
+    at.clips.sort(function (a, b) { return a.s2 - b.s2; });
+    out.push(at);
+  }
+  if (memo) memo.nest[id] = out;
+  return out;
+}
+/* Index of the first clip (sorted by start, never overlapping on one track)
+   that ends after time t. */
+function CP_firstEndingAfter(clips, t) {
+  var lo = 0, hi = clips.length;
+  while (lo < hi) { var mid = (lo + hi) >> 1; if (clips[mid].e2 <= t) lo = mid + 1; else hi = mid; }
+  return lo;
+}
+
 /*
  * The audio INSIDE a nested sequence, mapped to where it plays on the master
  * timeline — a nest (or a multicam source) has no media file of its own, so
@@ -657,45 +722,43 @@ var CP_NOT_A_MIC = /\.(aegraphic|mogrt|prproj|psd|ai|png|jpe?g|gif|tiff?|svg|eps
  * dis, rev }. Every inner audio track becomes one entry of `tracks`
  * (keyed, so the pieces of a razored nest land on the same one). Nests inside
  * nests are followed (depth ≤ 4, never into a sequence already on the path).
+ * The nest's clips are read once per listing (memo), not once per piece.
  */
-function CP_cutNestTracks(sq, win, depth, seen, key, label, name, tracks, order) {
+function CP_cutNestTracks(sq, win, depth, seen, key, label, name, tracks, order, memo) {
   if (!sq || depth > 4) return;
   var id = CP_seqId(sq);
   if (seen[id]) return;
   var path = {}; for (var pk in seen) { if (seen.hasOwnProperty(pk)) path[pk] = 1; }
   path[id] = 1;
   var winOut = win.inT + (win.en - win.st) * win.sp;
-  var aTracks = sq.audioTracks;
-  for (var t = 0; t < aTracks.numTracks; t++) {
-    var track = aTracks[t], lab = 'A' + (t + 1);
+  var aTracks = CP_nestAudio(sq, memo);
+  for (var t = 0; t < aTracks.length; t++) {
+    var at = aTracks[t], lab = at.lab;
     var tKey = key + '/' + id + '/' + lab;
-    var tName = name + ' › ' + ((track && track.name && String(track.name) !== lab) ? String(track.name) : lab);
-    var tMuted = win.muted || CP_trackIs(track, 'isMuted');
-    var clips = track.clips, n = clips.numItems;
-    for (var i = 0; i < n; i++) {
+    var tName = name + ' › ' + at.name;
+    var tMuted = win.muted || at.muted;
+    var clips = at.clips;
+    for (var i = CP_firstEndingAfter(clips, win.inT); i < clips.length; i++) {
       var c = clips[i];
-      var s2 = c.start.seconds, e2 = c.end.seconds;
+      if (c.s2 >= winOut) break;                       // past what the nest clip shows
+      var s2 = c.s2, e2 = c.e2;
       var vs = s2 > win.inT ? s2 : win.inT, ve = e2 < winOut ? e2 : winOut;
       if (!(ve - vs > 0.01)) continue;                 // outside what the nest clip shows
-      var mp = null; try { mp = c.projectItem ? c.projectItem.getMediaPath() : null; } catch (eM) {}
-      if (mp && CP_NOT_A_MIC.test(mp)) continue;
-      var ip2 = 0, op2 = 0; try { ip2 = c.inPoint.seconds; op2 = c.outPoint.seconds; } catch (eIO) {}
-      var sp2 = CP_clipSpeed(c, ip2, op2, s2, e2);
+      var ip2 = c.ip2, sp2 = c.sp2;
       var mSt = win.st + (vs - win.inT) / win.sp, mEn = win.st + (ve - win.inT) / win.sp;
-      var rev = win.rev || CP_clipReversed(c), dis = win.dis || CP_clipDisabled(c);
-      var inner = mp ? null : CP_nestedSeqOf(c.projectItem);
-      if (inner) {
-        CP_cutNestTracks(inner, { st: mSt, en: mEn, inT: ip2 + (vs - s2) * sp2, sp: sp2 * win.sp, muted: tMuted, dis: dis, rev: rev },
-                         depth + 1, path, tKey, label, tName + ' › ' + String(c.name), tracks, order);
+      var rev = win.rev || c.rev, dis = win.dis || c.dis;
+      if (c.inner) {
+        CP_cutNestTracks(c.inner, { st: mSt, en: mEn, inT: ip2 + (vs - s2) * sp2, sp: sp2 * win.sp, muted: tMuted, dis: dis, rev: rev },
+                         depth + 1, path, tKey, label, tName + ' › ' + c.name, tracks, order, memo);
         continue;
       }
       var tr = tracks[tKey];
       if (!tr) { tr = tracks[tKey] = { label: label, key: tKey, name: tName, muted: tMuted, items: [], clips: 0, nested: name }; order.push(tKey); }
       tr.clips++;
-      tr.items.push({ name: String(c.name), mediaPath: mp, seqStart: mSt, seqEnd: mEn,
+      tr.items.push({ name: c.name, mediaPath: c.mp, seqStart: mSt, seqEnd: mEn,
                       inPoint: ip2 + (vs - s2) * sp2, outPoint: ip2 + (ve - s2) * sp2,
                       speed: sp2 * win.sp, reversed: rev, disabled: dis, selected: false, nested: name,
-                      nodeId: (c.projectItem && c.projectItem.nodeId != null) ? String(c.projectItem.nodeId) : null });
+                      nodeId: c.nodeId });
     }
   }
 }
@@ -719,9 +782,9 @@ function CP_countNestItems(tracks, order) {
 function CP_getCutSources(argsJson) {
   try {
     var seq = CP_activeSequence();
-    var bad = CP_NOT_A_MIC;
+    var bad = CP_NOT_A_MIC, memo = CP_cutMemo();
     var out = { sequenceId: CP_seqId(seq), sequenceName: seq.name, fps: CP_sequenceFps(seq),
-                fingerprint: CP_cutFingerprint(seq), audio: [], video: [], selection: null };
+                fingerprint: CP_cutFingerprint(seq, 0, null, memo), audio: [], video: [], selection: null };
     var selLo = null, selHi = null, masterId = CP_seqId(seq), seen = {};
     seen[masterId] = 1;
     for (var g = 0; g < 2; g++) {
@@ -737,8 +800,9 @@ function CP_getCutSources(argsJson) {
           var st = c.start.seconds, en = c.end.seconds;
           if (!(en - st > 0.01)) continue;
           tr.clips++;
-          var mp = null; try { mp = c.projectItem ? c.projectItem.getMediaPath() : null; } catch (eM) {}
-          var nest = mp ? null : CP_nestedSeqOf(c.projectItem);
+          var pi = null; try { pi = c.projectItem; } catch (eP) {}
+          var mp = null; try { mp = pi ? pi.getMediaPath() : null; } catch (eM) {}
+          var nest = mp ? null : CP_nestedSeqOfMemo(pi, memo);
           var sel = false; try { sel = !!c.isSelected(); } catch (eS) {}
           // only a selected real clip (or nest) narrows the clean-up — a
           // caption, title or photo the owner last clicked must not shrink it
@@ -751,12 +815,12 @@ function CP_getCutSources(argsJson) {
           if (nest && !seen[CP_seqId(nest)]) {
             var had = CP_countNestItems(nestTracks, nestOrder);
             CP_cutNestTracks(nest, { st: st, en: en, inT: ip, sp: speed, muted: false, dis: dis, rev: rev }, 1, seen,
-                             'A' + (t + 1), 'A' + (t + 1), String(c.name), nestTracks, nestOrder);
+                             'A' + (t + 1), 'A' + (t + 1), String(c.name), nestTracks, nestOrder, memo);
             if (CP_countNestItems(nestTracks, nestOrder) > had) continue;   // heard through its own tracks
           }
           tr.items.push({ name: String(c.name), mediaPath: mp, seqStart: st, seqEnd: en, inPoint: ip, outPoint: op,
                           speed: speed, reversed: rev, disabled: dis, selected: sel,
-                          nodeId: (c.projectItem && c.projectItem.nodeId != null) ? String(c.projectItem.nodeId) : null });
+                          nodeId: (pi && pi.nodeId != null) ? String(pi.nodeId) : null });
         }
         if (g === 0) {
           out.audio.push(tr);

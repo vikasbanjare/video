@@ -1176,6 +1176,73 @@ console.log('host.jsx — CP_getCutSources opens nested sequences (dead air unde
     'a timeline without nests: the same two tracks and the same fingerprint shape as before (' + r.fingerprint + ')');
 }
 
+// ═══ A NEST CUT INTO HUNDREDS OF PIECES is read once, not once per piece ═══
+// After one Clean up, the nest on V1 + A1 is razored into ~100 pieces. The
+// listing (Find the silences / Clean up again) and the cut check before every
+// cut re-read the whole nested sequence for EVERY piece: ~470,000 Premiere
+// reads per listing at 100 pieces, 1.4 million at 300 (each one a round trip
+// into Premiere). Every read and call is counted here.
+console.log('host.jsx — a nest cut into many pieces is read once per listing');
+{
+  let reads = 0;
+  const T = (s) => { const o = {}; Object.defineProperty(o, 'seconds', { get() { reads++; return s; } }); return o; };
+  let node = 0;
+  const mkClip = (x) => {
+    const nid = x.nest ? 'seq-' + x.nest.id : 'n' + (++node);
+    const pi = { getMediaPath: () => { reads++; return x.nest ? null : x.path; }, isSequence: () => { reads++; return !!x.nest; } };
+    Object.defineProperty(pi, 'nodeId', { get() { reads++; return nid; } });
+    const c = { isSelected: () => { reads++; return false; }, getSpeed: () => { reads++; return 1; } };
+    for (const [k, v] of [['name', () => x.name], ['start', () => T(x.st)], ['end', () => T(x.en)], ['inPoint', () => T(x.ip || 0)],
+                          ['outPoint', () => T((x.ip || 0) + (x.en - x.st))], ['projectItem', () => pi]]) {
+      Object.defineProperty(c, k, { get() { reads++; return v(); } });
+    }
+    return c;
+  };
+  const tracks = (list) => { const o = { numTracks: list.length }; list.forEach((clips, i) => { const c = { numItems: clips.length }; clips.forEach((x, k) => { c[k] = mkClip(x); }); o[i] = { name: '', clips: c }; }); return o; };
+  const seqObj = (sq) => ({ sequenceID: sq.id, name: sq.name, end: '0', projectItem: { nodeId: 'seq-' + sq.id }, audioTracks: tracks(sq.audio), videoTracks: tracks(sq.video || []) });
+  // the nested podcast: 4 mics + 2 cameras, each already jump-cut into 60 pieces
+  const innerDur = 600, d = innerDur / 60;
+  const piece = (p, k) => ({ name: p + k, path: '/m/' + p + '.wav', st: k * d, en: (k + 1) * d, ip: k * d });
+  const inner = { id: 'inner', name: 'Podcast inner', audio: [0, 1, 2, 3].map(t => Array.from({ length: 60 }, (_, k) => piece('mic' + t, k))),
+    video: [0, 1].map(t => Array.from({ length: 60 }, (_, k) => Object.assign(piece('cam' + t, k), { path: '/m/cam' + t + '.mp4' }))) };
+  function world(N) {
+    const pd = innerDur / N;
+    const pieces = Array.from({ length: N }, (_, k) => ({ name: 'Podcast nest', nest: inner, st: k * pd * 0.9, en: (k + 1) * pd * 0.9, ip: k * pd }));
+    const seqs = [{ id: 'master', name: 'Episode 14', audio: [pieces], video: [pieces] }, inner].map(seqObj);
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    const host = loadHost(w);
+    w.sandbox.app.project.activeSequence = seqs[0];
+    w.sandbox.app.project.sequences = { numSequences: 2, 0: seqs[0], 1: seqs[1] };
+    return { host, master: seqs[0], inner: seqs[1] };
+  }
+  const cost = {};
+  for (const N of [100, 300]) {
+    const { host, master } = world(N);
+    reads = 0;
+    const r = call(host, 'CP_getCutSources', {});
+    cost[N] = { list: reads };
+    reads = 0;
+    const fp = host.CP_cutFingerprint(master);
+    cost[N].fp = reads;
+    const items = (r.audio || []).reduce((a, t) => a + (t.items || []).length, 0);
+    const mic0 = (r.audio || []).find(t => (t.items || []).some(it => it.mediaPath === '/m/mic0.wav'));
+    const first = mic0 && mic0.items[0];
+    assert(r.ok && mic0 && mic0.items.length >= N && !!first && close(first.seqStart, 0) && close(first.inPoint, 0) &&
+           fp === r.fingerprint && host.CP_cutFingerprint(master) === fp,
+      N + ' nest pieces: every piece is still listed and mapped (' + items + ' inner clips; mic 1 piece 1 at ' + (first && first.seqStart) + ' s), and the fingerprint is stable');
+    const moved = inner.audio[2][7], was = moved.st;
+    moved.st = 70.5;                                                   // someone moves a clip inside the nest
+    assert(host.CP_cutFingerprint(master) !== fp, N + ' nest pieces: moving a clip INSIDE the nest still changes the fingerprint (a stale cut list is refused)');
+    moved.st = was;
+  }
+  assert(cost[100].list <= 20000 && cost[300].list <= 40000,
+    'listing a nest cut into 100 / 300 pieces: ' + cost[100].list + ' / ' + cost[300].list + ' Premiere reads (it was ~470,000 / 1,400,000 — the nest re-read for every piece)');
+  assert(cost[100].fp <= 5000 && cost[300].fp <= 10000,
+    'the cut check on the same timeline: ' + cost[100].fp + ' / ' + cost[300].fp + ' reads (it was ~360,000 / 1,090,000)');
+  assert(cost[300].list - cost[100].list <= 200 * 50,
+    'each extra piece costs a few reads, not the whole nest again (' + Math.round((cost[300].list - cost[100].list) / 200) + ' reads per piece)');
+}
+
 // ═══ FLAT jump-cuts: many short voice pieces must beat one long b-roll ═══
 console.log('host.jsx — transcribe source picks by coverage ("multiple cut audio, still one word")');
 {
