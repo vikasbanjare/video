@@ -676,7 +676,7 @@
   function transcribeViaGroq(wavPath, lang) {
     return new Promise(function (resolve, reject) {
       var key = cpKey();
-      if (!key) return reject(new Error('Add your free Groq API key in Settings → Auto-transcribe (console.groq.com/keys).'));
+      if (!key) return reject(new Error('Paste your free speech key in Settings → Auto-transcribe (the ☁️ box). Get one at console.groq.com/keys.'));
       var cp; try { cp = nodeReq('child_process'); } catch (e) { return reject(e); }
       var args = ['-sS', '--max-time', '600', 'https://api.groq.com/openai/v1/audio/transcriptions',
         '-F', 'model=whisper-large-v3',
@@ -788,7 +788,7 @@
   function transcribeViaSwara(wavPath, langCode) {
     return new Promise(function (resolve, reject) {
       var key = cpSarvamKey();
-      if (!key) return reject(new Error('Add your Indian Voices key in Settings → Auto-transcribe.'));
+      if (!key) return reject(new Error('Paste your Indian-language key in Settings → Auto-transcribe → More speech options (the 🇮🇳 box).'));
       var cp; try { cp = nodeReq('child_process'); } catch (e) { return reject(e); }
       // 'translate-en' uses Sarvam's speech-to-text-TRANSLATE endpoint: it auto-detects
       // any Indian language and returns the text in ENGLISH (so Hindi/Tamil → English).
@@ -1009,7 +1009,7 @@
     opts = opts || {};
     return new Promise(function (resolve, reject) {
       var key = cpKey();
-      if (!key) return reject(new Error('This uses your free Groq key — add it in Settings → Auto-transcribe (console.groq.com/keys).'));
+      if (!key) return reject(new Error('This uses your free speech key — paste it in Settings → Auto-transcribe (the ☁️ box). Get one at console.groq.com/keys.'));
       var cp, fs, os, pathMod;
       try { cp = nodeReq('child_process'); fs = nodeReq('fs'); os = nodeReq('os'); pathMod = nodeReq('path'); } catch (e) { return reject(e); }
       var body = { model: opts.model || GROQ_TEXT_MODELS[0],
@@ -1172,7 +1172,7 @@
      paths return -> cues array with an attached .words list. */
   function transcribeViaDeepgram(audioPath, lang) {
     var key = cpDeepgramKey();
-    if (!key) return Promise.reject(new Error('Add your Deepgram key in Settings → Auto-transcribe.'));
+    if (!key) return Promise.reject(new Error('Paste your retake-finder key in Settings → Auto-transcribe → More speech options (the 🎧 box).'));
     // Deepgram assumes ENGLISH when no language is sent — it does not detect.
     // Auto-detect and Hinglish go to nova-3's multilingual model (Hindi and
     // English mixed in one sentence; the caller romanises Hinglish after);
@@ -1273,7 +1273,7 @@
   function autoTranscribeAI() {
     if (state.transcribing) return toast('Already transcribing — hang tight…');
     if (!cpKey()) {
-      return toast('“Auto-correct” needs your free Groq key (Settings → Auto-transcribe, console.groq.com/keys). Add it, or use “Transcribe (raw)”.', true);
+      return toast('“Transcribe” fixes misheard words with your free speech key: paste it in Settings → Auto-transcribe (the ☁️ box), or tap “Fast”. Get one at console.groq.com/keys.', true);
     }
     state.autoFixAfter = true;     // the terminal of autoTranscribe runs the AI fix
     autoTranscribe();
@@ -1295,14 +1295,16 @@
     }
     var wbin = null;
     if (cloud) {
-      if (!cpKey()) return toast('Add your free Groq API key in Settings → Auto-transcribe (console.groq.com/keys) — or switch the engine there to Deepgram / Indian Voices if you have one of those keys.', true);
+      if (!cpKey()) return toast('Paste your free speech key in Settings → Auto-transcribe (the ☁️ box). Get one at console.groq.com/keys. An Indian-language or retake-finder key works too, under More speech options.', true);
     } else if (swara) {
-      if (!cpSarvamKey()) return toast('Add your Indian Voices key in Settings → Auto-transcribe to use Indian-language transcription.', true);
+      if (!cpSarvamKey()) return toast('Paste your Indian-language key in Settings → Auto-transcribe → More speech options (the 🇮🇳 box).', true);
     } else if (dgram) {
-      if (!cpDeepgramKey()) return toast('Add your Deepgram key in Settings → Auto-transcribe.', true);
+      if (!cpDeepgramKey()) return toast('Paste your retake-finder key in Settings → Auto-transcribe → More speech options (the 🎧 box).', true);
     } else {
       wbin = resolveWhisper();
-      if (!wbin) return toast('Set the whisper engine in Settings → Auto-transcribe (brew install whisper-cpp).', true);
+      // (it said "Set the whisper engine … brew install whisper-cpp": the Settings
+      // control is gone, and a beginner cannot run Terminal commands)
+      if (!wbin) return toast('This computer can’t make the transcript by itself: paste your free speech key in Settings → Auto-transcribe (the ☁️ box). Get one at console.groq.com/keys.', true);
     }
     setTranscribing(true);   // all checks passed — commit, lock the buttons
     var lang = swara ? (settings.sarvamLang || 'unknown') : (settings.whisperLang || 'auto');   // default AUTO — never force English on non-English audio
@@ -11766,7 +11768,7 @@
      Premiere version (no dependency on the Auto Reframe script method). */
   function makeVerticalClip(h, rt) {
     var ff = resolveFfmpeg();
-    if (!ff) return toast('Making a clip needs ffmpeg (Settings → ffmpeg path).', true);
+    if (!ff) return toast('Making a clip needs the audio engine — tap Settings → ⬇️ Set up audio engine.', true);
     if (typeof CPReframe === 'undefined') return toast('Reframe module missing.', true);
     var name = sanitizeName(h.title || 'Pulse clip');
     var prog = $('shorts-progress'); prog.classList.remove('hidden'); prog.textContent = 'Finding the source video…';
@@ -11871,7 +11873,7 @@
   }
   function runSpeakerReframe() {
     var ff = resolveFfmpeg();
-    if (!ff) return toast('Speaker-aware reframe needs ffmpeg (Settings → ffmpeg path).', true);
+    if (!ff) return toast('Following the speaker needs the audio engine — tap Settings → ⬇️ Set up audio engine.', true);
     if (typeof CPReframe === 'undefined' || typeof CPMulticam === 'undefined') return toast('Reframe module missing.', true);
     var arrange = ($('sr-arrange') && $('sr-arrange').value) || 'lr';
     var regions = regionsForArrange(arrange), nPeople = regions.length;

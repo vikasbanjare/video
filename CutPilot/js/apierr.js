@@ -32,9 +32,9 @@
   /* Where the user fixes a key for each provider. */
   var KEYBOX = {
     groq: 'Settings → Auto-transcribe (the ☁️ box)',
-    deepgram: 'Settings → Auto-transcribe (the 🎧 box)',
-    sarvam: 'Settings → Auto-transcribe (the 🇮🇳 box)',
-    assemblyai: 'Settings → Verbatim transcription'
+    deepgram: 'Settings → Auto-transcribe → More speech options (the 🎧 box)',
+    sarvam: 'Settings → Auto-transcribe → More speech options (the 🇮🇳 box)',
+    assemblyai: 'Settings → Retake finder'
   };
   function keybox(p) { return KEYBOX[p] || 'Settings → Auto-transcribe'; }
 
