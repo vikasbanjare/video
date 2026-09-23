@@ -39,7 +39,8 @@ function hasFfmpeg() { try { cp.execFileSync('ffmpeg', ['-hide_banner', '-versio
  *             host(fn, argJson) → a JSON reply string, or undefined for the stub's
  *             own answer (lets a gate answer with the REAL host.jsx) }
  * fakes: { '<mediaPath>': 'stall' } → that file's decode sends ~5 s of audio, then hangs;
- *        'crash' → it sends ~5 s of audio, then the decoder quits with an error.
+ *        'crash' → it sends ~5 s of audio, then the decoder quits with an error;
+ *        'slow'  → it trickles the real audio in over ~4 s (a long file on a slow disk).
  */
 async function openPanel(browser, timeline, fakes) {
   const page = await browser.newPage();
@@ -87,6 +88,25 @@ async function openPanel(browser, timeline, fakes) {
   await page.exposeFunction('__spawn', (id, bin, args) => {
     const media = args[args.indexOf('-i') + 1];
     const send = (kind, payload) => page.evaluate((i, k, p) => window.__procEvent(i, k, p), id, kind, payload).catch(() => {});
+    if (fakes[media] === 'slow') {
+      const real = fakes.__realFor && fakes.__realFor[media];
+      if (args.indexOf('pipe:1') >= 0) {
+        const pcm = cp.execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', real, '-ac', '1', '-ar', '16000', '-f', 's16le', 'pipe:1'], { maxBuffer: 1 << 26 });
+        const n = 30, step = Math.ceil(pcm.length / n / 2) * 2;
+        let k = 0;
+        const tick = () => {
+          if (procs[id] === 'killed') return;
+          if (k * step >= pcm.length) { send('close', 0); return; }
+          send('stdout', pcm.slice(k * step, Math.min(pcm.length, (k + 1) * step)).toString('base64')); k++;
+          setTimeout(tick, 140);
+        };
+        procs[id] = { kill() { procs[id] = 'killed'; } };
+        setTimeout(tick, 30);
+      } else {
+        setTimeout(() => { send('stderr', 'Input #0, wav, from \'' + media + '\':\n  Duration: 00:00:27.50, bitrate: 768 kb/s\n  Stream #0:0: Audio: pcm_s16le, 48000 Hz, 1 channels\n'); send('close', 1); }, 30);
+      }
+      return true;
+    }
     if (fakes[media] === 'crash') {
       const real = fakes.__realFor && fakes.__realFor[media];
       if (args.indexOf('pipe:1') >= 0) {
@@ -123,7 +143,7 @@ async function openPanel(browser, timeline, fakes) {
     p.on('error', (e) => send('error', e.message));
     return true;
   });
-  await page.exposeFunction('__kill', (id) => { try { procs[id] && procs[id].kill(); } catch (e) {} return true; });
+  await page.exposeFunction('__kill', (id) => { calls.push({ fn: '__kill', args: id }); try { procs[id] && procs[id].kill(); } catch (e) {} return true; });
   await page.evaluateOnNewDocument(() => {
     window.__adobe_cep__ = {
       evalScript(script, cb) {

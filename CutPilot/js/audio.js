@@ -125,7 +125,9 @@
    * The dead-air detector's ears: decode [start, start+duration] of a file to
    * 16 kHz mono PCM (every audio stream mixed, rumble under 80 Hz removed) and
    * build the envelope while it streams, so nothing big is held in memory.
-   * opts: { start, duration, streams (from ffmpegAudioInfo), stallMs, onProgress(sec) }
+   * opts: { start, duration, streams (from ffmpegAudioInfo), stallMs, onProgress(sec),
+   *         stop: {} — the caller's Stop button: this fills in stop.now(), which
+   *         ends the scan at once (complete:false, stopped:true) }
    * Resolves { db, hop, start, duration, streams, complete, reason, why }.
    * complete:false means the scan did NOT finish (ffmpeg stalled on a slow or
    * external drive, or crashed) and the caller must cut nothing. `reason` is
@@ -159,16 +161,24 @@
       var stallMs = opts.stallMs || 60000;
       try { proc = cp.spawn(ffmpegPath, args); }
       catch (e) { return reject(engineError(ffmpegPath, e)); }
-      function finish(complete, reason, why) {
+      function finish(complete, reason, why, stopped) {
         if (settled) return; settled = true;
         if (timer) clearTimeout(timer);
+        if (opts.stop) opts.stop.now = null;
         var env = builder.finish();
         env.start = opts.start > 0 ? opts.start : 0;
         env.streams = nStreams;
         env.complete = complete;
         env.reason = reason || '';
         env.why = why || '';
+        env.stopped = !!stopped;
         resolve(env);
+      }
+      if (opts.stop) {
+        opts.stop.now = function () {
+          try { proc.kill(); } catch (eK) {}
+          finish(false, 'stopped by the owner', 'you stopped it', true);
+        };
       }
       function arm() {
         if (timer) clearTimeout(timer);

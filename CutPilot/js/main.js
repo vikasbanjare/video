@@ -9592,19 +9592,37 @@
   state.silRoles = state.silRoles || {};
   function silRolesFor(seqId) { return state.silRoles[seqId || '?'] || (state.silRoles[seqId || '?'] = {}); }
 
+  /* The Stop button under a scan: silStopper(id) shows it and returns the
+     token a scan listens to; stop.stopped is set when the owner taps it, and
+     stop.now (filled in by the running decode) ends that decode at once. */
+  function silStopper(btnId) {
+    var stop = { stopped: false, now: null }, b = $(btnId);
+    if (b) {
+      b.classList.remove('hidden');
+      b.onclick = function () { stop.stopped = true; if (stop.now) { try { stop.now(); } catch (e) {} } };
+    }
+    stop.done = function () { if (b) { b.classList.add('hidden'); b.onclick = null; } };
+    return stop;
+  }
+  function silStoppedError() { var e = new Error('Stopped — nothing was cut.'); e.stopped = true; return e; }
+
   /* One media file's used span → loudness envelope. Rejects, cutting NOTHING,
      when the scan could not finish (the old scan closed an open pause at the
-     end of the file on a timeout and deleted the rest of the episode). */
-  function listenTo(mediaPath, lo, hi, onProg, ffArg) {
+     end of the file on a timeout and deleted the rest of the episode) or the
+     owner tapped Stop. */
+  function listenTo(mediaPath, lo, hi, onProg, ffArg, stop) {
     var ff = ffArg || resolveFfmpeg();
     var name = silBase(mediaPath);
+    if (stop && stop.stopped) return Promise.reject(silStoppedError());
     if (!ff) return CPAudio.webAudioEnvelope(mediaPath, CPSilence);
     return CPAudio.ffmpegAudioInfo(mediaPath, ff).then(function (info) {
+      if (stop && stop.stopped) throw silStoppedError();
       if (info.missing) throw new Error('“' + name + '” is offline — the file isn’t where Premiere says it is. Relink it (right-click the clip → Link Media) and try again. Nothing was cut.');
       if (!info.streams) throw new Error('“' + name + '” has no sound in it — Pulse can’t listen to it. Nothing was cut.');
       var start = Math.max(0, lo - 0.5);
-      return CPAudio.ffmpegRmsEnvelope(mediaPath, ff, { start: start, duration: (hi - start) + 0.5, streams: info.streams, onProgress: onProg }, CPSilence);
+      return CPAudio.ffmpegRmsEnvelope(mediaPath, ff, { start: start, duration: (hi - start) + 0.5, streams: info.streams, onProgress: onProg, stop: stop || null }, CPSilence);
     }).then(function (env) {
+      if (env.stopped || (stop && stop.stopped)) throw silStoppedError();
       if (!env.complete) {
         // the engine's own error text goes to the diagnostics, never the toast
         try { diag('silence', 'listen incomplete: ' + silBase(mediaPath) + ': ' + env.reason); } catch (eD) {}
@@ -9629,7 +9647,7 @@
    * { cuts, range, selection, mics, notes, tooLoud, sequenceId, sequenceName,
    *   fingerprint, sources }.
    */
-  function analyzeTimeline(src, tune, prog) {
+  function analyzeTimeline(src, tune, prog, stop) {
     var tracks = (src && src.audio) || [];
     var notes = [], sources = [];
     var anyLive = tracks.some(function (t) { return !t.muted && t.items.some(function (it) { return !it.disabled; }); });
@@ -9681,7 +9699,7 @@
             '… ' + silClock(done + Math.min(sec, m.hi - m.lo)) + ' of ' + silClock(total);
         };
         say(0);
-        return listenTo(p, m.lo, m.hi, say).then(function (env) {
+        return listenTo(p, m.lo, m.hi, say, null, stop).then(function (env) {
           done += (m.hi - m.lo);
           m.env = env;
           var spans = m.sources.map(function (s) {
@@ -9975,6 +9993,7 @@
       ensureTranscriptThen('autoclean');
       return;
     }
+    var stop = silStopper('btn-autoclean-stop');   // listening a long podcast can take minutes
     CPBridge.callHost('CP_getCutSources', {}).then(function (src) {
       cutSrc = src;
       // the talking clip (retakes / verbatim words) — same pick captions use;
@@ -9982,12 +10001,13 @@
       return CPBridge.callHost('CP_getTranscribeSource').then(function (res) { return res; }, function () { return null; }).then(function (res) {
         if (res && res.clip) { clip = res.clip; state.clip = res.clip; }
         if (!doSil) {
+          stop.done();
           plan = { cuts: [], range: { start: 0, end: Infinity }, selection: false, mics: [], notes: [], tooLoud: false,
                    sequenceId: src.sequenceId, sequenceName: src.sequenceName, fingerprint: src.fingerprint, sources: [] };
           return plan;
         }
         prog.textContent = 'Listening for dead air…';
-        return analyzeTimeline(src, tune, prog).then(function (p) { plan = state.silLastPlan = p; return p; });
+        return analyzeTimeline(src, tune, prog, stop).then(function (p) { stop.done(); plan = state.silLastPlan = p; return p; });
       });
     }).then(function () {
       var fills = [];
@@ -10113,7 +10133,11 @@
           toast('✨ Cleaned! Removed ' + cutDoneText(rr, ranges) + '. Captions & takes follow the cut — run any other step or add captions with no re-transcribe. ' + backupText(rr));
         });
       });
-    }).catch(function (e) { prog.classList.add('hidden'); toast('Auto-clean failed: ' + e.message, true); });
+    }).catch(function (e) {
+      stop.done(); prog.classList.add('hidden');
+      if (e && e.stopped) return toast(e.message);
+      toast('Auto-clean failed: ' + e.message, true);
+    });
   }
   if ($('btn-autoclean')) $('btn-autoclean').addEventListener('click', runAutoCleanAll);
 
@@ -10153,9 +10177,11 @@
     prog.textContent = 'Reading your timeline…';
     // Every mic on the timeline is heard (a selected clip only narrows WHERE
     // to look) — the same detector the one-tap button uses.
+    var stop = silStopper('btn-analyze-stop');
     CPBridge.callHost('CP_getCutSources', {}).then(function (src) {
-      return analyzeTimeline(src, tune, prog);
+      return analyzeTimeline(src, tune, prog, stop);
     }).then(function (plan) {
+      stop.done();
       state.silPlan = state.silLastPlan = plan;
       var lo = plan.range.start, hi = plan.range.end, span = hi - lo;
       // a spoken word is never cut to remove a pause (ASR timing drift allowed for)
@@ -10205,7 +10231,8 @@
         toast('Found ' + nSil + ' pause' + (nSil === 1 ? '' : 's') + (nFill ? ' + ' + nFill + ' filler cuts' : '') + '. ' + hearingSummary(plan).split('\n')[0]);
       }
     }).catch(function (e) {
-      prog.classList.add('hidden');
+      stop.done(); prog.classList.add('hidden');
+      if (e && e.stopped) return toast(e.message);
       toast('Analyze failed: ' + e.message, true);
     });
   });
