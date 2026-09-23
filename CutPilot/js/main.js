@@ -1729,6 +1729,11 @@
       new MutationObserver(function () { env.title = env.textContent + ' — tap to look for your sequence again'; })
         .observe(env, { childList: true, characterData: true, subtree: true });
     }
+    // Too narrow for even a few letters (a long page name on a 260 px panel)
+    // the name shrank to a stray "H…": show a status dot in its colour instead.
+    if (env && window.ResizeObserver) {
+      new ResizeObserver(function () { env.classList.toggle('squeezed', env.clientWidth < 40); }).observe(env);
+    }
   }
 
   // Tap the sequence indicator to re-detect the active sequence on demand

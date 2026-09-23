@@ -127,6 +127,12 @@ button { color: inherit; }
 .env-status:hover { color: var(--fg); }
 .env-status.ok { color: var(--ok-text); }
 .env-status.err { color: var(--danger-text); }
+/* no room for a few letters of the name: a dot in its colour (the name is
+   its tooltip) instead of a stray "H…" */
+.env-status.squeezed { position: relative; color: transparent; }
+.env-status.squeezed::after { content: '●'; position: absolute; right: 2px; top: 0; color: var(--dim); }
+.env-status.squeezed.ok::after { color: var(--ok-text); }
+.env-status.squeezed.err::after { color: var(--danger-text); }
 /* Home shows the brand; every other page shows ‹ + its name */
 body[data-page="home"] .nav-back, body[data-page="home"] .nav-title { display: none; }
 @media (max-width: 599px) {

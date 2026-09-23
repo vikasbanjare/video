@@ -14,7 +14,8 @@
  * words must show them whole: nothing it says may be clipped sideways (or
  * below its last line, for a name that wraps). The sequence name in the top
  * bar is the one exception — it gives way to the page name and shows in full
- * on hover (and a tap looks for the sequence again).
+ * on hover (and a tap looks for the sequence again) — but it may not shrink
+ * to a stray letter ("H…"): too narrow for a few letters, it becomes a dot.
  *
  * The caption-words editor is measured too: at 260 px each line's text box
  * showed eleven letters ("yeh line nu"), so a caption could not be read,
@@ -38,6 +39,10 @@ function measure(args) {
   const roots = [page, document.getElementById('app-bar')].filter(Boolean);
   const out = [];
   let n = 0;
+  // the sequence name: a few letters at least, or a status dot — never "H…"
+  const env = document.getElementById('env-status');
+  if (env && shown(env) && !env.classList.contains('squeezed') && env.scrollWidth > env.clientWidth + 1 && env.clientWidth < 40)
+    out.push('#env-status shows ' + env.clientWidth + 'px of "' + env.textContent.trim().slice(0, 30) + '" (a stray letter)');
   roots.forEach(root => root.querySelectorAll('*').forEach(el => {
     if (/^(SCRIPT|STYLE|OPTION|SELECT|INPUT|TEXTAREA|CANVAS|svg|path)$/i.test(el.tagName) || !shown(el)) return;
     let words = '';
