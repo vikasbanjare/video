@@ -9,8 +9,9 @@
  *
  * Renders all eleven main screens (Home, the caption gallery, the style editor,
  * Clean up, Podcast cameras, Transcript, Shorts, Chapters, Organize, Safe zone,
- * Settings) at widths 260/320/400/600/900/1400 × heights 400/640/1000 ×
- * device pixel ratios 1/1.25/1.5/2, and FAILS on:
+ * Settings) at widths 260/320/400/600/900/1400/1600 × heights 400/640/1000 ×
+ * device pixel ratios 1/1.25/1.5/2 (1600: the widest the brief promises no
+ * sideways scroll for — "260–1600 wide"), and FAILS on:
  *   · horizontal overflow — the page scrolls sideways, or something pokes past
  *     the panel edge (an intentional sideways-scrolling strip is allowed);
  *   · the screen's primary action not visible without scrolling (fully inside
@@ -28,7 +29,7 @@
 'use strict';
 const U = require('./ui-lib/panel');
 
-const WIDTHS = [260, 320, 400, 600, 900, 1400];
+const WIDTHS = [260, 320, 400, 600, 900, 1400, 1600];
 const HEIGHTS = [400, 640, 1000];
 const DPRS = process.env.UI_LAYOUT_QUICK ? [1] : [1, 1.25, 1.5, 2];
 const NAV_MAX = 0.12;          // of the height, at 400 px tall
