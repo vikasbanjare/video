@@ -222,10 +222,17 @@
    * One microphone's levels, measured only over the envelope windows the
    * timeline actually uses (spans: [[i0, i1), …]). Digital zero is left out so a
    * silent camera pre-roll can't pretend the room is quiet.
-   * Returns { floor, speech, range, threshold, continuous, digital }:
-   *   continuous — speech is < 10 dB above the room (music bed, loud fan):
+   * Returns { floor, speech, range, threshold, continuous, digital, pauses, bed }:
+   *   continuous — speech is < 10 dB above the room (sustained music, loud fan):
    *                loudness can't find dead air, only digital zero counts;
-   *   digital    — nothing but digital zero here (a muted/empty mic).
+   *   digital    — nothing but digital zero here (a muted/empty mic);
+   *   pauses     — share of the span spent in pauses of 1 s or more;
+   *   bed        — sounds like music or steady noise, not a voice: continuous,
+   *                or a narrow loudness range that never pauses (a beat). The
+   *                caller leaves a bed out of the vote only when a real voice
+   *                track is there to decide instead.
+   * The threshold is always this mic's OWN automatic gate: Fine-tune → Manual
+   * is applied by the caller, to the tracks that vote as voices.
    */
   function micLevels(db, spans, tune) {
     var share = (tune && tune.share != null) ? tune.share : 0.30;
@@ -234,7 +241,7 @@
       a = Math.max(0, Math.floor(spans[s][0])); b = Math.min(db.length, Math.ceil(spans[s][1]));
       for (i = a; i < b; i++) if (db[i] > DIGITAL_SILENCE_DB) n++;
     }
-    if (n < 30) return { floor: null, speech: null, range: 0, threshold: DIGITAL_SILENCE_DB, continuous: false, digital: true };
+    if (n < 30) return { floor: null, speech: null, range: 0, threshold: DIGITAL_SILENCE_DB, continuous: false, digital: true, pauses: 1, bed: false };
     var vals = new Float32Array(n), j = 0;
     for (s = 0; s < spans.length; s++) {
       a = Math.max(0, Math.floor(spans[s][0])); b = Math.min(db.length, Math.ceil(spans[s][1]));
@@ -247,8 +254,39 @@
     var range = speech - floor;
     var continuous = range < 10;
     var thr = continuous ? DIGITAL_SILENCE_DB : floor + Math.min(share * range, range - 8);
-    if (tune && tune.manualDb != null && isFinite(tune.manualDb)) { thr = tune.manualDb; continuous = false; }
-    return { floor: floor, speech: speech, range: range, threshold: thr, continuous: continuous, digital: false };
+    var pauses = pauseShare(db, spans, thr, BED_PAUSE_SEC);
+    var bed = continuous || (range < BED_MAX_RANGE && pauses < BED_MAX_PAUSES);
+    return { floor: floor, speech: speech, range: range, threshold: thr, continuous: continuous, digital: false,
+             pauses: pauses, bed: bed };
+  }
+
+  /* What tells a music bed from a voice. A beat is loud on every hit and dips
+     between hits (13–19 dB apart), so loudness range alone called a drum loop
+     a mic, and its vote blocked every cut it played under. What a beat never
+     does is PAUSE: its dips are the gaps between hits, well under a second,
+     while a voice stops for a second or more between thoughts (and a podcast
+     mic is quiet the whole time the other person talks). */
+  var BED_PAUSE_SEC = 1.0;      // a real pause, whatever the preset
+  var BED_MAX_RANGE = 22;       // dB — a voice into its own mic swings 25–45 dB
+  var BED_MAX_PAUSES = 0.05;    // share of its span a bed spends in such pauses (intro, a break)
+
+  /* Share of the used windows (spans) that sit in quiet runs of at least
+     minSec under `threshold`, with the same hysteresis the cut uses. */
+  function pauseShare(db, spans, threshold, minSec) {
+    var flags = loudFlags(db, threshold), need = Math.max(1, Math.round(minSec / HOP));
+    var total = 0, paused = 0, s, i, a, b, run;
+    for (s = 0; s < spans.length; s++) {
+      a = Math.max(0, Math.floor(spans[s][0])); b = Math.min(db.length, Math.ceil(spans[s][1]));
+      if (b <= a) continue;
+      total += b - a; run = 0;
+      for (i = a; i < b; i++) {
+        if (!flags[i]) { run++; continue; }
+        if (run >= need) paused += run;
+        run = 0;
+      }
+      if (run >= need) paused += run;
+    }
+    return total ? paused / total : 0;
   }
 
   /* Loud(1)/quiet(0) per window with hysteresis: speech ends when the level

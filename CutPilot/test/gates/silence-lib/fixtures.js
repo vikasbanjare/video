@@ -87,10 +87,28 @@ function musicLayer(n, db) {
   return out;
 }
 
+/* A beat-driven music bed (what reels and YouTube videos actually use): a
+   soft chord pad with a kick on every beat, a snare on 2 and 4 and hi-hats on
+   the 8ths. It is loud on every hit and dips between hits (13–19 dB apart),
+   but it never pauses. beat: { bpm, padDb, kick, hat, snare } (amplitudes). */
+function beatLayer(n, beat, seed) {
+  const r = rng(seed), out = new Float32Array(n), len = 60 / beat.bpm, pad = dbToAmp(beat.padDb);
+  for (let i = 0; i < n; i++) {
+    const t = i / SR, b = t % len, half = t % (len / 2), no = Math.floor(t / len);
+    let v = pad * (Math.sin(2 * Math.PI * 220 * t) + 0.6 * Math.sin(2 * Math.PI * 277 * t) + 0.5 * Math.sin(2 * Math.PI * 330 * t)) / 1.6;
+    v += (beat.kick || 0) * Math.exp(-b / 0.08) * Math.sin(2 * Math.PI * (50 + 80 * Math.exp(-b / 0.03)) * b);
+    if (no % 2 === 1) v += (beat.snare || 0) * Math.exp(-b / 0.06) * (r() * 2 - 1);
+    v += (beat.hat || 0) * Math.exp(-half / 0.02) * (r() * 2 - 1);
+    out[i] = v;
+  }
+  return out;
+}
+
 /*
  * spec: { dur, floorDb, speech: [[s,e],…], speechDb (default −20),
  *         bleed: { bursts:[[s,e],…], db } (another voice leaking in),
- *         musicDb, digital: [[s,e],…] (exact digital zero), seed }
+ *         musicDb, beat: { bpm, padDb, kick, hat, snare } (a drum-loop bed),
+ *         digital: [[s,e],…] (exact digital zero), seed }
  */
 function render(spec) {
   const n = Math.round(spec.dur * SR), seed = spec.seed || 11;
@@ -100,6 +118,7 @@ function render(spec) {
   if (spec.speech && spec.speech.length) add(speechLayer(n, spec.speech, spec.speechDb != null ? spec.speechDb : -20, seed + 2));
   if (spec.bleed) add(speechLayer(n, spec.bleed.bursts, spec.bleed.db, seed + 3));
   if (spec.musicDb != null) add(musicLayer(n, spec.musicDb));
+  if (spec.beat) add(beatLayer(n, spec.beat, seed + 4));
   for (const [s, e] of (spec.digital || [])) {
     for (let i = Math.round(s * SR); i < Math.min(n, Math.round(e * SR)); i++) mix[i] = 0;
   }

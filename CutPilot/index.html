@@ -766,6 +766,9 @@
       </div>
       <button id="btn-autoclean" class="hero-btn" style="margin-top:10px">✨ Clean up my video</button>
       <div id="autoclean-progress" class="progress hidden"></div>
+      <!-- filled after every listen: each track Pulse heard, why nothing was
+           cut when nothing was, and a voice / music choice per track -->
+      <div id="ac-heard" class="hidden" style="margin-top:8px;padding:8px;border:1px solid var(--line, #2b3242);border-radius:8px"></div>
       <p class="hint" style="margin-top:6px">Pulse listens to <b>every mic</b> on your timeline and only cuts where <b>everyone</b> is quiet.
          Dead air is removed even without a transcript; transcribe first (Transcribe tab) so it can also remove repeated takes.
          A backup of your sequence is always made first.</p>
@@ -826,6 +829,7 @@
 
     <button id="btn-analyze" class="hero-btn alt">⚡ Find the silences</button>
     <div id="analyze-progress" class="progress hidden"></div>
+    <div id="sil-heard" class="hidden" style="margin:8px 0;padding:8px;border:1px solid var(--line, #2b3242);border-radius:8px"></div>
 
     <div id="results" class="hidden">
       <div class="card">
