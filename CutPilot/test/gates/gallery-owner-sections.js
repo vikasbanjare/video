@@ -10,7 +10,10 @@
  *     Styles sat at cards 70–107, although the chips (and the code comment)
  *     put them up front. The sections under All must follow the chip order;
  *   · THE ADVANCED NOTE said "the styles above…" even in the 🧩 chip, where
- *     nothing is above it. It must not point at something that is not there.
+ *     nothing is above it. It must not point at something that is not there;
+ *   · THE TEMPLATE SHEET promised "each word lights up exactly when it's
+ *     spoken" on TITLE templates, which have no word highlight. The line must
+ *     show for a caption template and not for a title.
  * Exit 0 pass, 1 fail, 2 skipped (no browser / puppeteer / unzip).
  */
 'use strict';
@@ -47,6 +50,15 @@ const G = require('./gallery-lib/panel.js');
     const sh = document.getElementById('mogrt-sheet');      // position:fixed, so no offsetParent
     out.sheetOpen = !!(sh && !sh.classList.contains('hidden') && getComputedStyle(sh).display !== 'none');
     out.sheetName = (document.getElementById('ms-name') || {}).textContent || '';
+    // the timing line: a caption template (just opened) vs a title template
+    const timingLine = () => { const w = document.getElementById('ms-words'); const p = w && w.nextElementSibling;
+      return (p && /Word-by-word timing/.test(p.textContent)) ? getComputedStyle(p).display !== 'none' : null; };
+    out.timingOnCaption = timingLine();
+    out.titleName = null;
+    if (adv) { adv.click(); await sleep(400); }
+    const tcard = Array.from(document.querySelectorAll('#tpl-grid .tpl-card.is-mogrt')).find(c => /Title|Stack/.test((c.querySelector('.tpl-name') || {}).textContent || ''));
+    if (tcard) { out.titleName = (tcard.querySelector('.tpl-name') || {}).textContent; tcard.click(); await sleep(400); }
+    out.timingOnTitle = timingLine();
     try { const x = document.querySelector('#mogrt-sheet [data-close], #ms-close, #mogrt-sheet .sheet-close'); if (x) x.click(); } catch (e) {}
     // ---- All: section order ---------------------------------------------------
     const all = chip('All'); if (all) { all.click(); await sleep(500); }
@@ -68,6 +80,13 @@ const G = require('./gallery-lib/panel.js');
   else if (!res.favStar) R.bad('under Favorites, "' + res.mogrtName + '" does not show its star');
   else if (!res.sheetOpen || res.sheetName !== res.mogrtName) R.bad('tapping the starred template under Favorites did not open its sheet (' + res.sheetName + ')');
   else R.ok('a starred template ("' + res.mogrtName + '") shows under Favorites, starred, and opens its own sheet');
+
+  // the sheet's timing line
+  if (res.timingOnCaption == null) R.bad('the template sheet\'s word-timing line is missing');
+  else if (!res.timingOnCaption) R.bad('the word-timing line is hidden on a caption template ("' + res.mogrtName + '")');
+  else if (!res.titleName) R.bad('no title template found in the 🧩 chip');
+  else if (res.timingOnTitle) R.bad('the sheet promises word-by-word timing on the title template "' + res.titleName + '", which has no word highlight');
+  else R.ok('the sheet shows "each word lights up…" on a caption template, not on the title template "' + res.titleName + '"');
 
   // All order == chip order
   const chipCats = res.chipOrder.filter(c => res.allSections.indexOf(c) >= 0);

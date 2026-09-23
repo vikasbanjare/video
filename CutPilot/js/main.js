@@ -4575,6 +4575,12 @@
     state.selectedMogrtTpl = t;
     try { state.selectedMogrtBase = mogrtCardStyle(t); } catch (eBase) { state.selectedMogrtBase = null; }
     $('ms-name').textContent = t.name;
+    // "each word lights up exactly when it's spoken" is a CAPTION template's
+    // promise — a title template has no word highlight, so don't make it there
+    try {
+      var tl = $('ms-words') && $('ms-words').nextElementSibling;
+      if (tl && /Word-by-word timing/.test(tl.textContent || '')) tl.style.display = (t.kind === 'title') ? 'none' : '';
+    } catch (eTl) {}
     // PREVIEW: templates that ship a REAL render show it (the Flux .mp4 loop /
     // a title's still) — that's the template's true animation. The live
     // "your colours" canvas stays visible beneath it and reflects every edit.
