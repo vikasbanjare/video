@@ -296,6 +296,21 @@ async function pickStyle(page, id) {
   }, id);
 }
 
+/* Select a style by id through window.CP_DEBUG_EXT.overlay.applyStyle — the
+   same steps as its card click, without needing the card to be on show (the
+   gallery hides near-duplicates such as btn-3dred). false = no such style. */
+async function applyStyle(page, id) {
+  return page.evaluate(async (id) => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const tab = document.querySelector('.tab[data-tab="captions"]'); if (tab) tab.click();
+    await sleep(120);
+    const X = window.CP_DEBUG_EXT && window.CP_DEBUG_EXT.overlay;
+    if (!X || !X.applyStyle || !X.applyStyle(id)) return false;
+    await sleep(260);
+    return true;
+  }, id);
+}
+
 /* ---------------------------------------------------------------- pixels -- */
 function readPng(buf) {
   let pos = 8, w = 0, h = 0, ct = 6;
@@ -382,4 +397,4 @@ function visibleAt(frames, t) {
 }
 
 module.exports = { ROOT, PANEL, requirePuppeteer, resolveBrowser, loadHostHarness, newPremiere, startBridge, launchPanel,
-                   pickStyle, readPng, decodeFrames, diffRGBA, visibleAt };
+                   pickStyle, applyStyle, readPng, decodeFrames, diffRGBA, visibleAt };

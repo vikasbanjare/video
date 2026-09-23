@@ -25,6 +25,11 @@
  *     1080x1920 and 1920x1080, with Hinglish, Devanagari and ₹ text, through
  *     window.CP_DEBUG_EXT.overlay: one overlay job and one image job on the same
  *     cues, compared at several moments, plus a moment with no caption.
+ *     Styles are applied by id (CP_DEBUG_EXT.overlay.applyStyle — the same
+ *     steps as a card click), because the gallery hides near-duplicate cards
+ *     such as btn-3dred that a saved look can still open. A check below proves
+ *     the hook and a real card click leave the same style behind, and that an
+ *     unknown id is refused rather than replaced by a default.
  *
  * A sample fails when more than max(150 px, 0.5% of the caption's ink) differ
  * by more than 24 levels (alpha, or premultiplied colour). A negative control
@@ -198,10 +203,23 @@ const STYLES = ['hormozi', 'focus', 'pack-neon', 'karaoke', 'cap-pastel', 'cap-t
   }
 
   // ============================================================= B. the matrix
-  const hook = await page.evaluate(() => !!(window.CP_DEBUG_EXT && window.CP_DEBUG_EXT.overlay && window.CP_DEBUG_EXT.overlay.run));
+  const hook = await page.evaluate(() => !!(window.CP_DEBUG_EXT && window.CP_DEBUG_EXT.overlay && window.CP_DEBUG_EXT.overlay.run &&
+                                             window.CP_DEBUG_EXT.overlay.applyStyle));
   if (!hook) {
-    bad('B: window.CP_DEBUG_EXT.overlay is missing — the style matrix cannot run');
+    bad('B: window.CP_DEBUG_EXT.overlay (run + applyStyle) is missing — the style matrix cannot run');
   } else {
+    // the id hook must be the card click, not a look-alike: same resolved style
+    // for a style that IS on show, and no silent default for an unknown id
+    const jobStyle = () => page.evaluate(() => JSON.stringify(window.CP_DEBUG_EXT.overlay.jobStyle(1080, 1920)));
+    await L.applyStyle(page, 'btn-neon');
+    const clicked = (await L.pickStyle(page, 'hormozi')) ? await jobStyle() : null;
+    await L.applyStyle(page, 'btn-neon');
+    const hooked = (await L.applyStyle(page, 'hormozi')) ? await jobStyle() : null;
+    const refused = !(await L.applyStyle(page, 'no-such-style-id'));
+    if (!clicked || !hooked) bad('B: hormozi could not be picked by card click (' + !!clicked + ') or by id (' + !!hooked + ')');
+    else if (clicked !== hooked) bad('B: applying a style by id leaves a different style than clicking its card');
+    else if (!refused) bad('B: an unknown style id was accepted — a typo would silently test the default style');
+    else ok('B styles are applied by id exactly as a card click applies them (hormozi: identical style), and an unknown id is refused');
     const cues = [
       { start: 0.30, end: 1.90, text: 'Paise kaise badhte hain' },
       { start: 2.20, end: 3.80, text: 'यह बहुत ज़रूरी बात है' },
@@ -221,7 +239,7 @@ const STYLES = ['hormozi', 'focus', 'pack-neon', 'karaoke', 'cap-pastel', 'cap-t
     for (const [W, Hh] of [[1080, 1920], [1920, 1080]]) {
       for (const id of STYLES) {
         premiere(W, Hh, FPS);
-        if (!(await L.pickStyle(page, id))) { bad('B ' + id + ': style card not found in the gallery'); continue; }
+        if (!(await L.applyStyle(page, id))) { bad('B ' + id + ': no built-in style has this id'); continue; }
         await page.evaluate(() => { window.__ovFrames = null; });
         // the per-image render (what a short video gets)
         let from = bridge.state.hostCalls.length;

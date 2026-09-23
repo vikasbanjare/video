@@ -7472,6 +7472,17 @@
       runImages: function (cues, opts) { return runCaptionPipeline(cues, withOpts(opts, { noOverlay: true })); },
       running: function () { return !!_ovJob; },
       cancel: cancelOverlayJob,
+      // pick a built-in style by id exactly as its gallery card click does —
+      // also for the near-duplicates the gallery hides (a saved look, favourite
+      // or recent still opens them). false when no style has that id: never a
+      // silent stand-in, so a gate cannot pass on the wrong style.
+      applyStyle: function (id) {
+        var all = allTemplates(), t = null;
+        for (var i = 0; i < all.length; i++) if (all[i].id === id && !all[i].mogrt) { t = all[i]; break; }
+        if (!t) return false;
+        preloadStyleFonts(t, renderPreview); _pvDemo = null; applyTemplate(t); showView('style');
+        return true;
+      },
       seqKey: overlaySeqKey,
       lastJob: function () { return state.lastCaptionJob ? { mode: state.lastCaptionJob.mode || null, track: state.lastCaptionJob.track } : null; }
     };
