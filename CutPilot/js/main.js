@@ -11117,7 +11117,7 @@
   // re-scan the timeline's audio tracks on demand (sequence may have opened
   // after the tab, or audio was just added)
   if ($('btn-mc-rescan')) $('btn-mc-rescan').addEventListener('click', function () {
-    state.mcAudioTracks = null; _mainTracksLoaded = false; _mcProbe = {};
+    state.mcAudioTracks = null; _mainTracksLoaded = false; _mcProbe = {}; _mcSplit = {};
     capMcProgress('Detecting audio tracks…');
     ensureAudioTracks().then(function (tracks) {
       return mcProbeTracks(tracks).then(function () { return tracks; });
@@ -11268,15 +11268,27 @@
   }
 
   /* Default mic for each camera. One stereo track → its Left and Right become
-     two mics (two wireless lavs on one recorder, a mixer's stereo file); tracks
-     that point at the SAME recording (Breakout to Mono) take its channels in
-     track order; otherwise camera i ↔ track i. */
+     two mics (two wireless lavs on one recorder, a mixer's stereo file); a
+     recording already heard to carry two people on its Left and Right (see
+     mcFindSplitRecording) gives its channels first; tracks that point at the
+     SAME recording (Breakout to Mono) take its channels in track order;
+     otherwise camera i ↔ track i. */
   function mcDefaultSources(tracks) {
     var byPath = {}, out = [];
     tracks.forEach(function (t, ti) { (byPath[t.mediaPath] = byPath[t.mediaPath] || []).push(ti); });
     if (tracks.length === 1) {
       var chs = mcChannelMap(_mcProbe[tracks[0].mediaPath]);
       if (chs.length >= 2) { for (var k = 0; k < chs.length; k++) out.push('0:' + k); return out; }
+    }
+    // a recording found to carry two people on its Left and Right (a lav
+    // receiver in split mode on one camera's audio): its channels are the
+    // first mics, then the other recordings in track order
+    for (var si = 0; si < tracks.length; si++) {
+      var sp = tracks[si].mediaPath, sch = mcChannelMap(_mcProbe[sp]);
+      if (_mcSplit[sp] !== true || sch.length < 2) continue;
+      for (var k2 = 0; k2 < sch.length; k2++) out.push(si + ':' + k2);
+      tracks.forEach(function (t, ti) { if (t.mediaPath !== sp) out.push(String(ti)); });
+      return out;
     }
     tracks.forEach(function (t, ti) {
       var group = byPath[t.mediaPath], chs2 = mcChannelMap(_mcProbe[t.mediaPath]);
@@ -11737,6 +11749,40 @@
     return ensureAudioTracks().then(function (tracks) {
       return mcProbeTracks(tracks).then(function () { return tracks; });
     }).then(function (tracks) {
+      _mcStreamReads = {};                       // Left and Right of one file: one read per plan
+      return mcFollowPass(tracks, numAngles).then(function (res) {
+        if (!res.stuck) return res.plan;
+        // 2+ mics paired but no speaker switch at all. The commonest cause: a
+        // lav receiver's host (Left) and guest (Right) on ONE camera's audio,
+        // heard mixed together, while the other camera only has its own
+        // scratch mic. If a recording Pulse paired by itself carries two
+        // different people on its Left and Right, use them and listen again.
+        return mcFindSplitRecording(tracks, res).then(function (split) {
+          if (!split) return res.plan;
+          var before = (state.mcMap || []).slice(), map = mcEnsureMap(tracks, numAngles), moved = [];
+          for (var a = 0; a < numAngles; a++) {
+            if (String(map[a]) === String(before[a])) continue;
+            var ms = mcParseSource(map[a]);
+            moved.push('V' + (a + 1) + ' → ' + (ms && tracks[ms.track] ? mcSourceName(tracks[ms.track], ms.channel) : 'No mic'));
+          }
+          if (!moved.length) return res.plan;
+          return mcFollowPass(tracks, numAngles).then(function (res2) {
+            state.mcAnalysis.note = '🎙️ ' + (split.name || 'One recording') + ' has two people on its Left and Right, so Pulse listened to ' +
+              moved.join(', ') + '. Change it in Step 2 if that’s wrong.';
+            try { renderMcMap(); } catch (eR) {}
+            return res2.plan;
+          });
+        });
+      });
+    });
+  }
+
+  /* One listen for "follow the speaker" with the current mic ↔ camera map.
+     Resolves { plan, stuck, micFor, nWin }: stuck = 2+ mics paired, yet
+     fewer than two of them ever clearly talk or the plan never switches
+     between speakers (only timed cutaways) — a pairing that can't work. */
+  function mcFollowPass(tracks, numAngles) {
+    return Promise.resolve().then(function () {
       var map = mcEnsureMap(tracks, numAngles);
       var dur = state.mcAudioEnd || (state.env && state.env.endSeconds) || 0;
       var wides = [];    // every camera without a mic — wide / cutaway shots take them in turn
@@ -11750,7 +11796,6 @@
       if (micCount < 1) throw new Error('Assign at least one camera to a mic (V1 → A1, …).');
 
       capMcProgress('Listening to ' + micCount + ' mic' + (micCount > 1 ? 's' : '') + '…');
-      _mcStreamReads = {};                       // Left and Right of one file: one read per plan
       var nWin = Math.ceil(dur / MC_STEP);
       var jobs = micFor.map(function (s) { return s ? micSeqGrid(s.track, nWin, s.channel) : Promise.resolve(null); });
       return Promise.all(jobs).then(function (grids) {
@@ -11815,6 +11860,7 @@
           mode: 'follow',
           coverage: mcCoverage(dbGrids, micNames, dur),
           micNames: micNames,
+          micCount: micCount,
           gains: cal.offsets.map(function (o, a) { return dbGrids[a] && dbGrids[a].length ? Math.round(o * 10) / 10 : null; }),
           gainMethod: cal.method.slice(),
           isolation: cal.crossIsolation != null ? Math.round(cal.crossIsolation * 10) / 10 : null,
@@ -11824,7 +11870,7 @@
         capMcProgress(null);
         // crosstalk (two people at once) goes to a wide camera when there is
         // one, and so do longer pauses; the periodic wide is optional
-        return CPMulticam.directorPlan(act.regions, dur, {
+        var plan = CPMulticam.directorPlan(act.regions, dur, {
           minSegment: mcMinHold(),
           wideAngles: wides,
           wideOnSilence: wides.length > 0,
@@ -11834,8 +11880,51 @@
           maxShot: mcMaxShot(),
           cutawayHold: mcCutawayHold()
         });
+        var talkers = act.clearShare.filter(function (x) { return x >= 0.03; }).length;
+        return { plan: plan, micFor: micFor, nWin: nWin,
+                 stuck: micCount >= 2 && (talkers < 2 || mcSpeakerSwitches(plan) === 0) };
       });
     });
+  }
+
+  /* Camera switches between speakers (timed cutaways don't count). */
+  function mcSpeakerSwitches(plan) {
+    var n = 0;
+    for (var i = 1; i < plan.length; i++) {
+      if (plan[i].angle !== plan[i - 1].angle && !plan[i].cutaway && !plan[i - 1].cutaway) n++;
+    }
+    return n;
+  }
+
+  /* A recording Pulse paired BY ITSELF (the owner's own picks are left alone)
+     whose Left and Right carry two different people — a lav receiver in split
+     mode on one camera's audio. Reads that recording's channels (one ffmpeg
+     pass) and remembers the answer per file. Resolves its track, or null. */
+  var _mcSplit = {};
+  function mcFindSplitRecording(tracks, res) {
+    var auto = state.mcMapAuto || [], cands = [];
+    for (var a = 0; a < res.micFor.length; a++) {
+      var s = res.micFor[a];
+      if (!s) continue;
+      if (auto[a] === false) return Promise.resolve(null);
+      var mp = s.track.mediaPath;
+      if (s.channel == null && _mcSplit[mp] !== false && mcChannelMap(_mcProbe[mp]).length >= 2 && cands.indexOf(s.track) < 0) cands.push(s.track);
+    }
+    return cands.reduce(function (chain, track) {
+      return chain.then(function (found) {
+        if (found) return found;
+        if (_mcSplit[track.mediaPath] === true) return track;
+        capMcProgress('Listening to the Left and Right of ' + (track.name || 'the recording') + '…');
+        return Promise.all([micSeqGrid(track, res.nWin, 0), micSeqGrid(track, res.nWin, 1)]).then(function (g) {
+          var sep = CPMulticam.micSeparation(g[0], g[1]);
+          var two = sep.n >= 50 && sep.p90 >= 1.5 && CPMulticam.micGainOffsets(g).method[1] === 'voices';
+          if (two) { var act = CPMulticam.speakerActivity(g, MC_STEP); two = act.clearShare[0] >= 0.03 && act.clearShare[1] >= 0.03; }
+          _mcSplit[track.mediaPath] = two;
+          capMcProgress(null);
+          return two ? track : null;
+        }, function () { capMcProgress(null); return null; });
+      });
+    }, Promise.resolve(null));
   }
 
   function capMcProgress(msg) {
@@ -12148,6 +12237,13 @@
       nl.textContent = noLabelsMsg;
       view.insertBefore(nl, view.firstChild);
     }
+    // Pulse changed which mic it listened to (a split Left/Right recording) — say so
+    if (an && an.note) {
+      var nt = document.createElement('div');
+      nt.className = 'hint mc-plan-note';
+      nt.textContent = an.note;
+      view.insertBefore(nt, view.firstChild);
+    }
     // Coverage: how much of the timeline the analysis HEARD (audio modes) or
     // the transcript speaks for (transcript mode), else the span the plan
     // reaches (interval modes). Timed cutaways are counted apart so they can't
@@ -12182,7 +12278,8 @@
     $('btn-mc-apply').classList.remove('hidden');
     if (state.mcApplied) { $('btn-mc-redo').classList.remove('hidden'); $('mc-redo-hint').classList.remove('hidden'); }
     toast(warn || (unlabelled ? noLabelsMsg
-        : (stats.segments + ' segments, ' + swText + ' across the full ' + fmt(timeline) + ' timeline.')), !!warn || unlabelled);
+        : (((an && an.note) ? an.note + ' ' : '') + stats.segments + ' segments, ' + swText + ' across the full ' + fmt(timeline) + ' timeline.')),
+      !!warn || unlabelled);
   }
 
   /* Does the follow-the-speaker plan agree with who the mics say was talking?
@@ -12192,11 +12289,19 @@
   function mcPlanSanity(plan, an, numAngles) {
     var talk = an.clearShare || [], talkers = [], a, i;
     for (a = 0; a < numAngles; a++) if ((talk[a] || 0) >= 0.03) talkers.push(a);
-    if (talkers.length < 2) return null;
-    var speakerSwitches = 0;
-    for (i = 1; i < plan.length; i++) {
-      if (plan[i].angle !== plan[i - 1].angle && !plan[i].cutaway && !plan[i - 1].cutaway) speakerSwitches++;
+    // 2+ mics paired, yet at most one of them ever clearly talks: the pairing
+    // can't tell the people apart (e.g. host and guest mixed together on one
+    // camera's audio) — a one-camera plan must not read as success
+    if (talkers.length < 2 && (an.micCount || 0) >= 2) {
+      var fix = ' If two people talk in this episode, check that each camera is paired with the mic on that person ' +
+        '(host and guest on the Left and Right of one recording: pick “… · Left” for one camera and “… · Right” for the other in Step 2).';
+      return talkers.length
+        ? ('⚠️ Pulse heard only ' + mcAngleName(talkers[0]) + '’s mic talking, so the camera stays on ' + mcAngleName(talkers[0]) +
+           ' (apart from timed cutaways).' + fix)
+        : ('⚠️ Pulse couldn’t tell who is talking on these mics, so the cameras don’t follow anyone.' + fix);
     }
+    if (talkers.length < 2) return null;
+    var speakerSwitches = mcSpeakerSwitches(plan);
     if (!speakerSwitches) {
       return '⚠️ Pulse heard more than one person talking but found no moment to switch cameras. ' +
         'Check that each camera is paired with the mic on that person.';
