@@ -10,7 +10,7 @@
  * start or end, or real word timing), leaves the rest in and says so — with
  * where they are and how to check them.
  *   1. a retake inside one caption line (no word timing): not cut, named;
- *   2. a restart inside one line: not cut, named;
+ *   2. a restart inside one line: not cut (and named, if the finder offers it);
  *   3. the AI (Smart Cleanup) on the same guessed times: not cut either;
  *   4. a whole-line retake (both edges are line edges): still cut;
  *   5. the same in-line retake WITH real word timing: cut, nothing named.
@@ -93,7 +93,10 @@ const srt = (texts) => texts.map((t, i) => {
     r = await oneTap({ settings: { ffmpegPath: FF, whisperLang: 'auto' } }, fromFile(RESTART));
     bad = r.ranges.filter(x => inLine(x.start) || inLine(x.end));
     C.check('a restart inside one line ("paise kaise, paise kaise"): not cut at a guessed time', bad.length === 0, 'cuts ' + fmt(r.ranges));
-    C.check('…and it is named in the confirm', /possible retake was left in/.test(r.confirm), r.confirm.replace(/\s+/g, ' ').slice(0, 300));
+    // (the retake finder on fix/retakes does not even offer an in-line restart
+    //  on guessed times; when it is offered, it must be named with its time)
+    C.check('…and if the retake finder offers it, the confirm names it with its time',
+      /possible retake was left in \(0:03\.\d\d–0:04\.\d\d\)/.test(r.confirm) || !/left in/.test(r.confirm), r.confirm.replace(/\s+/g, ' ').slice(0, 300));
 
     // 3) Smart Cleanup (AI) on the same guessed word times: its cut inside line 1 is left in too
     const aiCurl = (args) => {
