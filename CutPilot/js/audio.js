@@ -63,35 +63,53 @@
   /*
    * Web Audio fallback (no ffmpeg): decode the whole file with Chromium's own
    * decoder and build the same envelope the ffmpeg path produces.
-   * Resolves { db, hop, start, duration, streams, complete:true }.
+   * opts: { stop: {} — the caller's Stop button: this fills in stop.now(), which
+   *         ends the wait at once (the decode can't be interrupted, so its
+   *         result is simply ignored) }
+   * Resolves { db, hop, start, duration, streams, complete:true }, or
+   * { complete:false, stopped:true } when the owner tapped Stop.
    */
-  function webAudioEnvelope(mediaPath, CPSilenceLib) {
+  function webAudioEnvelope(mediaPath, CPSilenceLib, opts) {
+    opts = opts || {};
     return new Promise(function (resolve, reject) {
+      var settled = false;
+      function done(fn, v) {
+        if (settled) return; settled = true;
+        if (opts.stop) opts.stop.now = null;
+        fn(v);
+      }
+      if (opts.stop) {
+        opts.stop.now = function () {
+          done(resolve, { db: new Float32Array(0), hop: 0.01, start: 0, duration: 0, streams: 1, complete: false, stopped: true,
+                          reason: 'stopped by the owner', why: 'you stopped it' });
+        };
+      }
       var ab;
       try {
         ab = readFileArrayBuffer(mediaPath);
       } catch (e) {
         var eR = new Error('Pulse couldn’t open this media file — it may have been moved, renamed or deleted.');
         eR.detail = e.message;
-        return reject(eR);
+        return done(reject, eR);
       }
       var Ctx = window.AudioContext || window.webkitAudioContext;
       var ctx = new Ctx();
       ctx.decodeAudioData(ab, function (audioBuffer) {
+        if (settled) { try { ctx.close(); } catch (eC) {} return; }   // stopped meanwhile: nothing to build
         try {
           var b = CPSilenceLib.makeEnvelopeBuilder(audioBuffer.sampleRate);
           b.pushFloats(toMono(audioBuffer));
           var env = b.finish();
           env.start = 0; env.streams = 1; env.complete = true; env.reason = '';
-          resolve(env);
+          done(resolve, env);
         } catch (e2) {
-          reject(e2);
+          done(reject, e2);
         } finally {
           ctx.close();
         }
       }, function () {
         ctx.close();
-        reject(new Error('Pulse can’t read the sound in this kind of file without its audio engine. ' + ENGINE_HELP));
+        done(reject, new Error('Pulse can’t read the sound in this kind of file without its audio engine. ' + ENGINE_HELP));
       });
     });
   }

@@ -9642,7 +9642,13 @@
     var ff = ffArg || resolveFfmpeg();
     var name = silBase(mediaPath);
     if (stop && stop.stopped) return Promise.reject(silStoppedError());
-    if (!ff) return CPAudio.webAudioEnvelope(mediaPath, CPSilence);
+    if (!ff) {
+      // no audio engine: the browser decodes the file — Stop ends the wait at once
+      return CPAudio.webAudioEnvelope(mediaPath, CPSilence, { stop: stop || null }).then(function (env) {
+        if (env.stopped || (stop && stop.stopped)) throw silStoppedError();
+        return env;
+      });
+    }
     var start0 = Math.max(0, lo - 0.5), key = silEnvKey(mediaPath, start0, (hi - start0) + 0.5);
     for (var ci = 0; key && ci < silEnvCache.length; ci++) {
       if (silEnvCache[ci].key === key) { if (onProg) { try { onProg(hi - lo); } catch (eP) {} } return Promise.resolve(silEnvCache[ci].env); }
