@@ -7623,19 +7623,32 @@
      (the raw error) goes to 📋 Copy diagnostics only — the owner used to read
      "ffmpeg exit 1: [concat @ 0x…] … No space left on device" in a toast.
      stop: the next, simpler way would hit the same wall (a full disk refuses
-     every write), so the job stops instead of writing hundreds more files. */
+     every write), so the job stops instead of writing hundreds more files.
+     The audio engine is missing only when it could not be STARTED (spawn
+     ENOENT / EACCES). A RUNNING ffmpeg that says "No such file or directory"
+     lost a folder or file it was given (a drive unplugged mid-render): it used
+     to be told as a missing engine, sending the owner to set up an engine
+     that works. */
   function captionFailureCause(e) {
     var raw = rawFailure(e);
     if (/ENOSPC|No space left|disk (is )?full|quota exceeded/i.test(raw))
       return { plain: 'your disk is full — free some space, then try again', stop: true, known: true };
-    if (/spawn\b[^\n]*(ENOENT|EACCES)|ENOENT[^\n]*ffmpeg|ffmpeg[^\n]*(not found|No such file)/i.test(raw))
+    if (/\bspawn\b[^\n]*\b(ENOENT|EACCES)\b/.test(raw))
       return { plain: 'Pulse\'s audio engine is missing — tap Settings → ⬇️ Set up audio engine, then try again', stop: false, known: true };
     if (/EACCES|EPERM|EROFS|Permission denied|Operation not permitted|read-only file system|no folder Pulse can write/i.test(raw))
       return { plain: 'Pulse is not allowed to save files next to your project — save the project in a folder you can write to (for example Documents), then try again', stop: false, known: true };
+    if (/ENOENT|No such file or directory/i.test(raw))
+      return { plain: 'a folder Pulse was saving the captions into disappeared while it worked — if your project is on an external or cloud drive, check that it is still connected, then try again', stop: false, known: true };
     return { plain: 'something on this computer stopped it (📋 Copy diagnostics in Settings has the details)', stop: false, known: false };
   }
+  /* The message, its code, and the END of ffmpeg's output — where ffmpeg says
+     why it stopped. The simpler renderer shows ffmpeg's banner, so its reason
+     comes ~2.4 KB in: keeping only the first 2000 characters hid it, and a
+     full disk hit there did not stop the job. */
   function rawFailure(e) {
-    return String(((e && e.message) || e || '') + ' ' + ((e && e.code) || '') + ' ' + ((e && e.stderr) || '')).slice(0, 2000);
+    var err = String((e && e.stderr) || '');
+    if (err.length > 1500) err = '…' + err.slice(-1500);
+    return String(((e && e.message) || e || '') + ' ' + ((e && e.code) || '') + ' ' + err).slice(0, 2000);
   }
   function stopCaptions(cause) {
     setCaptionBusy(false); capProgress(null);
