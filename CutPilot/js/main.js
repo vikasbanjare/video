@@ -2631,9 +2631,11 @@
       var c = cues[idx];
       if ($('cap1-time')) $('cap1-time').textContent = '🕒 ' + fmt(c.start) + ' – ' + fmt(c.end);
       if ($('cap1-text')) $('cap1-text').value = c.text;
-      if ($('cap1-hint')) $('cap1-hint').textContent = spanning
-        ? 'This is the caption under your playhead. Fix the words and Save — only this one line re-renders.'
-        : 'Nothing sits exactly under the playhead, so this is the nearest caption. Move the playhead over the line you want and tap again, or just edit this one.';
+      var oneClip = state.lastCaptionJob.mode === 'overlay';
+      if ($('cap1-hint')) $('cap1-hint').textContent = (spanning
+        ? 'This is the caption under your playhead. Fix the words and Save — ' +
+          (oneClip ? 'your captions are one clip, so Pulse re-draws that clip with the change.' : 'only this one line re-renders.')
+        : 'Nothing sits exactly under the playhead, so this is the nearest caption. Move the playhead over the line you want and tap again, or just edit this one.');
       $('cap1-editor').classList.remove('hidden');
       if ($('cap1-text')) { $('cap1-text').focus(); $('cap1-text').select(); }
     }).catch(function (e) { capProgress(null); toast('Couldn\'t read the playhead: ' + e.message, true); });
@@ -2649,8 +2651,24 @@
     var cue = state.lastCaptionJob.cues[_cap1Idx];
     if (newText === cue.text) { closeOneCaptionEditor(); return toast('No change — caption left as-is.'); }
     cue.text = newText;            // persist the fix into the remembered job
+    // ...and into the word timing. Word-by-word captions are BUILT from it, so
+    // without this the next re-render ("Apply to all", or any overlay) brought
+    // the old word back. Lines whose word count is unchanged keep their exact
+    // spoken times (the same reflow "Edit words" uses).
+    try {
+      if (state.transcriptWords && state.transcriptWords.length) {
+        var rw = reflowWordTimingFromLines(state.lastCaptionJob.cues, state.transcriptWords);
+        if (rw && rw.length) state.transcriptWords = rw;
+      }
+    } catch (eRw) {}
     saveLastCaptionJob();
     closeOneCaptionEditor();
+    // A long video's captions are ONE overlay clip: a single caption image
+    // dropped onto it chopped the overlay in two. Re-draw the whole clip.
+    if (state.lastCaptionJob.mode === 'overlay') {
+      toast('✏️ Fixed — Pulse is re-drawing your caption clip with the change (a few minutes on a long video).');
+      return runLibassCaptions(state.lastCaptionJob.cues, { replaceTrack: state.lastCaptionJob.track });
+    }
     // re-render ONLY this cue and overwrite just that clip on the same track.
     // wordCues:null keeps it instant — no whole-audio re-analysis for one line.
     runCaptionPipeline(state.lastCaptionJob.cues, {
@@ -6665,6 +6683,11 @@
     if (!state.lastCaptionJob || !state.lastCaptionJob.cues) {
       return toast('Add captions first, then select a clip/range and use this.', true);
     }
+    // A long video's captions are ONE overlay clip — a part of it cannot take
+    // another style (images dropped on it chopped the clip). Say so.
+    if (state.lastCaptionJob.mode === 'overlay') {
+      return toast('These captions are one overlay clip, so a range cannot get its own style. Use "Apply to all" to restyle them all.', true);
+    }
     setCaptionBusy(true);
     CPBridge.callHost('CP_selectedRange', {}).then(function (rng) {
       setCaptionBusy(false);
@@ -6702,12 +6725,14 @@
     if ($('btn-cap-edit')) $('btn-cap-edit').classList.toggle('hidden', !on);
     if ($('btn-cap-fix1')) $('btn-cap-fix1').classList.toggle('hidden', !on);
     if ($('btn-cap-restyle')) $('btn-cap-restyle').classList.toggle('hidden', !on);
-    if ($('btn-cap-segment')) $('btn-cap-segment').classList.toggle('hidden', !on);
+    // one overlay clip cannot restyle just a range (see the btn-cap-segment handler)
+    if ($('btn-cap-segment')) $('btn-cap-segment').classList.toggle('hidden', !on || !!(job && job.mode === 'overlay'));
     var hint = $('cap-restyle-hint');
     if (hint) {
       if (job && job.mode === 'overlay') {
         hint.innerHTML = '✅ Your captions are ONE overlay clip (chosen automatically because this video is long — thousands of separate caption clips would bog your project down). ' +
-          'They stay editable from Pulse: <b>✏️ Edit words</b> re-renders them, and picking another style + <b>Add captions</b> replaces the overlay.';
+          'They stay editable from Pulse: <b>✏️ Edit words</b> or fixing one line re-draws the clip, and <b>Apply to all</b> (or another style + <b>Add captions</b>) restyles it. ' +
+          'A range cannot get its own style inside one clip.';
         hint.classList.remove('hidden');
       } else if (editable) {
         hint.innerHTML = 'Editable captions are on your timeline — click any caption clip and edit its <b>text or styling</b> in Window → Essential Graphics. Running “Add captions” again replaces this set.';
@@ -7665,6 +7690,9 @@
       // also for the near-duplicates the gallery hides (a saved look, favourite
       // or recent still opens them). false when no style has that id: never a
       // silent stand-in, so a gate cannot pass on the wrong style.
+      // the transcript's word timing (what word-by-word captions are built from)
+      setWords: function (w) { state.transcriptWords = w && w.length ? w : null; },
+      words: function () { return state.transcriptWords ? state.transcriptWords.slice() : null; },
       applyStyle: function (id) {
         var all = allTemplates(), t = null;
         for (var i = 0; i < all.length; i++) if (all[i].id === id && !all[i].mogrt) { t = all[i]; break; }

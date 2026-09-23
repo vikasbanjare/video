@@ -110,6 +110,22 @@ console.log('overlay: CP_placeOverlay tidies old overlays safely and replaces im
   else if (left.length) bad(left.length + ' of ' + before + ' caption images are still on the track under the new overlay — old captions would reappear');
   else ok('replacing an image caption track clears all ' + before + ' cap_*.png clips');
 }
+{
+  // ...and the other way round: an overlay job's track restyled AS IMAGES (a
+  // machine without the audio engine) must lose the overlay clip, or it stays
+  // under the new images and gets chopped into pieces by them
+  const w = sandbox.__mk({ vTracks: 1, aTracks: 1 });
+  w.model.addClip('vTracks', 0, 0, 600, { name: 'Podcast.mp4' });
+  const host = sandbox.__load(w);
+  const ov = call(host, 'CP_placeOverlay', { path: '/p/Pulse Media/pulse-captions-S-1-p-20260101-100000-000.mov', startSec: 0 });
+  const items = [];
+  for (let i = 0; i < 6; i++) items.push({ path: '/p/Pulse Media/caption-images-S-1-p-20260101-110000-000/cap_' + (10000 + i) + '.png', start: i * 1.5, end: i * 1.5 + 1.4 });
+  const img = call(host, 'CP_placeCaptionImages', { items: items, anim: 'karaoke', replaceTrack: ov.track });
+  const left = w.model.vTracks[img.track - 1].filter(c => /^pulse-captions/i.test(c.name));
+  if (!img.ok || img.track !== ov.track) bad('restyling an overlay track as images did not reuse the track');
+  else if (left.length) bad('restyling an overlay track as images left ' + left.length + ' piece(s) of the old overlay clip under the new captions');
+  else ok('restyling an overlay track as images removes the old overlay clip too');
+}
 
 // ---- 3. the tidy-up is not the last step (⌘Z) ------------------------------------
 // ExtendScript cannot group undo steps, so every change is its own ⌘Z. When the

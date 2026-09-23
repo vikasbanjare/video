@@ -1641,8 +1641,10 @@ function CP_placeCaptionImages(argsJson) {
       trackIndex = args.overwriteOnTrack - 1;
     } else if (args.replaceTrack != null && args.replaceTrack >= 1 && args.replaceTrack <= seq.videoTracks.numTracks) {
       // Restyle "apply to all": reuse the existing caption track, but first clear
-      // only Pulse's own caption frames (named cap_*.png) off it — so captions
-      // never stack across restyles, and any other clip the user put there is safe.
+      // only Pulse's own captions off it — the caption frames (cap_*.png) and a
+      // long video's one overlay clip (pulse-captions-*.mov), which otherwise
+      // stayed under the new images and got chopped by them — so captions never
+      // stack across restyles, and any other clip the user put there is safe.
       trackIndex = args.replaceTrack - 1;
       try {
         app.enableQE();
@@ -1653,7 +1655,7 @@ function CP_placeCaptionImages(argsJson) {
           if (!itR || itR.type === 'Empty') continue;
           var nmR = '';
           try { nmR = String(itR.name).toLowerCase(); } catch (eNm) {}
-          if (nmR.indexOf('cap_') === 0) { try { itR.remove(0, 0); } catch (eRem) {} }
+          if (nmR.indexOf('cap_') === 0 || nmR.indexOf('pulse-captions') === 0) { try { itR.remove(0, 0); } catch (eRem) {} }
         }
       } catch (eClr) {}
     } else {
