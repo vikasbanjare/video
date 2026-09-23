@@ -1605,7 +1605,7 @@
      "‹ + page name"; on a wide panel the .tab buttons are a sidebar. Every way
      in (Home cards, ‹, ⚙, ⌘K, a finished job) clicks the page's .tab button,
      so the per-page refreshes below run however the owner got there. */
-  var PAGE_TITLES = { home: '', transcribe: 'Transcript', captions: 'Captions', silence: 'Clean up',
+  var PAGE_TITLES = { home: '', transcribe: 'Transcribe', captions: 'Captions', silence: 'Clean up',
     shorts: 'Shorts', multicam: 'Podcast cameras', chapters: 'Chapters', organize: 'Organize',
     safezone: 'Safe zone', settings: 'Settings' };
   function showPage(name) {
@@ -1764,7 +1764,7 @@
       { group: 'Go', label: 'Captions', keywords: 'subtitle text caption styles', run: goTab('captions') },
       { group: 'Go', label: 'Clean up', keywords: 'auto-edit silence pause trim takes retakes fillers', run: goTab('silence') },
       { group: 'Go', label: 'Podcast cameras', keywords: 'multicam camera angle switch', run: goTab('multicam') },
-      { group: 'Go', label: 'Transcript', keywords: 'transcribe words', run: goTab('transcribe') },
+      { group: 'Go', label: 'Transcribe', keywords: 'transcript words', run: goTab('transcribe') },
       { group: 'Go', label: 'Shorts', keywords: 'viral clips reels', run: goTab('shorts') },
       { group: 'Go', label: 'Chapters', keywords: 'youtube timestamps markers', run: goTab('chapters') },
       { group: 'Go', label: 'Organize', keywords: 'bins project folders', run: goTab('organize') },

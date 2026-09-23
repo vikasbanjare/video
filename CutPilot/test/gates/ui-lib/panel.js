@@ -33,7 +33,7 @@ const SCREENS = [
   { id: 'caption-editor', tab: 'captions',   view: 'style',     primary: '#btn-magic', label: 'Caption style editor' },
   { id: 'cleanup',        tab: 'silence',    primary: '#btn-autoclean',  label: 'Clean up' },
   { id: 'cameras',        tab: 'multicam',   primary: '#btn-mc-plan',    label: 'Podcast cameras' },
-  { id: 'transcript',     tab: 'transcribe', primary: '#btn-tr-auto-ai', label: 'Transcript' },
+  { id: 'transcript',     tab: 'transcribe', primary: '#btn-tr-auto-ai', label: 'Transcribe' },
   { id: 'shorts',         tab: 'shorts',     primary: '#btn-find-shorts', label: 'Shorts' },
   { id: 'chapters',       tab: 'chapters',   primary: '#btn-ch-build',   label: 'Chapters' },
   { id: 'organize',       tab: 'organize',   primary: '#cpo-run',        label: 'Organize' },

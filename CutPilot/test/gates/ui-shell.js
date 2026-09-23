@@ -12,7 +12,7 @@
  *
  * In the real panel:
  *   1. it opens on Home: Add captions · Clean up · Podcast cameras as big
- *      buttons, each opening its page; More tools opens Transcript, Shorts,
+ *      buttons, each opening its page; More tools opens Transcribe, Shorts,
  *      Chapters, Organize and Safe zone;
  *   2. from every page one tap (‹) goes back Home and one tap (⚙) opens
  *      Settings, whose Diagnostics (copy, full check, recent messages) are
@@ -32,7 +32,7 @@ const U = require('./ui-lib/panel');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 const TASKS = [['home-captions', 'captions', /add captions/i], ['home-cleanup', 'silence', /clean up/i], ['home-cameras', 'multicam', /podcast cameras/i]];
-const TOOLS = [['transcribe', /transcript/i], ['shorts', /shorts/i], ['chapters', /chapters/i], ['organize', /organize/i], ['safezone', /safe zone/i]];
+const TOOLS = [['transcribe', /transcribe/i], ['shorts', /shorts/i], ['chapters', /chapters/i], ['organize', /organize/i], ['safezone', /safe zone/i]];
 
 const state = page => page.evaluate(() => {
   const p = document.querySelector('.tab-page.active');
@@ -92,7 +92,7 @@ const click = (page, sel) => page.evaluate(sel => {
       if (c !== 'ok' || s.page !== pageId) toolRes.push(pageId + ': ' + c + ', now on ' + s.page);
     }
     if (toolRes.length) R.bad('More tools: ' + toolRes.join('; '));
-    else R.ok('Home → each big task and each More tool (Transcript, Shorts, Chapters, Organize, Safe zone) opens its page');
+    else R.ok('Home → each big task and each More tool (Transcribe, Shorts, Chapters, Organize, Safe zone) opens its page');
 
     // ---- 2. back, ⚙, the bar's page name, Diagnostics --------------------------
     const nav = [];
