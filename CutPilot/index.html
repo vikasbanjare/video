@@ -753,11 +753,11 @@
          the camera. The AI reads your transcript, keeps your <b>best (final) take</b> of each line and
          cuts the earlier attempts + any off-script talk — all in one pass. Captions stay in sync, so you
          never re-transcribe.</p>
-      <p style="margin:8px 0 4px;font-weight:700;font-size:12px">How aggressive?</p>
+      <p style="margin:8px 0 4px;font-weight:700;font-size:12px">What are you making?</p>
       <div class="subview-switch" id="ac-strength">
-        <button data-s="gentle">🌿 Gentle</button>
-        <button data-s="balanced" class="on">⚖️ Balanced</button>
-        <button data-s="strong">⚡ Strong</button>
+        <button data-s="gentle" title="Natural rhythm: only pauses over 0.8s, each shortened to 0.35s">🎙 Podcast</button>
+        <button data-s="balanced" class="on" title="Balanced: pauses over 0.5s, each shortened to 0.3s">▶️ YouTube</button>
+        <button data-s="strong" title="Tight: pauses over 0.3s, each shortened to under 0.2s">⚡ Reel</button>
       </div>
       <div class="row tight" style="margin-top:8px;flex-wrap:wrap;gap:10px">
         <label class="check" style="margin:0"><input type="checkbox" id="ac-do-silence" checked> Dead air / silences</label>
@@ -766,7 +766,9 @@
       </div>
       <button id="btn-autoclean" class="hero-btn" style="margin-top:10px">✨ Clean up my video</button>
       <div id="autoclean-progress" class="progress hidden"></div>
-      <p class="hint" style="margin-top:6px">Tip: transcribe first (Transcribe tab) so it can also remove repeated takes. A backup of your sequence is always made first.</p>
+      <p class="hint" style="margin-top:6px">Pulse listens to <b>every mic</b> on your timeline and only cuts where <b>everyone</b> is quiet.
+         Dead air is removed even without a transcript; transcribe first (Transcribe tab) so it can also remove repeated takes.
+         A backup of your sequence is always made first.</p>
     </div>
 
     <!-- everything below the ONE button lives behind this drawer — one primary
@@ -794,13 +796,13 @@
 
       <p style="margin:10px 0 4px;font-weight:700;font-size:12px">How much to cut?</p>
       <div class="subview-switch" id="sil-strength">
-        <button data-s="gentle">🌿 Gentle</button>
-        <button data-s="balanced" class="on">⚖️ Balanced</button>
-        <button data-s="strong">⚡ Strong</button>
+        <button data-s="gentle">🎙 Podcast</button>
+        <button data-s="balanced" class="on">▶️ YouTube</button>
+        <button data-s="strong">⚡ Reel</button>
       </div>
-      <p class="hint" style="margin-top:5px"><b>Balanced</b> fits most talking videos.
-         <b>Strong</b> = punchy, fast cuts. <b>Gentle</b> keeps more breathing room. That’s the
-         only setting you need — Pulse figures out the rest.</p>
+      <p class="hint" style="margin-top:5px"><b>YouTube</b> fits most talking videos (pauses over 0.5s shortened to 0.3s).
+         <b>Reel</b> = tight, punchy cuts. <b>Podcast</b> keeps a natural rhythm (only pauses over 0.8s).
+         Pulse measures each mic’s own room noise — there is no dB to set.</p>
 
       <label class="check" style="margin-top:8px"><input type="checkbox" id="opt-fillers"> Also remove filler words <span class="dim">(um, uh, you know…)</span></label>
 

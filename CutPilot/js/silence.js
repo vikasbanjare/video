@@ -140,44 +140,335 @@
     return ranges;
   }
 
+  // ==========================================================================
+  // ADAPTIVE DEAD-AIR DETECTOR — what "Clean up my video" listens with.
+  // ffmpeg's silencedetect tests every SAMPLE's peak against one fixed dB
+  // number, so a room with a fan never goes "silent" while a quiet room cuts
+  // soft words, and the old easing ladder climbed until anything at all was
+  // found. This works the way a person listens:
+  //  1. 30 ms RMS loudness every 10 ms, per microphone (makeEnvelopeBuilder);
+  //  2. each mic's OWN room noise (10th percentile, digital zero ignored) and
+  //     speech level (60th percentile of what is clearly above the room);
+  //  3. gate = room + a share of the room→speech distance, never within 8 dB
+  //     of speech, with hysteresis so noise flicker can't split a pause;
+  //  4. a moment is dead air only when EVERY mic is quiet (combineMics) — a
+  //     two-mic podcast never loses the guest's answers;
+  //  5. auto-editor-style smoothing (public domain idea): a click or a lone
+  //     breath between two pauses joins the pause, cuts shorter than minCut
+  //     are dropped, and every cut keeps pre-roll before the next word and
+  //     post-roll after the last one (planCuts).
+  // ==========================================================================
+  var HOP = 0.01;                 // analysis step, seconds
+  var DIGITAL_SILENCE_DB = -90;   // at/below this = digital zero (camera pre-roll, fades, mute button)
+  var HYSTERESIS_DB = 3;
+
+  /* The three presets. Keyed by the panel's existing strength ids:
+     strong = Reel (tight), balanced = YouTube (balanced), gentle = Podcast
+     (natural). Numbers from the research brief (auto-editor / unsilence /
+     DeadAir / Descript): a podcast pause over 0.8 s is shortened to 0.35 s
+     (pre+post), a YouTube pause over 0.5 s to 0.30 s, a reel pause over 0.3 s
+     to 0.18 s. `share` is how far from the room noise toward speech the gate
+     sits. Every number moves the same way from Podcast → Reel, so a tighter
+     preset can never keep more than a looser one. */
+  var TUNING = {
+    strong:   { key: 'reel',    label: 'Reel (tight)',       share: 0.35, minPause: 0.30, pre: 0.08, post: 0.10, minCut: 0.20, minClip: 0.10, breathIsland: 0.30 },
+    balanced: { key: 'youtube', label: 'YouTube (balanced)', share: 0.30, minPause: 0.50, pre: 0.13, post: 0.17, minCut: 0.20, minClip: 0.10, breathIsland: 0.25 },
+    gentle:   { key: 'podcast', label: 'Podcast (natural)',  share: 0.25, minPause: 0.80, pre: 0.15, post: 0.20, minCut: 0.25, minClip: 0.10, breathIsland: 0.15 }
+  };
+  function tuning(name) {
+    var t = TUNING[name] || TUNING.balanced, o = {};
+    for (var k in t) { if (Object.prototype.hasOwnProperty.call(t, k)) o[k] = t[k]; }
+    return o;
+  }
+
+  /*
+   * Streaming loudness envelope. Feed signed 16-bit little-endian PCM bytes in
+   * any chunking (pushBytes) or float samples (pushFloats); finish() returns
+   * { db: Float32Array, hop, duration } — one 30 ms RMS level (dBFS) per 10 ms.
+   * Only per-10 ms energies are kept, so an hour of audio is ~360k numbers.
+   */
+  function makeEnvelopeBuilder(sampleRate, hopSec) {
+    var hop = hopSec || HOP;
+    var hopN = Math.max(1, Math.round(sampleRate * hop));
+    var energies = [], acc = 0, n = 0, low = -1;
+    function push(v) { acc += v * v; if (++n === hopN) { energies.push(acc); acc = 0; n = 0; } }
+    return {
+      pushBytes: function (bytes) {
+        var i = 0, L = bytes.length, s;
+        if (low >= 0 && L > 0) { s = (bytes[0] << 8) | low; if (s & 0x8000) s -= 0x10000; push(s / 32768); low = -1; i = 1; }
+        for (; i + 1 < L; i += 2) { s = (bytes[i + 1] << 8) | bytes[i]; if (s & 0x8000) s -= 0x10000; push(s / 32768); }
+        if (i < L) low = bytes[i];
+      },
+      pushFloats: function (arr) { for (var i = 0; i < arr.length; i++) push(arr[i]); },
+      seconds: function () { return (energies.length * hopN + n) / sampleRate; },
+      finish: function () {
+        var N = energies.length, db = new Float32Array(N);
+        for (var i = 0; i < N; i++) {
+          var a = i > 0 ? energies[i - 1] : energies[i], c = i + 1 < N ? energies[i + 1] : energies[i];
+          var ms = (a + energies[i] + c) / (3 * hopN);
+          db[i] = ms > 1e-12 ? 10 * Math.log(ms) / Math.LN10 : -120;
+        }
+        return { db: db, hop: hop, duration: N * hop };
+      }
+    };
+  }
+
+  function pct(sorted, p) {
+    if (!sorted.length) return NaN;
+    return sorted[Math.min(sorted.length - 1, Math.max(0, Math.floor(p * (sorted.length - 1))))];
+  }
+
+  /*
+   * One microphone's levels, measured only over the envelope windows the
+   * timeline actually uses (spans: [[i0, i1), …]). Digital zero is left out so a
+   * silent camera pre-roll can't pretend the room is quiet.
+   * Returns { floor, speech, range, threshold, continuous, digital }:
+   *   continuous — speech is < 10 dB above the room (music bed, loud fan):
+   *                loudness can't find dead air, only digital zero counts;
+   *   digital    — nothing but digital zero here (a muted/empty mic).
+   */
+  function micLevels(db, spans, tune) {
+    var share = (tune && tune.share != null) ? tune.share : 0.30;
+    var n = 0, s, i, a, b;
+    for (s = 0; s < spans.length; s++) {
+      a = Math.max(0, Math.floor(spans[s][0])); b = Math.min(db.length, Math.ceil(spans[s][1]));
+      for (i = a; i < b; i++) if (db[i] > DIGITAL_SILENCE_DB) n++;
+    }
+    if (n < 30) return { floor: null, speech: null, range: 0, threshold: DIGITAL_SILENCE_DB, continuous: false, digital: true };
+    var vals = new Float32Array(n), j = 0;
+    for (s = 0; s < spans.length; s++) {
+      a = Math.max(0, Math.floor(spans[s][0])); b = Math.min(db.length, Math.ceil(spans[s][1]));
+      for (i = a; i < b; i++) if (db[i] > DIGITAL_SILENCE_DB) vals[j++] = db[i];
+    }
+    vals.sort();
+    var floor = pct(vals, 0.10);
+    var lo = 0; while (lo < n && vals[lo] <= floor + 6) lo++;
+    var speech = (n - lo >= 30) ? vals[lo + Math.floor(0.6 * (n - lo - 1))] : floor + 6;
+    var range = speech - floor;
+    var continuous = range < 10;
+    var thr = continuous ? DIGITAL_SILENCE_DB : floor + Math.min(share * range, range - 8);
+    if (tune && tune.manualDb != null && isFinite(tune.manualDb)) { thr = tune.manualDb; continuous = false; }
+    return { floor: floor, speech: speech, range: range, threshold: thr, continuous: continuous, digital: false };
+  }
+
+  /* Loud(1)/quiet(0) per window with hysteresis: speech ends when the level
+     drops below the gate; a quiet stretch only ends when it climbs 3 dB ABOVE
+     it, so a noise flicker can't chop one pause into slivers. */
+  function loudFlags(db, threshold, hyst) {
+    var h = hyst != null ? hyst : HYSTERESIS_DB;
+    var out = new Uint8Array(db.length);
+    var loud = db.length ? db[0] > threshold : false;
+    for (var i = 0; i < db.length; i++) {
+      if (loud) { if (db[i] < threshold) loud = false; }
+      else if (db[i] > threshold + h) loud = true;
+      out[i] = loud ? 1 : 0;
+    }
+    return out;
+  }
+
+  /* Quiet runs of one envelope as media-time ranges (≥ minLen seconds). */
+  function quietRuns(flags, env, minLen) {
+    var out = [], i = 0, n = flags.length, t0 = env.start || 0, hop = env.hop || HOP;
+    while (i < n) {
+      if (flags[i]) { i++; continue; }
+      var j = i; while (j < n && !flags[j]) j++;
+      if ((j - i) * hop >= (minLen || 0) - 1e-9) out.push({ start: t0 + i * hop, end: t0 + j * hop });
+      i = j;
+    }
+    return out;
+  }
+
+  /*
+   * Lay every microphone onto ONE timeline grid (sequence seconds, 10 ms steps).
+   * sources: [{ seqStart, seqEnd, inPoint, speed,
+   *             env: {db, hop, start} | null   (null = unreadable → treated as speech),
+   *             flags: loudFlags(env.db, …), strongDb: speech − 20 }]
+   * Only sources that VOTE belong here (music beds are left out by the caller).
+   * range: {start, end}. Returns { t0, hop, n, state, strong } where state is
+   *   0 — no mic under this moment (never cut: b-roll/music-only stretches),
+   *   1 — every mic here is quiet (dead air),
+   *   2 — somebody is talking (or we could not hear this part → keep).
+   */
+  function combineMics(sources, range, hop) {
+    hop = hop || HOP;
+    var t0 = range.start;
+    var n = Math.max(0, Math.ceil((range.end - range.start) / hop - 1e-9));
+    var cov = new Uint8Array(n), loud = new Uint8Array(n), strong = new Uint8Array(n);
+    for (var s = 0; s < sources.length; s++) {
+      var src = sources[s], sp = src.speed > 0 ? src.speed : 1;
+      var g0 = Math.max(0, Math.ceil((src.seqStart - t0) / hop - 0.5 - 1e-9));
+      var g1 = Math.min(n, Math.ceil((src.seqEnd - t0) / hop - 0.5 - 1e-9));
+      for (var g = g0; g < g1; g++) {
+        cov[g] = 1;
+        if (!src.env || !src.flags) { loud[g] = 1; strong[g] = 1; continue; }
+        var m = src.inPoint + (t0 + (g + 0.5) * hop - src.seqStart) * sp;
+        var k = Math.floor((m - (src.env.start || 0)) / (src.env.hop || hop));
+        if (k < 0 || k >= src.flags.length) { loud[g] = 1; continue; }   // not in the decoded audio → keep
+        if (src.flags[k]) loud[g] = 1;
+        if (src.strongDb != null && src.env.db[k] > src.strongDb) strong[g] = 1;
+      }
+    }
+    var state = new Uint8Array(n);
+    for (var q = 0; q < n; q++) state[q] = cov[q] ? (loud[q] ? 2 : 1) : 0;
+    return { t0: t0, hop: hop, n: n, state: state, strong: strong };
+  }
+
+  /*
+   * Turn the combined grid into cut ranges (sequence seconds).
+   * tune: { minPause, pre, post, minCut, minClip, breathIsland } (see TUNING).
+   *  - a loud blip shorter than minClip, or a quiet (breath-level) island
+   *    shorter than breathIsland, sitting between two pauses joins the pause —
+   *    no 50 ms jump cuts, no lone breath with a cut on each side;
+   *  - a pause shorter than minPause stays (natural rhythm);
+   *  - post-roll is kept after speech ends, pre-roll before speech starts, so
+   *    word onsets and trailing-off endings are never clipped;
+   *  - a cut left shorter than minCut is dropped.
+   * Next to a stretch with no mic at all (state 0: head/tail of the voice
+   * clip) no margin is needed — there is no word there to protect.
+   */
+  function planCuts(grid, tune) {
+    var hop = grid.hop, st = grid.state, n = grid.n;
+    var runs = [], i = 0, r, R;
+    while (i < n) { var v = st[i], j = i; while (j < n && st[j] === v) j++; runs.push({ v: v, a: i, b: j }); i = j; }
+    function hasStrong(x) { for (var q = x.a; q < x.b; q++) if (grid.strong[q]) return true; return false; }
+    function mergeRuns(list) {
+      var out = [];
+      for (var k = 0; k < list.length; k++) {
+        if (out.length && out[out.length - 1].v === list[k].v) out[out.length - 1].b = list[k].b;
+        else out.push({ v: list[k].v, a: list[k].a, b: list[k].b });
+      }
+      return out;
+    }
+    for (var pass = 0; pass < 4; pass++) {
+      var changed = false;
+      for (r = 1; r < runs.length - 1; r++) {
+        R = runs[r];
+        if (R.v !== 2 || runs[r - 1].v !== 1 || runs[r + 1].v !== 1) continue;
+        var len = (R.b - R.a) * hop;
+        if (len < tune.minClip - 1e-9 || (len < tune.breathIsland - 1e-9 && !hasStrong(R))) { R.v = 1; changed = true; }
+      }
+      if (!changed) break;
+      runs = mergeRuns(runs);
+    }
+    var cuts = [];
+    for (r = 0; r < runs.length; r++) {
+      R = runs[r];
+      if (R.v !== 1) continue;
+      var s = grid.t0 + R.a * hop, e = grid.t0 + R.b * hop;
+      if (e - s < tune.minPause - 1e-9) continue;
+      var prev = runs[r - 1], next = runs[r + 1];
+      var cs = s + ((!prev || prev.v === 2) ? tune.post : 0);
+      var ce = e - ((!next || next.v === 2) ? tune.pre : 0);
+      if (ce - cs >= tune.minCut - 1e-9) cuts.push({ start: cs, end: ce });
+    }
+    return cuts;
+  }
+
+  /* True when a word list carries real per-word timings (median word ≤ 1 s),
+     not line-level cues spread evenly across pauses. */
+  function isWordLevel(words) {
+    if (!words || words.length < 3) return false;
+    var d = [];
+    for (var i = 0; i < words.length; i++) d.push(words[i].end - words[i].start);
+    d.sort(function (a, b) { return a - b; });
+    return d[Math.floor(d.length / 2)] <= 1.0;
+  }
+
+  /*
+   * Carve spoken words (sequence time) out of cut ranges, with room for ASR
+   * timing drift (before/after). Only word-level timings are trusted; a coarse
+   * line-level transcript would "protect" every real pause away, so it is
+   * ignored. With word-level timings the protected result stands even if it is
+   * empty — a word is never cut to make the numbers look better.
+   */
+  function protectCutsFromWords(cuts, words, opts) {
+    opts = opts || {};
+    if (!cuts || !cuts.length || !isWordLevel(words)) return (cuts || []).slice();
+    var before = opts.before != null ? opts.before : 0.2;
+    var after = opts.after != null ? opts.after : 0.15;
+    var minCut = opts.minCut != null ? opts.minCut : 0.2;
+    var prot = mergeRanges(words.map(function (w) { return { start: w.start - before, end: w.end + after }; }), 0);
+    var sorted = cuts.slice().sort(function (a, b) { return a.start - b.start; });
+    var out = [], p0 = 0;
+    for (var c = 0; c < sorted.length; c++) {
+      var segStart = sorted[c].start, end = sorted[c].end;
+      while (p0 < prot.length && prot[p0].end <= segStart) p0++;
+      for (var p = p0; p < prot.length && prot[p].start < end; p++) {
+        if (prot[p].start > segStart && prot[p].start - segStart >= minCut - 1e-9) out.push({ start: segStart, end: prot[p].start });
+        segStart = Math.max(segStart, prot[p].end);
+      }
+      if (end - segStart >= minCut - 1e-9) out.push({ start: segStart, end: end });
+    }
+    return out;
+  }
+
   // ---- transcript ↔ timeline sync ------------------------------------------
   // These keep the transcript (words / caption cues) aligned to the timeline
   // after an edit, so silence-cut → remove-takes → captions all compose. Pure,
   // so they're unit-tested in Node and shared by every edit path in the panel.
 
-  /* Copy the optional metadata fields a remapped item should carry forward. */
+  /* Copy a remapped item forward with EVERY field it had (caption cues carry
+     their per-word timings, emphasis, speaker…) — only start/end change. */
   function carry(src, start, end) {
-    var o = { start: start, end: end, text: src.text };
-    if (src.conf != null) o.conf = src.conf;
-    if (src.speaker != null) o.speaker = src.speaker;
-    if (src.word != null) o.word = src.word;
+    var o = {};
+    for (var k in src) { if (Object.prototype.hasOwnProperty.call(src, k)) o[k] = src[k]; }
+    o.start = start; o.end = end;
     return o;
   }
 
   /*
-   * Ripple a list of timed items through a set of CUT ranges (same time base).
-   * Items whose midpoint lands inside a cut are dropped; items after a cut slide
-   * left by the total removed time before them — exactly what a ripple-delete
-   * does on the timeline. closeGaps:false drops in-cut items WITHOUT shifting
-   * (the gap stays open, so downstream clips don't move).
-   * items: [{start,end,text,conf?,speaker?,word?}], ranges: [{start,end}].
+   * Ripple a list of timed items through a set of CUT ranges (same time base) —
+   * exactly what a ripple-delete does on the timeline. START and END are mapped
+   * separately: a time after a cut slides left by the cut's length, a time
+   * inside a cut collapses onto the cut's start. So an item is dropped only when
+   * NOTHING of it survives (it lay entirely inside cuts); a caption line that
+   * merely spans a removed pause keeps its words and just gets shorter. Because
+   * the mapping never reverses order, lines that did not overlap before cannot
+   * overlap after (the old midpoint rule dropped whole lines whose words were
+   * still spoken, and left the next line overlapping the previous one).
+   * Nested per-word timings (cue.words) are remapped the same way.
+   * closeGaps:false leaves the gap open: nothing shifts, fully-cut items drop,
+   * edges inside a cut are pulled back to the surviving side.
+   * items: [{start,end,…}], ranges: [{start,end}].
    */
   function rippleItems(items, ranges, closeGaps) {
     if (!items || !items.length) return items ? items.slice() : [];
     var merged = mergeRanges((ranges || []).filter(function (r) { return r.end > r.start; }), 0.0001);
     if (!merged.length) return items.slice();
     if (closeGaps === undefined) closeGaps = true;
-    var out = [];
-    for (var k = 0; k < items.length; k++) {
-      var it = items[k], mid = (it.start + it.end) / 2, inside = false, shift = 0;
+    function removedBefore(t) {
+      var s = 0;
       for (var i = 0; i < merged.length; i++) {
         var r = merged[i];
-        if (mid >= r.start - 0.001 && mid < r.end + 0.001) { inside = true; break; }
-        if (r.end <= it.start + 0.001) shift += (r.end - r.start);
+        if (r.start >= t) break;
+        s += Math.min(t, r.end) - r.start;
       }
-      if (inside) continue;                       // word/line was cut out
-      if (!closeGaps) shift = 0;                  // gap left open → nothing moves
-      out.push(carry(it, Math.max(0, it.start - shift), Math.max(0, it.end - shift)));
+      return s;
+    }
+    function cutAt(t) {   // the cut strictly containing t, if any
+      for (var i = 0; i < merged.length; i++) {
+        if (merged[i].start > t) return null;
+        if (t > merged[i].start && t < merged[i].end) return merged[i];
+      }
+      return null;
+    }
+    var out = [];
+    for (var k = 0; k < items.length; k++) {
+      var it = items[k], ns, ne;
+      var kept = (it.end - it.start) - (removedBefore(it.end) - removedBefore(it.start));
+      if (kept <= 0.01) continue;                          // entirely inside cuts → gone
+      if (closeGaps) {
+        ns = it.start - removedBefore(it.start);
+        ne = it.end - removedBefore(it.end);
+      } else {                                             // gap stays open: nothing slides
+        var cs = cutAt(it.start), ce = cutAt(it.end);
+        ns = cs ? cs.end : it.start;
+        ne = ce ? ce.start : it.end;
+        if (ne <= ns) { ns = it.start; ne = it.end; }
+      }
+      var o = carry(it, Math.max(0, ns), Math.max(0, ne));
+      if (it.words && it.words.length) o.words = rippleItems(it.words, merged, closeGaps);
+      out.push(o);
     }
     return out;
   }
@@ -206,7 +497,9 @@
           var ns = cum[k] + Math.min(len, Math.max(0, it.start - seg.start));
           var ne = cum[k] + Math.min(len, Math.max(0, it.end - seg.start));
           if (ne <= ns) ne = Math.min(cum[k] + len, ns + 0.02);
-          out.push(carry(it, ns, ne));
+          var o = carry(it, ns, ne);
+          if (it.words && it.words.length) o.words = remapThroughKeeps(it.words, ks);
+          out.push(o);
           break;
         }
       }
@@ -257,6 +550,18 @@
     parseFfmpegSilences: parseFfmpegSilences,
     rippleItems: rippleItems,
     remapThroughKeeps: remapThroughKeeps,
-    snapCutsToSilence: snapCutsToSilence
+    snapCutsToSilence: snapCutsToSilence,
+    // adaptive dead-air detector
+    HOP: HOP,
+    DIGITAL_SILENCE_DB: DIGITAL_SILENCE_DB,
+    tuning: tuning,
+    makeEnvelopeBuilder: makeEnvelopeBuilder,
+    micLevels: micLevels,
+    loudFlags: loudFlags,
+    quietRuns: quietRuns,
+    combineMics: combineMics,
+    planCuts: planCuts,
+    isWordLevel: isWordLevel,
+    protectCutsFromWords: protectCutsFromWords
   };
 });

@@ -98,11 +98,25 @@ function CP_getPlayheadSeconds() {
   } catch (e) { return CP_fail(e.message); }
 }
 
-/* Format seconds as a QE-compatible timecode string. */
+/* Format seconds as a QE-compatible timecode string.
+   Drop-frame (29.97 / 59.94 DF) uses real SMPTE drop-frame numbering: the
+   frame labels 0 and 1 (0-3 at 59.94) are skipped at the start of every
+   minute except each tenth. The old code counted frames non-drop and only
+   swapped ':' for ';', so a DF razor landed early — 0.6 s at 10 min, 3.6 s
+   at 1 h — and clipped words in long podcasts. DF only exists at 29.97 and
+   59.94; at any other rate the timecode is non-drop. */
 function CP_timecode(sec, fps, dropFrame) {
-  var sep = dropFrame ? ';' : ':';
+  var sep = ':';
   var totalFrames = Math.round(sec * fps);
   var fRate = Math.round(fps);
+  if (dropFrame && (fRate === 30 || fRate === 60) && Math.abs(fps - fRate) > 0.001) {
+    sep = ';';
+    var drop = (fRate === 60) ? 4 : 2;
+    var per10 = Math.round(fps * 600);          // real frames in ten minutes (17982 @29.97)
+    var perMin = fRate * 60 - drop;              // labels used in a dropped minute (1798)
+    var d10 = Math.floor(totalFrames / per10), m10 = totalFrames % per10;
+    totalFrames += drop * 9 * d10 + (m10 > drop ? drop * Math.floor((m10 - drop) / perMin) : 0);
+  }
   var ff = totalFrames % fRate;
   var totalSec = Math.floor(totalFrames / fRate);
   var ss = totalSec % 60;
@@ -562,32 +576,365 @@ function CP_mergeRanges(ranges) {
   return out;
 }
 
+// ------------------------------------------ cut guards (sequence identity) ----
+/* A stable identity for "the timeline Pulse listened to". */
+function CP_seqId(seq) {
+  try { if (seq && seq.sequenceID) return String(seq.sequenceID); } catch (e) {}
+  try { return 'name:' + seq.name; } catch (e2) {}
+  return '';
+}
+
+/* Is this sequence drop-frame? Premiere knows (videoDisplayFormat 102 =
+   29.97 DF, 106 = 59.94 DF); the manual Settings tick is only the fallback for
+   builds that don't report it. */
+function CP_seqDropFrame(seq, fallback) {
+  try {
+    var st = seq.getSettings ? seq.getSettings() : null;
+    var f = st ? st.videoDisplayFormat : null;
+    if (f === 102 || f === 106) return true;
+    if (typeof f === 'number' && f >= 100 && f <= 120) return false;
+  } catch (e) {}
+  return !!fallback;
+}
+
+/* The timeline's "shape": clip count, where every clip starts, and its end.
+   If it differs from what the analysis saw, the cut list no longer lines up
+   with the audio and must not be applied. */
+function CP_cutFingerprint(seq) {
+  var n = 0, sum = 0, groups = [seq.videoTracks, seq.audioTracks];
+  for (var g = 0; g < groups.length; g++) {
+    for (var t = 0; t < groups[g].numTracks; t++) {
+      var clips = groups[g][t].clips, k = clips.numItems;
+      n += k;
+      for (var i = 0; i < k; i++) { try { sum += Math.round(clips[i].start.seconds * 1000); } catch (e) {} }
+    }
+  }
+  var end = '';
+  try { end = String(seq.end); } catch (eE) {}
+  return n + '|' + sum + '|' + end;
+}
+
+function CP_trackIs(track, fn) {
+  try { return !!(track && typeof track[fn] === 'function' && track[fn]()); } catch (e) { return false; }
+}
+
 /*
- * In-place silence cutting via QE razor + delete.
- * argsJson: { ranges:[{start,end}] (sequence seconds), closeGaps:bool,
- *             backup:bool, dropFrame:bool }
- * Ranges are processed last-to-first so earlier timings stay valid.
+ * Everything the dead-air detector needs to listen to EVERY mic: each audio
+ * track's clips with their media file and exact media↔timeline mapping
+ * (speed included), whether the track is muted/locked, the selected span, and
+ * the sequence identity + fingerprint the cut is later checked against.
+ */
+function CP_getCutSources(argsJson) {
+  try {
+    var seq = CP_activeSequence();
+    var bad = /\.(aegraphic|mogrt|prproj|psd|ai|png|jpe?g|gif|tiff?|svg|eps|bmp|webp|heic)$/i;
+    var out = { sequenceId: CP_seqId(seq), sequenceName: seq.name, fps: CP_sequenceFps(seq),
+                fingerprint: CP_cutFingerprint(seq), audio: [], video: [], selection: null };
+    var selLo = null, selHi = null;
+    for (var g = 0; g < 2; g++) {
+      var tracks = g === 0 ? seq.audioTracks : seq.videoTracks;
+      for (var t = 0; t < tracks.numTracks; t++) {
+        var track = tracks[t];
+        var tr = { index: t, name: (track && track.name) ? String(track.name) : ((g === 0 ? 'A' : 'V') + (t + 1)),
+                   muted: CP_trackIs(track, 'isMuted'), locked: CP_trackIs(track, 'isLocked'), items: [], clips: 0 };
+        var clips = track.clips, k = clips.numItems;
+        for (var i = 0; i < k; i++) {
+          var c = clips[i];
+          var st = c.start.seconds, en = c.end.seconds;
+          if (!(en - st > 0.01)) continue;
+          tr.clips++;
+          var mp = null; try { mp = c.projectItem ? c.projectItem.getMediaPath() : null; } catch (eM) {}
+          var sel = false; try { sel = !!c.isSelected(); } catch (eS) {}
+          // only a selected real clip narrows the clean-up — a caption, title
+          // or photo the owner last clicked must not shrink it to that span
+          if (sel && mp && !bad.test(mp)) { selLo = (selLo == null || st < selLo) ? st : selLo; selHi = (selHi == null || en > selHi) ? en : selHi; }
+          if (g !== 0) continue;
+          if (mp && bad.test(mp)) continue;
+          var ip = 0, op = 0; try { ip = c.inPoint.seconds; op = c.outPoint.seconds; } catch (eIO) {}
+          // Speed: Premiere's own number when it reports one; else what the
+          // media span vs timeline span says. A 120% reel clip plays 1.2 s of
+          // media per second of timeline — ignoring that put cuts on the
+          // wrong words and even onto the next clip.
+          var speed = null;
+          try { if (typeof c.getSpeed === 'function') speed = parseFloat(c.getSpeed()); } catch (eSp) {}
+          if (speed && speed > 20) speed = speed / 100;                    // reported as a percentage
+          if (!(speed > 0)) speed = (op > ip) ? (op - ip) / (en - st) : 1;
+          var rev = false; try { rev = typeof c.isSpeedReversed === 'function' && !!c.isSpeedReversed(); } catch (eR) {}
+          var dis = false; try { dis = !!c.disabled; } catch (eD) {}
+          tr.items.push({ name: String(c.name), mediaPath: mp, seqStart: st, seqEnd: en, inPoint: ip, outPoint: op,
+                          speed: speed, reversed: rev, disabled: dis, selected: sel,
+                          nodeId: (c.projectItem && c.projectItem.nodeId != null) ? String(c.projectItem.nodeId) : null });
+        }
+        (g === 0 ? out.audio : out.video).push(tr);
+      }
+    }
+    if (selLo != null && selHi > selLo) out.selection = { start: selLo, end: selHi };
+    return CP_ok(out);
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/* Plain-language check before any edit: is this still the timeline the cut
+   list was made for? Returns an error string, or '' when it is safe. */
+function CP_cutGuard(seq, args) {
+  if (args.expectSequenceId && CP_seqId(seq) !== String(args.expectSequenceId)) {
+    return 'The timeline Pulse listened to' + (args.expectSequenceName ? ' (“' + args.expectSequenceName + '”)' : '') +
+      ' is not the one open now' + (seq && seq.name ? ' (“' + seq.name + '”)' : '') +
+      '. Nothing was cut — open that sequence again, or run Clean up on this one.';
+  }
+  if (args.expectFingerprint && CP_cutFingerprint(seq) !== String(args.expectFingerprint)) {
+    return 'The timeline changed after Pulse listened to it (clips were added, moved or removed), so the cut list no longer ' +
+      'lines up with your audio. Nothing was cut — run Clean up again.';
+  }
+  return '';
+}
+
+/* Every DOM track (video first) with a label like "V1" / "A2". */
+function CP_allTracks(seq) {
+  var out = [], groups = [seq.videoTracks, seq.audioTracks], pre = ['V', 'A'];
+  for (var g = 0; g < 2; g++) {
+    for (var t = 0; t < groups[g].numTracks; t++) {
+      var tr = groups[g][t];
+      out.push({ dom: tr, kind: g, index: t, label: pre[g] + (t + 1),
+                 name: (tr && tr.name) ? String(tr.name) : (pre[g] + (t + 1)) });
+    }
+  }
+  return out;
+}
+
+/* A track's clips, sorted by start: [{obj, start, end}]. */
+function CP_trackSnapshot(track) {
+  var out = [], clips = track.clips, n = clips.numItems;
+  for (var i = 0; i < n; i++) {
+    var c = clips[i];
+    if (!c) continue;
+    out.push({ obj: c, start: c.start.seconds, end: c.end.seconds });
+  }
+  out.sort(function (a, b) { return a.start - b.start; });
+  return out;
+}
+
+/* Seconds removed by the (sorted, disjoint) ranges before time t; a time
+   inside a range collapses onto that range's start. */
+function CP_removedBefore(ranges, t) {
+  var s = 0;
+  for (var i = 0; i < ranges.length; i++) {
+    if (ranges[i].start >= t) break;
+    s += Math.min(t, ranges[i].end) - ranges[i].start;
+  }
+  return s;
+}
+
+/* Move sequence markers with the edit: a marker after a cut slides left by the
+   removed time (Premiere's ripple never moves sequence markers, so chapters /
+   hook / beat markers drifted out of place). The orange "Silence" preview
+   markers describe the pauses that were just removed, so they are deleted. */
+function CP_shiftMarkers(seq, ranges, previewLabel) {
+  var res = { moved: 0, removed: 0 };
+  var markers = null;
+  try { markers = seq.markers; } catch (e0) {}
+  if (!markers || typeof markers.getFirstMarker !== 'function') return res;
+  var doomed = [], all = [], m = markers.getFirstMarker(), k;
+  function setT(mk, key, sec) {
+    try { var tt = new Time(); tt.seconds = sec; mk[key] = tt; } catch (e1) {}
+    try { if (Math.abs(mk[key].seconds - sec) > 0.0005) mk[key] = sec; } catch (e2) { try { mk[key] = sec; } catch (e3) {} }
+  }
+  // collect first, then edit — moving a marker must not change the walk
+  while (m) { all.push(m); m = markers.getNextMarker(m); }
+  for (k = 0; k < all.length; k++) {
+    m = all[k];
+    var nm = String(m.name || '');
+    if (previewLabel && nm.indexOf(previewLabel + ' ') === 0) doomed.push(m);
+    else {
+      var s = m.start.seconds, e = s;
+      try { e = m.end.seconds; } catch (eEnd) {}
+      var ns = s - CP_removedBefore(ranges, s), ne = e - CP_removedBefore(ranges, e);
+      if (Math.abs(ns - s) > 0.0005 || Math.abs(ne - e) > 0.0005) {
+        setT(m, 'start', ns);
+        setT(m, 'end', Math.max(ns, ne));
+        res.moved++;
+      }
+    }
+  }
+  for (var i = 0; i < doomed.length; i++) { try { markers.deleteMarker(doomed[i]); res.removed++; } catch (eD) {} }
+  return res;
+}
+
+/*
+ * In-place dead-air / retake cutting, two-phase (the DeadAir approach, MIT):
+ *   1. razor EVERY track at every cut boundary (QE — the only razor there is);
+ *   2. lift (no ripple) every piece that lies inside a cut, on every track;
+ *   3. close the gaps by moving every clip on every track left by exactly the
+ *      time removed before it — the SAME offset on every track, so b-roll with
+ *      gaps, music, a second camera and every mic stay in sync. (The old
+ *      per-track ripple delete only moved tracks that had a piece inside the
+ *      cut: a sparse b-roll track barely moved and drifted seconds away.)
+ * Each phase is verified before the next one starts. If a track refuses a
+ * razor, Pulse stops before removing anything; if it refuses a lift, before
+ * anything moves — so a failure never leaves the timeline out of sync, and the
+ * error says exactly what happened. Locked tracks are refused up front.
+ * O(boundaries × tracks) host calls — the old loop re-walked every item on
+ * every track for every range (O(n²): 123,000 item reads for 200 cuts).
+ * argsJson: { ranges:[{start,end}] (sequence seconds), closeGaps:bool (default
+ *             true), backup:bool, dropFrame:bool (fallback when the sequence
+ *             doesn't report its timecode), expectSequenceId, expectSequenceName,
+ *             expectFingerprint, previewLabel }
  */
 function CP_razorRipple(argsJson) {
   try {
     var args = JSON.parse(argsJson);
     var seq = CP_activeSequence();
-    var fps = CP_sequenceFps(seq);
-    if (args.backup) { try { seq.clone(); } catch (eB) {} }
+    var why = CP_cutGuard(seq, args);
+    if (why) return CP_fail(why);
+    var seqId = CP_seqId(seq);
+    var fps = CP_sequenceFps(seq), half = 0.5 / fps;
+    var df = CP_seqDropFrame(seq, !!args.dropFrame);
+    var closeGaps = args.closeGaps !== false;
 
-    var qseq = CP_qeSequence();
-    // Merge overlapping/adjacent ranges first so razor points are clean, then
-    // process LAST-to-FIRST so each ripple delete can't shift a not-yet-cut
-    // range's coordinates.
-    var ranges = CP_mergeRanges(args.ranges).sort(function (a, b) { return b.start - a.start; });
-    var removed = 0;
-    for (var i = 0; i < ranges.length; i++) {
-      CP_razorAllTracksAt(qseq, ranges[i].end, fps, !!args.dropFrame);
-      CP_razorAllTracksAt(qseq, ranges[i].start, fps, !!args.dropFrame);
-      // ripple-delete the whole span on every track → gap closes, A/V stay synced
-      removed += CP_deleteClipsInRange(qseq, ranges[i].start, ranges[i].end, true);
+    // snap to the frame grid the razor uses, then merge (the remap the panel
+    // does afterwards uses exactly these numbers — no drift over many cuts)
+    var raw = CP_mergeRanges(args.ranges), ranges = [], i, j;
+    for (i = 0; i < raw.length; i++) {
+      var rs = Math.round(raw[i].start * fps) / fps, re = Math.round(raw[i].end * fps) / fps;
+      if (re - rs < 1 / fps - 1e-6) continue;
+      if (ranges.length && rs <= ranges[ranges.length - 1].end + 1e-6) {
+        if (re > ranges[ranges.length - 1].end) ranges[ranges.length - 1].end = re;
+      } else ranges.push({ start: rs, end: re });
     }
-    return CP_ok({ removedClips: removed, closedGaps: ranges.length, cuts: ranges.length });
+    if (!ranges.length) return CP_ok({ cuts: 0, removed: [], removedSeconds: 0, removedClips: 0, closedGaps: 0, tracks: [] });
+
+    var tracks = CP_allTracks(seq), tk, snap, c;
+    // locked tracks can't be cut — the others would move and they'd drift
+    var locked = [];
+    for (tk = 0; tk < tracks.length; tk++) {
+      if (!CP_trackIs(tracks[tk].dom, 'isLocked')) continue;
+      snap = CP_trackSnapshot(tracks[tk].dom);
+      for (c = 0; c < snap.length; c++) {
+        if (snap[c].end > ranges[0].start + half) { locked.push(tracks[tk].label + (tracks[tk].name !== tracks[tk].label ? ' (“' + tracks[tk].name + '”)' : '')); break; }
+      }
+    }
+    if (locked.length) {
+      return CP_fail('Track ' + locked.join(', ') + (locked.length > 1 ? ' are' : ' is') + ' locked, so Pulse can\'t cut ' +
+        (locked.length > 1 ? 'them' : 'it') + ' — everything else would move and ' + (locked.length > 1 ? 'they' : 'it') +
+        ' would drift out of sync. Unlock ' + (locked.length > 1 ? 'them' : 'it') + ' (the padlock on the track header) and try again. Nothing was cut.');
+    }
+    var apiOk = true;
+    for (tk = 0; tk < tracks.length && apiOk; tk++) {
+      snap = CP_trackSnapshot(tracks[tk].dom);
+      if (snap.length && (typeof snap[0].obj.remove !== 'function' || (closeGaps && typeof snap[0].obj.move !== 'function'))) apiOk = false;
+    }
+    if (!apiOk) return CP_fail('This Premiere version can\'t remove or move clips from a script, so Pulse can\'t cut safely. Nothing was cut — use “Remove silences (safe copy)” instead.');
+
+    // backup FIRST — and if it fails, do nothing (the confirm promised one)
+    var backup = null;
+    if (args.backup) {
+      var cloned;
+      try { cloned = seq.clone(); } catch (eB) { return CP_fail('Could not make the backup copy of your sequence (' + eB.message + '). Nothing was cut.'); }
+      if (cloned === false) return CP_fail('Premiere refused to make the backup copy of your sequence. Nothing was cut.');
+      backup = String(seq.name) + ' Copy';
+      var now = null; try { now = app.project.activeSequence; } catch (eN) {}
+      if (!now || CP_seqId(now) !== seqId) {
+        CP_activateSequence(seq);
+        try { now = app.project.activeSequence; } catch (eN2) {}
+        if (!now || CP_seqId(now) !== seqId) return CP_fail('Making the backup switched Premiere to another sequence, so Pulse stopped before cutting anything. Open “' + seq.name + '” and try again.');
+      }
+    }
+
+    // ---- phase 1: razor every track at every boundary -----------------------
+    var qseq = CP_qeSequence();
+    var qt = [];
+    for (i = 0; i < qseq.numVideoTracks; i++) qt.push(qseq.getVideoTrackAt(i));
+    for (i = 0; i < qseq.numAudioTracks; i++) qt.push(qseq.getAudioTrackAt(i));
+    var bounds = [];
+    for (i = 0; i < ranges.length; i++) { bounds.push(ranges[i].start); bounds.push(ranges[i].end); }
+    var tcs = [];
+    for (i = 0; i < bounds.length; i++) tcs.push(CP_timecode(bounds[i], fps, df));
+    for (tk = 0; tk < qt.length; tk++) {
+      for (i = 0; i < tcs.length; i++) { try { qt[tk].razor(tcs[i]); } catch (eRz) {} }
+    }
+    var bad = [];
+    tracks = CP_allTracks(seq);   // re-read: the razors changed every track
+    for (tk = 0; tk < tracks.length; tk++) {
+      snap = CP_trackSnapshot(tracks[tk].dom);
+      var bi = 0;
+      for (c = 0; c < snap.length; c++) {
+        while (bi < bounds.length && bounds[bi] <= snap[c].start + half) bi++;
+        if (bi < bounds.length && bounds[bi] < snap[c].end - half) { bad.push(tracks[tk].label); break; }
+      }
+    }
+    if (bad.length) {
+      return CP_fail('Premiere would not razor track ' + bad.join(', ') + ', so Pulse stopped before removing anything — the timeline is still in sync ' +
+        '(it only has extra razor cuts; ⌘Z / Ctrl+Z removes them). Check that the track isn\'t locked or a nested/merged clip, then try again.');
+    }
+
+    // ---- phase 2: lift every piece inside a cut, on every track --------------
+    tracks = CP_allTracks(seq);
+    var perTrack = [], lifted = 0;
+    for (tk = 0; tk < tracks.length; tk++) {
+      snap = CP_trackSnapshot(tracks[tk].dom);
+      var doomed = [], ri = 0;
+      for (c = 0; c < snap.length; c++) {
+        var mid = (snap[c].start + snap[c].end) / 2;
+        while (ri < ranges.length && ranges[ri].end <= mid) ri++;
+        if (ri < ranges.length && mid > ranges[ri].start) doomed.push(snap[c]);
+      }
+      var n0 = snap.length;
+      for (j = doomed.length - 1; j >= 0; j--) { try { doomed[j].obj.remove(false, false); } catch (eRm) {} }
+      var after = CP_trackSnapshot(tracks[tk].dom);
+      perTrack.push({ track: tracks[tk].label, name: tracks[tk].name, lifted: n0 - after.length, moved: 0 });
+      lifted += Math.max(0, n0 - after.length);
+      ri = 0;
+      for (c = 0; c < after.length; c++) {
+        var mid2 = (after[c].start + after[c].end) / 2;
+        while (ri < ranges.length && ranges[ri].end <= mid2) ri++;
+        if (ri < ranges.length && mid2 > ranges[ri].start) { bad.push(tracks[tk].label); break; }
+      }
+    }
+    var removedSec = 0;
+    for (i = 0; i < ranges.length; i++) removedSec += ranges[i].end - ranges[i].start;
+    if (bad.length) {
+      return CP_fail('Premiere would not remove the cut pieces on track ' + bad.join(', ') + ', so Pulse stopped before moving anything — nothing is out of ' +
+        'sync, but the other tracks now have empty gaps where the pauses were. Press ⌘Z / Ctrl+Z to undo (or open the backup sequence), then try again.');
+    }
+
+    // ---- phase 3: close the gaps — the same offset on every track -------------
+    tracks = CP_allTracks(seq);
+    var markers = { moved: 0, removed: 0 };
+    if (closeGaps) {
+      var all = [];
+      for (tk = 0; tk < tracks.length; tk++) {
+        snap = CP_trackSnapshot(tracks[tk].dom);
+        for (c = 0; c < snap.length; c++) {
+          var sh = CP_removedBefore(ranges, snap[c].start + half);
+          if (sh > half) all.push({ obj: snap[c].obj, start: snap[c].start, target: snap[c].start - sh, tk: tk, ord: all.length });
+        }
+      }
+      // globally ascending by position, across ALL tracks: every clip lands in
+      // space already vacated, and a linked partner that Premiere moved along
+      // with its clip is simply found in place (delta 0) when its turn comes
+      all.sort(function (a, b) { return (a.start - b.start) || (a.ord - b.ord); });
+      for (i = 0; i < all.length; i++) {
+        var cur = all[i].obj.start.seconds, delta = all[i].target - cur;
+        if (Math.abs(delta) <= half) continue;
+        try { var mt = new Time(); mt.seconds = delta; all[i].obj.move(mt); perTrack[all[i].tk].moved++; } catch (eMv) {}
+      }
+      for (i = 0; i < all.length; i++) {
+        var got = null; try { got = all[i].obj.start.seconds; } catch (eG) {}
+        if (got == null || Math.abs(got - all[i].target) > half) {
+          var lb = tracks[all[i].tk].label, seen = false;
+          for (j = 0; j < bad.length; j++) if (bad[j] === lb) seen = true;
+          if (!seen) bad.push(lb);
+        }
+      }
+      if (bad.length) {
+        return CP_fail('Track ' + bad.join(', ') + ' did not move with the rest, so it is now OUT OF SYNC. Press ⌘Z / Ctrl+Z to undo ' +
+          (backup ? '(or open the backup “' + backup + '”)' : '') + ' — Pulse will not report this cut as done.');
+      }
+      markers = CP_shiftMarkers(seq, ranges, args.previewLabel || 'Silence');
+    }
+
+    return CP_ok({ cuts: ranges.length, removed: ranges, removedSeconds: removedSec, removedClips: lifted,
+                   closedGaps: closeGaps ? ranges.length : 0, tracks: perTrack, backup: backup,
+                   markersMoved: markers.moved, previewMarkersRemoved: markers.removed, dropFrame: df });
   } catch (e) { return CP_fail(e.message); }
 }
 
