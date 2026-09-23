@@ -13,6 +13,8 @@
  *       each template's definition.json (served from a copy extracted with unzip),
  *       and opts.folders fakes a user's "Add folder" template pack. The shim never
  *       writes anywhere (every write API is a no-op) and makes no network calls.
+ *   webFaces(page)   families the page declared / really loaded (is Google
+ *                    Fonts reachable here?)
  */
 'use strict';
 const fs = require('fs');
@@ -200,5 +202,21 @@ function reporter(title) {
   };
 }
 
+/* Which font families this page has DECLARED (by a stylesheet or FontFace)
+   and which have a face that really LOADED. Offline, or behind a proxy that
+   Chromium does not trust, the Google Fonts stylesheet never arrives, so none
+   of its families is declared; the offline stand-ins drawing instead is the
+   intended behaviour, and a gate that needs the designed faces can only SKIP.
+   (document.fonts.check() cannot tell: it answers true for a family nobody
+   declared.) Families come back lower-case, without quotes. */
+async function webFaces(page) {
+  return page.evaluate(() => {
+    const clean = s => String(s || '').replace(/["']/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const declared = new Set(), loaded = new Set();
+    try { document.fonts.forEach(f => { declared.add(clean(f.family)); if (f.status === 'loaded') loaded.add(clean(f.family)); }); } catch (e) {}
+    return { declared: Array.from(declared), loaded: Array.from(loaded) };
+  });
+}
+
 module.exports = { PANEL_DIR, PANEL_URL, MOGRT_DIR, skip, loadPuppeteer, chromiumPath, launch,
-                   mogrtDefinitions, openPanel, reporter };
+                   mogrtDefinitions, openPanel, reporter, webFaces };

@@ -84,7 +84,10 @@ const G = require('./gallery-lib/panel.js');
     await openCard(ord.id); await settle();
     const before = control();
     let bebasLoaded = false;
-    try { await document.fonts.load('400 48px "Bebas Neue"', 'abcABC'); bebasLoaded = document.fonts.check('400 48px "Bebas Neue"', 'abcABC'); } catch (e) {}
+    try { await document.fonts.load('400 48px "Bebas Neue"', 'abcABC'); } catch (e) {}
+    // check() answers true for a family no stylesheet declared (offline the
+    // Google stylesheet never arrives), so ask whether a Bebas Neue face LOADED
+    try { document.fonts.forEach(f => { if (String(f.family).replace(/["']/g, '').trim() === 'Bebas Neue' && f.status === 'loaded') bebasLoaded = true; }); } catch (e) {}
     FX.setFont('Bebas Neue'); await settle();
     const onBebas = control(), bebasDiff = await renderTellsCase();
     FX.setFont('Montserrat'); await settle();

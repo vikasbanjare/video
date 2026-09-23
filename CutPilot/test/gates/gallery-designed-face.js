@@ -19,8 +19,9 @@
  *     local face that looks nothing like them — and then renders each new
  *     style through the export path's own calls. Every style must draw exactly
  *     what its designed face alone draws, never the stand-in.
- * Exit 0 pass, 1 fail, 2 skipped (no browser / puppeteer, or no local face to
- * stand in for the Mac fonts).
+ * Exit 0 pass, 1 fail, 2 skipped (no browser / puppeteer, no local face to
+ * stand in for the Mac fonts, or the Google Fonts stylesheet cannot load here —
+ * then the static checks above still run and can fail).
  */
 'use strict';
 const G = require('./gallery-lib/panel.js');
@@ -68,7 +69,10 @@ const LOCAL_FACES = ['DejaVu Sans Mono Bold', 'DejaVu Sans Mono', 'Liberation Mo
     }
     return { data, rows, local };
   }, STAND_INS, LOCAL_FACES);
+  const faces = await G.webFaces(page);
   await browser.close();
+  // did the Google Fonts stylesheet reach this page at all?
+  const online = faces.declared.some(f => loaded.indexOf(f) >= 0);
   if (res.fatal) { R.bad(res.fatal); return R.done('', 'GALLERY DESIGNED FACE: harness failure'); }
 
   // data: the designed face first, its stand-in next
@@ -82,6 +86,13 @@ const LOCAL_FACES = ['DejaVu Sans Mono Bold', 'DejaVu Sans Mono', 'Liberation Mo
          ' keep their Mac stand-in right behind it for offline use');
   if (res.noLocal) {
     console.log('  ? no local face to stand in for the Mac fonts — the simulated-Mac render was not run; gate SKIPPED');
+    process.exit(2);
+  }
+  if (!online) {
+    // offline every style draws its stand-in on purpose: there is no designed face to compare with
+    if (R.failed) return R.done('', 'GALLERY DESIGNED FACE: failures above');
+    console.log('  ? the Google Fonts stylesheet did not load here, so no designed face can be drawn and the simulated-Mac ' +
+                'render proves nothing — gate SKIPPED (node tools/doctor.js)');
     process.exit(2);
   }
   const wrong = res.rows.filter(r => r.vsDesigned >= 16);
