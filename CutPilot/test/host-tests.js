@@ -47,6 +47,9 @@ function makeWorld(opts) {
   model.locked = {}; model.muted = {}; model.broken = {}; model.names = {};
   model.reads = 0;                   // every item read through QE or the DOM (cost probe)
   model.linkedMove = !!opts.linkedMove;
+  // opts.overwriteOnMove: a clip moved onto another on the same track trims or
+  // removes what it lands on (how a drag in Premiere overwrites)
+  model.overwriteOnMove = !!opts.overwriteOnMove;
 
   function Time() { this.seconds = 0; }
   // QE items read .secs; DOM clips read .seconds — one object serves both.
@@ -90,6 +93,15 @@ function makeWorld(opts) {
       model.allowEndSet = true;
       clip.start = mkT(clip.start.seconds + d);
       clip.end = mkT(clip.end.seconds + d);
+      if (where && model.overwriteOnMove) {
+        const s0 = clip.start.seconds, e0 = clip.end.seconds;
+        for (const o of where.arr.slice()) {
+          if (o === clip || o.end.seconds <= s0 + 1e-9 || o.start.seconds >= e0 - 1e-9) continue;
+          if (o.start.seconds < s0) o.end = mkT(s0);                        // tail overwritten
+          else if (o.end.seconds > e0) o.start = mkT(e0);                   // head overwritten
+          else where.arr.splice(where.arr.indexOf(o), 1);                   // covered: gone
+        }
+      }
       model.allowEndSet = false;
       if (where) where.arr.sort((a, b) => a.start.seconds - b.start.seconds);
       if (model.linkedMove && clip._link && !_partner) {
@@ -714,6 +726,24 @@ for (const mode of ['noop', 'throw']) {
   let ok = r.ok === true;
   for (let t = 0; t < 55 && ok; t += 0.25) if (Math.abs(mediaAt(cam, t) - mediaAt(hostMic, t)) > 1e-6) ok = false;
   assert(ok && contiguousFromZero(cam) && contiguousFromZero(hostMic), 'linked camera+mic moved together are not moved twice');
+}
+{
+  // a J/L cut: the camera piece on V1 is linked to a mic piece on A1 that sits
+  // further along. Premiere drags the partner with the camera — onto the next
+  // mic piece, which it shortens — and every clip still STARTS where Pulse
+  // wanted. Judged on starts only, that was reported as done.
+  const w = makeWorld({ vTracks: 1, aTracks: 1, fps: 25, linkedMove: true, overwriteOnMove: true });
+  w.model.addClip('vTracks', 0, 0, 10, { name: 'cam a', _mIn: 0 });
+  w.model.addClip('vTracks', 0, 12, 20, { name: 'cam b', _mIn: 12, _link: 'JL' });
+  w.model.addClip('aTracks', 0, 0, 10, { name: 'mic a', _mIn: 0 });
+  w.model.addClip('aTracks', 0, 26, 29, { name: 'mic b', _mIn: 26 });
+  w.model.addClip('aTracks', 0, 30, 34, { name: 'mic c', _mIn: 30, _link: 'JL' });
+  const host = loadHost(w);
+  const r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }], backup: true });
+  const micB = w.model.aTracks[0].find(c => c.name === 'mic b');
+  assert(!!micB && close(micB.start.seconds, 24, 1e-6), 'the shortened clip still starts on its target (24 s) — a start-only check sees nothing wrong');
+  assert(r.ok === false && /A1/.test(r.error) && /shortened, moved or dropped/.test(r.error) && /Episode 12 Copy/.test(r.error),
+    'a clip shortened by a dragged partner is caught on its END: not reported as done, and the backup is named: ' + (r.error || JSON.stringify(r)));
 }
 {
   // an already jump-cut timeline: several pieces of one recording per track

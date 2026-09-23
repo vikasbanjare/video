@@ -1046,13 +1046,19 @@ function CP_razorRipple(argsJson) {
     tracks = CP_allTracks(seq);
     var markers = { moved: 0, removed: 0 };
     if (closeGaps) {
-      var all = [];
+      // what every track must look like afterwards: each clip at its target
+      // with its length unchanged — checked on EVERY track once all has moved
+      var all = [], expect = [];
       for (tk = 0; tk < tracks.length; tk++) {
         snap = CP_trackSnapshot(tracks[tk].dom);
+        var ex = [];
         for (c = 0; c < snap.length; c++) {
           var sh = CP_removedBefore(ranges, snap[c].start + half);
-          if (sh > half) all.push({ obj: snap[c].obj, start: snap[c].start, target: snap[c].start - sh, tk: tk, ord: all.length });
+          var goal = sh > half ? snap[c].start - sh : snap[c].start;
+          ex.push({ s: goal, e: goal + (snap[c].end - snap[c].start) });
+          if (sh > half) all.push({ obj: snap[c].obj, start: snap[c].start, target: goal, tk: tk, ord: all.length });
         }
+        expect.push(ex);
       }
       // globally ascending by position, across ALL tracks: every clip lands in
       // space already vacated, and a linked partner that Premiere moved along
@@ -1074,6 +1080,22 @@ function CP_razorRipple(argsJson) {
       if (bad.length) {
         return CP_fail('Track ' + bad.join(', ') + ' did not move with the rest, so it is now OUT OF SYNC — Pulse will not report this cut as done. ' +
           CP_undoAdvice(backup));
+      }
+      // every clip where it belongs AND as long as it was: a clip's start can
+      // be right while Premiere dragged a linked partner (a J/L cut) over it
+      // and shortened it, or dropped it — that is not the cut Pulse planned
+      var changed = [];
+      for (tk = 0; tk < tracks.length; tk++) {
+        snap = CP_trackSnapshot(tracks[tk].dom);
+        var want = expect[tk], same = snap.length === want.length;
+        for (c = 0; same && c < snap.length; c++) {
+          if (Math.abs(snap[c].start - want[c].s) > half || Math.abs(snap[c].end - want[c].e) > half) same = false;
+        }
+        if (!same) changed.push(tracks[tk].label);
+      }
+      if (changed.length) {
+        return CP_fail('On track ' + changed.join(', ') + ' Premiere shortened, moved or dropped a clip while closing the gaps, so the result is not the cut ' +
+          'Pulse planned — Pulse will not report this cut as done. ' + CP_undoAdvice(backup));
       }
       markers = CP_shiftMarkers(seq, ranges, args.previewLabel || 'Silence');
     }
