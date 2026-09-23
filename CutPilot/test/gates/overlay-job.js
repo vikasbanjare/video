@@ -225,6 +225,26 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       if (!img) bad('with no writable media folder, the captions were not placed at all (' + said.slice(0, 120) + ')');
       else if (!/temporary folder/.test(said) || !/folder you can write to/.test(said)) bad('captions placed from the temp folder without telling the owner they can go missing: ' + said.slice(0, 200));
       else ok('with no writable folder the captions still go on, and the owner is told they sit in a temporary folder and what to do');
+
+      // the same machine, a LONG-video job: neither overlay renderer has a
+      // folder to write to, so it must end as separate images (same warning),
+      // not stop with nothing on the timeline
+      const from3 = bridge.state.hostCalls.length;
+      const toasts3 = [];
+      await page.evaluate(j => window.CP_DEBUG_EXT.overlay.run(j.cues, { wordCues: j.wordCues }), cuesFor(3, 1.6, 3));
+      let img3 = null;
+      for (let i = 0; i < 600; i++) {
+        await sleep(50);
+        const s = await ui();
+        if (s.toast && toasts3[toasts3.length - 1] !== s.toast) toasts3.push(s.toast);
+        img3 = img3 || bridge.state.hostCalls.slice(from3).find(c => c.fn === 'CP_placeCaptionImages') || null;
+        if (img3 && !s.busy && i > 3) break;
+        if (!img3 && !s.busy && i > 40) break;
+      }
+      const said3 = toasts3.join(' | ');
+      if (!img3) bad('a long-video job with no writable folder ended with nothing on the timeline: ' + said3.slice(0, 200));
+      else if (!/temporary folder/.test(said3)) bad('a long-video job fell back to images in the temp folder without the warning: ' + said3.slice(0, 200));
+      else ok('a long-video job with no writable folder still ends as captions (separate images, with the same warning)');
     }
   }
 

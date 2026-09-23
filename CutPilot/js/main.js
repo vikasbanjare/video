@@ -7676,9 +7676,16 @@
         });
       });
     }).catch(function (e) {
+      // before ffmpeg ran (word timing, the caption file, no media folder):
+      // separate images, like any other failure here — unless the cause
+      // would stop those too
       _ovJob = null;
       diag('captions', 'simpler overlay failed: ' + rawFailure(e));
-      stopCaptions(captionFailureCause(e));
+      var cause = captionFailureCause(e);
+      if (cause.stop) return stopCaptions(cause);
+      var first = opts.overlayFailed || cause.plain;
+      toast('The one caption overlay clip could not be made here (' + first + ') — using separate caption images instead.');
+      runCaptionPipeline(cues, withOpts(opts, { noOverlay: true, overlay: false, overlayFailed: first }));
     });
   }
 
