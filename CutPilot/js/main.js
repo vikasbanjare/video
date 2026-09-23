@@ -6820,20 +6820,33 @@
         return;
       }
 
-      var outDir;
-      try {
-        var pm = nodeReq('path');
-        outDir = pm.join(nodeReq('os').tmpdir(), 'cutpilot-frames-' + Date.now());
-      } catch (e) { setCaptionBusy(false); capProgress(null); return toast('Node unavailable: ' + e.message, true); }
+      var pm;
+      try { pm = nodeReq('path'); nodeReq('fs'); }
+      catch (e) { setCaptionBusy(false); capProgress(null); return toast('Node unavailable: ' + e.message, true); }
 
-      capProgress('Rendering 0 / ' + frames.length);
-      return CPRender.renderFrames(frames, {
-        width: state.env.width || 1920,
-        height: state.env.height || 1080,
-        preset: preset,
-        overrides: overrides,
-        outDir: outDir,
-        onProgress: function (done, total) { capProgress('Rendering ' + done + ' / ' + total); }
+      // The caption images live beside the project (captionMediaPlace), like
+      // the long-video overlay — NOT in the OS temp folder, which macOS clears
+      // of files unused for a few days: every reel's captions then went red
+      // ("Media Offline") when the project was reopened later.
+      var inTemp = false;
+      return captionMediaPlace().then(function (place) {
+        return pm.join(place.dir, 'caption-images-' + captionJobKey(place, (state.env && state.env.sequenceName) || '') + '-' + overlayStamp());
+      }, function (eDir) {
+        // no folder beside the project or in Documents takes a write: captions
+        // still land on the timeline today, and the toast says what to do
+        inTemp = true;
+        diag('captions', 'no caption media folder (' + ((eDir && eDir.message) || eDir) + ') — caption images go to the temp folder');
+        return pm.join(nodeReq('os').tmpdir(), 'cutpilot-frames-' + Date.now());
+      }).then(function (outDir) {
+        capProgress('Rendering 0 / ' + frames.length);
+        return CPRender.renderFrames(frames, {
+          width: state.env.width || 1920,
+          height: state.env.height || 1080,
+          preset: preset,
+          overrides: overrides,
+          outDir: outDir,
+          onProgress: function (done, total) { capProgress('Rendering ' + done + ' / ' + total); }
+        });
       }).then(function (items) {
         capProgress((scoped ? 'Restyling ' : 'Placing ') + items.length + ' captions in your timeline…', items.length * 130);
         // build styles animate in word-by-word (like reveal), so the host must NOT
@@ -6852,13 +6865,18 @@
         // remember the full-video job (don't let a segment restyle shrink it)
         if (!range) { state.lastCaptionJob = { cues: cues, track: r.track }; saveLastCaptionJob(); }
         reflectCaptionsPlaced();
+        var tempNote = inTemp
+          ? ' ⚠️ Pulse could not save these caption images next to your project or in your Documents folder, so they are in a ' +
+            'temporary folder your computer clears after a few days — the captions would then show as missing (red) in Premiere. ' +
+            'Save your project in a folder you can write to, then add the captions again.'
+          : '';
         if (single) {
-          toast('✅ Caption updated on V' + r.track + ' — text changed in place. ⌘Z / Ctrl+Z undoes it.');
+          toast('✅ Caption updated on V' + r.track + ' — text changed in place. ⌘Z / Ctrl+Z undoes it.' + tempNote, !!inTemp);
         } else {
           toast((scoped ? (range ? '🎯 Restyled range — ' : '🔄 Restyled ') : '🎉 ') + r.placed + ' captions ' +
                 (scoped ? 'on V' : 'added on V') + r.track +
                 (wordCues ? (realWordTiming ? ' · 🎯 word-synced' : ' · audio-synced') : '') +
-                (r.animated ? ' · ' + CPCaptions.getAnimation(anim).name : ''));
+                (r.animated ? ' · ' + CPCaptions.getAnimation(anim).name : '') + tempNote, !!inTemp);
         }
       });
     }).catch(function (e) {
