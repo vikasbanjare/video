@@ -10272,8 +10272,16 @@
     takesNote(stats);
     $('btn-takes-apply').classList.toggle('hidden', !on.length);
   }
+  /* Why some rows start unticked when the transcript has no word timing. */
+  function estimatedNote(dels) {
+    return (dels || []).some(function (d) { return d.estimated; })
+      ? 'This transcript has no word-by-word timing, so a cut that starts or ends inside a line is only estimated — those start unticked: ' +
+        'play each one (▶) before you tick it. Transcribe the clip again (Transcribe tab) for exact cuts.'
+      : '';
+  }
   /* A warning that belongs with the list (a part of the transcript the AI
-     could not read) — shown under the summary every time it is redrawn. */
+     could not read, cuts placed by estimate) — shown under the summary every
+     time it is redrawn. */
   function takesNote(stats) {
     if (!state.takeNote) return;
     var n = document.createElement('div'); n.className = 'hint';
@@ -10313,7 +10321,8 @@
       var span = document.createElement('span');
       var txt = d.text.length > 38 ? d.text.slice(0, 38) + '…' : d.text;
       span.textContent = '#' + (i + 1) + '  ' + fmt(d.start) + '→' + fmt(d.end) + '  “' + txt + '”' +
-        (d.label && d.reason ? '  · ' + d.reason : '') + (d.needsReview ? '  · unusually long — play it first' : '');
+        (d.label && d.reason ? '  · ' + d.reason : '') +
+        (d.estimated ? '  · timing is estimated — play it first' : d.needsReview ? '  · unusually long — play it first' : '');
       span.title = d.text;                                   // the whole phrase on hover
       item.appendChild(span);
       list.appendChild(item);
@@ -10352,7 +10361,8 @@
         people: takesPeople(words)
       });
       prog.classList.add('hidden');
-      showTakeList(CPTakes.tidyDeletes(res.deletes, 0.1), cutGuardOf(src));
+      var dels = CPTakes.tidyDeletes(res.deletes, 0.1);
+      showTakeList(dels, cutGuardOf(src), estimatedNote(dels));
     });
   });
   function applyTakes(safeCopy) {
@@ -10527,7 +10537,14 @@
         if (last && u.start - last.end < 2) last.end = Math.max(last.end, u.end);
         else spans.push({ start: u.start, end: u.end });
       });
-      return { cuts: CPSmartEdit.mergeChunkCuts(plan, perChunk), unread: spans };
+      var cuts = CPSmartEdit.mergeChunkCuts(plan, perChunk);
+      // an edge inside a caption line whose word times are only estimated
+      // (no word timing: flatten spread the words evenly) — hear it first
+      cuts.forEach(function (c) {
+        var a = words[c.fromIdx], b = words[c.toIdx];
+        if ((a && a.estimated && !a.cueStart) || (b && b.estimated && !b.cueEnd)) { c.estimated = true; c.needsReview = true; }
+      });
+      return { cuts: cuts, unread: spans };
     });
   }
   /* Smart Cleanup's own words for a failed AI call. The shared messages say
@@ -10561,8 +10578,10 @@
       var miss = (r.unread || []).map(function (u) { return CPSmartEdit.mmss(Math.floor(u.start)) + '–' + CPSmartEdit.mmss(Math.ceil(u.end)); });
       var note = miss.length ? 'The AI could not read ' + miss.join(', ') + ' of your transcript, so nothing is listed there. ' +
         'Run ✨ Smart Cleanup again, or use 🔎 Find repeated takes for that part.' : '';
+      var guess = estimatedNote(r.cuts);
+      if (guess) note = note ? note + ' ' + guess : guess;
       showTakeList(r.cuts, guard, note);   // reuse the same review → apply pipeline
-      var big = r.cuts.filter(function (c) { return c.needsReview; }).length;
+      var big = r.cuts.filter(function (c) { return c.needsReview && !c.estimated; }).length;
       if (r.cuts.length) toast('✨ Smart Cleanup found ' + r.cuts.length + ' cut' + (r.cuts.length === 1 ? '' : 's') + ' — review them, then apply.' +
         (big ? ' ' + big + ' unusually long one' + (big === 1 ? ' is' : 's are') + ' left unticked — play it (▶) before you tick it.' : '') +
         (note ? ' ⚠️ ' + note : ''));

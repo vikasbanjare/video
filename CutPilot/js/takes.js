@@ -59,16 +59,28 @@
   var STATEMENT_END = /[.!।॥۔！]["'”’)\]]*$/;
 
   /* Flatten cues (line-level, with text) into a word stream with even per-word
-     timing when real word cues aren't supplied. */
+     timing when real word cues aren't supplied. Every such time inside a line
+     is a GUESS: each word says so (estimated), and the first and last word
+     of each line say so too (cueStart / cueEnd) — the line's own start and
+     end are the only real times there are. */
   function flatten(cues) {
     var out = [];
     for (var c = 0; c < (cues || []).length; c++) {
       var ws = String(cues[c].text).replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
       var n = Math.max(1, ws.length), d = ((cues[c].end - cues[c].start) || n * 0.4) / n;
-      for (var k = 0; k < ws.length; k++) out.push({ start: cues[c].start + k * d, end: cues[c].start + (k + 1) * d, text: ws[k] });
+      for (var k = 0; k < ws.length; k++) {
+        var o = { start: cues[c].start + k * d, end: cues[c].start + (k + 1) * d, text: ws[k], estimated: true };
+        if (k === 0) o.cueStart = true;
+        if (k === ws.length - 1) o.cueEnd = true;
+        out.push(o);
+      }
     }
     return out;
   }
+  /* Is a cut edge at this word a REAL time? A word with real timing, or the
+     start (end) of a caption line whose word times are only estimated. */
+  function realStart(w) { return !w || !w.estimated || !!w.cueStart; }
+  function realEnd(w) { return !w || !w.estimated || !!w.cueEnd; }
 
   /* Longest-common-subsequence length of two token arrays (order-aware, tolerant
      of insertions/deletions/substitutions — exactly how retakes differ). */
@@ -402,6 +414,15 @@
     for (var g = 0; g < P; g++) { var r = find(g); (groups[r] = groups[r] || []).push(g); }
 
     function nextStart(idx) { return (idx + 1 < P) ? phrases[idx + 1][0].start : phrases[idx][phrases[idx].length - 1].end; }
+    /* A phrase cut whose start or end sits INSIDE a caption line with only
+       estimated word times is still listed, but flagged: the owner hears it
+       (▶) before it is ticked — it could clip a word or leave half of one. */
+    function cutOf(idx, reason) {
+      var d = { start: startOf(idx), end: nextStart(idx), text: pText(phrases[idx]), reason: reason };
+      var endOk = (idx + 1 < P) ? realStart(phrases[idx + 1][0]) : realEnd(phrases[idx][phrases[idx].length - 1]);
+      if (!realStart(phrases[idx][0]) || !endOk) { d.estimated = true; d.needsReview = true; }
+      return d;
+    }
 
     var deletes = [], removedWords = 0;
     var inRetakeGroup = {};   // phrase idx → member of a real (2+) retake group
@@ -436,7 +457,7 @@
       for (var c2 = 0; c2 < grp.length; c2++) {
         var idx = grp[c2];
         if (idx === keepIdx) continue;
-        deletes.push({ start: startOf(idx), end: nextStart(idx), text: pText(phrases[idx]), reason: 'repeated take' });
+        deletes.push(cutOf(idx, 'repeated take'));
         removedWords += phrases[idx].length;
         deleted[idx] = true;
       }
@@ -454,7 +475,7 @@
         if (ack[fi] || !sameLine(fi, fi + 1)) continue;
         if (strict(fi, fi + 1) && isStmt[fi]) continue;   // a finished sentence, then the other person going on from it
         if (isNearPrefix(ct[fi], ct[fi + 1], opts.prefixFrac)) {
-          deletes.push({ start: startOf(fi), end: nextStart(fi), text: pText(phrases[fi]), reason: 'false start' });
+          deletes.push(cutOf(fi, 'false start'));
           removedWords += phrases[fi].length;
           deleted[fi] = true;
           inRetakeGroup[fi] = true;   // retake activity — lets the aside pass anchor on it
@@ -505,7 +526,7 @@
         var hasStrong = strong > 0 || phraseHit;
         var chattery = (strong + weak) / tk.length >= 0.75;
         if (hasStrong && chattery) {
-          deletes.push({ start: startOf(ai), end: nextStart(ai), text: pText(phrases[ai]), reason: 'off-script aside' });
+          deletes.push(cutOf(ai, 'off-script aside'));
           removedWords += phrases[ai].length;
           deleted[ai] = true;
         }
@@ -523,11 +544,14 @@
     // twice ("thank you, thank you"), or a repeat that ends the line. In a
     // conversation with no speaker labels a quick echo may be the OTHER person
     // ("…and the algorithm" / "the algorithm is everything") inside one phrase,
-    // so there only a labelled phrase is searched.
+    // so there only a labelled phrase is searched. The cut lands between two
+    // words INSIDE a phrase, so it needs real word timing: on a line whose word
+    // times are only estimated (flatten) it would chop words at a guessed spot.
     if (opts.restarts !== false) {
       var minN = Math.max(2, minRun - 1), maxN = 6;
       for (var qi = 0; qi < P; qi++) {
         if (deleted[qi] || (people === 'many' && spk[qi] == null)) continue;
+        if (phrases[qi].some(function (w) { return w.estimated; })) continue;
         var ph = phrases[qi], tw = [];
         for (var wi = 0; wi < ph.length; wi++) { var nt = norm(ph[wi].text); if (nt && !FILLERS[nt]) tw.push({ t: nt, w: wi }); }
         var k0 = 0;
@@ -570,6 +594,8 @@
       if (out.length && s[i].start <= out[out.length - 1].end + 0.05) {
         var last = out[out.length - 1];
         last.end = Math.max(last.end, s[i].end);
+        if (s[i].needsReview) last.needsReview = true;   // one guessed edge makes the merged cut one to hear first
+        if (s[i].estimated) last.estimated = true;
         if (s[i].text && last.text !== s[i].text && (' / ' + last.text + ' / ').indexOf(' / ' + s[i].text + ' / ') < 0) last.text += ' / ' + s[i].text;
       } else {
         var o = {}; for (var k in s[i]) if (Object.prototype.hasOwnProperty.call(s[i], k)) o[k] = s[i][k];
