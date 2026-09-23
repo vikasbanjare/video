@@ -231,6 +231,25 @@ async function main() {
       !r3.err && viaFile.length === 1 && JSON.stringify(r3.starts) === JSON.stringify([1, 3, 7, 9]) && leftGraph.length === 0,
       JSON.stringify(r3) + ' · via file: ' + viaFile.length + ' · left: ' + leftGraph.join(','));
     await p3.page.close();
+
+    // a Hinglish owner with no transcript yet: the verbatim words the panel
+    // adopts are in Latin letters (Deepgram's multilingual model writes Hindi
+    // in Devanagari; captions made from them later would come out in it)
+    const devanagari = (args) => {
+      const url = args.find(a => /^https:\/\//.test(a)) || '';
+      if (!/api\.deepgram\.com/.test(url)) return '{}';
+      const ws = 'आज हम podcast के बारे में बात करेंगे।'.split(' ').map((w, i) => ({ word: w, punctuated_word: w, start: 1 + i * 0.4, end: 1.3 + i * 0.4, confidence: 0.95, speaker: 0 }));
+      return JSON.stringify({ results: { channels: [{ alternatives: [{ words: ws }] }] } });
+    };
+    const reel = { sequenceId: 's4', sequenceName: 'Reel', fingerprint: 'f4', fps: 25, selection: null, video: [],
+      audio: [{ index: 0, muted: false, items: [{ mediaPath: HOST, seqStart: 0, seqEnd: 6, inPoint: 0, outPoint: 6, speed: 1 }] }] };
+    const p4 = await H.openPanel(browser, { host: hostFor(reel), curl: devanagari, settings: Object.assign({}, settings, { whisperLang: 'hinglish' }), ffmpeg: FF });
+    await p4.page.evaluate(() => document.getElementById('btn-verbatim-retakes').click());
+    await H.waitFor(p4.page, () => !document.getElementById('takes-results').classList.contains('hidden') || /failed/.test(document.getElementById('toast').textContent), 30000);
+    const adopted = await p4.page.evaluate(() => (window.CP_DEBUG_EXT.retakes.transcriptWords() || []).map(w => w.text).join(' '));
+    C.check('Hinglish: the verbatim words the panel adopts are in Latin letters, like the rest of the panel',
+      /^aaj ham podcast ke baare men baat karenge\.?$/.test(adopted), adopted);
+    await p4.page.close();
   } finally {
     await browser.close();
   }

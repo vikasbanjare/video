@@ -9720,14 +9720,24 @@
       // the one clip is only needed when the host cannot list every track
       if (res && res.clip && res.clip.mediaPath) { clip = res.clip; state.clip = clip; }
       prog.textContent = '🎙 Transcribing verbatim (keeps every take)… this can take a minute';
+      var heard = null;
+      function dropAudio() { if (heard) { try { nodeReq('fs').unlinkSync(heard.path); } catch (e) {} heard = null; } }
       return verbatimTranscribe(clip, ff, src, { keepAudio: true }).then(function (words) {
-        var heard = words.audio;
-        function dropAudio() { if (heard) { try { nodeReq('fs').unlinkSync(heard.path); } catch (e) {} } }
+        heard = words.audio;
         words = words.slice();
         // Adopt the verbatim words only when the panel has none: they may be in
         // another script than the caption transcript (Devanagari vs Hinglish),
-        // and captions time their words from state.transcriptWords.
-        if (!(state.transcriptWords && state.transcriptWords.length)) state.transcriptWords = words;
+        // and captions time their words from state.transcriptWords. For a
+        // Hinglish owner they are adopted in Latin letters like the rest of the
+        // panel — the multilingual model writes Hindi words in Devanagari.
+        if (!(state.transcriptWords && state.transcriptWords.length)) {
+          state.transcriptWords = (settings.whisperLang === 'hinglish') ? words.map(function (w) {
+            var o = {}, k;
+            for (k in w) if (w.hasOwnProperty(k)) o[k] = w[k];
+            o.text = CPCaptions.devanagariToLatin(String(w.text));
+            return o;
+          }) : words;
+        }
         prog.textContent = 'Finding the best take of each line…';
         var tp = TAKE_PRESETS[state.takeStrength || 'balanced'] || TAKE_PRESETS.balanced;
         var det = CPTakes.findRepeatedTakes(words, { minRun: tp.minrun, sim: tp.sim / 100, keep: 'best', people: takesPeople(words) });
@@ -9739,9 +9749,8 @@
         return detectSilencesRobust(snapSrc, ff, { thresholdDb: -35, minSilence: 0.12, padding: 0 }).then(function (sd) {
           var sils = (sd.silences || []).map(function (x) { return { start: (snapSrc.seqStart || 0) + (x.start - (snapSrc.inPoint || 0)), end: (snapSrc.seqStart || 0) + (x.end - (snapSrc.inPoint || 0)) }; });
           return CPSilence.snapCutsToSilence(deletes, sils, { window: 0.25, pad: 0.02 });
-        }).then(function (snapped) { return CPTakes.tidyDeletes(snapped, 0.1); }, function () { return deletes; })
-          .then(function (cuts) { dropAudio(); return cuts; });
-      });
+        }).then(function (snapped) { return CPTakes.tidyDeletes(snapped, 0.1); }, function () { return deletes; });
+      }).then(function (cuts) { dropAudio(); return cuts; }, function (e) { dropAudio(); throw e; });
     }).then(function (cuts) {
       prog.classList.add('hidden');
       showTakeList(cuts, guard);
