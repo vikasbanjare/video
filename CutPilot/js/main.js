@@ -4077,14 +4077,24 @@
                       'This changes everything', 'Nobody tells you this', 'Start before you are ready'];
   /* Devanagari-first styles preview in Hindi / Hinglish — the owner's own
      language — so what the tile shows is the face's Hindi, not its Latin. */
-  var TILE_SAMPLES_HI = ['यह secret कोई नहीं बताता', 'पैसे बचाने का आसान तरीका',
-                         'आज से शुरुआत करो', 'Ye trick सच में काम करती'];
+  var TILE_SAMPLES_HI = ['यह secret कोई नहीं बताता', 'पैसे बचाने का easy तरीका',
+                         'आज से start करो', 'Ye trick सच में काम करती'];
+  /* The sample holds at least TWO whole captions of this style: with a
+     four-word line, a 5- or 6-word style showed ONE caption whatever the
+     Words-per-caption stepper said (the dead-control audit measured "+"
+     doing nothing). Two whole captions keep the grouping visible, and the
+     last caption on a tile is never a stray single word. The tile and the
+     editor preview both come through here, so they stay identical. */
   function tileSampleText(p) {
+    // Auto (0) is grouped 4 at a time by both surfaces (drawCardPreview and
+    // renderPreview use `wordsPerCue || 4`), so size the sample the same way
+    var wpc = (p && p.wordsPerCue != null) ? (parseInt(p.wordsPerCue, 10) || 4) : 4;
+    var want = Math.max(5, Math.min(20, wpc * 2));
     try {
       var tw = state.transcriptWords;
       if (tw && tw.length >= 4) {
         var ws = [];
-        for (var i = 0; i < tw.length && ws.length < 5; i++) {
+        for (var i = 0; i < tw.length && ws.length < want; i++) {
           var wd = tw[i] && (tw[i].text || tw[i].word);
           if (wd) ws.push(String(wd));
         }
@@ -4094,7 +4104,15 @@
     var h = 0, id = String((p && p.id) || '');
     for (var k = 0; k < id.length; k++) h = (h * 31 + id.charCodeAt(k)) & 0xffff;
     var pool = (p && p.script === 'deva') ? TILE_SAMPLES_HI : TILE_SAMPLES;
-    return pool[h % pool.length];
+    var start = h % pool.length;
+    var words = pool[start].split(' ');
+    // extend with the next sample lines (never a filler word list) when a
+    // caption of this style holds more words than one sample line
+    for (var n = 1; words.length < wpc * 2 && n < pool.length * 3; n++) {
+      words = words.concat(pool[(start + n) % pool.length].split(' '));
+    }
+    if (words.length > wpc * 2) words = words.slice(0, Math.max(pool[start].split(' ').length, wpc * 2));
+    return words.join(' ');
   }
   function layoutYPct(p) {
     var l = p && p.layout;
@@ -4413,7 +4431,7 @@
     card.appendChild(thumb);
 
     if (isMogrt) card.addEventListener('click', function () { openMogrtSheet(t); });
-    else card.addEventListener('click', function () { applyTemplate(t); showView('style'); });
+    else card.addEventListener('click', function () { _pvDemo = null; applyTemplate(t); showView('style'); });
     return card;
   }
 
@@ -4780,14 +4798,18 @@
     setEntranceButtons(state.captionEntrance);
     $('c-fill').value = toHex(p.fill, '#ffffff');
     $('c-hl').value = toHex(p.highlight, '#ffd400');
-    $('c-stroke').value = toHex(p.stroke, '#000000');
+    // With no colour of its own, an outline / shadow / 2nd box stop starts at
+    // one you can SEE on this style: black on a black box (Y2K, Neon, Orange
+    // Word Pop) — or a box gradient from #141414 to black — changed nothing.
+    var darkBox = !!p.boxColor && CPCaptions.contrastRatio(p.boxColor, '#000000') < 3;
+    $('c-stroke').value = toHex(p.stroke, darkBox ? '#ffffff' : '#000000');
     $('c-strokew').value = p.strokeWidth || 0;
     $('c-box-on').checked = !!p.boxColor;
     $('c-box').value = toHex(p.boxColor, '#ff3b6b');
     $('c-upper').checked = !!p.uppercase;
     // shadow (the preset's soft "glow") + letter spacing
     $('c-shadow-on').checked = !!p.glow;
-    $('c-shadow').value = toHex(p.glow, '#000000');
+    $('c-shadow').value = toHex(p.glow, darkBox ? '#ffffff' : '#000000');
     $('c-shadow-blur').value = Math.round(((p.glowBlur != null ? p.glowBlur : 0.35)) * 100);
     if ($('c-letter')) $('c-letter').value = p.letterSpacing || 0;
     if ($('c-weight')) $('c-weight').value = p.weight || 800;
@@ -4820,7 +4842,10 @@
     if ($('c-boxgloss')) $('c-boxgloss').value = Math.round(((p.boxGloss != null ? p.boxGloss : 0)) * 100);
     // gradient + glossy highlight controls
     if ($('c-hlgrad')) $('c-hlgrad').checked = !!p.highlight2;
-    if ($('c-hl2g')) $('c-hl2g').value = toHex(p.highlight2, '#ff6a00');
+    // no gradient of its own: the 2nd stop starts visibly apart from the
+    // highlight (a fixed #ff6a00 was invisible on orange highlights)
+    var hl1 = toHex(p.highlight, '#ffd400');
+    if ($('c-hl2g')) $('c-hl2g').value = toHex(p.highlight2, CPCaptions.shadeHex(hl1, CPCaptions.contrastRatio(hl1, '#000000') > 8 ? -0.5 : 0.5));
     if ($('c-hlgrad-opts')) $('c-hlgrad-opts').style.display = p.highlight2 ? '' : 'none';
     if ($('c-glossy')) $('c-glossy').checked = !!p.glossy;
     // keyword italic-serif + glow (editorial style); two-tier stacked sizing
@@ -4852,7 +4877,7 @@
     }
     // box gradient 2nd colour + padding
     if ($('c-boxgrad')) $('c-boxgrad').checked = !!p.boxColor2;
-    if ($('c-box2')) $('c-box2').value = toHex(p.boxColor2, '#000000');
+    if ($('c-box2')) $('c-box2').value = toHex(p.boxColor2, p.boxColor ? CPCaptions.shadeHex(p.boxColor, darkBox ? 0.45 : -0.35) : '#000000');
     if ($('c-boxgrad-opts')) $('c-boxgrad-opts').style.display = p.boxColor2 ? '' : 'none';
     if ($('c-box-pad')) $('c-box-pad').value = Math.round(((p.boxPad != null ? p.boxPad : 1)) * 100);
     // directional shadow offset
@@ -4873,6 +4898,12 @@
     if ($('c-brandon')) $('c-brandon').checked = !!p.brandColor;
     if ($('c-brand') && p.brandColor) $('c-brand').value = toHex(p.brandColor, '#ff2ea6');
     if ($('c-brand-words') && p.brandWords) $('c-brand-words').value = (p.brandWords || []).join(', ');
+    // the option rows these switches open must follow them — setting .checked
+    // fires no change event, so a row opened on the last style stayed on screen
+    // with its switch off, and its colour changed nothing
+    if ($('c-num-opts')) $('c-num-opts').style.display = p.numberColor ? '' : 'none';
+    if ($('c-brand-opts')) $('c-brand-opts').style.display = p.brandColor ? '' : 'none';
+    if ($('c-perword-style-wrap')) $('c-perword-style-wrap').style.display = p.perWordEntrance ? '' : 'none';
     $('c-speaker').checked = !!p.speaker;
     var aId = CPCaptions.animIdForConcept(p.anim);
     selectAnim(aId);
@@ -4918,7 +4949,16 @@
       chip.dataset.id = a.id;
       chip.textContent = a.name;
       chip.title = a.description;
-      chip.addEventListener('click', function () { selectAnim(a.id); renderPreview(); });
+      chip.addEventListener('click', function () {
+        // "Karaoke" and "One by one" ARE the word-by-word sweep: with ✨ Word-by-
+        // word off they could not play (currentAnim), so picking one turns it on
+        if ((a.id === 'karaoke' || a.id === 'reveal') && $('c-wordhl') && !$('c-wordhl').checked) {
+          $('c-wordhl').checked = true; state.wordHlOff = false;
+          setRevealButton(a.id === 'reveal' ? 'reveal' : 'karaoke');
+          syncWordHlUI();
+        }
+        selectAnim(a.id); renderPreview();
+      });
       rail.appendChild(chip);
     });
   }
@@ -4988,6 +5028,147 @@
     if ($('sw-box')) $('sw-box').style.display = boxOn ? '' : 'none';
     if ($('sw-stroke')) $('sw-stroke').style.display = strokeOn ? '' : 'none';
     if ($('sw-hl')) $('sw-hl').style.display = usesHighlight ? '' : 'none';
+  }
+
+  /* ---- controls that CANNOT act on the current look -------------------------
+     Measured by the pixel dead-control audit: some controls change nothing for
+     whole families of styles (a gradient on a word that sits on a solid Pill,
+     a glossy sheen with no gradient to shine, a box setting with no box, auto-
+     enlarge while word-by-word already pops the spoken word…). A control that
+     cannot act is DISABLED with a one-line reason right under it, and comes
+     back the moment the thing it needs is switched on. Runs on every preview
+     repaint, so it always describes the look on screen. */
+  var _whyEls = {}, _whyLast = {};
+  function _localShown(el) {
+    for (var n = el; n && n !== document.body; n = n.parentNode) {
+      if (n.classList && n.classList.contains('cust-pane')) return true;
+      if (n.style && n.style.display === 'none') return false;
+      if (n.classList && n.classList.contains('hidden')) return false;
+    }
+    return true;
+  }
+  function setWhy(id, reason) {
+    var e = $(id); if (!e) return;
+    var dis = !!reason;
+    var host = e.closest ? (e.closest('label') || e.parentNode) : e.parentNode;
+    var box = host && host.parentNode && host.parentNode.classList &&
+              (host.parentNode.classList.contains('ctrl-row') || host.parentNode.classList.contains('swatches'))
+              ? host.parentNode : host;
+    var w = _whyEls[id];
+    if (!w && dis && box && box.parentNode) {
+      w = document.createElement('div');
+      w.className = 'hint cp-why';
+      w.setAttribute('data-why-for', id);
+      w.style.margin = '1px 0 6px';
+      w.style.fontSize = '10.5px';
+      if ((host.classList && host.classList.contains('png-only')) || (box.classList && box.classList.contains('png-only'))) w.classList.add('png-only');
+      box.parentNode.insertBefore(w, box.nextSibling);
+      _whyEls[id] = w;
+    }
+    var shown = dis && !!box && _localShown(box);
+    var key = (dis ? reason : '') + '|' + shown;
+    if (_whyLast[id] === key) return;             // touch the DOM only when it changes
+    _whyLast[id] = key;
+    e.disabled = dis;
+    if (host && host.style) { host.style.opacity = dis ? '0.5' : ''; host.style.pointerEvents = dis ? 'none' : ''; }
+    if (w) { w.textContent = dis ? ('↳ ' + reason) : ''; w.style.display = shown ? '' : 'none'; }
+  }
+  function syncControlApplicability() {
+    var p = currentPreset() || {};
+    var editable = (_capOut === 'editable');
+    var wordHl = cchk('c-wordhl');
+    var build = !!p.build;
+    var reveal = wordHl && readReveal() === 'reveal';
+    var hls = readHlStyle();
+    var filled = !editable && (hls === 'box' || hls === 'bar');
+    var boxOn = cchk('c-box-on') || cchk('c-boxgrad') || cnum('c-box3d-depth', 0) > 0 || cnum('c-boxgloss', 0) > 0;
+    var borderOn = cchk('c-boxstroke-on');
+    var wpc = cnum('c-words', 0);
+    var PILL = 'Not with the Pill / Bar highlight look — the spoken word sits on a solid shape';
+    // a keyword-build style's frames ARE its word-by-word motion (they grow one
+    // word at a time and light the key word), so the sweep switch cannot act
+    setWhy('c-wordhl', build ? 'This style builds its caption word by word and lights its key word — that is its highlight' : null);
+    // with word-by-word off and no key words, no word is ever highlighted
+    var noneLit = !wordHl && !build && !cchk('c-kw');
+    var NONE_LIT = 'Nothing is highlighted in this style — turn on ✨ Word-by-word highlight first';
+    var hlgradWhy = noneLit ? NONE_LIT : filled ? PILL : (cchk('c-multicolor') && wordHl ? 'Cycle highlight colours is on — it replaces the gradient' : null);
+    setWhy('c-hlgrad', hlgradWhy);
+    setWhy('c-hl2g', hlgradWhy);
+    setWhy('c-glossy', hlgradWhy || (!cchk('c-hlgrad') ? 'Turn on 🌈 Gradient highlight first — the sheen runs between its two colours' : null));
+    setWhy('c-hlglow', noneLit ? NONE_LIT : (filled ? PILL : null));
+    setWhy('c-hlserif', noneLit ? NONE_LIT : null);
+    // 3D depth, gloss and the gradient box all draw ON the box face, so while
+    // any of them is set the face stays — the box switch alone cannot remove it
+    var boxForced = cchk('c-boxgrad') || cnum('c-box3d-depth', 0) > 0 || cnum('c-boxgloss', 0) > 0;
+    setWhy('c-box-on', boxForced ? 'The 3D edge, gloss or gradient box needs the box — set them to 0 / off to remove it' : null);
+    var sweepOwns = wordHl && !build;
+    setWhy('c-emphasize', sweepOwns ? 'Works when ✨ Word-by-word highlight is off — then the spoken word already pops' : null);
+    setWhy('c-kw', sweepOwns ? 'Used when ✨ Word-by-word highlight is off — the spoken word is the highlight' : null);
+    setWhy('c-kw-mode', sweepOwns ? 'Used when ✨ Word-by-word highlight is off' : null);
+    setWhy('c-hl-scale', wordHl ? 'Word-by-word is on — use Spoken-word size instead' : null);
+    setWhy('c-dimupcoming', build ? 'This style builds word by word — unspoken words are not on screen yet'
+                          : (reveal ? 'One by one already hides unspoken words — nothing to dim' : null));
+    setWhy('c-multicolor', build ? 'This style lights one keyword at a time — there is nothing to cycle' : null);
+    setWhy('c-hl3', (wordHl && (wpc === 1 || wpc === 2)) ? 'A caption holds 2 words here — raise Words per caption to 3+ to reach a 3rd colour' : null);
+    if (editable) {
+      setWhy('c-box-opacity', boxOn ? null : 'Needs 🟦 Background box');
+    } else {
+      setWhy('c-box-opacity', (boxOn || filled) ? null : 'Needs 🟦 Background box (or the Pill / Bar highlight look)');
+      setWhy('c-box-pad', (boxOn || hls === 'box') ? null : 'Needs 🟦 Background box (or the Pill highlight look)');
+      setWhy('c-box-radius', (boxOn || hls === 'box') ? null : 'Needs 🟦 Background box (or the Pill highlight look)');
+    }
+    setWhy('c-boxglow-on', (boxOn || borderOn) ? null : 'Needs 🟦 Background box or ⬜ Border — the glow comes off the box edge');
+    setWhy('c-box3d', cnum('c-box3d-depth', 0) > 0 ? null : 'Set 3D depth above 0 first');
+    var boxHex = ($('c-box') && $('c-box').value) || '#000000';
+    setWhy('c-boxgloss', (boxOn && !cchk('c-boxgrad') && CPCaptions.contrastRatio(boxHex, '#FFFFFF') < 1.3)
+      ? 'A white sheen cannot show on a white box — pick a darker Box colour first' : null);
+    setWhy('c-linegap', readLines() === 1 ? 'Lines on screen is Single — there is no second line to space' : null);
+    setWhy('c-wordspace', (!wordHl && !build && wpc === 1) ? 'One word per caption — there is no gap to space' : null);
+    setWhy('c-case', cchk('c-upper') ? 'ALL CAPS is on — turn it off to pick a text case' : null);
+    // key words in these modes already include every number, and a key word
+    // takes the Highlight colour — a separate number colour cannot show
+    var kwMode = ($('c-kw-mode') && $('c-kw-mode').value) || 'smart';
+    setWhy('c-numon', (!sweepOwns && cchk('c-kw') && /^(smart|numbers|all)$/.test(kwMode))
+      ? 'Your 🔑 key words already include numbers — they take the Highlight colour (turn key words off to colour numbers apart)' : null);
+  }
+
+  /* CONTENT DEMOS. Some controls act on what a caption SAYS: line spacing /
+     max width / lines on screen need a caption that wraps, auto-enlarge needs
+     punchy words, number colour needs numbers, keyword colour needs the words
+     the owner typed. The short sample phrase has none of those, so the preview
+     sat still and the controls read as dead. The moment the owner reaches for
+     one, the preview shows a caption that HAS it (in Hindi for a Hindi style)
+     — until another style is picked. */
+  var _pvDemo = null;                                  // { id: presetId, kind }
+  var PREVIEW_DEMOS = {
+    layout:   ['Everything changes tomorrow when remarkable storytelling transforms ordinary conversations completely',
+               'यह बेहद आसान तरीका आपकी पूरी ज़िंदगी हमेशा के लिए बदल सकता है'],
+    emphasis: ['Stop scrolling now because this secret changes everything instantly',
+               'Stop यह secret सच में everything बदल देगा'],
+    numbers:  ['I made $5,000 in 30 days with 3 simple edits',
+               'मैंने 30 दिन में ₹50,000 कमाए 3 आसान तरीकों से']
+  };
+  var DEMO_FOR = { 'c-linegap': 'layout', 'c-maxwidth': 'layout', 'c-lines': 'layout', 'c-emphasize': 'emphasis',
+                   'c-numon': 'numbers', 'c-num': 'numbers', 'c-brandon': 'brand', 'c-brand': 'brand', 'c-brand-words': 'brand' };
+  function previewDemoText(kind, p) {
+    var hi = !!(p && p.script === 'deva');
+    if (kind === 'brand') {
+      var bw = (($('c-brand-words') && $('c-brand-words').value) || '').split(',')
+        .map(function (s) { return s.trim(); }).filter(Boolean);
+      return (bw.length ? bw.slice(0, 2).join(' ') : (hi ? 'यह' : 'This')) + (hi ? ' सबके लिए मुफ़्त है' : ' is free for everyone today');
+    }
+    var d = PREVIEW_DEMOS[kind];
+    return d ? d[hi ? 1 : 0] : null;
+  }
+  function wirePreviewDemos() {
+    Object.keys(DEMO_FOR).forEach(function (id) {
+      var e = $(id); if (!e) return;
+      var kind = DEMO_FOR[id];
+      function on() { if (!_pvDemo || _pvDemo.id !== state.presetId || _pvDemo.kind !== kind) { _pvDemo = { id: state.presetId, kind: kind }; renderPreview(); } }
+      // colour inputs are hidden behind a swatch: listen on the label that holds both
+      var target = (e.type === 'hidden' && e.closest && e.closest('label')) || e;
+      ['pointerdown', 'mousedown', 'touchstart', 'focus', 'focusin', 'keydown'].forEach(function (ev) { target.addEventListener(ev, on); });
+    });
   }
 
   // Two-part customizer: 🎨 Style vs ✨ Effects & Pro, switched in the same panel.
@@ -5152,7 +5333,12 @@
     });
     $('wc-plus').addEventListener('click', function () {
       var w = parseInt($('c-words').value, 10) || 0;
-      setWordCount(w === 0 ? 1 : w + 1); renderPreview();
+      var next = (w === 0) ? 1 : w + 1;
+      // With word-by-word on, a caption always holds at least TWO words (the
+      // sweep needs a neighbour), so 1 and 2 look identical — step past 2 or
+      // the first "+" does nothing you can see.
+      if (w === 1 && cchk('c-wordhl')) next = 3;
+      setWordCount(next); renderPreview();
     });
     $('wc-full').addEventListener('click', function () {
       var w = parseInt($('c-words').value, 10) || 0;
@@ -5180,6 +5366,7 @@
       $('c-off-num').textContent = (ims > 0 ? '+' : '') + (ims / 1000).toFixed(2) + 's';
     }
     $('btn-replay').addEventListener('click', renderPreview);
+    wirePreviewDemos();
   }
 
   /* Highlight-timing nudge in seconds (positive = highlight later). */
@@ -5607,7 +5794,9 @@
       highlightFallbacks: cchk('c-hlserif') ? 'Georgia, "Times New Roman", serif' : null,
       highlightItalic: cchk('c-hlserif'),
       highlightWeight: cchk('c-hlserif') ? 800 : 0,
-      highlightGlow: cchk('c-hlglow') ? '#FFFFFF' : null,
+      // the keyword halo glows in the keyword's OWN colour: a hard-coded white
+      // halo vanished on white boxes and overrode the neon styles' own glow
+      highlightGlow: cchk('c-hlglow') ? $('c-hl').value : null,
       // two-tier "stacked" sizing — only applied to styles that define it
       subScale: (currentPreset() && currentPreset().subScale != null) ? (cnum('c-subscale', 62) / 100) : null,
       wordsPerLine: (currentPreset() && currentPreset().wordsPerLine != null) ? cnum('c-wordsperline', currentPreset().wordsPerLine || 0) : null,
@@ -5706,7 +5895,11 @@
      one); otherwise the chosen entrance animation. */
   function currentAnim() {
     if ($('c-wordhl') && $('c-wordhl').checked) return (readReveal() === 'reveal') ? 'reveal' : 'karaoke';
-    return state.animId;
+    // Word-by-word OFF is NO sweep — also on a style whose own animation IS the
+    // sweep (a third of the library: karaoke / reveal). Those kept sweeping in
+    // the preview and the per-image render, so the switch did nothing there,
+    // while the long-video overlay (captionRevealMode) already went static.
+    return (state.animId === 'karaoke' || state.animId === 'reveal') ? 'none' : state.animId;
   }
   /* Show the word-highlight options and hide the separate entrance-animation
      group while word-by-word is on (so there's only one obvious thing to set). */
@@ -5912,6 +6105,14 @@
     }
     canvas._pvStyle = pStyle;   // exposed so the parity harness can machine-compare tile vs preview
     var sample = tileSampleText(styled);
+    // content demo (see wirePreviewDemos) — the tile keeps its own sample
+    var demo = (_pvDemo && _pvDemo.id === state.presetId) ? _pvDemo.kind : null;
+    var demoText = demo ? previewDemoText(demo, styled) : null;
+    if (demoText) sample = demoText;
+    var wrapDemo = (demo === 'layout');
+    // a stacked style breaks lines by word count: show it TWO stacked lines of
+    // long words, which max width can still squeeze (more would only shrink)
+    if (wrapDemo && styled.wordsPerLine > 0) sample = sample.split(' ').slice(0, styled.wordsPerLine * 2).join(' ');
     if (carry.uppercase) sample = sample.toUpperCase();
     var sw = sample.split(' ');
     // MOTION PARITY with the gallery tile. These three inputs used to differ
@@ -5921,7 +6122,7 @@
     // looked dead in the editor preview. Both surfaces now derive motion the
     // same way, and proof B2 fails the build if they ever drift apart again.
     var pvAnimId = currentAnim();   // the EXACT call the render pipeline makes
-    var pvWpc = (styled.wordsPerCue || 4);
+    var pvWpc = wrapDemo ? sw.length : (styled.wordsPerCue || 4);
     canvas._pvAnimId = pvAnimId; canvas._pvWpc = pvWpc;
     var DUR = 0.35;                                   // seconds per word — same pacing as the tile
     var wordCues = sw.map(function (w, i) { return { start: i * DUR, end: (i + 1) * DUR, text: w }; });
@@ -5984,6 +6185,7 @@
     play();
     if (frames.length > 1) previewTimer = setInterval(play, Math.max(150, Math.round(DUR * 1000)));
 
+    try { syncControlApplicability(); } catch (eWhy) {}
     if (_booted) saveLook();
   }
 

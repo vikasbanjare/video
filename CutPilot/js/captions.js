@@ -2663,6 +2663,13 @@
     if (!x || !y) return 999;
     return Math.sqrt(Math.pow(x[0] - y[0], 2) + Math.pow(x[1] - y[1], 2) + Math.pow(x[2] - y[2], 2));
   }
+  /* `hex` moved toward white (t > 0) or black (t < 0) by |t| (0..1). */
+  function shadeHex(hex, t) {
+    var c = _hexRgb(hex); if (!c) return hex;
+    var to = t >= 0 ? 255 : 0, a = Math.min(1, Math.abs(t));
+    function h(v) { v = Math.round(v + (to - v) * a); var s = v.toString(16); return s.length < 2 ? '0' + s : s; }
+    return '#' + h(c[0]) + h(c[1]) + h(c[2]);
+  }
   function sweepColor(fill, highlight, box) {
     var f = String(fill || '#FFFFFF');
     if (highlight && String(highlight).toLowerCase() !== f.toLowerCase()) return highlight;
@@ -3286,6 +3293,7 @@
     inCategory: inCategory,
     sweepColor: sweepColor,
     contrastRatio: contrastRatio,
+    shadeHex: shadeHex,
     NICHES: NICHES,
     NICHE_RECOMMEND: NICHE_RECOMMEND,
     getPreset: getPreset,
