@@ -10207,61 +10207,48 @@
   /* Analyze one audio track's speech regions (sequence time). */
   var MC_STEP = 0.2; // loudness window / grid resolution in seconds
 
-  /* Get a mic's loudness envelope (Promise of {samples,duration}); ffmpeg only. */
-  function micEnvelope(track) {
-    var ff = resolveFfmpeg();
-    if (!ff) return Promise.reject(new Error('ffmpeg is required to read audio — install it (brew install ffmpeg) and re-check in Settings.'));
-    return CPAudio.ffmpegEnvelope(track.mediaPath, ff, MC_STEP);
-  }
-
-  /* Resample a mic envelope onto the shared sequence-time grid. A mic clip's
-     inPoint is the sync offset: sequence time 0 = media time inPoint. */
-  function envToSeqGrid(env, track, nWindows) {
-    var grid = new Array(nWindows);
-    var s = env.samples || [];
-    for (var k = 0; k < nWindows; k++) {
-      var mediaT = k * MC_STEP + (track.inPoint || 0);
-      var idx = Math.round(mediaT / MC_STEP);
-      grid[k] = (idx >= 0 && idx < s.length) ? s[idx].db : -100;
+  /* A mic track's clips as Premiere plays them: where each sits on the
+     timeline and which stretch of which media file it plays (in/out, speed,
+     reversed). The host lists every clip; a track from an older host that only
+     sent its first clip's fields becomes one clip from those. */
+  function mcTrackClips(track) {
+    var segs = (track.segments && track.segments.length) ? track.segments : null;
+    if (!segs) {
+      segs = [{ mediaPath: track.mediaPath, seqStart: track.seqStart || 0, inPoint: track.inPoint || 0,
+                outPoint: track.outPoint, dur: Math.max(0, (track.outPoint || 0) - (track.inPoint || 0)) || 1e7 }];
     }
-    return grid;
+    return segs.filter(function (s) { return s && s.mediaPath; }).map(function (s) {
+      var dur = (s.seqEnd != null) ? (s.seqEnd - (s.seqStart || 0)) : s.dur;
+      return { mediaPath: s.mediaPath, seqStart: s.seqStart || 0, dur: dur, inPoint: s.inPoint || 0,
+               outPoint: s.outPoint, speed: s.speed || 1, reversed: !!s.reversed };
+    });
   }
 
   /* Build a mic's loudness on the SEQUENCE-time grid, covering the WHOLE
-     timeline — every clip on that audio track, not just the first one. This is
-     what lets multicam cut the entire sequence (multiple takes / a multi-clip
-     mic track) instead of stopping after the first clip.
-       • single clip  → fast path (one ffmpeg pass + envToSeqGrid)
-       • many clips    → ffmpeg each unique media file once, then drop each
-                         clip's slice onto the shared grid at its sequence start. */
+     timeline — every clip on that audio track, not just the first one. Each
+     unique media file is read once (ffmpeg); every clip then drops the stretch
+     of media it plays onto the grid at ITS place on the timeline. A mic clip
+     slid to 0:05 to sync with the cameras therefore lines up at 0:05 — the old
+     single-clip shortcut ignored where the clip sat and shifted every cut. */
   function micSeqGrid(track, nWindows) {
-    var segs = (track.segments && track.segments.length) ? track.segments : null;
-    if (!segs || segs.length <= 1) {
-      return micEnvelope(track).then(function (env) { return envToSeqGrid(env, track, nWindows); });
-    }
-    // gather the unique media files across this track's clips (one ffmpeg each)
-    var uniq = {}, order = [];
-    segs.forEach(function (s) { if (!(s.mediaPath in uniq)) { uniq[s.mediaPath] = null; order.push(s.mediaPath); } });
+    var clips = mcTrackClips(track);
     var ff = resolveFfmpeg();
     if (!ff) return Promise.reject(new Error('ffmpeg is required to read audio — install it (brew install ffmpeg) and re-check in Settings.'));
+    var levels = {}, order = [];
+    clips.forEach(function (c) { if (!(c.mediaPath in levels)) { levels[c.mediaPath] = null; order.push(c.mediaPath); } });
     return order.reduce(function (chain, mp) {
       return chain.then(function () {
-        return CPAudio.ffmpegEnvelope(mp, ff, MC_STEP).then(function (env) { uniq[mp] = env.samples || []; });
+        return CPAudio.ffmpegEnvelope(mp, ff, MC_STEP).then(function (env) {
+          var lv = [];
+          (env.samples || []).forEach(function (s) { lv[Math.round(s.t / MC_STEP)] = s.db; });
+          levels[mp] = lv;
+        });
       });
     }, Promise.resolve()).then(function () {
-      var grid = new Array(nWindows);
-      for (var k = 0; k < nWindows; k++) grid[k] = -100;
-      segs.forEach(function (s) {
-        var samples = uniq[s.mediaPath] || [];
-        var w0 = Math.max(0, Math.round(s.seqStart / MC_STEP));
-        var w1 = Math.min(nWindows, Math.round((s.seqStart + s.dur) / MC_STEP));
-        for (var k = w0; k < w1; k++) {
-          var mediaT = (k - w0) * MC_STEP + (s.inPoint || 0);   // seq → this clip's media time
-          var idx = Math.round(mediaT / MC_STEP);
-          if (idx >= 0 && idx < samples.length) grid[k] = samples[idx].db;
-        }
+      var placed = clips.map(function (c) {
+        return { key: c.mediaPath, seqStart: c.seqStart, dur: c.dur, inPoint: c.inPoint, outPoint: c.outPoint, speed: c.speed, reversed: c.reversed };
       });
-      return grid;
+      return CPMulticam.seqGridFromClips(placed, function (k) { return levels[k]; }, MC_STEP, nWindows);
     });
   }
 
