@@ -3362,19 +3362,18 @@ function CP_getAudioTracks() {
       }
       diag.push('A' + (t + 1) + ':' + nClips + 'clip/' + withItem + 'item/' + segments.length + 'media');
       if (!ref) continue;
-      var muted = false, locked = false;
+      // a muted track (often a camera's scratch audio) is the panel's last
+      // choice when it pairs mics with cameras by itself
+      var muted = false;
       try { muted = (typeof track.isMuted === 'function') && !!track.isMuted(); } catch (eMu) {}
-      try { locked = (typeof track.isLocked === 'function') && !!track.isLocked(); } catch (eLo) {}
       out.push({
         index: t,
         name: track.name || ('A' + (t + 1)),
         mediaPath: mp,
         hasMedia: !!mp,
         clips: nClips,
-        clipsWithMedia: segments.length,
         muted: muted,
-        locked: locked,
-        segments: segments,             // ALL media clips on this track (seq time)
+        segments: segments,             // ALL media clips on this track (seq time); disabled ones are silent
         seqStart: ref.start.seconds,
         inPoint: ref.inPoint.seconds,
         outPoint: ref.outPoint.seconds

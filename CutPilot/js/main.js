@@ -11272,7 +11272,7 @@
      recording already heard to carry two people on its Left and Right (see
      mcFindSplitRecording) gives its channels first; tracks that point at the
      SAME recording (Breakout to Mono) take its channels in track order;
-     otherwise camera i ↔ track i. */
+     otherwise the cameras take the tracks in order, muted tracks last. */
   function mcDefaultSources(tracks) {
     var byPath = {}, out = [];
     tracks.forEach(function (t, ti) { (byPath[t.mediaPath] = byPath[t.mediaPath] || []).push(ti); });
@@ -11280,18 +11280,23 @@
       var chs = mcChannelMap(_mcProbe[tracks[0].mediaPath]);
       if (chs.length >= 2) { for (var k = 0; k < chs.length; k++) out.push('0:' + k); return out; }
     }
+    // tracks in the order Pulse offers them: the ones you hear first — a muted
+    // track (typically a camera's own scratch audio, muted once the lavs are
+    // synced) only after them
+    var order = tracks.map(function (t, ti) { return ti; });
+    order.sort(function (x, y) { return ((tracks[x].muted ? 1 : 0) - (tracks[y].muted ? 1 : 0)) || (x - y); });
     // a recording found to carry two people on its Left and Right (a lav
     // receiver in split mode on one camera's audio): its channels are the
-    // first mics, then the other recordings in track order
-    for (var si = 0; si < tracks.length; si++) {
-      var sp = tracks[si].mediaPath, sch = mcChannelMap(_mcProbe[sp]);
+    // first mics, then the other recordings in that order
+    for (var oi = 0; oi < order.length; oi++) {
+      var si = order[oi], sp = tracks[si].mediaPath, sch = mcChannelMap(_mcProbe[sp]);
       if (_mcSplit[sp] !== true || sch.length < 2) continue;
       for (var k2 = 0; k2 < sch.length; k2++) out.push(si + ':' + k2);
-      tracks.forEach(function (t, ti) { if (t.mediaPath !== sp) out.push(String(ti)); });
+      order.forEach(function (ti) { if (tracks[ti].mediaPath !== sp) out.push(String(ti)); });
       return out;
     }
-    tracks.forEach(function (t, ti) {
-      var group = byPath[t.mediaPath], chs2 = mcChannelMap(_mcProbe[t.mediaPath]);
+    order.forEach(function (ti) {
+      var t = tracks[ti], group = byPath[t.mediaPath], chs2 = mcChannelMap(_mcProbe[t.mediaPath]);
       out.push((group.length >= 2 && chs2.length >= group.length) ? (ti + ':' + group.indexOf(ti)) : String(ti));
     });
     return out;
@@ -11477,14 +11482,15 @@
   /* A mic track's clips as Premiere plays them: where each sits on the
      timeline and which stretch of which media file it plays (in/out, speed,
      reversed). The host lists every clip; a track from an older host that only
-     sent its first clip's fields becomes one clip from those. */
+     sent its first clip's fields becomes one clip from those. A disabled clip
+     plays silence in Premiere, so it is left out — its stretch is not heard. */
   function mcTrackClips(track) {
     var segs = (track.segments && track.segments.length) ? track.segments : null;
     if (!segs) {
       segs = [{ mediaPath: track.mediaPath, seqStart: track.seqStart || 0, inPoint: track.inPoint || 0,
                 outPoint: track.outPoint, dur: Math.max(0, (track.outPoint || 0) - (track.inPoint || 0)) || 1e7 }];
     }
-    return segs.filter(function (s) { return s && s.mediaPath; }).map(function (s) {
+    return segs.filter(function (s) { return s && s.mediaPath && !s.disabled; }).map(function (s) {
       var dur = (s.seqEnd != null) ? (s.seqEnd - (s.seqStart || 0)) : s.dur;
       return { mediaPath: s.mediaPath, seqStart: s.seqStart || 0, dur: dur, inPoint: s.inPoint || 0,
                outPoint: s.outPoint, speed: s.speed || 1, reversed: !!s.reversed };
@@ -11870,6 +11876,7 @@
           clearShare: act.clearShare.slice(),
           crosstalkShare: act.crosstalkShare
         };
+        mcDiagAnalysis(state.mcAnalysis);
         capMcProgress(null);
         // crosstalk (two people at once) goes to a wide camera when there is
         // one, and so do longer pauses; the periodic wide is optional
@@ -11888,6 +11895,23 @@
                  stuck: micCount >= 2 && (talkers < 2 || mcSpeakerSwitches(plan) === 0) };
       });
     });
+  }
+
+  /* What the follow analysis measured — each mic's gain correction (and how
+     it was found), how far apart the mics hear each other, how much each one
+     talked — into 📋 Copy diagnostics, so a report from the owner shows WHY
+     the cameras switched the way they did. */
+  function mcDiagAnalysis(an) {
+    var pct = function (x) { return Math.round((x || 0) * 100) + '%'; };
+    var mics = [];
+    (an.micNames || []).forEach(function (nm, a) {
+      if (!nm) { mics.push('V' + (a + 1) + ' no mic'); return; }
+      mics.push('V' + (a + 1) + ' ' + nm + ': gain ' + (an.gains[a] != null ? (an.gains[a] > 0 ? '+' : '') + an.gains[a] + ' dB' : '?') +
+        ' (' + an.gainMethod[a] + '), talking ' + pct(an.clearShare[a]));
+    });
+    diag('multicam', 'follow analysis — ' + mics.join(' · ') + ' · mics hear each other ' +
+      (an.isolation != null ? an.isolation + ' dB down' : 'unknown') + ' · crosstalk ' + pct(an.crosstalkShare) +
+      ' · ' + an.coverage.line.replace(/^⏱\s*/, ''));
   }
 
   /* Camera switches between speakers (timed cutaways don't count). */
@@ -12059,6 +12083,12 @@
     }).then(function (r) {
       capMcProgress(null);
       state.mcApplied = true;
+      // what the host did, cut by cut, for 📋 Copy diagnostics
+      diag('multicam', 'apply — cuts needed ' + r.cutsNeeded + ', landed ' + r.razored + ', missed ' + r.missedCuts +
+        (r.razorErrors ? ' (' + r.razorErrors + ' razor errors)' : '') + ', switched ' + r.toggled +
+        (r.toggleErrors ? ' (' + r.toggleErrors + ' failed)' : '') + ', verified ' + r.verifiedPct + '%, no footage ' + r.noFootageSec +
+        ' s, drop-frame ' + (r.dropFrame ? 'yes' : 'no') + ', cameras ' + r.tracksUsed + ', pieces ' + (r.piecesBefore || []).join('/') +
+        ' → ' + (r.piecesAfter || []).join('/'));
       $('btn-mc-redo').classList.remove('hidden');
       $('mc-redo-hint').classList.remove('hidden');
       // What really landed on the timeline (the host checks every cut and
@@ -12344,6 +12374,12 @@
   $('btn-mc-apply').addEventListener('click', function () {
     applyMcPlan().catch(mcApplyFailed);
   });
+
+  // multicam gate hooks: what 📋 Copy diagnostics would hand over right now
+  try {
+    window.CP_DEBUG_EXT = window.CP_DEBUG_EXT || {};
+    window.CP_DEBUG_EXT.multicam = { diagText: function () { return buildDiagText(); } };
+  } catch (eMcDbg) {}
 
   // =========================================================== SETTINGS ====
   function refreshFfmpegStatus() {
