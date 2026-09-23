@@ -394,6 +394,19 @@
           (isStmt[a] || !carriesOn(ct[a], ct[b]))) return false;
       return true;
     }
+    /* Is take i a deliberately shorter, FINISHED version of the fullest take
+       f ("So the secret … is posting consistency every single day." → "The
+       secret … is consistency.")? It ends in a full stop or question mark
+       (not "…"), not on a word no line ends on ("…is."), is not simply f cut
+       off (Whisper puts a full stop on fragments too: "So the secret … is
+       posting."), and ends on a word f also says — a new last word may be a
+       misheard fragment, so that case keeps the fuller take as before. */
+    function finishedShorter(i, f) {
+      if (i === f || !(isStmt[i] || isQ[i])) return false;
+      var t = ct[i], last = t[t.length - 1];
+      if (!last || OPEN_END[last] || carriesOn(t, ct[f])) return false;
+      return ct[f].indexOf(last) >= 0;
+    }
     /* A conversation whose speakers are not labelled: only a near-identical
        line can be the same person saying it again. */
     function strict(a, b) { return people === 'many' && (spk[a] == null || spk[b] == null); }
@@ -458,10 +471,13 @@
         // Hesitations and stutters don't count as content, so a stumbling take
         // never beats the clean re-read after it; a take that stops short is
         // cut even if it came last.
-        var lens = [], maxLen = 0, li;
-        for (li = 0; li < grp.length; li++) { lens[li] = ct[grp[li]].length; maxLen = Math.max(maxLen, lens[li]); }
+        // A shorter take that is a FINISHED sentence counts too — the speaker
+        // tightened the line on purpose (finishedShorter).
+        var lens = [], maxLen = 0, li, full = 0;
+        for (li = 0; li < grp.length; li++) { lens[li] = ct[grp[li]].length; if (lens[li] > maxLen) { maxLen = lens[li]; full = li; } }
         for (li = grp.length - 1; li >= 0; li--) {
-          if (!maxLen || lens[li] >= 0.75 * maxLen) { keepIdx = grp[li]; break; }
+          if (!maxLen || lens[li] >= 0.75 * maxLen ||
+              (lens[li] >= 0.5 * maxLen && finishedShorter(grp[li], grp[full]))) { keepIdx = grp[li]; break; }
         }
       } else if (keep === 'confident') {
         var bc = -Infinity, anyConf = false;
