@@ -4736,6 +4736,14 @@
   function fontCoverage(family) {
     return _fontCoverage[String(family || '').toLowerCase()] || null;
   }
+  /* Is this family installed? true / false once the installed-font scan has
+     run, null before (or where no scan is possible). Kept apart from
+     _installedFonts, which also collects faces typed into the picker. */
+  var _scanInstalled = null;
+  function fontInstalled(family) {
+    if (!_scanInstalled) return null;
+    return !!_scanInstalled[String(family || '').toLowerCase()];
+  }
 
   /* All font options: Suggested faces, every installed face, then a
      "type any font" escape hatch. Each carries its own face for preview. */
@@ -4830,8 +4838,10 @@
      is kept — never hide a font on a guess. */
   function setInstalledFontCoverage(detailed) {
     _fontCoverage = {}; _hiddenScriptFonts = [];
+    _scanInstalled = {};
     var usable = [];
     detailed.forEach(function (f) {
+      _scanInstalled[String(f.name).toLowerCase()] = 1;
       var known = (f.latin != null || f.devanagari != null);
       if (known) _fontCoverage[String(f.name).toLowerCase()] = { latin: !!f.latin, devanagari: !!f.devanagari };
       if (known && !f.latin && !f.devanagari) _hiddenScriptFonts.push(f.name);
@@ -8943,30 +8953,50 @@
   }
   /* The family to actually send: the chosen one when it can draw the words,
      else the style's own font, else a system face that can. Only ever swaps on
-     KNOWN coverage — an unreadable font is sent as chosen, never guessed away. */
+     KNOWN coverage — an unreadable font is sent as chosen, never guessed away.
+     NOT INSTALLED is known too, once the installed-font scan has run: Premiere
+     cannot draw a font it does not have and silently keeps the template's own
+     (Inter — no Hindi letters), so the nine Devanagari-first styles (Baloo 2,
+     Mukta, Hind, Rozha One, Kalam, Teko, Tiro, Anek — web faces a stock Mac
+     does not have) would put blank Hindi on the timeline. A face that is not
+     installed goes out as its Mac stand-in (CPCaptions.timelineFace: Anton →
+     Impact, Poppins → Futura…) or, for Hindi words, as an installed face that
+     draws Devanagari (Kohinoor Devanagari on a Mac, Nirmala UI on Windows). */
   var _fontSwapToasted = {};
   function drawableFamily(preset, text) {
     var want = preset.font;
     if (typeof CPFonts === 'undefined' || !CPFonts.canDraw) return want;
     var needs = CPFonts.scriptNeeds(text || '');
-    var ok = CPFonts.canDraw(fontCoverage(want), needs);
+    var inst = fontInstalled(want);
+    var ok = (inst === false) ? false : CPFonts.canDraw(fontCoverage(want), needs);
     if (ok !== false) return want;
     var own = null;
     try { var t = currentPreset && currentPreset(); own = t && t.font; } catch (e) {}
-    var cands = [own, needs.devanagari ? 'Kohinoor Devanagari' : null, needs.devanagari ? 'Nirmala UI' : null,
+    var standIn = (CPCaptions.timelineFace && CPCaptions.timelineFace(want)) || null;
+    var cands = [standIn, own, needs.devanagari ? 'Kohinoor Devanagari' : null, needs.devanagari ? 'Nirmala UI' : null,
                  needs.devanagari ? 'Noto Sans Devanagari' : null, 'Helvetica Neue', 'Arial'];
+    var script = (needs.devanagari && !(fontCoverage(want) || {}).devanagari) ? 'Hindi' : 'English';
     for (var i = 0; i < cands.length; i++) {
       var c = cands[i];
-      if (c && c !== want && CPFonts.canDraw(fontCoverage(c), needs) === true) {
+      if (c && c !== want && fontInstalled(c) !== false && CPFonts.canDraw(fontCoverage(c), needs) === true) {
         var key = want + '>' + c;
         if (!_fontSwapToasted[key]) {
           _fontSwapToasted[key] = 1;
-          try { diag('fonts', 'send-time swap: "' + want + '" cannot draw these words → "' + c + '"'); } catch (eD) {}
-          toast('“' + want + '” can’t draw ' + (needs.devanagari && !(fontCoverage(want) || {}).devanagari ? 'Hindi' : 'English') +
-                ' letters, so these captions use “' + c + '” instead.', true);
+          try { diag('fonts', 'send-time swap: "' + want + '" ' + (inst === false ? 'is not installed' : 'cannot draw these words') + ' → "' + c + '"'); } catch (eD) {}
+          toast(inst === false
+            ? '“' + want + '” isn’t installed on this computer, and Premiere can only use installed fonts — so these editable captions use “' + c + '” instead.'
+            : '“' + want + '” can’t draw ' + script + ' letters, so these captions use “' + c + '” instead.', true);
         }
         return c;
       }
+    }
+    // Nothing installed can draw these words: say so rather than let Premiere
+    // put blank Hindi on the timeline.
+    var wantDeva = (inst === false) ? false : (fontCoverage(want) || {}).devanagari;
+    if (needs.devanagari && wantDeva === false && !_fontSwapToasted[want + '>none']) {
+      _fontSwapToasted[want + '>none'] = 1;
+      try { diag('fonts', 'send-time: no installed font draws these Hindi words for "' + want + '"'); } catch (eD2) {}
+      toast('No font installed on this computer can draw these Hindi words in editable captions, so they may come out blank. Use ✨ Pulse-rendered captions for Hindi, or install a Hindi font such as Kohinoor Devanagari.', true);
     }
     return want;
   }

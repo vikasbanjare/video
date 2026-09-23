@@ -2458,14 +2458,42 @@
   ];
   TRENDING_TEMPLATES.forEach(function (t) { TEMPLATES.push(t); });
 
+  /* FONT_SAFE, decided on purpose (independent review: on a Mac 34 of the 54
+     new styles and 5 of the 6 .mogrt twins never drew their designed face —
+     Anton and Bebas Neue became Impact, Bangers became Marker Felt, the Plain
+     Subtitle twin Futura instead of Poppins).
+     The remap exists for EDITABLE captions: Premiere draws those with its own
+     text engine, which only has installed fonts. Pulse-rendered captions (the
+     default, and the long-video overlay) are drawn by the panel itself, which
+     loads the Google faces — so for them the designed face is the right one.
+       · the 54 new styles (trending + twins) keep their designed face FIRST and
+         put the Mac stand-in right after it: online it draws the designed
+         face, offline the stand-in (exactly what the remap gave before);
+       · the editable send swaps a face that is not installed for its stand-in
+         (timelineFace below; main.js drawableFamily), and for Hindi words for
+         an installed Devanagari face — Premiere cannot draw a missing font;
+       · the older styles keep the remap as it was: the owner has used them
+         with the Mac faces for months, and their tiles are what he knows. */
+  var DESIGNED_FACE = {};
+  TRENDING_TEMPLATES.concat(TWIN_TEMPLATES).forEach(function (t) { DESIGNED_FACE[t.id] = 1; });
   TEMPLATES.forEach(function (t) {
     var safe = FONT_SAFE[t.font];
     if (!safe) return;
-    var fb = [t.font].concat(t.fallbackFonts || []);
+    var fb;
+    if (DESIGNED_FACE[t.id]) {
+      fb = [safe].concat((t.fallbackFonts || []).filter(function (f) { return f !== safe; }));
+      if (fb.indexOf('sans-serif') < 0 && fb.indexOf('serif') < 0 && fb.indexOf('monospace') < 0) fb.push('sans-serif');
+      t.fallbackFonts = fb;
+      return;
+    }
+    fb = [t.font].concat(t.fallbackFonts || []);
     if (fb.indexOf('sans-serif') < 0 && fb.indexOf('serif') < 0 && fb.indexOf('monospace') < 0) fb.push('sans-serif');
     t.fallbackFonts = fb;
     t.font = safe;
   });
+  /* The installed Mac face that stands in for a Google face on the timeline
+     (editable captions), or null. */
+  function timelineFace(family) { return FONT_SAFE.hasOwnProperty(family) ? FONT_SAFE[family] : null; }
 
   /* Niche → recommended template id (the "AI Caption Styling" suggester). */
   var NICHE_RECOMMEND = {
@@ -3339,6 +3367,7 @@
     isNearBlack: isNearBlack,
     liftDark: liftDark,
     isDarkOnLight: isDarkOnLight,
+    timelineFace: timelineFace,
     contrastRatio: contrastRatio,
     shadeHex: shadeHex,
     NICHES: NICHES,
