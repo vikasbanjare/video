@@ -10668,6 +10668,10 @@
     // stale, so the retake/filler passes never cut at them (a new transcript
     // is a new object and starts clean)
     if (state.transcript) state.transcript.timelineEdited = true;
+    // …and the transcript SAVED for this clip is stale too: its cache key (the
+    // media file + lowest in / highest out point) survives a cut inside the
+    // clip, so the next transcription must listen again, not reload it
+    state._forceRetranscribe = true;
     return dropped;
   }
 
@@ -10700,7 +10704,7 @@
      transcript FILE is not (resyncTranscripts marks it). Its times now point
      at the wrong speech, so the retake and filler passes refuse it. */
   var STALE_TRANSCRIPT_MSG = 'your timeline changed since this transcript was made, and it has no word timing to follow the cuts. ' +
-    'Tap 🎙️ Auto-transcribe again (about a minute), then run this again.';
+    'Tap ↻ Re-transcribe (Transcribe tab) — it listens to your clip again, about a minute — then run this again.';
   function transcriptIsStale() { return !!(state.transcript && state.transcript.timelineEdited); }
   /* What the filler pass cuts on, always in the CURRENT timeline's time:
      the word list with its REAL timing, re-timed after every cut (the fillers
@@ -10760,14 +10764,34 @@
     stats.innerHTML = 'Found <b>' + dels.length + '</b> cut' + (dels.length > 1 ? 's' : '') +
       ' — about <b>' + total.toFixed(1) + 's</b> to remove' + (off ? ' (' + off + ' unticked — kept)' : '') +
       '. Untick anything you want to keep, then apply.';
+    takesNote(stats);
     $('btn-takes-apply').classList.toggle('hidden', !on.length);
+  }
+  /* Why some rows start unticked when the transcript has no word timing. */
+  function estimatedNote(dels) {
+    return (dels || []).some(function (d) { return d.estimated; })
+      ? 'This transcript has no word-by-word timing, so a cut that starts or ends inside a line is only estimated — those start unticked: ' +
+        'play each one (▶) before you tick it. Transcribe the clip again (Transcribe tab) for exact cuts.'
+      : '';
+  }
+  /* A warning that belongs with the list (a part of the transcript the AI
+     could not read, cuts placed by estimate) — shown under the summary every
+     time it is redrawn. */
+  function takesNote(stats) {
+    if (!state.takeNote) return;
+    var n = document.createElement('div'); n.className = 'hint';
+    n.textContent = '⚠️ ' + state.takeNote;
+    stats.appendChild(n);
   }
   function renderTakes(dels) {
     var list = $('takes-list');
     $('takes-results').classList.remove('hidden');
     list.innerHTML = '';
     if (!dels.length) {
-      $('takes-stats').textContent = 'Nothing to remove — the transcript reads clean. (Tip: lower “Match sensitivity”, or try ✨ Smart Cleanup for false starts, fillers & dead-air.)';
+      // never "reads clean" when part of it was not read at all
+      $('takes-stats').textContent = state.takePartial ? 'Nothing to remove in the parts that were read.'
+        : 'Nothing to remove — the transcript reads clean. (Tip: lower “Match sensitivity”, or try ✨ Smart Cleanup for false starts, fillers & dead-air.)';
+      takesNote($('takes-stats'));
       $('btn-takes-apply').classList.add('hidden');
       return;
     }
@@ -10792,7 +10816,8 @@
       var span = document.createElement('span');
       var txt = d.text.length > 38 ? d.text.slice(0, 38) + '…' : d.text;
       span.textContent = '#' + (i + 1) + '  ' + fmt(d.start) + '→' + fmt(d.end) + '  “' + txt + '”' +
-        (d.label && d.reason ? '  · ' + d.reason : '') + (d.needsReview ? '  · unusually long — play it first' : '');
+        (d.label && d.reason ? '  · ' + d.reason : '') +
+        (d.estimated ? '  · timing is estimated — play it first' : d.needsReview ? '  · unusually long — play it first' : '');
       span.title = d.text;                                   // the whole phrase on hover
       item.appendChild(span);
       list.appendChild(item);
@@ -10810,13 +10835,33 @@
   function cutGuardOf(src) {
     return (src && src.sequenceId) ? { sequenceId: src.sequenceId, sequenceName: src.sequenceName, fingerprint: src.fingerprint } : null;
   }
-  /* Show a take list for review, remembering the timeline it was made for. */
-  function showTakeList(dels, guard) {
+  /* Show a take list for review, remembering the timeline it was made for.
+     `note` is a warning shown with the list; `partial` = part of the timeline
+     or transcript was not read, so an empty list does not mean "clean". */
+  function showTakeList(dels, guard, note, partial) {
     state.takeDeletes = dels;
     state.takeGuard = guard || null;
+    state.takeNote = note || '';
+    state.takePartial = !!partial;
     renderTakes(dels);
   }
   if ($('tk-sim')) $('tk-sim').addEventListener('input', function () { $('tk-sim-val').textContent = this.value + '%'; });
+  /* "Who is talking?" as the panel's own dropdown: a native <select> popup can
+     refuse to open inside Premiere's panel, and this pick turns the podcast
+     protection on. The <select> keeps the value (takesPeople reads it) and is
+     hidden only once the dropdown is really in place — never no picker. */
+  (function mountTakeKindDropdown() {
+    var sel = $('tk-kind'), host = $('tk-kind-dd');
+    if (!sel || !host || host.firstChild || typeof makeDropdown !== 'function') return;
+    var opts = Array.prototype.map.call(sel.options, function (o) { return { value: o.value, label: o.textContent }; });
+    var dd = makeDropdown(opts, sel.value, function (v) {
+      sel.value = v;
+      try { sel.dispatchEvent(new Event('change')); } catch (e) {}
+    });
+    host.appendChild(dd.el);
+    sel.classList.add('hidden'); sel.setAttribute('aria-hidden', 'true'); sel.tabIndex = -1;
+    sel.addEventListener('change', function () { dd.set(sel.value); });
+  })();
   if ($('btn-takes-find')) $('btn-takes-find').addEventListener('click', function () {
     var words = takesGetWords();
     if (!words || words.length < 6) return toast(takesNoWordsMsg('find retakes'), true);
@@ -10829,7 +10874,8 @@
         people: takesPeople(words)
       });
       prog.classList.add('hidden');
-      showTakeList(CPTakes.tidyDeletes(res.deletes, 0.1), cutGuardOf(src));
+      var dels = CPTakes.tidyDeletes(res.deletes, 0.1);
+      showTakeList(dels, cutGuardOf(src), estimatedNote(dels));
     });
   });
   function applyTakes(safeCopy) {
@@ -10880,21 +10926,38 @@
     opts = opts || {};
     return groqChat(
       [{ role: 'system', content: prompt.system }, { role: 'user', content: prompt.user }],
-      { json: true, model: opts.model, maxTokens: opts.maxTokens || 2048, temperature: 0 }
+      { json: opts.json !== false, model: opts.model, maxTokens: opts.maxTokens || 2048, temperature: 0 }
     );
+  }
+  /* The provider's own words behind a failed AI call. The Error's message is
+     written for the owner ("Cloud transcription is busy…") and never carries
+     them — CPApiErr keeps them on .cpDetail, so that is what is read here. */
+  function aiErrText(e) { return String((e && e.cpDetail) || '') + ' ' + String((e && e.message) || ''); }
+  /* The answer did not fit in the reply. In JSON mode Groq does not send back
+     a reply cut off at the token limit: it answers HTTP 400
+     json_validate_failed ("max completion tokens reached before generating a
+     valid document") — the same code as for JSON that does not parse. */
+  function aiReplyUnfinished(e) {
+    return /json_validate_failed|failed to generate json|valid document|max(imum)?[ _]completion[ _]tokens/i.test(aiErrText(e));
+  }
+  /* The REQUEST alone is over the per-minute token limit (or the model's
+     context): waiting cannot help, a smaller request can. */
+  function aiRequestTooBig(e) {
+    return /request too large|reduce your message|too large for model|maximum context length|context_length_exceeded/i.test(aiErrText(e));
   }
   /* aiChat with a wait-and-retry when the org's tokens-per-minute limit is hit
      across chunks (Groq says "try again in Xs"). Doesn't retry a single
-     too-large request (retrying the same size can't help). */
+     too-large request (retrying the same size can't help), nor a limit that
+     lifts only in minutes (the daily one). */
   function aiChatRetry(prompt, opts, tries) {
     tries = tries || 0;
     return aiChat(prompt, opts).catch(function (e) {
-      var m = String((e && e.message) || '');
-      var tooBig = /too large|reduce your message/i.test(m);
-      var rateLimited = /rate.?limit|try again in|tokens per minute|TPM/i.test(m);
-      if (tries < 3 && rateLimited && !tooBig) {
-        var waitS = 22, mm = /try again in ([\d.]+)s/i.exec(m);
-        if (mm) waitS = Math.min(60, Math.ceil(parseFloat(mm[1])) + 2);
+      var m = aiErrText(e);
+      var rateLimited = (e && e.cpKind === 'rate_limit') || /rate.?limit|try again in|tokens per minute|TPM/i.test(m);
+      if (tries < 3 && rateLimited && !aiRequestTooBig(e)) {
+        var waitS = 22, mm = /try again in (?:(\d+)h)?(?:(\d+)m)?([\d.]+)s/i.exec(m);
+        if (mm) waitS = Math.ceil(parseInt(mm[1] || '0', 10) * 3600 + parseInt(mm[2] || '0', 10) * 60 + parseFloat(mm[3])) + 2;
+        if (waitS > 90) throw e;
         return new Promise(function (res) { setTimeout(res, waitS * 1000); }).then(function () { return aiChatRetry(prompt, opts, tries + 1); });
       }
       throw e;
@@ -10914,47 +10977,108 @@
 
   /* Chunked AI cleanup → cut ranges (sequence time, via the words' own times).
      opts:{aggressive, scripted, tangents, fillers, people} — fillers/tangents
-     === false leave that category out. Who is talking frames the prompt: one
-     person re-reading a script (scripted — keep only the last take of every
-     line), or a conversation (not scripted, and its side stories are content,
-     not tangents). opts.people, else takesPeople(): the "Who is talking?" pick
-     or the speaker labels. An explicit opts.scripted / opts.tangents wins.
+     === false leave that category out. Who is talking frames the prompt: only
+     ONE person ("Just me", or labels showing one voice) is framed as a script
+     being re-recorded (keep only the last take of every line) and asked for
+     tangents. A conversation, and a transcript whose speakers are not known
+     (Auto on any transcript without speaker labels — every Groq/Whisper one,
+     the owner's usual engine), get neutral framing and no tangent cuts: a
+     podcast's side stories are content. opts.people, else takesPeople(): the
+     "Who is talking?" pick or the speaker labels. An explicit opts.scripted /
+     opts.tangents wins.
      Shared by the review-first Smart Cleanup button and the one-tap "Clean up
-     my video". Resolves {cuts, truncated, maxw}.
+     my video". Resolves {cuts, unread} — unread = [{start, end}], the
+     stretches no usable answer came back for (nothing is listed there).
+     Rejects (cpKind 'ai_unreadable') when no part got a usable answer.
      EVERY word is read (it used to stop at 5,000 — the second half of a long
      podcast kept all its retakes, silently), in 1,000-word chunks that overlap
      by 150 so a retake straddling a chunk boundary is seen whole. */
   function aiCleanupCuts(words, opts, prog, label) {
     opts = opts || {};
     var people = ('people' in opts) ? opts.people : takesPeople(words);
-    var scripted = (opts.scripted != null) ? !!opts.scripted : people !== 'many';
-    var tangents = (opts.tangents != null) ? opts.tangents : (people === 'many' ? false : undefined);
+    var scripted = (opts.scripted != null) ? !!opts.scripted : people === 'one';
+    var tangents = (opts.tangents != null) ? opts.tangents : (people === 'one' ? undefined : false);
     var plan = CPSmartEdit.planChunks(words.length, 1000, 150);
     var cats = CPSmartEdit.cleanupCategories({ fillers: opts.fillers, tangents: tangents });
-    /* One chunk → its cuts (indices local to the chunk). A reply cut off by
-       the token limit keeps only the cuts before the cut-off point, silently —
-       so that chunk is asked again in two overlapping halves (twice at most). */
-    function ask(pc, depth) {
+    var unread = [], answered = 0;
+    /* One chunk → its cuts (indices local to the chunk). An answer that did
+       not fit — a reply cut off at the token limit, or Groq's JSON-mode HTTP
+       400 json_validate_failed, which is how Groq really reports it — and a
+       request over the per-minute limit are asked again in two overlapping
+       halves (twice at most); the smallest pieces then once more without the
+       JSON switch, where a reply cut off at the limit still keeps its
+       complete cuts. A piece that still gets no usable answer is reported as
+       unread: never silently dropped, and never the whole run lost for it.
+       No key, no internet or a used-up limit still stops the run — every
+       piece would fail the same way. */
+    function ask(pc, depth, plain) {
       var cw = words.slice(pc.from, pc.to);
       var prompt = CPSmartEdit.buildCleanupPrompt(cw, { aggressive: !!opts.aggressive, scripted: scripted,
                                                         fillers: opts.fillers, tangents: tangents });
-      return aiChatRetry(prompt, { maxTokens: 2048 }).then(function (content) {
-        if (depth < 2 && pc.to - pc.from >= 200 && CPSmartEdit.replyTruncated(content)) {
-          var halves = CPSmartEdit.splitChunk(pc, 150);
-          return ask(halves[0], depth + 1).then(function (a) {
-            return ask(halves[1], depth + 1).then(function (b) {
-              return CPSmartEdit.mergeChunkCuts(halves, [a, b]).map(function (c) { c.fromIdx -= pc.from; c.toIdx -= pc.from; return c; });
-            });
+      var canSplit = depth < 2 && pc.to - pc.from >= 200;
+      function inHalves() {
+        var halves = CPSmartEdit.splitChunk(pc, 150);
+        return ask(halves[0], depth + 1, plain).then(function (a) {
+          return ask(halves[1], depth + 1, plain).then(function (b) {
+            return CPSmartEdit.mergeChunkCuts(halves, [a, b]).map(function (c) { c.fromIdx -= pc.from; c.toIdx -= pc.from; return c; });
           });
-        }
+        });
+      }
+      return aiChatRetry(prompt, { maxTokens: 2048, json: !plain }).then(function (content) {
+        if (canSplit && CPSmartEdit.replyTruncated(content)) return inHalves();
+        answered++;
         return CPSmartEdit.parseCleanupResponse(content, cw, { minConfidence: 0, categories: cats });
+      }, function (e) {
+        var unfinished = aiReplyUnfinished(e);
+        if (!unfinished && !aiRequestTooBig(e)) throw e;
+        if (canSplit) return inHalves();
+        if (unfinished && !plain) return ask(pc, depth, true);
+        var a = (pc.ownFrom != null) ? pc.ownFrom : pc.from, b = ((pc.ownTo != null) ? pc.ownTo : pc.to) - 1;
+        if (b >= a && words[a] && words[b]) unread.push({ start: +words[a].start, end: +words[b].end });
+        try { diag('ai', 'Smart Cleanup: no usable answer for words ' + a + '–' + b + ' — ' + aiErrText(e).slice(0, 200)); } catch (eD) {}
+        return [];
       });
     }
     return processChunks(plan, function (pc) {
-      return ask(pc, 0).then(function (cuts) { return [cuts]; });   // one entry per chunk
+      return ask(pc, 0, false).then(function (cuts) { return [cuts]; });   // one entry per chunk
     }, prog, label || '✨ AI is reading your transcript').then(function (perChunk) {
-      return { cuts: CPSmartEdit.mergeChunkCuts(plan, perChunk), truncated: false, maxw: words.length };
+      if (!answered && unread.length) {
+        var none = new Error('The AI did not send back a usable answer for any part of your transcript.');
+        none.cpKind = 'ai_unreadable';
+        throw none;
+      }
+      unread.sort(function (x, y) { return x.start - y.start; });
+      var spans = [];
+      unread.forEach(function (u) {
+        var last = spans[spans.length - 1];
+        if (last && u.start - last.end < 2) last.end = Math.max(last.end, u.end);
+        else spans.push({ start: u.start, end: u.end });
+      });
+      var cuts = CPSmartEdit.mergeChunkCuts(plan, perChunk);
+      // an edge inside a caption line whose word times are only estimated
+      // (no word timing: flatten spread the words evenly) — hear it first
+      cuts.forEach(function (c) {
+        var a = words[c.fromIdx], b = words[c.toIdx];
+        if ((a && a.estimated && !a.cueStart) || (b && b.estimated && !b.cueEnd)) { c.estimated = true; c.needsReview = true; }
+      });
+      return { cuts: cuts, unread: spans };
     });
+  }
+  /* Smart Cleanup's own words for a failed AI call. The shared messages say
+     "Cloud transcription …", which sent the owner to the transcription
+     settings for a problem with the AI's answer. */
+  function smartCleanupErrMsg(e) {
+    var k = e && e.cpKind;
+    if (k === 'network' || k === 'request_failed') return 'Smart Cleanup could not reach the AI, so nothing was cut. Check your internet connection and try again.';
+    if (k === 'bad_key') return 'Smart Cleanup uses your free Groq key, and Groq did not accept it. Check the key in Settings → Auto-transcribe (the ☁️ box) — copy it again, with no spaces at the ends.';
+    if (k === 'rate_limit') return 'Smart Cleanup stopped: your free Groq limit is used up for now, so nothing was cut. Wait a few minutes (the daily limit resets the next day) and try again.';
+    if (k === 'no_credit') return 'Smart Cleanup stopped: your Groq account is out of credit, so nothing was cut. Top it up, then try again.';
+    if (k === 'provider_down') return 'Smart Cleanup stopped: the AI service is having trouble on its end, so nothing was cut. This is not your setup — try again in a few minutes.';
+    if (k === 'ai_unreadable' || k === 'unknown' || k === 'too_large' || k === 'bad_audio' || k === 'no_speech') {
+      return 'Smart Cleanup could not finish — the AI did not send back a usable answer, so nothing was cut. ' +
+             'Try again in a minute; if it keeps happening, use 🔎 Find repeated takes instead.';
+    }
+    return 'Smart Cleanup failed: ' + ((e && e.message) || 'something went wrong') + ' Nothing was cut.';
   }
   function runSmartCleanup() {
     if (typeof CPSmartEdit === 'undefined') return toast('Smart Cleanup module missing.', true);
@@ -10968,11 +11092,18 @@
       return aiCleanupCuts(words, { aggressive: aggressive }, prog, '✨ Reading your transcript with AI');
     }).then(function (r) {
       prog.classList.add('hidden');
-      showTakeList(r.cuts, guard);         // reuse the same review → apply pipeline
-      var big = r.cuts.filter(function (c) { return c.needsReview; }).length;
+      var miss = (r.unread || []).map(function (u) { return CPSmartEdit.mmss(Math.floor(u.start)) + '–' + CPSmartEdit.mmss(Math.ceil(u.end)); });
+      var note = miss.length ? 'The AI could not read ' + miss.join(', ') + ' of your transcript, so nothing is listed there. ' +
+        'Run ✨ Smart Cleanup again, or use 🔎 Find repeated takes for that part.' : '';
+      var guess = estimatedNote(r.cuts);
+      if (guess) note = note ? note + ' ' + guess : guess;
+      showTakeList(r.cuts, guard, note, miss.length > 0);   // reuse the same review → apply pipeline
+      var big = r.cuts.filter(function (c) { return c.needsReview && !c.estimated; }).length;
       if (r.cuts.length) toast('✨ Smart Cleanup found ' + r.cuts.length + ' cut' + (r.cuts.length === 1 ? '' : 's') + ' — review them, then apply.' +
-        (big ? ' ' + big + ' unusually long one' + (big === 1 ? ' is' : 's are') + ' left unticked — play it (▶) before you tick it.' : ''));
-    }).catch(function (e) { prog.classList.add('hidden'); toast('Smart Cleanup failed: ' + e.message, true); });
+        (big ? ' ' + big + ' unusually long one' + (big === 1 ? ' is' : 's are') + ' left unticked — play it (▶) before you tick it.' : '') +
+        (note ? ' ⚠️ ' + note : ''));
+      else if (note) toast('⚠️ ' + note, true);
+    }).catch(function (e) { prog.classList.add('hidden'); toast(smartCleanupErrMsg(e), true); });
   }
   if ($('btn-smart-cleanup')) $('btn-smart-cleanup').addEventListener('click', runSmartCleanup);
 
@@ -11059,30 +11190,92 @@
         var m = String((e && e.message) || '');
         if (!o.oneStream && /matches no streams|Stream specifier/i.test(m)) { o.oneStream = true; return run(); }
         if (file && o.flag !== '-/filter_complex' && /Unrecognized option|Option not found|filter_complex_script/i.test(m)) { o.flag = '-/filter_complex'; return run(); }
-        throw new Error('Could not read the timeline audio: ' + m.slice(-160));
+        // the owner reads a plain sentence; the tool's own words go to the diagnostic log
+        try { diag('verbatim', 'timeline mix failed: ' + m.slice(-400)); } catch (eD) {}
+        var err = new Error('Pulse couldn’t mix the sound of your timeline — one of its audio files may be damaged or in a format Pulse can’t open.');
+        err.cpDetail = m.slice(-400);
+        throw err;
       });
     }
     return run().then(function (r) { done(); return r; }, function (e) { done(); throw e; });
   }
   /* One clip's audio (in point to out point) — for a host that cannot list
-     the timeline's tracks. */
+     the timeline's tracks, and the fallback when the timeline mix fails. */
   function extractClipAudio(ff, clip, audio) {
     var inP = clip.inPoint || 0, outP = clip.outPoint || 0, dur = (outP > inP) ? (outP - inP) : 0;
     var args = ['-y', '-ss', String(inP), '-i', clip.mediaPath];
     if (dur > 0) args = args.concat(['-t', String(dur)]);
     return runProc(ff, args.concat(['-vn', '-ac', '1', '-ar', '16000', '-b:a', '64k', audio]))
-      .catch(function (e) { throw new Error('Could not extract audio: ' + String((e && e.message) || '').slice(-160)); });
+      .catch(function (e) {
+        try { diag('verbatim', 'clip read failed: ' + String((e && e.message) || '').slice(-400)); } catch (eD) {}
+        var err = new Error('Pulse couldn’t read the sound of “' + silBase(clip.mediaPath) + '” — the file may be offline (moved or renamed), ' +
+          'damaged, or in a format Pulse can’t open. Relink it in Premiere (right-click the clip → Link Media) and try again.');
+        err.cpDetail = String((e && e.message) || '').slice(-400);
+        throw err;
+      });
+  }
+  /* The mix the verbatim engine hears, with every file that would break it or
+     drown the voices left out, and one plain note for each: a file that is
+     offline (moved or renamed — ONE of those used to fail the whole run with
+     ffmpeg's "Error opening input files"), a file with no sound, and — when a
+     voice is left to hear — a track of steady music or noise (the same test
+     Clean up uses to leave a music bed out of its silence vote). A file that
+     cannot be checked is kept. Resolves { plan, notes, left } — plan null
+     when nothing is left to hear; left = the paths left out. */
+  function prepareTimelineMix(s, ff) {
+    var plan0 = CPVerbatim.timelineMixPlan(s);
+    if (!plan0) return Promise.resolve({ plan: null, notes: [], left: {} });
+    var where = {}, left = {}, offline = [], mute = [], voices = [], steady = [];
+    plan0.tracks.forEach(function (tr) {
+      tr.forEach(function (p) {
+        var t = (s.audio || [])[p.track] || {};
+        var lab = 'A' + ((t.index != null ? +t.index : p.track) + 1);
+        where[p.path] = where[p.path] || [];
+        if (where[p.path].indexOf(lab) < 0) where[p.path].push(lab);
+      });
+    });
+    function named(p) { return where[p].join(', ') + ' “' + silBase(p) + '”'; }
+    var chain = Promise.resolve();
+    plan0.inputs.forEach(function (inp) {
+      chain = chain.then(function () {
+        return CPAudio.ffmpegAudioInfo(inp.path, ff).then(function (info) {
+          if (info.missing) { left[inp.path] = 'offline'; offline.push(named(inp.path)); return; }
+          if (!info.streams) { left[inp.path] = 'no sound'; mute.push(named(inp.path)); return; }
+          if (plan0.inputs.length < 2) { voices.push(inp.path); return; }
+          return listenTo(inp.path, inp.from, inp.to, null, ff).then(function (env) {
+            var lv = CPSilence.micLevels(env.db, [[0, env.db.length]], CPSilence.tuning('balanced'));
+            (lv.continuous && !lv.digital ? steady : voices).push(inp.path);
+          }, function () { voices.push(inp.path); });
+        }, function () { voices.push(inp.path); });
+      });
+    });
+    return chain.then(function () {
+      var notes = [];
+      if (offline.length) notes.push(offline.join(', ') + (offline.length === 1 ? ' is' : ' are') + ' offline (moved or renamed), so ' +
+        (offline.length === 1 ? 'it was' : 'they were') + ' left out — relink in Premiere (right-click the clip → Link Media) to include ' + (offline.length === 1 ? 'it.' : 'them.'));
+      if (mute.length) notes.push(mute.join(', ') + (mute.length === 1 ? ' has no sound in it, so it was' : ' have no sound in them, so they were') + ' left out.');
+      if (voices.length) steady.forEach(function (p) {
+        left[p] = 'music';
+        notes.push(named(p) + ' sounds like steady music or noise, not a voice, so it was left out of what the verbatim engine hears.');
+      });
+      var plan = Object.keys(left).length ? CPVerbatim.timelineMixPlan(s, { leaveOut: left }) : plan0;
+      return { plan: plan, notes: notes, left: left };
+    });
   }
   /* Transcribe the timeline VERBATIM (keeps every take) and return words in
      SEQUENCE time with per-word confidence and speaker. EVERY live voice track
-     is heard, mixed as it plays (CP_getCutSources): the old path read one clip,
+     is heard (CP_getCutSources), each piece at its timeline position and each
+     file at its own recorded level — Premiere's volume settings are not
+     applied, so a music bed is left out rather than mixed in at full level
+     (prepareTimelineMix), as are offline files. The old path read one clip,
      so on a two-mic podcast the other person's words — and their retakes —
      were never read, and on a timeline already cut into pieces only one
      piece was. `src` = CP_getCutSources() when the caller has it (else read
-     here); with no track list (an older host) the one `clip` is read.
-     opts.keepAudio leaves the mix on disk as words.audio = {path, seqStart,
-     duration} (the caller deletes it) — Verbatim retakes snaps its cuts to
-     the pauses heard in it. */
+     here); with no track list (an older host), or when the mix fails, the one
+     `clip` is read. words.notes = what was left out or read instead, in plain
+     words for the owner. opts.keepAudio leaves the audio on disk as
+     words.audio = {path, seqStart, duration} (the caller deletes it) —
+     Verbatim retakes snaps its cuts to the pauses heard in it. */
   function verbatimTranscribe(clip, ff, src, opts) {
     opts = opts || {};
     var key = (settings.verbatimKey || '').trim();
@@ -11091,14 +11284,34 @@
     try { fs = nodeReq('fs'); os = nodeReq('os'); pathMod = nodeReq('path'); } catch (e) { return Promise.reject(e); }
     var audio = pathMod.join(os.tmpdir(), 'pulse-vb-' + Date.now() + '.mp3');
     function cleanup() { try { fs.unlinkSync(audio); } catch (e) {} }
+    var notes = [], off = 0, dur = 0, partial = false;
     return (src !== undefined ? Promise.resolve(src) : readCutSources()).then(function (s) {
-      var plan = s ? CPVerbatim.timelineMixPlan(s) : null;
-      if (!plan && !(clip && clip.mediaPath)) throw new Error('Put your video on the timeline (select it) so I can read its audio.');
+      return s ? prepareTimelineMix(s, ff) : { plan: null, notes: [], left: {} };
+    }).then(function (mx) {
+      var plan = mx.plan;
+      notes = mx.notes.slice();
+      // the one clip — unless its own file is one that had to be left out
+      var one = (clip && clip.mediaPath && !mx.left[clip.mediaPath]) ? clip : null;
+      function readClip() {
+        off = one.seqStart || 0;
+        dur = Math.max(0, (one.outPoint || 0) - (one.inPoint || 0));
+        return extractClipAudio(ff, one, audio);
+      }
+      if (!plan && !one) {
+        throw new Error(notes.length ? 'Pulse couldn’t hear any voice on your timeline. ' + notes.join(' ')
+                                     : 'Put your video on the timeline (select it) so I can read its audio.');
+      }
       // word time is relative to the start of what was read → seq = off + t
-      var off = plan ? plan.span.start : (clip.seqStart || 0);
-      var dur = plan ? plan.span.end - plan.span.start : Math.max(0, (clip.outPoint || 0) - (clip.inPoint || 0));
-      return (plan ? extractTimelineMix(ff, plan, audio) : extractClipAudio(ff, clip, audio)).then(function () {
-        if (!fs.existsSync(audio)) throw new Error('Could not extract audio.');
+      var read = !plan ? readClip() : extractTimelineMix(ff, plan, audio).then(function () {
+        off = plan.span.start; dur = plan.span.end - plan.span.start;
+      }, function (e) {
+        if (!one) throw new Error(e.message + ' Select the talking clip on your timeline and try again — Pulse can then read just that clip.');
+        notes.push(e.message + ' So Pulse read only the selected clip, “' + silBase(one.mediaPath) + '” — words on other tracks were not heard.');
+        partial = true;
+        return readClip();
+      });
+      return read.then(function () {
+        if (!fs.existsSync(audio)) throw new Error('Pulse couldn’t get the sound out of your timeline. Try again, or select the talking clip first.');
         var engine = (settings.verbatimProvider === 'assemblyai') ? verbatimAssembly : verbatimDeepgram;
         return engine(audio, key);
       }).then(function (ws) {
@@ -11107,6 +11320,8 @@
           if (w.speaker != null) o.speaker = w.speaker;   // who said it — an echo by the other person is never a retake
           return o;
         });
+        words.notes = notes;
+        words.partial = partial;   // only the selected clip was read
         if (opts.keepAudio) words.audio = { path: audio, seqStart: off, duration: dur };
         else cleanup();
         return words;
@@ -11118,7 +11333,7 @@
     if (!ff) return toast('This needs ffmpeg (Settings → ffmpeg).', true);
     if (!(settings.verbatimKey || '').trim()) return toast('Add a Deepgram or AssemblyAI key in Settings → Verbatim transcription to use this.', true);
     var prog = $('takes-progress'); prog.classList.remove('hidden'); prog.textContent = 'Reading your timeline…';
-    var guard = null, src = null, clip = null;
+    var guard = null, src = null, clip = null, vbNotes = [], vbPartial = false;
     readCutSources().then(function (s) {
       src = s; guard = cutGuardOf(s);   // the timeline whose audio is read — the list is for it only
       return CPBridge.callHost('CP_getSelectedClip');
@@ -11133,6 +11348,8 @@
       function dropAudio() { if (heard) { try { nodeReq('fs').unlinkSync(heard.path); } catch (e) {} heard = null; } }
       return verbatimTranscribe(clip, ff, src, { keepAudio: true }).then(function (words) {
         heard = words.audio;
+        vbNotes = words.notes || [];
+        vbPartial = !!words.partial;
         words = words.slice();
         // Adopt the verbatim words only when the panel has none: they may be in
         // another script than the caption transcript (Devanagari vs Hinglish),
@@ -11162,8 +11379,10 @@
       }).then(function (cuts) { dropAudio(); return cuts; }, function (e) { dropAudio(); throw e; });
     }).then(function (cuts) {
       prog.classList.add('hidden');
-      showTakeList(cuts, guard);
-      toast(cuts.length ? ('🎯 Found ' + cuts.length + ' retake/off-script cut' + (cuts.length === 1 ? '' : 's') + ' — review (▶ to preview), then apply.') : 'No clear retakes found in the verbatim transcript.');
+      var note = vbNotes.join(' ');
+      showTakeList(cuts, guard, note, vbPartial);
+      toast((cuts.length ? ('🎯 Found ' + cuts.length + ' retake/off-script cut' + (cuts.length === 1 ? '' : 's') + ' — review (▶ to preview), then apply.') : 'No clear retakes found in the verbatim transcript.') +
+        (note ? ' ⚠️ ' + note : ''));
     }).catch(function (e) { prog.classList.add('hidden'); toast('Verbatim retakes failed: ' + e.message, true); });
   }
   if ($('btn-verbatim-retakes')) $('btn-verbatim-retakes').addEventListener('click', runVerbatimRetakes);
@@ -11212,7 +11431,9 @@
     var segs = [], cur = [];
     for (var i = 0; i < w.length; i++) {
       cur.push(w[i]);
-      var endsSentence = /[.!?]["')\]]?$/.test(w[i].text);
+      // the Hindi danda "।" / "॥", the Urdu "۔" / "؟" and an ellipsis end a
+      // sentence too — a Devanagari transcript used to run on 14 words at a time
+      var endsSentence = /[.!?।॥۔؟…]["'”’)\]]*$/.test(w[i].text);
       var gap = (i + 1 < w.length) ? (w[i + 1].start - w[i].end) : 99;
       if (endsSentence || gap > 0.8 || cur.length >= 14) {
         segs.push({ text: cur.map(function (x) { return x.text; }).join(' '), start: cur[0].start, end: cur[cur.length - 1].end });

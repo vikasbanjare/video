@@ -59,16 +59,28 @@
   var STATEMENT_END = /[.!।॥۔！]["'”’)\]]*$/;
 
   /* Flatten cues (line-level, with text) into a word stream with even per-word
-     timing when real word cues aren't supplied. */
+     timing when real word cues aren't supplied. Every such time inside a line
+     is a GUESS: each word says so (estimated), and the first and last word
+     of each line say so too (cueStart / cueEnd) — the line's own start and
+     end are the only real times there are. */
   function flatten(cues) {
     var out = [];
     for (var c = 0; c < (cues || []).length; c++) {
       var ws = String(cues[c].text).replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
       var n = Math.max(1, ws.length), d = ((cues[c].end - cues[c].start) || n * 0.4) / n;
-      for (var k = 0; k < ws.length; k++) out.push({ start: cues[c].start + k * d, end: cues[c].start + (k + 1) * d, text: ws[k] });
+      for (var k = 0; k < ws.length; k++) {
+        var o = { start: cues[c].start + k * d, end: cues[c].start + (k + 1) * d, text: ws[k], estimated: true };
+        if (k === 0) o.cueStart = true;
+        if (k === ws.length - 1) o.cueEnd = true;
+        out.push(o);
+      }
     }
     return out;
   }
+  /* Is a cut edge at this word a REAL time? A word with real timing, or the
+     start (end) of a caption line whose word times are only estimated. */
+  function realStart(w) { return !w || !w.estimated || !!w.cueStart; }
+  function realEnd(w) { return !w || !w.estimated || !!w.cueEnd; }
 
   /* Longest-common-subsequence length of two token arrays (order-aware, tolerant
      of insertions/deletions/substitutions — exactly how retakes differ). */
@@ -183,6 +195,65 @@
     var i = 0;
     while (i < t.length - 1 && i < 2 && (FILLERS[t[i]] || INTERJ[t[i]])) i++;
     return !!AGREE[t[i]];
+  }
+  /* A line with its lead-in dropped ("haan toh", "yes,", "oh right", "um"). */
+  function bodyOf(t) {
+    var i = 0;
+    while (i < t.length - 1 && i < 3 && (LEAD[t[i]] || AGREE[t[i]] || INTERJ[t[i]] || FILLERS[t[i]])) i++;
+    return t.slice(i);
+  }
+  /* Does line b say (nearly) all of line a again, from a's start, and carry
+     on past a's last word? That is a restart of an unfinished line ("aaj hum
+     baat karenge" → "haan toh aaj hum baat karenge … aur bachat …"), not a
+     reply ("…more than likes" → "right, …more than anything else"). */
+  function carriesOn(a, b) {
+    var A = bodyOf(a), B = bodyOf(b);
+    return A.length > 0 && isNearPrefix(A, B) && B[A.length - 1] === A[A.length - 1];
+  }
+
+  /* A few words said twice can be a whole REMARK repeated for emphasis —
+     agreeing, praising, exclaiming: "theek hai, theek hai, …", "bahut accha,
+     bahut accha, …", "I know, I know, but…", "oh my god, oh my god, …",
+     "no worries, no worries". Never a restart. Words such a remark is made
+     of (with glue words and pronouns around them): */
+  var REMARK = wordSet(['theek', 'thik', 'sahi', 'accha', 'acha', 'achha', 'acchha', 'bahut', 'bohot', 'bahot', 'baat', 'kamaal',
+    'kamal', 'mast', 'zabardast', 'jabardast', 'badhiya', 'badiya', 'shandaar', 'bilkul', 'ekdum', 'haan', 'haa', 'ji', 'nahi',
+    'nahin', 'arre', 'arey', 'wah', 'waah', 'sach', 'sachchi', 'pakka', 'suno', 'dekho', 'ruko', 'chalo', 'bas', 'shabash', 'yaar',
+    'know', 'course', 'worries', 'worry', 'god', 'gosh', 'wow', 'great', 'good', 'nice', 'cool', 'amazing', 'awesome', 'perfect',
+    'done', 'fine', 'sure', 'true', 'really', 'seriously', 'totally', 'absolutely', 'exactly', 'right', 'yes', 'yeah', 'no', 'okay',
+    'ok', 'oh', 'ah', 'see', 'look', 'listen', 'wait', 'hold', 'stop', 'never', 'love', 'beautiful', 'brilliant', 'excellent',
+    'wonderful', 'incredible', 'crazy', 'insane', 'lovely', 'fantastic', 'correct', 'agreed', 'indeed', 'definitely', 'obviously',
+    'man', 'bro', 'dude',
+    'ठीक', 'सही', 'अच्छा', 'बहुत', 'बात', 'कमाल', 'मस्त', 'ज़बरदस्त', 'जबरदस्त', 'बढ़िया', 'शानदार', 'बिल्कुल', 'बिलकुल', 'एकदम',
+    'हाँ', 'हां', 'जी', 'नहीं', 'अरे', 'वाह', 'सच', 'पक्का', 'सुनो', 'देखो', 'रुको', 'चलो', 'बस', 'शाबाश', 'यार']);
+  /* Hindi puts the verb last, so a unit that ENDS in one is a finished
+     clause said twice ("sahi hai", "kya baat hai", "ho gaya", "kar diya"),
+     not a line broken off and started again. */
+  var VERB_END = wordSet(['hai', 'hain', 'hoon', 'hun', 'ho', 'tha', 'thi', 'gaya', 'gayi', 'gaye', 'gai', 'hua', 'hui', 'hue',
+    'diya', 'liya', 'kiya',
+    'है', 'हैं', 'हूँ', 'हूं', 'हो', 'था', 'थी', 'थे', 'गया', 'गई', 'गयी', 'गए', 'गये', 'हुआ', 'हुई', 'हुए', 'दिया', 'लिया', 'किया']);
+  /* …while a unit that ends in one of these is plainly unfinished ("so the,",
+     "we need to,", "what we do is,", "paise ke,"), however it is punctuated. */
+  var OPEN_END = wordSet(['the', 'a', 'an', 'of', 'to', 'in', 'on', 'at', 'for', 'and', 'or', 'but', 'with', 'from', 'by', 'into',
+    'about', 'my', 'your', 'our', 'their', 'his', 'her', 'its', 'is', 'are', 'was', 'were', 'be', 'am', 'if', 'because', 'when',
+    'ka', 'ki', 'ke', 'ko', 'se', 'mein', 'ne', 'par', 'pe', 'aur', 'ya', 'lekin', 'magar', 'agar', 'jab', 'jo',
+    'का', 'की', 'के', 'को', 'से', 'में', 'ने', 'पर', 'पे', 'और', 'या', 'लेकिन', 'मगर', 'अगर', 'जब', 'जो', 'कि']);
+  /* A word followed by a pause mark: comma, dash, sentence end. */
+  var CLOSED = /[,;:…—–.!?।॥۔؟،？！-]["'”’)\]]*$/;
+  /* Is the unit u (normalized tokens) said twice a repeated remark, not a
+     restart? rawA / rawB = how each copy's last word is written. */
+  function isRemark(u, rawA, rawB) {
+    var last = u[u.length - 1];
+    if (VERB_END[last]) return true;                                   // "theek hai", "ho gaya"
+    if (OPEN_END[last]) return false;                                  // "I see the, I see the problem": left hanging
+    var remark = 0, i;
+    for (i = 0; i < u.length; i++) {
+      if (REMARK[u[i]] || INTERJ[u[i]]) remark++;
+      else if (!FUNC[u[i]] && !FIRST[u[i]] && !SECOND[u[i]] && !EMPHATIC[u[i]]) break;
+    }
+    if (i === u.length && remark) return true;                         // "bahut accha", "I know", "oh my god"
+    // each copy stands alone — a pause mark after BOTH ("…, …, and then")
+    return CLOSED.test(rawA) && CLOSED.test(rawB);
   }
 
   function pTokens(p) { var a = []; for (var i = 0; i < p.length; i++) { var n = norm(p[i].text); if (n) a.push(n); } return a; }
@@ -314,9 +385,27 @@
       if (ask[b] && !ask[a] && ct[a].length >= ct[b].length) return false;
       // "Right, the algorithm rewards…" after "The algorithm rewards…": the
       // other person agreeing and picking the thought up — unless the labels
-      // say it is the same voice, or the owner said it is only them
-      if (people !== 'one' && (spk[a] == null || spk[b] == null) && agree[b] && !agree[a]) return false;
+      // say it is the same voice, or the owner said it is only them. With the
+      // speakers unknown (Auto on a plain transcript, the default) a lone
+      // speaker's "haan toh aaj hum…" after an UNFINISHED "aaj hum…" is still
+      // a restart when it says all of the earlier line again and goes on from
+      // its last word; an agreeing reply ends the thought its own way.
+      if (people !== 'one' && (spk[a] == null || spk[b] == null) && agree[b] && !agree[a] &&
+          (isStmt[a] || !carriesOn(ct[a], ct[b]))) return false;
       return true;
+    }
+    /* Is take i a deliberately shorter, FINISHED version of the fullest take
+       f ("So the secret … is posting consistency every single day." → "The
+       secret … is consistency.")? It ends in a full stop or question mark
+       (not "…"), not on a word no line ends on ("…is."), is not simply f cut
+       off (Whisper puts a full stop on fragments too: "So the secret … is
+       posting."), and ends on a word f also says — a new last word may be a
+       misheard fragment, so that case keeps the fuller take as before. */
+    function finishedShorter(i, f) {
+      if (i === f || !(isStmt[i] || isQ[i])) return false;
+      var t = ct[i], last = t[t.length - 1];
+      if (!last || OPEN_END[last] || carriesOn(t, ct[f])) return false;
+      return ct[f].indexOf(last) >= 0;
     }
     /* A conversation whose speakers are not labelled: only a near-identical
        line can be the same person saying it again. */
@@ -357,6 +446,15 @@
     for (var g = 0; g < P; g++) { var r = find(g); (groups[r] = groups[r] || []).push(g); }
 
     function nextStart(idx) { return (idx + 1 < P) ? phrases[idx + 1][0].start : phrases[idx][phrases[idx].length - 1].end; }
+    /* A phrase cut whose start or end sits INSIDE a caption line with only
+       estimated word times is still listed, but flagged: the owner hears it
+       (▶) before it is ticked — it could clip a word or leave half of one. */
+    function cutOf(idx, reason) {
+      var d = { start: startOf(idx), end: nextStart(idx), text: pText(phrases[idx]), reason: reason };
+      var endOk = (idx + 1 < P) ? realStart(phrases[idx + 1][0]) : realEnd(phrases[idx][phrases[idx].length - 1]);
+      if (!realStart(phrases[idx][0]) || !endOk) { d.estimated = true; d.needsReview = true; }
+      return d;
+    }
 
     var deletes = [], removedWords = 0;
     var inRetakeGroup = {};   // phrase idx → member of a real (2+) retake group
@@ -373,10 +471,13 @@
         // Hesitations and stutters don't count as content, so a stumbling take
         // never beats the clean re-read after it; a take that stops short is
         // cut even if it came last.
-        var lens = [], maxLen = 0, li;
-        for (li = 0; li < grp.length; li++) { lens[li] = ct[grp[li]].length; maxLen = Math.max(maxLen, lens[li]); }
+        // A shorter take that is a FINISHED sentence counts too — the speaker
+        // tightened the line on purpose (finishedShorter).
+        var lens = [], maxLen = 0, li, full = 0;
+        for (li = 0; li < grp.length; li++) { lens[li] = ct[grp[li]].length; if (lens[li] > maxLen) { maxLen = lens[li]; full = li; } }
         for (li = grp.length - 1; li >= 0; li--) {
-          if (!maxLen || lens[li] >= 0.75 * maxLen) { keepIdx = grp[li]; break; }
+          if (!maxLen || lens[li] >= 0.75 * maxLen ||
+              (lens[li] >= 0.5 * maxLen && finishedShorter(grp[li], grp[full]))) { keepIdx = grp[li]; break; }
         }
       } else if (keep === 'confident') {
         var bc = -Infinity, anyConf = false;
@@ -391,7 +492,7 @@
       for (var c2 = 0; c2 < grp.length; c2++) {
         var idx = grp[c2];
         if (idx === keepIdx) continue;
-        deletes.push({ start: startOf(idx), end: nextStart(idx), text: pText(phrases[idx]), reason: 'repeated take' });
+        deletes.push(cutOf(idx, 'repeated take'));
         removedWords += phrases[idx].length;
         deleted[idx] = true;
       }
@@ -409,7 +510,7 @@
         if (ack[fi] || !sameLine(fi, fi + 1)) continue;
         if (strict(fi, fi + 1) && isStmt[fi]) continue;   // a finished sentence, then the other person going on from it
         if (isNearPrefix(ct[fi], ct[fi + 1], opts.prefixFrac)) {
-          deletes.push({ start: startOf(fi), end: nextStart(fi), text: pText(phrases[fi]), reason: 'false start' });
+          deletes.push(cutOf(fi, 'false start'));
           removedWords += phrases[fi].length;
           deleted[fi] = true;
           inRetakeGroup[fi] = true;   // retake activity — lets the aside pass anchor on it
@@ -460,7 +561,7 @@
         var hasStrong = strong > 0 || phraseHit;
         var chattery = (strong + weak) / tk.length >= 0.75;
         if (hasStrong && chattery) {
-          deletes.push({ start: startOf(ai), end: nextStart(ai), text: pText(phrases[ai]), reason: 'off-script aside' });
+          deletes.push(cutOf(ai, 'off-script aside'));
           removedWords += phrases[ai].length;
           deleted[ai] = true;
         }
@@ -478,11 +579,14 @@
     // twice ("thank you, thank you"), or a repeat that ends the line. In a
     // conversation with no speaker labels a quick echo may be the OTHER person
     // ("…and the algorithm" / "the algorithm is everything") inside one phrase,
-    // so there only a labelled phrase is searched.
+    // so there only a labelled phrase is searched. The cut lands between two
+    // words INSIDE a phrase, so it needs real word timing: on a line whose word
+    // times are only estimated (flatten) it would chop words at a guessed spot.
     if (opts.restarts !== false) {
       var minN = Math.max(2, minRun - 1), maxN = 6;
       for (var qi = 0; qi < P; qi++) {
         if (deleted[qi] || (people === 'many' && spk[qi] == null)) continue;
+        if (phrases[qi].some(function (w) { return w.estimated; })) continue;
         var ph = phrases[qi], tw = [];
         for (var wi = 0; wi < ph.length; wi++) { var nt = norm(ph[wi].text); if (nt && !FILLERS[nt]) tw.push({ t: nt, w: wi }); }
         var k0 = 0;
@@ -490,13 +594,16 @@
           var hit = 0;
           for (var rn = Math.min(maxN, Math.floor((tw.length - k0 - 1) / 2)); rn >= minN && !hit; rn--) {
             var same = true, kinds = {}, nk = 0, polite = true;
+            var unit = [];
             for (var rq = 0; rq < rn && same; rq++) {
               var tk1 = tw[k0 + rq].t;
               if (tk1 !== tw[k0 + rn + rq].t) same = false;
               if (!kinds[tk1]) { kinds[tk1] = 1; nk++; }
               if (!EMPHATIC[tk1] && !AGREE[tk1] && !BACKCHANNEL[tk1]) polite = false;
+              unit.push(tk1);
             }
-            if (same && nk >= 2 && !polite) hit = rn;
+            if (same && nk >= 2 && !polite &&
+                !isRemark(unit, ph[tw[k0 + rn - 1].w].text, ph[tw[k0 + 2 * rn - 1].w].text)) hit = rn;
           }
           if (!hit) { k0++; continue; }
           var first = ph[tw[k0].w], again = ph[tw[k0 + hit].w], said = [];
@@ -522,6 +629,8 @@
       if (out.length && s[i].start <= out[out.length - 1].end + 0.05) {
         var last = out[out.length - 1];
         last.end = Math.max(last.end, s[i].end);
+        if (s[i].needsReview) last.needsReview = true;   // one guessed edge makes the merged cut one to hear first
+        if (s[i].estimated) last.estimated = true;
         if (s[i].text && last.text !== s[i].text && (' / ' + last.text + ' / ').indexOf(' / ' + s[i].text + ' / ') < 0) last.text += ' / ' + s[i].text;
       } else {
         var o = {}; for (var k in s[i]) if (Object.prototype.hasOwnProperty.call(s[i], k)) o[k] = s[i][k];

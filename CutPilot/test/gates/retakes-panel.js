@@ -345,9 +345,12 @@ function cues(lines) {
         check('…and the word-snap before cutting keeps it whole (it used to collapse filler cuts)',
           res.snapped.length === 1 && Math.abs(res.snapped[0].start - um.start) < 1e-6 && Math.abs(res.snapped[0].end - um.end) < 1e-6, JSON.stringify(res.snapped));
         check('a transcript file with no word timing still works before any cut', res.beforeCut === 1, String(res.beforeCut));
+        // The message now names "↻ Re-transcribe": "Auto-transcribe again"
+        // reloaded the SAVED pre-cut transcript (same cache key after a cut
+        // inside the clip) — see retakes-stale-retranscribe.js.
         check('after a cut, that stale file is refused with a plain message — no filler cut at old times',
-          res.afterCut.length === 0 && /Auto-transcribe again/.test(res.toast), JSON.stringify(res.afterCut) + ' · ' + res.toast);
-        check('…and "Find repeated takes" refuses it too, saying why', res.takesWords === null && /Auto-transcribe again/.test(res.findToast), res.findToast);
+          res.afterCut.length === 0 && /↻ Re-transcribe/.test(res.toast), JSON.stringify(res.afterCut) + ' · ' + res.toast);
+        check('…and "Find repeated takes" refuses it too, saying why', res.takesWords === null && /↻ Re-transcribe/.test(res.findToast), res.findToast);
       }
       await page.close();
     }

@@ -105,18 +105,26 @@
      pieces only the first piece was. These build ONE mono mix of every live
      audio track, each piece placed at its own timeline position (in point,
      speed and direction honoured), so a word at t seconds in the mix was said
-     at span.start + t on the timeline.
+     at span.start + t on the timeline. Each file is mixed at its own recorded
+     level: Premiere's clip and track volumes are not known to the panel —
+     which suits voices (a quiet mic is heard as well as a loud one), and is
+     why the panel leaves a music bed out (opts.leaveOut) instead of mixing it
+     in at full level.
        src = CP_getCutSources(): { audio:[{ muted, items:[{ mediaPath, seqStart,
              seqEnd, inPoint, outPoint, speed, reversed, disabled }] }], selection }
+       opts.leaveOut = { mediaPath: reason } — files not to hear (offline, no
+             sound, steady music or noise)
      Returns null when there is nothing to hear. */
   var NOT_AUDIO = /\.(aegraphic|mogrt|prproj|psd|ai|png|jpe?g|gif|tiff?|svg|eps|bmp|webp|heic)$/i;
   function r6(x) { return Math.round(x * 1e6) / 1e6; }
-  function timelineMixPlan(src) {
+  function timelineMixPlan(src, opts) {
+    var leave = (opts && opts.leaveOut) || {};
     var items = [], lo = Infinity, hi = -Infinity, i;
     ((src && src.audio) || []).forEach(function (t, ti) {
       if (!t || t.muted) return;                                    // a muted track is not heard
       (t.items || []).forEach(function (it) {
         if (!it || it.disabled || !it.mediaPath || NOT_AUDIO.test(String(it.mediaPath))) return;
+        if (Object.prototype.hasOwnProperty.call(leave, String(it.mediaPath))) return;
         var s = +it.seqStart, e = +it.seqEnd, a = +it.inPoint || 0, b = +it.outPoint || 0, sp = +it.speed;
         if (!(e - s > 0.05)) return;
         if (!(sp > 0)) sp = (b > a) ? (b - a) / (e - s) : 1;
