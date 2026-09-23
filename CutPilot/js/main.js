@@ -1614,10 +1614,12 @@
   }
   var tabs = document.querySelectorAll('.tab');
   for (var t = 0; t < tabs.length; t++) {
-    tabs[t].addEventListener('click', function () {
+    tabs[t].addEventListener('click', function (ev) {
       var page = $('tab-' + this.dataset.tab);
       if (!page) return;
       var wasActive = page.classList.contains('active');
+      // the owner picked another page in the sidebar: put the old message away
+      if (ev && ev.isTrusted && !wasActive) dismissToast();
       var oldTab = document.querySelector('.tab.active'), oldPage = document.querySelector('.tab-page.active');
       if (oldTab) oldTab.classList.remove('active');
       if (oldPage) oldPage.classList.remove('active');
@@ -1642,6 +1644,10 @@
         try {
           var vt = $('view-templates');
           _galleryScroll = 0;
+          // Arriving from another page shows EVERY style again: a category or
+          // a search picked earlier used to stay, so the owner came back to one
+          // or two styles, or none. Inside Captions the place is kept.
+          if (!wasActive) showWholeGallery(vt && !vt.classList.contains('hidden'));
           if (vt && vt.classList.contains('hidden')) showView('templates');
           // a template sheet left open when the owner went elsewhere (a
           // keyboard shortcut can do that) must not cover the gallery on return
@@ -1667,16 +1673,38 @@
     });
   }
 
+  /* The gallery back on "All" with no search — what Captions shows when the
+     owner arrives from another page. Re-draws the cards only when the gallery
+     is already on screen (showView('templates') draws them otherwise). */
+  function showWholeGallery(redraw) {
+    var changed = false;
+    if (state.libCategory !== 'All') { state.libCategory = 'All'; changed = true; }
+    if (state.libSearch) { state.libSearch = ''; changed = true; }
+    var s = $('lib-search'); if (s && s.value) { s.value = ''; changed = true; }
+    var chips = $('lib-cats') ? $('lib-cats').querySelectorAll('.cat-chip') : [];
+    for (var i = 0; i < chips.length; i++) chips[i].classList.toggle('on', chips[i].textContent === 'All');
+    if (changed && redraw) renderTemplateGrid();
+  }
+
+  /* A message belongs to the page it was said on. Messages drop in at the top,
+     where Home's first card is, so one left over from the page the owner had
+     just left ("Tweak it below, then Add captions") covered Home's "Add
+     captions". When the OWNER changes page the message is put away (it stays
+     in Settings → Help → Recent messages); a page the panel opens by itself
+     keeps the message that explains why. */
+  function dismissToast() { var t = $('toast'); if (t) t.classList.add('hidden'); }
+  function goPage(name) { dismissToast(); showPage(name); }
+
   /* The shell around the pages: ‹ back / the logo → Home, ⚙ → Settings, the
      Home task cards and More-tools buttons (data-go = the page they open), and
      every small ⓘ, which shows or hides the longer explanation it names. */
   function wireShell() {
-    if ($('nav-back')) $('nav-back').addEventListener('click', function () { showPage('home'); });
-    if ($('nav-home')) $('nav-home').addEventListener('click', function () { showPage('home'); });
-    if ($('nav-settings')) $('nav-settings').addEventListener('click', function () { showPage('settings'); });
+    if ($('nav-back')) $('nav-back').addEventListener('click', function () { goPage('home'); });
+    if ($('nav-home')) $('nav-home').addEventListener('click', function () { goPage('home'); });
+    if ($('nav-settings')) $('nav-settings').addEventListener('click', function () { goPage('settings'); });
     var go = document.querySelectorAll('[data-go]');
     for (var g = 0; g < go.length; g++) {
-      go[g].addEventListener('click', function () { showPage(this.getAttribute('data-go')); });
+      go[g].addEventListener('click', function () { goPage(this.getAttribute('data-go')); });
     }
     var infos = document.querySelectorAll('.info[data-info]');
     for (var i = 0; i < infos.length; i++) {

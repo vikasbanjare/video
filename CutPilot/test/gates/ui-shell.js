@@ -165,6 +165,74 @@ const click = (page, sel) => page.evaluate(sel => {
     if (ed.editor && ed.back && ed.returned) R.ok('a style opens the editor with a clear "‹ All styles" button that goes back to the gallery');
     else R.bad('card → editor → back does not work: ' + JSON.stringify(ed));
 
+    // Coming back to Captions from another page shows the WHOLE catalogue
+    // again. A category or a search picked earlier used to stay, so the owner
+    // came back to one or two styles (or none) — "not just one caption — I
+    // have to go back to check if we have any". Inside Captions (a style, then
+    // "‹ All styles") the owner's place is kept.
+    const narrowed = await page.evaluate(async () => {
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      const pg = document.getElementById('tab-captions');
+      const chips = Array.from(document.querySelectorAll('#lib-cats .cat-chip'));
+      let best = null;
+      for (const c of chips) {
+        if (/^all$/i.test(c.textContent.trim())) continue;
+        c.click(); await sleep(60);
+        const n = document.querySelectorAll('#tpl-grid .tpl-card').length;
+        if (n >= 1 && (!best || n < best.n)) best = { chip: c, name: c.textContent.trim(), n };
+      }
+      if (!best) return { err: 'no category chip holds a style' };
+      best.chip.click(); await sleep(200);
+      // the pinned bar sits on the panel's bottom edge even when the category
+      // is short (it floated in mid-page, a shadow line across the gallery)
+      const pr = pg.getBoundingClientRect(), bar = document.getElementById('cap-action-bar').getBoundingClientRect();
+      const barGap = Math.round(pr.bottom - bar.bottom);
+      // a style, then back: still on that category
+      const card = document.querySelector('#tpl-grid .tpl-card'); card.click(); await sleep(400);
+      const back = document.getElementById('btn-back-lib'); if (back) back.click(); await sleep(300);
+      const on = document.querySelector('#lib-cats .cat-chip.on');
+      const kept = !!on && on.textContent.trim() === best.name;
+      // and a search typed on top of it
+      const s = document.getElementById('lib-search');
+      s.value = 'zzqx'; s.dispatchEvent(new Event('input', { bubbles: true })); await sleep(150);
+      return { name: best.name, n: best.n, barGap, kept };
+    });
+    if (narrowed.err) R.bad('could not narrow the gallery: ' + narrowed.err);
+    else {
+      if (narrowed.kept) R.ok('inside Captions the owner keeps their place: "' + narrowed.name + '" is still picked after a style and "‹ All styles"');
+      else R.bad('a style and "‹ All styles" lost the category the owner picked ("' + narrowed.name + '")');
+      if (Math.abs(narrowed.barGap) <= 1) R.ok('with only ' + narrowed.n + ' style(s) in "' + narrowed.name + '" the "Add captions" bar still sits on the bottom edge');
+      else R.bad('with only ' + narrowed.n + ' style(s) in "' + narrowed.name + '" the "Add captions" bar floats ' + narrowed.barGap + 'px above the bottom edge');
+      // A message is on screen when the owner leaves (picking a style says
+      // "Tweak it below, then Add captions"). Messages drop in at the top,
+      // where Home's first card is: it must not follow the owner there.
+      await page.evaluate(() => {
+        const t = document.getElementById('toast');
+        if (t && t.classList.contains('hidden')) { t.textContent = 'Applied "Bold Pop". Tweak it below, then Add captions.'; t.className = 'toast'; }
+      });
+      const cb = await click(page, '#nav-back'); await sleep(200);
+      const ch = await click(page, '#home-captions'); await sleep(500);
+      if (cb === 'ok' && ch === 'ok') R.ok('a message from the page the owner left is put away — it never covers Home\'s "Add captions"');
+      else R.bad('leaving with a message on screen, Home\'s "Add captions" cannot be tapped (‹ ' + cb + ', card ' + ch + ') — the message from the page left behind covers it');
+      const again = await page.evaluate(() => {
+        const pg = document.getElementById('tab-captions'), pr = pg.getBoundingClientRect();
+        const on = document.querySelector('#lib-cats .cat-chip.on');
+        const cards = Array.from(document.querySelectorAll('#tpl-grid .tpl-card')).filter(c => { const r = c.getBoundingClientRect(); return r.width > 0 && r.bottom > pr.top && r.top < pr.bottom; });
+        return { chip: on ? on.textContent.trim() : null, search: document.getElementById('lib-search').value, cards: cards.length };
+      });
+      if (again.chip === 'All' && !again.search && again.cards >= 6)
+        R.ok('back from another page, Captions shows every style again (All, no search, ' + again.cards + ' styles on screen) — not the "' + narrowed.name + '" the owner left');
+      else R.bad('back from another page, Captions still shows what the owner left: ' + JSON.stringify(again) + ' (left on "' + narrowed.name + '" + a search)');
+    }
+    // leave the gallery as the next checks expect it, whatever happened above
+    await page.evaluate(() => {
+      const s = document.getElementById('lib-search');
+      if (s && s.value) { s.value = ''; s.dispatchEvent(new Event('input', { bubbles: true })); }
+      const all = Array.from(document.querySelectorAll('#lib-cats .cat-chip')).find(c => c.textContent.trim() === 'All');
+      if (all) all.click();
+    });
+    await sleep(200);
+
     // ---- 4. wide panel: a readable column, a wider gallery, a sidebar ----------
     const cols = async () => page.evaluate(() => {
       const g = document.getElementById('tpl-grid');
