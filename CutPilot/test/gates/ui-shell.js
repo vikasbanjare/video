@@ -139,6 +139,18 @@ const click = (page, sel) => page.evaluate(sel => {
     if (cap.gallery && cap.cards >= 6 && cap.chips >= 3 && cap.magic)
       R.ok('Add captions opens the style gallery: ' + cap.cards + ' styles and ' + cap.chips + ' categories on screen at 400×640, "Add captions" too');
     else R.bad('Captions does not open on a gallery of styles with categories and "Add captions" on screen: ' + JSON.stringify(cap));
+    // the pinned bar sits flush on the panel's bottom edge while the gallery
+    // scrolls: nothing of the page may show through underneath it
+    const flush = await page.evaluate(async () => {
+      const pg = document.getElementById('tab-captions'), bar = document.getElementById('btn-magic');
+      if (!pg || !bar) return { err: 'no page or button' };
+      pg.scrollTop = 300; await new Promise(r => setTimeout(r, 120));
+      const box = bar.parentElement.getBoundingClientRect(), pr = pg.getBoundingClientRect();
+      pg.scrollTop = 0;
+      return { gap: Math.round(pr.bottom - box.bottom) };
+    });
+    if (!flush.err && Math.abs(flush.gap) <= 1) R.ok('while the gallery scrolls, the "Add captions" bar sits flush on the panel\'s bottom edge');
+    else R.bad('the pinned "Add captions" bar leaves the page showing underneath it: ' + JSON.stringify(flush));
     const ed = await page.evaluate(async () => {
       const sleep = ms => new Promise(r => setTimeout(r, ms));
       const c = document.querySelectorAll('#tpl-grid .tpl-card')[3]; if (!c) return { err: 'no card' };

@@ -164,9 +164,13 @@ body[data-page="home"] .nav-back, body[data-page="home"] .nav-title { display: n
 /* ------------------------------------------------------------ pages --- */
 .tab-page {
   grid-area: page; display: none; min-height: 0; overflow-y: auto; overflow-x: hidden;
-  /* content is centred at a readable width on wide panels */
-  padding: 10px max(var(--gutter), calc((100% - var(--page-max)) / 2)) 14px;
+  /* content is centred at a readable width on wide panels. No bottom padding:
+     a pinned action bar must sit flush on the panel's edge (with padding,
+     the page showed through underneath it) — the spacer below gives the end
+     of the page its breathing room instead. */
+  padding: 10px max(var(--gutter), calc((100% - var(--page-max)) / 2)) 0;
 }
+.tab-page::after { content: ''; display: block; height: 14px; }
 .tab-page.active { display: block; }
 /* the caption gallery + style editor may use a wide panel: more columns */
 #tab-captions { padding-left: max(var(--gutter), calc((100% - 1180px) / 2)); padding-right: max(var(--gutter), calc((100% - 1180px) / 2)); }
@@ -354,7 +358,7 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px 
 .page-actions {
   position: -webkit-sticky; position: sticky; bottom: 0; z-index: 8;
   display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
-  margin: 6px 0 8px; padding: 8px 0 8px;
+  margin: 6px 0 0; padding: 8px 0 10px;
   background: var(--bg);
   box-shadow: 0 -9px 10px -11px rgba(0,0,0,.4);
 }
@@ -1254,7 +1258,7 @@ body.cap-editable .editable-only { display: block; }
 
 /* ================= Organize — readable in both themes ================= */
 /* organize.css gave this page 4 px side margins; every page shares one gutter */
-body #tab-organize.tab-page { padding: 12px max(var(--gutter), calc((100% - var(--page-max)) / 2)) 14px; }
+body #tab-organize.tab-page { padding: 12px max(var(--gutter), calc((100% - var(--page-max)) / 2)) 0; }
 body #tab-organize .cpo-title { font-size: var(--fs-2xl); }
 body #tab-organize .cpo-desc, body #tab-organize .cpo-status { font-size: var(--fs-md); }
 body #tab-organize .cpo-eyebrow, body #tab-organize .cpo-results-title { font-size: var(--fs-xs); }
