@@ -44,6 +44,10 @@
     'Nirmala UI', 'Mangal',                                     // Windows
     'Noto Sans Devanagari', 'Noto Sans', 'Arial Unicode MS'     // Linux / broad
   ];
+  /* Devanagari (plus its Extended and Vedic blocks). Letter spacing is a Latin
+     effect: Hindi letters hang from one continuous top line and join into
+     conjuncts, so spacing them tears a word into loose letters. */
+  var DEVA_RE = /[ऀ-ॿ꣠-ꣿ᳐-᳿]/;
 
   /* Sizes are kept to 0.01 px, never whole pixels. The editor preview is a
      scaled crop of the output frame: rounding 27.7 px up to 28 in the preview
@@ -256,7 +260,22 @@
     ctx.clearRect(0, 0, W, H);
     ctx.textBaseline = 'alphabetic';
     ctx.lineJoin = 'round';
-    if (style.letterSpacing) { try { ctx.letterSpacing = style.letterSpacing + 'px'; } catch (eLS) {} }
+    // LETTER SPACING, per word. It used to be set once for the whole frame, so
+    // it reached Hindi words too: the shirorekha (the top line every letter
+    // hangs from) broke at each letter and 'यह' drew as 'य ह' — a Hindi viewer
+    // reads that as broken or misspelt. "Luxe Wide" (6) and "Tall Poster" (2)
+    // are sold as Hindi-ready and did exactly that. A word with any Devanagari
+    // in it is now MEASURED and DRAWN with no extra spacing; Latin words keep
+    // the style's spacing, so a Hinglish line keeps its designed look. Always
+    // set explicitly — a reused canvas must not inherit the last style's value.
+    var LS = style.letterSpacing || 0, _lsNow = null;
+    function spacingFor(word) {
+      var v = (LS && !(word != null && DEVA_RE.test(String(word)))) ? LS : 0;
+      if (v === _lsNow) return;
+      _lsNow = v;
+      try { ctx.letterSpacing = v + 'px'; } catch (eLS) {}
+    }
+    spacingFor(null);
 
     // honor a per-style weight (clean styles want ~500-700, bold ones 800-900);
     // forcing 900 on everything made even the minimal styles look heavy/cheap.
@@ -300,6 +319,7 @@
     function layout(fit) {
       var eff = Math.max(8, r2(base * fit));
       setFont(eff);
+      spacingFor(null);
       var sp = ctx.measureText(' ').width + (style.wordSpacing || 0);
       var m = [];
       for (var k = 0; k < words.length; k++) {
@@ -310,6 +330,7 @@
         var multk = Math.max(hpk ? hlScale : 1, dyn);
         var pxk = r2(eff * multk);
         setFontFor(pxk, hpk);
+        spacingFor(words[k]);
         m.push({ word: words[k], px: pxk, hl: hpk, w: ctx.measureText(words[k]).width });
       }
       var ls = [];
@@ -340,10 +361,12 @@
             var itr = lineR.items[ir];
             itr.px = Math.max(6, r2(itr.px * sub));
             setFontFor(itr.px, itr.hl);
+            spacingFor(itr.word);
             itr.w = ctx.measureText(itr.word).width;
             lw += itr.w; if (itr.px > hMax) hMax = itr.px;
           }
           setFont(Math.max(6, r2(eff * sub)));
+          spacingFor(null);
           lineR.spaceW = ctx.measureText(' ').width + (style.wordSpacing || 0);
           lw += lineR.spaceW * Math.max(0, lineR.items.length - 1);
           lineR.width = lw; lineR.height = hMax; lineR.scale = sub;
@@ -375,6 +398,7 @@
       for (bi = 0; bi < words.length; bi++) {
         var wOne = words[bi];
         setFont(lay.eff);
+        spacingFor(wOne);
         if (ctx.measureText(wOne).width <= maxW || wOne.length < 6) { broken.push(wOne); continue; }
         var per = Math.max(3, Math.floor(wOne.length * maxW / ctx.measureText(wOne).width) - 1);
         for (var cpos = 0; cpos < wOne.length; cpos += per) broken.push(wOne.substr(cpos, per));
@@ -424,6 +448,7 @@
       var spk = String(frame.speaker).toUpperCase();
       var spx = Math.max(16, Math.round(base * 0.5));
       setFont(spx);
+      spacingFor(spk);
       ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
       var swid = ctx.measureText(spk).width;
       var sx = (W - swid) / 2;
@@ -577,6 +602,7 @@
         // word-by-word reveal in stable positions, no jitter.
         if (frame.reveal != null && mi >= frame.reveal) { x += it.w + lineSpace; mi++; continue; }
         setFontFor(it.px, it.hl);   // keyword may use a different (italic serif) face
+        spacingFor(it.word);        // no letter spacing inside a Hindi word
         // per-word highlight colour — cycle the palette word-to-word when set
         var hlColor = style.highlight;
         if (style.highlightColors && style.highlightColors.length) {
