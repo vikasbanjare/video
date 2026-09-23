@@ -1024,6 +1024,16 @@
           <button data-pace="high">⚡ High</button>
         </div>
         <p class="hint" id="mc-pace-hint" style="margin:5px 0 0">Balanced — natural conversation pace, with the odd cutaway during long talking.</p>
+        <!-- wide / centre camera — only shown when a camera is "No mic (wide / cutaway)" -->
+        <div id="mc-center-wrap2" class="mc-wide-box" style="display:none">
+          <p class="hint" style="margin:8px 0 4px">📹 <b>Wide camera:</b> used automatically when two people talk over each other, in longer pauses and for cutaways. With two or more no-mic cameras they take turns.</p>
+          <label>Also cut to the wide camera every <span class="val" id="mc-center-val">off</span>
+            <input type="range" id="mc-center" min="0" max="600" step="15" value="0">
+          </label>
+          <label>Hold the wide camera for <span class="val" id="mc-centerhold-val">2s</span>
+            <input type="range" id="mc-centerhold" min="1" max="10" step="1" value="2">
+          </label>
+        </div>
       </div>
 
       <!-- transcript (speaker-turn) options -->
@@ -1039,8 +1049,8 @@
       <details id="mc-director-opts" class="advanced hidden">
         <summary>⚙ Fine-tune (optional)</summary>
         <label class="check"><input type="checkbox" id="mc-autosync"> 🧲 Auto-sync cameras by audio <span class="dim">(ONLY if angles are out of sync — leave OFF for separate mics)</span></label>
-        <label>Min shot length (s) <span class="dim">(don't cut faster than this)</span> <span class="val" id="mc-minseg-val">1.4</span>
-          <input type="range" id="mc-minseg" min="0.5" max="5" step="0.1" value="1.4">
+        <label>Min shot length (s) <span class="dim">(don't cut faster than this — never under 1.5)</span> <span class="val" id="mc-minseg-val">2</span>
+          <input type="range" id="mc-minseg" min="1.5" max="5" step="0.1" value="2">
         </label>
         <label>Cut away during a long monologue, every <span class="val" id="mc-maxshot-val">2m</span>
           <input type="range" id="mc-maxshot" min="0" max="600" step="15" value="120">
@@ -1051,15 +1061,6 @@
         <label>Cut lead-in <span class="dim">(land the cut just before the line)</span> <span class="val" id="mc-leadin-val">off</span>
           <input type="range" id="mc-leadin" min="0" max="500" step="20" value="0">
         </label>
-        <!-- center/wide-cam frequency — only shown when a camera is "No mic (wide / cutaway)" -->
-        <div id="mc-center-wrap2" style="display:none">
-          <label>📹 Cut to the wide / centre camera every <span class="val" id="mc-center-val">off</span>
-            <input type="range" id="mc-center" min="0" max="600" step="15" value="0">
-          </label>
-          <label>Hold the wide camera for <span class="val" id="mc-centerhold-val">2s</span>
-            <input type="range" id="mc-centerhold" min="1" max="10" step="1" value="2">
-          </label>
-        </div>
       </details>
 
       <!-- interval option -->

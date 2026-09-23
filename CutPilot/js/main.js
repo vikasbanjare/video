@@ -10156,11 +10156,17 @@
   /* Low / Medium / High "how often to cut" — one simple control that presets the
      (hidden) Fine-tune sliders, so the default multicam UI is just: map mics +
      pick a pace. Power users can still open Fine-tune to hand-adjust afterward. */
+  /* Every pace keeps a shot on screen at least 1.5 s — faster reads as a glitch
+     (the "haan/hmm" flash). Snappy cuts sooner and punches in more often, but
+     never under that floor. */
+  var MC_MIN_HOLD = 1.5;
   var MC_PACE = {
-    low:    { minseg: 2.4, maxshot: 300, cutaway: 2, leadin: 0,   hint: '🐢 Calm — long, steady shots; only the occasional cut to the other person.' },
-    medium: { minseg: 1.4, maxshot: 120, cutaway: 3, leadin: 0,   hint: '⚖️ Balanced — natural conversation pace, with the odd cutaway during long talking.' },
-    high:   { minseg: 0.7, maxshot: 45,  cutaway: 2, leadin: 120, hint: '⚡ Snappy — cuts quickly and punches to the other person often.' }
+    low:    { minseg: 2.5, maxshot: 300, cutaway: 3, leadin: 0,   hint: '🐢 Calm — long, steady shots; only the occasional cut to the other person.' },
+    medium: { minseg: 2.0, maxshot: 120, cutaway: 3, leadin: 0,   hint: '⚖️ Balanced — natural conversation pace, with the odd cutaway during long talking.' },
+    high:   { minseg: 1.5, maxshot: 45,  cutaway: 2, leadin: 120, hint: '⚡ Snappy — cuts quickly and punches to the other person often.' }
   };
+  /* The minimum shot hold actually used: the slider, never under MC_MIN_HOLD. */
+  function mcMinHold() { return Math.max(MC_MIN_HOLD, parseFloat($('mc-minseg') && $('mc-minseg').value) || 2); }
   function applyMcPace(pace) {
     var p = MC_PACE[pace] || MC_PACE.medium;
     state.mcPace = MC_PACE[pace] ? pace : 'medium';
@@ -10287,9 +10293,9 @@
       mapFn = function () { return (idx++) % numAngles; };
     }
     var regions = CPMulticam.speakerCuesToRegions(cues, numAngles, mapFn);
-    var minSeg = parseFloat($('mc-minseg').value) || 1.2;
+    var minSeg = mcMinHold();
     var plan = CPMulticam.directorPlan(regions, dur, {
-      minSegment: minSeg, leadIn: mcLeadIn(), maxShot: mcMaxShot(), centerHold: Math.max(1.2, minSeg), cutawayHold: mcCutawayHold()
+      minSegment: minSeg, leadIn: mcLeadIn(), maxShot: mcMaxShot(), centerHold: minSeg, cutawayHold: mcCutawayHold()
     });
     return Promise.resolve(plan);
   }
@@ -10328,11 +10334,11 @@
     return ensureAudioTracks().then(function (tracks) {
       var map = state.mcMap || [];
       var dur = state.mcAudioEnd || (state.env && state.env.endSeconds) || 0;
-      var center = -1;
-      var micFor = [];   // angle → track (or null for center)
+      var wides = [];    // every camera without a mic — wide / cutaway shots take them in turn
+      var micFor = [];   // angle → track (or null for a wide camera)
       for (var i = 0; i < numAngles; i++) {
         var mi = (map[i] != null) ? map[i] : (i < tracks.length ? i : -1);
-        if (mi < 0 || !tracks[mi]) { if (center < 0) center = i; micFor.push(null); }
+        if (mi < 0 || !tracks[mi]) { wides.push(i); micFor.push(null); }
         else micFor.push(tracks[mi]);
       }
       var micCount = micFor.filter(function (t) { return t; }).length;
@@ -10374,11 +10380,12 @@
           crosstalkShare: act.crosstalkShare
         };
         capMcProgress(null);
-        var minSeg = parseFloat($('mc-minseg').value) || 1.2;
+        // crosstalk (two people at once) goes to a wide camera when there is
+        // one, and so do longer pauses; the periodic wide is optional
         return CPMulticam.directorPlan(act.regions, dur, {
-          minSegment: minSeg,
-          wideAngle: center,
-          wideOnSilence: center >= 0,
+          minSegment: mcMinHold(),
+          wideAngles: wides,
+          wideOnSilence: wides.length > 0,
           centerEvery: parseInt($('mc-center').value, 10) || 0,
           centerHold: mcCenterHold(),
           leadIn: mcLeadIn(),
