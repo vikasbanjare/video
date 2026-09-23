@@ -21,7 +21,10 @@
  *      start", yet a near-identical same-line retake is still found;
  *   3. with people:'one' ("Just me") a lone speaker's restart that opens with
  *      "right," / "haan toh" is caught, and a diarizer that split one voice
- *      into two labels cannot hide a retake;
+ *      into two labels cannot hide a retake; with the speakers unknown (Auto,
+ *      the default) such a restart is caught too when the earlier line is
+ *      unfinished and the later one says all of it again and goes on — while
+ *      an agreeing reply to an unpunctuated host line still cuts nothing;
  *   4. solo retakes are found exactly as before with people unset.
  *
  * Exit 0 = pass, 1 = fail.
@@ -110,14 +113,43 @@ console.log('a lone speaker ("Just me", people:\'one\')');
   const rightRestart = ['The algorithm rewards watch time more than', 'right, the algorithm rewards watch time more than likes.', 'So focus on the first three seconds.'];
   const d1 = run(rightRestart, 'balanced', 'one');
   check('balanced · "…more than / right, the algorithm rewards…": the unfinished take is cut', d1.length === 1 && /more than$/.test(d1[0]), JSON.stringify(d1));
+  // Speakers unknown (Auto on a Groq/Whisper transcript — the default): the
+  // earlier line is unfinished and the later one says all of it again and
+  // goes on, so this is one person restarting. (This check used to pin
+  // "left for the owner": the review showed that lost the most common solo
+  // Hinglish restart, "haan toh …", on the default setting.)
   const d1u = run(rightRestart, 'balanced');
-  check('balanced · …with the speakers unknown it is left for the owner (the safe side)', d1u.length === 0, JSON.stringify(d1u));
+  check('balanced · …with the speakers unknown, the unfinished take is cut too (it is said again in full and goes on)', d1u.length === 1 && /more than$/.test(d1u[0]), JSON.stringify(d1u));
   const haan = ['Aaj main aapko batane wala hoon ki', 'haan toh aaj main aapko batane wala hoon ki paise kaise bachayein.', 'Pehla step hai budget.'];
   const d2 = run(haan, 'balanced', 'one');
   check('balanced · "haan toh aaj main…" restart by one person is caught', d2.length === 1 && /batane wala hoon ki$/.test(d2[0]), JSON.stringify(d2));
   const split = [['Consistency is the only thing that', 0], ['consistency is the only thing that actually works.', 1], ['Post every day.', 0]];
   const d3 = run(split, 'balanced', 'one');
   check('balanced · a diarizer that split one voice into two labels cannot hide the retake', d3.length === 1 && /thing that$/.test(d3[0]), JSON.stringify(d3));
+}
+
+console.log('a lone speaker restarting with "haan toh / Haan, / yes, …", speakers unknown (Auto, the default)');
+{
+  const SOLO_AGREE = {
+    'Hinglish "haan toh …"': ['Aaj hum baat karenge paise ke baare mein', 'haan toh aaj hum baat karenge paise ke baare mein aur bachat ke baare mein.', 'Sabse pehle budget banana seekhte hain.'],
+    'Hinglish "Haan, …"': ['Sabse pehle aapko budget banana hai', 'Haan, sabse pehle aapko budget banana hai aur usko follow karna hai.', 'Chalo aage badhte hain.'],
+    'English "yes, …"': ['The first thing you need is a budget', 'yes, the first thing you need is a budget and a plan for it.', 'Let us start with the budget.']
+  };
+  for (const k of Object.keys(SOLO_AGREE)) {
+    for (const p of Object.keys(PRESETS)) {
+      const d = run(SOLO_AGREE[k], p);
+      check(p + ' · ' + k + ': the unfinished first take is cut', d.length === 1 && d[0] === SOLO_AGREE[k][0], JSON.stringify(d));
+    }
+  }
+  // …while the other person agreeing in the host's words, host line NOT
+  // punctuated, is still never cut: the reply does not carry on from the
+  // host's last word, it ends the thought its own way
+  const unpunct = ['The algorithm rewards watch time more than likes', 'Right, the algorithm rewards watch time more than anything else.',
+                   'Pehle teen second mein hook dena padta hai', 'Bilkul, pehle teen second mein hook dena hi padta hai sabko.'];
+  for (const p of Object.keys(PRESETS)) {
+    const d = run(unpunct, p);
+    check(p + ' · podcast, host lines with no final punctuation: an agreeing reply in the same words cuts nothing', d.length === 0, JSON.stringify(d));
+  }
 }
 
 console.log('solo retakes, people unset (unchanged)');

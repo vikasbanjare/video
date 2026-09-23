@@ -196,6 +196,20 @@
     while (i < t.length - 1 && i < 2 && (FILLERS[t[i]] || INTERJ[t[i]])) i++;
     return !!AGREE[t[i]];
   }
+  /* A line with its lead-in dropped ("haan toh", "yes,", "oh right", "um"). */
+  function bodyOf(t) {
+    var i = 0;
+    while (i < t.length - 1 && i < 3 && (LEAD[t[i]] || AGREE[t[i]] || INTERJ[t[i]] || FILLERS[t[i]])) i++;
+    return t.slice(i);
+  }
+  /* Does line b say (nearly) all of line a again, from a's start, and carry
+     on past a's last word? That is a restart of an unfinished line ("aaj hum
+     baat karenge" → "haan toh aaj hum baat karenge … aur bachat …"), not a
+     reply ("…more than likes" → "right, …more than anything else"). */
+  function carriesOn(a, b) {
+    var A = bodyOf(a), B = bodyOf(b);
+    return A.length > 0 && isNearPrefix(A, B) && B[A.length - 1] === A[A.length - 1];
+  }
 
   /* A few words said twice can be a whole REMARK repeated for emphasis —
      agreeing, praising, exclaiming: "theek hai, theek hai, …", "bahut accha,
@@ -371,8 +385,13 @@
       if (ask[b] && !ask[a] && ct[a].length >= ct[b].length) return false;
       // "Right, the algorithm rewards…" after "The algorithm rewards…": the
       // other person agreeing and picking the thought up — unless the labels
-      // say it is the same voice, or the owner said it is only them
-      if (people !== 'one' && (spk[a] == null || spk[b] == null) && agree[b] && !agree[a]) return false;
+      // say it is the same voice, or the owner said it is only them. With the
+      // speakers unknown (Auto on a plain transcript, the default) a lone
+      // speaker's "haan toh aaj hum…" after an UNFINISHED "aaj hum…" is still
+      // a restart when it says all of the earlier line again and goes on from
+      // its last word; an agreeing reply ends the thought its own way.
+      if (people !== 'one' && (spk[a] == null || spk[b] == null) && agree[b] && !agree[a] &&
+          (isStmt[a] || !carriesOn(ct[a], ct[b]))) return false;
       return true;
     }
     /* A conversation whose speakers are not labelled: only a near-identical
