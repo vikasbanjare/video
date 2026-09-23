@@ -9373,21 +9373,38 @@
       list.appendChild(item);
     });
   }
+  /* Which timeline a take list belongs to: the sequence ID, its name and a
+     fingerprint of every clip's position (CP_getCutSources), read when the list
+     is made and sent with the cut. The host then refuses to cut another
+     sequence — or this one after clips were added, moved or removed — instead
+     of cutting the list's times into the wrong speech. Resolves null when the
+     host cannot say (an older host script); the cut then goes ahead as before. */
+  function readCutSources() {
+    return CPBridge.callHost('CP_getCutSources', {}).then(function (src) { return src || null; }, function () { return null; });
+  }
+  function cutGuardOf(src) {
+    return (src && src.sequenceId) ? { sequenceId: src.sequenceId, sequenceName: src.sequenceName, fingerprint: src.fingerprint } : null;
+  }
+  /* Show a take list for review, remembering the timeline it was made for. */
+  function showTakeList(dels, guard) {
+    state.takeDeletes = dels;
+    state.takeGuard = guard || null;
+    renderTakes(dels);
+  }
   if ($('tk-sim')) $('tk-sim').addEventListener('input', function () { $('tk-sim-val').textContent = this.value + '%'; });
   if ($('btn-takes-find')) $('btn-takes-find').addEventListener('click', function () {
     var words = takesGetWords();
     if (!words || words.length < 6) return toast(takesNoWordsMsg('find retakes'), true);
     var prog = $('takes-progress'); prog.classList.remove('hidden'); prog.textContent = 'Scanning the transcript for retakes…';
-    setTimeout(function () {
+    readCutSources().then(function (src) {
       var res = CPTakes.findRepeatedTakes(words, {
         minRun: parseInt($('tk-minrun').value, 10) || 3,
         sim: (parseInt($('tk-sim').value, 10) || 60) / 100,
         keep: $('tk-keep').value
       });
-      state.takeDeletes = CPTakes.tidyDeletes(res.deletes, 0.1);
       prog.classList.add('hidden');
-      renderTakes(state.takeDeletes);
-    }, 30);
+      showTakeList(CPTakes.tidyDeletes(res.deletes, 0.1), cutGuardOf(src));
+    });
   });
   function applyTakes(safeCopy) {
     var dels = (state.takeDeletes || []).filter(function (d) { return !d.skip; });   // only the ticked rows
@@ -9405,14 +9422,23 @@
       });
       return;
     }
-    CPBridge.callHost('CP_razorRipple', { ranges: ranges, closeGaps: true, backup: backup, dropFrame: !!settings.dropFrame })
+    var args = { ranges: ranges, closeGaps: true, backup: backup, dropFrame: !!settings.dropFrame };
+    var g = state.takeGuard;   // the timeline this list was made for — the host refuses any other
+    if (g) { args.expectSequenceId = g.sequenceId; args.expectSequenceName = g.sequenceName; args.expectFingerprint = g.fingerprint; }
+    CPBridge.callHost('CP_razorRipple', args)
       .then(function (r) {
-        rippleTranscriptByRanges(ranges);   // keep the transcript in sync — no re-transcribe
-        state.takeDeletes = [];             // these are gone now
+        r = r || {};
+        // re-sync with what the host REALLY removed: it snaps every cut to the
+        // frame grid and merges neighbours, so the asked-for times drift by up
+        // to half a frame per cut (an older host doesn't say — then the asked)
+        var removed = Array.isArray(r.removed) ? r.removed : ranges;
+        rippleTranscriptByRanges(removed);  // keep the transcript in sync — no re-transcribe
+        state.takeDeletes = []; state.takeGuard = null;   // these are gone now
         if ($('takes-results')) $('takes-results').classList.add('hidden');
-        toast('🎬 Removed ' + (r.removedClips != null ? r.removedClips : ranges.length) + ' take piece' +
-              ((r.removedClips || ranges.length) === 1 ? '' : 's') + '. Transcript auto-synced — run any other Auto-Edit step or add captions, no re-transcribe needed. ⌘Z / Ctrl+Z undoes it.');
-      }).catch(function (e) { toast('Take cut failed: ' + e.message, true); });
+        var n = (r.cuts != null) ? r.cuts : removed.length;
+        var secs = (r.removedSeconds != null) ? r.removedSeconds : removed.reduce(function (a, x) { return a + (x.end - x.start); }, 0);
+        toast('🎬 Removed ' + n + ' take' + (n === 1 ? '' : 's') + ' (' + secs.toFixed(1) + 's). Transcript auto-synced — run any other Auto-Edit step or add captions, no re-transcribe needed. ⌘Z / Ctrl+Z undoes it.');
+      }).catch(function (e) { toast('Take cut failed: ' + e.message, true); });   // the list stays: nothing was cut
   }
   if ($('btn-takes-apply')) $('btn-takes-apply').addEventListener('click', function () { applyTakes(true); });
   if ($('btn-takes-cut')) $('btn-takes-cut').addEventListener('click', function () { applyTakes(false); });
@@ -9488,10 +9514,13 @@
     if (!words || words.length < 6) return toast(takesNoWordsMsg('run Smart Cleanup'), true);
     var aggressive = !!($('sc-aggressive') && $('sc-aggressive').checked);
     var prog = $('takes-progress'); prog.classList.remove('hidden');
-    aiCleanupCuts(words, { aggressive: aggressive, scripted: true }, prog, '✨ Reading your transcript with AI').then(function (r) {
-      state.takeDeletes = r.cuts;          // reuse the same review → apply pipeline
+    var guard = null;
+    readCutSources().then(function (src) {
+      guard = cutGuardOf(src);   // the list is for THIS timeline
+      return aiCleanupCuts(words, { aggressive: aggressive, scripted: true }, prog, '✨ Reading your transcript with AI');
+    }).then(function (r) {
       prog.classList.add('hidden');
-      renderTakes(r.cuts);
+      showTakeList(r.cuts, guard);         // reuse the same review → apply pipeline
       var big = r.cuts.filter(function (c) { return c.needsReview; }).length;
       if (r.cuts.length) toast('✨ Smart Cleanup found ' + r.cuts.length + ' cut' + (r.cuts.length === 1 ? '' : 's') + ' — review them, then apply.' +
         (big ? ' ' + big + ' unusually long one' + (big === 1 ? ' is' : 's are') + ' left unticked — play it (▶) before you tick it.' : ''));
@@ -9599,7 +9628,11 @@
     if (!ff) return toast('This needs ffmpeg (Settings → ffmpeg).', true);
     if (!(settings.verbatimKey || '').trim()) return toast('Add a Deepgram or AssemblyAI key in Settings → Verbatim transcription to use this.', true);
     var prog = $('takes-progress'); prog.classList.remove('hidden'); prog.textContent = 'Finding your clip…';
-    CPBridge.callHost('CP_getSelectedClip').then(
+    var guard = null;
+    readCutSources().then(function (src) {
+      guard = cutGuardOf(src);   // the timeline whose audio is read — the list is for it only
+      return CPBridge.callHost('CP_getSelectedClip');
+    }).then(
       function (res) { return (res && res.clip && res.clip.mediaPath) ? res : CPBridge.callHost('CP_getTranscribeSource'); },
       function () { return CPBridge.callHost('CP_getTranscribeSource'); }
     ).then(function (res) {
@@ -9622,9 +9655,8 @@
         }).then(function (snapped) { return CPTakes.tidyDeletes(snapped, 0.1); }, function () { return deletes; });
       });
     }).then(function (cuts) {
-      state.takeDeletes = cuts;
       prog.classList.add('hidden');
-      renderTakes(cuts);
+      showTakeList(cuts, guard);
       toast(cuts.length ? ('🎯 Found ' + cuts.length + ' retake/off-script cut' + (cuts.length === 1 ? '' : 's') + ' — review (▶ to preview), then apply.') : 'No clear retakes found in the verbatim transcript.');
     }).catch(function (e) { prog.classList.add('hidden'); toast('Verbatim retakes failed: ' + e.message, true); });
   }
@@ -9648,7 +9680,7 @@
       takesGetWords: takesGetWords,
       snapRangesToWords: snapRangesToWords,
       takeDeletes: function () { return state.takeDeletes; },
-      renderTakes: function (dels) { state.takeDeletes = dels; renderTakes(dels); },
+      renderTakes: function (dels, guard) { showTakeList(dels, guard); },
       aiCleanupCuts: aiCleanupCuts,
       verbatimDeepgram: verbatimDeepgram,
       verbatimAssembly: verbatimAssembly,
