@@ -12086,7 +12086,8 @@
       // what the host did, cut by cut, for 📋 Copy diagnostics
       diag('multicam', 'apply — cuts needed ' + r.cutsNeeded + ', landed ' + r.razored + ', missed ' + r.missedCuts +
         (r.razorErrors ? ' (' + r.razorErrors + ' razor errors)' : '') + ', switched ' + r.toggled +
-        (r.toggleErrors ? ' (' + r.toggleErrors + ' failed)' : '') + ', verified ' + r.verifiedPct + '%, no footage ' + r.noFootageSec +
+        (r.toggleErrors ? ' (' + r.toggleErrors + ' failed)' : '') +
+        (r.audioRestored ? ', camera audio switched back on ' + r.audioRestored : '') + ', verified ' + r.verifiedPct + '%, no footage ' + r.noFootageSec +
         ' s, drop-frame ' + (r.dropFrame ? 'yes' : 'no') + ', cameras ' + r.tracksUsed + ', pieces ' + (r.piecesBefore || []).join('/') +
         ' → ' + (r.piecesAfter || []).join('/'));
       $('btn-mc-redo').classList.remove('hidden');

@@ -8,7 +8,10 @@
  * sequence landed up to 3.6 s early by the hour.
  *
  * The real host.jsx runs on a mini-Premiere whose razor can throw, do nothing,
- * or fail now and then, and whose razor reads ';' timecode as SMPTE drop-frame.
+ * or fail now and then, and whose razor reads ';' timecode as SMPTE drop-frame
+ * (the sequence reports Premiere's own 29.97 / 59.94 drop-frame codes, 102 /
+ * 106). With linked camera audio, switching a camera's video off switches its
+ * audio off too — Apply must hand the owner's sound back untouched.
  * The panel checks go through the real panel as well.
  * MC_PANEL_DIR=<dir> runs it against another copy of the panel.
  */
@@ -89,6 +92,8 @@ for (const mode of ['throws', 'noop']) {
   for (const c of [{ fps: 30000 / 1001, df: true, tick: true, name: '29.97 DF sequence, Drop-frame setting on' },
                    { fps: 30000 / 1001, df: true, tick: false, name: '29.97 DF sequence, setting off' },
                    { fps: 60000 / 1001, df: true, tick: true, name: '59.94 DF sequence, setting on' },
+                   { fps: 60000 / 1001, df: true, tick: false, name: '59.94 DF sequence, setting off (Premiere\'s own 59.94 DF code decides)' },
+                   { fps: 60000 / 1001, df: false, tick: true, name: '59.94 NON-drop sequence, setting on' },
                    { fps: 30000 / 1001, df: false, tick: true, name: '29.97 NON-drop sequence, setting on' },
                    { fps: 25, df: false, tick: true, name: '25 fps sequence, setting on' }]) {
     const { w, host } = world({ fps: c.fps, dropFrameDisplay: c.df, end: 3660, video: FH.cameras(2, 3660) });
@@ -99,6 +104,30 @@ for (const mode of ['throws', 'noop']) {
     const worst = Math.max.apply(null, err);
     report(r.ok && worst <= 1 / c.fps + 1e-6, c.name + ': worst cut off by ' + worst.toFixed(3) + ' s (need ≤ 1 frame) — timecodes ' + w.model.razorTimecodes.slice(0, 3).join(' '));
   }
+}
+
+// ---- linked camera audio: switching a camera off must not silence the episode ----------
+// Premiere may switch a camera's LINKED audio off together with its video (and
+// cut it with the razor). The owner's sound must come through Apply untouched:
+// every audio clip that was on stays on, a clip they switched off stays off.
+{
+  const { w, host } = world({
+    linkedAudio: true,
+    audio: [
+      { name: 'A1', clips: [{ start: 0, end: 60, inPoint: 0, outPoint: 60, mediaPath: '/media/cam1.mov', name: 'cam1 audio' }] },
+      { name: 'A2', clips: [{ start: 0, end: 60, inPoint: 0, outPoint: 60, mediaPath: '/media/cam2.mov', name: 'cam2 audio' }] },
+      { name: 'A3', clips: [{ start: 0, end: 30, inPoint: 0, outPoint: 30, mediaPath: '/media/lav.wav', name: 'lav' },
+                            { start: 30, end: 40, inPoint: 30, outPoint: 40, mediaPath: '/media/lav.wav', name: 'lav', disabled: true },
+                            { start: 40, end: 60, inPoint: 40, outPoint: 60, mediaPath: '/media/lav.wav', name: 'lav' }] }
+    ]
+  });
+  const r = FH.call(host, 'CP_applyMulticamPlan', { plan: PLAN4, numAngles: 2, dropFrame: false });
+  let silent = 0;
+  w.model.audio.slice(0, 2).forEach(t => t.clips.forEach(c => { if (c.disabled) silent += c.end - c.start; }));
+  const lav = w.model.audio[2].clips.map(c => (c.disabled ? 'off' : 'on') + ' ' + c.start + '–' + c.end).join(', ');
+  report(r.ok && silent === 0 && lav === 'on 0–30, off 30–40, on 40–60' && r.verifiedPct === 100 && wrongSeconds(w, PLAN4, 25) === 0,
+    'linked camera audio: after Apply the cameras\' own sound is off for ' + silent.toFixed(1) + ' s (need 0), the lav reads "' + lav +
+    '" (the owner\'s own switched-off clip stays off), verified ' + r.verifiedPct + '%');
 }
 
 (async () => {

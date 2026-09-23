@@ -1148,6 +1148,51 @@ function CP_mcSpanned(rows, times, half) {
   return out;
 }
 
+/* Every audio track's switched-off clips as [start, end] rows, and how many
+   there are — read before Apply touches anything. Premiere may switch a
+   camera's LINKED audio off together with its video; this is what lets Apply
+   put the owner's sound back without touching a clip they switched off. */
+function CP_mcAudioOff(seq) {
+  var out = [];
+  for (var t = 0; t < seq.audioTracks.numTracks; t++) {
+    var cl = seq.audioTracks[t].clips, k = cl.numItems, rows = [], n = 0;
+    for (var i = 0; i < k; i++) {
+      var c = cl[i], dis = false;
+      if (!c) continue;
+      try { dis = !!c.disabled; } catch (eD) {}
+      if (!dis) continue;
+      n++;
+      try { rows.push([c.start.seconds, c.end.seconds]); } catch (eT) {}
+    }
+    out.push({ n: n, rows: rows });
+  }
+  return out;
+}
+
+/* Switch back on every audio clip that is off now but was not switched off
+   before Apply (its middle lies in none of the owner's own switched-off
+   clips). Tracks with no newly switched-off clip are not walked again.
+   Returns how many clips were switched back on. */
+function CP_mcRestoreAudio(seq, before) {
+  var fixed = 0;
+  for (var t = 0; t < seq.audioTracks.numTracks && t < before.length; t++) {
+    var cl = seq.audioTracks[t].clips, k = cl.numItems, now = 0, i, c, dis, off = [];
+    for (i = 0; i < k; i++) {
+      c = cl[i]; dis = false;
+      try { dis = !!(c && c.disabled); } catch (eD) {}
+      if (dis) { now++; off.push(c); }
+    }
+    if (now <= before[t].n) continue;
+    for (i = 0; i < off.length; i++) {
+      var mid = 0, mine = false;
+      try { mid = (off[i].start.seconds + off[i].end.seconds) / 2; } catch (eM) { continue; }
+      for (var r = 0; r < before[t].rows.length && !mine; r++) mine = mid > before[t].rows[r][0] && mid < before[t].rows[r][1];
+      if (!mine) { try { off[i].disabled = false; fixed++; } catch (eE) {} }
+    }
+  }
+  return fixed;
+}
+
 /* The row (clip) under time tm, or null. rows sorted by start. */
 function CP_mcRowAt(rows, tm) {
   var lo = 0, hi = rows.length - 1;
@@ -1172,9 +1217,13 @@ function CP_mcRowAt(rows, tm) {
  * "Multicam applied". Now: a locked camera track stops it before anything
  * changes; each cut is checked for an edge at its boundary (missedCuts, with
  * times); if no cut lands at all nothing is switched and it fails; afterwards
- * every shot is checked on the timeline (verifiedPct).
- * Drop-frame: the sequence's own timecode display decides (29.97 / 59.94 DF);
- * the Settings tick is only the fallback for builds that don't report it.
+ * every shot is checked on the timeline (verifiedPct). Premiere may switch a
+ * camera's linked audio off together with its video: any audio clip Apply
+ * switched off that way is switched back on (audioRestored); clips the owner
+ * had switched off stay off.
+ * Drop-frame: the sequence's own timecode display decides (29.97 / 59.94 DF,
+ * CP_seqDropFrame); the Settings tick is only the fallback for builds that
+ * don't report it.
  * argsJson: { plan:[{start,end,angle}], numAngles, dropFrame }
  */
 function CP_applyMulticamPlan(argsJson) {
@@ -1201,13 +1250,7 @@ function CP_applyMulticamPlan(argsJson) {
       return CP_fail('The plan uses camera V' + (topAngle + 1) + ' but was made for ' + n + ' camera' + (n === 1 ? '' : 's') +
         '. Nothing was changed — tap Auto multicam to build it again.');
     }
-    var df = !!args.dropFrame;
-    try {
-      var sset = seq.getSettings ? seq.getSettings() : null;
-      var vdf = sset ? sset.videoDisplayFormat : null;
-      if (vdf === 102 || vdf === 106) df = true;
-      else if (typeof vdf === 'number' && vdf >= 100 && vdf <= 120) df = false;
-    } catch (eDf) {}
+    var df = CP_seqDropFrame(seq, !!args.dropFrame);
 
     // a locked camera track can be neither cut nor switched: change nothing
     var locked = [], t, i;
@@ -1242,6 +1285,9 @@ function CP_applyMulticamPlan(argsJson) {
       need.push([]);
       for (b = 0; b < bounds.length; b++) if (sp0[b]) { need[t].push(b); needed++; }
     }
+
+    // what the owner has switched off on the audio tracks, before anything changes
+    var audioOff = CP_mcAudioOff(seq);
 
     // razor each camera track where needed (QE must be enabled). razor cuts
     // whichever clip spans that timecode, so it works across ALL clips on the
@@ -1297,6 +1343,10 @@ function CP_applyMulticamPlan(argsJson) {
       }
     }
 
+    // switching a camera's video off may switch its LINKED audio off too —
+    // put the owner's sound back (their own switched-off clips stay off)
+    var audioRestored = CP_mcRestoreAudio(seq, audioOff);
+
     // check every shot on the timeline: near its start, middle and end, only
     // the planned camera may be switched on. A planned camera with NO clip
     // there (it started late, or stops early) is not a failed switch — it is
@@ -1328,7 +1378,7 @@ function CP_applyMulticamPlan(argsJson) {
       missedAt: missedAt, razorErrors: razorErrors, toggleErrors: toggleErrors,
       verifiedPct: total > 0 ? Math.floor((good / total) * 1000) / 10 : 100,
       noFootageSec: Math.round(noFootage * 10) / 10, noFootageAt: noFootageAt,
-      dropFrame: df, tracksUsed: n,
+      audioRestored: audioRestored, dropFrame: df, tracksUsed: n,
       seqEnd: seqEnd, planStart: planStart, planEnd: planEnd,
       coveredPct: seqEnd > 0 ? Math.round((planEnd / seqEnd) * 100) : 100,
       outOfPlanClips: outOfPlan, piecesBefore: piecesBefore, piecesAfter: piecesAfter
