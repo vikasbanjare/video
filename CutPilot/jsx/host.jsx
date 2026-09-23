@@ -1260,13 +1260,62 @@ function CP_placeCaptionImages(argsJson) {
 }
 
 /*
- * Place ONE transparent caption-overlay clip (rendered by ffmpeg+libass) on a
- * fresh top video track at startSec. This is the "Reliable captions" path: the
- * whole word-by-word animation is baked into one alpha .mov, so there is NO
- * per-cue stacking, NO clip.end trimming, and what renders is exactly what plays.
- * argsJson: { path, startSec, replaceTrack? }
+ * Place ONE transparent caption-overlay clip (drawn by Pulse's canvas renderer,
+ * or by ffmpeg+libass as a fallback) on a fresh top video track at startSec.
+ * The whole word-by-word animation is baked into one full-frame alpha .mov, so
+ * there is NO per-cue stacking, NO clip.end trimming, and what renders is
+ * exactly what plays.
+ * argsJson: { path, startSec, replaceTrack?, durSec?, cleanup?: [paths] }
+ * cleanup lists this sequence's OLDER overlay files. After placing, the ones no
+ * clip in ANY sequence still uses have their Pulse bin removed and come back in
+ * `unused`, so the panel can delete those files. Anything that cannot be
+ * verified counts as used — deleting a file a timeline still shows is exactly
+ * the "Media Offline" this is meant to prevent.
  */
 function CP_placeOverlay(argsJson) {
+  function normPath(p) { return String(p || '').replace(/\\/g, '/').toLowerCase(); }
+  function unusedOverlays(paths) {
+    var want = {}, i, k, b;
+    for (i = 0; i < paths.length; i++) want[normPath(paths[i])] = paths[i];
+    // 1. the project items those files were imported as (only in Pulse's own bins)
+    var found = [];
+    var root = app.project.rootItem;
+    for (b = 0; b < root.children.numItems; b++) {
+      var bn = root.children[b];
+      if (!bn || bn.type !== 2 || String(bn.name).indexOf('Pulse Captions') !== 0) continue;
+      for (k = 0; k < bn.children.numItems; k++) {
+        var pi = bn.children[k], mp = '';
+        try { mp = pi.getMediaPath(); } catch (eMp) { mp = ''; }
+        if (want[normPath(mp)]) found.push({ path: want[normPath(mp)], item: pi, bin: bn });
+      }
+    }
+    if (!found.length) return [];
+    // 2. every project item any sequence's video tracks still show
+    var inUse = {};
+    var seqs = app.project.sequences;
+    for (var s = 0; s < seqs.numSequences; s++) {
+      var vt = seqs[s].videoTracks;
+      for (var t = 0; t < vt.numTracks; t++) {
+        var clips = vt[t].clips;
+        for (var c = 0; c < clips.numItems; c++) {
+          var cpi = clips[c].projectItem;
+          if (cpi) inUse[String(cpi.nodeId)] = true;
+        }
+      }
+    }
+    // 3. a FILE is unused only when every item made from it is unused
+    var usedPath = {};
+    for (i = 0; i < found.length; i++) if (inUse[String(found[i].item.nodeId)]) usedPath[found[i].path] = true;
+    var out = [], seen = {};
+    for (i = 0; i < found.length; i++) {
+      var f = found[i];
+      if (usedPath[f.path]) continue;
+      if (f.bin.children.numItems === 1) { try { f.bin.deleteBin(); } catch (eDel) {} }
+      if (!seen[f.path]) { seen[f.path] = true; out.push(f.path); }
+    }
+    return out;
+  }
+
   try {
     var args = JSON.parse(argsJson);
     var seq = CP_activeSequence();
@@ -1290,7 +1339,9 @@ function CP_placeOverlay(argsJson) {
 
     var trackIndex;
     if (args.replaceTrack != null && args.replaceTrack >= 1 && args.replaceTrack <= seq.videoTracks.numTracks) {
-      // reuse the existing overlay track, clearing Pulse's prior overlay clip off it
+      // reuse the existing caption track, clearing Pulse's prior captions off it:
+      // an overlay clip, or the cap_*.png images of a job that is becoming an
+      // overlay (a long video restyled with "Apply to all")
       trackIndex = args.replaceTrack - 1;
       try {
         app.enableQE();
@@ -1299,7 +1350,7 @@ function CP_placeOverlay(argsJson) {
           var itR = qtR.getItemAt(cr);
           if (!itR || itR.type === 'Empty') continue;
           var nmR = ''; try { nmR = String(itR.name).toLowerCase(); } catch (eNm) {}
-          if (nmR.indexOf('pulse') >= 0 || nmR.indexOf('caption') >= 0) { try { itR.remove(0, 0); } catch (eRem) {} }
+          if (nmR.indexOf('pulse') >= 0 || nmR.indexOf('caption') >= 0 || nmR.indexOf('cap_') === 0) { try { itR.remove(0, 0); } catch (eRem) {} }
         }
       } catch (eClr) {}
     } else {
@@ -1329,7 +1380,11 @@ function CP_placeOverlay(argsJson) {
         if (oc) { try { oc.end = CP_timeFromSeconds(startSec + args.durSec); } catch (eEnd) {} }
       } catch (eDur) {}
     }
-    return CP_ok({ placed: 1, track: trackIndex + 1, bin: bin.name });
+    var unused = [];
+    if (args.cleanup && args.cleanup.length) {
+      try { unused = unusedOverlays(args.cleanup); } catch (eCl) { unused = []; }
+    }
+    return CP_ok({ placed: 1, track: trackIndex + 1, bin: bin.name, unused: unused });
   } catch (e) { return CP_fail(e.message); }
 }
 

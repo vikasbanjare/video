@@ -758,6 +758,274 @@
     }).then(run);
   }
 
+  /* ================ ONE-CLIP CAPTION OVERLAY, drawn by THIS engine ================
+     A long video (most podcasts) cannot become thousands of caption clips, so it
+     becomes ONE transparent .mov. That .mov used to be drawn by libass — a second
+     rasterizer that cannot draw pills, gradients, neon, 3D edges, highlight
+     shapes or line limits, and placed Top/middle captions in the wrong spot —
+     while the panel promised "same look". Now the overlay is made of the very
+     frames the per-image path builds, each drawn by drawFrame: every UNIQUE
+     caption state becomes one PNG, and ffmpeg's concat demuxer holds each one
+     for exactly as long as the per-image clip would sit on the timeline. The
+     canvas stays full-frame, so CP_placeOverlay places it exactly as before. */
+
+  /* Everything drawFrame reads from a frame, minus its timing: two frames with
+     the same key draw the same pixels, so they share one PNG. */
+  function overlayStateKey(frame) {
+    var keys = [], k;
+    for (k in frame) if (Object.prototype.hasOwnProperty.call(frame, k) && k !== 'start' && k !== 'end') keys.push(k);
+    keys.sort();
+    var o = {};
+    for (var i = 0; i < keys.length; i++) o[keys[i]] = frame[keys[i]];
+    return JSON.stringify(o);
+  }
+
+  /*
+   * Turn caption frames into an overlay plan: the unique states to draw and a
+   * frame-exact timeline of which state (or -1 = nothing) shows when.
+   * Timing follows the host's placement rule for per-image captions
+   * (CP_placeCaptionImages): a caption ends at its own end or when the next
+   * one starts, whichever is first, and a zero-length one gets 0.04 s unless
+   * the next caption starts first. Boundaries snap to the sequence's frame
+   * grid, so the overlay never drifts no matter how long the video is.
+   * Pure — unit-tested in Node.
+   */
+  function planOverlay(frames, fps, opts) {
+    opts = opts || {};
+    fps = (+fps > 0) ? +fps : 30;
+    var items = [];
+    for (var i = 0; i < (frames || []).length; i++) {
+      var f = frames[i];
+      if (!f || !isFinite(+f.start) || !isFinite(+f.end)) continue;
+      items.push({ f: f, s: Math.max(0, +f.start), e: +f.end, i: i });
+    }
+    items.sort(function (a, b) { return (a.s - b.s) || (a.i - b.i); });
+    var states = [], byKey = {}, segments = [], cursor = 0;
+    function push(state, n) {
+      if (n <= 0) return;
+      var last = segments[segments.length - 1];
+      if (last && last.state === state) last.frames += n;
+      else segments.push({ state: state, frames: n });
+    }
+    for (var k = 0; k < items.length; k++) {
+      var it = items[k], next = items[k + 1];
+      var end = it.e;
+      if (next && next.s < end) end = next.s;
+      if (end <= it.s) end = it.s + 0.04;
+      if (next && next.s < end) end = next.s;
+      var a = Math.round(it.s * fps), b = Math.round(end * fps);
+      if (a < cursor) a = cursor;
+      if (b <= a) continue;                 // under one frame: Premiere would not show it either
+      var key = overlayStateKey(it.f);
+      var idx = byKey[key];
+      if (idx == null) { idx = byKey[key] = states.length; states.push(it.f); }
+      push(-1, a - cursor);
+      push(idx, b - a);
+      cursor = b;
+    }
+    // a short transparent tail, like the libass overlay had, so the clip never
+    // ends on a caption
+    var tail = Math.max(1, Math.round((opts.tailSec != null ? opts.tailSec : 0.2) * fps));
+    push(-1, tail);
+    return { fps: fps, states: states, segments: segments, totalFrames: cursor + tail };
+  }
+
+  /* ffmpeg wants a rational for NTSC rates: 29.97 written as a decimal drifts
+     against the sequence over an hour. */
+  function fpsRational(fps) {
+    fps = +fps || 30;
+    var ntsc = [24000, 30000, 48000, 60000, 120000];
+    for (var i = 0; i < ntsc.length; i++) if (Math.abs(fps - ntsc[i] / 1001) < 0.002) return ntsc[i] + '/1001';
+    if (Math.abs(fps - Math.round(fps)) < 0.002) return String(Math.round(fps));
+    return String(Math.round(fps * 1000) / 1000);
+  }
+
+  /*
+   * The concat-demuxer list for a plan. fileFor(stateIndex) names each PNG
+   * relative to the list (-1 = the blank frame). Durations are written from
+   * cumulative microseconds, so rounding never accumulates over an hour.
+   * withRate adds `option framerate`, which stops the image demuxer's default
+   * 1/25 time base from quantizing every start to 40 ms (measured: 10% of
+   * frames landed one frame late at 30 fps without it). ffmpeg older than 5.0
+   * does not know that directive — the caller retries without it.
+   * The last entry is listed twice because the demuxer ignores the final
+   * entry's duration otherwise.
+   */
+  function overlayConcatList(plan, fileFor, withRate) {
+    var rate = fpsRational(plan.fps);
+    var L = ['ffconcat version 1.0'];
+    var cum = 0, segs = plan.segments;
+    function entry(seg) {
+      L.push("file '" + fileFor(seg.state) + "'");
+      if (withRate) L.push('option framerate ' + rate);
+    }
+    for (var i = 0; i < segs.length; i++) {
+      var a = Math.round(cum * 1e6 / plan.fps), b = Math.round((cum + segs[i].frames) * 1e6 / plan.fps);
+      entry(segs[i]);
+      L.push('duration ' + ((b - a) / 1e6).toFixed(6));
+      cum += segs[i].frames;
+    }
+    if (segs.length) entry(segs[segs.length - 1]);
+    return L.join('\n') + '\n';
+  }
+
+  /* ffmpeg argv: concat list → ONE transparent qtrle .mov at the sequence's
+     frame rate (qtrle is what the libass overlay used; it imports with alpha in
+     Premiere on Mac and Windows). format=argb runs once per still, before the
+     fps filter repeats it. A one-second keyframe interval made a measured
+     minute of 1080x1920 captions 18 MB instead of 29 MB with qtrle's default
+     of 12, while scrubbing still decodes at most a second of deltas. Progress
+     goes to stdout as key=value lines. */
+  function ffmpegCanvasOverlayArgs(listPath, outPath, fps) {
+    return ['-y', '-hide_banner', '-nostdin',
+      '-f', 'concat', '-safe', '0', '-i', listPath,
+      '-vf', 'format=argb,fps=' + fpsRational(fps),
+      '-c:v', 'qtrle', '-g', String(Math.max(1, Math.round(+fps || 30))), '-an',
+      '-progress', 'pipe:1', '-nostats', outPath];
+  }
+
+  /* Wait for the style's font, but never block on it (same rule as renderFrames). */
+  function waitForFont(style) {
+    return new Promise(function (resolve) {
+      var settled = false;
+      function go() { if (!settled) { settled = true; resolve(); } }
+      try {
+        if (typeof document !== 'undefined' && document.fonts && document.fonts.load) {
+          document.fonts.load('700 ' + Math.max(8, style.size) + 'px "' + style.font + '"').then(go, go);
+        } else { go(); }
+      } catch (e) { go(); }
+      setTimeout(go, 1500);
+    });
+  }
+
+  /*
+   * Draw every unique caption state with drawFrame, then have ffmpeg stitch
+   * them into ONE transparent .mov. Returns { promise, cancel }.
+   * opts: { width, height, fps, preset, overrides (or style), workDir, outPath,
+   *         ffmpeg, onProgress({phase:'draw'|'encode', done, total, pct}) }
+   * The work folder (PNGs + list) is removed whatever happens. A cancelled or
+   * failed job also removes its partial .mov. The promise rejects with
+   * err.cancelled = true when cancel() stopped it.
+   */
+  function renderOverlay(frames, opts) {
+    var fs = nodeRequire('fs');
+    var pathMod = nodeRequire('path');
+    var cpMod = nodeRequire('child_process');
+    var NodeBuffer = (typeof Buffer !== 'undefined') ? Buffer : nodeRequire('buffer').Buffer;
+    var W = opts.width, H = opts.height;
+    var plan = planOverlay(frames, opts.fps, opts);
+    var style = opts.style || styleForFrame(opts.preset, H, opts.overrides, W);
+    var cancelled = false, proc = null, written = [];
+    var workDir = opts.workDir, outPath = opts.outPath;
+    var drawShare = 0.5;
+
+    function progress(phase, done, total) {
+      if (!opts.onProgress) return;
+      var frac = total ? Math.min(1, done / total) : 1;
+      var pct = (phase === 'draw') ? frac * drawShare : drawShare + frac * (1 - drawShare);
+      try { opts.onProgress({ phase: phase, done: done, total: total, pct: pct }); } catch (e) {}
+    }
+    function stopped() { var e = new Error('Stopped'); e.cancelled = true; return e; }
+    function removeWork() {
+      for (var i = 0; i < written.length; i++) { try { fs.unlinkSync(written[i]); } catch (e) {} }
+      written = [];
+      try { fs.rmdirSync(workDir); } catch (e2) {}
+    }
+    function removeOut() { try { if (fs.existsSync(outPath)) fs.unlinkSync(outPath); } catch (e) {} }
+    function fileFor(state) { return state < 0 ? 'blank.png' : ('s' + String(1000000 + state).slice(1) + '.png'); }
+    function writePng(canvas, name) {
+      var file = pathMod.join(workDir, name);
+      var b64 = canvas.toDataURL('image/png').split(',')[1];
+      fs.writeFileSync(file, NodeBuffer.from(b64, 'base64'));
+      written.push(file);
+    }
+
+    function draw() {
+      return new Promise(function (resolve, reject) {
+        try { if (!fs.existsSync(workDir)) fs.mkdirSync(workDir, { recursive: true }); } catch (eMk) { return reject(eMk); }
+        var canvas = document.createElement('canvas');
+        canvas.width = W; canvas.height = H;
+        try {
+          canvas.getContext('2d').clearRect(0, 0, W, H);
+          writePng(canvas, fileFor(-1));
+        } catch (eBlank) { return reject(eBlank); }
+        var i = 0, n = plan.states.length;
+        function chunk() {
+          if (cancelled) return reject(stopped());
+          try {
+            var stop = Math.min(i + 12, n);
+            for (; i < stop; i++) {
+              drawFrame(canvas, plan.states[i], style);
+              writePng(canvas, fileFor(i));
+            }
+          } catch (e) { return reject(e); }
+          progress('draw', i, n);
+          if (i < n) setTimeout(chunk, 0); else resolve();
+        }
+        chunk();
+      });
+    }
+
+    function encode(withRate) {
+      return new Promise(function (resolve, reject) {
+        if (cancelled) return reject(stopped());
+        var listPath = pathMod.join(workDir, 'list.ffconcat');
+        try {
+          fs.writeFileSync(listPath, overlayConcatList(plan, fileFor, withRate), 'utf8');
+          if (written.indexOf(listPath) < 0) written.push(listPath);
+        } catch (eL) { return reject(eL); }
+        var errTail = '', outBuf = '', settled = false;
+        function finish(err) { if (settled) return; settled = true; proc = null; if (err) reject(err); else resolve(); }
+        try { proc = cpMod.spawn(opts.ffmpeg, ffmpegCanvasOverlayArgs(listPath, outPath, plan.fps)); }
+        catch (eS) { return finish(eS); }
+        progress('encode', 0, plan.totalFrames);
+        if (proc.stdout) proc.stdout.on('data', function (d) {
+          outBuf += String(d);
+          var lines = outBuf.split('\n'); outBuf = lines.pop();
+          for (var li = 0; li < lines.length; li++) {
+            var m = /^frame=(\d+)/.exec(lines[li]);
+            if (m) progress('encode', +m[1], plan.totalFrames);
+          }
+        });
+        if (proc.stderr) proc.stderr.on('data', function (d) {
+          errTail += String(d); if (errTail.length > 6000) errTail = errTail.slice(-6000);
+        });
+        proc.on('error', function (e) { finish(e); });
+        proc.on('close', function (code) {
+          if (cancelled) return finish(stopped());
+          var size = 0; try { size = fs.statSync(outPath).size; } catch (eSt) {}
+          if (code === 0 && size > 0) return finish(null);
+          var err = new Error('ffmpeg exit ' + code + ': ' + errTail.split('\n').filter(function (l) { return l; }).slice(-2).join(' | '));
+          err.stderr = errTail;
+          finish(err);
+        });
+      });
+    }
+
+    var promise = waitForFont(style).then(draw).then(function () {
+      return encode(true).catch(function (e) {
+        // ffmpeg < 5.0 does not know the per-file `option` directive
+        if (!cancelled && e && /unknown keyword 'option'/i.test(e.stderr || '')) return encode(false);
+        throw e;
+      });
+    }).then(function () {
+      removeWork();
+      return { path: outPath, states: plan.states.length, frames: plan.totalFrames, fps: plan.fps };
+    }, function (e) {
+      removeWork(); removeOut();
+      throw e;
+    });
+
+    return {
+      promise: promise,
+      plan: plan,
+      cancel: function () {
+        cancelled = true;
+        if (proc) { try { proc.kill(); } catch (e) {} }
+      }
+    };
+  }
+
   /* WCAG relative luminance of a #rrggbb color (0..1). */
   function relativeLuminance(hex) {
     var m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ''));
@@ -804,6 +1072,12 @@
     styleForFrame: styleForFrame,
     drawFrame: drawFrame,
     renderFrames: renderFrames,
+    planOverlay: planOverlay,
+    overlayStateKey: overlayStateKey,
+    overlayConcatList: overlayConcatList,
+    ffmpegCanvasOverlayArgs: ffmpegCanvasOverlayArgs,
+    fpsRational: fpsRational,
+    renderOverlay: renderOverlay,
     relativeLuminance: relativeLuminance,
     contrastRatio: contrastRatio,
     legibilityWarning: legibilityWarning

@@ -1,10 +1,12 @@
 /*
  * Pulse — ASS (Advanced SubStation Alpha) karaoke caption generator.
  *
- * The reliable, word-accurate animated-caption engine: turn word-timed cues into
- * ONE .ass file that ffmpeg+libass burns into the video in a single pass. Because
- * the SAME .ass can be rendered by libass-in-WASM for the on-panel preview,
- * preview == output by construction (no second rasterizer, no MOGRT/AE).
+ * Turn word-timed cues into ONE .ass file that ffmpeg+libass renders into a
+ * transparent caption overlay. This is now only the FALLBACK for long videos:
+ * the preview and the per-image path are drawn by render.js, and the one-clip
+ * overlay is drawn by that same engine (CPRender.renderOverlay). libass is a
+ * different rasterizer and cannot draw pills, gradients, neon, 3D or highlight
+ * shapes — lostEffects() names what a given style loses when it has to run.
  *
  * Per-word highlight uses the "one Dialogue event per active-word state" pattern:
  * for each spoken word we emit a Dialogue spanning that word's time, showing the
@@ -182,20 +184,30 @@
     return head.join('\n') + '\n' + lines.join('\n') + '\n';
   }
 
-  /* Escape an .ass path for use inside ffmpeg's subtitles filter (the filter
-     graph treats ':' and '\' specially; Windows backslashes must become '/'). */
   /* Escape a path for use as the subtitles filter's VALUE.
-     ffmpeg parses this at two levels: the filtergraph splits on , and ; and
-     treats [ ] specially, then the filter's own parser splits key=value on '='.
-     Quoting handles the first level, but not the second — measured against real
-     ffmpeg, a folder named "a=b" still failed with "Error applying option
-     '/tmp/.../a' to filter 'subtitles': Option not found". Callers therefore
-     name the option explicitly (subtitles=filename=<this>), which is what makes
-     '=' safe. Verified rendering: "Reels, Final", "take [1]", "semi;colon",
-     "a=b" and "with space" all pass; see assertFilterPath tests. */
+     ffmpeg unescapes it TWICE, and each level has its own special characters:
+       1. the filtergraph (-vf) strips one level of '…' quoting / \-escaping and
+          splits on , ; [ ]
+       2. the filter's option parser then splits the result on ':' and strips a
+          second level of \-escaping.
+     Quoting alone only survives level 1, so a ':' reached level 2 bare and cut
+     the path in two. Every Windows path has one after its drive letter, so on
+     Windows the long-video overlay failed for EVERY file with "Error applying
+     option 'original_size' to filter 'subtitles': Invalid argument" (reproduced
+     with real ffmpeg on a folder named "a:b") and silently fell back to one
+     image per word. Same for an apostrophe ("Vikas's Reels").
+     So: escape \ ' : for level 2 first, then quote for level 1 — a quote cannot
+     sit inside '…', so each one closes the quote, adds an escaped \' and
+     reopens. Callers still name the option (subtitles=filename=<this>) so an
+     '=' in a folder name is never read as a key. Verified against real ffmpeg
+     in test/gates/overlay-escfilterpath.js. */
   function escFilterPath(p) {
-    var s = String(p).replace(/\\/g, '/');          // Windows separators
-    return "'" + s.replace(/'/g, "\\'") + "'";
+    var s = String(p);
+    // Windows separators become '/', which ffmpeg accepts. Only for a Windows
+    // path: on macOS a backslash is a legal character in a folder name.
+    if (/^[A-Za-z]:[\\\/]/.test(s) || /^\\\\/.test(s)) s = s.replace(/\\/g, '/');
+    var level2 = s.replace(/[\\':]/g, '\\$&');
+    return "'" + level2.replace(/'/g, "'\\''") + "'";
   }
 
   /* Build the ffmpeg burn-in command args (caller supplies in/out paths). The
@@ -221,7 +233,45 @@
       '-vf', sub, '-c:v', 'qtrle', outPath];
   }
 
+  /* What a libass overlay CANNOT draw for a style resolved by
+     CPRender.styleForFrame, named the way the owner sees them in the editor.
+     libass is now only the fallback for machines where Pulse's own renderer
+     cannot make the overlay; when it runs, the panel says exactly what this
+     style will lose instead of promising "same look". Pure. */
+  function lostEffects(st) {
+    var out = [];
+    function add(x) { for (var i = 0; i < out.length; i++) if (out[i] === x) return; out.push(x); }
+    if (!st) return out;
+    var boxed = !!st.boxColor;
+    if (boxed && st.boxRadius > 2) add('rounded box');
+    if ((st.boxStops && st.boxStops.length) || (boxed && st.boxColor2)) add('gradient box');
+    if (st.boxStroke && st.boxStrokeWidth > 0) add('box border');
+    if (st.boxGlow) add('neon glow');
+    if (st.box3d && st.box3dDepth > 0) add('3D edge');
+    if (st.boxGloss > 0) add('gloss');
+    if (st.boxShadow) add('box shadow');
+    if (st.glow) add('soft glow');
+    if (st.fill2) add('gradient text');
+    var hs = st.highlightStyle || 'color';
+    if (hs === 'box') add('pill highlight');
+    else if (hs === 'bar') add('bar highlight');
+    else if (hs !== 'color') add(hs + ' highlight');
+    if (st.highlight2) add(st.glossy ? 'metallic highlight' : 'gradient highlight');
+    if (st.highlightFont) add('keyword font');
+    if (st.highlightGlow) add('keyword glow');
+    if (st.highlightColors && st.highlightColors.length) add('colour-cycling highlight');
+    if (st.upcomingOpacity != null && st.upcomingOpacity < 1) add('dimmed upcoming words');
+    if (st.maxLines) add(st.maxLines === 1 ? 'one-line limit' : st.maxLines + '-line limit');
+    if (st.align === 'left' || st.align === 'right') add(st.align + ' alignment');
+    if (st.subScale && st.subScale < 1) add('two-size lines');
+    if (st.wordsPerLine) add('stacked words');
+    if (st.stagger) add('diagonal cascade');
+    if (st.numberColor || st.brandColor) add('number/brand colours');
+    return out;
+  }
+
   return {
+    lostEffects: lostEffects,
     assTime: assTime,
     assColor: assColor,
     assText: assText,

@@ -37,7 +37,7 @@ function makeWorld(opts) {
     fps,
     w: opts.w || 1920, h: opts.h || 1080,
     vTracks: [], aTracks: [],
-    cloned: 0, imports: [],
+    cloned: 0, imports: [], nodeSeq: 0,
     mogrtNaturalDur: opts.mogrtNaturalDur != null ? opts.mogrtNaturalDur : 3.5
   };
   for (let i = 0; i < (opts.vTracks || 1); i++) model.vTracks.push([]);
@@ -141,6 +141,9 @@ function makeWorld(opts) {
             if (items[i].start.seconds < en - 1e-9 && items[i].end.seconds > st + 1e-9) items.splice(i, 1);
           }
           const clip = mkClip(st, en, { name: (pItem && pItem.name) || 'clip' });
+          // a placed clip remembers what it was made from (CP_placeOverlay's
+          // cleanup asks whether any sequence still shows an item)
+          if (pItem && pItem.nodeId != null) clip.projectItem = pItem;
           items.push(clip);
           items.sort((a, b) => a.start.seconds - b.start.seconds);
           return clip;
@@ -357,10 +360,21 @@ function makeWorld(opts) {
         activeSequence: seq,
         // enough of the project model to exercise CP_placeCaptionImages: a bin
         // that remembers imported stills, and importFiles that fills it.
+        // the bins Pulse creates, listed like Premiere's rootItem.children
+        // (type 2 = bin), and removable like ProjectItem.deleteBin()
+        sequences: { numSequences: 1, 0: seq },
         rootItem: {
+          children: new Proxy({}, {
+            get(t, k) {
+              if (k === 'numItems') return model.bins.length;
+              const n = Number(k);
+              return Number.isInteger(n) ? model.bins[n] : undefined;
+            }
+          }),
           createBin(name) {
             const kids = [];
-            const bin = { name: name, children: { get numItems() { return kids.length; } }, _kids: kids };
+            const bin = { name: name, type: 2, children: { get numItems() { return kids.length; } }, _kids: kids,
+                          deleteBin() { const ix = model.bins.indexOf(bin); if (ix >= 0) model.bins.splice(ix, 1); } };
             const proxy = new Proxy(bin.children, {
               get(t, k) {
                 if (k === 'numItems') return kids.length;
@@ -377,7 +391,8 @@ function makeWorld(opts) {
           paths.forEach(pth => {
             const nm = String(pth).split(/[\\/]/).pop();
             bin._kids.push({
-              name: nm, _in: null, _out: null,
+              name: nm, _in: null, _out: null, type: 1,
+              nodeId: 'item-' + (++model.nodeSeq), getMediaPath() { return String(pth); },
               setInPoint(t) { this._in = t; }, setOutPoint(t) { this._out = t; },
               clearInPoint() { this._in = null; }, clearOutPoint() { this._out = null; }
             });

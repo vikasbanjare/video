@@ -1425,8 +1425,13 @@ console.log('ass.js (libass karaoke generator)');
   assert(/^'.*'$/.test(fp('/tmp/a/b.ass')), 'a filter path is quoted so separators stay literal');
   assert(fp('/tmp/Reels, Final/b.ass') === "'/tmp/Reels, Final/b.ass'", 'a comma survives inside the quotes');
   assert(fp('/tmp/take [1]/b.ass') === "'/tmp/take [1]/b.ass'", 'brackets survive inside the quotes');
-  assert(fp('C:\\Users\\v\\b.ass') === "'C:/Users/v/b.ass'", 'Windows separators become forward slashes');
-  assert(fp("/tmp/vikas's/b.ass") === "'/tmp/vikas\\'s/b.ass'", 'an apostrophe is backslash-escaped');
+  // The drive colon must be escaped for ffmpeg's SECOND unescaping level (the
+  // filter option parser splits on ':'); the old expectation "'C:/Users/v/b.ass'"
+  // failed in real ffmpeg with "Error applying option 'original_size'".
+  assert(fp('C:\\Users\\v\\b.ass') === "'C\\:/Users/v/b.ass'", 'Windows separators become forward slashes and the drive colon is escaped');
+  // "'/tmp/vikas\'s/b.ass'" (the old expectation) also failed in real ffmpeg: a
+  // quote cannot sit inside '…', so it closes, is escaped, and reopens.
+  assert(fp("/tmp/vikas's/b.ass") === "'/tmp/vikas\\'\\''s/b.ass'", 'an apostrophe survives both unescaping levels');
   const ovArgs = CPAss.ffmpegOverlayArgs('/tmp/a=b/cap.ass', 320, 180, 1, '/tmp/out.mov', null, 10);
   const vf = ovArgs[ovArgs.indexOf('-vf') + 1];
   assert(/^subtitles=filename=/.test(vf),
