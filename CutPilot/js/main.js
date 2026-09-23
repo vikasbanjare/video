@@ -5189,6 +5189,43 @@
     if (host && host.style) { host.style.opacity = dis ? '0.5' : ''; host.style.pointerEvents = dis ? 'none' : ''; }
     if (w) { w.textContent = dis ? ('↳ ' + reason) : ''; w.style.display = shown ? '' : 'none'; }
   }
+  /* Does the face the preview really draws have small letters at all? Display
+     faces like Bebas Neue draw 'a' with the SAME glyph as 'A', so on them the
+     ALL CAPS switch moved zero pixels (dead-control audit: Neon Pop and Tall
+     Poster, wherever their chain reaches Bebas Neue). Measured in pixels on the
+     preview's own font list — the canvas uses the first installed face, so a
+     Mac that draws Impact first keeps a working switch — and only remembered
+     once every web face in that list has loaded (before that the canvas is
+     still drawing a stand-in, and the answer is asked again on the next paint). */
+  var _capsOnlyCache = {};
+  function faceIsCapsOnly() {
+    if (typeof CPRender === 'undefined' || !CPRender.styleForFrame) return false;
+    var st;
+    try { st = CPRender.styleForFrame(previewBasis(styledPreset()), 1080, {}); } catch (e) { return false; }
+    if (!st || !st.font) return false;
+    var spec = (st.weight || 800) + ' 48px "' + st.font + '", "' + st.fallbacks + '", sans-serif';
+    if (_capsOnlyCache.hasOwnProperty(spec)) return _capsOnlyCache[spec];
+    var LOW = 'abdefghnqrty', UP = LOW.toUpperCase();
+    var ready = true;
+    try { if (document.fonts && document.fonts.check) ready = document.fonts.check(spec, LOW + UP); } catch (eC) {}
+    var caps = false;
+    try {
+      var cv = document.createElement('canvas'); cv.width = 520; cv.height = 72;
+      var g = cv.getContext('2d');
+      var pix = function (s) {
+        g.clearRect(0, 0, cv.width, cv.height);
+        g.font = spec; g.fillStyle = '#000'; g.textBaseline = 'alphabetic';
+        g.fillText(s, 4, 56);
+        return g.getImageData(0, 0, cv.width, cv.height).data;
+      };
+      var a = pix(LOW), b = pix(UP), diff = 0, ink = 0;
+      for (var i = 3; i < a.length; i += 4) { if (a[i] > 24) ink++; if (Math.abs(a[i] - b[i]) > 24) diff++; }
+      caps = ink > 200 && diff < 12;
+    } catch (eP) { return false; }
+    if (ready) _capsOnlyCache[spec] = caps;
+    return caps;
+  }
+
   function syncControlApplicability() {
     var p = currentPreset() || {};
     var editable = (_capOut === 'editable');
@@ -5240,7 +5277,12 @@
       ? 'A white sheen cannot show on a white box — pick a darker Box colour first' : null);
     setWhy('c-linegap', readLines() === 1 ? 'Lines on screen is Single — there is no second line to space' : null);
     setWhy('c-wordspace', (!wordHl && !build && wpc === 1) ? 'One word per caption — there is no gap to space' : null);
-    setWhy('c-case', cchk('c-upper') ? 'ALL CAPS is on — turn it off to pick a text case' : null);
+    // a face that only HAS capitals draws 'a' exactly like 'A', so neither
+    // ALL CAPS nor the text case can change a single pixel
+    var capsOnly = faceIsCapsOnly();
+    var CAPS_ONLY = 'This font only has capital letters — pick another font to use small letters';
+    setWhy('c-upper', capsOnly ? CAPS_ONLY : null);
+    setWhy('c-case', capsOnly ? CAPS_ONLY : (cchk('c-upper') ? 'ALL CAPS is on — turn it off to pick a text case' : null));
     // key words in these modes already include every number, and a key word
     // takes the Highlight colour — a separate number colour cannot show
     var kwMode = ($('c-kw-mode') && $('c-kw-mode').value) || 'smart';
