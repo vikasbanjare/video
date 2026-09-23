@@ -743,19 +743,9 @@
         chunk();
       });
     }
-    // Wait for the chosen font, but NEVER block rendering on it: if the font
-    // can't load (e.g. an offline/blocked web font, or an unknown custom name)
-    // proceed after a short timeout so the render can't hang forever.
-    return new Promise(function (resolve) {
-      var settled = false;
-      function go() { if (!settled) { settled = true; resolve(); } }
-      try {
-        if (typeof document !== 'undefined' && document.fonts && document.fonts.load) {
-          document.fonts.load('700 ' + Math.max(8, style.size) + 'px "' + style.font + '"').then(go, go);
-        } else { go(); }
-      } catch (e) { go(); }
-      setTimeout(go, 1500);
-    }).then(run);
+    // Every script piece the job needs is loaded first (see preloadFaces), but
+    // never blocks forever: an offline or unknown font times out and renders.
+    return preloadFaces(style, frames).then(run);
   }
 
   /* ================ ONE-CLIP CAPTION OVERLAY, drawn by THIS engine ================
@@ -884,17 +874,57 @@
       '-progress', 'pipe:1', '-nostats', outPath];
   }
 
-  /* Wait for the style's font, but never block on it (same rule as renderFrames). */
-  function waitForFont(style) {
+  /* Every character a caption job will draw (upper-cased too when the style
+     shouts), capped so a 60-minute podcast doesn't build a megabyte string. */
+  function jobCharset(frames, style) {
+    // The SPACE is always in: drawFrame measures the gap between words with it,
+    // and a job made only of Hindi words never loaded the Latin piece that holds
+    // it — every word gap was measured in a stand-in font (the gate caught it:
+    // right glyphs, same ink, shifted positions).
+    var seen = { ' ': 1 }, out = ' ';
+    function add(t) {
+      t = String(t == null ? '' : t);
+      if (style && style.uppercase) t += t.toUpperCase();
+      for (var i = 0; i < t.length && out.length < 4000; i++) {
+        var c = t.charAt(i);
+        if (!seen[c]) { seen[c] = 1; out += c; }
+      }
+    }
+    for (var f = 0; f < (frames || []).length && out.length < 4000; f++) {
+      var fr = frames[f];
+      if (fr && fr.words) for (var w = 0; w < fr.words.length; w++) add(fr.words[w]);
+      else if (fr) add(fr.text);
+    }
+    return out;
+  }
+  /* Load EVERY face the job will draw with, before the first frame.
+     Google Fonts splits each family by script (latin / latin-ext / devanagari)
+     and the browser fetches a piece only when its characters are first used.
+     The old wait — document.fonts.load('700 …"Font"') with no text — fetched the
+     Latin piece of weight 700 only, so the first Hindi or ₹ captions of a job
+     were drawn in a stand-in font and the later ones in the real face: two looks
+     in one video. CI caught it as the long-video overlay disagreeing with the
+     per-image render on exactly the Hindi and ₹ lines. Asking for the same font
+     LIST drawFrame uses, at the real weights, WITH the job's characters, pulls
+     every needed piece first. Never blocks forever: offline fonts time out. */
+  function preloadFaces(style, frames, timeoutMs) {
     return new Promise(function (resolve) {
       var settled = false;
-      function go() { if (!settled) { settled = true; resolve(); } }
+      function go(complete) { if (!settled) { settled = true; resolve({ complete: !!complete }); } }
       try {
-        if (typeof document !== 'undefined' && document.fonts && document.fonts.load) {
-          document.fonts.load('700 ' + Math.max(8, style.size) + 'px "' + style.font + '"').then(go, go);
-        } else { go(); }
-      } catch (e) { go(); }
-      setTimeout(go, 1500);
+        if (typeof document === 'undefined' || !document.fonts || !document.fonts.load) return go(true);
+        var text = jobCharset(frames, style);
+        var fw = style.weight || 800;
+        var specs = [fw + ' 64px "' + style.font + '", "' + style.fallbacks + '", sans-serif'];
+        if (style.highlightFont) {
+          var hfb = style.highlightFallbacks ? (', ' + style.highlightFallbacks)
+                                             : (', "' + style.font + '", "' + style.fallbacks + '", sans-serif');
+          specs.push((style.highlightItalic ? 'italic ' : '') + (style.highlightWeight || 900) + ' 64px "' + style.highlightFont + '"' + hfb);
+        }
+        Promise.all(specs.map(function (sp) { return document.fonts.load(sp, text).catch(function () { return []; }); }))
+          .then(function () { go(true); }, function () { go(false); });
+      } catch (e) { go(false); }
+      setTimeout(function () { go(false); }, timeoutMs || 6000);
     });
   }
 
@@ -1002,7 +1032,7 @@
       });
     }
 
-    var promise = waitForFont(style).then(draw).then(function () {
+    var promise = preloadFaces(style, frames).then(draw).then(function () {
       return encode(true).catch(function (e) {
         // ffmpeg < 5.0 does not know the per-file `option` directive
         if (!cancelled && e && /unknown keyword 'option'/i.test(e.stderr || '')) return encode(false);
@@ -1072,6 +1102,8 @@
     styleForFrame: styleForFrame,
     drawFrame: drawFrame,
     renderFrames: renderFrames,
+    preloadFaces: preloadFaces,
+    jobCharset: jobCharset,
     planOverlay: planOverlay,
     overlayStateKey: overlayStateKey,
     overlayConcatList: overlayConcatList,

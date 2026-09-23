@@ -3959,12 +3959,25 @@
       var grid = document.getElementById('tpl-grid');
       if (grid) { _thumbRO = new ResizeObserver(schedulePaintThumbs); _thumbRO.observe(grid); }
     }
-    // repaint once the caption fonts finish loading (canvas can't reflow itself)
+    // repaint once the caption fonts finish loading (canvas can't reflow itself).
+    // fonts.ready resolves ONCE; a script piece fetched later — the Hindi part of
+    // a Google font, requested the first time a Hindi caption is drawn — fires
+    // 'loadingdone' instead, and without it the preview and tiles kept showing
+    // the stand-in font they were first drawn with.
     if (!_thumbFontsHooked && document.fonts && document.fonts.ready) {
       _thumbFontsHooked = true;
-      document.fonts.ready.then(function () {
+      var repaintForFonts = function () {
         try { var cs = document.querySelectorAll('.tpl-thumb-canvas'); for (var k = 0; k < cs.length; k++) cs[k]._painted = false; paintThumbs(); } catch (e) {}
-      });
+        try { renderPreview(); } catch (eP) {}
+      };
+      document.fonts.ready.then(repaintForFonts);
+      if (document.fonts.addEventListener) {
+        var _fontRepaintT = null;
+        document.fonts.addEventListener('loadingdone', function () {
+          if (_fontRepaintT) clearTimeout(_fontRepaintT);
+          _fontRepaintT = setTimeout(repaintForFonts, 120);   // one repaint per burst of pieces
+        });
+      }
     }
   }
 

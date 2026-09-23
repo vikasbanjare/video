@@ -62,7 +62,41 @@ const checks = [
     fix: 'apt-get install -y fonts-indic && fc-cache -f' }
 ];
 
+/* Can headless Chromium load Google Fonts? The panel's caption styles load
+   their faces from fonts.googleapis.com. When the browser can't reach them
+   (a proxy whose CA the browser doesn't trust), every gate silently renders
+   with STAND-IN fonts — and a whole class of font bugs becomes invisible here
+   while CI (which can) still catches them. That is exactly how a Hindi/₹
+   stand-in-font bug passed locally and failed on CI. Measured, not assumed. */
+function webFontsReachable() {
+  let pptr = null;
+  for (const t of [path.join(ROOT, 'node_modules', 'puppeteer'), 'puppeteer']) { try { pptr = require(t); break; } catch (e) {} }
+  const exe = findChromium();
+  if (!pptr || !exe) return Promise.resolve(null);
+  return (async () => {
+    let b = null;
+    try {
+      b = await pptr.launch({ executablePath: exe, headless: 'new', args: ['--no-sandbox'] });
+      const pg = await b.newPage();
+      await pg.setContent('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@700&display=swap">', { waitUntil: 'networkidle0', timeout: 15000 });
+      const n = await pg.evaluate(() => document.fonts.load('700 40px "Poppins"', 'Aa').then(x => x.length, () => 0));
+      return n > 0;
+    } catch (e) { return false; }
+    finally { if (b) try { await b.close(); } catch (e2) {} }
+  })();
+}
+
 console.log('pulse doctor — can this machine actually run the gates?\n');
+(async () => {
+const wf = await webFontsReachable();
+if (wf !== null) checks.push({
+  name: 'Google Fonts in headless Chromium',
+  ok: wf,
+  guards: 'every gate that draws captions — without it they test with STAND-IN fonts, so font bugs only show up on CI',
+  fix: fs.existsSync('/root/.ccr/ca-bundle.crt')
+    ? 'trust the proxy CA for the browser: split /root/.ccr/ca-bundle.crt and certutil -A -d sql:$HOME/.pki/nssdb -t "C,," each cert (apt-get install libnss3-tools for certutil)'
+    : 'let Chromium reach fonts.googleapis.com / fonts.gstatic.com (check the proxy and its CA)'
+});
 const missing = checks.filter(c => !c.ok);
 const w = Math.max(...checks.map(c => c.name.length));
 for (const c of checks) console.log('  ' + (c.ok ? '✓' : '✗') + ' ' + c.name.padEnd(w) + (c.ok ? '' : '   MISSING'));
@@ -81,3 +115,4 @@ console.log('All at once:');
 console.log('  apt-get update -qq && apt-get install -y ffmpeg unzip fonts-indic && fc-cache -f');
 console.log('  npm i --no-save puppeteer@23');
 process.exit(1);
+})();
