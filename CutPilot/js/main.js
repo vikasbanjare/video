@@ -10522,6 +10522,25 @@
       state.mcApplied = true;
       $('btn-mc-redo').classList.remove('hidden');
       $('mc-redo-hint').classList.remove('hidden');
+      // What really landed on the timeline (the host checks every cut and
+      // every shot) — a partial result must never read as success.
+      var partly = [];
+      if (r.missedCuts > 0) {
+        partly.push(r.missedCuts + ' of ' + r.cutsNeeded + ' camera cuts didn’t land' +
+          (r.missedAt && r.missedAt.length ? ' (the first at ' + fmt(r.missedAt[0]) + ')' : ''));
+      }
+      if (r.toggleErrors > 0) partly.push(r.toggleErrors + ' camera piece' + (r.toggleErrors > 1 ? 's' : '') + ' couldn’t be switched on or off');
+      if (r.verifiedPct != null && r.verifiedPct < 99) partly.push('only ' + r.verifiedPct + '% of the plan is on the timeline as planned');
+      if (partly.length) {
+        var pbox = $('mc-diag');
+        if (pbox) {
+          pbox.classList.remove('hidden'); pbox.className = 'diag-out err';
+          pbox.textContent = 'Multicam was applied only partly:\n• ' + partly.join('\n• ') + '\n\n' +
+            'Undo (⌘Z) and tap Apply again. If it keeps happening, check that no camera track is locked, then restart Premiere.';
+        }
+        toast('⚠️ Multicam applied only partly — ' + partly[0] + '. See the box below.', true);
+        return r;
+      }
       // If the plan didn't reach the later clips, say so plainly + show the
       // numbers in the diag box (this is the "only cuts the first clip" case).
       if (r.coveredPct != null && r.coveredPct < 85) {
@@ -10555,6 +10574,15 @@
     box.classList.remove('hidden'); box.className = 'diag-out err';
     box.textContent = 'Build failed:\n' + e.message + '\n\nTap "Test audio engine" to check ffmpeg.';
   }
+  /* Apply failed in Premiere (nothing landed, a locked track…): say so where it
+     stays readable, not only in a toast. */
+  function mcApplyFailed(e) {
+    capMcProgress(null);
+    var msg = (e && e.message) ? e.message : String(e);
+    toast('Multicam failed: ' + msg, true);
+    var box = $('mc-diag');
+    if (box) { box.classList.remove('hidden'); box.className = 'diag-out err'; box.textContent = 'Multicam wasn’t applied:\n' + msg; }
+  }
 
   $('btn-mc-plan').addEventListener('click', function () {
     buildMcPlan().then(function () {
@@ -10571,7 +10599,7 @@
       renderMcPlan(parseInt($('mc-angles').value, 10));
       // apply errors are handled here so they don't fall through to the build
       // diagnostic box (which would be misleading for a Premiere-side failure)
-      return applyMcPlan().catch(function (e) { capMcProgress(null); toast('Multicam failed: ' + e.message, true); });
+      return applyMcPlan().catch(mcApplyFailed);
     }).catch(mcBuildFailed);
   });
 
@@ -10696,7 +10724,7 @@
   }
 
   $('btn-mc-apply').addEventListener('click', function () {
-    applyMcPlan().catch(function (e) { capMcProgress(null); toast('Multicam failed: ' + e.message, true); });
+    applyMcPlan().catch(mcApplyFailed);
   });
 
   // =========================================================== SETTINGS ====
