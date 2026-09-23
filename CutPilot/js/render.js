@@ -121,7 +121,11 @@
       boxRadius: Math.round(((o.boxRadius != null ? o.boxRadius : preset.boxRadius) || 10) * scale),
       glow: (o.glow !== undefined) ? o.glow : (preset.glow || null),
       glowBlur: (o.glowBlur != null) ? o.glowBlur : (preset.glowBlur != null ? preset.glowBlur : 0.35),
-      letterSpacing: Math.round(((o.letterSpacing != null ? o.letterSpacing : (preset.letterSpacing || 0))) * scale),
+      // Fractional, not whole pixels: canvas letter spacing takes 0.01 px steps.
+      // Rounding gave a 2x editor preview 2 px on 27 px text but the render 3 px
+      // on 54 px text, so a letter-spaced caption wrapped onto two lines in the
+      // preview and stayed on one on the timeline (gate: gallery-preview-render).
+      letterSpacing: Math.round(((o.letterSpacing != null ? o.letterSpacing : (preset.letterSpacing || 0))) * scale * 100) / 100,
       highlightScale: hlScale,
       highlightStyle: o.highlightStyle || preset.highlightStyle || 'color',
       // --- premium customization additions ---

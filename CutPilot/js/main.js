@@ -5796,7 +5796,11 @@
     // readable size (the full 9:16 frame wasted the panel on empty backdrop).
     // A small frame gauge in the corner shows WHERE on screen it will sit.
     var boxW = frame.clientWidth || 300, boxH = frame.clientHeight || 168;
-    var dpr = Math.min(2, (window.devicePixelRatio || 1));
+    // Always draw at 2x and let CSS scale it down. At the screen's own 1x a
+    // landscape caption in a narrow panel came out 8 px tall — a thin serif with
+    // a soft shadow is then mostly antialiasing, and "Cinema" previewed as a
+    // grey smudge its render never contains (gate: gallery-preview-render).
+    var dpr = 2;
     canvas.width = Math.round(boxW * dpr); canvas.height = Math.round(boxH * dpr);
     canvas.style.width = boxW + 'px'; canvas.style.height = boxH + 'px';
 
