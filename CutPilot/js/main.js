@@ -11966,6 +11966,7 @@
     state.mcAnalysis = null;
     state.mcPlanWarning = null;
     _mcShortReads = [];
+    mcHideReport();
     // follow/speech analyse audio → need ffmpeg; fetch it once if missing.
     var needFf = (src === 'follow' || src === 'speech');
     var pre = (needFf && !resolveFfmpeg() && CPBridge.isCEP()) ? ensureFfmpeg().then(function () {}) : Promise.resolve();
@@ -12048,6 +12049,9 @@
   function applyMcPlan() {
     if (!state.plan) return Promise.reject(new Error('Build the plan first.'));
     capMcProgress('Applying camera switches…');
+    // the last Apply's report (e.g. "applied only partly") must not stay up
+    // after this one — tapping Apply again is the fix it asks for
+    mcHideReport();
     return CPBridge.callHost('CP_applyMulticamPlan', {
       plan: state.plan,
       numAngles: parseInt($('mc-angles').value, 10),
@@ -12071,7 +12075,7 @@
         if (pbox) {
           pbox.classList.remove('hidden'); pbox.className = 'diag-out err';
           pbox.textContent = 'Multicam was applied only partly:\n• ' + partly.join('\n• ') + '\n\n' +
-            'Undo (⌘Z) and tap Apply again. If it keeps happening, check that no camera track is locked, then restart Premiere.';
+            'Tap Apply again — Pulse only redoes the cuts that are missing. If it keeps happening, restart Premiere.';
         }
         toast('⚠️ Multicam applied only partly — ' + partly[0] + '. See the box below.', true);
         return r;
@@ -12112,6 +12116,12 @@
       }
       return r;
     });
+  }
+
+  /* Put away the multicam report box (a new build or Apply writes its own). */
+  function mcHideReport() {
+    var box = $('mc-diag');
+    if (box) box.classList.add('hidden');
   }
 
   function mcBuildFailed(e) {

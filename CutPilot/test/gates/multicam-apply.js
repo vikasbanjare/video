@@ -132,6 +132,39 @@ for (const mode of ['throws', 'noop']) {
       report(isErr && want.test(msg) && !/^🎬 Multicam applied — \d+ cuts, \d+ angle toggles/.test(msg),
         'panel, ' + what + ': the owner sees ' + JSON.stringify(msg.slice(0, 110)) + (isErr ? ' (as an error)' : ' (as success)'));
     }
+    // ---- applied only partly: the advice works — tapping Apply again finishes it -----------
+    // (one ⌘Z in Premiere undoes one of hundreds of scripted steps, and more
+    // presses walk back into the owner's earlier edits — Apply is safe to repeat)
+    {
+      const ctx = await P.openPanel(browser, { premiere: { fps: 25, end: 60, video: FH.cameras(2, 60), audio }, envelopes: env });
+      let calls = 0, flaky = true;
+      const q = ctx.world.sandbox.qe.project.getActiveSequence;
+      ctx.world.sandbox.qe.project.getActiveSequence = () => {
+        const s = q(); const get = s.getVideoTrackAt.bind(s);
+        s.getVideoTrackAt = (i) => { const tr = get(i); const raz = tr.razor.bind(tr); tr.razor = (tc) => { if (flaky && ++calls % 2 === 0) throw new Error('razor failed'); return raz(tc); }; return tr; };
+        return s;
+      };
+      const r = await P.runMulticam(ctx, { cameras: 2, source: 'follow' });
+      const advice = r.diag || '';
+      flaky = false;
+      const again = await ctx.page.evaluate(async () => {
+        const n = document.getElementById('log').children.length;
+        document.getElementById('btn-mc-apply').click();
+        for (let i = 0; i < 200 && document.getElementById('log').children.length === n; i++) await new Promise(res => setTimeout(res, 50));
+        await new Promise(res => setTimeout(res, 200));
+        const box = document.getElementById('mc-diag');
+        const last = document.getElementById('log').lastElementChild;
+        return { toast: last ? last.textContent : '', box: box.classList.contains('hidden') ? null : box.textContent };
+      });
+      await ctx.page.close();
+      const res2 = ctx.calls.filter(c => c.fn === 'CP_applyMulticamPlan').pop().result || {};
+      const plan = ctx.calls.filter(c => c.fn === 'CP_applyMulticamPlan').pop().args.plan;
+      report(/Tap Apply again/.test(advice) && !/⌘Z|Undo/.test(advice),
+        'panel, applied only partly: the advice is to tap Apply again, not ⌘Z — ' + JSON.stringify(advice.split('\n').slice(-1)[0].slice(0, 90)));
+      report(res2.missedCuts === 0 && res2.verifiedPct === 100 && wrongSeconds(ctx.world, plan, 25) === 0 && /Multicam applied/.test(again.toast) && !/only partly/.test(again.box || ''),
+        'panel, tapping Apply again finishes it: missed cuts ' + res2.missedCuts + ', verified ' + res2.verifiedPct + '%, wrong camera ' +
+        wrongSeconds(ctx.world, plan, 25) + ' s, the owner sees ' + JSON.stringify(again.toast.slice(0, 60)) + (again.box ? ' and the box still says ' + JSON.stringify(again.box.slice(0, 50)) : ''));
+    }
   });
   if (failed) { console.log('MULTICAM APPLY: ' + failed + ' check(s) failed'); process.exit(1); }
   console.log('MULTICAM APPLY: failures are reported, nothing half-done reads as success, drop-frame lands on the frame ✓');
