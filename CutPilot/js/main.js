@@ -1774,12 +1774,13 @@
       { group: 'Captions', label: 'Open the style gallery', keywords: 'styles gallery browse templates', run: function () { goTab('captions')(); showView('templates'); } },
       { group: 'Captions', label: 'Use my own Premiere template', keywords: 'mogrt premiere template upload', run: function () { goTab('captions')(); showView('editor'); } },
       { group: 'Captions', label: 'Find my transcript again', keywords: 'srt vtt subtitle', run: function () { goTab('captions')(); findTranscript(); } },
-      { group: 'Auto-Edit', label: 'Find the silences', keywords: 'analyze detect dead air', run: function () { goTab('silence')(); clickId('btn-analyze')(); } },
-      { group: 'Auto-Edit', label: 'Remove silences (safe copy)', keywords: 'rebuild trim', run: function () { goTab('silence')(); clickId('btn-rebuild')(); } },
-      { group: 'Multicam', label: 'Build angle plan', keywords: 'cameras plan', run: function () { goTab('multicam')(); clickId('btn-mc-plan')(); } },
-      { group: 'Multicam', label: 'Apply camera switches', keywords: 'apply cut', run: function () { goTab('multicam')(); clickId('btn-mc-apply')(); } },
-      { group: 'Chapters', label: 'Generate chapters', keywords: 'youtube timestamps', run: function () { goTab('chapters')(); clickId('btn-ch-build')(); } },
-      { group: 'Settings', label: 'Run full diagnostic', keywords: 'debug help', run: function () { goTab('settings')(); clickId('btn-diag-full')(); } }
+      { group: 'Clean up', label: 'Clean up my video', keywords: 'auto-edit silences retakes fillers one tap', run: function () { goTab('silence')(); clickId('btn-autoclean')(); } },
+      { group: 'Clean up', label: 'Find the silences', keywords: 'analyze detect dead air', run: function () { goTab('silence')(); clickId('btn-analyze')(); } },
+      { group: 'Clean up', label: 'Remove the silences found (keeps a copy)', keywords: 'rebuild trim safe', run: function () { goTab('silence')(); clickId('btn-rebuild')(); } },
+      { group: 'Cameras', label: 'Plan camera cuts', keywords: 'multicam cameras angle plan', run: function () { goTab('multicam')(); clickId('btn-mc-plan')(); } },
+      { group: 'Cameras', label: 'Apply camera switches', keywords: 'multicam apply cut', run: function () { goTab('multicam')(); clickId('btn-mc-apply')(); } },
+      { group: 'Chapters', label: 'Make chapters', keywords: 'generate youtube timestamps', run: function () { goTab('chapters')(); clickId('btn-ch-build')(); } },
+      { group: 'Settings', label: 'Run the full check', keywords: 'diagnostic debug help support', run: function () { goTab('settings')(); clickId('btn-diag-full')(); } }
     ];
   }
   function openPalette() {

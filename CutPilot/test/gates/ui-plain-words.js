@@ -11,8 +11,8 @@
  *      labels, placeholders, tooltips, aria-labels, the ⓘ explanations) is
  *      free of the terms below. A web address the owner must visit
  *      (console.groq.com/keys) is not jargon and is skipped.
- *   2. RENDERED — every visible word on the eleven main screens, after the
- *      panel's scripts have run. Text written by code outside the UI shell is
+ *   2. RENDERED — every visible word on the eleven main screens and in the
+ *      ⌘K quick-commands list, after the panel's scripts have run. Text written by code outside the UI shell is
  *      listed in OTHER_OWNERS with who owns it; it is reported on every run,
  *      never silently passed, and an entry that no longer shows jargon fails
  *      (so the list cannot outlive its reason).
@@ -99,6 +99,18 @@ const OTHER_OWNERS = {
       }
       if (bad.length) R.bad(s.label + ': ' + bad.slice(0, 5).join('; '));
     }
+    // the ⌘K quick commands list is read too
+    const cmds = await page.evaluate(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }));
+      await new Promise(r => setTimeout(r, 120));
+      const items = Array.from(document.querySelectorAll('#cmdk-list .cmdk-item')).map(li => li.textContent.replace(/\s+/g, ' ').trim());
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }));
+      return items;
+    });
+    const cmdBad = cmds.map(t => ({ t, h: hits(t) })).filter(x => x.h.length);
+    if (!cmds.length) R.bad('the ⌘K quick commands list did not open');
+    else if (cmdBad.length) R.bad('⌘K quick commands: ' + cmdBad.map(x => x.h.join('/') + ' in "' + x.t + '"').join('; '));
+    else R.ok('⌘K quick commands: ' + cmds.length + ' entries, all in plain words');
     if (page._cpErrors.length) R.bad('page errors: ' + page._cpErrors.slice(0, 3).join(' | '));
   } finally { await browser.close(); }
   for (const id of Object.keys(OTHER_OWNERS)) {
