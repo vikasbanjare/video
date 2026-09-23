@@ -91,7 +91,11 @@ const tune = (st) => CPSilence.tuning(st);
     ok(r.made && under <= 0.01 && r.cuts.length > 0 && /A3[^\n]*never goes quiet[^\n]*nothing it plays over is cut/i.test(r.confirm || ''),
       '"No" for a bed under the first half: nothing under it is cut (' + secs(under) + '), the second half is cleaned (' + r.cuts.length + ' cuts), and the confirm says why');
 
-    // 3) a track NAMED music is left out without a question
+    // 3) a track NAMED music is left out without a question — and the panel says so
+    ({ page, calls } = await P.openPanel(browser, pod('Music')));
+    const tip = await page.evaluate(() => { document.querySelector('[data-tab="silence"]').click(); return document.getElementById('tab-silence').innerText; });
+    await page.close();
+    ok(/Name your music track Music/.test(tip) && /asks you first/.test(tip), 'under the Clean up button: name the music track "Music" and Pulse leaves it out; otherwise it asks first');
     for (const name of ['Music', 'BGM', 'Background', 'Song', 'Score', 'Beat', 'bgm_lofi', 'गाना']) {
       ({ page, calls } = await P.openPanel(browser, pod(name)));
       r = await once(page, calls, { strength: 'gentle', takes: false, music: 'no' });
