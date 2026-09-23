@@ -1196,3 +1196,21 @@ footer { border-top: 1px solid var(--line); background: var(--card); max-height:
    explain why the Pulse-only controls are not on screen. */
 .editable-only { display: none; }
 body.cap-editable .editable-only { display: block; }
+
+/* ================= Multicam tab — every rule below is scoped to #tab-multicam ================= */
+/* Step 2 camera rows. The "Detect audio" button sits on the label's own line —
+   floated right, it used to push into camera 1's row and squeeze its mic list
+   to a 22–35 px sliver at docked widths. Each row may wrap: on a narrow panel
+   the mic list takes a full-width line of its own, the same for every camera. */
+#tab-multicam .mc-map-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+#tab-multicam .mc-map-head .chip-btn { margin: 2px 0 2px 8px; }
+#tab-multicam .map-row { flex-wrap: wrap; }
+#tab-multicam .map-row > * { margin-top: 2px; margin-bottom: 2px; }
+#tab-multicam .map-row .map-name { flex: 1 1 80px; min-width: 70px; font-size: 11.5px; padding: 3px 6px; }
+#tab-multicam .map-row .map-mic { flex: none; }
+#tab-multicam .map-row select { flex: 2 1 140px; min-width: 120px; max-width: 100%; }
+/* the plan's speaker mapping line (transcript mode) and the wide-camera box */
+#tab-multicam .mc-speaker-map { margin: 0 0 6px; }
+#tab-multicam .mc-speaker-map .chip-btn { margin-left: 4px; }
+#tab-multicam .mc-wide-box { margin-top: 6px; }
+#tab-multicam .mc-plan-warn { margin-top: 4px; }

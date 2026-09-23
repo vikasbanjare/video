@@ -1121,11 +1121,60 @@ function CP_importClip(argsJson) {
 }
 
 // ------------------------------------------------------------- multicam ----
+/* A camera track's clips as sorted [start, end, disabled, clip] rows — read
+   once, so checking hundreds of cuts doesn't walk the DOM hundreds of times. */
+function CP_mcTrackRows(track) {
+  var rows = [], cl = track.clips, k = cl.numItems;
+  for (var i = 0; i < k; i++) {
+    var c = cl[i];
+    if (!c) continue;
+    var dis = false;
+    try { dis = !!c.disabled; } catch (eD) {}
+    rows.push([c.start.seconds, c.end.seconds, dis, c]);
+  }
+  rows.sort(function (a, b) { return a[0] - b[0]; });
+  return rows;
+}
+
+/* For sorted times, which ones fall INSIDE a clip (more than half a frame from
+   either edge) — i.e. still need a cut there. Two-pointer sweep. */
+function CP_mcSpanned(rows, times, half) {
+  var out = [], r = 0;
+  for (var i = 0; i < times.length; i++) {
+    var tm = times[i];
+    while (r < rows.length && rows[r][1] <= tm + half) r++;
+    out.push(r < rows.length && rows[r][0] < tm - half && rows[r][1] > tm + half);
+  }
+  return out;
+}
+
+/* The row (clip) under time tm, or null. rows sorted by start. */
+function CP_mcRowAt(rows, tm) {
+  var lo = 0, hi = rows.length - 1;
+  while (lo <= hi) {
+    var mid = (lo + hi) >> 1;
+    if (rows[mid][1] <= tm) lo = mid + 1;
+    else if (rows[mid][0] > tm) hi = mid - 1;
+    else return rows[mid];
+  }
+  return null;
+}
+
 /*
  * Apply an angle plan to stacked camera tracks (FireCut-style).
  * Because each camera is usually ONE long clip per track, we first razor
  * every camera track at all the segment boundaries, then enable only the
  * chosen camera's piece per segment and disable the others.
+ *
+ * It reports what HAPPENED on the timeline, not what it attempted — every
+ * razor error used to be swallowed, so a refused QE razor or a locked track
+ * left one camera on screen for the whole episode while the panel said
+ * "Multicam applied". Now: a locked camera track stops it before anything
+ * changes; each cut is checked for an edge at its boundary (missedCuts, with
+ * times); if no cut lands at all nothing is switched and it fails; afterwards
+ * every shot is checked on the timeline (verifiedPct).
+ * Drop-frame: the sequence's own timecode display decides (29.97 / 59.94 DF);
+ * the Settings tick is only the fallback for builds that don't report it.
  * argsJson: { plan:[{start,end,angle}], numAngles, dropFrame }
  */
 function CP_applyMulticamPlan(argsJson) {
@@ -1134,66 +1183,136 @@ function CP_applyMulticamPlan(argsJson) {
     var seq = CP_activeSequence();
     var n = Math.min(args.numAngles, seq.videoTracks.numTracks);
     var fps = CP_sequenceFps(seq);
+    var half = 0.5 / fps;
+    var plan = args.plan || [];
+    var df = !!args.dropFrame;
+    try {
+      var sset = seq.getSettings ? seq.getSettings() : null;
+      var vdf = sset ? sset.videoDisplayFormat : null;
+      if (vdf === 102 || vdf === 106) df = true;
+      else if (typeof vdf === 'number' && vdf >= 100 && vdf <= 120) df = false;
+    } catch (eDf) {}
+
+    // a locked camera track can be neither cut nor switched: change nothing
+    var locked = [], t, i;
+    for (t = 0; t < n; t++) {
+      try { var vt = seq.videoTracks[t]; if (typeof vt.isLocked === 'function' && vt.isLocked()) locked.push('V' + (t + 1)); } catch (eLk) {}
+    }
+    if (locked.length) {
+      return CP_fail('Camera track ' + locked.join(', ') + (locked.length > 1 ? ' are' : ' is') + ' locked, so Premiere can’t cut ' +
+        (locked.length > 1 ? 'them' : 'it') + '. Unlock ' + (locked.length > 1 ? 'them' : 'it') +
+        ' (the padlock at the left of the track) and Apply again — nothing was changed.');
+    }
 
     // collect unique internal boundaries
     var bmap = {};
-    for (var p = 0; p < args.plan.length; p++) {
-      if (args.plan[p].start > 0.001) bmap[args.plan[p].start.toFixed(3)] = args.plan[p].start;
-      bmap[args.plan[p].end.toFixed(3)] = args.plan[p].end;
+    for (var p = 0; p < plan.length; p++) {
+      if (plan[p].start > 0.001) bmap[plan[p].start.toFixed(3)] = plan[p].start;
+      bmap[plan[p].end.toFixed(3)] = plan[p].end;
     }
     var bounds = [];
     for (var key in bmap) if (bmap.hasOwnProperty(key)) bounds.push(bmap[key]);
     bounds.sort(function (a, b) { return a - b; });
 
-    // how much of the timeline does the plan actually span? (diagnostic for the
-    // "only cuts the first clip" report)
     var seqEnd = parseFloat(seq.end) / CP_TICKS_PER_SECOND;
-    var planStart = args.plan.length ? args.plan[0].start : 0;
-    var planEnd = args.plan.length ? args.plan[args.plan.length - 1].end : 0;
-    var piecesBefore = [];
-    for (var pb = 0; pb < n; pb++) piecesBefore.push(seq.videoTracks[pb].clips.numItems);
+    var planStart = plan.length ? plan[0].start : 0;
+    var planEnd = plan.length ? plan[plan.length - 1].end : 0;
+    var piecesBefore = [], need = [], needed = 0, b;
+    for (t = 0; t < n; t++) {
+      var rows0 = CP_mcTrackRows(seq.videoTracks[t]);
+      piecesBefore.push(rows0.length);
+      // only where a clip spans the boundary does this track need a cut
+      var sp0 = CP_mcSpanned(rows0, bounds, half);
+      need.push([]);
+      for (b = 0; b < bounds.length; b++) if (sp0[b]) { need[t].push(b); needed++; }
+    }
 
-    // razor each camera track at every boundary (QE must be enabled). razor cuts
+    // razor each camera track where needed (QE must be enabled). razor cuts
     // whichever clip spans that timecode, so it works across ALL clips on the
     // track — not just the first take.
-    var razored = 0;
+    var razorErrors = 0, qeProblem = '';
     try {
       try { app.enableQE(); } catch (eEn) {}
       var qseq = CP_qeSequence();
-      for (var t = 0; t < n; t++) {
+      for (t = 0; t < n; t++) {
         var qtrack = qseq.getVideoTrackAt(t);
-        if (!qtrack) continue;
-        for (var b = 0; b < bounds.length; b++) {
-          try { qtrack.razor(CP_timecode(bounds[b], fps, !!args.dropFrame)); razored++; } catch (eRz) {}
+        if (!qtrack) { razorErrors += need[t].length; continue; }
+        for (i = 0; i < need[t].length; i++) {
+          try { qtrack.razor(CP_timecode(bounds[need[t][i]], fps, df)); } catch (eRz) { razorErrors++; if (!qeProblem) qeProblem = String(eRz.message || eRz); }
         }
       }
-    } catch (eQE) {}
+    } catch (eQE) { qeProblem = String(eQE.message || eQE); }
 
-    // toggle enable/disable per resulting piece (re-read clips AFTER razoring)
-    var toggled = 0, piecesAfter = [], outOfPlan = 0;
+    // did each cut land? (an edge within half a frame of the boundary)
+    var landed = 0, missedAt = [], rows = [];
     for (t = 0; t < n; t++) {
-      var track = seq.videoTracks[t];
-      piecesAfter.push(track.clips.numItems);
-      for (var i = 0; i < track.clips.numItems; i++) {
-        var clip = track.clips[i];
-        var mid = (clip.start.seconds + clip.end.seconds) / 2;
-        var matched = false;
-        for (var s = 0; s < args.plan.length; s++) {
-          var seg = args.plan[s];
-          if (mid >= seg.start && mid < seg.end) {
-            matched = true;
-            var shouldDisable = (seg.angle !== t);
-            try {
-              if (clip.disabled !== shouldDisable) { clip.disabled = shouldDisable; toggled++; }
-            } catch (eDis) {}
-            break;
-          }
+      rows.push(CP_mcTrackRows(seq.videoTracks[t]));
+      var times = [];
+      for (i = 0; i < need[t].length; i++) times.push(bounds[need[t][i]]);
+      var still = CP_mcSpanned(rows[t], times, half);
+      for (i = 0; i < still.length; i++) {
+        if (still[i]) {
+          var seen = false;
+          for (var m = 0; m < missedAt.length; m++) if (Math.abs(missedAt[m] - times[i]) < half) seen = true;
+          if (!seen && missedAt.length < 5) missedAt.push(times[i]);
         }
-        if (!matched) outOfPlan++;   // a clip the plan never reached (e.g. takes 2-3)
+        else landed++;
       }
     }
+    if (needed > 0 && landed === 0) {
+      return CP_fail('Premiere didn’t make any of the ' + needed + ' camera cuts' + (qeProblem ? ' (' + qeProblem + ')' : '') +
+        ', so nothing was switched — your timeline is unchanged. Click the timeline once and Apply again; if it keeps happening, restart Premiere.');
+    }
+
+    // toggle enable/disable per resulting piece (plan and pieces both sorted)
+    var toggled = 0, toggleErrors = 0, piecesAfter = [], outOfPlan = 0;
+    for (t = 0; t < n; t++) {
+      piecesAfter.push(rows[t].length);
+      var s = 0;
+      for (i = 0; i < rows[t].length; i++) {
+        var row = rows[t][i];
+        var mid = (row[0] + row[1]) / 2;
+        while (s < plan.length && plan[s].end <= mid) s++;
+        if (s >= plan.length || mid < plan[s].start) { outOfPlan++; continue; }   // a clip the plan never reached
+        var shouldDisable = (plan[s].angle !== t);
+        try {
+          if (row[2] !== shouldDisable) { row[3].disabled = shouldDisable; row[2] = shouldDisable; toggled++; }
+        } catch (eDis) { toggleErrors++; }
+      }
+    }
+
+    // check every shot on the timeline: near its start, middle and end, only
+    // the planned camera may be switched on. A planned camera with NO clip
+    // there (it started late, or stops early) is not a failed switch — it is
+    // reported apart, because applying again can't fix it.
+    var good = 0, total = 0, after = [], noFootage = 0, noFootageAt = [];
+    for (t = 0; t < n; t++) after.push(CP_mcTrackRows(seq.videoTracks[t]));
+    for (p = 0; p < plan.length; p++) {
+      var sh = plan[p], len = sh.end - sh.start;
+      if (!(len > 0)) continue;
+      var inset = Math.min(len / 4, Math.max(2 * half, 0.1)), ok = true, bare = false;
+      var probes = [sh.start + inset, (sh.start + sh.end) / 2, sh.end - inset];
+      for (var q = 0; q < 3 && ok; q++) {
+        for (t = 0; t < n && ok; t++) {
+          var r = CP_mcRowAt(after[t], probes[q]);
+          if (t === sh.angle) { if (!r) bare = true; else if (r[2]) ok = false; }
+          else if (r && !r[2]) ok = false;
+        }
+      }
+      if (bare && ok) {
+        noFootage += len;
+        if (noFootageAt.length < 3) noFootageAt.push({ camera: 'V' + (sh.angle + 1), start: sh.start, end: sh.end });
+        continue;
+      }
+      total += len;
+      if (ok) good += len;
+    }
     return CP_ok({
-      toggled: toggled, razored: razored, cuts: bounds.length, tracksUsed: n,
+      toggled: toggled, razored: landed, cuts: bounds.length, cutsNeeded: needed, missedCuts: needed - landed,
+      missedAt: missedAt, razorErrors: razorErrors, toggleErrors: toggleErrors,
+      verifiedPct: total > 0 ? Math.floor((good / total) * 1000) / 10 : 100,
+      noFootageSec: Math.round(noFootage * 10) / 10, noFootageAt: noFootageAt,
+      dropFrame: df, tracksUsed: n,
       seqEnd: seqEnd, planStart: planStart, planEnd: planEnd,
       coveredPct: seqEnd > 0 ? Math.round((planEnd / seqEnd) * 100) : 100,
       outOfPlanClips: outOfPlan, piecesBefore: piecesBefore, piecesAfter: piecesAfter
@@ -3176,8 +3295,13 @@ function CP_insertMogrtCaptions(argsJson) {
 }
 
 /*
- * Enumerate each audio track's first real clip — the per-speaker mics used
- * for FireCut-style "cut to whoever is talking" multicam.
+ * Every audio track's clips — the per-speaker mics used for FireCut-style
+ * "cut to whoever is talking" multicam. EVERY clip is listed: after Smart Cut
+ * a 55-minute episode has 600+ pieces per mic, and the old 200-clip cap left
+ * everything after the first ~18 minutes unheard (the cameras switched at
+ * random there while the panel reported full coverage). Each clip carries the
+ * exact media↔timeline mapping: where it sits (seqStart/seqEnd), what it plays
+ * (inPoint/outPoint), its speed and whether it plays reversed.
  */
 function CP_getAudioTracks() {
   try {
@@ -3186,39 +3310,54 @@ function CP_getAudioTracks() {
     var out = [], diag = [];
     for (var t = 0; t < seq.audioTracks.numTracks; t++) {
       var track = seq.audioTracks[t];
-      var nClips = (track.clips && track.clips.numItems) ? track.clips.numItems : 0;
+      var clips = track.clips;
+      var nClips = (clips && clips.numItems) ? clips.numItems : 0;
       var mp = null, ref = null, withItem = 0;
-      // Walk EVERY clip on the track. We keep the first readable clip as the
-      // legacy single-clip reference, AND collect ALL clips with media into
-      // `segments` so the analyzer can cover the WHOLE timeline (multiple
-      // takes / a multi-clip track) instead of just the first clip.
+      // Walk EVERY clip on the track. The first readable clip stays as the
+      // legacy single-clip reference; `segments` lists them all.
       var segments = [];
       for (var i = 0; i < nClips; i++) {
-        var c = track.clips[i];
+        var c = clips[i];
         if (!c || !c.projectItem) continue;
         withItem++;
         if (!ref) ref = c;
         var p = null;
         try { p = c.projectItem.getMediaPath(); } catch (e1) {}
-        if (p && p.length) {
-          if (!mp) { mp = p; ref = c; }
-          var sStart = 0, sIn = 0, sEnd = 0;
-          try { sStart = c.start.seconds; } catch (eS) {}
-          try { sIn = c.inPoint.seconds; } catch (eI) {}
-          try { sEnd = c.end.seconds; } catch (eE) {}
-          if (segments.length < 200) {
-            segments.push({ mediaPath: p, seqStart: sStart, inPoint: sIn, dur: Math.max(0, sEnd - sStart) });
-          }
-        }
+        if (!(p && p.length)) continue;
+        if (!mp) { mp = p; ref = c; }
+        var sStart = 0, sEnd = 0, sIn = 0, sOut = 0;
+        try { sStart = c.start.seconds; } catch (eS) {}
+        try { sEnd = c.end.seconds; } catch (eE) {}
+        try { sIn = c.inPoint.seconds; } catch (eI) {}
+        try { sOut = c.outPoint.seconds; } catch (eO) {}
+        if (!(sEnd - sStart > 0.001)) continue;
+        // speed: Premiere's own number when it reports one (some builds give a
+        // percentage), else what the media span vs timeline span says
+        var speed = null;
+        try { if (typeof c.getSpeed === 'function') speed = parseFloat(c.getSpeed()); } catch (eSp) {}
+        if (speed && speed > 20) speed = speed / 100;
+        if (!(speed > 0)) speed = (sOut > sIn) ? (sOut - sIn) / (sEnd - sStart) : 1;
+        var rev = false;
+        try { rev = (typeof c.isSpeedReversed === 'function') && !!c.isSpeedReversed(); } catch (eR) {}
+        var dis = false;
+        try { dis = !!c.disabled; } catch (eD) {}
+        segments.push({ mediaPath: p, seqStart: sStart, seqEnd: sEnd, dur: sEnd - sStart, inPoint: sIn, outPoint: sOut,
+                        speed: Math.round(speed * 10000) / 10000, reversed: rev, disabled: dis });
       }
       diag.push('A' + (t + 1) + ':' + nClips + 'clip/' + withItem + 'item/' + segments.length + 'media');
       if (!ref) continue;
+      var muted = false, locked = false;
+      try { muted = (typeof track.isMuted === 'function') && !!track.isMuted(); } catch (eMu) {}
+      try { locked = (typeof track.isLocked === 'function') && !!track.isLocked(); } catch (eLo) {}
       out.push({
         index: t,
         name: track.name || ('A' + (t + 1)),
         mediaPath: mp,
         hasMedia: !!mp,
         clips: nClips,
+        clipsWithMedia: segments.length,
+        muted: muted,
+        locked: locked,
         segments: segments,             // ALL media clips on this track (seq time)
         seqStart: ref.start.seconds,
         inPoint: ref.inPoint.seconds,
