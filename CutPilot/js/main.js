@@ -10341,6 +10341,7 @@
      Resolves [dB per media window] per channel; a read that stalls for 60 s
      or fails is rejected with a plain reason. */
   var _mcStreamReads = {};
+  var _mcShortReads = [];     // files ffmpeg stopped reading early during this build
   function mcStreamLevels(mediaPath, stream, nCh) {
     var key = mediaPath + '#' + stream;
     if (_mcStreamReads[key]) return _mcStreamReads[key];
@@ -10389,7 +10390,11 @@
     var pct = Math.round(cov.all * 100);
     res.line = (cov.all >= 0.995) ? ('⏱ Heard ' + (grids.filter(function (g) { return g && g.length; }).length > 1 ? 'every mic' : 'your mic') +
       ' across the whole ' + fmt(dur) + ' timeline') : ('⏱ Heard every mic across ' + pct + '% of your ' + fmt(dur) + ' timeline');
-    if (worst && worst.heard < 0.85) {
+    var short = _mcShortReads[0];
+    if (short) {
+      res.warn = '⚠️ Pulse could read only the first ' + fmt(short.read) + ' of ' + short.file + ' (it is ' + fmt(short.of) + ' long) — ' +
+        'ffmpeg stopped early, which usually means a slow or external drive. Copy the recording to the Mac’s own drive (or just try again), then build again.';
+    } else if (worst && worst.heard < 0.85) {
       res.warn = (worst.lastHeard < dur * 0.85)
         ? ('⚠️ ' + worst.name + ' goes quiet for good at ' + fmt(worst.lastHeard) + ' of your ' + fmt(dur) + ' timeline — after that Pulse can’t hear that person, ' +
            'so the switching there is a guess. Make sure that mic’s clips run under the whole episode, then build again.')
@@ -10404,8 +10409,8 @@
      unique media file is read once (ffmpeg); every clip then drops the stretch
      of media it plays onto the grid at ITS place on the timeline. A mic clip
      slid to 0:05 to sync with the cameras therefore lines up at 0:05 — the old
-     single-clip shortcut ignored where the clip sat and shifted every cut. */
-  /* channel == null: the recording mixed to mono (CPAudio.ffmpegEnvelope).
+     single-clip shortcut ignored where the clip sat and shifted every cut.
+     channel == null: the recording mixed to mono (CPAudio.ffmpegEnvelope);
      channel k: only that source channel (host on Left, guest on Right). */
   function micSeqGrid(track, nWindows, channel) {
     var clips = mcTrackClips(track);
@@ -10426,6 +10431,10 @@
           var lv = [];
           (env.samples || []).forEach(function (s) { lv[Math.round(s.t / MC_STEP)] = s.db; });
           levels[mp] = lv;
+          // ffmpeg can stop early (its watchdog on a slow or external drive)
+          // and still hand back what it read — say so rather than guess
+          var readTo = lv.length * MC_STEP;
+          if (env.duration && readTo < env.duration - 1) _mcShortReads.push({ file: mp.split(/[\\/]/).pop(), read: readTo, of: env.duration });
         });
       });
     }, Promise.resolve()).then(function () {
@@ -10656,6 +10665,7 @@
     // made after a follow plan must not show the follow plan's coverage)
     state.mcAnalysis = null;
     state.mcPlanWarning = null;
+    _mcShortReads = [];
     // follow/speech analyse audio → need ffmpeg; fetch it once if missing.
     var needFf = (src === 'follow' || src === 'speech');
     var pre = (needFf && !resolveFfmpeg() && CPBridge.isCEP()) ? ensureFfmpeg().then(function () {}) : Promise.resolve();

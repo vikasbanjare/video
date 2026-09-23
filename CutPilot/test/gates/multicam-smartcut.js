@@ -92,6 +92,18 @@ function accuracyBetween(world, sim, t0, t1) {
       report(!!r2.plan && !/18:40|goes quiet/.test(r2.planView) && !/18:40|but:/.test(lastToast),
         'an "every few seconds" plan built next does not carry the old warning — ' + JSON.stringify((r2.planView.split('\n').filter(l => /⏱|⚠️/.test(l)).join(' | ')).slice(0, 100)));
     }
+    // ---- D. ffmpeg stopped reading a mic early (slow / external drive) ------------
+    {
+      const short = S.podcast({ dur: 600, pattern: 'balanced', seed: 33 });
+      const env = { '/media/mic1.wav': short.grids[0].slice(), '/media/mic2.wav': { levels: short.grids[1].slice(0, 1200), duration: 600 } };
+      const audio = [0, 1].map(m => ({ name: 'A' + (m + 1), clips: [{ start: 0, end: 600, inPoint: 0, outPoint: 600, mediaPath: '/media/mic' + (m + 1) + '.wav', name: 'mic' + (m + 1) }] }));
+      const ctx = await P.openPanel(browser, { premiere: { fps: 25, end: 600, video: FH.cameras(2, 600), audio }, envelopes: env });
+      const r = await P.runMulticam(ctx, { cameras: 2, source: 'follow' });
+      await ctx.page.close();
+      const said = /could read only the first 4:00/.test(r.planView) && /slow or external drive/.test(r.planView);
+      report(said, 'ffmpeg stopped reading mic2.wav at 4:00 of 10:00: the plan says so (and why) — ' +
+        JSON.stringify((r.planView.split('\n').filter(l => /⏱|⚠️/.test(l)).join(' | ')).slice(0, 170)));
+    }
   });
   if (failed) { console.log('MULTICAM SMART CUT: ' + failed + ' check(s) failed'); process.exit(1); }
   console.log('MULTICAM SMART CUT: the whole episode is heard, and coverage is reported truthfully ✓');

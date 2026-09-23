@@ -141,7 +141,9 @@ async function openPanel(browser, opts) {
         window.__mcEnvReads.push(mp);
         const e = window.__mcEnv[mp];
         if (!e) return Promise.reject(new Error('no such file: ' + mp));
-        return Promise.resolve({ samples: e.map((db, j) => ({ t: Math.round(j * step * 1000) / 1000, db })), duration: e.length * step });
+        // { levels, duration }: ffmpeg stopped early — fewer levels than the file is long
+        const lv = Array.isArray(e) ? e : e.levels, dur = Array.isArray(e) ? e.length * step : e.duration;
+        return Promise.resolve({ samples: lv.map((db, j) => ({ t: Math.round(j * step * 1000) / 1000, db })), duration: dur });
       };
     }, opts.envelopes, STEP);
   }
