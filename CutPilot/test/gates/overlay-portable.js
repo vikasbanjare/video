@@ -20,9 +20,10 @@
  *  2. no overlay file — the overlay-* gates, overlay-lib.cjs and every repo
  *     file they load (ass.js, render.js, ffmpeg-find.js, host-tests.js) —
  *     names an absolute path into a checkout: a node_modules folder, a file
- *     of this repo (…/CutPilot/…, …/tools/…), or this checkout itself —
- *     whichever machine wrote it. Made-up media paths (/Users/v/Show/…) are
- *     fine;
+ *     of this repo (…/CutPilot/…, …/tools/…), this checkout itself, or any
+ *     Pulse checkout on this machine (a folder holding CutPilot/CSXS/
+ *     manifest.xml) — whichever machine wrote it. Made-up media paths
+ *     (/Users/v/Show/…) are fine;
  *  3. that scan is run on made-up checkouts in the temp folder: it must pass
  *     when only ANOTHER area's file names the checkout it runs in, and fail
  *     on an overlay gate naming another machine's node_modules or this
@@ -66,6 +67,11 @@ function checkoutPaths(text, root) {
     const nm = segs.indexOf('node_modules');
     let hit = nm >= 2 && real(nm);                                    // a node_modules folder under any absolute path
     if (!hit) hit = p === here || p.indexOf(here + '/') === 0;         // this checkout
+    for (let i = 2; !hit && i <= segs.length; i++) {                  // ANY Pulse checkout on this machine, or a
+      const pre = segs.slice(0, i).join('/');                          // path inside one: the same answer from
+      if (pre.charAt(0) === '/' && real(i) &&                          // every checkout here, not only the one named
+          fs.existsSync(path.join(pre, 'CutPilot', 'CSXS', 'manifest.xml'))) hit = true;
+    }
     for (let i = 1; !hit && i < segs.length - 1; i++) {               // a CutPilot or tools file of this repo
       if ((segs[i] === 'CutPilot' || segs[i] === 'tools') && real(i)) {
         const rel = segs.slice(i).filter(Boolean);
@@ -126,7 +132,7 @@ function scan(root) {
 const here = scan(ROOT);
 if (here.files < 4) bad('found only ' + here.files + ' overlay file(s) to check — the overlay gates moved?');
 else if (here.hits.length) bad('overlay files naming an absolute checkout path: ' + here.hits.map(h => h.file + ' (' + h.paths.join(', ') + ')').join('; '));
-else ok('none of the ' + here.files + ' overlay files names an absolute path into a checkout (node_modules, repo files, or this checkout)');
+else ok('none of the ' + here.files + ' overlay files names an absolute path into a checkout (node_modules, repo files, this checkout, or any checkout on this machine)');
 if (here.others.length) note('not overlay files, so not failed here — for their owners: ' + here.others.join(', ') + ' name an absolute checkout path');
 
 // 3. the same scan on made-up checkouts
@@ -142,6 +148,7 @@ try {
   put('tools/dead-control-audit.js', 'const t = ' + q(path.join(S, 'node_modules', 'puppeteer')) + ';\n');
   put('CutPilot/test/gates/overlay-a.js', "require('./overlay-lib.cjs');\n");
   put('CutPilot/test/gates/overlay-b.js', "require('./overlay-lib.cjs');\n");
+  put('CutPilot/test/gates/overlay-c.js', "require('./overlay-lib.cjs');\n");
   const clean = scan(S);
   if (clean.hits.length) bad('a checkout whose path only OTHER areas\' files name still fails this gate: ' + clean.hits.map(h => h.file).join(', '));
   else if (clean.others.length !== 2) bad('the scan did not see the other areas\' files that name the made-up checkout (' + clean.others.join(', ') + ')');
@@ -150,12 +157,19 @@ try {
   const elsewhere = ['', 'Users', 'someone', 'Pulse', 'node_modules', 'puppeteer'].join('/');
   put('CutPilot/test/gates/overlay-a.js', 'const p = require(' + q(elsewhere) + ');\n');
   put('CutPilot/test/gates/overlay-b.js', 'const lib = ' + q(path.join(S, 'CutPilot', 'test', 'gates', 'overlay-lib.cjs')) + ';\n');
+  // ANOTHER checkout on this machine, named by its bare folder: caught from
+  // here too, not only when the gates run from that checkout
+  const T = path.join(tmp, 'another-checkout');
+  fs.mkdirSync(path.join(T, 'CutPilot', 'CSXS'), { recursive: true });
+  fs.writeFileSync(path.join(T, 'CutPilot', 'CSXS', 'manifest.xml'), '<ExtensionManifest/>');
+  put('CutPilot/test/gates/overlay-c.js', 'const ROOT = ' + q(T) + ';\n');
   const dirty = scan(S);
   const caught = f => dirty.hits.some(h => path.basename(h.file) === f);
   if (!caught('overlay-a.js')) bad('an overlay gate naming ANOTHER machine\'s node_modules is not caught: ' + dirty.hits.map(h => h.file).join(', '));
   else if (!caught('overlay-b.js')) bad('an overlay gate naming this checkout\'s own files is not caught: ' + dirty.hits.map(h => h.file).join(', '));
+  else if (!caught('overlay-c.js')) bad('an overlay gate naming ANOTHER checkout on this machine by its folder is only caught when the gates run from that checkout');
   else if (caught('overlay-job.js') || caught('overlay-lib.cjs')) bad('made-up media paths are mistaken for checkout paths: ' + dirty.hits.map(h => h.file).join(', '));
-  else ok('the scan catches an overlay gate naming another machine\'s node_modules or this checkout\'s files, and passes made-up media paths');
+  else ok('the scan catches an overlay gate naming another machine\'s node_modules, this checkout\'s files or another checkout on this machine, and passes made-up media paths');
 } finally {
   try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
 }
