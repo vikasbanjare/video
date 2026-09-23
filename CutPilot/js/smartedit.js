@@ -198,8 +198,6 @@
     }
     return null;
   }
-  /* Every cut the reply holds. A reply cut off mid-list (max_tokens) still
-     yields the cuts that were complete, instead of silently nothing. */
   /* The list of cuts from the first complete reply document, or null. */
   function replyDoc(s) {
     var tries = 0, i;
@@ -216,6 +214,8 @@
     }
     return null;
   }
+  /* Every cut the reply holds. A reply cut off mid-list (max_tokens) still
+     yields the cuts that were complete, instead of silently nothing. */
   function replyCuts(text) {
     if (text == null) return [];
     var s = String(text), doc = replyDoc(s);
