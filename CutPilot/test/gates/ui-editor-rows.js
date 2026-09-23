@@ -14,6 +14,12 @@
  * to keep its words on one line, fit inside its own box, and not overlap any
  * other label.
  *
+ * And no section is a bare heading: on the first style the gallery offers
+ * (Bold Pop, word-by-word off) "🖍️ Word highlight" showed its title with
+ * nothing under it — its options wait for word-by-word, and hints inside
+ * groups are hidden. Every visible section must show something under its
+ * title, on that style and on a karaoke style (word-by-word on).
+ *
  * CP_PANEL_DIR=<dir> runs it against another copy of the panel.
  */
 'use strict';
@@ -58,6 +64,20 @@ function check() {
   return { n: boxes.length, bad: out };
 }
 
+/* Runs in the page: sections of the open editor tab that show only a title. */
+function bareSections() {
+  const shown = el => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
+  const out = [];
+  document.querySelectorAll('#cust-pane-style .cust-group, #cust-pane-pro .cust-group').forEach(g => {
+    if (!shown(g)) return;
+    const title = g.querySelector('.cust-group-title');
+    if (!title) return;
+    const rest = Array.from(g.children).filter(k => k !== title && shown(k));
+    if (!rest.length) out.push('"' + title.textContent.replace(/\s+/g, ' ').trim() + '"');
+  });
+  return out;
+}
+
 (async () => {
   const R = U.reporter('ui editor rows: every style control reads on one clean line at every width');
   const browser = await U.launch();
@@ -77,6 +97,33 @@ function check() {
       }
     }
     await page.evaluate(() => { const b = document.querySelector('#cust-tabs button[data-pane="style"]'); if (b) b.click(); });
+    // no bare headings: the default style, then a karaoke style
+    await page.setViewport({ width: 400, height: 900 });
+    const bare = [];
+    let styles = 0;
+    for (const which of ['first', 'karaoke']) {
+      const name = await page.evaluate(async (which) => {
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+        const back = document.getElementById('btn-back-lib');
+        if (back && back.offsetParent !== null) { back.click(); await sleep(300); }
+        const cards = Array.from(document.querySelectorAll('#tpl-grid .tpl-card'));
+        const nm = c => { const n = c.querySelector('.tpl-name'); return n ? n.textContent.trim() : ''; };
+        const card = which === 'first' ? cards[0] : cards.find(c => /karaoke/i.test(nm(c)));
+        if (!card) return null;
+        card.click(); await sleep(450);
+        return nm(card);
+      }, which);
+      if (!name) continue;
+      styles++;
+      for (const pane of ['style', 'pro']) {
+        await page.evaluate(p => { const b = document.querySelector('#cust-tabs button[data-pane="' + p + '"]'); if (b) b.click(); }, pane);
+        await sleep(120);
+        (await page.evaluate(bareSections)).forEach(t => bare.push(name + ' (' + (pane === 'pro' ? 'Effects' : 'Style') + '): ' + t));
+      }
+    }
+    if (styles < 2) R.bad('could not open both a first style and a karaoke style (' + styles + ')');
+    else if (bare.length) R.bad('a section shows only its title, nothing under it — ' + bare.join('; '));
+    else R.ok('every section of the editor shows something under its title (' + styles + ' styles, both tabs)');
     if (page._cpErrors.length) R.bad('page errors: ' + page._cpErrors.slice(0, 3).join(' | '));
   } finally { await browser.close(); }
   if (total < 100) R.bad('only ' + total + ' labels measured — the check is not reaching the editor');

@@ -6426,6 +6426,8 @@
   function syncWordHlUI() {
     var on = !$('c-wordhl') || $('c-wordhl').checked;
     if ($('c-wordhl-opts')) $('c-wordhl-opts').classList.toggle('hidden', !on);
+    // the section itself too: with its options away it was a bare heading
+    if ($('cust-wordhl-group')) $('cust-wordhl-group').classList.toggle('hidden', !on);
     if ($('cust-anim-group')) $('cust-anim-group').classList.toggle('hidden', on);
   }
 
