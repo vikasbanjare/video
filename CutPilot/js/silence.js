@@ -235,10 +235,10 @@
    *                loudness can't find dead air, only digital zero counts;
    *   digital    — nothing but digital zero here (a muted/empty mic);
    *   pauses     — share of the span spent in pauses of 1 s or more;
-   *   bed        — sounds like music or steady noise, not a voice: continuous,
-   *                or a narrow loudness range that never pauses (a beat). The
-   *                caller leaves a bed out of the vote only when a real voice
-   *                track is there to decide instead.
+   *   bed        — steady like music: continuous, or a narrow loudness range
+   *                that never pauses (a beat). It never takes a track out of
+   *                the vote — a noisy guest mic is "steady" too — it only
+   *                shapes what Pulse says about the track.
    * The threshold is always this mic's OWN automatic gate: Fine-tune → Manual
    * is applied by the caller, to the tracks that vote as voices.
    */
@@ -268,12 +268,11 @@
              pauses: pauses, bed: bed };
   }
 
-  /* What tells a music bed from a voice. A beat is loud on every hit and dips
-     between hits (13–19 dB apart), so loudness range alone called a drum loop
-     a mic, and its vote blocked every cut it played under. What a beat never
-     does is PAUSE: its dips are the gaps between hits, well under a second,
-     while a voice stops for a second or more between thoughts (and a podcast
-     mic is quiet the whole time the other person talks). */
+  /* What a steady track looks like. A beat is loud on every hit and dips
+     between hits (13–19 dB apart), and what it never does is PAUSE: its dips
+     are the gaps between hits, well under a second. A voice in a noisy room
+     can look the same (café clatter, a TV behind the guest), so this only
+     describes a track; see versusOthers for what tells music from a voice. */
   var BED_PAUSE_SEC = 1.0;      // a real pause, whatever the preset
   var BED_MAX_RANGE = 22;       // dB — a voice into its own mic swings 25–45 dB
   var BED_MAX_PAUSES = 0.05;    // share of its span a bed spends in such pauses (intro, a break)
@@ -295,6 +294,66 @@
       if (run >= need) paused += run;
     }
     return total ? paused / total : 0;
+  }
+
+  // ---- which tracks decide what is dead air ---------------------------------
+  // What a track SOUNDS like never takes it out of the vote — a guest in a
+  // noisy café, or a fast talker, sounds "steady" too, and leaving that mic
+  // out cut every one of the guest's answers. A track leaves the vote only
+  // when its NAME says music, or the owner says so; what it sounds like only
+  // decides whether Pulse ASKS.
+
+  /* What a Premiere track name says: 'music' ("Music", "BGM", "Song",
+     "Score", "Beat", "Background", "गाना"…), 'voice' ("Voice", "VO", "Mic",
+     "Host", "Guest"…), or '' — "Audio 3" says nothing, and a name that says
+     both ("Music + VO") is not trusted either way. A nested track's name is
+     "Nest › A2"; only its own part (after the last ›) counts. */
+  var MUSIC_NAME = /(^|[^a-z0-9])(music|musics|bgm|bg music|songs?|score|beats?|background|instrumental|gaana|gana|sangeet)(?![a-z0-9])/i;
+  var MUSIC_NAME_HI = /(संगीत|गाना|गीत|म्यूजिक|म्यूज़िक)/;
+  var VOICE_NAME = /(^|[^a-z0-9])(voices?|vo|v\.o\.?|mics?|microphone|host|guest|dialog|dialogue|narration|narrator|interview|speaker)(?![a-z0-9])/i;
+  function trackNameSays(name) {
+    var own = String(name == null ? '' : name).split('›').pop().trim();
+    if (!own) return '';
+    var music = MUSIC_NAME.test(own) || MUSIC_NAME_HI.test(own), voice = VOICE_NAME.test(own);
+    return (music && !voice) ? 'music' : (voice && !music) ? 'voice' : '';
+  }
+
+  /*
+   * How one track behaves while the OTHER tracks talk and while they pause.
+   * grid = combineMics(the others); srcs = this track's clips
+   * [{ seqStart, seqEnd, inPoint, speed, env }]. Returns { share, turn, talk, quiet }:
+   *   share — of the time the others are heard under this track, how much of
+   *           it they are talking: a music bed plays UNDER the talking; a
+   *           jingle plays in the pauses (share ≈ 0);
+   *   turn  — how much louder this track is in the others' pauses than while
+   *           they talk (dB, 90th percentile of each): a guest answers in the
+   *           host's pauses, so the guest's mic is 8–15 dB louder there however
+   *           noisy the guest's room is; music does not care who is talking
+   *           (−2…+1 dB). 0 when either side is under half a second.
+   */
+  function versusOthers(grid, srcs) {
+    var q = [], t = [];
+    for (var s = 0; s < (srcs || []).length; s++) {
+      var src = srcs[s], sp = src.speed > 0 ? src.speed : 1, env = src.env;
+      if (!env || !env.db) continue;
+      var g0 = Math.max(0, Math.ceil((src.seqStart - grid.t0) / grid.hop - 0.5 - 1e-9));
+      var g1 = Math.min(grid.n, Math.ceil((src.seqEnd - grid.t0) / grid.hop - 0.5 - 1e-9));
+      for (var g = g0; g < g1; g++) {
+        var st = grid.state[g];
+        if (!st) continue;                                  // nobody else is on the timeline here
+        var m = src.inPoint + (grid.t0 + (g + 0.5) * grid.hop - src.seqStart) * sp;
+        var k = Math.floor((m - (env.start || 0)) / (env.hop || HOP));
+        if (k < 0 || k >= env.db.length || !(env.db[k] > DIGITAL_SILENCE_DB)) continue;
+        (st === 2 ? t : q).push(env.db[k]);
+      }
+    }
+    var enough = Math.round(0.5 / HOP);
+    var turn = 0;
+    if (q.length >= enough && t.length >= enough) {
+      q.sort(function (a, b) { return a - b; }); t.sort(function (a, b) { return a - b; });
+      turn = pct(q, 0.9) - pct(t, 0.9);
+    }
+    return { share: (q.length + t.length) ? t.length / (q.length + t.length) : 0, turn: turn, talk: t.length * HOP, quiet: q.length * HOP };
   }
 
   /* Loud(1)/quiet(0) per window with hysteresis: speech ends when the level
@@ -646,6 +705,8 @@
     tuning: tuning,
     makeEnvelopeBuilder: makeEnvelopeBuilder,
     micLevels: micLevels,
+    trackNameSays: trackNameSays,
+    versusOthers: versusOthers,
     loudFlags: loudFlags,
     quietRuns: quietRuns,
     combineMics: combineMics,

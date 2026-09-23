@@ -216,11 +216,34 @@ async function openPanel(browser, timeline, fakes) {
   return { page, calls };
 }
 
-/* Tick the boxes, pick the preset, press "Clean up my video", accept the
-   confirm. Returns { confirm, toast, razor:[args…], calls }. */
+/*
+ * Answer Pulse's "plays the whole time, like music — ignore it?" question
+ * (#sil-ask-ov) the way a gate says: music = 'yes' | 'no' | 'close', or an
+ * object { '<text in the question>': 'yes'|'no'|'close' }. Unanswered ones get
+ * 'no' — what the owner's panel does by default (a track is a voice). Runs in
+ * the page; returns the question's text, or null when none is showing.
+ */
+function answerMusicInPage(o) {
+  const ask = document.getElementById('sil-ask-ov');
+  if (!ask) return null;
+  const txt = (document.getElementById('sil-ask-text') || ask).innerText;
+  let a = 'no';
+  if (typeof o.music === 'string') a = o.music;
+  else if (o.music) for (const k of Object.keys(o.music)) if (txt.indexOf(k) >= 0) { a = o.music[k]; break; }
+  if (a === 'yes') document.getElementById('sil-ask-music').click();
+  else if (a === 'close') ask.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+  else document.getElementById('sil-ask-voice').click();
+  return txt;
+}
+
+/* Tick the boxes, pick the preset, press "Clean up my video", answer any
+   music question (opts.music, see answerMusicInPage), accept the confirm.
+   Returns { confirm, toast, asked:[question texts], razor:[args…], calls }. */
 async function cleanUp(page, calls, opts) {
   opts = opts || {};
-  const r = await page.evaluate(async (o) => {
+  const r = await page.evaluate(async (o, answerSrc) => {
+    const answer = new Function('o', 'return (' + answerSrc + ')(o);');
+    const asked = [];
     const tab = document.querySelector('[data-tab="silence"]'); if (tab) tab.click();
     // no strength given = leave the panel's current setting (and Fine-tune) alone
     const b = o.strength ? document.querySelector('#ac-strength button[data-s="' + o.strength + '"]') : null; if (b) b.click();
@@ -230,20 +253,22 @@ async function cleanUp(page, calls, opts) {
     document.getElementById('btn-autoclean').click();
     for (let i = 0; i < 600; i++) {
       await new Promise((res) => setTimeout(res, 50));
+      const q = answer(o);
+      if (q != null) { asked.push(q); continue; }
       const ov = document.getElementById('cp-confirm-ov');
       if (ov) {
         const txt = ov.innerText;
         document.getElementById('cp-confirm-ok').click();
         await new Promise((res) => setTimeout(res, 600));
         const t = document.getElementById('toast');
-        return { confirm: txt, toast: t ? t.textContent : '' };
+        return { confirm: txt, toast: t ? t.textContent : '', asked };
       }
       const t = document.getElementById('toast');
       const prog = document.getElementById('autoclean-progress');
-      if (t && t.textContent && !/hidden/.test(t.className) && prog && prog.classList.contains('hidden')) return { confirm: null, toast: t.textContent };
+      if (t && t.textContent && !/hidden/.test(t.className) && prog && prog.classList.contains('hidden')) return { confirm: null, toast: t.textContent, asked };
     }
-    return { timeout: true, prog: document.getElementById('autoclean-progress').textContent };
-  }, opts);
+    return { timeout: true, prog: document.getElementById('autoclean-progress').textContent, asked };
+  }, opts, answerMusicInPage.toString());
   r.razor = calls.filter(c => c.fn === 'CP_razorRipple').map(c => c.args);
   r.errors = calls.filter(c => c.fn === '__pageerror').map(c => c.args);
   return r;
@@ -258,4 +283,30 @@ async function withBrowser(fn) {
   try { return await fn(browser); } finally { await browser.close(); }
 }
 
-module.exports = { openPanel, cleanUp, withBrowser, PANEL_DIR, skip };
+/* Press "⚡ Find the silences" (the step-by-step drawer), answer any music
+   question like cleanUp does, and wait for the result. Returns { toast,
+   heard (the “What Pulse heard” box), found (the list of cuts is showing), asked }. */
+async function findSilences(page, opts) {
+  opts = opts || {};
+  return page.evaluate(async (o, answerSrc) => {
+    const answer = new Function('o', 'return (' + answerSrc + ')(o);');
+    const asked = [];
+    document.querySelector('[data-tab="silence"]').click();
+    document.querySelector('#tab-silence details.advanced').open = true;
+    const b = o.strength ? document.querySelector('#sil-strength button[data-s="' + o.strength + '"]') : null; if (b) b.click();
+    const t0 = document.getElementById('toast'); t0.textContent = ''; t0.className = 'toast hidden';
+    document.getElementById('btn-analyze').click();
+    for (let i = 0; i < 600; i++) {
+      await new Promise((res) => setTimeout(res, 50));
+      const q = answer(o);
+      if (q != null) { asked.push(q); continue; }
+      const t = document.getElementById('toast'), prog = document.getElementById('analyze-progress');
+      if (t.textContent && prog.classList.contains('hidden')) break;
+    }
+    const box = document.getElementById('sil-heard');
+    return { toast: document.getElementById('toast').textContent, heard: box && !box.classList.contains('hidden') ? box.innerText : '',
+             found: !document.getElementById('results').classList.contains('hidden'), asked };
+  }, opts, answerMusicInPage.toString());
+}
+
+module.exports = { openPanel, cleanUp, findSilences, withBrowser, PANEL_DIR, skip };

@@ -4,12 +4,13 @@
  * whenever its loudness swung more than 10 dB — and a drum loop swings 13–19 dB
  * between hits — so it got a vote, and a moment only counted as dead air when
  * the MUSIC was quiet too: 11 choppy cuts instead of 6, or nothing at all with
- * "Nothing to clean — your video is already tight!". A beat never PAUSES the
- * way a voice does, and that is what now tells them apart. The owner can also
- * say which track is music (or a voice) under “What Pulse heard”, and
- * Fine-tune → Manual only replaces the gate of the tracks that vote. Music
- * that plays while nobody talks (a jingle, an insert) is content, not a
- * pause: it keeps its vote and is never cut away.
+ * "Nothing to clean — your video is already tight!". A track whose name says
+ * music ("Music" here) is left out of the vote; any other track only when the
+ * owner says so (the one-tap question — silence-e2e-musicask — or “What Pulse
+ * heard”), because judging by sound took a noisy guest for music. Fine-tune →
+ * Manual only replaces the gate of the tracks that vote. Music that plays
+ * while nobody talks (a jingle, an insert) is content, not a pause: it keeps
+ * its vote and is never cut away.
  * Real panel, real ffmpeg, stubbed Premiere. Exit 0 pass · 1 fail · 2 skipped.
  */
 'use strict';
@@ -38,15 +39,15 @@ const tune = (st) => CPSilence.tuning(st);
     kick: F.makeWav(dir, 'kick_only_60bpm.wav', { dur: SC.DUR, beat: { bpm: 60, padDb: -70, kick: 0.5 }, seed: 9 })
   };
   const whole = (file, name) => ({ name: name || path.basename(file), mediaPath: file, seqStart: 0, seqEnd: SC.DUR, inPoint: 0, outPoint: SC.DUR });
-  const reel = (bed) => ({ seqId: 'seq-reel', seqName: 'Reel 07', video: [{}],
-    audio: [{ name: 'Voice', items: [whole(voice.file)] }, { name: 'Music', items: [whole(bed)] }] });
+  const reel = (bed, bedTrack) => ({ seqId: 'seq-reel', seqName: 'Reel 07', video: [{}],
+    audio: [{ name: 'Voice', items: [whole(voice.file)] }, { name: bedTrack || 'Music', items: [whole(bed)] }] });
   const voiceOnly = [{ spec: voice.spec, items: [{ seqStart: 0, seqEnd: SC.DUR, inPoint: 0, speed: 1 }] }];
 
   await P.withBrowser(async (browser) => {
-    async function run(tl, strength, before) {
+    async function run(tl, strength, before, music) {
       const { page, calls } = await P.openPanel(browser, tl);
       if (before) await before(page);
-      const r = await P.cleanUp(page, calls, { strength, takes: false });
+      const r = await P.cleanUp(page, calls, { strength, takes: false, music });
       r.heard = await page.evaluate(() => { const b = document.getElementById('ac-heard'); return b && !b.classList.contains('hidden') ? b.innerText : ''; });
       r.page = page; r.calls = calls;
       r.cuts = r.razor.length ? r.razor[0].ranges : [];
@@ -118,9 +119,11 @@ const tune = (st) => CPSilence.tuning(st);
         'Manual: the confirm says the music was left out and which gate was the owner\'s own');
     }
 
-    // the owner has the last word: a kick-only loop swings like a voice, so
-    // Pulse lets it vote (few, choppy cuts) until the owner marks it as music
-    const r = await run(reel(beds.kick), 'balanced');
+    // the owner has the last word: a kick-only loop on a track whose name
+    // says nothing ("Audio 2" — a track NAMED music is left out by its name
+    // now) keeps its vote while the owner hasn't said (few, choppy cuts; here
+    // the owner closes Pulse's question) until the owner marks it as music
+    const r = await run(reel(beds.kick, 'Audio 2'), 'balanced', null, 'close');
     const heardAuto = r.heard, autoRemoved = r.removed;
     ok(/A2/.test(heardAuto) && !!(await r.page.$('#ac-heard select[data-heard="A2"]')),
       '“What Pulse heard” lists every track with a voice / music choice');

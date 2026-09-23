@@ -104,9 +104,26 @@ function beatLayer(n, beat, seed) {
   return out;
 }
 
+/* A noisy room's clatter or chatter: short noise bursts (lenLo–lenHi s long,
+   gapLo–gapHi s apart) at `db` RMS — a café, cutlery, someone moving about.
+   clatter: { db, lenLo, lenHi, gapLo, gapHi }. */
+function clatterLayer(n, c, seed) {
+  const r = rng(seed), out = new Float32Array(n), a = dbToAmp(c.db) * Math.sqrt(3);   // uniform noise at that RMS
+  let t = 0.1;
+  while (t * SR < n) {
+    const len = c.lenLo + r() * (c.lenHi - c.lenLo);
+    const i0 = Math.round(t * SR), i1 = Math.min(n, Math.round((t + len) * SR));
+    for (let i = i0; i < i1; i++) out[i] = a * (r() * 2 - 1);
+    t += len + c.gapLo + r() * (c.gapHi - c.gapLo);
+  }
+  return out;
+}
+
 /*
  * spec: { dur, floorDb, speech: [[s,e],…], speechDb (default −20),
- *         bleed: { bursts:[[s,e],…], db } (another voice leaking in),
+ *         bleed: { bursts:[[s,e],…], db } (another voice leaking in — over
+ *                  the whole file it is a TV or a conversation next door),
+ *         clatter: { db, lenLo, lenHi, gapLo, gapHi } (a noisy room's bursts),
  *         musicDb, beat: { bpm, padDb, kick, hat, snare } (a drum-loop bed),
  *         digital: [[s,e],…] (exact digital zero), seed }
  */
@@ -117,6 +134,7 @@ function render(spec) {
   if (spec.floorDb != null) add(noiseLayer(n, spec.floorDb, seed + 1));
   if (spec.speech && spec.speech.length) add(speechLayer(n, spec.speech, spec.speechDb != null ? spec.speechDb : -20, seed + 2));
   if (spec.bleed) add(speechLayer(n, spec.bleed.bursts, spec.bleed.db, seed + 3));
+  if (spec.clatter) add(clatterLayer(n, spec.clatter, seed + 5));
   if (spec.musicDb != null) add(musicLayer(n, spec.musicDb));
   if (spec.beat) add(beatLayer(n, spec.beat, seed + 4));
   for (const [s, e] of (spec.digital || [])) {
