@@ -818,6 +818,14 @@ body.theme-light .tpl-card.on .tpl-thumb { box-shadow: 0 0 0 3px #7aa01f; }
 .tre-head .hero-btn.small { width: auto; margin: 0; }
 .tre-list { overflow-y: auto; margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
 .tre-row { display: flex; align-items: center; gap: 6px; }
+/* on a narrow panel each line's words get the whole width, under its time and
+   its + ⤴ ✕ buttons (at 260 px the box showed eleven letters: "yeh line nu") */
+@media (max-width: 359px) {
+  .tre-list { gap: 12px; }
+  .tre-row { flex-wrap: wrap; row-gap: 4px; }
+  .tre-row .tre-time { width: auto; text-align: left; margin-right: auto; }
+  .tre-row .tre-text { order: 9; flex: 1 1 100%; }
+}
 .tre-time { flex: 0 0 auto; width: 46px; font: var(--fs-xs) ui-monospace, monospace; color: var(--dim); text-align: right; }
 .tre-text { flex: 1; min-width: 0; min-height: var(--tap); padding: 4px 8px; background: var(--card2); border: 1px solid var(--line);
   border-radius: 7px; color: inherit; font-size: var(--fs-sm); }

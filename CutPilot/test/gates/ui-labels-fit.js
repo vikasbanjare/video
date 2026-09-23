@@ -16,6 +16,10 @@
  * bar is the one exception — it gives way to the page name and shows in full
  * on hover (and a tap looks for the sequence again).
  *
+ * The caption-words editor is measured too: at 260 px each line's text box
+ * showed eleven letters ("yeh line nu"), so a caption could not be read,
+ * let alone fixed. Each box must show a whole, typical caption line.
+ *
  * Dropdowns are ui-choices-fit.js's job.
  * CP_PANEL_DIR=<dir> runs it against another copy of the panel.
  */
@@ -84,9 +88,32 @@ function measure(args) {
       if (bad.length) R.bad(s.label + ': ' + bad.length + ' cut-off label(s) — ' + bad.slice(0, 5).join('; ') + (bad.length > 5 ? ' …' : ''));
       await page.setViewport({ width: 400, height: 800 });
     }
+    // the caption-words editor: every line's words readable in their box
+    const LINE = 'yeh line number 12 hai bhai';
+    const tre = [];
+    for (const W of WIDTHS) {
+      await page.setViewport({ width: W, height: 800 });
+      const r = await page.evaluate(async (LINE) => {
+        const D = window.CP_DEBUG;
+        if (!D || !D.setLastCaptionJob || !D.openCaptionTextEditor) return { err: 'no caption-editor hooks' };
+        document.querySelector('.tab[data-tab="captions"]').click();
+        D.setLastCaptionJob([0, 1, 2].map(i => ({ start: i * 2, end: i * 2 + 2, text: LINE })));
+        D.openCaptionTextEditor(); await new Promise(r => setTimeout(r, 250));
+        const boxes = Array.from(document.querySelectorAll('#tre-list .tre-text')).filter(b => b.getClientRects().length);
+        const out = { n: boxes.length, cut: boxes.filter(b => b.scrollWidth > b.clientWidth + 1).map(b => b.clientWidth + '<' + b.scrollWidth) };
+        const c = document.getElementById('tre-cancel'); if (c) c.click();
+        const t = document.getElementById('toast'); if (t) t.classList.add('hidden');
+        return out;
+      }, LINE);
+      if (r.err) { tre.push(r.err); break; }
+      total += r.n;
+      if (!r.n) tre.push(W + 'px: no line boxes');
+      else if (r.cut.length) tre.push(W + 'px: "' + LINE + '" does not fit its box (' + r.cut[0] + 'px)');
+    }
+    if (tre.length) R.bad('caption-words editor: ' + tre.join('; '));
     if (page._cpErrors.length) R.bad('page errors: ' + page._cpErrors.slice(0, 3).join(' | '));
   } finally { await browser.close(); }
   if (total < 500) R.bad('only ' + total + ' labels measured — the check is not reaching the screens');
-  else if (!R.failed) R.ok(total + ' labels on ' + U.SCREENS.length + ' screens at ' + WIDTHS.join(' / ') + ' px: every one shows in full (' + Object.keys(EXEMPT).map(k => '#' + k + ': ' + EXEMPT[k]).join('; ') + ')');
+  else if (!R.failed) R.ok(total + ' labels on ' + U.SCREENS.length + ' screens and in the caption-words editor at ' + WIDTHS.join(' / ') + ' px: every one shows in full (' + Object.keys(EXEMPT).map(k => '#' + k + ': ' + EXEMPT[k]).join('; ') + ')');
   R.done('UI LABELS FIT: nothing is cut short on a docked panel ✓', 'UI LABELS FIT: ' + R.failed + ' problem(s) above');
 })().catch(e => { console.error('  ✗ harness error: ' + (e && e.stack || e)); process.exit(1); });
