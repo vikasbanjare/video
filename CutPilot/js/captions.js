@@ -2368,8 +2368,12 @@
       font: 'EB Garamond', weight: 500, fallbackFonts: devaChain(['Georgia'], 'Tiro Devanagari Hindi', 'serif'), fontSize: 58,
       fill: '#E6E6E6', highlight: '#FFFFFF', upcomingOpacity: 0.6, glow: '#000000', glowBlur: 0.5, stroke: null, strokeWidth: 0, maxLines: 2,
       uppercase: false, wordsPerCue: 6, anim: 'fade', keyword: false },
+    // 64, not 56: Syne's capitals are short (0.65 of the font size), so at 56
+    // this all-caps look drew the smallest caption in the gallery — its tile
+    // read as a thin line of 7-pixel capitals (sim-preview-check: 6% of the
+    // tile against 11% for its size, once the real Syne loaded).
     { id: 'tr-luxe-wide', name: 'Luxe Wide', category: _C, popularity: 87, layout: 'center',
-      font: 'Syne', weight: 700, fallbackFonts: devaChain(['Arial'], 'Mukta'), fontSize: 56, fill: '#FFFFFF', highlight: '#D9C9A3',
+      font: 'Syne', weight: 700, fallbackFonts: devaChain(['Arial'], 'Mukta'), fontSize: 64, fill: '#FFFFFF', highlight: '#D9C9A3',
       letterSpacing: 6, glow: '#000000', glowBlur: 0.35, stroke: null, strokeWidth: 0,
       uppercase: true, wordsPerCue: 2, anim: 'fade', keyword: false },
     // ---- 🌈 neon & glow ----
