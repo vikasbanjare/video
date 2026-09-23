@@ -3361,7 +3361,6 @@
     STYLE_PRESETS: STYLE_PRESETS,
     TEMPLATES: TEMPLATES,
     CATEGORIES: CATEGORIES,
-    CAT_HINDI: CAT_HINDI,
     inCategory: inCategory,
     sweepColor: sweepColor,
     isNearBlack: isNearBlack,

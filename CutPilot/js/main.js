@@ -3711,10 +3711,11 @@
       this.value = '';
     });
 
-    // category chips (caption styles only — .mogrt lives in the Editor tab now).
-    // ⭐ Premium leads; 🎥 Your Styles (the 35 styles learned from the user's
-    // OWN videos) sits right up front — parked at the tail of a scrolling chip
-    // row it was invisible in a narrow panel ("where are those captions?").
+    // category chips, in galleryChips() order: All and 🔥 Trending lead, the
+    // owner's own 🎬 From My Videos / 🎥 Your Styles sit right behind them
+    // (parked at the tail of a scrolling chip row they were invisible in a
+    // narrow panel — "where are those captions?"), and Premiere's own .mogrt
+    // templates have their own chip at the end.
     var cats = galleryChips();
     var chipBox = $('lib-cats');
     cats.forEach(function (c) {
@@ -3869,18 +3870,24 @@
   }
 
   /* The STYLE cards for the current chip. Every card here is a Pulse style
-     that opens the full editor. .mogrt templates are never mixed in: they are
-     only returned for their own chip (and appended as a labelled section under
-     "All" by renderTemplateGrid). Near-duplicate Buttons (galleryHidden) are
-     left out of browsing but still come back through Favorites and Recent, so a
-     look the user kept never disappears. */
+     that opens the full editor. .mogrt templates are only returned for their
+     own chip (and appended as a labelled section under "All" by
+     renderTemplateGrid) — and under Favorites when the owner starred one: every
+     .mogrt card still shows a ☆, and a star that led nowhere read as broken
+     (they open their own template sheet from there, as everywhere).
+     Near-duplicate Buttons (galleryHidden) are left out of browsing but still
+     come back through Favorites and Recent, so a look the user kept never
+     disappears. */
   function filteredTemplates() {
     var mogrtMode = (state.libMode === 'mogrt');
     var cat = state.libCategory;
     var list;
     if (mogrtMode) list = allTemplates().filter(function (t) { return !!t.mogrt; });
     else if (cat === MOGRT_CAT) list = advancedMogrts();
-    else if (cat === 'Favorites') list = allTemplates().filter(function (t) { return !t.mogrt && state.favs[t.id]; });
+    else if (cat === 'Favorites') {
+      var advFav = advancedMogrts().filter(function (t) { return state.favs[t.id]; });
+      list = allTemplates().filter(function (t) { return !t.mogrt && state.favs[t.id]; }).concat(advFav);
+    }
     else if (cat === 'Recent') list = state.recent.map(findTemplate).filter(function (t) { return t && !t.mogrt; });
     else if (cat === 'My Templates') list = state.customTemplates.slice();
     else {
@@ -3916,8 +3923,11 @@
     }
     return h;
   }
-  var ADVANCED_NOTE = 'Premiere\'s own Motion Graphics templates. Each one only offers the few settings its designer built in — ' +
-    'the styles above give you every control. Caption looks from these templates are also above as full Pulse styles.';
+  /* Shown both under "All" (after every style) and alone in the 🧩 chip, so it
+     never says "above": in the chip nothing is above it. */
+  var ADVANCED_NOTE = 'Premiere\'s own Motion Graphics templates. Each one only offers the few settings its designer built in. ' +
+    'Every style in the gallery gives you every control — and the caption looks from these templates are there too, as full Pulse styles ' +
+    '(Plain Subtitle, Word Highlight, Word Pop, Active-Word Box, Gradient Highlight, Halo Box).';
 
   function renderTemplateGrid() {
     var grid = $('tpl-grid');
@@ -3944,10 +3954,20 @@
       grid.appendChild(gallerySectionHead(MOGRT_CAT, ADVANCED_NOTE));
       appendMogrtGroups(grid, list);
     } else if (cat === 'All' && !mogrtMode && !state.libSearch) {
-      // "All" reads as the library's sections, in chip order, each style once
-      // (under its home category), then the advanced .mogrt section.
-      var groups = [{ name: 'My Templates', items: [] }];
-      (CPCaptions.CATEGORIES || []).forEach(function (c) { groups.push({ name: c, items: [] }); });
+      // "All" reads as the library's sections IN CHIP ORDER (galleryChips:
+      // Trending, the owner's own From My Videos / Your Styles and My
+      // Templates, then the looks, Buttons last), each style once under its
+      // home category, then the advanced .mogrt section. It used to follow the
+      // library's own category order, which put the owner's own sections at
+      // cards 70–107 although the chips put them up front.
+      var groups = [];
+      galleryChips().forEach(function (c) {
+        if (c === 'My Templates' || (CPCaptions.CATEGORIES || []).indexOf(c) >= 0) groups.push({ name: c, items: [] });
+      });
+      (CPCaptions.CATEGORIES || []).forEach(function (c) {
+        for (var gi = 0; gi < groups.length; gi++) if (groups[gi].name === c) return;
+        groups.push({ name: c, items: [] });
+      });
       var byName = {};
       groups.forEach(function (g) { byName[g.name] = g; });
       var other = { name: 'More styles', items: [] };
@@ -3972,11 +3992,13 @@
   }
 
   /* Web fonts arrive per script: Google Fonts serves each face in subsets
-     (latin, devanagari…), and a browser fetches a subset only for text it lays
-     out or text named in document.fonts.load(). A canvas draw never fetches
-     one, and the render's font wait names no text, so it gets Latin only — a
-     Hindi caption in Baloo 2 or Mukta was drawn in whatever system face had
-     Devanagari. Ask for every face in the style's chain with BOTH scripts. */
+     (latin, devanagari…), and a browser fetches a subset only when text needs
+     it. A canvas draw DOES start that fetch, but draws that very frame in a
+     stand-in face while the piece downloads — so the first tiles (and, before
+     CPRender.preloadFaces, the first rendered frames) of a Hindi caption in
+     Baloo 2 or Mukta came out in whatever system face had Devanagari. Asking
+     up front for every face in the style's chain, with BOTH scripts, gets the
+     pieces in before the first draw. */
   var _fontsAsked = {};
   function preloadStyleFonts(p, then) {
     if (!p || !document.fonts || !document.fonts.load) return;
