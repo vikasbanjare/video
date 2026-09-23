@@ -200,9 +200,9 @@
   }
   /* Every cut the reply holds. A reply cut off mid-list (max_tokens) still
      yields the cuts that were complete, instead of silently nothing. */
-  function replyCuts(text) {
-    if (text == null) return [];
-    var s = String(text), tries = 0, i;
+  /* The list of cuts from the first complete reply document, or null. */
+  function replyDoc(s) {
+    var tries = 0, i;
     for (i = 0; i < s.length && tries < 200; i++) {
       var ch = s.charAt(i);
       if (ch !== '{' && ch !== '[') continue;
@@ -214,6 +214,12 @@
       if (l) return l;
       if (p) i = b;                              // parsed, but not a reply document: skip past it
     }
+    return null;
+  }
+  function replyCuts(text) {
+    if (text == null) return [];
+    var s = String(text), doc = replyDoc(s);
+    if (doc) return doc;
     // no complete reply document: recover each complete flat {...} that is a cut
     var out = [], m, re = /\{[^{}]*\}/g;
     while ((m = re.exec(s))) {
@@ -221,6 +227,15 @@
       if (q && span(q.v)) out.push(q.v);
     }
     return out;
+  }
+  /* Was the reply cut off (the token limit hit mid-list)? No complete reply
+     document, but a bracket that opens and never closes. parseCleanupResponse
+     still keeps the cuts that were complete; everything after the cut-off
+     point is lost, so the caller asks again about the chunk in two halves. */
+  function replyTruncated(text) {
+    if (text == null) return false;
+    var s = String(text), a = s.search(/[\[{]/);
+    return a >= 0 && !replyDoc(s) && closeAt(s, a) < 0;
   }
   var CAT_ALIAS = {
     filler: 'filler', fillers: 'filler', filler_word: 'filler', filler_words: 'filler', disfluency: 'filler', um: 'filler',
@@ -308,6 +323,16 @@
       out[k].ownTo = (k === out.length - 1) ? n : Math.floor((out[k + 1].from + out[k].to) / 2);
     }
     return out;
+  }
+  /* A chunk from planChunks split into two halves that overlap by `overlap`
+     words and share the chunk's own range between them — the re-ask when a
+     reply about the whole chunk was cut off. Same shape as planChunks. */
+  function splitChunk(pc, overlap) {
+    var mid = Math.floor((pc.from + pc.to) / 2), h = Math.floor(Math.max(0, overlap || 0) / 2);
+    var ownFrom = (pc.ownFrom != null) ? pc.ownFrom : pc.from, ownTo = (pc.ownTo != null) ? pc.ownTo : pc.to;
+    var cut = Math.min(Math.max(mid, ownFrom), ownTo);
+    return [{ from: pc.from, to: Math.min(pc.to, mid + h), ownFrom: ownFrom, ownTo: cut },
+            { from: Math.max(pc.from, mid - h), to: pc.to, ownFrom: cut, ownTo: ownTo }];
   }
   /* Combine per-chunk parsed cuts (perChunk[k] = parseCleanupResponse of chunk
      k) into one sorted list: keep each cut only from the chunk that owns its
@@ -473,7 +498,9 @@
     mmss: mmss,
     chunk: chunk,
     planChunks: planChunks,
+    splitChunk: splitChunk,
     mergeChunkCuts: mergeChunkCuts,
+    replyTruncated: replyTruncated,
     cleanupCategories: cleanupCategories,
     chatBody: chatBody
   };

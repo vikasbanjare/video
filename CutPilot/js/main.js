@@ -9522,13 +9522,27 @@
     var tangents = (opts.tangents != null) ? opts.tangents : (people === 'many' ? false : undefined);
     var plan = CPSmartEdit.planChunks(words.length, 1000, 150);
     var cats = CPSmartEdit.cleanupCategories({ fillers: opts.fillers, tangents: tangents });
-    return processChunks(plan, function (pc) {
+    /* One chunk → its cuts (indices local to the chunk). A reply cut off by
+       the token limit keeps only the cuts before the cut-off point, silently —
+       so that chunk is asked again in two overlapping halves (twice at most). */
+    function ask(pc, depth) {
       var cw = words.slice(pc.from, pc.to);
       var prompt = CPSmartEdit.buildCleanupPrompt(cw, { aggressive: !!opts.aggressive, scripted: scripted,
                                                         fillers: opts.fillers, tangents: tangents });
       return aiChatRetry(prompt, { maxTokens: 2048 }).then(function (content) {
-        return [CPSmartEdit.parseCleanupResponse(content, cw, { minConfidence: 0, categories: cats })];   // one entry per chunk
+        if (depth < 2 && pc.to - pc.from >= 200 && CPSmartEdit.replyTruncated(content)) {
+          var halves = CPSmartEdit.splitChunk(pc, 150);
+          return ask(halves[0], depth + 1).then(function (a) {
+            return ask(halves[1], depth + 1).then(function (b) {
+              return CPSmartEdit.mergeChunkCuts(halves, [a, b]).map(function (c) { c.fromIdx -= pc.from; c.toIdx -= pc.from; return c; });
+            });
+          });
+        }
+        return CPSmartEdit.parseCleanupResponse(content, cw, { minConfidence: 0, categories: cats });
       });
+    }
+    return processChunks(plan, function (pc) {
+      return ask(pc, 0).then(function (cuts) { return [cuts]; });   // one entry per chunk
     }, prog, label || '✨ AI is reading your transcript').then(function (perChunk) {
       return { cuts: CPSmartEdit.mergeChunkCuts(plan, perChunk), truncated: false, maxw: words.length };
     });
