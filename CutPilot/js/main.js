@@ -7215,6 +7215,18 @@
       p(d.getSeconds()) + '-' + p(d.getMilliseconds(), 3);
   }
 
+  /* mkdir -p that also works on the Node inside Premiere 14.0–14.3 (Node 8),
+     which ignores { recursive: true }: there an existing folder threw EEXIST
+     (the second long job in a project lost "Pulse Media") and a missing parent
+     threw ENOENT. One level at a time; folders that exist are left alone. */
+  function makeDirs(dir) {
+    var fs = nodeReq('fs'), pathMod = nodeReq('path');
+    if (fs.existsSync(dir)) return;
+    var parent = pathMod.dirname(dir);
+    if (parent && parent !== dir) makeDirs(parent);
+    try { fs.mkdirSync(dir); } catch (e) { if (!fs.existsSync(dir)) throw e; }
+  }
+
   /* Where caption media lives — the long-video overlay AND the per-image
      captions of every reel — and whose it is. NOT the OS temp folder: macOS
      clears files there that go unused for a few days, and the project then
@@ -7237,7 +7249,7 @@
       cands.push(pathMod.join(os.homedir(), 'Documents', 'Pulse', 'Media', mediaSafeName(pname)));
       for (var i = 0; i < cands.length; i++) {
         try {
-          fs.mkdirSync(cands[i], { recursive: true });
+          makeDirs(cands[i]);
           var probe = pathMod.join(cands[i], '.pulse-write-test');
           fs.writeFileSync(probe, 'ok');
           fs.unlinkSync(probe);
@@ -7612,7 +7624,7 @@
         var assPath = pathMod.join(work, 'cap.ass');
         var outPath = out.path;
         function dropWork() { try { fs.unlinkSync(assPath); } catch (e1) {} try { fs.rmdirSync(work); } catch (e2) {} }
-        try { fs.mkdirSync(work, { recursive: true }); fs.writeFileSync(assPath, assStr, 'utf8'); }
+        try { makeDirs(work); fs.writeFileSync(assPath, assStr, 'utf8'); }
         catch (eW) {
           dropWork();
           diag('captions', 'simpler overlay: could not write its caption file: ' + rawFailure(eW));
