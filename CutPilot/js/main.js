@@ -9615,56 +9615,101 @@
         });
       });
   }
-  /* Extract the clip's audio, transcribe VERBATIM (keeps every take), return
-     words in SEQUENCE time with per-word confidence. */
-  function verbatimTranscribe(clip, ff) {
-    return new Promise(function (resolve, reject) {
-      var key = (settings.verbatimKey || '').trim();
-      if (!key) return reject(new Error('Add a Deepgram or AssemblyAI key in Settings → Verbatim transcription.'));
-      var cp, fs, os, pathMod;
-      try { cp = nodeReq('child_process'); fs = nodeReq('fs'); os = nodeReq('os'); pathMod = nodeReq('path'); } catch (e) { return reject(e); }
-      var audio = pathMod.join(os.tmpdir(), 'pulse-vb-' + Date.now() + '.mp3');
-      var inP = clip.inPoint || 0, outP = clip.outPoint || 0, dur = (outP > inP) ? (outP - inP) : 0;
-      var args = ['-y', '-ss', String(inP), '-i', clip.mediaPath];
-      if (dur > 0) args = args.concat(['-t', String(dur)]);
-      args = args.concat(['-vn', '-ac', '1', '-ar', '16000', '-b:a', '64k', audio]);
-      var ex; try { ex = cp.spawn(ff, args); } catch (e3) { return reject(e3); }
-      var exErr = '';
-      if (ex.stderr) ex.stderr.on('data', function (d) { exErr += d.toString(); });
-      ex.on('error', function (e) { reject(new Error('Audio extract failed: ' + e.message)); });
-      ex.on('close', function (code) {
-        if (code !== 0 || !fs.existsSync(audio)) return reject(new Error('Could not extract audio: ' + exErr.slice(-140)));
-        function cleanup() { try { fs.unlinkSync(audio); } catch (e) {} }
-        var off = (clip.seqStart || 0);   // word time is relative to inPoint → seq = seqStart + t
-        function toSeq(ws) {
-          return ws.map(function (w) {
-            var o = { start: off + w.start, end: off + w.end, text: w.text, conf: w.conf };
-            if (w.speaker != null) o.speaker = w.speaker;   // who said it — an echo by the other person is never a retake
-            return o;
-          });
-        }
-        var engine = (settings.verbatimProvider === 'assemblyai') ? verbatimAssembly : verbatimDeepgram;
-        engine(audio, key).then(function (ws) { cleanup(); resolve(toSeq(ws)); }).catch(function (e) { cleanup(); reject(e); });
+  /* ffmpeg: every live audio track of the timeline, each piece at its own
+     timeline position, mixed to one mono mp3 (CPVerbatim.timelineMixPlan).
+     A long timeline's graph goes through a file — it would not fit on a
+     Windows command line. Retries: a file with fewer audio streams than the
+     tracks it sits on is read from its first stream; an ffmpeg that dropped
+     -filter_complex_script is given -/filter_complex. */
+  function extractTimelineMix(ff, plan, audio) {
+    var fs = nodeReq('fs'), graph = CPVerbatim.mixFilterGraph(plan);
+    var file = graph.length > 12000 ? audio.replace(/\.mp3$/, '') + '-graph.txt' : null;
+    function attempt(o) {
+      var opts = { oneStream: !!o.oneStream };
+      if (file) { fs.writeFileSync(file, CPVerbatim.mixFilterGraph(plan, opts)); opts.graphFile = file; opts.graphFlag = o.flag; }
+      return runProc(ff, CPVerbatim.mixFfmpegArgs(plan, audio, opts));
+    }
+    function done() { if (file) { try { fs.unlinkSync(file); } catch (e) {} } }
+    var o = { oneStream: false, flag: '-filter_complex_script' };
+    function run() {
+      return attempt(o).catch(function (e) {
+        var m = String((e && e.message) || '');
+        if (!o.oneStream && /matches no streams|Stream specifier/i.test(m)) { o.oneStream = true; return run(); }
+        if (file && o.flag !== '-/filter_complex' && /Unrecognized option|Option not found|filter_complex_script/i.test(m)) { o.flag = '-/filter_complex'; return run(); }
+        throw new Error('Could not read the timeline audio: ' + m.slice(-160));
       });
+    }
+    return run().then(function (r) { done(); return r; }, function (e) { done(); throw e; });
+  }
+  /* One clip's audio (in point to out point) — for a host that cannot list
+     the timeline's tracks. */
+  function extractClipAudio(ff, clip, audio) {
+    var inP = clip.inPoint || 0, outP = clip.outPoint || 0, dur = (outP > inP) ? (outP - inP) : 0;
+    var args = ['-y', '-ss', String(inP), '-i', clip.mediaPath];
+    if (dur > 0) args = args.concat(['-t', String(dur)]);
+    return runProc(ff, args.concat(['-vn', '-ac', '1', '-ar', '16000', '-b:a', '64k', audio]))
+      .catch(function (e) { throw new Error('Could not extract audio: ' + String((e && e.message) || '').slice(-160)); });
+  }
+  /* Transcribe the timeline VERBATIM (keeps every take) and return words in
+     SEQUENCE time with per-word confidence and speaker. EVERY live voice track
+     is heard, mixed as it plays (CP_getCutSources): the old path read one clip,
+     so on a two-mic podcast the other person's words — and their retakes —
+     were never read, and on a timeline already cut into pieces only one
+     piece was. `src` = CP_getCutSources() when the caller has it (else read
+     here); with no track list (an older host) the one `clip` is read.
+     opts.keepAudio leaves the mix on disk as words.audio = {path, seqStart,
+     duration} (the caller deletes it) — Verbatim retakes snaps its cuts to
+     the pauses heard in it. */
+  function verbatimTranscribe(clip, ff, src, opts) {
+    opts = opts || {};
+    var key = (settings.verbatimKey || '').trim();
+    if (!key) return Promise.reject(new Error('Add a Deepgram or AssemblyAI key in Settings → Verbatim transcription.'));
+    var fs, os, pathMod;
+    try { fs = nodeReq('fs'); os = nodeReq('os'); pathMod = nodeReq('path'); } catch (e) { return Promise.reject(e); }
+    var audio = pathMod.join(os.tmpdir(), 'pulse-vb-' + Date.now() + '.mp3');
+    function cleanup() { try { fs.unlinkSync(audio); } catch (e) {} }
+    return (src !== undefined ? Promise.resolve(src) : readCutSources()).then(function (s) {
+      var plan = s ? CPVerbatim.timelineMixPlan(s) : null;
+      if (!plan && !(clip && clip.mediaPath)) throw new Error('Put your video on the timeline (select it) so I can read its audio.');
+      // word time is relative to the start of what was read → seq = off + t
+      var off = plan ? plan.span.start : (clip.seqStart || 0);
+      var dur = plan ? plan.span.end - plan.span.start : Math.max(0, (clip.outPoint || 0) - (clip.inPoint || 0));
+      return (plan ? extractTimelineMix(ff, plan, audio) : extractClipAudio(ff, clip, audio)).then(function () {
+        if (!fs.existsSync(audio)) throw new Error('Could not extract audio.');
+        var engine = (settings.verbatimProvider === 'assemblyai') ? verbatimAssembly : verbatimDeepgram;
+        return engine(audio, key);
+      }).then(function (ws) {
+        var words = ws.map(function (w) {
+          var o = { start: off + w.start, end: off + w.end, text: w.text, conf: w.conf };
+          if (w.speaker != null) o.speaker = w.speaker;   // who said it — an echo by the other person is never a retake
+          return o;
+        });
+        if (opts.keepAudio) words.audio = { path: audio, seqStart: off, duration: dur };
+        else cleanup();
+        return words;
+      }, function (e) { cleanup(); throw e; });
     });
   }
   function runVerbatimRetakes() {
     var ff = resolveFfmpeg();
     if (!ff) return toast('This needs ffmpeg (Settings → ffmpeg).', true);
     if (!(settings.verbatimKey || '').trim()) return toast('Add a Deepgram or AssemblyAI key in Settings → Verbatim transcription to use this.', true);
-    var prog = $('takes-progress'); prog.classList.remove('hidden'); prog.textContent = 'Finding your clip…';
-    var guard = null;
-    readCutSources().then(function (src) {
-      guard = cutGuardOf(src);   // the timeline whose audio is read — the list is for it only
+    var prog = $('takes-progress'); prog.classList.remove('hidden'); prog.textContent = 'Reading your timeline…';
+    var guard = null, src = null, clip = null;
+    readCutSources().then(function (s) {
+      src = s; guard = cutGuardOf(s);   // the timeline whose audio is read — the list is for it only
       return CPBridge.callHost('CP_getSelectedClip');
     }).then(
       function (res) { return (res && res.clip && res.clip.mediaPath) ? res : CPBridge.callHost('CP_getTranscribeSource'); },
       function () { return CPBridge.callHost('CP_getTranscribeSource'); }
-    ).then(function (res) {
-      if (!res || !res.clip || !res.clip.mediaPath) throw new Error('Put your video on the timeline (select it) so I can read its audio.');
-      state.clip = res.clip;
+    ).then(null, function () { return null; }).then(function (res) {
+      // the one clip is only needed when the host cannot list every track
+      if (res && res.clip && res.clip.mediaPath) { clip = res.clip; state.clip = clip; }
       prog.textContent = '🎙 Transcribing verbatim (keeps every take)… this can take a minute';
-      return verbatimTranscribe(res.clip, ff).then(function (words) {
+      return verbatimTranscribe(clip, ff, src, { keepAudio: true }).then(function (words) {
+        var heard = words.audio;
+        function dropAudio() { if (heard) { try { nodeReq('fs').unlinkSync(heard.path); } catch (e) {} } }
+        words = words.slice();
         // Adopt the verbatim words only when the panel has none: they may be in
         // another script than the caption transcript (Devanagari vs Hinglish),
         // and captions time their words from state.transcriptWords.
@@ -9674,10 +9719,14 @@
         var det = CPTakes.findRepeatedTakes(words, { minRun: tp.minrun, sim: tp.sim / 100, keep: 'best', people: takesPeople(words) });
         var deletes = CPTakes.tidyDeletes(det.deletes, 0.1);
         prog.textContent = 'Snapping cuts to the pauses…';
-        return detectSilencesRobust(res.clip, ff, { thresholdDb: -35, minSilence: 0.12, padding: 0 }).then(function (sd) {
-          var sils = (sd.silences || []).map(function (s) { return { start: (res.clip.seqStart || 0) + (s.start - res.clip.inPoint), end: (res.clip.seqStart || 0) + (s.end - res.clip.inPoint) }; });
+        // snap to the pauses in what was transcribed: the mix of every voice
+        // (a pause in one mic while the other person talks is not a pause)
+        var snapSrc = heard ? { mediaPath: heard.path, inPoint: 0, outPoint: heard.duration, seqStart: heard.seqStart } : clip;
+        return detectSilencesRobust(snapSrc, ff, { thresholdDb: -35, minSilence: 0.12, padding: 0 }).then(function (sd) {
+          var sils = (sd.silences || []).map(function (x) { return { start: (snapSrc.seqStart || 0) + (x.start - (snapSrc.inPoint || 0)), end: (snapSrc.seqStart || 0) + (x.end - (snapSrc.inPoint || 0)) }; });
           return CPSilence.snapCutsToSilence(deletes, sils, { window: 0.25, pad: 0.02 });
-        }).then(function (snapped) { return CPTakes.tidyDeletes(snapped, 0.1); }, function () { return deletes; });
+        }).then(function (snapped) { return CPTakes.tidyDeletes(snapped, 0.1); }, function () { return deletes; })
+          .then(function (cuts) { dropAudio(); return cuts; });
       });
     }).then(function (cuts) {
       prog.classList.add('hidden');
@@ -9710,6 +9759,7 @@
       takesPeople: takesPeople,
       verbatimDeepgram: verbatimDeepgram,
       verbatimAssembly: verbatimAssembly,
+      verbatimTranscribe: verbatimTranscribe,
       transcribeViaDeepgram: transcribeViaDeepgram
     };
   } catch (eDbgR) {}

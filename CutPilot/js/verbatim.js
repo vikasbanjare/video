@@ -98,6 +98,151 @@
     return out;
   }
 
+  // ------------------------------------------------ the timeline's voices ----
+  /* A verbatim transcript must hear EVERY voice on the timeline. The old path
+     read one clip: on a two-mic podcast the other person's words (and their
+     retakes) were never transcribed, and on a timeline already cut into
+     pieces only the first piece was. These build ONE mono mix of every live
+     audio track, each piece placed at its own timeline position (in point,
+     speed and direction honoured), so a word at t seconds in the mix was said
+     at span.start + t on the timeline.
+       src = CP_getCutSources(): { audio:[{ muted, items:[{ mediaPath, seqStart,
+             seqEnd, inPoint, outPoint, speed, reversed, disabled }] }], selection }
+     Returns null when there is nothing to hear. */
+  var NOT_AUDIO = /\.(aegraphic|mogrt|prproj|psd|ai|png|jpe?g|gif|tiff?|svg|eps|bmp|webp|heic)$/i;
+  function r6(x) { return Math.round(x * 1e6) / 1e6; }
+  function timelineMixPlan(src) {
+    var items = [], lo = Infinity, hi = -Infinity, i;
+    ((src && src.audio) || []).forEach(function (t, ti) {
+      if (!t || t.muted) return;                                    // a muted track is not heard
+      (t.items || []).forEach(function (it) {
+        if (!it || it.disabled || !it.mediaPath || NOT_AUDIO.test(String(it.mediaPath))) return;
+        var s = +it.seqStart, e = +it.seqEnd, a = +it.inPoint || 0, b = +it.outPoint || 0, sp = +it.speed;
+        if (!(e - s > 0.05)) return;
+        if (!(sp > 0)) sp = (b > a) ? (b - a) / (e - s) : 1;
+        if (!(b > a)) b = a + (e - s) * sp;
+        items.push({ track: ti, path: String(it.mediaPath), seqStart: s, seqEnd: e, from: a, to: b, speed: sp, reversed: !!it.reversed });
+        lo = Math.min(lo, s); hi = Math.max(hi, e);
+      });
+    });
+    var sel = src && src.selection;
+    if (sel && +sel.end > +sel.start) { lo = Math.max(lo, +sel.start); hi = Math.min(hi, +sel.end); }   // the owner's selected span only
+    if (!items.length || !(hi - lo > 0.05)) return null;
+    var pieces = [];
+    items.forEach(function (x) {
+      var s = Math.max(x.seqStart, lo), e = Math.min(x.seqEnd, hi);
+      if (!(e - s > 0.02)) return;
+      // media time of timeline time t: from + (t - seqStart)·speed, or counted
+      // back from `to` when the clip plays reversed
+      var a = x.reversed ? x.to - (e - x.seqStart) * x.speed : x.from + (s - x.seqStart) * x.speed;
+      var b = x.reversed ? x.to - (s - x.seqStart) * x.speed : x.from + (e - x.seqStart) * x.speed;
+      pieces.push({ track: x.track, path: x.path, seqStart: s, seqEnd: e, from: a, to: b, speed: x.speed, reversed: x.reversed, streams: 1 });
+    });
+    // one recording at the same place on two tracks — a stereo pair split in
+    // two, or the second audio stream of a multi-track file — is read once,
+    // with all its streams
+    var kept = [];
+    pieces.forEach(function (p) {
+      for (var k = 0; k < kept.length; k++) {
+        var q = kept[k];
+        if (q.path === p.path && Math.abs(q.seqStart - p.seqStart) < 0.01 && Math.abs(q.from - p.from) < 0.01 &&
+            Math.abs(q.speed - p.speed) < 1e-3 && q.reversed === p.reversed) { q.streams++; return; }
+      }
+      kept.push(p);
+    });
+    var inputs = [], at = {};
+    kept.forEach(function (p) {
+      if (at[p.path] == null) { at[p.path] = inputs.length; inputs.push({ path: p.path, from: p.from, to: p.to, streams: 1 }); }
+      var inp = inputs[at[p.path]];
+      inp.from = Math.min(inp.from, p.from); inp.to = Math.max(inp.to, p.to); inp.streams = Math.max(inp.streams, p.streams);
+      p.input = at[p.path];
+    });
+    // decode only the part of each file the timeline uses (+ half a second)
+    for (i = 0; i < inputs.length; i++) { inputs[i].from = Math.max(0, inputs[i].from - 0.5); inputs[i].to += 0.5; }
+    var byTrack = {}, order = [];
+    kept.forEach(function (p) { if (!byTrack[p.track]) { byTrack[p.track] = []; order.push(p.track); } byTrack[p.track].push(p); });
+    order.sort(function (a, b) { return a - b; });
+    return {
+      span: { start: lo, end: hi },
+      inputs: inputs,
+      tracks: order.map(function (t) { return byTrack[t].sort(function (a, b) { return a.seqStart - b.seqStart; }); })
+    };
+  }
+
+  function tempo(sp) {
+    if (!(sp > 0) || Math.abs(sp - 1) < 1e-4) return '';
+    var out = [];
+    while (sp > 2) { out.push('atempo=2'); sp /= 2; }          // older ffmpeg: 0.5 … 2 per atempo
+    while (sp < 0.5) { out.push('atempo=0.5'); sp /= 0.5; }
+    out.push('atempo=' + r6(sp));
+    return ',' + out.join(',');
+  }
+  /* The ffmpeg filter graph for a timelineMixPlan: every track laid out on the
+     timeline (silence in its gaps, each piece trimmed from its file, sped /
+     reversed as it plays) and the tracks mixed to [mix]. opts.oneStream reads
+     only each file's first audio stream (the retry when a file has fewer
+     streams than tracks). */
+  function mixFilterGraph(plan, opts) {
+    opts = opts || {};
+    var R = opts.rate || 16000;
+    var FMT = 'aformat=sample_fmts=fltp:sample_rates=' + R + ':channel_layouts=mono';
+    var tracks = [], uses = [], k;
+    plan.tracks.forEach(function (tr) {
+      var segs = [], cur = plan.span.start;
+      tr.forEach(function (p) {
+        var s = Math.max(p.seqStart, cur), a = p.from, b = p.to;
+        if (s > p.seqStart) { if (p.reversed) b -= (s - p.seqStart) * p.speed; else a += (s - p.seqStart) * p.speed; }
+        if (!(p.seqEnd - s > 0.002) || !(b - a > 0.001)) return;
+        if (s - cur > 0.0005) segs.push({ gap: s - cur });
+        segs.push({ p: p, a: a - plan.inputs[p.input].from, b: b - plan.inputs[p.input].from });
+        uses[p.input] = (uses[p.input] || 0) + 1;
+        cur = p.seqEnd;
+      });
+      if (plan.span.end - cur > 0.0005) segs.push({ gap: plan.span.end - cur });
+      if (segs.length) tracks.push(segs);
+    });
+    var g = [], label = {}, taken = {};
+    for (k = 0; k < plan.inputs.length; k++) {
+      if (!uses[k]) continue;
+      var S = opts.oneStream ? 1 : Math.max(1, plan.inputs[k].streams || 1), head = '', outs = '', s;
+      if (S > 1) { for (s = 0; s < S; s++) head += '[' + k + ':a:' + s + ']'; head += 'amix=inputs=' + S + ':duration=longest:dropout_transition=0,'; }
+      else head = '[' + k + ':a:0]';
+      label[k] = []; taken[k] = 0;
+      for (s = 0; s < uses[k]; s++) { label[k].push('in' + k + '_' + s); outs += '[in' + k + '_' + s + ']'; }
+      g.push(head + FMT + (uses[k] > 1 ? ',asplit=' + uses[k] : '') + outs);
+    }
+    var n = 0, tOut = [];
+    tracks.forEach(function (segs, ti) {
+      var ins = '';
+      segs.forEach(function (sg) {
+        var l = 's' + (n++);
+        if (sg.gap != null) g.push('anullsrc=r=' + R + ':cl=mono,atrim=duration=' + r6(sg.gap) + ',' + FMT + '[' + l + ']');
+        else {
+          var p = sg.p;
+          g.push('[' + label[p.input][taken[p.input]++] + ']atrim=start=' + r6(sg.a) + ':end=' + r6(sg.b) + ',asetpts=PTS-STARTPTS' +
+                 (p.reversed ? ',areverse' : '') + tempo(p.speed) + ',' + FMT + '[' + l + ']');
+        }
+        ins += '[' + l + ']';
+      });
+      g.push(ins + (segs.length > 1 ? 'concat=n=' + segs.length + ':v=0:a=1' : 'anull') + '[t' + ti + ']');
+      tOut.push('[t' + ti + ']');
+    });
+    g.push(tOut.join('') + (tOut.length > 1 ? 'amix=inputs=' + tOut.length + ':duration=longest:dropout_transition=0' : 'anull') + '[mix]');
+    return g.join(';\n');
+  }
+  /* ffmpeg arguments that write the mix to `out` (mono mp3, 16 kHz). With
+     opts.graphFile the graph is read from that file (opts.graphFlag, default
+     -filter_complex_script) — a long timeline's graph would not fit on a
+     Windows command line. */
+  function mixFfmpegArgs(plan, out, opts) {
+    opts = opts || {};
+    var args = ['-y', '-hide_banner', '-nostats'];
+    plan.inputs.forEach(function (inp) { args.push('-ss', String(r6(inp.from)), '-t', String(r6(inp.to - inp.from)), '-i', inp.path); });
+    if (opts.graphFile) args.push(opts.graphFlag || '-filter_complex_script', opts.graphFile);
+    else args.push('-filter_complex', mixFilterGraph(plan, opts));
+    return args.concat(['-map', '[mix]', '-ac', '1', '-ar', String(opts.rate || 16000), '-b:a', '64k', out]);
+  }
+
   /* Group a word stream into sentence-ish cues (so the rest of the pipeline,
      which expects {text,start,end}, can use a verbatim transcript). Splits on
      sentence punctuation or a pause > gap. */
@@ -123,6 +268,9 @@
     parseDeepgram: parseDeepgram,
     assemblySubmitBody: assemblySubmitBody,
     parseAssembly: parseAssembly,
+    timelineMixPlan: timelineMixPlan,
+    mixFilterGraph: mixFilterGraph,
+    mixFfmpegArgs: mixFfmpegArgs,
     wordsToCues: wordsToCues
   };
 });
