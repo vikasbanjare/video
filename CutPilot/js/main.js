@@ -6004,6 +6004,11 @@
     var v = parseInt(e.value, 10); return isNaN(v) ? def : v;
   }
   function cchk(id) { var e = $(id); return !!(e && e.checked); }
+  // how far "Dim upcoming words" dims: the open style's (or saved copy's) own level
+  function designedDimLevel() {
+    var p = currentPreset();
+    return (p && p.upcomingOpacity != null && p.upcomingOpacity > 0 && p.upcomingOpacity < 1) ? p.upcomingOpacity : 0.4;
+  }
 
   /* Read the customizer into an overrides object for mergeStyle / render. */
   function readOverrides() {
@@ -6071,7 +6076,10 @@
       animSpeed: cnum('c-animspeed', 100) / 100,
       perWordEntrance: cchk('c-perword'),
       perWordEntranceStyle: ($('c-perword-style') ? $('c-perword-style').value : 'pop'),
-      upcomingOpacity: cchk('c-dimupcoming') ? 0.4 : 1,
+      // the style's OWN dim level (Ghost to Solid 0.35, Cinema Subtitle 0.6…):
+      // a fixed 0.4 changed every such look the moment it was opened, while
+      // its tile kept the designed level. 0.4 only when the style has none.
+      upcomingOpacity: cchk('c-dimupcoming') ? designedDimLevel() : 1,
       // --- button-pack box effects (border / neon glow / 3D / gloss) ---
       boxStroke: cchk('c-boxstroke-on') ? $('c-boxstroke').value : null,
       boxStrokeWidth: cnum('c-boxstrokew', 4),
