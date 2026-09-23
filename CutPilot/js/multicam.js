@@ -224,7 +224,7 @@
           split.push({ start: t0, end: t0 + maxShot, angle: sh.angle });
           var cEnd = Math.min(sh.end, t0 + maxShot + cutawayHold);
           if (sh.end - cEnd < minSeg) cEnd = sh.end;       // no sliver of the speaker after the cutaway
-          split.push({ start: t0 + maxShot, end: cEnd, angle: alt });
+          split.push({ start: t0 + maxShot, end: cEnd, angle: alt, cutaway: true });
           t0 = cEnd;
         }
         if (sh.end - t0 > 1e-3) split.push({ start: t0, end: sh.end, angle: sh.angle });

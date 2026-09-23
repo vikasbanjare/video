@@ -10230,6 +10230,31 @@
     });
   }
 
+  /* How much of the timeline the analysis really HEARD — measured on the audio
+     it read, not on where the plan starts and ends (a plan always spans the
+     whole timeline, so the old line said "Covers 0:00 → 55:00" even when two
+     thirds of the episode were never listened to). names: one per grid.
+     Returns { all, any, timeline, line, warn }. */
+  function mcCoverage(grids, names, dur) {
+    var cov = CPMulticam.gridCoverage(grids, MC_STEP);
+    var res = { all: cov.all, any: cov.any, timeline: dur, warn: null, line: '' };
+    var worst = null;
+    cov.perMic.forEach(function (m, i) {
+      if (m && (!worst || m.heard < worst.heard)) worst = { name: names[i] || ('mic ' + (i + 1)), heard: m.heard, lastHeard: m.lastHeard };
+    });
+    var pct = Math.round(cov.all * 100);
+    res.line = (cov.all >= 0.995) ? ('⏱ Heard ' + (grids.filter(function (g) { return g && g.length; }).length > 1 ? 'every mic' : 'your mic') +
+      ' across the whole ' + fmt(dur) + ' timeline') : ('⏱ Heard every mic across ' + pct + '% of your ' + fmt(dur) + ' timeline');
+    if (worst && worst.heard < 0.85) {
+      res.warn = (worst.lastHeard < dur * 0.85)
+        ? ('⚠️ ' + worst.name + ' goes quiet for good at ' + fmt(worst.lastHeard) + ' of your ' + fmt(dur) + ' timeline — after that Pulse can’t hear that person, ' +
+           'so the switching there is a guess. Make sure that mic’s clips run under the whole episode, then build again.')
+        : ('⚠️ Pulse could hear ' + worst.name + ' across only ' + Math.round(worst.heard * 100) + '% of your ' + fmt(dur) + ' timeline ' +
+           '(there are gaps in that mic track), so the switching in those gaps is a guess.');
+    }
+    return res;
+  }
+
   /* Build a mic's loudness on the SEQUENCE-time grid, covering the WHOLE
      timeline — every clip on that audio track, not just the first one. Each
      unique media file is read once (ffmpeg); every clip then drops the stretch
@@ -10331,7 +10356,10 @@
       var nWin = Math.ceil(dur / MC_STEP);
       return micSeqGrid(track, nWin).then(function (grid) {
         capMcProgress(null);
-        var seqSamples = grid.map(function (db, k) { return { t: k * MC_STEP, db: db }; });
+        state.mcAnalysis = { mode: 'speech', coverage: mcCoverage([grid], [track.name || 'your mic'], dur) };
+        // only moments the mic was actually heard (no clip there = no data, not silence)
+        var seqSamples = [];
+        grid.forEach(function (db, k) { if (db > -99) seqSamples.push({ t: k * MC_STEP, db: db }); });
         var starts = CPMulticam.burstStarts(seqSamples, { offset: 8, minGap: 0.6 })
           .filter(function (t) { return t > 0.3 && t < dur; });   // already sequence time
         var segs = CPMulticam.segmentsFromBoundaries(starts, dur);
@@ -10390,8 +10418,15 @@
         }
         var act = CPMulticam.speakerActivity(dbGrids, MC_STEP);
         var cal = act.calibration;
+        var micNames = micFor.map(function (t, a) {
+          if (!t) return null;
+          var nm = state.mcSpeakers && state.mcSpeakers[a] && String(state.mcSpeakers[a]).trim();
+          return (t.name || ('A' + (t.index + 1))) + (nm ? ' (' + nm + ')' : '');
+        });
         state.mcAnalysis = {
           mode: 'follow',
+          coverage: mcCoverage(dbGrids, micNames, dur),
+          micNames: micNames,
           gains: cal.offsets.map(function (o, a) { return dbGrids[a] && dbGrids[a].length ? Math.round(o * 10) / 10 : null; }),
           gainMethod: cal.method.slice(),
           isolation: cal.crossIsolation != null ? Math.round(cal.crossIsolation * 10) / 10 : null,
@@ -10500,9 +10535,14 @@
             'Fix: tap 🔄 Detect audio (reads every clip on the mic tracks), rebuild, then Apply.';
         }
         toast('⚠️ Multicam only covered ' + r.coveredPct + '% of the timeline (the first take). See the box for why.', true);
+      } else if (state.mcPlanWarning) {
+        // applied, but the plan itself carries a warning (unheard stretches,
+        // a pairing that disagrees with the mics) — don't let it read as success
+        toast('🎬 Multicam applied — ' + r.razored + ' cuts, but: ' + state.mcPlanWarning.replace(/^⚠️\s*/, ''), true);
       } else {
+        var heardLine = (state.mcAnalysis && state.mcAnalysis.coverage) ? (' ' + state.mcAnalysis.coverage.line.replace(/^⏱\s*/, '') + '.') : '';
         toast('🎬 Multicam applied — ' + r.razored + ' cuts, ' + r.toggled +
-              ' angle toggles across the full ' + fmt(r.seqEnd) + ' timeline.');
+              ' angle toggles across the full ' + fmt(r.seqEnd) + ' timeline.' + heardLine);
       }
       return r;
     });
@@ -10588,29 +10628,71 @@
       nl.textContent = noLabelsMsg;
       view.insertBefore(nl, view.firstChild);
     }
-    // Coverage check: does the plan span the WHOLE timeline, or only the first
-    // clip? (A podcast recorded in 3 takes = 3 clips; if analysis stops after
-    // clip 1 the switches never reach takes 2-3.) Surface it so it's obvious.
+    // Coverage: how much of the timeline the analysis HEARD (audio modes), or
+    // the span the plan reaches (transcript / interval modes). Timed cutaways
+    // are counted apart so they can't pass for real speaker switches.
     var planStart = state.plan.length ? state.plan[0].start : 0;
     var planEnd = state.plan.length ? state.plan[state.plan.length - 1].end : 0;
     var timeline = state.mcAudioEnd || (state.env && state.env.endSeconds) || planEnd;
+    var cutaways = state.plan.filter(function (p) { return p.cutaway; }).length;
+    var swText = stats.switches + ' switches' + (cutaways ? ' (' + cutaways + ' of them timed cutaways)' : '');
+    var heardInfo = (an && (an.mode === 'follow' || an.mode === 'speech') && an.coverage) ? an.coverage : null;
+    var warn = null;
     var cov = document.createElement('div');
     cov.className = 'hint'; cov.style.marginTop = '6px';
-    cov.textContent = '⏱ Covers ' + fmt(planStart) + ' → ' + fmt(planEnd) + ' of your ' + fmt(timeline) + ' timeline · ' + stats.switches + ' switches';
-    view.appendChild(cov);
-    var shortfall = (timeline > 1 && planEnd < timeline * 0.85);
-    if (shortfall) {
-      cov.className = 'hint err';
-      cov.textContent = '⚠️ Only covered ' + fmt(planStart) + ' → ' + fmt(planEnd) + ' of your ' + fmt(timeline) +
-        ' timeline — the later clips weren’t analyzed. Tap 🔄 Detect audio (it now reads every clip on the mic tracks), then rebuild.';
+    if (heardInfo) {
+      cov.textContent = heardInfo.line + ' · ' + swText;
+      warn = heardInfo.warn || ((an.mode === 'follow') ? mcPlanSanity(state.plan, an, numAngles) : null);
+    } else {
+      cov.textContent = '⏱ Covers ' + fmt(planStart) + ' → ' + fmt(planEnd) + ' of your ' + fmt(timeline) + ' timeline · ' + swText;
+      if (timeline > 1 && planEnd < timeline * 0.85) {
+        warn = '⚠️ The plan only reaches ' + fmt(planEnd) + ' of your ' + fmt(timeline) + ' timeline — the rest gets no switches.';
+      }
     }
+    view.appendChild(cov);
+    if (warn) {
+      var wl = document.createElement('div');
+      wl.className = 'hint err mc-plan-warn';
+      wl.textContent = warn;
+      view.appendChild(wl);
+    }
+    state.mcPlanWarning = warn;
     $('mc-plan-card').classList.remove('hidden');
     $('btn-mc-apply').classList.remove('hidden');
     if (state.mcApplied) { $('btn-mc-redo').classList.remove('hidden'); $('mc-redo-hint').classList.remove('hidden'); }
-    toast(shortfall
-      ? ('⚠️ Plan only reaches ' + fmt(planEnd) + ' of ' + fmt(timeline) + ' — later clips not covered.')
-      : (unlabelled ? noLabelsMsg
-        : (stats.segments + ' segments, ' + stats.switches + ' switches across the full ' + fmt(timeline) + ' timeline.')), shortfall || unlabelled);
+    toast(warn || (unlabelled ? noLabelsMsg
+        : (stats.segments + ' segments, ' + swText + ' across the full ' + fmt(timeline) + ' timeline.')), !!warn || unlabelled);
+  }
+
+  /* Does the follow-the-speaker plan agree with who the mics say was talking?
+     Catches a wrong mic ↔ camera pairing or mics that can't be told apart
+     before it reaches the timeline — not a dominant guest who rightly gets most
+     of the screen. Returns a plain warning, or null. */
+  function mcPlanSanity(plan, an, numAngles) {
+    var talk = an.clearShare || [], talkers = [], a, i;
+    for (a = 0; a < numAngles; a++) if ((talk[a] || 0) >= 0.03) talkers.push(a);
+    if (talkers.length < 2) return null;
+    var speakerSwitches = 0;
+    for (i = 1; i < plan.length; i++) {
+      if (plan[i].angle !== plan[i - 1].angle && !plan[i].cutaway && !plan[i - 1].cutaway) speakerSwitches++;
+    }
+    if (!speakerSwitches) {
+      return '⚠️ Pulse heard more than one person talking but found no moment to switch cameras. ' +
+        'Check that each camera is paired with the mic on that person.';
+    }
+    var screen = [], onMics = 0, talkSum = 0;
+    for (a = 0; a < numAngles; a++) screen.push(0);
+    plan.forEach(function (p) { if (!p.cutaway && talk[p.angle] != null) { screen[p.angle] += p.end - p.start; } });
+    talkers.forEach(function (x) { onMics += screen[x]; talkSum += talk[x]; });
+    for (i = 0; i < talkers.length && onMics > 0; i++) {
+      a = talkers[i];
+      var tShare = talk[a] / talkSum, sShare = screen[a] / onMics;
+      if (tShare - sShare > 0.25) {
+        return '⚠️ ' + mcAngleName(a) + ' is talking ' + Math.round(tShare * 100) + '% of the time but is on screen only ' +
+          Math.round(sShare * 100) + '% — check the mic ↔ camera pairing and the mic levels.';
+      }
+    }
+    return null;
   }
 
   $('btn-mc-apply').addEventListener('click', function () {

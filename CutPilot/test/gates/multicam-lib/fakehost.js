@@ -84,8 +84,11 @@ function makePremiere(spec) {
       isLocked() { return t.locked; },
       isMuted() { return !!t.muted; },
       get clips() {
+        // cached until a razor changes the track (600+ clips after Smart Cut)
+        if (t._dom && t._domVer === t.ver) return t._dom;
         const arr = t.clips.slice().sort((a, b) => a.start - b.start).map(c => domClip(c, isAudio));
         arr.numItems = arr.length;
+        t._dom = arr; t._domVer = t.ver;
         return arr;
       }
     }));
@@ -104,6 +107,7 @@ function makePremiere(spec) {
           if (c.start < cut - 1e-9 && c.end > cut + 1e-9) {
             t.clips.splice(i + 1, 0, { start: cut, end: c.end, name: c.name, disabled: c.disabled });
             c.end = cut;
+            t.ver = (t.ver || 0) + 1;
             return;
           }
         }

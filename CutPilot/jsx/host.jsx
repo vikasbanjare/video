@@ -2774,8 +2774,13 @@ function CP_insertMogrtCaptions(argsJson) {
 }
 
 /*
- * Enumerate each audio track's first real clip — the per-speaker mics used
- * for FireCut-style "cut to whoever is talking" multicam.
+ * Every audio track's clips — the per-speaker mics used for FireCut-style
+ * "cut to whoever is talking" multicam. EVERY clip is listed: after Smart Cut
+ * a 55-minute episode has 600+ pieces per mic, and the old 200-clip cap left
+ * everything after the first ~18 minutes unheard (the cameras switched at
+ * random there while the panel reported full coverage). Each clip carries the
+ * exact media↔timeline mapping: where it sits (seqStart/seqEnd), what it plays
+ * (inPoint/outPoint), its speed and whether it plays reversed.
  */
 function CP_getAudioTracks() {
   try {
@@ -2784,39 +2789,54 @@ function CP_getAudioTracks() {
     var out = [], diag = [];
     for (var t = 0; t < seq.audioTracks.numTracks; t++) {
       var track = seq.audioTracks[t];
-      var nClips = (track.clips && track.clips.numItems) ? track.clips.numItems : 0;
+      var clips = track.clips;
+      var nClips = (clips && clips.numItems) ? clips.numItems : 0;
       var mp = null, ref = null, withItem = 0;
-      // Walk EVERY clip on the track. We keep the first readable clip as the
-      // legacy single-clip reference, AND collect ALL clips with media into
-      // `segments` so the analyzer can cover the WHOLE timeline (multiple
-      // takes / a multi-clip track) instead of just the first clip.
+      // Walk EVERY clip on the track. The first readable clip stays as the
+      // legacy single-clip reference; `segments` lists them all.
       var segments = [];
       for (var i = 0; i < nClips; i++) {
-        var c = track.clips[i];
+        var c = clips[i];
         if (!c || !c.projectItem) continue;
         withItem++;
         if (!ref) ref = c;
         var p = null;
         try { p = c.projectItem.getMediaPath(); } catch (e1) {}
-        if (p && p.length) {
-          if (!mp) { mp = p; ref = c; }
-          var sStart = 0, sIn = 0, sEnd = 0;
-          try { sStart = c.start.seconds; } catch (eS) {}
-          try { sIn = c.inPoint.seconds; } catch (eI) {}
-          try { sEnd = c.end.seconds; } catch (eE) {}
-          if (segments.length < 200) {
-            segments.push({ mediaPath: p, seqStart: sStart, inPoint: sIn, dur: Math.max(0, sEnd - sStart) });
-          }
-        }
+        if (!(p && p.length)) continue;
+        if (!mp) { mp = p; ref = c; }
+        var sStart = 0, sEnd = 0, sIn = 0, sOut = 0;
+        try { sStart = c.start.seconds; } catch (eS) {}
+        try { sEnd = c.end.seconds; } catch (eE) {}
+        try { sIn = c.inPoint.seconds; } catch (eI) {}
+        try { sOut = c.outPoint.seconds; } catch (eO) {}
+        if (!(sEnd - sStart > 0.001)) continue;
+        // speed: Premiere's own number when it reports one (some builds give a
+        // percentage), else what the media span vs timeline span says
+        var speed = null;
+        try { if (typeof c.getSpeed === 'function') speed = parseFloat(c.getSpeed()); } catch (eSp) {}
+        if (speed && speed > 20) speed = speed / 100;
+        if (!(speed > 0)) speed = (sOut > sIn) ? (sOut - sIn) / (sEnd - sStart) : 1;
+        var rev = false;
+        try { rev = (typeof c.isSpeedReversed === 'function') && !!c.isSpeedReversed(); } catch (eR) {}
+        var dis = false;
+        try { dis = !!c.disabled; } catch (eD) {}
+        segments.push({ mediaPath: p, seqStart: sStart, seqEnd: sEnd, dur: sEnd - sStart, inPoint: sIn, outPoint: sOut,
+                        speed: Math.round(speed * 10000) / 10000, reversed: rev, disabled: dis });
       }
       diag.push('A' + (t + 1) + ':' + nClips + 'clip/' + withItem + 'item/' + segments.length + 'media');
       if (!ref) continue;
+      var muted = false, locked = false;
+      try { muted = (typeof track.isMuted === 'function') && !!track.isMuted(); } catch (eMu) {}
+      try { locked = (typeof track.isLocked === 'function') && !!track.isLocked(); } catch (eLo) {}
       out.push({
         index: t,
         name: track.name || ('A' + (t + 1)),
         mediaPath: mp,
         hasMedia: !!mp,
         clips: nClips,
+        clipsWithMedia: segments.length,
+        muted: muted,
+        locked: locked,
         segments: segments,             // ALL media clips on this track (seq time)
         seqStart: ref.start.seconds,
         inPoint: ref.inPoint.seconds,
