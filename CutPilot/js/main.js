@@ -12260,7 +12260,7 @@
             var o = document.createElement('option');
             o.value = String(a);
             var nm = a >= 0 ? mcAngleName(a) : '';
-            o.textContent = a < 0 ? 'no camera (hold the shot)' : ('V' + (a + 1) + (nm !== ('V' + (a + 1)) ? ' (' + nm + ')' : ''));
+            o.textContent = a < 0 ? 'hold the shot' : ('V' + (a + 1) + (nm !== ('V' + (a + 1)) ? ' (' + nm + ')' : ''));
             sel.appendChild(o);
           }
           sel.value = String(m.angle);
