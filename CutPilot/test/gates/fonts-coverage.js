@@ -128,6 +128,10 @@ if (!pptr || !exe) { console.log('  ? no puppeteer/Chromium — panel part skipp
     out.hinglishNotInstalled = X.resolve('Mukta', 'Ye trick सच में काम करती है');
     out.latinNotInstalled = X.resolve('Anton', 'Make every word count');
     out.installedKept = X.resolve('Impact', 'Make every word count');
+    // the editable PREVIEW shows the face the send uses (carryableStyle)
+    const D = window.CP_DEBUG;
+    out.previewAnton = D && D.carryableStyle ? D.carryableStyle({ font: 'Anton', fill: '#FFFFFF', fontSize: 80 }).font : null;
+    out.previewBaloo = D && D.carryableStyle ? D.carryableStyle({ font: 'Baloo 2', script: 'deva', fill: '#FFFFFF', fontSize: 80 }).font : null;
     X.setFont('Noto Sans Coptic');
     out.repaired = X.repair();
     // a machine where NOTHING installed draws Hindi: send, but say so
@@ -135,6 +139,15 @@ if (!pptr || !exe) { console.log('  ? no puppeteer/Chromium — panel part skipp
     const tEl = document.getElementById('toast'); if (tEl) tEl.textContent = '';
     out.noHindiFont = X.resolve('Hind', 'आज हम बात करेंगे');
     out.noHindiToast = tEl ? tEl.textContent : '';
+    // a macOS face the scan could not read (its system file is over the scan's
+    // size limit): on a Mac it is never called missing; elsewhere it is swapped
+    X.setCoverage([{ name: 'Arial', latin: true, devanagari: false }, { name: 'Kohinoor Devanagari', latin: true, devanagari: true }]);
+    const plat = Object.getOwnPropertyDescriptor(Navigator.prototype, 'platform');
+    try {
+      Object.defineProperty(Navigator.prototype, 'platform', { get: () => 'MacIntel', configurable: true });
+      out.macFaceOnMac = X.resolve('Helvetica Neue', 'Make every word count');
+    } finally { if (plat) Object.defineProperty(Navigator.prototype, 'platform', plat); }
+    out.macFaceElsewhere = X.resolve('Helvetica Neue', 'Make every word count');
     return out;
   });
   await browser.close();
@@ -173,6 +186,12 @@ if (!pptr || !exe) { console.log('  ? no puppeteer/Chromium — panel part skipp
   else ok('a Latin web face that is not installed (Anton) goes out as its Mac stand-in (Impact)');
   if (!r.installedKept || r.installedKept.substitutedFrom) bad('an installed face was swapped: ' + JSON.stringify(r.installedKept));
   else ok('an installed face that draws the words is sent as chosen (Impact)');
+  if (r.previewAnton !== 'Impact' || r.previewBaloo !== 'Kohinoor Devanagari')
+    bad('the editable preview still promises faces Premiere cannot draw (Anton → ' + r.previewAnton + ', Baloo 2 → ' + r.previewBaloo + ')');
+  else ok('the editable preview shows the face the timeline gets (Anton → Impact, Baloo 2 → Kohinoor Devanagari)');
+  if (!r.macFaceOnMac || r.macFaceOnMac.substitutedFrom) bad('on a Mac, a macOS face the scan could not read (Helvetica Neue) was called missing and swapped: ' + JSON.stringify(r.macFaceOnMac));
+  else if (!r.macFaceElsewhere || r.macFaceElsewhere.substitutedFrom !== 'Helvetica Neue') bad('off a Mac, a Mac face that is not installed is not swapped for one that is: ' + JSON.stringify(r.macFaceElsewhere));
+  else ok('a macOS face the scan could not read is kept on a Mac (' + r.macFaceOnMac.font + '), and swapped where it is really missing (→ ' + r.macFaceElsewhere.font + ')');
   if (!/Hindi/.test(r.noHindiToast || '') || !/Pulse-rendered/.test(r.noHindiToast || ''))
     bad('with no installed face that draws Hindi, the owner is not told (toast: "' + r.noHindiToast + '", sent ' + JSON.stringify(r.noHindiFont) + ')');
   else ok('with no installed face that draws Hindi, the owner is told to use Pulse-rendered captions (' + r.noHindiFont.font + ' sent)');

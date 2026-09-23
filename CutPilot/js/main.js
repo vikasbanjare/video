@@ -9000,37 +9000,60 @@
      Impact, Poppins → Futura…) or, for Hindi words, as an installed face that
      draws Devanagari (Kohinoor Devanagari on a Mac, Nirmala UI on Windows). */
   var _fontSwapToasted = {};
+  /* Pure: the family Premiere can really draw `needs` with, for a caption
+     asked to use `want` in a style whose own font is `own` (devaStyle = a
+     Hindi-first style, whose English words also stay in a Devanagari face).
+     { family, why: null | 'missing' | 'script', none: true when nothing
+     installed can draw the words }. Used by the send AND the editable preview,
+     so the preview shows the face the timeline will get. */
+  function editableFamily(want, needs, own, devaStyle) {
+    var out = { family: want, why: null, none: false, installed: null };
+    if (typeof CPFonts === 'undefined' || !CPFonts.canDraw || !want) return out;
+    var onMac = false;
+    try { onMac = /mac/i.test((typeof navigator !== 'undefined' && navigator.platform) || ''); } catch (eN) {}
+    // a macOS face can sit in a system file too big for the scan to read
+    var inst = (onMac && CPCaptions.isMacFace && CPCaptions.isMacFace(want)) ? null : fontInstalled(want);
+    out.installed = inst;
+    var ok = (inst === false) ? false : CPFonts.canDraw(fontCoverage(want), needs);
+    if (ok !== false) return out;
+    var deva = needs.devanagari || devaStyle;
+    var standIn = (CPCaptions.timelineFace && CPCaptions.timelineFace(want)) || null;
+    var cands = [standIn, own, deva ? 'Kohinoor Devanagari' : null, deva ? 'Nirmala UI' : null,
+                 deva ? 'Noto Sans Devanagari' : null, 'Helvetica Neue', 'Arial'];
+    for (var i = 0; i < cands.length; i++) {
+      var c = cands[i];
+      if (c && c !== want && fontInstalled(c) !== false && CPFonts.canDraw(fontCoverage(c), needs) === true) {
+        out.family = c; out.why = (inst === false) ? 'missing' : 'script';
+        return out;
+      }
+    }
+    var wantDeva = (inst === false) ? false : (fontCoverage(want) || {}).devanagari;
+    out.none = !!(needs.devanagari && wantDeva === false);
+    return out;
+  }
   function drawableFamily(preset, text) {
     var want = preset.font;
     if (typeof CPFonts === 'undefined' || !CPFonts.canDraw) return want;
     var needs = CPFonts.scriptNeeds(text || '');
-    var inst = fontInstalled(want);
-    var ok = (inst === false) ? false : CPFonts.canDraw(fontCoverage(want), needs);
-    if (ok !== false) return want;
-    var own = null;
-    try { var t = currentPreset && currentPreset(); own = t && t.font; } catch (e) {}
-    var standIn = (CPCaptions.timelineFace && CPCaptions.timelineFace(want)) || null;
-    var cands = [standIn, own, needs.devanagari ? 'Kohinoor Devanagari' : null, needs.devanagari ? 'Nirmala UI' : null,
-                 needs.devanagari ? 'Noto Sans Devanagari' : null, 'Helvetica Neue', 'Arial'];
-    var script = (needs.devanagari && !(fontCoverage(want) || {}).devanagari) ? 'Hindi' : 'English';
-    for (var i = 0; i < cands.length; i++) {
-      var c = cands[i];
-      if (c && c !== want && fontInstalled(c) !== false && CPFonts.canDraw(fontCoverage(c), needs) === true) {
-        var key = want + '>' + c;
-        if (!_fontSwapToasted[key]) {
-          _fontSwapToasted[key] = 1;
-          try { diag('fonts', 'send-time swap: "' + want + '" ' + (inst === false ? 'is not installed' : 'cannot draw these words') + ' → "' + c + '"'); } catch (eD) {}
-          toast(inst === false
-            ? '“' + want + '” isn’t installed on this computer, and Premiere can only use installed fonts — so these editable captions use “' + c + '” instead.'
-            : '“' + want + '” can’t draw ' + script + ' letters, so these captions use “' + c + '” instead.', true);
-        }
-        return c;
+    var own = null, devaStyle = false;
+    try { var t = currentPreset && currentPreset(); own = t && t.font; devaStyle = !!(t && t.script === 'deva'); } catch (e) {}
+    var pick = editableFamily(want, needs, own, devaStyle);
+    var c = pick.family;
+    if (c !== want) {
+      var key = want + '>' + c;
+      if (!_fontSwapToasted[key]) {
+        _fontSwapToasted[key] = 1;
+        var script = (needs.devanagari && !(fontCoverage(want) || {}).devanagari) ? 'Hindi' : 'English';
+        try { diag('fonts', 'send-time swap: "' + want + '" ' + (pick.why === 'missing' ? 'is not installed' : 'cannot draw these words') + ' → "' + c + '"'); } catch (eD) {}
+        toast(pick.why === 'missing'
+          ? '“' + want + '” isn’t installed on this computer, and Premiere can only use installed fonts — so these editable captions use “' + c + '” instead.'
+          : '“' + want + '” can’t draw ' + script + ' letters, so these captions use “' + c + '” instead.', true);
       }
+      return c;
     }
     // Nothing installed can draw these words: say so rather than let Premiere
     // put blank Hindi on the timeline.
-    var wantDeva = (inst === false) ? false : (fontCoverage(want) || {}).devanagari;
-    if (needs.devanagari && wantDeva === false && !_fontSwapToasted[want + '>none']) {
+    if (pick.none && !_fontSwapToasted[want + '>none']) {
       _fontSwapToasted[want + '>none'] = 1;
       try { diag('fonts', 'send-time: no installed font draws these Hindi words for "' + want + '"'); } catch (eD2) {}
       toast('No font installed on this computer can draw these Hindi words in editable captions, so they may come out blank. Use ✨ Pulse-rendered captions for Hindi, or install a Hindi font such as Kohinoor Devanagari.', true);
@@ -9136,7 +9159,10 @@
       // is rich AE source text (probeKind:"rich" in the user's own diagnostics,
       // probe-verified safe), so the insert writes each style's font/bold into
       // it — and the preview shows the same face. Styles keep their identity.
-      font: p.font || 'Inter',
+      // …and where that face is NOT installed (once the installed-font scan
+      // has run), the face the send swaps in (editableFamily): Premiere cannot
+      // draw a missing font, so the preview must not promise one.
+      font: editableFamily(p.font || 'Inter', { latin: true, devanagari: p.script === 'deva' }, p.font, p.script === 'deva').family,
       fallbackFonts: p.fallbackFonts || ['Hanken Grotesk', 'Segoe UI', 'Helvetica Neue', 'Arial', 'sans-serif'],
       weight: (p.weight || 800) >= 600 ? 800 : 500,   // the rich write only knows bold vs regular
       uppercase: !!p.uppercase,

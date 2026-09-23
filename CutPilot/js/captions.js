@@ -2494,6 +2494,15 @@
   /* The installed Mac face that stands in for a Google face on the timeline
      (editable captions), or null. */
   function timelineFace(family) { return FONT_SAFE.hasOwnProperty(family) ? FONT_SAFE[family] : null; }
+  /* Faces that ship with macOS. The panel's installed-font scan skips font
+     files over 8 MB, and some macOS system collections are big, so on a Mac
+     "not found by the scan" never means "not installed" for these. */
+  var MAC_FACES = ['helvetica neue', 'helvetica', 'avenir next', 'avenir', 'futura', 'impact', 'arial', 'arial black',
+    'arial narrow', 'menlo', 'monaco', 'courier new', 'courier', 'didot', 'marker felt', 'snell roundhand', 'trebuchet ms',
+    'georgia', 'times new roman', 'times', 'verdana', 'tahoma', 'comic sans ms', 'bradley hand', 'palatino', 'gill sans',
+    'optima', 'baskerville', 'rockwell', 'american typewriter', 'chalkboard se', 'noteworthy', 'kohinoor devanagari',
+    'devanagari mt', 'itf devanagari'];
+  function isMacFace(family) { return MAC_FACES.indexOf(String(family || '').toLowerCase()) >= 0; }
 
   /* Niche → recommended template id (the "AI Caption Styling" suggester). */
   var NICHE_RECOMMEND = {
@@ -3367,6 +3376,7 @@
     liftDark: liftDark,
     isDarkOnLight: isDarkOnLight,
     timelineFace: timelineFace,
+    isMacFace: isMacFace,
     contrastRatio: contrastRatio,
     shadeHex: shadeHex,
     NICHES: NICHES,
