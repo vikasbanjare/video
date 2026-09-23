@@ -21,7 +21,9 @@
  *   3. when the mix fails anyway, the selected clip is read instead, and the
  *      owner is told only that clip was read;
  *   4. with nothing to fall back to, the message is plain: no "exit 254",
- *      no ffmpeg wording.
+ *      no ffmpeg wording;
+ *   5. the takes card says to mute a music track first (the music test is a
+ *      heuristic — real music with loud and quiet parts may pass as a voice).
  *
  * Exit 0 = pass, 1 = fail, 2 = skipped (no ffmpeg / puppeteer / Chromium).
  */
@@ -158,6 +160,10 @@ async function main() {
     C.check('…the list says the offline file was left out, by name and track', /whoosh\.wav/.test(r.stats) && /offline/i.test(r.stats) && /A2/.test(r.stats), r.stats);
     C.check('…and that the music track was left out', /bed\.wav/.test(r.stats) && /music/i.test(r.stats) && /A3/.test(r.stats), r.stats);
     C.check('…in words the owner can act on (no ffmpeg / exit codes)', !/ffmpeg|exit \d|stderr|Error opening/i.test(r.stats + ' ' + r.toast), r.stats + ' | ' + r.toast);
+    // the music test is a heuristic (steady sound): real music with loud and
+    // quiet parts may pass as a voice, so the card also says to mute it
+    const hint = await a.page.evaluate(() => { const b = document.getElementById('btn-verbatim-retakes'); const p = b && b.previousElementSibling; return p ? p.textContent.replace(/\s+/g, ' ') : ''; });
+    C.check('the takes card tells the owner to mute a music track before Verbatim retakes', /mute your music track/i.test(hint), hint);
     await a.page.close();
 
     // 3 ─ the mix fails anyway: read the selected clip instead
