@@ -16,7 +16,10 @@
  *      jaldi"), one word said three times ("no no no", "haan haan haan"),
  *      "very very", courtesy said twice ("thank you, thank you so much",
  *      "come on, come on"), a repeat that ends the line ("bahut accha, bahut
- *      accha"), and a phrase already cut as a retake is not listed twice.
+ *      accha"), and a phrase already cut as a retake is not listed twice;
+ *   4. with "Two or more people" and no speaker labels a quick echo inside one
+ *      phrase may be the other person, so it is left; a labelled speaker's own
+ *      restart is still cut.
  *
  * Exit 0 = pass, 1 = fail.
  */
@@ -91,6 +94,18 @@ for (const k of Object.keys(KEEP)) {
   const r = run(['so the, so the secret to growing is', 'so the secret to growing is consistency.', 'Post daily.'], 'balanced');
   check('a take already cut as a retake is listed once, not again for its inner restart',
     r.d.length === 1 && r.d[0].start === r.ws[0].start && !/ \/ /.test(r.d[0].text), JSON.stringify(r.d));
+}
+
+console.log('conversations');
+{
+  // no labels, "Two or more people": a quick echo inside one phrase may be the
+  // other person — nothing is cut; with labels the host's own restart is
+  const echo = stream(['and the algorithm the algorithm is everything now.', 'Right.']);
+  const d1 = T.findRepeatedTakes(echo, { minRun: 3, sim: 0.6, keep: 'best', people: 'many' }).deletes;
+  check('"Two or more people", no labels: "…and the algorithm / the algorithm is everything" is not cut', d1.length === 0, JSON.stringify(d1));
+  const lab = stream(['so what we, so what we did was simple.', 'Okay.']).map(w => Object.assign({ speaker: 0 }, w));
+  const d2 = T.findRepeatedTakes(lab, { minRun: 3, sim: 0.6, keep: 'best', people: 'many' }).deletes;
+  check('"Two or more people", labelled: one speaker\'s own "so what we, so what we did" restart is cut', d2.length === 1 && d2[0].text === 'so what we,', JSON.stringify(d2));
 }
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

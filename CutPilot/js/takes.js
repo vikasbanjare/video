@@ -475,11 +475,14 @@
     // Never cut: one word said twice (Hindi doubles words on purpose —
     // "dheere dheere", "alag alag" — and English for emphasis, "very very"), a
     // run of one word ("no no no", "haan haan"), agreement or courtesy said
-    // twice ("thank you, thank you"), or a repeat that ends the line.
+    // twice ("thank you, thank you"), or a repeat that ends the line. In a
+    // conversation with no speaker labels a quick echo may be the OTHER person
+    // ("…and the algorithm" / "the algorithm is everything") inside one phrase,
+    // so there only a labelled phrase is searched.
     if (opts.restarts !== false) {
       var minN = Math.max(2, minRun - 1), maxN = 6;
       for (var qi = 0; qi < P; qi++) {
-        if (deleted[qi]) continue;
+        if (deleted[qi] || (people === 'many' && spk[qi] == null)) continue;
         var ph = phrases[qi], tw = [];
         for (var wi = 0; wi < ph.length; wi++) { var nt = norm(ph[wi].text); if (nt && !FILLERS[nt]) tw.push({ t: nt, w: wi }); }
         var k0 = 0;
