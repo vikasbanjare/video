@@ -9606,10 +9606,15 @@
       return CPAudio.ffmpegRmsEnvelope(mediaPath, ff, { start: start, duration: (hi - start) + 0.5, streams: info.streams, onProgress: onProg }, CPSilence);
     }).then(function (env) {
       if (!env.complete) {
-        throw new Error('Pulse couldn’t finish listening to “' + name + '” (' + env.reason + '). Nothing was cut. ' +
+        // the engine's own error text goes to the diagnostics, never the toast
+        try { diag('silence', 'listen incomplete: ' + silBase(mediaPath) + ': ' + env.reason); } catch (eD) {}
+        throw new Error('Pulse couldn’t finish listening to “' + name + '” (' + (env.why || 'it stopped part-way through') + '). Nothing was cut. ' +
           'If the file is on an external or network drive, copy it to your Mac’s internal drive and try again.');
       }
       return env;
+    }, function (e) {
+      if (e && e.detail) { try { diag('silence', 'listen failed: ' + silBase(mediaPath) + ': ' + e.detail); } catch (eD2) {} }
+      throw e;
     });
   }
 
@@ -9900,8 +9905,10 @@
   /* Apply a cut list to the timeline the analysis heard, then re-sync every
      transcript copy with the exact (frame-snapped) ranges the host removed. */
   function applyCleanCuts(ranges, guard, opts) {
+    // flowName: the button the owner pressed, so a refusal tells them what to
+    // run again ("run Find the silences again", not always "Clean up")
     var args = { ranges: ranges, closeGaps: opts.closeGaps !== false, backup: !!opts.backup,
-                 dropFrame: !!settings.dropFrame, previewLabel: 'Silence' };
+                 dropFrame: !!settings.dropFrame, previewLabel: 'Silence', flowName: opts.flow || '' };
     if (guard) { args.expectSequenceId = guard.sequenceId; args.expectSequenceName = guard.sequenceName; args.expectFingerprint = guard.fingerprint; }
     return CPBridge.callHost('CP_razorRipple', args).then(function (rr) {
       var removed = (rr && Array.isArray(rr.removed)) ? rr.removed : ranges;
@@ -9912,6 +9919,13 @@
       if ($('takes-results')) $('takes-results').classList.add('hidden');
       return rr || {};
     });
+  }
+  /* How to get the original back, in words the owner can act on: every
+     razor, lift and move is its own undo step (hundreds on a podcast), so the
+     backup copy — not ⌘Z — is the real undo. */
+  function backupText(rr) {
+    return (rr && rr.backup) ? 'Your untouched original is the backup copy “' + rr.backup + '” in the Project panel — open it to go back.'
+                             : 'No backup copy was made (“Back up sequence first” was off).';
   }
   function cutDoneText(rr, ranges) {
     var n = rr.cuts != null ? rr.cuts : ranges.length;
@@ -10093,9 +10107,9 @@
       return new Promise(function (res) { confirmInline(msg, 'Clean it up', res); }).then(function (yes) {
         if (!yes) return;
         prog.classList.remove('hidden'); prog.textContent = 'Cleaning your timeline…';
-        return applyCleanCuts(ranges, plan, { closeGaps: true, backup: true }).then(function (rr) {
+        return applyCleanCuts(ranges, plan, { closeGaps: true, backup: true, flow: 'Clean up my video' }).then(function (rr) {
           prog.classList.add('hidden');
-          toast('✨ Cleaned! Removed ' + cutDoneText(rr, ranges) + '. Captions & takes follow the cut — run any other step or add captions with no re-transcribe. ⌘Z / Ctrl+Z undoes it.');
+          toast('✨ Cleaned! Removed ' + cutDoneText(rr, ranges) + '. Captions & takes follow the cut — run any other step or add captions with no re-transcribe. ' + backupText(rr));
         });
       });
     }).catch(function (e) { prog.classList.add('hidden'); toast('Auto-clean failed: ' + e.message, true); });
@@ -10277,8 +10291,8 @@
                   : '\n\n⚠️ Backup is OFF — this edits your live sequence with no safety copy. Tick “Back up sequence first” if you’re unsure.';
     confirmInline(msg, 'Cut them', function (yes) {
       if (!yes) return;
-      applyCleanCuts(ranges, state.silPlan, { closeGaps: closeGaps, backup: backup }).then(function (rr) {
-        toast('Cut done — removed ' + cutDoneText(rr, ranges) + '. Transcript auto-synced — go straight to “Remove repeated takes” or captions, no re-transcribe needed.');
+      applyCleanCuts(ranges, state.silPlan, { closeGaps: closeGaps, backup: backup, flow: 'Find the silences' }).then(function (rr) {
+        toast('Cut done — removed ' + cutDoneText(rr, ranges) + '. Transcript auto-synced — go straight to “Remove repeated takes” or captions, no re-transcribe needed. ' + backupText(rr));
       }).catch(function (e) { toast('Cut failed: ' + e.message, true); });
     });
   });

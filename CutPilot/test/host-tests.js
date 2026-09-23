@@ -801,6 +801,66 @@ for (const mode of ['noop', 'throw']) {
   assert(r2.ok && r2.selection === null, 'a selected TITLE/caption does not shrink the clean-up to its 3 seconds');
 }
 
+// ═══ CP_razorRipple: what the owner reads when a cut is refused or stops
+//     half-way — the button to press again, and the backup as the way back ═══
+console.log('host.jsx — CP_razorRipple messages the owner can act on');
+{
+  const w = podcastWorld();
+  const host = loadHost(w);
+  const src = call(host, 'CP_getCutSources', {});
+  w.model.addClip('vTracks', 1, 40, 42, { name: 'late insert', _mIn: 40 });
+  let r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }], expectSequenceId: src.sequenceId, expectFingerprint: src.fingerprint, flowName: 'Find the silences' });
+  assert(r.ok === false && /press “Find the silences” again/.test(r.error) && !/Clean up/.test(r.error),
+    'a stale cut list from Find the silences says to press THAT button again, not "Clean up": ' + r.error);
+  r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }], expectSequenceId: src.sequenceId, expectFingerprint: src.fingerprint });
+  assert(r.ok === false && /press the button you used again/.test(r.error) && !/Clean up/.test(r.error),
+    'with no button named (the takes list), it says to press the button that was used: ' + r.error);
+  r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }], expectSequenceId: 'seq-other', expectSequenceName: 'Episode 11', flowName: 'Clean up my video' });
+  assert(r.ok === false && /press “Clean up my video” again on this one/.test(r.error), 'another sequence: open it, or press the same button on this one: ' + r.error);
+}
+{
+  // stopped half-way WITH a backup: the backup copy is the way back, ⌘Z only a fallback
+  const w = podcastWorld();
+  w.model.broken.A2 = 'nomove';
+  const host = loadHost(w);
+  const r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }, { start: 30, end: 33 }], backup: true });
+  assert(r.ok === false && /OUT OF SYNC/.test(r.error) && /“Episode 12 Copy” in the Project panel/.test(r.error) && /one press per edit/.test(r.error),
+    'out of sync with a backup: names the backup copy to open (⌘Z is one press per edit): ' + r.error);
+}
+{
+  // the backup's REAL name is reported (Premiere names copies itself — a
+  // localized build does not say "Copy"), so the owner opens the right one
+  const w = podcastWorld();
+  const seq = w.sandbox.app.project.activeSequence, clone0 = seq.clone;
+  seq.clone = function () {
+    clone0.call(seq);
+    w.sandbox.app.project.sequences = { numSequences: 2, 0: seq, 1: { sequenceID: 'seq-kopie', name: 'Episode 12 Kopie' } };
+    return true;
+  };
+  const host = loadHost(w);
+  const r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }], backup: true });
+  assert(r.ok === true && r.backup === 'Episode 12 Kopie', 'the backup copy is reported by the name Premiere gave it: ' + r.backup);
+}
+{
+  // …and WITHOUT one: say there is no backup, and how to undo
+  const w = podcastWorld();
+  w.model.broken.A2 = 'nomove';
+  const host = loadHost(w);
+  const r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }] });
+  assert(r.ok === false && /no backup copy/i.test(r.error) && /⌘Z/.test(r.error), 'out of sync without a backup: says so, and how to undo: ' + r.error);
+}
+{
+  // a Premiere that can't move clips from a script: no dead end — "safe copy"
+  // refuses any timeline with more than one clip, so it can't be THE answer
+  const w = podcastWorld();
+  for (const arr of w.model.vTracks.concat(w.model.aTracks)) for (const c of arr) delete c.move;
+  const host = loadHost(w);
+  const before = snapshotAll(w);
+  const r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }], backup: true });
+  assert(r.ok === false && /Nothing was cut/.test(r.error) && /Updating Premiere Pro/.test(r.error) && /ONE clip and one mic/.test(r.error) && snapshotAll(w) === before,
+    'no scriptable move: nothing cut, and the way out works for every timeline (update Premiere): ' + r.error);
+}
+
 // ══════════════════════════════════════════════ CP_insertMogrtCaptions ═════
 console.log('host.jsx — CP_insertMogrtCaptions (editable caption placement)');
 const CUES3 = [

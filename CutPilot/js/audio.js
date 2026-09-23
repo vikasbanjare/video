@@ -27,6 +27,16 @@
     return req(mod);
   }
 
+  /* What the owner reads when the audio engine can't even start: one plain
+     sentence and what to do. The technical detail rides along on .detail for
+     the diagnostics report. */
+  var ENGINE_HELP = 'Set it up again: Settings → Performance → ⬇️ Set up audio engine.';
+  function engineError(ffmpegPath, e) {
+    var err = new Error('Pulse’s audio engine could not start, so it can’t listen to your audio. ' + ENGINE_HELP);
+    err.detail = 'spawn "' + ffmpegPath + '": ' + (e && e.message);
+    return err;
+  }
+
   /* Read a file into an ArrayBuffer using Node fs (handles binary safely). */
   function readFileArrayBuffer(path) {
     var fs = nodeRequire('fs');
@@ -61,7 +71,9 @@
       try {
         ab = readFileArrayBuffer(mediaPath);
       } catch (e) {
-        return reject(new Error('Could not read media file: ' + e.message));
+        var eR = new Error('Pulse couldn’t open this media file — it may have been moved, renamed or deleted.');
+        eR.detail = e.message;
+        return reject(eR);
       }
       var Ctx = window.AudioContext || window.webkitAudioContext;
       var ctx = new Ctx();
@@ -79,10 +91,7 @@
         }
       }, function () {
         ctx.close();
-        reject(new Error(
-          'Chromium could not decode this file (codec not supported in CEP). ' +
-          'Set an ffmpeg path in Settings to analyze this format.'
-        ));
+        reject(new Error('Pulse can’t read the sound in this kind of file without its audio engine. ' + ENGINE_HELP));
       });
     });
   }
@@ -94,7 +103,7 @@
       var cp = nodeRequire('child_process');
       var proc, err = '', settled = false;
       try { proc = cp.spawn(ffmpegPath, ['-hide_banner', '-nostdin', '-i', mediaPath]); }
-      catch (e) { return reject(new Error('Could not launch ffmpeg at "' + ffmpegPath + '": ' + e.message)); }
+      catch (e) { return reject(engineError(ffmpegPath, e)); }
       var timer = setTimeout(function () { try { proc.kill(); } catch (eK) {} done(); }, 30000);
       function done() {
         if (settled) return; settled = true; clearTimeout(timer);
@@ -106,7 +115,7 @@
       if (proc.stderr) proc.stderr.on('data', function (d) { err += d.toString(); });
       proc.on('error', function (e) {
         if (settled) return; settled = true; clearTimeout(timer);
-        reject(new Error('Could not launch ffmpeg at "' + ffmpegPath + '": ' + e.message));
+        reject(engineError(ffmpegPath, e));
       });
       proc.on('close', function () { done(); });   // exits non-zero by design: no output was named
     });
@@ -117,9 +126,11 @@
    * 16 kHz mono PCM (every audio stream mixed, rumble under 80 Hz removed) and
    * build the envelope while it streams, so nothing big is held in memory.
    * opts: { start, duration, streams (from ffmpegAudioInfo), stallMs, onProgress(sec) }
-   * Resolves { db, hop, start, duration, streams, complete, reason }.
+   * Resolves { db, hop, start, duration, streams, complete, reason, why }.
    * complete:false means the scan did NOT finish (ffmpeg stalled on a slow or
-   * external drive, or crashed) and the caller must cut nothing. The old scan
+   * external drive, or crashed) and the caller must cut nothing. `reason` is
+   * the technical account (for diagnostics); `why` is the same in one plain
+   * sentence for the owner — never the engine's own error text. The old scan
    * closed a still-open pause at the end of the file on a timeout, so a slow
    * drive deleted the rest of the episode. There is no wall-clock limit, only
    * a STALL limit (no audio for stallMs), so a long file on a slow disk finishes.
@@ -147,8 +158,8 @@
       var proc, err = '', settled = false, timer = null;
       var stallMs = opts.stallMs || 60000;
       try { proc = cp.spawn(ffmpegPath, args); }
-      catch (e) { return reject(new Error('Could not launch ffmpeg at "' + ffmpegPath + '": ' + e.message)); }
-      function finish(complete, reason) {
+      catch (e) { return reject(engineError(ffmpegPath, e)); }
+      function finish(complete, reason, why) {
         if (settled) return; settled = true;
         if (timer) clearTimeout(timer);
         var env = builder.finish();
@@ -156,13 +167,15 @@
         env.streams = nStreams;
         env.complete = complete;
         env.reason = reason || '';
+        env.why = why || '';
         resolve(env);
       }
       function arm() {
         if (timer) clearTimeout(timer);
         timer = setTimeout(function () {
           try { proc.kill(); } catch (eK) {}
-          finish(false, 'no audio arrived for ' + Math.round(stallMs / 1000) + 's (slow or external drive?)');
+          finish(false, 'no audio arrived for ' + Math.round(stallMs / 1000) + 's (slow or external drive?)',
+                 'no sound arrived from the file for ' + Math.round(stallMs / 1000) + ' seconds — is it on a slow, external or network drive?');
         }, stallMs);
       }
       arm();
@@ -175,10 +188,11 @@
       if (proc.stderr) proc.stderr.on('data', function (d) { err += d.toString(); if (err.length > 20000) err = err.slice(-8000); });
       proc.on('error', function (e) {
         if (settled) return; settled = true; if (timer) clearTimeout(timer);
-        reject(new Error('Could not launch ffmpeg at "' + ffmpegPath + '": ' + e.message));
+        reject(engineError(ffmpegPath, e));
       });
       proc.on('close', function (code) {
-        if (code !== 0) finish(false, 'ffmpeg stopped (code ' + code + '): ' + err.slice(-300));
+        if (code !== 0) finish(false, 'ffmpeg stopped (code ' + code + '): ' + err.slice(-300),
+                               'the file stopped reading part-way through — it may be damaged, or still copying');
         else finish(true, '');
       });
     });

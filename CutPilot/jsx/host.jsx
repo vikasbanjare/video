@@ -674,16 +674,19 @@ function CP_getCutSources(argsJson) {
 }
 
 /* Plain-language check before any edit: is this still the timeline the cut
-   list was made for? Returns an error string, or '' when it is safe. */
+   list was made for? Returns an error string, or '' when it is safe.
+   args.flowName = the button the owner pressed ("Find the silences"…), so the
+   refusal names what to press again; without one it says so generally. */
 function CP_cutGuard(seq, args) {
+  var again = args.flowName ? 'press “' + args.flowName + '” again' : 'press the button you used again';
   if (args.expectSequenceId && CP_seqId(seq) !== String(args.expectSequenceId)) {
     return 'The timeline Pulse listened to' + (args.expectSequenceName ? ' (“' + args.expectSequenceName + '”)' : '') +
       ' is not the one open now' + (seq && seq.name ? ' (“' + seq.name + '”)' : '') +
-      '. Nothing was cut — open that sequence again, or run Clean up on this one.';
+      '. Nothing was cut — open that sequence again, or ' + again + ' on this one.';
   }
   if (args.expectFingerprint && CP_cutFingerprint(seq) !== String(args.expectFingerprint)) {
     return 'The timeline changed after Pulse listened to it (clips were added, moved or removed), so the cut list no longer ' +
-      'lines up with your audio. Nothing was cut — run Clean up again.';
+      'lines up with your audio. Nothing was cut — ' + again + ' so Pulse listens to it as it is now.';
   }
   return '';
 }
@@ -759,6 +762,17 @@ function CP_shiftMarkers(seq, ranges, previewLabel) {
   return res;
 }
 
+/* How to get the timeline back after a cut that stopped half-way. Every
+   razor, lift and move is its own undo step — hundreds on a podcast — so the
+   backup copy made before cutting is the real way back; ⌘Z is the fallback. */
+function CP_undoAdvice(backup) {
+  if (backup) {
+    return 'Your untouched original is saved as “' + backup + '” in the Project panel — open it and carry on from there. ' +
+      '(⌘Z / Ctrl+Z also works, but it takes one press per edit.)';
+  }
+  return 'There is no backup copy (it was switched off), so undo with ⌘Z / Ctrl+Z — one press per edit — until the timeline is back.';
+}
+
 /*
  * In-place dead-air / retake cutting, two-phase (the DeadAir approach, MIT):
  *   1. razor EVERY track at every cut boundary (QE — the only razor there is);
@@ -822,15 +836,23 @@ function CP_razorRipple(argsJson) {
       snap = CP_trackSnapshot(tracks[tk].dom);
       if (snap.length && (typeof snap[0].obj.remove !== 'function' || (closeGaps && typeof snap[0].obj.move !== 'function'))) apiOk = false;
     }
-    if (!apiOk) return CP_fail('This Premiere version can\'t remove or move clips from a script, so Pulse can\'t cut safely. Nothing was cut — use “Remove silences (safe copy)” instead.');
+    if (!apiOk) return CP_fail('This Premiere version doesn\'t let Pulse remove or move clips, so Pulse can\'t cut here safely. Nothing was cut. ' +
+      'Updating Premiere Pro fixes this. (On a timeline with ONE clip and one mic, “✂ Remove silences (safe copy)” in the step-by-step tools still works.)');
 
     // backup FIRST — and if it fails, do nothing (the confirm promised one)
     var backup = null;
     if (args.backup) {
-      var cloned;
+      var cloned, had = {}, q, sqs = null;
+      try { sqs = app.project.sequences; for (q = 0; q < sqs.numSequences; q++) had[CP_seqId(sqs[q])] = 1; } catch (eL) { sqs = null; }
       try { cloned = seq.clone(); } catch (eB) { return CP_fail('Could not make the backup copy of your sequence (' + eB.message + '). Nothing was cut.'); }
       if (cloned === false) return CP_fail('Premiere refused to make the backup copy of your sequence. Nothing was cut.');
+      // the copy's REAL name (the owner is told to open it if a cut goes
+      // wrong): the one sequence that was not there before the clone
       backup = String(seq.name) + ' Copy';
+      try {
+        sqs = app.project.sequences;
+        for (q = 0; q < sqs.numSequences; q++) { if (!had[CP_seqId(sqs[q])]) { backup = String(sqs[q].name); break; } }
+      } catch (eL2) {}
       var now = null; try { now = app.project.activeSequence; } catch (eN) {}
       if (!now || CP_seqId(now) !== seqId) {
         CP_activateSequence(seq);
@@ -862,8 +884,10 @@ function CP_razorRipple(argsJson) {
       }
     }
     if (bad.length) {
-      return CP_fail('Premiere would not razor track ' + bad.join(', ') + ', so Pulse stopped before removing anything — the timeline is still in sync ' +
-        '(it only has extra razor cuts; ⌘Z / Ctrl+Z removes them). Check that the track isn\'t locked or a nested/merged clip, then try again.');
+      return CP_fail('Premiere would not cut track ' + bad.join(', ') + ', so Pulse stopped before removing anything. Your timeline still plays ' +
+        'exactly as before — it only has extra cut lines in some clips, which change nothing you see or hear' +
+        (backup ? ' (your untouched original is also saved as “' + backup + '” in the Project panel)' : '') +
+        '. Check that the track isn\'t locked, then try again.');
     }
 
     // ---- phase 2: lift every piece inside a cut, on every track --------------
@@ -893,7 +917,7 @@ function CP_razorRipple(argsJson) {
     for (i = 0; i < ranges.length; i++) removedSec += ranges[i].end - ranges[i].start;
     if (bad.length) {
       return CP_fail('Premiere would not remove the cut pieces on track ' + bad.join(', ') + ', so Pulse stopped before moving anything — nothing is out of ' +
-        'sync, but the other tracks now have empty gaps where the pauses were. Press ⌘Z / Ctrl+Z to undo (or open the backup sequence), then try again.');
+        'sync, but the other tracks now have empty gaps where the pauses were. ' + CP_undoAdvice(backup));
     }
 
     // ---- phase 3: close the gaps — the same offset on every track -------------
@@ -926,8 +950,8 @@ function CP_razorRipple(argsJson) {
         }
       }
       if (bad.length) {
-        return CP_fail('Track ' + bad.join(', ') + ' did not move with the rest, so it is now OUT OF SYNC. Press ⌘Z / Ctrl+Z to undo ' +
-          (backup ? '(or open the backup “' + backup + '”)' : '') + ' — Pulse will not report this cut as done.');
+        return CP_fail('Track ' + bad.join(', ') + ' did not move with the rest, so it is now OUT OF SYNC — Pulse will not report this cut as done. ' +
+          CP_undoAdvice(backup));
       }
       markers = CP_shiftMarkers(seq, ranges, args.previewLabel || 'Silence');
     }

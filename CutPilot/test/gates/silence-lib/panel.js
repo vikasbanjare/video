@@ -36,7 +36,8 @@ function hasFfmpeg() { try { cp.execFileSync('ffmpeg', ['-hide_banner', '-versio
 /*
  * timeline: { seqId, seqName, audio:[{ name, muted, locked, items:[{ name, mediaPath,
  *             seqStart, seqEnd, inPoint, outPoint, speed }] }], video:[…], selection }
- * fakes: { '<mediaPath>': 'stall' } → that file's decode sends ~5 s of audio, then hangs.
+ * fakes: { '<mediaPath>': 'stall' } → that file's decode sends ~5 s of audio, then hangs;
+ *        'crash' → it sends ~5 s of audio, then the decoder quits with an error.
  */
 async function openPanel(browser, timeline, fakes) {
   const page = await browser.newPage();
@@ -72,7 +73,8 @@ async function openPanel(browser, timeline, fakes) {
     if (fn === 'CP_razorRipple') {
       const rs = (args && args.ranges) || [];
       return ok({ cuts: rs.length, removed: rs, removedSeconds: rs.reduce((a, r) => a + r.end - r.start, 0), removedClips: rs.length * 2,
-                  tracks: timeline.audio.map((t, i) => ({ track: 'A' + (i + 1), lifted: rs.length, moved: rs.length })) });
+                  tracks: timeline.audio.map((t, i) => ({ track: 'A' + (i + 1), lifted: rs.length, moved: rs.length })),
+                  backup: args && args.backup ? (timeline.seqName || 'Episode 12') + ' Copy' : null });
     }
     if (fn === 'CP_getEnv') return ok({ sequenceName: timeline.seqName || 'Episode 12', fps: 25, width: 1080, height: 1920, videoTracks: 1, audioTracks: timeline.audio.length, endSeconds: 60 });
     return ok({});
@@ -81,6 +83,17 @@ async function openPanel(browser, timeline, fakes) {
   await page.exposeFunction('__spawn', (id, bin, args) => {
     const media = args[args.indexOf('-i') + 1];
     const send = (kind, payload) => page.evaluate((i, k, p) => window.__procEvent(i, k, p), id, kind, payload).catch(() => {});
+    if (fakes[media] === 'crash') {
+      const real = fakes.__realFor && fakes.__realFor[media];
+      if (args.indexOf('pipe:1') >= 0) {
+        const pcm = cp.execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-t', '5', '-i', real, '-ac', '1', '-ar', '16000', '-f', 's16le', 'pipe:1'], { maxBuffer: 1 << 26 });
+        setTimeout(() => send('stdout', pcm.toString('base64')), 30);
+        setTimeout(() => { send('stderr', '[pcm_s16le @ 0x7f] Error while decoding stream #0:0: Invalid data found when processing input\n'); send('close', 1); }, 200);
+      } else {
+        setTimeout(() => { send('stderr', 'Input #0, wav, from \'' + media + '\':\n  Duration: 00:00:27.50, bitrate: 768 kb/s\n  Stream #0:0: Audio: pcm_s16le, 48000 Hz, 1 channels\n'); send('close', 1); }, 30);
+      }
+      return true;
+    }
     if (fakes[media] === 'stall') {
       const real = fakes.__realFor && fakes.__realFor[media];
       if (args.indexOf('pipe:1') >= 0) {
