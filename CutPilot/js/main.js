@@ -8923,20 +8923,9 @@
      inverse of the silence mapping. Returns [] when disabled/unavailable. */
   function fillerMediaRanges(clip, force) {
     if ((!force && !$('opt-fillers').checked) || typeof CPTranscript === 'undefined') return [];
-    var cues;
-    if (state.transcriptWords && state.transcriptWords.length) {
-      // REAL word timing, re-timed after every cut — the fillers are cut on
-      // the words themselves. (The .srt on disk is never re-timed, so after a
-      // first clean-up it put every filler cut seconds away from its "um".)
-      cues = [];
-      cues.words = CPCaptions.dedupeRepeatedCues(state.transcriptWords, { word: true });
-    } else if (transcriptIsStale()) {
-      toast('Filler removal skipped — ' + STALE_TRANSCRIPT_MSG, true); return [];
-    } else {
-      try { cues = readSelectedTranscript(); }
-      catch (e) { toast('Filler removal skipped — ' + e.message, true); return []; }
-    }
-    var res = CPTranscript.findFillerRanges(cues, { extra: $('opt-fillers-extra').checked, padding: 0.02 });
+    var fc = fillerCues();
+    if (fc.why) { toast('Filler removal skipped — ' + fc.why, true); return []; }
+    var res = CPTranscript.findFillerRanges(fc.cues, { extra: $('opt-fillers-extra').checked, padding: 0.02 });
     var out = [];
     res.ranges.forEach(function (fr) {
       var ms = Math.max((fr.start - clip.seqStart) + clip.inPoint, clip.inPoint);
@@ -9309,6 +9298,22 @@
   var STALE_TRANSCRIPT_MSG = 'your timeline changed since this transcript was made, and it has no word timing to follow the cuts. ' +
     'Tap 🎙️ Auto-transcribe again (about a minute), then run this again.';
   function transcriptIsStale() { return !!(state.transcript && state.transcript.timelineEdited); }
+  /* What the filler pass cuts on, always in the CURRENT timeline's time:
+     the word list with its REAL timing, re-timed after every cut (the fillers
+     are cut on the words themselves); else the transcript file — but never a
+     file whose times went stale after a cut (the .srt on disk is not re-timed,
+     so it put every filler cut seconds away from its "um"). Returns {cues}
+     (cues.words = the timed words) or {why} — the plain reason there is none.
+     Every filler path uses this, so all of them follow the cuts. */
+  function fillerCues() {
+    if (state.transcriptWords && state.transcriptWords.length) {
+      var cues = [];
+      cues.words = CPCaptions.dedupeRepeatedCues(state.transcriptWords, { word: true });
+      return { cues: cues };
+    }
+    if (transcriptIsStale()) return { why: STALE_TRANSCRIPT_MSG };
+    try { return { cues: readSelectedTranscript() }; } catch (e) { return { why: e.message }; }
+  }
   /* Words for the retake passes, always in the CURRENT timeline's time. */
   function takesGetWords() {
     if (state.transcriptWords && state.transcriptWords.length) return state.transcriptWords.slice();
@@ -9774,6 +9779,7 @@
       transcriptWords: function () { return state.transcriptWords; },
       ripple: function (ranges) { return rippleTranscriptByRanges(ranges); },
       fillerMediaRanges: function (clip) { return fillerMediaRanges(clip, true); },
+      fillerCues: fillerCues,
       takesGetWords: takesGetWords,
       snapRangesToWords: snapRangesToWords,
       takeDeletes: function () { return state.takeDeletes; },
