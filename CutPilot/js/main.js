@@ -10050,6 +10050,14 @@
     var held = plan.held || [];
     held.forEach(function (x) { why.push(silHeldLine(x)); });
     var voting = plan.mics.filter(function (m) { return !m.excluded && !m.digital; });
+    // several tracks, and without one of them there WOULD be pauses to cut:
+    // say so (in the toast), not "already tight" — one of them may be music
+    var filled = voting.length > 1 && voting.some(function (m) { return m.held >= SIL_HELD_SEC; });
+    if (!why.length && filled) {
+      return { head: 'Nothing to cut — whenever one of your tracks (' + voting.map(function (m) { return m.tracks; }).join(', ') +
+                     ') pauses, another one is still sounding. If one of them is music, mark it 🎵 Music under “What Pulse heard”, then run Clean up again.',
+               lines: [], act: false };
+    }
     if (voting.length > 1 && !held.length) {
       hint.push('A moment only counts as dead air when every track Pulse listened to (' + voting.map(function (m) { return m.tracks; }).join(', ') +
         ') is quiet. If one of them is music, mark it 🎵 Music under “What Pulse heard”, then run Clean up again.');

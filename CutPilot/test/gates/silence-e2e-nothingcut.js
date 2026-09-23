@@ -6,7 +6,9 @@
  * talking, could not hear inside a clip, or was held back by Fine-tune →
  * Manual; the reason sat in the confirm, which never opens when nothing is
  * found. Now the toast names the reason and “What Pulse heard” lists every
- * track, both for "Clean up my video" and for "Find the silences".
+ * track, both for "Clean up my video" and for "Find the silences". With two
+ * or more tracks where one always sounds in the others' pauses, it says that
+ * (and that one may be music) instead of "already tight".
  * Real panel, real ffmpeg, stubbed Premiere. Exit 0 pass · 1 fail · 2 skipped.
  */
 'use strict';
@@ -68,6 +70,19 @@ const short = (t) => '"' + String(t || '').replace(/\s+/g, ' ').slice(0, 110) + 
     ok(r.razor.length === 0 && /already tight/i.test(r.toast || '') && /every mic was heard/i.test(r.toast || ''),
       'no pause long enough, everything heard: THEN it says "already tight" (' + short(r.toast) + ')');
     ok(/tight\.wav/.test(heard), '…and “What Pulse heard” still lists what it listened to');
+
+    // 4b) two tracks where one is always sounding when the other pauses (two
+    //     people taking turns with no shared pause, or a music track Pulse
+    //     wasn't sure about): there WOULD be pauses to cut without one of them,
+    //     so "already tight" is not the truth — say so, in the toast itself
+    const turnsA = F.makeWav(dir, 'turns_a.wav', { dur: 30, floorDb: -60, speech: [[0.2, 4], [9, 12], [17, 20], [25, 28]], seed: 21 });
+    const turnsB = F.makeWav(dir, 'turns_b.wav', { dur: 30, floorDb: -58, speech: [[4.1, 8.9], [12.1, 16.9], [20.1, 24.9], [28.1, 30]], seed: 31 });
+    ({ page, calls } = await P.openPanel(browser, { seqId: 's4b', video: [{}], audio: [{ name: 'Audio 1', items: [item(turnsA, 30)] }, { name: 'Audio 2', items: [item(turnsB, 30)] }] }));
+    r = await P.cleanUp(page, calls, { strength: 'gentle', takes: false });
+    await page.close();
+    ok(r.razor.length === 0 && !/already tight/i.test(r.toast || '') && /another one is still sounding/i.test(r.toast || '') && /A1/.test(r.toast || '') &&
+       /A2/.test(r.toast || '') && /If one of them is music/.test(r.toast || ''),
+      'two tracks, one always sounding when the other pauses: the toast says so and names both — not "already tight" (' + short(r.toast) + ')');
 
     // 5) the step-by-step "Find the silences" says the same
     ({ page, calls } = await P.openPanel(browser, { seqId: 's5', video: [{}], selection: { start: 6.4, end: 9.0 },
