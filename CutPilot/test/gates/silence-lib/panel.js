@@ -89,6 +89,7 @@ async function openPanel(browser, timeline, fakes) {
   // child_process.spawn, answered by REAL ffmpeg (or a scripted stall)
   await page.exposeFunction('__spawn', (id, bin, args) => {
     const media = args[args.indexOf('-i') + 1];
+    calls.push({ fn: '__spawn', args: media });
     const send = (kind, payload) => page.evaluate((i, k, p) => window.__procEvent(i, k, p), id, kind, payload).catch(() => {});
     if (fakes[media] === 'slow') {
       const real = fakes.__realFor && fakes.__realFor[media];
@@ -161,6 +162,12 @@ async function openPanel(browser, timeline, fakes) {
   await page.goto('file://' + path.join(PANEL_DIR, 'index.html'), { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => !!document.getElementById('btn-autoclean') && typeof window.CPSilence !== 'undefined', { timeout: 20000 });
   await new Promise((r) => setTimeout(r, 1200));
+  // the media files' real size and date, for the panel's fs.statSync
+  const stats = {};
+  for (const t of timeline.audio) for (const it of t.items) {
+    if (it.mediaPath && fs.existsSync(it.mediaPath)) { const st = fs.statSync(it.mediaPath); stats[it.mediaPath] = { size: st.size, mtimeMs: st.mtimeMs }; }
+  }
+  await page.evaluate((st) => { window.__stats = st; }, stats);
   if (timeline.noFfmpeg) {
     // no ffmpeg on this machine: the panel reads each media file's bytes itself
     const files = {};
@@ -186,7 +193,8 @@ async function openPanel(browser, timeline, fakes) {
     };
     window.require = function (mod) {
       if (mod === 'fs') return { existsSync: (p) => !window.__noFfmpeg && p === '/usr/bin/ffmpeg',
-                                 readFileSync(p) { if (window.__files && window.__files[p]) return window.__files[p]; throw new Error('no fs in test'); } };
+                                 readFileSync(p) { if (window.__files && window.__files[p]) return window.__files[p]; throw new Error('no fs in test'); },
+                                 statSync(p) { const s = window.__stats && window.__stats[p]; if (!s) throw new Error('ENOENT: ' + p); return s; } };
       if (mod === 'os') return { homedir: () => '/nonexistent', tmpdir: () => '/tmp', platform: () => 'darwin' };
       if (mod === 'path') return { join: (...a) => a.join('/'), basename: (p) => String(p).split('/').pop() };
       if (mod === 'child_process') return {

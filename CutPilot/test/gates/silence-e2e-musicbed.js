@@ -109,13 +109,16 @@ const tune = (st) => CPSilence.tuning(st);
       s.value = 'music'; s.dispatchEvent(new Event('change'));
       return true;
     });
+    const before = r.calls.filter(c => c.fn === '__spawn').length;
     const r2 = await P.cleanUp(r.page, r.calls, { strength: 'balanced', takes: false });
+    const decodes = r.calls.filter(c => c.fn === '__spawn').length - before;
     await r.page.close();
     const cuts2 = r2.razor.length ? r2.razor[r2.razor.length - 1].ranges : [];
     const s2 = SC.score(voiceOnly, cuts2, tune('balanced'));
     ok(set && s2.clipped <= 0.02 && s2.removed >= 0.9 * s2.removable && s2.removed > autoRemoved + 1,
       'marked 🎵 Music by the owner, the kick loop is left out: ' + secs(s2.removed) + ' of ' + secs(s2.removable) + ' (Pulse on its own: ' + secs(autoRemoved) + ')');
     ok(/A2[^\n]*you marked it/i.test(r2.confirm || ''), 'the confirm says the owner marked it');
+    ok(decodes === 0, 'pressing Clean up again after marking it does not listen to the files all over again (' + decodes + ' new decodes)');
   });
   console.log(failed ? '\nMUSIC BED: ' + failed + ' check(s) failed ✗' : '\nMUSIC BED: a drum loop never blocks the clean-up ✓');
   process.exit(failed ? 1 : 0);

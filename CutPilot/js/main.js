@@ -9606,6 +9606,20 @@
   }
   function silStoppedError() { var e = new Error('Stopped — nothing was cut.'); e.stopped = true; return e; }
 
+  /* The last few envelopes heard, so pressing Clean up again — after marking
+     a track as music, or changing the preset — doesn't decode an hour of
+     audio all over again. Keyed by the file's size and modified time as well
+     as the span, so a changed file is always heard afresh; without a file
+     stat (no Node) nothing is kept. */
+  var silEnvCache = [];
+  function silEnvKey(mediaPath, start, dur) {
+    var st = null;
+    try { st = nodeReq('fs').statSync(mediaPath); } catch (e) { return null; }
+    if (!st || !(st.size > 0)) return null;
+    var mt = +st.mtimeMs || +st.mtime || 0;
+    return [mediaPath, st.size, mt, start.toFixed(3), dur.toFixed(3)].join('|');
+  }
+
   /* One media file's used span → loudness envelope. Rejects, cutting NOTHING,
      when the scan could not finish (the old scan closed an open pause at the
      end of the file on a timeout and deleted the rest of the episode) or the
@@ -9615,6 +9629,10 @@
     var name = silBase(mediaPath);
     if (stop && stop.stopped) return Promise.reject(silStoppedError());
     if (!ff) return CPAudio.webAudioEnvelope(mediaPath, CPSilence);
+    var start0 = Math.max(0, lo - 0.5), key = silEnvKey(mediaPath, start0, (hi - start0) + 0.5);
+    for (var ci = 0; key && ci < silEnvCache.length; ci++) {
+      if (silEnvCache[ci].key === key) { if (onProg) { try { onProg(hi - lo); } catch (eP) {} } return Promise.resolve(silEnvCache[ci].env); }
+    }
     return CPAudio.ffmpegAudioInfo(mediaPath, ff).then(function (info) {
       if (stop && stop.stopped) throw silStoppedError();
       if (info.missing) throw new Error('“' + name + '” is offline — the file isn’t where Premiere says it is. Relink it (right-click the clip → Link Media) and try again. Nothing was cut.');
@@ -9629,6 +9647,7 @@
         throw new Error('Pulse couldn’t finish listening to “' + name + '” (' + (env.why || 'it stopped part-way through') + '). Nothing was cut. ' +
           'If the file is on an external or network drive, copy it to your Mac’s internal drive and try again.');
       }
+      if (key) { silEnvCache.unshift({ key: key, env: env }); if (silEnvCache.length > 6) silEnvCache.length = 6; }   // only a complete scan is kept
       return env;
     }, function (e) {
       if (e && e.detail) { try { diag('silence', 'listen failed: ' + silBase(mediaPath) + ': ' + e.detail); } catch (eD2) {} }
