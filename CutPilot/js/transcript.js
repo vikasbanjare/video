@@ -26,10 +26,6 @@
     try { return new RegExp("[^\\p{L}\\p{M}\\p{N}']", 'gu'); }
     catch (e) { return /[^a-z0-9'À-ɏͰ-ӿ؀-ۿݐ-ݿऀ-෿꣠-ꣿ]/g; }
   })();
-  var WORD_SPLIT = (function () {
-    try { return new RegExp("[^\\p{L}\\p{M}\\p{N}']+", 'u'); }
-    catch (e) { return /[^a-z0-9'À-ɏͰ-ӿ؀-ۿݐ-ݿऀ-෿꣠-ꣿ]+/; }
-  })();
 
   /* One comparable token per word in any script: NFC, Latin case-folded,
      curly apostrophes straightened, punctuation and dandas dropped. (It used
@@ -103,8 +99,13 @@
   var QUESTION_PUNCT = /[?؟？]["'”’)\]]*$/;
   var EDGE_PUNCT = /^["'“”‘’(\[]+|[,.!?;:…—–।॥۔؟،"'“”‘’)\]-]+$/g;   // "know," → "know" in the review list
 
-  /* Common English + Hindi/Hinglish glue words — excluded from TF-IDF salience
-     so the highlight lands on content, not "the" or "hai". */
+  /* Common English stop words — excluded from TF-IDF salience so the
+     highlight lands on content, not glue. The KEYWORD side (this list,
+     tokenize, markSalient) is deliberately a–z only, exactly as before the
+     filler work: caption emphasis looks keywords up with an a–z key, so a
+     Devanagari keyword would take an emphasis slot it can never fill, and
+     adding Hinglish "main" (I) here stopped English "main" being emphasised.
+     The filler finder uses clean() above, which reads every script. */
   var STOP = {};
   ('a an and are as at be been being but by can could did do does doing for ' +
    'from had has have having he her here hers him his how i if in into is it ' +
@@ -112,28 +113,16 @@
    'such than that the their them then there these they this those to too up ' +
    'us was we were what when where which while who whom why will with would you ' +
    'your yours yeah ok okay gonna wanna got get really very much many one also ' +
-   'now then thing things way ' +
-   'hai hain ho tha thi ka ki ke ko se mein main ne na nahi nahin bhi hi toh aur ya par pe ye yeh vo woh wo iss uss ek ' +
-   'kya kuch koi jo jab tab ab kab kaise kyun kyunki lekin magar agar phir fir bhai yaar ji haan han accha acha achha ' +
-   'matlab bas sab sabse bahut bohot hum humne maine mera meri mere mujhe aap aapka aapki aapke aapko aapne tum apna ' +
-   'apni apne unka unki unke uska uski iska iski wala wali wale raha rahi rahe gaya gayi gaye kar karna karte karta kiya ' +
-   'diya liya hota hoti hote sakta sakte chahiye abhi yahan wahan thoda zyada jyada bilkul sirf dekho bolo').split(/\s+/)
-    .forEach(function (w) { STOP[w] = 1; });
-  ['है', 'हैं', 'हो', 'था', 'थी', 'थे', 'का', 'की', 'के', 'को', 'से', 'में', 'मैं', 'ने', 'ना', 'नहीं', 'भी', 'ही', 'तो', 'और',
-   'या', 'पर', 'पे', 'ये', 'यह', 'वो', 'वह', 'इस', 'उस', 'एक', 'क्या', 'कुछ', 'कोई', 'जो', 'जब', 'तब', 'अब', 'कब', 'कैसे',
-   'क्यों', 'क्योंकि', 'लेकिन', 'मगर', 'अगर', 'फिर', 'जी', 'हाँ', 'हां', 'अच्छा', 'मतलब', 'बस', 'सब', 'सबसे', 'बहुत', 'हम',
-   'हमने', 'मैंने', 'मेरा', 'मेरी', 'मेरे', 'मुझे', 'आप', 'आपका', 'आपकी', 'आपके', 'आपको', 'आपने', 'तुम', 'अपना', 'अपनी',
-   'अपने', 'उनका', 'उनकी', 'उनके', 'उसका', 'उसकी', 'इसका', 'इसकी', 'वाला', 'वाली', 'वाले', 'रहा', 'रही', 'रहे', 'गया', 'गई',
-   'गए', 'कर', 'करना', 'करते', 'करता', 'किया', 'दिया', 'लिया', 'होता', 'होती', 'होते', 'सकता', 'सकते', 'चाहिए', 'अभी',
-   'यहाँ', 'वहाँ', 'थोड़ा', 'ज़्यादा', 'बिल्कुल', 'सिर्फ़', 'देखो'].forEach(function (w) { STOP[clean(w)] = 1; });
+   'now then thing things way').split(/\s+/).forEach(function (w) { STOP[w] = 1; });
 
-  /* Split a string into lowercased word tokens in any script (apostrophes
-     kept inside words, e.g. "don't"). */
+  /* The keyword side's word key: lowercase a–z / 0–9 / apostrophe only. */
+  function kwClean(w) { return String(w).toLowerCase().replace(/[^a-z0-9']/g, ''); }
+
+  /* Split a string into lowercased alphanumeric tokens (apostrophes kept
+     inside words, e.g. "don't") — for keyword salience. */
   function tokenize(text) {
     var out = [];
-    var s = String(text || '');
-    if (s.normalize) s = s.normalize('NFC');
-    var raw = s.toLowerCase().replace(/[‘’ʼ`]/g, "'").split(WORD_SPLIT);
+    var raw = String(text || '').toLowerCase().split(/[^a-z0-9']+/);
     for (var i = 0; i < raw.length; i++) {
       var t = raw[i].replace(/^'+|'+$/g, '');
       if (t) out.push(t);
@@ -396,7 +385,7 @@
   function markSalient(words, set) {
     set = set || {};
     var flags = [];
-    for (var i = 0; i < words.length; i++) flags.push(!!set[clean(words[i])]);
+    for (var i = 0; i < words.length; i++) flags.push(!!set[kwClean(words[i])]);
     return flags;
   }
 
