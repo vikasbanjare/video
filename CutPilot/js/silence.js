@@ -529,7 +529,12 @@
      line behind as a 10–20 ms cue carrying all its text.
        a word:  at least half of it, and at least 50 ms (all of it if shorter);
        a line:  at least 50 ms; a line with per-word timings stays only while
-                one of its words does, and its text is rebuilt from them. */
+                one of its words does, and its text is rebuilt from them.
+     Which rule an item gets is said by the caller (opts.kind: 'words' for a
+     word list, 'lines' for caption cues) — a one-word line ("Haan.") or a
+     line with no spaces (Chinese, Japanese) is still a LINE, and the word
+     rule dropped it whenever the pause it ran into was cut. Without a kind,
+     an item with one word of text is treated as a word. */
   var WORD_KEEP_SEC = 0.05, LINE_KEEP_SEC = 0.05;
   function oneWord(it) { return !/\S\s+\S/.test(String(it.text == null ? '' : it.text).trim()); }
   function wordNeeds(len) { return Math.min(len, Math.max(WORD_KEEP_SEC, len / 2)); }
@@ -558,9 +563,10 @@
    * words gets its text rebuilt from the ones that are left.
    * closeGaps:false leaves the gap open: nothing shifts, cut items drop,
    * edges inside a cut are pulled back to the surviving side.
-   * items: [{start,end,…}], ranges: [{start,end}].
+   * items: [{start,end,…}], ranges: [{start,end}], opts: { kind: 'words' | 'lines' }.
    */
-  function rippleItems(items, ranges, closeGaps) {
+  function rippleItems(items, ranges, closeGaps, opts) {
+    var kind = opts && opts.kind;
     if (!items || !items.length) return items ? items.slice() : [];
     var merged = mergeRanges((ranges || []).filter(function (r) { return r.end > r.start; }), 0.0001);
     if (!merged.length) return items.slice();
@@ -615,7 +621,8 @@
         out.push(o);
         continue;
       }
-      if (!survives(it, oneWord(it) ? asWord : asLine)) continue;
+      var isWord = kind === 'words' || (kind !== 'lines' && oneWord(it));
+      if (!survives(it, isWord ? asWord : asLine)) continue;
       out.push(moved(it));
     }
     return out;

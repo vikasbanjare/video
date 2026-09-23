@@ -10452,7 +10452,11 @@
       return p ? { cuts: p.cuts, range: p.range, mics: p.mics, notes: p.notes, tooLoud: p.tooLoud, sequenceId: p.sequenceId,
                    asked: p.asked || [], held: p.held || [], musicOnly: p.musicOnly || [] } : null;
     },
-    mergeAiCuts: mergeAiCuts
+    mergeAiCuts: mergeAiCuts,
+    // the transcript copies a cut re-times (silence-remap-lines)
+    setTranscript: function (words, cues) { state.transcriptWords = words || null; state.lastCaptionJob = cues ? { cues: cues, track: 1 } : null; },
+    transcript: function () { return { words: state.transcriptWords, cues: state.lastCaptionJob ? state.lastCaptionJob.cues : null }; },
+    ripple: function (ranges) { return rippleTranscriptByRanges(ranges, true); }
   };
 
   $('btn-analyze').addEventListener('click', function () {
@@ -10674,7 +10678,9 @@
   function rippleTranscriptByRanges(ranges, closeGaps) {
     if (!ranges || !ranges.length) return 0;
     return resyncTranscripts(function (items) {
-      return CPSilence.rippleItems(items, ranges, closeGaps !== false);
+      // the word list is words; every other copy is caption LINES — a
+      // one-word line ("Haan.") or one with no spaces stays a line
+      return CPSilence.rippleItems(items, ranges, closeGaps !== false, { kind: items === state.transcriptWords ? 'words' : 'lines' });
     });
   }
 
