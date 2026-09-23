@@ -5687,6 +5687,7 @@
       align: o.align, maxLines: o.maxLines, highlightStyle: o.highlightStyle,
       upcomingOpacity: o.upcomingOpacity, lineGap: o.lineGap,
       glossy: o.glossy, highlightFont: o.highlightFont, highlightGlow: o.highlightGlow,
+      highlightItalic: o.highlightItalic, highlightWeight: o.highlightWeight, highlightFallbacks: o.highlightFallbacks,
       subScale: o.subScale, wordsPerLine: o.wordsPerLine,
       fill2: o.fill2, highlightColors: o.highlightColors,
       shadowDX: o.shadowDX, shadowDY: o.shadowDY, wordSpacing: o.wordSpacing,
@@ -5769,6 +5770,11 @@
     // the "pop size" for the spoken/highlighted word — its own slider while
     // word-by-word is on, otherwise the keyword pop-size slider.
     var pop = wordHlOn ? cnum('c-wordpop', 100) : cnum('c-hl-scale', 100);
+    // "Keyword in its own face": a style that DESIGNS its keyword face (DM Serif
+    // italic, Playfair italic…) keeps that face when the toggle is on — the
+    // toggle used to swap every one of them for Playfair Display 800.
+    var _cp = currentPreset() || {};
+    var serifOn = cchk('c-hlserif'), ownFace = _cp.highlightFont || null;
     return {
       font: $('c-font').value,
       fontSize: parseInt($('c-size').value, 10),
@@ -5790,10 +5796,11 @@
       glossy: cchk('c-glossy'),                                  // shiny metallic sheen on the highlighted word
       // keyword in a different (italic serif) face + a soft glow halo — authoritative
       // so the toggles can turn a preset's own keyword font on/off.
-      highlightFont: cchk('c-hlserif') ? 'Playfair Display' : null,
-      highlightFallbacks: cchk('c-hlserif') ? 'Georgia, "Times New Roman", serif' : null,
-      highlightItalic: cchk('c-hlserif'),
-      highlightWeight: cchk('c-hlserif') ? 800 : 0,
+      highlightFont: serifOn ? (ownFace || 'Playfair Display') : null,
+      highlightFallbacks: serifOn ? ((ownFace && _cp.highlightFallbacks) || 'Georgia, "Times New Roman", serif') : null,
+      // (a look saved before italic/weight were saved stays italic, as it was)
+      highlightItalic: serifOn ? ((ownFace && _cp.highlightItalic != null) ? !!_cp.highlightItalic : true) : false,
+      highlightWeight: serifOn ? (ownFace ? (_cp.highlightWeight || 800) : 800) : 0,
       // the keyword halo glows in the keyword's OWN colour: a hard-coded white
       // halo vanished on white boxes and overrode the neon styles' own glow
       highlightGlow: cchk('c-hlglow') ? $('c-hl').value : null,
