@@ -18,19 +18,23 @@ const FH = require('./multicam-lib/fakehost');
 
 const DUR = 120;
 const sim = S.podcast({ dur: DUR, pattern: 'balanced', seed: 21 });
+const SPED = 96;                                   // a 120 s conversation played at 125%
+const simSped = S.podcast({ dur: SPED, pattern: 'balanced', seed: 22 });
 
 /* mic tracks for a layout: each mic's clips + the media envelope they play */
-function layout(name, micClips) {
+function layout(name, micClips, s, dur) {
+  s = s || sim; dur = dur || DUR;
   const envelopes = {}, audio = [];
   micClips.forEach((clips, m) => {
     const media = '/media/' + name + '-mic' + (m + 1) + '.wav';
-    const mediaLen = Math.max.apply(null, clips.map(c => c.inPoint + (c.end - c.start))) + 1;
+    const sp = clips[0].speed || 1;
+    const mediaLen = Math.max.apply(null, clips.map(c => c.inPoint + (c.end - c.start) * sp)) + 1;
     // what this recorder captured: the mic's sequence-time level, shifted to media time
     const c0 = clips[0];
-    envelopes[media] = P.mediaEnvelope(sim.grids[m], { seqStart: c0.start, inPoint: c0.inPoint }, mediaLen);
-    audio.push({ name: 'A' + (m + 1), clips: clips.map((c, i) => Object.assign({ mediaPath: media, outPoint: c.inPoint + (c.end - c.start), name: 'mic' + (m + 1) + '-' + i }, c)) });
+    envelopes[media] = P.mediaEnvelope(s.grids[m], { seqStart: c0.start, inPoint: c0.inPoint, speed: sp }, mediaLen);
+    audio.push({ name: 'A' + (m + 1), clips: clips.map((c, i) => Object.assign({ mediaPath: media, outPoint: c.inPoint + (c.end - c.start) * sp, name: 'mic' + (m + 1) + '-' + i }, c)) });
   });
-  return { premiere: { fps: 25, end: DUR, video: FH.cameras(2, DUR), audio }, envelopes };
+  return { premiere: { fps: 25, end: dur, video: FH.cameras(2, dur), audio }, envelopes };
 }
 
 const whole = [{ start: 0, end: DUR, inPoint: 0 }];
@@ -39,7 +43,9 @@ const cases = [
   { name: 'guest mic slid to 0:05 to sync (one clip)', mics: [whole, [{ start: 5, end: DUR, inPoint: 0 }]], min: 95 },
   { name: 'guest mic slid to 0:05, cut into two clips (control)', mics: [whole, [{ start: 5, end: 60, inPoint: 0 }, { start: 60, end: DUR, inPoint: 55 }]], min: 95 },
   { name: 'both mics slid to 0:03 (one clip each)', mics: [[{ start: 3, end: DUR, inPoint: 0 }], [{ start: 3, end: DUR, inPoint: 0 }]], min: 95 },
-  { name: 'guest mic head trimmed 4 s, at 0:00', mics: [whole, [{ start: 0, end: DUR, inPoint: 4 }]], min: 95 }
+  { name: 'guest mic head trimmed 4 s, at 0:00', mics: [whole, [{ start: 0, end: DUR, inPoint: 4 }]], min: 95 },
+  { name: 'whole podcast sped up to 125% on the timeline', sped: true,
+    mics: [[{ start: 0, end: SPED, inPoint: 0, speed: 1.25 }], [{ start: 0, end: SPED, inPoint: 0, speed: 1.25 }]], min: 95 }
 ];
 
 (async () => {
@@ -48,17 +54,18 @@ const cases = [
   await P.withBrowser(async (browser) => {
     for (const c of cases) {
       // the slid clip's media starts at its inPoint: build envelopes from where each clip really sits
-      const L = layout(c.name.replace(/[^a-z0-9]+/gi, '-'), c.mics);
+      const s = c.sped ? simSped : sim;
+      const L = layout(c.name.replace(/[^a-z0-9]+/gi, '-'), c.mics, s, c.sped ? SPED : DUR);
       const ctx = await P.openPanel(browser, L);
       const r = await P.runMulticam(ctx, { cameras: 2, source: 'follow' });
       await ctx.page.close();
-      const acc = r.plan ? P.visibleAccuracy(ctx.world, sim) : 0;
+      const acc = r.plan ? P.visibleAccuracy(ctx.world, s) : 0;
       const ok = r.plan && acc >= c.min && !r.errors.length;
       if (!ok) failed++;
       console.log('  ' + (ok ? '✓' : '✗') + ' ' + c.name + ': right person on screen ' + acc + '% (need ≥' + c.min + '%)' +
         (r.plan ? '' : '  — no plan: ' + (r.diag || r.toasts.slice(-1)[0] || '?')) + (r.errors.length ? '  page errors: ' + r.errors.join(' | ') : ''));
       if (!ok && r.plan) console.log('      plan: ' + r.plan.slice(0, 6).map(p => p.start.toFixed(1) + '-' + p.end.toFixed(1) + ':V' + (p.angle + 1)).join(' ') +
-        '  truth: ' + sim.turns.slice(0, 4).map(t => t.start.toFixed(1) + '-' + t.end.toFixed(1) + ':V' + (t.s + 1)).join(' '));
+        '  truth: ' + s.turns.slice(0, 4).map(t => t.start.toFixed(1) + '-' + t.end.toFixed(1) + ':V' + (t.s + 1)).join(' '));
     }
   });
   if (failed) { console.log('MULTICAM TIMELINE: ' + failed + ' layout(s) put the wrong person on screen'); process.exit(1); }
