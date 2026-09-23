@@ -44,10 +44,14 @@ for (let trial = 0; trial < 200 && good; trial++) {
   for (let i = 0; i < 10; i++) { u += rnd() * 8; const e = u + 0.1 + rnd() * 2; cuts.push({ start: u, end: e }); u = e; }
   const o = CPSilence.rippleItems(cs, cuts, true);
   for (let i = 1; i < o.length; i++) if (o[i].start < o[i - 1].end - 1e-9) { good = false; why = 'overlap in trial ' + trial; }
-  const survive = cs.filter(c => (c.end - c.start) - cuts.reduce((a, k) => a + Math.max(0, Math.min(c.end, k.end) - Math.max(c.start, k.start)), 0) > 0.011);
+  // what must still be spoken for a one-word item to stay: half of it and at
+  // least 50 ms (silence.js wordNeeds). This used to be "over 10 ms", which let
+  // the frame-snapped sliver of a removed retake's first word come back.
+  const need = (len) => Math.min(len, Math.max(0.05, len / 2));
+  const survive = cs.filter(c => (c.end - c.start) - cuts.reduce((a, k) => a + Math.max(0, Math.min(c.end, k.end) - Math.max(c.start, k.start)), 0) >= need(c.end - c.start) - 1e-9);
   if (o.length !== survive.length) { good = false; why = 'trial ' + trial + ': ' + o.length + ' lines kept, ' + survive.length + ' still have speech'; }
 }
-ok(good, '200 random caption/cut sets: order kept, no overlaps, every line with surviving speech kept ' + why);
+ok(good, '200 random caption/cut sets: order kept, no overlaps, every line with enough surviving speech kept ' + why);
 const open = CPSilence.rippleItems(cues, [{ start: 11.5, end: 13 }], false);
 ok(open.length === 3 && close(open[2].start, 14), 'closeGaps:false — nothing slides, lines are kept');
 const re = CPSilence.remapThroughKeeps([{ start: 6, end: 7, text: 'C', words: [{ start: 6, end: 6.4, text: 'c1' }, { start: 6.5, end: 7, text: 'c2' }] }], [{ start: 0, end: 2 }, { start: 5, end: 8 }]);

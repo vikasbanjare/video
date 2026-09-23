@@ -454,18 +454,42 @@
     return o;
   }
 
+  /* How much of an item must still be spoken for it to stay after a cut.
+     The host snaps every cut edge to a whole frame (up to half a frame, ~20 ms,
+     either way), so a retake cut that started exactly on the removed take's
+     first word left 10–20 ms of it — and "keep anything over 10 ms" brought
+     that word back ("so I I think that we go"), and left a fully-cut caption
+     line behind as a 10–20 ms cue carrying all its text.
+       a word:  at least half of it, and at least 50 ms (all of it if shorter);
+       a line:  at least 50 ms; a line with per-word timings stays only while
+                one of its words does, and its text is rebuilt from them. */
+  var WORD_KEEP_SEC = 0.05, LINE_KEEP_SEC = 0.05;
+  function oneWord(it) { return !/\S\s+\S/.test(String(it.text == null ? '' : it.text).trim()); }
+  function wordNeeds(len) { return Math.min(len, Math.max(WORD_KEEP_SEC, len / 2)); }
+
+  /* The line's text after some of its words were cut: the surviving tokens of
+     its own text when they line up one-to-one with its words (punctuation and
+     script kept), else the surviving words joined. */
+  function survivingText(line, keepIdx) {
+    var toks = String(line.text == null ? '' : line.text).trim().split(/\s+/);
+    if (toks.length === line.words.length) return keepIdx.map(function (j) { return toks[j]; }).join(' ');
+    return keepIdx.map(function (j) { return String(line.words[j].text == null ? '' : line.words[j].text).trim(); })
+      .filter(Boolean).join(' ');
+  }
+
   /*
    * Ripple a list of timed items through a set of CUT ranges (same time base) —
    * exactly what a ripple-delete does on the timeline. START and END are mapped
    * separately: a time after a cut slides left by the cut's length, a time
-   * inside a cut collapses onto the cut's start. So an item is dropped only when
-   * NOTHING of it survives (it lay entirely inside cuts); a caption line that
-   * merely spans a removed pause keeps its words and just gets shorter. Because
-   * the mapping never reverses order, lines that did not overlap before cannot
-   * overlap after (the old midpoint rule dropped whole lines whose words were
-   * still spoken, and left the next line overlapping the previous one).
-   * Nested per-word timings (cue.words) are remapped the same way.
-   * closeGaps:false leaves the gap open: nothing shifts, fully-cut items drop,
+   * inside a cut collapses onto the cut's start. A caption line that merely
+   * spans a removed pause keeps its words and just gets shorter; an item goes
+   * when too little of it is still spoken (wordNeeds / LINE_KEEP_SEC above — a
+   * sliver left by frame snapping is not speech). Because the mapping never
+   * reverses order, lines that did not overlap before cannot overlap after.
+   * Nested per-word timings (cue.words) are remapped with the word rule; a
+   * line none of whose words is still spoken goes, one that lost some of its
+   * words gets its text rebuilt from the ones that are left.
+   * closeGaps:false leaves the gap open: nothing shifts, cut items drop,
    * edges inside a cut are pulled back to the surviving side.
    * items: [{start,end,…}], ranges: [{start,end}].
    */
@@ -490,11 +514,16 @@
       }
       return null;
     }
-    var out = [];
-    for (var k = 0; k < items.length; k++) {
-      var it = items[k], ns, ne;
-      var kept = (it.end - it.start) - (removedBefore(it.end) - removedBefore(it.start));
-      if (kept <= 0.01) continue;                          // entirely inside cuts → gone
+    function survives(it, need) {
+      var len = it.end - it.start;
+      if (!(len > 0)) return !cutAt(it.start);             // a zero-length mark: gone only inside a cut
+      var kept = len - (removedBefore(it.end) - removedBefore(it.start));
+      return kept >= need(len) - 1e-9;
+    }
+    function asWord(len) { return wordNeeds(len); }
+    function asLine(len) { return Math.min(len, LINE_KEEP_SEC); }
+    function moved(it) {
+      var ns, ne;
       if (closeGaps) {
         ns = it.start - removedBefore(it.start);
         ne = it.end - removedBefore(it.end);
@@ -504,9 +533,23 @@
         ne = ce ? ce.start : it.end;
         if (ne <= ns) { ns = it.start; ne = it.end; }
       }
-      var o = carry(it, Math.max(0, ns), Math.max(0, ne));
-      if (it.words && it.words.length) o.words = rippleItems(it.words, merged, closeGaps);
-      out.push(o);
+      return carry(it, Math.max(0, ns), Math.max(0, ne));
+    }
+    var out = [];
+    for (var k = 0; k < items.length; k++) {
+      var it = items[k];
+      if (it.words && it.words.length) {
+        var keepIdx = [];
+        for (var j = 0; j < it.words.length; j++) if (survives(it.words[j], asWord)) keepIdx.push(j);
+        if (!keepIdx.length) continue;                     // none of its words is still spoken → the line goes
+        var o = moved(it);
+        o.words = keepIdx.map(function (x) { return moved(it.words[x]); });
+        if (keepIdx.length < it.words.length) o.text = survivingText(it, keepIdx);
+        out.push(o);
+        continue;
+      }
+      if (!survives(it, oneWord(it) ? asWord : asLine)) continue;
+      out.push(moved(it));
     }
     return out;
   }

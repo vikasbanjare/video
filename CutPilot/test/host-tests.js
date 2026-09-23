@@ -801,6 +801,24 @@ for (const mode of ['noop', 'throw']) {
   assert(r2.ok && r2.selection === null, 'a selected TITLE/caption does not shrink the clean-up to its 3 seconds');
 }
 
+// ═══ CP_razorRipple → transcript: the words the panel re-times with the
+//     host's frame-snapped ranges never bring a removed take back ═══
+console.log('host.jsx — CP_razorRipple + the transcript remap (removed words stay removed)');
+{
+  const CPSilence = require(path.join(__dirname, '..', 'js', 'silence.js'));
+  const w = makeWorld({ vTracks: 1, aTracks: 1, fps: 25 });
+  w.model.addClip('vTracks', 0, 0, 60, { _mIn: 0 });
+  w.model.addClip('aTracks', 0, 0, 60, { _mIn: 0 });
+  const host = loadHost(w);
+  // "so I, I think that we go": the retake cut starts ON the removed "I"
+  const words = [{ start: 9.7, end: 9.98, text: 'so' }, { start: 10.028, end: 10.32, text: 'I' }, { start: 11.5, end: 11.7, text: 'I' },
+                 { start: 11.75, end: 12.1, text: 'think' }, { start: 12.15, end: 12.35, text: 'that' }, { start: 12.4, end: 12.55, text: 'we' }, { start: 12.6, end: 12.9, text: 'go' }];
+  const r = call(host, 'CP_razorRipple', { ranges: [{ start: 10.028, end: 11.5 }] });
+  const after = CPSilence.rippleItems(words, r.removed, true);
+  assert(r.ok && close(r.removed[0].start, 10.04, 1e-9) && after.map(x => x.text).join(' ') === 'so I think that we go',
+    'the real host snaps the cut to 10.04–11.52 and the re-timed words read "' + after.map(x => x.text).join(' ') + '" (was "so I I think that we go")');
+}
+
 // ═══ CP_razorRipple: what the owner reads when a cut is refused or stops
 //     half-way — the button to press again, and the backup as the way back ═══
 console.log('host.jsx — CP_razorRipple messages the owner can act on');
