@@ -84,8 +84,18 @@ const FLUX = ['Text Color', 'Highlighted Word Color 1', 'Highlighted Word Color 
       return out;
     };
     ui.dark = await tryAdd('twin-plain-subtitle');
+    // ▶ Real preview on timeline (the Mac check): its report says what a blank result means
+    const oldOv = document.getElementById('cp-confirm-ov'); if (oldOv) oldOv.remove();
+    const rp = document.getElementById('btn-real-preview');
+    const tEl = document.getElementById('toast'); if (tEl) tEl.textContent = '';
+    if (rp) { rp.click(); await sleep(500); }
+    ui.realPreviewToast = tEl ? tEl.textContent : '';
     const ok = document.getElementById('cp-confirm-ok');
     if (ok) { ok.click(); await sleep(400); }
+    // re-open the offer (the real preview dismissed it) and accept it
+    const ov0 = document.getElementById('cp-confirm-ov'); if (ov0) ov0.remove();
+    document.getElementById('btn-magic').click(); await sleep(400);
+    const ok2 = document.getElementById('cp-confirm-ok'); if (ok2) { ok2.click(); await sleep(400); }
     ui.dark.capOutAfter = D.capOut();
     ui.dark.placedAfter = window.__hostCalls.filter(f => /CP_insertMogrtCaptions/.test(f));
     const ov2 = document.getElementById('cp-confirm-ov'); if (ov2) ov2.remove();
@@ -140,6 +150,8 @@ const FLUX = ['Text Color', 'Highlighted Word Color 1', 'Highlighted Word Color 
     if (/light box/.test(u.dark.editorNote) && !u.dark.placed.length && /Pulse-rendered/.test(u.dark.dialog) && u.dark.capOutAfter === 'png' && !u.dark.placedAfter.length)
       R.ok('Plain Subtitle in editable mode: the editor says it in one line, Add places nothing and offers Pulse-rendered; accepting switches the caption type');
   }
+  if (!/light box/.test(u.realPreviewToast || '')) R.bad('▶ Real preview on timeline on a dark-on-light style does not say what a blank result means ("' + (u.realPreviewToast || '') + '")');
+  else R.ok('▶ Real preview on timeline (the check the Mac has to make) says what a blank result means');
   if (u.light.err) R.bad(u.light.err);
   else if (u.light.editorNote || /light box/.test(u.light.dialog)) R.bad('a light-text style (tr-punch-gold) gets the dark-words note or question');
   else R.ok('a light-text style is not questioned: no note, no dark-words dialog');

@@ -9418,8 +9418,10 @@
     var preset = styledPreset();
     var bb = bundledBackbone(preset);
     if (!bb) return toast('No caption engine loaded — reinstall the full Pulse folder.', true);
-    // the check the owner's Mac has to make: say what a blank result means
-    if (CPCaptions.isDarkOnLight(preset)) toast('This style has dark words on a light box. If the caption on the timeline shows no words, use ✨ Pulse-rendered captions for it.', true);
+    // the check the owner's Mac has to make: say what a blank result means (in
+    // the toast that reports the preview — an earlier one is replaced by it)
+    var darkNote = CPCaptions.isDarkOnLight(preset)
+      ? ' This style has dark words on a light box: if the preview shows no words, use ✨ Pulse-rendered captions for it.' : '';
     var basePreset = currentPreset() || {};
     var sizeScale = 1;
     try {
@@ -9447,7 +9449,7 @@
       return CPBridge.callHost('CP_previewMogrt', { path: bb.path, seconds: 4, params: params, text: sample, textStyle: textStyle });
     }).then(function (r) {
       if (btn) btn.disabled = false;
-      toast('▶ Real preview on V' + r.track + ' at the playhead — scrub to see EXACTLY what your settings render. Delete the clip when done (or ⌘Z).');
+      toast('▶ Real preview on V' + r.track + ' at the playhead — scrub to see EXACTLY what your settings render. Delete the clip when done (or ⌘Z).' + darkNote, !!darkNote);
     }).catch(function (e) { if (btn) btn.disabled = false; toast(e.message, true); });
   }
 
