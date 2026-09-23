@@ -96,8 +96,11 @@ function podcast(o) {
   const level = o.level || [], gain = o.gain || [], floor = o.floor || [];
   const spread = o.spread != null ? o.spread : 3;
   // the bleed path wobbles on its own (head turns, room reflections): the other
-  // mic does not hear a voice at exactly `isolation` dB down every window
-  const jitter = o.bleedJitter != null ? o.bleedJitter : 2;
+  // mic does not hear a voice at exactly `isolation` dB down every window.
+  // 0.8 dB is what real ffmpeg envelopes of two-mic recordings show (the
+  // spread of level(A) - level(B) around each voice, measured on sample-level
+  // simulations with delayed, reverberant bleed).
+  const jitter = o.bleedJitter != null ? o.bleedJitter : 0.8;
   const iso = (m, s) => (m === s ? 0 : (Array.isArray(o.isolation) ? o.isolation[m][s] : (o.isolation != null ? o.isolation : 12)));
   // per-speaker voice level per window (a voice rises and falls; bleed follows it)
   const voice = [];

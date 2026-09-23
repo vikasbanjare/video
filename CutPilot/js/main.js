@@ -10316,8 +10316,14 @@
     });
   }
 
-  /* FireCut-style: cut to whoever is LOUDEST, using the manual mic→camera map.
-     Relative loudness beats fixed silence thresholds on mics with room tone. */
+  /* FireCut-style: cut to whoever is TALKING, using the manual mic→camera map.
+     CPMulticam.speakerActivity judges it: every mic's gain is calibrated from
+     the voices themselves (a mic recorded 10 dB hotter no longer drowns the
+     other), each mic is judged by how far it rises above the quietest one
+     (shared bleed and room tone cancel out — with no percentile "floor", so a
+     guest who talks 90% of an interview still wins their own answers),
+     pauses where everyone sits at their own noise floor count as nobody, and
+     two people talking over each other count as crosstalk. */
   function mcSpeakerPlan(numAngles) {
     return ensureAudioTracks().then(function (tracks) {
       var map = state.mcMap || [];
@@ -10357,30 +10363,19 @@
             if (synced) capMcProgress('Auto-synced ' + synced + ' camera' + (synced > 1 ? 's' : '') + '…');
           }
         }
-        // COMMON-BLEED CANCELLATION (the key to reliable switching when two
-        // people sit close and both mics hear both voices): judge each mic by
-        // how far it rises ABOVE the quietest mic at that same instant. The
-        // speaker's own mic sticks out; shared bleed + room tone cancel out. Far
-        // more robust than absolute levels, whose per-mic noise floor gets
-        // polluted by bleed and hides the real talker.
-        var micCols = [];
-        for (var ai = 0; ai < numAngles; ai++) if (dbGrids[ai] && dbGrids[ai].length) micCols.push(ai);
-        var judged = dbGrids, ldOpts = { relGate: 5, margin: 1.5, stick: 1 };
-        if (micCols.length >= 2) {
-          var L = 0; micCols.forEach(function (a) { L = Math.max(L, dbGrids[a].length); });
-          judged = dbGrids.map(function (g) { return (g && g.length) ? g.slice() : g; });
-          for (var w = 0; w < L; w++) {
-            var mn = Infinity;
-            micCols.forEach(function (a) { var v = (dbGrids[a][w] == null) ? -100 : dbGrids[a][w]; if (v < mn) mn = v; });
-            micCols.forEach(function (a) { var v = (dbGrids[a][w] == null) ? -100 : dbGrids[a][w]; judged[a][w] = v - mn; });
-          }
-          // now levels are "excess over shared bleed": small gate, no absolute floor
-          ldOpts = { relGate: 3, margin: 1.5, stick: 1, floorPct: 0.2, gate: -1000 };
-        }
-        var regions = CPMulticam.loudnessToRegions(judged, MC_STEP, ldOpts);
+        var act = CPMulticam.speakerActivity(dbGrids, MC_STEP);
+        var cal = act.calibration;
+        state.mcAnalysis = {
+          mode: 'follow',
+          gains: cal.offsets.map(function (o, a) { return dbGrids[a] && dbGrids[a].length ? Math.round(o * 10) / 10 : null; }),
+          gainMethod: cal.method.slice(),
+          isolation: cal.crossIsolation != null ? Math.round(cal.crossIsolation * 10) / 10 : null,
+          clearShare: act.clearShare.slice(),
+          crosstalkShare: act.crosstalkShare
+        };
         capMcProgress(null);
         var minSeg = parseFloat($('mc-minseg').value) || 1.2;
-        return CPMulticam.directorPlan(regions, dur, {
+        return CPMulticam.directorPlan(act.regions, dur, {
           minSegment: minSeg,
           wideAngle: center,
           wideOnSilence: center >= 0,
