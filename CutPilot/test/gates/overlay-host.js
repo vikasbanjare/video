@@ -113,11 +113,14 @@ console.log('overlay: CP_placeOverlay tidies old overlays safely and replaces im
 {
   // ...and the other way round: an overlay job's track restyled AS IMAGES (a
   // machine without the audio engine) must lose the overlay clip, or it stays
-  // under the new images and gets chopped into pieces by them
+  // under the new images and gets chopped into pieces by them. (This harness's
+  // overwrite drops a whole overlapped clip where Premiere trims it into
+  // pieces, so the overlay sits where no image lands: only the clearing pass
+  // can take it off.)
   const w = sandbox.__mk({ vTracks: 1, aTracks: 1 });
   w.model.addClip('vTracks', 0, 0, 600, { name: 'Podcast.mp4' });
   const host = sandbox.__load(w);
-  const ov = call(host, 'CP_placeOverlay', { path: '/p/Pulse Media/pulse-captions-S-1-p-20260101-100000-000.mov', startSec: 0 });
+  const ov = call(host, 'CP_placeOverlay', { path: '/p/Pulse Media/pulse-captions-S-1-p-20260101-100000-000.mov', startSec: 100 });
   const items = [];
   for (let i = 0; i < 6; i++) items.push({ path: '/p/Pulse Media/caption-images-S-1-p-20260101-110000-000/cap_' + (10000 + i) + '.png', start: i * 1.5, end: i * 1.5 + 1.4 });
   const img = call(host, 'CP_placeCaptionImages', { items: items, anim: 'karaoke', replaceTrack: ov.track });
