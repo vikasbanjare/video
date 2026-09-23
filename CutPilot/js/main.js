@@ -12340,10 +12340,12 @@
   function mcPlanSanity(plan, an, numAngles) {
     var talk = an.clearShare || [], talkers = [], a, i;
     for (a = 0; a < numAngles; a++) if ((talk[a] || 0) >= 0.03) talkers.push(a);
-    // 2+ mics paired, yet at most one of them ever clearly talks: the pairing
-    // can't tell the people apart (e.g. host and guest mixed together on one
-    // camera's audio) — a one-camera plan must not read as success
-    if (talkers.length < 2 && (an.micCount || 0) >= 2) {
+    var speakerSwitches = mcSpeakerSwitches(plan);
+    // 2+ mics paired, yet not one switch between speakers and at most one mic
+    // ever clearly talks: the pairing can't tell the people apart (e.g. host
+    // and guest mixed together on one camera's audio) — a one-camera plan
+    // must not read as success
+    if (!speakerSwitches && talkers.length < 2 && (an.micCount || 0) >= 2) {
       var fix = ' If two people talk in this episode, check that each camera is paired with the mic on that person ' +
         '(host and guest on the Left and Right of one recording: pick “… · Left” for one camera and “… · Right” for the other in Step 2).';
       return talkers.length
@@ -12352,7 +12354,6 @@
         : ('⚠️ Pulse couldn’t tell who is talking on these mics, so the cameras don’t follow anyone.' + fix);
     }
     if (talkers.length < 2) return null;
-    var speakerSwitches = mcSpeakerSwitches(plan);
     if (!speakerSwitches) {
       return '⚠️ Pulse heard more than one person talking but found no moment to switch cameras. ' +
         'Check that each camera is paired with the mic on that person.';
