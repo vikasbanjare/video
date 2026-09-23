@@ -6806,11 +6806,12 @@
       if (frames.length > 600 && !opts.bigOk) {
         // Reaching here means the one-clip overlay could not be made: say why,
         // and name the actual fix, instead of only offering to shrink the job.
+        // (overlayFailed is already plain words — captionFailureCause)
         var whyNoOverlay = opts.overlayFailed
-          ? '\n\nPulse tried to make ONE caption overlay clip instead, but it failed on this machine (' + opts.overlayFailed + ').'
+          ? '\n\nPulse tried to make ONE caption overlay clip instead, but it could not here: ' + opts.overlayFailed + '.'
           : (!resolveFfmpeg()
             ? '\n\nPulse would normally render ONE caption overlay clip for a video this long (same look, one file instead of ' +
-              frames.length + '). That needs ffmpeg — add it in Settings and run this again.'
+              frames.length + '). That needs Pulse\'s audio engine — tap Settings → ⬇️ Set up audio engine, then run this again.'
             : '');
         confirmInline(frames.length + ' caption graphics will be created. That many can be slow to render and import — Premiere may look stuck near the end of its import bar. Tip: raise "Words per caption" or pick a shorter clip for fewer graphics.' +
           whyNoOverlay + '\n\nContinue anyway?', 'Continue', function (yes) {
@@ -6882,7 +6883,11 @@
     }).catch(function (e) {
       setCaptionBusy(false);
       capProgress(null);
-      toast('Captions failed: ' + e.message, true);
+      // a full disk / missing permission / missing engine in plain words; any
+      // other message (Premiere's own, e.g. "Open a sequence first.") as is
+      var cause = captionFailureCause(e);
+      if (cause.known) diag('captions', 'caption images failed: ' + rawFailure(e));
+      toast('Captions failed: ' + (cause.known ? cause.plain + '.' : e.message), true);
     });
   }
 
@@ -7403,19 +7408,45 @@
         toast('Stopped — no captions were added.');
         return;
       }
-      var why = String((e && e.message) || e).slice(0, 160);
-      diag('captions', 'Pulse overlay failed: ' + why);
-      return overlayFallback(cues, opts, why);
+      diag('captions', 'Pulse overlay failed: ' + rawFailure(e));
+      var cause = captionFailureCause(e);
+      if (cause.stop) return stopCaptions(cause);
+      return overlayFallback(cues, opts, cause.plain);
     });
   }
 
-  /* Pulse's own overlay could not be made: libass (a lesser look, and it says
-     what it loses), then separate images — each tried at most once. */
+  /* A caption-job failure in words the owner can act on. ffmpeg's own output
+     (the raw error) goes to 📋 Copy diagnostics only — the owner used to read
+     "ffmpeg exit 1: [concat @ 0x…] … No space left on device" in a toast.
+     stop: the next, simpler way would hit the same wall (a full disk refuses
+     every write), so the job stops instead of writing hundreds more files. */
+  function captionFailureCause(e) {
+    var raw = rawFailure(e);
+    if (/ENOSPC|No space left|disk (is )?full|quota exceeded/i.test(raw))
+      return { plain: 'your disk is full — free some space, then try again', stop: true, known: true };
+    if (/spawn\b[^\n]*(ENOENT|EACCES)|ENOENT[^\n]*ffmpeg|ffmpeg[^\n]*(not found|No such file)/i.test(raw))
+      return { plain: 'Pulse\'s audio engine is missing — tap Settings → ⬇️ Set up audio engine, then try again', stop: false, known: true };
+    if (/EACCES|EPERM|EROFS|Permission denied|Operation not permitted|read-only file system|no folder Pulse can write/i.test(raw))
+      return { plain: 'Pulse is not allowed to save files next to your project — save the project in a folder you can write to (for example Documents), then try again', stop: false, known: true };
+    return { plain: 'something on this computer stopped it (📋 Copy diagnostics in Settings has the details)', stop: false, known: false };
+  }
+  function rawFailure(e) {
+    return String(((e && e.message) || e || '') + ' ' + ((e && e.code) || '') + ' ' + ((e && e.stderr) || '')).slice(0, 2000);
+  }
+  function stopCaptions(cause) {
+    setCaptionBusy(false); capProgress(null);
+    toast('Captions were not added: ' + cause.plain + '.', true);
+  }
+
+  /* Pulse's own overlay could not be made: the simpler overlay renderer (a
+     lesser look, and it says what it loses), then separate images — each tried
+     at most once. The FIRST cause travels along: it is the one to fix. */
   function overlayFallback(cues, opts, why) {
+    var first = opts.overlayFailed || why;
     if (!opts.forceLibass && ffmpegHasLibass() && typeof CPAss !== 'undefined') {
-      return runLibassCaptions(cues, withOpts(opts, { forceLibass: true, overlay: false, overlayFailed: why }));
+      return runLibassCaptions(cues, withOpts(opts, { forceLibass: true, overlay: false, overlayFailed: first }));
     }
-    return runCaptionPipeline(cues, withOpts(opts, { noOverlay: true, overlay: false, overlayFailed: why }));
+    return runCaptionPipeline(cues, withOpts(opts, { noOverlay: true, overlay: false, overlayFailed: first }));
   }
 
   /* Place a finished overlay .mov (from either renderer) and record the job. */
@@ -7447,7 +7478,7 @@
       reflectCaptionsPlaced();
       try { tidyOldOverlays(r, info, asked); } catch (eTidy) { diag('captions', 'tidying old overlays: ' + eTidy.message); }
       toast(info.lost
-        ? '🎉 Captions added on V' + r.track + ' as ONE overlay clip (simpler libass look' +
+        ? '🎉 Captions added on V' + r.track + ' as ONE overlay clip (simpler look' +
           (info.lost.length ? ' — without ' + info.lost.join(', ') : '') + '). ⌘Z undoes it.'
         : '🎉 Captions added on V' + r.track + ' as ONE overlay clip, drawn by the same renderer as your preview. Edit words or restyle any time from Pulse; ⌘Z undoes it.');
     }, function (e) {
@@ -7455,8 +7486,9 @@
       // to separate caption images so Add captions never leaves nothing.
       try { nodeReq('fs').unlinkSync(info.path); } catch (eRm) {}
       diag('captions', 'overlay placement failed: ' + ((e && e.message) || e));
-      toast('Switched to separate caption images (the overlay clip could not be placed here).');
-      return runCaptionPipeline(cues, withOpts(opts, { noOverlay: true, overlay: false, overlayFailed: 'placing the clip failed' }));
+      toast('Switched to separate caption images (Premiere did not accept the one overlay clip here).');
+      return runCaptionPipeline(cues, withOpts(opts, { noOverlay: true, overlay: false,
+        overlayFailed: opts.overlayFailed || 'Premiere did not accept the overlay clip' }));
     });
   }
 
@@ -7497,8 +7529,8 @@
     // before rendering, instead of promising the same look.
     var lost = [];
     try { lost = CPAss.lostEffects(CPRender.styleForFrame(currentPreset(), H, ovr, W)); } catch (eL) { lost = []; }
-    toast('Long video: Pulse is using the simpler libass renderer for the one overlay clip' +
-      (opts.overlayFailed ? ' (its own renderer failed here: ' + opts.overlayFailed + ')' : '') + '. ' +
+    toast('Long video: Pulse is drawing the one caption overlay clip with its simpler caption renderer' +
+      (opts.overlayFailed ? ' (the full one could not run here: ' + opts.overlayFailed + ')' : '') + '. ' +
       (lost.length ? 'This style will LOSE: ' + lost.join(', ') + '.' : 'This style keeps its look.'));
     setCaptionBusy(true);
     capProgress('Listening for word timing…');
@@ -7545,21 +7577,30 @@
         var outPath = out.path;
         function dropWork() { try { fs.unlinkSync(assPath); } catch (e1) {} try { fs.rmdirSync(work); } catch (e2) {} }
         try { fs.mkdirSync(work, { recursive: true }); fs.writeFileSync(assPath, assStr, 'utf8'); }
-        catch (eW) { dropWork(); setCaptionBusy(false); capProgress(null); return toast('Could not write caption file: ' + eW.message, true); }
+        catch (eW) {
+          dropWork();
+          diag('captions', 'simpler overlay: could not write its caption file: ' + rawFailure(eW));
+          return stopCaptions(captionFailureCause(eW));
+        }
 
         var args = CPAss.ffmpegOverlayArgs(assPath, W, H, lastEnd + 0.2, outPath, bundledFontsDir(), Math.round(state.env.fps || 30));
         // If ANY step of the libass path fails on this machine, fall back to
-        // separate caption images so "Add captions" never fails outright.
+        // separate caption images so "Add captions" never fails outright —
+        // unless the cause would stop those too (a full disk).
         var done = false, cancelled = false, proc = null;
-        function fallbackImages(reason) {
+        function fallbackImages(err) {
           if (done) return; done = true; _ovJob = null; dropWork();
           try { fs.unlinkSync(outPath); } catch (eRm) {}
-          toast('The overlay clip could not be rendered here (' + reason + ') — using separate caption images instead.');
-          runCaptionPipeline(cues, withOpts(opts, { noOverlay: true, overlay: false, overlayFailed: 'libass ' + reason }));
+          diag('captions', 'simpler overlay failed: ' + rawFailure(err));
+          var cause = captionFailureCause(err);
+          if (cause.stop) return stopCaptions(cause);
+          var first = opts.overlayFailed || cause.plain;       // the first cause is the one to fix
+          toast('The one caption overlay clip could not be made here (' + first + ') — using separate caption images instead.');
+          runCaptionPipeline(cues, withOpts(opts, { noOverlay: true, overlay: false, overlayFailed: first }));
         }
-        overlayProgress('Rendering captions with libass — 0%', 0);
+        overlayProgress('Rendering captions (simpler look) — 0%', 0);
         _ovJob = { cancel: function () { cancelled = true; if (proc) { try { proc.kill(); } catch (eK) {} } } };
-        try { proc = cpMod.spawn(ff, args); } catch (eS) { return fallbackImages('ffmpeg launch'); }
+        try { proc = cpMod.spawn(ff, args); } catch (eS) { return fallbackImages(eS); }
         var errBuf = '';
         proc.stderr.on('data', function (d) {
           errBuf += d.toString(); if (errBuf.length > 8000) errBuf = errBuf.slice(-8000);
@@ -7568,10 +7609,10 @@
           while ((mm = re.exec(tail))) m = mm;
           if (m && lastEnd > 0) {
             var t = (+m[1]) * 3600 + (+m[2]) * 60 + (+m[3]);
-            overlayProgress('Rendering captions with libass — ' + Math.min(99, Math.round(t / (lastEnd + 0.2) * 100)) + '%', t / (lastEnd + 0.2));
+            overlayProgress('Rendering captions (simpler look) — ' + Math.min(99, Math.round(t / (lastEnd + 0.2) * 100)) + '%', t / (lastEnd + 0.2));
           }
         });
-        proc.on('error', function () { fallbackImages('ffmpeg error'); });
+        proc.on('error', function (eP) { fallbackImages(eP || new Error('the render could not start')); });
         proc.on('close', function (code) {
           if (done) return;
           if (cancelled) {
@@ -7581,12 +7622,16 @@
             return toast('Stopped — no captions were added.');
           }
           var ok = false; try { ok = fs.existsSync(outPath) && fs.statSync(outPath).size > 1000; } catch (eE) {}
-          if (code !== 0 || !ok) { return fallbackImages('render ' + code); }
+          if (code !== 0 || !ok) { var eR = new Error('render exit ' + code); eR.stderr = errBuf; return fallbackImages(eR); }
           done = true; _ovJob = null; dropWork();
           placeOverlayClip(cues, opts, { path: outPath, dir: out.dir, key: out.key, projectDir: out.projectDir, lost: lost });
         });
       });
-    }).catch(function (e) { _ovJob = null; setCaptionBusy(false); capProgress(null); toast('Captions failed: ' + (e && e.message || e), true); });
+    }).catch(function (e) {
+      _ovJob = null;
+      diag('captions', 'simpler overlay failed: ' + rawFailure(e));
+      stopCaptions(captionFailureCause(e));
+    });
   }
 
   // Hooks for test/gates/overlay-*.js (the shared CP_DEBUG block stays as is).
