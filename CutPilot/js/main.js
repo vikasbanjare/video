@@ -9942,19 +9942,26 @@
     if (!doSil && !doTakes && !doFill) return toast('Tick at least one thing to remove.', true);
     var prog = $('autoclean-progress'); prog.classList.remove('hidden'); prog.textContent = 'Reading your timeline…';
     var tune = silTune(strength);
-    var plan = null, clip = null, extraNotes = [];
-    // set when a transcription this clean was waiting for FAILED: do not try
-    // again (that would loop) — remove the dead air and say retakes were skipped
-    var noWords = !!state.autocleanNoWords; state.autocleanNoWords = false;
+    var plan = null, clip = null, cutSrc = null, extraNotes = [];
+    // a transcription this clean asked for ended with NO words (it failed or
+    // was abandoned): do not ask again (that would loop) — remove the dead air
+    // and say retakes were skipped. Set by this function itself when it asks,
+    // or by the transcript bar when it reports the failure.
+    var noWords = !!state.autocleanNoWords ||
+      (!!state.autocleanAskedWords && !state.pendingCaptionAction && !state.transcript &&
+       !(state.transcriptWords && state.transcriptWords.length));
+    state.autocleanNoWords = false; state.autocleanAskedWords = false;
     if (doTakes && !noWords && !(settings.verbatimKey || '').trim() && !(state.transcriptWords && state.transcriptWords.length) &&
         !state.transcript && !state.pendingCaptionAction && autoTranscribeAvailable()) {
       // retakes need words and they CAN be fetched: get them first (this same
       // clean re-runs by itself when they land) instead of listening twice
       prog.classList.add('hidden');
+      state.autocleanAskedWords = true;
       ensureTranscriptThen('autoclean');
       return;
     }
     CPBridge.callHost('CP_getCutSources', {}).then(function (src) {
+      cutSrc = src;
       // the talking clip (retakes / verbatim words) — same pick captions use;
       // it skips graphics and stills, so a selected title can't derail it
       return CPBridge.callHost('CP_getTranscribeSource').then(function (res) { return res; }, function () { return null; }).then(function (res) {
@@ -9993,11 +10000,13 @@
       // matcher nor the AI can even SEE the retakes in it. When a
       // Deepgram/AssemblyAI key is set, the one button transcribes VERBATIM
       // (every retake kept, per-word confidence) and runs the take-picker on it.
-      if ((settings.verbatimKey || '').trim() && typeof verbatimTranscribe === 'function' && clip) {
+      // It reads the SAME timeline whose fingerprint guards the cut (every
+      // voice track, mixed as it plays) — not one clip picked separately.
+      if ((settings.verbatimKey || '').trim() && typeof verbatimTranscribe === 'function') {
         var ffV = resolveFfmpeg();
         if (ffV) {
           prog.textContent = '🎯 Reading every word (verbatim engine)…';
-          return verbatimTranscribe(clip, ffV).then(function (vw) {
+          return verbatimTranscribe(clip, ffV, cutSrc).then(function (vw) {
             prog.textContent = 'Picking the best take of every line…';
             return result(takesOn(vw), { verbatim: true, vWords: vw });
           }).catch(function (eV) {
@@ -10009,24 +10018,40 @@
       return fallbackPath();
 
       function fallbackPath() {
-        var words = state.transcriptWords;
+        // words in the CURRENT timeline's time: the word list, else the last
+        // caption job's re-timed cues, else the transcript file (never one
+        // whose times went stale after an earlier cut)
+        var words = (state.transcriptWords && state.transcriptWords.length) ? state.transcriptWords : takesGetWords();
         if (!words || !words.length) {
           // ONE button = the whole job: when words CAN be fetched, fetch them and
           // this same clean re-runs by itself the moment they land…
           if (!noWords && !state.transcript && !state.pendingCaptionAction && autoTranscribeAvailable()) {
             prog.classList.add('hidden');
+            state.autocleanAskedWords = true;
             ensureTranscriptThen('autoclean');
             return { pending: true };
           }
-          // …and when they can't (no key / engine yet, or it just failed), still
-          // remove the dead air that was already found instead of throwing it away.
-          return result([], { needTranscript: noWords ? 'failed' : 'none' });
+          // …and when they can't (no key / engine yet, it just failed, or the
+          // transcript is out of date), still remove the dead air that was
+          // already found instead of throwing it away.
+          return result([], { needTranscript: noWords ? 'failed' : (state.transcript && transcriptIsStale()) ? 'stale'
+                                                 : state.transcript ? 'unreadable' : 'none' });
         }
         var base = takesOn(words);
         if (cpKey() && typeof CPSmartEdit !== 'undefined' && typeof aiCleanupCuts === 'function') {
           return aiCleanupCuts(words, { aggressive: (strength === 'strong') }, prog, '✨ AI finding retakes & off-script talk')
             .then(function (rr) {
-              return result(base.concat(mergeAiCuts(base, rr.cuts, doFill)), { ai: true });
+              // an unusually long AI cut (over 45 s, or a quarter of what it
+              // read) is only ever applied after the owner has played it — the
+              // one tap has no review list, so it is named and left alone
+              var long = (rr.cuts || []).filter(function (c) { return c.needsReview; });
+              if (long.length) {
+                extraNotes.push(long.length + ' unusually long AI cut' + (long.length > 1 ? 's were' : ' was') + ' left in (' +
+                  long.slice(0, 3).map(function (c) { return fmt(c.start) + '–' + fmt(c.end); }).join(', ') + (long.length > 3 ? ', …' : '') +
+                  ') — play ' + (long.length > 1 ? 'them' : 'it') + ' first: 🔁 Remove repeated takes → ✨ Smart Cleanup (AI).');
+              }
+              var sure = (rr.cuts || []).filter(function (c) { return !c.needsReview; });
+              return result(base.concat(mergeAiCuts(base, sure, doFill)), { ai: true });
             })
             .catch(function () { return result(base); });
         }
@@ -10042,6 +10067,8 @@
       prog.classList.add('hidden');
       var notes = [];
       if (r.needTranscript === 'failed') notes.push('Pulse couldn’t get your words, so repeated takes were skipped — this pass removes dead air only.');
+      else if (r.needTranscript === 'stale') notes.push('Your transcript was made before your last cut and has no word timing to follow it, so repeated takes were skipped — this pass removes dead air only. Re-transcribe (Transcribe tab) to get word timing, then run Clean up again.');
+      else if (r.needTranscript === 'unreadable') notes.push('Pulse couldn’t read your transcript, so repeated takes were skipped — this pass removes dead air only. Re-transcribe (Transcribe tab) to get word timing.');
       else if (r.needTranscript) notes.push('Repeated takes need your words and no transcription engine is set up yet (Settings → add a free key), so this pass removes dead air only.');
       notes = notes.concat(extraNotes);
       if (!ranges.length) {
