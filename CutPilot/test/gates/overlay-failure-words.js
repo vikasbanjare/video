@@ -27,7 +27,9 @@
  *     unplugged mid-render). The owner hears that a folder went missing, never
  *     that the audio engine is missing (it is fine: the simpler renderer then
  *     runs with it and places the captions). Also when the simpler renderer
- *     itself loses its folder, its reason after the banner.
+ *     itself loses its folder, its reason after the banner. And when ONE
+ *     picture in the middle goes, which the real ffmpeg answers with exit 0
+ *     and a clip that stops there: that clip must not be placed.
  *  6. ENGINE GONE (control): the ffmpeg file Pulse found earlier is deleted,
  *     so no job can start it — that still says the audio engine is missing,
  *     with Settings → Set up audio engine.
@@ -73,6 +75,9 @@ const JARGON = /ffmpeg|libass|concat|stderr|exit \d|exit code|0x[0-9a-f]{4,}|ENO
     // folder the overlay is saved into is gone, or the caption pictures it reads
     '  if [[ "$MODE" == gone-out ]]; then exec "$REAL" "${@:1:$#-1}" "$(dirname "$OUT")/gone/$(basename "$OUT")"; fi',
     '  if [[ "$MODE" == gone-in ]]; then prev=; for a in "$@"; do if [[ "$prev" == -i ]]; then rm -f "$(dirname "$a")"/*.png; fi; prev="$a"; done; exec "$REAL" "$@"; fi',
+    // one picture in the MIDDLE goes: the real ffmpeg then ends "successfully"
+    // with a clip that stops there
+    '  if [[ "$MODE" == gone-mid ]]; then prev=; for a in "$@"; do if [[ "$prev" == -i ]]; then rm -f "$(dirname "$a")/s000002.png"; fi; prev="$a"; done; exec "$REAL" "$@"; fi',
     'fi',
     'if [[ "$ARGS" == *"subtitles="* ]]; then',
     // this renderer shows ffmpeg's banner, so a real failure states its reason
@@ -132,6 +137,12 @@ const JARGON = /ffmpeg|libass|concat|stderr|exit \d|exit code|0x[0-9a-f]{4,}|ENO
     return { texts, confirm, placed, newImages: images().length - imgBefore };
   }
   const jargon = texts => texts.filter(t => JARGON.test(t));
+  /* how long a video file lasts, as ffmpeg reads it */
+  const lengthOf = f => {
+    const r = require('child_process').spawnSync(ff, ['-hide_banner', '-i', f], { encoding: 'utf8' });
+    const m = /Duration: (\d+):(\d+):([\d.]+)/.exec(r.stderr || '');
+    return m ? (+m[1]) * 3600 + (+m[2]) * 60 + (+m[3]) : 0;
+  };
 
   // ---- 1. a full disk stops the job -------------------------------------------------
   {
@@ -204,6 +215,25 @@ const JARGON = /ffmpeg|libass|concat|stderr|exit \d|exit code|0x[0-9a-f]{4,}|ENO
     if (!r.placed.some(c => c.fn === 'CP_placeOverlay')) bad('5 ' + mode + ': the simpler renderer did not go on to place the captions (' + said.slice(-160) + ')');
     const j = jargon(r.texts);
     if (j.length) bad('5 ' + mode + ': the owner read ffmpeg\'s own words: ' + j[0].slice(0, 160));
+  }
+  // one caption picture in the middle goes missing: the real ffmpeg exits 0
+  // with a clip that stops at that picture, and the podcast's captions would
+  // silently end there
+  {
+    const r = await scenario('gone-mid');
+    const said = r.texts.join(' | ');
+    const last = r.placed.filter(c => c.fn === 'CP_placeOverlay').pop();
+    const lastCaption = job.cues[job.cues.length - 1].end;
+    const secs = last ? lengthOf(last.args.path) : 0;
+    if (!last) bad('5 gone-mid: no caption overlay was placed (' + said.slice(-160) + ')');
+    else if (secs < lastCaption - 0.5) bad('5 gone-mid: a caption picture went missing mid-render and the overlay placed stops at ' + secs.toFixed(1) +
+      ' s of ' + lastCaption.toFixed(1) + ' s — the captions silently end there (the owner read: ' + said.slice(0, 160) + ')');
+    else ok('5 gone-mid: a caption picture missing mid-render is not placed as a clip that stops early (the placed overlay lasts ' + secs.toFixed(1) + ' s)');
+    if (/audio engine/i.test(said)) bad('5 gone-mid: the owner was told about the audio engine: ' + (said.match(/[^|]*audio engine[^|]*/i) || [''])[0].trim().slice(0, 200));
+    else if (!/folder[^|]*(went missing|disappeared)/i.test(said)) bad('5 gone-mid: the missing picture\'s folder is not named: ' + said.slice(0, 220));
+    else ok('5 gone-mid: the owner is told a folder went missing, and the simpler renderer placed the captions');
+    const j = jargon(r.texts);
+    if (j.length) bad('5 gone-mid: the owner read ffmpeg\'s own words: ' + j[0].slice(0, 160));
   }
   // the simpler renderer loses its folder: the real ffmpeg prints its banner
   // first, so its reason comes ~2.4 KB in — it must still be the one named

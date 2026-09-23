@@ -1068,7 +1068,7 @@
           fs.writeFileSync(listPath, overlayConcatList(plan, fileFor, withRate), 'utf8');
           if (written.indexOf(listPath) < 0) written.push(listPath);
         } catch (eL) { return reject(eL); }
-        var errTail = '', outBuf = '', settled = false;
+        var errTail = '', outBuf = '', settled = false, lastFrame = -1;
         function finish(err) { if (settled) return; settled = true; proc = null; if (err) reject(err); else resolve(); }
         try { proc = cpMod.spawn(opts.ffmpeg, ffmpegCanvasOverlayArgs(listPath, outPath, plan.fps)); }
         catch (eS) { return finish(eS); }
@@ -1078,7 +1078,7 @@
           var lines = outBuf.split('\n'); outBuf = lines.pop();
           for (var li = 0; li < lines.length; li++) {
             var m = /^frame=(\d+)/.exec(lines[li]);
-            if (m) progress('encode', +m[1], plan.totalFrames);
+            if (m) { lastFrame = +m[1]; progress('encode', lastFrame, plan.totalFrames); }
           }
         });
         if (proc.stderr) proc.stderr.on('data', function (d) {
@@ -1088,8 +1088,14 @@
         proc.on('close', function (code) {
           if (cancelled) return finish(stopped());
           var size = 0; try { size = fs.statSync(outPath).size; } catch (eSt) {}
-          if (code === 0 && size > 0) return finish(null);
-          var err = new Error('ffmpeg exit ' + code + ': ' + errTail.split('\n').filter(function (l) { return l; }).slice(-2).join(' | '));
+          // A caption picture that goes missing mid-list does not fail ffmpeg:
+          // it ends with exit 0 and a clip that stops there, so the captions
+          // silently ended partway through the video. Fewer frames than
+          // planned is a failure (one frame of rounding allowed).
+          var short = code === 0 && lastFrame >= 0 && lastFrame < plan.totalFrames - 1;
+          if (code === 0 && size > 0 && !short) return finish(null);
+          var err = new Error((short ? 'ffmpeg stopped early (' + lastFrame + ' of ' + plan.totalFrames + ' frames)' : 'ffmpeg exit ' + code) + ': ' +
+            errTail.split('\n').filter(function (l) { return l; }).slice(-2).join(' | '));
           err.stderr = errTail;
           finish(err);
         });
