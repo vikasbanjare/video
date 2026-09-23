@@ -1731,8 +1731,13 @@
     }
     // Too narrow for even a few letters (a long page name on a 260 px panel)
     // the name shrank to a stray "H…": show a status dot in its colour instead.
+    // (An attribute, not a class: the code that finds the sequence rewrites
+    // the whole className, which would bring the stray letter back.)
     if (env && window.ResizeObserver) {
-      new ResizeObserver(function () { env.classList.toggle('squeezed', env.clientWidth < 40); }).observe(env);
+      new ResizeObserver(function () {
+        if (env.clientWidth < 40) env.setAttribute('data-squeezed', '');
+        else env.removeAttribute('data-squeezed');
+      }).observe(env);
     }
   }
 

@@ -45,7 +45,8 @@ function measure(args) {
   let n = 0;
   // the sequence name: a few letters at least, or a status dot — never "H…"
   const env = document.getElementById('env-status');
-  if (env && shown(env) && !env.classList.contains('squeezed') && env.scrollWidth > env.clientWidth + 1 && env.clientWidth < 40)
+  const dot = env && (env.hasAttribute('data-squeezed') || env.classList.contains('squeezed'));
+  if (env && shown(env) && !dot && env.scrollWidth > env.clientWidth + 1 && env.clientWidth < 40)
     out.push('#env-status shows ' + env.clientWidth + 'px of "' + env.textContent.trim().slice(0, 30) + '" (a stray letter)');
   roots.forEach(root => root.querySelectorAll('*').forEach(el => {
     if (/^(SCRIPT|STYLE|OPTION|SELECT|INPUT|TEXTAREA|CANVAS|svg|path)$/i.test(el.tagName) || !shown(el)) return;
@@ -94,6 +95,10 @@ function measure(args) {
       for (const W of pass.widths) {
         await page.setViewport({ width: W, height: 800 });
         await sleep(200);
+        // the sequence name as the panel writes it when it finds the sequence
+        // (text AND class, e.g. on opening Captions) — at a size that stays put
+        await page.evaluate(() => { const e = document.getElementById('env-status'); if (e) { e.textContent = 'Hindi Podcast Ep 12 · 1080×1920'; e.className = 'env-status ok'; } });
+        await sleep(100);
         const m = await page.evaluate(measure, { EXEMPT });
         total += m.n;
         m.out.forEach(x => bad.push(W + 'px ' + x));
