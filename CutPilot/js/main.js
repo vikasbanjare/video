@@ -404,16 +404,16 @@
     if (_ffmpegSetup) return _ffmpegSetup;       // a download already in flight
     var fs, path, os;
     try { fs = nodeReq('fs'); path = nodeReq('path'); os = nodeReq('os'); }
-    catch (e) { return Promise.reject(new Error('Open inside Premiere to set up the audio tool.')); }
+    catch (e) { return Promise.reject(new Error('Open inside Premiere to set up the audio engine.')); }
     var dir = path.join(os.homedir(), '.cutpilot', 'bin');
     var dest = path.join(dir, (process.platform === 'win32') ? 'ffmpeg.exe' : 'ffmpeg');
     try { if (fs.existsSync(dest)) { settings.ffmpegPath = dest; saveSettings(); _ffmpeg = dest; return Promise.resolve(dest); } } catch (e0) {}
     _ffmpegSetup = new Promise(function (resolve, reject) {
       try { fs.mkdirSync(dir, { recursive: true }); } catch (eD) {}
-      setTranscriptBar('', '⬇️', 'First-time setup: downloading the audio tool (~50MB)…', null);
-      toast('One-time setup: downloading the audio engine (~50MB). This only happens once.');
+      setTranscriptBar('', '⬇️', 'First-time setup: downloading the audio engine (about 50 MB)…', null);
+      toast('One-time setup: downloading the audio engine (about 50 MB). This only happens once.');
       var url = ffmpegDownloadUrl(), part = dest + '.part';
-      var nodePct = function (pct) { setTranscriptBar('', '⬇️', 'Setting up the audio tool… ' + Math.round(pct * 100) + '%', null); };
+      var nodePct = function (pct) { setTranscriptBar('', '⬇️', 'Setting up the audio engine… ' + Math.round(pct * 100) + '%', null); };
       function finish() {
         var big = false; try { big = fs.statSync(part).size > 1e6; } catch (eS) {}
         if (!big) return fail(new Error('download was empty'));
@@ -425,8 +425,9 @@
       function fail(e) {
         try { fs.unlinkSync(part); } catch (eU) {}
         _ffmpegSetup = null;
-        reject(new Error('Couldn\'t download the audio tool (' + (e && e.message ? e.message : 'network error') +
-          '). Check the internet connection, or in Settings → ffmpeg set the path to an ffmpeg you download from ffmpeg.org.'));
+        // (it named a Settings section, "ffmpeg", that no longer exists)
+        reject(new Error('Couldn\'t download the audio engine (' + (e && e.message ? e.message : 'network error') +
+          '). Check the internet and tap Set up again, or point Settings → Advanced → Audio engine location at a copy you have.'));
       }
       // curl first (robust in CEP), then Node https as a fallback.
       _curlDownload(url, part).then(finish, function () {
@@ -1288,7 +1289,9 @@
     if (!ff) {
       // no ffmpeg yet → fetch it once (no Terminal), then start transcribing
       return ensureFfmpeg().then(function () { autoTranscribe(); })
-        .catch(function (e) { toast('Couldn’t set up the audio tool automatically (' + (e && e.message ? e.message : 'download failed') + '). You can set its path in Settings → ffmpeg.', true); });
+        // (ensureFfmpeg's own message already says what to do; this one sent
+        // the owner to "Settings → ffmpeg", a section that no longer exists)
+        .catch(function (e) { toast((e && e.message) || 'Couldn’t set up the audio engine — tap Settings → ⬇️ Set up audio engine to try again.', true); });
     }
     var wbin = null;
     if (cloud) {
@@ -5870,7 +5873,7 @@
     // ride the spoken word.
     if (state.transcriptWords && state.transcriptWords.length) { el.textContent = '· 🎯 word-perfect timing ready'; return; }
     if (!$('c-sync').checked) { el.textContent = '(off)'; return; }
-    el.textContent = resolveFfmpeg() ? '· estimates from audio' : '· needs ffmpeg (Settings)';
+    el.textContent = resolveFfmpeg() ? '· estimates from audio' : '· needs the audio engine (Settings)';
   }
 
   /* Single source of truth for words-per-caption; keeps the hidden input,
@@ -11996,14 +11999,17 @@
     el.classList.remove('hidden');
     if (ff) {
       el.className = 'ff-banner ok';
-      el.innerHTML = '✅ Audio engine ready (ffmpeg found). This mode can read your mics.';
+      el.textContent = '✅ Audio engine ready — Pulse can hear each mic.';
     } else {
+      // Plain words and ONE tap. This told the owner to "open Terminal and run
+      // brew install ffmpeg", although the same one-tap setup as Settings works
+      // here (the mics sit inside the video files; Pulse's audio engine hears them).
       el.className = 'ff-banner';
-      el.innerHTML = '⚠️ <b>This mode needs ffmpeg</b> because your mics are inside video files ' +
-        '(.MOV/.MP4), which Premiere\'s panel can\'t read on its own.<br>' +
-        'Install it once — open Terminal and run: <code>brew install ffmpeg</code><br>' +
-        'Then tap re-check. (Or set its path in Settings.)' +
-        '<br><button class="chip-btn" id="mc-ff-recheck">↻ Re-check ffmpeg</button>';
+      el.innerHTML = '⚠️ <b>Pulse needs its audio engine to hear your mics.</b>' +
+        '<br><button class="chip-btn" id="mc-ff-setup" title="Free, about 50 MB, downloaded once">⬇️ Set up audio engine</button> ' +
+        '<button class="chip-btn" id="mc-ff-recheck">↻ Check again</button>';
+      var setup = document.getElementById('mc-ff-setup');
+      if (setup) setup.addEventListener('click', function () { setUpAudioTool(this); });
       var btn = document.getElementById('mc-ff-recheck');
       if (btn) btn.addEventListener('click', function () { _ffmpeg = null; updateMcFfmpegBanner(); refreshFfmpegStatus(); });
     }
@@ -13328,35 +13334,42 @@
   } catch (eMcDbg) {}
 
   // =========================================================== SETTINGS ====
+  /* One plain line under the Set up button. It named the program and its
+     folder ("ffmpeg found: /opt/homebrew/bin/ffmpeg") and ran to three lines
+     naming pages that no longer exist ("Multicam & Smart Cut"). Where the
+     tool lives stays in the tooltip and in Copy diagnostics; what it is for
+     is behind the card's ⓘ. */
   function refreshFfmpegStatus() {
     _ffmpeg = null; // re-probe
     var ff = resolveFfmpeg();
     var el = $('ffmpeg-status');
-    if (ff) { el.textContent = '✅ ffmpeg found: ' + ff; el.className = 'hint'; }
-    else { el.textContent = '⚠️ No audio engine yet — tap "⬇️ Set up audio engine (auto-download)" above. ' +
-            'Captions, Multicam & Smart Cut need it to read audio inside video files.'; el.className = 'hint'; }
+    if (ff) { el.textContent = '✅ Audio engine ready.'; el.title = ff; el.className = 'hint'; }
+    else { el.textContent = '⚠️ Not set up yet — tap the button above (once).'; el.title = ''; el.className = 'hint'; }
   }
 
   $('btn-ffmpeg-pick').addEventListener('click', function () {
-    var path = pickFile('Locate the ffmpeg binary', []);
+    var path = pickFile('Choose the audio engine file', []);
     if (path) $('set-ffmpeg').value = path;
   });
-  // Explicit one-tap audio-engine setup (so a fresh install can fetch ffmpeg —
-  // and retry — from a visible button, not only silently on first transcribe).
-  if ($('btn-ffmpeg-setup')) $('btn-ffmpeg-setup').addEventListener('click', function () {
-    var btn = this, st = $('ffmpeg-status');
-    btn.disabled = true;
-    if (st) st.textContent = '⬇️ Downloading the audio engine (~50MB) — one time…';
-    ensureFfmpeg().then(function (p) {
-      if (st) st.textContent = '✅ Audio engine ready.';
+  /* One tap sets up the audio engine (so a fresh install can fetch it — and
+     retry — from a visible button, not only silently on first transcribe).
+     Settings and the Podcast cameras page, which cannot hear its mics without
+     it, use the same tap. */
+  function setUpAudioTool(btn) {
+    var st = $('ffmpeg-status');
+    if (btn) btn.disabled = true;
+    if (st) st.textContent = '⬇️ Downloading the audio engine (about 50 MB, once)…';
+    return ensureFfmpeg().then(function (p) {
       try { $('set-ffmpeg').value = p || settings.ffmpegPath || ''; } catch (e) {}
-      refreshFfmpegStatus(); toast('✅ Audio engine ready.');
+      refreshFfmpegStatus(); updateMcFfmpegBanner(); updateSyncStat();
+      toast('✅ Audio engine ready.');
     }, function (e) {
-      var m = (e && e.message) ? e.message : 'Download failed — check internet.';
+      var m = (e && e.message) ? e.message : 'The download failed — check your internet, then tap Set up again.';
       if (st) st.textContent = '⚠️ ' + m;
       toast(m, true);
-    }).then(function () { btn.disabled = false; });
-  });
+    }).then(function () { if (btn) btn.disabled = false; });
+  }
+  if ($('btn-ffmpeg-setup')) $('btn-ffmpeg-setup').addEventListener('click', function () { setUpAudioTool(this); });
 
   $('btn-save-settings').addEventListener('click', function () {
     settings.ffmpegPath = $('set-ffmpeg').value.trim();
@@ -13431,33 +13444,39 @@
     syncGroqVisibility();                       // show the key field when Cloud is in play
     var el = $('whisper-status'); if (!el) return;
     var resolved = resolveQuality();
-    var autoTag = (settings.whisperQuality === 'auto-best') ? ' · ✨ Auto chose this' : '';
+    // ONE plain line that points at what is really on screen: the speech-key
+    // box sits right under this line, the Indian-language and retake-finder
+    // keys under "More speech options". It named engines and models (Groq,
+    // Deepgram nova-3, ggml-large-v3-turbo…) and sent the owner to a picker
+    // "above" that the redesign folded away below.
+    el.title = '';
     if (resolved === 'cloud-groq') {
-      el.textContent = (settings.groqKey || '').trim()
-        ? '☁️ Cloud (Groq) ready — most accurate.' + autoTag
-        : '☁️ Cloud selected — paste your free Groq API key in the box that just appeared.';
+      el.textContent = (settings.groqKey || '').trim() ? '✅ Speech key ready — Pulse can write your words.'
+        // a build with its own key hides the box — never ask for it then
+        : KEY_BUNDLED ? '✅ Transcription is built in — just pick your language.'
+        : '👇 Paste your free speech key below.';
       return;
     }
     if (resolved === 'cloud-swara') {
       el.textContent = cpSarvamKey()
-        ? '🇮🇳 Indian Voices ready — pick your language above.' + autoTag
-        : '🇮🇳 Indian Voices selected — paste your key in the 🇮🇳 box below.';
+        ? '✅ Indian-language key ready.'
+        : '👇 Paste your key under More speech options.';
       return;
     }
     if (resolved === 'cloud-deepgram') {
       el.textContent = cpDeepgramKey()
-        ? '🎧 Deepgram ready — nova-3, keeps every word.' + autoTag
-        : '🎧 Deepgram selected — paste your key in the 🎧 box below.';
+        ? '✅ Retake-finder key ready — it writes your words too.'
+        : '👇 Paste your key under More speech options.';
       return;
     }
     var w = resolveWhisper(), m = resolveWhisperModel();
     var willUse = modelFileName();   // what accuracy+language will fetch/use
-    if (w) { el.textContent = '✅ Engine ready · will use ' + willUse + (m ? '' : ' (downloads on first use)') + autoTag; }
+    if (w) { el.textContent = '✅ Ready — this computer writes your words' + (m ? '.' : ' (one download first).'); el.title = willUse; }
     // "Cloud transcription is built in" was printed even when the build bundles
     // NO key - so the panel told the user there was nothing to set up, then
     // refused to transcribe without a key. Only say "built in" when it is true.
-    else if (KEY_BUNDLED) { el.textContent = 'Cloud transcription is built in — pick a language above and transcribe.'; }
-    else { el.textContent = 'Pick a cloud engine above, then paste its key in the matching box below.'; }
+    else if (KEY_BUNDLED) { el.textContent = '✅ Transcription is built in — just pick your language.'; }
+    else { el.textContent = '👇 Paste your free speech key below to switch it on.'; }
     var note = $('set-quality-note');
     if (note) { var q = (settings.whisperQuality || 'auto-best'); var qo = WHISPER_QUALITIES.filter(function (x) { return x.value === q; })[0]; note.textContent = qo ? '· ' + qo.label.replace(/^[^·]*· /, '') : ''; }
   }

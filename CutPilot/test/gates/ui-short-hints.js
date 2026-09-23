@@ -18,9 +18,9 @@
 const U = require('./ui-lib/panel');
 const MAX_CHARS = 90;
 
+/* (#whisper-status and #ffmpeg-status, the Settings status lines, are one
+   short line now — in every setup state, see ui-setup-lines.js.) */
 const OTHER_OWNERS = {
-  'whisper-status': 'transcription: refreshWhisperStatus() writes a two-line status ("Pick a cloud engine above, then paste its key in the matching box below.")',
-  'ffmpeg-status': 'settings/audio tool: refreshFfmpegStatus() writes a three-line status',
   'mc-pace-hint': 'multicam: the pace picker writes a two-line description of each pace'
 };
 /* the same, for status lines that carry a class instead of an id */

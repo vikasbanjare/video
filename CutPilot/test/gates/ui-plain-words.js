@@ -23,27 +23,14 @@
 const fs = require('fs'), path = require('path');
 const U = require('./ui-lib/panel');
 
-const JARGON = [
-  ['ffmpeg', /ffmpeg/i], ['libass', /libass/i], ['mogrt', /mogrt/i], ['overlay', /overlay/i], ['PNG', /\bPNG\b/i],
-  ['ASS', /\bASS\b/], ['QE', /\bQE\b/], ['Groq', /groq/i], ['Deepgram', /deepgram/i], ['AssemblyAI', /assembly ?ai/i],
-  ['API', /\bAPI\b/], ['nova-3', /nova-?3/i], ['whisper', /whisper/i], ['large-v3', /large-v3/i], ['Flux', /\bflux\b/i],
-  ['TF-IDF', /tf-?idf/i], ['keyframe', /keyframe/i], ['brew', /\bbrew\b|homebrew/i], ['dB', /\bdB\b/], ['ripple', /ripple/i],
-  ['verbatim', /verbatim/i], ['safe copy', /safe copy/i], ['cut in place', /cut in place/i],
-  ['Essential Graphics', /essential graphics/i], ['drop-frame', /drop-?frame/i], ['timecode', /timecode/i],
-  ['CEP', /\bCEP\b/], ['ExtendScript', /extendscript/i], ['JSX', /\bJSX\b/], ['codec', /\bcodec/i], ['JSON', /\bJSON\b/i]
-];
-const URLISH = /\S*(?:\.com|\.io|\.ai|:\/\/|www\.)\S*/gi;
-/* a term said in plain words first, with its name in brackets for the
-   messages and gates that use it, is explained — not jargon */
-const GLOSSED = /word-for-word \(verbatim\)/gi;
-const hits = t => { const s = String(t || '').replace(URLISH, ' ').replace(GLOSSED, ' '); return JARGON.filter(([, re]) => re.test(s)).map(([n]) => n); };
+const { JARGON, hits } = require('./ui-lib/words');
 
 /* Visible words written by code outside the UI shell (main.js logic owned by
-   another workstream). Reported every run; not fixed here. */
-const OTHER_OWNERS = {
-  'sync-stat': 'captions/word-sync: updateSyncStat() writes "· needs ffmpeg (Settings)" when the audio tool is missing',
-  'mc-ffmpeg': 'multicam: updateMcFfmpegBanner() tells the owner to "open Terminal and run brew install ffmpeg" and to "Re-check ffmpeg", though Settings has a one-tap Set up button'
-};
+   another workstream) that cannot be fixed here. Reported every run. Empty:
+   the word-sync status (#sync-stat, "needs ffmpeg") and the Podcast cameras
+   banner (#mc-ffmpeg, "open Terminal and run brew install ffmpeg") are plain
+   now, and ui-setup-lines.js reads them in every setup state. */
+const OTHER_OWNERS = {};
 
 (async () => {
   const R = U.reporter('ui plain words: no tool names or jargon in what the owner reads');
@@ -117,7 +104,7 @@ const OTHER_OWNERS = {
     if (reported.has(id)) R.note('reported, not fixed here: #' + id + ' — ' + OTHER_OWNERS[id]);
     else R.bad('OTHER_OWNERS lists #' + id + ' but it shows no jargon any more — drop it from the list');
   }
-  if (!R.failed) R.ok('every visible word on the ' + U.SCREENS.length + ' main screens is plain (apart from the reported text above)');
+  if (!R.failed) R.ok('every visible word on the ' + U.SCREENS.length + ' main screens is plain' + (reported.size ? ' (apart from the reported text above)' : ''));
   R.done('UI PLAIN WORDS: the owner reads what things do, not what they are built with ✓',
          'UI PLAIN WORDS: ' + R.failed + ' problem(s) above');
 })().catch(e => { console.error('  ✗ harness error: ' + (e && e.stack || e)); process.exit(1); });

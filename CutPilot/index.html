@@ -1179,8 +1179,10 @@
     </div>
 
     <div class="card">
-      <div class="step-head"><span class="step-title">🔊 Audio tool</span></div>
-      <button id="btn-ffmpeg-setup" class="chip-btn">⬇️ Set up audio engine (auto-download)</button>
+      <div class="step-head"><span class="step-title">🔊 Audio engine</span>
+        <button class="info" type="button" data-info="ff-info" aria-label="What the audio engine does">ⓘ</button></div>
+      <div class="info-pop hidden" id="ff-info">Pulse uses a free audio engine to hear the sound inside your video files: for your transcript, Clean up, Podcast cameras and matching captions to the voice. It downloads once (about 50 MB) and stays on this computer.</div>
+      <button id="btn-ffmpeg-setup" class="chip-btn" title="Free, about 50 MB, downloaded once">⬇️ Set up audio engine</button>
       <div id="ffmpeg-status" class="hint" style="margin:8px 0 0">checking…</div>
     </div>
 
@@ -1247,7 +1249,7 @@
       </details>
       <details class="advanced">
         <summary>🔧 Full check</summary>
-        <p class="hint">Checks the audio tool, your mics, a caption template and your words at once.</p>
+        <p class="hint">Checks the audio engine, your mics, a caption template and your words at once.</p>
         <button id="btn-diag-full" class="hero-btn small">🩺 Run the full check</button>
         <pre id="diag-out" class="diag-out">Results appear here.</pre>
         <button id="btn-diagfull-copy" class="chip-btn">Copy results</button>
@@ -1261,9 +1263,9 @@
         <label class="check"><input type="checkbox" id="set-precise-timing" checked> 🎯 Precise word timing <span class="dim">(tighter highlight)</span></label>
         <label class="check"><input type="checkbox" id="set-dropframe"> My projects are 29.97 or 59.94 fps</label>
         <button id="btn-save-settings" class="hero-btn small">Save settings</button>
-        <label class="fld-full">Audio tool location <span class="dim">(only if the download can't run)</span>
+        <label class="fld-full">Audio engine location <span class="dim">(only if the download can't run)</span>
           <div class="row tight" style="margin-top:0">
-            <input type="text" id="set-ffmpeg" placeholder="choose the audio tool file…">
+            <input type="text" id="set-ffmpeg" placeholder="choose the audio engine file…">
             <button id="btn-ffmpeg-pick" class="chip-btn" aria-label="Choose the file">…</button>
           </div>
         </label>
