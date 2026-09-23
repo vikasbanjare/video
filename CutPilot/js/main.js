@@ -7722,6 +7722,13 @@
       // SAFETY NET: if this Premiere will not take the overlay clip, fall back
       // to separate caption images so Add captions never leaves nothing.
       try { nodeReq('fs').unlinkSync(info.path); } catch (eRm) {}
+      // The host tidies BEFORE it places, so the old overlays it already took
+      // out of the project are this job's to delete (or keep pending): no
+      // later job would ever find them in the project again.
+      var told = e && e.host;
+      if (told && told.checked === true) {
+        try { tidyOldOverlays(told, info, asked); } catch (eTidy) { diag('captions', 'tidying old overlays: ' + eTidy.message); }
+      }
       diag('captions', 'overlay placement failed: ' + ((e && e.message) || e));
       toast('Switched to separate caption images (Premiere did not accept the one overlay clip here).');
       return runCaptionPipeline(cues, withOpts(opts, { noOverlay: true, overlay: false,

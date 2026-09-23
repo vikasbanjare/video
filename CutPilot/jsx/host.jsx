@@ -1822,8 +1822,18 @@ function CP_placeCaptionImages(argsJson) {
  * the placement and the first ⌘Z takes the new captions off the timeline (a
  * bin deletion as the last step made the first ⌘Z restore an item whose file
  * was already gone).
+ * A FAILURE after the tidy-up still reports it (ok:false with unused / free /
+ * checked): those old overlays' bins are already gone, so the panel must delete
+ * their files now — no later job can find them in the project again. A failure
+ * before it says checked:false. Either way the new overlay's own bin is taken
+ * back out: nothing was placed from it, and the panel deletes its file.
  */
 function CP_placeOverlay(argsJson) {
+  var bin = null, tidy = { unused: [], free: [], checked: false };
+  function fail(msg) {
+    if (bin) { try { bin.deleteBin(); } catch (eDb) {} }
+    return JSON.stringify({ ok: false, error: String(msg), unused: tidy.unused, free: tidy.free, checked: tidy.checked });
+  }
   function normPath(p) { return String(p || '').replace(/\\/g, '/').toLowerCase(); }
   function sameProject(a, b) {
     try {
@@ -1914,7 +1924,7 @@ function CP_placeOverlay(argsJson) {
     if (!seq) return CP_fail('Open a sequence first.');
     if (!args.path) return CP_fail('No overlay file.');
 
-    var bin = app.project.rootItem.createBin('Pulse Captions ' + ((new Date()).getTime() % 100000));
+    bin = app.project.rootItem.createBin('Pulse Captions ' + ((new Date()).getTime() % 100000));
     app.project.importFiles([args.path], true, bin, false);
     // importFiles can populate the bin a beat late for a single media file; poll
     // briefly (ExtendScript $.sleep) so we never miss the imported overlay. This is
@@ -1927,11 +1937,11 @@ function CP_placeOverlay(argsJson) {
       }
       if (!item) { try { $.sleep(60); } catch (eSl) {} }
     }
-    if (!item) return CP_fail('Overlay import failed (the .mov did not import).');
+    if (!item) return fail('Overlay import failed (the .mov did not import).');
 
     // Tidy BEFORE placing (see above): the new clip's placement stays the last
     // step, so ⌘Z undoes the captions first.
-    var tidy = { unused: [], free: [], checked: true };
+    tidy = { unused: [], free: [], checked: true };
     var cl = args.cleanup || [], rc = args.recheck || [];
     if (cl.length || rc.length) {
       try { tidy = tidyOverlays(cl, rc); } catch (eCl) { tidy = { unused: [], free: [], checked: false }; }
@@ -1963,14 +1973,14 @@ function CP_placeOverlay(argsJson) {
       } catch (eTrack) {}
     }
     var track = seq.videoTracks[trackIndex];
-    if (!track) return CP_fail('Could not find a video track to place the overlay on.');
+    if (!track) return fail('Could not find a video track to place the overlay on.');
     var startSec = (args.startSec > 0) ? args.startSec : 0;
     try {
       track.overwriteClip(item, startSec);
     } catch (ePlace) {
       // overwriteClip occasionally rejects seconds on some builds — retry with ticks.
       try { track.overwriteClip(item, CP_ticksFromSeconds(startSec)); }
-      catch (ePlace2) { return CP_fail('Could not place the caption overlay: ' + ePlace.message); }
+      catch (ePlace2) { return fail('Could not place the caption overlay: ' + ePlace.message); }
     }
     // Hold a still overlay (e.g. a branding PNG) for a requested duration.
     if (args.durSec && args.durSec > 0) {
@@ -1982,7 +1992,7 @@ function CP_placeOverlay(argsJson) {
     }
     return CP_ok({ placed: 1, track: trackIndex + 1, bin: bin.name,
                    unused: tidy.unused, free: tidy.free, checked: tidy.checked });
-  } catch (e) { return CP_fail(e.message); }
+  } catch (e) { return fail(e.message); }
 }
 
 /*
