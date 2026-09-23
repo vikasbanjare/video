@@ -33,7 +33,10 @@ const JARGON = [
   ['CEP', /\bCEP\b/], ['ExtendScript', /extendscript/i], ['JSX', /\bJSX\b/], ['codec', /\bcodec/i], ['JSON', /\bJSON\b/i]
 ];
 const URLISH = /\S*(?:\.com|\.io|\.ai|:\/\/|www\.)\S*/gi;
-const hits = t => { const s = String(t || '').replace(URLISH, ' '); return JARGON.filter(([, re]) => re.test(s)).map(([n]) => n); };
+/* a term said in plain words first, with its name in brackets for the
+   messages and gates that use it, is explained — not jargon */
+const GLOSSED = /word-for-word \(verbatim\)/gi;
+const hits = t => { const s = String(t || '').replace(URLISH, ' ').replace(GLOSSED, ' '); return JARGON.filter(([, re]) => re.test(s)).map(([n]) => n); };
 
 /* Visible words written by code outside the UI shell (main.js logic owned by
    another workstream). Reported every run; not fixed here. */
