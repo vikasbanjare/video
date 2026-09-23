@@ -9961,12 +9961,11 @@
     var plan = null, clip = null, cutSrc = null, extraNotes = [];
     // a transcription this clean asked for ended with NO words (it failed or
     // was abandoned): do not ask again (that would loop) — remove the dead air
-    // and say retakes were skipped. Set by this function itself when it asks,
-    // or by the transcript bar when it reports the failure.
-    var noWords = !!state.autocleanNoWords ||
-      (!!state.autocleanAskedWords && !state.pendingCaptionAction && !state.transcript &&
-       !(state.transcriptWords && state.transcriptWords.length));
-    state.autocleanNoWords = false; state.autocleanAskedWords = false;
+    // and say retakes were skipped. (The transcript bar could call this right
+    // after a failed transcription; it would take this same path.)
+    var noWords = !!state.autocleanAskedWords && !state.pendingCaptionAction && !state.transcript &&
+      !(state.transcriptWords && state.transcriptWords.length);
+    state.autocleanAskedWords = false;
     if (doTakes && !noWords && !(settings.verbatimKey || '').trim() && !(state.transcriptWords && state.transcriptWords.length) &&
         !state.transcript && !state.pendingCaptionAction && autoTranscribeAvailable()) {
       // retakes need words and they CAN be fetched: get them first (this same

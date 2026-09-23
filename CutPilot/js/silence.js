@@ -16,9 +16,17 @@
     return Math.pow(10, db / 20);
   }
 
+  // --------------------------------------------------------------------------
+  // LEGACY, kept for test/run-tests.js only: detectSilences, refineSilences and
+  // parseFfmpegSilences are the old fixed-threshold detector. Nothing in the
+  // panel calls them any more — "Clean up my video" and "Find the silences"
+  // listen with the adaptive detector further down (micLevels → combineMics →
+  // planCuts). Do not build new features on them.
+  // --------------------------------------------------------------------------
+
   /*
-   * Detect silent ranges in a mono Float32 sample buffer using windowed RMS.
-   * opts: { thresholdDb, windowSec, hopSec }
+   * (legacy — unit tests only) Detect silent ranges in a mono Float32 sample
+   * buffer using windowed RMS. opts: { thresholdDb, windowSec, hopSec }
    * Returns raw ranges [{start, end}] — call refineSilences() afterwards.
    */
   function detectSilences(samples, sampleRate, opts) {
@@ -64,7 +72,7 @@
   }
 
   /*
-   * Production pipeline over raw silence ranges:
+   * (legacy — unit tests only) The old pipeline over raw silence ranges:
    *  - merge near-adjacent silences (mergeGap)
    *  - drop silences shorter than minSilence (natural breaths stay)
    *  - shrink each silence by `padding` on both sides so speech never clips
@@ -117,7 +125,7 @@
   }
 
   /*
-   * Parse ffmpeg `silencedetect` stderr output into ranges.
+   * (legacy — unit tests only) Parse ffmpeg `silencedetect` stderr output into ranges.
    * Lines look like:
    *   [silencedetect @ 0x...] silence_start: 12.345
    *   [silencedetect @ 0x...] silence_end: 15.678 | silence_duration: 3.333
