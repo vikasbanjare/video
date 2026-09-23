@@ -13,7 +13,11 @@
  *     nothing is above it. It must not point at something that is not there;
  *   · THE TEMPLATE SHEET promised "each word lights up exactly when it's
  *     spoken" on TITLE templates, which have no word highlight. The line must
- *     show for a caption template and not for a title.
+ *     show for a caption template and not for a title;
+ *   · A STYLE PICKED FROM ITS CARD opens as designed: switching ✨ Word-by-word
+ *     off on one style used to keep it off for every style picked afterwards,
+ *     so 41 karaoke / reveal styles (Dim-to-Bright…) opened static while their
+ *     tiles swept. The opt-out still holds on the style it was made on.
  * Exit 0 pass, 1 fail, 2 skipped (no browser / puppeteer / unzip).
  */
 'use strict';
@@ -60,6 +64,25 @@ const G = require('./gallery-lib/panel.js');
     if (tcard) { out.titleName = (tcard.querySelector('.tpl-name') || {}).textContent; tcard.click(); await sleep(400); }
     out.timingOnTitle = timingLine();
     try { const x = document.querySelector('#mogrt-sheet [data-close], #ms-close, #mogrt-sheet .sheet-close'); if (x) x.click(); } catch (e) {}
+    // ---- word-by-word opt-out: kept on its style, not carried to the next pick
+    const pick = async (id) => {
+      const b = document.getElementById('btn-browse-styles'); if (b) b.click(); await sleep(150);
+      const a = chip('All'); if (a) { a.click(); await sleep(300); }
+      const cv = Array.from(document.querySelectorAll('#tpl-grid .tpl-thumb-canvas')).find(c => c._tpl && c._tpl.id === id);
+      let el = cv; while (el && !(el.classList && el.classList.contains('tpl-card'))) el = el.parentNode;
+      if (el) { el.click(); await sleep(300); }
+      return !!el;
+    };
+    const wh = () => { const e = document.getElementById('c-wordhl'); return e ? e.checked : null; };
+    out.optOut = {};
+    if (await pick('tr-yellow-wipe')) {
+      const e = document.getElementById('c-wordhl');
+      if (e && e.checked) { e.checked = false; e.dispatchEvent(new Event('change', { bubbles: true })); await sleep(150); }
+      out.optOut.offOnFirst = wh() === false;
+      await pick('tr-dim-bright');
+      out.optOut.nextPickOn = wh();
+      out.optOut.nextAnim = (document.getElementById('preview-canvas') || {})._pvAnimId || null;
+    }
     // ---- All: section order ---------------------------------------------------
     const all = chip('All'); if (all) { all.click(); await sleep(500); }
     out.allSections = Array.from(document.querySelectorAll('#tpl-grid .lib-section')).map(h => (h.firstChild && h.firstChild.textContent || h.textContent).split('  ·  ')[0].trim());
@@ -87,6 +110,12 @@ const G = require('./gallery-lib/panel.js');
   else if (!res.titleName) R.bad('no title template found in the 🧩 chip');
   else if (res.timingOnTitle) R.bad('the sheet promises word-by-word timing on the title template "' + res.titleName + '", which has no word highlight');
   else R.ok('the sheet shows "each word lights up…" on a caption template, not on the title template "' + res.titleName + '"');
+
+  // the word-by-word opt-out
+  const oo = res.optOut || {};
+  if (!oo.offOnFirst) R.bad('could not switch ✨ Word-by-word off on Yellow Wipe to set up the check');
+  else if (oo.nextPickOn !== true) R.bad('after switching ✨ Word-by-word off on one style, Dim-to-Bright picked from its card opens static (word-by-word ' + oo.nextPickOn + ', animation ' + oo.nextAnim + ') while its tile sweeps');
+  else R.ok('a style picked from its card opens as designed: Dim-to-Bright sweeps (' + oo.nextAnim + ') although word-by-word was switched off on the previous style');
 
   // All order == chip order
   const chipCats = res.chipOrder.filter(c => res.allSections.indexOf(c) >= 0);

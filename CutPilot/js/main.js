@@ -4513,7 +4513,16 @@
     card.appendChild(thumb);
 
     if (isMogrt) card.addEventListener('click', function () { openMogrtSheet(t); });
-    else card.addEventListener('click', function () { preloadStyleFonts(t, renderPreview); _pvDemo = null; applyTemplate(t); showView('style'); });
+    // Picking a style from its card opens it AS DESIGNED — the look its tile
+    // shows. The ✨ Word-by-word opt-out (state.wordHlOff) used to follow the
+    // owner to every style picked afterwards, so after switching it off once,
+    // 41 karaoke / reveal styles (Dim-to-Bright…) opened static while their
+    // tiles swept. The opt-out still holds for the style it was made on.
+    else card.addEventListener('click', function () {
+      preloadStyleFonts(t, renderPreview); _pvDemo = null;
+      state.wordHlOff = false;
+      applyTemplate(t); showView('style');
+    });
     return card;
   }
 
