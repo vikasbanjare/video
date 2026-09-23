@@ -10357,7 +10357,8 @@
   if ($('tk-sim')) $('tk-sim').addEventListener('input', function () { $('tk-sim-val').textContent = this.value + '%'; });
   /* "Who is talking?" as the panel's own dropdown: a native <select> popup can
      refuse to open inside Premiere's panel, and this pick turns the podcast
-     protection on. The hidden <select> keeps the value (takesPeople reads it). */
+     protection on. The <select> keeps the value (takesPeople reads it) and is
+     hidden only once the dropdown is really in place — never no picker. */
   (function mountTakeKindDropdown() {
     var sel = $('tk-kind'), host = $('tk-kind-dd');
     if (!sel || !host || host.firstChild || typeof makeDropdown !== 'function') return;
@@ -10367,6 +10368,7 @@
       try { sel.dispatchEvent(new Event('change')); } catch (e) {}
     });
     host.appendChild(dd.el);
+    sel.classList.add('hidden'); sel.setAttribute('aria-hidden', 'true'); sel.tabIndex = -1;
     sel.addEventListener('change', function () { dd.set(sel.value); });
   })();
   if ($('btn-takes-find')) $('btn-takes-find').addEventListener('click', function () {

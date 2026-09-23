@@ -15,7 +15,9 @@
  *   2. opening it and picking "Two or more people" / "Just me" is what the
  *      retake finder and Smart Cleanup then use;
  *   3. the value kept in the hidden <select> and the label shown stay in step
- *      both ways.
+ *      both ways;
+ *   4. the page's own HTML does not hide the <select>: only the panel's code
+ *      does, once the dropdown is in place, so a failed mount leaves a picker.
  *
  * Exit 0 = pass, 1 = fail, 2 = skipped (no puppeteer / Chromium).
  */
@@ -59,6 +61,12 @@ async function run() {
       JSON.stringify(r.many));
     C.check('…picking "Just me" → a lone speaker', !!r.one && r.one.value === 'one' && r.one.people === 'one' && /^Just me/.test(r.one.label), JSON.stringify(r.one));
     C.check('a value set on the hidden <select> shows in the dropdown\'s label', /^Auto/.test(r.labelBack || ''), r.labelBack);
+    // if the dropdown ever fails to mount, the native picker must still be
+    // there: only the panel's code hides it, after the dropdown is in place
+    const html = require('fs').readFileSync(require('path').join(H.PANEL_DIR, 'index.html'), 'utf8');
+    const tag = (/<select[^>]*id="tk-kind"[^>]*>/.exec(html) || [''])[0];
+    C.check('the page itself does not hide the native <select> (a failed dropdown never leaves no picker)',
+      !!tag && !/hidden/.test(tag), tag);
     const errs = calls.filter(c => c.fn === '__pageerror');
     C.check('no page errors', errs.length === 0, JSON.stringify(errs));
     await page.close();
