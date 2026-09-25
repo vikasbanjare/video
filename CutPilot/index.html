@@ -1,0 +1,1449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Pulse</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- Inter 600 = the caption engine's baked face; loading it makes every preview pixel-honest when online -->
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@500;600;700&display=swap" rel="stylesheet">
+  <!-- Caption faces — loaded as web fonts so the chosen font renders in the
+       live preview AND the canvas-rendered PNGs even if it isn't installed. -->
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Bebas+Neue&family=Archivo+Black&family=Fjalla+One&family=Bangers&family=Luckiest+Guy&family=Alfa+Slab+One&family=Bungee&family=Titan+One&family=Passion+One&family=Permanent+Marker&family=Pacifico&family=Shadows+Into+Light&family=Montserrat:wght@400;500;600;700;800;900&family=Poppins:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800;900&family=Oswald:wght@400;700&family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Lato:wght@400;700&family=Raleway:wght@400;700&family=Work+Sans:wght@400;700&family=Nunito:wght@400;700&family=Rubik:wght@400;700;800;900&family=DM+Sans:wght@400;500;700&family=Outfit:wght@400;500;600;700;800;900&family=Sora:wght@400;500;600;700;800&family=Barlow:wght@400;700&family=Manrope:wght@400;500;600;700;800&family=Teko:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,800;1,600;1,700;1,800&family=Merriweather:wght@400;700&family=Lora:wght@400;700&family=JetBrains+Mono:wght@400;700&family=Roboto+Mono:wght@400;700&family=Space+Mono:wght@400;700&family=Caveat:wght@400;700&family=Arvo:wght@400;700&family=Space+Grotesk:wght@400;500;600;700&family=Syne:wght@600;700;800&family=Unbounded:wght@600;700;800;900&family=DM+Serif+Display:ital@0;1&family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Baloo+2:wght@400;500;600;700;800&family=Mukta:wght@400;500;600;700;800&family=Hind:wght@400;500;600;700&family=Anek+Devanagari:wght@400;500;600;700;800&family=Rozha+One&family=Kalam:wght@400;700&family=Tiro+Devanagari+Hindi:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css?v=v0.10.2">
+  <link rel="stylesheet" href="css/organize.css?v=v0.10.2">
+</head>
+<body class="theme-light" data-page="home">
+  <!-- ONE navigation row (≤ 12 % of a 400 px-tall panel). Home is the menu;
+       every other page shows ‹ back + its name. -->
+  <header id="app-bar" class="app-bar">
+    <button id="nav-back" class="icon-btn nav-back" type="button" title="Home" aria-label="Back to Home">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+    </button>
+    <button id="nav-home" class="brand" type="button" title="Home" aria-label="Pulse — Home">
+      <svg class="logo-mark" viewBox="0 0 100 112" width="20" height="22" aria-hidden="true">
+        <defs><linearGradient id="plsG" x1="14" y1="104" x2="88" y2="12" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stop-color="#8FB0FF"/><stop offset="1" stop-color="#2C57E6"/></linearGradient></defs>
+        <circle cx="37" cy="14.5" r="10.5" fill="url(#plsG)"/>
+        <path d="M27 43a10 10 0 0 1 10-10h12a27 27 0 0 1 0 54h-4v15a9 9 0 0 1 -18 0Z" fill="url(#plsG)"/>
+        <line x1="33.5" y1="64" x2="64" y2="45.5" stroke="#fff" stroke-width="8.5" stroke-linecap="round"/>
+      </svg>
+      <span class="brand-name">Pulse</span><span class="brand-by">by aifloh</span>
+    </button>
+    <span id="nav-title" class="nav-title"></span>
+    <div id="env-status" class="env-status" title="Tap to look for your sequence again">connecting…</div>
+    <button id="theme-toggle" class="icon-btn theme-toggle" type="button" title="Switch light / dark (overrides Premiere's look)">🌙</button>
+    <button id="nav-settings" class="icon-btn" type="button" title="Settings" aria-label="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 13.5a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 0 1-4 0v-.1a1.6 1.6 0 0 0-2.7-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z"/></svg>
+    </button>
+  </header>
+
+  <!-- Every page's .tab button. Hidden on a docked panel (Home is the menu),
+       a sidebar on a wide one. main.js and the gates open pages by clicking these. -->
+  <nav class="tabs" aria-label="Pages">
+    <button class="tab active" data-tab="home"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 11 12 4l8.5 7"/><path d="M5.5 9.5V20h13V9.5"/></svg></span>Home</button>
+    <button class="tab" data-tab="captions"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3.5"/><path d="M10 10.5a2.2 2.2 0 1 0 0 3"/><path d="M16.5 10.5a2.2 2.2 0 1 0 0 3"/></svg></span>Captions</button>
+    <button class="tab" data-tab="silence"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><line x1="20" y1="4" x2="8.5" y2="15.5"/><line x1="14.5" y1="14.5" x2="20" y2="20"/><line x1="8.5" y1="8.5" x2="12" y2="12"/></svg></span>Clean up</button>
+    <button class="tab" data-tab="multicam"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="3.5" width="13" height="9" rx="2"/><rect x="3.5" y="9.5" width="13" height="9" rx="2"/></svg></span>Podcast cameras</button>
+    <button class="tab" data-tab="transcribe"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>Transcribe</button>
+    <button class="tab" data-tab="shorts"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="2.5" width="9" height="19" rx="2.5"/><path d="M10.5 12l4 -2.3v4.6Z" fill="currentColor" stroke="none"/></svg></span>Shorts</button>
+    <button class="tab" data-tab="chapters"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4.5" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1.4" fill="currentColor" stroke="none"/></svg></span>Chapters</button>
+    <button class="tab" data-tab="organize"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5a2 2 0 0 1 2-2h3.4a2 2 0 0 1 1.6.8l.9 1.2h7.1a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg></span>Organize</button>
+    <button class="tab" data-tab="safezone"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="2"/><rect x="9" y="7" width="6" height="6" rx="1"/><line x1="9" y1="17" x2="15" y2="17"/></svg></span>Safe zone</button>
+    <button class="tab" data-tab="settings"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 13.5a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 0 1-4 0v-.1a1.6 1.6 0 0 0-2.7-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z"/></svg></span>Settings</button>
+  </nav>
+
+  <!-- ================================ HOME =============================== -->
+  <section id="tab-home" class="tab-page active">
+    <div class="home-tasks">
+      <button id="home-captions" class="task-card primary" type="button" data-go="captions">
+        <span class="task-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3.5"/><path d="M10 10.5a2.2 2.2 0 1 0 0 3"/><path d="M16.5 10.5a2.2 2.2 0 1 0 0 3"/></svg></span>
+        <span class="task-txt"><span class="task-name">Add captions</span><span class="task-sub">Pick a look, add in one tap</span></span>
+        <span class="task-go" aria-hidden="true">›</span>
+      </button>
+      <button id="home-cleanup" class="task-card" type="button" data-go="silence">
+        <span class="task-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><line x1="20" y1="4" x2="8.5" y2="15.5"/><line x1="14.5" y1="14.5" x2="20" y2="20"/><line x1="8.5" y1="8.5" x2="12" y2="12"/></svg></span>
+        <span class="task-txt"><span class="task-name">Clean up</span><span class="task-sub">Silences, retakes, fillers</span></span>
+        <span class="task-go" aria-hidden="true">›</span>
+      </button>
+      <button id="home-cameras" class="task-card" type="button" data-go="multicam">
+        <span class="task-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="3.5" width="13" height="9" rx="2"/><rect x="3.5" y="9.5" width="13" height="9" rx="2"/></svg></span>
+        <span class="task-txt"><span class="task-name">Podcast cameras</span><span class="task-sub">Cut to whoever is talking</span></span>
+        <span class="task-go" aria-hidden="true">›</span>
+      </button>
+    </div>
+    <div class="more-tools">
+      <div class="more-head">More tools</div>
+      <div class="more-grid">
+        <button id="home-words" class="tool-btn" type="button" data-go="transcribe"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/></svg>Transcribe</button>
+        <button id="home-shorts" class="tool-btn" type="button" data-go="shorts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="2.5" width="9" height="19" rx="2.5"/><path d="M10.5 12l4 -2.3v4.6Z" fill="currentColor" stroke="none"/></svg>Shorts</button>
+        <button id="home-chapters" class="tool-btn" type="button" data-go="chapters"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4.5" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1.4" fill="currentColor" stroke="none"/></svg>Chapters</button>
+        <button id="home-organize" class="tool-btn" type="button" data-go="organize"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5a2 2 0 0 1 2-2h3.4a2 2 0 0 1 1.6.8l.9 1.2h7.1a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>Organize</button>
+        <button id="home-safezone" class="tool-btn" type="button" data-go="safezone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="2"/><rect x="9" y="7" width="6" height="6" rx="1"/><line x1="9" y1="17" x2="15" y2="17"/></svg>Safe zone</button>
+      </div>
+    </div>
+    <p class="home-foot"><span id="ver" class="ver">v0.10.2</span></p>
+  </section>
+
+  <!-- ============================ TRANSCRIBE ============================ -->
+  <section id="tab-transcribe" class="tab-page">
+    <div class="card">
+      <div class="step-head"><span class="step-num">1</span><span class="step-title">Get your words</span>
+        <button class="info" type="button" data-info="tr-info" aria-label="How it works">ⓘ</button></div>
+      <div class="info-pop hidden" id="tr-info">Select your talking clip on the timeline, then tap <b>Transcribe</b>. Pulse listens to the audio itself — nothing to export from Premiere. <b>Transcribe</b> also lets AI fix misheard words; <b>Fast</b> skips that.</div>
+      <label class="fld-full" id="tr-lang-row">Language<div id="tr-lang" class="dd-mount"></div></label>
+      <div id="tr-groq-wrap" class="groq-inline hidden">
+        <label class="fld-full">☁️ Speech key <span class="dim">(free — console.groq.com/keys)</span>
+          <input type="password" id="tr-groq-key" placeholder="paste your key…" autocomplete="off">
+        </label>
+      </div>
+      <div id="tr-dg-wrap" class="groq-inline hidden">
+        <label class="fld-full">🎧 Retake-finder key <span class="dim">(from deepgram.com)</span>
+          <input type="password" id="tr-dg-key" placeholder="paste your key…" autocomplete="off" spellcheck="false">
+        </label>
+      </div>
+      <div id="tr-swara-wrap" class="groq-inline hidden">
+        <label class="fld-full">🇮🇳 Indian-language key
+          <input type="password" id="tr-swara-key" placeholder="paste your key…" autocomplete="off">
+        </label>
+        <label class="fld-full">Indian language<div id="tr-swara-lang" class="dd-mount"></div></label>
+      </div>
+      <div class="tr-bar" id="tr-bar">
+        <span class="tr-ico" id="tr-ico">🔎</span>
+        <span class="tr-text" id="tr-text">looking for your words…</span>
+        <button class="link-btn" id="btn-tr-change">Change</button>
+      </div>
+      <div class="page-actions">
+        <button id="btn-tr-auto-ai" class="hero-btn" title="Transcribe, then let AI fix misheard words (recommended)">✨ Transcribe</button>
+        <button id="btn-tr-auto-main" class="hero-btn alt" title="Transcribe without AI fixes — fastest">Fast</button>
+      </div>
+      <div class="row tight">
+        <button id="btn-tr-edit" class="chip-btn">✏️ Review &amp; edit</button>
+        <button id="btn-retranscribe" class="chip-btn" title="Listen to the audio again from scratch (after you trimmed or re-edited the video)">↻ Redo</button>
+        <button id="btn-mark-hooks" class="chip-btn">🔖 Viral hooks</button>
+        <button id="btn-broll" class="chip-btn">💡 B-roll ideas</button>
+      </div>
+      <div id="tr-tools" class="hidden">
+        <div class="row tight">
+          <span class="dim">⤓ Save as</span>
+          <button id="btn-exp-srt" class="chip-btn" title="Subtitle file (.srt)">SRT</button>
+          <button id="btn-exp-vtt" class="chip-btn" title="Web subtitle file (.vtt)">VTT</button>
+          <button id="btn-exp-txt" class="chip-btn" title="Plain text">Text</button>
+        </div>
+        <div class="row tight">
+          <span class="dim">✨ Improve</span>
+          <button id="btn-fix-wording" class="chip-btn">Fix wording (AI)</button>
+          <button id="btn-detect-speakers" class="chip-btn">🗣️ Detect speakers (AI)</button>
+        </div>
+        <input type="text" id="tr-vocab" placeholder="Names to always spell right, e.g. Aarav, YouTube" style="margin-top:6px" autocomplete="off">
+        <div class="row tight">
+          <span class="dim">🌐 Translate to</span>
+          <div id="tr-translate-lang" class="dd-mount" style="flex:1 1 120px;min-width:120px;margin-top:0"></div>
+          <button id="btn-translate" class="chip-btn">Go</button>
+        </div>
+        <p class="hint" style="margin:6px 0 0">These use your free speech key. <button class="info" type="button" data-info="tr-tools-info" aria-label="More about these">ⓘ</button></p>
+        <div class="info-pop hidden" id="tr-tools-info"><b>Fix wording</b> corrects misheard words in any language — run it before translating. <b>Translate</b> replaces the words (your original is kept). <b>Detect speakers</b> is an AI guess, best for clear back-and-forth talk. The key goes in Settings → Auto-transcribe.</div>
+      </div>
+      <div id="tr-help" class="help-box hidden">
+        <b>Easiest:</b> select your clip and tap <b>✨ Transcribe</b> above.
+        <hr style="border:none;border-top:1px solid var(--line);margin:8px 0">
+        <b>Or use Premiere's transcript:</b> <i>Window → Text</i> → <b>···</b> →
+        <i>Export to SRT file</i> next to your video, then tap <b>Find again</b>.
+        <div class="row tight">
+          <button id="btn-tr-again" class="chip-btn">↻ Find again</button>
+          <button id="btn-tr-pick" class="chip-btn">Choose a file…</button>
+        </div>
+      </div>
+      <details class="advanced" id="tr-more">
+        <summary>Speech accuracy</summary>
+        <label class="fld-full" style="margin-top:0">Accuracy<div id="tr-quality" class="dd-mount"></div></label>
+      </details>
+      <details class="advanced" id="script-drawer">
+        <summary>📄 Fix words with my script</summary>
+        <p class="hint">Paste the script you spoke. <button class="info" type="button" data-info="script-info" aria-label="How it works">ⓘ</button></p>
+        <div class="info-pop hidden" id="script-info">Pulse keeps the <b>timing</b> from the transcript and takes the <b>spelling</b> from your script — names, brands and Hinglish come out right. A script from a different recording is refused, so nothing gets lost.</div>
+        <textarea id="script-text" rows="6" placeholder="Paste your script here…" spellcheck="false" style="width:100%;box-sizing:border-box"></textarea>
+        <div class="row tight">
+          <button id="btn-script-load" class="chip-btn">📂 Load script file…</button>
+          <button id="btn-script-apply" class="hero-btn small">✅ Fix words with my script</button>
+        </div>
+        <p class="hint" id="script-status" style="margin:6px 0 0"></p>
+      </details>
+      <p class="hint" id="tr-next-hint" style="margin:8px 0 0">Next: open <b>Captions</b> to add them.</p>
+    </div>
+  </section>
+
+  <!-- ============================== CAPTIONS ============================= -->
+  <section id="tab-captions" class="tab-page">
+
+    <!-- after captions are placed: edit / restyle them (empty until then) -->
+    <div id="cap-placed" class="cap-placed">
+      <button id="btn-cap-edit" class="chip-btn hidden">📝 Edit caption words</button>
+      <button id="btn-cap-fix1" class="chip-btn hidden" title="Edit the one caption under the playhead — it updates on the timeline">✏️ Fix one line</button>
+      <button id="btn-cap-restyle" class="chip-btn hidden">🔄 Restyle all</button>
+      <button id="btn-cap-segment" class="chip-btn hidden" title="Select a clip or range on the timeline first">🎯 Restyle a part</button>
+      <div id="cap1-editor" class="cap1-editor hidden">
+        <div class="cap1-time" id="cap1-time"></div>
+        <input id="cap1-text" type="text" class="cap1-text" placeholder="Caption text…" />
+        <div class="cap1-row">
+          <button id="cap1-save" class="hero-btn small">Save &amp; update</button>
+          <button id="cap1-cancel" class="hero-btn small alt">Cancel</button>
+        </div>
+        <p class="hint" id="cap1-hint"></p>
+      </div>
+      <p class="hint hidden" id="cap-restyle-hint">Captions are on your timeline.</p>
+    </div>
+
+    <div class="subview-switch" id="cap-view">
+      <button data-view="templates" class="on" title="Caption styles">🎨 Styles</button>
+      <button data-view="flux" title="Premium templates you can still edit in Premiere">⚡ Premium</button>
+      <button data-view="editor" title="Use your own Premiere template file">📁 Upload</button>
+    </div>
+
+    <!-- ===================== STYLE GALLERY (opens first) ================= -->
+    <div id="view-templates" class="subview">
+      <div class="lib-toolbar">
+        <input type="text" id="lib-search" placeholder="🔍 Search styles…">
+      </div>
+      <div class="cat-chips" id="lib-cats"></div>
+      <div class="tpl-grid" id="tpl-grid"></div>
+      <details class="advanced lib-more" id="lib-more">
+        <summary>More gallery options</summary>
+        <div class="lib-toolbar">
+          <select id="lib-sort" class="png-only" aria-label="Sort styles">
+            <option value="popular">Popular</option>
+            <option value="recent">Recent</option>
+            <option value="favorites">Favorites</option>
+            <option value="az">A–Z</option>
+          </select>
+        </div>
+        <div class="niche-row png-only">
+          <span class="dim">✨ Suggest for</span>
+          <select id="lib-niche">
+            <option value="">choose your content…</option>
+          </select>
+        </div>
+        <div class="row tight">
+          <button id="btn-true-prev" class="chip-btn" title="Premiere draws every style once (about a minute) — the cards then show exactly what lands on your timeline">🎥 Exact previews (~1 min)</button>
+          <button id="btn-reset-prev" class="chip-btn" title="Go back to Pulse's own drawn previews">↺ Reset previews</button>
+          <button id="btn-tpl-import" class="chip-btn">⤓ Import style</button>
+        </div>
+      </details>
+    </div>
+
+    <!-- ===================== PREMIUM (editable templates) ================= -->
+    <div id="view-flux" class="subview hidden">
+      <p class="hint" style="margin:2px 0 8px">Premium looks that stay editable in Premiere. <button class="info" type="button" data-info="flux-info" aria-label="More about premium templates">ⓘ</button></p>
+      <div class="info-pop hidden" id="flux-info">Each one lands on your timeline as a real Premiere graphic: font, colour, size and position stay editable, like Premiere's own titles. Tap a card to preview it, then caption with it.</div>
+      <div class="lib-toolbar">
+        <input type="text" id="flux-search" placeholder="🔍 Search premium styles…">
+      </div>
+      <div class="tpl-grid" id="flux-grid"></div>
+    </div>
+
+    <!-- template action sheet -->
+    <div id="mogrt-sheet" class="mogrt-sheet hidden">
+      <div class="ms-card">
+        <div class="ms-head">
+          <button id="ms-back" class="ms-back" type="button">‹ Back</button>
+          <button id="ms-x" class="ms-x" type="button" aria-label="Close">✕</button>
+        </div>
+        <div class="ms-name" id="ms-name">Template</div>
+        <!-- real looping animation (the template's baked thumb.mp4 = exactly what
+             gets placed) so you SEE the motion before using it -->
+        <video id="ms-anim" class="ms-anim hidden" autoplay loop muted playsinline disablepictureinpicture></video>
+        <div id="ms-live-preview" class="ms-live-preview hidden">
+          <canvas id="ms-live-canvas"></canvas>
+          <span class="ms-live-tag">your colours</span>
+        </div>
+        <img id="ms-thumb" class="ms-thumb hidden" alt="">
+        <p class="hint" id="ms-hint">Try it on your timeline, then caption your video in one tap.</p>
+        <div id="ms-tr" class="ms-tr"></div>
+        <button id="ms-transcribe" class="chip-btn">🎙️ Transcribe my clip</button>
+        <label class="field-label">Words per caption</label>
+        <div class="wc-bar" id="ms-words">
+          <button class="wc-btn" id="ms-wc-minus" type="button" aria-label="Fewer words">−</button>
+          <b id="ms-wc-num">Auto</b>
+          <button class="wc-btn" id="ms-wc-plus" type="button" aria-label="More words">+</button>
+          <button class="chip-btn" id="ms-wc-full" type="button" title="Whole sentences, sized to your video automatically">✨ Auto</button>
+        </div>
+        <p class="hint" style="margin:6px 0 4px">⚡ Word-by-word timing is automatic. <button class="info" type="button" data-info="ms-timing-info" aria-label="More about timing">ⓘ</button></p>
+        <div class="info-pop hidden" id="ms-timing-info">Each word lights up exactly when it's spoken. If Premiere shows an "Animation Controls" section (Type, Word Index…), leave it — Pulse sets it for you.</div>
+        <!-- editable text colour / font / size / template colours, built on open -->
+        <button id="ms-reset-orig" class="chip-btn" type="button">↺ Back to original</button>
+        <div id="ms-customizer" class="ms-customizer"></div>
+        <details class="advanced">
+          <summary>For support</summary>
+          <button id="ms-inspect" class="chip-btn">🔍 List this template's settings</button>
+          <pre id="ms-inspect-out" class="diag-out hidden"></pre>
+        </details>
+        <button id="ms-close" class="link-btn">Close</button>
+        <div class="page-actions">
+          <button id="ms-preview" class="hero-btn small alt">▶ Try on timeline</button>
+          <button id="ms-use" class="hero-btn small">✨ Caption with this</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================ STYLE EDITOR ========================== -->
+    <div id="view-editor" class="subview hidden">
+
+      <div class="editor-head">
+        <button id="btn-back-lib" class="chip-btn" title="Back to all styles">‹ All styles</button>
+        <span class="editor-tpl-name" id="editor-tpl-name">Spotlight</span>
+        <span class="spacer"></span>
+        <button id="btn-save-tpl" class="chip-btn" title="Save as my own style" aria-label="Save as my own style">＋ Save</button>
+        <button id="btn-dup-tpl" class="chip-btn" title="Duplicate" aria-label="Duplicate">⧉</button>
+        <button id="btn-export-tpl" class="chip-btn" title="Save to a file" aria-label="Save to a file">⤴</button>
+      </div>
+
+      <!-- LIVE PREVIEW (caption styles only) -->
+      <div class="preview-wrap" id="cap-preview">
+        <button id="btn-preview-collapse" class="preview-collapse" type="button" title="Hide / show the preview">▾ Preview</button>
+        <div id="cap-actions-dock" class="cap-actions-dock"></div>
+        <button id="btn-real-preview" class="chip-btn real-preview-btn" type="button" title="Drop ONE real caption at the playhead with your current settings">▶ Try one on the timeline</button>
+        <div class="preview-frame" id="preview-frame">
+          <canvas id="preview-canvas"></canvas>
+          <div class="preview-speaker hidden" id="preview-speaker"></div>
+          <div class="preview-caption hidden" id="preview-caption">YOUR CAPTION</div>
+        </div>
+        <button id="btn-replay" class="replay-btn" title="Replay animation" aria-label="Replay animation">▶</button>
+      </div>
+
+      <!-- ===== CAPTION STYLE controls ===== -->
+      <div id="method-animated">
+        <!-- the back button above replaces this; kept for scripts -->
+        <button id="btn-browse-styles" class="chip-btn step-action ui-offstage" type="button">≡ Browse styles</button>
+
+        <div id="wc-block" class="wc-bar">
+          <span class="wc-label">Words per caption</span>
+          <button class="wc-btn" id="wc-minus" type="button" aria-label="Fewer words">−</button>
+          <b id="wc-num">Auto</b>
+          <button class="wc-btn" id="wc-plus" type="button" aria-label="More words">+</button>
+          <button class="chip-btn" id="wc-full" type="button" title="Whole sentences, sized to your video automatically">✨ Auto</button>
+        </div>
+        <label class="check sync-line png-only"><input type="checkbox" id="c-sync" checked> 🎯 Match words to the voice <span id="sync-stat" class="dim"></span></label>
+        <div class="wc-bar sync-nudge png-only" id="sync-nudge">
+          <span class="wc-label">Highlight timing</span>
+          <button class="wc-btn" id="c-off-minus" type="button" title="Highlight comes earlier (−0.05s per tap)" aria-label="Earlier">−</button>
+          <b id="c-off-num">−0.06s</b>
+          <button class="wc-btn" id="c-off-plus" type="button" title="Highlight comes later (+0.05s per tap)" aria-label="Later">+</button>
+          <button class="chip-btn" id="c-off-reset" type="button">Reset</button>
+          <span class="dim">Too early? Tap +. Too late? Tap −.</span>
+        </div>
+        <input type="number" id="c-sync-offset" value="-60" class="hidden">
+        <input type="number" id="c-words" value="0" class="hidden">
+
+        <details class="advanced" id="customize-drawer" open>
+          <summary>🎨 Font, size &amp; colours</summary>
+          <div class="customizer">
+            <!-- In editable caption type the panel hides every control Premiere's
+                 engine cannot express (.png-only) — say why. -->
+            <p class="hint editable-only" id="editable-note">Editable captions show only what Premiere can change. <button class="info" type="button" data-info="editable-info" aria-label="Why">ⓘ</button></p>
+            <div class="info-pop hidden editable-only" id="editable-info">Switch the caption type to <b>Pulse-rendered</b> for everything — outline, glow, shine, letter spacing, alignment, line limits and the Effects tab.</div>
+            <div class="seg-control cust-tabs png-only" id="cust-tabs">
+              <button type="button" data-pane="style" class="on">🎨 Style</button>
+              <button type="button" data-pane="pro">✨ Effects</button>
+            </div>
+            <div id="cust-pane-style" class="cust-pane">
+            <!-- ✍️ TEXT -->
+            <div class="cust-group">
+              <div class="cust-group-title">✍️ Text</div>
+              <label class="full">Font
+                <div class="dd-mount" id="c-font-mount"></div>
+                <input type="hidden" id="c-font">
+              </label>
+              <div class="ctrl-row">
+                <label>Size <span class="val" id="c-size-val"></span>
+                  <input type="range" id="c-size" min="32" max="160" value="90">
+                </label>
+                <label class="png-only">Letter spacing <span class="val" id="c-letter-val"></span>
+                  <input type="range" id="c-letter" min="0" max="20" value="0">
+                </label>
+              </div>
+              <p class="hint" style="margin:5px 0 0">Size matches the final video — the preview is the real frame, smaller.</p>
+              <label>Weight <span class="val" id="c-weight-val"></span>
+                <input type="range" id="c-weight" min="100" max="900" step="100" value="800">
+              </label>
+              <label class="check"><input type="checkbox" id="c-upper" checked> ALL CAPS</label>
+            </div>
+
+            <!-- 🎨 COLOURS — everything here carries onto the editable caption clip -->
+            <div class="cust-group">
+              <div class="cust-group-title">🎨 Colours</div>
+              <div class="swatches">
+                <label class="sw" id="sw-fill">Text<span class="cp-mount" data-for="c-fill"></span><input type="hidden" id="c-fill" value="#ffffff"></label>
+                <label class="sw" id="sw-hl">Highlight<span class="cp-mount" data-for="c-hl"></span><input type="hidden" id="c-hl" value="#ffd400"></label>
+                <label class="sw png-only" id="sw-stroke">Outline<span class="cp-mount" data-for="c-stroke"></span><input type="hidden" id="c-stroke" value="#000000"></label>
+                <label class="sw" id="sw-box">Box<span class="cp-mount" data-for="c-box"></span><input type="hidden" id="c-box" value="#ff3b6b"></label>
+              </div>
+              <label class="check" title="The spoken word lights up in the Highlight colour"><input type="checkbox" id="c-wordhl" checked> ✨ Word-by-word highlight</label>
+              <label class="check"><input type="checkbox" id="c-box-on"> 🟦 Box behind text</label>
+              <label id="c-box-opacity-wrap">Box see-through <span class="val" id="c-box-opacity-val"></span>
+                <input type="range" id="c-box-opacity" min="20" max="100" value="100">
+              </label>
+              <label class="check"><input type="checkbox" id="c-shadow-on"> 🌑 Soft shadow</label>
+              <div class="ctrl-row hidden" id="c-shadow-row">
+                <label>Shadow colour<span class="cp-mount" data-for="c-shadow"></span><input type="hidden" id="c-shadow" value="#000000"></label>
+                <label>Shadow strength <span class="val" id="c-shadow-blur-val"></span>
+                  <input type="range" id="c-shadow-blur" min="0" max="120" value="35">
+                </label>
+              </div>
+              <label class="check" title="The spoken word sweeps Highlight → 2nd colour"><input type="checkbox" id="c-hlgrad"> 🌈 Two-colour highlight</label>
+              <div class="swatches" id="c-hlgrad-opts" style="display:none">
+                <label class="sw">2nd colour<span class="cp-mount" data-for="c-hl2g"></span><input type="hidden" id="c-hl2g" value="#ff6a00"></label>
+              </div>
+              <label class="check png-only"><input type="checkbox" id="c-glossy"> ✨ Glossy shine <span class="dim">(shiny metal band)</span></label>
+              <label class="check png-only"><input type="checkbox" id="c-hlserif"> 🅸 Key word in italic serif <span class="dim">(elegant second font)</span></label>
+              <label class="check png-only"><input type="checkbox" id="c-hlglow"> 🌟 Key word glow <span class="dim">(soft halo)</span></label>
+            </div>
+
+            <!-- 📐 POSITION — moves the whole caption (box + words together). -->
+            <div class="cust-group">
+              <div class="cust-group-title">📐 Position</div>
+              <label>On screen <span class="val" id="c-pos-val"></span>
+                <input type="range" id="c-pos" min="10" max="92" value="50">
+              </label>
+              <div class="seg-control mini" id="c-layout">
+                <button data-pos="22">Top</button>
+                <button data-pos="50" class="on">Center</button>
+                <button data-pos="76">Bottom</button>
+              </div>
+              <span class="field-label png-only">Alignment</span>
+              <div class="seg-control mini png-only" id="c-align">
+                <button data-a="left">Left</button>
+                <button data-a="center" class="on">Center</button>
+                <button data-a="right">Right</button>
+              </div>
+              <span class="field-label png-only">Lines on screen</span>
+              <div class="seg-control mini png-only" id="c-lines">
+                <button data-l="1" title="Always one line (text shrinks to fit)">Single</button>
+                <button data-l="2" class="on" title="Never more than two lines">Double</button>
+                <button data-l="0" title="Wrap freely">Auto</button>
+              </div>
+              <p class="hint png-only" style="margin:4px 0 0">Single = one line, Double = at most two, Auto = wrap freely.</p>
+              <span class="field-label">📱 Keep clear of app buttons</span>
+              <div class="seg-control mini" id="c-safezone">
+                <button data-z="76" class="on">Off</button>
+                <button data-z="64">TikTok</button>
+                <button data-z="62">Reels</button>
+                <button data-z="58">Shorts</button>
+              </div>
+            </div>
+
+            <!-- 🎬 ENTRANCE — real motion on each caption clip (⌘Z-able) -->
+            <div class="cust-group">
+              <div class="cust-group-title">🎬 Entrance</div>
+              <div class="seg-control mini" id="c-entrance">
+                <button data-e="none" class="on">None</button>
+                <button data-e="spoken" title="Each word appears exactly when it's said — nothing shows before it's spoken">🎬 As spoken</button>
+                <button data-e="pop">Pop</button>
+                <button data-e="slide">Slide</button>
+                <button data-e="fade">Fade</button>
+              </div>
+              <p class="hint" style="margin:4px 0 0">How each caption arrives. Undo with ⌘Z.</p>
+            </div>
+
+            <!-- ✨ SMART EMPHASIS — text-level, works on every style -->
+            <div class="cust-group">
+              <div class="cust-group-title">✨ Smart emphasis</div>
+              <label class="check" title="Adds one fitting emoji to lines about money, growth, fire, ideas…"><input type="checkbox" id="c-emoji"> 😀 Auto-emoji</label>
+              <label class="check" title="The most important words of your video get CAPITALS"><input type="checkbox" id="c-kwcaps"> 🔠 CAPS on key words</label>
+            </div>
+
+            <!-- 🖍️ WORD HIGHLIGHT (Pulse-rendered only; shown while word-by-word is on) -->
+            <div class="cust-group png-only" id="cust-wordhl-group">
+              <div class="cust-group-title">🖍️ Word highlight</div>
+              <p class="hint" style="margin:4px 0 8px">The line shows and each word lights up as it's said.</p>
+              <div id="c-wordhl-opts">
+                <span class="field-label">Highlight look</span>
+                <div class="seg-control wrap" id="c-hlstyle">
+                  <button data-s="color" class="on">Colour</button>
+                  <button data-s="box">Pill</button>
+                  <button data-s="bar">Bar</button>
+                  <button data-s="underline">Underline</button>
+                  <button data-s="marker">Marker</button>
+                  <button data-s="circle">Circle</button>
+                </div>
+                <span class="field-label">Words on screen</span>
+                <div class="seg-control mini" id="c-reveal">
+                  <button data-r="karaoke" class="on">All together</button>
+                  <button data-r="reveal">One by one</button>
+                </div>
+                <label style="margin-top:6px">Spoken-word size <span class="val" id="c-wordpop-val"></span>
+                  <input type="range" id="c-wordpop" min="100" max="160" value="100">
+                </label>
+                <div class="check-grid">
+                  <label class="check"><input type="checkbox" id="c-dimupcoming"> 🌗 Dim words not yet said</label>
+                  <label class="check"><input type="checkbox" id="c-multicolor"> 🌈 Cycle highlight colours</label>
+                </div>
+                <div class="swatches" id="c-multicolor-opts" style="display:none">
+                  <label class="sw">2nd<span class="cp-mount" data-for="c-hl2"></span><input type="hidden" id="c-hl2" value="#2D7CFF"></label>
+                  <label class="sw">3rd<span class="cp-mount" data-for="c-hl3"></span><input type="hidden" id="c-hl3" value="#22C55E"></label>
+                </div>
+              </div>
+            </div>
+
+            </div><!-- /cust-pane-style -->
+            <div id="cust-pane-pro" class="cust-pane hidden png-only">
+            <!-- ✨ EFFECTS -->
+            <div class="cust-group">
+              <div class="cust-group-title">✨ Effects</div>
+              <label>Outline width <span class="val" id="c-strokew-val"></span>
+                <input type="range" id="c-strokew" min="0" max="24" value="10">
+              </label>
+              <div class="ctrl-row hidden" id="c-shadow-offset-row">
+                <label>Shadow left/right <span class="val" id="c-shadow-dx-val"></span>
+                  <input type="range" id="c-shadow-dx" min="-30" max="30" value="0">
+                </label>
+                <label>Shadow up/down <span class="val" id="c-shadow-dy-val"></span>
+                  <input type="range" id="c-shadow-dy" min="-30" max="30" value="0">
+                </label>
+              </div>
+              <p class="hint" style="margin:2px 0 0">A low shadow strength + an offset gives a clean hard drop.</p>
+            </div>
+
+            <!-- 🎛️ PRO CONTROLS -->
+            <div class="cust-group">
+              <div class="cust-group-title">🎛️ Fine polish</div>
+
+              <label class="check"><input type="checkbox" id="c-grad"> 🎨 Two-colour text <span class="dim">(top = Text colour)</span></label>
+              <div class="swatches" id="c-grad-opts" style="display:none">
+                <label class="sw">Bottom colour<span class="cp-mount" data-for="c-fill2"></span><input type="hidden" id="c-fill2" value="#9aa7ff"></label>
+              </div>
+
+              <label class="check"><input type="checkbox" id="c-boxgrad"> 🟦 Two-colour box</label>
+              <div class="swatches" id="c-boxgrad-opts" style="display:none">
+                <label class="sw">Box bottom<span class="cp-mount" data-for="c-box2"></span><input type="hidden" id="c-box2" value="#1b1b1b"></label>
+              </div>
+
+              <div class="ctrl-row">
+                <label>Box roundness <span class="val" id="c-box-radius-val"></span>
+                  <input type="range" id="c-box-radius" min="0" max="60" value="12">
+                </label>
+              </div>
+              <label>Box padding <span class="val" id="c-box-pad-val"></span>
+                <input type="range" id="c-box-pad" min="50" max="200" value="100">
+              </label>
+
+              <!-- box effects: border / neon glow / 3D depth / gloss -->
+              <div class="btn-fx">
+                <label class="check"><input type="checkbox" id="c-boxstroke-on"> ⬜ Border</label>
+                <div class="swatches" id="c-boxstroke-opts" style="display:none">
+                  <label class="sw">Colour<span class="cp-mount" data-for="c-boxstroke"></span><input type="hidden" id="c-boxstroke" value="#14FF8E"></label>
+                  <label>Width <span class="val" id="c-boxstrokew-val"></span>
+                    <input type="range" id="c-boxstrokew" min="0" max="14" value="4">
+                  </label>
+                </div>
+                <label class="check"><input type="checkbox" id="c-boxglow-on"> 💡 Neon glow (box)</label>
+                <div class="swatches" id="c-boxglow-opts" style="display:none">
+                  <label class="sw">Glow<span class="cp-mount" data-for="c-boxglow"></span><input type="hidden" id="c-boxglow" value="#14FF8E"></label>
+                </div>
+                <div class="ctrl-row">
+                  <label>3D depth <span class="val" id="c-box3d-depth-val"></span>
+                    <input type="range" id="c-box3d-depth" min="0" max="24" value="0">
+                  </label>
+                  <label class="sw">3D edge<span class="cp-mount" data-for="c-box3d"></span><input type="hidden" id="c-box3d" value="#2C7000"></label>
+                </div>
+                <label>Box shine <span class="val" id="c-boxgloss-val"></span>
+                  <input type="range" id="c-boxgloss" min="0" max="100" value="0">
+                </label>
+              </div>
+
+              <div class="ctrl-row">
+                <label>Word spacing <span class="val" id="c-wordspace-val"></span>
+                  <input type="range" id="c-wordspace" min="0" max="40" value="0">
+                </label>
+                <label>Line spacing <span class="val" id="c-linegap-val"></span>
+                  <input type="range" id="c-linegap" min="55" max="200" value="118">
+                </label>
+              </div>
+              <label>Max line width <span class="val" id="c-maxwidth-val"></span>
+                <input type="range" id="c-maxwidth" min="50" max="98" value="86">
+              </label>
+              <div class="ctrl-row" id="c-twotier-wrap" style="display:none">
+                <label id="c-wordsperline-wrap">Words on top line <span class="val" id="c-wordsperline-val"></span>
+                  <input type="range" id="c-wordsperline" min="1" max="6" value="3">
+                </label>
+                <label id="c-subscale-wrap">2nd-line size <span class="val" id="c-subscale-val"></span>
+                  <input type="range" id="c-subscale" min="40" max="100" value="62">
+                </label>
+              </div>
+
+              <p class="hint" style="margin:6px 0 0">⚡ Motion follows your voice — nothing to set.</p>
+              <label class="check"><input type="checkbox" id="c-perword"> 🎬 Each word animates in as it's said</label>
+              <label id="c-perword-style-wrap" style="display:none">Word entrance
+                <select id="c-perword-style">
+                  <option value="pop">Pop</option>
+                  <option value="scale">Scale</option>
+                  <option value="slide">Slide up</option>
+                  <option value="bounce">Bounce</option>
+                  <option value="zoom">Zoom</option>
+                  <option value="blurdissolve">Blur in</option>
+                </select>
+              </label>
+              <div class="check-grid">
+                <label class="check"><input type="checkbox" id="c-emphasize"> 🔠 Bigger punchy words</label>
+                <label class="check"><input type="checkbox" id="c-strippunct"> 🧹 No punctuation</label>
+              </div>
+            </div>
+
+            <!-- 🎯 SMART TEXT -->
+            <div class="cust-group">
+              <div class="cust-group-title">🎯 Smart text</div>
+              <label>Text case
+                <select id="c-case">
+                  <option value="original">Original</option>
+                  <option value="upper">UPPERCASE</option>
+                  <option value="title">Title Case</option>
+                  <option value="sentence">Sentence case</option>
+                  <option value="lower">lowercase</option>
+                </select>
+              </label>
+              <label class="check"><input type="checkbox" id="c-censor"> 🤬 Hide swear words <span class="dim">(f***, s***)</span></label>
+              <label class="check"><input type="checkbox" id="c-numon"> 🔢 Colour numbers &amp; money <span class="dim">(₹1L, 50%, 2026)</span></label>
+              <div class="swatches" id="c-num-opts" style="display:none">
+                <label class="sw">Number colour<span class="cp-mount" data-for="c-num"></span><input type="hidden" id="c-num" value="#22C55E"></label>
+              </div>
+              <label class="check"><input type="checkbox" id="c-brandon"> ⭐ Colour my words</label>
+              <div id="c-brand-opts" style="display:none">
+                <input type="text" id="c-brand-words" placeholder="words, separated by commas">
+                <div class="swatches"><label class="sw">Word colour<span class="cp-mount" data-for="c-brand"></span><input type="hidden" id="c-brand" value="#FF3B6B"></label></div>
+              </div>
+            </div>
+
+            <!-- ➕ EXTRAS -->
+            <div class="cust-group">
+              <div class="cust-group-title">➕ Extras</div>
+              <div class="check-grid">
+                <label class="check"><input type="checkbox" id="c-speaker"> 🎙️ Show speaker names</label>
+              </div>
+              <label class="check kw-toggle"><input type="checkbox" id="c-kw"> 🔑 Also colour key words <span class="dim">(when word-by-word is off)</span></label>
+              <div id="c-kw-mode-wrap" class="hidden">
+                <label>Which words
+                  <select id="c-kw-mode">
+                    <option value="smart">✨ Smart — the key word, numbers &amp; names</option>
+                    <option value="auto">Auto — the stand-out words of your whole video</option>
+                    <option value="keywords">The single strongest word</option>
+                    <option value="numbers">Numbers</option>
+                    <option value="cta">Call-to-action words</option>
+                    <option value="names">Names</option>
+                  </select>
+                </label>
+                <label>Pop size <span class="val" id="c-hlscale-val"></span>
+                  <input type="range" id="c-hl-scale" min="100" max="170" value="100">
+                </label>
+              </div>
+            </div>
+
+            <!-- 🎬 ANIMATION (entrance — used when word-by-word highlight is OFF) -->
+            <div class="cust-group" id="cust-anim-group">
+              <div class="cust-group-title">🎬 Entrance animation</div>
+              <div id="anim-rail" class="anim-rail"></div>
+            </div>
+            </div><!-- /cust-pane-pro -->
+          </div>
+        </details>
+
+        <div id="legibility-note" class="legibility-note hidden"></div>
+        <span class="field-label">Caption type <button class="info" type="button" data-info="capout-info" aria-label="Which caption type?">ⓘ</button></span>
+        <div class="seg-control" id="cap-output" style="margin-bottom:6px">
+          <button data-out="png" class="on" type="button">✨ Pulse-rendered</button>
+          <button data-out="editable" type="button">✏️ Editable</button>
+        </div>
+        <div class="info-pop hidden" id="capout-info">✨ <b>Pulse-rendered</b>: box, words and the word highlight are drawn together — always lined up, exactly your colours. You can still fix any word later from Pulse. ✏️ <b>Editable</b>: Premiere graphics you retype in Premiere itself (needs the template to behave on your Mac).</div>
+        <p class="hint" style="margin:0 0 8px">Exact look, fixable any time from Pulse.</p>
+
+        <span class="field-label png-only">Word animation</span>
+        <div class="seg-control png-only" id="cap-reveal" style="margin-bottom:8px">
+          <button data-mode="highlight" class="on" type="button" title="The whole line shows and the spoken word lights up">🔆 Highlight word</button>
+          <button data-mode="reveal" type="button" title="Words pop in one at a time as they're said">📝 Pop in words</button>
+        </div>
+        <span id="cap-actions-home" style="display:none"></span>
+        <p class="hint" style="margin:2px 0 0">⚡ Viral edit = this style + gentle zoom-ins. <button class="info" type="button" data-info="viral-info" aria-label="More about Viral edit">ⓘ</button></p>
+        <div class="info-pop hidden" id="viral-info">Both buttons add the exact style above. <b>Viral edit</b> also adds subtle zoom-ins to your top clip (Ctrl/⌘+Z undoes them). It's new, so check the result.</div>
+        <pre id="native-recipe" class="native-recipe hidden"></pre>
+      </div>
+
+      <!-- ===== MY PREMIERE TEMPLATE (upload) section ===== -->
+      <div id="method-mogrt" class="hidden">
+        <div class="alt-block" id="mogrt-section">
+          <p class="hint">Use your own Premiere template file. <button class="info" type="button" data-info="mogrt-info" aria-label="How it works">ⓘ</button></p>
+          <div class="info-pop hidden" id="mogrt-info">Pulse fills your template with your words — one graphic per caption line — and lets you change its colour, font and text below.</div>
+
+          <!-- words (transcript) status + transcribe, so it's reachable right here -->
+          <div id="mogrt-tr" class="ms-tr"></div>
+          <button id="btn-mogrt-transcribe" class="chip-btn">🎙️ Transcribe my clip</button>
+
+          <!-- saved uploads -->
+          <div class="section-label sub">Your templates</div>
+          <div id="mogrt-uploads" class="mogrt-uploads"></div>
+          <div class="row tight">
+            <button id="btn-add-mogrt" class="hero-btn small">➕ Add a template file</button>
+          </div>
+
+          <!-- installed-in-Premiere templates (secondary) -->
+          <details class="advanced" id="mogrt-installed-wrap">
+            <summary>Or use one already in Premiere</summary>
+            <div id="tpl-installed">
+              <div class="row tight">
+                <select id="tpl-select"><option>scanning…</option></select>
+                <button id="btn-tpl-rescan" class="chip-btn" title="Look again" aria-label="Look again">↻</button>
+              </div>
+              <p class="hint" id="tpl-installed-hint"></p>
+            </div>
+          </details>
+          <span id="tpl-file-name" class="hidden"></span>
+
+          <!-- live editor for the chosen template (colour / font / size / text) -->
+          <div id="tpl-params" class="tpl-params hidden"></div>
+
+          <div class="wc-bar" id="mg-words" style="margin-top:10px">
+            <span class="wc-label">Words per caption</span>
+            <button class="wc-btn" id="mg-wc-minus" type="button" aria-label="Fewer words">−</button>
+            <b id="mg-wc-num">Auto</b>
+            <button class="wc-btn" id="mg-wc-plus" type="button" aria-label="More words">+</button>
+            <button class="chip-btn" id="mg-wc-full" type="button" title="Whole sentences, sized to your video automatically">✨ Auto</button>
+          </div>
+          <span class="field-label">Text case</span>
+          <div class="seg-control sub" id="mg-case">
+            <button data-case="as-spoken" class="on">As spoken</button>
+            <button data-case="upper">UPPER</button>
+            <button data-case="lower">lower</button>
+            <button data-case="title">Title</button>
+          </div>
+          <div class="row tight">
+            <button id="btn-tpl-preview" class="chip-btn" title="Drop one at the playhead to try it">▶ Try on timeline</button>
+            <button id="btn-tpl-inspect" class="chip-btn" title="List this template's settings (for support)">🔍 List settings</button>
+            <button id="btn-tpl-testfill" class="chip-btn" title="Drop one test caption and check the words show">🔬 Test</button>
+          </div>
+          <pre id="tpl-inspect-out" class="diag-out hidden"></pre>
+          <label class="check" style="margin:6px 0"><input type="checkbox" id="mg-stretch" checked> ↔ Longer captions stay on screen longer</label>
+          <div class="page-actions">
+            <button id="btn-alt-apply" class="hero-btn">🎬 Add template captions</button>
+          </div>
+          <p class="hint warn" style="margin-top:8px">⚠️ Stuck at "Loading… 89%"? That template is broken in Premiere — try another.</p>
+
+          <!-- Use Premiere's OWN editing, then copy it everywhere -->
+          <div class="alt-block" id="mg-match" style="margin-top:12px">
+            <div class="alt-title">🎯 Copy Premiere's own styling</div>
+            <p class="hint">Style one caption in Premiere, select it, then tap below. <button class="info" type="button" data-info="mgmatch-info" aria-label="How it works">ⓘ</button></p>
+            <div class="info-pop hidden" id="mgmatch-info">Style <b>one</b> caption in Premiere's graphics panel, click it on the timeline, then tap the button — Pulse copies that exact look (colour, padding, font, shadow…) onto every caption.</div>
+            <button id="btn-mg-copystyle" class="hero-btn small alt">🎨 Copy to all captions</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 🔊 SOUND FX -->
+      <details class="card sfx-card" id="sfx-card">
+        <summary><b>🔊 Sound effects</b> <span class="dim">— whoosh, pop… on your captions</span></summary>
+        <div class="sfx-body">
+          <label>Effect
+            <select id="sfx-effect"></select>
+          </label>
+          <p class="hint" id="sfx-desc" style="margin:3px 0"></p>
+          <label>Play it on
+            <select id="sfx-trigger">
+              <option value="caption">Each caption</option>
+              <option value="word">Each word</option>
+              <option value="keyword">Each key word</option>
+              <option value="number">Each number / money</option>
+              <option value="first">Just the first caption</option>
+            </select>
+          </label>
+          <label>Volume <span class="val" id="sfx-vol-val">80%</span>
+            <input type="range" id="sfx-vol" min="10" max="100" step="5" value="80">
+          </label>
+          <div class="row tight">
+            <button id="btn-sfx-preview" class="chip-btn">▶︎ Listen</button>
+            <button id="btn-sfx-add" class="hero-btn small" style="flex:1 1 140px;margin:0">➕ Add sound effects</button>
+          </div>
+          <p class="hint" style="margin:6px 0 0">Add captions first, so there's timing to follow. <button class="info" type="button" data-info="sfx-info" aria-label="More about sound effects">ⓘ</button></p>
+          <div class="info-pop hidden" id="sfx-info">Effects go on a free audio track — your voice track is never touched. Built in and free to use.</div>
+        </div>
+      </details>
+    </div><!-- /view-editor -->
+
+    <!-- "Add captions" is always on screen: in the gallery AND in the editor -->
+    <div id="cap-action-bar" class="page-actions cap-action-bar">
+      <div id="cap-progress" class="progress hidden"></div>
+      <button id="btn-magic" class="hero-btn">✨ Add captions</button>
+      <button id="btn-viral-edit" class="hero-btn alt" title="The same style plus gentle zoom-ins (new)">⚡ Viral edit</button>
+    </div>
+  </section>
+
+  <!-- ============================== CLEAN UP ============================= -->
+  <section id="tab-silence" class="tab-page">
+    <div class="card accent">
+      <div class="step-head"><span class="step-title">✨ Clean up my video</span>
+        <button class="info" type="button" data-info="ac-info" aria-label="What it removes">ⓘ</button></div>
+      <p class="hint">Cuts silences, repeated takes and fillers. A backup comes first.</p>
+      <div class="info-pop hidden" id="ac-info">Removes <b>dead air</b> at the start, middle and end, and <b>repeated takes</b> — even a script you re-read many times without stopping. It keeps your <b>last full take</b> of each line and cuts earlier tries and off-script talk, in one pass. Pulse listens to <b>every mic</b> and only cuts where everyone is quiet. Captions stay in sync. For retakes it needs your words first (Transcribe).</div>
+      <span class="field-label" style="margin-top:4px">What are you making?</span>
+      <div class="subview-switch" id="ac-strength" style="margin:5px 0 4px">
+        <button data-s="gentle" title="Natural rhythm: only pauses over 0.8s, each shortened to 0.35s">🎙 Podcast</button>
+        <button data-s="balanced" class="on" title="Balanced: pauses over 0.5s, each shortened to 0.3s">▶️ YouTube</button>
+        <button data-s="strong" title="Tight: pauses over 0.3s, each shortened to under 0.2s">⚡ Reel</button>
+      </div>
+      <div class="check-grid">
+        <label class="check"><input type="checkbox" id="ac-do-silence" checked> Silences</label>
+        <label class="check"><input type="checkbox" id="ac-do-takes" checked> Repeated takes</label>
+        <label class="check"><input type="checkbox" id="ac-do-fillers"> Filler words <span class="dim">(um, uh)</span></label>
+      </div>
+      <div class="page-actions">
+        <button id="btn-autoclean" class="hero-btn">✨ Clean up my video</button>
+        <div id="autoclean-progress" class="progress hidden"></div>
+        <button id="btn-autoclean-stop" class="chip-btn hidden" style="margin-top:6px" title="Stop listening — nothing is cut">■ Stop</button>
+      </div>
+      <!-- filled after every listen: each track Pulse heard, why nothing was
+           cut when nothing was, and a voice / music choice per track -->
+      <div id="ac-heard" class="hidden" style="margin-top:8px;padding:8px;border:1px solid var(--line, #2b3242);border-radius:8px"></div>
+      <p class="hint" style="margin-top:6px">Name your music track <b>Music</b> to skip it, or Pulse asks you first. <button class="info" type="button" data-info="ac-music-info" aria-label="How Pulse listens">ⓘ</button></p>
+      <div class="info-pop hidden" id="ac-music-info">Pulse listens to <b>every mic</b> on your timeline and only cuts where <b>everyone</b> is quiet. Name your music track <b>Music</b> (or BGM) in Premiere and Pulse leaves it out of that; if a track only sounds like music, Pulse asks you first. Dead air is removed even without a transcript; transcribe first so it can also remove repeated takes. A backup of your sequence is always made first.</div>
+    </div>
+
+    <!-- everything below the ONE button lives behind this drawer — one primary
+         action per screen; the step-by-step tools are there when wanted -->
+    <details class="advanced" style="margin:2px 0 10px">
+      <summary>🔧 Fine-tune step by step</summary>
+
+    <div class="subview-switch" id="ae-switch">
+      <button data-ae="silence" class="on">✂️ Silences</button>
+      <button data-ae="takes">🔁 Repeated takes</button>
+    </div>
+
+    <!-- ---- FUNCTION 1: remove silences ---- -->
+    <div id="ae-silence">
+    <div class="card">
+      <div class="step-head">
+        <span class="step-num">1</span>
+        <span class="step-title">Your clip</span>
+        <span id="clip-badge" class="badge">found for you</span>
+      </div>
+      <p class="hint">Tap “Find the silences” — Pulse finds your clip itself.</p>
+
+      <span class="field-label">How much to cut?</span>
+      <div class="subview-switch" id="sil-strength" style="margin:5px 0 4px">
+        <button data-s="gentle">🎙 Podcast</button>
+        <button data-s="balanced" class="on">▶️ YouTube</button>
+        <button data-s="strong">⚡ Reel</button>
+      </div>
+      <p class="hint" style="margin-top:4px">YouTube suits most talking videos. <button class="info" type="button" data-info="sil-info" aria-label="What each one does">ⓘ</button></p>
+      <div class="info-pop hidden" id="sil-info"><b>YouTube</b>: pauses over 0.5s shortened to 0.3s. <b>Reel</b>: tight, punchy cuts. <b>Podcast</b>: keeps a natural rhythm (only pauses over 0.8s). Pulse sets the level from each mic's own room noise; the Expert numbers are used only when you tick <b>Set by hand</b>. To target one clip, select it first.</div>
+
+      <label class="check"><input type="checkbox" id="opt-fillers"> Also remove filler words <span class="dim">(um, uh, you know…)</span></label>
+
+      <details class="advanced" style="margin-top:6px">
+        <summary>Expert settings</summary>
+        <div class="row" style="justify-content:space-between;margin:0 0 2px">
+          <span class="field-label" style="margin:0">How quiet counts as silence <b id="opt-threshold-val">−40</b></span>
+          <label class="check" style="margin:0"><input type="checkbox" id="opt-threshold-manual"> Set by hand</label>
+        </div>
+        <input type="range" id="opt-threshold-range" min="-70" max="-15" step="1" value="-40" aria-label="How quiet counts as silence">
+        <div class="grid2" style="margin-top:6px">
+          <label>Quiet level<input type="number" id="opt-threshold" value="-40" step="1" max="0" min="-90"></label>
+          <label>Shortest pause (s)<input type="number" id="opt-minsilence" value="0.5" step="0.1" min="0.1"></label>
+          <label>Room around words (s)<input type="number" id="opt-padding" value="0.12" step="0.02" min="0"></label>
+          <label>Lone breath under (s)<input type="number" id="opt-minkeep" value="0.25" step="0.05" min="0"></label>
+        </div>
+        <label class="check"><input type="checkbox" id="opt-fillers-extra"> Also cut “like”, “so”, “actually” <span class="dim">(may catch real words)</span></label>
+        <div id="opt-fillers-adv" style="display:none"></div>
+      </details>
+    </div>
+
+    <button id="btn-analyze" class="hero-btn alt">⚡ Find the silences</button>
+    <div id="analyze-progress" class="progress hidden"></div>
+    <button id="btn-analyze-stop" class="chip-btn hidden" style="margin-top:6px" title="Stop listening — nothing is cut">■ Stop</button>
+    <div id="sil-heard" class="hidden" style="margin:8px 0;padding:8px;border:1px solid var(--line, #2b3242);border-radius:8px"></div>
+
+    <div id="results" class="hidden">
+      <div class="card">
+        <div id="stats" class="stats"></div>
+        <div id="silence-list" class="seg-list"></div>
+        <div class="row tight">
+          <button id="btn-markers" class="chip-btn">Show as markers</button>
+          <button id="btn-clear-markers" class="chip-btn">Clear markers</button>
+        </div>
+      </div>
+      <button id="btn-rebuild" class="hero-btn">✂ Remove silences (keeps a copy)</button>
+      <details class="advanced">
+        <summary>Cut this sequence directly instead</summary>
+        <label class="check"><input type="checkbox" id="opt-backup" checked> Back up the sequence first</label>
+        <label class="check"><input type="checkbox" id="opt-closegaps" checked> Close the gaps</label>
+        <button id="btn-cut" class="danger-btn">Cut this sequence</button>
+      </details>
+    </div>
+    </div><!-- /ae-silence -->
+
+    <!-- ---- FUNCTION 2: remove repeated takes ---- -->
+    <div id="ae-takes" class="hidden">
+      <div class="card">
+        <div class="step-head"><span class="step-title">🔁 Remove repeated takes</span>
+          <button class="info" type="button" data-info="tk-info" aria-label="How it works">ⓘ</button></div>
+        <p class="hint">Keeps your last full take of each line.</p>
+        <div class="info-pop hidden" id="tk-info">Pulse reads your words — English, Hindi, Hinglish or a mix — finds where you <b>restarted a line</b>, keeps the last <b>complete</b> take and removes the earlier ones. On a podcast, an answer that repeats the other person's words is not a retake. Get your words first (Transcribe) — word timing makes the cuts tight.</div>
+        <span class="field-label">How hard to look?</span>
+        <div class="subview-switch" id="tk-strength" style="margin:5px 0 4px">
+          <button data-s="gentle">🌿 Gentle</button>
+          <button data-s="balanced" class="on">⚖️ Balanced</button>
+          <button data-s="strong">⚡ Strong</button>
+        </div>
+        <p class="hint" style="margin-top:4px">Strong also catches reworded retakes. You tick which cuts to make.</p>
+        <label class="fld-full">Who is talking?<div id="tk-kind-dd" class="dd-mount"></div>
+          <select id="tk-kind">
+            <option value="auto" selected>Auto — from speaker labels</option>
+            <option value="one">Just me (a reel, a re-recorded script)</option>
+            <option value="many">Two or more people (podcast, interview)</option>
+          </select>
+        </label>
+        <p class="hint" style="margin-top:4px">Podcast? Pick “Two or more people”. <button class="info" type="button" data-info="tk-kind-info" aria-label="Why it matters">ⓘ</button></p>
+        <div class="info-pop hidden" id="tk-kind-info">A retake is the <b>same person</b> saying a line again. Auto can only tell who is talking on a word-for-word (Verbatim) transcript, which labels each speaker; on any other it plays safe. Pick <b>Two or more people</b> for a podcast so an answer that echoes the question is never cut, or <b>Just me</b> for a reel so every restart is caught.</div>
+        <details class="advanced" style="margin-top:6px">
+          <summary>Expert settings</summary>
+          <div class="grid2" style="margin-top:6px">
+            <label>Shortest take (words)<input type="number" id="tk-minrun" value="3" min="2" max="8" step="1"></label>
+            <label>Match strictness <span class="val" id="tk-sim-val">60%</span><input type="range" id="tk-sim" min="40" max="90" step="5" value="60"></label>
+          </div>
+          <label class="fld-full">Keep which take?
+            <select id="tk-keep">
+              <option value="best" selected>The last complete try (recommended)</option>
+              <option value="last">Always the very last try</option>
+              <option value="confident">The clearest try</option>
+            </select>
+          </label>
+        </details>
+      </div>
+      <button id="btn-takes-find" class="hero-btn alt">🔎 Find repeated takes</button>
+      <p class="hint" style="margin-top:10px">🎯 Best for a script read many times. Tip: mute your music track first. <button class="info" type="button" data-info="vb-info" aria-label="How it works">ⓘ</button></p>
+      <button id="btn-verbatim-retakes" class="hero-btn">🎯 Best retake finder</button>
+      <div class="info-pop hidden" id="vb-info">It listens again to every voice on your timeline (each mic of a podcast) with a word-for-word listener that keeps every take, tells speakers apart, keeps the last <b>complete</b> take of each line, snaps cuts to the pauses and lists them for you to check. Muted tracks, offline files and steady music are left out — it tells you which. Needs a retake-finder key (Settings).</div>
+      <p class="hint" style="margin-top:10px">✨ Also cuts false starts and “let me think” pauses. <button class="info" type="button" data-info="sc-info" aria-label="How it works">ⓘ</button></p>
+      <div class="info-pop hidden" id="sc-info">Smart Cleanup reads your whole transcript and also removes <b>false starts</b>, fillers (“um”, “aa”, a stand-alone “matlab”) and <b>“let me think”</b> dead air that silence-cutting can't see, then keeps the last complete take. You check every cut before anything is removed.</div>
+      <label class="check" style="margin:2px 0 8px"><input type="checkbox" id="sc-aggressive"> Tighter cuts <span class="dim">(never mid-sentence)</span></label>
+      <button id="btn-smart-cleanup" class="hero-btn">✨ Smart Cleanup (AI)</button>
+      <div id="takes-progress" class="progress hidden"></div>
+      <div id="takes-results" class="hidden">
+        <div class="card">
+          <div id="takes-stats" class="stats"></div>
+          <div id="takes-list" class="seg-list"></div>
+        </div>
+        <button id="btn-takes-apply" class="hero-btn">✂ Remove the worse takes (keeps a copy)</button>
+        <details class="advanced">
+          <summary>Cut this sequence directly instead</summary>
+          <label class="check"><input type="checkbox" id="tk-backup" checked> Back up the sequence first</label>
+          <button id="btn-takes-cut" class="danger-btn">Cut takes in this sequence</button>
+        </details>
+      </div>
+    </div><!-- /ae-takes -->
+    </details><!-- /fine-tune drawer -->
+  </section>
+
+  <!-- =============================== SHORTS ============================= -->
+  <section id="tab-shorts" class="tab-page">
+    <div class="card">
+      <div class="step-head"><span class="step-title">🎬 Viral Shorts</span>
+        <button class="info" type="button" data-info="sh-info" aria-label="How it works">ⓘ</button></div>
+      <p class="hint">Finds the best short clips in a long video.</p>
+      <div class="info-pop hidden" id="sh-info">Pulse reads your transcript and finds the moments most likely to pop as short clips — each one a self-contained <b>hook → payoff</b>. Get your words first (Transcribe). For each moment you can <b>preview</b> it, <b>mark</b> it, or cut it out as a <b>vertical clip</b> — Premiere's Auto Reframe keeps the subject in frame.</div>
+      <div class="grid2">
+        <label>Clip length
+          <select id="sh-len">
+            <option value="15-60" selected>15–60s · standard</option>
+            <option value="10-30">10–30s · punchy</option>
+            <option value="30-90">30–90s · story</option>
+          </select>
+        </label>
+        <label>Shape
+          <select id="sh-ratio">
+            <option value="9:16" selected>9:16 vertical</option>
+            <option value="1:1">1:1 square</option>
+            <option value="4:5">4:5 portrait</option>
+            <option value="none">Keep original</option>
+          </select>
+        </label>
+        <label>Keep in frame
+          <select id="sh-focus">
+            <option value="center" selected>Center</option>
+            <option value="left">Left side</option>
+            <option value="right">Right side</option>
+          </select>
+        </label>
+      </div>
+      <div class="page-actions">
+        <button id="btn-find-shorts" class="hero-btn">✨ Find viral moments</button>
+        <div id="shorts-progress" class="progress hidden"></div>
+      </div>
+    </div>
+    <div id="shorts-results"></div>
+
+    <div class="card">
+      <div class="step-head"><span class="step-title">🎙 Vertical that follows the speaker</span>
+        <button class="info" type="button" data-info="sr-info" aria-label="How it works">ⓘ</button></div>
+      <p class="hint">For podcasts with a mic per person.</p>
+      <div class="info-pop hidden" id="sr-info">For 2–3 people, each on their own mic: Pulse follows whoever's talking — one person when one holds the floor, <b>split-screen</b> when they talk over each other. It uses your separate audio tracks and the shape chosen above, and puts a finished vertical clip back in your project.</div>
+      <label class="fld-full">People are arranged…
+        <select id="sr-arrange">
+          <option value="lr" selected>Side by side (2 people)</option>
+          <option value="thirds">Left, centre, right (3)</option>
+        </select>
+      </label>
+      <button id="btn-speaker-reframe" class="hero-btn alt" style="margin-top:8px">🎙 Make the vertical</button>
+      <div id="sr-progress" class="progress hidden"></div>
+    </div>
+  </section>
+
+  <!-- ========================== PODCAST CAMERAS ========================== -->
+  <section id="tab-multicam" class="tab-page">
+    <div id="mc-ffmpeg" class="ff-banner hidden"></div>
+    <!-- STEP 1: how many cameras? -->
+    <div class="card">
+      <div class="step-head">
+        <span class="step-num">1</span>
+        <span class="step-title">How many cameras?</span>
+        <button class="info" type="button" data-info="mc-count-info" aria-label="How to set up">ⓘ</button>
+      </div>
+      <p class="hint">Put each camera on its own video track.</p>
+      <div class="info-pop hidden" id="mc-count-info">Put each camera on its own video track (V1, V2, V3…), then tap how many you have. Pulse makes one row per camera in Step 2 — 2, 3, 5, 8 cameras or more. No nesting needed.</div>
+      <div class="seg-control mc-count" id="mc-count">
+        <button type="button" data-n="2" class="on">2</button>
+        <button type="button" data-n="3">3</button>
+        <button type="button" data-n="4">4</button>
+        <button type="button" data-n="5">5</button>
+        <button type="button" data-n="6">6</button>
+        <button type="button" data-n="7">7</button>
+        <button type="button" data-n="8">8</button>
+      </div>
+      <label class="row mc-more" style="margin-top:8px">More than 8?
+        <input type="number" id="mc-angles" value="2" min="2" max="16">
+      </label>
+    </div>
+
+    <!-- STEP 2: set up each camera -->
+    <div class="card">
+      <div class="step-head">
+        <span class="step-num">2</span>
+        <span class="step-title">Set up each camera</span>
+      </div>
+
+      <label>How should it switch cameras?
+        <select id="mc-source">
+          <option value="follow">🎙️ Follow the speaker (best)</option>
+          <option value="speech">🔊 Anyone talks (1 mic)</option>
+          <option value="transcript">🗣️ New speaker (transcript)</option>
+          <option value="interval">⏱️ Every few seconds</option>
+        </select>
+      </label>
+
+      <!-- one main / mixed mic -->
+      <div id="mc-main-opts" class="hidden">
+        <label>Main audio track
+          <select id="mc-main-track"><option value="0">A1</option></select>
+        </label>
+        <p class="hint">Cuts when someone starts talking after a pause. <button class="info" type="button" data-info="mc-main-info" aria-label="More">ⓘ</button></p>
+        <div class="info-pop hidden" id="mc-main-info">Handy for a single mixed podcast track. It can't tell <i>who</i> is talking — for that, give each person their own mic.</div>
+      </div>
+
+      <!-- follow-the-speaker options -->
+      <div id="mc-speaker-opts">
+        <div class="map-label mc-map-head"><span>Camera → speaker → mic</span> <button id="btn-mc-rescan" class="chip-btn">🔄 Detect audio</button></div>
+        <div id="mc-map"></div>
+        <p class="hint" style="margin:4px 0 8px">Pair each camera with the mic on that person.</p>
+
+        <span class="field-label" style="margin-top:4px">How often should it change camera?</span>
+        <div class="seg-control" id="mc-pace">
+          <button data-pace="low">🐢 Low</button>
+          <button data-pace="medium" class="on">⚖️ Medium</button>
+          <button data-pace="high">⚡ High</button>
+        </div>
+        <p class="hint" id="mc-pace-hint" style="margin:5px 0 0">Natural conversation pace, with the odd cutaway.</p>
+        <!-- wide / centre camera — only shown when a camera is "No mic (wide / cutaway)" -->
+        <div id="mc-center-wrap2" class="mc-wide-box" style="display:none">
+          <p class="hint" style="margin:8px 0 4px">📹 Wide camera: used when people talk over each other, in pauses and for cutaways.</p>
+          <label>Also cut to the wide camera every <span class="val" id="mc-center-val">off</span>
+            <input type="range" id="mc-center" min="0" max="600" step="15" value="0">
+          </label>
+          <label>Hold the wide camera for <span class="val" id="mc-centerhold-val">2s</span>
+            <input type="range" id="mc-centerhold" min="1" max="10" step="1" value="2">
+          </label>
+        </div>
+      </div>
+
+      <!-- transcript (speaker-turn) options -->
+      <div id="mc-transcript-opts" class="hidden">
+        <p class="hint">Switches camera at each speaker change. <button class="info" type="button" data-info="mc-tr-info" aria-label="How it works">ⓘ</button></p>
+        <div class="info-pop hidden" id="mc-tr-info">Uses the transcript from the <b>Transcribe</b> page. Run <b>🗣️ Detect speakers</b> there first for true per-person switching: “Speaker 1” goes to V1, “Speaker 2” to V2, and <b>⇄ Swap speakers</b> in the plan flips it if needed. Without speaker labels it swaps camera each line.</div>
+      </div>
+
+      <!-- director controls (shared by follow + transcript) — tucked away -->
+      <details id="mc-director-opts" class="advanced hidden">
+        <summary>⚙ Fine-tune (optional)</summary>
+        <label class="check"><input type="checkbox" id="mc-autosync"> 🧲 Camera mics a little late? Line them up while listening <span class="dim">(your clips don't move — leave off when each person wears a mic)</span></label>
+        <label>Shortest shot (s) <span class="val" id="mc-minseg-val">2</span>
+          <input type="range" id="mc-minseg" min="1.5" max="5" step="0.1" value="2">
+        </label>
+        <label>In a long monologue, cut away every <span class="val" id="mc-maxshot-val">2m</span>
+          <input type="range" id="mc-maxshot" min="0" max="600" step="15" value="120">
+        </label>
+        <label>Cutaway length <span class="val" id="mc-cutaway-val">3s</span>
+          <input type="range" id="mc-cutaway" min="1" max="10" step="1" value="3">
+        </label>
+        <label>Cut a little before the line <span class="val" id="mc-leadin-val">off</span>
+          <input type="range" id="mc-leadin" min="0" max="500" step="20" value="0">
+        </label>
+      </details>
+
+      <!-- interval option -->
+      <label id="mc-interval-wrap" class="hidden">Seconds per camera <span class="val" id="mc-interval-val">3</span>
+        <input type="range" id="mc-interval" min="1" max="15" step="1" value="3">
+      </label>
+
+      <!-- pattern options (interval/markers/smartcut) -->
+      <div id="mc-pattern-opts" class="hidden">
+        <label>Switch every N cuts
+          <input type="number" id="mc-hold" value="1" min="1" max="10">
+        </label>
+        <span class="field-label">Switching style</span>
+        <div class="seg-control" id="mc-mode">
+          <button data-mode="rotate" class="on">Rotate</button>
+          <button data-mode="pingpong">Ping-pong</button>
+          <button data-mode="random">Random</button>
+          <button data-mode="weighted">Hero cam</button>
+        </div>
+      </div>
+    </div>
+
+    <p class="hint center" style="margin-top:4px">Builds the cut plan — check it, then <b>Apply</b>.</p>
+    <div class="row tight" style="justify-content:center">
+      <button id="btn-mc-test" class="chip-btn">🔧 Test audio</button>
+    </div>
+    <pre id="mc-diag" class="diag-out hidden"></pre>
+    <div id="mc-progress" class="progress hidden"></div>
+    <div class="card hidden" id="mc-plan-card">
+      <div id="mc-plan-view" class="seg-list"></div>
+    </div>
+    <p class="hint center hidden" id="mc-redo-hint" style="margin-top:4px">Redo rebuilds and re-applies every cut with your current settings — handy after an Undo or on the next clip.</p>
+    <div class="page-actions">
+      <button id="btn-mc-plan" class="hero-btn">🎬 Plan camera cuts</button>
+      <button id="btn-mc-apply" class="hero-btn hidden">Apply camera switches</button>
+      <button id="btn-mc-redo" class="hero-btn alt hidden">🔁 Redo all cuts</button>
+    </div>
+  </section>
+
+  <!-- ============================== CHAPTERS ============================ -->
+  <section id="tab-chapters" class="tab-page">
+    <div class="card">
+      <div class="step-head"><span class="step-title">🔖 Chapters</span>
+        <button class="info" type="button" data-info="ch-info" aria-label="How it works">ⓘ</button></div>
+      <p class="hint">Makes timestamped chapters from your transcript.</p>
+      <div class="info-pop hidden" id="ch-info">Paste them into your YouTube or podcast description, or drop them on the timeline as markers. Uses the same transcript as Captions.</div>
+      <label>Shortest chapter (s) <span class="val" id="ch-min-val">30</span>
+        <input type="range" id="ch-min" min="10" max="180" step="5" value="30">
+      </label>
+      <div class="page-actions">
+        <button id="btn-ch-build" class="hero-btn">🔖 Make chapters</button>
+      </div>
+    </div>
+    <div id="ch-progress" class="progress hidden"></div>
+    <div id="ch-results" class="hidden">
+      <div class="card"><pre id="ch-out" class="diag-out"></pre></div>
+      <div class="row tight">
+        <button id="btn-ch-copy" class="hero-btn small" style="flex:1 1 140px;margin:0">⧉ Copy chapters</button>
+        <button id="btn-ch-markers" class="chip-btn">Add as markers</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== SETTINGS ============================= -->
+  <section id="tab-settings" class="tab-page">
+    <!-- the one thing a new user must do comes first -->
+    <div class="card accent">
+      <div class="step-head"><span class="step-title">🎙️ Auto-transcribe</span>
+        <button class="info" type="button" data-info="key-info" aria-label="How to get a key">ⓘ</button></div>
+      <div id="whisper-status" class="hint">Let Pulse make the transcript itself.</div>
+      <!-- The key boxes MUST live here: every "add your key" message in the panel
+           points at Settings -> Auto-transcribe. Always visible (unless a build
+           bundles its own key, which hides them). -->
+      <label class="fld-full" id="set-groq-row">☁️ Speech key <span class="dim">(free)</span>
+        <input type="password" id="set-groq-key" placeholder="paste your key…" autocomplete="off" spellcheck="false">
+      </label>
+      <div class="info-pop hidden" id="key-info">Get a free key at <b>console.groq.com/keys</b> (sign in, create a key, copy it) and paste it above. It turns your speech into words. Keys stay on this computer.</div>
+      <div id="set-key-msg" class="hint"></div>
+      <label class="fld-full">Language
+        <div id="set-whisper-lang" class="dd-mount"></div>
+      </label>
+      <details class="advanced">
+        <summary>More speech options</summary>
+        <label class="fld-full" style="margin-top:0">Accuracy <span class="dim" id="set-quality-note"></span>
+          <div id="set-whisper-quality" class="dd-mount"></div>
+        </label>
+        <label class="fld-full" id="set-swara-row">🇮🇳 Indian-language key
+          <input type="password" id="set-swara-key" placeholder="paste your key…" autocomplete="off" spellcheck="false">
+        </label>
+        <label class="fld-full" id="set-dg-row">🎧 Retake-finder key <span class="dim">(also transcribes)</span>
+          <input type="password" id="set-dg-key" placeholder="paste your key…" autocomplete="off" spellcheck="false">
+        </label>
+        <p class="hint" style="margin-top:6px">One key is enough — paste it in the box that matches your choice.</p>
+      </details>
+    </div>
+
+    <div class="card">
+      <div class="step-head"><span class="step-title">🔊 Audio engine</span>
+        <button class="info" type="button" data-info="ff-info" aria-label="What the audio engine does">ⓘ</button></div>
+      <div class="info-pop hidden" id="ff-info">Pulse uses a free audio engine to hear the sound inside your video files: for your transcript, Clean up, Podcast cameras and matching captions to the voice. It downloads once (about 50 MB) and stays on this computer.</div>
+      <button id="btn-ffmpeg-setup" class="chip-btn" title="Free, about 50 MB, downloaded once">⬇️ Set up audio engine</button>
+      <div id="ffmpeg-status" class="hint" style="margin:8px 0 0">checking…</div>
+    </div>
+
+    <div class="card">
+      <div class="step-head"><span class="step-title">🎨 Look</span></div>
+      <span class="field-label" style="margin-top:0">Colours</span>
+      <div class="seg-control" id="set-theme" role="group" aria-label="Colours">
+        <button type="button" data-theme="auto" class="on">Match Premiere</button>
+        <button type="button" data-theme="light">Light</button>
+        <button type="button" data-theme="dark">Dark</button>
+      </div>
+      <span class="field-label">Text size</span>
+      <div class="seg-control" id="set-text-size" role="group" aria-label="Text size">
+        <button type="button" data-size="s" title="Small">S</button>
+        <button type="button" data-size="m" class="on" title="Medium">M</button>
+        <button type="button" data-size="l" title="Large">L</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="step-head"><span class="step-title">🎯 Retake finder</span>
+        <button class="info" type="button" data-info="vbk-info" aria-label="Why a second key?">ⓘ</button></div>
+      <p class="hint">Needed for the best retake finder.</p>
+      <div class="info-pop hidden" id="vbk-info">Removing retakes needs words that keep <b>every</b> re-read — the normal speech key cleans those away. A key from <b>deepgram.com</b> or <b>assemblyai.com</b> (both have free plans) is used just for finding retakes.</div>
+      <label class="fld-full" style="margin-top:4px">Service
+        <select id="set-vb-provider">
+          <option value="deepgram" selected>deepgram.com (recommended)</option>
+          <option value="assemblyai">assemblyai.com</option>
+        </select>
+      </label>
+      <label class="fld-full" style="margin-top:6px">Key
+        <div class="row tight" style="margin-top:0">
+          <input type="password" id="set-vb-key" placeholder="paste your key…" autocomplete="off" spellcheck="false">
+          <button id="btn-save-vb" class="chip-btn">Save</button>
+        </div>
+      </label>
+      <p id="set-vb-msg" class="hint" style="margin:4px 0 0"></p>
+    </div>
+
+    <div class="card">
+      <div class="step-head"><span class="step-title">🔑 License</span><span id="lic-state" class="badge">checking…</span></div>
+      <p class="hint">Enter your license key to unlock Pulse for good.</p>
+      <div class="row tight">
+        <input type="text" id="set-lic-key" placeholder="PULSE-XXXX-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false">
+        <button id="btn-activate-lic" class="chip-btn">Activate</button>
+      </div>
+      <p id="set-lic-msg" class="hint" style="margin:4px 0 0"></p>
+    </div>
+
+    <div class="card">
+      <div class="step-head"><span class="step-title">🩺 Help &amp; diagnostics</span><span class="badge" id="diag-count">0</span></div>
+      <p class="hint">Something wrong? Copy diagnostics and send them to aiFloh. <button class="info" type="button" data-info="diag-info" aria-label="What is included">ⓘ</button></p>
+      <div class="info-pop hidden" id="diag-info">Make the problem happen, then tap <b>Copy diagnostics</b> and paste it to aiFloh. It captures the exact error so the real bug gets fixed. <b>No keys are included.</b> <b>Test everything</b> checks Pulse inside Premiere without touching your timeline.</div>
+      <div class="row tight">
+        <button id="btn-diag-copy" class="chip-btn">📋 Copy diagnostics</button>
+        <button id="btn-selftest" class="chip-btn" title="Pulse tests itself inside Premiere — renders real frames in a temporary sequence and checks the words show. Your timeline is never touched.">🧪 Test everything</button>
+        <button id="btn-diag-clear" class="chip-btn">Clear</button>
+        <pre id="selftest-out" class="diag-out hidden"></pre>
+      </div>
+      <textarea id="diag-text" readonly style="display:none;width:100%;box-sizing:border-box;height:150px;margin-top:8px;font:var(--fs-xs)/1.45 ui-monospace,Menlo,Consolas,monospace;background:var(--field);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px;resize:vertical"></textarea>
+      <details class="advanced">
+        <summary>Recent messages</summary>
+        <footer><div id="log" class="log"></div></footer>
+      </details>
+      <details class="advanced">
+        <summary>🔧 Full check</summary>
+        <p class="hint">Checks the audio engine, your mics, a caption template and your words at once.</p>
+        <button id="btn-diag-full" class="hero-btn small">🩺 Run the full check</button>
+        <pre id="diag-out" class="diag-out">Results appear here.</pre>
+        <button id="btn-diagfull-copy" class="chip-btn">Copy results</button>
+      </details>
+    </div>
+
+    <div class="card">
+      <details class="advanced" style="margin-top:0">
+        <summary>⚙️ Advanced</summary>
+        <label class="check"><input type="checkbox" id="set-enhance-audio" checked> 🎧 Clean the audio before transcribing <span class="dim">(your media is never changed)</span></label>
+        <label class="check"><input type="checkbox" id="set-precise-timing" checked> 🎯 Precise word timing <span class="dim">(tighter highlight)</span></label>
+        <label class="check"><input type="checkbox" id="set-dropframe"> My projects are 29.97 or 59.94 fps</label>
+        <button id="btn-save-settings" class="hero-btn small">Save settings</button>
+        <label class="fld-full">Audio engine location <span class="dim">(only if the download can't run)</span>
+          <div class="row tight" style="margin-top:0">
+            <input type="text" id="set-ffmpeg" placeholder="choose the audio engine file…">
+            <button id="btn-ffmpeg-pick" class="chip-btn" aria-label="Choose the file">…</button>
+          </div>
+        </label>
+        <span class="field-label">🎬 Extra Premiere template folders</span>
+        <p class="hint" style="margin:4px 0 6px">Your own template packs show up in the gallery.</p>
+        <div id="mogrt-folders" class="mogrt-folders"></div>
+        <button id="btn-add-mogrt-folder" class="hero-btn small alt">📁 Add folder…</button>
+        <div class="row tight" style="margin-top:12px">
+          <button id="btn-clean-caps" class="chip-btn" title="Delete every caption track Pulse added to this sequence (your video and audio are untouched)">🧹 Remove all Pulse captions</button>
+          <button id="cmdk-open" class="chip-btn cmdk-open" title="Quick actions — Ctrl/Cmd K">⌨ Quick commands (⌘K)</button>
+        </div>
+      </details>
+    </div>
+
+    <p class="hint center" id="ver-foot">Pulse v0.10.2 · auto-edit · multicam · captions · chapters · organize</p>
+  </section>
+
+  <!-- ============================== ORGANIZE ============================ -->
+  <section id="tab-organize" class="tab-page">
+    <div class="cpo-head">
+      <div class="cpo-eyebrow">Project cleanup</div>
+      <h2 class="cpo-title">One-click organizer</h2>
+      <p class="cpo-desc">Sorts your whole project into tidy folders by type.</p>
+    </div>
+    <button id="cpo-run" class="cpo-run" type="button"><span class="cpo-spinner"></span>Organize project</button>
+    <div id="cpo-status" class="cpo-status"></div>
+    <section id="cpo-results" class="cpo-results"></section>
+  </section>
+
+  <!-- ============================ SAFE ZONE ============================ -->
+  <section id="tab-safezone" class="tab-page">
+    <div class="step-head"><span class="step-title">🛟 Safe zone &amp; branding</span>
+      <button class="info" type="button" data-info="sz-info" aria-label="How it works">ⓘ</button></div>
+    <div class="info-pop hidden" id="sz-info">Adds one see-through guide on a new top video track. Switch that track's eye on and off while you line things up, then hide or delete it before you export. Your branding (logo / title) is meant to stay.</div>
+
+    <!-- live preview of the frame with guides + branding -->
+    <div id="sz-preview-wrap" class="sz-preview-wrap"><canvas id="sz-canvas"></canvas></div>
+
+    <!-- MODE: Safe zones (platform UI) vs Custom (grid builder) -->
+    <div class="seg-control" id="sz-mode" style="margin-bottom:8px">
+      <button data-mode="safezones" class="on" type="button">Safe zones</button>
+      <button data-mode="custom" type="button">Custom</button>
+    </div>
+
+    <!-- ===== Safe zones panel ===== -->
+    <div id="sz-panel-safezones">
+      <p class="hint" style="margin:0 0 6px">Shows where each app's buttons cover your video.</p>
+      <div class="seg-control" id="sz-platform" style="margin-bottom:8px">
+        <button data-pf="none" type="button">None</button>
+        <button data-pf="tiktok" type="button">TikTok</button>
+        <button data-pf="reels" class="on" type="button">Reels</button>
+        <button data-pf="shorts" type="button">Shorts</button>
+      </div>
+      <label class="sz-check"><input type="checkbox" id="sz-also-custom"> Also show my grid</label>
+    </div>
+
+    <!-- ===== Custom grid builder panel ===== -->
+    <div id="sz-panel-custom" class="hidden">
+      <span class="field-label" style="margin:0 0 4px">Grid</span>
+      <div class="grid2">
+        <div class="sz-num"><span>Rows</span><input id="sz-rows" type="number" min="0" max="12" value="3"></div>
+        <div class="sz-num"><span>Columns</span><input id="sz-cols" type="number" min="0" max="12" value="3"></div>
+        <div class="sz-num"><span>Margins %</span><input id="sz-margin" type="number" min="0" max="40" value="5"></div>
+        <div class="sz-num"><span>Gap %</span><input id="sz-gutter" type="number" min="0" max="20" value="0"></div>
+      </div>
+      <span class="field-label" style="margin:4px 0 2px">Guides</span>
+      <div class="check-grid" style="margin-bottom:8px">
+        <label class="sz-check"><input type="checkbox" id="sz-ov-margin"> Margin box</label>
+        <label class="sz-check"><input type="checkbox" id="sz-ov-thirds" checked> Rule of thirds</label>
+        <label class="sz-check"><input type="checkbox" id="sz-ov-cross"> Center cross</label>
+        <label class="sz-check"><input type="checkbox" id="sz-ov-action"> Safe area (90%)</label>
+        <label class="sz-check"><input type="checkbox" id="sz-ov-title"> Text area (80%)</label>
+        <label class="sz-check"><input type="checkbox" id="sz-ov-diag"> Diagonals</label>
+      </div>
+    </div>
+
+    <!-- ===== Branding (kept, on top of the guide) ===== -->
+    <span class="field-label" style="margin:4px 0 0">Branding</span>
+    <div class="seg-control" id="sz-brandmode" style="margin-bottom:8px">
+      <button data-bm="none" type="button">None</button>
+      <button data-bm="custom" type="button">My branding</button>
+      <button data-bm="pulse" class="on" type="button">⚡ Pulse</button>
+    </div>
+    <div id="sz-custom-fields">
+      <div class="sz-row">
+        <button id="sz-logo-pick" class="chip-btn" type="button">🖼 Upload logo…</button>
+        <span id="sz-logo-name" class="dim">no logo — a circle badge is used</span>
+        <button id="sz-logo-clear" class="chip-btn hidden" type="button" aria-label="Remove logo">✕</button>
+      </div>
+      <input id="sz-channel" type="text" value="by aifloh" placeholder="Channel name (e.g. @aifloh)" maxlength="40" style="margin:6px 0">
+      <input id="sz-title" type="text" placeholder="Video title / hook" maxlength="80" style="margin:0 0 6px">
+      <label class="sz-check"><input type="checkbox" id="sz-handle" checked> Show my logo + channel row</label>
+      <span class="field-label" style="margin:4px 0 0">Title position</span>
+      <div class="seg-control" id="sz-titlepos" style="margin-bottom:6px">
+        <button data-tp="top" type="button">Top</button>
+        <button data-tp="center" type="button">Center</button>
+        <button data-tp="bottom" class="on" type="button">Bottom</button>
+      </div>
+    </div>
+
+    <!-- ===== the guide on the timeline ===== -->
+    <label style="margin-top:4px">Guide strength <span class="val" id="sz-op-val">70%</span>
+      <input type="range" id="sz-opacity" min="10" max="100" value="70">
+    </label>
+
+    <span class="field-label" style="margin:0 0 0">Length</span>
+    <div class="seg-control" id="sz-dur" style="margin-bottom:8px">
+      <button data-d="3" type="button">3s</button>
+      <button data-d="5" type="button">5s</button>
+      <button data-d="full" class="on" type="button">Whole clip</button>
+    </div>
+
+    <label class="sz-check" style="margin-bottom:4px"><input type="checkbox" id="sz-replace" checked> Replace my old guide</label>
+    <p class="hint" style="margin:4px 0 0">Hide the guide track before you export.</p>
+    <div id="sz-progress" class="progress hidden"></div>
+
+    <div class="sz-row page-actions">
+      <button id="sz-apply" class="hero-btn" type="button">➕ Add guide to timeline</button>
+      <button id="sz-remove" class="chip-btn" type="button">Remove</button>
+    </div>
+  </section>
+
+  <!-- Transcript editor: fix wording / delete junk / merge lines — an overlay
+       over whichever page opened it -->
+  <div id="tr-editor" class="tr-editor hidden">
+    <div class="tre-card">
+      <div class="tre-head">
+        <b id="tre-title">✏️ Review &amp; edit the words</b>
+        <span class="spacer"></span>
+        <button id="tre-cancel" class="chip-btn">Cancel</button>
+        <button id="tre-save" class="hero-btn small">Save</button>
+      </div>
+      <p class="hint" style="margin:6px 0 0">Fix a word, delete a line (✕), merge up (⤴) or add one (＋). <button class="info" type="button" data-info="tre-info" aria-label="More">ⓘ</button></p>
+      <div class="info-pop hidden" id="tre-info">A ⚠️ banner marks any stretch the transcriber skipped — tap <b>＋ Add missing line</b> there and type what was said.</div>
+      <div id="tre-list" class="tre-list"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- ⌘K command palette -->
+  <div id="cmdk" class="cmdk hidden">
+    <div class="cmdk-box">
+      <input id="cmdk-input" type="text" autocomplete="off" placeholder="Type a command…  (captions · clean up · cameras · chapters)">
+      <ul id="cmdk-list" class="cmdk-list"></ul>
+      <div class="cmdk-foot">↑ ↓ to move · ↵ to run · esc to close</div>
+    </div>
+  </div>
+
+  <script src="js/lib/cep-bridge.js?v=v0.10.2"></script>
+  <script src="js/silence.js?v=v0.10.2"></script>
+  <script src="js/audio.js?v=v0.10.2"></script>
+  <script src="js/captions.js?v=v0.10.2"></script>
+  <script src="js/ass.js?v=v0.10.2"></script>
+  <script src="js/render.js?v=v0.10.2"></script>
+  <script src="js/multicam.js?v=v0.10.2"></script>
+  <script src="js/sfx.js?v=v0.10.2"></script>
+  <script src="js/takes.js?v=v0.10.2"></script>
+  <script src="js/smartedit.js?v=v0.10.2"></script>
+  <script src="js/apierr.js?v=v0.10.2"></script>
+  <script src="js/verbatim.js?v=v0.10.2"></script>
+  <script src="js/reframe.js?v=v0.10.2"></script>
+  <script src="js/scriptalign.js?v=v0.10.2"></script>
+  <script src="js/transcript.js?v=v0.10.2"></script>
+  <script src="js/fonts.js?v=v0.10.2"></script>
+  <script src="js/command.js?v=v0.10.2"></script>
+  <script src="js/chapters.js?v=v0.10.2"></script>
+  <script src="js/align.js?v=v0.10.2"></script>
+  <script src="js/main.js?v=v0.10.2"></script>
+  <script src="js/organize.js?v=v0.10.2"></script>
+  <script src="js/safezone.js?v=v0.10.2"></script>
+</body>
+</html>

@@ -1,0 +1,4131 @@
+/*
+ * Pulse — ExtendScript host (runs inside Premiere Pro).
+ * All entry points are CP_* functions that take a single JSON string and
+ * return a JSON string shaped {ok:true, ...} or {ok:false, error:"..."}.
+ *
+ * ExtendScript is ES3 and has no JSON object — a minimal polyfill is below.
+ * The QE DOM (app.enableQE) is undocumented but is the only way to razor
+ * and ripple-delete; everything QE-based is wrapped defensively and the
+ * panel offers a fully supported "rebuild" mode as the safe default.
+ */
+
+/* eslint-disable */
+
+var CP_TICKS_PER_SECOND = 254016000000; // Premiere's fixed tick rate
+
+// ---------------------------------------------------------------- JSON ----
+if (typeof JSON === 'undefined') { JSON = {}; }
+if (typeof JSON.stringify !== 'function') {
+  JSON.stringify = function (v) {
+    function esc(s) {
+      return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+              .replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
+    }
+    function go(x) {
+      var i, k, parts;
+      if (x === null || x === undefined) return 'null';
+      var t = typeof x;
+      if (t === 'number') return isFinite(x) ? String(x) : 'null';
+      if (t === 'boolean') return String(x);
+      if (t === 'string') return '"' + esc(x) + '"';
+      if (x instanceof Array) {
+        parts = [];
+        for (i = 0; i < x.length; i++) parts.push(go(x[i]));
+        return '[' + parts.join(',') + ']';
+      }
+      parts = [];
+      for (k in x) {
+        if (x.hasOwnProperty(k) && typeof x[k] !== 'function') {
+          parts.push('"' + esc(k) + '":' + go(x[k]));
+        }
+      }
+      return '{' + parts.join(',') + '}';
+    }
+    return go(v);
+  };
+}
+if (typeof JSON.parse !== 'function') {
+  JSON.parse = function (s) {
+    // Data only ever comes from our own panel, never from outside sources.
+    return eval('(' + s + ')');
+  };
+}
+
+// ------------------------------------------------------------- helpers ----
+function CP_ok(obj) {
+  obj = obj || {};
+  obj.ok = true;
+  return JSON.stringify(obj);
+}
+
+function CP_fail(msg) {
+  return JSON.stringify({ ok: false, error: String(msg) });
+}
+
+function CP_timeFromSeconds(sec) {
+  var t = new Time();
+  t.seconds = sec;
+  return t;
+}
+
+function CP_ticksFromSeconds(sec) {
+  return String(Math.round(sec * CP_TICKS_PER_SECOND));
+}
+
+function CP_activeSequence() {
+  if (!app.project || !app.project.activeSequence) {
+    throw new Error('No active sequence. Open a sequence in the timeline first.');
+  }
+  return app.project.activeSequence;
+}
+
+function CP_sequenceFps(seq) {
+  // seq.timebase is ticks-per-frame as a string
+  var tb = parseFloat(seq.timebase);
+  if (!tb || tb <= 0) return 25;
+  return CP_TICKS_PER_SECOND / tb;
+}
+
+/* Current timeline playhead position, in seconds. Lets the panel target the one
+   caption the user parked the playhead on, for a single-line text fix. */
+function CP_getPlayheadSeconds() {
+  try {
+    var seq = CP_activeSequence();
+    var s = null;
+    try { s = seq.getPlayerPosition().seconds; } catch (eP) {}
+    if (s == null || isNaN(s)) return CP_fail('Could not read the playhead position.');
+    return CP_ok({ seconds: s });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/* Format seconds as a QE-compatible timecode string.
+   Drop-frame (29.97 / 59.94 DF) uses real SMPTE drop-frame numbering: the
+   frame labels 0 and 1 (0-3 at 59.94) are skipped at the start of every
+   minute except each tenth. The old code counted frames non-drop and only
+   swapped ':' for ';', so a DF razor landed early — 0.6 s at 10 min, 3.6 s
+   at 1 h — and clipped words in long podcasts. DF only exists at 29.97 and
+   59.94; at any other rate the timecode is non-drop. */
+function CP_timecode(sec, fps, dropFrame) {
+  var sep = ':';
+  var totalFrames = Math.round(sec * fps);
+  var fRate = Math.round(fps);
+  if (dropFrame && (fRate === 30 || fRate === 60) && Math.abs(fps - fRate) > 0.001) {
+    sep = ';';
+    var drop = (fRate === 60) ? 4 : 2;
+    var per10 = Math.round(fps * 600);          // real frames in ten minutes (17982 @29.97)
+    var perMin = fRate * 60 - drop;              // labels used in a dropped minute (1798)
+    var d10 = Math.floor(totalFrames / per10), m10 = totalFrames % per10;
+    totalFrames += drop * 9 * d10 + (m10 > drop ? drop * Math.floor((m10 - drop) / perMin) : 0);
+  }
+  var ff = totalFrames % fRate;
+  var totalSec = Math.floor(totalFrames / fRate);
+  var ss = totalSec % 60;
+  var mm = Math.floor(totalSec / 60) % 60;
+  var hh = Math.floor(totalSec / 3600);
+  function p(n) { return (n < 10 ? '0' : '') + n; }
+  return p(hh) + sep + p(mm) + sep + p(ss) + sep + p(ff);
+}
+
+// -------------------------------------------------------------- probes ----
+function CP_ping() {
+  return CP_ok({ app: app.appName, version: app.version });
+}
+
+function CP_getEnv() {
+  try {
+    var seq = CP_activeSequence();
+    var fps = CP_sequenceFps(seq);
+    return CP_ok({
+      projectName: app.project.name,
+      sequenceName: seq.name,
+      fps: fps,
+      width: seq.frameSizeHorizontal,
+      height: seq.frameSizeVertical,
+      // PIXEL ASPECT RATIO. Captions are rendered as square-pixel PNGs sized to
+      // the frame, which is right for PAR 1.0 (every modern 16:9 / 9:16
+      // sequence). An anamorphic sequence — HDV 1440x1080 at 1.333, DV at 1.2 —
+      // displays those pixels stretched, so the text would come out wider than
+      // drawn. That case is NOT handled; report the number so a diagnostic can
+      // say so plainly instead of the captions just looking wrong.
+      pixelAspect: (function () {
+        try {
+          var st = seq.getSettings ? seq.getSettings() : null;
+          var par = st && (st.videoPixelAspectRatio || st.videoPixelaspectratio);
+          return par ? parseFloat(par) : 1;
+        } catch (ePar) { return 1; }
+      })(),
+      videoTracks: seq.videoTracks.numTracks,
+      audioTracks: seq.audioTracks.numTracks,
+      endSeconds: parseFloat(seq.end) / CP_TICKS_PER_SECOND
+    });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/*
+ * Find the first selected clip in the active sequence (video first, then
+ * audio) and return everything the panel needs to map media-relative
+ * silence times onto the sequence.
+ */
+function CP_getSelectedClip() {
+  try {
+    var seq = CP_activeSequence();
+    var found = null;
+    var groups = [seq.videoTracks, seq.audioTracks];
+    for (var g = 0; g < groups.length && !found; g++) {
+      for (var t = 0; t < groups[g].numTracks && !found; t++) {
+        var track = groups[g][t];
+        for (var i = 0; i < track.clips.numItems; i++) {
+          var clip = track.clips[i];
+          if (clip.isSelected()) {
+            var pItem = clip.projectItem;
+            found = {
+              name: clip.name,
+              mediaPath: pItem ? pItem.getMediaPath() : null,
+              trackType: g === 0 ? 'video' : 'audio',
+              trackIndex: t,
+              seqStart: clip.start.seconds,
+              seqEnd: clip.end.seconds,
+              inPoint: clip.inPoint.seconds,
+              outPoint: clip.outPoint.seconds,
+              nodeId: pItem ? pItem.nodeId : null
+            };
+            break;
+          }
+        }
+      }
+    }
+    if (!found) return CP_fail('No clip selected. Select the clip to analyze in the timeline.');
+    if (!found.mediaPath) return CP_fail('Selected clip has no media path (offline or synthetic clip).');
+    return CP_ok({ clip: found });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/*
+ * Pick the best clip to transcribe. The user often has a title/graphic
+ * (.aegraphic / .mogrt) selected, which has no audio — so we skip graphics and
+ * image stills, prefer the user's selection when it contains real A/V media,
+ * and otherwise fall back to the longest A/V clip in the sequence (the main
+ * talking clip). Returns the same shape as CP_getSelectedClip.
+ */
+function CP_getTranscribeSource(argsJson) {
+  try {
+    // opts.ignoreSelection: pick from ALL clips (the panel retries this way when
+    // the selected clip's media turns out to have no audio stream inside it);
+    // opts.excludeMediaPath: never re-pick the media that just failed the probe.
+    var opts = {};
+    try { if (argsJson) opts = JSON.parse(argsJson) || {}; } catch (eOp) {}
+    var seq = CP_activeSequence();
+    var bad = /\.(aegraphic|mogrt|prproj|psd|ai|png|jpe?g|gif|tiff?|svg|eps|bmp|webp|heic)$/i;
+    var selected = [], all = [];
+    // A NESTED SEQUENCE has no media path, so the old picker skipped the very
+    // clip holding the voice ("only one word gets transcribed"). Resolve the
+    // Sequence object behind a nested project item…
+    function seqForItem(pItem) {
+      if (!pItem) return null;
+      try { if (pItem.isSequence && !pItem.isSequence()) return null; } catch (eIs) {}
+      try {
+        var sqs = app.project.sequences;
+        for (var sI = 0; sI < sqs.numSequences; sI++) {
+          var cand = sqs[sI];
+          try {
+            if (cand && cand.projectItem && pItem.nodeId != null &&
+                String(cand.projectItem.nodeId) === String(pItem.nodeId)) return cand;
+          } catch (eCmp) {}
+        }
+      } catch (eSq) {}
+      return null;
+    }
+    // …and FLATTEN nests (depth-limited, cycle-guarded along the path) with
+    // exact time remapping: a voice recording jump-cut INSIDE a nest maps every
+    // piece back to where it plays on the MASTER timeline.
+    //   offset    = master-time where this window begins
+    //   winIn/Out = the slice of THIS sequence's own timeline that is visible
+    //   rate      = seconds of THIS sequence per master second (a nest sped to
+    //               120% runs 1.2)
+    // Speed counts (CP_clipSpeed, as the dead-air listing does): a reel clip at
+    // 120% plays 1.2 s of its recording per timeline second. Reading it as 1:1
+    // left the last sixth of the recording untranscribed and put every caption
+    // later and later behind the voice. Each piece carries `speed` = recording
+    // seconds per master second, so the panel maps words onto it exactly.
+    var reversedPieces = 0;
+    function collect(sq, offset, winIn, winOut, depth, pathIds, parentSel, rate, parentRev) {
+      if (!(rate > 0)) rate = 1;
+      if (!sq || depth > 4) return;
+      var idKey = null;
+      try { idKey = String(sq.sequenceID || sq.name || ''); } catch (eId) {}
+      if (idKey && pathIds[idKey]) return;             // a nest that contains itself
+      var childPath = {};
+      for (var pk in pathIds) { if (pathIds.hasOwnProperty(pk)) childPath[pk] = 1; }
+      if (idKey) childPath[idKey] = 1;
+      var groups = [sq.audioTracks, sq.videoTracks];   // audio first: most likely the voice
+      for (var g = 0; g < groups.length; g++) {
+        for (var t = 0; t < groups[g].numTracks; t++) {
+          var track = groups[g][t];
+          for (var i = 0; i < track.clips.numItems; i++) {
+            var clip = track.clips[i];
+            var st = clip.start.seconds, en = clip.end.seconds;
+            var visStart = st > winIn ? st : winIn;
+            var visEnd = en < winOut ? en : winOut;
+            if (visEnd - visStart <= 0.04) continue;   // outside the visible window
+            var ip = clip.inPoint.seconds, op = ip + (en - st);
+            try { op = clip.outPoint.seconds; } catch (eOp) {}
+            var sp = CP_clipSpeed(clip, ip, op, st, en);   // recording (or nest) s per s of THIS sequence
+            var rev = !!parentRev || CP_clipReversed(clip);
+            var isSel = parentSel;
+            try { isSel = parentSel || clip.isSelected(); } catch (eSel) {}
+            var pItem = clip.projectItem;
+            var mp = null;
+            try { mp = pItem ? pItem.getMediaPath() : null; } catch (eMp) {}
+            if (mp && !bad.test(mp)) {
+              if (opts.excludeMediaPath && mp === opts.excludeMediaPath) continue;
+              if (opts.onlyMediaPath && mp !== opts.onlyMediaPath) continue;
+              if (rev) { reversedPieces++; continue; }   // speech played backwards has no words to caption
+              var mIn = ip + (visStart - st) * sp, mOut = ip + (visEnd - st) * sp;
+              var sStart = offset + (visStart - winIn) / rate, sDur = (visEnd - visStart) / rate;
+              var rec = {
+                name: clip.name, mediaPath: mp,
+                trackType: g === 0 ? 'audio' : 'video', trackIndex: t,
+                seqStart: sStart, seqEnd: sStart + sDur,
+                inPoint: mIn, outPoint: mOut,
+                speed: sp * rate,
+                dur: sDur,
+                selected: isSel
+              };
+              all.push(rec);
+              if (rec.selected) selected.push(rec);
+            } else if (!mp) {
+              var inner = seqForItem(pItem);
+              if (inner) {
+                collect(inner, offset + (visStart - winIn) / rate,
+                        ip + (visStart - st) * sp, ip + (visEnd - st) * sp,
+                        depth + 1, childPath, isSel, rate * sp, rev);
+              }
+            }
+          }
+        }
+      }
+    }
+    collect(seq, 0, 0, 3600 * 100, 0, {}, false, 1, false);
+    if (!all.length && reversedPieces) return CP_fail('The clip with the voice plays in reverse, and speech played backwards has no words to caption. Turn off Reverse Speed on it (right-click ▸ Speed/Duration), then try again.');
+    if (!all.length) return CP_fail('No clip with audio found. Put your video or audio clip on the timeline, then try again.');
+    // Pick the media file by TOTAL COVERAGE, strongly preferring files that sit
+    // on AUDIO tracks. The old "longest single piece" rule broke jump-cut
+    // timelines: the voice is many SHORT pieces while one long b-roll/camera
+    // clip wins — its faint scratch audio passes the stream probe and Whisper
+    // transcribes near-silence into a single word.
+    var byMedia = {}, order = [], bk;
+    for (bk = 0; bk < all.length; bk++) {
+      var r0 = all[bk];
+      var bm = byMedia[r0.mediaPath];
+      if (!bm) { bm = byMedia[r0.mediaPath] = { total: 0, audioTotal: 0, onAudio: false, best: r0, selAny: false }; order.push(r0.mediaPath); }
+      bm.total += r0.dur;
+      if (r0.trackType === 'audio') { bm.audioTotal += r0.dur; bm.onAudio = true; }
+      if (r0.selected) bm.selAny = true;
+      if (r0.dur > bm.best.dur) bm.best = r0;
+    }
+    function pickPath(requireSel) {
+      var bestPath = null, bestTier = -1, bestScore = -1;
+      for (var oi = 0; oi < order.length; oi++) {
+        var bm2 = byMedia[order[oi]];
+        if (requireSel && !bm2.selAny) continue;
+        var tier = bm2.onAudio ? 1 : 0;                      // anything on an A-track outranks video-only media
+        var score = bm2.audioTotal * 2 + bm2.total;          // then: most on-screen coverage wins
+        if (tier > bestTier || (tier === bestTier && score > bestScore)) { bestTier = tier; bestScore = score; bestPath = order[oi]; }
+      }
+      return bestPath;
+    }
+    var useSel = (!opts.ignoreSelection && selected.length > 0);
+    var mainPath = (useSel ? pickPath(true) : null) || pickPath(false);
+    var main = byMedia[mainPath].best;
+    // Every timeline piece that uses the SAME source media — so a recording cut
+    // into jump-cuts is transcribed in full and each piece mapped back to where
+    // it sits on the timeline (music/b-roll on other files are excluded).
+    // DEDUPE overlapping copies: a LINKED clip contributes the same media range
+    // TWICE (its video piece + its audio piece), and every caption line was
+    // then placed once per copy — "same text 2 times". Same mapping → union;
+    // different mapping (slipped/nudged audio) → the AUDIO-track copy wins
+    // (audio pieces are collected first — they are what actually plays). Only
+    // true jump-cut pieces (disjoint media ranges) stay separate.
+    var instances = [];
+    for (var k = 0; k < all.length; k++) {
+      if (all[k].mediaPath !== main.mediaPath) continue;
+      var cnd = all[k], dup = false;
+      for (var m2 = 0; m2 < instances.length; m2++) {
+        var ex = instances[m2];
+        var ovl = (ex.outPoint < cnd.outPoint ? ex.outPoint : cnd.outPoint) -
+                  (ex.inPoint > cnd.inPoint ? ex.inPoint : cnd.inPoint);
+        if (ovl > 0.1) {
+          // the same mapping = the same speed and the recording's zero landing
+          // at the same master time
+          var offEx = ex.seqStart - ex.inPoint / ex.speed, offC = cnd.seqStart - cnd.inPoint / cnd.speed;
+          var dSp = ex.speed - cnd.speed;
+          if (offEx - offC < 0.05 && offC - offEx < 0.05 && dSp < 0.001 && dSp > -0.001) {
+            // identical mapping (the linked pair) → merge into one window
+            if (cnd.inPoint < ex.inPoint) { ex.seqStart -= (ex.inPoint - cnd.inPoint) / ex.speed; ex.inPoint = cnd.inPoint; }
+            if (cnd.outPoint > ex.outPoint) ex.outPoint = cnd.outPoint;
+          }
+          dup = true; break;   // slipped copy: the earlier (audio-first) one stays
+        }
+      }
+      if (!dup) instances.push({ inPoint: cnd.inPoint, outPoint: cnd.outPoint, seqStart: cnd.seqStart, speed: cnd.speed });
+    }
+    return CP_ok({ clip: main, instances: instances, fromSelection: selected.length > 0, candidates: all.length });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+function CP_getProjectInfo() {
+  try {
+    return CP_ok({ name: app.project.name, path: app.project.path });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/* Save the project (needed before importing external media/MOGRTs reliably).
+   If it was never saved, report needsSaveAs so the panel can ask the user. */
+function CP_saveProject() {
+  try {
+    if (!app.project.path) return CP_ok({ saved: false, needsSaveAs: true });
+    app.project.save();
+    return CP_ok({ saved: true, path: app.project.path });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/* Scan the project for already-imported caption files (.srt/.vtt). */
+function CP_findProjectSrts() {
+  try {
+    var hits = [];
+    function walk(bin) {
+      for (var i = 0; i < bin.children.numItems; i++) {
+        var child = bin.children[i];
+        if (child.type === 2 /* BIN */) { walk(child); continue; }
+        var mp = null;
+        try { mp = child.getMediaPath(); } catch (eMp) {}
+        if (mp && /\.(srt|vtt)$/i.test(mp)) {
+          hits.push({ name: child.name, path: mp, nodeId: child.nodeId });
+        }
+      }
+    }
+    walk(app.project.rootItem);
+    return CP_ok({ items: hits });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/*
+ * List the Motion Graphics Templates already installed in Premiere.
+ * Folder.userData resolves to the right place on both platforms:
+ *   macOS:   ~/Library/Application Support
+ *   Windows: C:\Users\<user>\AppData\Roaming
+ * so the templates live in <userData>/Adobe/Common/Motion Graphics Templates.
+ * Recurses into subfolders (users organize templates into categories),
+ * capped for safety.
+ */
+function CP_findInstalledMogrts() {
+  try {
+    var roots = [];
+    var common = new Folder(Folder.userData.fsName + '/Adobe/Common/Motion Graphics Templates');
+    if (common.exists) roots.push(common);
+    // Some installs also keep a per-version Essential Graphics cache.
+    var docs = new Folder(Folder.myDocuments.fsName + '/Adobe/Motion Graphics Templates');
+    if (docs.exists) roots.push(docs);
+
+    var hits = [];
+    var MAX = 600;
+    function walk(folder, depth) {
+      if (depth > 5 || hits.length >= MAX) return;
+      var entries = folder.getFiles();
+      for (var i = 0; i < entries.length && hits.length < MAX; i++) {
+        var e = entries[i];
+        if (e instanceof Folder) {
+          walk(e, depth + 1);
+        } else if (/\.mogrt$/i.test(e.name)) {
+          var cat = decodeURIComponent(folder.name);
+          hits.push({
+            name: decodeURIComponent(e.name).replace(/\.mogrt$/i, ''),
+            category: cat,
+            path: e.fsName
+          });
+        }
+      }
+    }
+    for (var r = 0; r < roots.length; r++) walk(roots[r], 0);
+
+    hits.sort(function (a, b) {
+      if (a.category === b.category) return a.name < b.name ? -1 : 1;
+      return a.category < b.category ? -1 : 1;
+    });
+    return CP_ok({ items: hits, scanned: roots.length });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+// ------------------------------------------------------------- markers ----
+/*
+ * Dry-run: drop a sequence marker over every detected silence so the user
+ * can audition before cutting. argsJson: {ranges:[{start,end}], label}
+ */
+function CP_addMarkers(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+    var n = 0;
+    for (var i = 0; i < args.ranges.length; i++) {
+      var r = args.ranges[i];
+      var m = seq.markers.createMarker(r.start);
+      m.name = (args.names && args.names[i]) ? args.names[i] : ((args.label || 'Silence') + ' ' + (i + 1));
+      m.end = r.end;
+      try { m.setColorByIndex(1); } catch (eColor) {}
+      n++;
+    }
+    return CP_ok({ created: n });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+function CP_clearPulseMarkers(argsJson) {
+  try {
+    var args = JSON.parse(argsJson || '{}');
+    var label = args.label || 'Silence';
+    var seq = CP_activeSequence();
+    var doomed = [];
+    var m = seq.markers.getFirstMarker();
+    while (m) {
+      if (m.name && m.name.indexOf(label) === 0) doomed.push(m);
+      m = seq.markers.getNextMarker(m);
+    }
+    for (var i = 0; i < doomed.length; i++) seq.markers.deleteMarker(doomed[i]);
+    return CP_ok({ removed: doomed.length });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+// ------------------------------------------------------------- backups ----
+function CP_backupSequence() {
+  try {
+    var seq = CP_activeSequence();
+    seq.clone(); // duplicates the sequence in the project panel
+    return CP_ok({ backedUp: seq.name });
+  } catch (e) { return CP_fail('Could not clone sequence: ' + e.message); }
+}
+
+// -------------------------------------------------- in-place QE cutting ----
+function CP_qeSequence() {
+  app.enableQE();
+  var qseq = qe.project.getActiveSequence();
+  if (!qseq) throw new Error('QE could not access the active sequence.');
+  return qseq;
+}
+
+function CP_razorAllTracksAt(qseq, sec, fps, dropFrame) {
+  var tc = CP_timecode(sec, fps, dropFrame);
+  var t, track;
+  for (t = 0; t < qseq.numVideoTracks; t++) {
+    track = qseq.getVideoTrackAt(t);
+    try { track.razor(tc); } catch (e1) {}
+  }
+  for (t = 0; t < qseq.numAudioTracks; t++) {
+    track = qseq.getAudioTrackAt(t);
+    try { track.razor(tc); } catch (e2) {}
+  }
+}
+
+function CP_deleteClipsInRange(qseq, startSec, endSec, ripple) {
+  var eps = 0.001;
+  var removed = 0;
+  var groups = [
+    { count: qseq.numVideoTracks, get: function (i) { return qseq.getVideoTrackAt(i); } },
+    { count: qseq.numAudioTracks, get: function (i) { return qseq.getAudioTrackAt(i); } }
+  ];
+  for (var g = 0; g < groups.length; g++) {
+    for (var t = 0; t < groups[g].count; t++) {
+      var track = groups[g].get(t);
+      for (var i = track.numItems - 1; i >= 0; i--) {
+        var item = track.getItemAt(i);
+        if (!item) continue;
+        var s = item.start.secs, e = item.end.secs;
+        // Decide membership by the clip's MIDPOINT, not exact edges. track.razor()
+        // snaps each cut to the nearest FRAME (~33ms @30fps), so the isolated
+        // piece's start/end land a few ms outside the requested [start,end];
+        // the old "fully inside within 1ms" test then matched NOTHING, so the
+        // razor fired but the delete removed zero clips (repeated-take + in-place
+        // silence cuts silently did nothing). Razoring at both bounds isolates the
+        // target piece, so its midpoint is solidly inside the span while every
+        // kept neighbour's midpoint is outside — robust to frame snapping.
+        var mid = (s + e) / 2;
+        if (mid > startSec + eps && mid < endSec - eps) {
+          var isEmpty = (item.type === 'Empty');
+          try { item.remove(ripple ? 1 : 0, 0); if (!isEmpty) removed++; } catch (eRem) {}
+        }
+      }
+    }
+  }
+  return removed;
+}
+
+/* Merge overlapping or touching ranges so the razor/ripple never double-cuts the
+   same spot (overlaps were a source of stray gaps + abrupt cuts). */
+function CP_mergeRanges(ranges) {
+  var s = (ranges || []).slice().sort(function (a, b) { return a.start - b.start; });
+  var out = [];
+  for (var i = 0; i < s.length; i++) {
+    if (s[i].end - s[i].start <= 0.02) continue;
+    if (out.length && s[i].start <= out[out.length - 1].end + 0.04) {
+      out[out.length - 1].end = Math.max(out[out.length - 1].end, s[i].end);
+    } else {
+      out.push({ start: s[i].start, end: s[i].end });
+    }
+  }
+  return out;
+}
+
+// ------------------------------------------ cut guards (sequence identity) ----
+/* A stable identity for "the timeline Pulse listened to". */
+function CP_seqId(seq) {
+  try { if (seq && seq.sequenceID) return String(seq.sequenceID); } catch (e) {}
+  try { return 'name:' + seq.name; } catch (e2) {}
+  return '';
+}
+
+/* Is this sequence drop-frame? Premiere knows (videoDisplayFormat 102 =
+   29.97 DF, 106 = 59.94 DF); the manual Settings tick is only the fallback for
+   builds that don't report it. */
+function CP_seqDropFrame(seq, fallback) {
+  try {
+    var st = seq.getSettings ? seq.getSettings() : null;
+    var f = st ? st.videoDisplayFormat : null;
+    if (f === 102 || f === 106) return true;
+    if (typeof f === 'number' && f >= 100 && f <= 120) return false;
+  } catch (e) {}
+  return !!fallback;
+}
+
+/* The Sequence behind a nested-sequence clip's project item, or null. (The
+   same lookup CP_getTranscribeSource makes for the "only one word
+   transcribed" nest case: a nest has no media path, so it is found by the
+   node id of the sequence's own project item.) */
+function CP_nestedSeqOf(pItem) {
+  if (!pItem) return null;
+  try { if (pItem.isSequence && !pItem.isSequence()) return null; } catch (eIs) {}
+  try {
+    var sqs = app.project.sequences;
+    for (var i = 0; i < sqs.numSequences; i++) {
+      var cand = sqs[i];
+      try {
+        if (cand && cand.projectItem && pItem.nodeId != null && String(cand.projectItem.nodeId) === String(pItem.nodeId)) return cand;
+      } catch (eCmp) {}
+    }
+  } catch (eSq) {}
+  return null;
+}
+
+/* What one listing (or one cut check) has already read, so a nest razored
+   into hundreds of pieces is read ONCE, not once per piece: after one Clean
+   up, a 100-piece nest cost ~470,000 Premiere reads per listing and ~360,000
+   per cut check, which runs again before every cut.
+     seqOf — a project item's node id → the sequence behind it (or null);
+     fp    — a nested sequence's fingerprint;
+     nest  — a nested sequence's audio clips (CP_nestAudio). */
+function CP_cutMemo() { return { seqOf: {}, fp: {}, nest: {} }; }
+function CP_nestedSeqOfMemo(pItem, memo) {
+  var nid = null;
+  try { nid = (pItem && pItem.nodeId != null) ? 'n' + String(pItem.nodeId) : null; } catch (eId) {}
+  if (!memo || nid == null) return CP_nestedSeqOf(pItem);
+  if (!memo.seqOf.hasOwnProperty(nid)) memo.seqOf[nid] = CP_nestedSeqOf(pItem);
+  return memo.seqOf[nid];
+}
+
+/* The timeline's "shape": clip count, where every clip starts, and its end —
+   and the same for every sequence nested in it (depth-limited; each nested
+   sequence once, however many pieces of it the timeline holds), because the
+   dead-air plan is made from the audio INSIDE a nest too. If it differs from
+   what the analysis saw, the cut list no longer lines up with the audio and
+   must not be applied. A timeline without nests gives the same string as
+   before. */
+function CP_cutFingerprint(seq, depth, seen, memo) {
+  depth = depth || 0; seen = seen || {}; memo = memo || CP_cutMemo();
+  var n = 0, sum = 0, groups = [seq.videoTracks, seq.audioTracks], nests = '', done = {};
+  var id = CP_seqId(seq);
+  seen[id] = 1;
+  for (var g = 0; g < groups.length; g++) {
+    for (var t = 0; t < groups[g].numTracks; t++) {
+      var clips = groups[g][t].clips, k = clips.numItems;
+      n += k;
+      for (var i = 0; i < k; i++) {
+        var c = clips[i];
+        try { sum += Math.round(c.start.seconds * 1000); } catch (e) {}
+        if (depth >= 4) continue;
+        var pi = null; try { pi = c.projectItem; } catch (eP) {}
+        var mp = null; try { mp = pi ? pi.getMediaPath() : null; } catch (eM) {}
+        if (mp) continue;
+        var inner = null; try { inner = CP_nestedSeqOfMemo(pi, memo); } catch (eN) {}
+        var iid = inner ? CP_seqId(inner) : '';
+        if (inner && !seen[iid] && !done[iid]) {
+          done[iid] = 1;
+          var fk = iid + '@' + depth;
+          if (!memo.fp.hasOwnProperty(fk)) {
+            var sub = {}; for (var sk in seen) { if (seen.hasOwnProperty(sk)) sub[sk] = 1; }
+            memo.fp[fk] = CP_cutFingerprint(inner, depth + 1, sub, memo);
+          }
+          nests += '|[' + memo.fp[fk] + ']';
+        }
+      }
+    }
+  }
+  var end = '';
+  try { end = String(seq.end); } catch (eE) {}
+  return n + '|' + sum + '|' + end + nests;
+}
+
+function CP_trackIs(track, fn) {
+  try { return !!(track && typeof track[fn] === 'function' && track[fn]()); } catch (e) { return false; }
+}
+
+/* Media seconds played per timeline second: Premiere's own number when it
+   reports one, else what the media span vs the timeline span says. A 120%
+   reel clip plays 1.2 s of media per second of timeline — ignoring that put
+   cuts on the wrong words and even onto the next clip. */
+function CP_clipSpeed(c, ip, op, st, en) {
+  var speed = null;
+  try { if (typeof c.getSpeed === 'function') speed = parseFloat(c.getSpeed()); } catch (eSp) {}
+  if (speed && speed > 20) speed = speed / 100;                    // reported as a percentage
+  if (!(speed > 0)) speed = (op > ip && en > st) ? (op - ip) / (en - st) : 1;
+  return speed;
+}
+function CP_clipReversed(c) { try { return typeof c.isSpeedReversed === 'function' && !!c.isSpeedReversed(); } catch (eR) { return false; } }
+function CP_clipDisabled(c) { try { return !!c.disabled; } catch (eD) { return false; } }
+
+var CP_NOT_A_MIC = /\.(aegraphic|mogrt|prproj|psd|ai|png|jpe?g|gif|tiff?|svg|eps|bmp|webp|heic)$/i;
+
+/* A nested sequence's audio clips as plain values, read from Premiere ONCE
+   per listing (memo.nest) and sorted by start: [{ lab, name, muted, clips:
+   [{ s2, e2, mp, ip2, op2, sp2, rev, dis, name, nodeId, inner }] }] (inner =
+   the sequence behind a nest inside the nest). Every piece of a razored nest
+   then just looks up the few clips its window shows. */
+function CP_nestAudio(sq, memo) {
+  var id = CP_seqId(sq);
+  if (memo && memo.nest.hasOwnProperty(id)) return memo.nest[id];
+  var out = [], aTracks = sq.audioTracks;
+  for (var t = 0; t < aTracks.numTracks; t++) {
+    var track = aTracks[t], lab = 'A' + (t + 1);
+    var at = { lab: lab, name: (track && track.name && String(track.name) !== lab) ? String(track.name) : lab,
+               muted: CP_trackIs(track, 'isMuted'), clips: [] };
+    var clips = track.clips, n = clips.numItems;
+    for (var i = 0; i < n; i++) {
+      var c = clips[i];
+      var s2 = c.start.seconds, e2 = c.end.seconds;
+      if (!(e2 - s2 > 0.01)) continue;
+      var pi = null; try { pi = c.projectItem; } catch (eP) {}
+      var mp = null; try { mp = pi ? pi.getMediaPath() : null; } catch (eM) {}
+      if (mp && CP_NOT_A_MIC.test(mp)) continue;
+      var ip2 = 0, op2 = 0; try { ip2 = c.inPoint.seconds; op2 = c.outPoint.seconds; } catch (eIO) {}
+      var nid = null; try { nid = (pi && pi.nodeId != null) ? String(pi.nodeId) : null; } catch (eN) {}
+      at.clips.push({ s2: s2, e2: e2, mp: mp, ip2: ip2, op2: op2, sp2: CP_clipSpeed(c, ip2, op2, s2, e2),
+                      rev: CP_clipReversed(c), dis: CP_clipDisabled(c), name: String(c.name), nodeId: nid,
+                      inner: mp ? null : CP_nestedSeqOfMemo(pi, memo) });
+    }
+    at.clips.sort(function (a, b) { return a.s2 - b.s2; });
+    out.push(at);
+  }
+  if (memo) memo.nest[id] = out;
+  return out;
+}
+/* Index of the first clip (sorted by start, never overlapping on one track)
+   that ends after time t. */
+function CP_firstEndingAfter(clips, t) {
+  var lo = 0, hi = clips.length;
+  while (lo < hi) { var mid = (lo + hi) >> 1; if (clips[mid].e2 <= t) lo = mid + 1; else hi = mid; }
+  return lo;
+}
+
+/*
+ * The audio INSIDE a nested sequence, mapped to where it plays on the master
+ * timeline — a nest (or a multicam source) has no media file of its own, so
+ * the old list gave it mediaPath null and nothing under it was ever cut, with
+ * "already tight". win = { st, en: master span of the nest clip, inT: the
+ * nested sequence's time at st, sp: its seconds per master second, muted,
+ * dis, rev }. Every inner audio track becomes one entry of `tracks`
+ * (keyed, so the pieces of a razored nest land on the same one). Nests inside
+ * nests are followed (depth ≤ 4, never into a sequence already on the path).
+ * The nest's clips are read once per listing (memo), not once per piece.
+ */
+function CP_cutNestTracks(sq, win, depth, seen, key, label, name, tracks, order, memo) {
+  if (!sq || depth > 4) return;
+  var id = CP_seqId(sq);
+  if (seen[id]) return;
+  var path = {}; for (var pk in seen) { if (seen.hasOwnProperty(pk)) path[pk] = 1; }
+  path[id] = 1;
+  var winOut = win.inT + (win.en - win.st) * win.sp;
+  var aTracks = CP_nestAudio(sq, memo);
+  for (var t = 0; t < aTracks.length; t++) {
+    var at = aTracks[t], lab = at.lab;
+    var tKey = key + '/' + id + '/' + lab;
+    var tName = name + ' › ' + at.name;
+    var tMuted = win.muted || at.muted;
+    var clips = at.clips;
+    for (var i = CP_firstEndingAfter(clips, win.inT); i < clips.length; i++) {
+      var c = clips[i];
+      if (c.s2 >= winOut) break;                       // past what the nest clip shows
+      var s2 = c.s2, e2 = c.e2;
+      var vs = s2 > win.inT ? s2 : win.inT, ve = e2 < winOut ? e2 : winOut;
+      if (!(ve - vs > 0.01)) continue;                 // outside what the nest clip shows
+      var ip2 = c.ip2, sp2 = c.sp2;
+      var mSt = win.st + (vs - win.inT) / win.sp, mEn = win.st + (ve - win.inT) / win.sp;
+      var rev = win.rev || c.rev, dis = win.dis || c.dis;
+      if (c.inner) {
+        CP_cutNestTracks(c.inner, { st: mSt, en: mEn, inT: ip2 + (vs - s2) * sp2, sp: sp2 * win.sp, muted: tMuted, dis: dis, rev: rev },
+                         depth + 1, path, tKey, label, tName + ' › ' + c.name, tracks, order, memo);
+        continue;
+      }
+      var tr = tracks[tKey];
+      if (!tr) { tr = tracks[tKey] = { label: label, key: tKey, name: tName, muted: tMuted, items: [], clips: 0, nested: name }; order.push(tKey); }
+      tr.clips++;
+      tr.items.push({ name: c.name, mediaPath: c.mp, seqStart: mSt, seqEnd: mEn,
+                      inPoint: ip2 + (vs - s2) * sp2, outPoint: ip2 + (ve - s2) * sp2,
+                      speed: sp2 * win.sp, reversed: rev, disabled: dis, selected: false, nested: name,
+                      nodeId: c.nodeId });
+    }
+  }
+}
+
+function CP_countNestItems(tracks, order) {
+  var n = 0;
+  for (var q = 0; q < order.length; q++) n += tracks[order[q]].items.length;
+  return n;
+}
+
+/*
+ * Everything the dead-air detector needs to listen to EVERY mic: each audio
+ * track's clips with their media file and exact media↔timeline mapping
+ * (speed included), whether the track is muted/locked, the selected span, and
+ * the sequence identity + fingerprint the cut is later checked against.
+ * A nested sequence on an audio track is opened up: each of ITS audio tracks
+ * is listed as a track of its own ({ label: 'A1', key, name: 'Nest › A2',
+ * nested }) holding its clips mapped to the master timeline. The cut itself
+ * still razors the nest clip on the master timeline, whole.
+ */
+function CP_getCutSources(argsJson) {
+  try {
+    var seq = CP_activeSequence();
+    var bad = CP_NOT_A_MIC, memo = CP_cutMemo();
+    var out = { sequenceId: CP_seqId(seq), sequenceName: seq.name, fps: CP_sequenceFps(seq),
+                fingerprint: CP_cutFingerprint(seq, 0, null, memo), audio: [], video: [], selection: null };
+    var selLo = null, selHi = null, masterId = CP_seqId(seq), seen = {};
+    seen[masterId] = 1;
+    for (var g = 0; g < 2; g++) {
+      var tracks = g === 0 ? seq.audioTracks : seq.videoTracks;
+      for (var t = 0; t < tracks.numTracks; t++) {
+        var track = tracks[t];
+        var tr = { index: t, name: (track && track.name) ? String(track.name) : ((g === 0 ? 'A' : 'V') + (t + 1)),
+                   muted: CP_trackIs(track, 'isMuted'), locked: CP_trackIs(track, 'isLocked'), items: [], clips: 0 };
+        var nestTracks = {}, nestOrder = [];
+        var clips = track.clips, k = clips.numItems;
+        for (var i = 0; i < k; i++) {
+          var c = clips[i];
+          var st = c.start.seconds, en = c.end.seconds;
+          if (!(en - st > 0.01)) continue;
+          tr.clips++;
+          var pi = null; try { pi = c.projectItem; } catch (eP) {}
+          var mp = null; try { mp = pi ? pi.getMediaPath() : null; } catch (eM) {}
+          var nest = mp ? null : CP_nestedSeqOfMemo(pi, memo);
+          var sel = false; try { sel = !!c.isSelected(); } catch (eS) {}
+          // only a selected real clip (or nest) narrows the clean-up — a
+          // caption, title or photo the owner last clicked must not shrink it
+          if (sel && ((mp && !bad.test(mp)) || nest)) { selLo = (selLo == null || st < selLo) ? st : selLo; selHi = (selHi == null || en > selHi) ? en : selHi; }
+          if (g !== 0) continue;
+          if (mp && bad.test(mp)) continue;
+          var ip = 0, op = 0; try { ip = c.inPoint.seconds; op = c.outPoint.seconds; } catch (eIO) {}
+          var speed = CP_clipSpeed(c, ip, op, st, en);
+          var rev = CP_clipReversed(c), dis = CP_clipDisabled(c);
+          if (nest && !seen[CP_seqId(nest)]) {
+            var had = CP_countNestItems(nestTracks, nestOrder);
+            CP_cutNestTracks(nest, { st: st, en: en, inT: ip, sp: speed, muted: false, dis: dis, rev: rev }, 1, seen,
+                             'A' + (t + 1), 'A' + (t + 1), String(c.name), nestTracks, nestOrder, memo);
+            if (CP_countNestItems(nestTracks, nestOrder) > had) continue;   // heard through its own tracks
+          }
+          tr.items.push({ name: String(c.name), mediaPath: mp, seqStart: st, seqEnd: en, inPoint: ip, outPoint: op,
+                          speed: speed, reversed: rev, disabled: dis, selected: sel,
+                          nodeId: (pi && pi.nodeId != null) ? String(pi.nodeId) : null });
+        }
+        if (g === 0) {
+          out.audio.push(tr);
+          for (var nq = 0; nq < nestOrder.length; nq++) {
+            var nt = nestTracks[nestOrder[nq]];
+            nt.index = t; nt.locked = tr.locked; nt.muted = nt.muted || tr.muted;
+            out.audio.push(nt);
+          }
+        } else out.video.push(tr);
+      }
+    }
+    if (selLo != null && selHi > selLo) out.selection = { start: selLo, end: selHi };
+    return CP_ok(out);
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/* Plain-language check before any edit: is this still the timeline the cut
+   list was made for? Returns an error string, or '' when it is safe.
+   args.flowName = the button the owner pressed ("Find the silences"…), so the
+   refusal names what to press again; without one it says so generally. */
+function CP_cutGuard(seq, args) {
+  var again = args.flowName ? 'press “' + args.flowName + '” again' : 'press the button you used again';
+  if (args.expectSequenceId && CP_seqId(seq) !== String(args.expectSequenceId)) {
+    return 'The timeline Pulse listened to' + (args.expectSequenceName ? ' (“' + args.expectSequenceName + '”)' : '') +
+      ' is not the one open now' + (seq && seq.name ? ' (“' + seq.name + '”)' : '') +
+      '. Nothing was cut — open that sequence again, or ' + again + ' on this one.';
+  }
+  if (args.expectFingerprint && CP_cutFingerprint(seq) !== String(args.expectFingerprint)) {
+    return 'The timeline changed after Pulse listened to it (clips were added, moved or removed), so the cut list no longer ' +
+      'lines up with your audio. Nothing was cut — ' + again + ' so Pulse listens to it as it is now.';
+  }
+  return '';
+}
+
+/* Every DOM track (video first) with a label like "V1" / "A2". */
+function CP_allTracks(seq) {
+  var out = [], groups = [seq.videoTracks, seq.audioTracks], pre = ['V', 'A'];
+  for (var g = 0; g < 2; g++) {
+    for (var t = 0; t < groups[g].numTracks; t++) {
+      var tr = groups[g][t];
+      out.push({ dom: tr, kind: g, index: t, label: pre[g] + (t + 1),
+                 name: (tr && tr.name) ? String(tr.name) : (pre[g] + (t + 1)) });
+    }
+  }
+  return out;
+}
+
+/* A track's clips, sorted by start: [{obj, start, end}]. */
+function CP_trackSnapshot(track) {
+  var out = [], clips = track.clips, n = clips.numItems;
+  for (var i = 0; i < n; i++) {
+    var c = clips[i];
+    if (!c) continue;
+    out.push({ obj: c, start: c.start.seconds, end: c.end.seconds });
+  }
+  out.sort(function (a, b) { return a.start - b.start; });
+  return out;
+}
+
+/* Seconds removed by the (sorted, disjoint) ranges before time t; a time
+   inside a range collapses onto that range's start. */
+function CP_removedBefore(ranges, t) {
+  var s = 0;
+  for (var i = 0; i < ranges.length; i++) {
+    if (ranges[i].start >= t) break;
+    s += Math.min(t, ranges[i].end) - ranges[i].start;
+  }
+  return s;
+}
+
+/* Move sequence markers with the edit: a marker after a cut slides left by the
+   removed time (Premiere's ripple never moves sequence markers, so chapters /
+   hook / beat markers drifted out of place). The orange "Silence" preview
+   markers describe the pauses that were just removed, so they are deleted. */
+function CP_shiftMarkers(seq, ranges, previewLabel) {
+  var res = { moved: 0, removed: 0 };
+  var markers = null;
+  try { markers = seq.markers; } catch (e0) {}
+  if (!markers || typeof markers.getFirstMarker !== 'function') return res;
+  var doomed = [], all = [], m = markers.getFirstMarker(), k;
+  function setT(mk, key, sec) {
+    try { var tt = new Time(); tt.seconds = sec; mk[key] = tt; } catch (e1) {}
+    try { if (Math.abs(mk[key].seconds - sec) > 0.0005) mk[key] = sec; } catch (e2) { try { mk[key] = sec; } catch (e3) {} }
+  }
+  // collect first, then edit — moving a marker must not change the walk
+  while (m) { all.push(m); m = markers.getNextMarker(m); }
+  for (k = 0; k < all.length; k++) {
+    m = all[k];
+    var nm = String(m.name || '');
+    if (previewLabel && nm.indexOf(previewLabel + ' ') === 0) doomed.push(m);
+    else {
+      var s = m.start.seconds, e = s;
+      try { e = m.end.seconds; } catch (eEnd) {}
+      var ns = s - CP_removedBefore(ranges, s), ne = e - CP_removedBefore(ranges, e);
+      if (Math.abs(ns - s) > 0.0005 || Math.abs(ne - e) > 0.0005) {
+        setT(m, 'start', ns);
+        setT(m, 'end', Math.max(ns, ne));
+        res.moved++;
+      }
+    }
+  }
+  for (var i = 0; i < doomed.length; i++) { try { markers.deleteMarker(doomed[i]); res.removed++; } catch (eD) {} }
+  return res;
+}
+
+/* How to get the timeline back after a cut that stopped half-way. Every
+   razor, lift and move is its own undo step — hundreds on a podcast — so the
+   backup copy made before cutting is the real way back; ⌘Z is the fallback. */
+function CP_undoAdvice(backup) {
+  if (backup) {
+    return 'Your untouched original is saved as “' + backup + '” in the Project panel — open it and carry on from there. ' +
+      '(⌘Z / Ctrl+Z also works, but it takes one press per edit.)';
+  }
+  return 'There is no backup copy (it was switched off), so undo with ⌘Z / Ctrl+Z — one press per edit — until the timeline is back.';
+}
+
+/*
+ * In-place dead-air / retake cutting, two-phase (the DeadAir approach, MIT):
+ *   1. razor EVERY track at every cut boundary (QE — the only razor there is);
+ *   2. lift (no ripple) every piece that lies inside a cut, on every track;
+ *   3. close the gaps by moving every clip on every track left by exactly the
+ *      time removed before it — the SAME offset on every track, so b-roll with
+ *      gaps, music, a second camera and every mic stay in sync. (The old
+ *      per-track ripple delete only moved tracks that had a piece inside the
+ *      cut: a sparse b-roll track barely moved and drifted seconds away.)
+ * Each phase is verified before the next one starts. If a track refuses a
+ * razor, Pulse stops before removing anything; if it refuses a lift, before
+ * anything moves — so a failure never leaves the timeline out of sync, and the
+ * error says exactly what happened. Locked tracks are refused up front.
+ * O(boundaries × tracks) host calls — the old loop re-walked every item on
+ * every track for every range (O(n²): 123,000 item reads for 200 cuts).
+ * argsJson: { ranges:[{start,end}] (sequence seconds), closeGaps:bool (default
+ *             true), backup:bool, dropFrame:bool (fallback when the sequence
+ *             doesn't report its timecode), expectSequenceId, expectSequenceName,
+ *             expectFingerprint, previewLabel }
+ */
+function CP_razorRipple(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+    var why = CP_cutGuard(seq, args);
+    if (why) return CP_fail(why);
+    var seqId = CP_seqId(seq);
+    var fps = CP_sequenceFps(seq), half = 0.5 / fps;
+    var df = CP_seqDropFrame(seq, !!args.dropFrame);
+    var closeGaps = args.closeGaps !== false;
+
+    // snap to the frame grid the razor uses, then merge (the remap the panel
+    // does afterwards uses exactly these numbers — no drift over many cuts)
+    var raw = CP_mergeRanges(args.ranges), ranges = [], i, j;
+    for (i = 0; i < raw.length; i++) {
+      var rs = Math.round(raw[i].start * fps) / fps, re = Math.round(raw[i].end * fps) / fps;
+      if (re - rs < 1 / fps - 1e-6) continue;
+      if (ranges.length && rs <= ranges[ranges.length - 1].end + 1e-6) {
+        if (re > ranges[ranges.length - 1].end) ranges[ranges.length - 1].end = re;
+      } else ranges.push({ start: rs, end: re });
+    }
+    if (!ranges.length) return CP_ok({ cuts: 0, removed: [], removedSeconds: 0, removedClips: 0, closedGaps: 0, tracks: [] });
+
+    var tracks = CP_allTracks(seq), tk, snap, c;
+    // locked tracks can't be cut — the others would move and they'd drift
+    var locked = [];
+    for (tk = 0; tk < tracks.length; tk++) {
+      if (!CP_trackIs(tracks[tk].dom, 'isLocked')) continue;
+      snap = CP_trackSnapshot(tracks[tk].dom);
+      for (c = 0; c < snap.length; c++) {
+        if (snap[c].end > ranges[0].start + half) { locked.push(tracks[tk].label + (tracks[tk].name !== tracks[tk].label ? ' (“' + tracks[tk].name + '”)' : '')); break; }
+      }
+    }
+    if (locked.length) {
+      return CP_fail('Track ' + locked.join(', ') + (locked.length > 1 ? ' are' : ' is') + ' locked, so Pulse can\'t cut ' +
+        (locked.length > 1 ? 'them' : 'it') + ' — everything else would move and ' + (locked.length > 1 ? 'they' : 'it') +
+        ' would drift out of sync. Unlock ' + (locked.length > 1 ? 'them' : 'it') + ' (the padlock on the track header) and try again. Nothing was cut.');
+    }
+    var apiOk = true;
+    for (tk = 0; tk < tracks.length && apiOk; tk++) {
+      snap = CP_trackSnapshot(tracks[tk].dom);
+      if (snap.length && (typeof snap[0].obj.remove !== 'function' || (closeGaps && typeof snap[0].obj.move !== 'function'))) apiOk = false;
+    }
+    if (!apiOk) return CP_fail('This Premiere version doesn\'t let Pulse remove or move clips, so Pulse can\'t cut here safely. Nothing was cut. ' +
+      'Updating Premiere Pro fixes this. (On a timeline with ONE clip and one mic, “✂ Remove silences (safe copy)” in the step-by-step tools still works.)');
+
+    // backup FIRST — and if it fails, do nothing (the confirm promised one)
+    var backup = null;
+    if (args.backup) {
+      var cloned, had = {}, q, sqs = null;
+      try { sqs = app.project.sequences; for (q = 0; q < sqs.numSequences; q++) had[CP_seqId(sqs[q])] = 1; } catch (eL) { sqs = null; }
+      try { cloned = seq.clone(); } catch (eB) { return CP_fail('Could not make the backup copy of your sequence (' + eB.message + '). Nothing was cut.'); }
+      if (cloned === false) return CP_fail('Premiere refused to make the backup copy of your sequence. Nothing was cut.');
+      // the copy's REAL name (the owner is told to open it if a cut goes
+      // wrong): the one sequence that was not there before the clone
+      backup = String(seq.name) + ' Copy';
+      try {
+        sqs = app.project.sequences;
+        for (q = 0; q < sqs.numSequences; q++) { if (!had[CP_seqId(sqs[q])]) { backup = String(sqs[q].name); break; } }
+      } catch (eL2) {}
+      var now = null; try { now = app.project.activeSequence; } catch (eN) {}
+      if (!now || CP_seqId(now) !== seqId) {
+        CP_activateSequence(seq);
+        try { now = app.project.activeSequence; } catch (eN2) {}
+        if (!now || CP_seqId(now) !== seqId) return CP_fail('Making the backup switched Premiere to another sequence, so Pulse stopped before cutting anything. Open “' + seq.name + '” and try again.');
+      }
+    }
+
+    // ---- phase 1: razor every track at every boundary -----------------------
+    var qseq = CP_qeSequence();
+    var qt = [];
+    for (i = 0; i < qseq.numVideoTracks; i++) qt.push(qseq.getVideoTrackAt(i));
+    for (i = 0; i < qseq.numAudioTracks; i++) qt.push(qseq.getAudioTrackAt(i));
+    var bounds = [];
+    for (i = 0; i < ranges.length; i++) { bounds.push(ranges[i].start); bounds.push(ranges[i].end); }
+    var tcs = [];
+    for (i = 0; i < bounds.length; i++) tcs.push(CP_timecode(bounds[i], fps, df));
+    for (tk = 0; tk < qt.length; tk++) {
+      for (i = 0; i < tcs.length; i++) { try { qt[tk].razor(tcs[i]); } catch (eRz) {} }
+    }
+    var bad = [];
+    tracks = CP_allTracks(seq);   // re-read: the razors changed every track
+    for (tk = 0; tk < tracks.length; tk++) {
+      snap = CP_trackSnapshot(tracks[tk].dom);
+      var bi = 0;
+      for (c = 0; c < snap.length; c++) {
+        while (bi < bounds.length && bounds[bi] <= snap[c].start + half) bi++;
+        if (bi < bounds.length && bounds[bi] < snap[c].end - half) { bad.push(tracks[tk].label); break; }
+      }
+    }
+    if (bad.length) {
+      return CP_fail('Premiere would not cut track ' + bad.join(', ') + ', so Pulse stopped before removing anything. Your timeline still plays ' +
+        'exactly as before — it only has extra cut lines in some clips, which change nothing you see or hear' +
+        (backup ? ' (your untouched original is also saved as “' + backup + '” in the Project panel)' : '') +
+        '. Check that the track isn\'t locked, then try again.');
+    }
+
+    // ---- phase 2: lift every piece inside a cut, on every track --------------
+    tracks = CP_allTracks(seq);
+    var perTrack = [], lifted = 0;
+    for (tk = 0; tk < tracks.length; tk++) {
+      snap = CP_trackSnapshot(tracks[tk].dom);
+      var doomed = [], ri = 0;
+      for (c = 0; c < snap.length; c++) {
+        var mid = (snap[c].start + snap[c].end) / 2;
+        while (ri < ranges.length && ranges[ri].end <= mid) ri++;
+        if (ri < ranges.length && mid > ranges[ri].start) doomed.push(snap[c]);
+      }
+      var n0 = snap.length;
+      for (j = doomed.length - 1; j >= 0; j--) { try { doomed[j].obj.remove(false, false); } catch (eRm) {} }
+      var after = CP_trackSnapshot(tracks[tk].dom);
+      perTrack.push({ track: tracks[tk].label, name: tracks[tk].name, lifted: n0 - after.length, moved: 0 });
+      lifted += Math.max(0, n0 - after.length);
+      ri = 0;
+      for (c = 0; c < after.length; c++) {
+        var mid2 = (after[c].start + after[c].end) / 2;
+        while (ri < ranges.length && ranges[ri].end <= mid2) ri++;
+        if (ri < ranges.length && mid2 > ranges[ri].start) { bad.push(tracks[tk].label); break; }
+      }
+    }
+    var removedSec = 0;
+    for (i = 0; i < ranges.length; i++) removedSec += ranges[i].end - ranges[i].start;
+    if (bad.length) {
+      return CP_fail('Premiere would not remove the cut pieces on track ' + bad.join(', ') + ', so Pulse stopped before moving anything — nothing is out of ' +
+        'sync, but the other tracks now have empty gaps where the pauses were. ' + CP_undoAdvice(backup));
+    }
+
+    // ---- phase 3: close the gaps — the same offset on every track -------------
+    tracks = CP_allTracks(seq);
+    var markers = { moved: 0, removed: 0 };
+    if (closeGaps) {
+      // what every track must look like afterwards: each clip at its target
+      // with its length unchanged — checked on EVERY track once all has moved
+      var all = [], expect = [];
+      for (tk = 0; tk < tracks.length; tk++) {
+        snap = CP_trackSnapshot(tracks[tk].dom);
+        var ex = [];
+        for (c = 0; c < snap.length; c++) {
+          var sh = CP_removedBefore(ranges, snap[c].start + half);
+          var goal = sh > half ? snap[c].start - sh : snap[c].start;
+          ex.push({ s: goal, e: goal + (snap[c].end - snap[c].start) });
+          if (sh > half) all.push({ obj: snap[c].obj, start: snap[c].start, target: goal, tk: tk, ord: all.length });
+        }
+        expect.push(ex);
+      }
+      // globally ascending by position, across ALL tracks: every clip lands in
+      // space already vacated, and a linked partner that Premiere moved along
+      // with its clip is simply found in place (delta 0) when its turn comes
+      all.sort(function (a, b) { return (a.start - b.start) || (a.ord - b.ord); });
+      for (i = 0; i < all.length; i++) {
+        var cur = all[i].obj.start.seconds, delta = all[i].target - cur;
+        if (Math.abs(delta) <= half) continue;
+        try { var mt = new Time(); mt.seconds = delta; all[i].obj.move(mt); perTrack[all[i].tk].moved++; } catch (eMv) {}
+      }
+      for (i = 0; i < all.length; i++) {
+        var got = null; try { got = all[i].obj.start.seconds; } catch (eG) {}
+        if (got == null || Math.abs(got - all[i].target) > half) {
+          var lb = tracks[all[i].tk].label, seen = false;
+          for (j = 0; j < bad.length; j++) if (bad[j] === lb) seen = true;
+          if (!seen) bad.push(lb);
+        }
+      }
+      if (bad.length) {
+        return CP_fail('Track ' + bad.join(', ') + ' did not move with the rest, so it is now OUT OF SYNC — Pulse will not report this cut as done. ' +
+          CP_undoAdvice(backup));
+      }
+      // every clip where it belongs AND as long as it was: a clip's start can
+      // be right while Premiere dragged a linked partner (a J/L cut) over it
+      // and shortened it, or dropped it — that is not the cut Pulse planned
+      var changed = [];
+      for (tk = 0; tk < tracks.length; tk++) {
+        snap = CP_trackSnapshot(tracks[tk].dom);
+        var want = expect[tk], same = snap.length === want.length;
+        for (c = 0; same && c < snap.length; c++) {
+          if (Math.abs(snap[c].start - want[c].s) > half || Math.abs(snap[c].end - want[c].e) > half) same = false;
+        }
+        if (!same) changed.push(tracks[tk].label);
+      }
+      if (changed.length) {
+        return CP_fail('On track ' + changed.join(', ') + ' Premiere shortened, moved or dropped a clip while closing the gaps, so the result is not the cut ' +
+          'Pulse planned — Pulse will not report this cut as done. ' + CP_undoAdvice(backup));
+      }
+      markers = CP_shiftMarkers(seq, ranges, args.previewLabel || 'Silence');
+    }
+
+    return CP_ok({ cuts: ranges.length, removed: ranges, removedSeconds: removedSec, removedClips: lifted,
+                   closedGaps: closeGaps ? ranges.length : 0, tracks: perTrack, backup: backup,
+                   markersMoved: markers.moved, previewMarkersRemoved: markers.removed, dropFrame: df });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+// ------------------------------------------------- safe rebuild cutting ----
+function CP_findProjectItemByNodeId(root, nodeId) {
+  if (nodeId == null) return null;
+  for (var i = 0; i < root.children.numItems; i++) {
+    var child = root.children[i];
+    if (String(child.nodeId) === String(nodeId)) return child;
+    if (child.type === 2 /* BIN */) {
+      var hit = CP_findProjectItemByNodeId(child, nodeId);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+/* Fallback lookup by media path — robust when the timeline clip's projectItem
+   nodeId doesn't match a bin item (merged clips, subclips, multicam, Productions).
+   Normalises separators + case so Windows/macOS paths still match. */
+function CP_normPath(p) { return String(p == null ? '' : p).replace(/\\/g, '/').toLowerCase(); }
+function CP_findProjectItemByMediaPath(root, mediaPath) {
+  var want = CP_normPath(mediaPath);
+  if (!want) return null;
+  for (var i = 0; i < root.children.numItems; i++) {
+    var child = root.children[i];
+    if (child.type === 2 /* BIN */) {
+      var hit = CP_findProjectItemByMediaPath(child, mediaPath);
+      if (hit) return hit;
+    } else {
+      var mp = null; try { mp = child.getMediaPath(); } catch (e) {}
+      if (mp && CP_normPath(mp) === want) return child;
+    }
+  }
+  return null;
+}
+
+/*
+ * Safe mode: build a brand-new sequence containing only the keep-segments
+ * of the selected clip's source media. Fully supported API, original
+ * sequence untouched.
+ * argsJson: { nodeId, keeps:[{start,end}] (media-relative seconds), name }
+ */
+function CP_rebuildTrimmed(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var pItem = CP_findProjectItemByNodeId(app.project.rootItem, args.nodeId);
+    // Fallback: match by media path when the nodeId doesn't resolve (merged/sub/
+    // multicam clips expose a projectItem whose nodeId isn't a plain bin item).
+    if (!pItem && args.mediaPath) pItem = CP_findProjectItemByMediaPath(app.project.rootItem, args.mediaPath);
+    if (!pItem) return CP_fail('Could not find the source clip in the Project panel. Make sure the original media is still imported (not just on the timeline), then try again.');
+
+    var seqName = args.name || ('Pulse Trim ' + new Date().getTime());
+    var newSeq = app.project.createNewSequenceFromClips(seqName, [pItem]);
+    if (!newSeq) return CP_fail('Could not create the trimmed sequence.');
+
+    // The sequence now holds the full clip once; clear it, then append keeps.
+    app.enableQE();
+    var qseq = qe.project.getActiveSequence();
+    for (var t = 0; t < qseq.numVideoTracks; t++) {
+      var tr = qseq.getVideoTrackAt(t);
+      for (var i = tr.numItems - 1; i >= 0; i--) {
+        var it = tr.getItemAt(i);
+        if (it && it.type !== 'Empty') { try { it.remove(0, 0); } catch (e0) {} }
+      }
+    }
+    for (t = 0; t < qseq.numAudioTracks; t++) {
+      var tra = qseq.getAudioTrackAt(t);
+      for (i = tra.numItems - 1; i >= 0; i--) {
+        var ita = tra.getItemAt(i);
+        if (ita && ita.type !== 'Empty') { try { ita.remove(0, 0); } catch (e1) {} }
+      }
+    }
+
+    var vTrack = newSeq.videoTracks[0];
+    var aTrack = newSeq.audioTracks[0];
+    var cursor = 0;
+    var placed = 0;
+    for (i = 0; i < args.keeps.length; i++) {
+      var k = args.keeps[i];
+      try {
+        pItem.setInPoint(CP_ticksFromSeconds(k.start), 4);
+        pItem.setOutPoint(CP_ticksFromSeconds(k.end), 4);
+        if (vTrack) vTrack.overwriteClip(pItem, cursor);
+        else if (aTrack) aTrack.overwriteClip(pItem, cursor);
+        cursor += (k.end - k.start);
+        placed++;
+      } catch (eIns) {}
+    }
+    try { pItem.clearInPoint(4); } catch (ec1) {}
+    try { pItem.clearOutPoint(4); } catch (ec2) {}
+
+    return CP_ok({ sequence: seqName, segmentsPlaced: placed, finalDuration: cursor });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+// --------------------------------------------------- viral shorts ----------
+/* Make the active sequence active by object (best-effort across versions). */
+function CP_activateSequence(seqObj) {
+  if (!seqObj) return;
+  try { app.project.activeSequence = seqObj; } catch (e1) {}
+  try { if (seqObj.sequenceID) app.project.openSequence(seqObj.sequenceID); } catch (e2) {}
+}
+
+/* Set the active sequence's in/out points to a range, so the user can preview /
+   export just that moment. argsJson: { start, end } in sequence seconds. */
+function CP_setInOut(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+    try { seq.setInPoint(CP_ticksFromSeconds(args.start)); } catch (eIn) {
+      try { seq.setInPoint(args.start); } catch (eIn2) {}
+    }
+    try { seq.setOutPoint(CP_ticksFromSeconds(args.end)); } catch (eOut) {
+      try { seq.setOutPoint(args.end); } catch (eOut2) {}
+    }
+    return CP_ok({ start: args.start, end: args.end });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/*
+ * Extract one highlight as its own short. Clones the active sequence (original
+ * untouched), trims the clone down to [start,end], then — if a target ratio is
+ * given — runs Premiere's real Auto Reframe (subject tracking) to produce the
+ * vertical/square sequence. argsJson: { start, end, name, ratio:{num,den}|null }.
+ */
+function CP_makeShort(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+    var name = args.name || ('Short ' + (Math.round((args.start || 0))) + 's');
+
+    var work = null;
+    try { work = seq.clone(); } catch (eC) {}
+    if (!work) {                                  // some builds don't return the clone
+      try { seq.clone(); } catch (eC2) {}
+      work = app.project.activeSequence;          // …but it usually becomes findable
+    }
+    if (!work) return CP_fail('Could not duplicate the sequence to build the short.');
+    CP_activateSequence(work);
+    try { work.name = name + ' (wide)'; } catch (eN) {}
+
+    var qseq = CP_qeSequence();
+    var fps = CP_sequenceFps(work);
+    var dur = 0; try { dur = work.end ? work.end.seconds : 0; } catch (eD) {}
+    var BIG = (dur > 0 ? dur : 1e7) + 5;
+    // isolate [start,end]: razor both bounds, lift the tail, ripple the head to 0
+    CP_razorAllTracksAt(qseq, args.end, fps, !!args.dropFrame);
+    CP_razorAllTracksAt(qseq, args.start, fps, !!args.dropFrame);
+    CP_deleteClipsInRange(qseq, args.end, BIG, false);     // tail → lift (no shift needed)
+    CP_deleteClipsInRange(qseq, 0, args.start, true);      // head → ripple, segment slides to 0
+
+    // optional: real Auto Reframe to the target aspect (returns a NEW sequence)
+    if (args.ratio && args.ratio.num && args.ratio.den) {
+      var rfName = name + ' ' + args.ratio.num + 'x' + args.ratio.den;
+      var reframed = null;
+      try { reframed = work.autoReframeSequence(args.ratio.num, args.ratio.den, 'default', rfName, false); } catch (eR) {
+        return CP_ok({ sequence: work.name, reframed: false, note: 'Trimmed clip created; Auto Reframe failed on this version: ' + eR.message });
+      }
+      if (reframed) { CP_activateSequence(reframed); return CP_ok({ sequence: rfName, reframed: true }); }
+    }
+    return CP_ok({ sequence: work.name, reframed: false });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/* Import a rendered file and, if possible, build a sequence sized to it (so a
+   vertical render lands as a ready vertical sequence). argsJson:{ path, name }. */
+function CP_importClip(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    try { app.project.importFiles([args.path], true, app.project.rootItem, false); } catch (eImp) {
+      return CP_fail('Could not import the rendered clip: ' + eImp.message);
+    }
+    var item = CP_findProjectItemByMediaPath(app.project.rootItem, args.path);
+    var seqName = args.name || 'Vertical clip';
+    if (item && app.project.createNewSequenceFromClips) {
+      try {
+        var ns = app.project.createNewSequenceFromClips(seqName, [item]);
+        if (ns) { CP_activateSequence(ns); return CP_ok({ imported: true, sequence: seqName }); }
+      } catch (eSeq) {}
+    }
+    return CP_ok({ imported: true, sequence: null });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+// ------------------------------------------------------------- multicam ----
+/* A camera track's clips as sorted [start, end, disabled, clip] rows — read
+   once, so checking hundreds of cuts doesn't walk the DOM hundreds of times. */
+function CP_mcTrackRows(track) {
+  var rows = [], cl = track.clips, k = cl.numItems;
+  for (var i = 0; i < k; i++) {
+    var c = cl[i];
+    if (!c) continue;
+    var dis = false;
+    try { dis = !!c.disabled; } catch (eD) {}
+    rows.push([c.start.seconds, c.end.seconds, dis, c]);
+  }
+  rows.sort(function (a, b) { return a[0] - b[0]; });
+  return rows;
+}
+
+/* For sorted times, which ones fall INSIDE a clip (more than half a frame from
+   either edge) — i.e. still need a cut there. Two-pointer sweep. */
+function CP_mcSpanned(rows, times, half) {
+  var out = [], r = 0;
+  for (var i = 0; i < times.length; i++) {
+    var tm = times[i];
+    while (r < rows.length && rows[r][1] <= tm + half) r++;
+    out.push(r < rows.length && rows[r][0] < tm - half && rows[r][1] > tm + half);
+  }
+  return out;
+}
+
+/* Every audio track's switched-off clips as [start, end] rows, and how many
+   there are — read before Apply touches anything. Premiere may switch a
+   camera's LINKED audio off together with its video; this is what lets Apply
+   put the owner's sound back without touching a clip they switched off. */
+function CP_mcAudioOff(seq) {
+  var out = [];
+  for (var t = 0; t < seq.audioTracks.numTracks; t++) {
+    var cl = seq.audioTracks[t].clips, k = cl.numItems, rows = [], n = 0;
+    for (var i = 0; i < k; i++) {
+      var c = cl[i], dis = false;
+      if (!c) continue;
+      try { dis = !!c.disabled; } catch (eD) {}
+      if (!dis) continue;
+      n++;
+      try { rows.push([c.start.seconds, c.end.seconds]); } catch (eT) {}
+    }
+    out.push({ n: n, rows: rows });
+  }
+  return out;
+}
+
+/* Switch back on every audio clip that is off now but was not switched off
+   before Apply (its middle lies in none of the owner's own switched-off
+   clips). Tracks with no newly switched-off clip are not walked again.
+   Returns how many clips were switched back on. */
+function CP_mcRestoreAudio(seq, before) {
+  var fixed = 0;
+  for (var t = 0; t < seq.audioTracks.numTracks && t < before.length; t++) {
+    var cl = seq.audioTracks[t].clips, k = cl.numItems, now = 0, i, c, dis, off = [];
+    for (i = 0; i < k; i++) {
+      c = cl[i]; dis = false;
+      try { dis = !!(c && c.disabled); } catch (eD) {}
+      if (dis) { now++; off.push(c); }
+    }
+    if (now <= before[t].n) continue;
+    for (i = 0; i < off.length; i++) {
+      var mid = 0, mine = false;
+      try { mid = (off[i].start.seconds + off[i].end.seconds) / 2; } catch (eM) { continue; }
+      for (var r = 0; r < before[t].rows.length && !mine; r++) mine = mid > before[t].rows[r][0] && mid < before[t].rows[r][1];
+      if (!mine) { try { off[i].disabled = false; fixed++; } catch (eE) {} }
+    }
+  }
+  return fixed;
+}
+
+/* The row (clip) under time tm, or null. rows sorted by start. */
+function CP_mcRowAt(rows, tm) {
+  var lo = 0, hi = rows.length - 1;
+  while (lo <= hi) {
+    var mid = (lo + hi) >> 1;
+    if (rows[mid][1] <= tm) lo = mid + 1;
+    else if (rows[mid][0] > tm) hi = mid - 1;
+    else return rows[mid];
+  }
+  return null;
+}
+
+/*
+ * Apply an angle plan to stacked camera tracks (FireCut-style).
+ * Because each camera is usually ONE long clip per track, we first razor
+ * every camera track at all the segment boundaries, then enable only the
+ * chosen camera's piece per segment and disable the others.
+ *
+ * It reports what HAPPENED on the timeline, not what it attempted — every
+ * razor error used to be swallowed, so a refused QE razor or a locked track
+ * left one camera on screen for the whole episode while the panel said
+ * "Multicam applied". Now: a locked camera track stops it before anything
+ * changes; each cut is checked for an edge at its boundary (missedCuts, with
+ * times); if no cut lands at all nothing is switched and it fails; afterwards
+ * every shot is checked on the timeline (verifiedPct). Premiere may switch a
+ * camera's linked audio off together with its video: any audio clip Apply
+ * switched off that way is switched back on (audioRestored); clips the owner
+ * had switched off stay off.
+ * Drop-frame: the sequence's own timecode display decides (29.97 / 59.94 DF,
+ * CP_seqDropFrame); the Settings tick is only the fallback for builds that
+ * don't report it.
+ * argsJson: { plan:[{start,end,angle}], numAngles, dropFrame }
+ */
+function CP_applyMulticamPlan(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+    var nTracks = seq.videoTracks.numTracks;
+    var n = Math.min(args.numAngles, nTracks);
+    var fps = CP_sequenceFps(seq);
+    var half = 0.5 / fps;
+    var plan = args.plan || [];
+
+    // A shot on a camera with no video track here would play as BLACK (every
+    // camera track below it is switched off) while every shot on the real
+    // tracks still checks out — refuse before changing anything.
+    var topAngle = -1;
+    for (var pa = 0; pa < plan.length; pa++) if (plan[pa].angle > topAngle) topAngle = plan[pa].angle;
+    if (topAngle >= nTracks) {
+      return CP_fail('The plan uses camera V' + (topAngle + 1) + ', but this timeline has only ' + nTracks + ' video track' +
+        (nTracks === 1 ? '' : 's') + ', so those shots would be black. Nothing was changed. Put each camera on its own video ' +
+        'track (V1, V2, V3…) or pick fewer cameras in Step 1, then build again.');
+    }
+    if (topAngle >= n) {
+      return CP_fail('The plan uses camera V' + (topAngle + 1) + ' but was made for ' + n + ' camera' + (n === 1 ? '' : 's') +
+        '. Nothing was changed — tap Auto multicam to build it again.');
+    }
+    var df = CP_seqDropFrame(seq, !!args.dropFrame);
+
+    // a locked camera track can be neither cut nor switched: change nothing
+    var locked = [], t, i;
+    for (t = 0; t < n; t++) {
+      try { var vt = seq.videoTracks[t]; if (typeof vt.isLocked === 'function' && vt.isLocked()) locked.push('V' + (t + 1)); } catch (eLk) {}
+    }
+    if (locked.length) {
+      return CP_fail('Camera track ' + locked.join(', ') + (locked.length > 1 ? ' are' : ' is') + ' locked, so Premiere can’t cut ' +
+        (locked.length > 1 ? 'them' : 'it') + '. Unlock ' + (locked.length > 1 ? 'them' : 'it') +
+        ' (the padlock at the left of the track) and Apply again — nothing was changed.');
+    }
+
+    // collect unique internal boundaries
+    var bmap = {};
+    for (var p = 0; p < plan.length; p++) {
+      if (plan[p].start > 0.001) bmap[plan[p].start.toFixed(3)] = plan[p].start;
+      bmap[plan[p].end.toFixed(3)] = plan[p].end;
+    }
+    var bounds = [];
+    for (var key in bmap) if (bmap.hasOwnProperty(key)) bounds.push(bmap[key]);
+    bounds.sort(function (a, b) { return a - b; });
+
+    var seqEnd = parseFloat(seq.end) / CP_TICKS_PER_SECOND;
+    var planStart = plan.length ? plan[0].start : 0;
+    var planEnd = plan.length ? plan[plan.length - 1].end : 0;
+    var piecesBefore = [], need = [], needed = 0, b;
+    for (t = 0; t < n; t++) {
+      var rows0 = CP_mcTrackRows(seq.videoTracks[t]);
+      piecesBefore.push(rows0.length);
+      // only where a clip spans the boundary does this track need a cut
+      var sp0 = CP_mcSpanned(rows0, bounds, half);
+      need.push([]);
+      for (b = 0; b < bounds.length; b++) if (sp0[b]) { need[t].push(b); needed++; }
+    }
+
+    // what the owner has switched off on the audio tracks, before anything changes
+    var audioOff = CP_mcAudioOff(seq);
+
+    // razor each camera track where needed (QE must be enabled). razor cuts
+    // whichever clip spans that timecode, so it works across ALL clips on the
+    // track — not just the first take.
+    var razorErrors = 0, qeProblem = '';
+    try {
+      try { app.enableQE(); } catch (eEn) {}
+      var qseq = CP_qeSequence();
+      for (t = 0; t < n; t++) {
+        var qtrack = qseq.getVideoTrackAt(t);
+        if (!qtrack) { razorErrors += need[t].length; continue; }
+        for (i = 0; i < need[t].length; i++) {
+          try { qtrack.razor(CP_timecode(bounds[need[t][i]], fps, df)); } catch (eRz) { razorErrors++; if (!qeProblem) qeProblem = String(eRz.message || eRz); }
+        }
+      }
+    } catch (eQE) { qeProblem = String(eQE.message || eQE); }
+
+    // did each cut land? (an edge within half a frame of the boundary)
+    var landed = 0, missedAt = [], rows = [];
+    for (t = 0; t < n; t++) {
+      rows.push(CP_mcTrackRows(seq.videoTracks[t]));
+      var times = [];
+      for (i = 0; i < need[t].length; i++) times.push(bounds[need[t][i]]);
+      var still = CP_mcSpanned(rows[t], times, half);
+      for (i = 0; i < still.length; i++) {
+        if (still[i]) {
+          var seen = false;
+          for (var m = 0; m < missedAt.length; m++) if (Math.abs(missedAt[m] - times[i]) < half) seen = true;
+          if (!seen && missedAt.length < 5) missedAt.push(times[i]);
+        }
+        else landed++;
+      }
+    }
+    if (needed > 0 && landed === 0) {
+      // a timeline whose timecode starts later than 00:00:00:00 (01:00:00:00 is
+      // a common preset) may be cut at the wrong timecode — name the way out
+      var zeroSec = 0;
+      try { zeroSec = parseFloat(seq.zeroPoint) / CP_TICKS_PER_SECOND; } catch (eZ) {}
+      if (zeroSec > 0.5) {
+        return CP_fail('Premiere didn’t make any of the ' + needed + ' camera cuts, so nothing was switched — your timeline is unchanged. ' +
+          'This timeline’s timecode starts at ' + CP_timecode(zeroSec, fps, df).replace(/;/g, ':') + ' instead of 00:00:00:00: open the Timeline panel menu ' +
+          '(☰ next to the sequence name), choose Start Time…, set it to 00:00:00:00, then Apply again.');
+      }
+      return CP_fail('Premiere didn’t make any of the ' + needed + ' camera cuts' + (qeProblem ? ' (' + qeProblem + ')' : '') +
+        ', so nothing was switched — your timeline is unchanged. Click the timeline once and Apply again; if it keeps happening, restart Premiere.');
+    }
+
+    // toggle enable/disable per resulting piece (plan and pieces both sorted)
+    var toggled = 0, toggleErrors = 0, piecesAfter = [], outOfPlan = 0;
+    for (t = 0; t < n; t++) {
+      piecesAfter.push(rows[t].length);
+      var s = 0;
+      for (i = 0; i < rows[t].length; i++) {
+        var row = rows[t][i];
+        var mid = (row[0] + row[1]) / 2;
+        while (s < plan.length && plan[s].end <= mid) s++;
+        if (s >= plan.length || mid < plan[s].start) { outOfPlan++; continue; }   // a clip the plan never reached
+        var shouldDisable = (plan[s].angle !== t);
+        try {
+          if (row[2] !== shouldDisable) { row[3].disabled = shouldDisable; row[2] = shouldDisable; toggled++; }
+        } catch (eDis) { toggleErrors++; }
+      }
+    }
+
+    // switching a camera's video off may switch its LINKED audio off too —
+    // put the owner's sound back (their own switched-off clips stay off)
+    var audioRestored = CP_mcRestoreAudio(seq, audioOff);
+
+    // check every shot on the timeline: near its start, middle and end, only
+    // the planned camera may be switched on. A planned camera with NO clip
+    // there (it started late, or stops early) is not a failed switch — it is
+    // reported apart, because applying again can't fix it.
+    var good = 0, total = 0, after = [], noFootage = 0, noFootageAt = [];
+    for (t = 0; t < n; t++) after.push(CP_mcTrackRows(seq.videoTracks[t]));
+    for (p = 0; p < plan.length; p++) {
+      var sh = plan[p], len = sh.end - sh.start;
+      if (!(len > 0)) continue;
+      var inset = Math.min(len / 4, Math.max(2 * half, 0.1)), ok = true, bare = false;
+      var probes = [sh.start + inset, (sh.start + sh.end) / 2, sh.end - inset];
+      for (var q = 0; q < 3 && ok; q++) {
+        for (t = 0; t < n && ok; t++) {
+          var r = CP_mcRowAt(after[t], probes[q]);
+          if (t === sh.angle) { if (!r) bare = true; else if (r[2]) ok = false; }
+          else if (r && !r[2]) ok = false;
+        }
+      }
+      if (bare && ok) {
+        noFootage += len;
+        if (noFootageAt.length < 3) noFootageAt.push({ camera: 'V' + (sh.angle + 1), start: sh.start, end: sh.end });
+        continue;
+      }
+      total += len;
+      if (ok) good += len;
+    }
+    return CP_ok({
+      toggled: toggled, razored: landed, cuts: bounds.length, cutsNeeded: needed, missedCuts: needed - landed,
+      missedAt: missedAt, razorErrors: razorErrors, toggleErrors: toggleErrors,
+      verifiedPct: total > 0 ? Math.floor((good / total) * 1000) / 10 : 100,
+      noFootageSec: Math.round(noFootage * 10) / 10, noFootageAt: noFootageAt,
+      audioRestored: audioRestored, dropFrame: df, tracksUsed: n,
+      seqEnd: seqEnd, planStart: planStart, planEnd: planEnd,
+      coveredPct: seqEnd > 0 ? Math.round((planEnd / seqEnd) * 100) : 100,
+      outOfPlanClips: outOfPlan, piecesBefore: piecesBefore, piecesAfter: piecesAfter
+    });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+// ------------------------------------------------------------- captions ----
+/*
+ * Import an SRT file and attach it to the active sequence as a caption
+ * track (Premiere 22+). argsJson: { srtPath }
+ */
+function CP_importSrtCaptions(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+
+    var before = app.project.rootItem.children.numItems;
+    var imported = app.project.importFiles([args.srtPath], true, app.project.rootItem, false);
+    if (!imported) return CP_fail('Premiere could not import the SRT file: ' + args.srtPath);
+
+    // The new item lands at the end of the root bin.
+    var item = null;
+    for (var i = app.project.rootItem.children.numItems - 1; i >= 0; i--) {
+      var cand = app.project.rootItem.children[i];
+      var mp = null;
+      try { mp = cand.getMediaPath(); } catch (eMp) {}
+      if (mp && mp.toLowerCase() === args.srtPath.toLowerCase()) { item = cand; break; }
+    }
+    if (!item && app.project.rootItem.children.numItems > before) {
+      item = app.project.rootItem.children[app.project.rootItem.children.numItems - 1];
+    }
+    if (!item) return CP_fail('SRT imported but the project item could not be located.');
+
+    if (typeof seq.createCaptionTrack !== 'function') {
+      return CP_fail('This Premiere version has no createCaptionTrack scripting API (needs 22.0+). The SRT is imported — drag it onto the timeline manually.');
+    }
+    var okCt = seq.createCaptionTrack(item, 0);
+    return CP_ok({ captionTrackCreated: okCt !== false });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+// ----------------------------------------- built-in animation engine ----
+function CP_findComponent(clip, displayName) {
+  for (var i = 0; i < clip.components.numItems; i++) {
+    if (String(clip.components[i].displayName).toLowerCase() === displayName.toLowerCase()) {
+      return clip.components[i];
+    }
+  }
+  return null;
+}
+
+function CP_findProperty(comp, displayName) {
+  if (!comp) return null;
+  for (var i = 0; i < comp.properties.numItems; i++) {
+    if (String(comp.properties[i].displayName).toLowerCase() === displayName.toLowerCase()) {
+      return comp.properties[i];
+    }
+  }
+  return null;
+}
+
+/* Force Premiere to re-composite a clip after a scripted edit. A setValue on a
+ * Motion-Graphics text property updates the stored value (and the EGP panel) but
+ * doesn't always mark the graphic dirty, so the Program monitor keeps showing the
+ * template's baked-in default. We dirty it several ways (cheap, all reversible,
+ * and the clip is always left enabled at its real opacity):
+ *   1) toggle the clip's enabled state,
+ *   2) nudge clip opacity off its current value and back. */
+function CP_forceRerender(clip) {
+  try { clip.disabled = true; } catch (e1) {}
+  try { clip.disabled = false; } catch (e2) {}
+  // STRONGEST safe kick: re-apply each source-text property's OWN current value
+  // with updateUI=true AFTER the disable-toggle. Writing the (already-correct)
+  // string a second time while the component is freshly dirtied is what finally
+  // makes Premiere re-composite — fixes "Essential Graphics shows the words but
+  // the Program monitor stays blank" on custom rich-text MOGRTs. Moves nothing.
+  try {
+    var comp = clip.getMGTComponent ? clip.getMGTComponent() : null;
+    if (comp && comp.properties) {
+      for (var pi = 0; pi < comp.properties.numItems; pi++) {
+        var p = comp.properties[pi], v = null;
+        try { v = p.getValue(); } catch (eGV) {}
+        if (typeof v === 'string' &&
+            (v.indexOf('textEditValue') !== -1 || v.indexOf('capProp') !== -1 ||
+             v.indexOf('"strDB"') !== -1 || (v.charAt(0) === '{' && v.indexOf('"text"') !== -1))) {
+          try { p.setValue(v, true); } catch (eRW1) { try { p.setValue(v); } catch (eRW2) {} }
+        }
+      }
+    }
+  } catch (eKick) {}
+  try {
+    var oc = CP_findComponent(clip, 'Opacity');
+    var op = oc ? CP_findProperty(oc, 'Opacity') : null;
+    if (op) {
+      var cur = null; try { cur = op.getValue(); } catch (eg) {}
+      if (typeof cur === 'number') {
+        // never leave a graphic invisible: a 0/blank opacity is bumped to full
+        var restore = (cur > 0.01) ? cur : 100;
+        try { op.setValue(restore >= 1 ? restore - 0.5 : restore + 0.5, true); } catch (es1) {}
+        try { op.setValue(restore, true); } catch (es2) {}
+      }
+    }
+  } catch (e3) {}
+}
+
+// Animation speed multiplier (1 = default; >1 snappier, <1 slower). Set by
+// CP_animateClip and read here so every keyframe time scales by 1/speed.
+var CP_ANIM_SPEED = 1;
+
+function CP_setKeys(prop, baseTime, keys) {
+  if (!prop) return;
+  var sp = (CP_ANIM_SPEED && CP_ANIM_SPEED > 0) ? CP_ANIM_SPEED : 1;
+  try {
+    prop.setTimeVarying(true);
+    for (var i = 0; i < keys.length; i++) {
+      var t = baseTime + keys[i].t / sp;
+      prop.addKey(t);
+      prop.setValueAtKey(t, keys[i].v, true);
+    }
+    // Best-effort smooth (Bezier) easing — what gives the FilmImpact-style
+    // glide instead of stiff linear motion. Only applied if the host exposes
+    // the interpolation enum; otherwise keys stay linear (still works).
+    if (typeof KFInterpolationType !== 'undefined' && KFInterpolationType.BEZIER != null) {
+      for (var j = 0; j < keys.length; j++) {
+        try { prop.setInterpolationTypeAtKey(baseTime + keys[j].t / sp, KFInterpolationType.BEZIER, true); } catch (eK) {}
+      }
+    }
+  } catch (e) {}
+}
+
+/* Apply one of the built-in entry animations as Motion/Opacity keyframes. */
+function CP_animateClip(clip, anim, speed) {
+  CP_ANIM_SPEED = (speed && speed > 0) ? speed : 1;
+  var base = clip.inPoint.seconds;
+  var motion = CP_findComponent(clip, 'Motion');
+  var opacityComp = CP_findComponent(clip, 'Opacity');
+  var scale = CP_findProperty(motion, 'Scale');
+  var pos = CP_findProperty(motion, 'Position');
+  var opacity = CP_findProperty(opacityComp, 'Opacity');
+
+  if (anim === 'pop') {
+    CP_setKeys(scale, base, [
+      { t: 0.0, v: 12 }, { t: 0.09, v: 108 }, { t: 0.16, v: 100 }
+    ]);
+  } else if (anim === 'scale') {
+    CP_setKeys(scale, base, [
+      { t: 0.0, v: 40 }, { t: 0.16, v: 100 }
+    ]);
+    CP_setKeys(opacity, base, [{ t: 0.0, v: 0 }, { t: 0.12, v: 100 }]);
+  } else if (anim === 'zoom') {
+    CP_setKeys(scale, base, [
+      { t: 0.0, v: 170 }, { t: 0.18, v: 100 }
+    ]);
+    CP_setKeys(opacity, base, [{ t: 0.0, v: 0 }, { t: 0.1, v: 100 }]);
+  } else if (anim === 'wave') {
+    CP_setKeys(pos, base, [
+      { t: 0.0, v: [0.5, 0.52] }, { t: 0.1, v: [0.5, 0.488] },
+      { t: 0.2, v: [0.5, 0.506] }, { t: 0.3, v: [0.5, 0.5] }
+    ]);
+    CP_setKeys(opacity, base, [{ t: 0.0, v: 0 }, { t: 0.1, v: 100 }]);
+  } else if (anim === 'shake') {
+    CP_setKeys(pos, base, [
+      { t: 0.0, v: [0.487, 0.5] }, { t: 0.05, v: [0.513, 0.5] },
+      { t: 0.1, v: [0.492, 0.5] }, { t: 0.15, v: [0.5, 0.5] }
+    ]);
+  } else if (anim === 'bounce') {
+    CP_setKeys(pos, base, [
+      { t: 0.0, v: [0.5, 0.56] }, { t: 0.11, v: [0.5, 0.487] },
+      { t: 0.18, v: [0.5, 0.503] }, { t: 0.24, v: [0.5, 0.5] }
+    ]);
+    CP_setKeys(opacity, base, [{ t: 0.0, v: 0 }, { t: 0.08, v: 100 }]);
+  } else if (anim === 'slide') {
+    CP_setKeys(pos, base, [
+      { t: 0.0, v: [0.5, 0.56] }, { t: 0.15, v: [0.5, 0.5] }
+    ]);
+    CP_setKeys(opacity, base, [{ t: 0.0, v: 0 }, { t: 0.13, v: 100 }]);
+  } else if (anim === 'fade') {
+    CP_setKeys(opacity, base, [{ t: 0.0, v: 0 }, { t: 0.15, v: 100 }]);
+  } else if (anim === 'glitch') {
+    CP_setKeys(pos, base, [
+      { t: 0.0, v: [0.498, 0.501] }, { t: 0.04, v: [0.503, 0.499] },
+      { t: 0.08, v: [0.5, 0.5] }
+    ]);
+    CP_setKeys(opacity, base, [
+      { t: 0.0, v: 0 }, { t: 0.03, v: 100 }, { t: 0.05, v: 35 }, { t: 0.08, v: 100 }
+    ]);
+
+  // ---- FilmImpact-style entrances: bigger, faster, eased moves with an
+  //      overshoot-and-settle. (Premiere's stock Motion keyframes carry the
+  //      motion but not literal GPU motion blur — see the note in the panel.)
+  } else if (anim === 'whoosh') {
+    // Impact Push: fly in from the left, overshoot past centre, settle.
+    CP_setKeys(pos, base, [
+      { t: 0.0, v: [0.16, 0.5] }, { t: 0.10, v: [0.532, 0.5] }, { t: 0.17, v: [0.5, 0.5] }
+    ]);
+    CP_setKeys(opacity, base, [{ t: 0.0, v: 0 }, { t: 0.05, v: 100 }]);
+  } else if (anim === 'zoompunch') {
+    // Impact Zoom Blur: punch in from oversized, slight undershoot, settle.
+    CP_setKeys(scale, base, [
+      { t: 0.0, v: 260 }, { t: 0.10, v: 94 }, { t: 0.17, v: 100 }
+    ]);
+    CP_setKeys(opacity, base, [{ t: 0.0, v: 0 }, { t: 0.06, v: 100 }]);
+  } else if (anim === 'blurdissolve') {
+    // Impact Blur Dissolve: gentle scale settle with a slow, soft fade.
+    CP_setKeys(scale, base, [
+      { t: 0.0, v: 114 }, { t: 0.24, v: 100 }
+    ]);
+    CP_setKeys(opacity, base, [{ t: 0.0, v: 0 }, { t: 0.22, v: 100 }]);
+  } else if (anim === 'glide') {
+    // Impact Motion: smooth rise from below with overshoot up, then settle.
+    CP_setKeys(pos, base, [
+      { t: 0.0, v: [0.5, 0.62] }, { t: 0.12, v: [0.5, 0.491] }, { t: 0.2, v: [0.5, 0.5] }
+    ]);
+    CP_setKeys(opacity, base, [{ t: 0.0, v: 0 }, { t: 0.12, v: 100 }]);
+  }
+  // 'karaoke', 'typewriter', 'none': the frame sequence is the animation.
+}
+
+/*
+ * Place pre-rendered caption PNGs on a dedicated top video track and apply
+ * the chosen entry animation per clip.
+ * argsJson: { items:[{path,start,end}], anim }
+ */
+/* Sequence-time range [start,end] covered by the currently selected timeline
+   clips (video or audio). Used by "restyle just this segment". */
+function CP_selectedRange() {
+  try {
+    var seq = CP_activeSequence();
+    var lo = null, hi = null;
+    function scan(tracks) {
+      for (var t = 0; t < tracks.numTracks; t++) {
+        var tr = tracks[t];
+        for (var i = 0; i < tr.clips.numItems; i++) {
+          var c = tr.clips[i];
+          if (c && c.isSelected && c.isSelected()) {
+            var s = c.start.seconds, e = c.end.seconds;
+            if (lo === null || s < lo) lo = s;
+            if (hi === null || e > hi) hi = e;
+          }
+        }
+      }
+    }
+    scan(seq.videoTracks); scan(seq.audioTracks);
+    if (lo === null) return CP_fail('Select the clip (or range) on the timeline you want to restyle, then try again.');
+    return CP_ok({ start: lo, end: hi });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/* Find the clip on a track whose start matches `startSec` (within ~half a frame
+   of tolerance). Needed when overwriting a clip MID-track, where the freshly
+   placed clip is not the last one by index. */
+function CP_clipAtStart(track, startSec) {
+  var best = null, bestD = 1e9;
+  for (var i = 0; i < track.clips.numItems; i++) {
+    var c = track.clips[i], s;
+    try { s = c.start.seconds; } catch (e) { continue; }
+    var d = Math.abs(s - startSec);
+    if (d < bestD) { bestD = d; best = c; }
+  }
+  return (bestD <= 0.25) ? best : null;
+}
+
+/* BETA: additive talking-head "punch-in" zooms. For each sequence time, find the
+   clip on videoTrack covering it and add Scale keyframes (100 → amount → hold →
+   100) in clip-local time, reusing the proven CP_setKeys path. Purely additive
+   and fully undoable — never cuts, deletes, or moves anything. */
+function CP_addZoomPunches(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+    if (!seq) return CP_fail('No active sequence.');
+    var vt = (args.videoTrack != null) ? args.videoTrack : 0;
+    if (vt < 0 || vt >= seq.videoTracks.numTracks) return CP_fail('Video track ' + (vt + 1) + ' not found.');
+    var track = seq.videoTracks[vt];
+    var times = args.times || [];
+    var amount = (args.amount != null) ? args.amount : 110;   // peak scale %
+    var hold = (args.hold != null) ? args.hold : 0.45;
+    var ramp = (args.ramp != null) ? args.ramp : 0.16;
+    CP_ANIM_SPEED = 1;
+    var applied = 0, skipped = 0;
+    for (var i = 0; i < times.length; i++) {
+      var at = times[i], clip = null;
+      for (var c = 0; c < track.clips.numItems; c++) {
+        var cc = track.clips[c], s, e;
+        try { s = cc.start.seconds; e = cc.end.seconds; } catch (eS) { continue; }
+        if (at >= s && at < e) { clip = cc; break; }
+      }
+      if (!clip) { skipped++; continue; }
+      var scale = CP_findProperty(CP_findComponent(clip, 'Motion'), 'Scale');
+      if (!scale) { skipped++; continue; }
+      var off;
+      try { off = clip.inPoint.seconds + (at - clip.start.seconds); } catch (eO) { skipped++; continue; }
+      var amt = (amount instanceof Array) ? amount[i % amount.length] : amount;
+      CP_setKeys(scale, off, [
+        { t: 0.0, v: 100 }, { t: ramp, v: amt }, { t: ramp + hold, v: amt }, { t: ramp + hold + ramp, v: 100 }
+      ]);
+      applied++;
+    }
+    return CP_ok({ applied: applied, skipped: skipped });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+function CP_placeCaptionImages(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+
+    // Import everything into a tidy bin.
+    var bin = app.project.rootItem.createBin('Pulse Captions ' + (new Date()).getTime() % 100000);
+    var paths = [];
+    for (var i = 0; i < args.items.length; i++) paths.push(args.items[i].path);
+    app.project.importFiles(paths, true, bin, false);
+
+    // Map imported items by filename for ordering-safe lookup.
+    var byName = {};
+    for (i = 0; i < bin.children.numItems; i++) {
+      byName[String(bin.children[i].name).toLowerCase()] = bin.children[i];
+    }
+
+    var trackIndex;
+    if (args.overwriteOnTrack != null && args.overwriteOnTrack >= 1 && args.overwriteOnTrack <= seq.videoTracks.numTracks) {
+      // Segment restyle: place the new (differently styled) caption clips onto the
+      // existing caption track, overwriting the old ones only where they land —
+      // captions outside the selected range are left exactly as they were.
+      trackIndex = args.overwriteOnTrack - 1;
+    } else if (args.replaceTrack != null && args.replaceTrack >= 1 && args.replaceTrack <= seq.videoTracks.numTracks) {
+      // Restyle "apply to all": reuse the existing caption track, but first clear
+      // only Pulse's own captions off it — the caption frames (cap_*.png) and a
+      // long video's one overlay clip (pulse-captions-*.mov), which otherwise
+      // stayed under the new images and got chopped by them — so captions never
+      // stack across restyles, and any other clip the user put there is safe.
+      trackIndex = args.replaceTrack - 1;
+      try {
+        app.enableQE();
+        var qseqR = qe.project.getActiveSequence();
+        var qtR = qseqR.getVideoTrackAt(trackIndex);
+        for (var cr = qtR.numItems - 1; cr >= 0; cr--) {
+          var itR = qtR.getItemAt(cr);
+          if (!itR || itR.type === 'Empty') continue;
+          var nmR = '';
+          try { nmR = String(itR.name).toLowerCase(); } catch (eNm) {}
+          if (nmR.indexOf('cap_') === 0 || nmR.indexOf('pulse-captions') === 0) { try { itR.remove(0, 0); } catch (eRem) {} }
+        }
+      } catch (eClr) {}
+    } else {
+      // Use a fresh top video track so we never stomp existing footage.
+      trackIndex = seq.videoTracks.numTracks - 1;
+      try {
+        app.enableQE();
+        var qseq = qe.project.getActiveSequence();
+        qseq.addTracks(1, seq.videoTracks.numTracks, 0);
+        trackIndex = seq.videoTracks.numTracks - 1;
+      } catch (eTrack) {}
+    }
+    var track = seq.videoTracks[trackIndex];
+
+    // EXACT mode (single-caption fix): size each still to its exact slot via
+    // source in/out BEFORE the overwrite, so re-rendering ONE cue mid-track can't
+    // spill past its slot and wipe the following caption. The placed clip is then
+    // located by position (not last-index, which only holds on a fresh track).
+    var exact = !!args.exact;
+    var placed = 0, animated = 0;
+    for (i = 0; i < args.items.length; i++) {
+      var it = args.items[i];
+      var fileName = it.path.split(/[\\\/]/).pop().toLowerCase();
+      var pItem = byName[fileName];
+      if (!pItem) continue;
+      try {
+        // Trim to the cue end — but NEVER let a caption linger past the next one.
+        // A placed still image defaults to a multi-second duration, so without
+        // this clamp many captions stay on screen at once (the "stacked wall").
+        // Clamp to the next caption's start whenever it's earlier than this end,
+        // and keep at least ~1 frame so a tightly-spaced word can't collapse to
+        // zero (which would let the next clip overwrite it — a skipped word).
+        var endT = it.end;
+        var nextStart = (i + 1 < args.items.length) ? args.items[i + 1].start : null;
+        if (nextStart != null && nextStart < endT) endT = nextStart;
+        if (endT <= it.start) endT = it.start + 0.04;
+        var clip = null;
+        if (exact) {
+          try { pItem.setInPoint(CP_ticksFromSeconds(0), 4); } catch (eIn) {}
+          try { pItem.setOutPoint(CP_ticksFromSeconds(endT - it.start), 4); } catch (eOut) {}
+          track.overwriteClip(pItem, it.start);
+          try { pItem.clearInPoint(4); } catch (eCi) {}
+          try { pItem.clearOutPoint(4); } catch (eCo) {}
+          clip = CP_clipAtStart(track, it.start);
+        } else {
+          track.overwriteClip(pItem, it.start);
+          clip = track.clips[track.clips.numItems - 1];
+        }
+        if (clip) { try { clip.end = CP_timeFromSeconds(endT); } catch (eEnd) {} }
+        placed++;
+        if (clip) {
+          var spd = (args.animSpeed && args.animSpeed > 0) ? args.animSpeed : 1;
+          var wordSync = (args.anim === 'karaoke' || args.anim === 'reveal');
+          if (args.anim && args.anim !== 'none' && args.anim !== 'typewriter') {
+            if (!wordSync) {
+              // entrance animation per caption (whole-line styles)
+              CP_animateClip(clip, args.anim, spd);
+              animated++;
+            } else if (args.perWordEntrance) {
+              // each word animates in as it's spoken (cleanest with "one by one")
+              CP_animateClip(clip, args.perWordEntranceStyle || 'pop', spd);
+              animated++;
+            }
+          }
+        }
+      } catch (ePlace) {}
+    }
+    return CP_ok({ placed: placed, animated: animated, track: trackIndex + 1, bin: bin.name });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/*
+ * Place ONE transparent caption-overlay clip (drawn by Pulse's canvas renderer,
+ * or by ffmpeg+libass as a fallback) on a fresh top video track at startSec.
+ * The whole word-by-word animation is baked into one full-frame alpha .mov, so
+ * there is NO per-cue stacking, NO clip.end trimming, and what renders is
+ * exactly what plays.
+ * argsJson: { path, startSec, replaceTrack?, durSec?, cleanup?: [paths], recheck?: [paths] }
+ * cleanup lists this project+sequence's OLDER overlay files. The ones no clip
+ * in ANY open project uses have their Pulse bin removed and come back in
+ * `unused`, so the panel can delete those files. recheck lists files an earlier
+ * job already reported unused that the panel has not deleted yet (a saved
+ * project still named them, or the delete failed); they come back in `free`
+ * while nothing uses them. `checked` is false when the project could not be
+ * inspected — then nothing is reported. Anything that cannot be verified
+ * counts as used — deleting a file a timeline still shows is exactly the
+ * "Media Offline" this is meant to prevent.
+ * The tidy-up runs BEFORE the new clip is placed, so the last scripted step is
+ * the placement and the first ⌘Z takes the new captions off the timeline (a
+ * bin deletion as the last step made the first ⌘Z restore an item whose file
+ * was already gone).
+ * A FAILURE after the tidy-up still reports it (ok:false with unused / free /
+ * checked): those old overlays' bins are already gone, so the panel must delete
+ * their files now — no later job can find them in the project again. A failure
+ * before it says checked:false. Either way the new overlay's own bin is taken
+ * back out: nothing was placed from it, and the panel deletes its file.
+ */
+function CP_placeOverlay(argsJson) {
+  var bin = null, tidy = { unused: [], free: [], checked: false };
+  function fail(msg) {
+    if (bin) { try { bin.deleteBin(); } catch (eDb) {} }
+    return JSON.stringify({ ok: false, error: String(msg), unused: tidy.unused, free: tidy.free, checked: tidy.checked });
+  }
+  function normPath(p) { return String(p || '').replace(/\\/g, '/').toLowerCase(); }
+  function sameProject(a, b) {
+    try {
+      if (a === b) return true;
+      if (a.documentID && b.documentID) return String(a.documentID) === String(b.documentID);
+      return String(a.path) === String(b.path) && String(a.name) === String(b.name);
+    } catch (eSp) { return false; }
+  }
+  /* every project item (in any bin) whose media is one of `want`; rootBin is
+     the Pulse Captions bin at the project's top level it sits in, else null.
+     (Depth, not object identity: ExtendScript may hand back a new wrapper for
+     the same bin on every read.) */
+  function itemsFor(proj, want, visit) {
+    function walk(folder, depth, rootBin) {
+      for (var n = 0; n < folder.children.numItems; n++) {
+        var it = folder.children[n];
+        if (!it) continue;
+        if (it.type === 2) {
+          var pulse = (depth === 0 && String(it.name).indexOf('Pulse Captions') === 0);
+          walk(it, depth + 1, depth === 0 ? (pulse ? it : null) : rootBin);
+          continue;
+        }
+        var mp = '';
+        try { mp = it.getMediaPath(); } catch (eMp) { mp = ''; }
+        if (mp && want[normPath(mp)]) visit(want[normPath(mp)], it, rootBin);
+      }
+    }
+    walk(proj.rootItem, 0, null);
+  }
+  function tidyOverlays(cleanup, recheck) {
+    var i, want = {}, isRecheck = {};
+    for (i = 0; i < cleanup.length; i++) want[normPath(cleanup[i])] = cleanup[i];
+    for (i = 0; i < recheck.length; i++) { want[normPath(recheck[i])] = recheck[i]; isRecheck[recheck[i]] = true; }
+    // 1. every item made from those files. Only Pulse's own root bins are ours
+    //    to judge: an item anywhere else means the owner filed it themselves.
+    var found = [], elsewhere = {}, inPulseBin = {};
+    itemsFor(app.project, want, function (p, it, pulseBin) {
+      found.push({ path: p, item: it, bin: pulseBin });
+      if (pulseBin) inPulseBin[p] = true; else elsewhere[p] = true;
+    });
+    // 2. every project item any sequence's video tracks still show
+    var inUse = {};
+    var seqs = app.project.sequences;
+    for (var s = 0; s < seqs.numSequences; s++) {
+      var vt = seqs[s].videoTracks;
+      for (var t = 0; t < vt.numTracks; t++) {
+        var clips = vt[t].clips;
+        for (var c = 0; c < clips.numItems; c++) {
+          var cpi = clips[c].projectItem;
+          if (cpi) inUse[String(cpi.nodeId)] = true;
+        }
+      }
+    }
+    var used = {};
+    for (i = 0; i < found.length; i++) if (inUse[String(found[i].item.nodeId)]) used[found[i].path] = true;
+    // 3. another OPEN project holding the file at all keeps it
+    var all = null;
+    try { all = app.projects; } catch (eAp) { all = null; }
+    if (all && all.numProjects > 1) {
+      for (var pj = 0; pj < all.numProjects; pj++) {
+        var other = all[pj];
+        if (!other || sameProject(other, app.project)) continue;
+        itemsFor(other, want, function (p) { used[p] = true; });
+      }
+    }
+    // 4. a FILE is unused only when every item made from it is unused
+    var out = { unused: [], free: [], checked: true }, seen = {};
+    for (i = 0; i < found.length; i++) {
+      var f = found[i];
+      if (used[f.path] || elsewhere[f.path]) continue;
+      if (f.bin && f.bin.children.numItems === 1) { try { f.bin.deleteBin(); } catch (eDel) {} }
+    }
+    for (var key in want) {
+      if (!want.hasOwnProperty(key)) continue;
+      var pth = want[key];
+      if (seen[pth] || used[pth] || elsewhere[pth]) continue;
+      seen[pth] = true;
+      // an older overlay the project never had: someone else's — leave it be
+      if (!isRecheck[pth] && !inPulseBin[pth]) continue;
+      if (isRecheck[pth]) out.free.push(pth); else out.unused.push(pth);
+    }
+    return out;
+  }
+
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+    if (!seq) return CP_fail('Open a sequence first.');
+    if (!args.path) return CP_fail('No overlay file.');
+
+    bin = app.project.rootItem.createBin('Pulse Captions ' + ((new Date()).getTime() % 100000));
+    app.project.importFiles([args.path], true, bin, false);
+    // importFiles can populate the bin a beat late for a single media file; poll
+    // briefly (ExtendScript $.sleep) so we never miss the imported overlay. This is
+    // strictly more robust than the proven PNG path, which reads children at once.
+    var item = null;
+    for (var tryN = 0; tryN < 20 && !item; tryN++) {
+      for (var c = bin.children.numItems - 1; c >= 0; c--) {
+        var cand = bin.children[c];
+        if (cand && cand.type !== 2) { item = cand; break; }   // skip nested bins (type 2)
+      }
+      if (!item) { try { $.sleep(60); } catch (eSl) {} }
+    }
+    if (!item) return fail('Overlay import failed (the .mov did not import).');
+
+    // Tidy BEFORE placing (see above): the new clip's placement stays the last
+    // step, so ⌘Z undoes the captions first.
+    tidy = { unused: [], free: [], checked: true };
+    var cl = args.cleanup || [], rc = args.recheck || [];
+    if (cl.length || rc.length) {
+      try { tidy = tidyOverlays(cl, rc); } catch (eCl) { tidy = { unused: [], free: [], checked: false }; }
+    }
+
+    var trackIndex;
+    if (args.replaceTrack != null && args.replaceTrack >= 1 && args.replaceTrack <= seq.videoTracks.numTracks) {
+      // reuse the existing caption track, clearing Pulse's prior captions off it:
+      // an overlay clip, or the cap_*.png images of a job that is becoming an
+      // overlay (a long video restyled with "Apply to all")
+      trackIndex = args.replaceTrack - 1;
+      try {
+        app.enableQE();
+        var qtR = qe.project.getActiveSequence().getVideoTrackAt(trackIndex);
+        for (var cr = qtR.numItems - 1; cr >= 0; cr--) {
+          var itR = qtR.getItemAt(cr);
+          if (!itR || itR.type === 'Empty') continue;
+          var nmR = ''; try { nmR = String(itR.name).toLowerCase(); } catch (eNm) {}
+          if (nmR.indexOf('pulse') >= 0 || nmR.indexOf('caption') >= 0 || nmR.indexOf('cap_') === 0) { try { itR.remove(0, 0); } catch (eRem) {} }
+        }
+      } catch (eClr) {}
+    } else {
+      // fresh top video track so we never stomp existing footage
+      trackIndex = seq.videoTracks.numTracks - 1;
+      try {
+        app.enableQE();
+        qe.project.getActiveSequence().addTracks(1, seq.videoTracks.numTracks, 0);
+        trackIndex = seq.videoTracks.numTracks - 1;
+      } catch (eTrack) {}
+    }
+    var track = seq.videoTracks[trackIndex];
+    if (!track) return fail('Could not find a video track to place the overlay on.');
+    var startSec = (args.startSec > 0) ? args.startSec : 0;
+    try {
+      track.overwriteClip(item, startSec);
+    } catch (ePlace) {
+      // overwriteClip occasionally rejects seconds on some builds — retry with ticks.
+      try { track.overwriteClip(item, CP_ticksFromSeconds(startSec)); }
+      catch (ePlace2) { return fail('Could not place the caption overlay: ' + ePlace.message); }
+    }
+    // Hold a still overlay (e.g. a branding PNG) for a requested duration.
+    if (args.durSec && args.durSec > 0) {
+      try {
+        var oc = (typeof CP_clipAtStart === 'function') ? CP_clipAtStart(track, startSec) : null;
+        if (!oc) oc = track.clips[track.clips.numItems - 1];
+        if (oc) { try { oc.end = CP_timeFromSeconds(startSec + args.durSec); } catch (eEnd) {} }
+      } catch (eDur) {}
+    }
+    return CP_ok({ placed: 1, track: trackIndex + 1, bin: bin.name,
+                   unused: tidy.unused, free: tidy.free, checked: tidy.checked });
+  } catch (e) { return fail(e.message); }
+}
+
+/*
+ * Remove Pulse guide/overlay clips from the timeline (the Safe Zone reference
+ * layer). If args.track is given, clear just that video track; otherwise scan all
+ * video tracks. Matches clips whose name looks like a Pulse guide/brand/overlay.
+ * argsJson: { track? }
+ */
+function CP_removeOverlay(argsJson) {
+  try {
+    var args = JSON.parse(argsJson || '{}');
+    var seq = CP_activeSequence();
+    if (!seq) return CP_fail('Open a sequence first.');
+    app.enableQE();
+    var qseq = qe.project.getActiveSequence();
+    var removed = 0;
+    var t0 = 0, t1 = seq.videoTracks.numTracks - 1;
+    if (args.track != null && args.track >= 1 && args.track <= seq.videoTracks.numTracks) { t0 = args.track - 1; t1 = args.track - 1; }
+    for (var ti = t1; ti >= t0; ti--) {
+      var qt = qseq.getVideoTrackAt(ti);
+      for (var i = qt.numItems - 1; i >= 0; i--) {
+        var it = qt.getItemAt(i);
+        if (!it || it.type === 'Empty') continue;
+        var nm = ''; try { nm = String(it.name).toLowerCase(); } catch (eN) {}
+        if (nm.indexOf('guide') >= 0 || nm.indexOf('pulse') >= 0 || nm.indexOf('brand') >= 0) { try { it.remove(0, 0); removed++; } catch (eR) {} }
+      }
+    }
+    return CP_ok({ removed: removed });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/*
+ * Place one short SFX clip at each given time on an audio track. Imports the WAV
+ * once, then overwrites a copy at every trigger time. Prefers an empty audio
+ * track (so the voice is never clobbered); adds one via QE when none is free.
+ * argsJson: { wavPath, times:[...seconds], label }
+ */
+function CP_placeSfx(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    if (!args.times || !args.times.length) return CP_fail('No SFX times given.');
+    var seq = CP_activeSequence();
+    if (!seq) return CP_fail('Open a sequence first.');
+
+    // import the WAV into a tidy bin
+    var bin = app.project.rootItem.createBin('Pulse SFX ' + ((new Date()).getTime() % 100000));
+    app.project.importFiles([args.wavPath], true, bin, false);
+    var item = null;
+    for (var c = bin.children.numItems - 1; c >= 0; c--) {
+      var cand = bin.children[c];
+      if (cand && cand.type !== 2) { item = cand; break; }   // skip nested bins
+    }
+    if (!item) item = bin.children[bin.children.numItems - 1];
+    if (!item) return CP_fail('SFX import failed.');
+
+    // find a free audio track; otherwise add one (QE), else fall back to the last
+    function firstEmptyAudio() {
+      for (var t = seq.audioTracks.numTracks - 1; t >= 0; t--) {
+        if (seq.audioTracks[t].clips.numItems === 0) return t;
+      }
+      return -1;
+    }
+    var idx = firstEmptyAudio();
+    if (idx < 0) {
+      try { var q = CP_qeSequence(); if (q && q.addTracks) { q.addTracks(0, 0, 1); seq = CP_activeSequence(); idx = firstEmptyAudio(); } } catch (eAdd) {}
+      if (idx < 0) idx = seq.audioTracks.numTracks - 1;   // last resort
+    }
+    var track = seq.audioTracks[idx];
+    if (!track) return CP_fail('No audio track available for SFX.');
+
+    var placed = 0;
+    for (var i = 0; i < args.times.length; i++) {
+      try { track.overwriteClip(item, args.times[i]); placed++; } catch (ePl) {}
+    }
+    return CP_ok({ placed: placed, track: idx + 1, bin: bin.name });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/*
+ * Insert one MOGRT per caption cue and push the cue text (and basic style
+ * params when the template exposes them) into the graphic.
+ * argsJson: { mogrtPath, cues:[{start,end,text}], videoTrack, audioTrack }
+ */
+/* Safely push a string into a MOGRT text property.
+ * `allowRich` gates the dangerous rich-source-text branch: the caller only
+ * passes true AFTER a probe write on a throwaway instance verified that this
+ * specific template accepts the edit cleanly (see CP_probeRichText). Without
+ * that proof we refuse rich writes — they can corrupt the project. */
+/* ---- balanced-span field rewriting for rich source-text blobs ----------
+   Styling fields live in PER-RUN arrays ("fillColorEditValue":[[r,g,b],[r,g,b]],
+   "fontFSBoldValue":[true,false], …). The old writer only styled SINGLE-run
+   blobs, so on any multi-run template the words were replaced but the styling
+   block was skipped — the caption landed with the template's default look
+   (white thin text on Subs Light while the preview showed dark bold: the
+   preview-vs-timeline screenshot). These helpers rewrite the VALUES inside the
+   existing arrays without ever changing an array's length or any run-length
+   field, so they are exactly as structure-safe as the single-run path. */
+function CP_scanJsonValue(s, i) {
+  while (i < s.length && (s.charAt(i) === ' ' || s.charAt(i) === '\t')) i++;
+  var c = s.charAt(i);
+  if (c === '[') {
+    var d = 0, j = i, inStr = false;
+    for (; j < s.length; j++) {
+      var ch = s.charAt(j);
+      if (inStr) { if (ch === '\\') { j++; continue; } if (ch === '"') inStr = false; continue; }
+      if (ch === '"') inStr = true;
+      else if (ch === '[') d++;
+      else if (ch === ']') { d--; if (!d) return { start: i, end: j + 1 }; }
+    }
+    return null;
+  }
+  var j2 = i, inS = false;
+  for (; j2 < s.length; j2++) {
+    var ch2 = s.charAt(j2);
+    if (inS) { if (ch2 === '\\') { j2++; continue; } if (ch2 === '"') inS = false; continue; }
+    if (ch2 === '"') inS = true;
+    else if (ch2 === ',' || ch2 === '}') break;
+  }
+  return { start: i, end: j2 };
+}
+function CP_rewriteBlobField(blob, fieldRegexSrc, fn) {
+  var re = new RegExp('"' + fieldRegexSrc + '"\\s*:\\s*', 'g');
+  var m, res = '', last = 0, changedAny = false;
+  while ((m = re.exec(blob)) !== null) {
+    var vs = re.lastIndex;
+    var span = CP_scanJsonValue(blob, vs);
+    if (!span) continue;
+    res += blob.substring(last, vs) + fn(blob.substring(span.start, span.end));
+    last = span.end;
+    re.lastIndex = span.end;
+    changedAny = true;
+  }
+  if (!changedAny) return blob;
+  return res + blob.substring(last);
+}
+function CP_runBoolsAll(desired) {
+  return function (span) { return span.replace(/true|false/g, desired ? 'true' : 'false'); };
+}
+function CP_runTripletsAll(t3) {
+  return function (span) {
+    if (/^\[\s*\[/.test(span)) return span.replace(/\[[^\[\]]*\]/g, function () { return '[' + t3 + ']'; });
+    if (span.charAt(0) === '[') return '[' + t3 + ']';
+    return span;
+  };
+}
+function CP_runStringsAll(str) {
+  return function (span) { return span.replace(/"(?:[^"\\]|\\.)*"/g, '"' + str + '"'); };
+}
+
+function CP_setMgrtText(prop, text, allowRich, style) {
+  var cur = null;
+  try { cur = prop.getValue ? prop.getValue() : null; } catch (eCur) { cur = null; }
+  if (typeof cur !== 'string') {
+    // Plain (non-JSON) param that reads as null/other — try a bare string.
+    try { prop.setValue(text, true); return true; } catch (e0a) {}
+    try { prop.setValue(text); return true; } catch (e0b) {}
+    return false;
+  }
+
+  function esc(s) {
+    return String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+                    .replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
+  }
+
+  // Rich After-Effects "source text" blob ({"capPropFontEdit":...,
+  // "textEditValue":...}). Edit ONLY the text inside the RAW string (never
+  // JSON.parse/stringify — our minimal polyfill re-serializes lossily and
+  // corrupts the clip). Crucially, every run-length field must match the NEW
+  // text length or Premiere throws "bad any cast"; update them generically
+  // (scalar AND single-run array forms). Gated behind allowRich.
+  // NOTE the strDB guard: once the strDB branch has extended a value with
+  // fonteditinfo (capProp…), a REGENERATE must still route it to the strDB
+  // branch — matching capProp here would fail the textEditValue swap and
+  // break re-runs.
+  if (cur.indexOf('"strDB"') === -1 &&
+      (cur.indexOf('textEditValue') !== -1 || cur.indexOf('capProp') !== -1)) {
+    if (!allowRich) return false;
+    var n = String(text).length, e = esc(text), changed = false;
+    var out = cur.replace(/("textEditValue"\s*:\s*")(?:[^"\\]|\\.)*(")/,
+      function (m, a, b) { changed = true; return a + e + b; });
+    if (!changed) return false;
+    // keep any *RunLength field consistent with the new char count
+    out = out.replace(/("[A-Za-z]*RunLength"\s*:\s*)\[\s*\d+\s*\]/g, function (m, a) { return a + '[' + n + ']'; });
+    out = out.replace(/("[A-Za-z]*RunLength"\s*:\s*)\d+/g, function (m, a) { return a + n; });
+    // Text STYLE edits. fill / caps / bold / italic / font apply on ANY run
+    // count now: CP_rewriteBlobField replaces the values INSIDE the existing
+    // per-run arrays without changing their length (or any run-length field),
+    // so a multi-run blob stays exactly as structurally consistent as before —
+    // the old single-run gate silently skipped ALL styling on multi-run
+    // templates, which is why timeline captions came out template-default
+    // (white/thin) while the preview showed the chosen colours. Only SIZE keeps
+    // the single-run gate: multi-run sizes are a designed hierarchy, and
+    // CP_scaleAllTextSizes already scales those proportionally.
+    var singleRun = /"capPropTextRunCount"\s*:\s*1\b/.test(out);
+    if (style) {
+      if (style.font) {
+        var fe = esc(String(style.font));
+        out = CP_rewriteBlobField(out, 'fontEditValue', CP_runStringsAll(fe));
+        out = out.replace(/("fontName"\s*:\s*")(?:[^"\\]|\\.)*(")/g, function (m, a, b) { return a + fe + b; });
+      }
+      if (style.size != null && !isNaN(parseFloat(style.size)) && singleRun) {
+        var sz = parseFloat(style.size);
+        out = out.replace(/("fontSizeEditValue"\s*:\s*)\[\s*[\d.]+\s*\]/, function (m, a) { return a + '[' + sz + ']'; });
+        out = out.replace(/("fontSizeEditValue"\s*:\s*)[\d.]+/, function (m, a) { return a + sz; });
+      }
+      if (style.caps != null) out = CP_rewriteBlobField(out, 'fontFSAllCapsValue', CP_runBoolsAll(!!style.caps));
+      if (style.bold != null) out = CP_rewriteBlobField(out, 'fontFSBoldValue', CP_runBoolsAll(!!style.bold));
+      if (style.italic != null) out = CP_rewriteBlobField(out, 'fontFSItalicValue', CP_runBoolsAll(!!style.italic));
+      // Text FILL colour lives in the source text too (AE stores [r,g,b] 0..1,
+      // per-run as [[r,g,b],[r,g,b],…]) — every run gets the chosen colour.
+      if (style.fill) {
+        var fcr = CP_hexToRgba(style.fill);
+        var t3 = fcr[0] + ',' + fcr[1] + ',' + fcr[2];
+        out = CP_rewriteBlobField(out, '(?:font)?[Ff]ill[Cc]olou?r(?:Edit)?Value', CP_runTripletsAll(t3));
+      }
+    }
+    try { prop.setValue(out, true); return true; } catch (e1) {}
+    try { prop.setValue(out); return true; } catch (e2) {}
+    return false;
+  }
+
+  // strDB source text ({"strDB":[{"localeString":"en_US","str":"…"}]}) — the
+  // simple multi-locale format many "Shorts" text templates use. Swap the
+  // "str" value(s); no run-length to worry about, so it's safe (not gated).
+  if (cur.indexOf('"strDB"') !== -1) {
+    var es = esc(text), chs = false;
+    var os = cur.replace(/("str"\s*:\s*")(?:[^"\\]|\\.)*(")/g,
+      function (m, a, b) { chs = true; return a + es + b; });
+    if (chs) {
+      // FONT on strDB-valued Text controls: the face lives in a control-level
+      // `fonteditinfo` (see the mogrt's definition.json), NOT in the plain
+      // value — which is why font picks were silently ignored on templates
+      // whose live value is strDB. Write the value EXTENDED with fonteditinfo,
+      // read back to confirm this Premiere accepted the shape, and fall back
+      // to the plain write if it didn't (words always land). NOT gated behind
+      // allowRich: that guard protects the run-length-sensitive RICH rewrite;
+      // this shape has no run-lengths and self-verifies + reverts.
+      if (style && style.font) {
+        try {
+          var fe3 = esc(String(style.font));
+          var ext = null;
+          if (os.indexOf('"fonteditinfo"') !== -1) {
+            ext = CP_rewriteBlobField(os, 'fontEditValue', CP_runStringsAll(fe3));
+            if (style.bold != null) ext = CP_rewriteBlobField(ext, 'fontFSBoldValue', CP_runBoolsAll(!!style.bold));
+            if (style.italic != null) ext = CP_rewriteBlobField(ext, 'fontFSItalicValue', CP_runBoolsAll(!!style.italic));
+            if (style.caps != null) ext = CP_rewriteBlobField(ext, 'fontFSAllCapsValue', CP_runBoolsAll(!!style.caps));
+          } else if (os.charAt(0) === '{') {
+            ext = '{' +
+              '"fonteditinfo":{"capPropFontEdit":true,"capPropFontFauxStyleEdit":true,"capPropFontSizeEdit":true,' +
+              '"fontEditValue":"' + fe3 + '",' +
+              '"fontFSAllCapsValue":' + (style.caps ? 'true' : 'false') + ',' +
+              '"fontFSBoldValue":' + (style.bold ? 'true' : 'false') + ',' +
+              '"fontFSItalicValue":' + (style.italic ? 'true' : 'false') + ',' +
+              '"fontFSSmallCapsValue":false},' +
+              os.substring(1);
+          }
+          if (ext && ext !== os) {
+            var extSet = false;
+            try { prop.setValue(ext, true); extSet = true; } catch (eX1) {
+              try { prop.setValue(ext); extSet = true; } catch (eX2) {}
+            }
+            if (extSet) {
+              var back = '';
+              try { back = String(prop.getValue()); } catch (eBk) {}
+              if (back.indexOf(fe3) !== -1) return true;   // the font STUCK
+              // this Premiere stripped/refused the shape → plain write below
+            }
+          }
+        } catch (eFei) {}
+      }
+      try { prop.setValue(os, true); return true; } catch (eS1) {}
+      try { prop.setValue(os); return true; } catch (eS2) {}
+    }
+    return false;
+  }
+
+  // Simple {"text":"..."} templates: swap just the text value in the raw string.
+  if (cur.charAt(0) === '{' && cur.indexOf('"text"') !== -1) {
+    var e2v = esc(text), ch = false;
+    var o2 = cur.replace(/("text"\s*:\s*")(?:[^"\\]|\\.)*(")/,
+      function (m, a, b) { ch = true; return a + e2v + b; });
+    if (ch) {
+      try { prop.setValue(o2, true); return true; } catch (e3) {}
+      try { prop.setValue(o2); return true; } catch (e4) {}
+    }
+    return false;
+  }
+
+  // True plain-string params only — never write a bare string onto a JSON blob.
+  if (cur.charAt(0) !== '{') {
+    try { prop.setValue(text, true); return true; } catch (e5) {}
+    try { prop.setValue(text); return true; } catch (e6) {}
+  }
+  return false;
+}
+
+/* Scale the font size of EVERY editable text layer in a MOGRT by `scale`
+ * (1 = unchanged). Many templates stack more than one text layer — e.g. a big
+ * ghosted "echo" word behind the coloured caption. The panel's single Font-size
+ * control only resized the layer we wrote the caption into, leaving the other
+ * layer at its template size, so the two no longer matched and one overflowed
+ * the frame. Scaling every text layer from its OWN current (template-default)
+ * size keeps the design's size RATIO intact while the whole graphic grows or
+ * shrinks together. Style-only — never touches the text. Single-run layers only
+ * (same safety gate as the rich-text writer). Returns how many layers changed. */
+function CP_scaleAllTextSizes(comp, scale) {
+  if (!comp || !comp.properties || !scale || scale === 1) return 0;
+  var n = 0;
+  for (var i = 0; i < comp.properties.numItems; i++) {
+    var p = comp.properties[i], cur = null;
+    try { cur = p.getValue ? p.getValue() : null; } catch (e) { continue; }
+    if (typeof cur !== 'string') continue;
+    if (cur.indexOf('textEditValue') === -1 && cur.indexOf('capProp') === -1) continue;
+    if (!/"capPropTextRunCount"\s*:\s*1\b/.test(cur)) continue;        // single-run only (safe)
+    var out = cur.replace(/("fontSizeEditValue"\s*:\s*)\[\s*([\d.]+)\s*\]/,
+                          function (m, a, v) { return a + '[' + (parseFloat(v) * scale) + ']'; });
+    if (out === cur) out = cur.replace(/("fontSizeEditValue"\s*:\s*)([\d.]+)/,
+                          function (m, a, v) { return a + (parseFloat(v) * scale); });
+    if (out === cur) continue;
+    try { p.setValue(out, true); n++; } catch (e1) { try { p.setValue(out); n++; } catch (e2) {} }
+  }
+  return n;
+}
+
+/* A MOGRT GROUP control reports its value as a ';'-separated list of child
+   UUIDs (e.g. "1e42b26d-…;c0e7d2a9-…"). Those are containers, NOT text. */
+function CP_isUuidList(s) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(\s*;|\s*$)/i.test(String(s));
+}
+/* True if a string value is a real editable text field (source-text or plain
+   caption) rather than a group reference, a font name, or a non-caption helper
+   field (read-only mirrors, author notes, "change font only" duplicates). */
+function CP_isTextValue(v, name) {
+  if (typeof v !== 'string' || !v.length) return false;
+  if (CP_isUuidList(v)) return false;                       // group container
+  var nmL = String(name || '').toLowerCase();
+  if (nmL.indexOf('font') !== -1 || nmL.indexOf('typeface') !== -1) return false; // font picker
+  // Auto-subtitle templates expose read-only word mirrors and an author "Note"
+  // beside the real caption field — filling those garbles the graphic.
+  if (/readonly|read only|\(read|\bnote\b|instruction|change font only|\(change font|do not|don't edit|placeholder/.test(nmL)) return false;
+  return true;
+}
+
+/* All text-ish properties of a MOGRT component, in display order. Multi-line
+   templates (Text 01..NN) return several; Pulse fills each with a
+   consecutive caption line. Group refs / font pickers are excluded. */
+function CP_textPropsOf(comp) {
+  var out = [];
+  if (!comp || !comp.properties) return out;
+  for (var i = 0; i < comp.properties.numItems; i++) {
+    var p = comp.properties[i];
+    var v = null; try { v = p.getValue(); } catch (e) { continue; }
+    if (CP_isTextValue(v, p.displayName)) out.push(p);
+  }
+  return out;
+}
+
+/* Find the text-ish property of a MOGRT component (display-name keyword first,
+   then the first property holding real text). Returns prop|null. */
+function CP_findTextProp(props, KEYS) {
+  for (var k = 0; k < KEYS.length; k++) {
+    for (var p = 0; p < props.numItems; p++) {
+      var dn = String(props[p].displayName || '').toLowerCase();
+      if (dn.indexOf(KEYS[k]) === -1) continue;
+      var v = null; try { v = props[p].getValue(); } catch (eV) { v = null; }
+      if (CP_isTextValue(v, props[p].displayName)) return props[p];   // must be real text, not a group ref
+    }
+  }
+  for (var p2 = 0; p2 < props.numItems; p2++) {
+    var v2 = null; try { v2 = props[p2].getValue(); } catch (eV2) { v2 = null; }
+    if (CP_isTextValue(v2, props[p2].displayName)) return props[p2];
+  }
+  return null;
+}
+
+/* Remove the most-recently-added clip from a video track (best effort, QE). */
+function CP_removeLastClipOnTrack(vTrack) {
+  try {
+    app.enableQE();
+    var qt = qe.project.getActiveSequence().getVideoTrackAt(vTrack);
+    for (var k = qt.numItems - 1; k >= 0; k--) {
+      var it = qt.getItemAt(k);
+      if (it && it.type !== 'Empty') { try { it.remove(0, 0); } catch (eR) {} return; }
+    }
+  } catch (eQE) {}
+}
+
+/* LAST-RESORT clip trim: razor the track at `wantEnd` and delete the piece
+   that starts there. Needed on Premiere versions whose MOGRT clips silently
+   refuse `.end` assignment AND QE speed-stretch — without it a 30s template
+   stays at its full natural length. Used by the caption inserter (final cue)
+   and by the timeline preview. */
+function CP_razorTrimTail(seq, vTrack, wantEnd, tailEnd) {
+  try {
+    app.enableQE();
+    var fpsT = CP_TICKS_PER_SECOND / parseFloat(seq.timebase);
+    var qtT = qe.project.getActiveSequence().getVideoTrackAt(vTrack);
+    qtT.razor(CP_timecode(wantEnd, fpsT, false));
+    var halfF = 0.5 / fpsT;
+    for (var tk = qtT.numItems - 1; tk >= 0; tk--) {
+      var itT = qtT.getItemAt(tk);
+      if (itT && itT.type !== 'Empty' &&
+          itT.start.secs >= wantEnd - halfF && itT.start.secs < tailEnd - halfF) {
+        try { itT.remove(0, 0); return true; } catch (eRt) {}
+        break;
+      }
+    }
+  } catch (eTailTrim) {}
+  return false;
+}
+
+/* Time-stretch the most-recently-placed clip on a track to `speedPct` (best
+   effort via QE). Slowing it (<100%) makes a fixed-length MOGRT last longer —
+   the only scriptable way to extend past a template's authored duration. */
+function CP_stretchLastClip(vTrack, speedPct) {
+  try {
+    app.enableQE();
+    var qt = qe.project.getActiveSequence().getVideoTrackAt(vTrack);
+    for (var k = qt.numItems - 1; k >= 0; k--) {
+      var it = qt.getItemAt(k);
+      if (!it || it.type === 'Empty') continue;
+      try { it.setSpeed(speedPct); return true; } catch (e1) {}
+      try { it.setSpeed(speedPct, '00:00:00:00', false, false, false); return true; } catch (e2) {}
+      return false;
+    }
+  } catch (eQE) {}
+  return false;
+}
+
+/* PROBE: drop ONE throwaway instance, attempt the text write, read it back to
+ * confirm it stuck and still parses, then remove the instance. This is what
+ * makes rich-text captioning safe — we never write to the user's real captions
+ * unless this verified the template accepts the edit cleanly.
+ * Returns: { kind:'rich'|'simple'|'strdb'|'plain'|'none', richSafe:bool, textCount:int }. */
+function CP_probeRichText(mogrtPath, vTrack, aTrack, KEYS, sampleText, style) {
+  var res = { kind: 'none', richSafe: false, textCount: 0, imported: false };
+  var clip = null;
+  try {
+    clip = seqGlobalImport(mogrtPath, vTrack, aTrack);
+    if (!clip) return res;
+    res.imported = true;   // the template CAN be placed — safe to clear a replaced set
+    var comp = clip.getMGTComponent();
+    if (!comp || !comp.properties) { CP_removeLastClipOnTrack(vTrack); return res; }
+    res.textCount = CP_textPropsOf(comp).length;     // how many text lines this template holds
+    // Word-highlight caption engines (Flux Halo/Prism family) carry a second
+    // text layer that is an expression-driven HIGHLIGHT MIRROR of the first —
+    // its words follow the main text automatically. When the mirror is not
+    // name-tagged ("(Change font only)") it still counts as a text prop, and
+    // treating it as a second caption LINE paired two cues into one graphic
+    // and "the second text never changed". Detect the rig instead: a sweep
+    // duration control + exactly two text props = mirror, ONE caption line.
+    try {
+      var pr = comp.properties;
+      for (var sw = 0; sw < pr.numItems; sw++) {
+        var swn = String(pr[sw].displayName || '').toLowerCase().replace(/[^a-z]/g, '');
+        if (swn.indexOf('starttimeduration') === 0 || (swn.indexOf('duration') >= 0 && swn.indexOf('automated') >= 0)) { res.hasSweep = true; break; }
+      }
+    } catch (eRig) {}
+    res.mirrorText = !!(res.hasSweep && res.textCount === 2);
+    if (res.mirrorText) res.textCount = 1;           // the mirror is NOT a caption line
+    var prop = CP_findTextProp(comp.properties, KEYS);
+    if (!prop) { CP_removeLastClipOnTrack(vTrack); return res; }
+    var before = null; try { before = prop.getValue(); } catch (eB) {}
+    if (typeof before === 'string' && (before.indexOf('textEditValue') !== -1 || before.indexOf('capProp') !== -1)) {
+      res.kind = 'rich';
+      var probeText = String(sampleText || 'Pulse test');
+      // probe the SAME write the real captions will do (text + optional style),
+      // so enabling style edits can't slip past the safety verification.
+      if (CP_setMgrtText(prop, probeText, true, style)) {
+        var after = null; try { after = prop.getValue(); } catch (eA) { after = null; }
+        if (typeof after === 'string' && after.indexOf('textEditValue') !== -1) {
+          try {
+            var parsed = JSON.parse(after);
+            res.richSafe = !!(parsed && String(parsed.textEditValue) === probeText);
+          } catch (eP) { res.richSafe = false; }
+        }
+        // Single-run source text: our rewrite sets the one run-length to exactly
+        // the new text length, so it's provably consistent (no "bad any cast"
+        // risk). getValue() can lag setValue() and make the read-back check above
+        // inconclusive — don't let that falsely block a safe single-run fill,
+        // which would leave every caption on the template's default text.
+        if (!res.richSafe && /"capPropTextRunCount"\s*:\s*1\b/.test(before)) {
+          res.richSafe = true;
+        }
+      }
+    } else if (typeof before === 'string' && before.indexOf('"strDB"') !== -1) {
+      res.kind = 'strdb';   // simple multi-locale source text — safe to fill directly
+    } else if (typeof before === 'string' && before.charAt(0) === '{') {
+      res.kind = 'simple';
+    } else {
+      res.kind = 'plain';
+    }
+  } catch (e) { /* fall through to cleanup */ }
+  CP_removeLastClipOnTrack(vTrack);
+  return res;
+}
+
+/* Import a MOGRT onto the active sequence at time 0 (probe helper). */
+function seqGlobalImport(mogrtPath, vTrack, aTrack) {
+  var seq = CP_activeSequence();
+  return seq.importMGT(mogrtPath, CP_ticksFromSeconds(0), vTrack, aTrack);
+}
+
+/* True if a property currently holds a plain string (likely a text param). */
+function CP_propIsString(prop) {
+  try {
+    var v = prop.getValue ? prop.getValue() : null;
+    return typeof v === 'string';
+  } catch (e) { return false; }
+}
+
+// -------------------------------------------- MOGRT param editing (safe) ----
+// Unlike the rich source-text param, a MOGRT's colour / size / toggle / font
+// controls are ordinary settable parameter types (the same ones Premiere shows
+// in Essential Graphics), so the panel can expose them for editing + preview.
+
+function CP_clamp01(x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
+function CP_hex2(n) { n = Math.round(CP_clamp01(n) * 255); var s = n.toString(16); return s.length < 2 ? '0' + s : s; }
+
+/* MOGRT colour values are [r,g,b,a] floats 0..1 → "#rrggbb". */
+function CP_rgbaToHex(arr) {
+  try { return '#' + CP_hex2(arr[0]) + CP_hex2(arr[1]) + CP_hex2(arr[2]); } catch (e) { return '#ffffff'; }
+}
+function CP_hexToRgba(hex) {
+  hex = String(hex).replace('#', '');
+  if (hex.length === 3) hex = hex.charAt(0) + hex.charAt(0) + hex.charAt(1) + hex.charAt(1) + hex.charAt(2) + hex.charAt(2);
+  var r = parseInt(hex.substr(0, 2), 16) / 255;
+  var g = parseInt(hex.substr(2, 2), 16) / 255;
+  var b = parseInt(hex.substr(4, 2), 16) / 255;
+  if (isNaN(r) || isNaN(g) || isNaN(b)) return [1, 1, 1, 1];
+  return [r, g, b, 1];
+}
+/* Some MOGRT colour controls read/write as a packed 24-bit int (0xRRGGBB). */
+function CP_intToHex(n) {
+  n = Math.round(Number(n)) & 0xFFFFFF;
+  var s = n.toString(16); while (s.length < 6) s = '0' + s;
+  return '#' + s;
+}
+function CP_hexToInt(hex) {
+  hex = String(hex).replace('#', '');
+  if (hex.length === 3) hex = hex.charAt(0) + hex.charAt(0) + hex.charAt(1) + hex.charAt(1) + hex.charAt(2) + hex.charAt(2);
+  var v = parseInt(hex, 16);
+  return isNaN(v) ? 0 : v;
+}
+
+/* Set a MOGRT colour from a hex string.
+
+   THE correct API (per Adobe's Premiere scripting docs) is
+   ComponentParam.setColorValue(alpha, red, green, blue, updateUI) with 0-255
+   values — NOT setValue(). For a colour param, getValue()/setValue() use an
+   internal packed number that does not round-trip (e.g. getValue() on white
+   returns 280379743338240), which is exactly why every setValue() attempt
+   silently failed. setColorValue() is the method that actually works.
+
+   We still keep setValue() array / int fallbacks for the rare param that has no
+   setColorValue (older or non-AE templates). */
+function CP_setColorAny(prop, hex) {
+  var rgba = CP_hexToRgba(hex);                 // [r,g,b,a] 0..1
+  var r = Math.round(rgba[0] * 255), g = Math.round(rgba[1] * 255), b = Math.round(rgba[2] * 255);
+  var canVerify = false;
+  try { canVerify = (typeof prop.getColorValue === 'function'); } catch (eCV) { canVerify = false; }
+
+  // Read the colour back and check it really became r,g,b. getColorValue may
+  // return [a,r,g,b] OR [r,g,b,a] depending on the build — accept either, so a
+  // verified set is order-proof.
+  function ok() {
+    if (!canVerify) return false;
+    try {
+      var c = prop.getColorValue();
+      if (!c || c.length < 3) return false;
+      function n(x, y) { return Math.abs(Math.round(Number(x)) - y) <= 2; }
+      if (c.length >= 4 && n(c[1], r) && n(c[2], g) && n(c[3], b)) return true;   // [a,r,g,b]
+      if (n(c[0], r) && n(c[1], g) && n(c[2], b)) return true;                    // [r,g,b,a]
+      return false;
+    } catch (eR) { return false; }
+  }
+
+  // 1) documented API: setColorValue(alpha, red, green, blue, updateUI), 0-255.
+  try { prop.setColorValue(255, r, g, b, 1); if (!canVerify || ok()) return true; } catch (e0) {}
+  try { prop.setColorValue(255, r, g, b);    if (!canVerify || ok()) return true; } catch (e0b) {}
+  // 2) fallbacks for non-AE colour params — only accept when verified.
+  try { prop.setValue(rgba, true); if (canVerify && ok()) return true; } catch (e1) {}
+  try { prop.setValue(rgba);       if (canVerify && ok()) return true; } catch (e2) {}
+  var pi = r * 65536 + g * 256 + b;
+  try { prop.setValue(pi, true);   if (canVerify && ok()) return true; } catch (e3) {}
+  // 3) alternate arg order, last resort (some builds: red, green, blue, alpha).
+  try { prop.setColorValue(r, g, b, 255, 1); if (canVerify && ok()) return true; } catch (e4) {}
+  // 4) couldn't verify — best effort so a colour is at least attempted.
+  try { prop.setColorValue(255, r, g, b, 1); return true; } catch (e5) {}
+  try { prop.setValue(rgba, true); return true; } catch (e6) {}
+  return false;
+}
+
+/* Classify a MOGRT property so the panel can render the right control.
+   Returns { kind, value } where kind is text|color|colorint|number|bool|font|string. */
+function CP_classifyMgrtProp(p) {
+  var val = null, t = '?';
+  try { val = p.getValue(); t = typeof val; } catch (e) {}
+  var name = String(p.displayName || '').toLowerCase();
+  // Treat a NUMBER as a packed colour when its name reads colour-y (color,
+  // fill, stroke, background, tint, accent, shadow, glow…) but is NOT a scalar
+  // modifier (opacity, size, width, angle…), so multiple differently-named
+  // colour controls all get a real picker instead of a number box.
+  var nameColor = /(colou?r|fill|stroke|outline|background|\bbg\b|tint|shade|accent|swatch|gradient|shadow|glow)/.test(name);
+  var nameScalar = /(opacity|alpha|size|scale|width|height|amount|angle|radius|blur|feather|position|duration|offset|spacing|tracking|leading|rotation|percent|level|count|index|weight|intensity|softness)/.test(name);
+  var isColorName = nameColor && !nameScalar;
+  if (t === 'string') {
+    if (val.indexOf('capProp') !== -1 || val.indexOf('textEditValue') !== -1 || val.charAt(0) === '{') {
+      return { kind: 'text', value: '' };
+    }
+    if (name.indexOf('font') !== -1 || name.indexOf('typeface') !== -1) return { kind: 'font', value: String(val) };
+    return { kind: 'string', value: String(val) };
+  }
+  if (t === 'number') {
+    // a number named "Color …" is almost always a packed colour int
+    if (isColorName) return { kind: 'colorint', value: CP_intToHex(val) };
+    return { kind: 'number', value: val };
+  }
+  if (t === 'boolean') return { kind: 'bool', value: val };
+  if (t === 'object' && val && typeof val.length === 'number' && typeof val[0] === 'number') {
+    if (val.length >= 3) return { kind: 'color', value: CP_rgbaToHex(val) };
+    return { kind: 'number', value: val[0] };
+  }
+  return { kind: 'string', value: String(val) };
+}
+
+/* Apply one override to a MOGRT property (colour/size/toggle/font). Best
+   effort — never throws, returns true on success. */
+function CP_setMgrtParam(prop, kind, value) {
+  try {
+    if (kind === 'point') {
+      // position param — getValue returns {x,y}; try object then array forms
+      var px = (value && value.x != null) ? Number(value.x) : 0;
+      var py = (value && value.y != null) ? Number(value.y) : 0;
+      try { prop.setValue({ x: px, y: py }, true); return true; } catch (ep1) {}
+      try { prop.setValue([px, py], true); return true; } catch (ep2) {}
+      try { prop.setValue([px, py]); return true; } catch (ep3) {}
+      return false;
+    }
+    if (kind === 'colornum') {
+      // panel pre-encoded the colour as an exact number (rare path)
+      var cn = Number(value);
+      try { prop.setValue(cn, true); return true; } catch (ecn1) {}
+      try { prop.setValue(cn); return true; } catch (ecn2) {}
+      return false;
+    }
+    if (kind === 'color' || kind === 'colorint') {
+      return CP_setColorAny(prop, value);
+    }
+    var v;
+    if (kind === 'number') v = parseFloat(value);
+    else if (kind === 'bool') v = !!value;
+    else if (kind === 'font') v = String(value);
+    else return false;
+    if (kind === 'number' && isNaN(v)) return false;
+    try { prop.setValue(v, true); return true; } catch (e1) {}
+    try { prop.setValue(v); return true; } catch (e2) {}
+  } catch (e) {}
+  return false;
+}
+
+/* Apply a list of overrides [{i, kind, value}] to a clip's MGT component. */
+function CP_applyMgrtParams(comp, params) {
+  if (!comp || !comp.properties || !params) return 0;
+  var n = 0;
+  for (var k = 0; k < params.length; k++) {
+    var pr = params[k];
+    if (pr == null || pr.i == null || pr.i < 0 || pr.i >= comp.properties.numItems) continue;
+    if (CP_setMgrtParam(comp.properties[pr.i], pr.kind, pr.value)) n++;
+  }
+  return n;
+}
+
+/* Capture every NON-text style property of a MOGRT component — colours (via the
+   real colour API), numbers, booleans, points, and font/string params. Source
+   text, rich text and group references are skipped so each caption keeps its own
+   words. Used by "match all captions to the one I styled in Essential Graphics". */
+function CP_captureMgrtStyle(comp) {
+  var out = [];
+  if (!comp || !comp.properties) return out;
+  for (var i = 0; i < comp.properties.numItems; i++) {
+    var p = comp.properties[i];
+    var v = null; try { v = p.getValue(); } catch (e) { continue; }
+    if (typeof v === 'string' &&
+        (v.indexOf('capProp') !== -1 || v.indexOf('textEditValue') !== -1 ||
+         v.indexOf('"strDB"') !== -1 || CP_isUuidList(v))) continue;        // text / group
+    var col = null;
+    try { if (typeof p.getColorValue === 'function') { var cv = p.getColorValue(); if (cv && cv.length >= 4) col = [cv[0], cv[1], cv[2], cv[3]]; } } catch (eC) {}
+    if (col) { out.push({ i: i, kind: 'color', color: col }); continue; }
+    if (typeof v === 'number' || typeof v === 'boolean') { out.push({ i: i, kind: 'val', value: v }); continue; }
+    if (typeof v === 'object' && v && v.x != null) { out.push({ i: i, kind: 'point', x: v.x, y: v.y }); continue; }
+    if (typeof v === 'string') { out.push({ i: i, kind: 'str', value: v }); continue; }   // font names etc.
+  }
+  return out;
+}
+
+/* Apply a captured style onto a MOGRT component (best effort, never throws). */
+function CP_applyCapturedStyle(comp, style) {
+  if (!comp || !comp.properties || !style) return 0;
+  var n = 0;
+  for (var k = 0; k < style.length; k++) {
+    var s = style[k];
+    if (s.i == null || s.i < 0 || s.i >= comp.properties.numItems) continue;
+    var p = comp.properties[s.i];
+    try {
+      if (s.kind === 'color' && typeof p.setColorValue === 'function') {
+        // getColorValue is [a,r,g,b]; replicate the colour, force opaque alpha
+        p.setColorValue(255, s.color[1], s.color[2], s.color[3], 1); n++;
+      } else if (s.kind === 'point') {
+        try { p.setValue({ x: s.x, y: s.y }, true); n++; }
+        catch (e1) { try { p.setValue([s.x, s.y], true); n++; } catch (e2) {} }
+      } else if (s.kind === 'val') {
+        p.setValue(s.value, true); n++;
+      } else if (s.kind === 'str') {
+        try { p.setValue(s.value, true); n++; } catch (eS) {}
+      }
+    } catch (e) {}
+  }
+  return n;
+}
+
+/* "Match all captions to the one I styled": read the SELECTED graphic's full
+   look (as set in Premiere's own Essential Graphics) and copy it onto every other
+   MOGRT graphic on the same track. This lets the user edit natively — padding and
+   all — and propagate it everywhere, instead of relying on our rebuilt controls. */
+function CP_copyStyleSelectedToTrack() {
+  try {
+    var seq = CP_activeSequence();
+    var sel = null, selTrack = -1, selIdx = -1;
+    for (var t = 0; t < seq.videoTracks.numTracks && !sel; t++) {
+      var tr = seq.videoTracks[t];
+      for (var i = 0; i < tr.clips.numItems; i++) {
+        var isSel = false; try { isSel = tr.clips[i].isSelected(); } catch (eS) {}
+        if (isSel) { sel = tr.clips[i]; selTrack = t; selIdx = i; break; }
+      }
+    }
+    if (!sel) return CP_fail('Select one caption graphic you styled (click it on the timeline), then try again.');
+    var srcComp = null; try { srcComp = sel.getMGTComponent(); } catch (eM) {}
+    if (!srcComp || !srcComp.properties) return CP_fail('The selected clip isn\'t a Motion Graphics template — select one of Pulse\'s caption graphics.');
+    var style = CP_captureMgrtStyle(srcComp);
+    if (!style.length) return CP_fail('Could not read any style from the selected graphic.');
+    var track = seq.videoTracks[selTrack], applied = 0;
+    for (var c = 0; c < track.clips.numItems; c++) {
+      if (c === selIdx) continue;
+      var comp = null; try { comp = track.clips[c].getMGTComponent(); } catch (eG) {}
+      if (comp && comp.properties) { if (CP_applyCapturedStyle(comp, style) > 0) applied++; }
+    }
+    return CP_ok({ applied: applied, captured: style.length, track: selTrack + 1 });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/* Make a word-highlight template (Flux / subtitle) SWEEP its highlight across the
+ * words over the caption's visible time, instead of holding on one fixed word.
+ * These templates expose a "Type" dropdown (Index Based | Duration Based) and a
+ * point "Start Time, Duration(Automated)" = [startSec, durationSec]. By default
+ * the template sweeps over a fixed ~6s, so on a short caption the highlight never
+ * reaches the later words. We force Duration Based and set the duration to the
+ * caption's real on-screen length, so the highlight advances word-by-word at the
+ * talking pace. No-op on templates without these controls. Returns a small
+ * diagnostic object (or null) so the panel can report what it set. */
+/* ---- caption-track safety helpers (the "nothing appears" bug class) --------
+   A remembered "replace this track" index can go stale: the user layers b-roll
+   above it (captions render hidden behind footage), switches sequence/project
+   (the index now points at REAL footage), locks/mutes the track, or the
+   regenerate's template fails to import after the old set was already wiped.
+   These helpers make every one of those safe. */
+
+/* Normalise a clip/template name for the caption-track signature: drop any
+   file extension, lowercase, strip non-alphanumerics. */
+function CP_sigNorm(s) {
+  s = String(s == null ? '' : s).toLowerCase().replace(/\.[a-z0-9]{2,5}$/, '');
+  return s.replace(/[^a-z0-9]/g, '');
+}
+
+/* TRUE only when every clip on the track is one of OUR caption graphics (its
+   name starts with a known template basename). An empty track passes (clearing
+   it is a no-op). Any failure to inspect returns FALSE — we never clear what
+   we cannot verify. */
+/* Remove EVERY video track that holds only Pulse captions (template graphics
+   or rendered caption images). Weeks of debug builds left the user's sequence
+   with a dozen stacked caption tracks; this clears them in one action. Tracks
+   holding any non-caption clip are never touched. */
+function CP_removePulseCaptionTracks(argsJson) {
+  try {
+    var args = {};
+    try { if (argsJson) args = JSON.parse(argsJson) || {}; } catch (eA) {}
+    var seq = CP_activeSequence();
+    app.enableQE();
+    var qseq = qe.project.getActiveSequence();
+    // 'pulse' covers everything Pulse writes now (pulse-captions.mov). The
+    // anchored 'captions.mov' is for overlays placed by v0.9.344-v0.9.378, which
+    // named the file without any Pulse marker and were therefore invisible to
+    // this cleanup. Anchored on purpose: a user clip called "My Captions v2.mov"
+    // must not be swept up.
+    var pat = /(flux|subtitle|shorts_text|text_animation|pulse|cutpilot|cap[-_]?\d)/i;
+    var legacyOverlay = /^captions\.mov$/i;
+    var cleared = 0, tracks = [];
+    for (var ti = seq.videoTracks.numTracks - 1; ti >= 0; ti--) {
+      var track = seq.videoTracks[ti];
+      if (!track.clips.numItems) continue;
+      var allCaps = true;
+      for (var ci = 0; ci < track.clips.numItems; ci++) {
+        var nm = String(track.clips[ci].name || '');
+        if (!pat.test(nm) && !legacyOverlay.test(nm)) { allCaps = false; break; }
+      }
+      if (!allCaps) continue;
+      var qt = null;
+      try { qt = qseq.getVideoTrackAt(ti); } catch (eQ) {}
+      if (!qt) continue;
+      var removed = 0;
+      for (var k = qt.numItems - 1; k >= 0; k--) {
+        var it = qt.getItemAt(k);
+        if (it && it.type !== 'Empty') { try { it.remove(0, 0); removed++; } catch (eR) {} }
+      }
+      if (removed) { cleared += removed; tracks.push(ti + 1); }
+    }
+    return CP_ok({ cleared: cleared, tracks: tracks });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+function CP_trackIsPulseCaptions(ti, names) {
+  try {
+    app.enableQE();
+    var qt = qe.project.getActiveSequence().getVideoTrackAt(ti);
+    for (var k = 0; k < qt.numItems; k++) {
+      var it = qt.getItemAt(k);
+      if (!it || it.type === 'Empty') continue;
+      var nm = CP_sigNorm(it.name);
+      var ok1 = false;
+      for (var n = 0; n < names.length; n++) {
+        if (nm && names[n] && nm.indexOf(names[n]) === 0) { ok1 = true; break; }
+      }
+      if (!ok1) return false;
+    }
+    return true;
+  } catch (e) { return false; }
+}
+
+function CP_clearTrackClips(ti) {
+  try {
+    app.enableQE();
+    var qt = qe.project.getActiveSequence().getVideoTrackAt(ti);
+    for (var rp = qt.numItems - 1; rp >= 0; rp--) {
+      var it = qt.getItemAt(rp);
+      if (it && it.type !== 'Empty') { try { it.remove(0, 0); } catch (e1) {} }
+    }
+  } catch (e) {}
+}
+
+/* Add a video track ABOVE everything; return its 0-based index, or -1 when
+   Premiere refused (QE unavailable) — the caller must NOT fall back to writing
+   on the existing top track, that overwrites the user's footage. */
+function CP_addTopVideoTrack() {
+  var seqA = CP_activeSequence();
+  var before = seqA.videoTracks.numTracks;
+  try { app.enableQE(); qe.project.getActiveSequence().addTracks(1, before, 0); } catch (e1) {}
+  seqA = CP_activeSequence();
+  if (seqA.videoTracks.numTracks > before) return seqA.videoTracks.numTracks - 1;
+  try { app.enableQE(); qe.project.getActiveSequence().addTracks(1); } catch (e2) {}
+  seqA = CP_activeSequence();
+  if (seqA.videoTracks.numTracks > before) return seqA.videoTracks.numTracks - 1;
+  return -1;
+}
+
+/* Best-effort: a muted or locked target track shows nothing / refuses clips.
+   Both calls are harmless no-ops where the API surface is missing. */
+function CP_bestEffortShowTrack(seq, ti) {
+  try { var t = seq.videoTracks[ti]; if (t && t.setMute) t.setMute(0); } catch (e1) {}
+  try { var qt = qe.project.getActiveSequence().getVideoTrackAt(ti); if (qt && qt.setLock) qt.setLock(false); } catch (e2) {}
+}
+
+/* The full zero-insert result shape with ONE loud reason — every field the
+   panel reads, so an early abort is never mistaken for success. */
+function CP_zeroInsertResult(args, msg) {
+  return {
+    inserted: 0, reused: 0, textSet: 0, clamped: 0, stretched: 0, maxTemplateDur: 0,
+    swept: 0, sweepSample: null, graphics: 0, linesPerGraphic: 1, textCount: 0,
+    failed: (args && args.cues) ? args.cues.length : 0, richBlocked: false,
+    probeKind: 'none', fields: [], sampleErrors: [msg], allowRich: false,
+    paramsSent: (args && args.params) ? args.params.length : 0, paramsApplied: 0,
+    fgFontSet: 0, track: 0, replaceMode: 'aborted', replaceGuard: null, templateImports: false
+  };
+}
+
+function CP_setWordSweep(comp, durSec, wordCount) {
+  if (!comp || !comp.properties || !(durSec > 0)) return null;
+  // RELAXED name matching. The old code demanded the byte-exact prefix
+  // "Start Time, Duration(Automated)" — one space difference in the live
+  // display name (e.g. "Duration (Automated)") and it bailed with null: NO
+  // sweep on any caption, which reads as "the highlight is not working".
+  // Same class of bug the colour mapper had. Now: normalize (lowercase, strip
+  // non-letters) and match on substance, and NEVER bind the entrance
+  // "Animation Type" dropdown as the highlight Type.
+  var props = comp.properties, typeProp = null, durProp = null, idxProp = null, i;
+  for (i = 0; i < props.numItems; i++) {
+    var dn = String(props[i].displayName || '');
+    var nn = dn.toLowerCase().replace(/[^a-z]/g, '');     // "Start Time, Duration (Automated)" → "starttimedurationautomated"
+    if (!durProp && (nn.indexOf('starttimeduration') === 0 || (nn.indexOf('duration') >= 0 && nn.indexOf('automated') >= 0))) durProp = props[i];
+    else if (!typeProp && (nn === 'type' || nn === 'highlighttype') && nn.indexOf('animation') < 0) typeProp = props[i];
+    else if (!idxProp && nn === 'wordindex') idxProp = props[i];
+  }
+  if (!durProp) return null;                       // not a word-highlight template
+  var info = { dur: durSec, typeSet: false, durSet: false,
+               typeName: typeProp ? String(typeProp.displayName) : null,
+               durName: String(durProp.displayName) };
+  // Type → "Duration Based" (2nd menu option; Premiere dropdowns are 1-based).
+  if (typeProp) {
+    try { typeProp.setValue(2, true); info.typeSet = true; }
+    catch (e1) { try { typeProp.setValue(2); info.typeSet = true; } catch (e2) {} }
+  }
+  // GRACEFUL DEGRADATION: if the mode switch didn't take (or doesn't exist) the
+  // template may sit in Index mode where "Word Index" 0 highlights NOTHING —
+  // point it at the first word so there is always a visible highlight.
+  if (!info.typeSet && idxProp) {
+    try { idxProp.setValue(1, true); } catch (eI1) { try { idxProp.setValue(1); } catch (eI2) {} }
+  }
+  // THE ENGINE'S OWN MATH (read from the .aep):
+  //   activeIndex = round(linear(time, d[0], d[0]+d[1], 0, words+1))
+  // Index 0 (before word 1) and words+1 (past the last word) highlight
+  // NOTHING. The old [0, caption-length] window therefore started every
+  // caption with NO active word and dropped the last word early — the
+  // highlight lagged the voice ("animation speed is wrong"), and in
+  // As-spoken those stretches were BLANK (a 1-word caption: HALF of it).
+  // Window such that t=0 lands at index 0.75 (safely ON word 1) and t=dur
+  // at words+0.25 (still on the last word):
+  //   d1 = dur*(W+1)/(W-0.5)      d0 = -0.75*dur/(W-0.5)
+  var W = (wordCount && wordCount > 0) ? wordCount : 3;
+  var d1 = durSec * (W + 1) / (W - 0.5);
+  var d0 = -0.75 * durSec / (W - 0.5);
+  info.words = W; info.d0 = d0; info.d1 = d1;
+  try { durProp.setValue([d0, d1], true); info.durSet = true; }
+  catch (e3) { try { durProp.setValue([d0, d1]); info.durSet = true; }
+    catch (e4) { try { durProp.setValue({ x: d0, y: d1 }, true); info.durSet = true; } catch (e5) {} } }
+  return info;
+}
+
+/* The engine's text layers are OPACITY-GATED by their authored intro animation:
+ *   if (Animation Type == K) easeOut(time, stime, stime+atime, 0, 100) else 0
+ * with "Animation Start Time, Duration" authored as [0, 1] — a ONE-SECOND
+ * slide/fade-in. Real captions are often shorter than that (98 captions in a
+ * 60s video ≈ 0.6s each), so the words never became visible while the BG box
+ * (not gated) rendered fine → "box on the video, no words".
+ * PRESERVE the ORIGINAL whenever it fits: if the authored intro finishes
+ * within 60% of this caption's visible length, it is left completely
+ * untouched — the template plays exactly as its author designed (the user's
+ * own .mogrt keeps ITS animation). Only when the caption is too short for
+ * the authored intro (the empty-box case) is it scaled down to half the
+ * caption's length (never below 0.12s, never longer than authored). Also
+ * make sure "Animation Type" holds a VALID variant (1..8) — an out-of-range
+ * value blanks EVERY text layer. A value the USER explicitly sent in params
+ * (template sheet) always wins. */
+function CP_forceIntroVisible(comp, params, clipDurSec, mode) {
+  if (!comp || !comp.properties) return 0;
+  var props = comp.properties, fixed = 0;
+  var dur = (clipDurSec && clipDurSec > 0) ? clipDurSec : 1;
+  function userSet(idx) {
+    if (!params || !params.length) return false;
+    for (var p = 0; p < params.length; p++) { if (params[p] && params[p].i === idx) return true; }
+    return false;
+  }
+  for (var i = 0; i < props.numItems; i++) {
+    var nn = String(props[i].displayName || '').toLowerCase().replace(/[^a-z]/g, '');
+    if (nn === 'animationstarttimeduration') {
+      if (userSet(i)) continue;
+      // CAPTION STYLES ('snappy'): words must be readable almost immediately on
+      // EVERY frame a viewer can pause on — a fast 0.12–0.25s pop-in, always,
+      // even when the authored 1s fade would "fit". (A paused frame early in a
+      // caption showed an empty box — the user's Reels screenshot.) The user's
+      // own TEMPLATES keep the fit-original behaviour below.
+      if (mode === 'snappy') {
+        var fitS = 0.4 * dur;
+        if (fitS > 0.25) fitS = 0.25;
+        if (fitS < 0.12) fitS = 0.12;
+        try { props[i].setValue([0, fitS], true); fixed++; }
+        catch (eS1) { try { props[i].setValue({ x: 0, y: fitS }, true); fixed++; } catch (eS2) {} }
+        continue;
+      }
+      var stime = 0, atime = 1;
+      try {
+        var cv = props[i].getValue();
+        if (cv && cv.x != null) { stime = +cv.x || 0; atime = +cv.y || 1; }
+        else if (cv && cv.length >= 2) { stime = +cv[0] || 0; atime = +cv[1] || 1; }
+      } catch (eR) {}
+      if (stime + atime <= 0.6 * dur) continue;   // authored intro FITS → keep the ORIGINAL animation untouched
+      var fit = 0.5 * dur;
+      if (fit > atime) fit = atime;               // never slower than authored
+      if (fit < 0.12) fit = 0.12;                 // never a hard pop (still animated)
+      try { props[i].setValue([0, fit], true); fixed++; }
+      catch (e1) { try { props[i].setValue({ x: 0, y: fit }, true); fixed++; } catch (e2) {} }
+    } else if (nn === 'animationtype') {
+      if (userSet(i)) continue;
+      var cur = null; try { cur = props[i].getValue(); } catch (eG) {}
+      // With the repaired engines (all 8 intro gates live, "else 100"
+      // neutral) EVERY variant 1..9 renders text safely — keep the template's
+      // own choice and only rescue an out-of-range value. (History: variant 8
+      // was forced while 1-7 carried the author's dead-expression bug.)
+      var want = (cur >= 1 && cur <= 9) ? cur : 8;
+      if (cur !== want) {
+        try { props[i].setValue(want, true); fixed++; } catch (e3) {}
+      }
+    }
+  }
+  return fixed;
+}
+
+function CP_insertMogrtCaptions(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    // Cues MUST be in time order: the never-overrun-the-next-caption clamp and
+    // the per-group gap logic both assume it. The panel sends sorted cues, but
+    // ASR quirks / other callers can hand them out of order — an earlier
+    // caption then overruns a later one and both fight on screen. Sort here.
+    if (args.cues && args.cues.length > 1) {
+      args.cues.sort(function (a, b) { return (a && a.start || 0) - (b && b.start || 0); });
+    }
+    var seq = CP_activeSequence();
+    // Detect portrait sequences. Flux/MOGRT templates are authored for 1920×1080
+    // landscape; on a portrait sequence (e.g. 1080×1920 for Shorts/Reels) the
+    // MOGRT composition overflows the narrower frame by ~420px on each side.
+    // We scale every placed clip down to seqWidth/1920 so it fits.
+    var seqW = parseFloat(seq.frameSizeHorizontal) || 1920;
+    var seqH = parseFloat(seq.frameSizeVertical) || 1080;
+    var isPortrait = (seqH > seqW);
+    var portraitScale = isPortrait ? Math.round((seqW / 1920) * 10000) / 100 : 100;
+    // Place MOGRT captions on a FRESH top video track (like the image engine)
+    // so they never overwrite existing footage — UNLESS replaceTrack asks us to
+    // reuse a track Pulse captioned before (regenerating after a style change).
+    // The reuse path is guarded four ways (the "nothing appears" bug class):
+    //  · SIGNATURE — we only touch a track whose every clip is one of OUR
+    //    caption graphics; a stale index that now points at real footage
+    //    (sequence/project switch) is treated as foreign and left alone;
+    //  · VISIBILITY — a verified caption track that is no longer TOP (b-roll
+    //    layered above) is cleared but the NEW set goes on a fresh top track,
+    //    so captions can never sit hidden behind footage while we report ✅;
+    //  · KEEP-ON-FAIL — the old set is cleared only AFTER the import probe
+    //    proves this template actually imports;
+    //  · LOUD ABORT — if Premiere refuses to add a fresh track we stop with a
+    //    clear reason instead of silently overwriting the current top track.
+    var sigNames = [];
+    try { sigNames.push(CP_sigNorm(String(args.mogrtPath || '').split(/[\\\/]/).pop())); } catch (eSg) {}
+    if (args.captionNames && args.captionNames.length) {
+      for (var cnI = 0; cnI < args.captionNames.length; cnI++) sigNames.push(CP_sigNorm(args.captionNames[cnI]));
+    }
+    var vTrack = -1, reuseIdx = null, replaceMode = 'fresh', replaceGuard = null;
+    if (args.replaceTrack != null && args.replaceTrack >= 1 && args.replaceTrack <= seq.videoTracks.numTracks) {
+      reuseIdx = args.replaceTrack - 1;
+      if (!CP_trackIsPulseCaptions(reuseIdx, sigNames)) { replaceGuard = 'foreign'; reuseIdx = null; }
+    } else if (args.replaceTrack != null) {
+      replaceGuard = 'out-of-range';
+    }
+    if (reuseIdx != null) {
+      vTrack = reuseIdx;                 // provisional — cleared only after the probe verifies import
+    } else if (args.videoTrack != null) {
+      vTrack = args.videoTrack; replaceMode = 'explicit';
+    } else {
+      vTrack = CP_addTopVideoTrack();
+      if (vTrack < 0) {
+        return CP_ok(CP_zeroInsertResult(args,
+          'Could not add a caption video track (Premiere scripting was unavailable). Nothing on your timeline was changed — add one empty video track above your footage, then try again.'));
+      }
+      seq = CP_activeSequence();
+    }
+    var aTrack = args.audioTrack != null ? args.audioTrack : 0;
+    var inserted = 0, textSet = 0, clamped = 0, maxTemplateDur = 0, swept = 0, sweepSample = null, introFixed = 0;
+    var errors = [];
+    var fieldNames = null; // captured once for diagnostics
+    var paramsApplied = 0; // how many colour/number overrides actually landed (all passes)
+    var fgFontSet = 0;     // "(Change font only)" gradient mirrors given the style's font
+    var fontApplied = null; // READBACK: the face the first graphic actually stored (ground truth)
+    var spokenFallbacks = 0; // "As spoken" clips whose sweep failed → base text forced visible
+
+    var KEYS = ['text', 'source', 'caption', 'title', 'subtitle', 'headline',
+                'body', 'content', 'label', 'name', 'word'];
+
+    // SAFETY PROBE: before captioning the real timeline, test the text write on
+    // one throwaway instance and read it back. For rich AE source-text we only
+    // enable writing if that verified clean — otherwise we place the graphics
+    // but leave the text alone (never risking the "bad any cast" corruption).
+    var probe = CP_probeRichText(args.mogrtPath, vTrack, aTrack, KEYS,
+                                 (args.cues[0] && args.cues[0].text) ? args.cues[0].text : 'Pulse test',
+                                 args.textStyle);
+    var allowRich = (probe.kind === 'rich') ? probe.richSafe : false;
+    var richBlocked = (probe.kind === 'rich' && !probe.richSafe);
+
+    // Finalize the replace flow now the probe told us the template imports:
+    // only NOW is it safe to clear the previous set; and if the verified
+    // caption track is no longer the TOP track, the new set moves to a fresh
+    // top track so it can never hide behind footage layered above.
+    if (reuseIdx != null) {
+      if (!probe.imported) {
+        return CP_ok(CP_zeroInsertResult(args,
+          'This template failed to import, so your previous captions were left untouched. Try another template.'));
+      }
+      CP_clearTrackClips(reuseIdx);
+      if (reuseIdx < seq.videoTracks.numTracks - 1) {
+        var ntTop = CP_addTopVideoTrack();
+        if (ntTop >= 0) { vTrack = ntTop; seq = CP_activeSequence(); replaceMode = 'fresh-after-clear'; }
+        else { vTrack = reuseIdx; replaceMode = 'reused'; }   // couldn't add — reuse in place (never worse than before)
+      } else { replaceMode = 'reused'; }
+    }
+    CP_bestEffortShowTrack(seq, vTrack);   // un-mute/un-lock the target so placed captions are visible
+
+    var trackObj = seq.videoTracks[vTrack];
+    var sharedItem = null, reused = 0, stretched = 0;
+
+    // GROUP cues into graphics. A multi-line template (Text 01..NN) holds
+    // several caption lines in ONE graphic, so we take N consecutive cues per
+    // insert; a single-text template takes one cue per insert (as before).
+    var perGraphic = (probe.textCount && probe.textCount > 1) ? probe.textCount : 1;
+    var groups = [];
+    if (perGraphic > 1) {
+      for (var gi = 0; gi < args.cues.length; gi += perGraphic) groups.push(args.cues.slice(gi, gi + perGraphic));
+    } else {
+      for (var gj = 0; gj < args.cues.length; gj++) groups.push([args.cues[gj]]);
+    }
+
+    for (var g = 0; g < groups.length; g++) {
+      var grp = groups[g];
+      var startSec = grp[0].start;
+      var wantEnd = grp[grp.length - 1].end;
+      if (g + 1 < groups.length) {                      // never overrun the next graphic
+        var nextStart = groups[g + 1][0].start;
+        if (nextStart > startSec && nextStart < wantEnd) wantEnd = nextStart;
+      }
+
+      // Import a FRESH graphic for EACH caption. Reusing one shared project item
+      // is faster but every instance then shares the same text — so only the
+      // first caption kept its words and the rest showed the template default.
+      // A fresh instance per caption guarantees each gets its own text.
+      var clip = null;
+      try {
+        clip = seq.importMGT(args.mogrtPath, CP_ticksFromSeconds(startSec), vTrack, aTrack);
+      } catch (eImp) { errors.push('graphic ' + g + ': ' + eImp.message); continue; }
+      if (!clip) { errors.push('graphic ' + g + ': importMGT returned nothing'); continue; }
+      inserted++;
+
+      var nat = 0, clipStart = 0;
+      try {
+        clipStart = clip.start.seconds;
+        nat = clip.end.seconds - clipStart;
+        if (nat > maxTemplateDur) maxTemplateDur = nat;
+      } catch (eNat) {}
+
+      // Portrait scaling: scale the clip down so it fits within the narrower frame.
+      if (isPortrait && portraitScale < 99) {
+        try {
+          var motionFx = clip.getMGTComponent ? null : null;   // reset
+          // Try the standard Motion effect property (available on all video clips)
+          for (var mi = 0; mi < clip.videoComponents.numItems; mi++) {
+            var fx = clip.videoComponents[mi];
+            if (String(fx.displayName || '').toLowerCase().indexOf('motion') === 0) {
+              var scaleProp = fx.properties.getNamedProperty('Scale');
+              if (scaleProp) { scaleProp.setValue(portraitScale, true); break; }
+            }
+          }
+        } catch (eScale) {}
+      }
+
+      // WHOLE-GRAPHIC POSITION: move the clip's Motion, not the text layer —
+      // the BG box is its own layer, so moving text alone split them apart
+      // ("the text is not aligned with the box"). Motion Position is
+      // normalized; the engine's caption sits at the comp centre (0.5), so the
+      // wanted caption row IS the Y to set.
+      if (args.posYPct != null && isFinite(args.posYPct)) {
+        try {
+          for (var mvI = 0; mvI < clip.videoComponents.numItems; mvI++) {
+            var mvFx = clip.videoComponents[mvI];
+            if (String(mvFx.displayName || '').toLowerCase().indexOf('motion') !== 0) continue;
+            var posP = mvFx.properties.getNamedProperty('Position');
+            if (!posP) break;
+            var wantY = args.posYPct;
+            if (wantY < 0.05) wantY = 0.05; else if (wantY > 0.95) wantY = 0.95;
+            try { posP.setValue([0.5, wantY], true); } catch (eMv1) { try { posP.setValue([0.5, wantY]); } catch (eMv2) {} }
+            break;
+          }
+        } catch (eMv) {}
+      }
+
+      var textSetBefore = textSet;
+      try {
+        var comp = clip.getMGTComponent();
+        if (comp && comp.properties) {
+          var props = comp.properties;
+          if (!fieldNames) {
+            fieldNames = [];
+            for (var fn = 0; fn < props.numItems; fn++) fieldNames.push(String(props[fn].displayName || ('#' + fn)));
+          }
+          paramsApplied += CP_applyMgrtParams(comp, args.params);   // colour/size/font overrides
+
+          // Word-by-word: if this is a word-highlight template, make its highlight
+          // sweep across the words over THIS caption's visible length, so it
+          // follows the talking pace instead of holding on one word.
+          var swOk = null;
+          try {
+            var swWords = String(grp[0].text || '').replace(/\s+/g, ' ').replace(/^ | $/g, '').split(' ').length;
+            swOk = CP_setWordSweep(comp, wantEnd - startSec, swWords);
+            if (swOk) { swept++; if (!sweepSample) sweepSample = swOk; }
+          } catch (eSw) {}
+
+          // fit the template's own entrance animation to THIS caption's length —
+          // the authored 1s intro left short captions as an empty box, but the
+          // animation itself is the Flux signature look, so it plays scaled
+          try { introFixed += CP_forceIntroVisible(comp, args.params, wantEnd - startSec, args.introMode); } catch (eIv) {}
+
+          var tprops = CP_textPropsOf(comp);
+          if (probe.mirrorText && tprops.length > 1) {
+            // word-highlight engine with an UN-TAGGED expression mirror (Prism
+            // family): the caption words go into the MAIN text only — the mirror
+            // follows it by expression. Writing cue text (or '') into the mirror
+            // desynced the highlight and looked like "the second text never
+            // changes". The mirror still gets the font-only pass below.
+            if (CP_setMgrtText(tprops[0], grp[0].text, allowRich, args.textStyle)) textSet++;
+          } else if (tprops.length > 1) {
+            // multi-line: one caption line per text field, blank unused slots
+            var anySet = false;
+            for (var j = 0; j < tprops.length; j++) {
+              var txt = (j < grp.length) ? grp[j].text : '';
+              if (CP_setMgrtText(tprops[j], txt, allowRich, args.textStyle)) anySet = true;
+            }
+            if (anySet) textSet++;
+          } else {
+            // single text field: match by display-name keyword, then any string —
+            // but only REAL caption fields (skip read-only mirrors / notes / fonts).
+            var done = false;
+            for (var k = 0; k < KEYS.length && !done; k++) {
+              for (var pIdx = 0; pIdx < props.numItems && !done; pIdx++) {
+                var dn = String(props[pIdx].displayName || '').toLowerCase();
+                if (dn.indexOf(KEYS[k]) === -1) continue;
+                var gv = null; try { gv = props[pIdx].getValue(); } catch (eGv) {}
+                if (CP_isTextValue(gv, props[pIdx].displayName) &&
+                    CP_setMgrtText(props[pIdx], grp[0].text, allowRich, args.textStyle)) { textSet++; done = true; }
+              }
+            }
+            for (var p2 = 0; p2 < props.numItems && !done; p2++) {
+              var gv2 = null; try { gv2 = props[p2].getValue(); } catch (eGv2) {}
+              if (CP_isTextValue(gv2, props[p2].displayName) &&
+                  CP_setMgrtText(props[p2], grp[0].text, allowRich, args.textStyle)) { textSet++; done = true; }
+            }
+          }
+          // The gradient-highlight overlay ("Gradient FG Text (Change font
+          // only)") must match the main text. The NAME-TAGGED prop now gets a
+          // FULL write — the user's WORDS and face ("there are 2 text boxes,
+          // you have to change both"): if the template's internal auto-link is
+          // healthy the static words are simply ignored, and if it is broken
+          // on a given machine the correct words render instead of the sample.
+          // The UN-TAGGED Prism mirror stays FONT-ONLY: its words are
+          // expression-driven and writing them desynced the highlight.
+          if (allowRich && args.textStyle && args.textStyle.font) {
+            try {
+              var fgTagged = null;
+              for (var fgI = 0; fgI < props.numItems; fgI++) {
+                if (String(props[fgI].displayName || '').toLowerCase().indexOf('change font only') >= 0) { fgTagged = props[fgI]; break; }
+              }
+              // FONT-ONLY on the tagged overlay — the template author's own
+              // Note: "If you changing only the text then you don't need to
+              // touch Gradient FG Text." The v0.9.321 full-words write was the
+              // ONE insert-path step the all-green test ladder never exercised
+              // — reverted: words stay expression-driven, only the face syncs.
+              if (fgTagged) {
+                var ftV = null; try { ftV = fgTagged.getValue(); } catch (eFtV) {}
+                if (typeof ftV === 'string' &&
+                    (ftV.indexOf('fontEditValue') !== -1 || ftV.indexOf('capProp') !== -1)) {
+                  var ftE = String(args.textStyle.font).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+                  var ftOut = CP_rewriteBlobField(ftV, 'fontEditValue', CP_runStringsAll(ftE));
+                  ftOut = ftOut.replace(/("fontName"\s*:\s*")(?:[^"\\]|\\.)*(")/g,
+                    function (m, a, b) { return a + ftE + b; });
+                  if (ftOut !== ftV) {
+                    try { fgTagged.setValue(ftOut, true); fgFontSet++; }
+                    catch (eFtS1) { try { fgTagged.setValue(ftOut); fgFontSet++; } catch (eFtS2) {} }
+                  }
+                }
+              } else if (probe.mirrorText && tprops.length > 1 && args.textStyle.font) {
+                var fgP = tprops[1];
+                var fgV = null; try { fgV = fgP.getValue(); } catch (eFgV) {}
+                if (typeof fgV === 'string' &&
+                    (fgV.indexOf('fontEditValue') !== -1 || fgV.indexOf('capProp') !== -1)) {
+                  var fgE = String(args.textStyle.font).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+                  var fgOut = CP_rewriteBlobField(fgV, 'fontEditValue', CP_runStringsAll(fgE));
+                  fgOut = fgOut.replace(/("fontName"\s*:\s*")(?:[^"\\]|\\.)*(")/g,
+                    function (m, a, b) { return a + fgE + b; });
+                  if (fgOut !== fgV) {
+                    try { fgP.setValue(fgOut, true); fgFontSet++; }
+                    catch (eFgS1) { try { fgP.setValue(fgOut); fgFontSet++; } catch (eFgS2) {} }
+                  }
+                }
+              }
+            } catch (eFg) {}
+          }
+          // Overall font size: scale EVERY text layer together (so a template's
+          // second "echo" layer grows with the caption instead of mismatching).
+          if (allowRich && args.textStyle && args.textStyle.sizeScale && args.textStyle.sizeScale !== 1) {
+            try { CP_scaleAllTextSizes(comp, args.textStyle.sizeScale); } catch (eSc) {}
+          }
+          // READBACK (once): the face the graphic actually STORED after our
+          // write — ground truth for "I changed the font but the video didn't"
+          // (a font that isn't installed is silently kept by Premiere).
+          if (fontApplied === null && args.textStyle && args.textStyle.font && tprops.length) {
+            try {
+              var fbV = String(tprops[0].getValue());
+              var fbM = fbV.match(/"fontEditValue"\s*:\s*\[?\s*"((?:[^"\\]|\\.)*)"/);
+              if (fbM) fontApplied = fbM[1];
+            } catch (eFb) {}
+          }
+        }
+      } catch (eComp) {}
+
+      // Force a re-render when we wrote new text into a rich source-text graphic:
+      // Premiere can keep showing the template's baked-in default until the clip
+      // is invalidated. CP_forceRerender dirties it (and always leaves it enabled
+      // at its real opacity) so the new words actually paint.
+      if (textSet > textSetBefore) CP_forceRerender(clip);
+
+      // Re-apply the colour/param overrides LAST — writing a source-text blob
+      // (the caption text, the size scale, and the re-render kick above all do)
+      // can revert param-driven styling on some templates, which left e.g. a
+      // white box with the template's default white text while the preview was
+      // right. CP_applyMgrtParams is idempotent, so a second pass is free.
+      try { if (comp && comp.properties) paramsApplied += CP_applyMgrtParams(comp, args.params); } catch (eReap) {}
+      // "AS SPOKEN" SAFETY (after the re-apply, which would undo it): that mode
+      // makes the BASE text invisible (Text Opacity 0) and relies on the word
+      // sweep to paint each word — on a clip where the sweep did NOT engage,
+      // that meant NO TEXT AT ALL ("some captions' text is not visible").
+      // Force this clip's base text fully visible: readable words beat a
+      // missing effect, always.
+      if (args.revealSpoken && !swOk) {
+        try {
+          if (comp && comp.properties) {
+            for (var svI = 0; svI < comp.properties.numItems; svI++) {
+              var svN = String(comp.properties[svI].displayName || '').toLowerCase().replace(/\s+/g, ' ');
+              if (svN === 'text opacity') {
+                try { comp.properties[svI].setValue(100, true); } catch (eSv1) { try { comp.properties[svI].setValue(100); } catch (eSv2) {} }
+                spokenFallbacks++;
+                break;
+              }
+            }
+          }
+        } catch (eSpF) {}
+      }
+
+      // Entrance animation — the SAME keyframe engine the PNG path uses, applied
+      // to the editable graphic clip. This is what gives "editable template"
+      // captions their synced pop/scale/slide motion (per-word-group reveal),
+      // since the sliding-highlight karaoke can't survive as editable text.
+      // 'karaoke'/'reveal'/'typewriter'/'none' carry no clip-level entrance.
+      if (args.anim && args.anim !== 'none' && args.anim !== 'karaoke' &&
+          args.anim !== 'reveal' && args.anim !== 'typewriter') {
+        try { CP_animateClip(clip, args.anim, args.animSpeed); } catch (eAnim) {}
+      }
+
+      // Duration LAST (so a time-stretch can't disturb the component edits).
+      // Fit the graphic to its caption. The problem: a template animation may be ~5s
+      // while the spoken word is ~1.5s. Cramming the whole animation into the word by
+      // SPEED meant >100000% — it flashed by invisibly. So args.maxSpeed picks how a
+      // template LONGER than the word behaves (set from the panel's Animation-speed
+      // control); we also let the clip run into any GAP before the next caption rather
+      // than always trimming to the word, so the animation is actually watchable:
+      //   100  Natural  – real pace; clip runs its full length up to the next caption.
+      //   200  Balanced – up to 2× so a long animation finishes sooner.
+      //   huge Fit all  – squeeze the whole animation into the word (can be very fast).
+      // wordEnd = the spoken word's end; nextStart = where the next caption begins
+      // (we never overlap it). Templates shorter than the word just hold to wordEnd.
+      var wordEnd = wantEnd;
+      var nextStart = (g + 1 < groups.length) ? groups[g + 1][0].start : (wordEnd + nat + 3600);
+      var MAX_SPEED = (args.maxSpeed && args.maxSpeed > 0) ? args.maxSpeed : 200;
+      if (MAX_SPEED > 500) MAX_SPEED = 500;   // ABSOLUTE ceiling — a caption animation must never become a sub-frame flash, whatever the panel asks for
+      var needed = wordEnd - clipStart;
+      var endSec = wordEnd;
+      if (args.stretch && nat > 0.05 && needed > 0.05 && nat > needed + 0.05) {
+        var fitPct = (nat / needed) * 100;                  // speed to exactly fill the word (>100)
+        var pct = (fitPct <= MAX_SPEED) ? fitPct : MAX_SPEED;
+        if (fitPct <= MAX_SPEED) {
+          endSec = wordEnd;                                 // animation fits within the cap → fill the word
+        } else {
+          endSec = clipStart + nat / (pct / 100);           // capped speed → play the (sped) animation…
+          if (endSec > nextStart) endSec = nextStart;       // …but never into the next caption
+          if (endSec < wordEnd) endSec = wordEnd;           // …and at least cover the spoken word
+        }
+        if ((pct < 99 || pct > 101) && CP_stretchLastClip(vTrack, pct)) stretched++;
+      }
+      try { clip.end = CP_timeFromSeconds(endSec); } catch (eEnd) {}
+      // Fallback: if clip.end setter didn't trim the clip (some Premiere versions
+      // don't allow setting .end on MOGRT clips directly), use QE speed-up to force
+      // the clip to fit within the caption's desired duration. Without this, long
+      // templates (e.g. 30s Flux) would overflow into every subsequent caption slot,
+      // pushing each to its own video track and cluttering the timeline.
+      try {
+        var actualEnd = clip.end.seconds;
+        if (actualEnd > endSec + 0.2) {
+          var curDur = actualEnd - clipStart;
+          var wantDur = endSec - clipStart;
+          if (wantDur > 0.05 && curDur > wantDur) {
+            var fallbackPct = Math.min((curDur / wantDur) * 100, 5000);
+            if (CP_stretchLastClip(vTrack, fallbackPct)) {
+              try { clip.end = CP_timeFromSeconds(endSec); } catch (eR) {}
+              stretched++;
+            }
+          }
+        }
+      } catch (eFb) {}
+      // LAST-RESORT trim: if the clip STILL overruns (end-assignment refused AND
+      // speed-stretch refused), razor at the wanted end and delete the tail.
+      // This is the "last caption runs way too long" bug: earlier captions only
+      // looked right because the NEXT import overwrote them — the final clip has
+      // no next, so a failed trim left the template's full natural length.
+      try {
+        var tailEnd = clip.end.seconds;
+        if (tailEnd > endSec + 0.2) CP_razorTrimTail(seq, vTrack, endSec, tailEnd);
+      } catch (eTailTrim) {}
+      try { if (endSec < wordEnd - 0.05) clamped++; } catch (eChk) {}
+    }
+    return CP_ok({
+      inserted: inserted,
+      reused: reused,
+      textSet: textSet,
+      clamped: clamped,
+      stretched: stretched,
+      maxTemplateDur: maxTemplateDur,
+      swept: swept,                       // # graphics switched to word-by-word sweep
+      sweepSample: sweepSample,           // what we set on the first one (diagnostic)
+      graphics: groups.length,
+      linesPerGraphic: perGraphic,
+      textCount: probe.textCount,
+      failed: groups.length - inserted,
+      richBlocked: richBlocked,           // template is rich AND probe said unsafe
+      probeKind: probe.kind,              // 'rich' | 'simple' | 'strdb' | 'plain' | 'none'
+      fields: fieldNames ? fieldNames.slice(0, 8) : [],
+      sampleErrors: errors.slice(0, 3),
+      allowRich: allowRich,               // did the safety probe permit rich-text writes?
+      paramsSent: (args.params || []).length,
+      paramsApplied: paramsApplied,       // across both passes (pre-text + final re-apply)
+      fgFontSet: fgFontSet,               // gradient "(Change font only)" mirrors re-faced
+      fontApplied: fontApplied,           // the face the first graphic actually stored (readback)
+      spokenFallbacks: spokenFallbacks,   // as-spoken clips whose sweep failed → text forced visible
+      track: vTrack + 1,                  // 1-based, so a later call can replaceTrack this same set
+      replaceMode: replaceMode,           // 'fresh' | 'reused' | 'fresh-after-clear' | 'explicit'
+      replaceGuard: replaceGuard,         // null | 'foreign' | 'out-of-range' — why a reuse was refused
+      templateImports: probe.imported,    // the safety probe could place this template
+      introFixed: introFixed              // authored intro fades neutralized (words visible at once)
+    });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/*
+ * Every audio track's clips — the per-speaker mics used for FireCut-style
+ * "cut to whoever is talking" multicam. EVERY clip is listed: after Smart Cut
+ * a 55-minute episode has 600+ pieces per mic, and the old 200-clip cap left
+ * everything after the first ~18 minutes unheard (the cameras switched at
+ * random there while the panel reported full coverage). Each clip carries the
+ * exact media↔timeline mapping: where it sits (seqStart/seqEnd), what it plays
+ * (inPoint/outPoint), its speed and whether it plays reversed.
+ */
+function CP_getAudioTracks() {
+  try {
+    var seq = CP_activeSequence();
+    if (!seq) return CP_fail('No active sequence — open your timeline first.');
+    var out = [], diag = [];
+    for (var t = 0; t < seq.audioTracks.numTracks; t++) {
+      var track = seq.audioTracks[t];
+      var clips = track.clips;
+      var nClips = (clips && clips.numItems) ? clips.numItems : 0;
+      var mp = null, ref = null, withItem = 0;
+      // Walk EVERY clip on the track. The first readable clip stays as the
+      // legacy single-clip reference; `segments` lists them all.
+      var segments = [];
+      for (var i = 0; i < nClips; i++) {
+        var c = clips[i];
+        if (!c || !c.projectItem) continue;
+        withItem++;
+        if (!ref) ref = c;
+        var p = null;
+        try { p = c.projectItem.getMediaPath(); } catch (e1) {}
+        if (!(p && p.length)) continue;
+        if (!mp) { mp = p; ref = c; }
+        var sStart = 0, sEnd = 0, sIn = 0, sOut = 0;
+        try { sStart = c.start.seconds; } catch (eS) {}
+        try { sEnd = c.end.seconds; } catch (eE) {}
+        try { sIn = c.inPoint.seconds; } catch (eI) {}
+        try { sOut = c.outPoint.seconds; } catch (eO) {}
+        if (!(sEnd - sStart > 0.001)) continue;
+        // speed: Premiere's own number when it reports one (some builds give a
+        // percentage), else what the media span vs timeline span says
+        var speed = null;
+        try { if (typeof c.getSpeed === 'function') speed = parseFloat(c.getSpeed()); } catch (eSp) {}
+        if (speed && speed > 20) speed = speed / 100;
+        if (!(speed > 0)) speed = (sOut > sIn) ? (sOut - sIn) / (sEnd - sStart) : 1;
+        var rev = false;
+        try { rev = (typeof c.isSpeedReversed === 'function') && !!c.isSpeedReversed(); } catch (eR) {}
+        var dis = false;
+        try { dis = !!c.disabled; } catch (eD) {}
+        segments.push({ mediaPath: p, seqStart: sStart, seqEnd: sEnd, dur: sEnd - sStart, inPoint: sIn, outPoint: sOut,
+                        speed: Math.round(speed * 10000) / 10000, reversed: rev, disabled: dis });
+      }
+      diag.push('A' + (t + 1) + ':' + nClips + 'clip/' + withItem + 'item/' + segments.length + 'media');
+      if (!ref) continue;
+      // a muted track (often a camera's scratch audio) is the panel's last
+      // choice when it pairs mics with cameras by itself
+      var muted = false;
+      try { muted = (typeof track.isMuted === 'function') && !!track.isMuted(); } catch (eMu) {}
+      out.push({
+        index: t,
+        name: track.name || ('A' + (t + 1)),
+        mediaPath: mp,
+        hasMedia: !!mp,
+        clips: nClips,
+        muted: muted,
+        segments: segments,             // ALL media clips on this track (seq time); disabled ones are silent
+        seqStart: ref.start.seconds,
+        inPoint: ref.inPoint.seconds,
+        outPoint: ref.outPoint.seconds
+      });
+    }
+    // Is the FIRST video clip a nested sequence? Multicam can't switch angles
+    // that live inside a single nested clip, so the panel warns about this.
+    var nestedOnV1 = false;
+    try {
+      var v0 = seq.videoTracks[0];
+      if (v0 && v0.clips && v0.clips.numItems) {
+        var vc = v0.clips[0];
+        // a nested sequence's projectItem reports isSequence() === true
+        if (vc && vc.projectItem && typeof vc.projectItem.isSequence === 'function' && vc.projectItem.isSequence()) nestedOnV1 = true;
+      }
+    } catch (eN) {}
+    return CP_ok({
+      audioTracks: out,
+      videoTracks: seq.videoTracks.numTracks,
+      nestedOnV1: nestedOnV1,
+      end: parseFloat(seq.end) / CP_TICKS_PER_SECOND,
+      diag: 'tracks=' + seq.audioTracks.numTracks + ' [' + diag.join('  ') + ']'
+    });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/*
+ * Inspect a .mogrt: drop one instance, list every editable property
+ * (name + current value type), then remove the test instance. Lets us see
+ * exactly what text field a template exposes.
+ * argsJson: { path }
+ */
+function CP_inspectMogrt(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+    // Read the template's editable fields on a THROWAWAY top track that is
+    // guaranteed empty — never on the user's footage. The old code imported onto
+    // the existing top track at time 0, so if any clip lived there it got
+    // overwritten, and the fragile cleanup sometimes left the test graphic on the
+    // timeline ("clicking a template auto-generates a preview"). Now: reuse an
+    // already-empty top track if there is one, otherwise add a fresh one, so the
+    // track holds ONLY our throwaway clip and cleanup is unambiguous.
+    var vTrack = seq.videoTracks.numTracks - 1;
+    var topEmpty = false;
+    try { topEmpty = (seq.videoTracks[vTrack].clips.numItems === 0); } catch (eEmpty) {}
+    if (!topEmpty) {
+      try {
+        app.enableQE();
+        qe.project.getActiveSequence().addTracks(1, seq.videoTracks.numTracks, 0);
+        vTrack = seq.videoTracks.numTracks - 1;
+      } catch (eTrack) {}
+    }
+    var clip = null;
+    try { clip = seq.importMGT(args.path, CP_ticksFromSeconds(0), vTrack, 0); }
+    catch (eImp) { return CP_fail('importMGT failed: ' + eImp.message); }
+    if (!clip) return CP_fail('importMGT returned nothing.');
+
+    var props = [];
+    try {
+      var comp = clip.getMGTComponent();
+      if (comp && comp.properties) {
+        for (var i = 0; i < comp.properties.numItems; i++) {
+          var p = comp.properties[i];
+          var val = null, type = '?';
+          try { val = p.getValue(); type = typeof val; } catch (eV) {}
+          var raw = String(val);
+          // Show the FULL value for string params (capped) so we can see the
+          // rich source-text structure — run-length fields and all — not just
+          // the first 40 chars. `rich` flags AE source-text that can't be set.
+          var rich = (type === 'string' && (raw.indexOf('capProp') !== -1 || raw.indexOf('textEditValue') !== -1));
+          var sample = (raw.length > 6000) ? (raw.substr(0, 6000) + '…[' + raw.length + ' chars total]') : raw;
+          // classify so the panel can render an editable control (colour/size/
+          // toggle/font) for the basic params, like Essential Graphics does.
+          var cls = CP_classifyMgrtProp(p);
+          // raw numeric value (when applicable) lets the panel calibrate the
+          // colour encoding by matching it to the template's known defaults.
+          var num = (type === 'number') ? val : null;
+          // Colour diagnostics (read-only): whether this param supports the real
+          // colour API, and what colour it currently reports. Lets us confirm on
+          // the user's own Premiere why a colour does/doesn't take.
+          var hasSCV = false, gcv = null;
+          try { hasSCV = (typeof p.setColorValue === 'function'); } catch (eSCV) {}
+          try { if (typeof p.getColorValue === 'function') { var cc = p.getColorValue(); gcv = (cc != null) ? String(cc) : null; } }
+          catch (eGCV) { gcv = 'err'; }
+          // capture a point/{x,y} live value so the panel's padding/position
+          // controls use Premiere's REAL scale (not the tiny definition default).
+          var point = null;
+          try { if (val && typeof val === 'object' && typeof val.length !== 'number' && val.x != null) point = { x: val.x, y: val.y }; } catch (ePt) {}
+          props.push({ i: i, name: String(p.displayName), type: type, rich: rich, len: raw.length,
+                       sample: sample, kind: cls.kind, value: cls.value, num: num,
+                       hasSCV: hasSCV, gcv: gcv, point: point });
+        }
+      }
+    } catch (eComp) {}
+
+    // Remove the throwaway graphic. The track was empty before we imported, so
+    // clearing EVERY non-empty item on exactly this track (no early break) is
+    // safe and reliably leaves nothing behind on the user's timeline.
+    try {
+      app.enableQE();
+      var qt = qe.project.getActiveSequence().getVideoTrackAt(vTrack);
+      for (var k = qt.numItems - 1; k >= 0; k--) {
+        var it = qt.getItemAt(k);
+        if (it && it.type !== 'Empty') { try { it.remove(0, 0); } catch (eR) {} }
+      }
+    } catch (eQE) {}
+
+    return CP_ok({ count: props.length, props: props });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/* Round-trip diagnostic: drop ONE caption from this template at the playhead,
+ * write a known sample string, read it back, and report both — so we can tell
+ * whether Premiere STORES the new text (read-back matches) but doesn't RENDER it
+ * (a refresh problem) versus never accepting the write at all. The test clip is
+ * left on the timeline at the playhead so the user can eyeball what it renders. */
+function CP_testMgrtFill(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+    var at = 0; try { at = seq.getPlayerPosition().seconds; } catch (eP) {}
+    // fresh top track so we never disturb existing clips
+    var vTrack = seq.videoTracks.numTracks - 1;
+    try { app.enableQE(); qe.project.getActiveSequence().addTracks(1, seq.videoTracks.numTracks, 0); vTrack = seq.videoTracks.numTracks - 1; } catch (eT) {}
+
+    var SAMPLE = 'CUTPILOT TEST 12345';
+    var clip = null;
+    try { clip = seq.importMGT(args.path, CP_ticksFromSeconds(at), vTrack, 0); }
+    catch (eImp) { return CP_fail('importMGT failed: ' + eImp.message); }
+    if (!clip) return CP_fail('importMGT returned nothing.');
+
+    var comp = null; try { comp = clip.getMGTComponent(); } catch (eC) {}
+    if (!comp || !comp.properties) return CP_ok({ found: false, note: 'no MGT component on the inserted clip', track: vTrack + 1 });
+
+    var KEYS = ['text', 'source', 'caption', 'title', 'subtitle', 'headline', 'body', 'content', 'label', 'name', 'word'];
+    var prop = CP_findTextProp(comp.properties, KEYS);
+    if (!prop) return CP_ok({ found: false, note: 'no text-like property found', track: vTrack + 1 });
+
+    var before = null; try { before = String(prop.getValue()); } catch (eB) {}
+    var kind = 'plain';
+    if (before && (before.indexOf('textEditValue') !== -1 || before.indexOf('capProp') !== -1)) kind = 'rich';
+    else if (before && before.indexOf('"strDB"') !== -1) kind = 'strdb';
+    else if (before && before.charAt(0) === '{') kind = 'simple';
+
+    var wrote = CP_setMgrtText(prop, SAMPLE, true, null);
+    CP_forceRerender(clip);   // same forced re-render the real fill uses
+
+    var after = null; try { after = String(prop.getValue()); } catch (eA) {}
+    // pull the text the read-back actually holds, by format
+    var readText = null, m;
+    try { if ((m = String(after).match(/"textEditValue"\s*:\s*"((?:[^"\\]|\\.)*)"/))) readText = m[1]; } catch (e1) {}
+    if (readText == null) { try { if ((m = String(after).match(/"str"\s*:\s*"((?:[^"\\]|\\.)*)"/))) readText = m[1]; } catch (e2) {} }
+    if (readText == null && after && after.charAt(0) !== '{') readText = after;
+
+    return CP_ok({
+      found: true,
+      fieldName: String(prop.displayName),
+      kind: kind,
+      wrote: !!wrote,
+      sample: SAMPLE,
+      readBack: readText,
+      matches: (readText === SAMPLE),
+      beforeSample: before ? before.substr(0, 220) : null,
+      afterSample: after ? after.substr(0, 260) : null,
+      track: vTrack + 1,
+      atSeconds: at
+    });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/*
+ * Drop a single instance of a .mogrt at the playhead so the user can scrub
+ * Premiere's monitor and watch the animation. argsJson: { path, seconds }
+ */
+function CP_previewMogrt(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+    var at = 0;
+    try { at = seq.getPlayerPosition().seconds; } catch (eP) {}
+    if (!(at >= 0)) at = 0;
+    var vTrack = seq.videoTracks.numTracks - 1;
+    var clip = seq.importMGT(args.path, CP_ticksFromSeconds(at), vTrack, 0);
+    if (!clip) return CP_fail('Premiere could not place this template.');
+    var pvEnd = at + (args.seconds || 4);
+    try { clip.end = CP_timeFromSeconds(pvEnd); } catch (eE) {}
+    // apply the panel's colour/size/font overrides + sample text to the preview
+    var pParams = 0;
+    try {
+      var pcomp = clip.getMGTComponent();
+      if (pcomp) {
+        pParams = CP_applyMgrtParams(pcomp, args.params);
+        try { CP_forceIntroVisible(pcomp, args.params, args.seconds || 4); } catch (eIv) {}   // entrance fitted to the preview length
+        if (args.text && pcomp.properties) {
+          var ptp = CP_findTextProp(pcomp.properties, ['text', 'caption', 'title', 'subtitle', 'headline', 'body']);
+          if (ptp) CP_setMgrtText(ptp, args.text, true, args.textStyle);
+          if (args.textStyle && args.textStyle.sizeScale && args.textStyle.sizeScale !== 1) {
+            try { CP_scaleAllTextSizes(pcomp, args.textStyle.sizeScale); } catch (eSc) {}
+          }
+        }
+      }
+    } catch (ePv) {}
+    // same broken-end-setter trap as the caption inserter: if the end
+    // assignment was refused, razor-trim so the preview is 4s, not 30s.
+    // AFTER params/text — razoring can invalidate the component reference.
+    try {
+      var pvActual = clip.end.seconds;
+      if (pvActual > pvEnd + 0.2) CP_razorTrimTail(seq, vTrack, pvEnd, pvActual);
+    } catch (ePvTrim) {}
+    return CP_ok({ placedAt: at, track: vTrack + 1, paramsSet: pParams });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/*
+ * Render REAL style previews with Premiere itself — the gallery cards then
+ * show EXACTLY what the engine renders ("almost every caption preview is
+ * wrong — render the animation and put exactly that"). Uses a TEMP sequence
+ * so the user's timeline is never touched: per style, import the engine
+ * .mogrt, apply the style's params + sample words + word sweep, park the
+ * playhead mid-sweep and export ONE frame via QE (named <styleId>.png so
+ * the panel's style-previews loader picks it up as-is). Cleans up after.
+ * argsJson: { mogrtPath, outDir, sep, at, seconds,
+ *             styles:[{ id, params, textStyle, text }] }
+ */
+function CP_renderStylePreviews(argsJson) {
+  var prevActive = null, seq = null;
+  var rendered = [], failed = [];
+  try {
+    var args = JSON.parse(argsJson);
+    if (!args.styles || !args.styles.length) return CP_fail('No styles given.');
+    try { prevActive = app.project.activeSequence; } catch (ePA) {}
+    if (!app.project.createNewSequence) return CP_fail('This Premiere version cannot create a render sequence from a panel.');
+    seq = app.project.createNewSequence('Pulse preview render (temp)', 'pulse-prev-' + String(Math.floor(Math.random() * 1e9)));
+    if (!seq) return CP_fail('Could not create the temp render sequence.');
+    // vertical 1080×1920 (the cards are 9:16 true-output miniatures)
+    try {
+      var st = seq.getSettings();
+      st.videoFrameWidth = 1080; st.videoFrameHeight = 1920;
+      seq.setSettings(st);
+    } catch (eSt) {}
+    app.project.activeSequence = seq;
+    app.enableQE();
+    var seconds = args.seconds || 2.5;
+    var at = (args.at != null) ? args.at : (seconds * 0.55);   // mid-sweep: highlight visibly ON
+    for (var s = 0; s < args.styles.length; s++) {
+      var stl = args.styles[s], out = null;
+      try {
+        var clip = seq.importMGT(args.mogrtPath, CP_ticksFromSeconds(0), 0, 0);
+        if (!clip) { failed.push(stl.id); continue; }
+        try { clip.end = CP_timeFromSeconds(seconds); } catch (eE) {}
+        var comp = clip.getMGTComponent();
+        if (comp) {
+          // stl.noIntro / stl.noSweep: the self-test's diagnostic LADDER skips
+          // individual writes to isolate which one kills the render on a
+          // given machine.
+          try { CP_applyMgrtParams(comp, stl.params || []); } catch (ePr) {}
+          if (!stl.noIntro) { try { CP_forceIntroVisible(comp, stl.params || [], seconds, 'snappy'); } catch (eIv) {} }
+          if (!stl.noSweep) {
+            try {
+              var pvW = String(stl.text || '').replace(/\s+/g, ' ').replace(/^ | $/g, '').split(' ').length;
+              CP_setWordSweep(comp, seconds, pvW);
+            } catch (eSw) {}
+          }
+          if (stl.text && comp.properties) {
+            var tp = CP_findTextProp(comp.properties, ['text', 'caption', 'title', 'subtitle']);
+            if (tp) { try { CP_setMgrtText(tp, stl.text, true, stl.textStyle || null); } catch (eTx) {} }
+          }
+          try { CP_forceRerender(clip); } catch (eRr) {}
+          try { CP_applyMgrtParams(comp, stl.params || []); } catch (ePr2) {}   // re-apply (text writes can revert params)
+        }
+        try { seq.setPlayerPosition(CP_ticksFromSeconds(at)); } catch (eCt) {}
+        var qseq = qe.project.getActiveSequence();
+        var tc = null;
+        try { tc = qseq.CTI.timecode; } catch (eTc) {}
+        // QE appends ".png" itself — pass the BASE path (see CP_captureSequenceFrame)
+        out = args.outDir + (args.sep || '/') + stl.id;
+        var okF = false;
+        try { okF = qseq.exportFramePNG(tc, out); } catch (eXp) {}
+        if (okF !== false) rendered.push(stl.id); else failed.push(stl.id);
+        // clear the track for the next style
+        try {
+          var qtr = qseq.getVideoTrackAt(0);
+          for (var qi = qtr.numItems - 1; qi >= 0; qi--) {
+            var qit = qtr.getItemAt(qi);
+            if (qit && qit.type !== 'Empty') { try { qit.remove(0, 0); } catch (eRm) {} }
+          }
+        } catch (eClr) {}
+      } catch (ePer) { failed.push(stl.id); }
+    }
+  } catch (e) {
+    try { if (prevActive) app.project.activeSequence = prevActive; } catch (eR1) {}
+    return CP_fail(e.message);
+  }
+  // cleanup: restore the user's sequence, delete the temp one (best effort)
+  try { if (prevActive) app.project.activeSequence = prevActive; } catch (eR2) {}
+  var cleaned = false;
+  try { if (app.project.deleteSequence && seq) { app.project.deleteSequence(seq); cleaned = true; } } catch (eDel) {}
+  return CP_ok({ rendered: rendered, failed: failed, cleaned: cleaned });
+}
+
+/* Rung J of the self-test ladder: place ONE bare engine graphic on the
+   USER'S OWN active sequence (fresh top track), export a frame, remove the
+   clip and the track again. Discriminates "the pipeline is broken" from
+   "THIS sequence is broken" — the temp-sequence ladder can be all-green
+   while the user's sequence refuses to paint text. */
+function CP_probeRealSequence(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+    var vTrack = seq.videoTracks.numTracks;          // fresh top track keeps footage safe
+    if (CP_addTopVideoTrack(seq) < 0) return CP_fail('could not add a probe track');
+    var clip = seq.importMGT(args.mogrtPath, CP_ticksFromSeconds(0), vTrack, 0);
+    if (!clip) return CP_fail('engine would not import on this sequence');
+    try { clip.end = CP_timeFromSeconds(1.2); } catch (eE) {}
+    try {
+      var comp = clip.getMGTComponent();
+      if (comp && comp.properties) {
+        var tp = CP_findTextProp(comp.properties, ['text', 'caption', 'title']);
+        if (tp) CP_setMgrtText(tp, args.text || 'PULSE TEST WORDS', true, null);
+      }
+    } catch (eT) {}
+    try { CP_forceRerender(clip); } catch (eR) {}
+    try { seq.setPlayerPosition(CP_ticksFromSeconds(0.6)); } catch (eP) {}
+    app.enableQE();
+    var qseq = qe.project.getActiveSequence();
+    var tc = null;
+    try { tc = qseq.CTI.timecode; } catch (eTc) {}
+    var base = String(args.outPath || '').replace(/\.png$/i, '');
+    var okF = false;
+    try { okF = qseq.exportFramePNG(tc, base); } catch (eX) {}
+    // clean up: remove the probe clip from the added track
+    try {
+      var qtr = qseq.getVideoTrackAt(vTrack);
+      for (var qi = qtr.numItems - 1; qi >= 0; qi--) {
+        var qit = qtr.getItemAt(qi);
+        if (qit && qit.type !== 'Empty') { try { qit.remove(0, 0); } catch (eRm) {} }
+      }
+    } catch (eClr) {}
+    return CP_ok({ exported: okF !== false, file: base + '.png', track: vTrack + 1 });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/* Export ONE real frame of the ACTIVE sequence at `at` seconds (QE PNG).
+   Used by the panel's automatic after-insert render check — the proof that
+   the words are visible comes from the user's own timeline, not a test rig. */
+function CP_captureSequenceFrame(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+    try { seq.setPlayerPosition(CP_ticksFromSeconds(args.at || 0)); } catch (eP) {}
+    app.enableQE();
+    var qseq = qe.project.getActiveSequence();
+    var tc = null;
+    try { tc = qseq.CTI.timecode; } catch (eT) {}
+    // QE appends ".png" to the path ITSELF — passing "x.png" writes
+    // "x.png.png" and every checker looked at the wrong file ("frame never
+    // appeared"). Hand it the base path; the file lands at base + ".png".
+    var base = String(args.outPath || '').replace(/\.png$/i, '');
+    var okF = false;
+    try { okF = qseq.exportFramePNG(tc, base); } catch (eX) {}
+    return CP_ok({ exported: okF !== false, at: args.at || 0, file: base + '.png' });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/* Return sorted sequence-marker times (seconds) — a Smart-Cut-free source
+   of multicam switch points. */
+function CP_getMarkers() {
+  try {
+    var seq = CP_activeSequence();
+    var out = [];
+    var m = seq.markers.getFirstMarker();
+    while (m) { out.push(m.start.seconds); m = seq.markers.getNextMarker(m); }
+    out.sort(function (a, b) { return a - b; });
+    return CP_ok({ times: out, end: parseFloat(seq.end) / CP_TICKS_PER_SECOND });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/* v1.0: drop named sequence markers at the given times (hook detection).
+   argsJson: { markers:[{time, label, comment}] }. Returns how many were added. */
+function CP_addHookMarkers(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+    var list = args.markers || [];
+    var added = 0;
+    for (var i = 0; i < list.length; i++) {
+      var t = Number(list[i].time) || 0;
+      try {
+        var mk = seq.markers.createMarker(t);
+        if (mk) {
+          try { mk.name = String(list[i].label || 'Hook'); } catch (eN) {}
+          try { if (list[i].comment) mk.comments = String(list[i].comment); } catch (eC) {}
+          try { mk.setColorByIndex(1); } catch (eCol) {}   // red = attention (best effort)
+          added++;
+        }
+      } catch (eM) {}
+    }
+    return CP_ok({ added: added });
+  } catch (e) { return CP_fail(e.message); }
+}
