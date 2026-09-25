@@ -211,12 +211,38 @@
     ov.addEventListener('mousedown', function (e) { if (e.target === ov) close(null); });
     row.appendChild(bC); row.appendChild(bS);
     card.appendChild(h); card.appendChild(inp); card.appendChild(row);
+    dialogLayout(ov, card, h, row);
     ov.appendChild(card); document.body.appendChild(ov);
     setTimeout(function () { try { inp.focus(); inp.select(); } catch (e) {} }, 0);
   }
 
   /* In-panel yes/no. confirm() pops a modal OVER Premiere's window — every
      decision now stays inside the Pulse tab (same overlay as promptInline). */
+  /* Every in-panel dialog shares one layout: the card never grows past the
+     panel, its message scrolls INSIDE it, and the buttons stay pinned in view.
+     A docked Premiere panel is often only ~400px tall. The Clean up confirm grew
+     to ~900 characters (every mic's levels), and its "Clean it up" button landed
+     below the bottom of the screen, with no way to scroll to it — the only way
+     out was clicking the backdrop, which cancels. A short card still sits
+     centred (auto margins), exactly as before. */
+  function dialogLayout(ov, card, body, actions) {
+    ov.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(8,10,16,.72);z-index:99998;' +
+      'display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:8px 0;box-sizing:border-box;';
+    card.style.margin = 'auto';
+    card.style.maxHeight = 'calc(100vh - 16px)';
+    card.style.display = 'flex';
+    card.style.flexDirection = 'column';
+    card.style.boxSizing = 'border-box';
+    if (body) { body.style.overflowY = 'auto'; body.style.minHeight = '0'; body.style.flex = '1 1 auto'; }
+    if (actions) actions.style.flex = '0 0 auto';
+  }
+
+  window.CP_DEBUG_EXT = window.CP_DEBUG_EXT || {};
+  window.CP_DEBUG_EXT.dialogs = {
+    confirm: function (msg) { confirmInline(msg, 'Clean it up', function () {}); },
+    prompt: function (title) { promptInline(title, '', function () {}); },
+    music: function (tracks, name) { try { silAskMusic({ tracks: tracks || 'A3', name: name || 'music_bed.wav' }); } catch (e) {} }
+  };
   function confirmInline(msg, okLabel, onDone) {
     var old = document.getElementById('cp-confirm-ov');
     if (old && old.parentNode) old.parentNode.removeChild(old);
@@ -242,6 +268,7 @@
     ov.addEventListener('mousedown', function (e) { if (e.target === ov) close(false); });
     rowEl.appendChild(bC); rowEl.appendChild(bS);
     card.appendChild(h); card.appendChild(rowEl);
+    dialogLayout(ov, card, h, rowEl);
     ov.appendChild(card); document.body.appendChild(ov);
   }
 
@@ -10744,6 +10771,7 @@
       ov.addEventListener('mousedown', function (e) { if (e.target === ov) close(''); });
       row.appendChild(bNo); row.appendChild(bYes);
       card.appendChild(h); card.appendChild(sub); card.appendChild(row);
+      dialogLayout(ov, card, sub, row);
       ov.appendChild(card); document.body.appendChild(ov);
     });
   }
