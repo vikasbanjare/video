@@ -591,6 +591,33 @@ console.log('captions.js (audio sync)');
   const one = CPCaptions.alignPhrase(['solo'], 3, 4, []);
   assert(one.length === 1 && one[0].text === 'solo', 'single word handled');
 
+  // recording time ↔ timeline time through the pieces that show the recording
+  {
+    const P = [{ inPoint: 0, outPoint: 4, seqStart: 20, speed: 1 }, { inPoint: 6.3, outPoint: 12, seqStart: 24, speed: 1.2 }];
+    const tl = CPCaptions.mediaToTimeline([{ start: 1, end: 1.5, text: 'one' }, { start: 5, end: 5.5, text: 'cut' }, { start: 9, end: 9.5, text: 'nine' }], P);
+    assert(tl.length === 2 && tl[0].text === 'one' && close(tl[0].start, 21) && close(tl[0].end, 21.5), 'mediaToTimeline: a word lands on its piece at 1:1');
+    assert(close(tl[1].start, 24 + 2.7 / 1.2) && close(tl[1].end, 24 + 3.2 / 1.2), 'mediaToTimeline: a sped-up piece divides by its speed');
+    assert(!tl.some(w => w.text === 'cut'), 'mediaToTimeline: a word no piece shows is dropped');
+    const two = CPCaptions.mediaToTimeline([{ start: 3, end: 7, text: 'line' }], P);
+    assert(two.length === 2 && close(two[0].end, 24) && close(two[1].start, 24), 'mediaToTimeline: a line across a cut appears on both pieces, trimmed to each');
+    assert(CPCaptions.mediaToTimeline([{ start: 3.97, end: 4.5, text: 'x' }], P).length === 0, 'mediaToTimeline: a sliver of 0.05 s or less is dropped');
+    const back = CPCaptions.timelineToMedia(tl.concat([{ start: 50, end: 51, text: 'nowhere' }]), P);
+    assert(back[0].piece === 0 && close(back[0].start, 1) && back[1].piece === 1 && close(back[1].start, 9) && close(back[1].end, 9.5),
+      'timelineToMedia: the way back through the same piece, speed included');
+    assert(back[2] === null, 'timelineToMedia: a time no piece plays → null');
+    const noSpeed = CPCaptions.mediaToTimeline([{ start: 2, end: 3, text: 'a' }], [{ inPoint: 0, outPoint: 10, seqStart: 5 }]);
+    assert(close(noSpeed[0].start, 7), 'mediaToTimeline: a piece without a speed plays at 1:1');
+    // the same words, moved from one placement of the recording to another
+    const was = [{ inPoint: 0, outPoint: 10, seqStart: 0, speed: 1 }];
+    const now = [{ inPoint: 2, outPoint: 10, seqStart: 10, speed: 2 }];
+    const moved = CPCaptions.retimeThroughRecording([{ start: 7, end: 7.5, text: 'seven', speaker: 'A' },
+      { start: 1, end: 1.5, text: 'trimmed' }, { start: 40, end: 41, text: 'elsewhere' }], was, now);
+    assert(moved.length === 2 && moved[0].text === 'seven' && close(moved[0].start, 12.5) && close(moved[0].end, 12.75) && moved[0].speaker === 'A',
+      'retimeThroughRecording: through the recording onto the new piece (speed too), other fields kept');
+    assert(!moved.some(w => w.text === 'trimmed'), 'retimeThroughRecording: a word the new placement no longer shows is dropped');
+    assert(moved[1].text === 'elsewhere' && close(moved[1].start, 40), 'retimeThroughRecording: an item no old piece played is left as it was');
+  }
+
   // alignCuesToAudio produces word-level cues, offset by inPoint
   const cues = [{ start: 0, end: 2, text: 'one two' }];
   const envIn = [];

@@ -37,7 +37,10 @@ process.on('exit', () => { try { fs.rmSync(DIR, { recursive: true, force: true }
 const MEDIA = path.join(DIR, 'reel.wav');
 cp.execFileSync(FF, ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', "aevalsrc='0.4*sin(2*PI*300*t)*between(mod(t,2),0,1)':s=16000:d=10", MEDIA]);
 
-const SAVED_SRT = '1\n00:00:01,000 --> 00:00:04,000\nso the secret is consistency\n\n2\n00:00:05,000 --> 00:00:08,000\npost every single day\n';
+/* the saved store keeps RECORDING time (v3): this clip sits at 0:00 with its
+   in point at 0, so recording time is timeline time */
+const SAVED = JSON.stringify({ v: 3, lines: [{ start: 1, end: 4, text: 'so the secret is consistency' }, { start: 5, end: 8, text: 'post every single day' }],
+  words: null, wordLevel: false, dedupeWords: false, minIn: 0, maxOut: 10 });
 
 async function run() {
   console.log('stale transcript: the way back really listens again');
@@ -60,19 +63,19 @@ async function run() {
     const settings = { groqKey: 'gsk-test-key', ffmpegPath: FF, whisperLang: 'auto' };
     /* the transcript saved for this clip on an earlier day, in the (faked) store */
     async function withSavedTranscript(page) {
-      await page.evaluate((srt) => {
+      await page.evaluate((json) => {
         const req = window.require;
         window.require = function (m) {
           const mod = req(m);
           if (m !== 'fs') return mod;
-          const saved = (p) => /\.cutpilot[\\/]transcripts[\\/].*\.srt$/.test(String(p));
+          const saved = (p) => /\.cutpilot[\\/]transcripts[\\/].*\.json$/.test(String(p));
           return Object.assign({}, mod, {
             existsSync: (p) => saved(p) || mod.existsSync(p),
-            readFileSync: (p, e) => saved(p) ? srt : mod.readFileSync(p, e),
-            statSync: (p) => saved(p) ? { size: srt.length, mtimeMs: 1, mtime: new Date(1), isFile: () => true, isDirectory: () => false } : mod.statSync(p)
+            readFileSync: (p, e) => saved(p) ? json : mod.readFileSync(p, e),
+            statSync: (p) => saved(p) ? { size: json.length, mtimeMs: 1, mtime: new Date(1), isFile: () => true, isDirectory: () => false } : mod.statSync(p)
           });
         };
-      }, SAVED_SRT);
+      }, SAVED);
     }
     /* Tap Auto-transcribe; done when the saved transcript is loaded, a new
        transcription is requested, or the run stops with an error. */

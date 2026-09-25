@@ -240,7 +240,16 @@ function CP_getTranscribeSource(argsJson) {
     // piece back to where it plays on the MASTER timeline.
     //   offset    = master-time where this window begins
     //   winIn/Out = the slice of THIS sequence's own timeline that is visible
-    function collect(sq, offset, winIn, winOut, depth, pathIds, parentSel) {
+    //   rate      = seconds of THIS sequence per master second (a nest sped to
+    //               120% runs 1.2)
+    // Speed counts (CP_clipSpeed, as the dead-air listing does): a reel clip at
+    // 120% plays 1.2 s of its recording per timeline second. Reading it as 1:1
+    // left the last sixth of the recording untranscribed and put every caption
+    // later and later behind the voice. Each piece carries `speed` = recording
+    // seconds per master second, so the panel maps words onto it exactly.
+    var reversedPieces = 0;
+    function collect(sq, offset, winIn, winOut, depth, pathIds, parentSel, rate, parentRev) {
+      if (!(rate > 0)) rate = 1;
       if (!sq || depth > 4) return;
       var idKey = null;
       try { idKey = String(sq.sequenceID || sq.name || ''); } catch (eId) {}
@@ -258,7 +267,10 @@ function CP_getTranscribeSource(argsJson) {
             var visStart = st > winIn ? st : winIn;
             var visEnd = en < winOut ? en : winOut;
             if (visEnd - visStart <= 0.04) continue;   // outside the visible window
-            var ip = clip.inPoint.seconds;
+            var ip = clip.inPoint.seconds, op = ip + (en - st);
+            try { op = clip.outPoint.seconds; } catch (eOp) {}
+            var sp = CP_clipSpeed(clip, ip, op, st, en);   // recording (or nest) s per s of THIS sequence
+            var rev = !!parentRev || CP_clipReversed(clip);
             var isSel = parentSel;
             try { isSel = parentSel || clip.isSelected(); } catch (eSel) {}
             var pItem = clip.projectItem;
@@ -266,14 +278,17 @@ function CP_getTranscribeSource(argsJson) {
             try { mp = pItem ? pItem.getMediaPath() : null; } catch (eMp) {}
             if (mp && !bad.test(mp)) {
               if (opts.excludeMediaPath && mp === opts.excludeMediaPath) continue;
-              var mIn = ip + (visStart - st), mOut = ip + (visEnd - st);
-              var sStart = offset + (visStart - winIn);
+              if (opts.onlyMediaPath && mp !== opts.onlyMediaPath) continue;
+              if (rev) { reversedPieces++; continue; }   // speech played backwards has no words to caption
+              var mIn = ip + (visStart - st) * sp, mOut = ip + (visEnd - st) * sp;
+              var sStart = offset + (visStart - winIn) / rate, sDur = (visEnd - visStart) / rate;
               var rec = {
                 name: clip.name, mediaPath: mp,
                 trackType: g === 0 ? 'audio' : 'video', trackIndex: t,
-                seqStart: sStart, seqEnd: sStart + (visEnd - visStart),
+                seqStart: sStart, seqEnd: sStart + sDur,
                 inPoint: mIn, outPoint: mOut,
-                dur: visEnd - visStart,
+                speed: sp * rate,
+                dur: sDur,
                 selected: isSel
               };
               all.push(rec);
@@ -281,16 +296,17 @@ function CP_getTranscribeSource(argsJson) {
             } else if (!mp) {
               var inner = seqForItem(pItem);
               if (inner) {
-                collect(inner, offset + (visStart - winIn),
-                        ip + (visStart - st), ip + (visEnd - st),
-                        depth + 1, childPath, isSel);
+                collect(inner, offset + (visStart - winIn) / rate,
+                        ip + (visStart - st) * sp, ip + (visEnd - st) * sp,
+                        depth + 1, childPath, isSel, rate * sp, rev);
               }
             }
           }
         }
       }
     }
-    collect(seq, 0, 0, 3600 * 100, 0, {}, false);
+    collect(seq, 0, 0, 3600 * 100, 0, {}, false, 1, false);
+    if (!all.length && reversedPieces) return CP_fail('The clip with the voice plays in reverse, and speech played backwards has no words to caption. Turn off Reverse Speed on it (right-click ▸ Speed/Duration), then try again.');
     if (!all.length) return CP_fail('No clip with audio found. Put your video or audio clip on the timeline, then try again.');
     // Pick the media file by TOTAL COVERAGE, strongly preferring files that sit
     // on AUDIO tracks. The old "longest single piece" rule broke jump-cut
@@ -339,16 +355,19 @@ function CP_getTranscribeSource(argsJson) {
         var ovl = (ex.outPoint < cnd.outPoint ? ex.outPoint : cnd.outPoint) -
                   (ex.inPoint > cnd.inPoint ? ex.inPoint : cnd.inPoint);
         if (ovl > 0.1) {
-          var offEx = ex.seqStart - ex.inPoint, offC = cnd.seqStart - cnd.inPoint;
-          if (offEx - offC < 0.05 && offC - offEx < 0.05) {
+          // the same mapping = the same speed and the recording's zero landing
+          // at the same master time
+          var offEx = ex.seqStart - ex.inPoint / ex.speed, offC = cnd.seqStart - cnd.inPoint / cnd.speed;
+          var dSp = ex.speed - cnd.speed;
+          if (offEx - offC < 0.05 && offC - offEx < 0.05 && dSp < 0.001 && dSp > -0.001) {
             // identical mapping (the linked pair) → merge into one window
-            if (cnd.inPoint < ex.inPoint) { ex.seqStart -= (ex.inPoint - cnd.inPoint); ex.inPoint = cnd.inPoint; }
+            if (cnd.inPoint < ex.inPoint) { ex.seqStart -= (ex.inPoint - cnd.inPoint) / ex.speed; ex.inPoint = cnd.inPoint; }
             if (cnd.outPoint > ex.outPoint) ex.outPoint = cnd.outPoint;
           }
           dup = true; break;   // slipped copy: the earlier (audio-first) one stays
         }
       }
-      if (!dup) instances.push({ inPoint: cnd.inPoint, outPoint: cnd.outPoint, seqStart: cnd.seqStart });
+      if (!dup) instances.push({ inPoint: cnd.inPoint, outPoint: cnd.outPoint, seqStart: cnd.seqStart, speed: cnd.speed });
     }
     return CP_ok({ clip: main, instances: instances, fromSelection: selected.length > 0, candidates: all.length });
   } catch (e) { return CP_fail(e.message); }

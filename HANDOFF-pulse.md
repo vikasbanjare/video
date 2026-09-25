@@ -1,10 +1,53 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.1** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.2** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.2 — caption sync (the owner's "sync problem with pulse rendering with voice")
+Found in the code, without waiting for the owner's early/late answer. Four
+ways a caption's time left the voice, all fixed and gated
+(`test/gates/caption-sync-placement.js`, 25 checks; host-tests "counts clip
+speed", 9 checks; mediaToTimeline/timelineToMedia unit tests). Each fix was
+mutation-verified: breaking it turns its checks red.
+- **Speed.** `CP_getTranscribeSource` read every clip as 1:1. A reel at 120%
+  plays 1.2 s of recording per timeline second, so the last sixth was never
+  transcribed and every caption drifted later (1.5 s late by the 9th second).
+  The host now gives each piece `speed` (CP_clipSpeed, the same as the dead-air
+  listing, composed through nests). The panel places words with
+  `CPCaptions.mediaToTimeline`: timeline = seqStart + (recording − in) / speed.
+  Reversed voice clips get a plain "plays in reverse" answer.
+- **Saved transcripts.** The cache (`~/.cutpilot/transcripts`) held TIMELINE
+  times but was keyed by the recording alone. After the clip was moved, cut by
+  hand, or used in another sequence, a reused transcript put every caption
+  where the words used to be. That happened both when Auto-transcribe reloaded
+  it and when selecting the clip auto-loaded it. Store v3 keeps RECORDING
+  time (`{v:3, lines, words, wordLevel, dedupeWords, minIn, maxOut}` JSON) and
+  `placeTranscript()` lays it onto the pieces the timeline shows NOW, through
+  the same steps a fresh transcription takes. v2 files are ignored, so each
+  clip is heard once more.
+- **Word timing.** `refineWordCues` measured every word against the SELECTED
+  clip's offset. After a clean-up it snapped the words of other pieces to the
+  wrong audio. Each word now goes through its own piece (`transcriptPieces()`
+  asks Premiere with `onlyMediaPath` = `state.transcriptMedia`), is refined
+  per piece, and is clamped to what the piece shows. The fallback for a picked
+  .srt read the first audio track's in point and ignored where the clip
+  starts on the timeline. It now uses the same pieces.
+- **Words made before the clip moved.** A transcript already in the panel kept
+  the times of the placement it was made for: trimming 2 s off the head
+  AFTER transcribing put every caption 2 s late. The transcript now remembers
+  its placement (`state.transcriptPlacement`). Before a caption action runs,
+  `ensureTranscriptThen` asks Premiere where the recording sits now. If it
+  moved, `followMovedRecording` moves every copy (the .srt, the words, the
+  template-editor cues) through the recording (`retimeThroughRecording`),
+  says so, and runs the action again. Pulse's own cuts clear the placement:
+  `resyncTranscripts` has already re-timed those copies.
+- Diagnostics: the `asr source` line names any speed that isn't 100%.
+- Not changed: after Pulse's OWN cuts, Auto-transcribe still listens again
+  (`_forceRetranscribe`). With v3 a reload would be correct, but that is a
+  separate decision.
 
 ### v0.9.388 → v0.10.0 — the owner's "make everything work" release
 The owner (4 months in, not shipped) asked for: every caption editable, a
@@ -38,7 +81,7 @@ What changed for the owner:
   sent "NotoSansCoptic-Bold" → blank captions); every font piece a job needs
   is loaded before the first frame (Hindi/₹ drew in a stand-in font).
 
-Harness: test/gates/*.js are discovered automatically (122 gates at release);
+Harness: test/gates/*.js are discovered automatically (126 gates as of v0.10.2);
 tools/doctor.js says what a machine is missing — including whether headless
 Chromium can load Google Fonts (without it every caption gate silently tests
 stand-in fonts; the proxy CA must be in ~/.pki/nssdb).
@@ -419,18 +462,20 @@ Absolute paths. Only files touched in this session are listed.
 
 ## Next 3 actions
 
-1. **Owner installs v0.10.0 on the Mac and runs the real flows**: Hindi captions
+1. **Owner installs v0.10.2 on the Mac and runs the real flows**: Hindi captions
    on a reel; Clean up on a 2-mic podcast (with and without a music track —
    name it "Music" or answer the one-tap question); Podcast cameras. Then
    📋 Copy diagnostics. Everything above is proven against a fake Premiere
    and headless Chromium; the QE razor, undo grouping, linked-audio behaviour
    and CEP timer throttling are only provable on the Mac.
-2. **Open question from the owner's report — caption SYNC**: captions were off
-   the voice on a 43 s ElevenLabs clip. Not yet diagnosed: the pre-ASR filter
-   adds only 25 ms; the likelier cause is refineWordCues snapping words to the
-   SELECTED clip's audio (state.clip) instead of the transcribed clip, guarded
-   only by a 60%-on-speech check. Needs the owner's answer: early or late,
-   constant or growing?
+2. **Caption SYNC — fixed in v0.10.2, confirm on the Mac**: the four causes
+   found in the code (clip speed ignored; saved transcripts in timeline time
+   reused after a move or cut; word snapping against the selected clip; words
+   made before the clip was trimmed or moved) are fixed and gated (see State). If captions are still off on the owner's 43 s
+   ElevenLabs clip, ask: early or late, and constant or growing? Constant
+   points at the recording's own start (MP3 encoder delay, a timecode start),
+   growing at a rate mismatch. Also get the diagnostics line `asr source …`,
+   which now names any speed that isn't 100%.
 3. **Strategic**: Adobe's Premiere sample README (Nov 2025) says CEP support
    ends about a year after 25.6 — i.e. now. The pure-JS cores (silence, takes,
    render, captions) carry over to UXP; host.jsx (QE razor) and Node

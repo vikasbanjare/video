@@ -97,6 +97,70 @@ const MUTANTS = [
     repl: '    if (false) eff.wordsPerCue = ov.wordsPerCue;',
     gate: 'tools/dead-control-audit.js',
     why: 'Words-per-line goes dead in the preview again'
+  },
+  {
+    name: 'caption-sync-speed',
+    file: 'CutPilot/js/captions.js',
+    find: '        var p = ps[k], sp = (+p.speed > 0) ? +p.speed : 1;\n        var s = Math.max(+it.start, +p.inPoint)',
+    repl: '        var p = ps[k], sp = 1;\n        var s = Math.max(+it.start, +p.inPoint)',
+    gate: 'CutPilot/test/gates/caption-sync-placement.js',
+    why: 'captions on a sped-up reel drift behind the voice again'
+  },
+  {
+    name: 'caption-sync-host-speed',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '            var sp = CP_clipSpeed(clip, ip, op, st, en);   // recording (or nest) s per s of THIS sequence',
+    repl: '            var sp = 1;',
+    gate: 'CutPilot/test/host-tests.js',
+    why: 'Premiere\'s answer reads a sped-up clip as 1:1 again'
+  },
+  {
+    name: 'caption-sync-saved',
+    file: 'CutPilot/js/main.js',
+    find: '          var placed = (!sparse && !forceFresh) ? placeTranscript(cached, insts) : null;',
+    repl: '          var placed = (!sparse && !forceFresh) ? { cues: cached.lines, words: cached.words } : null;',
+    gate: 'CutPilot/test/gates/caption-sync-placement.js',
+    why: 'a reused transcript puts captions where the words were before the clip moved'
+  },
+  {
+    name: 'caption-sync-scan',
+    file: 'CutPilot/js/main.js',
+    find: '          var placed = placeTranscript(cc, pieces);',
+    repl: '          var placed = { cues: cc.lines, words: cc.words };',
+    gate: 'CutPilot/test/gates/caption-sync-placement.js',
+    why: 'selecting a clip auto-loads its saved words at the old place'
+  },
+  {
+    name: 'caption-sync-refine',
+    file: 'CutPilot/js/main.js',
+    find: '        var at = CPCaptions.timelineToMedia(words, src.pieces);',
+    repl: '        src.pieces = [{ inPoint: src.pieces[0].inPoint, outPoint: 1e9, seqStart: src.pieces[0].seqStart, speed: src.pieces[0].speed }]; var at = CPCaptions.timelineToMedia(words, src.pieces);',
+    gate: 'CutPilot/test/gates/caption-sync-placement.js',
+    why: 'after a cut, words are snapped against the wrong stretch of the recording'
+  },
+  {
+    name: 'caption-sync-fallback',
+    file: 'CutPilot/js/main.js',
+    find: '        var at = CPCaptions.timelineToMedia(cues, src.pieces), out = [];',
+    repl: '        return CPCaptions.alignCuesToAudio(cues, env.samples, src.pieces[0].inPoint || 0, opt); var at, out = [];',
+    gate: 'CutPilot/test/gates/caption-sync-placement.js',
+    why: 'the words of a picked .srt are timed against the wrong audio'
+  },
+  {
+    name: 'caption-sync-follow',
+    file: 'CutPilot/js/main.js',
+    find: '      if (!now.length || !res.clip || res.clip.mediaPath !== pl.mediaPath || samePieces(now, pl.pieces)) return false;',
+    repl: '      return false;',
+    gate: 'CutPilot/test/gates/caption-sync-placement.js',
+    why: 'words made before the clip was trimmed or moved stay where the voice used to be'
+  },
+  {
+    name: 'caption-sync-follow-hook',
+    file: 'CutPilot/js/main.js',
+    find: "      if (action === 'autoclean' || !state.transcriptPlacement || (Date.now() - (state._placementCheckedAt || 0)) < 3000) return true;",
+    repl: '      return true;',
+    gate: 'CutPilot/test/gates/caption-sync-placement.js',
+    why: 'Add captions stops checking where the clip sits before it places the words'
   }
 ];
 

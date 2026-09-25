@@ -204,6 +204,80 @@
   }
 
   /*
+   * Where recording-time items play on the timeline. pieces = every timeline
+   * piece that shows the recording: [{ inPoint, outPoint (recording seconds),
+   * seqStart (timeline seconds), speed }], speed = recording seconds played per
+   * timeline second (a reel sped to 120% is 1.2; missing = 1). Each item is cut
+   * to what each piece shows and moved to where that piece plays it, so an
+   * item two pieces show appears twice and one no piece shows is dropped, as
+   * is a sliver of minLen recording seconds or less (default 0.05). Returns
+   * [{ start, end, text, conf }] sorted by start. Pure + tested.
+   */
+  function mediaToTimeline(items, pieces, minLen) {
+    var out = [], min = (minLen != null) ? minLen : 0.05;
+    var ps = pieces || [];
+    for (var i = 0; i < (items || []).length; i++) {
+      var it = items[i];
+      for (var k = 0; k < ps.length; k++) {
+        var p = ps[k], sp = (+p.speed > 0) ? +p.speed : 1;
+        var s = Math.max(+it.start, +p.inPoint), e = Math.min(+it.end, +p.outPoint);
+        if (e - s > min) {
+          out.push({ start: +p.seqStart + (s - p.inPoint) / sp, end: +p.seqStart + (e - p.inPoint) / sp,
+                     text: it.text, conf: it.conf });
+        }
+      }
+    }
+    out.sort(function (a, b) { return a.start - b.start; });
+    return out;
+  }
+
+  /*
+   * The way back: for each timeline-time item, the piece that plays its middle
+   * and where that is in the recording — { piece: index into pieces, start,
+   * end } in recording seconds, or null when no piece plays it (the words of
+   * a stretch that was cut out, or of another recording). Pure + tested.
+   */
+  function timelineToMedia(items, pieces) {
+    var ps = pieces || [], out = [];
+    for (var i = 0; i < (items || []).length; i++) {
+      var it = items[i], mid = (+it.start + +it.end) / 2, hit = null;
+      for (var k = 0; k < ps.length && !hit; k++) {
+        var p = ps[k], sp = (+p.speed > 0) ? +p.speed : 1;
+        var pEnd = +p.seqStart + (p.outPoint - p.inPoint) / sp;
+        if (mid >= +p.seqStart - 1e-6 && mid <= pEnd + 1e-6) {
+          hit = { piece: k, start: +p.inPoint + (it.start - p.seqStart) * sp, end: +p.inPoint + (it.end - p.seqStart) * sp };
+        }
+      }
+      out.push(hit);
+    }
+    return out;
+  }
+
+  /*
+   * Timeline-time items made for one placement of a recording, moved onto
+   * another placement of the SAME recording (the clip was moved, trimmed, cut
+   * or re-sped since): through the recording and back. Each item keeps its
+   * other fields; one no old piece plays is kept as it was, one no new piece
+   * shows is dropped. Sorted by start. Pure + tested.
+   */
+  function retimeThroughRecording(items, oldPieces, newPieces) {
+    var at = timelineToMedia(items, oldPieces), out = [];
+    for (var i = 0; i < (items || []).length; i++) {
+      var it = items[i], m = at[i];
+      if (!m) { out.push(it); continue; }
+      var placed = mediaToTimeline([{ start: m.start, end: m.end, text: it.text, conf: it.conf }], newPieces);
+      for (var k = 0; k < placed.length; k++) {
+        var o = {};
+        for (var key in it) if (Object.prototype.hasOwnProperty.call(it, key)) o[key] = it[key];
+        o.start = placed[k].start; o.end = placed[k].end;
+        out.push(o);
+      }
+    }
+    out.sort(function (a, b) { return a.start - b.start; });
+    return out;
+  }
+
+  /*
    * Regroup a transcript into captions of `perCue` words EACH, flowing ACROSS
    * the original line boundaries (unlike explodeWords, which only splits within
    * a line and so can never reduce the caption count). A new caption also
@@ -3371,6 +3445,9 @@
     framesKeywordBuild: framesKeywordBuild,
     regroupWords: regroupWords,
     remapCuesToKeeps: remapCuesToKeeps,
+    mediaToTimeline: mediaToTimeline,
+    timelineToMedia: timelineToMedia,
+    retimeThroughRecording: retimeThroughRecording,
     STYLE_PRESETS: STYLE_PRESETS,
     TEMPLATES: TEMPLATES,
     CATEGORIES: CATEGORIES,

@@ -1132,7 +1132,13 @@
   // recovered word-level timing; v1 caches (lines only) are intentionally
   // bypassed so a clip is re-transcribed ONCE to capture its word timing, then
   // cached for good.
-  var _TC_VER = 'v2';
+  // v3 = RECORDING time. v2 saved TIMELINE times, keyed by the recording alone,
+  // so a transcript reused after the clip moved, was cut up by a clean-up, or
+  // went into another sequence put every caption where the words USED to be.
+  // A v3 transcript belongs to the recording and is placed on the timeline as
+  // it is now (placeTranscript). v2 files are never read: each clip is heard
+  // once more, then cached for good.
+  var _TC_VER = 'v3';
   function _tcKey(mediaPath, minIn, maxOut) {
     // key on the RESOLVED engine + language, so changing the model (or "Auto"
     // resolving differently) produces a new key and the clip is re-transcribed.
@@ -1142,54 +1148,102 @@
     var base = String(mediaPath).split(/[\\/]/).pop().replace(/\.[^.]+$/, '').replace(/[^\w]+/g, '_').slice(0, 40);
     return base + '-' + _TC_VER + '-' + h.toString(16);
   }
+  /* A saved transcript: { lines, words, wordLevel, dedupeWords, minIn, maxOut }
+     with every time in RECORDING seconds (see _TC_VER), or null. */
+  function readCachedTranscriptFile(file) {
+    try {
+      var t = JSON.parse(nodeReq('fs').readFileSync(file, 'utf8'));
+      if (!t || t.v !== 3 || !t.lines || !t.lines.length) return null;
+      return t;
+    } catch (e) { return null; }
+  }
   function loadCachedTranscript(mediaPath, minIn, maxOut) {
     try {
       var fs = nodeReq('fs'), p = nodeReq('path'), dir = _tcDir(); if (!dir || !mediaPath) return null;
-      var key = _tcKey(mediaPath, minIn, maxOut), srt = p.join(dir, key + '.srt');
-      if (!fs.existsSync(srt) || !fs.statSync(srt).size) return null;
-      var words = null;
-      try { var js = p.join(dir, key + '.json'); if (fs.existsSync(js)) words = JSON.parse(fs.readFileSync(js, 'utf8')).words || null; } catch (eJ) {}
-      return { srtPath: srt, words: words };
+      var file = p.join(dir, _tcKey(mediaPath, minIn, maxOut) + '.json');
+      if (!fs.existsSync(file)) return null;
+      return readCachedTranscriptFile(file);
     } catch (e) { return null; }
   }
-  function saveCachedTranscript(mediaPath, minIn, maxOut, cues, words) {
+  function saveCachedTranscript(mediaPath, minIn, maxOut, t) {
     try {
       var fs = nodeReq('fs'), p = nodeReq('path'), dir = _tcDir(); if (!dir || !mediaPath) return;
-      var key = _tcKey(mediaPath, minIn, maxOut);
-      fs.writeFileSync(p.join(dir, key + '.srt'), CPCaptions.toSRT(cues), 'utf8');
-      // record the engine + language that produced it so the loose finder only
+      // the engine + language that made it ride along, so the loose finder only
       // auto-loads a transcript that matches the CURRENT model (else re-transcribe)
-      try { fs.writeFileSync(p.join(dir, key + '.json'), JSON.stringify({ words: words || null, q: resolveQuality(), lang: (settings.whisperLang || 'auto'), at: Date.now() }), 'utf8'); } catch (eW) {}
+      fs.writeFileSync(p.join(dir, _tcKey(mediaPath, minIn, maxOut) + '.json'), JSON.stringify({
+        v: 3, lines: t.lines, words: t.words || null, wordLevel: !!t.wordLevel, dedupeWords: !!t.dedupeWords,
+        minIn: minIn, maxOut: maxOut, q: resolveQuality(), lang: (settings.whisperLang || 'auto'), at: Date.now()
+      }), 'utf8');
     } catch (e) {}
   }
-  /* Loosely find a transcript we already saved for this media file (any trim),
-     so SELECTING a clip we've transcribed before auto-loads its words — the user
+  /* Loosely find a transcript we already saved for this media file, so
+     SELECTING a clip we've transcribed before auto-loads its words — the user
      never re-transcribes the same file. Only matches transcripts made with the
      CURRENT engine + language, so changing the model means it won't reuse a stale
-     one (it'll re-transcribe instead). Returns the most recent {srtPath,words}. */
-  function findCachedTranscriptForMedia(mediaPath) {
+     one (it'll re-transcribe instead), and only one that heard every part of
+     the recording the timeline shows now (span = { minIn, maxOut }, recording
+     seconds): an older, shorter trim would leave the rest without words.
+     Returns the most recent saved transcript (readCachedTranscriptFile). */
+  function findCachedTranscriptForMedia(mediaPath, span) {
     try {
       var fs = nodeReq('fs'), p = nodeReq('path'), dir = _tcDir();
       if (!dir || !mediaPath) return null;
       var base = String(mediaPath).split(/[\\/]/).pop().replace(/\.[^.]+$/, '').replace(/[^\w]+/g, '_').slice(0, 40);
       var curQ = resolveQuality(), curLang = (settings.whisperLang || 'auto');
-      var best = null, bestM = -1, bestWords = null;
+      var best = null, bestM = -1;
       fs.readdirSync(dir).forEach(function (f) {
-        if (f.indexOf(base + '-') !== 0 || !/\.srt$/i.test(f)) return;
+        if (f.indexOf(base + '-' + _TC_VER + '-') !== 0 || !/\.json$/i.test(f)) return;
         var full = p.join(dir, f);
         try {
-          var st = fs.statSync(full); if (!st.size) return;
+          var st = fs.statSync(full);
+          if (!((st.mtimeMs || 0) > bestM)) return;
+          var t = readCachedTranscriptFile(full);
+          if (!t) return;
           // only reuse a transcript made with the model + language selected now
-          var meta = {};
-          try { var js = full.replace(/\.srt$/i, '.json'); if (fs.existsSync(js)) meta = JSON.parse(fs.readFileSync(js, 'utf8')) || {}; } catch (eM) {}
-          if (meta.q != null && meta.q !== curQ) return;
-          if (meta.lang != null && meta.lang !== curLang) return;
-          if ((st.mtimeMs || 0) > bestM) { bestM = st.mtimeMs || 0; best = full; bestWords = meta.words || null; }
+          if (t.q != null && t.q !== curQ) return;
+          if (t.lang != null && t.lang !== curLang) return;
+          if (span && (t.minIn > span.minIn + 0.5 || t.maxOut < span.maxOut - 0.5)) return;
+          bestM = st.mtimeMs || 0; best = t;
         } catch (e) {}
       });
       if (!best) return null;
-      return { srtPath: best, words: bestWords, mtime: bestM };
+      best.mtime = bestM;
+      return best;
     } catch (e) { return null; }
+  }
+  /* A saved transcript (recording time) laid onto the timeline pieces that
+     show the recording NOW: { cues, words } in timeline seconds. The same
+     steps a fresh transcription takes (Auto-transcribe below), so a transcript
+     loaded from the store lands exactly where a new one would. */
+  function placeTranscript(t, pieces) {
+    var cues = CPCaptions.dedupeRepeatedCues(CPCaptions.mediaToTimeline(t.lines, pieces));
+    var words = null;
+    if (t.wordLevel) {
+      words = cues.slice();                                  // the lines were single words
+      cues = CPCaptions.regroupWords(cues, 7, { maxGap: 0.8 });
+    } else if (t.words && t.words.length) {
+      words = CPCaptions.mediaToTimeline(t.words, pieces);
+      if (t.dedupeWords) words = CPCaptions.dedupeRepeatedCues(words, { word: true });
+    }
+    return { cues: cues, words: (words && words.length) ? words : null };
+  }
+  /* A timeline transcript is written to a file (the rest of the panel reads
+     transcripts from .srt files); the name follows what it holds, so the
+     same placement gives the same path and a rescan doesn't count it as new. */
+  function writePlacedTranscript(cues, tag) {
+    var p = nodeReq('path'), fs = nodeReq('fs');
+    var body = CPCaptions.toSRT(cues);
+    var h = 0; for (var i = 0; i < body.length; i++) h = (h * 31 + body.charCodeAt(i)) >>> 0;
+    var file = p.join(nodeReq('os').tmpdir(), 'cutpilot-transcript-' + tag + '-' + h.toString(16) + '.srt');
+    fs.writeFileSync(file, body, 'utf8');
+    return file;
+  }
+  /* The pieces of a transcribe-source reply: every timeline piece that shows
+     the recording, each with its speed. */
+  function transcribePieces(res) {
+    var clip = res && res.clip;
+    if (res && res.instances && res.instances.length) return res.instances;
+    return clip ? [{ inPoint: clip.inPoint || 0, outPoint: clip.outPoint || 0, seqStart: clip.seqStart || 0, speed: clip.speed || 1 }] : [];
   }
 
   /* Deepgram as a FULL transcription engine (not just "find retakes").
@@ -1386,9 +1440,9 @@
         var clip = res.clip;
         if (!clip || !clip.mediaPath) throw new Error('Put your video or audio clip on the timeline first.');
         var shortName = (clip.name || 'clip').replace(/\.[^.]+$/, '');
-        // Every timeline piece that uses this recording (jump-cuts of one source).
-        var insts = (res.instances && res.instances.length) ? res.instances
-                    : [{ inPoint: clip.inPoint || 0, outPoint: clip.outPoint || 0, seqStart: clip.seqStart || 0 }];
+        // Every timeline piece that uses this recording (jump-cuts of one source),
+        // each with its speed.
+        var insts = transcribePieces(res);
         // Linked clips put the SAME media on a video AND audio track → de-dup so
         // captions don't come out twice.
         var _seenInst = {};
@@ -1406,7 +1460,11 @@
         var dur = (maxOut > minIn) ? (maxOut - minIn) : 0;
         // one-line trace that makes "it didn't hear everything" diagnosable from
         // a single Copy-Diagnostics: which media, how many timeline pieces, span
-        try { diag('asr', 'source “' + (clip.name || '?') + '” (' + (clip.trackType || '?') + ' track) · ' + insts.length + ' piece' + (insts.length === 1 ? '' : 's') + ' · media ' + Math.round(minIn) + '→' + Math.round(maxOut) + 's'); } catch (eDs) {}
+        try {
+          var speeds = insts.filter(function (it) { return Math.abs((it.speed || 1) - 1) > 0.001; }).map(function (it) { return Math.round((it.speed || 1) * 100) + '%'; });
+          diag('asr', 'source “' + (clip.name || '?') + '” (' + (clip.trackType || '?') + ' track) · ' + insts.length + ' piece' + (insts.length === 1 ? '' : 's') + ' · media ' + Math.round(minIn) + '→' + Math.round(maxOut) + 's' +
+            (speeds.length ? ' · speed ' + speeds.filter(function (v, i) { return speeds.indexOf(v) === i; }).join('/') : ''));
+        } catch (eDs) {}
         var asrWordLevel = false;   // true once we have real per-word timing (-ml 1)
         var groqWords = null;       // real per-word cues from Groq (cloud path)
 
@@ -1422,23 +1480,28 @@
         var cacheKeyNow = String(clip.mediaPath) + '|' + Math.round(minIn) + '|' + Math.round(maxOut);
         var cached = loadCachedTranscript(clip.mediaPath, minIn, maxOut);
         if (cached) {
-          var cc = []; try { cc = CPCaptions.parseSRT(nodeReq('fs').readFileSync(cached.srtPath, 'utf8')); } catch (eR) {}
+          var cc = cached.lines;   // recording seconds
           var covered = 0;
           for (var cvI = 0; cvI < cc.length; cvI++) covered += Math.max(0, (cc[cvI].end || 0) - (cc[cvI].start || 0));
           var sparse = !cc.length || (dur > 30 && (cc.length < 3 || covered < 0.12 * dur));
           var forceFresh = (state._cacheServedKey === cacheKeyNow) || !!state._forceRetranscribe;
-          if (!sparse && !forceFresh) {
-            state.transcript = { label: 'Saved transcript (' + shortName + ')', path: cached.srtPath, mtime: 1e16 };
-            state.transcriptWords = cached.words || null;
+          // laid onto the pieces as they sit NOW — the clip may have moved or
+          // been cut since it was heard
+          var placed = (!sparse && !forceFresh) ? placeTranscript(cached, insts) : null;
+          if (placed && placed.cues.length) {
+            state.transcript = { label: 'Saved transcript (' + shortName + ')', path: writePlacedTranscript(placed.cues, 'saved'), mtime: 1e16 };
+            state.transcriptWords = placed.words;
+            state.transcriptMedia = clip.mediaPath;
+            state.transcriptPlacement = { mediaPath: clip.mediaPath, pieces: insts };
             state.transcriptManual = true;
             state._cacheServedKey = cacheKeyNow;
             $('tr-help').classList.add('hidden');
             refreshMogrtSheetTr(); refreshMogrtEditorTr();
-            setTranscriptBar('ok', '✅', 'Loaded the saved transcript (' + cc.length + ' lines). Not right? Tap Auto-transcribe again to re-listen.', 'Change');
+            setTranscriptBar('ok', '✅', 'Loaded the saved transcript (' + placed.cues.length + ' lines). Not right? Tap Auto-transcribe again to re-listen.', 'Change');
             toast('✓ Loaded the saved transcript for “' + shortName + '”. If it looks incomplete, tap Auto-transcribe once more — that re-listens from scratch.');
             return;   // skip ffmpeg + whisper entirely
           }
-          try { diag('asr', (sparse ? 'IGNORED sparse cached transcript (' + cc.length + ' lines / ' + Math.round(covered) + 's over ' + Math.round(dur) + 's span)' : 'user asked to re-listen') + ' — transcribing fresh'); } catch (eDg) {}
+          try { diag('asr', (sparse ? 'IGNORED sparse cached transcript (' + cc.length + ' lines / ' + Math.round(covered) + 's over ' + Math.round(dur) + 's span)' : forceFresh ? 'user asked to re-listen' : 'saved transcript has no words on the timeline as it is now') + ' — transcribing fresh'); } catch (eDg) {}
         }
         state._cacheServedKey = null;   // this run is a real transcription
         state._forceRetranscribe = false;   // the force applies to this run only
@@ -1547,65 +1610,55 @@
               try { diag('asr', 'indic detected: ' + dl); } catch (eD) {}
             }
           } catch (eHint) {}
-          // Map (wav-relative) cues onto every timeline piece showing that part,
-          // converting to sequence time: seq = mediaTime - pieceIn + pieceSeqStart.
-          function toSeq(list) {
-            var out = [];
-            list.forEach(function (rc) {
-              var mStart = rc.start + minIn, mEnd = rc.end + minIn;
-              insts.forEach(function (it) {
-                var s = Math.max(mStart, it.inPoint), e = Math.min(mEnd, it.outPoint);
-                if (e - s > 0.05) out.push({ start: s - it.inPoint + it.seqStart, end: e - it.inPoint + it.seqStart, text: rc.text, conf: rc.conf });
-              });
-            });
-            out.sort(function (a, b) { return a.start - b.start; });
-            return out;
+          // What was heard, in RECORDING seconds (the extract began at minIn):
+          // this is what the store keeps. placeTranscript lays it onto every
+          // timeline piece showing that part, at that piece's speed:
+          // timeline = pieceSeqStart + (recording - pieceIn) / speed. It also
+          // collapses overlapping copies of the SAME line ("same text 2
+          // times") from a linked clip's double mapping, chunk-boundary
+          // overlap, or whisper repeating itself.
+          function toMedia(list) {
+            return (list || []).map(function (rc) { return { start: rc.start + minIn, end: rc.end + minIn, text: rc.text, conf: rc.conf }; });
           }
-          var cues = toSeq(rawCues);
-          // overlapping copies of the SAME line ("same text 2 times") — from a
-          // linked clip's double mapping, chunk-boundary overlap, or whisper
-          // repeating itself — collapse to one
-          cues = CPCaptions.dedupeRepeatedCues(cues);
-          if (!cues.length) throw new Error('no speech detected in “' + shortName + '”');
+          var heard = { lines: toMedia(rawCues), words: null, wordLevel: asrWordLevel, dedupeWords: false };
+          if (!CPCaptions.mediaToTimeline(heard.lines, insts).length) throw new Error('no speech detected in “' + shortName + '”');
 
           // Per-word timing for the highlight so it rides the SPOKEN word. Best
-          // source is whisper's own word-level pass; when that isn't available
-          // (older build, cloud, or it produced line-level only) recover word
-          // onsets from the WAV we already extracted — this works even when the
-          // audio is baked into the video with no separate timeline track, so an
-          // auto-transcribed clip ALWAYS gets word-following captions.
-          var wordsReady;
+          // source is whisper's own word-level pass (rawCues were single words);
+          // when that isn't available (older build, cloud, or it produced
+          // line-level only) recover word onsets from the WAV we already
+          // extracted — this works even when the audio is baked into the video
+          // with no separate timeline track, so an auto-transcribed clip ALWAYS
+          // gets word-following captions.
+          var wordsReady = Promise.resolve();
           if (asrWordLevel) {
-            state.transcriptWords = cues.slice();                 // rawCues were single words
-            cues = CPCaptions.regroupWords(cues, 7, { maxGap: 0.8 });
-            wordsReady = Promise.resolve();
+            // the lines ARE the words
           } else if (groqWords && groqWords.length) {
             // REAL per-word timestamps from Groq → highlight rides the spoken word.
-            var gw = CPCaptions.dedupeRepeatedCues(toSeq(groqWords), { word: true });
-            state.transcriptWords = gw.length ? gw : null;
-            wordsReady = Promise.resolve();
+            heard.words = toMedia(groqWords);
+            heard.dedupeWords = true;
           } else if (typeof CPAudio !== 'undefined' && CPAudio.ffmpegEnvelope && ff) {
             setTranscriptBar('', ico, 'Aligning each word to the audio…', null);
             wordsReady = CPAudio.ffmpegEnvelope(wav, ff, 0.1).then(function (env) {
               try {
                 if (env && env.samples && env.samples.length) {
-                  var ww = CPCaptions.alignCuesToAudio(rawCues, env.samples, 0,
-                    { rise: 6, minSpacing: 0.08, snapWin: 0.18 });
-                  var sw = toSeq(ww);
-                  state.transcriptWords = sw.length ? sw : null;
-                } else { state.transcriptWords = null; }
-              } catch (eAl) { state.transcriptWords = null; }
-            }, function () { state.transcriptWords = null; });
-          } else {
-            state.transcriptWords = null;
-            wordsReady = Promise.resolve();
+                  heard.words = toMedia(CPCaptions.alignCuesToAudio(rawCues, env.samples, 0,
+                    { rise: 6, minSpacing: 0.08, snapWin: 0.18 }));
+                }
+              } catch (eAl) {}
+            }, function () {});
           }
 
           return wordsReady.then(function () {
+            var placed = placeTranscript(heard, insts);
+            var cues = placed.cues;
+            state.transcriptWords = placed.words;
+            state.transcriptMedia = clip.mediaPath;
+            state.transcriptPlacement = { mediaPath: clip.mediaPath, pieces: insts };
             var finalPath = pathMod.join(os.tmpdir(), 'cutpilot-transcript-' + stamp + '.srt');
             fs.writeFileSync(finalPath, CPCaptions.toSRT(cues), 'utf8');
             try { fs.unlinkSync(wav); } catch (eU) {}
-            saveCachedTranscript(clip.mediaPath, minIn, maxOut, cues, state.transcriptWords);  // so this clip never needs re-transcribing
+            saveCachedTranscript(clip.mediaPath, minIn, maxOut, heard);  // so this clip never needs re-transcribing
             state.transcript = { label: 'Pulse transcript (' + cues.length + ' lines)', path: finalPath, mtime: 1e16 };
             state.transcriptManual = true;
             $('tr-help').classList.add('hidden');
@@ -2422,15 +2475,28 @@
     ).then(function () {
       return CPBridge.callHost('CP_getSelectedClip').catch(function () { return null; });
     }).then(function (sel) {
+      var saved = Promise.resolve();
       if (sel && sel.clip && sel.clip.mediaPath && pathMod) {
-        clipBase = pathMod.basename(sel.clip.mediaPath).replace(/\.[^.]+$/, '').toLowerCase();
-        listCaptionFilesIn(pathMod.dirname(sel.clip.mediaPath)).forEach(function (s) { s.base = 1e14; s.src = 'clip'; add(s); });
-        // A transcript WE already made for this exact clip is the canonical one:
-        // it wins over any external .srt and carries word-level timing.
-        var cc = findCachedTranscriptForMedia(sel.clip.mediaPath);
-        if (cc) add({ label: 'your saved transcript', path: cc.srtPath, base: 9e15, src: 'cutpilot-cache', words: cc.words, mtime: cc.mtime });
+        var mediaPath = sel.clip.mediaPath;
+        clipBase = pathMod.basename(mediaPath).replace(/\.[^.]+$/, '').toLowerCase();
+        listCaptionFilesIn(pathMod.dirname(mediaPath)).forEach(function (s) { s.base = 1e14; s.src = 'clip'; add(s); });
+        // A transcript WE already made for this recording is the canonical one:
+        // it wins over any external .srt and carries word-level timing. It is
+        // laid onto the pieces of the recording the timeline shows NOW.
+        saved = CPBridge.callHost('CP_getTranscribeSource', { onlyMediaPath: mediaPath }).then(function (res) {
+          var pieces = transcribePieces(res);
+          if (!pieces.length) return;
+          var span = { minIn: Infinity, maxOut: -Infinity };
+          pieces.forEach(function (pc) { span.minIn = Math.min(span.minIn, pc.inPoint); span.maxOut = Math.max(span.maxOut, pc.outPoint); });
+          var cc = findCachedTranscriptForMedia(mediaPath, span);
+          if (!cc) return;
+          var placed = placeTranscript(cc, pieces);
+          if (!placed.cues.length) return;
+          add({ label: 'your saved transcript', path: writePlacedTranscript(placed.cues, 'saved'), base: 9e15, src: 'cutpilot-cache',
+                words: placed.words, mtime: cc.mtime, mediaPath: mediaPath, placement: { mediaPath: mediaPath, pieces: pieces } });
+        }).then(null, function () { /* no saved transcript to offer */ });
       }
-      return CPBridge.callHost('CP_getProjectInfo').catch(function () { return null; });
+      return saved.then(function () { return CPBridge.callHost('CP_getProjectInfo').catch(function () { return null; }); });
     }).then(function (proj) {
       if (proj && proj.path && pathMod) {
         projBase = pathMod.basename(proj.path).replace(/\.[^.]+$/, '').toLowerCase();
@@ -2463,11 +2529,17 @@
         // (If the scan re-found the same file, silently refresh its metadata.)
         if (samePath && top.words && !state.transcriptWords) state.transcriptWords = top.words;
       } else if (top) {
-        if (!samePath) state.transcriptWords = top.words || null;   // words only reset when the FILE changes
+        if (!samePath) {                                     // words only reset when the FILE changes
+          state.transcriptWords = top.words || null;
+          state.transcriptMedia = top.mediaPath || null;
+          state.transcriptPlacement = top.placement || null;
+        }
         state.transcript = top;
         if (top.src === 'cutpilot-cache') {
           // restore the saved word-level timing + protect it from a background rescan
           state.transcriptWords = top.words || null;
+          state.transcriptMedia = top.mediaPath || null;
+          state.transcriptPlacement = top.placement || null;
           state.transcriptManual = true;
           setTranscriptBar('ok', '✅', 'Using your saved transcript — already done, no re-transcribe', 'Change');
         } else {
@@ -2488,6 +2560,8 @@
   function pickTranscriptByHand(p) {
     state.transcript = { label: p.split(/[\\/]/).pop(), path: p, mtime: 1e16 };
     state.transcriptWords = null;    // hand-picked file has no per-word timing
+    state.transcriptMedia = null;    // …and no known recording
+    state.transcriptPlacement = null;
     state.transcriptManual = true;   // auto-rescan must not override a hand pick
     setTranscriptBar('ok', '✅', 'Using ' + state.transcript.label, 'Change');
     $('tr-help').classList.add('hidden');
@@ -6957,8 +7031,27 @@
      remember which action was asked for, auto-transcribe, then setTranscriptBar
      finishes that same action. Returns true if words are already here (proceed
      now), false if we kicked off transcription (caller should stop). */
+  /* Run a caption action again (after its words were fetched or re-placed). */
+  function runCaptionAction(act) {
+    if (act === 'native') applyNative();
+    else if (act === 'editstyle') applyEditableStyle();
+    else if (act === 'viral') viralEdit();
+    else if (act === 'magic' && $('btn-magic')) $('btn-magic').click();
+  }
   function ensureTranscriptThen(action) {
-    if (state.transcript) return true;
+    if (state.transcript) {
+      // The words follow a clip moved since they were placed
+      // (followMovedRecording): check once, then run the action again with
+      // the words where the voice is now.
+      if (action === 'autoclean' || !state.transcriptPlacement || (Date.now() - (state._placementCheckedAt || 0)) < 3000) return true;
+      state._placementCheckedAt = Date.now();
+      followMovedRecording().then(function (moved) {
+        state._placementCheckedAt = Date.now();
+        if (moved) toast('↔ Your clip moved after Pulse heard it, so the words now follow it to where it sits.');
+        runCaptionAction(action);
+      });
+      return false;
+    }
     if (state.pendingCaptionAction) { toast('⏳ Still getting your words — I\'ll add them automatically when ready.'); return false; }
     var ff = resolveFfmpeg();
     var canAuto = !!ff && ((resolveQuality() === 'cloud-groq' && cpKey()) || (resolveQuality() === 'cloud-swara' && cpSarvamKey()) || !!resolveWhisper());
@@ -7515,12 +7608,75 @@
 
   /* Build audio-aligned word cues for tight sync (null = fall back to
      length-weighted timing). Uses the first audio track's envelope. */
+  /* The recording the transcript came from and every piece of it the timeline
+     shows NOW, each with its speed: { mediaPath, pieces } or null. Asked of
+     Premiere each time — the owner may have moved, cut or sped the clip since
+     it was heard. A transcript of unknown origin (a picked .srt) uses the
+     recording Auto-transcribe would pick. */
+  function transcriptPieces() {
+    var mp = state.transcriptMedia || null;
+    return CPBridge.callHost('CP_getTranscribeSource', mp ? { onlyMediaPath: mp } : undefined).then(function (res) {
+      if (!res || !res.clip || !res.clip.mediaPath) return null;
+      var pieces = transcribePieces(res);
+      return pieces.length ? { mediaPath: res.clip.mediaPath, pieces: pieces } : null;
+    }, function () { return null; });
+  }
+
+  /* A transcript remembers where its recording sat when its times were made
+     (state.transcriptPlacement = { mediaPath, pieces }). Before captions are
+     made, ask Premiere where that recording sits NOW: if the owner moved,
+     trimmed, cut or re-sped the clip since, every copy of the transcript is
+     moved onto the new pieces through the recording first. Otherwise the
+     captions land where the words USED to be: a head trimmed after
+     transcribing put every caption late by the trim. Resolves true when it
+     moved them; any failure leaves everything as it was. */
+  function samePieces(a, b) {
+    if (!a || !b || a.length !== b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      var x = a[i], y = b[i];
+      if (Math.abs(x.inPoint - y.inPoint) > 0.001 || Math.abs(x.outPoint - y.outPoint) > 0.001 ||
+          Math.abs(x.seqStart - y.seqStart) > 0.001 || Math.abs((x.speed || 1) - (y.speed || 1)) > 0.0001) return false;
+    }
+    return true;
+  }
+  function followMovedRecording() {
+    var pl = state.transcriptPlacement;
+    if (!pl || !pl.mediaPath || !pl.pieces || !pl.pieces.length) return Promise.resolve(false);
+    return CPBridge.callHost('CP_getTranscribeSource', { onlyMediaPath: pl.mediaPath }).then(function (res) {
+      var now = transcribePieces(res);
+      if (!now.length || !res.clip || res.clip.mediaPath !== pl.mediaPath || samePieces(now, pl.pieces)) return false;
+      if (state.transcriptPlacement !== pl) return false;              // replaced while Premiere answered
+      var move = function (items) { return CPCaptions.retimeThroughRecording(items, pl.pieces, now); };
+      var t = state.transcript, lines = null;
+      if (t && t.path) {
+        lines = move(CPCaptions.parseSRT(nodeReq('fs').readFileSync(t.path, 'utf8')));
+        if (!lines.length) return false;       // none of its words is on the timeline now: leave it as it is
+      }
+      if (state.transcriptWords && state.transcriptWords.length) state.transcriptWords = move(state.transcriptWords);
+      if (typeof _treCues !== 'undefined' && _treCues && _treCues.length) _treCues = move(_treCues);
+      if (lines) {
+        var nt = {}, k;
+        for (k in t) if (t.hasOwnProperty(k)) nt[k] = t[k];
+        nt.path = writePlacedTranscript(lines, 'moved');
+        state.transcript = nt;
+      }
+      state.transcriptPlacement = { mediaPath: pl.mediaPath, pieces: now };
+      try { diag('asr', 'the recording moved on the timeline since it was heard: transcript re-placed on ' + now.length + ' piece' + (now.length === 1 ? '' : 's')); } catch (eD) {}
+      return true;
+    }).then(null, function () { return false; });
+  }
+
   /* Sharpen the ASR word stamps so the word-by-word highlight rides the actual
      voice (CPAlign): snap any boundary that landed in silence to the real speech
      edge, and syllable-shape boundaries inside a continuous run. Pure DATA — the
      captions stay fully editable. SAFE BY DESIGN:
-       • words are SEQUENCE time, the envelope is MEDIA time → map via the clip's
-         seqStart/inPoint, refine, map back.
+       • words are SEQUENCE time, the envelope is RECORDING time → each word is
+         mapped through the piece that plays it (transcriptPieces: its own in
+         point, start and speed), refined with the other words of that piece,
+         and mapped back through the same piece. This used the SELECTED clip's
+         offset for every word: after a clean-up had cut the talk into pieces,
+         the words of every other piece were measured against the wrong
+         stretch of the recording and snapped up to a quarter second off.
        • self-check: if most words DON'T fall on speech (a time-base mismatch or a
          music-only clip) we DON'T trust the audio — we fall back to a gentle
          syllable-only pass, which can't drift the timing.
@@ -7530,22 +7686,44 @@
       return Promise.resolve(words);
     }
     function shapeOnly() { try { return CPAlign.refineWords(words, [], { blend: 0.35 }); } catch (e) { return words; } }
-    var clip = state.clip, ff = resolveFfmpeg();
-    if (!clip || !clip.mediaPath || !ff || typeof CPAudio === 'undefined' || !CPAudio.ffmpegEnvelope) {
+    var ff = resolveFfmpeg();
+    if (!ff || typeof CPAudio === 'undefined' || !CPAudio.ffmpegEnvelope) {
       return Promise.resolve(shapeOnly());
     }
-    return CPAudio.ffmpegEnvelope(clip.mediaPath, ff, 0.02).then(function (env) {
-      if (!env || !env.samples || !env.samples.length) return shapeOnly();
-      var sS = clip.seqStart || 0, iP = clip.inPoint || 0;
-      var media = words.map(function (w) { return { start: w.start - sS + iP, end: w.end - sS + iP, text: w.text, conf: w.conf }; });
-      var runs = CPAlign.speechRuns(env.samples, {});
-      var hit = 0;
-      media.forEach(function (w) { var c = (w.start + w.end) / 2; for (var i = 0; i < runs.length; i++) if (c >= runs[i].start && c <= runs[i].end) { hit++; break; } });
-      var aligned = runs.length > 0 && (hit / media.length) >= 0.6;   // do the words actually line up with speech?
-      try { diag('align', 'precise-timing ' + (aligned ? 'snap+shape' : 'shape-only') + ' — ' + hit + '/' + media.length + ' words on speech'); } catch (eD) {}
-      var refined = aligned ? CPAlign.refineWords(media, env.samples, { blend: 0.5, snapWin: 0.25 })
-                            : CPAlign.refineWords(media, [], { blend: 0.35 });
-      return refined.map(function (w) { return { start: w.start - iP + sS, end: w.end - iP + sS, text: w.text, conf: w.conf }; });
+    return transcriptPieces().then(function (src) {
+      if (!src) return shapeOnly();
+      return CPAudio.ffmpegEnvelope(src.mediaPath, ff, 0.02).then(function (env) {
+        if (!env || !env.samples || !env.samples.length) return shapeOnly();
+        var at = CPCaptions.timelineToMedia(words, src.pieces);
+        var runs = CPAlign.speechRuns(env.samples, {});
+        var hit = 0, placed = 0;
+        at.forEach(function (m) {
+          if (!m) return;
+          placed++;
+          var c = (m.start + m.end) / 2;
+          for (var i = 0; i < runs.length; i++) if (c >= runs[i].start && c <= runs[i].end) { hit++; break; }
+        });
+        // do the words actually line up with speech? (a word no piece plays counts against)
+        var aligned = runs.length > 0 && (hit / words.length) >= 0.6;
+        try { diag('align', 'precise-timing ' + (aligned ? 'snap+shape' : 'shape-only') + ' — ' + hit + '/' + words.length + ' words on speech · ' + placed + ' placed on ' + src.pieces.length + ' piece' + (src.pieces.length === 1 ? '' : 's')); } catch (eD) {}
+        if (!aligned) return shapeOnly();
+        var out = words.map(function (w) { return { start: w.start, end: w.end, text: w.text, conf: w.conf }; });
+        var byPiece = {};
+        at.forEach(function (m, i) { if (m) (byPiece[m.piece] = byPiece[m.piece] || []).push(i); });
+        Object.keys(byPiece).forEach(function (k) {
+          var idx = byPiece[k], pc = src.pieces[+k], sp = (+pc.speed > 0) ? +pc.speed : 1;
+          var media = idx.map(function (i) { return { start: at[i].start, end: at[i].end, text: words[i].text, conf: words[i].conf }; });
+          var refined = CPAlign.refineWords(media, env.samples, { blend: 0.5, snapWin: 0.25 });
+          refined.forEach(function (r, j) {
+            // a snap never carries a word past the edge of what its piece shows
+            var s = Math.max(pc.inPoint, Math.min(pc.outPoint, r.start)), e = Math.max(pc.inPoint, Math.min(pc.outPoint, r.end));
+            if (!(e - s > 0.01)) return;                     // nothing left to show: keep the ASR stamp
+            out[idx[j]].start = pc.seqStart + (s - pc.inPoint) / sp;
+            out[idx[j]].end = pc.seqStart + (e - pc.inPoint) / sp;
+          });
+        });
+        return out;
+      });
     }).catch(function () { return shapeOnly(); });
   }
 
@@ -7559,16 +7737,53 @@
     if (!wantSync) return Promise.resolve(null);   // audio-envelope alignment is the opt-in fallback
     var ff = resolveFfmpeg();
     if (!ff) return Promise.resolve(null);
-    return ensureAudioTracks().then(function (tracks) {
-      if (!tracks.length) return null;
-      var track = tracks[0];
-      return CPAudio.ffmpegEnvelope(track.mediaPath, ff, 0.1).then(function (env) {
+    // Each line is heard in the stretch of the recording its own timeline piece
+    // plays (transcriptPieces). This read the FIRST audio track's in point as
+    // the only offset: a clip that did not start at 0:00 on the timeline, a
+    // cut-up talk, or a sped-up reel had its words matched to the wrong audio.
+    return transcriptPieces().then(function (src) {
+      if (!src) return null;
+      return CPAudio.ffmpegEnvelope(src.mediaPath, ff, 0.1).then(function (env) {
         if (!env.samples || !env.samples.length) return null;
-        return CPCaptions.alignCuesToAudio(cues, env.samples, track.inPoint || 0,
-          { rise: 6, minSpacing: 0.1, snapWin: 0.18 });
+        var opt = { rise: 6, minSpacing: 0.1, snapWin: 0.18 };
+        var at = CPCaptions.timelineToMedia(cues, src.pieces), out = [];
+        cues.forEach(function (c, i) {
+          var m = at[i];
+          if (!m) {                                          // no piece plays it: spread by length
+            CPCaptions.alignCuesToAudio([c], [], 0, opt).forEach(function (w) { out.push(w); });
+            return;
+          }
+          var words = CPCaptions.alignCuesToAudio([{ start: m.start, end: m.end, text: c.text }], env.samples, 0, opt);
+          CPCaptions.mediaToTimeline(words, [src.pieces[m.piece]], 0).forEach(function (w) { out.push({ start: w.start, end: w.end, text: w.text }); });
+        });
+        return out.length ? out : null;
       });
     }).catch(function () { return null; });  // any failure → silent fallback
   }
+
+  // test hooks for the caption-timing gate (caption-sync-placement)
+  try {
+    window.CP_DEBUG_EXT = window.CP_DEBUG_EXT || {};
+    window.CP_DEBUG_EXT.sync = {
+      transcript: function () {
+        var cues = null;
+        try { if (state.transcript) cues = CPCaptions.parseSRT(nodeReq('fs').readFileSync(state.transcript.path, 'utf8')); } catch (e) {}
+        return { label: state.transcript ? state.transcript.label : null, src: state.transcript ? (state.transcript.src || null) : null,
+                 cues: cues, words: state.transcriptWords || null, media: state.transcriptMedia || null,
+                 placement: state.transcriptPlacement || null };
+      },
+      setTranscript: function (o) {
+        o = o || {};
+        state.transcript = o.transcript || null; state.transcriptWords = o.words || null; state.transcriptMedia = o.media || null;
+        state.transcriptPlacement = o.placement || null;
+        state.transcriptManual = !!o.manual; state._cacheServedKey = null; state._forceRetranscribe = false;
+      },
+      findTranscript: findTranscript,
+      followMovedRecording: followMovedRecording,
+      refineWordCues: refineWordCues,
+      getCaptionWordCues: getCaptionWordCues
+    };
+  } catch (eDbgS) {}
 
   /* ===== "Reliable captions" — ffmpeg + libass burned overlay =====
      One .ass (per-word highlight + pop, sentence-grouped, portrait-safe margins)
@@ -11549,6 +11764,9 @@
     // media file + lowest in / highest out point) survives a cut inside the
     // clip, so the next transcription must listen again, not reload it
     state._forceRetranscribe = true;
+    // the copies above were just re-timed for this cut: followMovedRecording
+    // must not move them a second time from the placement they were made for
+    state.transcriptPlacement = null;
     return dropped;
   }
 

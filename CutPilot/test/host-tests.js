@@ -1087,6 +1087,75 @@ console.log('host.jsx — transcribe source resolves nested sequences ("only one
     'piece 2 time-mapped + clipped to the nest window (media 45→75 at master 35s): ' + JSON.stringify(i1));
 }
 
+// ═══ SPEED in the transcribe source: a reel at 120% plays 1.2 s of its
+//     recording per timeline second. Read as 1:1, the last sixth of the
+//     recording was never heard and every caption drifted later behind the
+//     voice (the owner's "sync problem with pulse rendering with voice"). ═══
+console.log('host.jsx — transcribe source counts clip speed (captions drifted behind a sped-up voice)');
+{
+  const T = s => ({ seconds: s, get secs() { return this.seconds; } });
+  const mkTracks = list => { const o = {}; list.forEach((tr, i) => { o[i] = tr; }); o.numTracks = list.length; return o; };
+  const mkClips = arr => { const c = { numItems: arr.length }; arr.forEach((x, i) => { c[i] = x; }); return c; };
+  const near = (a, b) => Math.abs(a - b) < 1e-6;
+  // a clip on the timeline st→en playing its recording from ip at `speed`;
+  // report = what getSpeed() answers (a number, a percentage, or absent)
+  const at = (name, path, st, en, ip, speed, report, extra) => {
+    const c = { name, start: T(st), end: T(en), inPoint: T(ip), outPoint: T(ip + (en - st) * speed),
+      isSelected: () => false, projectItem: { getMediaPath: () => path, nodeId: 'n_' + name } };
+    if (report !== undefined) c.getSpeed = () => report;
+    return Object.assign(c, extra || {});
+  };
+  const run = (master, sequences, args) => {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    const host = loadHost(w);
+    w.sandbox.app.project.activeSequence = master;
+    w.sandbox.app.project.sequences = sequences || { numSequences: 0 };
+    return call(host, 'CP_getTranscribeSource', args || {});
+  };
+  const seq = (audio, video) => ({ sequenceID: 'sq-' + Math.random(), audioTracks: mkTracks(audio.map(cl => ({ clips: mkClips(cl) }))), videoTracks: mkTracks((video || []).map(cl => ({ clips: mkClips(cl) }))) });
+
+  // 1) timeline 2–12 s at 120% plays recording 0–12 s
+  [[1.2, '1.2 from getSpeed()'], [120, '120 (a percentage) from getSpeed()'], [undefined, 'no getSpeed(): from the recording span ÷ timeline span']].forEach(([rep, how]) => {
+    const r = run(seq([[at('reel', '/m/reel.mp4', 2, 12, 0, 1.2, rep)]]));
+    const p = r.ok && r.instances[0];
+    assert(!!p && near(p.inPoint, 0) && near(p.outPoint, 12) && near(p.seqStart, 2) && near(p.speed, 1.2),
+      '120% reel, speed ' + how + ': the whole recording 0–12 s is heard, placed at 0:02 at speed 1.2: ' + JSON.stringify(r).slice(0, 200));
+    assert(!!p && near(r.clip.speed, 1.2), '…and the picked clip carries the speed too (' + how + ')');
+  });
+
+  // 2) a linked pair (its video + its audio) at 120% is ONE piece, not two
+  {
+    const r = run(seq([[at('reel a', '/m/reel.mp4', 2, 12, 0, 1.2, 1.2)]], [[at('reel v', '/m/reel.mp4', 2, 12, 0, 1.2, 1.2)]]));
+    assert(r.ok && r.instances.length === 1 && near(r.instances[0].speed, 1.2), 'linked 120% pair → one piece: ' + JSON.stringify(r.instances));
+  }
+
+  // 3) a nest played at 200%, holding a voice at 150%: speeds multiply
+  {
+    const inner = { sequenceID: 'sq-inner', projectItem: { nodeId: 'nest2' },
+      audioTracks: mkTracks([{ clips: mkClips([at('voice', '/m/voice.wav', 0, 40, 0, 1.5, 1.5)]) }]), videoTracks: mkTracks([]) };
+    const nestClip = { name: 'nest', start: T(5), end: T(15), inPoint: T(10), outPoint: T(30), getSpeed: () => 2,
+      isSelected: () => false, projectItem: { getMediaPath: () => null, nodeId: 'nest2' } };
+    const r = run(seq([[nestClip]]), { numSequences: 1, 0: inner });
+    const p = r.ok && r.instances[0];
+    // master 5–15 shows the nest's 10–30 s, where the voice plays recording 15–45 s
+    assert(!!p && near(p.inPoint, 15) && near(p.outPoint, 45) && near(p.seqStart, 5) && near(p.speed, 3),
+      'nest at 200% holding a 150% voice: recording 15–45 s at master 0:05, speed 3: ' + JSON.stringify(r).slice(0, 220));
+  }
+
+  // 4) only reversed speech on the timeline: say so, don't caption it backwards
+  {
+    const r = run(seq([[at('rev', '/m/rev.wav', 0, 10, 0, 1, 1, { isSpeedReversed: () => true })]]));
+    assert(!r.ok && /reverse/i.test(r.error || ''), 'a reversed voice clip → a plain "plays in reverse" answer: ' + JSON.stringify(r));
+  }
+
+  // 5) onlyMediaPath: the pieces of THAT recording, even when another is selected
+  {
+    const r = run(seq([[at('talk', '/m/talk.wav', 0, 10, 0, 1, 1)], [at('music', '/m/music.wav', 0, 30, 0, 1, 1, { isSelected: () => true })]]), null,
+      { onlyMediaPath: '/m/talk.wav' });
+    assert(r.ok && r.clip.mediaPath === '/m/talk.wav' && r.instances.length === 1, 'onlyMediaPath answers for that recording only: ' + JSON.stringify(r).slice(0, 160));
+  }
+}
+
 // ═══ NESTED SEQUENCES in the dead-air listing: every inner clip, mapped to
 //     the master timeline (the old list gave the nest mediaPath null, so
 //     nothing under it was ever cut and the owner heard "already tight") ═══
