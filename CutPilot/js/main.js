@@ -1616,8 +1616,10 @@
             // local models only — the two CLOUD engines have no ggml file at all
             // (this used to print "wanted ggml-cloud-swara.bin … used a fallback")
             if (!cloud && !swara) { var want = modelFileName(); if (modelLabel !== want) note = ' ⚠️ wanted ' + want + ' but it didn\'t load — used a fallback (check internet).'; }
-            toast('✓ Transcribed “' + shortName + '” — ' + cues.length + ' lines using ' + modelLabel + '.' +
-                  (state.transcriptWords ? ' 🎯 Word-level highlight ready.' : '') + note);
+            // plain words: what was done and what is now possible — not which
+            // engine and model did it (that stays in the transcript bar + diagnostics)
+            toast('✓ Got the words from “' + shortName + '” — ' + cues.length + ' lines.' +
+                  (state.transcriptWords ? ' Each word will light up as it is spoken.' : '') + note);
           });
         });
       });
@@ -6908,9 +6910,13 @@
     var canAuto = !!ff && ((resolveQuality() === 'cloud-groq' && cpKey()) || (resolveQuality() === 'cloud-swara' && cpSarvamKey()) || !!resolveWhisper());
     if (canAuto) {
       state.pendingCaptionAction = action;
+      // Clean up waits for the words too — telling the owner "I'll add the
+      // captions" there promised something that was never going to happen.
       toast(action === 'native'
         ? '📝 Getting your words first — I\'ll add the EDITABLE caption track automatically when it\'s done.'
-        : '✨ Getting your words first — I\'ll add the captions automatically when it\'s done.');
+        : action === 'autoclean'
+          ? '✨ Listening to your video first — the clean-up continues by itself when it\'s done.'
+          : '✨ Getting your words first — I\'ll add the captions automatically when it\'s done.');
       var tb = document.querySelector('.tab[data-tab="transcribe"]'); if (tb) tb.click();
       autoTranscribe();
     } else {
@@ -10782,7 +10788,7 @@
     var fix = x.role === 'mic' ? ' You said it is a voice. If it is music after all, choose 🎵 Music for it under “What Pulse heard”, then run Clean up again.'
             : x.answers ? '' : ' If it is music, choose 🎵 Music for it under “What Pulse heard”, then run Clean up again.';
     if (x.continuous) {
-      return who + ' never goes quiet' + (x.answers ? ' — the sound around the voice is almost as loud as the voice —' : '') +
+      return who + ' never goes quiet' + (x.answers ? ' (the sound around the voice is almost as loud as the voice)' : '') +
         ', so nothing it plays over is cut.' + fix;
     }
     return who + ' keeps sounding where the others pause, so about ' + x.held.toFixed(1) + 's of pauses under it were kept.' + fix;
@@ -10813,8 +10819,8 @@
     if (!skipHeld) (plan.held || []).forEach(function (x) { lines.push(silHeldLine(x)); });
     var loudBed = heard.filter(function (m) { return !m.digital && !m.continuous && !m.music && m.floor > -40; })[0];
     if (loudBed) {
-      lines.push('The background under ' + loudBed.tracks + ' is loud (≈ ' + Math.round(loudBed.floor) + ' dB). If that is music mixed into the voice, ' +
-        'it will jump at every cut — cut the pauses first, then add the music on its own track.');
+      lines.push('There is a loud background sound under ' + loudBed.tracks + ' (hum, room noise or music). ' +
+        'If it is music recorded together with the voice, it will jump at every cut — cut the pauses first, then add music on its own track.');
     }
     // only real voices make a podcast — a music bed is not a second mic
     var voices = heard.filter(function (m) { return !m.music && !m.digital; });
