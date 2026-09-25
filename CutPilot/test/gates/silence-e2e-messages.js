@@ -69,14 +69,18 @@ const short = (t) => '"' + String(t || '').replace(/\s+/g, ' ').slice(0, 140) + 
     ({ page, calls } = await P.openPanel(browser, SC.soloTimeline(fx.file)));
     const labels = await page.evaluate(() => {
       const lab = (id) => { const el = document.getElementById(id); return el && el.closest('label') ? el.closest('label').textContent.trim() : ''; };
-      const hint = Array.from(document.querySelectorAll('#ae-silence .hint')).map(h => h.textContent).join(' ');
-      return { thr: lab('opt-threshold'), min: lab('opt-minsilence'), pad: lab('opt-padding'), keep: lab('opt-minkeep'), hint };
+      // the hint plus its ⓘ explanation: the redesign keeps each hint to one line
+      // with the rest one tap away, so both are what the owner is told
+      const hint = Array.from(document.querySelectorAll('#ae-silence .hint, #ae-silence .info-pop')).map(h => h.textContent).join(' ');
+      // the switch that makes the Fine-tune numbers count, by the label the owner sees
+      const manual = lab('opt-threshold-manual');
+      return { thr: lab('opt-threshold'), min: lab('opt-minsilence'), pad: lab('opt-padding'), keep: lab('opt-minkeep'), hint, manual };
     });
     await page.close();
     ok(/breath/i.test(labels.keep) && !/Min keep/.test(labels.keep) && /pause/i.test(labels.min) && /words/i.test(labels.pad) && /quiet/i.test(labels.thr),
       'Fine-tune labels say what they do: ' + JSON.stringify([labels.thr, labels.min, labels.pad, labels.keep]));
-    ok(!/there is no dB to set/i.test(labels.hint) && /Manual/.test(labels.hint),
-      'the hint above Fine-tune no longer says "there is no dB to set" right above a dB box');
+    ok(!/there(?: is|'s|’s) no (?:dB|level) to set/i.test(labels.hint) && !!labels.manual && labels.hint.indexOf(labels.manual) !== -1,
+      'the hint above Fine-tune no longer says there is no level to set right above a level box, and names the switch the owner sees ("' + labels.manual + '")');
   });
   console.log(failed ? '\nMESSAGES: ' + failed + ' check(s) failed ✗' : '\nMESSAGES: plain words the owner can act on ✓');
   process.exit(failed ? 1 : 0);

@@ -30,7 +30,7 @@
   /* What the owner reads when the audio engine can't even start: one plain
      sentence and what to do. The technical detail rides along on .detail for
      the diagnostics report. */
-  var ENGINE_HELP = 'Set it up again: Settings → Performance → ⬇️ Set up audio engine.';
+  var ENGINE_HELP = 'Set it up again: Settings → Audio engine → ⬇️ Set up audio engine.';
   function engineError(ffmpegPath, e) {
     var err = new Error('Pulse’s audio engine could not start, so it can’t listen to your audio. ' + ENGINE_HELP);
     err.detail = 'spawn "' + ffmpegPath + '": ' + (e && e.message);
