@@ -39,7 +39,11 @@
         } catch (e) {
           return reject(new Error(fnName + ' returned unparseable result: ' + String(result).slice(0, 200)));
         }
-        if (parsed && parsed.ok === false) reject(new Error(parsed.error || ('Host error in ' + fnName)));
+        if (parsed && parsed.ok === false) {
+          var err = new Error(parsed.error || ('Host error in ' + fnName));
+          err.host = parsed;            // what the host still reports with a failure
+          reject(err);
+        }
         else resolve(parsed);
       });
     });

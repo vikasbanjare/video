@@ -7623,19 +7623,32 @@
      (the raw error) goes to 📋 Copy diagnostics only — the owner used to read
      "ffmpeg exit 1: [concat @ 0x…] … No space left on device" in a toast.
      stop: the next, simpler way would hit the same wall (a full disk refuses
-     every write), so the job stops instead of writing hundreds more files. */
+     every write), so the job stops instead of writing hundreds more files.
+     The audio engine is missing only when it could not be STARTED (spawn
+     ENOENT / EACCES). A RUNNING ffmpeg that says "No such file or directory"
+     lost a folder or file it was given (a drive unplugged mid-render): it used
+     to be told as a missing engine, sending the owner to set up an engine
+     that works. */
   function captionFailureCause(e) {
     var raw = rawFailure(e);
     if (/ENOSPC|No space left|disk (is )?full|quota exceeded/i.test(raw))
       return { plain: 'your disk is full — free some space, then try again', stop: true, known: true };
-    if (/spawn\b[^\n]*(ENOENT|EACCES)|ENOENT[^\n]*ffmpeg|ffmpeg[^\n]*(not found|No such file)/i.test(raw))
+    if (/\bspawn\b[^\n]*\b(ENOENT|EACCES)\b/.test(raw))
       return { plain: 'Pulse\'s audio engine is missing — tap Settings → ⬇️ Set up audio engine, then try again', stop: false, known: true };
     if (/EACCES|EPERM|EROFS|Permission denied|Operation not permitted|read-only file system|no folder Pulse can write/i.test(raw))
       return { plain: 'Pulse is not allowed to save files next to your project — save the project in a folder you can write to (for example Documents), then try again', stop: false, known: true };
+    if (/ENOENT|No such file or directory/i.test(raw))
+      return { plain: 'a folder Pulse was saving the captions into disappeared while it worked — if your project is on an external or cloud drive, check that it is still connected, then try again', stop: false, known: true };
     return { plain: 'something on this computer stopped it (📋 Copy diagnostics in Settings has the details)', stop: false, known: false };
   }
+  /* The message, its code, and the END of ffmpeg's output — where ffmpeg says
+     why it stopped. The simpler renderer shows ffmpeg's banner, so its reason
+     comes ~2.4 KB in: keeping only the first 2000 characters hid it, and a
+     full disk hit there did not stop the job. */
   function rawFailure(e) {
-    return String(((e && e.message) || e || '') + ' ' + ((e && e.code) || '') + ' ' + ((e && e.stderr) || '')).slice(0, 2000);
+    var err = String((e && e.stderr) || '');
+    if (err.length > 1500) err = '…' + err.slice(-1500);
+    return String(((e && e.message) || e || '') + ' ' + ((e && e.code) || '') + ' ' + err).slice(0, 2000);
   }
   function stopCaptions(cause) {
     setCaptionBusy(false); capProgress(null);
@@ -7709,6 +7722,13 @@
       // SAFETY NET: if this Premiere will not take the overlay clip, fall back
       // to separate caption images so Add captions never leaves nothing.
       try { nodeReq('fs').unlinkSync(info.path); } catch (eRm) {}
+      // The host tidies BEFORE it places, so the old overlays it already took
+      // out of the project are this job's to delete (or keep pending): no
+      // later job would ever find them in the project again.
+      var told = e && e.host;
+      if (told && told.checked === true) {
+        try { tidyOldOverlays(told, info, asked); } catch (eTidy) { diag('captions', 'tidying old overlays: ' + eTidy.message); }
+      }
       diag('captions', 'overlay placement failed: ' + ((e && e.message) || e));
       toast('Switched to separate caption images (Premiere did not accept the one overlay clip here).');
       return runCaptionPipeline(cues, withOpts(opts, { noOverlay: true, overlay: false,
@@ -7882,16 +7902,28 @@
       // the transcript's word timing (what word-by-word captions are built from)
       setWords: function (w) { state.transcriptWords = w && w.length ? w : null; },
       words: function () { return state.transcriptWords ? state.transcriptWords.slice() : null; },
-      // pick a built-in style by id exactly as its gallery card click does —
-      // also for the near-duplicates the gallery hides (a saved look, favourite
-      // or recent still opens them). false when no style has that id: never a
-      // silent stand-in, so a gate cannot pass on the wrong style.
+      // pick a built-in style by id through its gallery card's OWN click
+      // handler: a card is built for it and clicked, so this can never drift
+      // from what the owner's click does (a copy of the card's steps missed
+      // the word-by-word reset the card gained later). Works for the
+      // near-duplicates the gallery hides, too (a saved look, favourite or
+      // recent still opens them). false when no style has that id or the
+      // click left another style in force: never a silent stand-in, so a gate
+      // cannot pass on the wrong style.
       applyStyle: function (id) {
         var all = allTemplates(), t = null;
         for (var i = 0; i < all.length; i++) if (all[i].id === id && !all[i].mogrt) { t = all[i]; break; }
         if (!t) return false;
-        preloadStyleFonts(t, renderPreview); _pvDemo = null; applyTemplate(t); showView('style');
-        return true;
+        buildTemplateCard(t).click();
+        return currentPreset().id === id;
+      },
+      // everything a caption job reads from the Captions screen once a style
+      // is picked: which style, its resolved look, and how the words animate
+      jobInputs: function (w, h) {
+        var p = currentPreset();
+        return { id: p.id, style: CPRender.styleForFrame(p, h, readOverrides(), w), anim: currentAnim(),
+                 reveal: captionRevealMode(), entrance: state.captionEntrance, words: $('c-words').value,
+                 motionNote: overlayMotionNote() };
       },
       seqKey: overlaySeqKey,
       lastJob: function () { return state.lastCaptionJob ? { mode: state.lastCaptionJob.mode || null, track: state.lastCaptionJob.track } : null; }

@@ -25,11 +25,14 @@
  *     1080x1920 and 1920x1080, with Hinglish, Devanagari and ₹ text, through
  *     window.CP_DEBUG_EXT.overlay: one overlay job and one image job on the same
  *     cues, compared at several moments, plus a moment with no caption.
- *     Styles are applied by id (CP_DEBUG_EXT.overlay.applyStyle — the same
- *     steps as a card click), because the gallery hides near-duplicate cards
- *     such as btn-3dred that a saved look can still open. A check below proves
- *     the hook and a real card click leave the same style behind, and that an
- *     unknown id is refused rather than replaced by a default.
+ *     Styles are applied by id (CP_DEBUG_EXT.overlay.applyStyle, which clicks
+ *     a card built for that style), because the gallery hides near-duplicate
+ *     cards such as btn-3dred that a saved look can still open. A check below
+ *     proves the hook leaves exactly what a real card click leaves — starting
+ *     from a real click on another style with ✨ Word-by-word off, compared on
+ *     everything a caption job reads — and that an unknown id is refused
+ *     rather than replaced by a default. Every run reads back the style in
+ *     force, so the matrix cannot quietly draw one style 48 times.
  *
  * A sample fails when more than max(150 px, 0.5% of the caption's ink) differ
  * by more than 24 levels (alpha, or premultiplied colour). A negative control
@@ -204,22 +207,55 @@ const STYLES = ['hormozi', 'focus', 'pack-neon', 'karaoke', 'cap-pastel', 'cap-t
 
   // ============================================================= B. the matrix
   const hook = await page.evaluate(() => !!(window.CP_DEBUG_EXT && window.CP_DEBUG_EXT.overlay && window.CP_DEBUG_EXT.overlay.run &&
-                                             window.CP_DEBUG_EXT.overlay.applyStyle));
+                                             window.CP_DEBUG_EXT.overlay.applyStyle && window.CP_DEBUG_EXT.overlay.jobInputs));
   if (!hook) {
-    bad('B: window.CP_DEBUG_EXT.overlay (run + applyStyle) is missing — the style matrix cannot run');
+    bad('B: window.CP_DEBUG_EXT.overlay (run + applyStyle + jobInputs) is missing — the style matrix cannot run');
   } else {
-    // the id hook must be the card click, not a look-alike: same resolved style
-    // for a style that IS on show, and no silent default for an unknown id
-    const jobStyle = () => page.evaluate(() => JSON.stringify(window.CP_DEBUG_EXT.overlay.jobStyle(1080, 1920)));
-    await L.applyStyle(page, 'btn-neon');
-    const clicked = (await L.pickStyle(page, 'hormozi')) ? await jobStyle() : null;
-    await L.applyStyle(page, 'btn-neon');
-    const hooked = (await L.applyStyle(page, 'hormozi')) ? await jobStyle() : null;
+    // The id hook must leave behind exactly what the owner's card click
+    // leaves. Both paths start from a REAL card click on another style with
+    // the owner's ✨ Word-by-word switched off there (a card click switches
+    // it back on for the style it opens), and they are compared on everything
+    // a caption job reads: the style in force, its resolved look, how the
+    // words animate. Nothing here goes through the hook but the step under
+    // test, and the start must differ from the card click's result — so a
+    // hook that applies nothing, or skips a step the card takes, fails.
+    const inputs = () => page.evaluate(() => JSON.stringify(window.CP_DEBUG_EXT.overlay.jobInputs(1080, 1920)));
+    async function fromAnotherStyle() {
+      if (!(await L.pickStyle(page, 'btn-neon'))) return null;
+      const off = await page.evaluate(() => {
+        const c = document.getElementById('c-wordhl'); if (!c) return false;
+        if (c.checked) c.click();                      // the owner's own switch
+        return !c.checked;
+      });
+      return off ? inputs() : null;
+    }
+    function differs(a, b) {
+      const A = JSON.parse(a), B = JSON.parse(b), out = [];
+      Object.keys(Object.assign({}, A, B)).forEach(k => {
+        if (JSON.stringify(A[k]) === JSON.stringify(B[k])) return;
+        if (k === 'style' && A[k] && B[k]) Object.keys(Object.assign({}, A[k], B[k])).forEach(s => {
+          if (JSON.stringify(A[k][s]) !== JSON.stringify(B[k][s])) out.push('style.' + s + ' ' + JSON.stringify(A[k][s]) + ' vs ' + JSON.stringify(B[k][s]));
+        });
+        else out.push(k + ' ' + JSON.stringify(A[k]) + ' vs ' + JSON.stringify(B[k]));
+      });
+      return out.slice(0, 6).map(d => d.length > 160 ? d.slice(0, 157) + '…' : d).join('; ');
+    }
+    const start = await fromAnotherStyle();
+    const clicked = start && (await L.pickStyle(page, 'hormozi')) ? await inputs() : null;
+    const start2 = await fromAnotherStyle();
+    const hookSaid = !!start2 && await L.applyStyle(page, 'hormozi');
+    const hooked = start2 ? await inputs() : null;
     const refused = !(await L.applyStyle(page, 'no-such-style-id'));
-    if (!clicked || !hooked) bad('B: hormozi could not be picked by card click (' + !!clicked + ') or by id (' + !!hooked + ')');
-    else if (clicked !== hooked) bad('B: applying a style by id leaves a different style than clicking its card');
+    await L.pickStyle(page, 'hormozi');                   // the matrix starts from the owner's usual state
+    if (!start || !start2) bad('B: could not set up the start (Neon by its card, then ✨ Word-by-word off)');
+    else if (!clicked || JSON.parse(clicked).id !== 'hormozi') bad('B: clicking the hormozi card did not leave hormozi in force (' + (clicked && JSON.parse(clicked).id) + ')');
+    else if (clicked === start) bad('B: the check is blind — clicking the hormozi card changed nothing it compares');
+    else if (hooked !== clicked) bad('B: picking hormozi by id (the hook ' + (hookSaid ? 'said yes' : 'said no') + ') leaves a different result than clicking its card: ' +
+      differs(clicked, hooked) + ' (card click vs hook)');
+    else if (!hookSaid) bad('B: the hook left hormozi in force but said it could not');
     else if (!refused) bad('B: an unknown style id was accepted — a typo would silently test the default style');
-    else ok('B styles are applied by id exactly as a card click applies them (hormozi: identical style), and an unknown id is refused');
+    else ok('B picking a style by id leaves exactly what clicking its card leaves (hormozi from Neon with ✨ Word-by-word off: same style, look, ' +
+      'animation and word mode), and an unknown id is refused');
     const cues = [
       { start: 0.30, end: 1.90, text: 'Paise kaise badhte hain' },
       { start: 2.20, end: 3.80, text: 'यह बहुत ज़रूरी बात है' },
@@ -234,12 +270,16 @@ const STYLES = ['hormozi', 'focus', 'pack-neon', 'karaoke', 'cap-pastel', 'cap-t
       window.CPRender.renderOverlay = function (frames, o) { window.__ovFrames = JSON.parse(JSON.stringify(frames)); return orig.apply(this, arguments); };
     });
     const FPS = 12;
-    let runs = 0, passRuns = 0, sameFrames = 0, blind = 0, controls = 0;
+    let runs = 0, passRuns = 0, sameFrames = 0, blind = 0, controls = 0, picked = 0;
     const failures = [];
     for (const [W, Hh] of [[1080, 1920], [1920, 1080]]) {
       for (const id of STYLES) {
         premiere(W, Hh, FPS);
-        if (!(await L.applyStyle(page, id))) { bad('B ' + id + ': no built-in style has this id'); continue; }
+        if (!(await L.applyStyle(page, id))) { bad('B ' + id + ': could not be picked by id (no built-in style has this id, or another stayed in force)'); continue; }
+        // which style this run really draws — read back, not taken on the hook's word
+        const inForce = await page.evaluate(() => window.CP_DEBUG_EXT.overlay.jobInputs(1080, 1920).id);
+        if (inForce !== id) { bad('B ' + id + ' @' + W + 'x' + Hh + ': ' + inForce + ' was in force instead, so this run would test the wrong style'); continue; }
+        picked++;
         await page.evaluate(() => { window.__ovFrames = null; });
         // the per-image render (what a short video gets)
         let from = bridge.state.hostCalls.length;
@@ -288,8 +328,9 @@ const STYLES = ['hormozi', 'focus', 'pack-neon', 'karaoke', 'cap-pastel', 'cap-t
     }
     failures.slice(0, 12).forEach(f => bad('B ' + f));
     if (failures.length > 12) bad('B … and ' + (failures.length - 12) + ' more');
-    if (runs && passRuns === runs && !failures.length)
-      ok('B ' + runs + ' style×size runs (' + STYLES.length + ' styles at 1080x1920 and 1920x1080, Hinglish + Devanagari + ₹): every sampled overlay frame matches the per-image render');
+    if (runs && passRuns === runs && !failures.length && picked === 2 * STYLES.length)
+      ok('B ' + runs + ' style×size runs (' + STYLES.length + ' styles at 1080x1920 and 1920x1080, Hinglish + Devanagari + ₹, each read back as the style in force): ' +
+        'every sampled overlay frame matches the per-image render');
     if (ENGINE !== 'libass' && runs) {
       if (sameFrames === runs) ok('B the overlay is built from exactly the per-image path\'s caption frames in all ' + runs + ' runs');
     }
