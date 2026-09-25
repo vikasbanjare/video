@@ -404,16 +404,16 @@
     if (_ffmpegSetup) return _ffmpegSetup;       // a download already in flight
     var fs, path, os;
     try { fs = nodeReq('fs'); path = nodeReq('path'); os = nodeReq('os'); }
-    catch (e) { return Promise.reject(new Error('Open inside Premiere to set up the audio tool.')); }
+    catch (e) { return Promise.reject(new Error('Open inside Premiere to set up the audio engine.')); }
     var dir = path.join(os.homedir(), '.cutpilot', 'bin');
     var dest = path.join(dir, (process.platform === 'win32') ? 'ffmpeg.exe' : 'ffmpeg');
     try { if (fs.existsSync(dest)) { settings.ffmpegPath = dest; saveSettings(); _ffmpeg = dest; return Promise.resolve(dest); } } catch (e0) {}
     _ffmpegSetup = new Promise(function (resolve, reject) {
       try { fs.mkdirSync(dir, { recursive: true }); } catch (eD) {}
-      setTranscriptBar('', '⬇️', 'First-time setup: downloading the audio tool (~50MB)…', null);
-      toast('One-time setup: downloading the audio engine (~50MB). This only happens once.');
+      setTranscriptBar('', '⬇️', 'First-time setup: downloading the audio engine (about 50 MB)…', null);
+      toast('One-time setup: downloading the audio engine (about 50 MB). This only happens once.');
       var url = ffmpegDownloadUrl(), part = dest + '.part';
-      var nodePct = function (pct) { setTranscriptBar('', '⬇️', 'Setting up the audio tool… ' + Math.round(pct * 100) + '%', null); };
+      var nodePct = function (pct) { setTranscriptBar('', '⬇️', 'Setting up the audio engine… ' + Math.round(pct * 100) + '%', null); };
       function finish() {
         var big = false; try { big = fs.statSync(part).size > 1e6; } catch (eS) {}
         if (!big) return fail(new Error('download was empty'));
@@ -425,8 +425,9 @@
       function fail(e) {
         try { fs.unlinkSync(part); } catch (eU) {}
         _ffmpegSetup = null;
-        reject(new Error('Couldn\'t download the audio tool (' + (e && e.message ? e.message : 'network error') +
-          '). Check the internet connection, or in Settings → ffmpeg set the path to an ffmpeg you download from ffmpeg.org.'));
+        // (it named a Settings section, "ffmpeg", that no longer exists)
+        reject(new Error('Couldn\'t download the audio engine (' + (e && e.message ? e.message : 'network error') +
+          '). Check the internet and tap Set up again, or point Settings → Advanced → Audio engine location at a copy you have.'));
       }
       // curl first (robust in CEP), then Node https as a fallback.
       _curlDownload(url, part).then(finish, function () {
@@ -675,7 +676,7 @@
   function transcribeViaGroq(wavPath, lang) {
     return new Promise(function (resolve, reject) {
       var key = cpKey();
-      if (!key) return reject(new Error('Add your free Groq API key in Settings → Auto-transcribe (console.groq.com/keys).'));
+      if (!key) return reject(new Error('Paste your free speech key in Settings → Auto-transcribe (the ☁️ box). Get one at console.groq.com/keys.'));
       var cp; try { cp = nodeReq('child_process'); } catch (e) { return reject(e); }
       var args = ['-sS', '--max-time', '600', 'https://api.groq.com/openai/v1/audio/transcriptions',
         '-F', 'model=whisper-large-v3',
@@ -787,7 +788,7 @@
   function transcribeViaSwara(wavPath, langCode) {
     return new Promise(function (resolve, reject) {
       var key = cpSarvamKey();
-      if (!key) return reject(new Error('Add your Indian Voices key in Settings → Auto-transcribe.'));
+      if (!key) return reject(new Error('Paste your Indian-language key in Settings → Auto-transcribe → More speech options (the 🇮🇳 box).'));
       var cp; try { cp = nodeReq('child_process'); } catch (e) { return reject(e); }
       // 'translate-en' uses Sarvam's speech-to-text-TRANSLATE endpoint: it auto-detects
       // any Indian language and returns the text in ENGLISH (so Hindi/Tamil → English).
@@ -1008,7 +1009,7 @@
     opts = opts || {};
     return new Promise(function (resolve, reject) {
       var key = cpKey();
-      if (!key) return reject(new Error('This uses your free Groq key — add it in Settings → Auto-transcribe (console.groq.com/keys).'));
+      if (!key) return reject(new Error('This uses your free speech key — paste it in Settings → Auto-transcribe (the ☁️ box). Get one at console.groq.com/keys.'));
       var cp, fs, os, pathMod;
       try { cp = nodeReq('child_process'); fs = nodeReq('fs'); os = nodeReq('os'); pathMod = nodeReq('path'); } catch (e) { return reject(e); }
       var body = { model: opts.model || GROQ_TEXT_MODELS[0],
@@ -1171,7 +1172,7 @@
      paths return -> cues array with an attached .words list. */
   function transcribeViaDeepgram(audioPath, lang) {
     var key = cpDeepgramKey();
-    if (!key) return Promise.reject(new Error('Add your Deepgram key in Settings → Auto-transcribe.'));
+    if (!key) return Promise.reject(new Error('Paste your retake-finder key in Settings → Auto-transcribe → More speech options (the 🎧 box).'));
     // Deepgram assumes ENGLISH when no language is sent — it does not detect.
     // Auto-detect and Hinglish go to nova-3's multilingual model (Hindi and
     // English mixed in one sentence; the caller romanises Hinglish after);
@@ -1272,7 +1273,7 @@
   function autoTranscribeAI() {
     if (state.transcribing) return toast('Already transcribing — hang tight…');
     if (!cpKey()) {
-      return toast('“Auto-correct” needs your free Groq key (Settings → Auto-transcribe, console.groq.com/keys). Add it, or use “Transcribe (raw)”.', true);
+      return toast('“Transcribe” fixes misheard words with your free speech key: paste it in Settings → Auto-transcribe (the ☁️ box), or tap “Fast”. Get one at console.groq.com/keys.', true);
     }
     state.autoFixAfter = true;     // the terminal of autoTranscribe runs the AI fix
     autoTranscribe();
@@ -1288,18 +1289,22 @@
     if (!ff) {
       // no ffmpeg yet → fetch it once (no Terminal), then start transcribing
       return ensureFfmpeg().then(function () { autoTranscribe(); })
-        .catch(function (e) { toast('Couldn’t set up the audio tool automatically (' + (e && e.message ? e.message : 'download failed') + '). You can set its path in Settings → ffmpeg.', true); });
+        // (ensureFfmpeg's own message already says what to do; this one sent
+        // the owner to "Settings → ffmpeg", a section that no longer exists)
+        .catch(function (e) { toast((e && e.message) || 'Couldn’t set up the audio engine — tap Settings → ⬇️ Set up audio engine to try again.', true); });
     }
     var wbin = null;
     if (cloud) {
-      if (!cpKey()) return toast('Add your free Groq API key in Settings → Auto-transcribe (console.groq.com/keys) — or switch the engine there to Deepgram / Indian Voices if you have one of those keys.', true);
+      if (!cpKey()) return toast('Paste your free speech key in Settings → Auto-transcribe (the ☁️ box). Get one at console.groq.com/keys. An Indian-language or retake-finder key works too, under More speech options.', true);
     } else if (swara) {
-      if (!cpSarvamKey()) return toast('Add your Indian Voices key in Settings → Auto-transcribe to use Indian-language transcription.', true);
+      if (!cpSarvamKey()) return toast('Paste your Indian-language key in Settings → Auto-transcribe → More speech options (the 🇮🇳 box).', true);
     } else if (dgram) {
-      if (!cpDeepgramKey()) return toast('Add your Deepgram key in Settings → Auto-transcribe.', true);
+      if (!cpDeepgramKey()) return toast('Paste your retake-finder key in Settings → Auto-transcribe → More speech options (the 🎧 box).', true);
     } else {
       wbin = resolveWhisper();
-      if (!wbin) return toast('Set the whisper engine in Settings → Auto-transcribe (brew install whisper-cpp).', true);
+      // (it said "Set the whisper engine … brew install whisper-cpp": the Settings
+      // control is gone, and a beginner cannot run Terminal commands)
+      if (!wbin) return toast('This computer can’t make the transcript by itself: paste your free speech key in Settings → Auto-transcribe (the ☁️ box). Get one at console.groq.com/keys.', true);
     }
     setTranscribing(true);   // all checks passed — commit, lock the buttons
     var lang = swara ? (settings.sarvamLang || 'unknown') : (settings.whisperLang || 'auto');   // default AUTO — never force English on non-English audio
@@ -1601,13 +1606,33 @@
   }
 
   // --------------------------------------------------------------- tabs ----
+  /* Pages. On a docked panel the Home screen is the menu and the app bar shows
+     "‹ + page name"; on a wide panel the .tab buttons are a sidebar. Every way
+     in (Home cards, ‹, ⚙, ⌘K, a finished job) clicks the page's .tab button,
+     so the per-page refreshes below run however the owner got there. */
+  var PAGE_TITLES = { home: '', transcribe: 'Transcribe', captions: 'Captions', silence: 'Clean up',
+    shorts: 'Shorts', multicam: 'Podcast cameras', chapters: 'Chapters', organize: 'Organize',
+    safezone: 'Safe zone', settings: 'Settings' };
+  function showPage(name) {
+    var b = document.querySelector('.tab[data-tab="' + name + '"]');
+    if (b) b.click();
+  }
   var tabs = document.querySelectorAll('.tab');
   for (var t = 0; t < tabs.length; t++) {
-    tabs[t].addEventListener('click', function () {
-      document.querySelector('.tab.active').classList.remove('active');
-      document.querySelector('.tab-page.active').classList.remove('active');
+    tabs[t].addEventListener('click', function (ev) {
+      var page = $('tab-' + this.dataset.tab);
+      if (!page) return;
+      var wasActive = page.classList.contains('active');
+      // the owner picked another page in the sidebar: put the old message away
+      if (ev && ev.isTrusted && !wasActive) dismissToast();
+      var oldTab = document.querySelector('.tab.active'), oldPage = document.querySelector('.tab-page.active');
+      if (oldTab) oldTab.classList.remove('active');
+      if (oldPage) oldPage.classList.remove('active');
       this.classList.add('active');
-      $('tab-' + this.dataset.tab).classList.add('active');
+      page.classList.add('active');
+      document.body.setAttribute('data-page', this.dataset.tab);
+      if ($('nav-title')) $('nav-title').textContent = PAGE_TITLES[this.dataset.tab] || '';
+      if (!wasActive) page.scrollTop = 0;       // a page opens at its top
       // Leaving Captions? Stop the live-preview animation loop so it isn't
       // painting an off-screen canvas forever in the background.
       if (this.dataset.tab !== 'captions') { if (previewTimer) { clearInterval(previewTimer); previewTimer = null; } stopCardAnimator(); }
@@ -1615,15 +1640,24 @@
       if (this.dataset.tab === 'safezone' && window.CPSafezone) { try { CPSafezone.onShow(); } catch (eSZ) {} }
       // Re-check for a transcript when returning to Captions (e.g. after
       // exporting one), and refresh the preview now the frame has a size.
-      // OPENING CAPTIONS LANDS ON THE ACTION, not on a wall of styles: the
-      // primary "Add captions" button lives in the style editor, so a user who
-      // opened this tab saw only the gallery and no way to proceed until they
-      // happened to click a card. Land on the editor (with "≡ Browse styles"
-      // one tap away) whenever a style is already chosen.
+      // OPENING CAPTIONS SHOWS THE STYLES. "When we open the Captions tab it's
+      // supposed to show different captions, not just one caption — I have to
+      // go back to check if we have any." It used to land in the editor of the
+      // last style. Now it always opens on the gallery; "✨ Add captions" sits
+      // in a bar pinned under it, so the action is never more than one tap away.
       if (this.dataset.tab === 'captions') {
         try {
           var vt = $('view-templates');
-          if (vt && !vt.classList.contains('hidden') && state.presetId) showView('style');
+          _galleryScroll = 0;
+          // Arriving from another page shows EVERY style again: a category or
+          // a search picked earlier used to stay, so the owner came back to one
+          // or two styles, or none. Inside Captions the place is kept.
+          if (!wasActive) showWholeGallery(vt && !vt.classList.contains('hidden'));
+          if (vt && vt.classList.contains('hidden')) showView('templates');
+          // a template sheet left open when the owner went elsewhere (a
+          // keyboard shortcut can do that) must not cover the gallery on return
+          var ms = $('mogrt-sheet');
+          if (!wasActive && ms && !ms.classList.contains('hidden') && $('ms-close')) $('ms-close').click();
         } catch (eVw) {}
       }
       if (this.dataset.tab === 'captions' && CPBridge.isCEP()) {
@@ -1642,6 +1676,69 @@
         syncMcSource();
       }
     });
+  }
+
+  /* The gallery back on "All" with no search — what Captions shows when the
+     owner arrives from another page. Re-draws the cards only when the gallery
+     is already on screen (showView('templates') draws them otherwise). */
+  function showWholeGallery(redraw) {
+    var changed = false;
+    if (state.libCategory !== 'All') { state.libCategory = 'All'; changed = true; }
+    if (state.libSearch) { state.libSearch = ''; changed = true; }
+    var s = $('lib-search'); if (s && s.value) { s.value = ''; changed = true; }
+    var chips = $('lib-cats') ? $('lib-cats').querySelectorAll('.cat-chip') : [];
+    for (var i = 0; i < chips.length; i++) chips[i].classList.toggle('on', chips[i].textContent === 'All');
+    if (changed && redraw) renderTemplateGrid();
+  }
+
+  /* A message belongs to the page it was said on. Messages drop in at the top,
+     where Home's first card is, so one left over from the page the owner had
+     just left ("Tweak it below, then Add captions") covered Home's "Add
+     captions". When the OWNER changes page the message is put away (it stays
+     in Settings → Help → Recent messages); a page the panel opens by itself
+     keeps the message that explains why. */
+  function dismissToast() { var t = $('toast'); if (t) t.classList.add('hidden'); }
+  function goPage(name) { dismissToast(); showPage(name); }
+
+  /* The shell around the pages: ‹ back / the logo → Home, ⚙ → Settings, the
+     Home task cards and More-tools buttons (data-go = the page they open), and
+     every small ⓘ, which shows or hides the longer explanation it names. */
+  function wireShell() {
+    if ($('nav-back')) $('nav-back').addEventListener('click', function () { goPage('home'); });
+    if ($('nav-home')) $('nav-home').addEventListener('click', function () { goPage('home'); });
+    if ($('nav-settings')) $('nav-settings').addEventListener('click', function () { goPage('settings'); });
+    var go = document.querySelectorAll('[data-go]');
+    for (var g = 0; g < go.length; g++) {
+      go[g].addEventListener('click', function () { goPage(this.getAttribute('data-go')); });
+    }
+    var infos = document.querySelectorAll('.info[data-info]');
+    for (var i = 0; i < infos.length; i++) {
+      infos[i].setAttribute('aria-expanded', 'false');
+      infos[i].addEventListener('click', function (e) {
+        e.preventDefault(); e.stopPropagation();    // an ⓘ inside a <summary>/<label> must not toggle it
+        var pop = $(this.getAttribute('data-info')); if (!pop) return;
+        var open = pop.classList.contains('hidden');
+        pop.classList.toggle('hidden', !open);
+        this.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+    }
+    // The sequence name is cut short on a narrow panel: its full text is always
+    // one hover away. (Many places write this label, so follow the element.)
+    var env = $('env-status');
+    if (env && window.MutationObserver) {
+      new MutationObserver(function () { env.title = env.textContent + ' — tap to look for your sequence again'; })
+        .observe(env, { childList: true, characterData: true, subtree: true });
+    }
+    // Too narrow for even a few letters (a long page name on a 260 px panel)
+    // the name shrank to a stray "H…": show a status dot in its colour instead.
+    // (An attribute, not a class: the code that finds the sequence rewrites
+    // the whole className, which would bring the stray letter back.)
+    if (env && window.ResizeObserver) {
+      new ResizeObserver(function () {
+        if (env.clientWidth < 40) env.setAttribute('data-squeezed', '');
+        else env.removeAttribute('data-squeezed');
+      }).observe(env);
+    }
   }
 
   // Tap the sequence indicator to re-detect the active sequence on demand
@@ -1706,21 +1803,27 @@
     function goTab(t) { return function () { var b = document.querySelector('.tab[data-tab="' + t + '"]'); if (b) b.click(); }; }
     function clickId(id) { return function () { var e = $(id); if (e) e.click(); }; }
     return [
-      { group: 'Go', label: 'Captions', keywords: 'subtitle text caption', run: goTab('captions') },
-      { group: 'Go', label: 'Auto-Edit', keywords: 'silence pause trim takes retakes', run: goTab('silence') },
-      { group: 'Go', label: 'Multicam', keywords: 'camera angle switch', run: goTab('multicam') },
+      { group: 'Go', label: 'Home', keywords: 'start menu back', run: goTab('home') },
+      { group: 'Go', label: 'Captions', keywords: 'subtitle text caption styles', run: goTab('captions') },
+      { group: 'Go', label: 'Clean up', keywords: 'auto-edit silence pause trim takes retakes fillers', run: goTab('silence') },
+      { group: 'Go', label: 'Podcast cameras', keywords: 'multicam camera angle switch', run: goTab('multicam') },
+      { group: 'Go', label: 'Transcribe', keywords: 'transcript words', run: goTab('transcribe') },
+      { group: 'Go', label: 'Shorts', keywords: 'viral clips reels', run: goTab('shorts') },
       { group: 'Go', label: 'Chapters', keywords: 'youtube timestamps markers', run: goTab('chapters') },
-      { group: 'Go', label: 'Settings', keywords: 'ffmpeg diagnostics path', run: goTab('settings') },
-      { group: 'Captions', label: 'Add captions', keywords: 'render burn animate', run: function () { goTab('captions')(); showView('style'); clickId('btn-magic')(); } },
-      { group: 'Captions', label: 'Open template library', keywords: 'styles gallery browse', run: function () { goTab('captions')(); showView('templates'); } },
-      { group: 'Captions', label: 'Open .mogrt Editor', keywords: 'mogrt premiere template upload', run: function () { goTab('captions')(); showView('editor'); } },
+      { group: 'Go', label: 'Organize', keywords: 'bins project folders', run: goTab('organize') },
+      { group: 'Go', label: 'Safe zone', keywords: 'guide branding reels tiktok', run: goTab('safezone') },
+      { group: 'Go', label: 'Settings', keywords: 'keys diagnostics theme text size', run: goTab('settings') },
+      { group: 'Captions', label: 'Add captions', keywords: 'render burn animate', run: function () { goTab('captions')(); clickId('btn-magic')(); } },
+      { group: 'Captions', label: 'Open the style gallery', keywords: 'styles gallery browse templates', run: function () { goTab('captions')(); showView('templates'); } },
+      { group: 'Captions', label: 'Use my own Premiere template', keywords: 'mogrt premiere template upload', run: function () { goTab('captions')(); showView('editor'); } },
       { group: 'Captions', label: 'Find my transcript again', keywords: 'srt vtt subtitle', run: function () { goTab('captions')(); findTranscript(); } },
-      { group: 'Auto-Edit', label: 'Find the silences', keywords: 'analyze detect dead air', run: function () { goTab('silence')(); clickId('btn-analyze')(); } },
-      { group: 'Auto-Edit', label: 'Remove silences (safe copy)', keywords: 'rebuild trim', run: function () { goTab('silence')(); clickId('btn-rebuild')(); } },
-      { group: 'Multicam', label: 'Build angle plan', keywords: 'cameras plan', run: function () { goTab('multicam')(); clickId('btn-mc-plan')(); } },
-      { group: 'Multicam', label: 'Apply camera switches', keywords: 'apply cut', run: function () { goTab('multicam')(); clickId('btn-mc-apply')(); } },
-      { group: 'Chapters', label: 'Generate chapters', keywords: 'youtube timestamps', run: function () { goTab('chapters')(); clickId('btn-ch-build')(); } },
-      { group: 'Settings', label: 'Run full diagnostic', keywords: 'debug help', run: function () { goTab('settings')(); clickId('btn-diag-full')(); } }
+      { group: 'Clean up', label: 'Clean up my video', keywords: 'auto-edit silences retakes fillers one tap', run: function () { goTab('silence')(); clickId('btn-autoclean')(); } },
+      { group: 'Clean up', label: 'Find the silences', keywords: 'analyze detect dead air', run: function () { goTab('silence')(); clickId('btn-analyze')(); } },
+      { group: 'Clean up', label: 'Remove the silences found (keeps a copy)', keywords: 'rebuild trim safe', run: function () { goTab('silence')(); clickId('btn-rebuild')(); } },
+      { group: 'Cameras', label: 'Plan camera cuts', keywords: 'multicam cameras angle plan', run: function () { goTab('multicam')(); clickId('btn-mc-plan')(); } },
+      { group: 'Cameras', label: 'Apply camera switches', keywords: 'multicam apply cut', run: function () { goTab('multicam')(); clickId('btn-mc-apply')(); } },
+      { group: 'Chapters', label: 'Make chapters', keywords: 'generate youtube timestamps', run: function () { goTab('chapters')(); clickId('btn-ch-build')(); } },
+      { group: 'Settings', label: 'Run the full check', keywords: 'diagnostic debug help support', run: function () { goTab('settings')(); clickId('btn-diag-full')(); } }
     ];
   }
   function openPalette() {
@@ -1782,29 +1885,169 @@
       if (_cmd.open) return;
       var tag = (e.target && e.target.tagName) || '';
       if (/INPUT|TEXTAREA|SELECT/.test(tag) || e.metaKey || e.ctrlKey || e.altKey) return;
-      var map = { '1': 'transcribe', '2': 'captions', '3': 'silence', '4': 'multicam', '5': 'chapters', '6': 'settings' };
+      var map = { '0': 'home', '1': 'transcribe', '2': 'captions', '3': 'silence', '4': 'multicam', '5': 'chapters', '6': 'settings' };
       if (map[e.key]) { var b = document.querySelector('.tab[data-tab="' + map[e.key] + '"]'); if (b) b.click(); }
     });
   }
 
   // --------------------------------------------------------------- boot ----
   // ---- Light / Dark theme -------------------------------------------------
+  /* The theme FOLLOWS PREMIERE. On load the panel reads Premiere's own panel
+     colour (CEP appSkinInfo.panelBackgroundColor) and goes dark or light by its
+     brightness; when the owner changes Premiere's Appearance, Premiere fires
+     com.adobe.csxs.events.ThemeColorChanged and the panel follows again. It
+     used to open white inside Premiere's dark UI, always. The 🌙/☀️ button and
+     Settings → Look are an override that sticks until "Match Premiere" is
+     picked. Outside Premiere the computer's light/dark setting stands in.
+     (The old 'cutpilot.theme' key was written on every boot, not only by a
+     choice, so it cannot tell an override from a default — it is not read.) */
+  var THEME_MODE_KEY = 'cutpilot.themeMode';     // 'auto' | 'light' | 'dark'
+  var THEME_EVENT = 'com.adobe.csxs.events.ThemeColorChanged';
+  var _themeMode = 'auto';
+  function hostPanelColor() {
+    try {
+      var cep = window.__adobe_cep__;
+      if (!cep || typeof cep.getHostEnvironment !== 'function') return null;
+      var env = cep.getHostEnvironment();
+      if (typeof env === 'string') env = JSON.parse(env);
+      var skin = env && env.appSkinInfo;
+      var c = skin && skin.panelBackgroundColor && skin.panelBackgroundColor.color;
+      if (!c || c.red == null || c.green == null || c.blue == null) return null;
+      return { r: +c.red, g: +c.green, b: +c.blue };
+    } catch (e) { return null; }
+  }
+  function hostTheme() {
+    var c = hostPanelColor();
+    if (c) return ((0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b) / 255) < 0.5 ? 'dark' : 'light';
+    try { if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark'; } catch (e) {}
+    return 'light';
+  }
   function applyTheme(t) {
     t = (t === 'dark') ? 'dark' : 'light';
     document.body.classList.remove('theme-light', 'theme-dark');
     document.body.classList.add('theme-' + t);
-    var b = $('theme-toggle'); if (b) b.textContent = (t === 'dark') ? '☀️' : '🌙';
-    try { localStorage.setItem('cutpilot.theme', t); } catch (e) {}
+    var b = $('theme-toggle');
+    if (b) { b.textContent = (t === 'dark') ? '☀️' : '🌙'; b.title = 'Switch to ' + (t === 'dark' ? 'light' : 'dark') + ' (overrides Premiere’s look)'; }
+  }
+  function setThemeMode(mode, persist) {
+    _themeMode = (mode === 'light' || mode === 'dark') ? mode : 'auto';
+    if (persist) { try { localStorage.setItem(THEME_MODE_KEY, _themeMode); } catch (e) {} }
+    applyTheme(_themeMode === 'auto' ? hostTheme() : _themeMode);
+    var box = $('set-theme');
+    if (box) {
+      var bs = box.querySelectorAll('button');
+      for (var i = 0; i < bs.length; i++) bs[i].classList.toggle('on', bs[i].getAttribute('data-theme') === _themeMode);
+    }
   }
   function wireTheme() {
-    var saved = 'light';
-    try { saved = localStorage.getItem('cutpilot.theme') || 'light'; } catch (e) {}
-    applyTheme(saved);
+    var saved = 'auto';
+    try { saved = localStorage.getItem(THEME_MODE_KEY) || 'auto'; } catch (e) {}
+    setThemeMode(saved, false);
+    // Premiere's Appearance changed → follow it (unless the owner overrode it)
+    try {
+      var cep = window.__adobe_cep__;
+      if (cep && typeof cep.addEventListener === 'function') {
+        cep.addEventListener(THEME_EVENT, function () { if (_themeMode === 'auto') setThemeMode('auto', false); });
+      }
+    } catch (eEv) {}
+    // outside Premiere, the computer's light/dark switch does the same job
+    try {
+      var mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+      var onOs = function () { if (_themeMode === 'auto' && !hostPanelColor()) setThemeMode('auto', false); };
+      if (mq && mq.addEventListener) mq.addEventListener('change', onOs);
+      else if (mq && mq.addListener) mq.addListener(onOs);
+    } catch (eMq) {}
     var b = $('theme-toggle');
     if (b) b.addEventListener('click', function () {
-      applyTheme(document.body.classList.contains('theme-dark') ? 'light' : 'dark');
+      setThemeMode(document.body.classList.contains('theme-dark') ? 'light' : 'dark', true);
+    });
+    var box = $('set-theme');
+    if (box) box.addEventListener('click', function (e) {
+      var t = e.target;
+      while (t && t !== box && !(t.getAttribute && t.getAttribute('data-theme'))) t = t.parentNode;
+      if (t && t !== box) setThemeMode(t.getAttribute('data-theme'), true);
     });
   }
+
+  // ---- Text size ------------------------------------------------------------
+  /* Premiere has no UI text-size setting of its own, so Pulse has one:
+     Settings → Look → Text size S / M / L. Every font size in the stylesheet
+     is in rem, so one class on <html> scales all of it (nothing under 11 px). */
+  var TEXT_SIZE_KEY = 'cutpilot.textSize';
+  function applyTextSize(s, persist) {
+    s = (s === 's' || s === 'l') ? s : 'm';
+    var h = document.documentElement;
+    h.classList.remove('text-s', 'text-l');
+    if (s !== 'm') h.classList.add('text-' + s);
+    if (persist) { try { localStorage.setItem(TEXT_SIZE_KEY, s); } catch (e) {} }
+    var box = $('set-text-size');
+    if (box) {
+      var bs = box.querySelectorAll('button');
+      for (var i = 0; i < bs.length; i++) bs[i].classList.toggle('on', bs[i].getAttribute('data-size') === s);
+    }
+    return s;
+  }
+  function wireTextSize() {
+    var s = 'm';
+    try { s = localStorage.getItem(TEXT_SIZE_KEY) || 'm'; } catch (e) {}
+    applyTextSize(s, false);
+    var box = $('set-text-size');
+    if (box) box.addEventListener('click', function (e) {
+      var t = e.target;
+      while (t && t !== box && !(t.getAttribute && t.getAttribute('data-size'))) t = t.parentNode;
+      if (t && t !== box) { applyTextSize(t.getAttribute('data-size'), true); repaintCanvases(); }
+    });
+  }
+
+  // ---- Crisp canvases on every screen ---------------------------------------
+  /* Every canvas sizes its backing store from devicePixelRatio when it paints.
+     A new ratio — the panel dragged from a Retina screen to a 1x monitor, or
+     Windows scaling set to 125 / 150 % — changes no CSS size, so no resize
+     event or ResizeObserver fires and the canvases stayed at the old ratio
+     (blurry, or wastefully large). Watch the resolution itself and repaint.
+     A resolution media query only matches ONE ratio, so it is re-armed after
+     every change. */
+  var _dprMq = null;
+  function repaintCanvases() {
+    try {
+      var cs = document.querySelectorAll('.tpl-thumb-canvas');
+      for (var i = 0; i < cs.length; i++) cs[i]._painted = false;
+      schedulePaintThumbs();
+    } catch (e) {}
+    try { renderPreview(); } catch (e2) {}
+    try { if (_mogrtPrevCanvas) renderMogrtPreview(); } catch (e3) {}
+    try { if (window.CPSafezone && CPSafezone.render) CPSafezone.render(); } catch (e4) {}
+  }
+  function watchPixelRatio() {
+    function onChange() { arm(); repaintCanvases(); }
+    function arm() {
+      try {
+        if (_dprMq) {
+          if (_dprMq.removeEventListener) _dprMq.removeEventListener('change', onChange);
+          else if (_dprMq.removeListener) _dprMq.removeListener(onChange);
+        }
+        _dprMq = window.matchMedia('(resolution: ' + (window.devicePixelRatio || 1) + 'dppx)');
+        if (_dprMq.addEventListener) _dprMq.addEventListener('change', onChange);
+        else if (_dprMq.addListener) _dprMq.addListener(onChange);
+      } catch (e) {}
+    }
+    if (window.matchMedia) arm();
+    // CEP's own scale hook (Mac only) — the same repaint
+    try {
+      var cep = window.__adobe_cep__;
+      if (cep && typeof cep.setScaleFactorChangedHandler === 'function') cep.setScaleFactorChangedHandler(repaintCanvases);
+    } catch (eSf) {}
+  }
+
+  window.CP_DEBUG_EXT = window.CP_DEBUG_EXT || {};
+  window.CP_DEBUG_EXT.ui = {
+    theme: function () { return document.body.classList.contains('theme-dark') ? 'dark' : 'light'; },
+    themeMode: function () { return _themeMode; },
+    hostTheme: hostTheme,
+    textSize: function () { var h = document.documentElement; return h.classList.contains('text-s') ? 's' : h.classList.contains('text-l') ? 'l' : 'm'; },
+    page: function () { return document.body.getAttribute('data-page'); },
+    showPage: showPage
+  };
 
   /* Trial kill-switch: a build can bake in a hard expiry. We compare the clock
      to the expiry AND to the latest time we've ever recorded (persisted in the
@@ -1993,6 +2236,9 @@
       });
     }
     wireTheme();
+    wireTextSize();
+    wireShell();
+    watchPixelRatio();
     wireLicense();
     wireVerbatim();
     wireDiagnostics();
@@ -2586,16 +2832,19 @@
     catch (e) { return toast(e.message, true); }
     _treMode = 'transcript';
     _treCues = cues.map(function (c) { return { start: c.start, end: c.end, text: c.text }; });
+    if ($('tre-title')) $('tre-title').textContent = '✏️ Review & edit the words';
     renderTrEditor();
     $('tr-editor').classList.remove('hidden');
   }
   /* Edit the wording of captions already on the timeline, then re-render them in
-     place. Reuses the transcript editor UI (which lives on the Transcribe tab). */
+     place. Reuses the transcript editor, an overlay over whichever page opened
+     it: this used to switch to the Transcribe page first, so closing the editor
+     left the owner there instead of on Captions. */
   function openCaptionTextEditor() {
     if (!state.lastCaptionJob || !state.lastCaptionJob.cues) return toast('Add captions first, then you can edit their text.', true);
     _treMode = 'captions';
     _treCues = state.lastCaptionJob.cues.map(function (c) { return { start: c.start, end: c.end, text: c.text }; });
-    var tb = document.querySelector('.tab[data-tab="transcribe"]'); if (tb) tb.click();
+    if ($('tre-title')) $('tre-title').textContent = '✏️ Edit your caption words';
     renderTrEditor();
     $('tr-editor').classList.remove('hidden');
     toast('✏️ Fix any wording, then tap Save — your captions update in place.');
@@ -4118,7 +4367,10 @@
   function paintThumbs() {
     if (!window.CPRender || !CPRender.drawFrame) return;
     var canvases = document.querySelectorAll('.tpl-thumb-canvas');
-    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    // backing store = on-screen size × the screen's pixel ratio (up to 3x), so a
+    // tile is sharp at 125 / 150 / 200 / 300 %; repaintCanvases() re-runs this
+    // when the ratio changes (watchPixelRatio)
+    var dpr = Math.min(3, window.devicePixelRatio || 1);
     for (var i = 0; i < canvases.length; i++) {
       var cvs = canvases[i], t = cvs._tpl;
       if (!t && cvs._mogrtTpl) t = cvs._tpl = mogrtCardStyle(cvs._mogrtTpl);   // animated card → style from its colours
@@ -5456,30 +5708,10 @@
     });
   }
 
-  /* On WIDE panels the two primary actions dock under the sticky preview —
-     the dead space the user pointed at — and return to their normal spot when
-     the panel is narrow. Moving nodes preserves their listeners. */
-  function dockCapActions() {
-    var dock = $('cap-actions-dock'), home = $('cap-actions-home');
-    var magic = $('btn-magic'), viral = $('btn-viral-edit');
-    if (!dock || !home || !magic) return;
-    var wc = $('wc-block');
-    var wide = (window.innerWidth || 0) >= 620;
-    if (wide && magic.parentNode !== dock) {
-      if (wc && !$('wc-home')) {
-        var wcHome = document.createElement('span');
-        wcHome.id = 'wc-home'; wcHome.style.display = 'none';
-        wc.parentNode.insertBefore(wcHome, wc);
-      }
-      if (wc) dock.appendChild(wc);            // words-per-caption sits with the action
-      dock.appendChild(magic); if (viral) dock.appendChild(viral);
-    } else if (!wide && magic.parentNode === dock) {
-      var wcH = $('wc-home');
-      if (wc && wcH) wcH.parentNode.insertBefore(wc, wcH.nextSibling);
-      home.parentNode.insertBefore(magic, home.nextSibling);
-      if (viral) home.parentNode.insertBefore(viral, magic.nextSibling);
-    }
-  }
+  /* "✨ Add captions" and "⚡ Viral edit" no longer move between a narrow and
+     a wide spot (they used to dock under the preview only when the panel was
+     620 px or wider, and sat ~2,400 px down below that): they live in
+     #cap-action-bar, pinned to the bottom of the Captions page at every size. */
 
   function wireCustomizer() {
     wireCustomizerTabs();
@@ -5656,7 +5888,7 @@
     // ride the spoken word.
     if (state.transcriptWords && state.transcriptWords.length) { el.textContent = '· 🎯 word-perfect timing ready'; return; }
     if (!$('c-sync').checked) { el.textContent = '(off)'; return; }
-    el.textContent = resolveFfmpeg() ? '· estimates from audio' : '· needs ffmpeg (Settings)';
+    el.textContent = resolveFfmpeg() ? '· estimates from audio' : '· needs the audio engine (Settings)';
   }
 
   /* Single source of truth for words-per-caption; keeps the hidden input,
@@ -5692,10 +5924,14 @@
        'style'     = editing one caption style (font / colour / animation) — still
                      part of the Templates section, so that tab stays lit
        'editor'    = the .mogrt Editor (upload + customise a Premiere template) */
+  var _galleryScroll = 0;      // where the owner was in the gallery before opening a style
   function showView(v) {
     var inStyleEdit = (v === 'style');
     var inMogrt = (v === 'editor');
     var inFlux = (v === 'flux');
+    var capPage = $('tab-captions');
+    var wasGallery = !$('view-templates').classList.contains('hidden');
+    if (capPage && wasGallery && v !== 'templates') _galleryScroll = capPage.scrollTop;
     $('view-templates').classList.toggle('hidden', v !== 'templates');
     $('view-editor').classList.toggle('hidden', !(inStyleEdit || inMogrt));
     if ($('view-flux')) $('view-flux').classList.toggle('hidden', !inFlux);
@@ -5707,6 +5943,15 @@
     if (inMogrt) { setCapMethod('mogrt'); renderMogrtEditor(); }
     if (v === 'templates') renderTemplateGrid();
     if (inFlux) renderFluxGrid();
+    // "✨ Add captions" stays pinned under the style gallery and the style
+    // editor; the Premium sheet and the upload section have their own button.
+    if ($('cap-action-bar')) $('cap-action-bar').classList.toggle('hidden', !(v === 'templates' || inStyleEdit));
+    // in the editor the ‹ All styles button is the way back — the switch
+    // would only take a row of a short panel
+    if ($('cap-view')) $('cap-view').classList.toggle('hidden', inStyleEdit);
+    // a style opens at its top; back in the gallery, the owner is where they left it
+    if (capPage && v !== 'templates') capPage.scrollTop = 0;
+    else if (capPage && !wasGallery) capPage.scrollTop = _galleryScroll;
   }
 
   /* The Flux section: premium, EDITABLE .mogrt templates (section:"flux" in
@@ -6191,6 +6436,8 @@
   function syncWordHlUI() {
     var on = !$('c-wordhl') || $('c-wordhl').checked;
     if ($('c-wordhl-opts')) $('c-wordhl-opts').classList.toggle('hidden', !on);
+    // the section itself too: with its options away it was a bare heading
+    if ($('cust-wordhl-group')) $('cust-wordhl-group').classList.toggle('hidden', !on);
     if ($('cust-anim-group')) $('cust-anim-group').classList.toggle('hidden', on);
   }
 
@@ -6359,7 +6606,8 @@
     // landscape caption in a narrow panel came out 8 px tall — a thin serif with
     // a soft shadow is then mostly antialiasing, and "Cinema" previewed as a
     // grey smudge its render never contains (gate: gallery-preview-render).
-    var dpr = 2;
+    // On a screen denser than 2x, follow the screen so it stays sharp there too.
+    var dpr = Math.max(2, window.devicePixelRatio || 1);
     canvas.width = Math.round(boxW * dpr); canvas.height = Math.round(boxH * dpr);
     canvas.style.width = boxW + 'px'; canvas.style.height = boxH + 'px';
 
@@ -6652,9 +6900,13 @@
   var _capOut = 'png';   // Pulse-rendered by default (see btn-magic handler)
   function updateMagicLabel() {
     var b = $('btn-magic'); if (!b) return;
-    b.innerHTML = (_capOut === 'editable')
-      ? '✏️ Add captions <span class="dim">(editable template clips)</span>'
-      : '✨ Add captions <span class="dim">(Pulse-rendered — exact look, always aligned)</span>';
+    // One short label: the button is pinned under the gallery AND the editor at
+    // every panel width. Which kind of captions it makes is picked (and
+    // explained, behind its ⓘ) in the editor's "Caption type".
+    b.textContent = (_capOut === 'editable') ? '✏️ Add editable captions' : '✨ Add captions';
+    b.title = (_capOut === 'editable')
+      ? 'Adds Premiere graphics you can retype in Premiere'
+      : 'Adds your captions in the style you picked — exact look, always lined up';
   }
   /* Single source of truth for the caption type: sets the value, lights the
      right chip and relabels the main button. Used by clicks AND by restore. */
@@ -8563,7 +8815,7 @@
     var par = cv.parentNode;
     var W = par.clientWidth || 280, Hpx = par.clientHeight || 96;
     if (Hpx < 50) Hpx = 96;
-    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    var dpr = Math.min(3, window.devicePixelRatio || 1);
     cv.width = Math.round(W * dpr); cv.height = Math.round(Hpx * dpr);
     cv.style.width = W + 'px'; cv.style.height = Hpx + 'px';
     // SAME pipeline as every other preview: the template's base look (from its
@@ -12070,7 +12322,7 @@
      Premiere version (no dependency on the Auto Reframe script method). */
   function makeVerticalClip(h, rt) {
     var ff = resolveFfmpeg();
-    if (!ff) return toast('Making a clip needs ffmpeg (Settings → ffmpeg path).', true);
+    if (!ff) return toast('Making a clip needs the audio engine — tap Settings → ⬇️ Set up audio engine.', true);
     if (typeof CPReframe === 'undefined') return toast('Reframe module missing.', true);
     var name = sanitizeName(h.title || 'Pulse clip');
     var prog = $('shorts-progress'); prog.classList.remove('hidden'); prog.textContent = 'Finding the source video…';
@@ -12175,7 +12427,7 @@
   }
   function runSpeakerReframe() {
     var ff = resolveFfmpeg();
-    if (!ff) return toast('Speaker-aware reframe needs ffmpeg (Settings → ffmpeg path).', true);
+    if (!ff) return toast('Following the speaker needs the audio engine — tap Settings → ⬇️ Set up audio engine.', true);
     if (typeof CPReframe === 'undefined' || typeof CPMulticam === 'undefined') return toast('Reframe module missing.', true);
     var arrange = ($('sr-arrange') && $('sr-arrange').value) || 'lr';
     var regions = regionsForArrange(arrange), nPeople = regions.length;
@@ -12303,14 +12555,17 @@
     el.classList.remove('hidden');
     if (ff) {
       el.className = 'ff-banner ok';
-      el.innerHTML = '✅ Audio engine ready (ffmpeg found). This mode can read your mics.';
+      el.textContent = '✅ Audio engine ready — Pulse can hear each mic.';
     } else {
+      // Plain words and ONE tap. This told the owner to "open Terminal and run
+      // brew install ffmpeg", although the same one-tap setup as Settings works
+      // here (the mics sit inside the video files; Pulse's audio engine hears them).
       el.className = 'ff-banner';
-      el.innerHTML = '⚠️ <b>This mode needs ffmpeg</b> because your mics are inside video files ' +
-        '(.MOV/.MP4), which Premiere\'s panel can\'t read on its own.<br>' +
-        'Install it once — open Terminal and run: <code>brew install ffmpeg</code><br>' +
-        'Then tap re-check. (Or set its path in Settings.)' +
-        '<br><button class="chip-btn" id="mc-ff-recheck">↻ Re-check ffmpeg</button>';
+      el.innerHTML = '⚠️ <b>Pulse needs its audio engine to hear your mics.</b>' +
+        '<br><button class="chip-btn" id="mc-ff-setup" title="Free, about 50 MB, downloaded once">⬇️ Set up audio engine</button> ' +
+        '<button class="chip-btn" id="mc-ff-recheck">↻ Check again</button>';
+      var setup = document.getElementById('mc-ff-setup');
+      if (setup) setup.addEventListener('click', function () { setUpAudioTool(this); });
       var btn = document.getElementById('mc-ff-recheck');
       if (btn) btn.addEventListener('click', function () { _ffmpeg = null; updateMcFfmpegBanner(); refreshFfmpegStatus(); });
     }
@@ -13635,35 +13890,42 @@
   } catch (eMcDbg) {}
 
   // =========================================================== SETTINGS ====
+  /* One plain line under the Set up button. It named the program and its
+     folder ("ffmpeg found: /opt/homebrew/bin/ffmpeg") and ran to three lines
+     naming pages that no longer exist ("Multicam & Smart Cut"). Where the
+     tool lives stays in the tooltip and in Copy diagnostics; what it is for
+     is behind the card's ⓘ. */
   function refreshFfmpegStatus() {
     _ffmpeg = null; // re-probe
     var ff = resolveFfmpeg();
     var el = $('ffmpeg-status');
-    if (ff) { el.textContent = '✅ ffmpeg found: ' + ff; el.className = 'hint'; }
-    else { el.textContent = '⚠️ No audio engine yet — tap "⬇️ Set up audio engine (auto-download)" above. ' +
-            'Captions, Multicam & Smart Cut need it to read audio inside video files.'; el.className = 'hint'; }
+    if (ff) { el.textContent = '✅ Audio engine ready.'; el.title = ff; el.className = 'hint'; }
+    else { el.textContent = '⚠️ Not set up yet — tap the button above (once).'; el.title = ''; el.className = 'hint'; }
   }
 
   $('btn-ffmpeg-pick').addEventListener('click', function () {
-    var path = pickFile('Locate the ffmpeg binary', []);
+    var path = pickFile('Choose the audio engine file', []);
     if (path) $('set-ffmpeg').value = path;
   });
-  // Explicit one-tap audio-engine setup (so a fresh install can fetch ffmpeg —
-  // and retry — from a visible button, not only silently on first transcribe).
-  if ($('btn-ffmpeg-setup')) $('btn-ffmpeg-setup').addEventListener('click', function () {
-    var btn = this, st = $('ffmpeg-status');
-    btn.disabled = true;
-    if (st) st.textContent = '⬇️ Downloading the audio engine (~50MB) — one time…';
-    ensureFfmpeg().then(function (p) {
-      if (st) st.textContent = '✅ Audio engine ready.';
+  /* One tap sets up the audio engine (so a fresh install can fetch it — and
+     retry — from a visible button, not only silently on first transcribe).
+     Settings and the Podcast cameras page, which cannot hear its mics without
+     it, use the same tap. */
+  function setUpAudioTool(btn) {
+    var st = $('ffmpeg-status');
+    if (btn) btn.disabled = true;
+    if (st) st.textContent = '⬇️ Downloading the audio engine (about 50 MB, once)…';
+    return ensureFfmpeg().then(function (p) {
       try { $('set-ffmpeg').value = p || settings.ffmpegPath || ''; } catch (e) {}
-      refreshFfmpegStatus(); toast('✅ Audio engine ready.');
+      refreshFfmpegStatus(); updateMcFfmpegBanner(); updateSyncStat();
+      toast('✅ Audio engine ready.');
     }, function (e) {
-      var m = (e && e.message) ? e.message : 'Download failed — check internet.';
+      var m = (e && e.message) ? e.message : 'The download failed — check your internet, then tap Set up again.';
       if (st) st.textContent = '⚠️ ' + m;
       toast(m, true);
-    }).then(function () { btn.disabled = false; });
-  });
+    }).then(function () { if (btn) btn.disabled = false; });
+  }
+  if ($('btn-ffmpeg-setup')) $('btn-ffmpeg-setup').addEventListener('click', function () { setUpAudioTool(this); });
 
   $('btn-save-settings').addEventListener('click', function () {
     settings.ffmpegPath = $('set-ffmpeg').value.trim();
@@ -13738,33 +14000,39 @@
     syncGroqVisibility();                       // show the key field when Cloud is in play
     var el = $('whisper-status'); if (!el) return;
     var resolved = resolveQuality();
-    var autoTag = (settings.whisperQuality === 'auto-best') ? ' · ✨ Auto chose this' : '';
+    // ONE plain line that points at what is really on screen: the speech-key
+    // box sits right under this line, the Indian-language and retake-finder
+    // keys under "More speech options". It named engines and models (Groq,
+    // Deepgram nova-3, ggml-large-v3-turbo…) and sent the owner to a picker
+    // "above" that the redesign folded away below.
+    el.title = '';
     if (resolved === 'cloud-groq') {
-      el.textContent = (settings.groqKey || '').trim()
-        ? '☁️ Cloud (Groq) ready — most accurate.' + autoTag
-        : '☁️ Cloud selected — paste your free Groq API key in the box that just appeared.';
+      el.textContent = (settings.groqKey || '').trim() ? '✅ Speech key ready — Pulse can write your words.'
+        // a build with its own key hides the box — never ask for it then
+        : KEY_BUNDLED ? '✅ Transcription is built in — just pick your language.'
+        : '👇 Paste your free speech key below.';
       return;
     }
     if (resolved === 'cloud-swara') {
       el.textContent = cpSarvamKey()
-        ? '🇮🇳 Indian Voices ready — pick your language above.' + autoTag
-        : '🇮🇳 Indian Voices selected — paste your key in the 🇮🇳 box below.';
+        ? '✅ Indian-language key ready.'
+        : '👇 Paste your key under More speech options.';
       return;
     }
     if (resolved === 'cloud-deepgram') {
       el.textContent = cpDeepgramKey()
-        ? '🎧 Deepgram ready — nova-3, keeps every word.' + autoTag
-        : '🎧 Deepgram selected — paste your key in the 🎧 box below.';
+        ? '✅ Retake-finder key ready — it writes your words too.'
+        : '👇 Paste your key under More speech options.';
       return;
     }
     var w = resolveWhisper(), m = resolveWhisperModel();
     var willUse = modelFileName();   // what accuracy+language will fetch/use
-    if (w) { el.textContent = '✅ Engine ready · will use ' + willUse + (m ? '' : ' (downloads on first use)') + autoTag; }
+    if (w) { el.textContent = '✅ Ready — this computer writes your words' + (m ? '.' : ' (one download first).'); el.title = willUse; }
     // "Cloud transcription is built in" was printed even when the build bundles
     // NO key - so the panel told the user there was nothing to set up, then
     // refused to transcribe without a key. Only say "built in" when it is true.
-    else if (KEY_BUNDLED) { el.textContent = 'Cloud transcription is built in — pick a language above and transcribe.'; }
-    else { el.textContent = 'Pick a cloud engine above, then paste its key in the matching box below.'; }
+    else if (KEY_BUNDLED) { el.textContent = '✅ Transcription is built in — just pick your language.'; }
+    else { el.textContent = '👇 Paste your free speech key below to switch it on.'; }
     var note = $('set-quality-note');
     if (note) { var q = (settings.whisperQuality || 'auto-best'); var qo = WHISPER_QUALITIES.filter(function (x) { return x.value === q; })[0]; note.textContent = qo ? '· ' + qo.label.replace(/^[^·]*· /, '') : ''; }
   }
@@ -14004,14 +14272,6 @@
   // change; nothing inside Premiere uses this.
   try {
     if ($('btn-real-preview')) $('btn-real-preview').addEventListener('click', function () { realPreviewOnTimeline(this); });
-    try {
-      dockCapActions();
-      var _dockT = null;
-      window.addEventListener('resize', function () {
-        if (_dockT) clearTimeout(_dockT);
-        _dockT = setTimeout(dockCapActions, 120);
-      });
-    } catch (eDock) {}
     window.CP_DEBUG = {
       mapPresetToMogrt: mapPresetToMogrt,
       mapPresetToFlux: mapPresetToFlux,
