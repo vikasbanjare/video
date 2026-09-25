@@ -11995,8 +11995,15 @@
     // tracks in the order Pulse offers them: the ones you hear first — a muted
     // track (typically a camera's own scratch audio, muted once the lavs are
     // synced) only after them
+    // Only when at least TWO tracks are still unmuted — enough mics to follow two
+    // people. Otherwise a muted track is not scratch audio: it is a lav muted for
+    // listening (host lav muted, guest lav on), or the iso lavs muted under an
+    // unmuted finished mix. Sorting those last paired the cameras with the wrong
+    // mics — 0% the right person on screen, reported as success. Then keep
+    // camera i ↔ track i.
     var order = tracks.map(function (t, ti) { return ti; });
-    order.sort(function (x, y) { return ((tracks[x].muted ? 1 : 0) - (tracks[y].muted ? 1 : 0)) || (x - y); });
+    var unmuted = tracks.filter(function (t) { return !t.muted; }).length;
+    if (unmuted >= 2) order.sort(function (x, y) { return ((tracks[x].muted ? 1 : 0) - (tracks[y].muted ? 1 : 0)) || (x - y); });
     // a recording found to carry two people on its Left and Right (a lav
     // receiver in split mode on one camera's audio): its channels are the
     // first mics, then the other recordings in that order
