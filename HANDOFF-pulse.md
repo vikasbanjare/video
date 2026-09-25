@@ -1,10 +1,47 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.9.388** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.0** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.9.388 → v0.10.0 — the owner's "make everything work" release
+The owner (4 months in, not shipped) asked for: every caption editable, a
+beginner UI, a panel that works at any size/scaling, 40+ trending styles, and
+auto-edit that really removes dead air, retakes and fillers on Hindi/Hinglish
+podcasts. Worked as an audit → build → review → fix → verify pipeline of
+parallel agents, each change proven by a gate that fails without it.
+
+What changed for the owner:
+- **UI**: Home with three tasks (Add captions · Clean up · Podcast cameras);
+  Captions opens on the style GALLERY with Add captions pinned; plain words,
+  one-line hints (rest behind ⓘ), Text size S/M/L; follows Premiere's theme;
+  fits 260–1600 px wide, 400 px tall, any display scaling (16 ui-* gates, incl.
+  a layout gate over 924 size/scaling combinations and ui-dialogs).
+- **Captions**: 128 styles (54 researched trending looks, 9 Devanagari-first),
+  creator categories of 10–26 styles; .mogrt templates moved to their own
+  "Premiere templates" section so every gallery card opens the full editor.
+  Long videos (podcasts) are drawn by the SAME renderer as the preview
+  (0 px difference over 24 styles) instead of libass.
+- **Clean up / silence**: listens to EVERY mic; cuts only where all are quiet;
+  adaptive room-noise detection; Reel/YouTube/Podcast presets. A track leaves
+  the vote as music ONLY by its Premiere track name or the owner's one-tap
+  answer — never by its sound (a noisy remote guest was being cut entirely).
+- **Retakes/fillers**: Unicode (Devanagari) matching; a guest's echo never cuts
+  the host's line; keeps the last complete take; Hindi fillers only when
+  pause-bounded; Deepgram gets language=multi; the verbatim mix follows the
+  same music rule as Clean up.
+- **Multicam**: follows the speaker in interviews, per-mic gain, L/R split,
+  honest Apply, muted-lav pairing fixed.
+- **Fonts**: fonts that can't draw English/Hindi are hidden (the owner's Mac
+  sent "NotoSansCoptic-Bold" → blank captions); every font piece a job needs
+  is loaded before the first frame (Hindi/₹ drew in a stand-in font).
+
+Harness: test/gates/*.js are discovered automatically (122 gates at release);
+tools/doctor.js says what a machine is missing — including whether headless
+Chromium can load Google Fonts (without it every caption gate silently tests
+stand-in fonts; the proxy CA must be in ~/.pki/nssdb).
 
 ### DONE (verified by automated gates, all green)
 - Full battery: `node CutPilot/test/run-tests.js` → exit 0.
@@ -382,18 +419,19 @@ Absolute paths. Only files touched in this session are listed.
 
 ## Next 3 actions
 
-1. **Confirm the key path on the owner's Mac.** v0.9.388 went over; the owner has a
-   Deepgram key and can now pick Deepgram as the engine outright — no Groq account
-   needed. What to check in their next diagnostics paste: the line now reads
-   `Transcribe key: … · Deepgram: … · Indian Voices: … · engine: …`, so one paste
-   says which keys landed AND which engine resolved. Then: fresh sequence →
-   `🧹 Remove all Pulse captions` → `✨ Add captions` → `📋 Copy diagnostics`.
-   Note the Deepgram request path itself (curl → api.deepgram.com) has never run
-   against the live API from here — only its URL builder and parser are tested.
-2. **Exercise a LONG video on their Mac.** The one-clip overlay is what a 60-minute
-   podcast takes, and it has never run on macOS. It is now fully checked here (box,
-   size, position, pop, Hindi, transparency) and in CI, but macOS font resolution
-   through libass/fontconfig is the one part no gate here can reach.
-3. **Pick up the loop.** No iteration is half-finished. Good next themes: the editable
-   (.mogrt) path has had far less scrutiny than the Pulse renderer this session; and
-   `assOptsFromStyle` still hardcodes `anim:'pop'` rather than following the style.
+1. **Owner installs v0.10.0 on the Mac and runs the real flows**: Hindi captions
+   on a reel; Clean up on a 2-mic podcast (with and without a music track —
+   name it "Music" or answer the one-tap question); Podcast cameras. Then
+   📋 Copy diagnostics. Everything above is proven against a fake Premiere
+   and headless Chromium; the QE razor, undo grouping, linked-audio behaviour
+   and CEP timer throttling are only provable on the Mac.
+2. **Open question from the owner's report — caption SYNC**: captions were off
+   the voice on a 43 s ElevenLabs clip. Not yet diagnosed: the pre-ASR filter
+   adds only 25 ms; the likelier cause is refineWordCues snapping words to the
+   SELECTED clip's audio (state.clip) instead of the transcribed clip, guarded
+   only by a 60%-on-speech check. Needs the owner's answer: early or late,
+   constant or growing?
+3. **Strategic**: Adobe's Premiere sample README (Nov 2025) says CEP support
+   ends about a year after 25.6 — i.e. now. The pure-JS cores (silence, takes,
+   render, captions) carry over to UXP; host.jsx (QE razor) and Node
+   child_process (ffmpeg) do not. Plan the UXP port with the owner.
