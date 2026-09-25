@@ -12037,11 +12037,46 @@
      drown the voices left out, and one plain note for each: a file that is
      offline (moved or renamed — ONE of those used to fail the whole run with
      ffmpeg's "Error opening input files"), a file with no sound, and — when a
-     voice is left to hear — a track of steady music or noise (the same test
-     Clean up uses to leave a music bed out of its silence vote). A file that
-     cannot be checked is kept. Resolves { plan, notes, left } — plan null
-     when nothing is left to hear; left = the paths left out. */
-  function prepareTimelineMix(s, ff) {
+     voice is left to hear — a MUSIC track, decided exactly the way Clean up
+     decides it: the owner's own answer first ("No, it's a voice" / "Yes, it's
+     music"), then the Premiere track name. NEVER by how it sounds. This used to
+     leave out any file that merely sounded steady (voice under 10 dB above its
+     noise), so a remote guest on a noisy phone line was dropped from what the
+     verbatim engine heard — and the host re-asking a question after the
+     guest's answer then cut that answer as a "retake". A steady track that is
+     not named or confirmed as music is KEPT, with a note saying how to leave
+     it out. A file that cannot be checked is kept. Resolves { plan, notes,
+     left } — plan null when nothing is left to hear; left = the paths left
+     out. deps (tests only) replaces the two listening steps. */
+  function mixMusicReason(s, p) {
+    var roles = silRolesFor(s && s.sequenceId), own = '', named = '';
+    (s && s.audio || []).forEach(function (tr) {
+      if (!tr || !(tr.items || []).some(function (it) { return it && String(it.mediaPath) === p; })) return;
+      var r = roles[silTrackKey(tr)];
+      if (r === 'mic') own = 'mic';
+      else if (r === 'music' && own !== 'mic') own = 'music';
+      var w = CPSilence.trackNameSays(tr.name);
+      if (w === 'voice') named = 'voice';
+      else if (w === 'music' && named !== 'voice') named = 'music';
+    });
+    if (own === 'mic') return '';
+    if (own === 'music') return 'you told Pulse it is music';
+    if (named === 'music') return 'its track is named as music';
+    return '';
+  }
+  window.CP_DEBUG_EXT = window.CP_DEBUG_EXT || {};
+  window.CP_DEBUG_EXT.mix = {
+    prepare: function (s, deps) { return prepareTimelineMix(s, 'ffmpeg', deps).then(function (r) { return { left: r.left, notes: r.notes }; }); },
+    setRole: function (seqId, key, role) { silRolesFor(seqId)[key] = role; }
+  };
+  function prepareTimelineMix(s, ff, deps) {
+    deps = deps || {};
+    var audioInfo = deps.audioInfo || function (p) { return CPAudio.ffmpegAudioInfo(p, ff); };
+    var measure = deps.measure || function (inp) {
+      return listenTo(inp.path, inp.from, inp.to, null, ff).then(function (env) {
+        return CPSilence.micLevels(env.db, [[0, env.db.length]], CPSilence.tuning('balanced'));
+      });
+    };
     var plan0 = CPVerbatim.timelineMixPlan(s);
     if (!plan0) return Promise.resolve({ plan: null, notes: [], left: {} });
     var where = {}, left = {}, offline = [], mute = [], voices = [], steady = [];
@@ -12057,13 +12092,12 @@
     var chain = Promise.resolve();
     plan0.inputs.forEach(function (inp) {
       chain = chain.then(function () {
-        return CPAudio.ffmpegAudioInfo(inp.path, ff).then(function (info) {
+        return audioInfo(inp.path).then(function (info) {
           if (info.missing) { left[inp.path] = 'offline'; offline.push(named(inp.path)); return; }
           if (!info.streams) { left[inp.path] = 'no sound'; mute.push(named(inp.path)); return; }
           if (plan0.inputs.length < 2) { voices.push(inp.path); return; }
-          return listenTo(inp.path, inp.from, inp.to, null, ff).then(function (env) {
-            var lv = CPSilence.micLevels(env.db, [[0, env.db.length]], CPSilence.tuning('balanced'));
-            (lv.continuous && !lv.digital ? steady : voices).push(inp.path);
+          return measure(inp).then(function (lv) {
+            (lv && lv.continuous && !lv.digital ? steady : voices).push(inp.path);
           }, function () { voices.push(inp.path); });
         }, function () { voices.push(inp.path); });
       });
@@ -12073,9 +12107,20 @@
       if (offline.length) notes.push(offline.join(', ') + (offline.length === 1 ? ' is' : ' are') + ' offline (moved or renamed), so ' +
         (offline.length === 1 ? 'it was' : 'they were') + ' left out — relink in Premiere (right-click the clip → Link Media) to include ' + (offline.length === 1 ? 'it.' : 'them.'));
       if (mute.length) notes.push(mute.join(', ') + (mute.length === 1 ? ' has no sound in it, so it was' : ' have no sound in them, so they were') + ' left out.');
-      if (voices.length) steady.forEach(function (p) {
-        left[p] = 'music';
-        notes.push(named(p) + ' sounds like steady music or noise, not a voice, so it was left out of what the verbatim engine hears.');
+      // Music leaves the mix only by the owner's answer or the track's name,
+      // and only while something else is left to hear.
+      var heard = voices.concat(steady);
+      heard.forEach(function (p) {
+        var why = mixMusicReason(s, p);
+        if (why && heard.some(function (q) { return q !== p && !left[q] && !mixMusicReason(s, q); })) {
+          left[p] = 'music';
+          notes.push(named(p) + ' was left out of what the verbatim engine hears, because ' + why + '.');
+        }
+      });
+      steady.forEach(function (p) {
+        if (left[p]) return;
+        notes.push(named(p) + ' sounds steady, like music or a noisy line — it was kept in, because Pulse never leaves a voice out by its sound. ' +
+          'If it is music, name the track “Music” in Premiere and it will be left out.');
       });
       var plan = Object.keys(left).length ? CPVerbatim.timelineMixPlan(s, { leaveOut: left }) : plan0;
       return { plan: plan, notes: notes, left: left };
