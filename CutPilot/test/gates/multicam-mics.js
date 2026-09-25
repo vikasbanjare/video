@@ -57,6 +57,32 @@ const scratch = (sim, a, b) => sim.grids[0].map((v, i) => Math.round((10 * Math.
         'C. Copy diagnostics carries the calibration and what Apply did — ' + JSON.stringify((analysis || '(no analysis line)').slice(0, 110)) + ' | ' +
         JSON.stringify((applied || '(no apply line)').slice(0, 80)));
     }
+    // ---- E. a MUTED lav is not scratch audio when fewer than two tracks are on --------
+    // Regression found in verification: sorting every muted track last swapped the
+    // pairing when (E1) the host's lav on A1 is muted for listening while the guest's
+    // lav on A2 plays, or (E2) both iso lavs are muted on A1/A2 under an unmuted
+    // finished mix on A3 — 0% the right person on screen, reported as success.
+    for (const lay of [
+      { tag: 'E1. host lav muted on A1, guest lav on A2', need: '["0","1"]',
+        audio: (dur) => [{ name: 'A1', muted: true, clips: [clip(dur, '/media/host.wav')] },
+                         { name: 'A2', clips: [clip(dur, '/media/guest.wav')] }] },
+      { tag: 'E2. iso lavs muted on A1/A2, finished mix on A3', need: '["0","1"]',
+        audio: (dur) => [{ name: 'A1', muted: true, clips: [clip(dur, '/media/host.wav')] },
+                         { name: 'A2', muted: true, clips: [clip(dur, '/media/guest.wav')] },
+                         { name: 'A3', clips: [clip(dur, '/media/mix.wav')] }] }
+    ]) {
+      const sim = S.podcast({ dur: 180, pattern: 'balanced', seed: 21 });
+      const dur = sim.dur;
+      const mix = sim.grids[0].map((v, i) => Math.round(10 * Math.log10(Math.pow(10, v / 10) + Math.pow(10, sim.grids[1][i] / 10)) * 100) / 100);
+      const envelopes = { '/media/host.wav': sim.grids[0].slice(), '/media/guest.wav': sim.grids[1].slice(), '/media/mix.wav': mix };
+      const ctx = await P.openPanel(browser, { premiere: { fps: 25, end: dur, video: FH.cameras(2, dur), audio: lay.audio(dur) }, envelopes });
+      const r = await P.runMulticam(ctx, { cameras: 2, source: 'follow' });
+      await ctx.page.close();
+      const acc = r.plan ? P.visibleAccuracy(ctx.world, sim) : 0;
+      report(JSON.stringify(r.mapValues) === lay.need && acc >= 95,
+        lay.tag + ': Pulse pairs ' + JSON.stringify(r.mapValues) + ' (need ' + lay.need + '), right person on screen ' + acc + '%' +
+        (r.plan ? '' : ' — no plan: ' + JSON.stringify((r.diag || '').slice(0, 90))));
+    }
     // ---- B. a mic clip switched off in Premiere is not heard ----------------------------
     {
       const sim = S.podcast({ dur: 180, pattern: 'balanced', seed: 12 });
