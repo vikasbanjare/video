@@ -10859,8 +10859,8 @@
     if (!skipHeld) (plan.held || []).forEach(function (x) { lines.push(silHeldLine(x)); });
     var loudBed = heard.filter(function (m) { return !m.digital && !m.continuous && !m.music && m.floor > -40; })[0];
     if (loudBed) {
-      lines.push('There is a loud background sound under ' + loudBed.tracks + ' (hum, room noise or music). ' +
-        'If it is music recorded together with the voice, it will jump at every cut — cut the pauses first, then add music on its own track.');
+      lines.push('The background under ' + loudBed.tracks + ' is loud (hum, room noise or music). ' +
+        'If it is music recorded with the voice, it will jump at every cut — cut the pauses first, then add music on its own track.');
     }
     // only real voices make a podcast — a music bed is not a second mic
     var voices = heard.filter(function (m) { return !m.music && !m.digital; });
