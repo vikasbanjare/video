@@ -2047,8 +2047,22 @@
     try { if (_mogrtPrevCanvas) renderMogrtPreview(); } catch (e3) {}
     try { if (window.CPSafezone && CPSafezone.render) CPSafezone.render(); } catch (e4) {}
   }
+  var _lastDpr = null;
   function watchPixelRatio() {
-    function onChange() { arm(); repaintCanvases(); }
+    _lastDpr = window.devicePixelRatio || 1;
+    function onChange() { _lastDpr = window.devicePixelRatio || 1; arm(); repaintCanvases(); }
+    /* Belt and braces: whether a resolution media query fires 'change' when the
+       ratio changes depends on the browser version — CI's Chrome 131 never fired
+       it for an emulated change (every gallery tile stayed at the old sharpness),
+       and Premiere's own engine is older still (Chromium 99). So also compare the
+       ratio itself on every resize and a few times a second; a number compare
+       costs nothing, and a change repaints exactly once. */
+    function checkRatio() {
+      var d = window.devicePixelRatio || 1;
+      if (d !== _lastDpr) onChange();
+    }
+    try { window.addEventListener('resize', checkRatio); } catch (eR) {}
+    try { setInterval(checkRatio, 250); } catch (eI) {}
     function arm() {
       try {
         if (_dprMq) {
