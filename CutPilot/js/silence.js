@@ -16,9 +16,17 @@
     return Math.pow(10, db / 20);
   }
 
+  // --------------------------------------------------------------------------
+  // LEGACY, kept for test/run-tests.js only: detectSilences, refineSilences and
+  // parseFfmpegSilences are the old fixed-threshold detector. Nothing in the
+  // panel calls them any more — "Clean up my video" and "Find the silences"
+  // listen with the adaptive detector further down (micLevels → combineMics →
+  // planCuts). Do not build new features on them.
+  // --------------------------------------------------------------------------
+
   /*
-   * Detect silent ranges in a mono Float32 sample buffer using windowed RMS.
-   * opts: { thresholdDb, windowSec, hopSec }
+   * (legacy — unit tests only) Detect silent ranges in a mono Float32 sample
+   * buffer using windowed RMS. opts: { thresholdDb, windowSec, hopSec }
    * Returns raw ranges [{start, end}] — call refineSilences() afterwards.
    */
   function detectSilences(samples, sampleRate, opts) {
@@ -64,7 +72,7 @@
   }
 
   /*
-   * Production pipeline over raw silence ranges:
+   * (legacy — unit tests only) The old pipeline over raw silence ranges:
    *  - merge near-adjacent silences (mergeGap)
    *  - drop silences shorter than minSilence (natural breaths stay)
    *  - shrink each silence by `padding` on both sides so speech never clips
@@ -117,7 +125,7 @@
   }
 
   /*
-   * Parse ffmpeg `silencedetect` stderr output into ranges.
+   * (legacy — unit tests only) Parse ffmpeg `silencedetect` stderr output into ranges.
    * Lines look like:
    *   [silencedetect @ 0x...] silence_start: 12.345
    *   [silencedetect @ 0x...] silence_end: 15.678 | silence_duration: 3.333
@@ -222,10 +230,17 @@
    * One microphone's levels, measured only over the envelope windows the
    * timeline actually uses (spans: [[i0, i1), …]). Digital zero is left out so a
    * silent camera pre-roll can't pretend the room is quiet.
-   * Returns { floor, speech, range, threshold, continuous, digital }:
-   *   continuous — speech is < 10 dB above the room (music bed, loud fan):
+   * Returns { floor, speech, range, threshold, continuous, digital, pauses, bed }:
+   *   continuous — speech is < 10 dB above the room (sustained music, loud fan):
    *                loudness can't find dead air, only digital zero counts;
-   *   digital    — nothing but digital zero here (a muted/empty mic).
+   *   digital    — nothing but digital zero here (a muted/empty mic);
+   *   pauses     — share of the span spent in pauses of 1 s or more;
+   *   bed        — steady like music: continuous, or a narrow loudness range
+   *                that never pauses (a beat). It never takes a track out of
+   *                the vote — a noisy guest mic is "steady" too — it only
+   *                shapes what Pulse says about the track.
+   * The threshold is always this mic's OWN automatic gate: Fine-tune → Manual
+   * is applied by the caller, to the tracks that vote as voices.
    */
   function micLevels(db, spans, tune) {
     var share = (tune && tune.share != null) ? tune.share : 0.30;
@@ -234,7 +249,7 @@
       a = Math.max(0, Math.floor(spans[s][0])); b = Math.min(db.length, Math.ceil(spans[s][1]));
       for (i = a; i < b; i++) if (db[i] > DIGITAL_SILENCE_DB) n++;
     }
-    if (n < 30) return { floor: null, speech: null, range: 0, threshold: DIGITAL_SILENCE_DB, continuous: false, digital: true };
+    if (n < 30) return { floor: null, speech: null, range: 0, threshold: DIGITAL_SILENCE_DB, continuous: false, digital: true, pauses: 1, bed: false };
     var vals = new Float32Array(n), j = 0;
     for (s = 0; s < spans.length; s++) {
       a = Math.max(0, Math.floor(spans[s][0])); b = Math.min(db.length, Math.ceil(spans[s][1]));
@@ -247,8 +262,98 @@
     var range = speech - floor;
     var continuous = range < 10;
     var thr = continuous ? DIGITAL_SILENCE_DB : floor + Math.min(share * range, range - 8);
-    if (tune && tune.manualDb != null && isFinite(tune.manualDb)) { thr = tune.manualDb; continuous = false; }
-    return { floor: floor, speech: speech, range: range, threshold: thr, continuous: continuous, digital: false };
+    var pauses = pauseShare(db, spans, thr, BED_PAUSE_SEC);
+    var bed = continuous || (range < BED_MAX_RANGE && pauses < BED_MAX_PAUSES);
+    return { floor: floor, speech: speech, range: range, threshold: thr, continuous: continuous, digital: false,
+             pauses: pauses, bed: bed };
+  }
+
+  /* What a steady track looks like. A beat is loud on every hit and dips
+     between hits (13–19 dB apart), and what it never does is PAUSE: its dips
+     are the gaps between hits, well under a second. A voice in a noisy room
+     can look the same (café clatter, a TV behind the guest), so this only
+     describes a track; see versusOthers for what tells music from a voice. */
+  var BED_PAUSE_SEC = 1.0;      // a real pause, whatever the preset
+  var BED_MAX_RANGE = 22;       // dB — a voice into its own mic swings 25–45 dB
+  var BED_MAX_PAUSES = 0.05;    // share of its span a bed spends in such pauses (intro, a break)
+
+  /* Share of the used windows (spans) that sit in quiet runs of at least
+     minSec under `threshold`, with the same hysteresis the cut uses. */
+  function pauseShare(db, spans, threshold, minSec) {
+    var flags = loudFlags(db, threshold), need = Math.max(1, Math.round(minSec / HOP));
+    var total = 0, paused = 0, s, i, a, b, run;
+    for (s = 0; s < spans.length; s++) {
+      a = Math.max(0, Math.floor(spans[s][0])); b = Math.min(db.length, Math.ceil(spans[s][1]));
+      if (b <= a) continue;
+      total += b - a; run = 0;
+      for (i = a; i < b; i++) {
+        if (!flags[i]) { run++; continue; }
+        if (run >= need) paused += run;
+        run = 0;
+      }
+      if (run >= need) paused += run;
+    }
+    return total ? paused / total : 0;
+  }
+
+  // ---- which tracks decide what is dead air ---------------------------------
+  // What a track SOUNDS like never takes it out of the vote — a guest in a
+  // noisy café, or a fast talker, sounds "steady" too, and leaving that mic
+  // out cut every one of the guest's answers. A track leaves the vote only
+  // when its NAME says music, or the owner says so; what it sounds like only
+  // decides whether Pulse ASKS.
+
+  /* What a Premiere track name says: 'music' ("Music", "BGM", "Song",
+     "Score", "Beat", "Background", "गाना"…), 'voice' ("Voice", "VO", "Mic",
+     "Host", "Guest"…), or '' — "Audio 3" says nothing, and a name that says
+     both ("Music + VO") is not trusted either way. A nested track's name is
+     "Nest › A2"; only its own part (after the last ›) counts. */
+  var MUSIC_NAME = /(^|[^a-z0-9])(music|musics|bgm|bg music|songs?|score|beats?|background|instrumental|gaana|gana|sangeet)(?![a-z0-9])/i;
+  var MUSIC_NAME_HI = /(संगीत|गाना|गीत|म्यूजिक|म्यूज़िक)/;
+  var VOICE_NAME = /(^|[^a-z0-9])(voices?|vo|v\.o\.?|mics?|microphone|host|guest|dialog|dialogue|narration|narrator|interview|speaker)(?![a-z0-9])/i;
+  function trackNameSays(name) {
+    var own = String(name == null ? '' : name).split('›').pop().trim();
+    if (!own) return '';
+    var music = MUSIC_NAME.test(own) || MUSIC_NAME_HI.test(own), voice = VOICE_NAME.test(own);
+    return (music && !voice) ? 'music' : (voice && !music) ? 'voice' : '';
+  }
+
+  /*
+   * How one track behaves while the OTHER tracks talk and while they pause.
+   * grid = combineMics(the others); srcs = this track's clips
+   * [{ seqStart, seqEnd, inPoint, speed, env }]. Returns { share, turn, talk, quiet }:
+   *   share — of the time the others are heard under this track, how much of
+   *           it they are talking: a music bed plays UNDER the talking; a
+   *           jingle plays in the pauses (share ≈ 0);
+   *   turn  — how much louder this track is in the others' pauses than while
+   *           they talk (dB, 90th percentile of each): a guest answers in the
+   *           host's pauses, so the guest's mic is 8–15 dB louder there however
+   *           noisy the guest's room is; music does not care who is talking
+   *           (−2…+1 dB). 0 when either side is under half a second.
+   */
+  function versusOthers(grid, srcs) {
+    var q = [], t = [];
+    for (var s = 0; s < (srcs || []).length; s++) {
+      var src = srcs[s], sp = src.speed > 0 ? src.speed : 1, env = src.env;
+      if (!env || !env.db) continue;
+      var g0 = Math.max(0, Math.ceil((src.seqStart - grid.t0) / grid.hop - 0.5 - 1e-9));
+      var g1 = Math.min(grid.n, Math.ceil((src.seqEnd - grid.t0) / grid.hop - 0.5 - 1e-9));
+      for (var g = g0; g < g1; g++) {
+        var st = grid.state[g];
+        if (!st) continue;                                  // nobody else is on the timeline here
+        var m = src.inPoint + (grid.t0 + (g + 0.5) * grid.hop - src.seqStart) * sp;
+        var k = Math.floor((m - (env.start || 0)) / (env.hop || HOP));
+        if (k < 0 || k >= env.db.length || !(env.db[k] > DIGITAL_SILENCE_DB)) continue;
+        (st === 2 ? t : q).push(env.db[k]);
+      }
+    }
+    var enough = Math.round(0.5 / HOP);
+    var turn = 0;
+    if (q.length >= enough && t.length >= enough) {
+      q.sort(function (a, b) { return a - b; }); t.sort(function (a, b) { return a - b; });
+      turn = pct(q, 0.9) - pct(t, 0.9);
+    }
+    return { share: (q.length + t.length) ? t.length / (q.length + t.length) : 0, turn: turn, talk: t.length * HOP, quiet: q.length * HOP };
   }
 
   /* Loud(1)/quiet(0) per window with hysteresis: speech ends when the level
@@ -416,22 +521,52 @@
     return o;
   }
 
+  /* How much of an item must still be spoken for it to stay after a cut.
+     The host snaps every cut edge to a whole frame (up to half a frame, ~20 ms,
+     either way), so a retake cut that started exactly on the removed take's
+     first word left 10–20 ms of it — and "keep anything over 10 ms" brought
+     that word back ("so I I think that we go"), and left a fully-cut caption
+     line behind as a 10–20 ms cue carrying all its text.
+       a word:  at least half of it, and at least 50 ms (all of it if shorter);
+       a line:  at least 50 ms; a line with per-word timings stays only while
+                one of its words does, and its text is rebuilt from them.
+     Which rule an item gets is said by the caller (opts.kind: 'words' for a
+     word list, 'lines' for caption cues) — a one-word line ("Haan.") or a
+     line with no spaces (Chinese, Japanese) is still a LINE, and the word
+     rule dropped it whenever the pause it ran into was cut. Without a kind,
+     an item with one word of text is treated as a word. */
+  var WORD_KEEP_SEC = 0.05, LINE_KEEP_SEC = 0.05;
+  function oneWord(it) { return !/\S\s+\S/.test(String(it.text == null ? '' : it.text).trim()); }
+  function wordNeeds(len) { return Math.min(len, Math.max(WORD_KEEP_SEC, len / 2)); }
+
+  /* The line's text after some of its words were cut: the surviving tokens of
+     its own text when they line up one-to-one with its words (punctuation and
+     script kept), else the surviving words joined. */
+  function survivingText(line, keepIdx) {
+    var toks = String(line.text == null ? '' : line.text).trim().split(/\s+/);
+    if (toks.length === line.words.length) return keepIdx.map(function (j) { return toks[j]; }).join(' ');
+    return keepIdx.map(function (j) { return String(line.words[j].text == null ? '' : line.words[j].text).trim(); })
+      .filter(Boolean).join(' ');
+  }
+
   /*
    * Ripple a list of timed items through a set of CUT ranges (same time base) —
    * exactly what a ripple-delete does on the timeline. START and END are mapped
    * separately: a time after a cut slides left by the cut's length, a time
-   * inside a cut collapses onto the cut's start. So an item is dropped only when
-   * NOTHING of it survives (it lay entirely inside cuts); a caption line that
-   * merely spans a removed pause keeps its words and just gets shorter. Because
-   * the mapping never reverses order, lines that did not overlap before cannot
-   * overlap after (the old midpoint rule dropped whole lines whose words were
-   * still spoken, and left the next line overlapping the previous one).
-   * Nested per-word timings (cue.words) are remapped the same way.
-   * closeGaps:false leaves the gap open: nothing shifts, fully-cut items drop,
+   * inside a cut collapses onto the cut's start. A caption line that merely
+   * spans a removed pause keeps its words and just gets shorter; an item goes
+   * when too little of it is still spoken (wordNeeds / LINE_KEEP_SEC above — a
+   * sliver left by frame snapping is not speech). Because the mapping never
+   * reverses order, lines that did not overlap before cannot overlap after.
+   * Nested per-word timings (cue.words) are remapped with the word rule; a
+   * line none of whose words is still spoken goes, one that lost some of its
+   * words gets its text rebuilt from the ones that are left.
+   * closeGaps:false leaves the gap open: nothing shifts, cut items drop,
    * edges inside a cut are pulled back to the surviving side.
-   * items: [{start,end,…}], ranges: [{start,end}].
+   * items: [{start,end,…}], ranges: [{start,end}], opts: { kind: 'words' | 'lines' }.
    */
-  function rippleItems(items, ranges, closeGaps) {
+  function rippleItems(items, ranges, closeGaps, opts) {
+    var kind = opts && opts.kind;
     if (!items || !items.length) return items ? items.slice() : [];
     var merged = mergeRanges((ranges || []).filter(function (r) { return r.end > r.start; }), 0.0001);
     if (!merged.length) return items.slice();
@@ -452,11 +587,16 @@
       }
       return null;
     }
-    var out = [];
-    for (var k = 0; k < items.length; k++) {
-      var it = items[k], ns, ne;
-      var kept = (it.end - it.start) - (removedBefore(it.end) - removedBefore(it.start));
-      if (kept <= 0.01) continue;                          // entirely inside cuts → gone
+    function survives(it, need) {
+      var len = it.end - it.start;
+      if (!(len > 0)) return !cutAt(it.start);             // a zero-length mark: gone only inside a cut
+      var kept = len - (removedBefore(it.end) - removedBefore(it.start));
+      return kept >= need(len) - 1e-9;
+    }
+    function asWord(len) { return wordNeeds(len); }
+    function asLine(len) { return Math.min(len, LINE_KEEP_SEC); }
+    function moved(it) {
+      var ns, ne;
       if (closeGaps) {
         ns = it.start - removedBefore(it.start);
         ne = it.end - removedBefore(it.end);
@@ -466,9 +606,24 @@
         ne = ce ? ce.start : it.end;
         if (ne <= ns) { ns = it.start; ne = it.end; }
       }
-      var o = carry(it, Math.max(0, ns), Math.max(0, ne));
-      if (it.words && it.words.length) o.words = rippleItems(it.words, merged, closeGaps);
-      out.push(o);
+      return carry(it, Math.max(0, ns), Math.max(0, ne));
+    }
+    var out = [];
+    for (var k = 0; k < items.length; k++) {
+      var it = items[k];
+      if (it.words && it.words.length) {
+        var keepIdx = [];
+        for (var j = 0; j < it.words.length; j++) if (survives(it.words[j], asWord)) keepIdx.push(j);
+        if (!keepIdx.length) continue;                     // none of its words is still spoken → the line goes
+        var o = moved(it);
+        o.words = keepIdx.map(function (x) { return moved(it.words[x]); });
+        if (keepIdx.length < it.words.length) o.text = survivingText(it, keepIdx);
+        out.push(o);
+        continue;
+      }
+      var isWord = kind === 'words' || (kind !== 'lines' && oneWord(it));
+      if (!survives(it, isWord ? asWord : asLine)) continue;
+      out.push(moved(it));
     }
     return out;
   }
@@ -557,6 +712,8 @@
     tuning: tuning,
     makeEnvelopeBuilder: makeEnvelopeBuilder,
     micLevels: micLevels,
+    trackNameSays: trackNameSays,
+    versusOthers: versusOthers,
     loudFlags: loudFlags,
     quietRuns: quietRuns,
     combineMics: combineMics,

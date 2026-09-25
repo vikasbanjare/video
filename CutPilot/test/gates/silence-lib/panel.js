@@ -35,8 +35,14 @@ function hasFfmpeg() { try { cp.execFileSync('ffmpeg', ['-hide_banner', '-versio
 
 /*
  * timeline: { seqId, seqName, audio:[{ name, muted, locked, items:[{ name, mediaPath,
- *             seqStart, seqEnd, inPoint, outPoint, speed }] }], video:[…], selection }
- * fakes: { '<mediaPath>': 'stall' } → that file's decode sends ~5 s of audio, then hangs.
+ *             seqStart, seqEnd, inPoint, outPoint, speed }] }], video:[…], selection,
+ *             host(fn, argJson) → a JSON reply string, or undefined for the stub's
+ *             own answer (lets a gate answer with the REAL host.jsx),
+ *             noFfmpeg: true → the panel finds no ffmpeg and reads the media
+ *             files itself (its Web Audio fallback) }
+ * fakes: { '<mediaPath>': 'stall' } → that file's decode sends ~5 s of audio, then hangs;
+ *        'crash' → it sends ~5 s of audio, then the decoder quits with an error;
+ *        'slow'  → it trickles the real audio in over ~4 s (a long file on a slow disk).
  */
 async function openPanel(browser, timeline, fakes) {
   const page = await browser.newPage();
@@ -44,12 +50,14 @@ async function openPanel(browser, timeline, fakes) {
   const calls = [];
   const procs = {};
   fakes = fakes || {};
+  timeline.audio = timeline.audio || [];
   const first = timeline.audio.find(t => t.items.length);
   const primary = first ? first.items[0] : null;
   const fingerprint = 'fp-' + JSON.stringify(timeline.audio.map(t => t.items.length));
   await page.exposeFunction('__hostCall', (fn, argJson) => {
     let args = null; try { args = JSON.parse(argJson); } catch (e) {}
     calls.push({ fn, args });
+    if (timeline.host) { const own = timeline.host(fn, argJson); if (own !== undefined) return own; }
     const ok = (o) => JSON.stringify(Object.assign({ ok: true }, o));
     if (fn === 'CP_getCutSources') {
       return ok({
@@ -72,7 +80,8 @@ async function openPanel(browser, timeline, fakes) {
     if (fn === 'CP_razorRipple') {
       const rs = (args && args.ranges) || [];
       return ok({ cuts: rs.length, removed: rs, removedSeconds: rs.reduce((a, r) => a + r.end - r.start, 0), removedClips: rs.length * 2,
-                  tracks: timeline.audio.map((t, i) => ({ track: 'A' + (i + 1), lifted: rs.length, moved: rs.length })) });
+                  tracks: timeline.audio.map((t, i) => ({ track: 'A' + (i + 1), lifted: rs.length, moved: rs.length })),
+                  backup: args && args.backup ? (timeline.seqName || 'Episode 12') + ' Copy' : null });
     }
     if (fn === 'CP_getEnv') return ok({ sequenceName: timeline.seqName || 'Episode 12', fps: 25, width: 1080, height: 1920, videoTracks: 1, audioTracks: timeline.audio.length, endSeconds: 60 });
     return ok({});
@@ -80,7 +89,38 @@ async function openPanel(browser, timeline, fakes) {
   // child_process.spawn, answered by REAL ffmpeg (or a scripted stall)
   await page.exposeFunction('__spawn', (id, bin, args) => {
     const media = args[args.indexOf('-i') + 1];
+    calls.push({ fn: '__spawn', args: media });
     const send = (kind, payload) => page.evaluate((i, k, p) => window.__procEvent(i, k, p), id, kind, payload).catch(() => {});
+    if (fakes[media] === 'slow') {
+      const real = fakes.__realFor && fakes.__realFor[media];
+      if (args.indexOf('pipe:1') >= 0) {
+        const pcm = cp.execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', real, '-ac', '1', '-ar', '16000', '-f', 's16le', 'pipe:1'], { maxBuffer: 1 << 26 });
+        const n = 30, step = Math.ceil(pcm.length / n / 2) * 2;
+        let k = 0;
+        const tick = () => {
+          if (procs[id] === 'killed') return;
+          if (k * step >= pcm.length) { send('close', 0); return; }
+          send('stdout', pcm.slice(k * step, Math.min(pcm.length, (k + 1) * step)).toString('base64')); k++;
+          setTimeout(tick, 140);
+        };
+        procs[id] = { kill() { procs[id] = 'killed'; } };
+        setTimeout(tick, 30);
+      } else {
+        setTimeout(() => { send('stderr', 'Input #0, wav, from \'' + media + '\':\n  Duration: 00:00:27.50, bitrate: 768 kb/s\n  Stream #0:0: Audio: pcm_s16le, 48000 Hz, 1 channels\n'); send('close', 1); }, 30);
+      }
+      return true;
+    }
+    if (fakes[media] === 'crash') {
+      const real = fakes.__realFor && fakes.__realFor[media];
+      if (args.indexOf('pipe:1') >= 0) {
+        const pcm = cp.execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-t', '5', '-i', real, '-ac', '1', '-ar', '16000', '-f', 's16le', 'pipe:1'], { maxBuffer: 1 << 26 });
+        setTimeout(() => send('stdout', pcm.toString('base64')), 30);
+        setTimeout(() => { send('stderr', '[pcm_s16le @ 0x7f] Error while decoding stream #0:0: Invalid data found when processing input\n'); send('close', 1); }, 200);
+      } else {
+        setTimeout(() => { send('stderr', 'Input #0, wav, from \'' + media + '\':\n  Duration: 00:00:27.50, bitrate: 768 kb/s\n  Stream #0:0: Audio: pcm_s16le, 48000 Hz, 1 channels\n'); send('close', 1); }, 30);
+      }
+      return true;
+    }
     if (fakes[media] === 'stall') {
       const real = fakes.__realFor && fakes.__realFor[media];
       if (args.indexOf('pipe:1') >= 0) {
@@ -106,7 +146,7 @@ async function openPanel(browser, timeline, fakes) {
     p.on('error', (e) => send('error', e.message));
     return true;
   });
-  await page.exposeFunction('__kill', (id) => { try { procs[id] && procs[id].kill(); } catch (e) {} return true; });
+  await page.exposeFunction('__kill', (id) => { calls.push({ fn: '__kill', args: id }); try { procs[id] && procs[id].kill(); } catch (e) {} return true; });
   await page.evaluateOnNewDocument(() => {
     window.__adobe_cep__ = {
       evalScript(script, cb) {
@@ -122,6 +162,21 @@ async function openPanel(browser, timeline, fakes) {
   await page.goto('file://' + path.join(PANEL_DIR, 'index.html'), { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => !!document.getElementById('btn-autoclean') && typeof window.CPSilence !== 'undefined', { timeout: 20000 });
   await new Promise((r) => setTimeout(r, 1200));
+  // the media files' real size and date, for the panel's fs.statSync
+  const stats = {};
+  for (const t of timeline.audio) for (const it of t.items) {
+    if (it.mediaPath && fs.existsSync(it.mediaPath)) { const st = fs.statSync(it.mediaPath); stats[it.mediaPath] = { size: st.size, mtimeMs: st.mtimeMs }; }
+  }
+  await page.evaluate((st) => { window.__stats = st; }, stats);
+  if (timeline.noFfmpeg) {
+    // no ffmpeg on this machine: the panel reads each media file's bytes itself
+    const files = {};
+    for (const t of timeline.audio) for (const it of t.items) if (it.mediaPath && fs.existsSync(it.mediaPath)) files[it.mediaPath] = fs.readFileSync(it.mediaPath).toString('base64');
+    await page.evaluate((f) => {
+      window.__noFfmpeg = true; window.__files = {};
+      for (const k of Object.keys(f)) { const b = atob(f[k]), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); window.__files[k] = u; }
+    }, files);
+  }
   await page.evaluate(() => {
     // a slow disk / watchdog in seconds instead of minutes (both the old 240 s
     // silencedetect limit and the new 60 s stall limit)
@@ -137,7 +192,9 @@ async function openPanel(browser, timeline, fakes) {
       else if (kind === 'error') h.error.forEach(f => f(new Error(payload)));
     };
     window.require = function (mod) {
-      if (mod === 'fs') return { existsSync: (p) => p === '/usr/bin/ffmpeg', readFileSync() { throw new Error('no fs in test'); } };
+      if (mod === 'fs') return { existsSync: (p) => !window.__noFfmpeg && p === '/usr/bin/ffmpeg',
+                                 readFileSync(p) { if (window.__files && window.__files[p]) return window.__files[p]; throw new Error('no fs in test'); },
+                                 statSync(p) { const s = window.__stats && window.__stats[p]; if (!s) throw new Error('ENOENT: ' + p); return s; } };
       if (mod === 'os') return { homedir: () => '/nonexistent', tmpdir: () => '/tmp', platform: () => 'darwin' };
       if (mod === 'path') return { join: (...a) => a.join('/'), basename: (p) => String(p).split('/').pop() };
       if (mod === 'child_process') return {
@@ -159,11 +216,34 @@ async function openPanel(browser, timeline, fakes) {
   return { page, calls };
 }
 
-/* Tick the boxes, pick the preset, press "Clean up my video", accept the
-   confirm. Returns { confirm, toast, razor:[args…], calls }. */
+/*
+ * Answer Pulse's "plays the whole time, like music — ignore it?" question
+ * (#sil-ask-ov) the way a gate says: music = 'yes' | 'no' | 'close', or an
+ * object { '<text in the question>': 'yes'|'no'|'close' }. Unanswered ones get
+ * 'no' — what the owner's panel does by default (a track is a voice). Runs in
+ * the page; returns the question's text, or null when none is showing.
+ */
+function answerMusicInPage(o) {
+  const ask = document.getElementById('sil-ask-ov');
+  if (!ask) return null;
+  const txt = (document.getElementById('sil-ask-text') || ask).innerText;
+  let a = 'no';
+  if (typeof o.music === 'string') a = o.music;
+  else if (o.music) for (const k of Object.keys(o.music)) if (txt.indexOf(k) >= 0) { a = o.music[k]; break; }
+  if (a === 'yes') document.getElementById('sil-ask-music').click();
+  else if (a === 'close') ask.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+  else document.getElementById('sil-ask-voice').click();
+  return txt;
+}
+
+/* Tick the boxes, pick the preset, press "Clean up my video", answer any
+   music question (opts.music, see answerMusicInPage), accept the confirm.
+   Returns { confirm, toast, asked:[question texts], razor:[args…], calls }. */
 async function cleanUp(page, calls, opts) {
   opts = opts || {};
-  const r = await page.evaluate(async (o) => {
+  const r = await page.evaluate(async (o, answerSrc) => {
+    const answer = new Function('o', 'return (' + answerSrc + ')(o);');
+    const asked = [];
     const tab = document.querySelector('[data-tab="silence"]'); if (tab) tab.click();
     // no strength given = leave the panel's current setting (and Fine-tune) alone
     const b = o.strength ? document.querySelector('#ac-strength button[data-s="' + o.strength + '"]') : null; if (b) b.click();
@@ -173,20 +253,22 @@ async function cleanUp(page, calls, opts) {
     document.getElementById('btn-autoclean').click();
     for (let i = 0; i < 600; i++) {
       await new Promise((res) => setTimeout(res, 50));
+      const q = answer(o);
+      if (q != null) { asked.push(q); continue; }
       const ov = document.getElementById('cp-confirm-ov');
       if (ov) {
         const txt = ov.innerText;
         document.getElementById('cp-confirm-ok').click();
         await new Promise((res) => setTimeout(res, 600));
         const t = document.getElementById('toast');
-        return { confirm: txt, toast: t ? t.textContent : '' };
+        return { confirm: txt, toast: t ? t.textContent : '', asked };
       }
       const t = document.getElementById('toast');
       const prog = document.getElementById('autoclean-progress');
-      if (t && t.textContent && !/hidden/.test(t.className) && prog && prog.classList.contains('hidden')) return { confirm: null, toast: t.textContent };
+      if (t && t.textContent && !/hidden/.test(t.className) && prog && prog.classList.contains('hidden')) return { confirm: null, toast: t.textContent, asked };
     }
-    return { timeout: true, prog: document.getElementById('autoclean-progress').textContent };
-  }, opts);
+    return { timeout: true, prog: document.getElementById('autoclean-progress').textContent, asked };
+  }, opts, answerMusicInPage.toString());
   r.razor = calls.filter(c => c.fn === 'CP_razorRipple').map(c => c.args);
   r.errors = calls.filter(c => c.fn === '__pageerror').map(c => c.args);
   return r;
@@ -201,4 +283,30 @@ async function withBrowser(fn) {
   try { return await fn(browser); } finally { await browser.close(); }
 }
 
-module.exports = { openPanel, cleanUp, withBrowser, PANEL_DIR, skip };
+/* Press "⚡ Find the silences" (the step-by-step drawer), answer any music
+   question like cleanUp does, and wait for the result. Returns { toast,
+   heard (the “What Pulse heard” box), found (the list of cuts is showing), asked }. */
+async function findSilences(page, opts) {
+  opts = opts || {};
+  return page.evaluate(async (o, answerSrc) => {
+    const answer = new Function('o', 'return (' + answerSrc + ')(o);');
+    const asked = [];
+    document.querySelector('[data-tab="silence"]').click();
+    document.querySelector('#tab-silence details.advanced').open = true;
+    const b = o.strength ? document.querySelector('#sil-strength button[data-s="' + o.strength + '"]') : null; if (b) b.click();
+    const t0 = document.getElementById('toast'); t0.textContent = ''; t0.className = 'toast hidden';
+    document.getElementById('btn-analyze').click();
+    for (let i = 0; i < 600; i++) {
+      await new Promise((res) => setTimeout(res, 50));
+      const q = answer(o);
+      if (q != null) { asked.push(q); continue; }
+      const t = document.getElementById('toast'), prog = document.getElementById('analyze-progress');
+      if (t.textContent && prog.classList.contains('hidden')) break;
+    }
+    const box = document.getElementById('sil-heard');
+    return { toast: document.getElementById('toast').textContent, heard: box && !box.classList.contains('hidden') ? box.innerText : '',
+             found: !document.getElementById('results').classList.contains('hidden'), asked };
+  }, opts, answerMusicInPage.toString());
+}
+
+module.exports = { openPanel, cleanUp, findSilences, withBrowser, PANEL_DIR, skip };

@@ -37,18 +37,23 @@ const tune = (st) => (CPSilence.tuning ? CPSilence.tuning(st) : { minPause: 0.8,
     let r = await P.cleanUp(page, calls, { strength: 'gentle', takes: false });
     const plan = await page.evaluate(() => (window.CP_DEBUG_EXT && window.CP_DEBUG_EXT.silence) ? window.CP_DEBUG_EXT.silence.plan() : null);
     await page.close();
-    ok(!!plan && plan.mics.filter(m => !m.excluded).length === 2 && plan.mics.filter(m => m.excluded).map(m => m.name).join() === 'music_bed.wav',
-      'each mic got its OWN room-noise gate, and only the music bed was left out: ' +
-      (plan ? JSON.stringify(plan.mics.map(m => [m.tracks, m.excluded ? 'left out' : Math.round(m.floor) + '→' + Math.round(m.threshold) + ' dB'])) : 'no plan'));
     let cuts = r.razor.length ? r.razor[0].ranges : [];
     let s = SC.score(mics, cuts, tune('gentle'));
     const g = SC.score(guestOnly, cuts, tune('gentle'));
+    const h = SC.score([{ spec: S.host.spec, items: itemsFull }], cuts, tune('gentle'));
+    // tied to the cut list, not just to what the plan says: each mic's own
+    // gate is what keeps ITS speaker's words, and the bed decided nothing
+    ok(!!plan && plan.mics.filter(m => !m.excluded).length === 2 && plan.mics.filter(m => m.excluded).map(m => m.name).join() === 'music_bed.wav' &&
+       r.razor.length === 1 && g.clipped <= 0.02 && h.clipped <= 0.02 && s.removed >= 0.7 * s.removable,
+      'each mic got its OWN room-noise gate, and only the music bed was left out — and the cuts show it (host ' + secs(h.clipped) + ', guest ' +
+      secs(g.clipped) + ' of speech cut, ' + secs(s.removed) + ' of dead air removed): ' +
+      (plan ? JSON.stringify(plan.mics.map(m => [m.tracks, m.excluded ? 'left out' : Math.round(m.floor) + '→' + Math.round(m.threshold) + ' dB'])) : 'no plan'));
     ok(r.razor.length === 1, 'A1 host + A2 guest + A3 music: the cut is made (' + (r.razor.length ? cuts.length + ' sections' : r.toast) + ')');
     ok(g.clipped <= 0.02, 'NONE of the guest\'s answers is cut (' + secs(g.clipped) + ' of guest speech inside cuts)');
     ok(s.clipped <= 0.02, 'no word of either mic is cut (' + secs(s.clipped) + ')');
     ok(s.removed >= 0.7 * s.removable, 'the dead air where BOTH are quiet is removed — ' + secs(s.removed) + ' of ' + secs(s.removable));
-    ok(/A1/.test(r.confirm || '') && /A2/.test(r.confirm || '') && /A3[^\n]*left out/i.test(r.confirm || ''),
-      'the confirm reports every track honestly: both mics heard, the music track left out of the vote');
+    ok(/A1/.test(r.confirm || '') && /A2/.test(r.confirm || '') && /A3[^\n]*left out/i.test(r.confirm || '') && g.clipped <= 0.02 && h.clipped <= 0.02,
+      'the confirm reports every track honestly: both mics heard (neither mic\'s words are cut), the music track left out of the vote');
     if (r.confirm) console.log('    confirm: ' + r.confirm.replace(/\n+/g, ' ⏎ ').slice(0, 400));
 
     // one recorder file with a stream per mic
@@ -74,6 +79,17 @@ const tune = (st) => (CPSilence.tuning ? CPSilence.tuning(st) : { minPause: 0.8,
     s = SC.score([{ spec: S.hostRoom.spec, items: itemsFull }, { spec: S.guestRoom.spec, items: itemsFull }], cuts, tune('balanced'));
     ok(r.razor.length === 1 && s.clipped <= 0.02 && s.removed >= 0.7 * s.removable,
       'in-room podcast (mics hear each other), YouTube preset: ' + secs(s.removed) + ' of ' + secs(s.removable) + ' dead air removed, ' + secs(s.clipped) + ' of speech cut');
+    // the same room, but the host's mic misses the guest's last answer: only
+    // the guest's own mic can protect it (the bleed above would hide a mic
+    // that was never listened to)
+    ({ page, calls } = await P.openPanel(browser, { seqId: 'seq-room2', video: [{}],
+      audio: [{ name: 'Host', items: [whole(S.hostRoomPart.file)] }, { name: 'Guest', items: [whole(S.guestRoom.file)] }] }));
+    r = await P.cleanUp(page, calls, { strength: 'balanced', takes: false });
+    await page.close();
+    cuts = r.razor.length ? r.razor[0].ranges : [];
+    const lastAnswer = SC.score([{ spec: Object.assign({}, S.guestRoom.spec, { speech: [SC.GUEST[3]] }), items: itemsFull }], cuts, tune('balanced'));
+    ok(r.razor.length === 1 && lastAnswer.clipped <= 0.02,
+      'in-room, the guest\'s last answer heard ONLY by the guest\'s mic is kept (' + secs(lastAnswer.clipped) + ' of it cut)');
   });
   console.log(failed ? '\n2-MIC PODCAST: ' + failed + ' check(s) failed ✗' : '\n2-MIC PODCAST: every mic heard, no answer lost ✓');
   process.exit(failed ? 1 : 0);

@@ -100,6 +100,9 @@ function build(dir) {
   // the same conversation in one room: each mic also picks up the other voice
   S.hostRoom = mk('host_mic_room.wav', { dur: PDUR, floorDb: -58, speech: HOST, bleed: { bursts: GUEST, db: -45 }, seed: 22 });
   S.guestRoom = mk('guest_mic_room.wav', { dur: PDUR, floorDb: -52, speech: GUEST, bleed: { bursts: HOST, db: -46 }, seed: 32 });
+  // …where the host's mic does NOT pick up the guest's last answer (the guest
+  // turned away): only the guest's own mic hears it
+  S.hostRoomPart = mk('host_mic_room_part.wav', { dur: PDUR, floorDb: -58, speech: HOST, bleed: { bursts: GUEST.slice(0, 3), db: -45 }, seed: 23 });
   S.musicTrack = mk('music_bed.wav', { dur: PDUR, musicDb: -28 });
   return { dir, S };
 }

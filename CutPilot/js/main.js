@@ -10067,29 +10067,102 @@
     var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
     return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (s < 10 ? '0' : '') + s;
   }
+  /* A track's label as the owner sees it on the timeline ("A2"), and a key
+     that is unique even for the tracks INSIDE a nested sequence. */
+  function silTrackLab(tr) { return tr.label || ('A' + (tr.index + 1)); }
+  function silTrackKey(tr) { return tr.key || silTrackLab(tr); }
   function silTrackLabel(tr) {
-    var lab = 'A' + (tr.index + 1);
+    var lab = silTrackLab(tr);
     return lab + (tr.name && tr.name !== lab ? ' “' + tr.name + '”' : '');
+  }
+
+  /* A music clip plays UNDER the talking at least this share of the time the
+     voices are heard with it (a bed); less, and it plays in the pauses — a
+     jingle, an intro split off on its own — which is content, not dead air. */
+  var SIL_BED_UNDER_TALK = 0.25;
+  /* A voice is at least this much louder (dB) in the other tracks' pauses
+     than while they talk: it answers there. Music does not care (−2…+1 dB). */
+  var SIL_TURN_DB = 4;
+  /* A track that keeps at least this much of the others' pauses from being
+     cut is worth asking about, or naming in the message. */
+  var SIL_HELD_SEC = 1.0;
+  /* …but only if it plays the whole time: a track that stops for a second or
+     more for this share of its time is somebody talking, not a bed. */
+  var SIL_PLAYS_ON = 0.25;
+
+  /* The owner's own word on what a track is, per sequence: 'mic' (always
+     listen to it) or 'music' (never let it decide what is dead air). Given
+     with one tap when Pulse asks, or under “What Pulse heard”. Without it a
+     track is a voice, unless its track name says music. */
+  state.silRoles = state.silRoles || {};
+  function silRolesFor(seqId) { return state.silRoles[seqId || '?'] || (state.silRoles[seqId || '?'] = {}); }
+
+  /* The Stop button under a scan: silStopper(id) shows it and returns the
+     token a scan listens to; stop.stopped is set when the owner taps it, and
+     stop.now (filled in by the running decode) ends that decode at once. */
+  function silStopper(btnId) {
+    var stop = { stopped: false, now: null }, b = $(btnId);
+    if (b) {
+      b.classList.remove('hidden');
+      b.onclick = function () { stop.stopped = true; if (stop.now) { try { stop.now(); } catch (e) {} } };
+    }
+    stop.done = function () { if (b) { b.classList.add('hidden'); b.onclick = null; } };
+    return stop;
+  }
+  function silStoppedError() { var e = new Error('Stopped — nothing was cut.'); e.stopped = true; return e; }
+
+  /* The last few envelopes heard, so pressing Clean up again — after marking
+     a track as music, or changing the preset — doesn't decode an hour of
+     audio all over again. Keyed by the file's size and modified time as well
+     as the span, so a changed file is always heard afresh; without a file
+     stat (no Node) nothing is kept. */
+  var silEnvCache = [];
+  function silEnvKey(mediaPath, start, dur) {
+    var st = null;
+    try { st = nodeReq('fs').statSync(mediaPath); } catch (e) { return null; }
+    if (!st || !(st.size > 0)) return null;
+    var mt = +st.mtimeMs || +st.mtime || 0;
+    return [mediaPath, st.size, mt, start.toFixed(3), dur.toFixed(3)].join('|');
   }
 
   /* One media file's used span → loudness envelope. Rejects, cutting NOTHING,
      when the scan could not finish (the old scan closed an open pause at the
-     end of the file on a timeout and deleted the rest of the episode). */
-  function listenTo(mediaPath, lo, hi, onProg, ffArg) {
+     end of the file on a timeout and deleted the rest of the episode) or the
+     owner tapped Stop. */
+  function listenTo(mediaPath, lo, hi, onProg, ffArg, stop) {
     var ff = ffArg || resolveFfmpeg();
     var name = silBase(mediaPath);
-    if (!ff) return CPAudio.webAudioEnvelope(mediaPath, CPSilence);
+    if (stop && stop.stopped) return Promise.reject(silStoppedError());
+    if (!ff) {
+      // no audio engine: the browser decodes the file — Stop ends the wait at once
+      return CPAudio.webAudioEnvelope(mediaPath, CPSilence, { stop: stop || null }).then(function (env) {
+        if (env.stopped || (stop && stop.stopped)) throw silStoppedError();
+        return env;
+      });
+    }
+    var start0 = Math.max(0, lo - 0.5), key = silEnvKey(mediaPath, start0, (hi - start0) + 0.5);
+    for (var ci = 0; key && ci < silEnvCache.length; ci++) {
+      if (silEnvCache[ci].key === key) { if (onProg) { try { onProg(hi - lo); } catch (eP) {} } return Promise.resolve(silEnvCache[ci].env); }
+    }
     return CPAudio.ffmpegAudioInfo(mediaPath, ff).then(function (info) {
+      if (stop && stop.stopped) throw silStoppedError();
       if (info.missing) throw new Error('“' + name + '” is offline — the file isn’t where Premiere says it is. Relink it (right-click the clip → Link Media) and try again. Nothing was cut.');
       if (!info.streams) throw new Error('“' + name + '” has no sound in it — Pulse can’t listen to it. Nothing was cut.');
       var start = Math.max(0, lo - 0.5);
-      return CPAudio.ffmpegRmsEnvelope(mediaPath, ff, { start: start, duration: (hi - start) + 0.5, streams: info.streams, onProgress: onProg }, CPSilence);
+      return CPAudio.ffmpegRmsEnvelope(mediaPath, ff, { start: start, duration: (hi - start) + 0.5, streams: info.streams, onProgress: onProg, stop: stop || null }, CPSilence);
     }).then(function (env) {
+      if (env.stopped || (stop && stop.stopped)) throw silStoppedError();
       if (!env.complete) {
-        throw new Error('Pulse couldn’t finish listening to “' + name + '” (' + env.reason + '). Nothing was cut. ' +
+        // the engine's own error text goes to the diagnostics, never the toast
+        try { diag('silence', 'listen incomplete: ' + silBase(mediaPath) + ': ' + env.reason); } catch (eD) {}
+        throw new Error('Pulse couldn’t finish listening to “' + name + '” (' + (env.why || 'it stopped part-way through') + '). Nothing was cut. ' +
           'If the file is on an external or network drive, copy it to your Mac’s internal drive and try again.');
       }
+      if (key) { silEnvCache.unshift({ key: key, env: env }); if (silEnvCache.length > 6) silEnvCache.length = 6; }   // only a complete scan is kept
       return env;
+    }, function (e) {
+      if (e && e.detail) { try { diag('silence', 'listen failed: ' + silBase(mediaPath) + ': ' + e.detail); } catch (eD2) {} }
+      throw e;
     });
   }
 
@@ -10098,13 +10171,13 @@
    * clip on every track (muted tracks left out when a live one exists), each
    * media file decoded once with its OWN room-noise gate, then a moment counts
    * as dead air only when EVERY mic under it is quiet. A 2-mic podcast never
-   * loses the guest's answers; a music bed on its own track is recognised as
-   * steady sound and left out of the vote (it is still cut, so it stays in
-   * sync). src = CP_getCutSources(); tune = silTune(). Resolves a plan:
-   * { cuts, range, selection, mics, notes, tooLoud, sequenceId, sequenceName,
-   *   fingerprint, sources }.
+   * loses the guest's answers. Which tracks vote is decided by silDecide (a
+   * music track leaves the vote only by its name or the owner's word).
+   * src = CP_getCutSources(); tune = silTune(). Resolves a plan:
+   * { cuts, range, selection, mics, notes, tooLoud, ask, held, musicOnly,
+   *   sequenceId, sequenceName, fingerprint, sources, heard }.
    */
-  function analyzeTimeline(src, tune, prog) {
+  function analyzeTimeline(src, tune, prog, stop) {
     var tracks = (src && src.audio) || [];
     var notes = [], sources = [];
     var anyLive = tracks.some(function (t) { return !t.muted && t.items.some(function (it) { return !it.disabled; }); });
@@ -10139,10 +10212,13 @@
     sources.forEach(function (s) {
       if (s.unreadable) return;
       var sp = mediaSpan(s), m = media[s.mediaPath];
-      if (!m) { m = media[s.mediaPath] = { path: s.mediaPath, lo: sp[0], hi: sp[1], sources: [], tracks: [] }; order.push(s.mediaPath); }
+      if (!m) { m = media[s.mediaPath] = { path: s.mediaPath, lo: sp[0], hi: sp[1], sources: [], tracks: [], keys: [], names: [], nests: [] }; order.push(s.mediaPath); }
       m.lo = Math.min(m.lo, sp[0]); m.hi = Math.max(m.hi, sp[1]); m.sources.push(s);
-      var lab = 'A' + (s.track.index + 1);
+      var lab = silTrackLab(s.track), key = silTrackKey(s.track), nest = s.track.nested || s.item.nested;
       if (m.tracks.indexOf(lab) < 0) m.tracks.push(lab);
+      if (m.keys.indexOf(key) < 0) m.keys.push(key);
+      if (s.track.name && m.names.indexOf(String(s.track.name)) < 0) m.names.push(String(s.track.name));
+      if (nest && m.nests.indexOf(String(nest)) < 0) m.nests.push(String(nest));
     });
     var total = order.reduce(function (acc, p) { return acc + (media[p].hi - media[p].lo); }, 0), done = 0;
     var chain = Promise.resolve();
@@ -10154,7 +10230,7 @@
             '… ' + silClock(done + Math.min(sec, m.hi - m.lo)) + ' of ' + silClock(total);
         };
         say(0);
-        return listenTo(p, m.lo, m.hi, say).then(function (env) {
+        return listenTo(p, m.lo, m.hi, say, null, stop).then(function (env) {
           done += (m.hi - m.lo);
           m.env = env;
           var spans = m.sources.map(function (s) {
@@ -10167,58 +10243,373 @@
       });
     });
     return chain.then(function () {
-      var voices = order.filter(function (p) { return !media[p].levels.continuous; });
-      order.forEach(function (p) {
-        var m = media[p];
-        if (!m.levels.continuous || !voices.length) return;
-        m.excluded = true;
-        notes.push(m.tracks.join(', ') + ' “' + silBase(p) + '” is steady sound (music or noise), so it was left out when judging silence — it is still cut with everything else, so it stays in sync.');
-      });
-      var voting = [];
-      sources.forEach(function (s) {
-        if (s.unreadable) { voting.push({ seqStart: s.seqStart, seqEnd: s.seqEnd, inPoint: s.inPoint, speed: s.speed, env: null }); return; }
-        var m = media[s.mediaPath];
-        if (m.excluded) return;
-        voting.push({ seqStart: s.seqStart, seqEnd: s.seqEnd, inPoint: s.inPoint, speed: s.speed, env: m.env, flags: m.flags,
-                      strongDb: m.levels.speech != null ? m.levels.speech - 20 : null });
-      });
-      var cuts = CPSilence.planCuts(CPSilence.combineMics(voting, range), tune);
-      var mics = order.map(function (p) {
-        var m = media[p], L = m.levels;
-        return { path: p, name: silBase(p), tracks: m.tracks.join(', '), floor: L.floor, speech: L.speech, threshold: L.threshold,
-                 continuous: L.continuous, digital: L.digital, excluded: !!m.excluded };
-      });
-      return { cuts: cuts, range: range, selection: !!sel, mics: mics, notes: notes,
-               tooLoud: !voices.length && order.length > 0 && !sources.some(function (s) { return s.unreadable; }),
-               sequenceId: src.sequenceId, sequenceName: src.sequenceName, fingerprint: src.fingerprint,
-               sources: sources.map(function (s) { return { name: s.item.name, track: 'A' + (s.track.index + 1), mediaPath: s.mediaPath, nodeId: s.item.nodeId,
-                                                             seqStart: s.seqStart, seqEnd: s.seqEnd, inPoint: s.inPoint, outPoint: s.item.outPoint,
-                                                             speed: s.speed, unreadable: s.unreadable }; }),
-               tune: tune };
+      return silDecide({ src: src, tune: tune, media: media, order: order, sources: sources, range: range,
+                         selection: !!sel, notes: notes, said: {}, asked: [] });
     });
   }
 
-  /* What Pulse heard, in plain words — shown before anything is cut. */
-  function hearingSummary(plan) {
-    if (!plan) return '';
-    var lines = [], voices = plan.mics.filter(function (m) { return !m.excluded; });
-    if (voices.length) {
-      lines.push('Listened to ' + voices.length + ' mic' + (voices.length > 1 ? 's' : '') + ': ' + voices.map(function (m) {
-        return m.tracks + ' ' + m.name + (m.digital ? ' (silent)' : m.continuous ? ' (steady background — only true silence counts)'
-          : ' (room noise ≈ ' + Math.round(m.floor) + ' dB, quiet below ' + Math.round(m.threshold) + ' dB)');
+  /*
+   * Which clips decide what is dead air, and the cut list — made from what
+   * analyzeTimeline heard (h), and made again after the owner answers a
+   * question, without listening to anything twice.
+   *  1. A file is MUSIC only when the owner said so (the one-tap question, or
+   *     “What Pulse heard”) or its track's NAME says music. What it sounds
+   *     like never takes it out of the vote — a guest in a noisy café sounds
+   *     "steady" too, and leaving that mic out cut every one of the answers.
+   *  2. Music leaves the vote only where it plays UNDER a voice. A music clip
+   *     that plays while nobody talks (a jingle, an intro split off on its
+   *     own) is content: nothing under it is cut.
+   *  3. Any other track that keeps the others' pauses from being cut, plays
+   *     the whole time (it never stops for a second or more), plays under
+   *     their talking, and is no louder in their pauses than while they talk
+   *     (a voice answers in the pauses; music does not care who talks)
+   *     becomes a QUESTION for the owner (plan.ask). Until it is answered it
+   *     is a voice.
+   *  4. A voting track that keeps pauses anyway — the owner said it is a
+   *     voice, or it never goes quiet — is named (plan.held), so the owner
+   *     hears why those pauses stayed instead of "already tight".
+   */
+  function silDecide(h) {
+    var media = h.media, order = h.order, sources = h.sources, range = h.range, tune = h.tune;
+    var notes = h.notes.slice();
+    var roles = silRolesFor(h.src.sequenceId);
+    var manual = tune.manualDb != null && isFinite(tune.manualDb);
+    order.forEach(function (p) {
+      var m = media[p], own = '', named = '';
+      m.closed = false;   // the question was closed unanswered this run: a voice, not asked again till next time
+      m.keys.forEach(function (k) {
+        var r = roles[k];
+        if (r === 'mic') own = 'mic';
+        else if (r === 'music' && own !== 'mic') own = 'music';
+        if (h.said[k]) m.closed = true;
+      });
+      m.names.forEach(function (n) {
+        var w = CPSilence.trackNameSays(n);
+        if (w === 'voice') named = 'voice';
+        else if (w === 'music' && named !== 'voice') named = 'music';
+      });
+      m.role = own; m.named = named;
+      m.music = own === 'music' || (!own && named === 'music');
+      m.excluded = m.insert = m.solo = m.answers = false; m.held = 0; m.share = m.turn = null;
+    });
+    // with no voice to decide instead, music decides by itself
+    var lone = !order.some(function (p) { return !media[p].music && !media[p].levels.digital; });
+    order.forEach(function (p) {
+      var m = media[p];
+      if (lone && m.music) {
+        m.music = false;
+        notes.push(m.tracks.join(', ') + ' “' + silBase(p) + '” is music, but no voice track is there to decide instead, so Pulse listened to it.');
+      }
+      // Fine-tune → Manual: the owner's number is the gate of every track that votes
+      m.gate = (manual && !m.music) ? tune.manualDb : m.levels.threshold;
+      m.flags = CPSilence.loudFlags(m.env.db, m.gate);
+    });
+    function clipOf(s) { return { seqStart: s.seqStart, seqEnd: s.seqEnd, inPoint: s.inPoint, speed: s.speed, env: media[s.mediaPath].env }; }
+    function vote(s) {
+      var m = media[s.mediaPath];
+      return { file: s.mediaPath, seqStart: s.seqStart, seqEnd: s.seqEnd, inPoint: s.inPoint, speed: s.speed, env: m.env, flags: m.flags,
+               strongDb: m.levels.speech != null ? m.levels.speech - 20 : null };
+    }
+    // a clip Pulse can't hear inside, or music playing on its own: nothing under it is cut
+    function keepAll(s) { return { file: s.unreadable ? null : s.mediaPath, seqStart: s.seqStart, seqEnd: s.seqEnd, inPoint: s.inPoint, speed: s.speed, env: null }; }
+    var talkVotes = [];
+    sources.forEach(function (s) { if (!s.unreadable && !media[s.mediaPath].music) talkVotes.push(vote(s)); });
+    var talk = talkVotes.length ? CPSilence.combineMics(talkVotes, range) : null;
+    var votes = [];
+    sources.forEach(function (s) {
+      s.left = s.insert = false;
+      if (s.unreadable) { votes.push(keepAll(s)); return; }
+      var m = media[s.mediaPath];
+      if (!m.music) { votes.push(vote(s)); return; }
+      if (!talk || CPSilence.versusOthers(talk, [clipOf(s)]).share < SIL_BED_UNDER_TALK) {
+        s.insert = m.insert = true; votes.push(keepAll(s)); return;
+      }
+      s.left = true;   // a bed under the voices: it is cut with them, it decides nothing
+    });
+    order.forEach(function (p) {
+      var m = media[p];
+      if (!m.music) return;
+      var left = m.sources.filter(function (s) { return s.left; }).length;
+      m.excluded = left === m.sources.length;
+      if (left) {
+        notes.push(m.tracks.join(', ') + ' “' + silBase(p) + '” is music (' + (m.role === 'music' ? 'you marked it' : 'its track name says so') +
+          '), so it was left out when judging silence — it is still cut with everything else, so it stays in sync.');
+      }
+      if (m.insert) {
+        notes.push(m.tracks.join(', ') + ' “' + silBase(p) + '” plays while nobody is talking' + (left ? ' in places' : '') +
+          ', so there it is kept — it is not cut as a pause.');
+      }
+    });
+    var grid = CPSilence.combineMics(votes, range);
+    var cuts = CPSilence.planCuts(grid, tune);
+    var cutSec = CPSilence.totalDuration(cuts);
+    // every voting track: would the others' pauses be cut without it?
+    var ask = [], held = [];
+    order.forEach(function (p) {
+      var m = media[p];
+      if (m.music || m.levels.digital) return;
+      var others = votes.filter(function (v) { return v.file !== p; });
+      if (!others.length) return;
+      var og = CPSilence.combineMics(others, range);
+      var vs = CPSilence.versusOthers(og, m.sources.map(clipOf));
+      m.share = vs.share; m.turn = vs.turn;
+      m.held = Math.max(0, CPSilence.totalDuration(CPSilence.planCuts(og, tune)) - cutSec);
+      if (m.held < SIL_HELD_SEC) return;
+      m.answers = vs.turn >= SIL_TURN_DB;          // louder in the others' pauses: someone answering there
+      if (vs.share < SIL_BED_UNDER_TALK) {         // it plays while the others are quiet: content, kept
+        if (!m.answers && m.levels.bed) {
+          m.solo = true;
+          notes.push(m.tracks.join(', ') + ' “' + silBase(p) + '” sounds like music, but it plays while nobody is talking, so Pulse kept listening to it — it is not cut as a pause.');
+        }
+        return;
+      }
+      var playsOn = m.levels.pauses < SIL_PLAYS_ON;
+      if ((!m.answers && playsOn) || m.levels.continuous) held.push(m);
+      if (!m.answers && playsOn && !m.role && !m.closed && m.named !== 'voice') ask.push(m);
+    });
+    ask.sort(function (a, b) { return b.held - a.held; });
+    // music playing on its own before the first word / after the last one,
+    // cut as dead air with everything else — said in the confirm
+    var first = -1, last = -1;
+    for (var g = 0; g < grid.n; g++) { if (grid.state[g] === 2) { if (first < 0) first = g; last = g; } }
+    var headEnd = first < 0 ? range.end : grid.t0 + first * grid.hop, tailStart = last < 0 ? range.start : grid.t0 + (last + 1) * grid.hop;
+    function musicUnder(a, b) {
+      var t = 0;
+      sources.forEach(function (s) { if (s.left) t = Math.max(t, Math.min(b, s.seqEnd) - Math.max(a, s.seqStart)); });
+      return t;
+    }
+    var musicOnly = [];
+    if (cuts.length) {
+      var c0 = cuts[0], cN = cuts[cuts.length - 1];
+      if (c0.start < headEnd && musicUnder(c0.start, Math.min(c0.end, headEnd)) >= SIL_HELD_SEC) {
+        musicOnly.push({ start: c0.start, end: Math.min(c0.end, headEnd), where: 'start' });
+      }
+      if (cN.end > tailStart && (cN !== c0 || !musicOnly.length) && musicUnder(Math.max(cN.start, tailStart), cN.end) >= SIL_HELD_SEC) {
+        musicOnly.push({ start: Math.max(cN.start, tailStart), end: cN.end, where: 'end' });
+      }
+    }
+    function who(m) { return m.tracks.join(', ') + (m.nests.length ? ' (inside “' + m.nests.join('”, “') + '”)' : ''); }
+    var mics = order.map(function (p) {
+      var m = media[p], L = m.levels;
+      return { path: p, name: silBase(p), tracks: who(m), keys: m.keys.slice(), floor: L.floor, speech: L.speech, threshold: m.gate,
+               continuous: L.continuous, digital: L.digital, excluded: !!m.excluded, music: !!m.music, role: m.role, named: m.named,
+               insert: !!m.insert, solo: !!m.solo, held: m.held, heldBack: held.indexOf(m) >= 0, answers: !!m.answers,
+               share: m.share, turn: m.turn, range: L.range, pauses: L.pauses, manual: manual && !m.music };
+    });
+    function brief(m) { return { keys: m.keys.slice(), tracks: who(m), name: silBase(m.path), held: m.held, role: m.role, continuous: !!m.levels.continuous, answers: !!m.answers }; }
+    return { cuts: cuts, range: range, selection: h.selection, mics: mics, notes: notes, manual: manual,
+             tooLoud: !manual && order.length > 0 && order.every(function (p) { return media[p].levels.continuous; }) &&
+                      !sources.some(function (s) { return s.unreadable; }),
+             ask: ask.map(brief), held: held.map(brief), musicOnly: musicOnly, asked: h.asked.slice(),
+             sequenceId: h.src.sequenceId, sequenceName: h.src.sequenceName, fingerprint: h.src.fingerprint,
+             sources: sources.map(function (s) { return { name: s.item.name, track: 'A' + (s.track.index + 1), mediaPath: s.mediaPath, nodeId: s.item.nodeId,
+                                                           seqStart: s.seqStart, seqEnd: s.seqEnd, inPoint: s.inPoint, outPoint: s.item.outPoint,
+                                                           speed: s.speed, unreadable: s.unreadable }; }),
+             tune: tune, heard: h };
+  }
+
+  /*
+   * Ask the owner about each track Pulse thinks may be music — one tap each,
+   * one track at a time — and make the plan again with every answer. This is
+   * the only way a track whose NAME doesn't say music leaves the vote.
+   * "Yes, it's music" / "No, it's a voice" is remembered for this sequence
+   * (“What Pulse heard” can change it); closing the question keeps the track
+   * a voice for this run and asks again next time.
+   */
+  function silSettle(plan, prog) {
+    if (!plan || !plan.ask || !plan.ask.length) return Promise.resolve(plan);
+    var q = plan.ask[0], h = plan.heard;
+    if (prog) prog.textContent = 'One question before anything is cut…';
+    return silAskMusic(q).then(function (ans) {
+      var roles = silRolesFor(h.src.sequenceId);
+      q.keys.forEach(function (k) { if (ans) roles[k] = ans; else h.said[k] = 'closed'; });
+      h.asked.push({ tracks: q.tracks, name: q.name, answer: ans || 'closed' });
+      return silSettle(silDecide(h), prog);
+    });
+  }
+  /* The question itself, in plain words, with its two answers. Resolves
+     'music', 'mic', or '' when it is closed without an answer. */
+  function silAskMusic(q) {
+    return new Promise(function (resolve) {
+      var old = document.getElementById('sil-ask-ov');
+      if (old && old.parentNode) old.parentNode.removeChild(old);
+      var ov = document.createElement('div'); ov.id = 'sil-ask-ov';
+      ov.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(8,10,16,.72);z-index:99998;display:flex;align-items:center;justify-content:center;';
+      var card = document.createElement('div');
+      card.style.cssText = 'background:#151922;border:1px solid #2b3242;border-radius:12px;padding:16px;width:300px;max-width:92vw;';
+      var h = document.createElement('div'); h.id = 'sil-ask-text';
+      h.textContent = q.tracks + ' “' + q.name + '” plays the whole time, like music. Ignore it when finding dead air?';
+      h.style.cssText = 'color:#e7ecf3;font-size:12px;line-height:1.5;margin-bottom:6px;font-weight:700;';
+      var sub = document.createElement('div');
+      sub.textContent = 'Yes: Pulse cuts the pauses in your talking and trims this track with them, so it stays in sync. ' +
+        'No: it counts as a voice, and nothing it plays over is cut.';
+      sub.style.cssText = 'color:#aab3c5;font-size:11px;line-height:1.45;margin-bottom:12px;';
+      var row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;';
+      var done = false;
+      function close(v) {
+        if (done) return; done = true;
+        try { ov.parentNode.removeChild(ov); } catch (e) {}
+        resolve(v);
+      }
+      var bNo = document.createElement('button'); bNo.type = 'button'; bNo.id = 'sil-ask-voice'; bNo.textContent = 'No, it’s a voice';
+      bNo.style.cssText = 'padding:7px 14px;border-radius:8px;border:1px solid #2b3242;background:transparent;color:#e7ecf3;cursor:pointer;font-size:12px;';
+      var bYes = document.createElement('button'); bYes.type = 'button'; bYes.id = 'sil-ask-music'; bYes.textContent = 'Yes, it’s music';
+      bYes.style.cssText = 'padding:7px 16px;border-radius:8px;border:0;background:#c6f24e;color:#10140a;font-weight:800;cursor:pointer;font-size:12px;';
+      bNo.onclick = function () { close('mic'); };
+      bYes.onclick = function () { close('music'); };
+      ov.addEventListener('mousedown', function (e) { if (e.target === ov) close(''); });
+      row.appendChild(bNo); row.appendChild(bYes);
+      card.appendChild(h); card.appendChild(sub); card.appendChild(row);
+      ov.appendChild(card); document.body.appendChild(ov);
+    });
+  }
+
+  /* Why a voting track's pauses stayed, in plain words (plan.held). */
+  function silHeldLine(x) {
+    var who = x.tracks + ' “' + x.name + '”';
+    var fix = x.role === 'mic' ? ' You said it is a voice. If it is music after all, choose 🎵 Music for it under “What Pulse heard”, then run Clean up again.'
+            : x.answers ? '' : ' If it is music, choose 🎵 Music for it under “What Pulse heard”, then run Clean up again.';
+    if (x.continuous) {
+      return who + ' never goes quiet' + (x.answers ? ' — the sound around the voice is almost as loud as the voice —' : '') +
+        ', so nothing it plays over is cut.' + fix;
+    }
+    return who + ' keeps sounding where the others pause, so about ' + x.held.toFixed(1) + 's of pauses under it were kept.' + fix;
+  }
+  /* Music playing on its own at the start or the end, cut like any dead air. */
+  function silMusicOnlyLine(mo) {
+    var len = (mo.end - mo.start).toFixed(1) + 's';
+    return mo.where === 'start'
+      ? 'Only music plays for the first ' + len + ', before anyone talks — it is cut too, like any dead air. To keep it as an intro, split the music clip where your talking starts (C key in Premiere), then run Clean up again.'
+      : 'Only music plays for the last ' + len + ', after the last word — it is cut too, like any dead air. To keep it as an outro, split the music clip where your talking ends (C key in Premiere), then run Clean up again.';
+  }
+
+  /* What Pulse heard, in plain words — shown before anything is cut.
+     skipHeld: the reason pauses were kept is already the headline. */
+  function hearingSummary(plan, skipHeld) {
+    if (!plan || !plan.mics) return '';
+    var lines = [], heard = plan.mics.filter(function (m) { return !m.excluded; });
+    if (heard.length) {
+      var tracksWord = heard.some(function (m) { return m.music; }) ? ' track' : ' mic';
+      lines.push('Listened to ' + heard.length + tracksWord + (heard.length > 1 ? 's' : '') + ': ' + heard.map(function (m) {
+        return m.tracks + ' ' + m.name + (m.digital ? ' (silent)'
+          : m.insert ? ' (music playing on its own — kept)'
+          : (m.continuous && !m.manual) ? ' (steady background — only true silence counts)'
+          : ' (room noise ≈ ' + Math.round(m.floor) + ' dB, quiet below ' + Math.round(m.threshold) + ' dB' + (m.manual ? ' — your Manual setting' : '') + ')');
       }).join('; ') + '.');
     }
     plan.notes.forEach(function (n) { lines.push(n); });
-    var loudBed = voices.filter(function (m) { return !m.digital && !m.continuous && m.floor > -40; })[0];
+    if (!skipHeld) (plan.held || []).forEach(function (x) { lines.push(silHeldLine(x)); });
+    var loudBed = heard.filter(function (m) { return !m.digital && !m.continuous && !m.music && m.floor > -40; })[0];
     if (loudBed) {
       lines.push('The background under ' + loudBed.tracks + ' is loud (≈ ' + Math.round(loudBed.floor) + ' dB). If that is music mixed into the voice, ' +
         'it will jump at every cut — cut the pauses first, then add the music on its own track.');
     }
+    // only real voices make a podcast — a music bed is not a second mic
+    var voices = heard.filter(function (m) { return !m.music && !m.digital; });
     if (voices.length > 1 && plan.tune && plan.tune.key !== 'podcast' && !plan.tune.manual) {
-      lines.push('Tip: this sounds like a podcast (' + voices.length + ' mics) — 🎙 Podcast keeps a more natural rhythm.');
+      lines.push('Tip: this sounds like a podcast (' + voices.length + ' voices) — 🎙 Podcast keeps a more natural rhythm.');
     }
-    if (plan.selection) lines.push('Only the selected clip (' + fmt(plan.range.start) + '–' + fmt(plan.range.end) + ') was checked — deselect it to clean the whole timeline.');
+    if (plan.selection) lines.push('Only the selected clip (' + fmt(plan.range.start) + '–' + fmt(plan.range.end) + ') was checked — click an empty spot on the timeline to deselect it, then run again to clean the whole timeline.');
     return lines.join('\n');
+  }
+
+  /* Why NOTHING was cut, in plain words. "Already tight" is said only when
+     every mic was heard over the whole timeline on Pulse's own settings — a
+     leftover selection, a clip Pulse can't hear inside, Manual mode, or a
+     track that kept the others' pauses (one that never goes quiet, or music
+     the owner said is a voice) is named instead, in the toast itself (the
+     old toast hid all of them behind "your video is already tight!").
+     Returns { head, lines, act }: act = the owner has something to change. */
+  function silNothingCut(plan, tune) {
+    if (!plan || !plan.mics) return { head: 'Nothing to clean — your video is already tight!', lines: [], act: false };
+    if (plan.tooLoud) {
+      return { head: 'Background music or noise is as loud as your voice, so Pulse can’t find dead air by sound — nothing was cut. Transcribe first and it can cut the pauses between words.',
+               lines: [], act: true };
+    }
+    var why = [], hint = [];
+    if (plan.selection) {
+      why.push('Only the selected clip (' + fmt(plan.range.start) + '–' + fmt(plan.range.end) + ') was checked. Click an empty spot on the timeline to deselect it, then run Clean up again to clean the whole timeline.');
+    }
+    var deaf = (plan.sources || []).filter(function (s) { return s.unreadable; });
+    if (deaf.length) {
+      why.push('Pulse couldn’t hear inside ' + deaf.map(function (s) { return s.track + ' “' + s.name + '” (' + s.unreadable + ')'; }).join(', ') +
+        ', so nothing under ' + (deaf.length > 1 ? 'them' : 'it') + ' was cut.');
+    }
+    if (plan.manual && tune) {
+      why.push('Fine-tune → Manual is on: only pauses of ' + tune.minPause + 's or longer, quieter than ' + tune.manualDb + ' dB, count. Untick Manual to let Pulse measure your room.');
+    }
+    var held = plan.held || [];
+    held.forEach(function (x) { why.push(silHeldLine(x)); });
+    var voting = plan.mics.filter(function (m) { return !m.excluded && !m.digital; });
+    // several tracks, and without one of them there WOULD be pauses to cut:
+    // say so (in the toast), not "already tight" — one of them may be music
+    var filled = voting.length > 1 && voting.some(function (m) { return m.held >= SIL_HELD_SEC; });
+    if (!why.length && filled) {
+      return { head: 'Nothing to cut — whenever one of your tracks (' + voting.map(function (m) { return m.tracks; }).join(', ') +
+                     ') pauses, another one is still sounding. If one of them is music, mark it 🎵 Music under “What Pulse heard”, then run Clean up again.',
+               lines: [], act: false };
+    }
+    if (voting.length > 1 && !held.length) {
+      hint.push('A moment only counts as dead air when every track Pulse listened to (' + voting.map(function (m) { return m.tracks; }).join(', ') +
+        ') is quiet. If one of them is music, mark it 🎵 Music under “What Pulse heard”, then run Clean up again.');
+    }
+    var head = why.length ? 'Nothing was cut. ' + why[0] : 'Nothing to clean — every mic was heard over the whole timeline and no pause is long enough to cut. Your video is already tight!';
+    return { head: head, lines: why.slice(1).concat(hint), act: why.length > 0 };
+  }
+
+  /* “What Pulse heard”: every track it listened to (or couldn't), in plain
+     words, each with a choice — 🎤 a voice / 🎵 music — that the next Clean up
+     uses. Shown after every listen, so a surprise (a music bed that kept the
+     pauses, a leftover selection) is visible and fixable. */
+  function renderHeard(boxId, plan, lines, again) {
+    var box = $(boxId); if (!box) return;
+    box.innerHTML = '';
+    if (!plan) { box.classList.add('hidden'); return; }
+    var title = document.createElement('div');
+    title.style.cssText = 'font-weight:700;font-size:12px;margin:0 0 4px';
+    title.textContent = 'What Pulse heard';
+    box.appendChild(title);
+    (lines || []).forEach(function (l) {
+      if (!l) return;
+      var p = document.createElement('p'); p.className = 'hint'; p.style.margin = '0 0 4px'; p.textContent = l;
+      box.appendChild(p);
+    });
+    var roles = silRolesFor(plan.sequenceId);
+    (plan.mics || []).forEach(function (m) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:6px;align-items:center;justify-content:space-between;margin:3px 0;font-size:11px';
+      var lab = document.createElement('span');
+      lab.textContent = m.tracks + ' · ' + m.name + ' — ' + (m.digital ? 'silent'
+        : m.excluded ? 'music (' + (m.role === 'music' ? 'you marked it' : 'its track name says so') + ') — left out when finding dead air'
+        : m.insert ? 'music playing on its own — kept'
+        : m.heldBack ? (m.continuous ? 'never goes quiet — nothing it plays over is cut' : 'keeps sounding in the pauses — they are kept')
+        : m.solo ? 'plays while nobody is talking — kept'
+        : 'a voice' + (m.role === 'mic' ? ' (you said so)' : ''));
+      var sel = document.createElement('select');
+      sel.setAttribute('data-heard', m.keys.join('|'));
+      sel.style.cssText = 'max-width:150px;font-size:11px';
+      var cur = m.role || 'auto';
+      // no choice made: a voice, unless the track's name says music
+      [['auto', m.named === 'music' ? '🎵 Music (by its name)' : '🎤 A voice (not set)'], ['mic', '🎤 A voice — always listen'],
+       ['music', '🎵 Music — ignore it']].forEach(function (o) {
+        var op = document.createElement('option'); op.value = o[0]; op.textContent = o[1]; if (o[0] === cur) op.selected = true; sel.appendChild(op);
+      });
+      sel.addEventListener('change', function () {
+        var v = sel.value;
+        m.keys.forEach(function (k) { if (v === 'auto') delete roles[k]; else roles[k] = v; });
+        toast('Got it — ' + m.tracks + ' is ' + (v === 'mic' ? 'a voice' : v === 'music' ? 'music' : (m.named === 'music' ? 'music, as its name says' : 'a voice')) + '. ' +
+          (again || 'Run ✨ Clean up my video again') + ' to use this.');
+      });
+      row.appendChild(lab); row.appendChild(sel);
+      box.appendChild(row);
+    });
+    (plan.sources || []).filter(function (s) { return s.unreadable; }).forEach(function (s) {
+      var row = document.createElement('div');
+      row.style.cssText = 'margin:3px 0;font-size:11px';
+      row.textContent = s.track + ' · ' + s.name + ' — couldn’t hear inside it (' + s.unreadable + '); nothing under it is cut';
+      box.appendChild(row);
+    });
+    box.classList.remove('hidden');
   }
 
   /* Can words be fetched automatically right now? The same test
@@ -10268,8 +10659,10 @@
   /* Apply a cut list to the timeline the analysis heard, then re-sync every
      transcript copy with the exact (frame-snapped) ranges the host removed. */
   function applyCleanCuts(ranges, guard, opts) {
+    // flowName: the button the owner pressed, so a refusal tells them what to
+    // run again ("run Find the silences again", not always "Clean up")
     var args = { ranges: ranges, closeGaps: opts.closeGaps !== false, backup: !!opts.backup,
-                 dropFrame: !!settings.dropFrame, previewLabel: 'Silence' };
+                 dropFrame: !!settings.dropFrame, previewLabel: 'Silence', flowName: opts.flow || '' };
     if (guard) { args.expectSequenceId = guard.sequenceId; args.expectSequenceName = guard.sequenceName; args.expectFingerprint = guard.fingerprint; }
     return CPBridge.callHost('CP_razorRipple', args).then(function (rr) {
       var removed = (rr && Array.isArray(rr.removed)) ? rr.removed : ranges;
@@ -10280,6 +10673,13 @@
       if ($('takes-results')) $('takes-results').classList.add('hidden');
       return rr || {};
     });
+  }
+  /* How to get the original back, in words the owner can act on: every
+     razor, lift and move is its own undo step (hundreds on a podcast), so the
+     backup copy — not ⌘Z — is the real undo. */
+  function backupText(rr) {
+    return (rr && rr.backup) ? 'Your untouched original is the backup copy “' + rr.backup + '” in the Project panel — open it to go back.'
+                             : 'No backup copy was made (“Back up sequence first” was off).';
   }
   function cutDoneText(rr, ranges) {
     var n = rr.cuts != null ? rr.cuts : ranges.length;
@@ -10310,30 +10710,41 @@
     if (!doSil && !doTakes && !doFill) return toast('Tick at least one thing to remove.', true);
     var prog = $('autoclean-progress'); prog.classList.remove('hidden'); prog.textContent = 'Reading your timeline…';
     var tune = silTune(strength);
-    var plan = null, clip = null, extraNotes = [];
-    // set when a transcription this clean was waiting for FAILED: do not try
-    // again (that would loop) — remove the dead air and say retakes were skipped
-    var noWords = !!state.autocleanNoWords; state.autocleanNoWords = false;
+    var plan = null, clip = null, cutSrc = null, extraNotes = [];
+    // a transcription this clean asked for ended with NO words (it failed or
+    // was abandoned): do not ask again (that would loop) — remove the dead air
+    // and say retakes were skipped. (The transcript bar could call this right
+    // after a failed transcription; it would take this same path.)
+    var noWords = !!state.autocleanAskedWords && !state.pendingCaptionAction && !state.transcript &&
+      !(state.transcriptWords && state.transcriptWords.length);
+    state.autocleanAskedWords = false;
     if (doTakes && !noWords && !(settings.verbatimKey || '').trim() && !(state.transcriptWords && state.transcriptWords.length) &&
         !state.transcript && !state.pendingCaptionAction && autoTranscribeAvailable()) {
       // retakes need words and they CAN be fetched: get them first (this same
       // clean re-runs by itself when they land) instead of listening twice
       prog.classList.add('hidden');
+      state.autocleanAskedWords = true;
       ensureTranscriptThen('autoclean');
       return;
     }
+    var stop = silStopper('btn-autoclean-stop');   // listening a long podcast can take minutes
     CPBridge.callHost('CP_getCutSources', {}).then(function (src) {
+      cutSrc = src;
       // the talking clip (retakes / verbatim words) — same pick captions use;
       // it skips graphics and stills, so a selected title can't derail it
       return CPBridge.callHost('CP_getTranscribeSource').then(function (res) { return res; }, function () { return null; }).then(function (res) {
         if (res && res.clip) { clip = res.clip; state.clip = res.clip; }
         if (!doSil) {
+          stop.done();
           plan = { cuts: [], range: { start: 0, end: Infinity }, selection: false, mics: [], notes: [], tooLoud: false,
                    sequenceId: src.sequenceId, sequenceName: src.sequenceName, fingerprint: src.fingerprint, sources: [] };
           return plan;
         }
         prog.textContent = 'Listening for dead air…';
-        return analyzeTimeline(src, tune, prog).then(function (p) { plan = state.silLastPlan = p; return p; });
+        return analyzeTimeline(src, tune, prog, stop).then(function (p) {
+          stop.done();
+          return silSettle(p, prog);   // a track that may be music: the owner says, with one tap
+        }).then(function (p) { plan = state.silLastPlan = p; return p; });
       });
     }).then(function () {
       var fills = [];
@@ -10343,11 +10754,52 @@
         if (fr.why) extraNotes.push('Filler words skipped — ' + fr.why);
       }
       var tp = TAKE_PRESETS[strength] || TAKE_PRESETS.balanced;
-      function takesOn(words) {
+      /* The one tap has no list to review, so it only makes a retake cut
+         whose edges are REAL times: never one the retake finder marks as
+         estimated, and — when the words are caption lines spread evenly
+         (no word-by-word timing, `edges` = each line's start and end) — only
+         one that starts and ends on a line's own start or end. The rest are
+         left in and named in the confirm (guessedNote). */
+      var guessed = [], matcherAll = [], guessedSaid = false;
+      function onEdge(edges, t) {
+        for (var i = 0; i < edges.length; i++) if (Math.abs(edges[i] - t) <= 0.02) return true;
+        return false;
+      }
+      function sureCut(d, edges) {
+        if (d.needsReview || d.estimated) return false;
+        return !edges || (onEdge(edges, d.start) && onEdge(edges, d.end));
+      }
+      function takesOn(words, edges) {
         // keep:'best' — completeness + per-word confidence + recency picks the
         // take that actually got finished cleanly, not blindly the last one.
         var tk = CPTakes.findRepeatedTakes(words, { minRun: tp.minrun, sim: tp.sim / 100, keep: 'best', people: takesPeople(words) });
-        return tk.deletes.map(function (d) { return { start: d.start, end: d.end }; });
+        var out = [];
+        tk.deletes.forEach(function (d) {
+          matcherAll.push({ start: d.start, end: d.end });
+          if (sureCut(d, edges)) out.push({ start: d.start, end: d.end }); else guessed.push(d);
+        });
+        return out;
+      }
+      /* The only real times in a transcript with no word-by-word timing: the
+         start and end of each caption line (the same lines takesGetWords
+         spreads into words). null when the words carry their own timing. */
+      function lineEdges() {
+        if (state.transcriptWords && state.transcriptWords.length) return null;
+        var cues = (state.lastCaptionJob && state.lastCaptionJob.cues) || null;
+        if (!cues && !transcriptIsStale()) { try { cues = readSelectedTranscript(); } catch (e) { cues = null; } }
+        var out = [];
+        (cues || []).forEach(function (c) { out.push(+c.start, +c.end); });
+        return out;
+      }
+      function guessedNote() {
+        if (!guessed.length || guessedSaid) return;
+        guessedSaid = true;
+        var g = mergeSeqRanges(guessed), many = g.length > 1;   // the finder and the AI can name the same one
+        extraNotes.push(g.length + ' possible retake' + (many ? 's were' : ' was') + ' left in (' +
+          g.slice(0, 3).map(function (c) { return fmt(c.start) + '–' + fmt(c.end); }).join(', ') + (g.length > 3 ? ', …' : '') +
+          ') — your transcript has no word-by-word timing, so where ' + (many ? 'they start and end' : 'it starts and ends') +
+          ' inside a caption line is only a guess. To check ' + (many ? 'them' : 'it') + ' first, tap Cancel and open 🔁 Remove repeated takes ' +
+          '(▶ plays each one), or re-transcribe (Transcribe tab) for exact word timing.');
       }
       function result(other, extra) {
         var r = { sil: plan.cuts, other: fills.concat(other || []) };
@@ -10361,13 +10813,17 @@
       // matcher nor the AI can even SEE the retakes in it. When a
       // Deepgram/AssemblyAI key is set, the one button transcribes VERBATIM
       // (every retake kept, per-word confidence) and runs the take-picker on it.
-      if ((settings.verbatimKey || '').trim() && typeof verbatimTranscribe === 'function' && clip) {
+      // It reads the SAME timeline whose fingerprint guards the cut (every
+      // voice track, mixed as it plays) — not one clip picked separately.
+      if ((settings.verbatimKey || '').trim() && typeof verbatimTranscribe === 'function') {
         var ffV = resolveFfmpeg();
         if (ffV) {
           prog.textContent = '🎯 Reading every word (verbatim engine)…';
-          return verbatimTranscribe(clip, ffV).then(function (vw) {
+          return verbatimTranscribe(clip, ffV, cutSrc).then(function (vw) {
             prog.textContent = 'Picking the best take of every line…';
-            return result(takesOn(vw), { verbatim: true, vWords: vw });
+            var vSure = takesOn(vw, null);
+            guessedNote();
+            return result(vSure, { verbatim: true, vWords: vw });
           }).catch(function (eV) {
             try { diag('autoclean', 'verbatim failed, falling back: ' + (eV && eV.message)); } catch (e0) {}
             return fallbackPath();
@@ -10377,28 +10833,52 @@
       return fallbackPath();
 
       function fallbackPath() {
-        var words = state.transcriptWords;
+        // words in the CURRENT timeline's time: the word list, else the last
+        // caption job's re-timed cues, else the transcript file (never one
+        // whose times went stale after an earlier cut)
+        var words = (state.transcriptWords && state.transcriptWords.length) ? state.transcriptWords : takesGetWords();
         if (!words || !words.length) {
           // ONE button = the whole job: when words CAN be fetched, fetch them and
           // this same clean re-runs by itself the moment they land…
           if (!noWords && !state.transcript && !state.pendingCaptionAction && autoTranscribeAvailable()) {
             prog.classList.add('hidden');
+            state.autocleanAskedWords = true;
             ensureTranscriptThen('autoclean');
             return { pending: true };
           }
-          // …and when they can't (no key / engine yet, or it just failed), still
-          // remove the dead air that was already found instead of throwing it away.
-          return result([], { needTranscript: noWords ? 'failed' : 'none' });
+          // …and when they can't (no key / engine yet, it just failed, or the
+          // transcript is out of date), still remove the dead air that was
+          // already found instead of throwing it away.
+          return result([], { needTranscript: noWords ? 'failed' : (state.transcript && transcriptIsStale()) ? 'stale'
+                                                 : state.transcript ? 'unreadable' : 'none' });
         }
-        var base = takesOn(words);
+        var edges = lineEdges();
+        var base = takesOn(words, edges);
         if (cpKey() && typeof CPSmartEdit !== 'undefined' && typeof aiCleanupCuts === 'function') {
           return aiCleanupCuts(words, { aggressive: (strength === 'strong') }, prog, '✨ AI finding retakes & off-script talk')
             .then(function (rr) {
-              return result(base.concat(mergeAiCuts(base, rr.cuts, doFill)), { ai: true });
+              // an unusually long AI cut (over 45 s, or a quarter of what it
+              // read) is only ever applied after the owner has played it — the
+              // one tap has no review list, so it is named and left alone
+              var long = (rr.cuts || []).filter(function (c) { return c.needsReview; });
+              if (long.length) {
+                extraNotes.push(long.length + ' unusually long AI cut' + (long.length > 1 ? 's were' : ' was') + ' left in (' +
+                  long.slice(0, 3).map(function (c) { return fmt(c.start) + '–' + fmt(c.end); }).join(', ') + (long.length > 3 ? ', …' : '') +
+                  ') — play ' + (long.length > 1 ? 'them' : 'it') + ' first: 🔁 Remove repeated takes → ✨ Smart Cleanup (AI).');
+              }
+              var sure = (rr.cuts || []).filter(function (c) { return !c.needsReview; });
+              // an AI cut on guessed word times is left in like the matcher's
+              var ai = mergeAiCuts(matcherAll, sure, doFill).filter(function (c) {
+                if (sureCut(c, edges)) return true;
+                guessed.push(c); return false;
+              });
+              guessedNote();
+              return result(base.concat(ai), { ai: true });
             })
-            .catch(function () { return result(base); });
+            .catch(function () { guessedNote(); return result(base); });
         }
         prog.textContent = 'Finding repeated takes…';
+        guessedNote();
         return result(base);
       }
     }).then(function (r) {
@@ -10410,13 +10890,15 @@
       prog.classList.add('hidden');
       var notes = [];
       if (r.needTranscript === 'failed') notes.push('Pulse couldn’t get your words, so repeated takes were skipped — this pass removes dead air only.');
+      else if (r.needTranscript === 'stale') notes.push('Your transcript was made before your last cut and has no word timing to follow it, so repeated takes were skipped — this pass removes dead air only. Re-transcribe (Transcribe tab) to get word timing, then run Clean up again.');
+      else if (r.needTranscript === 'unreadable') notes.push('Pulse couldn’t read your transcript, so repeated takes were skipped — this pass removes dead air only. Re-transcribe (Transcribe tab) to get word timing.');
       else if (r.needTranscript) notes.push('Repeated takes need your words and no transcription engine is set up yet (Settings → add a free key), so this pass removes dead air only.');
       notes = notes.concat(extraNotes);
       if (!ranges.length) {
-        var why = (plan && plan.tooLoud)
-          ? 'Background music or noise is as loud as your voice, so Pulse can’t find dead air by sound — nothing was cut. Transcribe first and it can cut the pauses between words.'
-          : 'Nothing to clean — your video is already tight!';
-        return toast(why + (notes.length ? ' ' + notes.join(' ') : ''));
+        var nc = !doSil ? { head: 'Nothing to remove — Pulse found no repeated takes' + (doFill ? ' or filler words' : '') + '.', lines: [], act: false }
+                        : silNothingCut(plan, tune);
+        renderHeard('ac-heard', doSil ? plan : null, [nc.head].concat(nc.lines, notes, doSil ? [hearingSummary(plan, true)] : []));
+        return toast(nc.head + (notes.length ? ' ' + notes.join(' ') : '') + (doSil ? ' (Details under “What Pulse heard”.)' : ''), nc.act);
       }
       var total = ranges.reduce(function (a, x) { return a + (x.end - x.start); }, 0);
       var span = (plan && isFinite(plan.range.end)) ? (plan.range.end - plan.range.start) : 0;
@@ -10425,19 +10907,26 @@
         ' — about ' + total.toFixed(1) + 's' + (span > 0 ? ' (' + Math.round(100 * total / span) + '% of ' + silClock(span) + ')' : '') + '.';
       var heard = hearingSummary(plan);
       if (heard) msg += '\n\n' + heard;
+      if (doSil && plan.mics.length > 1) msg += '\nNot right? Cancel, then say which track is a voice and which is music under “What Pulse heard”.';
       if (notes.length) msg += '\n\n' + notes.join('\n');
+      (doSil && plan.musicOnly || []).forEach(function (mo) { msg += '\n\n⚠️ ' + silMusicOnlyLine(mo); });
       if (big && big.end - big.start > 30) msg += '\n\n⚠️ The longest single cut is ' + Math.round(big.end - big.start) + 's (at ' + fmt(big.start) + ') — preview it if that looks wrong.';
       if (span > 0 && total > span * 0.5) msg += '\n\n⚠️ That is more than half of your video.';
       msg += '\n\n✅ A backup of your sequence is made first.';
+      renderHeard('ac-heard', doSil ? plan : null, [heard]);
       return new Promise(function (res) { confirmInline(msg, 'Clean it up', res); }).then(function (yes) {
         if (!yes) return;
         prog.classList.remove('hidden'); prog.textContent = 'Cleaning your timeline…';
-        return applyCleanCuts(ranges, plan, { closeGaps: true, backup: true }).then(function (rr) {
+        return applyCleanCuts(ranges, plan, { closeGaps: true, backup: true, flow: 'Clean up my video' }).then(function (rr) {
           prog.classList.add('hidden');
-          toast('✨ Cleaned! Removed ' + cutDoneText(rr, ranges) + '. Captions & takes follow the cut — run any other step or add captions with no re-transcribe. ⌘Z / Ctrl+Z undoes it.');
+          toast('✨ Cleaned! Removed ' + cutDoneText(rr, ranges) + '. Captions & takes follow the cut — run any other step or add captions with no re-transcribe. ' + backupText(rr));
         });
       });
-    }).catch(function (e) { prog.classList.add('hidden'); toast('Auto-clean failed: ' + e.message, true); });
+    }).catch(function (e) {
+      stop.done(); prog.classList.add('hidden');
+      if (e && e.stopped) return toast(e.message);
+      toast('Auto-clean failed: ' + e.message, true);
+    });
   }
   if ($('btn-autoclean')) $('btn-autoclean').addEventListener('click', runAutoCleanAll);
 
@@ -10465,9 +10954,14 @@
   window.CP_DEBUG_EXT.silence = {
     plan: function () {
       var p = state.silLastPlan;
-      return p ? { cuts: p.cuts, range: p.range, mics: p.mics, notes: p.notes, tooLoud: p.tooLoud, sequenceId: p.sequenceId } : null;
+      return p ? { cuts: p.cuts, range: p.range, mics: p.mics, notes: p.notes, tooLoud: p.tooLoud, sequenceId: p.sequenceId,
+                   asked: p.asked || [], held: p.held || [], musicOnly: p.musicOnly || [] } : null;
     },
-    mergeAiCuts: mergeAiCuts
+    mergeAiCuts: mergeAiCuts,
+    // the transcript copies a cut re-times (silence-remap-lines)
+    setTranscript: function (words, cues) { state.transcriptWords = words || null; state.lastCaptionJob = cues ? { cues: cues, track: 1 } : null; },
+    transcript: function () { return { words: state.transcriptWords, cues: state.lastCaptionJob ? state.lastCaptionJob.cues : null }; },
+    ripple: function (ranges) { return rippleTranscriptByRanges(ranges, true); }
   };
 
   $('btn-analyze').addEventListener('click', function () {
@@ -10477,8 +10971,12 @@
     prog.textContent = 'Reading your timeline…';
     // Every mic on the timeline is heard (a selected clip only narrows WHERE
     // to look) — the same detector the one-tap button uses.
+    var stop = silStopper('btn-analyze-stop');
     CPBridge.callHost('CP_getCutSources', {}).then(function (src) {
-      return analyzeTimeline(src, tune, prog);
+      return analyzeTimeline(src, tune, prog, stop);
+    }).then(function (plan) {
+      stop.done();
+      return silSettle(plan, prog);   // a track that may be music: the owner says, with one tap
     }).then(function (plan) {
       state.silPlan = state.silLastPlan = plan;
       var lo = plan.range.start, hi = plan.range.end, span = hi - lo;
@@ -10500,12 +10998,12 @@
       }).filter(function (k) { return k.end - k.start > 0.02; }) : [];
       if (one) state.clip = { name: one.name, mediaPath: one.mediaPath, nodeId: one.nodeId, seqStart: one.seqStart,
                               seqEnd: one.seqEnd, inPoint: one.inPoint, outPoint: one.outPoint };
-      var nMics = plan.mics.filter(function (m) { return !m.excluded; }).length;
+      var nMics = plan.mics.filter(function (m) { return !m.excluded && !m.music && !m.digital; }).length;
       $('clip-badge').textContent = nMics + ' mic' + (nMics === 1 ? '' : 's') + ' · ' + plan.sources.length + ' clip' + (plan.sources.length === 1 ? '' : 's') +
         (plan.selection ? ' (selection)' : '');
       $('clip-badge').className = 'badge ok';
       // Fine-tune shows the loudest room's gate, so "Manual" starts from what Pulse measured
-      var gates = plan.mics.filter(function (m) { return !m.excluded && !m.digital && !m.continuous; }).map(function (m) { return m.threshold; });
+      var gates = plan.mics.filter(function (m) { return !m.excluded && !m.digital && !m.continuous && !m.music; }).map(function (m) { return m.threshold; });
       if (gates.length && !tune.manual) {
         var g = Math.round(Math.max.apply(null, gates));
         if ($('opt-threshold')) $('opt-threshold').value = g;
@@ -10515,16 +11013,23 @@
       renderResults(isFinite(span) ? span : 0);
       prog.classList.add('hidden');
       var nFill = fillers.ranges.length, nSil = sil.length;
+      var again = 'Tap ⚡ Find the silences again';
+      var ours = function (t) { return t.replace(/run Clean up again/g, 'tap ⚡ Find the silences again'); };
       if (nSil === 0 && nFill === 0) {
-        toast(plan.tooLoud
-          ? 'Background music or noise is as loud as your voice, so Pulse can’t find dead air by sound. Transcribe first and it can cut the pauses between words.'
-          : (tune.manual ? 'No pauses found at ' + tune.manualDb + ' dB / ' + tune.minPause + 's (Manual). Untick Manual to let Pulse measure your room.'
-                         : 'No pauses long enough to cut — your clip is already tight. (Try ⚡ Reel for tighter cuts.)'), !!plan.tooLoud);
+        // say WHY nothing was found — a leftover selection, a clip Pulse can't
+        // hear inside, Manual mode, a track that kept the pauses — not just "tight"
+        var nc = silNothingCut(plan, tune);
+        var head = ours(nc.head);
+        if (!nc.act && !plan.tooLoud && !(plan.mics.length > 1)) head += ' (Try ⚡ Reel for tighter cuts.)';
+        renderHeard('sil-heard', plan, [head].concat(nc.lines.map(ours), [ours(hearingSummary(plan, true))]), again);
+        toast(head + ' (Details under “What Pulse heard”.)', nc.act);
       } else {
+        renderHeard('sil-heard', plan, [ours(hearingSummary(plan))].concat((plan.musicOnly || []).map(function (mo) { return '⚠️ ' + ours(silMusicOnlyLine(mo)); })), again);
         toast('Found ' + nSil + ' pause' + (nSil === 1 ? '' : 's') + (nFill ? ' + ' + nFill + ' filler cuts' : '') + '. ' + hearingSummary(plan).split('\n')[0]);
       }
     }).catch(function (e) {
-      prog.classList.add('hidden');
+      stop.done(); prog.classList.add('hidden');
+      if (e && e.stopped) return toast(e.message);
       toast('Analyze failed: ' + e.message, true);
     });
   });
@@ -10611,8 +11116,8 @@
                   : '\n\n⚠️ Backup is OFF — this edits your live sequence with no safety copy. Tick “Back up sequence first” if you’re unsure.';
     confirmInline(msg, 'Cut them', function (yes) {
       if (!yes) return;
-      applyCleanCuts(ranges, state.silPlan, { closeGaps: closeGaps, backup: backup }).then(function (rr) {
-        toast('Cut done — removed ' + cutDoneText(rr, ranges) + '. Transcript auto-synced — go straight to “Remove repeated takes” or captions, no re-transcribe needed.');
+      applyCleanCuts(ranges, state.silPlan, { closeGaps: closeGaps, backup: backup, flow: 'Find the silences' }).then(function (rr) {
+        toast('Cut done — removed ' + cutDoneText(rr, ranges) + '. Transcript auto-synced — go straight to “Remove repeated takes” or captions, no re-transcribe needed. ' + backupText(rr));
       }).catch(function (e) { toast('Cut failed: ' + e.message, true); });
     });
   });
@@ -10682,7 +11187,9 @@
   function rippleTranscriptByRanges(ranges, closeGaps) {
     if (!ranges || !ranges.length) return 0;
     return resyncTranscripts(function (items) {
-      return CPSilence.rippleItems(items, ranges, closeGaps !== false);
+      // the word list is words; every other copy is caption LINES — a
+      // one-word line ("Haan.") or one with no spaces stays a line
+      return CPSilence.rippleItems(items, ranges, closeGaps !== false, { kind: items === state.transcriptWords ? 'words' : 'lines' });
     });
   }
 

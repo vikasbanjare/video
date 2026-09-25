@@ -47,6 +47,9 @@ function makeWorld(opts) {
   model.locked = {}; model.muted = {}; model.broken = {}; model.names = {};
   model.reads = 0;                   // every item read through QE or the DOM (cost probe)
   model.linkedMove = !!opts.linkedMove;
+  // opts.overwriteOnMove: a clip moved onto another on the same track trims or
+  // removes what it lands on (how a drag in Premiere overwrites)
+  model.overwriteOnMove = !!opts.overwriteOnMove;
 
   function Time() { this.seconds = 0; }
   // QE items read .secs; DOM clips read .seconds — one object serves both.
@@ -90,6 +93,15 @@ function makeWorld(opts) {
       model.allowEndSet = true;
       clip.start = mkT(clip.start.seconds + d);
       clip.end = mkT(clip.end.seconds + d);
+      if (where && model.overwriteOnMove) {
+        const s0 = clip.start.seconds, e0 = clip.end.seconds;
+        for (const o of where.arr.slice()) {
+          if (o === clip || o.end.seconds <= s0 + 1e-9 || o.start.seconds >= e0 - 1e-9) continue;
+          if (o.start.seconds < s0) o.end = mkT(s0);                        // tail overwritten
+          else if (o.end.seconds > e0) o.start = mkT(e0);                   // head overwritten
+          else where.arr.splice(where.arr.indexOf(o), 1);                   // covered: gone
+        }
+      }
       model.allowEndSet = false;
       if (where) where.arr.sort((a, b) => a.start.seconds - b.start.seconds);
       if (model.linkedMove && clip._link && !_partner) {
@@ -716,6 +728,24 @@ for (const mode of ['noop', 'throw']) {
   assert(ok && contiguousFromZero(cam) && contiguousFromZero(hostMic), 'linked camera+mic moved together are not moved twice');
 }
 {
+  // a J/L cut: the camera piece on V1 is linked to a mic piece on A1 that sits
+  // further along. Premiere drags the partner with the camera — onto the next
+  // mic piece, which it shortens — and every clip still STARTS where Pulse
+  // wanted. Judged on starts only, that was reported as done.
+  const w = makeWorld({ vTracks: 1, aTracks: 1, fps: 25, linkedMove: true, overwriteOnMove: true });
+  w.model.addClip('vTracks', 0, 0, 10, { name: 'cam a', _mIn: 0 });
+  w.model.addClip('vTracks', 0, 12, 20, { name: 'cam b', _mIn: 12, _link: 'JL' });
+  w.model.addClip('aTracks', 0, 0, 10, { name: 'mic a', _mIn: 0 });
+  w.model.addClip('aTracks', 0, 26, 29, { name: 'mic b', _mIn: 26 });
+  w.model.addClip('aTracks', 0, 30, 34, { name: 'mic c', _mIn: 30, _link: 'JL' });
+  const host = loadHost(w);
+  const r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }], backup: true });
+  const micB = w.model.aTracks[0].find(c => c.name === 'mic b');
+  assert(!!micB && close(micB.start.seconds, 24, 1e-6), 'the shortened clip still starts on its target (24 s) — a start-only check sees nothing wrong');
+  assert(r.ok === false && /A1/.test(r.error) && /shortened, moved or dropped/.test(r.error) && /Episode 12 Copy/.test(r.error),
+    'a clip shortened by a dragged partner is caught on its END: not reported as done, and the backup is named: ' + (r.error || JSON.stringify(r)));
+}
+{
   // an already jump-cut timeline: several pieces of one recording per track
   const w = makeWorld({ vTracks: 1, aTracks: 1, fps: 25 });
   w.model.addClip('vTracks', 0, 0, 10, { _mIn: 0 }); w.model.addClip('vTracks', 0, 10, 20, { _mIn: 15 });
@@ -799,6 +829,84 @@ for (const mode of ['noop', 'throw']) {
   w2.model.addClip('aTracks', 0, 0, 60, { name: 'cam', projectItem: pi('/m/cam.mp4'), inPoint: { seconds: 0 }, outPoint: { seconds: 60 } });
   const r2 = call(loadHost(w2), 'CP_getCutSources', {});
   assert(r2.ok && r2.selection === null, 'a selected TITLE/caption does not shrink the clean-up to its 3 seconds');
+}
+
+// ═══ CP_razorRipple → transcript: the words the panel re-times with the
+//     host's frame-snapped ranges never bring a removed take back ═══
+console.log('host.jsx — CP_razorRipple + the transcript remap (removed words stay removed)');
+{
+  const CPSilence = require(path.join(__dirname, '..', 'js', 'silence.js'));
+  const w = makeWorld({ vTracks: 1, aTracks: 1, fps: 25 });
+  w.model.addClip('vTracks', 0, 0, 60, { _mIn: 0 });
+  w.model.addClip('aTracks', 0, 0, 60, { _mIn: 0 });
+  const host = loadHost(w);
+  // "so I, I think that we go": the retake cut starts ON the removed "I"
+  const words = [{ start: 9.7, end: 9.98, text: 'so' }, { start: 10.028, end: 10.32, text: 'I' }, { start: 11.5, end: 11.7, text: 'I' },
+                 { start: 11.75, end: 12.1, text: 'think' }, { start: 12.15, end: 12.35, text: 'that' }, { start: 12.4, end: 12.55, text: 'we' }, { start: 12.6, end: 12.9, text: 'go' }];
+  const r = call(host, 'CP_razorRipple', { ranges: [{ start: 10.028, end: 11.5 }] });
+  const after = CPSilence.rippleItems(words, r.removed, true);
+  assert(r.ok && close(r.removed[0].start, 10.04, 1e-9) && after.map(x => x.text).join(' ') === 'so I think that we go',
+    'the real host snaps the cut to 10.04–11.52 and the re-timed words read "' + after.map(x => x.text).join(' ') + '" (was "so I I think that we go")');
+}
+
+// ═══ CP_razorRipple: what the owner reads when a cut is refused or stops
+//     half-way — the button to press again, and the backup as the way back ═══
+console.log('host.jsx — CP_razorRipple messages the owner can act on');
+{
+  const w = podcastWorld();
+  const host = loadHost(w);
+  const src = call(host, 'CP_getCutSources', {});
+  w.model.addClip('vTracks', 1, 40, 42, { name: 'late insert', _mIn: 40 });
+  let r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }], expectSequenceId: src.sequenceId, expectFingerprint: src.fingerprint, flowName: 'Find the silences' });
+  assert(r.ok === false && /press “Find the silences” again/.test(r.error) && !/Clean up/.test(r.error),
+    'a stale cut list from Find the silences says to press THAT button again, not "Clean up": ' + r.error);
+  r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }], expectSequenceId: src.sequenceId, expectFingerprint: src.fingerprint });
+  assert(r.ok === false && /press the button you used again/.test(r.error) && !/Clean up/.test(r.error),
+    'with no button named (the takes list), it says to press the button that was used: ' + r.error);
+  r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }], expectSequenceId: 'seq-other', expectSequenceName: 'Episode 11', flowName: 'Clean up my video' });
+  assert(r.ok === false && /press “Clean up my video” again on this one/.test(r.error), 'another sequence: open it, or press the same button on this one: ' + r.error);
+}
+{
+  // stopped half-way WITH a backup: the backup copy is the way back, ⌘Z only a fallback
+  const w = podcastWorld();
+  w.model.broken.A2 = 'nomove';
+  const host = loadHost(w);
+  const r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }, { start: 30, end: 33 }], backup: true });
+  assert(r.ok === false && /OUT OF SYNC/.test(r.error) && /“Episode 12 Copy” in the Project panel/.test(r.error) && /one press per edit/.test(r.error),
+    'out of sync with a backup: names the backup copy to open (⌘Z is one press per edit): ' + r.error);
+}
+{
+  // the backup's REAL name is reported (Premiere names copies itself — a
+  // localized build does not say "Copy"), so the owner opens the right one
+  const w = podcastWorld();
+  const seq = w.sandbox.app.project.activeSequence, clone0 = seq.clone;
+  seq.clone = function () {
+    clone0.call(seq);
+    w.sandbox.app.project.sequences = { numSequences: 2, 0: seq, 1: { sequenceID: 'seq-kopie', name: 'Episode 12 Kopie' } };
+    return true;
+  };
+  const host = loadHost(w);
+  const r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }], backup: true });
+  assert(r.ok === true && r.backup === 'Episode 12 Kopie', 'the backup copy is reported by the name Premiere gave it: ' + r.backup);
+}
+{
+  // …and WITHOUT one: say there is no backup, and how to undo
+  const w = podcastWorld();
+  w.model.broken.A2 = 'nomove';
+  const host = loadHost(w);
+  const r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }] });
+  assert(r.ok === false && /no backup copy/i.test(r.error) && /⌘Z/.test(r.error), 'out of sync without a backup: says so, and how to undo: ' + r.error);
+}
+{
+  // a Premiere that can't move clips from a script: no dead end — "safe copy"
+  // refuses any timeline with more than one clip, so it can't be THE answer
+  const w = podcastWorld();
+  for (const arr of w.model.vTracks.concat(w.model.aTracks)) for (const c of arr) delete c.move;
+  const host = loadHost(w);
+  const before = snapshotAll(w);
+  const r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }], backup: true });
+  assert(r.ok === false && /Nothing was cut/.test(r.error) && /Updating Premiere Pro/.test(r.error) && /ONE clip and one mic/.test(r.error) && snapshotAll(w) === before,
+    'no scriptable move: nothing cut, and the way out works for every timeline (update Premiere): ' + r.error);
 }
 
 // ══════════════════════════════════════════════ CP_insertMogrtCaptions ═════
@@ -977,6 +1085,162 @@ console.log('host.jsx — transcribe source resolves nested sequences ("only one
     'piece 1 time-mapped through the nest (media 10→40 at master 5s): ' + JSON.stringify(i0));
   assert(Math.abs(i1.inPoint - 45) < 1e-6 && Math.abs(i1.outPoint - 75) < 1e-6 && Math.abs(i1.seqStart - 35) < 1e-6,
     'piece 2 time-mapped + clipped to the nest window (media 45→75 at master 35s): ' + JSON.stringify(i1));
+}
+
+// ═══ NESTED SEQUENCES in the dead-air listing: every inner clip, mapped to
+//     the master timeline (the old list gave the nest mediaPath null, so
+//     nothing under it was ever cut and the owner heard "already tight") ═══
+console.log('host.jsx — CP_getCutSources opens nested sequences (dead air under a nest)');
+{
+  const w = makeWorld({ vTracks: 1, aTracks: 1 });
+  const host = loadHost(w);
+  const T = s => ({ seconds: s, get secs() { return this.seconds; } });
+  const mkTracks = list => { const o = {}; list.forEach((tr, i) => { o[i] = tr; }); o.numTracks = list.length; return o; };
+  const mkClips = arr => { const c = { numItems: arr.length }; arr.forEach((x, i) => { c[i] = x; }); return c; };
+  const real = (name, path, st, en, ip, extra) => Object.assign({
+    name, start: T(st), end: T(en), inPoint: T(ip), outPoint: T(ip + (en - st)),
+    isSelected: () => false, projectItem: { getMediaPath: () => path, nodeId: 'n_' + name } }, extra || {});
+  const nest = (name, nodeId, st, en, ip, extra) => Object.assign({
+    name, start: T(st), end: T(en), inPoint: T(ip), outPoint: T(ip + (en - st)),
+    isSelected: () => false, projectItem: { getMediaPath: () => null, nodeId } }, extra || {});
+  // the repo's nested fixture: ONE voice jump-cut into two pieces inside the
+  // nest, plus a guest mic on the nest's A2 that is muted in there
+  const innerSeq = {
+    sequenceID: 'sq-inner', name: 'ETF inner', projectItem: { nodeId: 'nest1' },
+    audioTracks: mkTracks([
+      { name: 'A1', clips: mkClips([real('voice a', '/m/voice.wav', 0, 40, 0), real('voice b', '/m/voice.wav', 40, 80, 45)]) },
+      { name: 'Guest', isMuted: () => true, clips: mkClips([real('guest', '/m/guest.wav', 20, 60, 0)]) }
+    ]),
+    videoTracks: mkTracks([])
+  };
+  const master = {
+    sequenceID: 'sq-master', name: 'Master',
+    audioTracks: mkTracks([{ name: 'A1', clips: mkClips([nest('ETF nest', 'nest1', 5, 65, 10)]) }]),
+    videoTracks: mkTracks([{ clips: mkClips([real('Stray.mp4', '/m/stray.mp4', 0, 3, 0)]) }])
+  };
+  w.sandbox.app.project.activeSequence = master;
+  w.sandbox.app.project.sequences = { numSequences: 2, 0: master, 1: innerSeq };
+  const r = call(host, 'CP_getCutSources', {});
+  const voice = (r.audio || []).find(t => (t.items || []).some(it => it.mediaPath === '/m/voice.wav'));
+  const guest = (r.audio || []).find(t => (t.items || []).some(it => it.mediaPath === '/m/guest.wav'));
+  assert(r.ok && !(r.audio || []).some(t => (t.items || []).some(it => it.mediaPath == null)),
+    'a nest is not listed as a clip with no media (nothing under it could be heard): ' + JSON.stringify(r.audio && r.audio.map(t => [t.label || t.index, t.items.length])));
+  assert(!!voice && voice.items.length === 2 && voice.label === 'A1' && /ETF nest/.test(voice.name) && voice.key !== 'A1',
+    'the voice inside the nest is listed on its own track, labelled with the master track and the nest: ' + (voice && JSON.stringify([voice.label, voice.key, voice.name])));
+  const [p1, p2] = voice ? voice.items : [];
+  assert(!!p1 && close(p1.seqStart, 5) && close(p1.seqEnd, 35) && close(p1.inPoint, 10) && close(p1.outPoint, 40) && close(p1.speed, 1),
+    'piece 1 mapped to the master timeline (media 10→40 plays at 5–35 s): ' + JSON.stringify(p1));
+  assert(!!p2 && close(p2.seqStart, 35) && close(p2.seqEnd, 65) && close(p2.inPoint, 45) && close(p2.outPoint, 75),
+    'piece 2 mapped and clipped to what the nest shows (media 45→75 at 35–65 s): ' + JSON.stringify(p2));
+  assert(!!guest && guest.muted === true && close(guest.items[0].seqStart, 15) && close(guest.items[0].inPoint, 0),
+    'a track muted INSIDE the nest is flagged muted (the guest at master 15 s): ' + JSON.stringify(guest && [guest.muted, guest.items[0]]));
+
+  // a nest sped up to 200% on the master, holding a nest of its own
+  const deep = { sequenceID: 'sq-deep', name: 'Deep', projectItem: { nodeId: 'nest3' },
+    audioTracks: mkTracks([{ name: 'A1', clips: mkClips([real('vo', '/m/vo.wav', 0, 30, 100)]) }]), videoTracks: mkTracks([]) };
+  const mid = { sequenceID: 'sq-mid', name: 'Mid', projectItem: { nodeId: 'nest2' },
+    audioTracks: mkTracks([{ name: 'A1', clips: mkClips([nest('Deep nest', 'nest3', 10, 40, 0)]) }]), videoTracks: mkTracks([]) };
+  const top = { sequenceID: 'sq-top', name: 'Top',
+    audioTracks: mkTracks([{ name: 'A1', clips: mkClips([nest('Mid nest', 'nest2', 0, 10, 10, { getSpeed: () => 2 })]) }]), videoTracks: mkTracks([]) };
+  w.sandbox.app.project.activeSequence = top;
+  w.sandbox.app.project.sequences = { numSequences: 3, 0: top, 1: mid, 2: deep };
+  const r2 = call(host, 'CP_getCutSources', {});
+  const vo = (r2.audio || []).map(t => t.items).reduce((a, b) => a.concat(b), []).find(it => it.mediaPath === '/m/vo.wav');
+  // top 0–10 s shows Mid 10–30 at 2×; Mid 10–30 is Deep 0–20 → vo media 100–120
+  assert(!!vo && close(vo.seqStart, 0) && close(vo.seqEnd, 10) && close(vo.inPoint, 100) && close(vo.outPoint, 120) && close(vo.speed, 2),
+    'a nest inside a 200% nest: media 100→120 plays at master 0–10 s, 2 s of media per second: ' + JSON.stringify(vo));
+
+  // editing INSIDE the nest after listening changes the fingerprint → the cut is refused
+  w.sandbox.app.project.activeSequence = master;
+  w.sandbox.app.project.sequences = { numSequences: 2, 0: master, 1: innerSeq };
+  const fp1 = call(host, 'CP_getCutSources', {}).fingerprint;
+  innerSeq.audioTracks[0].clips[1].start = T(41); innerSeq.audioTracks[0].clips[1].end = T(81);
+  const fp2 = call(host, 'CP_getCutSources', {}).fingerprint;
+  assert(fp1 !== fp2, 'moving a clip inside the nest changes the timeline fingerprint (a stale cut list is refused): ' + fp1 + ' vs ' + fp2);
+  // a nest that contains itself is not followed forever
+  const loop = { sequenceID: 'sq-loop', name: 'Loop', projectItem: { nodeId: 'nestL' },
+    audioTracks: mkTracks([{ name: 'A1', clips: mkClips([nest('Loop nest', 'nestL', 0, 10, 0)]) }]), videoTracks: mkTracks([]) };
+  w.sandbox.app.project.activeSequence = loop;
+  w.sandbox.app.project.sequences = { numSequences: 1, 0: loop };
+  const r3 = call(host, 'CP_getCutSources', {});
+  assert(r3.ok === true, 'a sequence nested in itself is listed without looping (' + (r3.error || 'ok') + ')');
+}
+{
+  // a flat timeline lists exactly what it did before (no nest → no new tracks)
+  const w = makeWorld({ vTracks: 1, aTracks: 2, fps: 25 });
+  const pi = (p) => ({ getMediaPath: () => p, nodeId: 'n' + p });
+  w.model.addClip('aTracks', 0, 0, 20, { name: 'host', projectItem: pi('/m/host.wav'), inPoint: { seconds: 0 }, outPoint: { seconds: 20 } });
+  w.model.addClip('aTracks', 1, 0, 20, { name: 'guest', projectItem: pi('/m/guest.wav'), inPoint: { seconds: 0 }, outPoint: { seconds: 20 } });
+  const r = call(loadHost(w), 'CP_getCutSources', {});
+  assert(r.ok && r.audio.length === 2 && r.audio.every(t => !t.key && !t.nested) && /^\d+\|\d+\|\d+$/.test(r.fingerprint),
+    'a timeline without nests: the same two tracks and the same fingerprint shape as before (' + r.fingerprint + ')');
+}
+
+// ═══ A NEST CUT INTO HUNDREDS OF PIECES is read once, not once per piece ═══
+// After one Clean up, the nest on V1 + A1 is razored into ~100 pieces. The
+// listing (Find the silences / Clean up again) and the cut check before every
+// cut re-read the whole nested sequence for EVERY piece: ~470,000 Premiere
+// reads per listing at 100 pieces, 1.4 million at 300 (each one a round trip
+// into Premiere). Every read and call is counted here.
+console.log('host.jsx — a nest cut into many pieces is read once per listing');
+{
+  let reads = 0;
+  const T = (s) => { const o = {}; Object.defineProperty(o, 'seconds', { get() { reads++; return s; } }); return o; };
+  let node = 0;
+  const mkClip = (x) => {
+    const nid = x.nest ? 'seq-' + x.nest.id : 'n' + (++node);
+    const pi = { getMediaPath: () => { reads++; return x.nest ? null : x.path; }, isSequence: () => { reads++; return !!x.nest; } };
+    Object.defineProperty(pi, 'nodeId', { get() { reads++; return nid; } });
+    const c = { isSelected: () => { reads++; return false; }, getSpeed: () => { reads++; return 1; } };
+    for (const [k, v] of [['name', () => x.name], ['start', () => T(x.st)], ['end', () => T(x.en)], ['inPoint', () => T(x.ip || 0)],
+                          ['outPoint', () => T((x.ip || 0) + (x.en - x.st))], ['projectItem', () => pi]]) {
+      Object.defineProperty(c, k, { get() { reads++; return v(); } });
+    }
+    return c;
+  };
+  const tracks = (list) => { const o = { numTracks: list.length }; list.forEach((clips, i) => { const c = { numItems: clips.length }; clips.forEach((x, k) => { c[k] = mkClip(x); }); o[i] = { name: '', clips: c }; }); return o; };
+  const seqObj = (sq) => ({ sequenceID: sq.id, name: sq.name, end: '0', projectItem: { nodeId: 'seq-' + sq.id }, audioTracks: tracks(sq.audio), videoTracks: tracks(sq.video || []) });
+  // the nested podcast: 4 mics + 2 cameras, each already jump-cut into 60 pieces
+  const innerDur = 600, d = innerDur / 60;
+  const piece = (p, k) => ({ name: p + k, path: '/m/' + p + '.wav', st: k * d, en: (k + 1) * d, ip: k * d });
+  const inner = { id: 'inner', name: 'Podcast inner', audio: [0, 1, 2, 3].map(t => Array.from({ length: 60 }, (_, k) => piece('mic' + t, k))),
+    video: [0, 1].map(t => Array.from({ length: 60 }, (_, k) => Object.assign(piece('cam' + t, k), { path: '/m/cam' + t + '.mp4' }))) };
+  function world(N) {
+    const pd = innerDur / N;
+    const pieces = Array.from({ length: N }, (_, k) => ({ name: 'Podcast nest', nest: inner, st: k * pd * 0.9, en: (k + 1) * pd * 0.9, ip: k * pd }));
+    const seqs = [{ id: 'master', name: 'Episode 14', audio: [pieces], video: [pieces] }, inner].map(seqObj);
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    const host = loadHost(w);
+    w.sandbox.app.project.activeSequence = seqs[0];
+    w.sandbox.app.project.sequences = { numSequences: 2, 0: seqs[0], 1: seqs[1] };
+    return { host, master: seqs[0], inner: seqs[1] };
+  }
+  const cost = {};
+  for (const N of [100, 300]) {
+    const { host, master } = world(N);
+    reads = 0;
+    const r = call(host, 'CP_getCutSources', {});
+    cost[N] = { list: reads };
+    reads = 0;
+    const fp = host.CP_cutFingerprint(master);
+    cost[N].fp = reads;
+    const items = (r.audio || []).reduce((a, t) => a + (t.items || []).length, 0);
+    const mic0 = (r.audio || []).find(t => (t.items || []).some(it => it.mediaPath === '/m/mic0.wav'));
+    const first = mic0 && mic0.items[0];
+    assert(r.ok && mic0 && mic0.items.length >= N && !!first && close(first.seqStart, 0) && close(first.inPoint, 0) &&
+           fp === r.fingerprint && host.CP_cutFingerprint(master) === fp,
+      N + ' nest pieces: every piece is still listed and mapped (' + items + ' inner clips; mic 1 piece 1 at ' + (first && first.seqStart) + ' s), and the fingerprint is stable');
+    const moved = inner.audio[2][7], was = moved.st;
+    moved.st = 70.5;                                                   // someone moves a clip inside the nest
+    assert(host.CP_cutFingerprint(master) !== fp, N + ' nest pieces: moving a clip INSIDE the nest still changes the fingerprint (a stale cut list is refused)');
+    moved.st = was;
+  }
+  assert(cost[100].list <= 20000 && cost[300].list <= 40000,
+    'listing a nest cut into 100 / 300 pieces: ' + cost[100].list + ' / ' + cost[300].list + ' Premiere reads (it was ~470,000 / 1,400,000 — the nest re-read for every piece)');
+  assert(cost[100].fp <= 5000 && cost[300].fp <= 10000,
+    'the cut check on the same timeline: ' + cost[100].fp + ' / ' + cost[300].fp + ' reads (it was ~360,000 / 1,090,000)');
+  assert(cost[300].list - cost[100].list <= 200 * 50,
+    'each extra piece costs a few reads, not the whole nest again (' + Math.round((cost[300].list - cost[100].list) / 200) + ' reads per piece)');
 }
 
 // ═══ FLAT jump-cuts: many short voice pieces must beat one long b-roll ═══

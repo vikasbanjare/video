@@ -766,7 +766,13 @@
       </div>
       <button id="btn-autoclean" class="hero-btn" style="margin-top:10px">✨ Clean up my video</button>
       <div id="autoclean-progress" class="progress hidden"></div>
+      <button id="btn-autoclean-stop" class="chip-btn hidden" style="margin-top:6px" title="Stop listening — nothing is cut">■ Stop</button>
+      <!-- filled after every listen: each track Pulse heard, why nothing was
+           cut when nothing was, and a voice / music choice per track -->
+      <div id="ac-heard" class="hidden" style="margin-top:8px;padding:8px;border:1px solid var(--line, #2b3242);border-radius:8px"></div>
       <p class="hint" style="margin-top:6px">Pulse listens to <b>every mic</b> on your timeline and only cuts where <b>everyone</b> is quiet.
+         Name your music track <b>Music</b> (or BGM) in Premiere and Pulse leaves it out of that; if a track only sounds like music,
+         Pulse asks you first.
          Dead air is removed even without a transcript; transcribe first (Transcribe tab) so it can also remove repeated takes.
          A backup of your sequence is always made first.</p>
     </div>
@@ -802,22 +808,23 @@
       </div>
       <p class="hint" style="margin-top:5px"><b>YouTube</b> fits most talking videos (pauses over 0.5s shortened to 0.3s).
          <b>Reel</b> = tight, punchy cuts. <b>Podcast</b> keeps a natural rhythm (only pauses over 0.8s).
-         Pulse measures each mic’s own room noise — there is no dB to set.</p>
+         Pulse measures each mic’s own room noise, so you never need to set a dB level —
+         the Fine-tune numbers below are only used when you tick <b>Manual</b>.</p>
 
       <label class="check" style="margin-top:8px"><input type="checkbox" id="opt-fillers"> Also remove filler words <span class="dim">(um, uh, you know…)</span></label>
 
       <details class="advanced" style="margin-top:8px">
         <summary>Fine-tune (for power users)</summary>
         <label style="display:flex;justify-content:space-between;align-items:center;margin:8px 0 2px">
-          <span>Silence threshold <b id="opt-threshold-val">−40 dB</b></span>
-          <label class="check" style="margin:0;font-size:11px"><input type="checkbox" id="opt-threshold-manual"> Manual</label>
+          <span>Quiet below <b id="opt-threshold-val">−40 dB</b></span>
+          <label class="check" style="margin:0;font-size:11px" title="Use these numbers instead of Pulse’s own measurement (a music track is still left out)"><input type="checkbox" id="opt-threshold-manual"> Manual</label>
         </label>
         <input type="range" id="opt-threshold-range" min="-70" max="-15" step="1" value="-40">
         <div class="grid2" style="margin-top:8px">
-          <label>Threshold (dB)<input type="number" id="opt-threshold" value="-40" step="1" max="0" min="-90"></label>
-          <label>Min pause (s)<input type="number" id="opt-minsilence" value="0.5" step="0.1" min="0.1"></label>
-          <label>Padding (s)<input type="number" id="opt-padding" value="0.12" step="0.02" min="0"></label>
-          <label>Min keep (s)<input type="number" id="opt-minkeep" value="0.25" step="0.05" min="0"></label>
+          <label title="A moment quieter than this counts as a pause">Quiet below (dB)<input type="number" id="opt-threshold" value="-40" step="1" max="0" min="-90"></label>
+          <label title="Only pauses at least this long are cut">Shortest pause to cut (s)<input type="number" id="opt-minsilence" value="0.5" step="0.1" min="0.1"></label>
+          <label title="Room kept before and after your words, so no word is clipped">Keep around words (s)<input type="number" id="opt-padding" value="0.12" step="0.02" min="0"></label>
+          <label title="A breath or click shorter than this, between two pauses, is cut with them">Cut a lone breath under (s)<input type="number" id="opt-minkeep" value="0.25" step="0.05" min="0"></label>
         </div>
         <label class="check" style="margin-top:6px"><input type="checkbox" id="opt-fillers-extra"> Filler removal also cuts “like”, “so”, “actually” <span class="dim">(may catch real words)</span></label>
         <div id="opt-fillers-adv" style="display:none"></div>
@@ -826,6 +833,8 @@
 
     <button id="btn-analyze" class="hero-btn alt">⚡ Find the silences</button>
     <div id="analyze-progress" class="progress hidden"></div>
+    <button id="btn-analyze-stop" class="chip-btn hidden" style="margin-top:6px" title="Stop listening — nothing is cut">■ Stop</button>
+    <div id="sil-heard" class="hidden" style="margin:8px 0;padding:8px;border:1px solid var(--line, #2b3242);border-radius:8px"></div>
 
     <div id="results" class="hidden">
       <div class="card">
