@@ -2482,8 +2482,11 @@
         listCaptionFilesIn(pathMod.dirname(mediaPath)).forEach(function (s) { s.base = 1e14; s.src = 'clip'; add(s); });
         // A transcript WE already made for this recording is the canonical one:
         // it wins over any external .srt and carries word-level timing. It is
-        // laid onto the pieces of the recording the timeline shows NOW.
-        saved = CPBridge.callHost('CP_getTranscribeSource', { onlyMediaPath: mediaPath }).then(function (res) {
+        // laid onto the pieces of the recording the timeline shows NOW. Asking
+        // Premiere walks the whole timeline, so only when something is saved
+        // for this recording and the scan may adopt it (a scan never replaces
+        // a transcript the owner made or picked).
+        if (!curProtected && findCachedTranscriptForMedia(mediaPath)) saved = CPBridge.callHost('CP_getTranscribeSource', { onlyMediaPath: mediaPath }).then(function (res) {
           var pieces = transcribePieces(res);
           if (!pieces.length) return;
           var span = { minIn: Infinity, maxOut: -Infinity };

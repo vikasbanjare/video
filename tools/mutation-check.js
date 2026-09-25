@@ -161,6 +161,14 @@ const MUTANTS = [
     repl: '      return true;',
     gate: 'CutPilot/test/gates/caption-sync-placement.js',
     why: 'Add captions stops checking where the clip sits before it places the words'
+  },
+  {
+    name: 'caption-sync-scan-guard',
+    file: 'CutPilot/js/main.js',
+    find: 'if (!curProtected && findCachedTranscriptForMedia(mediaPath)) saved = CPBridge.callHost(',
+    repl: 'if (true) saved = CPBridge.callHost(',
+    gate: 'CutPilot/test/gates/caption-sync-placement.js',
+    why: 'every panel focus makes Premiere walk the whole timeline again, saved transcript or not'
   }
 ];
 

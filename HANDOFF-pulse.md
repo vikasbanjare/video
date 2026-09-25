@@ -9,7 +9,7 @@ Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels
 ### v0.10.2 — caption sync (the owner's "sync problem with pulse rendering with voice")
 Found in the code, without waiting for the owner's early/late answer. Four
 ways a caption's time left the voice, all fixed and gated
-(`test/gates/caption-sync-placement.js`, 25 checks; host-tests "counts clip
+(`test/gates/caption-sync-placement.js`, 26 checks; host-tests "counts clip
 speed", 9 checks; mediaToTimeline/timelineToMedia unit tests). Each fix was
 mutation-verified: breaking it turns its checks red.
 - **Speed.** `CP_getTranscribeSource` read every clip as 1:1. A reel at 120%
@@ -44,6 +44,10 @@ mutation-verified: breaking it turns its checks red.
   template-editor cues) through the recording (`retimeThroughRecording`),
   says so, and runs the action again. Pulse's own cuts clear the placement:
   `resyncTranscripts` has already re-timed those copies.
+- The selection scan (findTranscript, on every panel focus while nothing is
+  loaded) asks Premiere for the recording's pieces ONLY when something is
+  saved for that recording and the scan may adopt it. The call walks the
+  whole timeline, which is slow on a long podcast.
 - Diagnostics: the `asr source` line names any speed that isn't 100%.
 - Not changed: after Pulse's OWN cuts, Auto-transcribe still listens again
   (`_forceRetranscribe`). With v3 a reload would be correct, but that is a

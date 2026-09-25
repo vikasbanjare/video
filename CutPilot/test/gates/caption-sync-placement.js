@@ -130,9 +130,17 @@ async function run() {
 
     // 1 ─ a reel sped to 120%, starting at 0:02 on the timeline
     {
-      const { page } = await open();
+      const { page, calls } = await open();
       place = { media: REEL, pieces: [{ inPoint: 0, outPoint: 12, seqStart: 2, speed: 1.2 }] };
       heardDur = 12;
+      // nothing saved for this recording yet: selecting it must not make
+      // Premiere walk the whole timeline (the scan runs on every panel focus)
+      await page.evaluate(() => { window.CP_DEBUG_EXT.sync.setTranscript({}); window.CP_DEBUG_EXT.sync.findTranscript(); });
+      await H.waitFor(page, () => /No transcript|Using/.test((document.getElementById('tr-bar') || document.body).textContent), 3000);
+      await new Promise(res => setTimeout(res, 300));
+      C.check('nothing saved for the clip: the scan does not ask Premiere to walk the timeline',
+        !calls.some(c => c.fn === 'CP_getTranscribeSource' && c.args && c.args.onlyMediaPath === REEL) && calls.some(c => c.fn === 'CP_getSelectedClip'),
+        calls.map(c => c.fn + (c.args && c.args.onlyMediaPath ? '(' + path.basename(c.args.onlyMediaPath) + ')' : '')).join(', ').slice(0, 300));
       const r = await autoTranscribe(page);
       const t = r.t;
       C.check('120% reel: the first word lands where it is spoken (0:02 + 1 s ÷ 1.2 = 2.833 s)', near((word(t, 'one') || {}).start, 2 + 1 / 1.2), fmt(word(t, 'one')) + ' · ' + r.toast);
