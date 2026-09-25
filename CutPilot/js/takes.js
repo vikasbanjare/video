@@ -390,8 +390,14 @@
       // speaker's "haan toh aaj hum…" after an UNFINISHED "aaj hum…" is still
       // a restart when it says all of the earlier line again and goes on from
       // its last word; an agreeing reply ends the thought its own way.
+      // With "Two or more people" the owner has told us it is a conversation:
+      // an agreeing echo always protects the other person's line, however it
+      // was punctuated. Whisper often drops the full stop, and "So for me
+      // consistency is key," followed by "Exactly, for me consistency is key,
+      // and…" was being cut as a false start — the card promises an answer
+      // that echoes the question is never cut.
       if (people !== 'one' && (spk[a] == null || spk[b] == null) && agree[b] && !agree[a] &&
-          (isStmt[a] || !carriesOn(ct[a], ct[b]))) return false;
+          (people === 'many' || isStmt[a] || !carriesOn(ct[a], ct[b]))) return false;
       return true;
     }
     /* Is take i a deliberately shorter, FINISHED version of the fullest take
