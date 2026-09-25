@@ -167,5 +167,35 @@ console.log('solo retakes, people unset (unchanged)');
   }
 }
 
+// ---- "Two or more people": an echo protects a line WHATEVER its punctuation --
+// Regression found in verification: with people:'many', a host line ending in a
+// comma, or with no punctuation at all (Whisper often drops it), was cut as a
+// false start when the guest agreed and echoed it — while the card promises
+// "an answer that echoes the question is never cut", and the one-tap applies
+// these cuts with no review list.
+console.log('two or more people — echoes of unpunctuated or comma-ended lines');
+{
+  const ECHO_MANY = {
+    'English, comma-ended host line': ['So for me consistency is key,', 'Exactly, for me consistency is key, and quality matters too.',
+                                       'What did you post first?', 'A reel every single day.'],
+    'English, no punctuation at all': ['so for me consistency is key', 'exactly for me consistency is key and quality matters too',
+                                       'what did you post first', 'a reel every single day'],
+    'Hinglish, no punctuation': ['Toh roz post karna zaroori hai', 'Haan, roz post karna zaroori hai aur quality bhi.',
+                                 'Pehla video kya tha?', 'Ek chhota sa reel.'],
+    'Hinglish, comma-ended': ['Toh roz post karna zaroori hai,', 'Haan bilkul, roz post karna zaroori hai, aur quality bhi.',
+                              'Pehla video kya tha?', 'Ek chhota sa reel.']
+  };
+  for (const k of Object.keys(ECHO_MANY)) {
+    for (const p of Object.keys(PRESETS)) {
+      const d = run(ECHO_MANY[k], p, 'many');
+      check(p + ' · many · ' + k + ': nothing is cut', d.length === 0, JSON.stringify(d));
+    }
+  }
+  // …and "Two or more people" still finds a same-person near-identical retake
+  const retake = ['So the secret to growing on instagram is consistency.', 'So the secret to growing on instagram is consistency every day.', 'Post every day for a month.'];
+  const dr = run(retake, 'balanced', 'many');
+  check('balanced · many: a near-identical same-line retake is still found', dr.length === 1, JSON.stringify(dr));
+}
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
