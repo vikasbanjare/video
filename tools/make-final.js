@@ -26,7 +26,15 @@ function buildOnce() {
 // boot the obfuscated panel in headless Chromium and confirm it really works
 async function verify() {
   const puppeteer = require(path.join(ROOT, 'node_modules', 'puppeteer'));
-  const browser = await puppeteer.launch({ args: ['--no-sandbox', '--allow-file-access-from-files'], headless: 'new' });
+  // Find Chromium the same way every gate does. Launching with no path made
+  // puppeteer look only for its own downloaded Chrome — absent on a machine
+  // that installs puppeteer without the download (CI, a rebuilt container) —
+  // and the build retried 8 times and gave up on a perfectly good build.
+  let executablePath;
+  if (process.env.CP_CHROMIUM && fs.existsSync(process.env.CP_CHROMIUM)) executablePath = process.env.CP_CHROMIUM;
+  else executablePath = ['/opt/pw-browsers/chromium', '/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome'].find(p => fs.existsSync(p));
+  const browser = await puppeteer.launch(Object.assign({ args: ['--no-sandbox', '--allow-file-access-from-files'], headless: 'new' },
+    executablePath ? { executablePath } : {}));
   try {
     const page = await browser.newPage();
     const errs = [];
