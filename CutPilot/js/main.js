@@ -4468,6 +4468,44 @@
      doing nothing). Two whole captions keep the grouping visible, and the
      last caption on a tile is never a stray single word. The tile and the
      editor preview both come through here, so they stay identical. */
+  /* Whole phrases by length. A tile cuts its sample into captions of exactly
+     the style's words-per-caption, so every caption is a WHOLE phrase only if
+     each phrase has exactly that many words. Gluing sample lines together and
+     slicing them showed "Make every word count Heat waves" and "Start before
+     you are ready Make" — half-built phrases, which v0.9.386 had fixed once. */
+  var TILE_PHRASES = {
+    2: ['Stay consistent', 'Start today', 'Post daily', 'Think bigger', 'Hook fast', 'Keep going'],
+    3: ['Nobody tells you', 'Make it count', 'Grow your channel', 'Start right now', 'This changes everything', 'Trust the process'],
+    4: ['Make every word count', 'Heat waves are rising', 'Grow your channel fast', 'Nobody tells you this', 'Just start posting today', 'The hook is everything'],
+    5: ['Start before you are ready', 'This changes everything for you', 'Grow your channel really fast', 'Nobody ever tells you this', 'Make every single word count'],
+    6: ['The first three seconds decide everything', 'Nobody tells you this about money', 'Start before you feel really ready', 'Post every single day for results'],
+    7: ['The first three seconds decide everything here', 'Nobody ever tells you this about money', 'Start before you feel ready, keep going'],
+    8: ['Your first three seconds decide everything for you', 'Nobody ever tells you this thing about money', 'Start before you feel ready and keep going'],
+    9: ['Your first three seconds decide everything for your reel', 'Nobody ever tells you this one thing about money', 'Start before you feel ready and keep posting daily'],
+    10: ['Your first three seconds decide everything for your next reel', 'Nobody ever tells you this one simple thing about money', 'Start before you feel ready and keep on posting daily']
+  };
+  var TILE_PHRASES_HI = {
+    2: ['आज start', 'सच में', 'easy तरीका', 'start करो'],
+    3: ['आज start करो', 'पैसे कैसे बचाएं', 'ये trick कमाल', 'कोई नहीं बताता'],
+    4: ['यह secret सबसे ज़रूरी', 'पैसे बचाने का तरीका', 'आज से start करो', 'ये trick काम करती'],
+    5: ['यह secret कोई नहीं बताता', 'पैसे बचाने का easy तरीका', 'ये trick सच में कमाल'],
+    6: ['यह secret कोई भी नहीं बताता', 'पैसे बचाने का सबसे easy तरीका', 'ये trick सच में बहुत कमाल']
+  };
+  /* The sample holds at least TWO whole captions of this style: with a
+     four-word line, a 5- or 6-word style showed ONE caption whatever the
+     Words-per-caption stepper said (the dead-control audit measured "+"
+     doing nothing). Two whole captions keep the grouping visible, and the
+     last caption on a tile is never a stray single word. The tile and the
+     editor preview both come through here, so they stay identical. */
+  window.CP_DEBUG_EXT = window.CP_DEBUG_EXT || {};
+  window.CP_DEBUG_EXT.tiles = {
+    phrases: function () {
+      var out = TILE_SAMPLES.concat(TILE_SAMPLES_HI);
+      [TILE_PHRASES, TILE_PHRASES_HI].forEach(function (m) { for (var k in m) if (m.hasOwnProperty(k)) out = out.concat(m[k]); });
+      return out;
+    },
+    sample: function (p) { return tileSampleText(p); }
+  };
   function tileSampleText(p) {
     // Auto (0) is grouped 4 at a time by both surfaces (drawCardPreview and
     // renderPreview use `wordsPerCue || 4`), so size the sample the same way
@@ -4486,16 +4524,18 @@
     } catch (eT) {}
     var h = 0, id = String((p && p.id) || '');
     for (var k = 0; k < id.length; k++) h = (h * 31 + id.charCodeAt(k)) & 0xffff;
-    var pool = (p && p.script === 'deva') ? TILE_SAMPLES_HI : TILE_SAMPLES;
-    var start = h % pool.length;
-    var words = pool[start].split(' ');
-    // extend with the next sample lines (never a filler word list) when a
-    // caption of this style holds more words than one sample line
-    for (var n = 1; words.length < wpc * 2 && n < pool.length * 3; n++) {
-      words = words.concat(pool[(start + n) % pool.length].split(' '));
+    var deva = (p && p.script === 'deva');
+    var lines = deva ? TILE_SAMPLES_HI : TILE_SAMPLES;
+    if (wpc <= 1) return lines[h % lines.length];          // one word per caption: any line reads whole
+    var byLen = deva ? TILE_PHRASES_HI : TILE_PHRASES;
+    var n = byLen[wpc] ? wpc : null;
+    if (!n) {                                               // longer than the pool: the longest phrases, still whole
+      var ks = Object.keys(byLen).map(Number).sort(function (a, b) { return a - b; });
+      n = ks[ks.length - 1];
     }
-    if (words.length > wpc * 2) words = words.slice(0, Math.max(pool[start].split(' ').length, wpc * 2));
-    return words.join(' ');
+    var pool = byLen[n];
+    // two whole phrases of exactly the caption size → two whole captions
+    return pool[h % pool.length] + ' ' + pool[(h + 1) % pool.length];
   }
   function layoutYPct(p) {
     var l = p && p.layout;
