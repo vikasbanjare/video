@@ -1,10 +1,85 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.3** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.4** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.4 — one-mic podcasts follow each voice, free offline transcription, a better camera edit
+Everything below is gated and mutation-verified (the mutation entries are in
+tools/mutation-check.js). None of it has run on the owner's Mac yet.
+- **Podcast cameras edit** (commit 1657511):
+  - Redo with nothing to change said "applied — 0 cuts". It now says the
+    timeline already has this edit, and what to change.
+  - The three paces really differ (CPMulticam.PACES; longest shot Calm 45 s,
+    Balanced 20 s, Snappy 10 s). Calm and Balanced used to make the same
+    edit, because no real answer reached their 5 and 2 minute limits.
+  - A long answer gets reaction shots of the listener. They leave and come
+    back on a breath (reactionSpan pairs pauses of 0.2 s or more) and last
+    2–9 s. At Balanced they are 6–17% of an interview (more the longer the
+    answers run); Snappy runs 14–22%.
+  - Gate multicam-edit-quality (13 checks). multicam-follow now judges
+    reaction shots by those limits instead of as "wrong person": it had
+    failed since 1657511, caught only when the whole multicam set was re-run.
+- **Who's talking (one mic, several people)**, js/voices.js + main.js
+  mcOneMicPlan / mcVoicesPlan:
+  - Engine: sherpa-onnx 1.13.8's diarization program from its PyPI wheels
+    (sherpa-onnx-bin + sherpa-onnx-core), with pyannote segmentation-3.0
+    (MIT) and NVIDIA NeMo TitaNet-small (CC-BY-4.0; credited in Settings →
+    Who's talking). URLs and SHA-256 pinned for Apple silicon (69 MB), Intel
+    Mac (72 MB), Windows (82 MB) and Linux.
+  - Install into ~/.cutpilot/voices/1.13.8: every download checked, wheels
+    unzipped by Pulse (zipMember), the model's .tar.bz2 by the system tar,
+    the program moved in last. A failed install leaves nothing. The Mac
+    program needs only libonnxruntime.dylib next to it (@loader_path) and is
+    code-signed (checked from its Mach-O). **Windows: whether its tar.exe
+    reads .bz2 is untested** (it would fall back to talk bursts, saying why).
+  - Flow: follow mode with one audio track, or a Left/Right that sound the
+    same → Pulse asks once ("Download (69 MB)"). Then it mixes that track to
+    a 16 kHz WAV and runs the engine (4 threads, about 0.1× real time here).
+    Voice k goes to the k-th camera; cameras the owner set to "No mic
+    (wide)" stay wides. ⇄ Swap and per-voice pickers work as in transcript
+    mode. Declined or failed → the old talk-burst plan, with the reason.
+  - How many people: two person-cameras → exactly 2 voices. With 3+ the
+    engine decides (threshold 0.8), and "👥 How many people talk?" in the
+    plan lets the owner say; it listens again once. Measured: 0.8 finds 4
+    of 4 (sherpa's test recording) and 3 of 3 (Hindi TTS), but split one
+    voice of a spliced test conversation in two; 0.85+ merged the two male
+    Hindi TTS voices. No single threshold is right, hence the picker.
+  - The split is cached per recording with a razor-proof key, so Swap, Redo,
+    a pace change or Apply's razor cuts never listen again.
+  - Gates: voices-engine (6, real downloads), multicam-voices (12, the real
+    panel + host.jsx + ffmpeg + engine on a conversation with known turns:
+    100% right camera), 19 voices.js unit tests; 16 mutations.
+- **Transcribe on this computer** (free, no key, no Homebrew):
+  - The owner's (white-label) build offers "💻 On this computer — free, no
+    key (about 600 MB, once)" = large-v3-turbo-q5_0. Auto with no key still
+    asks for the key (cloud stays the default), and that message names it.
+  - No whisper.cpp found → Pulse fetches whisper.cpp-cli 0.0.3 from PyPI
+    (Charlie Marsh's packaging of whisper.cpp of spring 2024, MIT; ~1 MB,
+    pinned) into ~/.cutpilot/whisper/0.0.3/whisper-cli. Homebrew or a
+    Settings path still wins. On a Mac it uses Accelerate but **runs on the
+    CPU** (its Metal shaders are not bundled). whisper.cpp publishes no Mac
+    program itself yet (v1.8.3 has Windows zips and an xcframework; a PR for
+    Mac CLI builds, #4029, was open) — switch when it does.
+  - Pulse asks before the 574 MB model download (every build). Cancel reads
+    "Not transcribed — nothing was downloaded", not "failed".
+  - The owner's build names no engine or model anywhere (the transcript bar
+    said "Cloud · Groq (large-v3)"). A Deepgram transcript no longer claims
+    "wanted ggml-cloud-deepgram.bin … used a fallback".
+  - **Proof that this 2024 engine loads large-v3-turbo comes from CI only**:
+    Hugging Face is blocked in this container, so whisper-transcribe.js
+    (tiny + large-v3-turbo on JFK's sample, Pulse's exact options, Pulse's
+    SRT reader) skips here. Read its CI result before trusting the option.
+  - Gates: whisper-engine (3), whisper-transcribe (3, CI),
+    transcribe-on-this-computer (8, the white-label panel); 9 mutations.
+- Test plumbing: the multicam harness answers the voice-engine question
+  (ui.voices), runs real programs (opts.bins/files/settings) and clears the
+  old plan before each build. CI caches engine and model downloads
+  (/tmp/pulse-engines via CP_VOICES_CACHE).
+- Lesson: never `require()` tools/mutation-check.js to syntax-check it — it
+  runs the whole mutation pass and edits files in place. Use `node --check`.
 
 ### v0.10.3 — the five open problems from the owner's status list
 Each is gated, and each fix was broken on purpose to see its gate go red (12
@@ -113,7 +188,7 @@ release downloads work.
 - **Found:** the white-label build hides every local engine (WHISPER_QUALITIES
   is cloud-only), and the local install needs Homebrew. To offer free
   offline transcription, show the local option and download a ready-built
-  engine instead.
+  engine instead. → Done in v0.10.4 (see above).
 
 ### v0.10.2 — caption sync (the owner's "sync problem with pulse rendering with voice")
 Found in the code, without waiting for the owner's early/late answer. Four
@@ -575,12 +650,16 @@ Absolute paths. Only files touched in this session are listed.
 
 ## Next 3 actions
 
-1. **Owner installs v0.10.3 on the Mac and runs the real flows**: Hindi captions
-   on a reel; Clean up on a 2-mic podcast (with and without a music track —
-   name it "Music" or answer the one-tap question); Podcast cameras. Then
-   📋 Copy diagnostics. Everything above is proven against a fake Premiere
-   and headless Chromium; the QE razor, undo grouping, linked-audio behaviour
-   and CEP timer throttling are only provable on the Mac.
+1. **Owner installs v0.10.4 on the Mac and runs the real flows**: Podcast
+   cameras on a ONE-mic episode (say yes to Who's talking; check Voice 1 /
+   Voice 2 are on the right cameras, try ⇄ Swap and "How many people
+   talk?"); Transcribe with "💻 On this computer" on a Hindi clip (time it
+   against Pulse Cloud — it runs on the CPU); Hindi captions on a reel;
+   Clean up on a 2-mic podcast. Then 📋 Copy diagnostics (the voice engine
+   logs "split … into N voices" there). Everything above is proven against
+   a fake Premiere and headless Chromium; the QE razor, undo grouping,
+   linked-audio behaviour and CEP timer throttling are only provable on the
+   Mac.
 2. **Caption SYNC — fixed in v0.10.2, confirm on the Mac**: the four causes
    found in the code (clip speed ignored; saved transcripts in timeline time
    reused after a move or cut; word snapping against the selected clip; words
