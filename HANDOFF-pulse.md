@@ -26,8 +26,8 @@ tools/mutation-check.js). None of it has run on the owner's Mac yet.
   mcOneMicPlan / mcVoicesPlan:
   - Engine: sherpa-onnx 1.13.8's diarization program from its PyPI wheels
     (sherpa-onnx-bin + sherpa-onnx-core), with pyannote segmentation-3.0
-    (MIT) and NVIDIA NeMo TitaNet-small (CC-BY-4.0; credited in Settings →
-    Who's talking). URLs and SHA-256 pinned for Apple silicon (69 MB), Intel
+    (MIT) and NVIDIA NeMo TitaNet-small (CC-BY-4.0; credited behind the ⓘ of
+    Settings → Who's talking). URLs and SHA-256 pinned for Apple silicon (69 MB), Intel
     Mac (72 MB), Windows (82 MB) and Linux.
   - Install into ~/.cutpilot/voices/1.13.8: every download checked, wheels
     unzipped by Pulse (zipMember), the model's .tar.bz2 by the system tar,
@@ -68,10 +68,12 @@ tools/mutation-check.js). None of it has run on the owner's Mac yet.
   - The owner's build names no engine or model anywhere (the transcript bar
     said "Cloud · Groq (large-v3)"). A Deepgram transcript no longer claims
     "wanted ggml-cloud-deepgram.bin … used a fallback".
-  - **Proof that this 2024 engine loads large-v3-turbo comes from CI only**:
-    Hugging Face is blocked in this container, so whisper-transcribe.js
-    (tiny + large-v3-turbo on JFK's sample, Pulse's exact options, Pulse's
-    SRT reader) skips here. Read its CI result before trusting the option.
+  - **This 2024 engine loads large-v3-turbo — proven in CI** (run 274):
+    whisper-transcribe.js (tiny + large-v3-turbo on JFK's sample, Pulse's
+    exact options, Pulse's SRT reader, language on Auto) passed there; it
+    skips in this container, where Hugging Face is blocked. On CI's CPU
+    turbo took 89 s for the 11 s clip (one 30 s window) — speed on the
+    owner's Mac is unmeasured; Pulse Cloud stays the fast default.
   - Gates: whisper-engine (3), whisper-transcribe (3, CI),
     transcribe-on-this-computer (8, the white-label panel); 9 mutations.
 - Test plumbing: the multicam harness answers the voice-engine question
