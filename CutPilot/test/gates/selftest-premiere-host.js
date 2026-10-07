@@ -13,6 +13,9 @@
  *      added when the new sequence has one video track) — found as the
  *      newest item in the bin even when Premiere reports the file under
  *      /private/var instead of /var
+ *   A2. the test sequence shows time the way the owner's does (its time
+ *      display copied: Frames, drop-frame…), so the razor is tried as on
+ *      their timeline
  *   B. the razor: by Pulse's timecode, and at the playhead's own timecode —
  *      and on a Premiere that only takes the playhead's text, the first says
  *      "no cut" and the second cuts
@@ -68,10 +71,11 @@ function world(opts) {
   const seqs = [];
   let active = null;
   const fps = 30;
-  function mkSeq(name, item, nV) {
-    const s = { name, sequenceID: 'seq-' + (++nid), playhead: 0, V: [], A: [[]],
+  function mkSeq(name, item, nV, fmt) {
+    const s = { name, sequenceID: 'seq-' + (++nid), playhead: 0, V: [], A: [[]], settings: { videoDisplayFormat: fmt || 103 },
                 frameSizeHorizontal: 1280, frameSizeVertical: 720, timebase: String(TICKS / fps), end: String(10 * TICKS),
-                getSettings() { return { videoDisplayFormat: 103 }; },
+                getSettings() { return Object.assign({}, s.settings); },
+                setSettings(st) { if (opts.setSettingsThrows) throw new Error('Premiere refused'); s.settings = Object.assign({}, st); },
                 setPlayerPosition(t) { s.playhead = Number(t) / TICKS; } };
     for (let i = 0; i < nV; i++) s.V.push([]);
     if (item) { s.V[0].push({ start: 0, end: 10, item }); s.A[0].push({ start: 0, end: 10, item }); }
@@ -91,7 +95,7 @@ function world(opts) {
     return s;
   }
   // the owner's project as it was before the test
-  const ownSeq = mkSeq('Episode 7', null, 3);
+  const ownSeq = mkSeq('Episode 7', null, 3, opts.ownFormat);   // 110: the owner's timeline shows Frames
   seqs.push(ownSeq); put(mkItem('Episode 7', 1, { _seq: ownSeq }), root);
   const footage = put(mkItem('Footage', 2), root);
   put(mkItem('ep7.mp4', 1, { _media: '/Users/owner/ep7.mp4' }), footage);
@@ -111,7 +115,7 @@ function world(opts) {
     set activeSequence(s) { if (opts.activeSetterBroken) return; active = s; },
     openSequence(id) { const s = seqs.find(q => q.sequenceID === id); if (s) active = s; return !!s; },
     importFiles(paths, sup, bin) {
-      paths.forEach(p => put(mkItem(path.basename(p), 1, { _media: (opts.privateVar ? '/private' : '') + p }), bin || root));
+      Array.from(paths).forEach(p => put(mkItem(path.basename(p), 1, { _media: (opts.privateVar ? '/private' : '') + p }), bin || root));
       return true;
     },
     createNewSequenceFromClips(name, items, bin) {
@@ -133,7 +137,7 @@ function world(opts) {
     const f = Math.round(active.playhead * fps), p2 = n => (n < 10 ? '0' : '') + n;
     return opts.ctiFrames ? String(f) : '00:00:' + p2(Math.floor(f / fps)) + ':' + p2(f % fps);
   };
-  const sandbox = { JSON, Math, Date, String, Number, Array, Object, Error, RegExp,
+  const sandbox = {
     Time: function () { this.seconds = 0; },
     $: { os: 'Macintosh OS 14.5.0' },
     app: { version: '25.1.0', enableQE() {}, project },
@@ -159,6 +163,7 @@ function world(opts) {
     } } }
   };
   vm.createContext(sandbox);
+  require('../es3-runtime.js').strip(sandbox);   // ExtendScript's ES3 built-ins, host.jsx's own JSON
   vm.runInContext(fs.readFileSync(path.join(PANEL, 'jsx', 'host.jsx'), 'utf8'), sandbox, { filename: 'host.jsx' });
   const call = (fn, a) => JSON.parse(a === undefined ? sandbox[fn]() : sandbox[fn](JSON.stringify(a)));
   const names = (b) => b._kids.map(c => c.name);
@@ -182,6 +187,18 @@ const cams = { mediaPath: HOME + 'test-camera-1.mov', mediaPath2: HOME + 'test-c
     'A. it reports what Premiere made: ' + JSON.stringify({ seq: r.sequence, size: r.width + 'x' + r.height, fps: r.fps, v: r.videoTracks, end: r.endSeconds, premiere: r.premiere, os: r.os }));
   report(!!w.root._kids.find(c => c.name === 'Pulse self-test (temporary)') && w.ownSeq.V.every(t => t.length === 0),
     'A. found by the newest item in its bin although Premiere reports the files under /private/var — the owner’s sequence is untouched');
+}
+
+// A2. the test sequence shows time the way the owner's does
+{
+  const w = world({ ownFormat: 110 });
+  const r = w.call('CP_selfTestSetup', cams);
+  const seq = w.seqs.find(s => s.name === 'Pulse self-test (temporary)');
+  report(r.ok && seq.settings.videoDisplayFormat === 110 && r.displayFormat === 110 && /Episode 7/.test(r.mirrors) && w.ownSeq.settings.videoDisplayFormat === 110,
+    'A2. the owner’s time display is copied onto the test sequence, so a razor that ignores timecodes there does here too (' + JSON.stringify(r.mirrors) + ')');
+  const w2 = world({ ownFormat: 110, setSettingsThrows: true });
+  const r2 = w2.call('CP_selfTestSetup', cams);
+  report(r2.ok && /could not copy your time display/.test(r2.mirrors), 'A2. a Premiere that refuses the copy still runs the test, and says so (' + JSON.stringify(r2.mirrors) + ')');
 }
 
 // B. the razor, both ways

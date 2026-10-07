@@ -1,10 +1,68 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.7** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.8** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.8 — 🧪 Test everything tries every feature in the owner's REAL Premiere
+The owner after v0.10.7: "whenever I tried I found 100s of problems … find
+some other way to test the build". The honest cause: every gate runs Pulse
+against an IMITATION of Premiere (fakehost.js, host-tests.js makeWorld,
+scripted hosts) and headless Chromium; the owner's Mac runs the real one,
+and the two disagreed (the script did not load; the QE razor ignored the
+cuts). New strategy, three parts:
+- **The real-Premiere feature test** (Settings → 🧪 Test everything →
+  premiereFeatureTest() in main.js; CP_selfTestSetup / CP_selfTestRazor /
+  CP_selfTestCleanup in host.jsx). ffmpeg renders two 10 s cameras into
+  ~/.cutpilot/pulse-selftest/ (test-camera-1.mov: red, mic beeping 0–2, 3–5,
+  6–8, 9–10 s; test-camera-2.mov: blue) — qtrle, the codec Pulse's overlays
+  already import with. The host builds a bin + a sequence from camera 1 and
+  puts camera 2 on V2, then the panel runs the ORDINARY host calls on it,
+  each a row "In Premiere: …" with what Premiere answered: script reads the
+  sequence (CP_getEnv), mic tracks, transcribe source, frame export, Multicam
+  Apply (plan red/blue/red, checked by the camera colour in frames Premiere
+  draws), razor by timecode and at the playhead (with both timecodes), markers
+  + hook markers, zoom punches, captions (Pulse's look, checked by "ink" in
+  Premiere's frame), sound effects, Premium (Flux) captions (skipped with a
+  note in a never-saved project), the long-video overlay, .srt captions,
+  Remove captions (ink gone), Premium previews (CP_renderMogrtFrames), Clean
+  up (CP_razorRipple 2–3 s; end 10 → 9). Cleanup ALWAYS runs: owner's
+  sequence active again; every "Pulse self-test…" sequence and the test bin
+  deleted; NEW top-level "Pulse …" bins and a new Motion Graphics Template
+  Media bin deleted; new template items in an existing MGT bin and items from
+  the test's files moved into the test bin first. Rows land in the report and
+  📋 diagnostics ("selftest-premiere"). Gates selftest-premiere (scripted
+  Premiere + real panel + real ffmpeg, 6 scenarios) and
+  selftest-premiere-host (host side, vm project model); 17 mutations.
+- **Host gates run on ExtendScript's built-ins** (test/es3-runtime.js,
+  strip(context) in every loader): the vm's own Array/String/Object/Date/
+  Function/Number/Math lose every non-ES3 method and JSON is removed, so
+  host.jsx's OWN JSON polyfill is what all host gates exercise. A sandbox
+  handing Node's built-ins in is refused. Fakes must not call ES5 methods on
+  arrays host.jsx made (Array.from(paths) first). PULSE_HOST_RUNTIME=node
+  turns it off. host.jsx was clean (285 host tests pass).
+- **Bugs the new checks found (all real, all fixed + gated):**
+  · Remove captions (CP_removePulseCaptionTracks) judged by NAME: the owner's
+    "Pulse ep 3.mp4", "Flux intro.mov", a track with "Subtitle b-roll.mp4"
+    went with the captions. Now CP_isPulseCaptionClip: a media file only if
+    it is Pulse's own (cap_N.png, pulse-captions-*.mov, legacy captions.mov);
+    graphics (templates) by name as before. Gate host-remove-safety.
+  · Remove guide (CP_removeOverlay) with no remembered track deleted every
+    clip named *guide* / *pulse* / *brand* on every track. Now guide.png only.
+  · host.jsx's JSON.stringify left control characters raw → the panel's
+    JSON.parse refused the whole answer; the bridge sent U+2028/U+2029 raw →
+    a syntax error in ExtendScript ("EvalScript error."). Both escaped. Gate
+    host-json-roundtrip (real bridge + real host.jsx, Hindi/emoji/paths too).
+  · The style audit after the first 🧪 run silently set useRealPreviews and
+    replaced every style card with the editable engine's render (not how ✨
+    captions are drawn), and overwrote the test report. Now audit-only (temp
+    folder, deleted after) and appended under the report.
+- **NEXT (the loop):** the owner runs 🧪 Test everything and sends the report
+  / 📋 Copy diagnostics; every ❌ "In Premiere:" row names the real failure.
+  Then: offline transcription + Who's talking on speech the Mac makes with
+  `say` (only when those engines are set up).
 
 ### v0.10.7 — Premium previews drawn by Premiere with the owner's words
 The owner after v0.10.5: "flux preview is very bad, not accurate" (the

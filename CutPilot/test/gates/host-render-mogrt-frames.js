@@ -53,7 +53,7 @@ function world(opts) {
     createNewSequence(name, id) { const s = mkSeq(name + '#' + id); log.created.push(s); return s; },
     deleteSequence(s) { log.deleted.push(s.name); return true; }
   };
-  const sandbox = { JSON, Math, Date, String, Number, Array, Object, Error, RegExp,
+  const sandbox = {
     Time: function () { this.seconds = 0; },
     app: { enableQE() {}, project },
     qe: { project: { getActiveSequence() {
@@ -65,6 +65,7 @@ function world(opts) {
     } } }
   };
   vm.createContext(sandbox);
+  require('../es3-runtime.js').strip(sandbox);   // ExtendScript's ES3 built-ins, host.jsx's own JSON
   vm.runInContext(fs.readFileSync(path.join(PANEL, 'jsx', 'host.jsx'), 'utf8'), sandbox, { filename: 'host.jsx' });
   return { sandbox, log, own, project };
 }

@@ -14,6 +14,8 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+// host.jsx runs on ExtendScript's ES3 built-ins and its own JSON (es3-runtime.js)
+const ES3 = require('../../es3-runtime.js');
 
 const TICKS = 254016000000;
 
@@ -187,7 +189,6 @@ function makePremiere(spec) {
     getPlayerPosition() { return mkT(model.playhead); }
   };
   const sandbox = {
-    JSON, Date, Math,
     Time: function () { this.seconds = 0; },
     app: {
       enableQE() {}, appName: 'Premiere Pro (fake)', version: '24.0',
@@ -217,6 +218,7 @@ function makePremiere(spec) {
 
 function loadHost(hostPath, premiere) {
   vm.createContext(premiere.sandbox);
+  ES3.strip(premiere.sandbox);
   vm.runInContext(fs.readFileSync(hostPath, 'utf8'), premiere.sandbox, { filename: path.basename(hostPath) });
   return premiere.sandbox;
 }

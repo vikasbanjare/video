@@ -61,15 +61,15 @@ const MUTANTS = [
   {
     name: 'caption-cleanup',
     file: 'CutPilot/jsx/host.jsx',
-    find: '        if (!pat.test(nm) && !legacyOverlay.test(nm)) { allCaps = false; break; }',
-    repl: '        if (!pat.test(nm)) { allCaps = false; break; }',
+    find: '|| /^pulse-captions/i.test(file) ||',
+    repl: '||',
     gate: 'CutPilot/test/host-tests.js',
     why: 'Remove-all-captions stops finding a long video\'s overlay'
   },
   {
     name: 'legibility-floor',
     file: 'CutPilot/js/render.js',
-    find: '          px = Math.max(px, Math.round(shortSide * 0.05));',
+    find: '          px = Math.max(px, r2(shortSide * 0.05));',
     repl: '          px = px;',
     gate: 'tools/style-quality-audit.js',
     why: 'small styles render below the phone-legible floor'
@@ -676,7 +676,7 @@ const MUTANTS = [
     name: 'selftest-clip-names',
     file: 'CutPilot/js/main.js',
     find: "    var cam1 = pathMod.join(dir, 'test-camera-1.mov'), cam2 = pathMod.join(dir, 'test-camera-2.mov');",
-    repl: "    var cam1 = pathMod.join(dir, 'pulse-selftest-cam1.mov'), cam2 = pathMod.join(dir, 'pulse-selftest-cam2.mov');",
+    repl: "    var cam1 = pathMod.join(dir, 'pulse-captions-camera-1.mov'), cam2 = pathMod.join(dir, 'test-camera-2.mov');",
     gate: 'CutPilot/test/gates/selftest-premiere.js',
     why: '“Remove Pulse’s captions” takes the test cameras for captions and deletes them mid-test'
   },
@@ -711,6 +711,87 @@ const MUTANTS = [
     repl: '                  so.textContent = rep;',
     gate: 'CutPilot/test/gates/selftest-premiere.js',
     why: 'the style audit’s report replaces the test report the owner is reading'
+  },
+  // ---- removals that took the owner's footage; text that broke host calls ----
+  {
+    name: 'remove-guide-by-name',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "        if (nm === 'guide.png') { try { it.remove(0, 0); removed++; } catch (eR) {} }",
+    repl: "        if (nm.indexOf('guide') >= 0 || nm.indexOf('pulse') >= 0 || nm.indexOf('brand') >= 0) { try { it.remove(0, 0); removed++; } catch (eR) {} }",
+    gate: 'CutPilot/test/gates/host-remove-safety.js',
+    why: 'Remove guide takes “Brand story.mp4” and “Style guide.mov” off the timeline'
+  },
+  {
+    name: 'remove-captions-by-name',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '  if (!CP_MEDIA_FILE.test(file)) return CP_CAPTION_NAME.test(nm) || /^captions\\.mov$/i.test(nm);',
+    repl: '  if (true) return CP_CAPTION_NAME.test(nm) || /^captions\\.mov$/i.test(nm);',
+    gate: 'CutPilot/test/gates/host-remove-safety.js',
+    why: 'Remove captions deletes the owner’s “Pulse ep 3.mp4” with the captions'
+  },
+  {
+    name: 'json-control-chars',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "              .replace(/[\\u0000-\\u001f\\u2028\\u2029]/g, function (c) {",
+    repl: "              .replace(/[\\u0000]/g, function (c) {",
+    gate: 'CutPilot/test/gates/host-json-roundtrip.js',
+    why: 'a control character in a name comes back raw and the panel refuses Premiere’s whole answer'
+  },
+  {
+    name: 'bridge-line-separators',
+    file: 'CutPilot/js/lib/cep-bridge.js',
+    find: "      if (typeof json === 'string') json = json.replace(/\\u2028/g, '\\\\u2028').replace(/\\u2029/g, '\\\\u2029');",
+    repl: '',
+    gate: 'CutPilot/test/gates/host-json-roundtrip.js',
+    why: 'a pasted line separator reaches ExtendScript raw — the whole call is a syntax error'
+  },
+  {
+    name: 'es3-runtime-active',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "  try { nm = String(clip.name || ''); } catch (eN) {}",
+    repl: "  try { nm = String(clip.name || ''); if ([nm].indexOf(nm) < 0) nm = ''; } catch (eN) {}",
+    gate: 'CutPilot/test/gates/host-remove-safety.js',
+    why: 'host.jsx calls Array.indexOf, which Premiere’s ExtendScript does not have, and no gate notices'
+  },
+  {
+    name: 'cleanup-playhead-fallback',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '    if (unc.length) {\n      triedPlayhead = true;',
+    repl: '    if (false) {\n      triedPlayhead = true;',
+    gate: 'CutPilot/test/host-tests.js',
+    why: 'on a Premiere whose razor ignores Pulse’s timecodes (the owner’s Mac), Clean up cuts nothing at all'
+  },
+  {
+    name: 'cleanup-cut-facts',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "          triedPlayhead: triedPlayhead, uncut: bad.join('/'), qeProblem: qeProblem });",
+    repl: "          uncut: bad.join('/') });",
+    gate: 'CutPilot/test/host-tests.js',
+    why: 'a Clean up Premiere refused reports nothing of what Premiere answered'
+  },
+  {
+    name: 'selftest-mirror-display',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '        if (ps && ts && ps.videoDisplayFormat != null && ts.videoDisplayFormat !== ps.videoDisplayFormat) { ts.videoDisplayFormat = ps.videoDisplayFormat; seq.setSettings(ts); }',
+    repl: '',
+    gate: 'CutPilot/test/gates/selftest-premiere-host.js',
+    why: 'the test sequence shows time its own way, so a razor that fails on the owner’s Frames timeline passes the test'
+  },
+  {
+    name: 'selftest-mirror-size',
+    file: 'CutPilot/js/main.js',
+    find: "          size = (w - w % 2) + 'x' + (h - h % 2); rate = rateOf(f);",
+    repl: '',
+    gate: 'CutPilot/test/gates/selftest-premiere.js',
+    why: 'the test clips are 1280×720 in a vertical sequence — letterboxed, unlike the owner’s, and the black reads as captions'
+  },
+  {
+    name: 'selftest-mirror-ntsc',
+    file: 'CutPilot/js/main.js',
+    find: "      var known = [[23.976, '24000/1001'], [29.97, '30000/1001'], [59.94, '60000/1001'], [47.952, '48000/1001'], [119.88, '120000/1001']];",
+    repl: '      var known = [];',
+    gate: 'CutPilot/test/gates/selftest-premiere.js',
+    why: 'a 29.97 fps sequence gets test clips at a rounded rate, so the test sequence is not like the owner’s'
   }
 ];
 

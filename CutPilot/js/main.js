@@ -3793,16 +3793,34 @@
         }
       });
     }
-    var red = 'color=c=0xC82828:s=1280x720:r=30:d=10', blue = 'color=c=0x2848C8:s=1280x720:r=30:d=10';
+    // the clips take the owner's sequence size and frame rate, so the test
+    // sequence made from them is like theirs (a 1280×720 clip in a vertical
+    // sequence would be letterboxed — black around it, which reads as a caption)
+    var size = '1280x720', rate = '30', yours = null;
+    function rateOf(fps) {
+      var known = [[23.976, '24000/1001'], [29.97, '30000/1001'], [59.94, '60000/1001'], [47.952, '48000/1001'], [119.88, '120000/1001']];
+      for (var i = 0; i < known.length; i++) if (Math.abs(fps - known[i][0]) < 0.01) return known[i][1];
+      return String(Math.round(fps * 1000) / 1000);
+    }
+    function src(hex) { return 'color=c=' + hex + ':s=' + size + ':r=' + rate + ':d=10'; }
 
     add('Test clips made on this computer', function () {
       emptyDir();
-      return makeClip(['-f', 'lavfi', '-i', red, '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000:duration=10',
-                       '-filter_complex', "[1:a]volume='if(lt(mod(t,3),2),0.6,0)':eval=frame[a]",
-                       '-map', '0:v', '-map', '[a]', '-c:v', 'qtrle', '-c:a', 'pcm_s16le', '-t', '10'], cam1)
-        .then(function () { return makeClip(['-f', 'lavfi', '-i', blue, '-c:v', 'qtrle', '-an', '-t', '10'], cam2); })
+      return host('CP_getEnv').then(function (env) {
+        var w = Math.round(Number(env && env.width)), h = Math.round(Number(env && env.height)), f = Number(env && env.fps);
+        if (w >= 16 && h >= 16 && w <= 8192 && h <= 8192 && f > 1 && f <= 240) {
+          size = (w - w % 2) + 'x' + (h - h % 2); rate = rateOf(f);
+          yours = '“' + env.sequenceName + '” ' + w + '×' + h + ' at ' + Math.round(f * 1000) / 1000 + ' fps';
+        }
+      }, function () {}).then(function () {
+        return makeClip(['-f', 'lavfi', '-i', src('0xC82828'), '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000:duration=10',
+                         '-filter_complex', "[1:a]volume='if(lt(mod(t,3),2),0.6,0)':eval=frame[a]",
+                         '-map', '0:v', '-map', '[a]', '-c:v', 'qtrle', '-c:a', 'pcm_s16le', '-t', '10'], cam1);
+      })
+        .then(function () { return makeClip(['-f', 'lavfi', '-i', src('0x2848C8'), '-c:v', 'qtrle', '-an', '-t', '10'], cam2); })
         .then(function () { return makeClip(['-f', 'lavfi', '-i', 'sine=frequency=880:sample_rate=48000:duration=0.4', '-c:a', 'pcm_s16le'], sfx); })
-        .then(function () { return { state: 'ok', note: 'two 10-second cameras and a sound effect, in ' + dir }; });
+        .then(function () { return { state: 'ok', note: 'two 10-second cameras (' + size.replace('x', '×') + ' at ' + rate + ' fps' +
+          (yours ? ', like your ' + yours : ' — no sequence of yours is open') + ') and a sound effect, in ' + dir }; });
     });
     add('A test sequence (yours is not touched)', function () {
       // Premium templates are only placed in a saved project (the ✨ flow asks
@@ -3814,7 +3832,7 @@
         var note = 'Premiere ' + r.premiere + ' on ' + r.os + ' · “' + r.sequence + '” ' + r.width + '×' + r.height + ' at ' + r.fps +
           ' fps · ' + r.videoTracks + ' video / ' + r.audioTracks + ' audio tracks · second camera: ' + r.secondCamera +
           ' · ' + r.endSeconds + ' s · time display ' + r.displayFormat + (r.dropFrame ? ' (drop-frame)' : '') +
-          (saved ? '' : ' · your project has never been saved');
+          (r.mirrors ? ' (from ' + r.mirrors + ')' : '') + (saved ? '' : ' · your project has never been saved');
         return { state: /^yes/.test(String(r.secondCamera)) ? 'ok' : 'fail', note: note };
       });
     });
@@ -3940,7 +3958,7 @@
       if (!canvasOverlayReady()) return Promise.resolve({ state: 'warn', note: 'this audio engine cannot make the overlay clip' });
       var frames = CPCaptions.buildCaptionFrames([{ start: 6.4, end: 7.8, text: 'Overlay test words' }], { anim: 'none', wordsPerCue: 3 });
       var job = CPRender.renderOverlay(frames, { width: setup.width, height: setup.height, fps: setup.fps || 30, preset: styledPreset(),
-        overrides: readOverrides(), workDir: pathMod.join(dir, 'overlay-work'), outPath: pathMod.join(dir, 'pulse-selftest-overlay.mov'),
+        overrides: readOverrides(), workDir: pathMod.join(dir, 'overlay-work'), outPath: pathMod.join(dir, 'pulse-captions-selftest.mov'),
         ffmpeg: ff });
       return job.promise.then(function (res) {
         return host('CP_placeOverlay', { path: res.path, startSec: 0 });
@@ -11825,6 +11843,7 @@
                  dropFrame: !!settings.dropFrame, previewLabel: 'Silence', flowName: opts.flow || '' };
     if (guard) { args.expectSequenceId = guard.sequenceId; args.expectSequenceName = guard.sequenceName; args.expectFingerprint = guard.fingerprint; }
     return CPBridge.callHost('CP_razorRipple', args).then(function (rr) {
+      try { diag('silence', 'cut ' + ((rr && rr.cuts) || 0) + ' section(s), ' + ((rr && rr.removedSeconds) || 0).toFixed(2) + ' s, by ' + ((rr && rr.cutMethod) || 'timecode')); } catch (eDg) {}
       var removed = (rr && Array.isArray(rr.removed)) ? rr.removed : ranges;
       rippleTranscriptByRanges(removed, args.closeGaps);
       state.silencesSeq = []; state.silPlan = null;
@@ -11832,6 +11851,12 @@
       state.takeDeletes = [];                                   // a take list from before the cut is stale now
       if ($('takes-results')) $('takes-results').classList.add('hidden');
       return rr || {};
+    }, function (e) {
+      // what Premiere answered (frame rate, the timecode sent, the playhead's own…), for 📋 diagnostics
+      var info = e && e.host && e.host.info, kv = [];
+      if (info) for (var k in info) if (info.hasOwnProperty(k)) kv.push(k + '=' + info[k]);
+      try { diag('silence', 'cut failed — ' + (kv.length ? kv.join(', ') + ' — ' : '') + ((e && e.message) || e)); } catch (eDg) {}
+      throw e;
     });
   }
   /* How to get the original back, in words the owner can act on: every

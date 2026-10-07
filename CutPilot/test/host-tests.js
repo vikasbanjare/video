@@ -18,6 +18,8 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+// host.jsx runs on ExtendScript's ES3 built-ins and its own JSON (es3-runtime.js)
+const ES3 = require(path.join(__dirname, 'es3-runtime.js'));
 
 let passed = 0, failed = 0;
 function assert(cond, name) {
@@ -143,6 +145,17 @@ function makeWorld(opts) {
     return frames / fps;
   };
   const snap = (s) => Math.round(s * fps) / fps;
+  // the playhead (Sequence.setPlayerPosition) and the text QE's playhead writes
+  // for it (qe…CTI.timecode). opts.razorOwnText: a razor that silently ignores
+  // any timecode not written the playhead's way — the owner's Mac (v0.10.5),
+  // e.g. a timeline whose time display is Frames (opts.ctiFrames)
+  model.playhead = 0;
+  const ctiText = () => {
+    const f = Math.round(model.playhead * fps), fR = Math.round(fps), p2 = (n) => (n < 10 ? '0' : '') + n;
+    if (opts.ctiFrames) return String(f);
+    const ss = Math.floor(f / fR);
+    return p2(Math.floor(ss / 3600)) + ':' + p2(Math.floor(ss / 60) % 60) + ':' + p2(ss % 60) + ':' + p2(f % fR);
+  };
 
   function qeTrack(items, label) {
     return {
@@ -171,7 +184,8 @@ function makeWorld(opts) {
         if (label && model.broken[label] === 'throw') throw new Error('track is locked');
         if (label && model.broken[label] === 'noop') return;
         model.razors = (model.razors || 0) + 1;
-        const cut = snap(parseTc(tc));            // Premiere snaps razors to the frame grid
+        if (opts.razorOwnText && String(tc) !== ctiText()) return;   // not written its own way: nothing happens
+        const cut = opts.razorOwnText ? snap(model.playhead) : snap(parseTc(tc));   // Premiere snaps razors to the frame grid
         for (let i = 0; i < items.length; i++) {
           const it = items[i];
           if (it.type === 'Empty') continue;
@@ -249,6 +263,8 @@ function makeWorld(opts) {
     get audioTracks() { return domTracks(model.aTracks, 'A'); },
     sequenceID: opts.sequenceID || 'seq-main',
     name: opts.seqName || 'Episode 12',
+    setPlayerPosition(ticks) { model.playhead = Number(ticks) / TICKS; },
+    getPlayerPosition() { const t = mkT(model.playhead); t.ticks = String(Math.round(model.playhead * TICKS)); return t; },
     get end() {                                  // ticks string, like Premiere
       let e = 0;
       for (const arr of model.vTracks.concat(model.aTracks)) for (const c of arr) e = Math.max(e, c.end.seconds);
@@ -467,9 +483,7 @@ function makeWorld(opts) {
   };
 
   const sandbox = {
-    JSON,
     Time,
-    Date,
     app: {
       enableQE() {},
       project: {
@@ -504,7 +518,7 @@ function makeWorld(opts) {
           }
         },
         importFiles(paths, suppress, bin, asNumbered) {
-          paths.forEach(pth => {
+          Array.from(paths).forEach(pth => {
             const nm = String(pth).split(/[\\/]/).pop();
             bin._kids.push({
               name: nm, _in: null, _out: null, type: 1,
@@ -522,6 +536,8 @@ function makeWorld(opts) {
       project: {
         getActiveSequence() {
           return {
+            get CTI() { return this._cti || { timecode: ctiText() }; },
+            set CTI(v) { this._cti = v; },          // a test may pin its own
             get numVideoTracks() { return model.vTracks.length; },
             get numAudioTracks() { return model.aTracks.length; },
             getVideoTrackAt(i) { return qeTrack(model.vTracks[i], 'V' + (i + 1)); },
@@ -538,6 +554,7 @@ function makeWorld(opts) {
 const hostSrc = fs.readFileSync(path.join(__dirname, '..', 'jsx', 'host.jsx'), 'utf8');
 function loadHost(world) {
   vm.createContext(world.sandbox);
+  ES3.strip(world.sandbox);
   vm.runInContext(hostSrc, world.sandbox, { filename: 'host.jsx' });
   return world.sandbox;
 }
@@ -599,6 +616,40 @@ console.log('host.jsx — CP_razorRipple (razor + ripple delete on a real geomet
   const r = call(host, 'CP_razorRipple', { ranges: [{ start: 10.017, end: 12.983 }] });   // off-grid @25fps
   assert(r.removedClips === 1, 'off-frame-grid range still removes its piece (midpoint membership)');
   assert(close(totalDur(w.model.vTracks[0]), 60 - 2.96, 2 / 25), 'duration removed ≈ the requested span (± a frame)');
+}
+
+// The owner's Mac (v0.10.5): Premiere's razor silently ignored Pulse's
+// timecodes. Clean up then cut NOTHING ("Premiere would not cut track …").
+// Cut what did not land at the playhead's own timecode, as Multicam does.
+{
+  const w = makeWorld({ vTracks: 1, aTracks: 2, fps: 25, razorOwnText: true, ctiFrames: true });
+  w.model.addClip('vTracks', 0, 0, 60, { name: 'camera' });
+  w.model.addClip('aTracks', 0, 0, 60, { name: 'host mic' });
+  w.model.addClip('aTracks', 1, 0, 60, { name: 'guest mic' });
+  w.model.playhead = 7;
+  const host = loadHost(w);
+  const r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }, { start: 30, end: 33 }] });
+  const all = w.model.vTracks.concat(w.model.aTracks);
+  assert(r.ok === true && r.cutMethod === 'playhead' && all.every(t => close(totalDur(t), 55, 1 / 25) && contiguousFromZero(t)),
+    'a razor that ignores Pulse’s timecodes: Clean up cuts at the playhead’s own timecode instead — every track loses the same 5 s and stays in sync (' +
+    (r.ok ? 'by ' + r.cutMethod : r.error) + ')');
+  assert(close(w.model.playhead, 7), 'the playhead goes back to where the owner left it (' + w.model.playhead + ' s)');
+}
+{
+  const w = makeWorld({ vTracks: 1, aTracks: 1, fps: 25 });
+  w.model.addClip('vTracks', 0, 0, 60, { name: 'camera' });
+  w.model.addClip('aTracks', 0, 0, 60, { name: 'mic' });
+  w.model.broken.V1 = 'noop'; w.model.broken.A1 = 'noop';
+  const host = loadHost(w);
+  const r = call(host, 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }] });
+  const f = r.info || {};
+  assert(r.ok === false && /would not cut track V1, A1/.test(r.error) && f.fps === 25 && f.timecodeSent === '00:00:10:00' &&
+         f.playheadTimecode === '00:00:10:00' && f.triedPlayhead === true && f.uncut === 'V1/A1' && close(totalDur(w.model.vTracks[0]), 60),
+    'a razor that cuts nothing: nothing is removed, and the failure carries what Premiere answered (' + JSON.stringify(f).slice(0, 160) + ')');
+  const ok = makeWorld({ vTracks: 1, aTracks: 0, fps: 25 });
+  ok.model.addClip('vTracks', 0, 0, 60, {});
+  const r2 = call(loadHost(ok), 'CP_razorRipple', { ranges: [{ start: 10, end: 12 }] });
+  assert(r2.ok && r2.cutMethod === 'timecode' && close(ok.model.playhead, 0), 'the ordinary razor cuts by timecode and never moves the playhead');
 }
 
 // ═══ CP_razorRipple on REAL podcast/reel timelines: several mics, sparse

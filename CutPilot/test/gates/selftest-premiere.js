@@ -76,14 +76,20 @@ function scriptedPremiere(o) {
   const isPng = (p) => { try { return fs.readFileSync(p).slice(1, 4).toString() === 'PNG'; } catch (e) { return false; } };
   const H = {
     CP_selfTestSetup(a) {
-      for (const p of [a.mediaPath, a.mediaPath2]) log.imported.push({ path: p, size: fs.existsSync(p) ? fs.statSync(p).size : 0 });
+      for (const p of [a.mediaPath, a.mediaPath2]) {
+        // what the clip really is (ffmpeg's own reading of it)
+        const r = require('child_process').spawnSync(o.ff, ['-hide_banner', '-i', p], { encoding: 'utf8' });
+        const v = /Video: (\w+)[^\n]*?, (\d+)x(\d+)[^\n]*?, ([\d.]+) fps/.exec(r.stderr || '') || [];
+        log.imported.push({ path: p, size: fs.existsSync(p) ? fs.statSync(p).size : 0, codec: v[1], dims: v[2] + 'x' + v[3], fps: v[4] });
+      }
       if (o.noSequence) return fail('Premiere would not make a sequence from the test clip: Premiere said no');
       tl.active = 'Pulse self-test (temporary)';
       return ok({ sequence: tl.active, fps: 30, displayFormat: 103, dropFrame: false, width: 1280, height: 720, videoTracks: 2, audioTracks: 1,
                   v1Clips: 1, a1Clips: 1, secondCamera: 'yes', endSeconds: 10, premiere: '25.1.0', os: 'Macintosh OS 14.5.0' });
     },
     CP_getProjectInfo() { return ok({ name: 'Episode 7.prproj', path: o.unsaved ? '' : '/Users/owner/Shows/Episode 7.prproj' }); },
-    CP_getEnv() { return ok({ sequenceName: tl.active, width: tl.active === 'Episode 7' ? 1080 : 1280, height: tl.active === 'Episode 7' ? 1920 : 720, fps: 30 }); },
+    CP_getEnv() { return ok({ sequenceName: tl.active, width: tl.active === 'Episode 7' ? 1080 : 1280, height: tl.active === 'Episode 7' ? 1920 : 720,
+                              fps: tl.active === 'Episode 7' ? (o.envFps || 30) : 30 }); },
     CP_getAudioTracks() { return ok({ audioTracks: [{ name: 'A1', mediaPath: log.imported[0].path }] }); },
     CP_getTranscribeSource() { return ok({ clip: { mediaPath: log.imported[0].path, inPoint: 0 } }); },
     CP_captureSequenceFrame(a) {
@@ -189,7 +195,7 @@ function scriptedPremiere(o) {
     const P = await L.launchPanel({ env });
     if (P.skip) { console.log('  ? ' + P.skip + ' — skipped'); process.exit(2); }
     if (opts.noFfmpeg) P.bridge.state.hide = /ffmpeg(\.exe)?$/;
-    const prem = scriptedPremiere(o);
+    const prem = scriptedPremiere(Object.assign({ ff }, o));
     P.bridge.state.premiere = { host: prem.host };
     // the panel finds its bundled templates through the extension's path
     await P.page.evaluate((dir) => { window.__adobe_cep__.getSystemPath = () => 'file://' + dir; }, PANEL_DIR);
@@ -258,15 +264,19 @@ function scriptedPremiere(o) {
       '1. Premiere was handed real files: clips ' + imp.map(f => Math.round(f.size / 1024) + ' KB').join(' + ') + ', ' +
       R.prem.log.captionFiles.length + ' caption PNG(s), an overlay of ' + Math.round(((R.prem.log.overlay || {}).size || 0) / 1024) + ' KB, an .srt, ' +
       path.basename(R.prem.log.mogrt || 'no template'));
-    // the REAL rule "Remove Pulse's captions" uses to take a track for a caption track
-    const hostSrc = fs.readFileSync(path.join(PANEL_DIR, 'jsx', 'host.jsx'), 'utf8');
-    const rm = /var pat = \/(.+)\/(\w*);/.exec(hostSrc.slice(hostSrc.indexOf('function CP_removePulseCaptionTracks')));
-    const capPat = rm ? new RegExp(rm[1], rm[2]) : null;
-    const camNames = imp.map(f => path.basename(f.path)), ovName = path.basename((R.prem.log.overlay || {}).path || '');
-    report(capPat && camNames.every(n => !capPat.test(n)) && capPat.test(ovName),
+    // the REAL rule "Remove Pulse's captions" uses for a clip (host.jsx CP_isPulseCaptionClip)
+    const hctx = require('vm').createContext({});
+    require('../es3-runtime.js').strip(hctx);
+    require('vm').runInContext(fs.readFileSync(path.join(PANEL_DIR, 'jsx', 'host.jsx'), 'utf8'), hctx, { filename: 'host.jsx' });
+    const isCaption = (p) => hctx.CP_isPulseCaptionClip({ name: path.basename(p), projectItem: { getMediaPath: () => p } });
+    const camNames = imp.map(f => path.basename(f.path)), ovPath = (R.prem.log.overlay || {}).path || '', ovName = path.basename(ovPath);
+    report(imp.every(f => !isCaption(f.path)) && !!ovPath && isCaption(ovPath),
       '1. “Remove Pulse’s captions” would not take the test cameras for captions (' + camNames.join(', ') + ') and does take the test overlay (' + ovName + ')');
+    report(imp.every(f => f.codec === 'qtrle' && f.dims === '1080x1920' && f.fps === '30') && /like your “Episode 7” 1080×1920 at 30 fps/.test(R.rowOf('Test clips')),
+      '1. the test clips take the owner’s sequence size and frame rate (' + imp.map(f => f.codec + ' ' + f.dims + ' ' + f.fps + ' fps').join(', ') +
+      '), so the test sequence is like theirs');
     const calls = R.prem.log.calls, ci = calls.indexOf('CP_selfTestCleanup');
-    report(calls.filter(c => c === 'CP_selfTestCleanup').length === 1 && calls.slice(0, calls.indexOf('CP_selfTestSetup')).join() === 'CP_getProjectInfo' &&
+    report(calls.filter(c => c === 'CP_selfTestCleanup').length === 1 && calls.slice(0, calls.indexOf('CP_selfTestSetup')).join() === 'CP_getEnv,CP_getProjectInfo' &&
            calls.slice(ci + 1, ci + 2)[0] === 'CP_getEnv' && calls.slice(0, ci).indexOf('CP_inspectMogrt') < 0 && /Episode 7/.test(R.out.env),
       '1. the tidy-up runs once, after every feature, and the panel’s sequence is the owner’s again (' + JSON.stringify(R.out.env) + ')');
     report(Array.isArray(R.left) && R.left.length === 0, '1. the test’s own files are deleted (' + R.dir + ': ' + JSON.stringify(R.left) + ')');
@@ -310,7 +320,9 @@ function scriptedPremiere(o) {
 
   // 2b. a project never saved: Premium templates are not tried
   {
-    const R = await run('unsaved', { unsaved: true, multicamWrongCamera: true });
+    const R = await run('unsaved', { unsaved: true, multicamWrongCamera: true, envFps: 29.97002997 });
+    report(R.prem.log.imported.every(f => f.fps === '29.97'), '2b. an owner’s 29.97 fps sequence gets 29.97 fps test clips (30000/1001), not 30 (' +
+      R.prem.log.imported.map(f => f.fps).join(', ') + ')');
     report(/^⚠️/.test(R.rowOf('Premium (Flux) captions')) && /saved project/.test(R.rowOf('Premium (Flux) captions')) &&
            /^⚠️/.test(R.rowOf('Premium previews')) && R.prem.log.calls.indexOf('CP_insertMogrtCaptions') < 0 &&
            R.prem.log.calls.indexOf('CP_renderMogrtFrames') < 0 && /never been saved/.test(R.rowOf('A test sequence')) && /^✅/.test(R.rowOf('Sound effects')),

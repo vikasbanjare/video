@@ -17,9 +17,16 @@ var CP_TICKS_PER_SECOND = 254016000000; // Premiere's fixed tick rate
 if (typeof JSON === 'undefined') { JSON = {}; }
 if (typeof JSON.stringify !== 'function') {
   JSON.stringify = function (v) {
+    // every control character, and U+2028/U+2029: the panel's JSON.parse
+    // refuses a raw control character ("Bad control character in string
+    // literal"), so one in a clip, marker or template name lost the answer
     function esc(s) {
       return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-              .replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
+              .replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t')
+              .replace(/[\u0000-\u001f\u2028\u2029]/g, function (c) {
+                var h = c.charCodeAt(0).toString(16);
+                return '\\u' + '0000'.slice(h.length) + h;
+              });
     }
     function go(x) {
       var i, k, parts;
@@ -1057,24 +1064,60 @@ function CP_razorRipple(argsJson) {
     for (i = 0; i < ranges.length; i++) { bounds.push(ranges[i].start); bounds.push(ranges[i].end); }
     var tcs = [];
     for (i = 0; i < bounds.length; i++) tcs.push(CP_timecode(bounds[i], fps, df));
+    var qeProblem = '';
     for (tk = 0; tk < qt.length; tk++) {
-      for (i = 0; i < tcs.length; i++) { try { qt[tk].razor(tcs[i]); } catch (eRz) {} }
+      for (i = 0; i < tcs.length; i++) { try { qt[tk].razor(tcs[i]); } catch (eRz) { if (!qeProblem) qeProblem = String(eRz.message || eRz); } }
+    }
+    // every boundary still inside a clip, per track: [{ tk, label, b: [boundary index] }]
+    var unCut = function () {
+      var out = [], trs = CP_allTracks(seq);   // re-read: the razors changed every track
+      for (var t2 = 0; t2 < trs.length; t2++) {
+        var sn = CP_trackSnapshot(trs[t2].dom), b2 = 0, miss = [];
+        for (var c2 = 0; c2 < sn.length; c2++) {
+          while (b2 < bounds.length && bounds[b2] <= sn[c2].start + half) b2++;
+          for (var k2 = b2; k2 < bounds.length && bounds[k2] < sn[c2].end - half; k2++) miss.push(k2);
+        }
+        if (miss.length) out.push({ tk: t2, label: trs[t2].label, b: miss });
+      }
+      return out;
+    };
+    var unc = unCut(), method = 'timecode', ctiSample = '', triedPlayhead = false;
+    if (unc.length) { try { $.sleep(300); } catch (eSl) {} unc = unCut(); }
+    // The owner's Mac (v0.10.5): the razor silently ignored Pulse's timecodes.
+    // Cut what did not land at the timecode QE's own PLAYHEAD writes for that
+    // moment — Premiere's own text — as Multicam Apply does (v0.10.6).
+    if (unc.length) {
+      triedPlayhead = true;
+      var keepPos = null, nV = qseq.numVideoTracks, atB = {}, bk;
+      try { keepPos = seq.getPlayerPosition(); } catch (eGp) {}
+      for (i = 0; i < unc.length; i++) for (j = 0; j < unc[i].b.length; j++) (atB[unc[i].b[j]] = atB[unc[i].b[j]] || []).push(unc[i].tk);
+      for (bk in atB) {
+        if (!atB.hasOwnProperty(bk)) continue;
+        try { seq.setPlayerPosition(CP_ticksFromSeconds(bounds[bk])); } catch (eSp) { continue; }
+        var ctc = '';
+        try { ctc = String(qseq.CTI.timecode); } catch (eCt) { continue; }
+        if (!ctiSample) ctiSample = ctc;
+        for (j = 0; j < atB[bk].length; j++) {
+          var qx = atB[bk][j];
+          try { (qx < nV ? qseq.getVideoTrackAt(qx) : qseq.getAudioTrackAt(qx - nV)).razor(ctc); }
+          catch (eRp) { if (!qeProblem) qeProblem = String(eRp.message || eRp); }
+        }
+      }
+      try { if (keepPos) seq.setPlayerPosition(keepPos.ticks); } catch (eRs) {}
+      unc = unCut();
+      if (!unc.length) method = 'playhead';
     }
     var bad = [];
-    tracks = CP_allTracks(seq);   // re-read: the razors changed every track
-    for (tk = 0; tk < tracks.length; tk++) {
-      snap = CP_trackSnapshot(tracks[tk].dom);
-      var bi = 0;
-      for (c = 0; c < snap.length; c++) {
-        while (bi < bounds.length && bounds[bi] <= snap[c].start + half) bi++;
-        if (bi < bounds.length && bounds[bi] < snap[c].end - half) { bad.push(tracks[tk].label); break; }
-      }
-    }
+    for (i = 0; i < unc.length; i++) bad.push(unc[i].label);
     if (bad.length) {
-      return CP_fail('Premiere would not cut track ' + bad.join(', ') + ', so Pulse stopped before removing anything. Your timeline still plays ' +
+      var fmtOf = null;
+      try { fmtOf = seq.getSettings().videoDisplayFormat; } catch (eDf) {}
+      return CP_failInfo('Premiere would not cut track ' + bad.join(', ') + ', so Pulse stopped before removing anything. Your timeline still plays ' +
         'exactly as before — it only has extra cut lines in some clips, which change nothing you see or hear' +
         (backup ? ' (your untouched original is also saved as “' + backup + '” in the Project panel)' : '') +
-        '. Check that the track isn\'t locked, then try again.');
+        '. Check that the track isn\'t locked, then try again.',
+        { fps: Math.round(fps * 1000) / 1000, dropFrame: df, displayFormat: fmtOf, timecodeSent: tcs[0], playheadTimecode: ctiSample,
+          triedPlayhead: triedPlayhead, uncut: bad.join('/'), qeProblem: qeProblem });
     }
 
     // ---- phase 2: lift every piece inside a cut, on every track --------------
@@ -1167,7 +1210,7 @@ function CP_razorRipple(argsJson) {
 
     return CP_ok({ cuts: ranges.length, removed: ranges, removedSeconds: removedSec, removedClips: lifted,
                    closedGaps: closeGaps ? ranges.length : 0, tracks: perTrack, backup: backup,
-                   markersMoved: markers.moved, previewMarkersRemoved: markers.removed, dropFrame: df });
+                   markersMoved: markers.moved, previewMarkersRemoved: markers.removed, dropFrame: df, cutMethod: method });
   } catch (e) { return CP_fail(e.message); }
 }
 
@@ -2321,7 +2364,7 @@ function CP_placeOverlay(argsJson) {
 /*
  * Remove Pulse guide/overlay clips from the timeline (the Safe Zone reference
  * layer). If args.track is given, clear just that video track; otherwise scan all
- * video tracks. Matches clips whose name looks like a Pulse guide/brand/overlay.
+ * video tracks. Matches Pulse's guide clip only: guide.png.
  * argsJson: { track? }
  */
 function CP_removeOverlay(argsJson) {
@@ -2340,7 +2383,10 @@ function CP_removeOverlay(argsJson) {
         var it = qt.getItemAt(i);
         if (!it || it.type === 'Empty') continue;
         var nm = ''; try { nm = String(it.name).toLowerCase(); } catch (eN) {}
-        if (nm.indexOf('guide') >= 0 || nm.indexOf('pulse') >= 0 || nm.indexOf('brand') >= 0) { try { it.remove(0, 0); removed++; } catch (eR) {} }
+        // Pulse's guide is always one guide.png (pulse-guide-…/guide.png). The
+        // old test — any name containing guide, pulse or brand — took the
+        // owner's "Brand story.mp4" or "Style guide.mov" off every track
+        if (nm === 'guide.png') { try { it.remove(0, 0); removed++; } catch (eR) {} }
       }
     }
     return CP_ok({ removed: removed });
@@ -3098,6 +3144,23 @@ function CP_sigNorm(s) {
    or rendered caption images). Weeks of debug builds left the user's sequence
    with a dozen stacked caption tracks; this clears them in one action. Tracks
    holding any non-caption clip are never touched. */
+/* Is this timeline clip one of Pulse's captions? A caption TEMPLATE is a
+   graphic (no media file) and is known by its name; a media file only by
+   being one of Pulse's own caption files — caption images (cap_00012.png),
+   a one-clip overlay (pulse-captions-….mov, or captions.mov from v0.9.344-
+   v0.9.378). A name alone used to be enough, so the owner's "Pulse ep 3.mp4"
+   or "Subtitle b-roll.mp4" went with the captions. */
+var CP_CAPTION_NAME = /(flux|subtitle|shorts_text|text_animation|pulse|cutpilot|cap[-_]?\d)/i;
+var CP_MEDIA_FILE = /\.(mp4|m4v|mov|mxf|avi|mts|m2ts|mkv|webm|mpe?g|wmv|flv|3gp|r3d|braw|crm|ari|dng|exr|dpx|wav|mp3|aac|m4a|aiff?|flac|ogg|png|jpe?g|tiff?|psd|gif|bmp|heic|webp|ai|eps|svg)$/i;
+function CP_isPulseCaptionClip(clip) {
+  var nm = '', mp = '';
+  try { nm = String(clip.name || ''); } catch (eN) {}
+  try { mp = String(clip.projectItem.getMediaPath() || ''); } catch (eM) { mp = ''; }
+  var file = mp.replace(/^.*[\\\/]/, '');
+  if (!CP_MEDIA_FILE.test(file)) return CP_CAPTION_NAME.test(nm) || /^captions\.mov$/i.test(nm);
+  return /^cap[-_]?\d+[^\\\/]*\.png$/i.test(file) || /^pulse-captions/i.test(file) || /^captions\.mov$/i.test(file);
+}
+
 function CP_removePulseCaptionTracks(argsJson) {
   try {
     var args = {};
@@ -3110,16 +3173,13 @@ function CP_removePulseCaptionTracks(argsJson) {
     // named the file without any Pulse marker and were therefore invisible to
     // this cleanup. Anchored on purpose: a user clip called "My Captions v2.mov"
     // must not be swept up.
-    var pat = /(flux|subtitle|shorts_text|text_animation|pulse|cutpilot|cap[-_]?\d)/i;
-    var legacyOverlay = /^captions\.mov$/i;
     var cleared = 0, tracks = [];
     for (var ti = seq.videoTracks.numTracks - 1; ti >= 0; ti--) {
       var track = seq.videoTracks[ti];
       if (!track.clips.numItems) continue;
       var allCaps = true;
       for (var ci = 0; ci < track.clips.numItems; ci++) {
-        var nm = String(track.clips[ci].name || '');
-        if (!pat.test(nm) && !legacyOverlay.test(nm)) { allCaps = false; break; }
+        if (!CP_isPulseCaptionClip(track.clips[ci])) { allCaps = false; break; }
       }
       if (!allCaps) continue;
       var qt = null;
@@ -4218,12 +4278,16 @@ function CP_stRootBin(name) {
 /* The item an import just put in `bin`: the newest one not seen before. Not by
    its path — a Mac may report a file under /var as /private/var. */
 function CP_stImported(bin, mediaPath, seen) {
-  for (var c = bin.children.numItems - 1; c >= 0; c--) {
-    var it = bin.children[c];
-    if (!it || it.type === 2) continue;
-    var id = '';
-    try { id = String(it.nodeId); } catch (e) {}
-    if (!seen[id]) { seen[id] = 1; return it; }
+  // importFiles can fill the bin a beat late (see CP_placeOverlay): look again
+  for (var tryN = 0; tryN < 20; tryN++) {
+    for (var c = bin.children.numItems - 1; c >= 0; c--) {
+      var it = bin.children[c];
+      if (!it || it.type === 2) continue;
+      var id = '';
+      try { id = String(it.nodeId); } catch (e) {}
+      if (!seen[id]) { seen[id] = 1; return it; }
+    }
+    try { $.sleep(60); } catch (eSl) {}
   }
   return CP_findProjectItemByMediaPath(app.project.rootItem, mediaPath);
 }
@@ -4253,6 +4317,17 @@ function CP_selfTestSetup(argsJson) {
     catch (eS) { return CP_fail('Premiere would not make a sequence from the test clip: ' + eS.message); }
     if (!seq) return CP_fail('Premiere made no sequence from the test clip');
     CP_ST.seq = seq;
+    // the owner's time display too (the clips already have their size and
+    // frame rate): a razor that ignores timecodes on THEIR timeline — e.g. one
+    // shown in Frames — must ignore them here as well
+    var mirrored = 'no sequence of yours was open';
+    if (CP_ST.prev) {
+      try {
+        var ps = CP_ST.prev.getSettings(), ts = seq.getSettings();
+        if (ps && ts && ps.videoDisplayFormat != null && ts.videoDisplayFormat !== ps.videoDisplayFormat) { ts.videoDisplayFormat = ps.videoDisplayFormat; seq.setSettings(ts); }
+        mirrored = '“' + CP_ST.prev.name + '”: time display ' + (ps ? ps.videoDisplayFormat : '?');
+      } catch (eMs) { mirrored = 'could not copy your time display (' + eMs.message + ')'; }
+    }
     CP_activateSequence(seq);
     var s1 = CP_activeSequence();
     if (String(s1.name) !== CP_ST_NAME) return CP_fail('Premiere made the test sequence but would not open it (the active one is “' + s1.name + '”)');
@@ -4274,7 +4349,7 @@ function CP_selfTestSetup(argsJson) {
                    videoTracks: s2.videoTracks.numTracks, audioTracks: s2.audioTracks.numTracks,
                    v1Clips: s2.videoTracks[0].clips.numItems, a1Clips: s2.audioTracks.numTracks ? s2.audioTracks[0].clips.numItems : 0,
                    secondCamera: second, endSeconds: Math.round(parseFloat(s2.end) / CP_TICKS_PER_SECOND * 1000) / 1000,
-                   premiere: String(app.version), os: String($.os) });
+                   mirrors: mirrored, premiere: String(app.version), os: String($.os) });
   } catch (e) { return CP_fail(e.message); }
 }
 

@@ -81,7 +81,12 @@
    */
   function callHost(fnName /*, ...args */) {
     var args = Array.prototype.slice.call(arguments, 1).map(function (a) {
-      return JSON.stringify(JSON.stringify(a)); // double-encode: ExtendScript receives a JSON string literal
+      // U+2028 / U+2029 (pasted text carries them) END A LINE in ExtendScript
+      // (ECMAScript 3), even inside a string: sent raw, the whole call was a
+      // syntax error ("EvalScript error."). They travel as \u escapes.
+      var json = JSON.stringify(a);
+      if (typeof json === 'string') json = json.replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+      return JSON.stringify(json); // double-encode: ExtendScript receives a JSON string literal
     });
     var script = fnName + '(' + args.join(',') + ')';
     return new Promise(function (resolve, reject) {

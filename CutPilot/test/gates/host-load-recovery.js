@@ -71,6 +71,7 @@ function engine(opts) {
     }
   };
   vm.createContext(ctx);
+  require('../es3-runtime.js').strip(ctx);   // ExtendScript's ES3 built-ins, host.jsx's own JSON
   if (opts.preload) vm.runInContext(fs.readFileSync(path.join(PANEL, 'jsx', 'host.jsx'), 'utf8'), ctx, { filename: 'host.jsx' });
   if (opts.after) opts.after(ctx);
   return ctx;

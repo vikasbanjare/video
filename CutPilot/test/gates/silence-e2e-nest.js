@@ -49,9 +49,10 @@ function premiere(master, all) {
   const objs = all.map(seqObj);
   const seqs = { numSequences: objs.length };
   objs.forEach((o, i) => { seqs[i] = o; });
-  const ctx = { JSON, Date, Time: function () { this.seconds = 0; },
+  const ctx = { Time: function () { this.seconds = 0; },
     app: { project: { activeSequence: objs[all.indexOf(master)], sequences: seqs }, enableQE() {} }, qe: {} };
   vm.createContext(ctx);
+  require('../es3-runtime.js').strip(ctx);   // ExtendScript's ES3 built-ins, host.jsx's own JSON
   vm.runInContext(HOST_SRC, ctx, { filename: 'host.jsx' });
   return (fn, argJson) => (fn === 'CP_getCutSources' ? ctx.CP_getCutSources(argJson || '{}') : undefined);
 }
