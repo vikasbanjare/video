@@ -524,6 +524,23 @@ const MUTANTS = [
     repl: '',
     gate: 'CutPilot/test/gates/host-load-recovery.js',
     why: '📋 diagnostics no longer says whether Premiere loaded Pulse’s script'
+  },
+  // ---- multicam: when the QE razor ignores Pulse's timecodes ----
+  {
+    name: 'multicam-playhead-fallback',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '          razorAtPlayhead(t0, bounds[need[t0][0]]);',
+    repl: '          void 0;',
+    gate: 'CutPilot/test/gates/multicam-razor-fallback.js',
+    why: 'when the razor ignores Pulse’s timecodes, Apply no longer cuts at the playhead’s own timecode'
+  },
+  {
+    name: 'multicam-cut-facts',
+    file: 'CutPilot/js/main.js',
+    find: "      box.textContent = 'Multicam wasn’t applied:\\n' + msg + (facts ? '\\n\\nWhat Premiere answered: ' + facts : '');",
+    repl: "      box.textContent = 'Multicam wasn’t applied:\\n' + msg;",
+    gate: 'CutPilot/test/gates/multicam-razor-fallback.js',
+    why: 'a failed Apply no longer shows what Premiere answered'
   }
 ];
 

@@ -58,6 +58,10 @@ function CP_ok(obj) {
   return JSON.stringify(obj);
 }
 
+/* A failure that also carries facts for 📋 diagnostics (info: a flat object). */
+function CP_failInfo(msg, info) {
+  return JSON.stringify({ ok: false, error: String(msg), info: info || null });
+}
 function CP_fail(msg) {
   return JSON.stringify({ ok: false, error: String(msg) });
 }
@@ -1365,6 +1369,11 @@ function CP_mcTrackRows(track) {
   return rows;
 }
 
+/* How many items QE's own view of a track holds (-1 when it can't say). */
+function CP_mcQeItems(qtrack) {
+  try { return qtrack ? qtrack.numItems : -1; } catch (e) { return -1; }
+}
+
 /* For sorted times, which ones fall INSIDE a clip (more than half a frame from
    either edge) — i.e. still need a cut there. Two-pointer sweep. */
 function CP_mcSpanned(rows, times, half) {
@@ -1545,47 +1554,106 @@ function CP_applyMulticamPlan(argsJson) {
     // razor each camera track where needed (QE must be enabled). razor cuts
     // whichever clip spans that timecode, so it works across ALL clips on the
     // track — not just the first take.
-    var razorErrors = 0, qeProblem = '';
+    var razorErrors = 0, qeProblem = '', qseq = null, qeBefore = [], tcSent = '', method = 'timecode';
     try {
       try { app.enableQE(); } catch (eEn) {}
-      var qseq = CP_qeSequence();
+      qseq = CP_qeSequence();
       for (t = 0; t < n; t++) {
         var qtrack = qseq.getVideoTrackAt(t);
+        qeBefore.push(CP_mcQeItems(qtrack));
         if (!qtrack) { razorErrors += need[t].length; continue; }
         for (i = 0; i < need[t].length; i++) {
-          try { qtrack.razor(CP_timecode(bounds[need[t][i]], fps, df)); } catch (eRz) { razorErrors++; if (!qeProblem) qeProblem = String(eRz.message || eRz); }
+          var tcOne = CP_timecode(bounds[need[t][i]], fps, df);
+          if (!tcSent) tcSent = tcOne;
+          try { qtrack.razor(tcOne); } catch (eRz) { razorErrors++; if (!qeProblem) qeProblem = String(eRz.message || eRz); }
         }
       }
     } catch (eQE) { qeProblem = String(eQE.message || eQE); }
 
-    // did each cut land? (an edge within half a frame of the boundary)
+    // did each cut land? (an edge within half a frame of the boundary) — read
+    // from the sequence as Premiere has it NOW (re-fetched: the object read
+    // before cutting may still describe the timeline before the cuts)
     var landed = 0, missedAt = [], rows = [];
-    for (t = 0; t < n; t++) {
-      rows.push(CP_mcTrackRows(seq.videoTracks[t]));
-      var times = [];
-      for (i = 0; i < need[t].length; i++) times.push(bounds[need[t][i]]);
-      var still = CP_mcSpanned(rows[t], times, half);
-      for (i = 0; i < still.length; i++) {
-        if (still[i]) {
-          var seen = false;
-          for (var m = 0; m < missedAt.length; m++) if (Math.abs(missedAt[m] - times[i]) < half) seen = true;
-          if (!seen && missedAt.length < 5) missedAt.push(times[i]);
+    var verify = function () {
+      var sq = CP_activeSequence();
+      landed = 0; missedAt = []; rows = [];
+      for (t = 0; t < n; t++) {
+        rows.push(CP_mcTrackRows(sq.videoTracks[t]));
+        var times = [];
+        for (i = 0; i < need[t].length; i++) times.push(bounds[need[t][i]]);
+        var still = CP_mcSpanned(rows[t], times, half);
+        for (i = 0; i < still.length; i++) {
+          if (still[i]) {
+            var seen = false;
+            for (var m = 0; m < missedAt.length; m++) if (Math.abs(missedAt[m] - times[i]) < half) seen = true;
+            if (!seen && missedAt.length < 5) missedAt.push(times[i]);
+          }
+          else landed++;
         }
-        else landed++;
+      }
+    };
+    verify();
+    // Nothing landed. The owner's Mac (v0.10.5): "Premiere didn't make any of
+    // the 12 camera cuts" with no error from the razor at all. Look again
+    // after a moment; then, if QE's own clip count didn't move either, cut at
+    // the timecode QE's PLAYHEAD writes for that moment — Premiere's own text
+    // (e.g. a timeline whose time display is Frames) — first on one cut, then
+    // on all of them if that one lands.
+    var qeAfter = [], ctiSample = '', triedPlayhead = false;
+    if (needed > 0 && landed === 0 && qseq) {
+      try { $.sleep(300); } catch (eSl) {}
+      verify();
+      for (t = 0; t < n; t++) { try { qeAfter.push(CP_mcQeItems(qseq.getVideoTrackAt(t))); } catch (eQa) { qeAfter.push(-1); } }
+      if (landed === 0) {
+        var keepPos = null;
+        try { keepPos = seq.getPlayerPosition(); } catch (eGp) {}
+        var t0 = -1;
+        for (t = 0; t < n && t0 < 0; t++) if (need[t].length) t0 = t;
+        if (t0 >= 0) {
+          triedPlayhead = true;
+          var razorAtPlayhead = function (tt, sec) {
+            try { seq.setPlayerPosition(CP_ticksFromSeconds(sec)); } catch (eSp) { return; }
+            var ctc = '';
+            try { ctc = String(qseq.CTI.timecode); } catch (eCt) { return; }
+            if (!ctiSample) ctiSample = ctc;
+            try { qseq.getVideoTrackAt(tt).razor(ctc); } catch (eRp) { if (!qeProblem) qeProblem = String(eRp.message || eRp); }
+          };
+          razorAtPlayhead(t0, bounds[need[t0][0]]);
+          verify();
+          if (landed > 0) {
+            method = 'playhead';
+            for (t = 0; t < n; t++) {
+              for (i = 0; i < need[t].length; i++) { if (t === t0 && i === 0) continue; razorAtPlayhead(t, bounds[need[t][i]]); }
+            }
+            verify();
+          }
+        }
+        try { if (keepPos) seq.setPlayerPosition(keepPos.ticks); } catch (eRs) {}
       }
     }
+    // what Premiere said, for 📋 diagnostics when no cut lands
+    var cutInfo = {
+      fps: Math.round(fps * 1000) / 1000, dropFrame: df, timebase: String(seq.timebase),
+      displayFormat: (function () { try { var st = seq.getSettings(); return st ? st.videoDisplayFormat : null; } catch (eDf) { return null; } })(),
+      zeroPoint: (function () { try { return parseFloat(seq.zeroPoint) / CP_TICKS_PER_SECOND; } catch (eZp) { return null; } })(),
+      timecodeSent: tcSent, playheadTimecode: ctiSample, triedPlayhead: triedPlayhead,
+      qeClipsBefore: qeBefore.join('/'), qeClipsAfter: qeAfter.join('/'), clipsBefore: piecesBefore.join('/'),
+      clipsAfter: (function () { var a = []; for (var r0 = 0; r0 < rows.length; r0++) a.push(rows[r0].length); return a.join('/'); })(),
+      razorErrors: razorErrors, qeProblem: qeProblem
+    };
     if (needed > 0 && landed === 0) {
       // a timeline whose timecode starts later than 00:00:00:00 (01:00:00:00 is
       // a common preset) may be cut at the wrong timecode — name the way out
       var zeroSec = 0;
       try { zeroSec = parseFloat(seq.zeroPoint) / CP_TICKS_PER_SECOND; } catch (eZ) {}
       if (zeroSec > 0.5) {
-        return CP_fail('Premiere didn’t make any of the ' + needed + ' camera cuts, so nothing was switched — your timeline is unchanged. ' +
+        return CP_failInfo('Premiere didn’t make any of the ' + needed + ' camera cuts, so nothing was switched — your timeline is unchanged. ' +
           'This timeline’s timecode starts at ' + CP_timecode(zeroSec, fps, df).replace(/;/g, ':') + ' instead of 00:00:00:00: open the Timeline panel menu ' +
-          '(☰ next to the sequence name), choose Start Time…, set it to 00:00:00:00, then Apply again.');
+          '(☰ next to the sequence name), choose Start Time…, set it to 00:00:00:00, then Apply again.', cutInfo);
       }
-      return CP_fail('Premiere didn’t make any of the ' + needed + ' camera cuts' + (qeProblem ? ' (' + qeProblem + ')' : '') +
-        ', so nothing was switched — your timeline is unchanged. Click the timeline once and Apply again; if it keeps happening, restart Premiere.');
+      return CP_failInfo('Premiere didn’t make any of the ' + needed + ' camera cuts' + (qeProblem ? ' (' + qeProblem + ')' : '') +
+        ', so nothing was switched — your timeline is unchanged. Click the timeline once and Apply again; if it keeps happening, restart Premiere ' +
+        'and send 📋 Copy diagnostics (Settings) — it now holds what Premiere answered.', cutInfo);
     }
 
     // toggle enable/disable per resulting piece (plan and pieces both sorted)
@@ -1636,6 +1704,7 @@ function CP_applyMulticamPlan(argsJson) {
       if (ok) good += len;
     }
     return CP_ok({
+      cutMethod: method,
       toggled: toggled, razored: landed, cuts: bounds.length, cutsNeeded: needed, missedCuts: needed - landed,
       missedAt: missedAt, razorErrors: razorErrors, toggleErrors: toggleErrors,
       verifiedPct: total > 0 ? Math.floor((good / total) * 1000) / 10 : 100,
@@ -4052,6 +4121,66 @@ function CP_renderStylePreviews(argsJson) {
   var cleaned = false;
   try { if (app.project.deleteSequence && seq) { app.project.deleteSequence(seq); cleaned = true; } } catch (eDel) {}
   return CP_ok({ rendered: rendered, failed: failed, cleaned: cleaned });
+}
+
+/*
+ * Render a Premium (.mogrt) template with the owner's own words, as Premiere
+ * draws it — the owner: "flux preview is very bad, not accurate" (the cards
+ * showed the template author's small low-resolution clip with its sample
+ * text). A TEMP sequence at the owner's frame size (their timeline is never
+ * touched): import the template, set its text, then export one PNG per time
+ * via QE (QE adds ".png" itself to outBase_NN). Cleans up after.
+ * argsJson: { mogrtPath, text, seconds, times:[s], outBase, width, height }
+ * Returns { files:[path], failed:[time], cleaned }.
+ */
+function CP_renderMogrtFrames(argsJson) {
+  var prevActive = null, seq = null, files = [], failed = [];
+  try {
+    var args = JSON.parse(argsJson);
+    var times = args.times || [];
+    if (!args.mogrtPath || !times.length || !args.outBase) return CP_fail('Nothing to render.');
+    try { prevActive = app.project.activeSequence; } catch (ePA) {}
+    if (!app.project.createNewSequence) return CP_fail('This Premiere version cannot create a render sequence from a panel.');
+    seq = app.project.createNewSequence('Pulse Premium preview (temp)', 'pulse-prem-' + String(Math.floor(Math.random() * 1e9)));
+    if (!seq) return CP_fail('Could not create the temp render sequence.');
+    try {
+      var st = seq.getSettings();
+      st.videoFrameWidth = args.width || 1920; st.videoFrameHeight = args.height || 1080;
+      seq.setSettings(st);
+    } catch (eSt) {}
+    app.project.activeSequence = seq;
+    app.enableQE();
+    var seconds = args.seconds || 3;
+    var clip = seq.importMGT(args.mogrtPath, CP_ticksFromSeconds(0), 0, 0);
+    if (!clip) throw new Error('Premiere would not place this template');
+    try { clip.end = CP_timeFromSeconds(seconds); } catch (eE) {}
+    try {
+      var comp = clip.getMGTComponent();
+      if (comp && comp.properties && args.text) {
+        var tp = CP_findTextProp(comp.properties, ['text', 'caption', 'title', 'subtitle']);
+        if (tp) CP_setMgrtText(tp, args.text, true, null);
+      }
+    } catch (eTx) {}
+    try { CP_forceRerender(clip); } catch (eRr) {}
+    var qseq = qe.project.getActiveSequence();
+    for (var k = 0; k < times.length; k++) {
+      var base = args.outBase + '_' + (k < 10 ? '0' : '') + k;
+      var okF = false;
+      try {
+        seq.setPlayerPosition(CP_ticksFromSeconds(times[k]));
+        okF = qseq.exportFramePNG(String(qseq.CTI.timecode), base);
+      } catch (eXp) { okF = false; }
+      if (okF !== false) files.push(base + '.png'); else failed.push(times[k]);
+    }
+  } catch (e) {
+    try { if (prevActive) app.project.activeSequence = prevActive; } catch (eR1) {}
+    try { if (seq && app.project.deleteSequence) app.project.deleteSequence(seq); } catch (eD1) {}
+    return CP_fail(e.message);
+  }
+  try { if (prevActive) app.project.activeSequence = prevActive; } catch (eR2) {}
+  var cleaned = false;
+  try { if (app.project.deleteSequence && seq) { app.project.deleteSequence(seq); cleaned = true; } } catch (eDel) {}
+  return CP_ok({ files: files, failed: failed, cleaned: cleaned });
 }
 
 /* Rung J of the self-test ladder: place ONE bare engine graphic on the

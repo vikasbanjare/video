@@ -14256,7 +14256,7 @@
       capMcProgress(null);
       state.mcApplied = true;
       // what the host did, cut by cut, for 📋 Copy diagnostics
-      diag('multicam', 'apply — cuts needed ' + r.cutsNeeded + ', landed ' + r.razored + ', missed ' + r.missedCuts +
+      diag('multicam', 'apply — cuts needed ' + r.cutsNeeded + ', landed ' + r.razored + (r.cutMethod ? ' (by ' + r.cutMethod + ')' : '') + ', missed ' + r.missedCuts +
         (r.razorErrors ? ' (' + r.razorErrors + ' razor errors)' : '') + ', switched ' + r.toggled +
         (r.toggleErrors ? ' (' + r.toggleErrors + ' failed)' : '') +
         (r.audioRestored ? ', camera audio switched back on ' + r.audioRestored : '') +
@@ -14361,8 +14361,19 @@
     capMcProgress(null);
     var msg = (e && e.message) ? e.message : String(e);
     toast('Multicam failed: ' + msg, true);
+    // what Premiere answered when no cut landed (frame rate, the timecode
+    // sent, the playhead's own timecode, clip counts) — into 📋 diagnostics
+    // and under the message, so one report says why
+    var info = e && e.host && e.host.info, facts = '';
+    if (info) {
+      facts = Object.keys(info).map(function (k) { return k + '=' + info[k]; }).join(' · ');
+      diag('multicam', 'apply failed — ' + facts);
+    }
     var box = $('mc-diag');
-    if (box) { box.classList.remove('hidden'); box.className = 'diag-out err'; box.textContent = 'Multicam wasn’t applied:\n' + msg; }
+    if (box) {
+      box.classList.remove('hidden'); box.className = 'diag-out err';
+      box.textContent = 'Multicam wasn’t applied:\n' + msg + (facts ? '\n\nWhat Premiere answered: ' + facts : '');
+    }
   }
 
   $('btn-mc-plan').addEventListener('click', function () {

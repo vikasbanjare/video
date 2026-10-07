@@ -30,7 +30,12 @@ function dfLabelToFrames(hh, mm, ss, ff, fRate) {
  *   end (s), video: [{ name, locked, clips: [{ start, end, name }] }],
  *   audio: [{ name, muted, locked, clips: [{ start, end, inPoint, outPoint,
  *            mediaPath, speed, reversed, disabled, name }] }],
- *   razor: 'ok' | 'throws' | 'noop',  nested: bool (V1 clip is a nested sequence)
+ *   razor: 'ok' | 'throws' | 'noop' | 'own-text',  nested: bool (V1 clip is a nested sequence)
+ *     ('own-text': the QE razor silently ignores any timecode that isn't
+ *      written the way the QE playhead writes it — e.g. a timeline whose
+ *      display format is Frames, ctiFormat: 'frames')
+ *   ctiFormat: 'timecode' (default) | 'frames' — how the QE playhead
+ *     (qe…getActiveSequence().CTI.timecode) writes its time
  *   qeParse: 'separator' | 'sequence' — how the QE razor reads a timecode (below)
  *   startTime: s — the sequence's timecode starts here (01:00:00:00 = 3600), and
  *     the QE razor reads timecodes as that absolute timecode
@@ -121,13 +126,26 @@ function makePremiere(spec) {
     list.numTracks = tracks.length;
     return list;
   }
+  // the playhead (Sequence.setPlayerPosition) and how QE writes its time
+  model.playhead = 0;
+  function ctiText() {
+    const f = Math.round(model.playhead * fps);
+    if (spec.ctiFormat === 'frames') return String(f);
+    const p2 = (n) => (n < 10 ? '0' : '') + n, ff = f % fRate, ss = Math.floor(f / fRate);
+    return p2(Math.floor(ss / 3600)) + ':' + p2(Math.floor(ss / 60) % 60) + ':' + p2(ss % 60) + ':' + p2(ff);
+  }
   function qeTrack(t) {
     return {
+      get numItems() { return t.clips.length; },
       razor(tc) {
         model.razorCalls++; model.razorTimecodes.push(String(tc));
         if (spec.razor === 'throws') throw new Error('razor failed');
         if (spec.razor === 'noop' || t.locked) return;
-        const cut = snap(parseTc(tc) - (spec.startTime || 0));
+        let cut;
+        if (spec.razor === 'own-text') {
+          if (String(tc) !== ctiText()) return;           // not written its own way: nothing happens
+          cut = snap(model.playhead);
+        } else cut = snap(parseTc(tc) - (spec.startTime || 0));
         for (let i = 0; i < t.clips.length; i++) {
           const c = t.clips[i];
           if (c.start < cut - 1e-9 && c.end > cut + 1e-9) {
@@ -164,7 +182,9 @@ function makePremiere(spec) {
     },
     get videoTracks() { return domTrackList(vTracks, false); },
     get audioTracks() { return domTrackList(aTracks, true); },
-    markers: { getFirstMarker() { return null; }, getNextMarker() { return null; } }
+    markers: { getFirstMarker() { return null; }, getNextMarker() { return null; } },
+    setPlayerPosition(ticks) { model.playhead = Number(ticks) / TICKS; },
+    getPlayerPosition() { return mkT(model.playhead); }
   };
   const sandbox = {
     JSON, Date, Math,
@@ -175,6 +195,7 @@ function makePremiere(spec) {
     },
     qe: { project: { getActiveSequence() {
       return {
+        get CTI() { return { get timecode() { return ctiText(); } }; },
         get numVideoTracks() { return vTracks.length; },
         get numAudioTracks() { return aTracks.length; },
         getVideoTrackAt(i) { return vTracks[i] ? qeTrack(vTracks[i]) : null; },
