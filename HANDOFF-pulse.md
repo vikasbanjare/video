@@ -1,10 +1,68 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.2** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.3** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.3 — the five open problems from the owner's status list
+Each is gated, and each fix was broken on purpose to see its gate go red (12
+mutations; 10 are in tools/mutation-check.js).
+- **Hindi chip**: 🇮🇳 Hindi sits right after 🔥 Trending, in CATEGORIES and
+  the chip row (galleryChips). It had been 603–694 px into a 236 px row. At
+  260 px it is now on screen without scrolling (gallery-categories measures
+  it). The gate's REQUIRED creator order changed with it.
+- **Caption language on the Captions page**: a "Words in" picker (#cap-lang,
+  a third synced copy of WHISPER_LANGS). captionScriptFollow(): Hindi letters
+  → Hinglish converts in place (hinglishify; times untouched; nothing
+  uploaded). English letters → Hindi asks first, then listens again with
+  language=hi. Gate captions-language-picker.
+- **Clean up remembers** settings.cleanStrength / takeStrength. Never picked:
+  a vertical sequence starts on ⚡ Reel (cleanDefaultForSequence, on opening
+  the page). Gate silence-remember-choice.
+- **Multicam second Apply**: CP_mcRestoreAudio(seq, before, nCams) now also
+  switches the owner's own switched-off sound back OFF when switching a
+  camera piece on brought it on (keptOff). For links that work both ways, the
+  picture wins over sound kept off (linkedOn) and the sound wins over a
+  picture (pictureOn, reported as partly applied). The panel names Unlink.
+  multicam-apply gained both cases; fakehost gained linkedBothWays.
+- **After Pulse's own cuts** Auto-transcribe reuses the saved (v3) transcript
+  laid onto the cut pieces: resyncTranscripts no longer sets
+  _forceRetranscribe. An exact-key miss falls back to a saved transcript of
+  the recording that covers the span (a cut head or tail). Messages now name
+  the "↻ Redo" button the owner sees (they said "↻ Re-transcribe", which
+  isn't on screen); the gates read the label from the DOM.
+
+### Research (October 2026): what Pulse could add next
+Sources were web search results, since this environment's proxy blocks most
+vendor sites. Treat the details as secondary until the owner confirms them.
+- **Adobe's CEP timeline** (Adobe developer blog, Sept 2026, via search) for
+  Premiere: no new CEP Marketplace submissions after Dec 2027; CEP disabled
+  by default Dec 2028; removed Dec 2029. UXP has been GA in Premiere since
+  25.6. → The UXP port is a 2027 project, not an emergency.
+- **Premiere now does natively**, so don't build: bulk bleep or mute words
+  (26.0), Translate Captions, single-word captions (26.3), the Generative
+  Media Tool for prompted video and sound effects (26.5), Enhance Speech,
+  Auto-ducking, Auto Reframe, text-based editing.
+- **Gaps against AutoCut, FireCut, Submagic, Opus Clip, Descript and Indian
+  caption apps**, best first:
+  1. AI hook title for the first ~3 s.
+  2. Post kit: titles, description, hashtags and chapter timestamps.
+  3. Real auto B-roll from Pexels or Pixabay (free keys); today it is ideas
+     only.
+  4. A smarter Auto-zoom (Viral Edit's punches are basic).
+  5. Reel progress bar.
+  6. Beat markers.
+  7. Sarvam Saaras v3 batch API: word-level times, diarization, 22 Indian
+     languages, codemix/translit for Hinglish.
+  8. Regional-language captions (fonts per script).
+  9. Hindi AI voiceover (Sarvam Bulbul).
+  10. Chapter title cards.
+- **Found while researching**: Pulse calls Sarvam's sync speech-to-text
+  (saarika:v2.5). Its timestamps are reportedly phrase-level, not word-level,
+  so on "Indian Voices" transcripts the word highlight may step phrase by
+  phrase. Not verified (no Sarvam key here); item 7 fixes it.
 
 ### v0.10.2 — caption sync (the owner's "sync problem with pulse rendering with voice")
 Found in the code, without waiting for the owner's early/late answer. Four
@@ -466,7 +524,7 @@ Absolute paths. Only files touched in this session are listed.
 
 ## Next 3 actions
 
-1. **Owner installs v0.10.2 on the Mac and runs the real flows**: Hindi captions
+1. **Owner installs v0.10.3 on the Mac and runs the real flows**: Hindi captions
    on a reel; Clean up on a 2-mic podcast (with and without a music track —
    name it "Music" or answer the one-tap question); Podcast cameras. Then
    📋 Copy diagnostics. Everything above is proven against a fake Premiere
@@ -480,7 +538,8 @@ Absolute paths. Only files touched in this session are listed.
    points at the recording's own start (MP3 encoder delay, a timecode start),
    growing at a rate mismatch. Also get the diagnostics line `asr source …`,
    which now names any speed that isn't 100%.
-3. **Strategic**: Adobe's Premiere sample README (Nov 2025) says CEP support
-   ends about a year after 25.6 — i.e. now. The pure-JS cores (silence, takes,
-   render, captions) carry over to UXP; host.jsx (QE razor) and Node
-   child_process (ffmpeg) do not. Plan the UXP port with the owner.
+3. **Strategic**: Adobe's September 2026 timeline (see Research) supersedes
+   the Nov 2025 README. For Premiere, CEP is disabled by default in Dec 2028
+   and removed in Dec 2029, so the UXP port is a 2027 project. The pure-JS
+   cores (silence, takes, render, captions) carry over to UXP; host.jsx (QE
+   razor) and Node child_process (ffmpeg) do not. Plan it with the owner.
