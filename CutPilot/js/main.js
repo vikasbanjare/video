@@ -13320,11 +13320,18 @@
      (the "haan/hmm" flash). Snappy cuts sooner and punches in more often, but
      never under that floor. */
   var MC_MIN_HOLD = 1.5;
-  var MC_PACE = {
-    low:    { minseg: 2.5, maxshot: 300, cutaway: 3, leadin: 0,   hint: '🐢 Calm — long, steady shots; only the occasional cut to the other person.' },
-    medium: { minseg: 2.0, maxshot: 120, cutaway: 3, leadin: 0,   hint: '⚖️ Balanced — natural conversation pace, with the odd cutaway during long talking.' },
-    high:   { minseg: 1.5, maxshot: 45,  cutaway: 2, leadin: 120, hint: '⚡ Snappy — cuts quickly and punches to the other person often.' }
+  /* The paces' settings live with the director (CPMulticam.PACES, where the
+     multicam-edit-quality gate measures them); the hints say what each does. */
+  var MC_PACE_HINTS = {
+    low:    '🐢 Calm — steady shots: cuts only for answers of a few seconds or more.',
+    medium: '⚖️ Balanced — follows the talk, with a reaction shot every 20 s or so of a long answer.',
+    high:   '⚡ Snappy — quick cuts, and a reaction shot every 10 s or so.'
   };
+  var MC_PACE = {};
+  Object.keys(CPMulticam.PACES).forEach(function (k) {
+    var v = CPMulticam.PACES[k];
+    MC_PACE[k] = { minseg: v.minseg, maxshot: v.maxshot, cutaway: v.cutaway, leadin: v.leadin, hint: MC_PACE_HINTS[k] };
+  });
   /* The minimum shot hold actually used: the slider, never under MC_MIN_HOLD. */
   function mcMinHold() { return Math.max(MC_MIN_HOLD, parseFloat($('mc-minseg') && $('mc-minseg').value) || 2); }
   function applyMcPace(pace) {
@@ -14042,6 +14049,12 @@
         // applied, but the plan itself carries a warning (unheard stretches,
         // a pairing that disagrees with the mics) — don't let it read as success
         toast('🎬 Multicam applied — ' + r.razored + ' cuts, but: ' + state.mcPlanWarning.replace(/^⚠️\s*/, ''), true);
+      } else if (!r.razored && !r.toggled && !r.audioRestored && !r.audioKeptOff) {
+        // Redo (or Apply again) with the same settings: the timeline already
+        // shows exactly this edit — "applied — 0 cuts, 0 angle toggles" read as
+        // if the button did nothing
+        toast('✓ Your timeline already has this edit — nothing to cut or switch. For a different edit, change “How often should it change camera?” ' +
+              'or a camera’s mic, then tap 🔁 Redo.');
       } else if (r.audioLinkedOn > 0) {
         // the cameras switched as planned, but some sound the owner had
         // switched off is on again: Premiere would not switch it off without

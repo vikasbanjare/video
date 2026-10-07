@@ -146,6 +146,19 @@
    *   wideOnSilence    use the wide angle during silence too (default false = hold)
    * Returns [{start,end,angle}] ready for CP_applyMulticamPlan.
    */
+  /* The three "How often should it change camera?" paces the panel offers,
+     as the director's settings: minseg = shortest shot AND shortest answer that
+     gets its own cut (s), maxshot = how long one camera may stay on a talker
+     before a reaction shot (s), cutaway = the reaction shot's hold (s), leadin =
+     cut this early before a new talker (ms). Calm and Balanced used to be 2 and
+     5 minutes apart on maxshot, so no real answer reached either and the two
+     made the same edit. */
+  var PACES = {
+    low:    { minseg: 3.5, maxshot: 45, cutaway: 3, leadin: 0 },
+    medium: { minseg: 2.0, maxshot: 20, cutaway: 3, leadin: 0 },
+    high:   { minseg: 1.5, maxshot: 10, cutaway: 2, leadin: 120 }
+  };
+
   function directorPlan(speakerRegions, duration, opts) {
     opts = opts || {};
     var step = opts.step || 0.12;
@@ -229,8 +242,65 @@
     // each wide moment gets a real camera, taking the wide cameras in turn
     for (i = 0; i < out.length; i++) if (out[i].angle === WIDE) out[i].angle = nextWide();
 
+    // The breaths in this speaker's talk whose middle lies in [lo, hi]: gaps
+    // of 0.2 s or more between two of their speech regions, as { at (the
+    // middle), len }. None for a camera with no mic or one unbroken stretch.
+    function pausesIn(angle, lo, hi) {
+      var rg = speakerRegions[angle], outP = [];
+      if (!rg || rg.length < 2 || !(hi > lo)) return outP;
+      for (var k = 0; k + 1 < rg.length; k++) {
+        var g0 = rg[k].end, g1 = rg[k + 1].start;
+        if (g1 - g0 < 0.2 - 1e-6) continue;
+        var mid = (g0 + g1) / 2;
+        if (mid >= lo && mid <= hi) outP.push({ at: mid, len: g1 - g0 });
+      }
+      return outP;
+    }
+    // Where a reaction shot leaves the talker and comes back: best of all, at
+    // two breaths (a whole phrase of theirs heard over the listener), the
+    // reaction lasting between the hold and hold + 6 s. A longer pause (the end
+    // of a sentence) beats a short one, and a reaction near the target time and
+    // near the hold beats a far one. Failing a pair, leave at the best breath
+    // and come back on time; failing that, the plain timing.
+    function reactionSpan(angle, target, lo, hi, hold, maxEnd) {
+      var ps = pausesIn(angle, lo, maxEnd), best = null, bestSc = -Infinity, k, m;
+      for (k = 0; k < ps.length; k++) {
+        if (ps[k].at > hi) break;
+        for (m = k + 1; m < ps.length; m++) {
+          var d = ps[m].at - ps[k].at;
+          if (d < Math.max(minSeg, hold - 1)) continue;
+          if (d > hold + 6) break;
+          var sc = ps[k].len + ps[m].len - 0.15 * Math.abs(ps[k].at - target) - 0.1 * Math.abs(d - hold);
+          if (sc > bestSc) { bestSc = sc; best = { start: ps[k].at, end: ps[m].at }; }
+        }
+      }
+      if (best) return best;
+      var one = null;
+      for (k = 0; k < ps.length; k++) {
+        if (ps[k].at > hi) break;
+        var s1 = ps[k].len - 0.15 * Math.abs(ps[k].at - target);
+        if (one == null || s1 > one.sc) one = { at: ps[k].at, sc: s1 };
+      }
+      var st = one ? one.at : target;
+      return { start: st, end: Math.min(maxEnd, st + hold) };
+    }
+    // the reaction shot during someone's long talk: a wide camera when there is
+    // one, else the person who talked last before them (the one listening), else
+    // the next camera
+    function listenerFor(idx) {
+      var sp = out[idx].angle;
+      if (wides.length && wides.indexOf(sp) < 0) return nextWide();
+      for (var k = idx - 1; k >= 0; k--) {
+        var a = out[k].angle;
+        if (a !== sp && a >= 0 && speakerRegions[a]) return a;
+      }
+      return (sp + 1) % nA;
+    }
+
     // break up shots that linger too long with a brief cutaway to the wide cam
-    // (or the next angle), so a long monologue never sits on one camera forever.
+    // (or the listener), so a long monologue never sits on one camera forever.
+    // Each cutaway starts at a breath in the speaker's talk and comes back at
+    // one when it can (never mid-word); it falls back to the plain timing.
     if (maxShot > 0 && nA > 1) {
       var split = [];
       for (i = 0; i < out.length; i++) {
@@ -238,27 +308,32 @@
         if (sh.end - sh.start <= maxShot * 1.5) { split.push(sh); continue; }
         var t0 = sh.start;
         while (sh.end - t0 > maxShot * 1.5) {
-          var alt = (wides.length && wides.indexOf(sh.angle) < 0) ? nextWide() : ((sh.angle + 1) % nA);
-          split.push({ start: t0, end: t0 + maxShot, angle: sh.angle });
-          var cEnd = Math.min(sh.end, t0 + maxShot + cutawayHold);
+          var alt = listenerFor(i);
+          var span = reactionSpan(sh.angle, t0 + maxShot, t0 + Math.max(minSeg, maxShot * 0.6),
+                                  Math.min(sh.end - minSeg - cutawayHold, t0 + maxShot * 1.4), cutawayHold, sh.end - minSeg);
+          var cs = span.start, cEnd = span.end;
+          split.push({ start: t0, end: cs, angle: sh.angle, back: t0 > sh.start });
           if (sh.end - cEnd < minSeg) cEnd = sh.end;       // no sliver of the speaker after the cutaway
-          split.push({ start: t0 + maxShot, end: cEnd, angle: alt, cutaway: true });
+          split.push({ start: cs, end: cEnd, angle: alt, cutaway: true });
           t0 = cEnd;
         }
-        if (sh.end - t0 > 1e-3) split.push({ start: t0, end: sh.end, angle: sh.angle });
+        if (sh.end - t0 > 1e-3) split.push({ start: t0, end: sh.end, angle: sh.angle, back: t0 > sh.start });
       }
       out = split;
     }
 
     // anticipation: pull each cut a little earlier so the new angle is on screen
     // just before the line lands (pros never cut exactly on the word) — but
-    // never so far that the shot before it drops under the minimum hold.
+    // never so far that the shot before it drops under the minimum hold. A
+    // reaction cutaway and the cut back from it already sit on a breath.
     if (leadIn > 0) {
       for (i = 1; i < out.length; i++) {
+        if (out[i].cutaway || out[i].back) continue;
         var ns = Math.max(out[i - 1].start + minSeg, out[i].start - leadIn);
         if (ns < out[i].start) { out[i].start = ns; out[i - 1].end = ns; }
       }
     }
+    for (i = 0; i < out.length; i++) delete out[i].back;
     return out;
   }
 
@@ -835,6 +910,7 @@
     segmentsFromBoundaries: segmentsFromBoundaries,
     holdSegments: holdSegments,
     directorPlan: directorPlan,
+    PACES: PACES,
     loudnessToRegions: loudnessToRegions,
     twoModes: twoModes,
     micGainOffsets: micGainOffsets,

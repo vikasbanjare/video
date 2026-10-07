@@ -257,6 +257,30 @@ const MUTANTS = [
     repl: "Re-transcribe (Transcribe tab) to get word timing, then run Clean up again.');",
     gate: 'CutPilot/test/gates/silence-e2e-oneshot-words.js',
     why: 'the one-tap clean-up sends the owner to a button that does not exist'
+  },
+  {
+    name: 'multicam-redo-nothing-to-change',
+    file: 'CutPilot/js/main.js',
+    find: '      } else if (!r.razored && !r.toggled && !r.audioRestored && !r.audioKeptOff) {',
+    repl: '      } else if (false) {',
+    gate: 'CutPilot/test/gates/multicam-apply.js',
+    why: 'Redo with the same settings says "applied — 0 cuts" as if it did nothing'
+  },
+  {
+    name: 'multicam-distinct-paces',
+    file: 'CutPilot/js/multicam.js',
+    find: '    low:    { minseg: 3.5, maxshot: 45, cutaway: 3, leadin: 0 },\n    medium: { minseg: 2.0, maxshot: 20, cutaway: 3, leadin: 0 },',
+    repl: '    low:    { minseg: 2.5, maxshot: 300, cutaway: 3, leadin: 0 },\n    medium: { minseg: 2.0, maxshot: 120, cutaway: 3, leadin: 0 },',
+    gate: 'CutPilot/test/gates/multicam-edit-quality.js',
+    why: 'Calm and Balanced make the same edit again, with no reaction shots'
+  },
+  {
+    name: 'multicam-reaction-on-a-breath',
+    file: 'CutPilot/js/multicam.js',
+    find: '      var ps = pausesIn(angle, lo, maxEnd), best = null, bestSc = -Infinity, k, m;',
+    repl: '      return { start: target, end: Math.min(maxEnd, target + hold) }; var ps = [], best = null, bestSc = -Infinity, k, m;',
+    gate: 'CutPilot/test/gates/multicam-edit-quality.js',
+    why: 'reaction shots cut away from the talker mid-word again'
   }
 ];
 

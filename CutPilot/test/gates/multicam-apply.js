@@ -262,6 +262,45 @@ for (const mode of ['throws', 'noop']) {
         'panel, tapping Apply again finishes it: missed cuts ' + res2.missedCuts + ', verified ' + res2.verifiedPct + '%, wrong camera ' +
         wrongSeconds(ctx.world, plan, 25) + ' s, the owner sees ' + JSON.stringify(again.toast.slice(0, 60)) + (again.box ? ' and the box still says ' + JSON.stringify(again.box.slice(0, 50)) : ''));
     }
+
+    // ---- 🔁 Redo: says so when there is nothing to change, re-cuts when there is ----------
+    // ("the redo button is not working": with the same settings it rebuilt the
+    // same edit and said "Multicam applied — 0 cuts, 0 angle toggles"; and
+    // Calm vs Balanced made the same edit, so switching pace changed nothing)
+    {
+      const isim = S.podcast({ dur: 120, pattern: 'interview', share: 0.85, seed: 5 });
+      const ienv = {}, iaudio = [];
+      isim.grids.forEach((g, m) => {
+        ienv['/media/mic' + (m + 1) + '.wav'] = g.slice();
+        iaudio.push({ name: 'A' + (m + 1), clips: [{ start: 0, end: 120, inPoint: 0, outPoint: 120, mediaPath: '/media/mic' + (m + 1) + '.wav', name: 'mic' + (m + 1) }] });
+      });
+      const ctx = await P.openPanel(browser, { premiere: { fps: 25, end: 120, video: FH.cameras(2, 120), audio: iaudio }, envelopes: ienv });
+      await P.runMulticam(ctx, { cameras: 2, source: 'follow' });
+      const redo = (pace) => ctx.page.evaluate(async (pace) => {
+        if (pace) { const b = document.querySelector('#mc-pace button[data-pace="' + pace + '"]'); if (b) b.click(); }
+        const n = document.getElementById('log').children.length;
+        document.getElementById('btn-mc-redo').click();
+        for (let i = 0; i < 300; i++) {
+          await new Promise(res => setTimeout(res, 50));
+          const last = document.getElementById('log').lastElementChild;
+          if (document.getElementById('log').children.length > n && last && /Multicam|already has this edit|failed/i.test(last.textContent)) break;
+        }
+        await new Promise(res => setTimeout(res, 200));
+        const last = document.getElementById('log').lastElementChild;
+        return last ? last.textContent : '';
+      }, pace);
+      const same = await redo(null);
+      const sameRes = ctx.calls.filter(c => c.fn === 'CP_applyMulticamPlan').pop().result || {};
+      report(sameRes.razored === 0 && sameRes.toggled === 0 && /already has this edit/.test(same) && !/0 cuts/.test(same),
+        'panel, 🔁 Redo with the same settings: says the timeline already has this edit (not "applied — 0 cuts") — ' + JSON.stringify(same.slice(0, 70)));
+      const snappy = await redo('high');
+      const sn = ctx.calls.filter(c => c.fn === 'CP_applyMulticamPlan').pop();
+      const snRes = sn.result || {};
+      report(snRes.razored > 0 && snRes.verifiedPct === 100 && wrongSeconds(ctx.world, sn.args.plan, 25) === 0 && /Multicam applied — \d+ cuts/.test(snappy),
+        'panel, ⚡ Snappy then 🔁 Redo: re-cuts the timeline with the new edit (' + snRes.razored + ' new cuts, verified ' + snRes.verifiedPct + '%) — ' +
+        JSON.stringify(snappy.slice(0, 60)));
+      await ctx.page.close();
+    }
   });
   if (failed) { console.log('MULTICAM APPLY: ' + failed + ' check(s) failed'); process.exit(1); }
   console.log('MULTICAM APPLY: failures are reported, nothing half-done reads as success, drop-frame lands on the frame ✓');
