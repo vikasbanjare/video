@@ -335,6 +335,7 @@ function cues(lines) {
         document.getElementById('btn-takes-find').click();
         await new Promise(r => setTimeout(r, 100));
         out.findToast = document.getElementById('toast').textContent;
+        out.redo = (document.getElementById('btn-retranscribe') || {}).textContent || '(no listen-again button)';
         return out;
       });
       if (res.missing) check('filler hooks present (CP_DEBUG_EXT.retakes)', false, 'window.CP_DEBUG_EXT.retakes is missing');
@@ -345,12 +346,12 @@ function cues(lines) {
         check('…and the word-snap before cutting keeps it whole (it used to collapse filler cuts)',
           res.snapped.length === 1 && Math.abs(res.snapped[0].start - um.start) < 1e-6 && Math.abs(res.snapped[0].end - um.end) < 1e-6, JSON.stringify(res.snapped));
         check('a transcript file with no word timing still works before any cut', res.beforeCut === 1, String(res.beforeCut));
-        // The message now names "↻ Re-transcribe": "Auto-transcribe again"
-        // reloaded the SAVED pre-cut transcript (same cache key after a cut
-        // inside the clip) — see retakes-stale-retranscribe.js.
-        check('after a cut, that stale file is refused with a plain message — no filler cut at old times',
-          res.afterCut.length === 0 && /↻ Re-transcribe/.test(res.toast), JSON.stringify(res.afterCut) + ' · ' + res.toast);
-        check('…and "Find repeated takes" refuses it too, saying why', res.takesWords === null && /↻ Re-transcribe/.test(res.findToast), res.findToast);
+        // The message names the button that always listens again, by its
+        // label on screen (it said "↻ Re-transcribe" while the button read
+        // "↻ Redo") — see retakes-stale-retranscribe.js.
+        check('after a cut, that stale file is refused with a plain message naming the "' + res.redo + '" button — no filler cut at old times',
+          res.afterCut.length === 0 && res.toast.indexOf(res.redo) >= 0, JSON.stringify(res.afterCut) + ' · ' + res.toast);
+        check('…and "Find repeated takes" refuses it too, saying why', res.takesWords === null && res.findToast.indexOf(res.redo) >= 0, res.findToast);
       }
       await page.close();
     }

@@ -1398,28 +1398,51 @@ function CP_mcAudioOff(seq) {
   return out;
 }
 
-/* Switch back on every audio clip that is off now but was not switched off
-   before Apply (its middle lies in none of the owner's own switched-off
-   clips). Tracks with no newly switched-off clip are not walked again.
-   Returns how many clips were switched back on. */
-function CP_mcRestoreAudio(seq, before) {
-  var fixed = 0;
-  for (var t = 0; t < seq.audioTracks.numTracks && t < before.length; t++) {
-    var cl = seq.audioTracks[t].clips, k = cl.numItems, now = 0, i, c, dis, off = [];
+/* Give the owner's sound back exactly as it was before Apply. Premiere may
+   switch a camera's LINKED audio along with its video, both ways:
+   · an audio clip Apply switched OFF (its middle lies in none of the owner's
+     own switched-off clips) is switched back on — restored;
+   · an audio clip the owner had switched OFF that Apply switched ON (a camera
+     piece switched on took its linked sound with it — on a second Apply, the
+     owner's switched-off camera sound came back) is switched off again —
+     keptOff.
+   If Premiere links sound and picture both ways, each change can carry a
+   camera piece with it. Switching a sound off that also switched its camera
+   piece off: the picture the plan needs wins, the piece goes back on, and it
+   is counted in linkedOn (that sound stays on). Switching a sound back on
+   that also switched a camera piece on: the sound wins (a silent episode is
+   worse than a wrong shot), counted in pictureOn, and the shot check after
+   Apply reports the plan as only partly applied.
+   before = CP_mcAudioOff(seq), read before Apply touched anything; nCams =
+   the camera tracks Apply switched.
+   Returns { restored, keptOff, linkedOn, pictureOn }. */
+function CP_mcRestoreAudio(seq, before, nCams) {
+  var restored = 0, keptOff = 0, linkedOn = 0, pictureOn = 0, t, i;
+  var camWas = [];
+  for (t = 0; t < (nCams || 0); t++) camWas.push(CP_mcTrackRows(seq.videoTracks[t]));
+  for (t = 0; t < seq.audioTracks.numTracks && t < before.length; t++) {
+    var cl = seq.audioTracks[t].clips, k = cl.numItems, rows = before[t].rows;
     for (i = 0; i < k; i++) {
-      c = cl[i]; dis = false;
-      try { dis = !!(c && c.disabled); } catch (eD) {}
-      if (dis) { now++; off.push(c); }
-    }
-    if (now <= before[t].n) continue;
-    for (i = 0; i < off.length; i++) {
-      var mid = 0, mine = false;
-      try { mid = (off[i].start.seconds + off[i].end.seconds) / 2; } catch (eM) { continue; }
-      for (var r = 0; r < before[t].rows.length && !mine; r++) mine = mid > before[t].rows[r][0] && mid < before[t].rows[r][1];
-      if (!mine) { try { off[i].disabled = false; fixed++; } catch (eE) {} }
+      var c = cl[i], dis = false, mid = 0;
+      if (!c) continue;
+      try { dis = !!c.disabled; } catch (eD) {}
+      if (!dis && !rows.length) continue;              // nothing of the owner's to keep off here
+      try { mid = (c.start.seconds + c.end.seconds) / 2; } catch (eM) { continue; }
+      var mine = !!CP_mcRowAt(rows, mid);
+      if (dis && !mine) { try { c.disabled = false; restored++; } catch (eE) {} }
+      else if (!dis && mine) { try { c.disabled = true; keptOff++; } catch (eO) {} }
     }
   }
-  return fixed;
+  if (restored || keptOff) {
+    for (t = 0; t < camWas.length; t++) {
+      var now = CP_mcTrackRows(seq.videoTracks[t]);
+      for (i = 0; i < now.length && i < camWas[t].length; i++) {
+        if (now[i][2] && !camWas[t][i][2]) { try { now[i][3].disabled = false; linkedOn++; } catch (eL) {} }
+        else if (!now[i][2] && camWas[t][i][2]) pictureOn++;
+      }
+    }
+  }
+  return { restored: restored, keptOff: keptOff, linkedOn: linkedOn, pictureOn: pictureOn };
 }
 
 /* The row (clip) under time tm, or null. rows sorted by start. */
@@ -1449,7 +1472,8 @@ function CP_mcRowAt(rows, tm) {
  * every shot is checked on the timeline (verifiedPct). Premiere may switch a
  * camera's linked audio off together with its video: any audio clip Apply
  * switched off that way is switched back on (audioRestored); clips the owner
- * had switched off stay off.
+ * had switched off stay off, even when switching a camera piece on brought its
+ * linked sound on with it (audioKeptOff — a second Apply did that).
  * Drop-frame: the sequence's own timecode display decides (29.97 / 59.94 DF,
  * CP_seqDropFrame); the Settings tick is only the fallback for builds that
  * don't report it.
@@ -1583,7 +1607,7 @@ function CP_applyMulticamPlan(argsJson) {
 
     // switching a camera's video off may switch its LINKED audio off too —
     // put the owner's sound back (their own switched-off clips stay off)
-    var audioRestored = CP_mcRestoreAudio(seq, audioOff);
+    var audio = CP_mcRestoreAudio(seq, audioOff, n);
 
     // check every shot on the timeline: near its start, middle and end, only
     // the planned camera may be switched on. A planned camera with NO clip
@@ -1616,7 +1640,8 @@ function CP_applyMulticamPlan(argsJson) {
       missedAt: missedAt, razorErrors: razorErrors, toggleErrors: toggleErrors,
       verifiedPct: total > 0 ? Math.floor((good / total) * 1000) / 10 : 100,
       noFootageSec: Math.round(noFootage * 10) / 10, noFootageAt: noFootageAt,
-      audioRestored: audioRestored, dropFrame: df, tracksUsed: n,
+      audioRestored: audio.restored, audioKeptOff: audio.keptOff, audioLinkedOn: audio.linkedOn, audioPictureOn: audio.pictureOn,
+      dropFrame: df, tracksUsed: n,
       seqEnd: seqEnd, planStart: planStart, planEnd: planEnd,
       coveredPct: seqEnd > 0 ? Math.round((planEnd / seqEnd) * 100) : 100,
       outOfPlanClips: outOfPlan, piecesBefore: piecesBefore, piecesAfter: piecesAfter

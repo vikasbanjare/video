@@ -144,6 +144,60 @@ for (const mode of ['throws', 'noop']) {
     '" (the owner\'s own switched-off clip stays off), verified ' + r.verifiedPct + '%');
 }
 
+// ---- a SECOND Apply keeps the sound the owner switched off, off -------------------
+// After the first Apply the owner switches off camera 1's own sound (they use
+// the lav). A second Apply switches camera 1 pieces back ON, and their linked
+// sound came back on with them — the old restore only ever switched sound back
+// ON, never off again.
+{
+  const linked = () => world({
+    linkedAudio: true,
+    audio: [
+      { name: 'A1', clips: [{ start: 0, end: 60, inPoint: 0, outPoint: 60, mediaPath: '/media/cam1.mov', name: 'cam1 audio' }] },
+      { name: 'A2', clips: [{ start: 0, end: 60, inPoint: 0, outPoint: 60, mediaPath: '/media/cam2.mov', name: 'cam2 audio' }] },
+      { name: 'A3', clips: [{ start: 0, end: 60, inPoint: 0, outPoint: 60, mediaPath: '/media/lav.wav', name: 'lav' }] }
+    ]
+  });
+  const PLAN4B = [{ start: 0, end: 12, angle: 1 }, { start: 12, end: 30, angle: 0 }, { start: 30, end: 44, angle: 1 }, { start: 44, end: 60, angle: 0 }];
+  const { w, host } = linked();
+  const r1 = FH.call(host, 'CP_applyMulticamPlan', { plan: PLAN4, numAngles: 2, dropFrame: false });
+  w.model.audio[0].clips.forEach(c => { c.disabled = true; });          // the owner: camera 1's own sound off
+  const r2 = FH.call(host, 'CP_applyMulticamPlan', { plan: PLAN4B, numAngles: 2, dropFrame: false });
+  const a1on = w.model.audio[0].clips.filter(c => !c.disabled).reduce((s, c) => s + c.end - c.start, 0);
+  const a2off = w.model.audio[1].clips.filter(c => c.disabled).reduce((s, c) => s + c.end - c.start, 0);
+  const lavOff = w.model.audio[2].clips.some(c => c.disabled);
+  report(r1.ok && r2.ok && a1on === 0 && a2off === 0 && !lavOff && r2.audioKeptOff > 0 && r2.verifiedPct === 100 && wrongSeconds(w, PLAN4B, 25) === 0,
+    'second Apply: camera 1\'s sound the owner switched off stays off (on for ' + a1on.toFixed(1) + ' s, need 0; kept off ' + r2.audioKeptOff +
+    '), camera 2\'s sound and the lav stay on, every shot as planned (verified ' + r2.verifiedPct + '%)');
+}
+
+// ---- if Premiere links sound and picture BOTH ways --------------------------------
+// Switching a sound back off then takes its camera piece along (the plan's
+// picture wins: the piece goes back on, linkedOn), and switching a sound back
+// on brings a switched-off camera piece with it (the sound wins: pictureOn, and
+// the shot check reports the plan as only partly applied — never "applied").
+{
+  const { w, host } = world({
+    linkedAudio: true, linkedBothWays: true,
+    video: [{ name: 'V1', clips: [{ start: 0, end: 30, name: 'cam1' }, { start: 30, end: 60, name: 'cam1' }] },
+            { name: 'V2', clips: [{ start: 0, end: 30, name: 'cam2' }, { start: 30, end: 60, name: 'cam2' }] }],
+    audio: [
+      { name: 'A1', clips: [{ start: 0, end: 30, inPoint: 0, outPoint: 30, mediaPath: '/media/cam1.mov', name: 'cam1 audio', disabled: true },
+                            { start: 30, end: 60, inPoint: 30, outPoint: 60, mediaPath: '/media/cam1.mov', name: 'cam1 audio', disabled: true }] },
+      { name: 'A2', clips: [{ start: 0, end: 30, inPoint: 0, outPoint: 30, mediaPath: '/media/cam2.mov', name: 'cam2 audio' },
+                            { start: 30, end: 60, inPoint: 30, outPoint: 60, mediaPath: '/media/cam2.mov', name: 'cam2 audio' }] }
+    ]
+  });
+  // as a first Apply left it: camera 2 on screen, then camera 1 — set without the links' side effects
+  w.model.video[0].clips[0].disabled = true; w.model.video[1].clips[1].disabled = true;
+  const r = FH.call(host, 'CP_applyMulticamPlan', { plan: [{ start: 0, end: 30, angle: 0 }, { start: 30, end: 60, angle: 1 }], numAngles: 2, dropFrame: false });
+  const a2off = w.model.audio[1].clips.filter(c => c.disabled).reduce((s, c) => s + c.end - c.start, 0);
+  report(r.ok && r.audioLinkedOn === 1 && r.audioPictureOn === 1 && a2off === 0 && r.verifiedPct < 99,
+    'sound and picture linked both ways: the owner\'s switched-off sound that would take its camera with it stays on (linkedOn ' + r.audioLinkedOn +
+    '), sound switched back on that brought a camera with it is counted (pictureOn ' + r.audioPictureOn + '), camera 2\'s sound is never off (' +
+    a2off.toFixed(1) + ' s) and the plan reads as partly applied (verified ' + r.verifiedPct + '%)');
+}
+
 (async () => {
   // ---- the panel says what happened ---------------------------------------------------
   await P.withBrowser(async (browser) => {

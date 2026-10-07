@@ -33,8 +33,11 @@
 'use strict';
 const G = require('./gallery-lib/panel.js');
 
-const REQUIRED = ['🔥 Trending', '💥 Bold & Viral', '🎤 Karaoke', '🎙️ Podcast', '✨ Minimal & Clean',
-                  '🎬 Cinematic & Editorial', '🌈 Neon & Glow', '😂 Fun & Meme', '🇮🇳 Hindi (हिंदी)'];
+// 🇮🇳 Hindi right after 🔥 Trending: Pulse is made for Hindi and Hinglish
+// creators, and as the last look chip it sat off-screen in a docked panel
+const REQUIRED = ['🔥 Trending', '🇮🇳 Hindi (हिंदी)', '💥 Bold & Viral', '🎤 Karaoke', '🎙️ Podcast', '✨ Minimal & Clean',
+                  '🎬 Cinematic & Editorial', '🌈 Neon & Glow', '😂 Fun & Meme'];
+const HINDI = '🇮🇳 Hindi (हिंदी)';
 const BUTTONS = '🔘 Buttons';
 const OLD_CHIPS = ['⭐ Premium', 'Bold Creator', 'Minimal Professional', 'Dynamic Highlight', 'Social Growth',
                    'Podcast Pro', 'Storytelling', 'Gaming Stream', 'Cinematic', 'Motivation', 'Education'];
@@ -134,6 +137,19 @@ function captionIdentity(t) {
     ids.forEach(id => { const p = window.CPCaptions.getPreset(id); out[id] = p && p.id; });
     return out;
   }, BASE_IDS);
+  // the Hindi chip at the narrowest docked panel (260 px), the row not scrolled
+  await page.setViewport({ width: 260, height: 800 });
+  await new Promise(r => setTimeout(r, 400));
+  const narrow = await page.evaluate((hindi) => {
+    const strip = document.getElementById('lib-cats');
+    if (!strip) return null;
+    strip.scrollLeft = 0;
+    const sr = strip.getBoundingClientRect();
+    const chip = Array.from(strip.querySelectorAll('.cat-chip')).find(c => c.textContent.trim() === hindi);
+    if (!chip) return { found: false };
+    const cr = chip.getBoundingClientRect();
+    return { found: true, left: Math.round(cr.left - sr.left), right: Math.round(cr.right - sr.left), width: Math.round(sr.width) };
+  }, HINDI);
   await browser.close();
 
   // 1. category list + chip row
@@ -156,6 +172,9 @@ function captionIdentity(t) {
   const chipOrder = REQUIRED.map(c => labels.indexOf(c));
   if (chipOrder.some(i => i < 0) || !chipOrder.every((v, i) => i === 0 || v > chipOrder[i - 1]))
     R.bad('the chip row does not show the creator categories in order: ' + labels.join(' | '));
+  if (!narrow || !narrow.found) R.bad('the ' + HINDI + ' chip is missing from the chip row at 260 px');
+  else if (narrow.left < 0 || narrow.right > narrow.width) R.bad('at 260 px the ' + HINDI + ' chip is off-screen until the row is scrolled (' + narrow.left + '–' + narrow.right + ' px in a ' + narrow.width + ' px row)');
+  else R.ok('at 260 px, the narrowest docked panel, the ' + HINDI + ' chip is on screen without scrolling (' + narrow.left + '–' + narrow.right + ' px of ' + narrow.width + ')');
   const empty = REQUIRED.concat([BUTTONS]).filter(l => { const r = res.chips.find(c => c.label === l); return !r || !r.names.length; });
   if (empty.length) R.bad('chips missing or empty: ' + empty.join(', '));
   else R.ok('every creator chip shows styles (' + REQUIRED.concat([BUTTONS]).map(l => {

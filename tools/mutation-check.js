@@ -169,6 +169,86 @@ const MUTANTS = [
     repl: 'if (true) saved = CPBridge.callHost(',
     gate: 'CutPilot/test/gates/caption-sync-placement.js',
     why: 'every panel focus makes Premiere walk the whole timeline again, saved transcript or not'
+  },
+  {
+    name: 'multicam-keep-off',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '      else if (!dis && mine) { try { c.disabled = true; keptOff++; } catch (eO) {} }',
+    repl: '',
+    gate: 'CutPilot/test/gates/multicam-apply.js',
+    why: 'a second Apply turns back on the camera sound the owner switched off'
+  },
+  {
+    name: 'multicam-picture-wins',
+    file: 'CutPilot/jsx/host.jsx',
+    find: 'if (now[i][2] && !camWas[t][i][2]) { try { now[i][3].disabled = false; linkedOn++; } catch (eL) {} }',
+    repl: 'if (false) {}',
+    gate: 'CutPilot/test/gates/multicam-apply.js',
+    why: 'keeping a sound off takes the planned camera shot off with it'
+  },
+  {
+    name: 'transcript-reuse-after-cut',
+    file: 'CutPilot/js/main.js',
+    find: '    // the copies above were just re-timed for this cut: followMovedRecording',
+    repl: '    state._forceRetranscribe = true;\n    // the copies above were just re-timed for this cut: followMovedRecording',
+    gate: 'CutPilot/test/gates/retakes-stale-retranscribe.js',
+    why: 'every Pulse cut makes the next Auto-transcribe listen for a minute again'
+  },
+  {
+    name: 'transcript-reuse-head-cut',
+    file: 'CutPilot/js/main.js',
+    find: ' ||\n                     findCachedTranscriptForMedia(clip.mediaPath, { minIn: minIn, maxOut: maxOut });',
+    repl: ';',
+    gate: 'CutPilot/test/gates/retakes-stale-retranscribe.js',
+    why: 'a clean-up that cut the start makes the saved transcript unusable'
+  },
+  {
+    name: 'redo-button-name',
+    file: 'CutPilot/js/main.js',
+    find: "    'Tap ↻ Redo on the Transcribe page — it listens to your clip again, about a minute — then run this again.';",
+    repl: "    'Tap ↻ Re-transcribe (Transcribe tab) — it listens to your clip again, about a minute — then run this again.';",
+    gate: 'CutPilot/test/gates/retakes-stale-retranscribe.js',
+    why: 'the message sends the owner to a button that does not exist'
+  },
+  {
+    name: 'clean-pick-saved',
+    file: 'CutPilot/js/main.js',
+    find: "      if (key) { settings[key] = b.getAttribute('data-s'); saveSettings(); }",
+    repl: '',
+    gate: 'CutPilot/test/gates/silence-remember-choice.js',
+    why: 'Clean up forgets Podcast / Reel and opens on YouTube again'
+  },
+  {
+    name: 'clean-vertical-default',
+    file: 'CutPilot/js/main.js',
+    find: "    applySilStrength(e && e.height > e.width ? 'strong' : 'balanced');",
+    repl: "    applySilStrength('balanced');",
+    gate: 'CutPilot/test/gates/silence-remember-choice.js',
+    why: 'a vertical reel starts on the gentler YouTube cut'
+  },
+  {
+    name: 'hindi-chip-up-front',
+    file: 'CutPilot/js/main.js',
+    find: "c !== '🔥 Trending' && c !== HINDI_CAT; });\n    var head = ['All'];\n    if (C.indexOf('🔥 Trending') >= 0) head.push('🔥 Trending');\n    if (C.indexOf(HINDI_CAT) >= 0) head.push(HINDI_CAT);",
+    repl: "c !== '🔥 Trending'; });\n    var head = ['All'];\n    if (C.indexOf('🔥 Trending') >= 0) head.push('🔥 Trending');",
+    gate: 'CutPilot/test/gates/gallery-categories.js',
+    why: 'the Hindi styles chip is off-screen in a docked panel again'
+  },
+  {
+    name: 'caption-language-picker',
+    file: 'CutPilot/js/main.js',
+    find: "    mountInto('cap-lang', 'l');   // the Captions page: Hindi letters took six taps through Transcribe",
+    repl: '',
+    gate: 'CutPilot/test/gates/captions-language-picker.js',
+    why: 'the Captions page loses its language picker (six taps through Transcribe again)'
+  },
+  {
+    name: 'caption-words-follow-language',
+    file: 'CutPilot/js/main.js',
+    find: "        if (kind === 'l') captionScriptFollow(v);   // words already heard follow the new script",
+    repl: '',
+    gate: 'CutPilot/test/gates/captions-language-picker.js',
+    why: 'choosing a language leaves the words already on screen in the old script'
   }
 ];
 

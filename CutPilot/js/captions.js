@@ -633,10 +633,14 @@
      and the owner's own "From My Videos" / "Your Styles" tabs stay whole while
      their styles also show up under the look they belong to. Buttons stay last.
      (The old chips — ⭐ Premium, Bold Creator, Dynamic Highlight, Social
-     Growth… — sorted by build history; nobody could guess what was inside.) */
+     Growth… — sorted by build history; nobody could guess what was inside.)
+     🇮🇳 Hindi comes right after 🔥 Trending: Pulse is made for Hindi and
+     Hinglish creators, and at the end of the scrolling chip row the Hindi
+     styles were off-screen in a docked panel. */
   var CAT_HINDI = '🇮🇳 Hindi (हिंदी)';
   var CATEGORIES = [
     '🔥 Trending',
+    CAT_HINDI,
     '💥 Bold & Viral',
     '🎤 Karaoke',
     '🎙️ Podcast',
@@ -644,7 +648,6 @@
     '🎬 Cinematic & Editorial',
     '🌈 Neon & Glow',
     '😂 Fun & Meme',
-    CAT_HINDI,
     '🎬 From My Videos',
     '🎥 Your Styles',
     '🔘 Buttons'

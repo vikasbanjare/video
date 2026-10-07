@@ -1,24 +1,29 @@
 /*
  * retakes-stale-retranscribe.js — after a cut, the way back to exact word
- * times really listens again instead of reloading the pre-cut transcript.
+ * times gives the words where they are NOW.
  *
  * After any cut, a transcript FILE with no word timing is stale: the retake
  * and filler passes refuse it and tell the owner what to do. That message
- * said "Tap 🎙️ Auto-transcribe again (about a minute)". But Auto-transcribe
- * serves the transcript SAVED for this clip whenever its cache key (the media
- * file + the lowest in point and highest out point) is unchanged — and a
- * ripple cut inside the clip does not change it. So the owner got the
- * pre-cut transcript back instantly, and the next retake or filler cut was
- * made at pre-cut times.
+ * said "Tap 🎙️ Auto-transcribe again (about a minute)". The transcript SAVED
+ * for a clip used to hold timeline times, found by the recording alone, so
+ * after a cut Auto-transcribe served the pre-cut times back. v0.10.x forced a
+ * fresh listen after every Pulse cut instead (a minute each time). The saved
+ * transcript now keeps RECORDING time and is laid onto the pieces the
+ * timeline shows when it is loaded, so after a cut it is reused, correctly.
  *
  * Checked in the REAL panel (fake Premiere and Groq, real ffmpeg on a real
  * audio file, the saved-transcript store faked in memory):
- *   1. the refusal points at "↻ Re-transcribe" (which always listens again),
- *      not at Auto-transcribe — for Find repeated takes and for fillers;
+ *   1. the refusal names the "↻ Redo" button (which always listens again) by
+ *      its label on screen, not Auto-transcribe — for Find repeated takes and
+ *      for fillers (it said "↻ Re-transcribe", a button that isn't there);
  *   2. with no cut, Auto-transcribe still loads the saved transcript (the
  *      cache keeps working);
- *   3. after a cut, Auto-transcribe listens again (a new transcription is
- *      requested) instead of loading the saved pre-cut transcript.
+ *   3. after Pulse cut 3.5–4.5 s out of the clip, Auto-transcribe reuses the
+ *      saved transcript with no new upload, and the line after the cut sits
+ *      1 s earlier — where its words are now;
+ *   4. after a clean-up cut the clip's first 2 s (its span is no longer the
+ *      saved one), the saved transcript that heard all of it is still reused;
+ *   5. ↻ Redo still always listens again.
  *
  * Exit 0 = pass, 1 = fail, 2 = skipped (no ffmpeg / puppeteer / Chromium).
  */
@@ -59,23 +64,31 @@ async function run() {
       return '{}';
     };
     const clip = { name: 'reel.wav', mediaPath: MEDIA, seqStart: 0, seqEnd: 10, inPoint: 0, outPoint: 10, nodeId: 'n1', trackType: 'audio' };
-    const host = (fn) => (fn === 'CP_getTranscribeSource' || fn === 'CP_getSelectedClip') ? { clip } : {};
+    // the pieces of the recording on the timeline now (a cut changes them)
+    let pieces = [{ inPoint: 0, outPoint: 10, seqStart: 0, speed: 1 }];
+    const host = (fn) => fn === 'CP_getSelectedClip' ? { clip }
+      : fn === 'CP_getTranscribeSource' ? { clip, instances: pieces.map(p => Object.assign({}, p)) } : {};
     const settings = { groqKey: 'gsk-test-key', ffmpegPath: FF, whisperLang: 'auto' };
-    /* the transcript saved for this clip on an earlier day, in the (faked) store */
-    async function withSavedTranscript(page) {
-      await page.evaluate((json) => {
+    /* the transcript saved for this clip on an earlier day, in the (faked)
+       store. anyKey: it answers whatever name the panel asks for (the saved
+       span is the clip's span); else it is ONE file, 'reel-v3-0.json', found
+       only by listing the folder — as for a span that is not the saved one. */
+    async function withSavedTranscript(page, anyKey) {
+      await page.evaluate((json, anyKey) => {
         const req = window.require;
         window.require = function (m) {
           const mod = req(m);
           if (m !== 'fs') return mod;
-          const saved = (p) => /\.cutpilot[\\/]transcripts[\\/].*\.json$/.test(String(p));
+          const saved = (p) => anyKey ? /\.cutpilot[\\/]transcripts[\\/].*\.json$/.test(String(p))
+                                      : /\.cutpilot[\\/]transcripts[\\/]reel-v3-0\.json$/.test(String(p));
           return Object.assign({}, mod, {
             existsSync: (p) => saved(p) || mod.existsSync(p),
             readFileSync: (p, e) => saved(p) ? json : mod.readFileSync(p, e),
-            statSync: (p) => saved(p) ? { size: json.length, mtimeMs: 1, mtime: new Date(1), isFile: () => true, isDirectory: () => false } : mod.statSync(p)
+            statSync: (p) => saved(p) ? { size: json.length, mtimeMs: 1, mtime: new Date(1), isFile: () => true, isDirectory: () => false } : mod.statSync(p),
+            readdirSync: (d) => /\.cutpilot[\\/]transcripts$/.test(String(d).replace(/[\\/]+$/, '')) ? ['reel-v3-0.json'] : mod.readdirSync(d)
           });
         };
-      }, SAVED);
+      }, SAVED, anyKey !== false);
     }
     /* Tap Auto-transcribe; done when the saved transcript is loaded, a new
        transcription is requested, or the run stops with an error. */
@@ -106,11 +119,11 @@ async function run() {
         const find = t.textContent;
         t.textContent = '';
         R.fillerMediaRanges({ seqStart: 0, inPoint: 0, outPoint: 100, mediaPath: '/media/reel.mp4' });
-        return { find, filler: t.textContent };
+        return { find, filler: t.textContent, redo: (document.getElementById('btn-retranscribe') || {}).textContent || '(no listen-again button)' };
       });
-      C.check('Find repeated takes on a stale transcript points at "↻ Re-transcribe", not Auto-transcribe',
-        /↻ Re-transcribe/.test(r.find) && !/Auto-transcribe/.test(r.find), r.find);
-      C.check('…and so does filler removal', /↻ Re-transcribe/.test(r.filler) && !/Auto-transcribe/.test(r.filler), r.filler);
+      C.check('Find repeated takes on a stale transcript points at the "' + r.redo + '" button by its label on screen, not Auto-transcribe',
+        r.find.indexOf(r.redo) >= 0 && !/Auto-transcribe/.test(r.find), r.find);
+      C.check('…and so does filler removal', r.filler.indexOf(r.redo) >= 0 && !/Auto-transcribe/.test(r.filler), r.filler);
       await page.close();
     }
 
@@ -123,18 +136,55 @@ async function run() {
       await page.close();
     }
 
-    // 3 ─ after a cut: Auto-transcribe listens again
+    const lines = (page) => page.evaluate(() => (window.CP_DEBUG_EXT.sync.transcript().cues || []).map(c => ({ start: c.start, end: c.end, text: c.text })));
+    const near = (a, b) => typeof a === 'number' && Math.abs(a - b) < 0.002;
+
+    // 3 ─ Pulse cuts 3.5–4.5 s out of the clip: Auto-transcribe reuses the saved
+    //     transcript, laid onto the two pieces the timeline shows now
     {
       const { page } = await H.openPanel(browser, { host, curl, settings, ffmpeg: FF });
       await withSavedTranscript(page);
       await page.evaluate(() => {
         const R = window.CP_DEBUG_EXT.retakes;
         R.setTranscript({ words: [{ text: 'so', start: 1, end: 1.2 }, { text: 'post', start: 5, end: 5.4 }], captionCues: null, transcript: null });
-        R.ripple([{ start: 3.5, end: 4.5 }]);    // a cut inside the clip: the saved transcript's times are now wrong
+        R.ripple([{ start: 3.5, end: 4.5 }]);    // Pulse's own cut inside the clip
       });
+      pieces = [{ inPoint: 0, outPoint: 3.5, seqStart: 0, speed: 1 }, { inPoint: 4.5, outPoint: 10, seqStart: 3.5, speed: 1 }];
       const r = await autoTranscribe(page);
-      C.check('after a cut: Auto-transcribe listens again instead of loading the saved pre-cut transcript',
-        r.listened && !/Loaded the saved transcript/.test(r.toast), JSON.stringify(r));
+      const l = await lines(page);
+      const post = l.find(x => /post every single day/.test(x.text));
+      C.check('after Pulse\'s cut: Auto-transcribe reuses the saved transcript — no new upload, no minute of waiting',
+        !r.listened && /Loaded the saved transcript/.test(r.toast), JSON.stringify(r));
+      C.check('…and the line after the cut sits 1 s earlier, where its words are now (5–8 s → 4–7 s)',
+        !!post && near(post.start, 4) && near(post.end, 7), JSON.stringify(l));
+      await page.close();
+    }
+
+    // 4 ─ a clean-up cut the clip's first 2 s: the span is no longer the saved
+    //     one, but the saved transcript heard all of it and is reused
+    {
+      const { page } = await H.openPanel(browser, { host, curl, settings, ffmpeg: FF });
+      await withSavedTranscript(page, false);
+      pieces = [{ inPoint: 2, outPoint: 10, seqStart: 0, speed: 1 }];
+      const r = await autoTranscribe(page);
+      const l = await lines(page);
+      const first = l.find(x => /consistency/.test(x.text)), post = l.find(x => /post every single day/.test(x.text));
+      C.check('head cut by 2 s: the saved transcript that heard the whole clip is reused (no new upload)',
+        !r.listened && /Loaded the saved transcript/.test(r.toast), JSON.stringify(r));
+      C.check('…placed where the words are now: the first line from 0 s (its first 1 s was cut off), the second at 3–6 s',
+        !!first && near(first.start, 0) && near(first.end, 2) && !!post && near(post.start, 3) && near(post.end, 6), JSON.stringify(l));
+      await page.close();
+    }
+
+    // 5 ─ ↻ Redo always listens again
+    {
+      const { page } = await H.openPanel(browser, { host, curl, settings, ffmpeg: FF });
+      await withSavedTranscript(page);
+      pieces = [{ inPoint: 0, outPoint: 10, seqStart: 0, speed: 1 }];
+      const before = transcribed;
+      await page.evaluate(() => { document.getElementById('toast').textContent = ''; document.getElementById('btn-retranscribe').click(); });
+      for (let i = 0; i < 300 && transcribed === before; i++) await new Promise(res => setTimeout(res, 100));
+      C.check('↻ Redo listens again even with a saved transcript', transcribed > before, 'requests: ' + (transcribed - before));
       await page.close();
     }
   } finally {

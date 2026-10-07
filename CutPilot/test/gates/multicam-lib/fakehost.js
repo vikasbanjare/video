@@ -38,6 +38,8 @@ function dfLabelToFrames(hh, mm, ss, ff, fRate) {
  *     same span on An (the camera's own audio): a razor on the video cuts the
  *     linked audio too, and switching the video off switches its audio off —
  *     what real Premiere may do with linked clips (unverified on a Mac)
+ *   linkedBothWays: bool — with linkedAudio, switching the AUDIO also switches
+ *     its camera clip (Premiere's linking may work in both directions)
  * }
  * The sequence reports Premiere's videoDisplayFormat: 102 = 29.97 drop-frame,
  * 106 = 59.94 drop-frame, 103 / 107 = 29.97 / 59.94 non-drop, 101 = other.
@@ -59,7 +61,7 @@ function makePremiere(spec) {
   if (spec.linkedAudio) {
     vTracks.forEach((vt, ti) => vt.clips.forEach(vc => {
       const ac = aTracks[ti] && aTracks[ti].clips.find(a => Math.abs(a.start - vc.start) < 1e-6 && Math.abs(a.end - vc.end) < 1e-6);
-      if (ac) { vc.link = ac; vc.linkTrack = aTracks[ti]; }
+      if (ac) { vc.link = ac; vc.linkTrack = aTracks[ti]; ac.back = vc; }
     }));
   }
 
@@ -88,6 +90,7 @@ function makePremiere(spec) {
         if (spec.toggle === 'throws') throw new Error('toggle refused');
         c.disabled = !!v;
         if (c.link) c.link.disabled = !!v;            // linked camera audio follows its video
+        if (spec.linkedBothWays && c.back) c.back.disabled = !!v;   // …and the camera follows its audio
       },
       projectItem: {
         getMediaPath() { return isAudio ? c.mediaPath : ('/media/' + c.name + '.mp4'); },
@@ -140,7 +143,7 @@ function makePremiere(spec) {
               const at = c.linkTrack;
               at.clips.splice(at.clips.indexOf(la) + 1, 0, ap);
               at.ver = (at.ver || 0) + 1;
-              piece.link = ap; piece.linkTrack = at;
+              piece.link = ap; piece.linkTrack = at; ap.back = piece;
             }
             return;
           }

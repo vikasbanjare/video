@@ -1478,7 +1478,11 @@
         //  · pressing Auto-transcribe AGAIN right after a cache-load forces a
         //    fresh re-listen (the natural "no, actually listen again" gesture).
         var cacheKeyNow = String(clip.mediaPath) + '|' + Math.round(minIn) + '|' + Math.round(maxOut);
-        var cached = loadCachedTranscript(clip.mediaPath, minIn, maxOut);
+        // the transcript saved for exactly this span, else one saved for the
+        // same recording that heard all of it (a clean-up that cut the head
+        // or the tail changed the span, not the words)
+        var cached = loadCachedTranscript(clip.mediaPath, minIn, maxOut) ||
+                     findCachedTranscriptForMedia(clip.mediaPath, { minIn: minIn, maxOut: maxOut });
         if (cached) {
           var cc = cached.lines;   // recording seconds
           var covered = 0;
@@ -1751,6 +1755,10 @@
         }).catch(function () {});
         if (!state.transcriptManual) findTranscript();  // re-scan unless hand-picked (catches a fresh export)
         renderPreview();
+      }
+      if (this.dataset.tab === 'silence' && !settings.cleanStrength) {
+        if (CPBridge.isCEP()) CPBridge.callHost('CP_getEnv').then(function (env) { state.env = env; cleanDefaultForSequence(); }, cleanDefaultForSequence);
+        else cleanDefaultForSequence();
       }
       if (this.dataset.tab === 'multicam' && CPBridge.isCEP()) {
         // re-read the timeline's audio tracks in case it changed
@@ -2610,7 +2618,7 @@
     if ($('btn-tr-auto')) $('btn-tr-auto').addEventListener('click', autoTranscribe);
     if ($('btn-tr-auto-main')) $('btn-tr-auto-main').addEventListener('click', autoTranscribe);
     if ($('btn-tr-auto-ai')) $('btn-tr-auto-ai').addEventListener('click', autoTranscribeAI);
-    // "↻ Re-transcribe" — ALWAYS listens again from scratch, ignoring any saved
+    // "↻ Redo" — ALWAYS listens again from scratch, ignoring any saved
     // transcript for this clip (use after trimming/re-editing the video).
     if ($('btn-retranscribe')) $('btn-retranscribe').addEventListener('click', function () {
       state._forceRetranscribe = true;
@@ -4234,17 +4242,20 @@
     toast('Added "' + name + '". Edit its colour / font / text below, then Add template captions.');
   }
 
-  /* Gallery chip row. The owner's own tabs stay right behind "All" and 🔥
-     Trending (parked at the tail of a scrolling row they were invisible in a
-     narrow panel — "where are those captions?"); the look categories follow in
-     the library's order; 🔘 Buttons is the last style chip; the Premiere .mogrt
-     templates get their own clearly-labelled chip after it. */
+  /* Gallery chip row. 🇮🇳 Hindi and the owner's own tabs stay right behind
+     "All" and 🔥 Trending (parked at the tail of a scrolling row they were
+     invisible in a narrow panel — "where are those captions?"); the look
+     categories follow in the library's order; 🔘 Buttons is the last style
+     chip; the Premiere .mogrt templates get their own clearly-labelled chip
+     after it. */
   var PERSONAL_CATS = ['🎬 From My Videos', '🎥 Your Styles'];
+  var HINDI_CAT = '🇮🇳 Hindi (हिंदी)';
   function galleryChips() {
     var C = CPCaptions.CATEGORIES || [];
-    var looks = C.filter(function (c) { return PERSONAL_CATS.indexOf(c) < 0 && c !== '🔘 Buttons' && c !== '🔥 Trending'; });
+    var looks = C.filter(function (c) { return PERSONAL_CATS.indexOf(c) < 0 && c !== '🔘 Buttons' && c !== '🔥 Trending' && c !== HINDI_CAT; });
     var head = ['All'];
     if (C.indexOf('🔥 Trending') >= 0) head.push('🔥 Trending');
+    if (C.indexOf(HINDI_CAT) >= 0) head.push(HINDI_CAT);
     return head.concat(PERSONAL_CATS.filter(function (c) { return C.indexOf(c) >= 0; }),
                        ['My Templates', 'Favorites', 'Recent'], looks, ['🔘 Buttons', MOGRT_CAT]);
   }
@@ -10615,11 +10626,17 @@
     if ($('opt-threshold-manual')) $('opt-threshold-manual').checked = false;   // preset = "let Pulse decide"
   }
   function applyTakeStrength(name) {
-    var p = TAKE_PRESETS[name] || TAKE_PRESETS.balanced; state.takeStrength = name;
+    if (!TAKE_PRESETS[name]) name = 'balanced';
+    var p = TAKE_PRESETS[name]; state.takeStrength = name;
+    var g = $('tk-strength');
+    if (g) { var tb = g.getElementsByTagName('button'); for (var i = 0; i < tb.length; i++) tb[i].classList.toggle('on', tb[i].getAttribute('data-s') === name); }
     if ($('tk-minrun')) $('tk-minrun').value = p.minrun;
     if ($('tk-sim')) { $('tk-sim').value = p.sim; if ($('tk-sim-val')) $('tk-sim-val').textContent = p.sim + '%'; }
   }
-  function wireStrength(groupId, apply) {
+  /* The owner's pick is remembered (settings[key]). Clean up opened on ▶️
+     YouTube every time, so a reel or podcast editor picked again on every
+     visit. */
+  function wireStrength(groupId, apply, key) {
     var g = $(groupId); if (!g) return;
     g.addEventListener('click', function (e) {
       var b = e.target; while (b && b !== g && b.tagName !== 'BUTTON') b = b.parentNode;
@@ -10627,12 +10644,20 @@
       var btns = g.getElementsByTagName('button');
       for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('on', btns[i] === b);
       apply(b.getAttribute('data-s'));
+      if (key) { settings[key] = b.getAttribute('data-s'); saveSettings(); }
     });
   }
-  wireStrength('sil-strength', applySilStrength);
-  wireStrength('ac-strength', applySilStrength);
-  wireStrength('tk-strength', applyTakeStrength);
-  applySilStrength('balanced'); applyTakeStrength('balanced');   // sensible defaults on load
+  wireStrength('sil-strength', applySilStrength, 'cleanStrength');
+  wireStrength('ac-strength', applySilStrength, 'cleanStrength');
+  wireStrength('tk-strength', applyTakeStrength, 'takeStrength');
+  applySilStrength(settings.cleanStrength || 'balanced'); applyTakeStrength(settings.takeStrength || 'balanced');
+  /* Never picked yet: a vertical sequence (a reel) starts on ⚡ Reel, any
+     other on ▶️ YouTube. Asked when Clean up opens — the sequence may be new. */
+  function cleanDefaultForSequence() {
+    if (settings.cleanStrength) return;
+    var e = state.env;
+    applySilStrength(e && e.height > e.width ? 'strong' : 'balanced');
+  }
 
   /* The detector settings for a strength. With Fine-tune → Manual ticked, the
      owner's own numbers win everywhere — the one-tap button used to ignore them. */
@@ -11480,8 +11505,8 @@
       prog.classList.add('hidden');
       var notes = [];
       if (r.needTranscript === 'failed') notes.push('Pulse couldn’t get your words, so repeated takes were skipped — this pass removes dead air only.');
-      else if (r.needTranscript === 'stale') notes.push('Your transcript was made before your last cut and has no word timing to follow it, so repeated takes were skipped — this pass removes dead air only. Re-transcribe (Transcribe tab) to get word timing, then run Clean up again.');
-      else if (r.needTranscript === 'unreadable') notes.push('Pulse couldn’t read your transcript, so repeated takes were skipped — this pass removes dead air only. Re-transcribe (Transcribe tab) to get word timing.');
+      else if (r.needTranscript === 'stale') notes.push('Your transcript was made before your last cut and has no word timing to follow it, so repeated takes were skipped — this pass removes dead air only. Tap ↻ Redo on the Transcribe page to get word timing, then run Clean up again.');
+      else if (r.needTranscript === 'unreadable') notes.push('Pulse couldn’t read your transcript, so repeated takes were skipped — this pass removes dead air only. Tap ↻ Redo on the Transcribe page to get word timing.');
       else if (r.needTranscript) notes.push('Repeated takes need your words and no transcription engine is set up yet (Settings → add a free key), so this pass removes dead air only.');
       notes = notes.concat(extraNotes);
       if (!ranges.length) {
@@ -11551,7 +11576,9 @@
     // the transcript copies a cut re-times (silence-remap-lines)
     setTranscript: function (words, cues) { state.transcriptWords = words || null; state.lastCaptionJob = cues ? { cues: cues, track: 1 } : null; },
     transcript: function () { return { words: state.transcriptWords, cues: state.lastCaptionJob ? state.lastCaptionJob.cues : null }; },
-    ripple: function (ranges) { return rippleTranscriptByRanges(ranges, true); }
+    ripple: function (ranges) { return rippleTranscriptByRanges(ranges, true); },
+    // the strength the next clean-up cuts with (silence-remember-choice)
+    strength: function () { return state.silStrength; }
   };
 
   $('btn-analyze').addEventListener('click', function () {
@@ -11763,10 +11790,10 @@
     // stale, so the retake/filler passes never cut at them (a new transcript
     // is a new object and starts clean)
     if (state.transcript) state.transcript.timelineEdited = true;
-    // …and the transcript SAVED for this clip is stale too: its cache key (the
-    // media file + lowest in / highest out point) survives a cut inside the
-    // clip, so the next transcription must listen again, not reload it
-    state._forceRetranscribe = true;
+    // (The transcript SAVED for this clip is not stale: it keeps recording
+    // time and is laid onto the pieces the timeline shows when it is next
+    // loaded, so Auto-transcribe after a cut reuses it instead of listening
+    // again for a minute.)
     // the copies above were just re-timed for this cut: followMovedRecording
     // must not move them a second time from the placement they were made for
     state.transcriptPlacement = null;
@@ -11804,7 +11831,7 @@
      transcript FILE is not (resyncTranscripts marks it). Its times now point
      at the wrong speech, so the retake and filler passes refuse it. */
   var STALE_TRANSCRIPT_MSG = 'your timeline changed since this transcript was made, and it has no word timing to follow the cuts. ' +
-    'Tap ↻ Re-transcribe (Transcribe tab) — it listens to your clip again, about a minute — then run this again.';
+    'Tap ↻ Redo on the Transcribe page — it listens to your clip again, about a minute — then run this again.';
   function transcriptIsStale() { return !!(state.transcript && state.transcript.timelineEdited); }
   /* What the filler pass cuts on, always in the CURRENT timeline's time:
      the word list with its REAL timing, re-timed after every cut (the fillers
@@ -13954,7 +13981,11 @@
       diag('multicam', 'apply — cuts needed ' + r.cutsNeeded + ', landed ' + r.razored + ', missed ' + r.missedCuts +
         (r.razorErrors ? ' (' + r.razorErrors + ' razor errors)' : '') + ', switched ' + r.toggled +
         (r.toggleErrors ? ' (' + r.toggleErrors + ' failed)' : '') +
-        (r.audioRestored ? ', camera audio switched back on ' + r.audioRestored : '') + ', verified ' + r.verifiedPct + '%, no footage ' + r.noFootageSec +
+        (r.audioRestored ? ', camera audio switched back on ' + r.audioRestored : '') +
+        (r.audioKeptOff ? ', switched-off sound kept off ' + r.audioKeptOff : '') +
+        (r.audioLinkedOn ? ', sound linked to picture: ' + r.audioLinkedOn + ' stayed on' : '') +
+        (r.audioPictureOn ? ', picture linked to sound: ' + r.audioPictureOn + ' came back on' : '') +
+        ', verified ' + r.verifiedPct + '%, no footage ' + r.noFootageSec +
         ' s, drop-frame ' + (r.dropFrame ? 'yes' : 'no') + ', cameras ' + r.tracksUsed + ', pieces ' + (r.piecesBefore || []).join('/') +
         ' → ' + (r.piecesAfter || []).join('/'));
       $('btn-mc-redo').classList.remove('hidden');
@@ -13968,6 +13999,10 @@
       }
       if (r.toggleErrors > 0) partly.push(r.toggleErrors + ' camera piece' + (r.toggleErrors > 1 ? 's' : '') + ' couldn’t be switched on or off');
       if (r.verifiedPct != null && r.verifiedPct < 99) partly.push('only ' + r.verifiedPct + '% of the plan is on the timeline as planned');
+      // Premiere linked each camera's sound to its picture both ways: keeping
+      // the sound on brought switched-off pictures back
+      if (r.audioPictureOn > 0) partly.push('Premiere links each camera’s sound to its picture, so keeping your sound on switched ' + r.audioPictureOn +
+        ' camera shot' + (r.audioPictureOn > 1 ? 's' : '') + ' back on. Select the camera clips, right-click ▸ Unlink, then Apply again');
       if (partly.length) {
         var pbox = $('mc-diag');
         if (pbox) {
@@ -14007,6 +14042,13 @@
         // applied, but the plan itself carries a warning (unheard stretches,
         // a pairing that disagrees with the mics) — don't let it read as success
         toast('🎬 Multicam applied — ' + r.razored + ' cuts, but: ' + state.mcPlanWarning.replace(/^⚠️\s*/, ''), true);
+      } else if (r.audioLinkedOn > 0) {
+        // the cameras switched as planned, but some sound the owner had
+        // switched off is on again: Premiere would not switch it off without
+        // taking the picture with it
+        toast('🎬 Multicam applied — ' + r.razored + ' cuts. ' + r.audioLinkedOn + ' bit' + (r.audioLinkedOn > 1 ? 's' : '') +
+              ' of camera sound you had switched off ' + (r.audioLinkedOn > 1 ? 'are' : 'is') + ' on again, because Premiere links it to the picture. ' +
+              'To keep it off: select the camera clips, right-click ▸ Unlink, then Apply again.', true);
       } else {
         var heardLine = (state.mcAnalysis && state.mcAnalysis.coverage) ? (' ' + state.mcAnalysis.coverage.line.replace(/^⏱\s*/, '') + '.') : '';
         toast('🎬 Multicam applied — ' + r.razored + ' cuts, ' + r.toggled +
@@ -14318,6 +14360,7 @@
     if ($('tr-dg-wrap')) $('tr-dg-wrap').classList.toggle('hidden', !usingDg);
     // Swara picks its own Indian language, so hide the generic whisper/Groq language row
     if ($('tr-lang-row')) $('tr-lang-row').classList.toggle('hidden', usingSwara);
+    if ($('cap-lang-row')) $('cap-lang-row').classList.toggle('hidden', usingSwara);
     var k = settings.groqKey || '';
     setIfNotFocused('tr-groq-key', k);
     setIfNotFocused('set-groq-key', k);
@@ -14414,13 +14457,65 @@
       var dd = makeDropdown(opts, cur, function (v) {
         if (kind === 'q') settings.whisperQuality = v; else settings.whisperLang = v;
         saveSettings(); refreshWhisperStatus();
-        (kind === 'q' ? _qDDs : _langDDs).forEach(function (o) { if (o !== dd) o.set(v); });  // keep both copies in sync
+        (kind === 'q' ? _qDDs : _langDDs).forEach(function (o) { if (o !== dd) o.set(v); });  // keep every copy in sync
+        if (kind === 'l') captionScriptFollow(v);   // words already heard follow the new script
       }, kind === 'q' ? 'base' : 'English');
       host.appendChild(dd.el);
       (kind === 'q' ? _qDDs : _langDDs).push(dd);
     }
     mountInto('set-whisper-quality', 'q'); mountInto('tr-quality', 'q');
     mountInto('set-whisper-lang', 'l');    mountInto('tr-lang', 'l');
+    mountInto('cap-lang', 'l');   // the Captions page: Hindi letters took six taps through Transcribe
+  }
+  /* The script the current transcript is written in: 'deva' (Hindi letters)
+     or 'latin', by which letters it mostly has; null with no transcript. */
+  function transcriptScript() {
+    var text = '';
+    try {
+      if (!state.transcript) return null;
+      text = CPCaptions.parseSRT(nodeReq('fs').readFileSync(state.transcript.path, 'utf8')).map(function (c) { return c.text; }).join(' ');
+    } catch (e) { return null; }
+    var deva = (text.match(/[\u0900-\u097F]/g) || []).length, latin = (text.match(/[A-Za-z]/g) || []).length;
+    if (!deva && !latin) return null;
+    return deva > latin ? 'deva' : 'latin';
+  }
+  /* The caption language changed (on the Captions page, the Transcribe page
+     or in Settings — one setting). Words already heard follow it:
+     · Hindi letters → Hinglish: converted in place (hinglishify: AI with the
+       speech key, else letter by letter); every time stays as it was.
+     · English letters → Hindi letters: only hearing the voice again in Hindi
+       gets the real Hindi words, so Pulse asks first.
+     Any other choice applies to the next transcription only. */
+  function captionScriptFollow(lang) {
+    if (!state.transcript || state.transcribing) return;
+    var want = lang === 'hi' ? 'deva' : (lang === 'hinglish' ? 'latin' : null);
+    var have = transcriptScript();
+    if (!want || !have || want === have) return;
+    if (want === 'latin') {
+      var t = state.transcript, cues;
+      try { cues = CPCaptions.dedupeRepeatedCues(CPCaptions.parseSRT(nodeReq('fs').readFileSync(t.path, 'utf8'))); } catch (eR) { return; }
+      var rc = cues.map(function (c) { return { start: c.start, end: c.end, text: c.text }; });
+      if (state.transcriptWords && state.transcriptWords.length) {
+        rc.words = state.transcriptWords.map(function (w) { var o = {}, k; for (k in w) if (w.hasOwnProperty(k)) o[k] = w[k]; return o; });
+      }
+      return hinglishify(rc).then(function (out) {
+        if (state.transcript !== t) return;               // replaced while converting
+        var nt = {}, k;
+        for (k in t) if (t.hasOwnProperty(k)) nt[k] = t[k];
+        nt.path = writePlacedTranscript(out, 'hinglish');
+        state.transcript = nt;
+        if (out.words) state.transcriptWords = out.words;
+        setTranscriptBar('ok', '✅', 'Your words are in Hinglish (English letters), same timing', 'Change');
+        refreshMogrtSheetTr(); refreshMogrtEditorTr();
+        try { renderPreview(); } catch (eP) {}
+        toast('✓ Your words are now in Hinglish (Hindi in English letters). Their timing did not change.');
+      }, function (e) { toast('Couldn’t change your words to Hinglish: ' + ((e && e.message) || e), true); });
+    }
+    confirmInline('Your words are written in English letters. To write them in Hindi (हिन्दी), Pulse listens to your clip again — about a minute.',
+      'Listen again', function (yes) {
+        if (!yes) return toast('Kept your words as they are. Your next transcription will be in Hindi (हिन्दी).');
+        autoTranscribe();
+      });
   }
   if ($('btn-whisper-pick')) $('btn-whisper-pick').addEventListener('click', function () {
     var p = pickFile('Locate the whisper engine (whisper-cli / main)', []); if (p) $('set-whisper').value = p;
