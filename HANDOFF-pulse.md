@@ -59,6 +59,17 @@ cuts). New strategy, three parts:
     replaced every style card with the editable engine's render (not how ✨
     captions are drawn), and overwrote the test report. Now audit-only (temp
     folder, deleted after) and appended under the report.
+- **Clean up cuts at the playhead too** (CP_razorRipple): what the razor did
+  not cut by Pulse's timecode (after a 300 ms second look) is cut at the
+  timecode QE's playhead writes — Multicam's v0.10.6 fallback; result
+  cutMethod 'timecode' | 'playhead' (📋 "silence: cut … by …"); a refusal is
+  CP_failInfo with fps / timecodeSent / playheadTimecode / triedPlayhead /
+  uncut, logged by applyCleanCuts. Mini-Premiere (host-tests makeWorld) got a
+  playhead + CTI and opts.razorOwnText / ctiFrames.
+- **The test mirrors the owner's sequence:** clips at its size and frame
+  rate (NTSC as 30000/1001), its time display copied onto the test sequence
+  (CP_selfTestSetup → mirrors). A timecode-only razor failure is ⚠️ (Pulse
+  falls back); the playhead razor failing too is ❌.
 - **NEXT (the loop):** the owner runs 🧪 Test everything and sends the report
   / 📋 Copy diagnostics; every ❌ "In Premiere:" row names the real failure.
   Then: offline transcription + Who's talking on speech the Mac makes with

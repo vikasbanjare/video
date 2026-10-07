@@ -22,8 +22,9 @@
  *      owner's style cards to its renders (it used to opt them in silently),
  *      and its report goes under the test's instead of replacing it
  *   2. failures say what Premiere answered, and the rest still runs: a razor
- *      that ignores Pulse's timecode (with the timecode it was sent and the
- *      one the playhead reads), a Multicam Apply that fails (with its facts),
+ *      that ignores Pulse's timecode (a ⚠️ note — Clean up and Multicam cut at
+ *      the playhead then — with the timecode it was sent and the one the
+ *      playhead reads), a Multicam Apply that fails (with its facts),
  *      a caption call that stops, Premium captions Premiere places but does
  *      not draw, a tidy-up that leaves a bin — and the tidy-up still runs
  *   2b. a project never saved: the Premium template steps say to save it once
@@ -303,7 +304,7 @@ function scriptedPremiere(o) {
   // 2. failures say what Premiere answered; the rest still runs
   {
     const R = await run('fails', { timecodeIgnored: true, multicamFails: true, captionsStop: true, premiumInvisible: true, cleanupLeaves: true });
-    report(/^❌/.test(R.rowOf('Razor by timecode')) && /NO cut/.test(R.rowOf('Razor by timecode')) &&
+    report(/^⚠️/.test(R.rowOf('Razor by timecode')) && /NO cut/.test(R.rowOf('Razor by timecode')) && /cuts at the playhead’s own instead/.test(R.rowOf('Razor by timecode')) &&
            /timecode sent "00:00:01:06", playhead reads "00:00:00:00"/.test(R.rowOf('Razor by timecode')) && /^✅/.test(R.rowOf('Razor at the playhead')),
       '2. a razor that ignores Pulse’s timecode: ' + short(R.rowOf('Razor by timecode')));
     report(/^❌/.test(R.rowOf('Multicam: Apply')) && /didn’t make any of the 2 camera cuts/.test(R.rowOf('Multicam: Apply')) &&

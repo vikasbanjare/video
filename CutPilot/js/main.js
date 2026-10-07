@@ -3884,7 +3884,11 @@
     function razorStep(name, args) {
       add(name, function () {
         return host('CP_selfTestRazor', args).then(function (r) {
-          return { state: r.cut ? 'ok' : 'fail', note: (r.cut ? 'cut' : 'NO cut') + ' at ' + args.at + ' s on V' + (args.track + 1) +
+          // Clean up and Multicam cut at the playhead's own timecode when the
+          // razor ignores Pulse's: that alone is a note, the playhead failing too is a problem
+          var state = r.cut ? 'ok' : (args.method === 'timecode' ? 'warn' : 'fail');
+          return { state: state, note: (r.cut ? 'cut' : 'NO cut') + ' at ' + args.at + ' s on V' + (args.track + 1) +
+            (!r.cut && args.method === 'timecode' ? ' — Premiere ignores Pulse’s timecodes here, so Pulse cuts at the playhead’s own instead (next row)' : '') +
             ' · timecode sent ' + JSON.stringify(r.timecode) + ', playhead reads ' + JSON.stringify(r.playheadTimecode) +
             ' · clips ' + r.clipsBefore + '→' + r.clipsAfter + ' (QE ' + r.qeBefore + '→' + r.qeAfter + ')' +
             ' · ' + r.fps + ' fps' + (r.dropFrame ? ' drop-frame' : '') + (r.error ? ' · error: ' + r.error : '') };
