@@ -141,10 +141,12 @@ function ownerAt(sim, t) {
 function accuracy(plan, sim, opts) {
   opts = opts || {};
   const grace = opts.grace != null ? opts.grace : 1.0, camOf = opts.camOf || (s => s);
+  const skip = opts.skip || [];     // spans not judged (the plan's own reaction shots)
   let ok = 0, tot = 0;
   for (let t = 0.05; t < sim.dur; t += 0.1) {
     const who = ownerAt(sim, t);
     if (who < 0) continue;
+    if (skip.some(iv => t >= iv.start && t < iv.end)) continue;
     const tn = sim.turns.find(q => t >= q.start && t < q.end);
     if (t < tn.start + grace) continue;
     tot++;

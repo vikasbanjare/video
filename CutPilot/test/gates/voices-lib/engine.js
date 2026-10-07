@@ -5,7 +5,8 @@
  * downloads themselves are kept in a cache folder (CP_VOICES_CACHE, else
  * <tmp>/pulse-voices-cache-<version>) and fetched only when missing — each
  * checked against the SHA-256 Pulse ships. The cache also holds sherpa-onnx's
- * four-speaker test recording, from the same GitHub release as the model.
+ * four-speaker test recording, from the same GitHub release as the model, and
+ * whisper.cpp's own JFK sample (public domain) for the speech engine.
  * No network and nothing cached: the gate SKIPS (exit 2) and says why.
  */
 'use strict';
@@ -18,6 +19,11 @@ const zlib = require('zlib');
 
 const FOUR = { url: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/0-four-speakers-zh.wav',
                sha256: 'bedf036caed208386c67b4ef4b11f83d74dd0d420b102163a1c33cd09cde7010' };
+/* "And so, my fellow Americans: ask not what your country can do for you…"
+   — JFK's inaugural address (US government work, public domain), 11 s, as
+   whisper.cpp ships it in its own samples. */
+const JFK = { url: 'https://raw.githubusercontent.com/ggml-org/whisper.cpp/master/samples/jfk.wav',
+              sha256: '59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e' };
 /* Who speaks when in that recording: A, B, C and D (sherpa-onnx's own split
    of it, the same with 4 voices asked for or found). */
 const FOUR_TURNS = [[0.32, 6.87, 'A'], [7.02, 10.75, 'B'], [11.46, 13.63, 'B'], [13.75, 17.04, 'C'], [22.14, 24.84, 'A'],
@@ -44,8 +50,9 @@ function curl(url, dest) {
 }
 /* The SHA-256 Pulse expects for a URL it downloads. */
 function expected(V, url) {
-  const all = [V.MODELS.segmentation, V.MODELS.embedding, FOUR];
+  const all = [V.MODELS.segmentation, V.MODELS.embedding, FOUR, JFK];
   Object.keys(V.ENGINE).forEach((k) => all.push(V.ENGINE[k].bin, V.ENGINE[k].lib));
+  Object.keys(V.WHISPER || {}).forEach((k) => all.push(V.WHISPER[k]));
   const hit = all.find((x) => x.url === url);
   return hit ? hit.sha256 : null;
 }
@@ -85,6 +92,20 @@ async function setUp(V) {
     throw e;
   }
 }
+/* Pulse's speech engine, freshly installed by Pulse's own installer, or a SKIP. */
+async function whisperSetUp(V) {
+  const node = nodeModules();
+  if (!V.whisperFor(node.platform, node.arch)) skip('no ready-built speech engine is published for ' + node.platform + '-' + node.arch);
+  try { cp.execFileSync('curl', ['--version'], { stdio: 'ignore' }); } catch (e) { skip('no curl'); }
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-whisper-'));
+  try {
+    const prog = await V.installWhisper(node, dir, getter(V));
+    return { node, dir, prog };
+  } catch (e) {
+    if (/Couldn’t download|curl|ENOTFOUND|network/i.test(e.message)) { cleanUp(dir); skip('could not fetch the speech engine (' + e.message.slice(0, 160) + ')'); }
+    throw e;
+  }
+}
 function cleanUp(dir) { try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {} }
 
 /* ffmpeg: a 16 kHz mono WAV of the recording's pieces in a new order —
@@ -101,4 +122,4 @@ function splice(src, pieces, out) {
     '-map', '[out]', '-ac', '1', '-ar', '16000', out], { stdio: ['ignore', 'ignore', 'pipe'] });
 }
 
-module.exports = { FOUR, FOUR_TURNS, setUp, cleanUp, getter, nodeModules, splice, skip, sha };
+module.exports = { FOUR, FOUR_TURNS, JFK, setUp, whisperSetUp, cleanUp, cached, getter, nodeModules, splice, skip, sha };

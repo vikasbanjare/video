@@ -188,6 +188,9 @@ async function runMulticam(ctx, ui) {
     const mapOptions = sels.map(s => Array.from(s.options).map(o => o.value + '=' + o.textContent));
     const mapValues = sels.map(s => s.value);
     $('mc-diag').classList.add('hidden');
+    // the last build's plan must not count as this one's (a second build
+    // read the first one's plan and returned before its own question)
+    $('mc-plan-view').innerHTML = '';
     $('btn-mc-plan').click();
     const asked = [];
     const planned = await until(() => {

@@ -410,6 +410,87 @@ const MUTANTS = [
     repl: "",
     gate: 'CutPilot/test/gates/multicam-voices.js',
     why: 'Settings no longer credits NVIDIA’s CC-BY-4.0 model'
+  },
+  // ---- transcribe on this computer (the free speech engine) ----
+  {
+    name: 'whisper-member',
+    file: 'CutPilot/js/voices.js',
+    find: '      var data = zipMember(fs.readFileSync(whl), w.member, node.zlib);',
+    repl: "      var data = zipMember(fs.readFileSync(whl), w.member + '.old', node.zlib);",
+    gate: 'CutPilot/test/gates/whisper-engine.js',
+    why: 'the speech engine is unpacked from the wrong place in its download'
+  },
+  {
+    name: 'whisper-runnable',
+    file: 'CutPilot/js/voices.js',
+    find: "      if (node.platform !== 'win32') fs.chmodSync(prog, 493);   // 0755",
+    repl: '',
+    gate: 'CutPilot/test/gates/whisper-engine.js',
+    why: 'the speech engine is installed but cannot be run'
+  },
+  {
+    name: 'whisper-own-engine',
+    file: 'CutPilot/js/main.js',
+    find: '    if (own && tryPath(own)) return (_whisper = own);',
+    repl: '    if (false) return (_whisper = own);',
+    gate: 'CutPilot/test/gates/transcribe-on-this-computer.js',
+    why: 'the engine Pulse set up is never found, so transcribing still asks for a key'
+  },
+  {
+    name: 'whisper-setup-retry',
+    file: 'CutPilot/js/main.js',
+    find: "      _whisperSetup = null; diag('asr', 'speech engine set-up failed: '",
+    repl: "      diag('asr', 'speech engine set-up failed: '",
+    gate: 'CutPilot/test/gates/transcribe-on-this-computer.js',
+    why: 'one failed set-up blocks the speech engine until Premiere restarts'
+  },
+  {
+    name: 'whisper-ask-model',
+    file: 'CutPilot/js/main.js',
+    find: '      if (!(mb >= 100)) return Promise.resolve(true);',
+    repl: '      return Promise.resolve(true);',
+    gate: 'CutPilot/test/gates/transcribe-on-this-computer.js',
+    why: 'the 574 MB model is downloaded without asking'
+  },
+  {
+    name: 'whisper-cancel-plain',
+    file: 'CutPilot/js/main.js',
+    find: "      if (e && e.cancelled) {\n        setTranscriptBar('', '🎙️', 'Not transcribed — nothing was downloaded.', null);",
+    repl: "      if (false) {\n        setTranscriptBar('', '🎙️', 'Not transcribed — nothing was downloaded.', null);",
+    gate: 'CutPilot/test/gates/transcribe-on-this-computer.js',
+    why: '“Cancel” on the model download reads as “Auto-transcribe failed”'
+  },
+  {
+    name: 'whisper-wl-option',
+    file: 'CutPilot/js/main.js',
+    find: "    { value: 'large-v3-turbo-q5_0', label: '💻 On this computer — free, no key (about 600 MB, once)' },",
+    repl: '',
+    gate: 'CutPilot/test/gates/transcribe-on-this-computer.js',
+    why: 'the owner’s build offers no free on-this-computer transcription'
+  },
+  {
+    name: 'whisper-wl-model-name',
+    file: 'CutPilot/js/main.js',
+    find: "      var what = WHITE_LABEL ? 'the speech model' : name;",
+    repl: '      var what = name;',
+    gate: 'CutPilot/test/gates/transcribe-on-this-computer.js',
+    why: 'the owner’s build shows the model’s file name while downloading'
+  },
+  {
+    name: 'whisper-key-message',
+    file: 'CutPilot/js/main.js',
+    find: "(WHITE_LABEL ? ' — or pick “💻 On this computer” there (free, no key).' : '.')",
+    repl: "'.'",
+    gate: 'CutPilot/test/gates/transcribe-on-this-computer.js',
+    why: 'the “paste your key” message no longer says there is a free way without one'
+  },
+  {
+    name: 'multicam-reaction-length',
+    file: 'CutPilot/js/multicam.js',
+    find: '          if (d > hold + 6) break;',
+    repl: '          if (d > hold + 40) break;',
+    gate: 'CutPilot/test/gates/multicam-follow.js',
+    why: 'a reaction shot holds the silent listener for up to 40 s'
   }
 ];
 

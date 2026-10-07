@@ -919,6 +919,11 @@ console.log('voices.js');
   const before = CPVoices.ready(fakeNode, '/v');
   have.add('/v/titanet-small.onnx');
   assert(!before && CPVoices.ready(fakeNode, '/v'), 'ready only once every file of the engine is in place');
+  // the free speech-to-text engine: one program per computer, pinned
+  assert(['darwin-arm64', 'darwin-x64', 'win32-x64', 'linux-x64'].every(k => { const w = CPVoices.WHISPER[k]; return w && /^[0-9a-f]{64}$/.test(w.sha256) && w.size > 1e5 &&
+         /^https:\/\/files\.pythonhosted\.org\//.test(w.url); }), 'the speech engine for every computer comes from PyPI, pinned by SHA-256');
+  assert(CPVoices.whisperFor('linux', 'arm64') === null && /\.exe$/.test(CPVoices.WHISPER['win32-x64'].member) && CPVoices.whisperBin('win32') === 'whisper-cli.exe' &&
+         CPVoices.whisperBin('darwin') === 'whisper-cli', 'the speech engine is whisper-cli (.exe on Windows), and none is offered where none is published');
 }
 
 // ------------------------------------------------------------------- sfx ----

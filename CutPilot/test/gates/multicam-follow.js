@@ -12,6 +12,11 @@
  *     sat on the silent host for minutes
  *   - one mic recorded 10–12 dB hotter/quieter: zero switches, one camera
  *
+ * Since v0.10.4 a long answer gets planned reaction shots of the listener
+ * (2–9 s, on a breath — multicam-edit-quality.js judges those). They are not
+ * counted as "wrong person" here; instead they are bounded: at most 20% of
+ * the episode, none longer than 9 s — so minutes on the silent host still fail.
+ *
  * MC_PANEL_DIR=<dir> runs it against another copy of the panel.
  */
 'use strict';
@@ -49,14 +54,19 @@ const cases = [
       const ctx = await P.openPanel(browser, { premiere: { fps: 25, end: dur, video: FH.cameras(n, dur), audio }, envelopes });
       const r = await P.runMulticam(ctx, { cameras: n, source: 'follow' });
       await ctx.page.close();
-      const acc = r.plan ? P.visibleAccuracy(ctx.world, sim) : 0;
+      // the plan's own reaction shots are judged by their own bounds, not as "wrong person"
+      const reactions = r.plan ? r.plan.filter(p => p.cutaway) : [];
+      const acc = r.plan ? P.visibleAccuracy(ctx.world, sim, { skip: reactions }) : 0;
+      const reactPct = Math.round(1000 * reactions.reduce((a, p) => a + p.end - p.start, 0) / dur) / 10;
+      const reactMax = reactions.reduce((a, p) => Math.max(a, p.end - p.start), 0);
       const f = r.plan ? S.shotFacts(r.plan, n) : null;
       const need = c.min || 95;
       // a plan that follows the speaker carries no pairing warning
       const warn = r.planView.split('\n').filter(l => /⚠️/.test(l)).join(' | ');
-      const ok = !!r.plan && acc >= need && f.shortest >= 1.4 - 1e-6 && !r.errors.length && !warn;
+      const ok = !!r.plan && acc >= need && f.shortest >= 1.4 - 1e-6 && !r.errors.length && !warn && reactPct <= 20 && reactMax <= 9 + 1e-6;
       if (!ok) failed++;
       console.log('  ' + (ok ? '✓' : '✗') + ' ' + c.name + ': right person on screen ' + acc + '% (need ≥' + need + '%)' +
+        ', reaction shots ' + reactPct + '% of the episode (≤ 20%)' + (reactions.length ? ', longest ' + reactMax.toFixed(1) + ' s (≤ 9)' : '') +
         (f ? ', ' + f.switches + ' switches, screen time ' + f.share.join('/') + '%, shortest shot ' + f.shortest.toFixed(2) + ' s' : '  — no plan: ' + (r.diag || r.toasts.slice(-1)[0] || '?')) +
         (warn ? ', but the plan WARNS: ' + JSON.stringify(warn.slice(0, 110)) : '') +
         (r.errors.length ? '  page errors: ' + r.errors.join(' | ') : ''));

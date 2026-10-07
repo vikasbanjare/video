@@ -14,6 +14,10 @@
  * threshold below (5.9% of speech time given to the wrong person on the
  * Hindi one), at about 11× real time on 4 threads.
  *
+ * It also carries Pulse's free speech-to-text engine for "On this computer"
+ * (WHISPER below): whisper.cpp's command-line program, ready-built, so the
+ * owner never needs Homebrew or Terminal.
+ *
  * Pure: the zip reader takes zlib from the caller, so all of this is
  * unit-testable in Node. The panel (main.js) downloads, verifies, unpacks and
  * runs it.
@@ -83,10 +87,35 @@
   var CREDITS = 'Who’s talking uses sherpa-onnx (Apache-2.0), pyannote segmentation-3.0 (MIT) and NVIDIA NeMo TitaNet-small ' +
                 '(© NVIDIA, CC-BY-4.0).';
 
+  /* The speech-to-text engine: whisper.cpp's command-line program (MIT) as
+     whisper.cpp-cli 0.0.3 ships it on PyPI — one self-contained program per
+     computer (whisper.cpp of spring 2024; on a Mac it uses Accelerate, and
+     runs on the CPU because the GPU shaders are not in it). whisper.cpp has
+     no ready-built Mac program of its own yet. A whisper.cpp the owner
+     installed (Homebrew) is preferred when there is one. */
+  var WHISPER_VERSION = '0.0.3';
+  var WCLI = PYPI;
+  var WHISPER = {
+    'darwin-arm64': { url: WCLI + 'fd/eb/4d1a96d887b62fdddc58e3e0c9c94f673b54cd9fc025329340f9c4d052bc/whisper_cpp_cli-0.0.3-py3-none-macosx_11_0_arm64.whl',
+                      sha256: '6c9cb1d10770da5b7f92c54c2ace29142694b5b392c274db1d95ce1d2f6223d2', size: 523109,
+                      member: 'whisper_cpp_cli-0.0.3.data/scripts/whisper-cpp' },
+    'darwin-x64': { url: WCLI + 'a5/11/359833bd72353eb0142defc26ac2d8bd957da5b72540bd546ce7f0caea83/whisper_cpp_cli-0.0.3-py3-none-macosx_10_12_x86_64.whl',
+                    sha256: '1d85c6ca3dbf907c07a59f8daa620b3d0e3b263356c5220357dd7e06b42bc523', size: 598977,
+                    member: 'whisper_cpp_cli-0.0.3.data/scripts/whisper-cpp' },
+    'win32-x64': { url: WCLI + '8d/9e/5d0ae83e7e42a9e3305d6de22008a7375721fcfc025cd81836fb6cd09678/whisper_cpp_cli-0.0.3-py3-none-win_amd64.whl',
+                   sha256: 'b1d2005fc60c967670254614f4c21f37277e25d75c0d670d61f3ad409d53abe1', size: 364120,
+                   member: 'whisper_cpp_cli-0.0.3.data/scripts/whisper-cpp.exe' },
+    'linux-x64': { url: WCLI + 'cd/14/81dc2f85743343286756825312919ff6e29b61d4cd7457c32fc972d77d0f/whisper_cpp_cli-0.0.3-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl',
+                   sha256: '03133be9568117a85d4d8daedd7fe8469807d10d2fe92e0e177d2fcb5147808f', size: 589027,
+                   member: 'whisper_cpp_cli-0.0.3.data/scripts/whisper-cpp' }
+  };
+
   function engineFor(platform, arch) {
     return ENGINE[String(platform) + '-' + String(arch)] || null;
   }
   function binName(platform) { return BIN + (platform === 'win32' ? '.exe' : ''); }
+  function whisperFor(platform, arch) { return WHISPER[String(platform) + '-' + String(arch)] || null; }
+  function whisperBin(platform) { return 'whisper-cli' + (platform === 'win32' ? '.exe' : ''); }
   function baseName(member) { return String(member).split('/').pop(); }
   /* Everything that must be on disk for the engine to run, relative to its folder. */
   function needFiles(platform, arch) {
@@ -179,6 +208,33 @@
     try { node.fs.mkdirSync(dir); } catch (e) { if (!node.fs.existsSync(dir)) throw e; }
   }
 
+  /* Download each item ({ spec: { url, sha256, size }, file }) into its file,
+     one after another, and check every one against its SHA-256 before anything
+     uses it. onPct(0–1) follows the bytes. `what` names it for the owner. */
+  function fetchChecked(node, items, get, onPct, what) {
+    var fs = node.fs, total = 0, done = 0, chain = Promise.resolve();
+    items.forEach(function (it) { total += it.spec.size; });
+    function pct(extra) { if (onPct) { try { onPct(Math.min(1, (done + extra) / total)); } catch (x) {} } }
+    items.forEach(function (it) {
+      chain = chain.then(function () {
+        try { fs.unlinkSync(it.file); } catch (x) {}
+        var timer = setInterval(function () { var n = 0; try { n = fs.statSync(it.file).size; } catch (x) {} pct(Math.min(n, it.spec.size)); }, 500);
+        var stop = function () { clearInterval(timer); };
+        return get(it.spec.url, it.file).then(stop, function (err) {
+          stop();
+          throw new Error('Couldn’t download the ' + what + ' (' + ((err && err.message) || 'network error') + '). Check the internet and try again.');
+        }).then(function () {
+          if (sha256File(node, it.file) !== it.spec.sha256) {
+            throw new Error('A ' + what + ' download didn’t match what Pulse expects (damaged on the way, or changed on the server), ' +
+              'so nothing was installed. Try again later.');
+          }
+          done += it.spec.size; pct(0);
+        });
+      });
+    });
+    return chain;
+  }
+
   /* Download, check and unpack the engine into `dir`. get(url, dest) → Promise
      downloads one file; onPct(0–1) follows the bytes. Nothing in a download is
      used unless its SHA-256 matches the one above, and the program is moved
@@ -191,31 +247,15 @@
     var items = [{ spec: e.bin, file: path.join(tmp, 'bin.whl') }, { spec: e.lib, file: path.join(tmp, 'lib.whl') },
                  { spec: MODELS.segmentation, file: path.join(tmp, 'segmentation.tar.bz2') },
                  { spec: MODELS.embedding, file: path.join(tmp, MODELS.embedding.file) }];
-    var total = 0, done = 0;
-    items.forEach(function (it) { total += it.spec.size; made.push(it.file); });
-    function pct(extra) { if (onPct) { try { onPct(Math.min(1, (done + extra) / total)); } catch (x) {} } }
+    items.forEach(function (it) { made.push(it.file); });
     function clean() {
       made.forEach(function (f) { try { fs.unlinkSync(f); } catch (x) {} });
       try { fs.rmdirSync(path.join(tmp, path.dirname(MODELS.segmentation.member))); } catch (x) {}
       try { fs.rmdirSync(tmp); } catch (x) {}
     }
-    var chain = Promise.resolve().then(function () { mkdirs(node, tmp); });
-    items.forEach(function (it) {
-      chain = chain.then(function () {
-        try { fs.unlinkSync(it.file); } catch (x) {}
-        var timer = setInterval(function () { var n = 0; try { n = fs.statSync(it.file).size; } catch (x) {} pct(Math.min(n, it.spec.size)); }, 500);
-        var stop = function () { clearInterval(timer); };
-        return get(it.spec.url, it.file).then(stop, function (err) {
-          stop();
-          throw new Error('Couldn’t download the voice engine (' + ((err && err.message) || 'network error') + '). Check the internet and try again.');
-        }).then(function () {
-          if (sha256File(node, it.file) !== it.spec.sha256) {
-            throw new Error('A voice engine download didn’t match what Pulse expects (damaged on the way, or changed on the server), ' +
-              'so nothing was installed. Try again later.');
-          }
-          done += it.spec.size; pct(0);
-        });
-      });
+    var chain = Promise.resolve().then(function () {
+      mkdirs(node, tmp);
+      return fetchChecked(node, items, get, onPct, 'voice engine');
     });
     var parts = [];   // [final name, temporary file]
     chain = chain.then(function () {
@@ -261,6 +301,32 @@
       return dir;
     });
     return chain.catch(function (err) { clean(); throw err; });
+  }
+
+  /* Download, check and unpack the speech-to-text program into `dir` (the
+     panel: ~/.cutpilot/whisper/<WHISPER_VERSION>). Resolves the program's path. */
+  function installWhisper(node, dir, get, onPct) {
+    var fs = node.fs, path = node.path, w = whisperFor(node.platform, node.arch);
+    if (!w) return Promise.reject(new Error('The free speech engine isn’t available for this computer yet.'));
+    var tmp = path.join(dir, 'download'), whl = path.join(tmp, 'engine.whl'), prog = path.join(tmp, whisperBin(node.platform));
+    function clean() {
+      [whl, prog].forEach(function (f) { try { fs.unlinkSync(f); } catch (x) {} });
+      try { fs.rmdirSync(tmp); } catch (x) {}
+    }
+    return Promise.resolve().then(function () {
+      mkdirs(node, tmp);
+      return fetchChecked(node, [{ spec: w, file: whl }], get, onPct, 'speech engine');
+    }).then(function () {
+      var data = zipMember(fs.readFileSync(whl), w.member, node.zlib);
+      if (!data) throw new Error('The speech engine download has no program in it.');
+      fs.writeFileSync(prog, data);
+      if (node.platform !== 'win32') fs.chmodSync(prog, 493);   // 0755
+      var to = path.join(dir, whisperBin(node.platform));
+      try { fs.unlinkSync(to); } catch (x) {}
+      fs.renameSync(prog, to);
+      clean();
+      return to;
+    }).catch(function (err) { clean(); throw err; });
   }
 
   /* Run the engine on a 16 kHz mono WAV. Resolves the turns (parseTurns);
@@ -320,6 +386,11 @@
     ENGINE: ENGINE,
     MODELS: MODELS,
     CREDITS: CREDITS,
+    WHISPER_VERSION: WHISPER_VERSION,
+    WHISPER: WHISPER,
+    whisperFor: whisperFor,
+    whisperBin: whisperBin,
+    installWhisper: installWhisper,
     engineFor: engineFor,
     binName: binName,
     baseName: baseName,

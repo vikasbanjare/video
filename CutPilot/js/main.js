@@ -498,6 +498,9 @@
                  '/opt/homebrew/bin/main', '/usr/local/bin/whisper',
                  'C:\\whisper\\whisper-cli.exe', 'C:\\whisper\\main.exe'];
     for (var i = 0; i < cands.length; i++) if (tryPath(cands[i])) return (_whisper = cands[i]);
+    // Pulse's own ready-built engine (set up by the Transcribe button — no Homebrew)
+    var own = whisperOwnPath();
+    if (own && tryPath(own)) return (_whisper = own);
     // Ask the user's DEFAULT login shell (zsh on modern macOS, not bash) where
     // it is — picks up the full Homebrew PATH a GUI app otherwise can't see.
     var shOut = _loginShell("for c in whisper-cli whisper-cpp whisper main; do command -v \"$c\" && exit 0; done");
@@ -520,6 +523,32 @@
       for (var i = 0; i < lines.length; i++) { var p = lines[i].trim(); if (p) return p; }
     } catch (e) {}
     return null;
+  }
+  /* No whisper.cpp on this computer: fetch Pulse's ready-built one (about
+     1 MB from PyPI, checked against its SHA-256 — CPVoices.WHISPER), so
+     "On this computer" works without Homebrew or Terminal. A whisper.cpp
+     the owner installed (Homebrew, a path in Settings) is used first. */
+  var _whisperSetup = null, _whisperJustSetUp = false;
+  function whisperOwnDir() {
+    return nodeReq('path').join(nodeReq('os').homedir(), '.cutpilot', 'whisper', CPVoices.WHISPER_VERSION);
+  }
+  function whisperOwnPath() {
+    try { return nodeReq('path').join(whisperOwnDir(), CPVoices.whisperBin(voicesPlatform().platform)); } catch (e) { return null; }
+  }
+  function whisperEnginePossible() {
+    var pa = voicesPlatform();
+    try { return CPBridge.isCEP() && !!CPVoices.whisperFor(pa.platform, pa.arch); } catch (e) { return false; }
+  }
+  function ensureWhisperEngine() {
+    if (_whisperSetup) return _whisperSetup;
+    var node;
+    try { node = voicesNode(true); } catch (e) { return Promise.reject(new Error('Open inside Premiere to set up the speech engine.')); }
+    _whisperSetup = CPVoices.installWhisper(node, whisperOwnDir(), voicesGet, null).then(function (p) {
+      _whisperSetup = null; _whisper = null; diag('asr', 'speech engine set up (' + CPVoices.WHISPER_VERSION + ')'); return p;
+    }, function (e) {
+      _whisperSetup = null; diag('asr', 'speech engine set-up failed: ' + (e && e.message)); throw e;
+    });
+    return _whisperSetup;
   }
   function resolveWhisperModel() {
     var fs; try { fs = nodeReq('fs'); } catch (e) { return settings.whisperModel || null; }
@@ -558,13 +587,17 @@
     { value: 'large-v3-turbo', label: 'Local · Pro · large-v3-turbo (~1.6GB)' },
     { value: 'large-v3', label: 'Local · Max · large-v3 (~3GB)' }
   ];
-  // white-label builds hide the underlying engine/model names: show ONE generic
-  // cloud option (the bundled key makes it work out of the box).
+  // white-label builds hide the underlying engine/model names: a generic cloud
+  // option first, and the free engine that runs on this computer (no key, no
+  // Homebrew: Pulse fetches its ready-built engine and the model once)
   if (WHITE_LABEL) WHISPER_QUALITIES = [
     { value: 'cloud-groq', label: '✨ Pulse Cloud — best accuracy' },
+    { value: 'large-v3-turbo-q5_0', label: '💻 On this computer — free, no key (about 600 MB, once)' },
     { value: 'cloud-swara', label: '🇮🇳 Indian Voices — all languages' },
     { value: 'cloud-deepgram', label: '🎧 Deepgram — your own key' }
   ];
+  // the one-time model download, by accuracy (MB) — said before downloading
+  var WHISPER_MB = { 'tiny': 75, 'base': 142, 'small': 466, 'medium': 1500, 'large-v3-turbo': 1600, 'large-v3-turbo-q5_0': 574, 'large-v3': 3100 };
   var WHISPER_LANGS = [
     // AUTO first and default: the old 'en' default FORCED English on every
     // voice — Hindi audio came back as English-ish nonsense. Auto lets the
@@ -628,11 +661,9 @@
       if (cpKey()) return 'cloud-groq';
       if (cpDeepgramKey()) return 'cloud-deepgram';   // a Deepgram key alone is enough to transcribe
       if (cpSarvamKey()) return 'cloud-swara';
-      // A cloud-only (white-label) build ships NO local-engine UI - no way to
-      // install whisper or point at a model. Falling back to a local model left
-      // the user on an engine they could not set up AND hid the key box (it only
-      // showed for cloud), so the key could never be entered. Stay on cloud and
-      // ask for the key instead.
+      // A white-label build stays on cloud and asks for the key: falling back
+      // to a local model hid the key box (it only showed for cloud), so the key
+      // could never be entered. "On this computer" is the owner's own pick.
       return WHITE_LABEL ? 'cloud-groq' : 'large-v3-turbo-q5_0';
     }
     return q;
@@ -650,7 +681,7 @@
   }
   /* The model to transcribe with, downloading it on first use. Returns a Promise.
      A manually-set model path always wins (advanced override). */
-  function resolveTranscribeModel() {
+  function resolveTranscribeModel(ask) {
     var fs, path; try { fs = nodeReq('fs'); path = nodeReq('path'); } catch (e) { return Promise.reject(new Error('Node unavailable')); }
     var tryP = function (p) { try { return p && fs.existsSync(p) ? p : null; } catch (e2) { return null; } };
     var name = modelFileName(), os = nodeReq('os');             // the model the Accuracy + Language picker wants
@@ -660,9 +691,13 @@
     if (tryP(settings.whisperModel) && base(settings.whisperModel) === name) return Promise.resolve(settings.whisperModel);
     var dirs = [_modelsDir(), path.join(os.homedir(), 'Downloads'), path.join(os.homedir(), 'Documents'), os.homedir()];
     for (var i = 0; i < dirs.length; i++) { var hit = dirs[i] && tryP(path.join(dirs[i], name)); if (hit) return Promise.resolve(hit); }
-    return downloadModel(name, path.join(_modelsDir(), name)).catch(function (e) {
-      if (tryP(settings.whisperModel)) return settings.whisperModel;   // offline fallback so it still runs
-      throw e;
+    // a one-time download of hundreds of MB: say so and ask first
+    return (ask ? ask(WHISPER_MB[resolveQuality()] || 0) : Promise.resolve(true)).then(function (yes) {
+      if (!yes) { var no = new Error('Nothing was downloaded, so nothing was transcribed.'); no.cancelled = true; throw no; }
+      return downloadModel(name, path.join(_modelsDir(), name)).catch(function (e) {
+        if (tryP(settings.whisperModel)) return settings.whisperModel;   // offline fallback so it still runs
+        throw e;
+      });
     });
   }
   function downloadModel(name, target) {
@@ -670,10 +705,16 @@
       var cp, fs, path; try { cp = nodeReq('child_process'); fs = nodeReq('fs'); path = nodeReq('path'); } catch (e) { return reject(e); }
       try { fs.mkdirSync(path.dirname(target), { recursive: true }); } catch (e) {}
       var url = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/' + name;
-      setTranscriptBar('', '⬇️', 'Downloading ' + name + ' — one-time, please wait…', null);
+      var what = WHITE_LABEL ? 'the speech model' : name;
+      setTranscriptBar('', '⬇️', 'Downloading ' + what + ' — one-time, please wait…', null);
       var p; try { p = cp.spawn('curl', ['-L', '--fail', '-o', target, url]); } catch (e) { return reject(e); }
-      p.on('error', reject);
+      var tick = setInterval(function () {
+        var mb = 0; try { mb = Math.round(fs.statSync(target).size / 1e6); } catch (eS) {}
+        if (mb) setTranscriptBar('', '⬇️', 'Downloading ' + what + ' — ' + mb + ' MB so far (one time)…', null);
+      }, 1000);
+      p.on('error', function (e) { clearInterval(tick); reject(e); });
       p.on('close', function (code) {
+        clearInterval(tick);
         if (code === 0) { try { if (fs.statSync(target).size > 1e6) return resolve(target); } catch (e) {} }
         try { fs.unlinkSync(target); } catch (e) {}
         reject(new Error('couldn\'t download model "' + name + '" — check your internet, or set a model path in Settings.'));
@@ -1376,15 +1417,26 @@
     }
     var wbin = null;
     if (cloud) {
-      if (!cpKey()) return toast('Paste your free speech key in Settings → Auto-transcribe (the ☁️ box). Get one at console.groq.com/keys. An Indian-language or retake-finder key works too, under More speech options.', true);
+      if (!cpKey()) return toast('Paste your free speech key in Settings → Auto-transcribe (the ☁️ box). Get one at console.groq.com/keys. An Indian-language or retake-finder key works too, under More speech options' +
+        (WHITE_LABEL ? ' — or pick “💻 On this computer” there (free, no key).' : '.'), true);
     } else if (swara) {
       if (!cpSarvamKey()) return toast('Paste your Indian-language key in Settings → Auto-transcribe → More speech options (the 🇮🇳 box).', true);
     } else if (dgram) {
       if (!cpDeepgramKey()) return toast('Paste your retake-finder key in Settings → Auto-transcribe → More speech options (the 🎧 box).', true);
     } else {
       wbin = resolveWhisper();
-      // (it said "Set the whisper engine … brew install whisper-cpp": the Settings
-      // control is gone, and a beginner cannot run Terminal commands)
+      // no speech engine on this computer yet: fetch Pulse's ready-built one
+      // (about 1 MB, once), then start. (It said "brew install whisper-cpp"
+      // once, then "paste a key" — a beginner can do neither offline.)
+      var justSetUp = _whisperJustSetUp;
+      _whisperJustSetUp = false;
+      if (!wbin && !justSetUp && whisperEnginePossible()) {
+        setTranscriptBar('', '⬇️', 'One-time setup: downloading the free speech engine…', null);
+        return ensureWhisperEngine().then(function () { _whisperJustSetUp = true; autoTranscribe(); }, function (e) {
+          setTranscriptBar('warn', '⚠️', 'The free speech engine couldn’t be set up', null);
+          toast(e.message, true);
+        });
+      }
       if (!wbin) return toast('This computer can’t make the transcript by itself: paste your free speech key in Settings → Auto-transcribe (the ☁️ box). Get one at console.groq.com/keys.', true);
     }
     setTranscribing(true);   // all checks passed — commit, lock the buttons
@@ -1402,13 +1454,22 @@
     if (lang === 'hinglish' && swara) { wlang = 'hi-IN'; romanize = true; }
     var ico = swara ? '🇮🇳' : dgram ? '🎧' : cloud ? '☁️' : '🎙️';
     setTranscriptBar('', ico, useCloud ? 'Connecting to the cloud…' : 'Preparing the speech model…', null);
-    (useCloud ? Promise.resolve(null) : resolveTranscribeModel()).then(function (model) {
+    var askModel = function (mb) {
+      if (!(mb >= 100)) return Promise.resolve(true);
+      return new Promise(function (res) {
+        confirmInline('To transcribe on this computer, Pulse downloads its free speech model once — about ' + mb + ' MB. ' +
+          'After that it works without internet and without a key.', 'Download (' + mb + ' MB)', res);
+      });
+    };
+    (useCloud ? Promise.resolve(null) : resolveTranscribeModel(askModel)).then(function (model) {
       // local Hinglish: pick the mode that matches the model we actually resolved
       if (!cloud && !dgram && lang === 'hinglish') {
         if (/\.en\.bin$/i.test(String(model))) { wlang = 'en'; romanize = false; }   // English-only fallback
         else { wlang = 'hi'; romanize = true; }                                       // multilingual: transcribe + romanise
       }
-      var modelLabel = swara ? 'Indian Voices (Sarvam)' : dgram ? 'Cloud · Deepgram (nova-3)' : cloud ? 'Cloud · Groq (large-v3)' : String(model).split(/[\\/]/).pop();
+      var modelFile = String(model).split(/[\\/]/).pop();
+      var modelLabel = WHITE_LABEL ? (swara ? 'Indian Voices' : dgram ? 'Deepgram' : cloud ? 'Pulse Cloud' : 'on this computer')
+        : (swara ? 'Indian Voices (Sarvam)' : dgram ? 'Cloud · Deepgram (nova-3)' : cloud ? 'Cloud · Groq (large-v3)' : modelFile);
       // Does this media file actually CONTAIN an audio stream? A podcast setup
       // often has a video file with NO embedded sound + the mic recording as a
       // separate audio clip — extracting from the video then fails with ffmpeg's
@@ -1672,7 +1733,11 @@
             var note = '';
             // local models only — the two CLOUD engines have no ggml file at all
             // (this used to print "wanted ggml-cloud-swara.bin … used a fallback")
-            if (!cloud && !swara) { var want = modelFileName(); if (modelLabel !== want) note = ' ⚠️ wanted ' + want + ' but it didn\'t load — used a fallback (check internet).'; }
+            if (!useCloud) {
+              var want = modelFileName();
+              if (modelFile !== want) note = WHITE_LABEL ? ' ⚠️ The best speech model didn’t load, so a smaller one was used (check the internet).'
+                                                         : ' ⚠️ wanted ' + want + ' but it didn\'t load — used a fallback (check internet).';
+            }
             // plain words: what was done and what is now possible — not which
             // engine and model did it (that stays in the transcript bar + diagnostics)
             toast('✓ Got the words from “' + shortName + '” — ' + cues.length + ' lines.' +
@@ -1686,6 +1751,10 @@
       if (state.autoFixAfter) { state.autoFixAfter = false; if (state.transcript) cleanupTranscript(); }
     }, function (e) {
       setTranscribing(false); state.autoFixAfter = false;
+      if (e && e.cancelled) {
+        setTranscriptBar('', '🎙️', 'Not transcribed — nothing was downloaded.', null);
+        return toast(e.message + ' Tap Transcribe again whenever you’re ready, or use Pulse Cloud with your free key.');
+      }
       setTranscriptBar('warn', '⚠️', 'Auto-transcribe failed', 'Get one →');
       toast('Auto-transcribe failed: ' + e.message, true);
     });
@@ -13891,6 +13960,9 @@
      3+ cameras). Declined, not available for this computer, or failed: the
      talk-burst plan, as before, and the toast says why. */
   var _voicesSetup = null, _voicesOnPct = null, _mcVoices = null;
+  function voicesGet(url, dest) {
+    return _curlDownload(url, dest).catch(function () { return _downloadTo(url, dest); });
+  }
   function voicesPlatform() { return { platform: (typeof process !== 'undefined' && process.platform) || 'darwin',
                                        arch: (typeof process !== 'undefined' && process.arch) || 'x64' }; }
   function voicesNode(forInstall) {
@@ -13920,10 +13992,7 @@
     if (_voicesSetup) return _voicesSetup;
     var node;
     try { node = voicesNode(true); } catch (e) { return Promise.reject(new Error('Open inside Premiere to set up Who’s talking.')); }
-    var get = function (url, dest) {
-      return _curlDownload(url, dest).catch(function () { return _downloadTo(url, dest); });
-    };
-    _voicesSetup = CPVoices.install(node, voicesDir(), get, function (f) { if (_voicesOnPct) _voicesOnPct(f); }).then(function (d) {
+    _voicesSetup = CPVoices.install(node, voicesDir(), voicesGet, function (f) { if (_voicesOnPct) _voicesOnPct(f); }).then(function (d) {
       _voicesSetup = null; diag('voices', 'engine set up (' + CPVoices.VERSION + ')'); refreshVoicesStatus(); return d;
     }, function (e) {
       _voicesSetup = null; diag('voices', 'set-up failed: ' + (e && e.message)); throw e;
@@ -15019,6 +15088,7 @@
       groqModelUnusable: groqModelUnusable,
       groqPrefs: function () { return GROQ_TEXT_MODELS.slice(); },
       engineOptions: function () { return WHISPER_QUALITIES.map(function (q) { return q.value; }); },
+      engineLabels: function () { return WHISPER_QUALITIES.map(function (q) { return q.label; }); },
       // the preview is a true crop of the SEQUENCE, so tests need to stand it
       // in front of a vertical reel and a landscape podcast alike
       env: function () { return state.env ? { width: state.env.width, height: state.env.height } : null; },

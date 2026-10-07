@@ -39,7 +39,17 @@ jobs:
           fc-cache -f >/dev/null 2>&1 || true
       - name: Headless Chrome (for the simulation + panel proofs)
         run: npm i --no-save puppeteer@23
+      # The free voice engine (who's talking), the speech engine and its test
+      # models (tiny, large-v3-turbo) are real downloads, each checked by its
+      # gate. Keep them between runs instead of fetching ~730 MB every push.
+      - name: Cache the free voice and speech engines
+        uses: actions/cache@v4
+        with:
+          path: /tmp/pulse-engines
+          key: pulse-engines-${{ hashFiles('CutPilot/js/voices.js') }}
+          restore-keys: pulse-engines-
       - name: Full battery
         env:
           CI: 'true'
+          CP_VOICES_CACHE: /tmp/pulse-engines
         run: node CutPilot/test/run-tests.js
