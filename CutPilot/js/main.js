@@ -3697,6 +3697,348 @@
     }
   }
 
+  /* ---- THE REAL-PREMIERE FEATURE TEST ----------------------------------------
+     The gates run Pulse against an imitation of Premiere. The owner's Mac runs
+     the real one, and the two disagreed: the script did not load there, the
+     razor ignored Pulse's cuts. So 🧪 Test everything tries every feature that
+     touches the timeline in the owner's OWN Premiere — on a throwaway sequence
+     made from two clips Pulse renders here (a red camera whose mic beeps
+     0–2 s, 3–5 s, 6–8 s and 9–10 s, and a blue camera above it), checking
+     what lands with frames Premiere itself draws, and deleting everything
+     afterwards. The owner's work is never touched. Every step is a row saying
+     what Premiere answered; the rows land in the report and in
+     📋 Copy diagnostics, so one report names every problem left. */
+  var ST_SEQ = 'Pulse self-test (temporary)';
+  var ST_RED = [200, 40, 40], ST_BLUE = [40, 72, 200];
+
+  /* average colour of a small patch of a frame, at fractions of its size */
+  function stPatch(img, fx, fy) {
+    var W = img.naturalWidth || img.width, H = img.naturalHeight || img.height;
+    var c = document.createElement('canvas'); c.width = 16; c.height = 16;
+    var g = c.getContext('2d');
+    g.drawImage(img, Math.max(0, Math.round(W * fx) - 8), Math.max(0, Math.round(H * fy) - 8), 16, 16, 0, 0, 16, 16);
+    var d = g.getImageData(0, 0, 16, 16).data, r = 0, gr = 0, b = 0;
+    for (var i = 0; i < d.length; i += 4) { r += d[i]; gr += d[i + 1]; b += d[i + 2]; }
+    var n = d.length / 4;
+    return [Math.round(r / n), Math.round(gr / n), Math.round(b / n)];
+  }
+  function stNear(c, want) {
+    return Math.abs(c[0] - want[0]) + Math.abs(c[1] - want[1]) + Math.abs(c[2] - want[2]) < 120;
+  }
+  function stColorName(c) { return stNear(c, ST_RED) ? 'red' : (stNear(c, ST_BLUE) ? 'blue' : 'rgb(' + c.join(',') + ')'); }
+  /* how much of a frame is NOT the camera's flat colour (captions, graphics):
+     a share of the pixels, 0–1 */
+  function stInk(img) {
+    var W = img.naturalWidth || img.width, H = img.naturalHeight || img.height;
+    var w = 320, h = Math.max(1, Math.round(320 * H / W));
+    var c = document.createElement('canvas'); c.width = w; c.height = h;
+    var g = c.getContext('2d'); g.drawImage(img, 0, 0, w, h);
+    var bg = stPatch(img, 0.04, 0.06), d = g.getImageData(0, 0, w, h).data, n = 0;
+    for (var i = 0; i < d.length; i += 4) {
+      if (Math.abs(d[i] - bg[0]) + Math.abs(d[i + 1] - bg[1]) + Math.abs(d[i + 2] - bg[2]) > 90) n++;
+    }
+    return n / (w * h);
+  }
+
+  function premiereFeatureTest(row, ff, progress) {
+    var fs = nodeReq('fs'), pathMod = nodeReq('path'), os = nodeReq('os');
+    var dir = pathMod.join(os.homedir(), '.cutpilot', 'pulse-selftest');
+    // plain names: "Remove Pulse's captions" takes a track whose clips are all
+    // named like Pulse's captions (pulse…, cap_1…, flux…) for a caption track
+    var cam1 = pathMod.join(dir, 'test-camera-1.mov'), cam2 = pathMod.join(dir, 'test-camera-2.mov');
+    var sfx = pathMod.join(dir, 'test-sound.wav'), srt = pathMod.join(dir, 'test-captions.srt');
+    var setup = null, framesWork = null, saved = true, shot = 0, chain, steps = [];
+    function add(name, fn) { steps.push({ name: name, fn: fn }); }
+    function say(name, state, note) {
+      row('In Premiere: ' + name, state, note);
+      try { diag('selftest-premiere', (state === 'ok' ? '✅ ' : state === 'warn' ? '⚠️ ' : '❌ ') + name + (note ? ' — ' + note : '')); } catch (eD) {}
+    }
+    function host(fn, args) { return CPBridge.callHost(fn, args === undefined ? {} : args); }
+    /* what Premiere answered with a failure, as k=v pairs */
+    function facts(e) {
+      var info = e && e.host && e.host.info, out = [];
+      if (info) for (var k in info) if (info.hasOwnProperty(k)) out.push(k + '=' + (typeof info[k] === 'object' ? JSON.stringify(info[k]) : info[k]));
+      return out.length ? ' [' + out.join(', ') + ']' : '';
+    }
+    function emptyDir() {
+      try { fs.mkdirSync(dir, { recursive: true }); } catch (eMk) {}
+      try {
+        fs.readdirSync(dir).forEach(function (f) {
+          var p = pathMod.join(dir, f);
+          try {
+            if (fs.statSync(p).isDirectory()) { fs.readdirSync(p).forEach(function (g) { try { fs.unlinkSync(pathMod.join(p, g)); } catch (eU) {} }); fs.rmdirSync(p); }
+            else fs.unlinkSync(p);
+          } catch (eF) {}
+        });
+      } catch (eR) {}
+    }
+    /* one frame of the test sequence, drawn by Premiere: an Image or null */
+    function frameAt(at) {
+      var png = pathMod.join(dir, 'frame-' + (++shot) + '.png');
+      return host('CP_captureSequenceFrame', { at: at, outPath: png }).then(function (r) {
+        if (!r || r.exported === false) return null;
+        return new Promise(function (res) { loadRenderedFrame(png, res); });
+      });
+    }
+    function inkAt(at) {
+      if (!framesWork) return Promise.resolve(null);
+      return frameAt(at).then(function (im) { return im ? stInk(im) : null; });
+    }
+    function pct(x) { return Math.round(x * 1000) / 10 + '%'; }
+    function makeClip(args, out) {
+      return runFfmpeg(ff, ['-hide_banner', '-y'].concat(args, [out]), 60000).then(function (r) {
+        if (r.error || r.code !== 0 || !fs.existsSync(out)) {
+          throw new Error('ffmpeg could not make ' + pathMod.basename(out) + ': ' +
+            (r.error || ('exit ' + r.code + ' ' + String(r.stderr || '').split('\n').filter(Boolean).slice(-2).join(' '))));
+        }
+      });
+    }
+    var red = 'color=c=0xC82828:s=1280x720:r=30:d=10', blue = 'color=c=0x2848C8:s=1280x720:r=30:d=10';
+
+    add('Test clips made on this computer', function () {
+      emptyDir();
+      return makeClip(['-f', 'lavfi', '-i', red, '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000:duration=10',
+                       '-filter_complex', "[1:a]volume='if(lt(mod(t,3),2),0.6,0)':eval=frame[a]",
+                       '-map', '0:v', '-map', '[a]', '-c:v', 'qtrle', '-c:a', 'pcm_s16le', '-t', '10'], cam1)
+        .then(function () { return makeClip(['-f', 'lavfi', '-i', blue, '-c:v', 'qtrle', '-an', '-t', '10'], cam2); })
+        .then(function () { return makeClip(['-f', 'lavfi', '-i', 'sine=frequency=880:sample_rate=48000:duration=0.4', '-c:a', 'pcm_s16le'], sfx); })
+        .then(function () { return { state: 'ok', note: 'two 10-second cameras and a sound effect, in ' + dir }; });
+    });
+    add('A test sequence (yours is not touched)', function () {
+      // Premium templates are only placed in a saved project (the ✨ flow asks
+      // for ⌘S first): an unsaved one skips them instead of failing them
+      return host('CP_getProjectInfo').then(function (pi) { saved = !!(pi && pi.path); }, function () {}).then(function () {
+        return host('CP_selfTestSetup', { mediaPath: cam1, mediaPath2: cam2 });
+      }).then(function (r) {
+        setup = r;
+        var note = 'Premiere ' + r.premiere + ' on ' + r.os + ' · “' + r.sequence + '” ' + r.width + '×' + r.height + ' at ' + r.fps +
+          ' fps · ' + r.videoTracks + ' video / ' + r.audioTracks + ' audio tracks · second camera: ' + r.secondCamera +
+          ' · ' + r.endSeconds + ' s · time display ' + r.displayFormat + (r.dropFrame ? ' (drop-frame)' : '') +
+          (saved ? '' : ' · your project has never been saved');
+        return { state: /^yes/.test(String(r.secondCamera)) ? 'ok' : 'fail', note: note };
+      });
+    });
+    add('Pulse’s script reads the sequence', function () {
+      return host('CP_getEnv').then(function (env) {
+        var good = env && env.sequenceName === ST_SEQ && Number(env.width) === Number(setup.width);
+        return { state: good ? 'ok' : 'fail', note: '“' + (env && env.sequenceName) + '” ' + (env && env.width) + '×' + (env && env.height) +
+          ' at ' + (env && Math.round(env.fps * 1000) / 1000) + ' fps' };
+      });
+    });
+    add('Mic tracks (Podcast cameras, Clean up)', function () {
+      return host('CP_getAudioTracks').then(function (r) {
+        var t = (r.audioTracks || []).filter(function (x) { return x.mediaPath; });
+        var mine = t.filter(function (x) { return /test-camera-1\.mov$/.test(x.mediaPath); });
+        return { state: mine.length ? 'ok' : 'fail', note: t.length + ' mic track(s): ' +
+          t.map(function (x) { return x.name + ' → ' + String(x.mediaPath).split(/[\\/]/).pop(); }).join(', ') };
+      });
+    });
+    add('Transcribe finds the talking clip', function () {
+      return host('CP_getTranscribeSource').then(function (r) {
+        var c = (r && (r.clip || r)) || {}, mp = String(c.mediaPath || '');
+        return { state: /test-camera-1\.mov$/.test(mp) ? 'ok' : 'fail', note: mp ? mp.split(/[\\/]/).pop() + (c.inPoint != null ? ' from ' + c.inPoint + ' s' : '') : 'no clip' };
+      });
+    });
+    add('Premiere draws frames for Pulse’s checks', function () {
+      return frameAt(1).then(function (im) {
+        if (!im) { framesWork = false; return { state: 'fail', note: 'no frame came back — Pulse cannot see what lands on the timeline' }; }
+        framesWork = true;
+        var c = stPatch(im, 0.5, 0.5);
+        return { state: stNear(c, ST_BLUE) ? 'ok' : 'warn', note: 'the top camera shows ' + stColorName(c) + ' (expected blue)' };
+      });
+    });
+    add('Multicam: Apply', function () {
+      var plan = [{ start: 0, end: 3, angle: 0 }, { start: 3, end: 6, angle: 1 }, { start: 6, end: 10, angle: 0 }];
+      return host('CP_applyMulticamPlan', { plan: plan, numAngles: 2, dropFrame: false }).then(function (r) {
+        var note = 'cuts landed ' + r.razored + ' of ' + r.cutsNeeded + (r.cutMethod ? ' (by ' + r.cutMethod + ')' : '') +
+          ', switched ' + r.toggled + ', verified ' + r.verifiedPct + '%';
+        if (!framesWork) return { state: (r.missedCuts === 0 && r.verifiedPct >= 99) ? 'ok' : 'fail', note: note };
+        var seen = [];
+        return [1.5, 4.5, 7.5].reduce(function (p, at) {
+          return p.then(function () { return frameAt(at).then(function (im) { seen.push(im ? stColorName(stPatch(im, 0.5, 0.5)) : 'no frame'); }); });
+        }, Promise.resolve()).then(function () {
+          var right = seen.join(',') === 'red,blue,red';
+          return { state: right && r.missedCuts === 0 ? 'ok' : 'fail',
+                   note: note + ' · on screen at 1.5 / 4.5 / 7.5 s: ' + seen.join(' / ') + ' (expected red / blue / red)' };
+        });
+      }, function (e) { throw new Error(e.message + facts(e)); });
+    });
+    function razorStep(name, args) {
+      add(name, function () {
+        return host('CP_selfTestRazor', args).then(function (r) {
+          return { state: r.cut ? 'ok' : 'fail', note: (r.cut ? 'cut' : 'NO cut') + ' at ' + args.at + ' s on V' + (args.track + 1) +
+            ' · timecode sent ' + JSON.stringify(r.timecode) + ', playhead reads ' + JSON.stringify(r.playheadTimecode) +
+            ' · clips ' + r.clipsBefore + '→' + r.clipsAfter + ' (QE ' + r.qeBefore + '→' + r.qeAfter + ')' +
+            ' · ' + r.fps + ' fps' + (r.dropFrame ? ' drop-frame' : '') + (r.error ? ' · error: ' + r.error : '') };
+        });
+      });
+    }
+    razorStep('Razor by timecode (Clean up, retakes)', { track: 0, at: 1.2, method: 'timecode' });
+    razorStep('Razor at the playhead', { track: 1, at: 8.4, method: 'playhead' });
+    add('Markers (silence preview, chapters, hooks)', function () {
+      var made = 0, hooks = 0;
+      return host('CP_addMarkers', { ranges: [{ start: 2, end: 3 }, { start: 5, end: 6 }], label: 'Pulse self-test' }).then(function (r) {
+        made = r.created;
+        return host('CP_addHookMarkers', { markers: [{ time: 7, label: 'Pulse self-test hook', comment: 'test' }] });
+      }).then(function (r) {
+        hooks = r.added;
+        return host('CP_getMarkers');
+      }).then(function (r) {
+        var t = (r.times || []).map(function (x) { return Math.round(x * 10) / 10; });
+        var all = t.indexOf(2) >= 0 && t.indexOf(5) >= 0 && t.indexOf(7) >= 0;
+        return host('CP_clearPulseMarkers', { label: 'Pulse self-test' }).then(function (c) {
+          return { state: all && c.removed === 3 ? 'ok' : 'fail', note: 'made ' + made + ' + ' + hooks + ' hook; Premiere lists ' +
+            (t.length ? t.join(', ') + ' s' : 'none') + '; removed again ' + c.removed };
+        });
+      });
+    });
+    add('Zoom punch-ins', function () {
+      return host('CP_addZoomPunches', { videoTrack: 0, times: [1.5], amount: 108, hold: 1.1, ramp: 0.5 }).then(function (r) {
+        return { state: r.applied === 1 ? 'ok' : 'fail', note: 'applied ' + r.applied + ', skipped ' + r.skipped };
+      });
+    });
+    add('Captions (Pulse’s own look)', function () {
+      var cues = [{ start: 0.4, end: 1.8, text: 'Pulse test words' }];
+      var frames = CPCaptions.buildCaptionFrames(cues, { anim: 'none', wordsPerCue: 3 });
+      return CPRender.renderFrames(frames, { width: setup.width, height: setup.height, preset: styledPreset(),
+                                            overrides: readOverrides(), outDir: pathMod.join(dir, 'captions') }).then(function (items) {
+        return host('CP_placeCaptionImages', { items: items, anim: 'none' });
+      }).then(function (r) {
+        return inkAt(1).then(function (ink) {
+          var note = 'placed ' + r.placed + ' on V' + r.track + (ink == null ? '' : ' · ' + pct(ink) + ' of the frame is caption');
+          return { state: r.placed > 0 && (ink == null || ink > 0.002) ? (ink == null ? 'warn' : 'ok') : 'fail', note: note };
+        });
+      });
+    });
+    add('Sound effects', function () {
+      var placed = null;
+      return host('CP_placeSfx', { wavPath: sfx, times: [2.2, 5.2], label: 'selftest' }).then(function (r) {
+        placed = r;
+        return host('CP_getCutSources');
+      }).then(function (src) {
+        var tr = (src.audio || []).filter(function (a) { return a.index === placed.track - 1 && !a.nested; })[0];
+        var n = tr ? tr.items.filter(function (it) { return /test-sound\.wav$/.test(String(it.mediaPath)); }).length : 0;
+        return { state: placed.placed === 2 && n >= 2 ? 'ok' : 'fail', note: 'placed ' + placed.placed + ' on A' + placed.track + '; Premiere shows ' + n + ' there' };
+      });
+    });
+    add('Premium (Flux) captions', function () {
+      try { if (!(state.bundledMogrts || []).length) loadBundledMogrts(); } catch (eL) {}
+      var t = (state.bundledMogrts || []).filter(function (m) { return m.premium; })[0];
+      if (!t) return Promise.resolve({ state: 'warn', note: 'no Premium template is installed with Pulse' });
+      if (!saved) return Promise.resolve({ state: 'warn', note: 'not tried — Premium templates need a saved project: save yours once (⌘S), then test again' });
+      return host('CP_insertMogrtCaptions', { mogrtPath: t.path, cues: [{ start: 3.4, end: 4.9, text: 'Premium test words' }],
+        videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false, maxSpeed: 100, replaceTrack: null,
+        captionNames: captionGraphicNames(t.path) }).then(function (r) {
+        return inkAt(4.3).then(function (ink) {
+          var note = t.name + ': inserted ' + r.inserted + ' on V' + r.track + (r.textSet != null ? ', words set ' + r.textSet : '') +
+            ((r.sampleErrors && r.sampleErrors.length) ? ' · ' + r.sampleErrors[0] : '') + (ink == null ? '' : ' · ' + pct(ink) + ' of the frame is caption');
+          return { state: r.inserted > 0 && (ink == null || ink > 0.002) ? (ink == null ? 'warn' : 'ok') : 'fail', note: note };
+        });
+      });
+    });
+    add('Long videos: one overlay clip', function () {
+      if (!canvasOverlayReady()) return Promise.resolve({ state: 'warn', note: 'this audio engine cannot make the overlay clip' });
+      var frames = CPCaptions.buildCaptionFrames([{ start: 6.4, end: 7.8, text: 'Overlay test words' }], { anim: 'none', wordsPerCue: 3 });
+      var job = CPRender.renderOverlay(frames, { width: setup.width, height: setup.height, fps: setup.fps || 30, preset: styledPreset(),
+        overrides: readOverrides(), workDir: pathMod.join(dir, 'overlay-work'), outPath: pathMod.join(dir, 'pulse-selftest-overlay.mov'),
+        ffmpeg: ff });
+      return job.promise.then(function (res) {
+        return host('CP_placeOverlay', { path: res.path, startSec: 0 });
+      }).then(function (r) {
+        return inkAt(7).then(function (ink) {
+          return { state: ink == null ? 'warn' : (ink > 0.002 ? 'ok' : 'fail'),
+                   note: 'placed on V' + r.track + (ink == null ? '' : ' · ' + pct(ink) + ' of the frame is caption') };
+        });
+      });
+    });
+    add('Premiere captions from an .srt', function () {
+      fs.writeFileSync(srt, '1\n00:00:00,200 --> 00:00:00,900\nPulse test caption\n', 'utf8');   // early: a caption past the video would move the sequence's end
+      return host('CP_importSrtCaptions', { srtPath: srt }).then(function (r) {
+        return { state: r.captionTrackCreated ? 'ok' : 'fail', note: r.captionTrackCreated ? 'a caption track was made' : 'Premiere made no caption track' };
+      });
+    });
+    add('Remove Pulse’s captions', function () {
+      return host('CP_removePulseCaptionTracks', {}).then(function (r) {
+        return inkAt(1).then(function (ink1) {
+          return inkAt(4.3).then(function (ink2) {
+            var gone = ink1 == null || (ink1 < 0.002 && ink2 < 0.002);
+            return { state: gone ? (ink1 == null ? 'warn' : 'ok') : 'fail', note: 'cleared ' + r.cleared + ' track(s)' +
+              (ink1 == null ? '' : ' · caption left on screen: ' + pct(ink1) + ' / ' + pct(ink2)) };
+          });
+        });
+      });
+    });
+    add('Premium previews with your words', function () {
+      var t = (state.bundledMogrts || []).filter(function (m) { return m.premium; })[0];
+      if (!t) return Promise.resolve({ state: 'warn', note: 'no Premium template is installed with Pulse' });
+      if (!saved) return Promise.resolve({ state: 'warn', note: 'not tried — Premium templates need a saved project: save yours once (⌘S), then test again' });
+      return host('CP_renderMogrtFrames', { mogrtPath: t.path, text: 'Pulse test words', seconds: 2, times: [0.6, 1.3],
+                                            outBase: pathMod.join(dir, 'premium'), width: 1080, height: 1920 }).then(function (r) {
+        var f = (r.files || [])[1] || (r.files || [])[0];
+        if (!f) return { state: 'fail', note: 'Premiere drew no frames' };
+        return new Promise(function (res) { loadRenderedFrame(f, res); }).then(function (im) {
+          var blank = !im || imageLooksBlank(im);
+          return { state: blank ? 'fail' : 'ok', note: t.name + ': ' + (r.files || []).length + ' frame(s)' + (im ? (blank ? ', but they are blank' : ', with words') : ', but the file never appeared') };
+        });
+      });
+    });
+    add('Clean up (silence cut)', function () {
+      var endBefore = null;
+      return host('CP_getMarkers').then(function (m) {
+        endBefore = m.end;
+        return host('CP_getCutSources');
+      }).then(function (src) {
+        return host('CP_razorRipple', { ranges: [{ start: 2, end: 3 }], closeGaps: true, dropFrame: false, flowName: 'Test everything',
+                                        expectSequenceId: src.sequenceId, expectFingerprint: src.fingerprint });
+      }).then(function () { return host('CP_getMarkers'); }).then(function (m) {
+        var cut = Math.round((endBefore - m.end) * 100) / 100;
+        return { state: Math.abs(cut - 1) < 0.05 ? 'ok' : 'fail', note: 'the sequence went from ' + Math.round(endBefore * 100) / 100 + ' s to ' +
+          Math.round(m.end * 100) / 100 + ' s (1 s of silence removed: ' + (Math.abs(cut - 1) < 0.05 ? 'yes' : 'no') + ')' };
+      }, function (e) { throw new Error(e.message + facts(e)); });
+    });
+
+    var stopped = false;
+    chain = Promise.resolve();
+    steps.forEach(function (s, i) {
+      chain = chain.then(function () {
+        if (stopped) return null;
+        if (progress) progress(i + 1, steps.length, s.name);
+        var p;
+        try { p = Promise.resolve(s.fn()); } catch (eS) { p = Promise.reject(eS); }
+        var timer, timeout = new Promise(function (res, rej) {
+          timer = setTimeout(function () { rej(new Error('Premiere did not answer within 90 s')); }, 90000);
+        });
+        return Promise.race([p, timeout]).then(function (r) {
+          clearTimeout(timer);
+          say(s.name, r.state, r.note);
+        }, function (e) {
+          clearTimeout(timer);
+          say(s.name, 'fail', (e && e.message) || String(e));
+          if (i < 2) stopped = true;   // no clips or no test sequence: nothing else can run
+        });
+      });
+    });
+    return chain.then(function () {
+      if (progress) progress(steps.length, steps.length, 'putting everything back');
+      return host('CP_selfTestCleanup').then(function (r) {
+        say('Everything the test made is deleted', r.left && r.left.length ? 'warn' : 'ok',
+          (r.done || []).join(', ') + (r.left && r.left.length ? ' · still there: ' + r.left.join(', ') + ' — safe to delete' : ''));
+      }, function (e) {
+        say('Everything the test made is deleted', 'warn', 'Premiere did not finish tidying up (' + e.message +
+          ') — the sequence and bin named “' + ST_SEQ + '” are safe to delete');
+      });
+    }).then(function () {
+      emptyDir();
+      // the panel's idea of "your sequence" is yours again
+      return host('CP_getEnv').then(function (env) {
+        if (env && env.sequenceName !== ST_SEQ) {
+          state.env = env;
+          var el = $('env-status'); if (el) { el.textContent = env.sequenceName + ' · ' + env.width + '×' + env.height; el.className = 'env-status ok'; }
+        }
+      }, function () {});
+    });
+  }
+
   var _selfTestBusy = false;
   function runSelfTest() {
     if (_selfTestBusy) return toast('Self-test already running — hang tight…');
@@ -3723,12 +4065,15 @@
       toast(report.split('\n')[0], report.charAt(0) === '❌');
       // "check and generate ALL the captions for every template on your own
       // and give report": after each self-test, render EVERY style once with
-      // the real engine and blank-scan each frame — per-style ✅/❌ lands in
-      // Diagnostics (and the cards get true previews as a bonus).
+      // the editable-captions engine and blank-scan each frame — per-style
+      // ✅/❌ lands in Diagnostics. An AUDIT only: it used to switch the owner's
+      // style cards to these renders too (an opt-in the owner never chose, and
+      // not how ✨ Pulse-rendered captions are drawn), so a card could show
+      // something other than what lands.
       if (!state._stylesAuditRan && CPBridge.isCEP()) {
         state._stylesAuditRan = true;
         toast('🎥 Now checking EVERY caption style automatically (~2 min) — the per-style report will be in 📋 Copy diagnostics.');
-        setTimeout(function () { try { renderTruePreviews(); } catch (eA) {} }, 900);
+        setTimeout(function () { try { renderTruePreviews({ auditOnly: true }); } catch (eA) {} }, 900);
       }
     }
     var fs = null, pathMod = null, os = null;
@@ -3745,12 +4090,23 @@
     var bb = bundledBackbone(currentPreset() || {});
     if (!bb) { try { loadBundledMogrts(); } catch (eB) {} bb = bundledBackbone(currentPreset() || {}); }
     row('Caption engine template', bb ? 'ok' : 'fail', bb ? (bb.name || 'found') : 'missing — reinstall Pulse');
-    if (!bb || !fs) return finish();
+    if (!fs) return finish();
     _selfTestBusy = true;
-    if (out) out.textContent = '🧪 Testing inside Premiere… (~20s — a temp sequence appears briefly; your timeline is untouched)';
+    function busy(msg) { if (out) out.textContent = msg; }
     var outDir = pathMod.join(os.tmpdir(), 'pulse-selftest');
     try { fs.mkdirSync(outDir, { recursive: true }); } catch (eMk) {}
-    CPBridge.callHost('CP_inspectMogrt', { path: bb.path }).then(function (r) {
+    busy('🧪 Testing every feature inside Premiere… (about a minute — a test sequence appears briefly; your timeline is untouched)');
+    // every feature on a throwaway sequence first (premiereFeatureTest), then
+    // the caption engine template's render ladder
+    (ff ? premiereFeatureTest(row, ff, function (n, of, what) {
+      busy('🧪 Testing inside Premiere — step ' + n + ' of ' + of + ': ' + what + '… (your timeline is untouched)');
+    }) : Promise.resolve(row('In Premiere: every feature', 'warn',
+      'needs the audio engine to make its test clips — Settings → ⬇️ Set up audio engine, then test again'))).then(function () {
+      if (!bb) return null;
+      busy('🧪 Testing the caption engine template… (~20s)');
+      return CPBridge.callHost('CP_inspectMogrt', { path: bb.path });
+    }).then(function (r) {
+      if (!r) return null;
       var liveProps = (r && r.props) || [];
       row('Engine opens in Premiere', (liveProps.length > 5) ? 'ok' : 'fail', liveProps.length + ' controls found');
       var base = styles[0] || {};
@@ -3855,7 +4211,11 @@
   }
 
   var _truePrevBusy = false;
-  function renderTruePreviews() {
+  /* opts.auditOnly: check every style without touching the gallery — renders
+     go to a temp folder and are deleted after the scan, and the cards keep
+     Pulse's own drawn previews (only 🎥 Exact previews switches them). */
+  function renderTruePreviews(opts) {
+    var audit = !!(opts && opts.auditOnly);
     if (_truePrevBusy) return toast('Already rendering — hang tight…');
     if (!CPBridge.isCEP()) return toast('Real previews need Premiere (open Pulse inside Premiere).', true);
     var bb = bundledBackbone(currentPreset() || {});
@@ -3863,12 +4223,12 @@
     if (!bb) return toast('The caption engine template is missing — reinstall Pulse.', true);
     var fs, pathMod, os;
     try { fs = nodeReq('fs'); pathMod = nodeReq('path'); os = nodeReq('os'); } catch (e2) { return toast('Node unavailable in this panel.', true); }
-    var outDir = pathMod.join(os.homedir(), 'Documents', 'Pulse', 'style-previews');
+    var outDir = audit ? pathMod.join(os.tmpdir(), 'pulse-style-audit') : pathMod.join(os.homedir(), 'Documents', 'Pulse', 'style-previews');
     try { fs.mkdirSync(outDir, { recursive: true }); } catch (eMk) {}
     var styles = CPCaptions.TEMPLATES.concat(state.customTemplates || []).filter(function (t) { return t && t.id && !t.mogrt; });
     if (!styles.length) return toast('No styles to render.', true);
     _truePrevBusy = true;
-    settings.useRealPreviews = true; saveSettings();   // explicit opt-in
+    if (!audit) { settings.useRealPreviews = true; saveSettings(); }   // explicit opt-in: the 🎥 button only
     var btn = $('btn-true-prev'); if (btn) btn.disabled = true;
     capProgress('Reading the caption engine…');
     CPBridge.callHost('CP_inspectMogrt', { path: bb.path }).then(function (r) {
@@ -3900,10 +4260,11 @@
       });
       return chain.then(function () {
         capProgress(null);
-        _stylePrev = null; loadStylePreviews();
-        renderTemplateGrid();
+        if (!audit) { _stylePrev = null; loadStylePreviews(); renderTemplateGrid(); }
         _truePrevBusy = false; if (btn) btn.disabled = false;
-        if (okAll.length) {
+        if (audit) {
+          // nothing on the cards changes: the verdicts are the report below
+        } else if (okAll.length) {
           toast('✅ ' + okAll.length + ' style cards now show Premiere\'s OWN render — exactly what lands on your timeline' +
                 (failAll.length ? ' (' + failAll.length + ' kept the drawn swatch)' : '') + '.');
         } else {
@@ -3954,8 +4315,12 @@
                         ' styles did not render a proper caption on this machine:\n\n' +
                         boxOnly.map(function (x, i) { return (i + 1) + '. ' + x; }).join('\n');
               try {
+                // under the self-test's report (the audit runs after it), never over it
                 var so = $('selftest-out');
-                if (so) { so.classList.remove('hidden'); so.textContent = rep; }
+                if (so) {
+                  so.classList.remove('hidden');
+                  so.textContent = audit && /In Premiere: /.test(so.textContent) ? so.textContent + '\n\n' + rep : rep;
+                }
               } catch (eS) {}
               try {
                 var os3 = nodeReq('os'), pm3 = nodeReq('path'), fs3 = nodeReq('fs');
@@ -3970,7 +4335,12 @@
               diag('previews', 'style quality: all ' + okAll.length + ' styles rendered readable, in-frame captions ✓');
             }
             // re-read the folder (failed frames were removed) and repaint, so
-            // every card shows either a GOOD real render or its drawn swatch
+            // every card shows either a GOOD real render or its drawn swatch;
+            // an audit's renders were only for the verdicts — delete them
+            if (audit) {
+              try { fs.readdirSync(outDir).forEach(function (f) { try { fs.unlinkSync(pathMod.join(outDir, f)); } catch (eU) {} }); } catch (eA) {}
+              return;
+            }
             try { _stylePrev = null; loadStylePreviews(); renderTemplateGrid(); } catch (eRe) {}
           });
         } catch (eScan) {}
@@ -4211,7 +4581,7 @@
       });
       chipBox.appendChild(chip);
     });
-    if ($('btn-true-prev')) $('btn-true-prev').addEventListener('click', renderTruePreviews);
+    if ($('btn-true-prev')) $('btn-true-prev').addEventListener('click', function () { renderTruePreviews(); });
     if ($('btn-selftest')) $('btn-selftest').addEventListener('click', runSelfTest);
     // 📄 SCRIPT FIX — the creator's own script corrects every misheard word
     // while the transcript keeps the timing that makes captions land on voice.

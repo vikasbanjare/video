@@ -4183,6 +4183,196 @@ function CP_renderMogrtFrames(argsJson) {
   return CP_ok({ files: files, failed: failed, cleaned: cleaned });
 }
 
+/*
+ * The REAL-Premiere feature test (Settings → 🧪 Test everything). The owner
+ * found problems the gates never saw: the gates run against an imitation of
+ * Premiere, the owner's Mac runs the real one (it did not load the script;
+ * its razor ignored the cuts). So every feature is tried on the real
+ * Premiere — on a throwaway sequence made from test clips Pulse renders
+ * itself, never on the owner's work. CP_selfTestSetup builds it (a bin, the
+ * clips, a sequence from the first, the second on the video track above it as
+ * a second camera); the panel then runs the ordinary feature calls on it; and
+ * CP_selfTestCleanup makes the owner's sequence active again and deletes
+ * everything the test made. Each step reports what Premiere answered.
+ */
+var CP_ST = null;   // { prev, seq, bin, rootBefore, mgtBefore }
+var CP_ST_NAME = 'Pulse self-test (temporary)';
+var CP_MGT_BIN = 'Motion Graphics Template Media';   // where Premiere files every template it places
+/* nodeId → 1 for everything in `folder` right now */
+function CP_stIds(folder) {
+  var ids = {};
+  if (!folder) return ids;
+  for (var i = 0; i < folder.children.numItems; i++) {
+    try { ids[String(folder.children[i].nodeId)] = 1; } catch (e) {}
+  }
+  return ids;
+}
+function CP_stRootBin(name) {
+  var root = app.project.rootItem;
+  for (var i = 0; i < root.children.numItems; i++) {
+    var c = root.children[i];
+    if (c && c.type === 2 && String(c.name) === name) return c;
+  }
+  return null;
+}
+/* The item an import just put in `bin`: the newest one not seen before. Not by
+   its path — a Mac may report a file under /var as /private/var. */
+function CP_stImported(bin, mediaPath, seen) {
+  for (var c = bin.children.numItems - 1; c >= 0; c--) {
+    var it = bin.children[c];
+    if (!it || it.type === 2) continue;
+    var id = '';
+    try { id = String(it.nodeId); } catch (e) {}
+    if (!seen[id]) { seen[id] = 1; return it; }
+  }
+  return CP_findProjectItemByMediaPath(app.project.rootItem, mediaPath);
+}
+/* argsJson: { mediaPath (camera 1, with sound), mediaPath2 (camera 2) } */
+function CP_selfTestSetup(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    CP_ST = { prev: null, seq: null, bin: null, rootBefore: CP_stIds(app.project.rootItem), mgtBefore: CP_stIds(CP_stRootBin(CP_MGT_BIN)) };
+    try { CP_ST.prev = app.project.activeSequence || null; } catch (eP) {}
+    var bin = null;
+    try { bin = app.project.rootItem.createBin(CP_ST_NAME); } catch (eB) {}
+    if (!bin) return CP_fail('Premiere would not make a bin for the test');
+    CP_ST.bin = bin;
+    var paths = [args.mediaPath], items = [], seen = {};
+    if (args.mediaPath2) paths.push(args.mediaPath2);
+    for (var k = 0; k < paths.length; k++) {
+      var okI = null;
+      try { okI = app.project.importFiles([paths[k]], true, bin, false); }
+      catch (eI) { return CP_fail('Premiere would not import the test clip ' + paths[k] + ': ' + eI.message); }
+      var it = CP_stImported(bin, paths[k], seen);
+      if (!it) return CP_fail('Premiere imported nothing from the test clip ' + paths[k] + ' (importFiles said ' + okI + ')');
+      items.push(it);
+    }
+    if (typeof app.project.createNewSequenceFromClips !== 'function') return CP_fail('This Premiere cannot make a sequence from a clip by script');
+    var seq = null;
+    try { seq = app.project.createNewSequenceFromClips(CP_ST_NAME, [items[0]], bin); }
+    catch (eS) { return CP_fail('Premiere would not make a sequence from the test clip: ' + eS.message); }
+    if (!seq) return CP_fail('Premiere made no sequence from the test clip');
+    CP_ST.seq = seq;
+    CP_activateSequence(seq);
+    var s1 = CP_activeSequence();
+    if (String(s1.name) !== CP_ST_NAME) return CP_fail('Premiere made the test sequence but would not open it (the active one is “' + s1.name + '”)');
+    // the second camera: the second clip on the video track above the first
+    var second = 'no';
+    try {
+      if (s1.videoTracks.numTracks < 2) CP_addTopVideoTrack();
+      var v2 = CP_activeSequence().videoTracks[1];
+      if (!v2) second = 'no (Premiere would not add a second video track)';
+      else {
+        try { v2.overwriteClip(items[items.length - 1], 0); } catch (eO1) { v2.overwriteClip(items[items.length - 1], CP_ticksFromSeconds(0)); }
+        second = CP_activeSequence().videoTracks[1].clips.numItems > 0 ? 'yes' : 'no (the clip did not land on V2)';
+      }
+    } catch (eV2) { second = 'no (' + eV2.message + ')'; }
+    var s2 = CP_activeSequence(), fmt = null;
+    try { fmt = s2.getSettings().videoDisplayFormat; } catch (eF) {}
+    return CP_ok({ sequence: String(s2.name), fps: Math.round(CP_sequenceFps(s2) * 1000) / 1000, displayFormat: fmt,
+                   dropFrame: CP_seqDropFrame(s2, false), width: s2.frameSizeHorizontal, height: s2.frameSizeVertical,
+                   videoTracks: s2.videoTracks.numTracks, audioTracks: s2.audioTracks.numTracks,
+                   v1Clips: s2.videoTracks[0].clips.numItems, a1Clips: s2.audioTracks.numTracks ? s2.audioTracks[0].clips.numItems : 0,
+                   secondCamera: second, endSeconds: Math.round(parseFloat(s2.end) / CP_TICKS_PER_SECOND * 1000) / 1000,
+                   premiere: String(app.version), os: String($.os) });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/* One razor on the active sequence, the way Pulse cuts: by the timecode Pulse
+   writes, or at the timecode QE's own playhead writes. Reports both views. */
+function CP_selfTestRazor(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence(), fps = CP_sequenceFps(seq), df = CP_seqDropFrame(seq, false);
+    app.enableQE();
+    var qseq = qe.project.getActiveSequence();
+    var qt = qseq.getVideoTrackAt(args.track);
+    var before = seq.videoTracks[args.track].clips.numItems, qBefore = CP_mcQeItems(qt), tc = '', err = '';
+    if (args.method === 'playhead') {
+      seq.setPlayerPosition(CP_ticksFromSeconds(args.at));
+      try { tc = String(qseq.CTI.timecode); } catch (eCt) { err = 'no playhead timecode: ' + eCt.message; }
+    } else tc = CP_timecode(args.at, fps, df);
+    if (tc) { try { qt.razor(tc); } catch (eR) { err = String(eR.message || eR); } }
+    var after = CP_activeSequence().videoTracks[args.track].clips.numItems, cti = '';
+    try { cti = String(qseq.CTI.timecode); } catch (eC2) {}
+    return CP_ok({ cut: after > before, clipsBefore: before, clipsAfter: after, qeBefore: qBefore, qeAfter: CP_mcQeItems(qt),
+                   timecode: tc, playheadTimecode: cti, error: err, fps: Math.round(fps * 1000) / 1000, dropFrame: df });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/* Put things back: the owner's sequence active again; every sequence the test
+   made deleted (and any a stopped earlier test left); what the test brought
+   into the project deleted — its bin, the bins Pulse's features made at the
+   project's top level during the test (Pulse Captions…, Pulse SFX…, the
+   Motion Graphics Template Media bin a first template makes), and items made
+   from the test's own files. Nothing that was in the project before is
+   touched. */
+function CP_selfTestCleanup() {
+  var done = [], left = [], st = CP_ST;
+  CP_ST = null;
+  try {
+    if (st && st.prev) {
+      try { CP_activateSequence(st.prev); done.push('your sequence is active again'); }
+      catch (e1) { left.push('your sequence could not be made active again (' + e1.message + ')'); }
+    }
+    var seqs = app.project.sequences, doomed = [], k;
+    for (k = 0; k < seqs.numSequences; k++) {
+      var sq = seqs[k];
+      if (sq && String(sq.name).indexOf('Pulse self-test') === 0) doomed.push(sq);
+    }
+    if (st && st.seq) {
+      var known = false;
+      for (k = 0; k < doomed.length; k++) if (doomed[k] === st.seq || String(doomed[k].sequenceID) === String(st.seq.sequenceID)) known = true;
+      if (!known) doomed.push(st.seq);
+    }
+    var gone = 0;
+    for (k = 0; k < doomed.length; k++) {
+      var nm = String(doomed[k].name);
+      try { if (app.project.deleteSequence(doomed[k]) !== false) gone++; else left.push('the sequence “' + nm + '”'); }
+      catch (e2) { left.push('the sequence “' + nm + '” (' + e2.message + ')'); }
+    }
+    if (gone) done.push(gone + ' test sequence' + (gone > 1 ? 's' : '') + ' deleted');
+    var root = app.project.rootItem, before = (st && st.rootBefore) || {}, bins = 0;
+    var binId = '';
+    try { binId = st && st.bin ? String(st.bin.nodeId) : ''; } catch (eId) {}
+    // the templates the test placed, in a Motion Graphics Template Media bin
+    // the owner already had: into the test bin with the rest
+    var mgt = CP_stRootBin(CP_MGT_BIN), mgtId = '';
+    try { mgtId = mgt ? String(mgt.nodeId) : ''; } catch (eMg) {}
+    if (st && st.bin && mgt && before[mgtId]) {
+      for (k = mgt.children.numItems - 1; k >= 0; k--) {
+        var g = mgt.children[k], gid = '';
+        try { gid = String(g.nodeId); } catch (eG) {}
+        if (!g || g.type === 2 || (st.mgtBefore || {})[gid]) continue;
+        try { g.moveBin(st.bin); } catch (eGm) { left.push('the template item “' + g.name + '”'); }
+      }
+    }
+    for (k = root.children.numItems - 1; k >= 0; k--) {
+      var c = root.children[k];
+      if (!c) continue;
+      var id = '', name = String(c.name);
+      try { id = String(c.nodeId); } catch (e3) {}
+      var ours = (c.type === 2 && name === CP_ST_NAME);   // this test's bin, or one a stopped test left
+      if (!ours && (!st || before[id] || id === binId)) continue;
+      if (c.type === 2) {
+        if (!ours && name.indexOf('Pulse') !== 0 && name !== CP_MGT_BIN) continue;
+        if (id === binId) continue;
+        try { c.deleteBin(); bins++; } catch (e4) { left.push('the bin “' + name + '”'); }
+      } else {
+        var mp = '';
+        try { mp = String(c.getMediaPath()); } catch (e5) {}
+        if (mp.toLowerCase().indexOf('pulse-selftest') < 0) continue;
+        if (st && st.bin) { try { c.moveBin(st.bin); } catch (e6) { left.push('the item “' + name + '”'); } }
+      }
+    }
+    if (st && st.bin) {
+      try { st.bin.deleteBin(); bins++; } catch (e7) { left.push('the bin “' + CP_ST_NAME + '”'); }
+    }
+    if (bins) done.push(bins + ' test bin' + (bins > 1 ? 's' : '') + ' deleted');
+  } catch (e) { left.push(e.message); }
+  return CP_ok({ done: done, left: left });
+}
+
 /* Rung J of the self-test ladder: place ONE bare engine graphic on the
    USER'S OWN active sequence (fresh top track), export a frame, remove the
    clip and the track again. Discriminates "the pipeline is broken" from

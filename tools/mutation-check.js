@@ -574,6 +574,143 @@ const MUTANTS = [
     repl: '        if (false) CP_setMgrtText(tp, args.text, true, null);',
     gate: 'CutPilot/test/gates/host-render-mogrt-frames.js',
     why: 'Premiere draws the template with its sample text, not the owner’s words'
+  },
+  // ---- the real-Premiere feature test (🧪 Test everything) ----
+  {
+    name: 'selftest-newest-item',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '    if (!seen[id]) { seen[id] = 1; return it; }',
+    repl: '    if (false) { seen[id] = 1; return it; }',
+    gate: 'CutPilot/test/gates/selftest-premiere-host.js',
+    why: 'the test clips are looked up by their path, which a Mac reports under /private/var — the test never starts'
+  },
+  {
+    name: 'selftest-second-camera',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '      if (s1.videoTracks.numTracks < 2) CP_addTopVideoTrack();',
+    repl: '      if (false) CP_addTopVideoTrack();',
+    gate: 'CutPilot/test/gates/selftest-premiere-host.js',
+    why: 'a sequence made with one video track gets no second camera, so Multicam cannot be tried'
+  },
+  {
+    name: 'selftest-cleanup-templates',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '        try { g.moveBin(st.bin); }',
+    repl: '        try { if (false) g.moveBin(st.bin); }',
+    gate: 'CutPilot/test/gates/selftest-premiere-host.js',
+    why: 'the templates the test placed stay in the owner’s Motion Graphics Template Media bin'
+  },
+  {
+    name: 'selftest-cleanup-leftover',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '      var ours = (c.type === 2 && name === CP_ST_NAME);',
+    repl: '      var ours = false;',
+    gate: 'CutPilot/test/gates/selftest-premiere-host.js',
+    why: 'a bin a stopped earlier test left is never deleted'
+  },
+  {
+    name: 'selftest-cleanup-owner-bins',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "        if (!ours && name.indexOf('Pulse') !== 0 && name !== CP_MGT_BIN) continue;",
+    repl: '        if (false) continue;',
+    gate: 'CutPilot/test/gates/selftest-premiere-host.js',
+    why: 'the tidy-up deletes a bin the owner made while the test ran'
+  },
+  {
+    name: 'selftest-cleanup-prev',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "      try { CP_activateSequence(st.prev); done.push('your sequence is active again'); }",
+    repl: "      try { done.push('your sequence is active again'); }",
+    gate: 'CutPilot/test/gates/selftest-premiere-host.js',
+    why: 'after the test the owner is left looking at a deleted sequence instead of theirs'
+  },
+  {
+    name: 'selftest-keeps-going',
+    file: 'CutPilot/js/main.js',
+    find: '          if (i < 2) stopped = true;   // no clips or no test sequence: nothing else can run',
+    repl: '          stopped = true;',
+    gate: 'CutPilot/test/gates/selftest-premiere.js',
+    why: 'one failing feature hides every feature after it from the report'
+  },
+  {
+    name: 'selftest-cleanup-always',
+    file: 'CutPilot/js/main.js',
+    find: "      if (progress) progress(steps.length, steps.length, 'putting everything back');",
+    repl: "      if (stopped) return null;\n      if (progress) progress(steps.length, steps.length, 'putting everything back');",
+    gate: 'CutPilot/test/gates/selftest-premiere.js',
+    why: 'a test that could not build its sequence leaves its bin and clips in the owner’s project'
+  },
+  {
+    name: 'selftest-facts',
+    file: 'CutPilot/js/main.js',
+    find: "      }, function (e) { throw new Error(e.message + facts(e)); });\n    });\n    function razorStep(name, args) {",
+    repl: "      });\n    });\n    function razorStep(name, args) {",
+    gate: 'CutPilot/test/gates/selftest-premiere.js',
+    why: 'a failed Multicam Apply reports only its message, not what Premiere answered'
+  },
+  {
+    name: 'selftest-camera-colour',
+    file: 'CutPilot/js/main.js',
+    find: "          var right = seen.join(',') === 'red,blue,red';",
+    repl: '          var right = true;',
+    gate: 'CutPilot/test/gates/selftest-premiere.js',
+    why: 'Multicam passes on Premiere’s word while the wrong camera is on screen'
+  },
+  {
+    name: 'selftest-premium-ink',
+    file: 'CutPilot/js/main.js',
+    find: "          return { state: r.inserted > 0 && (ink == null || ink > 0.002) ? (ink == null ? 'warn' : 'ok') : 'fail', note: note };\n        });\n      });\n    });\n    add('Long videos: one overlay clip'",
+    repl: "          return { state: r.inserted > 0 ? (ink == null ? 'warn' : 'ok') : 'fail', note: note };\n        });\n      });\n    });\n    add('Long videos: one overlay clip'",
+    gate: 'CutPilot/test/gates/selftest-premiere.js',
+    why: 'Premium captions Premiere places but does not draw pass as working'
+  },
+  {
+    name: 'selftest-unsaved-premium',
+    file: 'CutPilot/js/main.js',
+    find: "      if (!saved) return Promise.resolve({ state: 'warn', note: 'not tried — Premium templates need a saved project: save yours once (⌘S), then test again' });\n      return host('CP_insertMogrtCaptions', {",
+    repl: "      return host('CP_insertMogrtCaptions', {",
+    gate: 'CutPilot/test/gates/selftest-premiere.js',
+    why: 'an unsaved project gets a Premium failure the ✨ flow would never hit (it asks for ⌘S first)'
+  },
+  {
+    name: 'selftest-clip-names',
+    file: 'CutPilot/js/main.js',
+    find: "    var cam1 = pathMod.join(dir, 'test-camera-1.mov'), cam2 = pathMod.join(dir, 'test-camera-2.mov');",
+    repl: "    var cam1 = pathMod.join(dir, 'pulse-selftest-cam1.mov'), cam2 = pathMod.join(dir, 'pulse-selftest-cam2.mov');",
+    gate: 'CutPilot/test/gates/selftest-premiere.js',
+    why: '“Remove Pulse’s captions” takes the test cameras for captions and deletes them mid-test'
+  },
+  {
+    name: 'selftest-sfx-track',
+    file: 'CutPilot/js/main.js',
+    find: '        var tr = (src.audio || []).filter(function (a) { return a.index === placed.track - 1 && !a.nested; })[0];',
+    repl: '        var tr = (src.audio || [])[placed.track];',
+    gate: 'CutPilot/test/gates/selftest-premiere.js',
+    why: 'the sound-effect check looks at the wrong audio track'
+  },
+  {
+    name: 'selftest-env-back',
+    file: 'CutPilot/js/main.js',
+    find: '        if (env && env.sequenceName !== ST_SEQ) {',
+    repl: '        if (false) {',
+    gate: 'CutPilot/test/gates/selftest-premiere.js',
+    why: 'after the test the panel still thinks the deleted test sequence is the owner’s'
+  },
+  {
+    name: 'selftest-audit-optin',
+    file: 'CutPilot/js/main.js',
+    find: '    if (!audit) { settings.useRealPreviews = true; saveSettings(); }   // explicit opt-in: the 🎥 button only',
+    repl: '    { settings.useRealPreviews = true; saveSettings(); }',
+    gate: 'CutPilot/test/gates/selftest-premiere.js',
+    why: 'the style audit after the first test switches every style card to the editable engine’s render'
+  },
+  {
+    name: 'selftest-audit-append',
+    file: 'CutPilot/js/main.js',
+    find: "                  so.textContent = audit && /In Premiere: /.test(so.textContent) ? so.textContent + '\\n\\n' + rep : rep;",
+    repl: '                  so.textContent = rep;',
+    gate: 'CutPilot/test/gates/selftest-premiere.js',
+    why: 'the style audit’s report replaces the test report the owner is reading'
   }
 ];
 
