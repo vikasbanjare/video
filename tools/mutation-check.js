@@ -491,6 +491,39 @@ const MUTANTS = [
     repl: '          if (d > hold + 40) break;',
     gate: 'CutPilot/test/gates/multicam-follow.js',
     why: 'a reaction shot holds the silent listener for up to 40 s'
+  },
+  // ---- Pulse's Premiere script (jsx/host.jsx) not loaded ----
+  {
+    name: 'host-heal-load',
+    file: 'CutPilot/js/lib/cep-bridge.js',
+    find: "      (path ? ' $.evalFile(new File(' + JSON.stringify(path) + '));' : '') +",
+    repl: "      '' +",
+    gate: 'CutPilot/test/gates/host-load-recovery.js',
+    why: 'when Premiere has not loaded Pulse’s script, Pulse no longer loads it itself'
+  },
+  {
+    name: 'host-heal-line',
+    file: 'CutPilot/js/lib/cep-bridge.js',
+    find: "      ' catch (e) { return \"LOADERR \" + (e && e.message ? e.message : e) + (e && e.line ? \" (line \" + e.line + \")\" : \"\"); } })()';",
+    repl: "      ' catch (e) { return \"LOADERR \" + (e && e.message ? e.message : e); } })()';",
+    gate: 'CutPilot/test/gates/host-load-recovery.js',
+    why: 'a script that cannot load no longer says which line broke it'
+  },
+  {
+    name: 'host-heal-retry',
+    file: 'CutPilot/js/lib/cep-bridge.js',
+    find: "            if (r2 === 'EvalScript error.' || /^CALLERR /.test(String(r2))) {",
+    repl: '            if (true) {',
+    gate: 'CutPilot/test/gates/host-load-recovery.js',
+    why: 'after loading the script, the call that needed it still fails'
+  },
+  {
+    name: 'host-diag-line',
+    file: 'CutPilot/js/main.js',
+    find: "    try { var hs = CPBridge.hostState ? CPBridge.hostState() : null; if (hs) row('Premiere script: ' + hs.state + (hs.detail ? ' — ' + hs.detail : '')); } catch (e) {}",
+    repl: '',
+    gate: 'CutPilot/test/gates/host-load-recovery.js',
+    why: '📋 diagnostics no longer says whether Premiere loaded Pulse’s script'
   }
 ];
 

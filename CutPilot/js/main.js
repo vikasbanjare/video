@@ -278,6 +278,8 @@
     try { row('Pulse ' + (($('ver') && $('ver').textContent) || '?')); } catch (e) {}
     try { row('Platform: ' + ((typeof navigator !== 'undefined' && navigator.platform) || '?') + ' · in Premiere: ' + (typeof CPBridge !== 'undefined' && CPBridge.isCEP() ? 'yes' : 'no')); } catch (e) {}
     try { row('ffmpeg: ' + (resolveFfmpeg() || 'NOT FOUND')); } catch (e) {}
+    // whether Premiere loaded Pulse's script (jsx/host.jsx) — "unknown" until a call needed checking
+    try { var hs = CPBridge.hostState ? CPBridge.hostState() : null; if (hs) row('Premiere script: ' + hs.state + (hs.detail ? ' — ' + hs.detail : '')); } catch (e) {}
     try { row('Transcribe key: ' + (cpKey() ? 'set' : 'none') + ' · Deepgram: ' + (cpDeepgramKey() ? 'set' : 'none') + ' · Indian Voices: ' + (cpSarvamKey() ? 'set' : 'none') + ' · engine: ' + resolveQuality()); } catch (e) {}
     // Which text model the AI features settled on. A retired model broke every
     // one of them at once and the panel could not say which model it had asked
@@ -15025,7 +15027,12 @@
       try { R.push(buildDiagText()); } catch (eBD) {}
       R.push('', 'Done. Tap "Copy results" and send this to support.');
       show();
-    }).catch(function (e) { R.push('ERROR: ' + e.message); show(); });
+    }).catch(function (e) {
+      R.push('ERROR: ' + e.message);
+      var hs = CPBridge.hostState ? CPBridge.hostState() : null;
+      if (hs && hs.state !== 'unknown') R.push('Premiere script: ' + hs.state + (hs.detail ? ' — ' + hs.detail : ''));
+      show();
+    });
   });
 
   refreshFfmpegStatus();
