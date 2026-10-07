@@ -833,6 +833,14 @@ const MUTANTS = [
     repl: '    return chain;',
     gate: 'CutPilot/test/gates/selftest-speech.js',
     why: 'the test’s speech recordings stay in the temp folder'
+  },
+  {
+    name: 'overlay-replace-by-name',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "          if (nmR.indexOf('cap_') === 0 || nmR.indexOf('pulse-captions') === 0 || nmR === 'captions.mov' || nmR === 'guide.png') { try { itR.remove(0, 0); } catch (eRem) {} }",
+    repl: "          if (nmR.indexOf('pulse') >= 0 || nmR.indexOf('caption') >= 0 || nmR.indexOf('cap_') === 0) { try { itR.remove(0, 0); } catch (eRem) {} }",
+    gate: 'CutPilot/test/gates/overlay-host.js',
+    why: 'replacing a caption track also takes the owner’s “Caption intro.mp4” off it'
   }
 ];
 

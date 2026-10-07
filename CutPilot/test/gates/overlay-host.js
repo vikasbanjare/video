@@ -130,6 +130,28 @@ console.log('overlay: CP_placeOverlay tidies old overlays safely and replaces im
   else ok('restyling an overlay track as images removes the old overlay clip too');
 }
 
+{
+  // ...but the owner's OWN clips on that track stay. Replacing cleared every
+  // clip whose name merely contained "pulse" or "caption" — the owner's
+  // "Caption intro.mp4" or "Pulse ep 3.mp4" moved onto the caption track went
+  // with the old captions. Only Pulse's own files: cap_N.png, pulse-captions-
+  // ….mov, captions.mov (v0.9.344–378), guide.png (the safe-zone guide).
+  const w = sandbox.__mk({ vTracks: 2, aTracks: 1 });
+  w.model.addClip('vTracks', 0, 0, 600, { name: 'Podcast.mp4' });
+  w.model.addClip('vTracks', 1, 6, 7, { name: 'cap_10000.png' });
+  w.model.addClip('vTracks', 1, 8, 9, { name: 'pulse-captions-S-1-p-20260101-100000-000.mov' });
+  w.model.addClip('vTracks', 1, 10, 12, { name: 'Caption intro.mp4' });
+  w.model.addClip('vTracks', 1, 20, 30, { name: 'Pulse ep 3.mp4' });
+  w.model.addClip('vTracks', 1, 40, 41, { name: 'guide.png' });
+  const host = sandbox.__load(w);
+  const r = call(host, 'CP_placeOverlay', { path: '/p/Pulse Media/pulse-captions-S-1-p-20260101-120000-000.mov', startSec: 0, replaceTrack: 2 });
+  const names = w.model.vTracks[1].map(c => c.name).join(', ');
+  if (!r.ok) bad('replacing a caption track failed: ' + JSON.stringify(r).slice(0, 120));
+  else if (!/Caption intro\.mp4/.test(names) || !/Pulse ep 3\.mp4/.test(names)) bad('replacing the caption track took the owner’s own clips too — the track holds ' + names);
+  else if (/cap_10000|20260101-100000|guide\.png/.test(names)) bad('replacing the caption track left Pulse’s old captions or guide: ' + names);
+  else ok('replacing a caption track keeps the owner’s “Caption intro.mp4” and “Pulse ep 3.mp4” and takes only Pulse’s own (' + names + ')');
+}
+
 // ---- 3. the tidy-up is not the last step (⌘Z) ------------------------------------
 // ExtendScript cannot group undo steps, so every change is its own ⌘Z. When the
 // old overlay's bin was deleted AFTER placing, the first ⌘Z brought back a bin

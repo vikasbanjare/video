@@ -2326,7 +2326,10 @@ function CP_placeOverlay(argsJson) {
           var itR = qtR.getItemAt(cr);
           if (!itR || itR.type === 'Empty') continue;
           var nmR = ''; try { nmR = String(itR.name).toLowerCase(); } catch (eNm) {}
-          if (nmR.indexOf('pulse') >= 0 || nmR.indexOf('caption') >= 0 || nmR.indexOf('cap_') === 0) { try { itR.remove(0, 0); } catch (eRem) {} }
+          // Pulse's own clips only — caption images, one-clip overlays (and the
+          // v0.9.344–378 captions.mov), the safe-zone guide. "Contains pulse or
+          // caption" also took the owner's "Caption intro.mp4" off the track.
+          if (nmR.indexOf('cap_') === 0 || nmR.indexOf('pulse-captions') === 0 || nmR === 'captions.mov' || nmR === 'guide.png') { try { itR.remove(0, 0); } catch (eRem) {} }
         }
       } catch (eClr) {}
     } else {
