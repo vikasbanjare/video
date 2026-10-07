@@ -119,7 +119,9 @@ async function fullCheck(browser, panelDir, ctx) {
     await sl(200);
     let diag = '';
     try { diag = window.CP_DEBUG_EXT.multicam.diagText(); } catch (e) { diag = 'n/a: ' + e.message; }
-    return { check: box.textContent, diag, host: window.CPBridge.hostState() };
+    let env = null;
+    try { env = window.CP_DEBUG.env(); } catch (e) {}
+    return { check: box.textContent, diag, host: window.CPBridge.hostState(), env };
   });
   await page.close();
   out.loads = scripts.filter(s => /typeof CP_getEnv/.test(s)).length;      // Pulse's own check, not Organize's loader
@@ -144,6 +146,10 @@ async function fullCheck(browser, panelDir, ctx) {
       JSON.stringify((A.check.split('\n').find(l => /^2\)|ERROR/.test(l)) || '').slice(0, 90)));
     report(/Premiere script: loaded — Premiere had not loaded Pulse’s script; Pulse loaded it itself/.test(A.diag),
       'A. 📋 diagnostics says so: ' + JSON.stringify((A.diag.split('\n').find(l => /Premiere script/.test(l)) || 'no line').slice(0, 110)));
+    // the panel's own start-up calls — the ones that found the script missing — got their answers too
+    report(!!A.env && A.env.width === 1920 && A.env.height === 1080 && !/Premiere stopped/.test(A.diag),
+      'A. the calls that found it missing were answered once it loaded (the panel knows the 1920×1080 sequence' +
+      (A.env ? '' : ' — it doesn’t') + ', no failed calls in 📋 diagnostics)');
     // B. host.jsx has a syntax error at line 120
     const ctxB = engine({ preload: false });
     const B = await fullCheck(browser, broken, ctxB);
