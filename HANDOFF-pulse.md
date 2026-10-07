@@ -1,10 +1,31 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.6** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.7** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.7 — Premium previews drawn by Premiere with the owner's words
+The owner after v0.10.5: "flux preview is very bad, not accurate" (the
+template authors' own 640×360 clips with their sample text, cropped).
+- **"🎬 Preview with my words"** (Premium view) → renderPremiumPreviews():
+  per Premium template, CP_renderMogrtFrames (temp sequence at the owner's
+  sequence size, importMGT, the owner's first 4 transcript words via
+  CP_findTextProp/CP_setMgrtText, 20 frames over ~3 s exported by QE at the
+  playhead's own timecode, temp sequence deleted) → makePremiumPreview():
+  ffmpeg bbox (union of non-black pixels) → 2:1 crop → card loop (.mp4, 7 fps)
+  + still in ~/Documents/Pulse/premium-previews; loadBundledMogrts() prefers
+  those (with a ?v= stamp so a re-render reloads). Failures keep the shipped
+  preview and are listed in 📋 diagnostics ("premium renders: N of M").
+- **cropdetect → bbox** (panel and tools/real-mogrt-previews.js): cropdetect
+  averages whole columns, so a thin caption in a tall frame came back with a
+  NEGATIVE width ("nothing visible"); shipped previews regenerated with bbox.
+- Depends on QE exportFramePNG working on the owner's Premiere — unproven
+  there (QE razor did nothing in v0.10.5; see v0.10.6). If it fails, the
+  status says "Premiere couldn’t draw them here" and diagnostics say why.
+- Gates gallery-premium-render (7 checks), host-render-mogrt-frames (4);
+  4 mutations.
 
 ### v0.10.6 — multicam cuts at Premiere's own playhead timecode when the razor ignores Pulse's
 The owner's Mac, v0.10.5: the script loads now (Podcast cameras read the
