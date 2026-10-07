@@ -70,10 +70,18 @@ cuts). New strategy, three parts:
   rate (NTSC as 30000/1001), its time display copied onto the test sequence
   (CP_selfTestSetup → mirrors). A timecode-only razor failure is ⚠️ (Pulse
   falls back); the playhead razor failing too is ❌.
+- **The engines that listen, on speech the Mac speaks** (speechEngineRows,
+  before the Premiere part): macOS `/usr/bin/say` makes "Testing Pulse. One,
+  two, three." → 16 kHz mono → the offline speech engine (resolveWhisper /
+  resolveWhisperModel) must hear those words; four lines in two built-in
+  voices (a low one: Alex/Daniel/…, a high one: Samantha/Karen/…), each padded
+  to 6 s (apad/atrim/concat) → CPVoices.run with 2 speakers must give Voice
+  1/2/1/2 at 6·i+1.5 s. Only engines already set up; no `say` (Windows) → no
+  rows. Gate selftest-speech with stand-ins (overlay-lib state.alias puts a
+  fake `say` at /usr/bin/say; fake whisper-cli and diarization binary keep
+  the audio they get); 5 mutations.
 - **NEXT (the loop):** the owner runs 🧪 Test everything and sends the report
-  / 📋 Copy diagnostics; every ❌ "In Premiere:" row names the real failure.
-  Then: offline transcription + Who's talking on speech the Mac makes with
-  `say` (only when those engines are set up).
+  / 📋 Copy diagnostics; every ❌ row names the real failure.
 
 ### v0.10.7 — Premium previews drawn by Premiere with the owner's words
 The owner after v0.10.5: "flux preview is very bad, not accurate" (the
