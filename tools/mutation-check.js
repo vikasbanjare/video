@@ -249,6 +249,14 @@ const MUTANTS = [
     repl: '',
     gate: 'CutPilot/test/gates/captions-language-picker.js',
     why: 'choosing a language leaves the words already on screen in the old script'
+  },
+  {
+    name: 'redo-button-name-cleanup',
+    file: 'CutPilot/js/main.js',
+    find: "Tap ↻ Redo on the Transcribe page to get word timing, then run Clean up again.');",
+    repl: "Re-transcribe (Transcribe tab) to get word timing, then run Clean up again.');",
+    gate: 'CutPilot/test/gates/silence-e2e-oneshot-words.js',
+    why: 'the one-tap clean-up sends the owner to a button that does not exist'
   }
 ];
 

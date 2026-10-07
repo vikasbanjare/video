@@ -11,8 +11,8 @@
  *      its lines are used to find the retake — the old one-tap said "no
  *      transcription engine is set up yet" and removed dead air only.
  *   3. A transcript whose times went stale after an earlier cut: retakes are
- *      skipped and the owner is told to re-transcribe for word timing — not
- *      that no engine is set up.
+ *      skipped and the owner is told to tap the "↻ Redo" button (by its
+ *      label on screen) for word timing — not that no engine is set up.
  *   4. The AI marks a cut unusually long (a quarter of what it read): the
  *      one-tap has no review list, so that cut is NOT made and the confirm
  *      names it; the ordinary AI cut still is.
@@ -123,6 +123,7 @@ const overlaps = (ranges, s, e) => ranges.some(r => r.end > s + 0.05 && r.start 
       window.CP_DEBUG_EXT.retakes.setTranscript({ words: null, captionCues: null, transcript: { path: '/proj/episode4.srt', label: 'episode4.srt', timelineEdited: true } });
     }, staleSrt);
     r = await oneTap(p.page, p.calls, { fillers: true });
+    const redo = await p.page.evaluate(() => (document.getElementById('btn-retranscribe') || {}).textContent || '(no listen-again button)');
     await p.page.close();
     // (resolved when ws/retakes was merged: fillerSeqRanges reads fillerCues();
     //  this guards the one-tap path the review said an easy merge would lose)
@@ -131,8 +132,11 @@ const overlaps = (ranges, s, e) => ranges.some(r => r.end > s + 0.05 && r.start 
       JSON.stringify(r.ranges.map(x => [+x.start.toFixed(2), +x.end.toFixed(2)])) + ' · ' + (r.confirm || r.toast).slice(0, 400));
     C.check('a transcript made before an earlier cut: no retake is cut at its stale times', !overlaps(r.ranges, 5.6, 7.0),
       JSON.stringify(r.ranges.map(x => [+x.start.toFixed(2), +x.end.toFixed(2)])));
-    C.check('…and the owner is told to re-transcribe for word timing (not that no engine is set up)',
-      /re-transcribe/i.test(r.confirm || r.toast) && /word timing/i.test(r.confirm || r.toast) && !/no transcription engine/i.test(r.confirm || r.toast),
+    C.check('…and the owner is told to tap "' + redo + '" for word timing, by the button\'s label on screen (not that no engine is set up)',
+      // ONE sentence names the button AND says it is for word timing (the filler
+      // note names the button too, in another sentence)
+      (r.confirm || r.toast).split(/(?<=[.!?])\s+|\n+/).some(x => /word timing/i.test(x) && x.indexOf(redo) >= 0) &&
+        !/no transcription engine/i.test(r.confirm || r.toast),
       (r.confirm || r.toast).slice(0, 300));
 
     // 4) the AI marks one cut unusually long
