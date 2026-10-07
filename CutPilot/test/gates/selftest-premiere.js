@@ -79,8 +79,9 @@ function scriptedPremiere(o) {
       for (const p of [a.mediaPath, a.mediaPath2]) {
         // what the clip really is (ffmpeg's own reading of it)
         const r = require('child_process').spawnSync(o.ff, ['-hide_banner', '-i', p], { encoding: 'utf8' });
-        const v = /Video: (\w+)[^\n]*?, (\d+)x(\d+)[^\n]*?, ([\d.]+) fps/.exec(r.stderr || '') || [];
-        log.imported.push({ path: p, size: fs.existsSync(p) ? fs.statSync(p).size : 0, codec: v[1], dims: v[2] + 'x' + v[3], fps: v[4] });
+        const v = /Video: (\w+)[^\n]*?, (\d+)x(\d+)[^\n]*?, ([\d.]+) fps[^\n]*?, ([\d.]+k?) tbn/.exec(r.stderr || '') || [];
+        // tbn: the clip's time base — 30k for real NTSC 30000/1001, 11988 for a rounded 29.97
+        log.imported.push({ path: p, size: fs.existsSync(p) ? fs.statSync(p).size : 0, codec: v[1], dims: v[2] + 'x' + v[3], fps: v[4], tbn: v[5] });
       }
       if (o.noSequence) return fail('Premiere would not make a sequence from the test clip: Premiere said no');
       tl.active = 'Pulse self-test (temporary)';
@@ -321,8 +322,8 @@ function scriptedPremiere(o) {
   // 2b. a project never saved: Premium templates are not tried
   {
     const R = await run('unsaved', { unsaved: true, multicamWrongCamera: true, envFps: 29.97002997 });
-    report(R.prem.log.imported.every(f => f.fps === '29.97'), '2b. an owner’s 29.97 fps sequence gets 29.97 fps test clips (30000/1001), not 30 (' +
-      R.prem.log.imported.map(f => f.fps).join(', ') + ')');
+    report(R.prem.log.imported.every(f => f.fps === '29.97' && f.tbn === '30k'), '2b. an owner’s 29.97 fps sequence gets true NTSC test clips (30000/1001), not 30 or a rounded 29.97 (' +
+      R.prem.log.imported.map(f => f.fps + ' fps, time base ' + f.tbn).join('; ') + ')');
     report(/^⚠️/.test(R.rowOf('Premium (Flux) captions')) && /saved project/.test(R.rowOf('Premium (Flux) captions')) &&
            /^⚠️/.test(R.rowOf('Premium previews')) && R.prem.log.calls.indexOf('CP_insertMogrtCaptions') < 0 &&
            R.prem.log.calls.indexOf('CP_renderMogrtFrames') < 0 && /never been saved/.test(R.rowOf('A test sequence')) && /^✅/.test(R.rowOf('Sound effects')),

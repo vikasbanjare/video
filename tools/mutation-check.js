@@ -63,7 +63,7 @@ const MUTANTS = [
     file: 'CutPilot/jsx/host.jsx',
     find: '|| /^pulse-captions/i.test(file) ||',
     repl: '||',
-    gate: 'CutPilot/test/host-tests.js',
+    gate: 'CutPilot/test/gates/host-remove-safety.js',
     why: 'Remove-all-captions stops finding a long video\'s overlay'
   },
   {
