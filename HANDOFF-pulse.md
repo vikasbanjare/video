@@ -64,6 +64,57 @@ vendor sites. Treat the details as secondary until the owner confirms them.
   so on "Indian Voices" transcripts the word highlight may step phrase by
   phrase. Not verified (no Sarvam key here); item 7 fixes it.
 
+### Free local voice tools — tested here (October 2026)
+The owner asked for free alternatives to Sarvam (paid), including NVIDIA's
+multi-speaker model. Everything below ran in this container, except where
+marked "not testable here". Hugging Face, OpenAI's model host and most
+vendor sites are blocked by this environment's proxy; PyPI and GitHub
+release downloads work.
+- **Engine: sherpa-onnx 1.13.8 (Apache-2.0).** The PyPI wheels
+  `sherpa-onnx-bin` + `sherpa-onnx-core` are plain zips holding ready-built
+  programs, no Python needed: Mac arm64 12 + 9.5 MB, Windows x64 18 + 17 MB.
+  Pulse could download them like it downloads ffmpeg. They hold speaker
+  diarization, offline ASR, Silero VAD, a denoiser, source separation,
+  punctuation and TTS. CoreML is a provider on Mac.
+- **Who spoke when (diarization) — WORKS.** pyannote segmentation-3.0 (MIT)
+  plus NVIDIA NeMo TitaNet-small embeddings (CC-BY-4.0: credit NVIDIA), both
+  from sherpa-onnx's GitHub releases (6.9 MB + 40 MB).
+  - A real 4-speaker recording (sherpa's 0-four-speakers-zh.wav), told 4:
+    TitaNet and ERes2Net give the identical answer. As far as I recall, that
+    matches sherpa's documented output.
+  - A Hindi 3-person conversation built with Piper hi_IN voices (two male,
+    one female, 10 turns, one 0.8 s interjection): DER 5.9%.
+  - With threshold 0.75–0.8 and the count NOT given, it found 4 and 3 on
+    those two files. CAM++ embeddings failed (DER 45–51%; collapsed when told
+    4).
+  - On a harder 7-voice joined file it found 9, so ask "how many people?"
+    and fall back to auto.
+  - Speed here: 11× real time on 4 threads, so a 60-minute podcast takes
+    about 5.6 min.
+  - Scripts: scratchpad/bench (make_convo.py, score.py) — not in the repo.
+- **NVIDIA Nemotron 3 Diarization** (open weights, OpenMDW-1.1 licence,
+  commercial use OK, up to 8 speakers, top of a public leaderboard): the
+  community ONNX exports need Python/numpy preprocessing, and sherpa's
+  diarization program does not offer it (pyannote only). Not testable here
+  (Hugging Face blocked). A later upgrade, not needed now.
+- **Hindi speech-to-text, free:**
+  - Whisper through sherpa-onnx is NOT usable for Hindi. It cuts at 30 s, and
+    its byte-token joining drops Devanagari letters ("मस्ते ोस्तों"; CER 76%
+    even split at pauses). Use whisper.cpp (Pulse's local engine) for Whisper
+    instead.
+  - Dolphin small (Apache-2.0): WER 80% on the Hindi conversation.
+  - Meta Omnilingual 300M (Apache-2.0): writes Hindi in Urdu script, with no
+    language hint. Both unusable for Hindi captions.
+  - AI4Bharat IndicConformer (MIT; 22 languages; published Hindi WER better
+    than Whisper; sherpa-onnx exports exist on Hugging Face): the best local
+    candidate, not testable here.
+  - Groq's free tier (whisper-large-v3/turbo: 28,800 audio-seconds a day, no
+    card) is already Pulse's "Pulse Cloud" — free with the owner's own key.
+- **Found:** the white-label build hides every local engine (WHISPER_QUALITIES
+  is cloud-only), and the local install needs Homebrew. To offer free
+  offline transcription, show the local option and download a ready-built
+  engine instead.
+
 ### v0.10.2 — caption sync (the owner's "sync problem with pulse rendering with voice")
 Found in the code, without waiting for the owner's early/late answer. Four
 ways a caption's time left the voice, all fixed and gated
