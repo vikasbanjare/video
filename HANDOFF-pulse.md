@@ -1,10 +1,32 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.5** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.6** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.6 — multicam cuts at Premiere's own playhead timecode when the razor ignores Pulse's
+The owner's Mac, v0.10.5: the script loads now (Podcast cameras read the
+tracks and built 12 cuts), but Apply said "Premiere didn’t make any of the 12
+camera cuts" — the QE razor took every timecode WITHOUT an error and cut
+nothing. Unknown which of: QE ignoring Pulse's timecode text (e.g. a timeline
+whose time display is Frames), or a stale read of the timeline.
+- CP_applyMulticamPlan: verify from a fresh sequence; if nothing landed, look
+  again after $.sleep(300); then cut at the timecode the QE playhead writes
+  (setPlayerPosition + qe…CTI.timecode — the pymiere-documented pattern),
+  probing one cut first, then all; playhead restored.
+- If still nothing: CP_failInfo carries fps, dropFrame, timebase,
+  displayFormat, zeroPoint, timecodeSent, playheadTimecode, triedPlayhead,
+  QE clip counts before/after, DOM clip counts, razorErrors, qeProblem — shown
+  under the message ("What Premiere answered: …") and in 📋 diagnostics.
+  **The owner's next report names the cause.** Success logs "(by playhead)".
+- Gate multicam-razor-fallback (fake: razor 'own-text' + ctiFormat 'frames');
+  2 mutations.
+- host.jsx: CP_renderMogrtFrames (Premium template rendered by Premiere with
+  the owner's words, frame by frame) — for the next release's Premium
+  previews ("flux preview is very bad, not accurate": the template authors'
+  own clips are low-resolution with their sample text). Not called yet.
 
 ### v0.10.5 — Pulse's Premiere script loads (or says exactly why not); real Premium previews
 The owner's first run of v0.10.4 on the Mac: "ExtendScript error while calling
@@ -690,7 +712,10 @@ Absolute paths. Only files touched in this session are listed.
 
 ## Next 3 actions
 
-0. **v0.10.5 first**: Settings → Run the full check must reach "2) sequence".
+0. **v0.10.6 first**: Settings → Run the full check must reach "2) sequence";
+   Podcast cameras → Apply must cut. If Apply still fails, the box under the
+   message ("What Premiere answered: …") names the cause.
+   (v0.10.5: Settings → Run the full check must reach "2) sequence".)
    If it doesn't, the "Premiere script:" line in 📋 Copy diagnostics names the
    ExtendScript error and line — fix that before anything else.
 1. **Owner installs v0.10.5 on the Mac and runs the real flows**: Podcast
