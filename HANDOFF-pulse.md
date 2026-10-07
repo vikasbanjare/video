@@ -1,10 +1,42 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.4** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.5** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.5 — Pulse's Premiere script loads (or says exactly why not); real Premium previews
+The owner's first run of v0.10.4 on the Mac: "ExtendScript error while calling
+CP_getAudioTracks (check the host script loaded)", and Settings → Run the full
+check stopped at "ERROR: ExtendScript error while calling CP_getEnv". Every
+call into Premiere failed: Premiere had not loaded jsx/host.jsx.
+- **Likely cause:** since v0.9.345 the protected build minified host.jsx with
+  terser onto ONE line of 86,355 characters with renamed locals; the last
+  version confirmed on the owner's Mac is v0.9.339. Both forms parse as ES3
+  (acorn, ecmaVersion 3, allowReserved "never"), have no control characters
+  or BOM, and the source's load-time code is ES3-safe — so the exact
+  ExtendScript failure is not proven here (ExtendScript can't run on Linux).
+  The build now ships jsx/*.jsx byte for byte as tested and refuses otherwise.
+- **Self-repair + exact cause (cep-bridge.js):** on "EvalScript error." the
+  bridge asks ExtendScript once; if CP_getEnv is missing it loads host.jsx
+  with $.evalFile and retries; if that throws, ExtendScript's own message and
+  line go into the error, the full check and 📋 diagnostics ("Premiere
+  script: ok | loaded | failed — …"). **If the owner still sees a failure,
+  that line names the cause — ask for 📋 Copy diagnostics first.**
+  Organize already loads its organize.jsx with $.evalFile the same way.
+- Gate host-load-recovery (8 checks; an imitation ExtendScript engine: the
+  fake Premiere in its own vm context, $.evalFile, File, "EvalScript error."
+  for a throw); 4 mutations.
+- **Premium (Flux) previews were imitations:** tools/gen-preview-clips.js had
+  replaced each template's own preview with a clip drawn by Pulse's caption
+  engine (Apex, Surge and Vortex shared one). tools/real-mogrt-previews.js
+  now cuts each card's preview from the template's own thumb.mp4 (cropped
+  2:1 to the caption, ≤ 6 s loop, no sound) with the author's still as the
+  poster (a frame of the preview where that still is black: Echo, Pulse,
+  Surge). The old generator is deleted. Gate gallery-real-previews (fails on
+  the old clips). Orbit and Vector's own previews really are glossy pills
+  whose text reads only in the first moment — that is the template.
 
 ### v0.10.4 — one-mic podcasts follow each voice, free offline transcription, a better camera edit
 Everything below is gated and mutation-verified (the mutation entries are in
@@ -658,7 +690,10 @@ Absolute paths. Only files touched in this session are listed.
 
 ## Next 3 actions
 
-1. **Owner installs v0.10.4 on the Mac and runs the real flows**: Podcast
+0. **v0.10.5 first**: Settings → Run the full check must reach "2) sequence".
+   If it doesn't, the "Premiere script:" line in 📋 Copy diagnostics names the
+   ExtendScript error and line — fix that before anything else.
+1. **Owner installs v0.10.5 on the Mac and runs the real flows**: Podcast
    cameras on a ONE-mic episode (say yes to Who's talking; check Voice 1 /
    Voice 2 are on the right cameras, try ⇄ Swap and "How many people
    talk?"); Transcribe with "💻 On this computer" on a Hindi clip (time it
