@@ -17,6 +17,10 @@
  *      own message and the line, instead of "check the host script loaded"
  *   C. host.jsx loaded as normal → nothing extra is run
  *   D. a call that throws past its own try/catch → its message is shown
+ *   E. Podcast cameras — where the owner's screenshot came from
+ *      ("ExtendScript error while calling CP_getAudioTracks"): with the script
+ *      not loaded, Detect audio → Build → Apply follows the speaker on the
+ *      timeline as it does when Premiere loaded it
  * PANEL_DIR=<dir> runs it against another copy of the panel.
  */
 'use strict';
@@ -25,6 +29,8 @@ const os = require('os');
 const path = require('path');
 const vm = require('vm');
 const FH = require('./multicam-lib/fakehost');
+const MP = require('./multicam-lib/panel');
+const SY = require('./multicam-lib/synth');
 
 const ROOT = path.join(__dirname, '..', '..', '..');
 const PANEL = process.env.PANEL_DIR || path.join(ROOT, 'CutPilot');
@@ -46,9 +52,10 @@ function browserPath() {
 /* An ExtendScript engine stand-in: the fake Premiere's globals, plus $ and
    File. evalFile throws like ExtendScript does, with the error's line. */
 function engine(opts) {
-  const world = FH.makePremiere({ fps: 25, end: 60, video: FH.cameras(2, 60),
+  const world = FH.makePremiere(opts.premiere || { fps: 25, end: 60, video: FH.cameras(2, 60),
     audio: [{ name: 'A1', clips: [{ start: 0, end: 60, inPoint: 0, outPoint: 60, mediaPath: '/media/mic1.wav', name: 'mic1' }] }] });
   const ctx = world.sandbox;
+  ctx.__world = world;
   ctx.File = function (p) { this.fsName = String(p); };
   ctx.File.prototype.toString = function () { return this.fsName; };
   ctx.$ = {
@@ -129,6 +136,45 @@ async function fullCheck(browser, panelDir, ctx) {
   return out;
 }
 
+/* The Podcast cameras page on the imitation engine, driven by the multicam
+   harness's own runMulticam (mic loudness from envelopes, as multicam-follow). */
+async function podcastCameras(browser, ctx, envelopes) {
+  const page = await browser.newPage();
+  const errors = [], calls = [];
+  page.on('pageerror', (e) => errors.push(String(e.message)));
+  await page.exposeFunction('__es', (script) => {
+    const m = /^(\w+)\(([\s\S]*)\)$/.exec(script);
+    let args = null;
+    if (m && m[2]) { try { args = JSON.parse(JSON.parse(m[2])); } catch (e) {} }
+    const rec = { fn: m ? m[1] : script.slice(0, 40), args };
+    calls.push(rec);
+    try { const r = vm.runInContext(script, ctx); return r === undefined ? 'undefined' : String(r); }
+    catch (e) { rec.threw = e.message; return 'EvalScript error.'; }
+  });
+  await page.evaluateOnNewDocument((ext) => {
+    try { localStorage.setItem('cutpilot.settings', JSON.stringify({ ffmpegPath: '/usr/bin/ffmpeg' })); } catch (e) {}
+    window.__adobe_cep__ = {
+      evalScript(script, cb) { window.__es(script).then(cb); },
+      getSystemPath(kind) { return kind === 'extension' ? 'file://' + ext : ''; }
+    };
+  }, PANEL);
+  await page.goto('file://' + path.join(PANEL, 'index.html'), { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => !!document.getElementById('btn-mc-plan') && typeof window.CPMulticam !== 'undefined', { timeout: 20000 });
+  await new Promise(r => setTimeout(r, 900));
+  await page.evaluate((env, step) => {
+    CPAudio.ffmpegEnvelope = function (mp) {
+      const lv = env[mp];
+      if (!lv) return Promise.reject(new Error('no such file: ' + mp));
+      return Promise.resolve({ samples: lv.map((db, j) => ({ t: Math.round(j * step * 1000) / 1000, db })), duration: lv.length * step });
+    };
+  }, envelopes, MP.STEP);
+  const r = await MP.runMulticam({ page, calls, errors }, { cameras: 2, source: 'follow' });
+  r.host = await page.evaluate(() => window.CPBridge.hostState());
+  r.failedFirst = calls.filter(c => c.threw && /^CP_/.test(c.fn)).map(c => c.fn);
+  await page.close();
+  return r;
+}
+
 (async () => {
   console.log('Premiere script loading (' + PANEL + ')');
   const pptr = requirePuppeteer();
@@ -169,7 +215,23 @@ async function fullCheck(browser, panelDir, ctx) {
     const dLine = D.check.split('\n').find(l => /^ERROR/.test(l)) || '';
     report(/Premiere stopped while running CP_getEnv: seq\.frameSizeHorizontal is undefined/.test(dLine),
       'D. a call that throws is reported with its own message: ' + JSON.stringify(dLine.slice(0, 120)));
-    const errs = [].concat(A.errors, B.errors, C.errors, D.errors);
+    // E. Podcast cameras with the script not loaded
+    const sim = SY.podcast({ dur: 120, pattern: 'balanced', seed: 3 });
+    const envelopes = {}, audio = [];
+    sim.grids.forEach((g, m) => {
+      const media = '/media/mic' + (m + 1) + '.wav';
+      envelopes[media] = g.slice();
+      audio.push({ name: 'A' + (m + 1), clips: [{ start: 0, end: sim.dur, inPoint: 0, outPoint: sim.dur, mediaPath: media, name: 'mic' + (m + 1) }] });
+    });
+    const ctxE = engine({ preload: false, premiere: { fps: 25, end: sim.dur, video: FH.cameras(2, sim.dur), audio } });
+    const E = await podcastCameras(browser, ctxE, envelopes);
+    const accE = E.plan ? MP.visibleAccuracy(ctxE.__world, sim) : 0;
+    const extErr = E.toasts.filter(t => /ExtendScript error|didn’t load|Premiere stopped/.test(t));
+    report(E.failedFirst.indexOf('CP_getAudioTracks') >= 0 && E.host.state === 'loaded' && !!E.plan && E.applied && accE >= 95 && !extErr.length,
+      'E. Podcast cameras, script not loaded at first (' + E.failedFirst.join(', ') + ' failed before Pulse loaded it): Detect audio → Build → ' +
+      'Apply followed the speaker, right person on screen ' + accE + '% (need ≥ 95%)' + (extErr.length ? ' — but: ' + JSON.stringify(extErr[0].slice(0, 120)) : '') +
+      (E.plan ? '' : ' — no plan: ' + JSON.stringify((E.diag || E.toasts.slice(-1)[0] || '').slice(0, 140))));
+    const errs = [].concat(A.errors, B.errors, C.errors, D.errors, E.errors);
     report(!errs.length, 'no script errors in the panel' + (errs.length ? ': ' + errs.slice(0, 2).join(' | ') : ''));
   } finally {
     await browser.close();
