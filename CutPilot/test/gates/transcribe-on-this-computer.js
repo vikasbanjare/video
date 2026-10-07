@@ -59,7 +59,8 @@ function whiteLabelCopy() {
     if (f !== 'main.js') { fs.symlinkSync(from, path.join(dir, 'js', f)); continue; }
     const src = fs.readFileSync(from, 'utf8');
     const wl = src.replace(/var WHITE_LABEL = false;\s*\/\*@@CP_WL@@\*\//, 'var WHITE_LABEL = true; /*@@CP_WL@@*/');
-    if (wl === src) throw new Error('main.js has no white-label switch to flip');
+    // a built panel (PANEL_DIR) is already white-label, its switch obfuscated away
+    if (wl === src && !process.env.PANEL_DIR) throw new Error('main.js has no white-label switch to flip');
     fs.writeFileSync(path.join(dir, 'js', f), wl);
   }
   return dir;

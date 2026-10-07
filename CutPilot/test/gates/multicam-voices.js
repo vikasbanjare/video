@@ -33,7 +33,9 @@ const path = require('path');
 const P = require('./multicam-lib/panel');
 const FH = require('./multicam-lib/fakehost');
 const E = require('./voices-lib/engine');
-const V = require(path.join(P.PANEL_DIR, 'js', 'voices.js'));
+// the test's own helpers (file names, sizes) from the source: a built panel's
+// obfuscated voices.js runs in the panel's browser, not under Node's require
+const V = require(path.join(__dirname, '..', '..', 'js', 'voices.js'));
 
 let failed = 0;
 const report = (ok, msg) => { if (!ok) failed++; console.log('  ' + (ok ? '✓' : '✗') + ' ' + msg); };

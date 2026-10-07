@@ -82,6 +82,12 @@ tools/mutation-check.js). None of it has run on the owner's Mac yet.
   (/tmp/pulse-engines via CP_VOICES_CACHE).
 - Lesson: never `require()` tools/mutation-check.js to syntax-check it — it
   runs the whole mutation pass and edits files in place. Use `node --check`.
+- The BUILT panel (CutPilot-protected) can't be `require()`d under Node: the
+  obfuscated modules hang at load outside the panel's browser. Test a build
+  with the browser gates: `MC_PANEL_DIR=…/CutPilot-protected node
+  CutPilot/test/gates/multicam-voices.js` and `PANEL_DIR=…/CutPilot-protected
+  node CutPilot/test/gates/transcribe-on-this-computer.js` both passed on the
+  v0.10.4 build (the gates take their own helpers from the source).
 
 ### v0.10.3 — the five open problems from the owner's status list
 Each is gated, and each fix was broken on purpose to see its gate go red (12
@@ -480,12 +486,12 @@ Five new panel proofs stand in the reported state, all mutation-verified.
   build is `--enable-libass --enable-fontconfig`), but not on their Mac.
 
 ### IN PROGRESS (exact task when this session ended)
-- A `/loop`: audit → fix → test → commit, one theme per iteration, builds withheld
-  at the owner's request. ~38 iterations through v0.9.387. Nothing half-finished;
-  tree clean, CI green.
-- Returns are diminishing — the last passes found a wrong number in a message and
-  a card showing one word. The substantial caption work is done. The highest-value
-  next step is not another audit, it is getting a build onto the owner's Mac.
+- v0.10.4 was built (keyless, white-label), key-scanned (0 hits in the
+  protected folder, Pulse-Mac.zip, the Windows .hta and git) and sent to the
+  owner as Pulse-Mac.zip. Local battery: nothing failed, 1 of 134 skipped
+  (whisper-transcribe — no Hugging Face here; it passed in CI run 274).
+- Nothing half-finished. The highest-value next step is the owner's Mac run
+  (Next 3 actions).
 
 ## Files
 
