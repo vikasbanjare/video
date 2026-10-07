@@ -281,6 +281,135 @@ const MUTANTS = [
     repl: '      return { start: target, end: Math.min(maxEnd, target + hold) }; var ps = [], best = null, bestSc = -Infinity, k, m;',
     gate: 'CutPilot/test/gates/multicam-edit-quality.js',
     why: 'reaction shots cut away from the talker mid-word again'
+  },
+  // ---- who's talking (one mic, several people) ----
+  {
+    name: 'voices-sha-check',
+    file: 'CutPilot/js/voices.js',
+    find: '          if (sha256File(node, it.file) !== it.spec.sha256) {',
+    repl: '          if (false) {',
+    gate: 'CutPilot/test/gates/voices-engine.js',
+    why: 'a voice engine download that does not match its SHA-256 is installed and run anyway'
+  },
+  {
+    name: 'voices-clean-on-failure',
+    file: 'CutPilot/js/voices.js',
+    find: '    return chain.catch(function (err) { clean(); throw err; });',
+    repl: '    return chain;',
+    gate: 'CutPilot/test/gates/voices-engine.js',
+    why: 'a failed install leaves its downloads behind'
+  },
+  {
+    name: 'voices-threshold',
+    file: 'CutPilot/js/voices.js',
+    find: "(opts.threshold || 0.8)",
+    repl: "(opts.threshold || 0.5)",
+    gate: 'CutPilot/test/gates/voices-engine.js',
+    why: 'the engine decides the number of people at its own default, which split 4 people into 8'
+  },
+  {
+    name: 'voices-num-clusters',
+    file: 'CutPilot/js/voices.js',
+    find: "    if (opts.speakers >= 2) a.push('--clustering.num-clusters=' + Math.floor(opts.speakers));",
+    repl: "    if (false) a.push('--clustering.num-clusters=' + Math.floor(opts.speakers));",
+    gate: 'CutPilot/test/gates/voices-engine.js',
+    why: 'asking for two people no longer gives exactly two voices'
+  },
+  {
+    name: 'voices-offset',
+    file: 'CutPilot/js/main.js',
+    find: '      var regions = CPVoices.voicesToRegions(v.turns, numAngles, angleOf, v.start);',
+    repl: '      var regions = CPVoices.voicesToRegions(v.turns, numAngles, angleOf, 0);',
+    gate: 'CutPilot/test/gates/multicam-voices.js',
+    why: 'the voices are placed as if the recording started at 0:00 on the timeline'
+  },
+  {
+    name: 'voices-cache',
+    file: 'CutPilot/js/main.js',
+    find: '      if (_mcVoices && _mcVoices.key === key) return _mcVoices;',
+    repl: '      if (false) return _mcVoices;',
+    gate: 'CutPilot/test/gates/multicam-voices.js',
+    why: 'Swap and Redo listen to the whole recording again'
+  },
+  {
+    name: 'voices-cache-razor',
+    file: 'CutPilot/js/main.js',
+    find: "        var k = it.mediaPath + '@' + Math.round(zero * 20) + '×' + Math.round(sp * 1000) + (it.reversed ? 'r' : '');",
+    repl: "        var k = it.mediaPath + '@' + it.seqStart + '×' + Math.round(sp * 1000) + (it.reversed ? 'r' : '');",
+    gate: 'CutPilot/test/gates/multicam-voices.js',
+    why: 'a recording razored into pieces counts as a new recording, so Redo listens again'
+  },
+  {
+    name: 'voices-ask-first',
+    file: 'CutPilot/js/main.js',
+    find: '    var ask = voicesReady() ? Promise.resolve(true) :',
+    repl: '    var ask = true ? Promise.resolve(true) :',
+    gate: 'CutPilot/test/gates/multicam-voices.js',
+    why: 'the voice engine is downloaded without asking'
+  },
+  {
+    name: 'voices-remember-no',
+    file: 'CutPilot/js/main.js',
+    find: '      if (!yes) { state.voicesDeclined = true; return bursts(',
+    repl: '      if (!yes) { return bursts(',
+    gate: 'CutPilot/test/gates/multicam-voices.js',
+    why: '“Cancel” is asked again on every build'
+  },
+  {
+    name: 'voices-fallback',
+    file: 'CutPilot/js/main.js',
+    find: '      return mcVoicesPlan(numAngles, track).catch(function (e) {',
+    repl: '      return mcVoicesPlan(numAngles, track).then(null, function (e) { throw e; }).catch(function (e) { throw e; }).catch(function (e) {\n        throw e;',
+    gate: 'CutPilot/test/gates/multicam-voices.js',
+    why: 'a voice engine that fails leaves the owner with no plan at all'
+  },
+  {
+    name: 'voices-mapping-ui',
+    file: 'CutPilot/js/main.js',
+    find: "    if (an && (an.mode === 'transcript' || an.mode === 'voices') && an.labelled && an.mapping.length) {",
+    repl: "    if (an && an.mode === 'transcript' && an.labelled && an.mapping.length) {",
+    gate: 'CutPilot/test/gates/multicam-voices.js',
+    why: 'the plan no longer says which voice is on which camera, and Swap is gone'
+  },
+  {
+    name: 'voices-swap-kept',
+    file: 'CutPilot/js/main.js',
+    find: "      var sig = 'voices|' + v.key;\n      if (!state.mcTrPicks || state.mcTrPicks.sig !== sig) state.mcTrPicks = { sig: sig, map: {} };",
+    repl: "      var sig = 'voices|' + v.key;\n      state.mcTrPicks = { sig: sig, map: {} };",
+    gate: 'CutPilot/test/gates/multicam-voices.js',
+    why: '⇄ Swap speakers is forgotten on the next build'
+  },
+  {
+    name: 'voices-people-count',
+    file: 'CutPilot/js/main.js',
+    find: '          state.mcVoicesPeople = { key: an.recording, n: n };',
+    repl: '          state.mcVoicesPeople = null;',
+    gate: 'CutPilot/test/gates/multicam-voices.js',
+    why: '“How many people talk?” changes nothing'
+  },
+  {
+    name: 'voices-two-cameras-two-people',
+    file: 'CutPilot/js/main.js',
+    find: '    var want = cams.length === 2 ? 2 : 0;',
+    repl: '    var want = 0;',
+    gate: 'CutPilot/test/gates/multicam-voices.js',
+    why: 'with two cameras the engine guesses the number of people instead of listening for two'
+  },
+  {
+    name: 'voices-owner-wide',
+    file: 'CutPilot/js/main.js',
+    find: "    for (var a = 0; a < numAngles; a++) if (!(String(map[a]) === '-1' && auto[a] === false)) cams.push(a);",
+    repl: "    for (var a = 0; a < numAngles; a++) cams.push(a);",
+    gate: 'CutPilot/test/gates/multicam-voices.js',
+    why: 'a camera the owner set to “No mic (wide)” is given a voice'
+  },
+  {
+    name: 'voices-credit',
+    file: 'CutPilot/js/main.js',
+    find: "  if ($('voices-credits')) $('voices-credits').textContent = CPVoices.CREDITS;",
+    repl: "",
+    gate: 'CutPilot/test/gates/multicam-voices.js',
+    why: 'Settings no longer credits NVIDIA’s CC-BY-4.0 model'
   }
 ];
 

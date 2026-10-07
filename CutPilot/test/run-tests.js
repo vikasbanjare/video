@@ -16,6 +16,7 @@ const CPSfx = require(path.join(__dirname, '..', 'js', 'sfx.js'));
 const CPTakes = require(path.join(__dirname, '..', 'js', 'takes.js'));
 const CPAss = require(path.join(__dirname, '..', 'js', 'ass.js'));
 const CPAlign = require(path.join(__dirname, '..', 'js', 'align.js'));
+const CPVoices = require(path.join(__dirname, '..', 'js', 'voices.js'));
 
 let passed = 0, failed = 0;
 
@@ -851,6 +852,73 @@ console.log('multicam.js');
   // max-shot forces cutaways inside a long monologue
   const ms = CPMulticam.directorPlan([[{ start: 0, end: 30 }], []], 30, { minSegment: 1, wideAngle: 1, maxShot: 8, centerHold: 1.5 });
   assert(ms.length > 1, 'maxShot breaks a long single-camera monologue into cutaways');
+}
+
+// --------------------------------------------------------------- voices ----
+console.log('voices.js');
+{
+  const zlib = require('zlib');
+  // which engine each computer gets
+  assert(!!CPVoices.engineFor('darwin', 'arm64') && !!CPVoices.engineFor('darwin', 'x64') && !!CPVoices.engineFor('win32', 'x64') &&
+         !!CPVoices.engineFor('linux', 'x64'), 'an engine for Apple silicon and Intel Macs, Windows and Linux');
+  assert(CPVoices.engineFor('win32', 'ia32') === null && CPVoices.engineFor('linux', 'arm64') === null,
+    'no engine offered where none is published (32-bit Windows, Linux on ARM)');
+  assert(CPVoices.binName('win32') === 'sherpa-onnx-offline-speaker-diarization.exe' && CPVoices.binName('darwin') === 'sherpa-onnx-offline-speaker-diarization',
+    'the program is an .exe on Windows only');
+  const need = CPVoices.needFiles('darwin', 'arm64');
+  assert(need.join(',') === 'sherpa-onnx-offline-speaker-diarization,libonnxruntime.dylib,segmentation.onnx,titanet-small.onnx',
+    'a Mac needs the program, its runtime library and the two models: ' + need.join(', '));
+  assert(CPVoices.needFiles('win32', 'x64').filter(f => /\.dll$/.test(f)).length === 3, 'Windows also needs the three DLLs next to the program');
+  assert(CPVoices.needFiles('linux', 'arm64').length === 0, 'nothing to need where there is no engine');
+  const mb = CPVoices.downloadSize('darwin', 'arm64') / 1e6;
+  assert(mb > 60 && mb < 80, 'the Mac download is about 70 MB (' + mb.toFixed(1) + ')');
+  // a zip (a .whl is one) — one stored and one deflated member
+  const zip = (entries) => {
+    const locals = [], central = []; let off = 0;
+    entries.forEach(([name, data, method]) => {
+      const body = method === 8 ? zlib.deflateRawSync(data) : data, nm = Buffer.from(name);
+      const lh = Buffer.alloc(30); lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(method, 8);
+      lh.writeUInt32LE(body.length, 18); lh.writeUInt32LE(data.length, 22); lh.writeUInt16LE(nm.length, 26);
+      const ch = Buffer.alloc(46); ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(method, 10);
+      ch.writeUInt32LE(body.length, 20); ch.writeUInt32LE(data.length, 24); ch.writeUInt16LE(nm.length, 28); ch.writeUInt32LE(off, 42);
+      locals.push(lh, nm, body); central.push(ch, nm); off += 30 + nm.length + body.length;
+    });
+    const cd = Buffer.concat(central), end = Buffer.alloc(22);
+    end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(entries.length, 8); end.writeUInt16LE(entries.length, 10);
+    end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(off, 16);
+    return Buffer.concat(locals.concat([cd, end]));
+  };
+  const big = Buffer.from('who is talking? '.repeat(500));
+  const z = zip([['a/readme.txt', Buffer.from('hello'), 0], ['pkg/lib/engine.bin', big, 8]]);
+  assert(String(CPVoices.zipMember(z, 'a/readme.txt', zlib)) === 'hello', 'zip: a stored member reads back');
+  assert(CPVoices.zipMember(z, 'pkg/lib/engine.bin', zlib).equals(big), 'zip: a deflated member reads back');
+  assert(CPVoices.zipMember(z, 'pkg/lib/other.bin', zlib) === null, 'zip: a member that is not there is null, not a crash');
+  let threw = false; try { CPVoices.zipMember(Buffer.from('not a zip at all, just text'), 'x', zlib); } catch (e) { threw = /not a zip/.test(e.message); }
+  assert(threw, 'zip: something that is not a zip says so');
+  // the program's arguments
+  const a2 = CPVoices.diarizeArgs('/v', '/t/in.wav', { speakers: 2 });
+  assert(a2.indexOf('--clustering.num-clusters=2') >= 0 && !a2.some(x => /cluster-threshold/.test(x)) && a2[a2.length - 1] === '/t/in.wav' &&
+         a2.indexOf('--segmentation.pyannote-model=/v/segmentation.onnx') >= 0 && a2.indexOf('--embedding.model=/v/titanet-small.onnx') >= 0,
+    'two people asked for: exactly two voices, the models from the engine folder, the recording last');
+  const aAny = CPVoices.diarizeArgs('/v', '/t/in.wav', {});
+  assert(aAny.indexOf('--clustering.cluster-threshold=0.8') >= 0 && !aAny.some(x => /num-clusters/.test(x)), 'no count given: the engine decides, at the tested threshold');
+  // the program's answer
+  const turns = CPVoices.parseTurns('progress 50.00%\n7.017 -- 10.747 speaker_01\n0.318 -- 6.865 speaker_00\nprogress 100.00%\n11.4 -- 11.4 speaker_01\n13.75 -- 17.041 speaker_02\n');
+  assert(turns.length === 3 && turns[0].speaker === 0 && close(turns[0].start, 0.318) && turns[1].speaker === 1 && close(turns[2].end, 17.041),
+    'its answer is read in time order, progress lines and empty turns left out');
+  const order = CPVoices.voiceOrder([{ start: 0, end: 4, speaker: 3 }, { start: 5, end: 6, speaker: 1 }, { start: 7, end: 9, speaker: 3 }]);
+  assert(order.length === 2 && order[0].speaker === 3 && close(order[0].talk, 6) && order[1].speaker === 1 && close(order[1].talk, 1),
+    'voices in the order they first speak, with how long each talks');
+  const reg = CPVoices.voicesToRegions([{ start: 0, end: 4, speaker: 3 }, { start: 5, end: 6, speaker: 1 }, { start: 7, end: 9, speaker: 3 }, { start: 9, end: 10, speaker: 7 }],
+    3, [2, 0, -1], 100);
+  assert(reg[2].length === 2 && close(reg[2][1].start, 107) && reg[0].length === 1 && close(reg[0][0].end, 106) && reg[1].length === 0,
+    'each voice’s turns go to its camera on the timeline; a voice with no camera goes nowhere');
+  // ready only when every file is there
+  const have = new Set(['/v/sherpa-onnx-offline-speaker-diarization', '/v/libonnxruntime.dylib', '/v/segmentation.onnx']);
+  const fakeNode = { fs: { existsSync: (p) => have.has(p) }, path: { join: (a, b) => a + '/' + b }, platform: 'darwin', arch: 'arm64' };
+  const before = CPVoices.ready(fakeNode, '/v');
+  have.add('/v/titanet-small.onnx');
+  assert(!before && CPVoices.ready(fakeNode, '/v'), 'ready only once every file of the engine is in place');
 }
 
 // ------------------------------------------------------------------- sfx ----

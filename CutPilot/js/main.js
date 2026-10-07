@@ -13880,6 +13880,208 @@
     });
   }
 
+  /* ---- 🗣️ Who's talking: one mic, several people -------------------------
+     A podcast recorded on ONE mic can't follow the speaker by loudness —
+     everybody is on the same track — so the cameras switched on each talk
+     burst, whoever spoke. The free voice engine (CPVoices: sherpa-onnx with
+     pyannote and NVIDIA TitaNet, about 70 MB, downloaded once into
+     ~/.cutpilot/voices after the owner says yes) tells the voices apart and
+     says who spoke when, on this computer. Each voice gets a camera
+     ("Voice 1 → V1", with ⇄ Swap speakers, and a camera picker per voice for
+     3+ cameras). Declined, not available for this computer, or failed: the
+     talk-burst plan, as before, and the toast says why. */
+  var _voicesSetup = null, _voicesOnPct = null, _mcVoices = null;
+  function voicesPlatform() { return { platform: (typeof process !== 'undefined' && process.platform) || 'darwin',
+                                       arch: (typeof process !== 'undefined' && process.arch) || 'x64' }; }
+  function voicesNode(forInstall) {
+    var pa = voicesPlatform();
+    var n = { fs: nodeReq('fs'), path: nodeReq('path'), child_process: nodeReq('child_process'), platform: pa.platform, arch: pa.arch,
+              env: (typeof process !== 'undefined' && process.env) || {} };
+    if (forInstall) { n.crypto = nodeReq('crypto'); n.zlib = nodeReq('zlib'); }
+    return n;
+  }
+  function voicesDir() {
+    if (settings.voicesDir) return settings.voicesDir;
+    return nodeReq('path').join(nodeReq('os').homedir(), '.cutpilot', 'voices', CPVoices.VERSION);
+  }
+  function voicesReady() {
+    try { return CPVoices.ready(voicesNode(), voicesDir()); } catch (e) { return false; }
+  }
+  /* Can this computer run it at all? (in Premiere, an engine built for it) */
+  function voicesPossible() {
+    var pa = voicesPlatform();
+    try { return CPBridge.isCEP() && !!CPVoices.engineFor(pa.platform, pa.arch); } catch (e) { return false; }
+  }
+  function voicesMB() { var pa = voicesPlatform(); return Math.round(CPVoices.downloadSize(pa.platform, pa.arch) / 1e6); }
+  /* Set the engine up once: download, check, unpack. onPct(0–1). */
+  function ensureVoices(onPct) {
+    _voicesOnPct = onPct || null;
+    if (voicesReady()) return Promise.resolve(voicesDir());
+    if (_voicesSetup) return _voicesSetup;
+    var node;
+    try { node = voicesNode(true); } catch (e) { return Promise.reject(new Error('Open inside Premiere to set up Who’s talking.')); }
+    var get = function (url, dest) {
+      return _curlDownload(url, dest).catch(function () { return _downloadTo(url, dest); });
+    };
+    _voicesSetup = CPVoices.install(node, voicesDir(), get, function (f) { if (_voicesOnPct) _voicesOnPct(f); }).then(function (d) {
+      _voicesSetup = null; diag('voices', 'engine set up (' + CPVoices.VERSION + ')'); refreshVoicesStatus(); return d;
+    }, function (e) {
+      _voicesSetup = null; diag('voices', 'set-up failed: ' + (e && e.message)); throw e;
+    });
+    return _voicesSetup;
+  }
+  function refreshVoicesStatus() {
+    var el = $('voices-status');
+    if (!el) return;
+    if (voicesReady()) el.textContent = '✅ Ready — Podcast cameras follow each voice when everyone is on one mic.';
+    else if (!voicesPossible()) el.textContent = CPBridge.isCEP() ? 'Not available for this computer yet.' : 'Open inside Premiere to set it up.';
+    else el.textContent = 'Not set up yet — free, about ' + voicesMB() + ' MB, downloaded once. Pulse also offers it when your podcast is on one mic.';
+  }
+  if ($('voices-credits')) $('voices-credits').textContent = CPVoices.CREDITS;
+  if ($('btn-voices-setup')) $('btn-voices-setup').addEventListener('click', function () {
+    var btn = this, st = $('voices-status');
+    if (!voicesPossible()) { refreshVoicesStatus(); return toast(st ? st.textContent : 'Who’s talking isn’t available here.', true); }
+    btn.disabled = true;
+    ensureVoices(function (f) { if (st) st.textContent = '⬇️ Setting up Who’s talking… ' + Math.round(f * 100) + '%'; }).then(function () {
+      refreshVoicesStatus(); toast('✅ Who’s talking is ready.');
+    }, function (e) {
+      if (st) st.textContent = '⚠️ ' + e.message;
+      toast(e.message, true);
+    }).then(function () { btn.disabled = false; });
+  });
+  refreshVoicesStatus();
+
+  /* What a voice split heard: each recording, where it sits on the timeline
+     and at what speed, the timeline span and the people asked for. A razor
+     cut (Apply) changes none of it, so Redo and ⇄ Swap reuse the split
+     instead of listening again. */
+  function mcVoicesKey(audio, people) {
+    var parts = [], lo = Infinity, hi = -Infinity;
+    audio.forEach(function (t) {
+      if (!t || t.muted) return;
+      (t.items || []).forEach(function (it) {
+        if (!it || !it.mediaPath) return;
+        var sp = +it.speed > 0 ? +it.speed : 1;
+        var zero = it.reversed ? (+it.seqStart + (+it.outPoint || 0) / sp) : (+it.seqStart - (+it.inPoint || 0) / sp);
+        var k = it.mediaPath + '@' + Math.round(zero * 20) + '×' + Math.round(sp * 1000) + (it.reversed ? 'r' : '');
+        if (parts.indexOf(k) < 0) parts.push(k);
+        lo = Math.min(lo, +it.seqStart); hi = Math.max(hi, +it.seqEnd);
+      });
+    });
+    parts.sort();
+    return parts.join('|') + '#' + Math.round(lo * 10) + '-' + Math.round(hi * 10) + '#' + people;
+  }
+  /* Follow each voice: split the recording on `track` (all of the timeline's
+     audio when there is no track) into voices, give each a camera and let the
+     director cut. Cameras the owner set to “No mic (wide / cutaway)” stay
+     wides. How many people: the owner's answer in the plan (“How many people
+     talk?”), else exactly two for two cameras, else the engine decides — no
+     one threshold is right for every recording (measured: two similar male
+     voices merge above 0.8, and short pieces of one voice split below 0.85),
+     so the plan says how many it heard and the owner can change it. */
+  function mcVoicesPlan(numAngles, track) {
+    var ff = resolveFfmpeg(), fs = nodeReq('fs'), os = nodeReq('os'), path = nodeReq('path');
+    var map = state.mcMap || [], auto = state.mcMapAuto || [], cams = [];
+    for (var a = 0; a < numAngles; a++) if (!(String(map[a]) === '-1' && auto[a] === false)) cams.push(a);
+    var want = cams.length === 2 ? 2 : 0;
+    var dur = state.mcAudioEnd || (state.env && state.env.endSeconds) || 0;
+    var wav = path.join(os.tmpdir(), 'pulse-voices-' + Date.now() + '.wav');
+    var gone = function () { try { fs.unlinkSync(wav); } catch (eU) {} };
+    return readCutSources().then(function (s) {
+      if (!s || !s.audio) throw new Error('Pulse couldn’t read your timeline’s audio.');
+      var audio = s.audio.filter(function (t) { return !track || t.index === track.index; });
+      // the owner's “How many people talk?” belongs to this recording
+      var base = mcVoicesKey(audio, '');
+      if (state.mcVoicesPeople && state.mcVoicesPeople.key === base) want = state.mcVoicesPeople.n;
+      var key = base + want;
+      if (_mcVoices && _mcVoices.key === key) return _mcVoices;
+      return ensureVoices(function (f) { capMcProgress('Setting up Who’s talking (one time)… ' + Math.round(f * 100) + '%'); }).then(function () {
+        capMcProgress('Listening to your recording…');
+        return prepareTimelineMix({ sequenceId: s.sequenceId, audio: audio }, ff);
+      }).then(function (mx) {
+        if (!mx.plan) throw new Error('Pulse found no sound to listen to' + (mx.notes.length ? ': ' + mx.notes[0] : '.'));
+        return extractTimelineMix(ff, mx.plan, wav).then(function () {
+          capMcProgress('Telling the voices apart… 0%');
+          return CPVoices.run(voicesNode(), voicesDir(), wav, { speakers: want }, function (p) {
+            capMcProgress('Telling the voices apart… ' + Math.round(p) + '%');
+          });
+        }).then(function (turns) {
+          gone();
+          _mcVoices = { key: key, base: base, turns: turns, start: mx.plan.span.start, end: mx.plan.span.end };
+          diag('voices', 'split ' + fmt(mx.plan.span.end - mx.plan.span.start) + ' into ' + CPVoices.voiceOrder(turns).length + ' voices (' +
+            turns.length + ' turns), asked for ' + (want || 'any number'));
+          return _mcVoices;
+        }, function (e) { gone(); throw e; });
+      });
+    }).then(function (v) {
+      capMcProgress(null);
+      var order = CPVoices.voiceOrder(v.turns), talkAll = 0;
+      if (!order.length) throw new Error('Pulse heard no one talking in this recording.');
+      order.forEach(function (o) { talkAll += o.talk; });
+      // voice k (in the order they first speak) → the k-th camera; a voice
+      // that barely talks (a laugh or cough split off on its own) gets none
+      var labels = order.map(function (o, i) { return 'Voice ' + (i + 1); }), guess = [], k = 0;
+      order.forEach(function (o) { guess.push(o.talk >= 0.03 * talkAll && k < cams.length ? cams[k++] : -1); });
+      // the owner's own picks (⇄ Swap speakers, a voice's camera) belong to this split
+      var sig = 'voices|' + v.key;
+      if (!state.mcTrPicks || state.mcTrPicks.sig !== sig) state.mcTrPicks = { sig: sig, map: {} };
+      var angleOf = labels.map(function (lab, i) {
+        var own = state.mcTrPicks.map[lab];
+        return (own != null && own < numAngles) ? own : guess[i];
+      });
+      var used = {}, wides = [];
+      angleOf.forEach(function (x) { if (x >= 0) used[x] = true; });
+      for (var w = 0; w < numAngles; w++) if (!used[w]) wides.push(w);
+      var share = dur > 0 ? Math.min(1, (v.end - v.start) / dur) : 1, talkers = order.filter(function (o) { return o.talk >= 0.03 * talkAll; }).length;
+      var voicesLine = ' · ' + talkers + (talkers === 1 ? ' voice' : ' voices');
+      state.mcAnalysis = {
+        mode: 'voices', labelled: true, asked: want, heard: talkers, recording: v.base,
+        mapping: labels.map(function (lab, i) { return { label: lab, angle: angleOf[i] }; }),
+        coverage: { share: share, warn: null,
+          line: (share >= 0.995 ? '⏱ Pulse listened to your whole ' + fmt(dur) + ' timeline'
+                                : '⏱ Pulse listened to ' + Math.round(share * 100) + '% of your ' + fmt(dur) + ' timeline') + voicesLine }
+      };
+      if (talkers < 2 && cams.length >= 2) {
+        state.mcAnalysis.coverage.warn = '⚠️ Pulse heard only one voice in this recording, so the camera stays on ' +
+          mcAngleName(angleOf[0] >= 0 ? angleOf[0] : 0) + ' (apart from timed cutaways). If more people talk, pick how many under ' +
+          '“How many people talk?” and Pulse listens again.';
+      }
+      var regions = CPVoices.voicesToRegions(v.turns, numAngles, angleOf, v.start);
+      return CPMulticam.directorPlan(regions, dur, {
+        minSegment: mcMinHold(),
+        wideAngles: wides,
+        wideOnSilence: wides.length > 0,
+        centerEvery: parseInt($('mc-center').value, 10) || 0,
+        centerHold: mcCenterHold(),
+        leadIn: mcLeadIn(),
+        maxShot: mcMaxShot(),
+        cutawayHold: mcCutawayHold()
+      });
+    }, function (e) { capMcProgress(null); throw e; });
+  }
+  /* One mic for everyone (`why` = the plain reason the mics can't be told
+     apart): follow each person by their voice when the owner has the voice
+     engine or agrees to fetch it, else switch on each talk burst. */
+  function mcOneMicPlan(numAngles, track, why) {
+    var bursts = function (extra) {
+      toast(why + ' — switching cameras on each talk burst instead (one-mic mode).' + (extra ? ' ' + extra : ''));
+      return patternPlan(numAngles, mcSpeechBurstSegments(track));
+    };
+    if (!voicesPossible()) return bursts();
+    var ask = voicesReady() ? Promise.resolve(true) : (state.voicesDeclined ? Promise.resolve(false) : new Promise(function (res) {
+      confirmInline('Everyone is on one mic here, so Pulse can’t tell who is talking by how loud each mic is.\n\n' +
+        'Pulse can tell the people apart by their voices instead — free, and it runs on this computer (nothing is uploaded). ' +
+        'It needs a one-time download of about ' + voicesMB() + ' MB.', 'Download (' + voicesMB() + ' MB)', res);
+    }));
+    return ask.then(function (yes) {
+      if (!yes) { state.voicesDeclined = true; return bursts('To follow each person by their voice, set up 🗣️ Who’s talking in Settings.'); }
+      return mcVoicesPlan(numAngles, track).catch(function (e) {
+        diag('voices', 'fell back to talk bursts: ' + (e && e.message) + (e && e.detail ? ' — ' + e.detail : ''));
+        return bursts('(Who’s talking didn’t work this time: ' + ((e && e.message) || 'unknown error') + ')');
+      });
+    });
+  }
+
   /* Build the cut plan from whatever switch mode is selected. Returns a Promise
      of the plan and stashes it in state.plan. Shared by Auto-multicam, Apply
      and the one-click Redo button so they always use the SAME current settings. */
@@ -13933,9 +14135,8 @@
       // recording, and say why.
       var oneMicInstead = function (e) {
         var who = (e && e.track) ? ('The Left and Right of ' + (e.track.name || ('A' + (e.track.index + 1)))) : 'The Left and Right channels';
-        toast(who + ' sound almost the same (one stereo mic, or two mics that hear each other too much), so Pulse can’t tell who is ' +
-          'talking from them — switching cameras on each talk burst instead (one-mic mode).');
-        return patternPlan(numAngles, mcSpeechBurstSegments(e && e.track));
+        return mcOneMicPlan(numAngles, e && e.track, who + ' sound almost the same (one stereo mic, or two mics that hear each other too much), ' +
+          'so Pulse can’t tell who is talking from them');
       };
       if (src === 'follow' && tracks && tracks.length < 2) {
         return mcProbeTracks(tracks).then(function () {
@@ -13947,8 +14148,7 @@
               return oneMicInstead(e);
             });
           }
-          toast('Only one audio track found — switching cameras on each talk burst instead (one-mic mode).');
-          return patternPlan(numAngles, mcSpeechBurstSegments());
+          return mcOneMicPlan(numAngles, null, 'Only one audio track found');
         });
       }
       if (src === 'follow') {
@@ -14136,9 +14336,10 @@
       view.appendChild(item);
     });
     // transcript mode: say which speaker label went to which camera, with a
-    // one-tap swap (the AI's "Speaker 1" may be the person on V2)
+    // one-tap swap (the AI's "Speaker 1" may be the person on V2) — and the
+    // same for the voices Who's talking told apart on one mic
     var an = state.mcAnalysis;
-    if (an && an.mode === 'transcript' && an.labelled && an.mapping.length) {
+    if (an && (an.mode === 'transcript' || an.mode === 'voices') && an.labelled && an.mapping.length) {
       var mapLine = document.createElement('div');
       mapLine.className = 'hint mc-speaker-map';
       mapLine.textContent = '🗣️ ' + an.mapping.map(function (m) {
@@ -14171,7 +14372,7 @@
       if (numAngles >= 3 || an.mapping.length >= 3) {
         var pickRow = document.createElement('div');
         pickRow.className = 'hint mc-speaker-pick';
-        pickRow.appendChild(document.createTextNode('Camera for each speaker: '));
+        pickRow.appendChild(document.createTextNode(an.mode === 'voices' ? 'Camera for each voice: ' : 'Camera for each speaker: '));
         an.mapping.forEach(function (m) {
           var wrap = document.createElement('span');
           wrap.className = 'mc-pick';
@@ -14199,6 +14400,32 @@
           pickRow.appendChild(wrap);
         });
         mapLine.parentNode.insertBefore(pickRow, mapLine.nextSibling);
+      }
+      // voices: how many people Pulse listened for — the owner can say
+      // (the engine guessing one person as two, or two similar voices as one)
+      if (an.mode === 'voices') {
+        var pplRow = document.createElement('div');
+        pplRow.className = 'hint mc-voices-people';
+        pplRow.appendChild(document.createTextNode('👥 How many people talk? '));
+        var ppl = document.createElement('select');
+        ppl.id = 'mc-voices-people';
+        var pOpts = [[0, 'Pulse decides' + (an.asked ? '' : ' (heard ' + an.heard + ')')]];
+        for (var pc = 2; pc <= 6; pc++) pOpts.push([pc, pc + ' people']);
+        pOpts.forEach(function (o) {
+          var op = document.createElement('option');
+          op.value = String(o[0]); op.textContent = o[1];
+          ppl.appendChild(op);
+        });
+        ppl.value = String(an.asked || 0);
+        ppl.addEventListener('change', function () {
+          var n = parseInt(this.value, 10) || 0;
+          state.mcVoicesPeople = { key: an.recording, n: n };
+          capMcProgress('Listening again for ' + (n ? n + ' people' : 'everyone') + '…');
+          rebuild();
+        });
+        pplRow.appendChild(ppl);
+        var afterRow = view.querySelector('.mc-speaker-pick') || mapLine;
+        afterRow.parentNode.insertBefore(pplRow, afterRow.nextSibling);
       }
     }
     var unlabelled = !!(an && an.mode === 'transcript' && !an.labelled);

@@ -10,6 +10,9 @@
  *   - real: child_process.spawn is bridged to real ffmpeg on real WAV files.
  * MC_PANEL_DIR=<dir> runs the same scenario against another copy of the panel
  * (e.g. the code before a fix) to prove the gate can fail.
+ * With real ffmpeg, opts.bins lists other real programs the panel may start
+ * (the voice engine), opts.files the paths it may find on disk, and
+ * opts.settings is merged into the panel's saved settings.
  */
 'use strict';
 const fs = require('fs');
@@ -76,9 +79,11 @@ async function openPanel(browser, opts) {
   });
   if (opts.realFfmpeg) {
     const procs = {};
+    const bins = opts.bins || [];
     await page.exposeFunction('__spawn', (id, bin, args) => {
       const send = (kind, payload) => page.evaluate((i, k, p) => window.__procEvent(i, k, p), id, kind, payload).catch(() => {});
-      const p = cp.spawn('ffmpeg', args);
+      const p = cp.spawn(bins.indexOf(bin) >= 0 ? bin : 'ffmpeg', args);
+      calls.push({ fn: 'spawn', bin, args });
       procs[id] = p;
       p.stdout.on('data', (d) => send('stdout', d.toString()));
       p.stderr.on('data', (d) => send('stderr', d.toString()));
@@ -87,9 +92,11 @@ async function openPanel(browser, opts) {
       return true;
     });
     await page.exposeFunction('__kill', (id) => { try { procs[id] && procs[id].kill(); } catch (e) {} return true; });
+    // the panel's own temporary audio (the voice engine's input) — nothing else
+    await page.exposeFunction('__unlink', (p) => { if (/^\/tmp\/pulse-voices-[\w.-]+\.wav$/.test(String(p))) { try { fs.unlinkSync(p); } catch (e) {} } return true; });
   }
-  await page.evaluateOnNewDocument((real) => {
-    try { localStorage.setItem('cutpilot.settings', JSON.stringify({ ffmpegPath: '/usr/bin/ffmpeg' })); } catch (e) {}
+  await page.evaluateOnNewDocument((real, extra, files) => {
+    try { localStorage.setItem('cutpilot.settings', JSON.stringify(Object.assign({ ffmpegPath: '/usr/bin/ffmpeg' }, extra || {}))); } catch (e) {}
     window.__adobe_cep__ = {
       evalScript(script, cb) {
         const m = /^(\w+)\(([\s\S]*)\)$/.exec(script);
@@ -110,7 +117,8 @@ async function openPanel(browser, opts) {
         else if (kind === 'error') h.error.forEach(f => f(new Error(payload)));
       };
       window.require = function (mod) {
-        if (mod === 'fs') return { existsSync: (p) => p === '/usr/bin/ffmpeg', readFileSync() { throw new Error('no fs in test'); }, writeFileSync() {} };
+        if (mod === 'fs') return { existsSync: (p) => p === '/usr/bin/ffmpeg' || (files || []).indexOf(p) >= 0, readFileSync() { throw new Error('no fs in test'); },
+                                   writeFileSync() {}, unlinkSync: (p) => { window.__unlink(String(p)); } };
         if (mod === 'os') return { homedir: () => '/nonexistent', tmpdir: () => '/tmp', platform: () => 'darwin' };
         if (mod === 'path') return { join: (...a) => a.join('/'), basename: (p) => String(p).split('/').pop(), dirname: (p) => String(p).split('/').slice(0, -1).join('/') };
         if (mod === 'child_process') return {
@@ -129,7 +137,7 @@ async function openPanel(browser, opts) {
         throw new Error('test shim: no module ' + mod);
       };
     }
-  }, !!opts.realFfmpeg);
+  }, !!opts.realFfmpeg, opts.settings || null, opts.files || []);
   await page.goto('file://' + path.join(PANEL_DIR, 'index.html'), { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => !!document.getElementById('btn-mc-plan') && typeof window.CPMulticam !== 'undefined', { timeout: 20000 });
   await new Promise((r) => setTimeout(r, 900));
@@ -152,8 +160,10 @@ async function openPanel(browser, opts) {
 
 /*
  * ui: { cameras, source ('follow'), map: [select value per camera] (optional),
- *       names: [...], pace ('low'|'medium'|'high'), center (s), apply (default true) }
- * Returns { plan, applyResult, toasts, diag, planView, mapOptions, mapValues }.
+ *       names: [...], pace ('low'|'medium'|'high'), center (s), apply (default true),
+ *       voices: 'no' (default) | 'yes' — the answer to "download the voice engine?" }
+ * Returns { plan, applyResult, toasts, diag, planView, mapOptions, mapValues, asked }
+ * (asked = the questions the panel put up while planning).
  */
 async function runMulticam(ctx, ui) {
   ui = Object.assign({ cameras: 2, source: 'follow', apply: true }, ui);
@@ -179,7 +189,17 @@ async function runMulticam(ctx, ui) {
     const mapValues = sels.map(s => s.value);
     $('mc-diag').classList.add('hidden');
     $('btn-mc-plan').click();
-    const planned = await until(() => document.querySelector('#mc-plan-view .seg-item') || !$('mc-diag').classList.contains('hidden'), 30000);
+    const asked = [];
+    const planned = await until(() => {
+      const ov = document.getElementById('cp-confirm-ov');
+      if (ov && !ov.dataset.seen) {
+        ov.dataset.seen = '1';
+        asked.push(ov.textContent);
+        const btns = ov.querySelectorAll('button');
+        (ui.voices === 'yes' ? document.getElementById('cp-confirm-ok') : btns[0]).click();
+      }
+      return document.querySelector('#mc-plan-view .seg-item') || !$('mc-diag').classList.contains('hidden');
+    }, 30000);
     await sleep(200);
     const planView = $('mc-plan-view') ? $('mc-plan-view').innerText : '';
     const diagPlan = $('mc-diag').classList.contains('hidden') ? null : $('mc-diag').textContent;
@@ -192,7 +212,7 @@ async function runMulticam(ctx, ui) {
     }
     const toasts = Array.from($('log').children).slice(logBefore).map(e => (e.className || '') + '|' + e.textContent);
     return { planned, applied, planView, diagPlan, diag: $('mc-diag').classList.contains('hidden') ? null : $('mc-diag').textContent,
-             toasts, mapOptions, mapValues };
+             toasts, mapOptions, mapValues, asked };
   }, ui);
   const applyCall = ctx.calls.filter(c => c.fn === 'CP_applyMulticamPlan').pop();
   res.plan = applyCall ? applyCall.args.plan : null;
