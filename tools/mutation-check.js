@@ -541,6 +541,39 @@ const MUTANTS = [
     repl: "      box.textContent = 'Multicam wasn’t applied:\\n' + msg;",
     gate: 'CutPilot/test/gates/multicam-razor-fallback.js',
     why: 'a failed Apply no longer shows what Premiere answered'
+  },
+  // ---- Premium previews drawn by Premiere with the owner's words ----
+  {
+    name: 'premium-owner-words',
+    file: 'CutPilot/js/main.js',
+    find: "    return picked.length >= 3 ? picked.join(' ') : 'Make every word count';",
+    repl: "    return 'Make every word count';",
+    gate: 'CutPilot/test/gates/gallery-premium-render.js',
+    why: 'the Premium previews are drawn with a stand-in phrase instead of the owner’s words'
+  },
+  {
+    name: 'premium-own-render-wins',
+    file: 'CutPilot/js/main.js',
+    find: '        var thumbUrl = (ownImg && ownImg + stamp) || shipImg || findIn(mdir, base, IMG);',
+    repl: '        var thumbUrl = shipImg || (ownImg && ownImg + stamp) || findIn(mdir, base, IMG);',
+    gate: 'CutPilot/test/gates/gallery-premium-render.js',
+    why: 'the cards keep the shipped clips after Premiere drew them with the owner’s words'
+  },
+  {
+    name: 'premium-caption-box',
+    file: 'CutPilot/js/main.js',
+    find: "'-vf', 'bbox=min_val=24', '-f', 'null', '-']).then(function (err) {",
+    repl: "'-vf', 'cropdetect=limit=24:round=2:reset=0', '-f', 'null', '-']).then(function (err) {",
+    gate: 'CutPilot/test/gates/gallery-premium-render.js',
+    why: 'a thin caption in a tall frame reads as “nothing visible” again (cropdetect averages whole columns)'
+  },
+  {
+    name: 'premium-host-text',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '        if (tp) CP_setMgrtText(tp, args.text, true, null);',
+    repl: '        if (false) CP_setMgrtText(tp, args.text, true, null);',
+    gate: 'CutPilot/test/gates/host-render-mogrt-frames.js',
+    why: 'Premiere draws the template with its sample text, not the owner’s words'
   }
 ];
 

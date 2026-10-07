@@ -4038,8 +4038,12 @@
         // re-render (e.g. every card showing the same blue Halo box) mask the
         // real template ("use the original preview").
         var shipImg = findIn(path.join(mdir, 'thumbs'), base, IMG), shipVid = findIn(path.join(mdir, 'thumbs'), base, VID);
-        var thumbUrl = shipImg || findIn(mdir, base, IMG);
-        var videoUrl = shipVid || findIn(mdir, base, VID);
+        // …and Premiere's own render with the owner's words ("🎬 Preview with
+        // my words") wins over both; the stamp makes a new render reload
+        var own = premiumPreviewDir(), stamp = '?v=' + _premStamp;
+        var ownImg = own ? findIn(own, base, IMG) : '', ownVid = own ? findIn(own, base, VID) : '';
+        var thumbUrl = (ownImg && ownImg + stamp) || shipImg || findIn(mdir, base, IMG);
+        var videoUrl = (ownVid && ownVid + stamp) || shipVid || findIn(mdir, base, VID);
         if (thumbUrl) withThumb++;
         if (videoUrl) withVideo++;
         return { name: m.name, path: path.join(mdir, m.file),
@@ -6199,6 +6203,106 @@
   /* The Flux section: premium, EDITABLE .mogrt templates (section:"flux" in
      mogrts/index.json). Each card routes through the MOGRT pipeline — placed on
      the timeline as a live Essential Graphics element, never a burned-in PNG. */
+  /* ---- Premium previews drawn by Premiere, with the owner's words --------
+     The owner: "flux preview is very bad, not accurate". The cards showed
+     each template author's own small clip (640×360, their sample text).
+     "🎬 Preview with my words" has Premiere draw every Premium template with
+     the owner's words at their timeline's size (CP_renderMogrtFrames: a temp
+     sequence, real frames via QE), then ffmpeg crops the frames to the
+     caption (2:1, like the card) and makes the card's loop and still in
+     ~/Documents/Pulse/premium-previews. Those win over the shipped previews. */
+  var _premBusy = false, _premStamp = 0;
+  function premiumPreviewDir() {
+    try { return nodeReq('path').join(nodeReq('os').homedir(), 'Documents', 'Pulse', 'premium-previews'); } catch (e) { return null; }
+  }
+  /* The owner's own first words (their transcript), else a stand-in. */
+  function premiumSampleText() {
+    var w = state.transcriptWords || [], picked = [];
+    for (var i = 0; i < w.length && picked.length < 4; i++) {
+      var t = String((w[i] && (w[i].text || w[i].word)) || '').replace(/[.,!?।"“”]/g, '').trim();
+      if (t) picked.push(t);
+    }
+    return picked.length >= 3 ? picked.join(' ') : 'Make every word count';
+  }
+  /* Rendered frames (<base>_00.png, _01…) → the card's preview: the area
+     around the caption over all frames (2:1, padded, at least 40% of the
+     frame wide), a loop at 7 fps and a still from three quarters in.
+     FW × FH = the size the frames were rendered at. */
+  function makePremiumPreview(ff, files, outNoExt, FW, FH) {
+    if (!files || files.length < 2) return Promise.reject(new Error('Premiere exported no frames'));
+    var pattern = String(files[0]).replace(/_00\.png$/, '_%02d.png');
+    // ffmpeg's bbox: the exact box of non-black pixels in each frame (cropdetect
+    // averages whole columns, so a thin caption in a tall frame read as nothing)
+    return runProc(ff, ['-hide_banner', '-framerate', '7', '-i', pattern, '-vf', 'bbox=min_val=24', '-f', 'null', '-']).then(function (err) {
+      var c = premiumBox(err);
+      if (!c) throw new Error('nothing visible in Premiere’s frames');
+      var even = function (v) { return Math.max(2, Math.round(v / 2) * 2); };
+      var W = Math.min(FW, Math.max(c[0] * 1.3 + 24, (c[1] * 1.6 + 24) * 2, FW * 0.4)), H = Math.min(FH, W / 2);
+      W = even(H * 2 > FW ? FW : H * 2); H = even(W / 2);
+      var X = Math.min(FW - W, even(Math.max(0, c[2] + c[0] / 2 - W / 2))), Y = Math.min(FH - H, even(Math.max(0, c[3] + c[1] / 2 - H / 2)));
+      var crop = 'crop=' + W + ':' + H + ':' + X + ':' + Y + ',scale=384:192:flags=lanczos';
+      return runProc(ff, ['-y', '-hide_banner', '-framerate', '7', '-i', pattern, '-vf', crop + ',format=yuv420p', '-an',
+        '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '20', '-movflags', '+faststart', outNoExt + '.mp4']).then(function () {
+        return runProc(ff, ['-y', '-hide_banner', '-i', files[Math.floor(files.length * 0.75)], '-vf', crop, outNoExt + '.png']);
+      });
+    });
+  }
+  /* The union of ffmpeg bbox lines ("x1:N x2:N y1:N y2:N" per frame) as
+     [w, h, x, y], or null when no frame had anything on it. */
+  function premiumBox(log) {
+    var re = /x1:(\d+) x2:(\d+) y1:(\d+) y2:(\d+)/g, m, x1 = Infinity, y1 = Infinity, x2 = -1, y2 = -1;
+    while ((m = re.exec(String(log)))) {
+      var a = +m[1], b = +m[2], c = +m[3], d = +m[4];
+      if (b < a || d < c) continue;
+      if (a < x1) x1 = a; if (c < y1) y1 = c; if (b > x2) x2 = b; if (d > y2) y2 = d;
+    }
+    return x2 < 0 ? null : [x2 - x1 + 1, y2 - y1 + 1, x1, y1];
+  }
+  function renderPremiumPreviews(btn) {
+    if (_premBusy) return toast('Already drawing the previews — hang tight…');
+    if (!CPBridge.isCEP()) return toast('Previews with your words need Premiere (open Pulse inside Premiere).', true);
+    var ff = resolveFfmpeg();
+    if (!ff) return ensureFfmpeg().then(function () { renderPremiumPreviews(btn); }, function (e) { toast(e.message, true); });
+    var fs, path, os;
+    try { fs = nodeReq('fs'); path = nodeReq('path'); os = nodeReq('os'); } catch (e) { return toast('Open Pulse inside Premiere to draw the previews.', true); }
+    var list = mogrtTemplates().filter(function (t) { return t.flux; });
+    if (!list.length) return toast('No Premium templates loaded yet.', true);
+    var dir = premiumPreviewDir();
+    try { fs.mkdirSync(dir, { recursive: true }); } catch (eMk) {}
+    var words = premiumSampleText();
+    var W = (state.env && state.env.width) || 1920, H = (state.env && state.env.height) || 1080;
+    var times = [];
+    for (var k = 0; k < 20; k++) times.push(Math.round((0.15 + k * 0.14) * 100) / 100);
+    var st = $('flux-render-status');
+    _premBusy = true;
+    if (btn) btn.disabled = true;
+    var ok = 0, bad = [], chain = Promise.resolve();
+    list.forEach(function (t, i) {
+      chain = chain.then(function () {
+        if (st) { st.classList.remove('hidden'); st.textContent = '🎬 Premiere is drawing “' + t.name + '”… (' + (i + 1) + '/' + list.length + ')'; }
+        var base = path.basename(t.path).replace(/\.mogrt$/i, '');
+        var raw = path.join(os.tmpdir(), 'pulse-prem-' + Date.now() + '-' + i);
+        var made = [];
+        return CPBridge.callHost('CP_renderMogrtFrames', { mogrtPath: t.path, text: words, seconds: 3, times: times, outBase: raw, width: W, height: H })
+          .then(function (r) { made = r.files || []; return makePremiumPreview(ff, made, path.join(dir, base), W, H); })
+          .then(function () { ok++; }, function (e) { bad.push(t.name + ': ' + ((e && e.message) || e)); })
+          .then(function () { made.forEach(function (f) { try { fs.unlinkSync(f); } catch (eU) {} }); });
+      });
+    });
+    return chain.then(function () {
+      _premBusy = false;
+      if (btn) btn.disabled = false;
+      _premStamp++;
+      loadBundledMogrts();
+      renderFluxGrid();
+      if (st) st.textContent = ok ? ('✅ ' + ok + ' of ' + list.length + ' drawn by Premiere with “' + words + '”.') : '⚠️ Premiere couldn’t draw them here.';
+      diag('previews', 'premium renders: ' + ok + ' of ' + list.length + (bad.length ? ' — failed: ' + bad.join(' | ') : ''));
+      toast(ok ? '✅ The Premium cards now show Premiere’s own render with your words.'
+               : 'Premiere couldn’t draw the previews here — tap 📋 Copy diagnostics in Settings and send it to aiFloh.', !ok);
+    });
+  }
+  if ($('btn-flux-render')) $('btn-flux-render').addEventListener('click', function () { renderPremiumPreviews(this); });
+
   function renderFluxGrid() {
     var grid = $('flux-grid'); if (!grid) return;
     var q = (state.fluxSearch || '').trim();

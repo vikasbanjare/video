@@ -45,11 +45,18 @@ function planFor(file, tmp) {
   const sz = /, (\d{2,5})x(\d{2,5})[, ]/.exec(probe), dm = /Duration: (\d+):(\d+):([\d.]+)/.exec(probe);
   if (!sz || !dm) return { base, skip: 'its preview video can’t be read', bad: true };
   const FW = +sz[1], FH = +sz[2], keep = Math.min(KEEP, (+dm[1]) * 3600 + (+dm[2]) * 60 + (+dm[3]));
-  // where the caption is: the largest non-black area over the kept part
-  const cd = run(['-hide_banner', '-t', String(keep), '-i', src, '-vf', 'cropdetect=limit=24:round=2:reset=0', '-f', 'null', '-']).stderr;
-  const all = cd.match(/crop=(\d+):(\d+):(\d+):(\d+)/g) || [];
-  if (!all.length) return { base, skip: 'nothing visible in its preview', bad: true };
-  const [w, h, x, y] = all[all.length - 1].slice(5).split(':').map(Number);
+  // where the caption is: the box of non-black pixels over the kept part
+  // (ffmpeg bbox, unioned — cropdetect averages whole columns and missed thin text)
+  const bb = run(['-hide_banner', '-t', String(keep), '-i', src, '-vf', 'bbox=min_val=24', '-f', 'null', '-']).stderr;
+  let x1 = Infinity, y1 = Infinity, x2 = -1, y2 = -1, mm;
+  const re = /x1:(\d+) x2:(\d+) y1:(\d+) y2:(\d+)/g;
+  while ((mm = re.exec(bb))) {
+    const [a, b, c, d] = mm.slice(1).map(Number);
+    if (b < a || d < c) continue;
+    x1 = Math.min(x1, a); y1 = Math.min(y1, c); x2 = Math.max(x2, b); y2 = Math.max(y2, d);
+  }
+  if (x2 < 0) return { base, skip: 'nothing visible in its preview', bad: true };
+  const w = x2 - x1 + 1, h = y2 - y1 + 1, x = x1, y = y1;
   let W = Math.min(FW, Math.max(w * 1.3 + 24, (h * 1.6 + 24) * 2, 320));
   let H = Math.min(FH, W / 2);
   W = even(H * 2 > FW ? FW : H * 2); H = even(W / 2);
