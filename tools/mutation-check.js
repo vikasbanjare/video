@@ -748,8 +748,8 @@ const MUTANTS = [
   {
     name: 'es3-runtime-active',
     file: 'CutPilot/jsx/host.jsx',
-    find: "  try { nm = String(clip.name || ''); } catch (eN) {}",
-    repl: "  try { nm = String(clip.name || ''); if ([nm].indexOf(nm) < 0) nm = ''; } catch (eN) {}",
+    find: "  var nm = '', mp = '';\n  try { nm = String(clip.name || ''); } catch (eN) {}",
+    repl: "  var nm = '', mp = '', first = [1, 2].indexOf(1);\n  try { nm = String(clip.name || ''); } catch (eN) {}",
     gate: 'CutPilot/test/gates/host-remove-safety.js',
     why: 'host.jsx calls Array.indexOf, which Premiere’s ExtendScript does not have, and no gate notices'
   },
