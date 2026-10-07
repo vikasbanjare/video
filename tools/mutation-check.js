@@ -792,6 +792,47 @@ const MUTANTS = [
     repl: '      var known = [];',
     gate: 'CutPilot/test/gates/selftest-premiere.js',
     why: 'a 29.97 fps sequence gets test clips at a rounded rate, so the test sequence is not like the owner’s'
+  },
+  // ---- the engines that listen, on speech the Mac speaks ----
+  {
+    name: 'speech-words-check',
+    file: 'CutPilot/js/main.js',
+    find: '          var heard = /test/i.test(txt) && /\\b(one|1)\\b/i.test(txt) && /\\b(three|3)\\b/i.test(txt);',
+    repl: '          var heard = !!txt;',
+    gate: 'CutPilot/test/gates/selftest-speech.js',
+    why: 'a transcription that misses words passes as working'
+  },
+  {
+    name: 'speech-voice-order',
+    file: 'CutPilot/js/main.js',
+    find: '        var right = who[0] != null && who[1] != null && who[0] !== who[1] && who[2] === who[0] && who[3] === who[1];',
+    repl: '        var right = who[0] !== who[1];',
+    gate: 'CutPilot/test/gates/selftest-speech.js',
+    why: 'Who’s talking passes when it gives the third and fourth lines to the wrong voice'
+  },
+  {
+    name: 'speech-line-slots',
+    file: 'CutPilot/js/main.js',
+    find: "aresample=16000,apad=whole_dur=' + ST_LINE + ',atrim=0:' + ST_LINE + '[l'",
+    repl: "aresample=16000[l'",
+    gate: 'CutPilot/test/gates/selftest-speech.js',
+    why: 'the spoken lines run together, so the voice heard at each line’s moment is not that line’s'
+  },
+  {
+    name: 'speech-mac-only',
+    file: 'CutPilot/js/main.js',
+    find: '    if (!ff || !fs.existsSync(ST_SAY)) return Promise.resolve();',
+    repl: '    if (!ff) return Promise.resolve();',
+    gate: 'CutPilot/test/gates/selftest-speech.js',
+    why: 'a computer without `say` (Windows) gets failing speech rows for a test it cannot run'
+  },
+  {
+    name: 'speech-tidy',
+    file: 'CutPilot/js/main.js',
+    find: '    return chain.then(tidy, function (e) { tidy(); throw e; });',
+    repl: '    return chain;',
+    gate: 'CutPilot/test/gates/selftest-speech.js',
+    why: 'the test’s speech recordings stay in the temp folder'
   }
 ];
 

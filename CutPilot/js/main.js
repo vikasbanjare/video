@@ -4061,6 +4061,84 @@
     });
   }
 
+  /* ---- THE ENGINES THAT LISTEN, ON REAL SPEECH ---------------------------
+     🧪 Test everything also tries the two engines that listen, on speech this
+     Mac speaks itself (macOS `say`): offline transcription must hear the
+     words it was given, and Who's talking must tell two voices apart, each
+     at the right moment. Only an engine already set up is tried — nothing is
+     downloaded here — and each row says what was heard. Not a Mac (no `say`):
+     no rows. */
+  var ST_SAY = '/usr/bin/say';
+  var ST_LINE = 6;   // each spoken line is padded to 6 s, so line i is heard at 6·i + 1.5 s
+  /* two built-in voices that sound unlike each other (a low one, a high one) */
+  function stSayPair() {
+    var list = '';
+    try { list = String(nodeReq('child_process').execSync(ST_SAY + " -v '?'", { timeout: 8000 })); } catch (e) { return null; }
+    var have = {};
+    list.split('\n').forEach(function (l) { var m = /^(\S+)\s+[a-z]{2}[_-][A-Z]{2}/.exec(l); if (m) have[m[1]] = 1; });
+    var low = ['Alex', 'Daniel', 'Fred', 'Tom', 'Aaron', 'Arthur', 'Rishi', 'Ralph'];
+    var high = ['Samantha', 'Karen', 'Victoria', 'Moira', 'Tessa', 'Fiona', 'Veena', 'Kate', 'Serena', 'Allison', 'Ava', 'Susan'];
+    var a = low.filter(function (v) { return have[v]; })[0], b = high.filter(function (v) { return have[v]; })[0];
+    return a && b ? [a, b] : null;
+  }
+  function speechEngineRows(row, ff) {
+    var fs = nodeReq('fs'), pathMod = nodeReq('path'), os = nodeReq('os');
+    if (!ff || !fs.existsSync(ST_SAY)) return Promise.resolve();
+    var wbin = null, model = null;
+    try { wbin = resolveWhisper(); model = wbin ? resolveWhisperModel() : null; } catch (eW) {}
+    var voices = voicesReady();
+    if (!(wbin && model) && !voices) return Promise.resolve();
+    var dir = pathMod.join(os.tmpdir(), 'pulse-selftest-speech');
+    try { fs.mkdirSync(dir, { recursive: true }); } catch (eMk) {}
+    var f = function (n) { return pathMod.join(dir, n); };
+    function say(voice, text, out) { return runProc(ST_SAY, (voice ? ['-v', voice] : []).concat(['-o', out, text])); }
+    function wav16(args, out) { return runProc(ff, ['-hide_banner', '-y'].concat(args, ['-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', out])); }
+    function tidy() { try { fs.readdirSync(dir).forEach(function (n) { try { fs.unlinkSync(f(n)); } catch (eU) {} }); fs.rmdirSync(dir); } catch (eT) {} }
+    var chain = Promise.resolve();
+    if (wbin && model) chain = chain.then(function () {
+      var t0 = Date.now(), said = 'Testing Pulse. One, two, three.';
+      return say(null, said, f('words.aiff'))
+        .then(function () { return wav16(['-i', f('words.aiff')], f('words.wav')); })
+        .then(function () { return runProc(wbin, ['-m', model, '-f', f('words.wav'), '-osrt', '-of', f('words'), '-l', 'en']); })
+        .then(function () {
+          var txt = '';
+          try { txt = CPCaptions.parseSRT(fs.readFileSync(f('words.srt'), 'utf8')).map(function (c) { return c.text; }).join(' ').trim(); } catch (eR) {}
+          var heard = /test/i.test(txt) && /\b(one|1)\b/i.test(txt) && /\b(three|3)\b/i.test(txt);
+          row('Transcribe on this computer', heard ? 'ok' : 'fail', (txt ? 'heard “' + txt.slice(0, 90) + '”' : 'heard nothing') +
+            ' in ' + Math.round((Date.now() - t0) / 100) / 10 + ' s' + (heard ? '' : ' — Pulse said “' + said + '”'));
+        }, function (e) { row('Transcribe on this computer', 'fail', String((e && e.message) || e).slice(0, 220)); });
+    });
+    if (voices) chain = chain.then(function () {
+      var pair = stSayPair();
+      if (!pair) { row('Who’s talking (two voices)', 'warn', 'this Mac has no two different built-in voices to test with'); return null; }
+      var lines = [[0, 'Welcome back to the show. Today we talk about editing podcasts faster.'],
+                   [1, 'Thanks for having me. I cut every episode myself, so this matters a lot.'],
+                   [0, 'Then tell me, how long does one episode usually take you?'],
+                   [1, 'Most weeks it takes me two full days, sometimes even three.']];
+      var chainL = Promise.resolve();
+      lines.forEach(function (l, i) { chainL = chainL.then(function () { return say(pair[l[0]], l[1], f('line' + i + '.aiff')); }); });
+      return chainL.then(function () {
+        var args = [], fl = '';
+        lines.forEach(function (l, i) { args.push('-i', f('line' + i + '.aiff')); fl += '[' + i + ':a]aresample=16000,apad=whole_dur=' + ST_LINE + ',atrim=0:' + ST_LINE + '[l' + i + '];'; });
+        lines.forEach(function (l, i) { fl += '[l' + i + ']'; });
+        fl += 'concat=n=' + lines.length + ':v=0:a=1[a]';
+        return wav16(args.concat(['-filter_complex', fl, '-map', '[a]']), f('voices.wav'));
+      }).then(function () {
+        return CPVoices.run(voicesNode(), voicesDir(), f('voices.wav'), { speakers: 2 });
+      }).then(function (turns) {
+        var at = function (t) { for (var k = 0; k < turns.length; k++) if (t >= turns[k].start && t < turns[k].end) return turns[k].speaker; return null; };
+        var who = lines.map(function (l, i) { return at(i * ST_LINE + 1.5); });
+        var n = CPVoices.voiceOrder(turns).length;
+        var right = who[0] != null && who[1] != null && who[0] !== who[1] && who[2] === who[0] && who[3] === who[1];
+        var tag = {}, next = 1;
+        var named = who.map(function (s) { if (s == null) return '—'; if (!tag[s]) tag[s] = 'Voice ' + (next++); return tag[s]; });
+        row('Who’s talking (two voices)', right ? 'ok' : 'fail', 'heard ' + n + ' voice' + (n === 1 ? '' : 's') +
+          ' (' + pair.join(' and ') + '); the four lines went to ' + named.join(' / ') + (right ? '' : ' — expected Voice 1 / Voice 2 / Voice 1 / Voice 2'));
+      }, function (e) { row('Who’s talking (two voices)', 'fail', String((e && e.message) || e).slice(0, 200) + (e && e.detail ? ' · ' + String(e.detail).slice(-160) : '')); });
+    });
+    return chain.then(tidy, function (e) { tidy(); throw e; });
+  }
+
   var _selfTestBusy = false;
   function runSelfTest() {
     if (_selfTestBusy) return toast('Self-test already running — hang tight…');
@@ -4117,13 +4195,16 @@
     function busy(msg) { if (out) out.textContent = msg; }
     var outDir = pathMod.join(os.tmpdir(), 'pulse-selftest');
     try { fs.mkdirSync(outDir, { recursive: true }); } catch (eMk) {}
-    busy('🧪 Testing every feature inside Premiere… (about a minute — a test sequence appears briefly; your timeline is untouched)');
-    // every feature on a throwaway sequence first (premiereFeatureTest), then
-    // the caption engine template's render ladder
-    (ff ? premiereFeatureTest(row, ff, function (n, of, what) {
-      busy('🧪 Testing inside Premiere — step ' + n + ' of ' + of + ': ' + what + '… (your timeline is untouched)');
-    }) : Promise.resolve(row('In Premiere: every feature', 'warn',
-      'needs the audio engine to make its test clips — Settings → ⬇️ Set up audio engine, then test again'))).then(function () {
+    // the engines that listen first (on speech this Mac speaks), then every
+    // feature on a throwaway sequence, then the caption engine template's ladder
+    busy('🧪 Testing the engines that listen… (your timeline is untouched)');
+    speechEngineRows(row, ff).catch(function (eSp) { row('Engines that listen', 'warn', eSp.message); }).then(function () {
+      busy('🧪 Testing every feature inside Premiere… (about a minute — a test sequence appears briefly; your timeline is untouched)');
+      return ff ? premiereFeatureTest(row, ff, function (n, of, what) {
+        busy('🧪 Testing inside Premiere — step ' + n + ' of ' + of + ': ' + what + '… (your timeline is untouched)');
+      }) : row('In Premiere: every feature', 'warn',
+        'needs the audio engine to make its test clips — Settings → ⬇️ Set up audio engine, then test again');
+    }).then(function () {
       if (!bb) return null;
       busy('🧪 Testing the caption engine template… (~20s)');
       return CPBridge.callHost('CP_inspectMogrt', { path: bb.path });

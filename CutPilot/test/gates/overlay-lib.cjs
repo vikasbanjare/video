@@ -78,15 +78,19 @@ function startBridge() {
   // missing parent); state.hide (a RegExp) makes matching paths not exist (a
   // machine without ffmpeg although this one has /usr/bin/ffmpeg);
   // state.failWrite ({ re, code }) makes writing a matching file fail with
-  // that error code (a full disk: ENOSPC).
-  const state = { premiere: null, hostCalls: [], failUnlink: null, node8: false, hide: null, failWrite: null };
+  // that error code (a full disk: ENOSPC). state.alias ({ '/usr/bin/say':
+  // '/tmp/…/fake-say' }) stands a program in for one this machine lacks (a
+  // Mac's own tools): it exists, runs and is named in commands as the alias.
+  const state = { premiere: null, hostCalls: [], failUnlink: null, node8: false, hide: null, failWrite: null, alias: {} };
+  const real = (p) => (state.alias && state.alias[p]) || p;
+  const realCmd = (c) => { let s = String(c); Object.keys(state.alias || {}).forEach(k => { s = s.split(k).join(state.alias[k]); }); return s; };
 
   function errOut(e) {
     return { error: { message: String(e && e.message || e), code: e && e.code, status: e && e.status,
                       stdout: e && e.stdout ? String(e.stdout) : undefined } };
   }
   const ops = {
-    existsSync: (p) => !(state.hide && state.hide.test(p)) && fs.existsSync(p),
+    existsSync: (p) => !(state.hide && state.hide.test(p)) && fs.existsSync(real(p)),
     statSync: (p) => { const s = fs.statSync(p); return { size: s.size, mtimeMs: s.mtimeMs, dir: s.isDirectory() }; },
     mkdirSync: (p, o) => { fs.mkdirSync(p, state.node8 ? undefined : (o || undefined)); return null; },
     writeFileSync: (p, d) => {
@@ -107,13 +111,13 @@ function startBridge() {
     rmdirSync: (p) => { fs.rmdirSync(p); return null; },
     renameSync: (a, b) => { fs.renameSync(a, b); return null; },
     accessSync: (p, m) => { fs.accessSync(p, m); return null; },
-    execSync: (cmd) => cp.execSync(cmd, { encoding: 'utf8', maxBuffer: 1 << 26 }),
+    execSync: (cmd) => cp.execSync(realCmd(cmd), { encoding: 'utf8', maxBuffer: 1 << 26 }),
     spawn: (cmd, args) => {
       const id = nextId++;
       const rec = { out: '', err: '', exited: false, code: null, error: null, child: null, args: args };
       procs[id] = rec;
       try {
-        const ch = cp.spawn(cmd, args || []);
+        const ch = cp.spawn(real(cmd), args || []);
         rec.child = ch;
         ch.stdout.on('data', d => { rec.out += d.toString(); });
         ch.stderr.on('data', d => { rec.err += d.toString(); });
