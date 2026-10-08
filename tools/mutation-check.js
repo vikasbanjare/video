@@ -570,8 +570,8 @@ const MUTANTS = [
   {
     name: 'premium-host-text',
     file: 'CutPilot/jsx/host.jsx',
-    find: '        if (tp) CP_setMgrtText(tp, args.text, true, null);',
-    repl: '        if (false) CP_setMgrtText(tp, args.text, true, null);',
+    find: "          if (tp) CP_setMgrtText(tp, args.text, true, args.textStyle || null);",
+    repl: "          if (false) CP_setMgrtText(tp, args.text, true, args.textStyle || null);",
     gate: 'CutPilot/test/gates/host-render-mogrt-frames.js',
     why: 'Premiere draws the template with its sample text, not the owner’s words'
   },
@@ -918,8 +918,8 @@ const MUTANTS = [
   {
     name: 'capcore-fit',
     file: 'CutPilot/js/captions.js',
-    find: '      fits: fit ? function (a, b) { return fit(capWords(a, b)); } : null,',
-    repl: '      fits: null,',
+    find: "      fits: fit ? function (a, b) { var cw = capWords(a, b); return fit(cw, fitHow(cw)); } : null,",
+    repl: "      fits: null,",
     gate: 'CutPilot/test/gates/captions-generate-lands.js',
     why: 'Auto groups more words than fit the frame, so captions shrink or overflow'
   },
@@ -1335,8 +1335,8 @@ const MUTANTS = [
   {
     name: 'pfit-card-render-plan',
     file: 'CutPilot/js/main.js',
-    find: '        if (sb) { rArgs.params = sb.params; rArgs.textStyle = sb.textStyle; rArgs.compW = sb.compW; rArgs.compH = sb.compH; rArgs.posYPct = sb.posYPct; rArgs.sizeFit = sb.sizeFit; }',
-    repl: '',
+    find: "        if (sb) { rArgs.params = sb.params; rArgs.textStyle = sb.textStyle; rArgs.compW = sb.compW; rArgs.compH = sb.compH; rArgs.fitMode = sb.fitMode; rArgs.posYPct = sb.posYPct; rArgs.sizeFit = sb.sizeFit; }",
+    repl: "",
     gate: 'CutPilot/test/gates/gallery-premium-render.js',
     why: 'the Premium cards are drawn unfitted, so the preview no longer matches the timeline'
   },
@@ -1375,24 +1375,24 @@ const MUTANTS = [
   {
     name: 'pfit-preview-fit',
     file: 'CutPilot/jsx/host.jsx',
-    find: '    var pvScale = CP_fitScalePct(seq, args.compW, args.compH);',
-    repl: '    var pvScale = 100;',
+    find: "    var pvScale = CP_fitScalePct(seq, args.compW, args.compH, 0, 0, args.fitMode);",
+    repl: "    var pvScale = 100;",
     gate: 'CutPilot/test/host-tests.js',
     why: '▶ Try on timeline shows the template at a different size than the insert'
   },
   {
     name: 'pfit-render-fit',
     file: 'CutPilot/jsx/host.jsx',
-    find: '    var rfScale = CP_fitScalePct(seq, args.compW, args.compH, args.width, args.height);   // the size this render was asked for',
-    repl: '    var rfScale = 100;',
+    find: "    var rfScale = CP_fitScalePct(seq, args.compW, args.compH, args.width, args.height, args.fitMode);   // the size this render was asked for",
+    repl: "    var rfScale = 100;",
     gate: 'CutPilot/test/gates/host-render-mogrt-frames.js',
     why: 'the Premium card renders are drawn at a different size than the timeline gets'
   },
   {
     name: 'pfit-sheet-preview',
     file: 'CutPilot/js/main.js',
-    find: '          compW: b.compW, compH: b.compH, posYPct: b.posYPct, sizeFit: b.sizeFit });',
-    repl: '          compW: b.compW, compH: b.compH });',
+    find: "          compW: b.compW, compH: b.compH, fitMode: b.fitMode, posYPct: b.posYPct, sizeFit: b.sizeFit });",
+    repl: "          compW: b.compW, compH: b.compH });",
     gate: 'CutPilot/test/gates/premium-fit.js',
     why: '▶ Try on timeline in the Premium sheet drops the template mid-frame at its title size, not where the captions go'
   },
@@ -1748,8 +1748,8 @@ const MUTANTS = [
   {
     name: 'tt-panel-exact',
     file: 'CutPilot/js/main.js',
-    find: '        if (single || overwriteOnTrack || replaceTrack) placeArgs.exact = true;',
-    repl: '        if (single) placeArgs.exact = true;',
+    find: "        if (single || overwriteOnTrack || placeArgs.replaceTrack) placeArgs.exact = true;",
+    repl: "        if (single) placeArgs.exact = true;",
     gate: 'CutPilot/test/gates/captions-transcript-timing.js',
     why: 'a range restyle or “Apply to all” places stills at their default length over the next captions'
   },
