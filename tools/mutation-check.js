@@ -841,6 +841,104 @@ const MUTANTS = [
     repl: "          if (nmR.indexOf('pulse') >= 0 || nmR.indexOf('caption') >= 0 || nmR.indexOf('cap_') === 0) { try { itR.remove(0, 0); } catch (eRem) {} }",
     gate: 'CutPilot/test/gates/overlay-host.js',
     why: 'replacing a caption track also takes the owner’s “Caption intro.mp4” off it'
+  },
+  // Caption options are reachable (captions-options-reachable): each one
+  // undoes one fix the owner would see as "the option is gone again"
+  {
+    name: "opt-editable-trap",
+    file: "CutPilot/js/main.js",
+    find: "    if (_capOut === 'editable') { try { showCustPane('style'); } catch (ePane) {} }\n",
+    repl: "",
+    gate: "CutPilot/test/gates/captions-options-reachable.js",
+    why: "Effects tab open → ✏️ Editable leaves an empty editor again"
+  },
+  {
+    name: "opt-hidden-count",
+    file: "CutPilot/js/main.js",
+    find: "    n.textContent = String(countPulseOnlySettings());",
+    repl: "    n.textContent = 'some';",
+    gate: "CutPilot/test/gates/captions-options-reachable.js",
+    why: "✏️ Editable no longer says how many settings it hides"
+  },
+  {
+    name: "opt-restore-style",
+    file: "CutPilot/js/main.js",
+    find: "      if (lp && !lp.mogrt && lp.id === look.presetId) applyTemplate(lp, { silent: true });",
+    repl: "      if (lp && false) applyTemplate(lp, { silent: true });",
+    gate: "CutPilot/test/gates/captions-options-reachable.js",
+    why: "a reload shows the boot default style's settings under the picked style's name"
+  },
+  {
+    name: "opt-save-kwcaps",
+    file: "CutPilot/js/main.js",
+    find: "    'c-emoji', 'c-kwcaps', 'c-sync'];",
+    repl: "    'c-emoji', 'c-sync'];",
+    gate: "CutPilot/test/gates/captions-options-reachable.js",
+    why: "🔠 CAPS on key words is lost when Premiere reopens"
+  },
+  {
+    name: "opt-greyed-dead-click",
+    file: "CutPilot/js/main.js",
+    find: "    var canFix = dis && !!fix;",
+    repl: "    var canFix = false;",
+    gate: "CutPilot/test/gates/captions-options-reachable.js",
+    why: "a greyed control whose reason one tap could meet is a dead click again"
+  },
+  {
+    name: "opt-outline-swatch",
+    file: "CutPilot/js/main.js",
+    find: "    if ($('sw-stroke')) $('sw-stroke').style.display = '';",
+    repl: "    if ($('sw-stroke')) $('sw-stroke').style.display = (parseInt($('c-strokew').value, 10) || 0) > 0 ? '' : 'none';",
+    gate: "CutPilot/test/gates/captions-options-reachable.js",
+    why: "the Outline colour vanishes on every style with no outline"
+  },
+  {
+    name: "opt-editable-radius",
+    file: "CutPilot/js/main.js",
+    find: "    if (ov.boxRadius != null && ov.boxRadius !== (preset.boxRadius != null ? preset.boxRadius : 12)) eff.boxRadius = ov.boxRadius;\n",
+    repl: "",
+    gate: "CutPilot/test/gates/captions-options-reachable.js",
+    why: "Box roundness shows in ✏️ Editable but never reaches the caption"
+  },
+  {
+    name: "opt-editable-case",
+    file: "CutPilot/js/main.js",
+    find: "    var caseMode = caps ? 'upper' : editorTextCase();",
+    repl: "    var caseMode = caps ? 'upper' : (state.mogrtCase || 'as-spoken');",
+    gate: "CutPilot/test/gates/captions-options-reachable.js",
+    why: "✏️ Editable captions take their text case from the 📁 Upload view again"
+  },
+  {
+    name: "opt-lib-sort-pulse-only",
+    file: "CutPilot/index.html",
+    find: "<select id=\"lib-sort\" aria-label=\"Sort styles\">",
+    repl: "<select id=\"lib-sort\" class=\"png-only\" aria-label=\"Sort styles\">",
+    gate: "CutPilot/test/gates/captions-options-reachable.js",
+    why: "gallery sort disappears in ✏️ Editable"
+  },
+  {
+    name: "opt-browse-hint",
+    file: "CutPilot/js/main.js",
+    find: "use a Pulse style instead (🎨 Styles, at the top of Captions).';",
+    repl: "use a Pulse style instead (≡ Browse styles).';",
+    gate: "CutPilot/test/gates/captions-options-reachable.js",
+    why: "a hint sends the owner to a button that is never shown"
+  },
+  {
+    name: "opt-sync-nudge-pulse-only",
+    file: "CutPilot/index.html",
+    find: "<div class=\"wc-bar sync-nudge\" id=\"sync-nudge\">",
+    repl: "<div class=\"wc-bar sync-nudge png-only\" id=\"sync-nudge\">",
+    gate: "CutPilot/test/gates/captions-options-reachable.js",
+    why: "the highlight-timing nudge hides in ✏️ Editable"
+  },
+  {
+    name: "opt-auto-tooltip",
+    file: "CutPilot/js/main.js",
+    find: "    var wcTip = (w === 0) ? 'Auto: whole phrases, fitted to your video'",
+    repl: "    var wcTip = (w === 0) ? 'Whole sentences'",
+    gate: "CutPilot/test/gates/captions-options-reachable.js",
+    why: "the Words per caption stepper no longer says what Auto does"
   }
 ];
 

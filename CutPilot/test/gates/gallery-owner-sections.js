@@ -86,10 +86,12 @@ const G = require('./gallery-lib/panel.js');
       await pick('tr-dim-bright');
       out.optOut.nextPickOn = wh();
       out.optOut.nextAnim = (document.getElementById('preview-canvas') || {})._pvAnimId || null;
-      // Dim-to-Bright sweeps word by word, so auto-enlarge is disabled with a reason
+      // Dim-to-Bright sweeps word by word, so auto-enlarge is greyed with a
+      // reason — greyed but tappable (aria-disabled) now that one tap can meet
+      // it by switching word-by-word off (captions-options-reachable)
       const em = document.getElementById('c-emphasize');
       const why = document.querySelector('[data-why-for="c-emphasize"]');
-      out.optOut.emph = { wordHl: wh(), disabled: !!(em && em.disabled), why: why ? why.textContent : '' };
+      out.optOut.emph = { wordHl: wh(), disabled: !!(em && (em.disabled || em.getAttribute('aria-disabled') === 'true')), why: why ? why.textContent : '' };
     }
     // ---- All: section order ---------------------------------------------------
     const all = chip('All'); if (all) { all.click(); await sleep(500); }
@@ -128,7 +130,7 @@ const G = require('./gallery-lib/panel.js');
   // the auto-enlarge reason, with word-by-word on
   const em = res.optOut && res.optOut.emph;
   if (!em || em.wordHl !== true) R.bad('could not open a word-by-word style to read the auto-enlarge reason');
-  else if (!em.disabled || !em.why) R.bad('with ✨ Word-by-word on, auto-enlarge is not disabled with a reason (reason: "' + (em && em.why) + '")');
+  else if (!em.disabled || !em.why) R.bad('with ✨ Word-by-word on, auto-enlarge is not greyed with a reason (reason: "' + (em && em.why) + '")');
   else if (!/only works while ✨ Word-by-word is off/i.test(em.why) || !/already pops while it is on/i.test(em.why))
     R.bad('the auto-enlarge reason does not say it only works while ✨ Word-by-word is off because the spoken word already pops while it is on: "' + em.why + '"');
   else R.ok('the auto-enlarge reason reads the right way round: "' + em.why.replace(/^↳\s*/, '') + '"');
