@@ -1691,6 +1691,68 @@ console.log('host.jsx — fixing ONE caption must not disturb its neighbours');
   assert(names[6].indexOf('w_6_fixed') === 0, 'the middle word was the one replaced');
 }
 
+{
+  // RESTYLE A RANGE without the exact flag (an older panel, or any caller that
+  // forgets it): stills dropped at their default 5 s length on a track that
+  // already holds captions covered the captions after them, and the trim went
+  // to the LAST clip on the track. The host must size them exactly itself.
+  const w = makeWorld({ vTracks: 1, aTracks: 1 });
+  const host = loadHost(w);
+  const base = [];
+  for (let i = 0; i < 8; i++) base.push({ path: '/tmp/cap_' + String(i).padStart(3, '0') + '.png', start: i, end: i + 1 });
+  const first = call(host, 'CP_placeCaptionImages', { items: base });
+  const tIx = first.track;
+  const r = call(host, 'CP_placeCaptionImages', {
+    items: [{ path: '/tmp/new_002.png', start: 2, end: 3 }, { path: '/tmp/new_003.png', start: 3, end: 4 }],
+    overwriteOnTrack: tIx
+  });
+  const trk = w.model.vTracks[tIx - 1].map(c => [c.name, +c.start.seconds.toFixed(3), +c.end.seconds.toFixed(3)]);
+  assert(r.ok && r.placed === 2, 'range restyle without exact places both captions');
+  assert(trk.length === 8, 'range restyle without exact keeps all 8 captions (got ' + JSON.stringify(trk) + ')');
+  assert(trk.every(c => c[2] > c[1]), 'no caption ends before it starts: ' + JSON.stringify(trk));
+  assert(trk[4][0].indexOf('cap_004') === 0 && trk[4][1] === 4 && trk[4][2] === 5 &&
+         trk[7][0].indexOf('cap_007') === 0 && trk[7][1] === 7 && trk[7][2] === 8,
+    'the captions after the range are the original clips in their own slots: ' + JSON.stringify(trk.slice(4)));
+  assert(trk[2][0].indexOf('new_002') === 0 && trk[2][1] === 2 && trk[2][2] === 3 &&
+         trk[3][0].indexOf('new_003') === 0 && trk[3][2] === 4,
+    'the restyled captions fill exactly their own slots: ' + JSON.stringify(trk.slice(2, 4)));
+}
+{
+  // "Add captions" again (replaceTrack) when the owner put their own logo clip
+  // later on the caption track: the logo must keep its full length, and every
+  // new caption must end where its cue ends.
+  const w = makeWorld({ vTracks: 1, aTracks: 1 });
+  const host = loadHost(w);
+  const items = [];
+  for (let i = 0; i < 4; i++) items.push({ path: '/tmp/cap_' + String(i).padStart(3, '0') + '.png', start: i, end: i + 1 });
+  const first = call(host, 'CP_placeCaptionImages', { items });
+  const tIx = first.track;
+  w.model.addClip('vTracks', tIx - 1, 20, 25, { name: 'logo.png', projectItem: { nodeId: 'owner-logo', getMediaPath: () => '/owner/logo.png' } });
+  const again = items.map((it, i) => ({ path: '/tmp/re_' + i + '.png', start: it.start, end: it.end }));
+  const r = call(host, 'CP_placeCaptionImages', { items: again, replaceTrack: tIx });
+  const trk = w.model.vTracks[tIx - 1].map(c => [c.name, +c.start.seconds.toFixed(3), +c.end.seconds.toFixed(3)]);
+  const logo = trk.filter(c => c[0] === 'logo.png');
+  assert(r.ok && r.placed === 4, 'regenerate next to an owner clip places all 4 captions');
+  assert(logo.length === 1 && logo[0][1] === 20 && logo[0][2] === 25,
+    'the owner\'s logo clip on the caption track keeps 20–25 s: ' + JSON.stringify(logo));
+  const caps = trk.filter(c => c[0] !== 'logo.png');
+  assert(caps.length === 4 && caps.every((c, i) => c[0].indexOf('re_' + i) === 0 && c[1] === i && c[2] === i + 1),
+    'each new caption sits exactly in its cue slot: ' + JSON.stringify(caps));
+}
+{
+  // the owner's own clip starting right where a caption goes is never the one
+  // trimmed: only the still Pulse just placed takes the cue's end
+  const w = makeWorld({ vTracks: 1, aTracks: 1 });
+  const host = loadHost(w);
+  const first = call(host, 'CP_placeCaptionImages', { items: [{ path: '/tmp/cap_000.png', start: 0, end: 1 }] });
+  const tIx = first.track;
+  w.model.addClip('vTracks', tIx - 1, 6.1, 9, { name: 'intro.mov', projectItem: { nodeId: 'owner-intro', getMediaPath: () => '/owner/intro.mov' } });
+  call(host, 'CP_placeCaptionImages', { items: [{ path: '/tmp/re_000.png', start: 0, end: 1 }, { path: '/tmp/re_001.png', start: 6, end: 6.1 }], replaceTrack: tIx });
+  const intro = w.model.vTracks[tIx - 1].filter(c => c.name === 'intro.mov');
+  assert(intro.length === 1 && Math.abs(intro[0].end.seconds - 9) < 1e-6 && Math.abs(intro[0].start.seconds - 6.1) < 1e-6,
+    'an owner clip 0.1 s after a caption keeps 6.1–9 s: ' + JSON.stringify(intro.map(c => [c.start.seconds, c.end.seconds])));
+}
+
 // ═══ CP_getEnv — 9 panel call sites, no test until now ═══
 console.log('host.jsx — CP_getEnv (every caption is sized from this)');
 {

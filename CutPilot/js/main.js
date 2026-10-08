@@ -8144,7 +8144,10 @@
           perWordEntranceStyle: overrides.perWordEntranceStyle };
         if (overwriteOnTrack) placeArgs.overwriteOnTrack = overwriteOnTrack;
         else if (replaceTrack) placeArgs.replaceTrack = replaceTrack;
-        if (single) placeArgs.exact = true;   // size each still exactly → never clobber the next caption
+        // size each still exactly whenever it lands on a track that already
+        // has clips (one-caption fix, a range restyle, "Add captions" again):
+        // a still at its default length covered the captions after it there
+        if (single || overwriteOnTrack || replaceTrack) placeArgs.exact = true;
         return CPBridge.callHost('CP_placeCaptionImages', placeArgs);
       }).then(function (r) {
         setCaptionBusy(false);
