@@ -1106,6 +1106,30 @@ const MUTANTS = [
     repl: '    var wordCuesP = getCaptionWordCues(cues, true);',
     gate: 'CutPilot/test/gates/captions-long-video-same.js',
     why: 'falling back from Pulse\'s overlay to libass throws away the word timing the job had and re-guesses it'
+  },
+  {
+    name: 'capcore-static-fit-wordsync',
+    file: 'CutPilot/js/captions.js',
+    find: '      fits: fit ? function (a, b) { var cw = capWords(a, b); return fit(cw, fitHow(cw)); } : null,',
+    repl: '      fits: fit ? function (a, b) { var cw = capWords(a, b); return fit(cw); } : null,',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: 'a static caption with Bigger punchy words / lit key words is grouped as if one word at a time were enlarged, then shrinks below the style\'s size'
+  },
+  {
+    name: 'capcore-static-fit-emphasis',
+    file: 'CutPilot/js/captions.js',
+    find: "      return { wordSync: false, highlightSet: (kw && kw.on) ? markKeywords(cw, kw) : null };",
+    repl: "      return { wordSync: true, highlightSet: (kw && kw.on) ? markKeywords(cw, kw) : null };",
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: 'the fit ignores 🔠 Bigger punchy words (viral words 1.5x) on static captions, so those captions shrink'
+  },
+  {
+    name: 'capcore-static-fit-keywords',
+    file: 'CutPilot/js/render.js',
+    find: "              highlightSet: (opts && opts.highlightSet) || null };",
+    repl: "              highlightSet: null };",
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: 'the fit ignores the key words lit at the pop size on static captions, so those captions shrink'
   }
 ];
 

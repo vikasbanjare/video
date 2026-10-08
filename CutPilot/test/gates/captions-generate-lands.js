@@ -95,12 +95,18 @@ function timedWords(text, rate, gap) {
   }
   return out;
 }
+// punchy talk: the viral words 🔠 Bigger punchy words draws 1.5x, long
+// words (1.15x) and numbers / names a lit keyword draws at the pop size
+const PUNCHY = 'This is the biggest secret to massive growth, money and results never stop coming. ' +
+  'Agar tum consistency rakhoge toh instantly viral growth guaranteed hai aur international recognition bhi milegi. ' +
+  'Stop wasting money now because the opportunity is huge and Rahul made 50 lakh profit in three months.';
 const TRANSCRIPTS = {
   hinglish: timedWords(HINGLISH, 1),
   devanagari: timedWords(DEVANAGARI, 1),
   english: timedWords(ENGLISH, 0.62),          // ~4 words a second
   slow: timedWords(SLOW, 1.5, 0.38),
-  urls: timedWords(URLS, 1)
+  urls: timedWords(URLS, 1),
+  punchy: timedWords(PUNCHY, 0.8)
 };
 /* Each transcript reaches Add captions the way a transcription does: as the
    engine stamped it (stretched words included), placed on the timeline by
@@ -206,7 +212,7 @@ function pageInstall() {
       // capitals as drawn: the caption's body (words at the style's size) and
       // the tallest of all (the spoken word's pop included)
       const body = fills.filter(x => cv._cpLayout && Math.abs(x.px - cv._cpLayout.size) < 0.01);
-      return { lay: cv._cpLayout, ext: [l, t, rr, b], lines, drawn: fills.map(x => x.t),
+      return { lay: cv._cpLayout, ext: [l, t, rr, b], lines, drawn: fills.map(x => x.t), pxMax: Math.max(0, ...fills.map(x => x.px)),
                capBody: Math.max(0, ...body.map(x => x.capH)), capDrawn: Math.max(0, ...fills.map(x => x.capH)) };
     });
     // the height of a capital letter at the style's size, in the face it draws with
@@ -522,6 +528,33 @@ function check(R, name, res, words, opts) {
       else R.ok('@' + env.width + ': the preview shows the emoji and the CAPS key words too');
     }
     await setCheck('c-emoji', false); await setCheck('c-kwcaps', false);
+
+    // A static caption (✨ Word-by-word off) with 🔠 Bigger punchy words and
+    // 🔑 key words lit at Pop size 140%: every word is drawn at its own size
+    // AT ONCE (viral words 1.5x, long words 1.15x, lit key words 1.4x), so
+    // the caption must be grouped for THAT width — measured as one spoken
+    // word at a time, captions came out 54-64.8 px on a 64.8 px style.
+    if (!(await page.evaluate(() => window.CP_DEBUG_EXT.overlay.applyStyle('hormozi')))) R.bad('could not pick "Bold Statement"');
+    await setCheck('c-wordhl', false); await setCheck('c-emphasize', true); await setCheck('c-kw', true);
+    await page.evaluate(() => { const el = document.getElementById('c-kw-mode'); el.value = 'smart'; el.dispatchEvent(new Event('change', { bubbles: true })); });
+    await setRange('c-hl-scale', 140);
+    await click('wc-full');
+    for (const env of ENVS) {
+      for (const key of ['punchy', 'hinglish', 'english']) {
+        const res = await gen(env, key);
+        const caps = check(R, 'static + Bigger punchy words + key words · ' + key, res, TRANSCRIPTS[key], { N: 0 });
+        if (!caps || res.error) continue;
+        // the setting really drew some words bigger (else this proves nothing)
+        const big = res.draws.some(d => d.pxMax > d.lay.size * 1.1);
+        const sizes = [...new Set(caps.map(c => c.draws[0].lay.size))];
+        if (res.frames.some(f => f.active != null)) R.bad('static · ' + key + ' @' + env.width + ': frames still light one word at a time (Word-by-word is off)');
+        else if (key === 'punchy' && !big) R.bad('static · punchy @' + env.width + ': no word was drawn bigger — Bigger punchy words / key words did nothing');
+        else if (sizes.length !== 1 || Math.abs(sizes[0] - res.size) > 0.01) R.bad('static · ' + key + ' @' + env.width + ': captions drawn at ' + sizes.join(' / ') + ' px (style ' + res.size + ')');
+        else R.ok('static · ' + key + ' @' + env.width + 'x' + env.height + ': every caption at the style\'s ' + res.size + ' px with the big words drawn big');
+      }
+    }
+    await setCheck('c-emphasize', false); await setCheck('c-kw', false); await setCheck('c-wordhl', true);
+    await setRange('c-hl-scale', 100);
 
     // ---- 5. Premiere's own caption track: balanced lines, ≥1 s, 2-frame gaps
     for (const env of ENVS) {

@@ -573,23 +573,39 @@
 
   /*
    * Does this caption fit the frame at the style's OWN size, within its line
-   * limit and max width (box, outline and glow included, any one word drawn
-   * as the spoken word)? style = styleForFrame(…) for a W×H frame.
-   * words = the caption's words exactly as they will be drawn.
+   * limit and max width (box, outline and glow included)? style =
+   * styleForFrame(…) for a W×H frame. words = the caption's words exactly as
+   * they will be drawn. opts says how the frames will draw them, so the fit
+   * measures what the owner will see:
+   *   wordSync (default true): one word lit at a time (karaoke / reveal) —
+   *     any one word may be drawn as the spoken word;
+   *   wordSync false (a static caption, the keyword build): every word at
+   *     its own size — 🔠 Bigger punchy words (up to 1.5x) and every word in
+   *     highlightSet (lit keywords, at the highlight size) all at once.
+   * Measured any other way, a static caption with several big words was
+   * grouped for one width, drawn wider, and shrank below the style's size.
    */
   function wordsFit(style, W, H, words, opts) {
     var ws = (words || []).map(function (w) { return style.uppercase ? String(w).toUpperCase() : String(w); });
     if (ws.length <= 1) return true;                   // one word always goes up (it is broken if it must be)
-    var o = { wordSync: !(opts && opts.wordSync === false), fixedSize: true };
+    var o = { wordSync: !(opts && opts.wordSync === false), fixedSize: true,
+              highlightSet: (opts && opts.highlightSet) || null };
     return captionLayout(measurerFor(style), ws, style, W, H, o).fits;
   }
   /* wordsFit for one style and frame, as the function the caption grouper
-     calls (CPCaptions.buildCaptionFrames opts.fit). */
+     calls (CPCaptions.buildCaptionFrames opts.fit). The grouper passes, per
+     caption, how its frames will draw it ({ wordSync, highlightSet }); that
+     wins over the opts given here. */
   function fitter(style, W, H, opts) {
     var memo = {};
-    return function (words) {
-      var key = (words || []).join('\u0001');
-      if (!memo.hasOwnProperty(key)) memo[key] = wordsFit(style, W, H, words, opts);
+    return function (words, how) {
+      var o = {}, k;
+      for (k in (opts || {})) if (opts.hasOwnProperty(k)) o[k] = opts[k];
+      for (k in (how || {})) if (how.hasOwnProperty(k)) o[k] = how[k];
+      var lit = [];
+      if (o.highlightSet) for (var i = 0; i < (words || []).length; i++) if (o.highlightSet[i]) lit.push(i);
+      var key = (o.wordSync === false ? 's' : 'w') + lit.join(',') + '\u0002' + (words || []).join('\u0001');
+      if (!memo.hasOwnProperty(key)) memo[key] = wordsFit(style, W, H, words, o);
       return memo[key];
     };
   }

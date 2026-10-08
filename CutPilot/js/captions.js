@@ -3702,7 +3702,8 @@
    *         capsWords { word: 1 } ("CAPS on key words"), emoji,
    *         keyword:{on,mode}, speaker:{on}, build, window,
    *         wordCues (real word timing; else the lines are spread by length),
-   *         fit(words[]) → does this caption fit the frame (CPRender.fitter),
+   *         fit(words[], { wordSync, highlightSet }) → does this caption fit
+   *           the frame drawn that way (CPRender.fitter),
    *         fps (the sequence's; default 30) }
    * Frame shapes (cap = which caption the frame belongs to):
    *   static        -> { start, end, words:[...], highlightSet?, cap }
@@ -3806,14 +3807,23 @@
     }
 
     var fit = (typeof opts.fit === 'function') ? opts.fit : null;
+    var swept = (anim === 'karaoke' || anim === 'reveal');
+    // The fit is asked about a caption as its frames will DRAW it: in
+    // karaoke / reveal one word is lit at a time; otherwise every word at
+    // once at its own size, the lit keywords (and 🔠 Bigger punchy words) at
+    // their bigger size — so a static caption is never grouped too long
+    // and then shrunk below the style's size.
+    function fitHow(cw) {
+      if (swept) return { wordSync: true };
+      return { wordSync: false, highlightSet: (kw && kw.on) ? markKeywords(cw, kw) : null };
+    }
     var groups = groupCaptionWords(words, {
       maxWords: wpc,
-      fits: fit ? function (a, b) { return fit(capWords(a, b)); } : null,
+      fits: fit ? function (a, b) { var cw = capWords(a, b); return fit(cw, fitHow(cw)); } : null,
       lenOf: function (k) { return visLen(D[k]) + 1; }
     });
     var timed = timeCaptions(words, groups, { fps: opts.fps, textOf: function (a, b) { return capWords(a, b).join(' '); } });
 
-    var swept = (anim === 'karaoke' || anim === 'reveal');
     frames = [];
     for (var c = 0; c < timed.length; c++) {
       var cp = timed[c], F = cp.fps, n = cp.b - cp.a;
