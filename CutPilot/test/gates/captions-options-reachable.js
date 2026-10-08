@@ -12,6 +12,7 @@
  *   C. a reload changed the picked style's look on 37 of 41 styles (only the
  *      style's NAME was restored; the rest fell back to the boot default), and
  *      🔠 CAPS on key words / auto-emoji / timing switch were never saved;
+ *      a look saved by the previous version must reload right too;
  *   D. greyed controls were dead clicks even where one tap could meet their
  *      reason (Box padding with no box, Outline colour with no outline);
  *   E. the Outline colour hid on 71 of 123 styles until a width was set on the
@@ -34,6 +35,7 @@ const G = require('./gallery-lib/panel.js');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const RELOAD_STYLES = 42;        // the brief asks for at least 40
 const LANDSCAPE_STYLES = 12;     // the same check again on a 1920×1080 sequence
+const LEGACY_STYLES = 12;        // and on a look saved before every setting was saved by id
 
 /* Makes the fake host answer CP_getEnv with the size the gate picked
    (localStorage 'gate.env' = "W×H"), so a reload keeps the sequence shape.
@@ -375,19 +377,27 @@ async function reloadPanel(page) {
     }
     return d;
   };
-  const reloadOne = async (id) => {
+  /* legacy: the look was saved by the version the owner has today, which
+     stored the style's name and ~30 settings by name but no `ctl` block — the
+     first reload after updating Pulse must still show the picked style, not
+     the boot default's values under its name */
+  const reloadOne = async (id, legacy) => {
     if (!(await openStyle(page, id))) return { err: 'no card' };
     await sleep(150);
     const before = await page.evaluate(() => window.CP_DEBUG.readOverrides());
+    if (legacy) await page.evaluate(() => {
+      const k = 'cutpilot.look'; const l = JSON.parse(localStorage.getItem(k) || 'null');
+      if (l) { delete l.ctl; localStorage.setItem(k, JSON.stringify(l)); }
+    });
     await reloadPanel(page);
     const after = await page.evaluate(() => ({ ov: window.CP_DEBUG.readOverrides(), id: window.CP_DEBUG.snapshot().presetId }));
     return { diff: diffOv(before, after.ov), sameStyle: after.id === id };
   };
-  const runReloads = async (list, label) => {
+  const runReloads = async (list, label, legacy) => {
     const changed = [];
     let n = 0;
     for (const id of list) {
-      const r = await reloadOne(id);
+      const r = await reloadOne(id, legacy);
       if (r.err) { changed.push(id + ': ' + r.err); continue; }
       n++;
       const keys = Object.keys(r.diff);
@@ -401,6 +411,7 @@ async function reloadPanel(page) {
   const must = ['tr-hindi-podcast', 'pro-boldpop', 'karaoke'].filter(id => shown.indexOf(id) >= 0);
   const portraitSet = Array.from(new Set(must.concat(pick(shown, RELOAD_STYLES)))).slice(0, Math.max(RELOAD_STYLES, must.length));
   await runReloads(portraitSet, '1080×1920');
+  await runReloads(pick(shown.slice(1), LEGACY_STYLES), '1080×1920, look saved by the previous version', true);
   await page.evaluate(() => { try { localStorage.setItem('gate.env', '1920x1080'); } catch (e) {} });
   await reloadPanel(page);
   const env = await page.evaluate(() => window.CP_DEBUG.env());
