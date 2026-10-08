@@ -56,6 +56,11 @@
      gallery-preview-render). Canvas fonts take fractional sizes. */
   function r2(v) { return Math.round(v * 100) / 100; }
 
+  // Landscape size curve (see styleForFrame): above 5% of the frame's height
+  // (the legibility floor) a size grows at 30% of the rate — Bold Statement's
+  // 90 lands at ~65 px on 1920x1080, capitals ~5% of the height.
+  var LAND_KNEE = 0.05, LAND_SLOPE = 0.3;
+
   function styleForFrame(preset, frameH, o, frameW) {
     o = o || {};
     preset = preset || {};   // never deref a null preset (stale id / missing base)
@@ -75,6 +80,17 @@
     if (frameW && frameH && frameH > frameW) {
       var tallness = Math.min(1.9, frameH / frameW);      // 16:9 vertical = 1.78
       scale *= 1 + 0.55 * (tallness - 1);                 // 1.0 (square) … ~1.43 (9:16)
+    }
+    // LANDSCAPE SIZE: on a 16:9 podcast the big reel styles came out oversized
+    // — Bold Statement at 90 px had capital letters 6.6% of the frame's height
+    // (subtitle practice is ~4.5-5.5%). Above LAND_KNEE of the frame height a
+    // size grows at LAND_SLOPE: the default lands at ~5%, small styles are
+    // untouched, and a Size change still changes the output (it is the same
+    // curve, never a cap). Outline, box, spacing and shadow shrink with it, so
+    // the look keeps its proportions.
+    if (frameW && frameH && frameW > frameH) {
+      var asked = ((o.fontSize || preset.fontSize) || 0) * scale, knee = frameH * LAND_KNEE;
+      if (asked > knee) scale *= (knee + (asked - knee) * LAND_SLOPE) / asked;
     }
     var strokeW = (o.strokeWidth != null) ? o.strokeWidth : (preset.strokeWidth || 0);
     var box = (o.boxColor !== undefined) ? o.boxColor : (preset.boxColor || null);
@@ -124,6 +140,9 @@
         }
         return px;
       })(),
+      // the smallest size a caption may shrink to when one word is wider than
+      // the frame (5% of the short side); past it the word is broken instead
+      minSize: (frameW && frameW > 0) ? r2(((frameH && frameH > 0) ? Math.min(frameW, frameH) : frameW) * 0.05) : 0,
       fill: fill,
       highlight: highlight,
       stroke: (o.stroke !== undefined) ? o.stroke : (preset.stroke || null),
@@ -246,12 +265,343 @@
     ctx.closePath();
   }
 
+  /* ==== CAPTION LAYOUT — one layout per caption ==========================
+     Where a caption's lines break and at what size it is drawn is decided
+     ONCE per caption, from its words alone, and every frame of that caption
+     (each spoken word lighting up in turn) reuses it. It used to be decided
+     per frame with the spoken word enlarged, so a caption jumped from one
+     line to two, or shrank, while it was being said.
+       · size: the style's own size. It shrinks only when one word alone is
+         wider than the frame, never below 5% of the frame's short side; past
+         that the word is broken (a long URL), not drawn microscopic;
+       · width: each line, with ANY one word enlarged as the spoken word, fits
+         the frame's max width MINUS what the style draws around the text
+         (box padding, outline, glow, the spoken word's pill) — so the box
+         and the glow stay inside the frame too;
+       · lines: as few as fit (at most the style's line limit), broken where
+         the grammar allows (CPCaptions.lineBreakCost) into even lines, the
+         top one a little shorter, never one or two words alone on a line.
+     The same code answers "does this caption fit?" for the caption grouper
+     (fitter), so a caption is only ever made of words that fit. */
+
+  /* The grammar rules live in captions.js (a page has it as CPCaptions;
+     Node's tests require it next to this file). */
+  function capLib() {
+    if (typeof CPCaptions !== 'undefined' && CPCaptions && CPCaptions.lineBreakCost) return CPCaptions;
+    try { if (typeof module === 'object' && module.exports && typeof require === 'function') return require('./captions.js'); } catch (e) {}
+    return null;
+  }
+
+  /* The canvas font string for a word: the style's face, or the spoken /
+     keyword word's own face when the style has one. */
+  function fontFor(style, px, hl) {
+    if (hl && style.highlightFont) {
+      var w = style.highlightWeight || 900;
+      var it = style.highlightItalic ? 'italic ' : '';
+      var fb = style.highlightFallbacks
+        ? (', ' + style.highlightFallbacks)
+        : (', "' + style.font + '", "' + style.fallbacks + '", sans-serif');
+      return it + w + ' ' + px + 'px "' + style.highlightFont + '"' + fb;
+    }
+    return (style.weight || 800) + ' ' + px + 'px "' + style.font + '", "' + style.fallbacks + '", sans-serif';
+  }
+  /* Letter spacing for a word: none inside a Hindi word (see drawFrame). */
+  function spacingOf(style, word) {
+    var LS = style.letterSpacing || 0;
+    return (LS && !(word != null && DEVA_RE.test(String(word)))) ? LS : 0;
+  }
+
+  /* Measures text the way drawFrame draws it, on a real canvas. */
+  function canvasMeasurer(ctx, style) {
+    function prep(t, px, hl) {
+      ctx.font = fontFor(style, px, hl);
+      try { ctx.letterSpacing = spacingOf(style, t) + 'px'; } catch (e) {}
+    }
+    return {
+      width: function (t, px, hl) { prep(t, px, hl); return ctx.measureText(String(t)).width; },
+      space: function (px) { prep(null, px, false); return ctx.measureText(' ').width; },
+      metrics: function (t, px, hl) {
+        prep(t, px, hl);
+        var m = ctx.measureText(String(t));
+        var a = m.actualBoundingBoxAscent, d = m.actualBoundingBoxDescent;
+        return { asc: (a != null && isFinite(a)) ? a : px * 0.75, desc: (d != null && isFinite(d)) ? d : px * 0.2 };
+      }
+    };
+  }
+  /* Where there is no canvas (Node's tests): a deterministic estimate per
+     drawn letter (grapheme cluster — a Devanagari cluster is ONE letter). */
+  function estimateMeasurer(style) {
+    var wt = style.weight || 800, wf = wt >= 800 ? 1.06 : (wt >= 600 ? 1 : 0.95);
+    function letters(t) {
+      var C = capLib();
+      return (C && C.graphemes) ? C.graphemes(t) : String(t).split('');
+    }
+    function em(g) {
+      if (/[ऀ-ॿ]/.test(g)) return 0.62;
+      if (g === ' ') return 0.28;
+      if (/[A-Z]/.test(g)) return 0.68;
+      if (/[a-z]/.test(g)) return 0.53;
+      if (/[0-9]/.test(g)) return 0.58;
+      if (/[.,;:'!|]/.test(g)) return 0.28;
+      if (g.charCodeAt(0) >= 0xD800 || /[☀-➿]/.test(g)) return 1.1;
+      return 0.6;
+    }
+    return {
+      width: function (t, px) {
+        var g = letters(t), s = 0;
+        for (var i = 0; i < g.length; i++) s += em(g[i]);
+        return s * px * wf + spacingOf(style, t) * g.length;
+      },
+      space: function (px) { return 0.28 * px * wf + (style.letterSpacing || 0); },
+      metrics: function (t, px) {
+        var s = String(t), deva = DEVA_RE.test(s);
+        var desc = deva ? 0.32 : (/[gjpqy,;]/.test(s) ? 0.22 : 0.02);
+        return { asc: px * (deva ? 0.95 : (/[a-z]/.test(s) ? 0.76 : 0.72)), desc: px * desc };
+      }
+    };
+  }
+  var _measureCtx = null;
+  function measurerFor(style) {
+    if (_measureCtx === null) {
+      _measureCtx = false;
+      try {
+        if (typeof document !== 'undefined' && document.createElement) _measureCtx = document.createElement('canvas').getContext('2d') || false;
+      } catch (e) { _measureCtx = false; }
+    }
+    return _measureCtx ? canvasMeasurer(_measureCtx, style) : estimateMeasurer(style);
+  }
+
+  function hasBox(style) {
+    return !!(style.boxColor || style.boxStroke || style.boxGlow ||
+              (style.box3d && style.box3dDepth > 0) || style.boxGloss > 0);
+  }
+  /* How far a style draws past the text on EACH side at font size px: the
+     outline, the glow, the box padding (with its border, glow and shadow),
+     and the pill / bar / ring around the spoken word. */
+  function sideExtent(style, px) {
+    var hl = px * (style.highlightScale || 1);
+    var pad = (style.boxPad != null ? style.boxPad : 1);
+    var ext = (style.stroke && style.strokeWidth) ? style.strokeWidth / 2 : 0;
+    if (style.glow) ext = Math.max(ext, hl * (style.glowBlur != null ? style.glowBlur : 0.35) * 0.5 + Math.abs(style.shadowDX || 0));
+    if (style.highlightGlow) ext = Math.max(ext, hl * (style.highlightGlowBlur != null ? style.highlightGlowBlur : 0.4) * 0.5);
+    if (hasBox(style)) {
+      var padX = px * 0.32 * pad, bxH = hl + px * 0.44 * pad;
+      var edge = (style.boxStroke && style.boxStrokeWidth > 0) ? style.boxStrokeWidth / 2 : 0;
+      if (style.boxGlow) edge = Math.max(edge, bxH * (style.boxGlowBlur != null ? style.boxGlowBlur : 0.6) * 0.5);
+      if (style.boxShadow) edge = Math.max(edge, bxH * (style.boxShadowBlur != null ? style.boxShadowBlur : 0.5) * 0.5);
+      ext = Math.max(ext, padX + edge);
+    }
+    var shape = style.highlightStyle;
+    if (shape === 'box') ext = Math.max(ext, hl * 0.22 * pad);
+    else if (shape === 'bar' || shape === 'circle') ext = Math.max(ext, hl * 0.16);
+    else if (shape === 'marker') ext = Math.max(ext, hl * 0.06);
+    return ext;
+  }
+
+  /*
+   * Break items (each { w, wh }: width plain, width as the spoken word) into
+   * lines: the fewest lines (at most maxLines; 0 = no limit) whose widest
+   * case fits `budget`, then the best grammar + evenness. strict: a break
+   * the grammar forbids (before a postposition / auxiliary / danda) is not
+   * allowed at all — that is how a caption is asked whether it FITS.
+   * Returns [[from, to), …] or null when they cannot fit. Pure — tested in Node.
+   */
+  function breakLines(items, words, sp, budget, maxLines, wpl, ctx, strict) {
+    var n = items.length, C = capLib(), k;
+    if (!n) return [];
+    function lineW(a, b) {
+      var s = 0, ex = 0;
+      for (var q = a; q < b; q++) { s += items[q].w; if (items[q].wh - items[q].w > ex) ex = items[q].wh - items[q].w; }
+      return s + sp * (b - a - 1) + ex;
+    }
+    function natW(a, b) { var s = 0; for (var q = a; q < b; q++) s += items[q].w; return s + sp * (b - a - 1); }
+    var bc = [0];
+    for (k = 1; k < n; k++) {
+      var c = (C && C.lineBreakCost) ? C.lineBreakCost(words[k - 1], words[k], ctx) : 1;
+      bc.push(c === Infinity ? (strict ? Infinity : 50) : c);
+    }
+    var forbid = function (q) { return bc[q] === Infinity || bc[q] >= 50; };
+    if (wpl > 0) {
+      // stacked styles: N words a line — one more or one fewer where the
+      // grammar needs it (a postposition stays with its noun)
+      var st = [], a0 = 0;
+      while (a0 < n) {
+        var e = Math.min(n, a0 + wpl);
+        if (e < n && forbid(e)) {
+          if (e + 1 <= n && (e + 1 === n || !forbid(e + 1)) && lineW(a0, e + 1) <= budget + 0.01) e = e + 1;
+          else if (e - 1 > a0 && !forbid(e - 1)) e = e - 1;
+        }
+        if (lineW(a0, e) > budget + 0.01) {
+          // asked whether it fits: no. Drawing: fewer words on this line
+          // (a long URL or word), never a line wider than the frame
+          if (strict) return null;
+          while (e - 1 > a0 && lineW(a0, e) > budget + 0.01) e--;
+          if (lineW(a0, e) > budget + 0.01) return null;
+        }
+        if (e < n && strict && bc[e] === Infinity) return null;
+        st.push([a0, e]); a0 = e;
+      }
+      return st;
+    }
+    function orphan(a, b) { return (b - a === 1 && n >= 3) ? 3 : ((b - a === 2 && n >= 6) ? 1 : 0); }
+    var maxK = (maxLines > 0) ? Math.min(maxLines, n) : n, total = natW(0, n);
+    for (var K = 1; K <= maxK; K++) {
+      if (K === 1) { if (lineW(0, n) <= budget + 0.01) return [[0, n]]; continue; }
+      if (K === 2) {
+        var best = null;
+        for (k = 1; k < n; k++) {
+          if (bc[k] === Infinity || lineW(0, k) > budget + 0.01 || lineW(k, n) > budget + 0.01) continue;
+          var t = natW(0, k), b2 = natW(k, n);
+          // even lines, the top one ~5% shorter (bottom-heavy)
+          var cost = bc[k] + Math.abs(t - 0.95 * b2) / budget * 4 + orphan(0, k) + orphan(k, n);
+          if (!best || cost < best.c) best = { c: cost, k: k };
+        }
+        if (best) return [[0, best.k], [best.k, n]];
+        continue;
+      }
+      var avg = total / K, D = [];
+      for (var g = 0; g <= K; g++) D.push([]);
+      D[0][0] = { c: 0, from: -1 };
+      for (g = 1; g <= K; g++) {
+        for (var j = 1; j <= n; j++) {
+          var bj = null;
+          for (var i = j - 1; i >= 0; i--) {
+            if (lineW(i, j) > budget + 0.01) break;
+            var pv = D[g - 1][i]; if (!pv || (i > 0 && bc[i] === Infinity)) continue;
+            var cc = pv.c + (i > 0 ? bc[i] : 0) + Math.abs(natW(i, j) - avg) / budget * 4 + orphan(i, j);
+            if (!bj || cc < bj.c) bj = { c: cc, from: i };
+          }
+          if (bj) D[g][j] = bj;
+        }
+      }
+      if (D[K][n]) {
+        var out = [], at = n;
+        for (g = K; g >= 1; g--) { out.push([D[g][at].from, at]); at = D[g][at].from; }
+        return out.reverse();
+      }
+    }
+    return null;
+  }
+
+  /*
+   * The layout of one caption: { size, hlSize, budget, ext, sp, items:[{word,
+   * src, px, hlPx, w, wh, stat}], lines:[{from, to, asc, desc, deva}], fits }.
+   * opts: { wordSync (frames light one word at a time), highlightSet (words
+   * lit for the whole caption), fixedSize (true: never shrink — the grouper's
+   * question "does it fit at the style's size?") }.
+   */
+  function captionLayout(meas, words, style, W, H, opts) {
+    opts = opts || {};
+    var wordSync = !!opts.wordSync, hset = opts.highlightSet || null;
+    // A caption of ONE word has no other word to stand out from: it is drawn
+    // at the style's size (still in the spoken word's colour / face) — the
+    // pop size would only make every one-word caption bigger than the style.
+    var base = style.size, hlScale = (wordSync && words.length === 1) ? 1 : (style.highlightScale || 1);
+    var minPx = (style.minSize > 0) ? Math.min(base, style.minSize) : Math.max(6, base * 0.34);
+    var C = capLib(), ctx = (C && C.textContext) ? C.textContext(words) : null;
+    var maxLines = style.maxLines || 0, wpl = style.wordsPerLine || 0;
+    function at(eff, toks, srcs, lineCap, strict) {
+      var ext = sideExtent(style, eff);
+      var budget = Math.max(eff, W * style.maxWidthPct - 2 * ext);
+      var sp = meas.space(eff) + (style.wordSpacing || 0);
+      var items = [];
+      for (var k = 0; k < toks.length; k++) {
+        var src = srcs[k], stat = !!(hset && hset[src]);
+        var dyn = (style.emphasizeWords && !wordSync) ? wordScale(toks[k]) : 1;
+        var px = r2(eff * Math.max(stat ? hlScale : 1, dyn));
+        var hlPx = r2(eff * Math.max(hlScale, dyn));
+        var w = meas.width(toks[k], px, stat);
+        var wh = (wordSync && !stat) ? meas.width(toks[k], hlPx, true) : w;
+        items.push({ word: toks[k], src: src, px: px, hlPx: hlPx, w: w, wh: wh, stat: stat });
+      }
+      var ls = breakLines(items, toks, sp, budget, lineCap, wpl, ctx, strict);
+      return { size: eff, hlSize: r2(eff * hlScale), budget: budget, ext: ext, sp: sp, items: items, ranges: ls };
+    }
+    var srcs0 = [];
+    for (var s0 = 0; s0 < words.length; s0++) srcs0.push(s0);
+    // at the style's size with only good line breaks; else a poor break
+    // rather than smaller text; else smaller (never under the floor)
+    var lay = at(base, words, srcs0, maxLines, true);
+    if (opts.fixedSize) return finish(lay, true);
+    if (!lay.ranges) lay = at(base, words, srcs0, maxLines, false);
+    var guard = 0;
+    while (!lay.ranges && lay.size > minPx + 0.005 && guard++ < 60) lay = at(Math.max(minPx, r2(lay.size * 0.93)), words, srcs0, maxLines, false);
+    if (!lay.ranges) {
+      // still too wide at the smallest readable size: break any word wider
+      // than a line into pieces of whole letters (a URL, a compound word)
+      var toks = [], srcs = [], g = (C && C.graphemes) ? C.graphemes : function (t) { return String(t).split(''); };
+      for (var q = 0; q < lay.items.length; q++) {
+        var itq = lay.items[q], widest = Math.max(itq.w, itq.wh);
+        if (widest <= lay.budget || String(itq.word).length < 2) { toks.push(itq.word); srcs.push(q); continue; }
+        var gl = g(itq.word), piece = '';
+        // a piece must fit drawn plainly AND as the spoken word (the two
+        // faces differ in width — an italic keyword face can be narrower)
+        var pieceW = function (p) {
+          return Math.max(meas.width(p, itq.px, itq.stat), wordSync ? meas.width(p, itq.hlPx, true) : 0);
+        };
+        for (var gi = 0; gi < gl.length; gi++) {
+          var tryP = piece + gl[gi];
+          if (piece && pieceW(tryP) > lay.budget) { toks.push(piece); srcs.push(q); piece = gl[gi]; }
+          else piece = tryP;
+        }
+        if (piece) { toks.push(piece); srcs.push(q); }
+      }
+      var lay2 = at(lay.size, toks, srcs, maxLines, false);
+      if (!lay2.ranges) lay2 = at(lay.size, toks, srcs, 0, false);     // more lines rather than tiny text
+      lay = lay2;
+    }
+    return finish(lay, !!lay.ranges);
+
+    function finish(L, ok) {
+      var ranges = L.ranges || [[0, L.items.length]];
+      var lines = [];
+      for (var r = 0; r < ranges.length; r++) {
+        var asc = 0, desc = 0, deva = false;
+        for (var k = ranges[r][0]; k < ranges[r][1]; k++) {
+          var it = L.items[k], hlNow = wordSync || it.stat;
+          var m = meas.metrics(it.word, hlNow ? it.hlPx : it.px, hlNow);
+          if (m.asc > asc) asc = m.asc;
+          if (m.desc > desc) desc = m.desc;
+          if (DEVA_RE.test(String(it.word))) deva = true;
+        }
+        lines.push({ from: ranges[r][0], to: ranges[r][1], asc: asc, desc: desc, deva: deva });
+      }
+      return { size: L.size, hlSize: L.hlSize, budget: L.budget, ext: L.ext, sp: L.sp,
+               items: L.items, lines: lines, fits: ok && !!L.ranges && (!maxLines || lines.length <= maxLines) };
+    }
+  }
+
+  /*
+   * Does this caption fit the frame at the style's OWN size, within its line
+   * limit and max width (box, outline and glow included, any one word drawn
+   * as the spoken word)? style = styleForFrame(…) for a W×H frame.
+   * words = the caption's words exactly as they will be drawn.
+   */
+  function wordsFit(style, W, H, words, opts) {
+    var ws = (words || []).map(function (w) { return style.uppercase ? String(w).toUpperCase() : String(w); });
+    if (ws.length <= 1) return true;                   // one word always goes up (it is broken if it must be)
+    var o = { wordSync: !(opts && opts.wordSync === false), fixedSize: true };
+    return captionLayout(measurerFor(style), ws, style, W, H, o).fits;
+  }
+  /* wordsFit for one style and frame, as the function the caption grouper
+     calls (CPCaptions.buildCaptionFrames opts.fit). */
+  function fitter(style, W, H, opts) {
+    var memo = {};
+    return function (words) {
+      var key = (words || []).join('\u0001');
+      if (!memo.hasOwnProperty(key)) memo[key] = wordsFit(style, W, H, words, opts);
+      return memo[key];
+    };
+  }
+
   /*
    * Draw one caption frame onto a canvas.
-   * frame: { words:[...], active?, highlightSet?, speaker? } or { text }.
+   * frame: { words:[...], active?, highlightSet?, reveal?, speaker? } or { text }.
    * Highlighted words (active OR in highlightSet) render in the highlight
    * color and scaled up by style.highlightScale. A frame.speaker draws a
    * small label pill above the caption.
+   * The caption's layout (captionLayout) depends only on its words, so every
+   * frame of one caption has the same lines at the same size.
    * Returns the canvas (caller turns it into a PNG).
    */
   function drawFrame(canvas, frame, style) {
@@ -268,9 +618,9 @@
     // in it is now MEASURED and DRAWN with no extra spacing; Latin words keep
     // the style's spacing, so a Hinglish line keeps its designed look. Always
     // set explicitly — a reused canvas must not inherit the last style's value.
-    var LS = style.letterSpacing || 0, _lsNow = null;
+    var _lsNow = null;
     function spacingFor(word) {
-      var v = (LS && !(word != null && DEVA_RE.test(String(word)))) ? LS : 0;
+      var v = spacingOf(style, word);
       if (v === _lsNow) return;
       _lsNow = v;
       try { ctx.letterSpacing = v + 'px'; } catch (eLS) {}
@@ -279,32 +629,18 @@
 
     // honor a per-style weight (clean styles want ~500-700, bold ones 800-900);
     // forcing 900 on everything made even the minimal styles look heavy/cheap.
-    var fontWeight = style.weight || 800;
-    function setFont(px) {
-      ctx.font = fontWeight + ' ' + px + 'px "' + style.font + '", "' + style.fallbacks + '", sans-serif';
-    }
+    function setFont(px) { ctx.font = fontFor(style, px, false); }
     // the highlighted word can use a DIFFERENT (heavier/italic) font + weight,
     // with its own fallback chain (e.g. a serif keyword falls back to Georgia).
-    function setFontFor(px, hl) {
-      if (hl && style.highlightFont) {
-        var w = style.highlightWeight || 900;
-        var it = style.highlightItalic ? 'italic ' : '';
-        var fb = style.highlightFallbacks
-          ? (', ' + style.highlightFallbacks)
-          : (', "' + style.font + '", "' + style.fallbacks + '", sans-serif');
-        ctx.font = it + w + ' ' + px + 'px "' + style.highlightFont + '"' + fb;
-      } else { setFont(px); }
-    }
+    function setFontFor(px, hl) { ctx.font = fontFor(style, px, hl); }
 
     var words = frame.words ? frame.words.slice() : String(frame.text).split(/\s+/);
     if (style.uppercase) for (var u = 0; u < words.length; u++) words[u] = words[u].toUpperCase();
 
-    var base = style.size;
     function isHL(i) {
       return frame.words != null &&
-        (i === frame.active || (frame.highlightSet && frame.highlightSet[i]));
+        (i === frame.active || !!(frame.highlightSet && frame.highlightSet[i]));
     }
-    var hlScale = style.highlightScale || 1;
     var maxW = W * style.maxWidthPct;
     // In word-sync frames (karaoke/reveal expose frame.active) ONLY the spoken
     // word should stand out. The dynamic viral/long-word size boost is therefore
@@ -312,126 +648,78 @@
     // even when they're not the active word and look highlighted alongside it.
     var wordSync = (frame.active != null);
 
-    // Build per-word metrics and greedy-wrap into lines at a given font scale.
-    // Highlighted words get the highlight scale; non-word-sync frames also let
-    // viral/long words grow. Pure measurement — called repeatedly to shrink the
-    // caption until it fits the allowed line count.
-    function layout(fit) {
-      var eff = Math.max(8, r2(base * fit));
-      setFont(eff);
-      spacingFor(null);
-      var sp = ctx.measureText(' ').width + (style.wordSpacing || 0);
-      var m = [];
-      for (var k = 0; k < words.length; k++) {
-        var hpk = isHL(k);
-        // auto-enlarge punchy/long words only when the user opts in AND it's not
-        // a word-sync frame (where only the spoken word should stand out).
-        var dyn = (style.emphasizeWords && !wordSync) ? wordScale(words[k]) : 1;
-        var multk = Math.max(hpk ? hlScale : 1, dyn);
-        var pxk = r2(eff * multk);
-        setFontFor(pxk, hpk);
-        spacingFor(words[k]);
-        m.push({ word: words[k], px: pxk, hl: hpk, w: ctx.measureText(words[k]).width });
+    // ONE layout for the whole caption (see captionLayout): measured on this
+    // canvas, with every word allowed to be the spoken one, so the line
+    // breaks and the size are the same on every frame of the caption.
+    var lay = captionLayout(canvasMeasurer(ctx, style), words, style, W, H,
+                            { wordSync: wordSync, highlightSet: frame.words != null ? frame.highlightSet : null });
+    var base = lay.size, hlSize = lay.hlSize, spaceW = lay.sp;
+    _lsNow = null;                                   // the measurer moved the canvas's spacing
+    var lines = [];
+    for (var lr0 = 0; lr0 < lay.lines.length; lr0++) {
+      var L0 = lay.lines[lr0], items0 = [], wsum = 0, hMax = base;
+      for (var k0 = L0.from; k0 < L0.to; k0++) {
+        var m0 = lay.items[k0], hlNow = isHL(m0.src);
+        var it0 = { word: m0.word, src: m0.src, hl: hlNow, px: hlNow ? m0.hlPx : m0.px,
+                    w: hlNow ? (wordSync && !m0.stat ? m0.wh : m0.w) : m0.w };
+        items0.push(it0);
+        wsum += it0.w;
+        hMax = Math.max(hMax, wordSync ? m0.hlPx : it0.px);   // the widest case: boxes never change size mid-caption
       }
-      var ls = [];
-      var cur = { items: [], width: 0, height: eff };
-      var wpl = style.wordsPerLine || 0;             // stacked layout: N words per line
-      for (var j = 0; j < m.length; j++) {
-        var add = m[j].w + (cur.items.length ? sp : 0);
-        var forceBreak = wpl && cur.items.length >= wpl;
-        if (cur.items.length && (forceBreak || cur.width + add > maxW)) {
-          ls.push(cur);
-          cur = { items: [], width: 0, height: eff };
-          add = m[j].w;
+      lines.push({ items: items0, width: wsum + spaceW * Math.max(0, items0.length - 1), height: hMax,
+                   spaceW: spaceW, scale: 1, asc: L0.asc, desc: L0.desc, deva: L0.deva });
+    }
+    // two-tier "stacked" editorial look: lines after the first shrink to subScale.
+    // Re-measure those words at the smaller size so centering stays tight.
+    var sub = style.subScale;
+    if (sub && sub < 1) {
+      for (var lr = 1; lr < lines.length; lr++) {
+        var lineR = lines[lr], lw = 0, hMaxR = 0;
+        for (var ir = 0; ir < lineR.items.length; ir++) {
+          var itr = lineR.items[ir];
+          itr.px = Math.max(6, r2(itr.px * sub));
+          setFontFor(itr.px, itr.hl);
+          spacingFor(itr.word);
+          itr.w = ctx.measureText(itr.word).width;
+          lw += itr.w; if (itr.px > hMaxR) hMaxR = itr.px;
         }
-        cur.items.push(m[j]);
-        cur.width += add;
-        cur.height = Math.max(cur.height, m[j].px);
+        setFont(Math.max(6, r2(base * sub)));
+        spacingFor(null);
+        lineR.spaceW = ctx.measureText(' ').width + (style.wordSpacing || 0);
+        lw += lineR.spaceW * Math.max(0, lineR.items.length - 1);
+        lineR.width = lw; lineR.height = hMaxR; lineR.scale = sub;
+        lineR.asc *= sub; lineR.desc *= sub;
       }
-      if (cur.items.length) ls.push(cur);
-      // default per-line spacing/scale (uniform unless two-tier shrinks lines 2+)
-      for (var lz = 0; lz < ls.length; lz++) { ls[lz].spaceW = sp; ls[lz].scale = 1; }
-      // two-tier "stacked" editorial look: lines after the first shrink to subScale.
-      // Re-measure those words at the smaller size so wrapping/centering stay tight.
-      var sub = style.subScale;
-      if (sub && sub < 1) {
-        for (var lr = 1; lr < ls.length; lr++) {
-          var lineR = ls[lr], lw = 0, hMax = 0;
-          for (var ir = 0; ir < lineR.items.length; ir++) {
-            var itr = lineR.items[ir];
-            itr.px = Math.max(6, r2(itr.px * sub));
-            setFontFor(itr.px, itr.hl);
-            spacingFor(itr.word);
-            itr.w = ctx.measureText(itr.word).width;
-            lw += itr.w; if (itr.px > hMax) hMax = itr.px;
-          }
-          setFont(Math.max(6, r2(eff * sub)));
-          spacingFor(null);
-          lineR.spaceW = ctx.measureText(' ').width + (style.wordSpacing || 0);
-          lw += lineR.spaceW * Math.max(0, lineR.items.length - 1);
-          lineR.width = lw; lineR.height = hMax; lineR.scale = sub;
-        }
-      }
-      var widest = 0;
-      for (var lw2 = 0; lw2 < ls.length; lw2++) if (ls[lw2].width > widest) widest = ls[lw2].width;
-      return { meta: m, lines: ls, eff: eff, hlSize: r2(eff * hlScale), spaceW: sp, widest: widest };
     }
-
-    // Enforce the line limit (1 = single, 2 = double) by shrinking the font
-    // until it fits — this kills the ugly "one stray word on a 2nd line" look.
-    var lay = layout(1);
-    // Shrink until the caption fits BOTH ways:
-    //  · within the allowed number of lines (kills the stray-word second line)
-    //  · within the frame's width — a single unbreakable word (a long URL, a
-    //    compound German/medical word) forms its own line that wrapping cannot
-    //    split, and used to run straight off both edges of the video.
-    var fit = 1, guard = 0;
-    while (((style.maxLines && lay.lines.length > style.maxLines) || lay.widest > maxW) &&
-           fit > 0.34 && guard < 30) {
-      fit *= 0.93; guard++;
-      lay = layout(fit);
-    }
-    // Still wider than the frame at the smallest sane size (an extreme word):
-    // break it across lines rather than let it bleed off screen.
-    if (lay.widest > maxW) {
-      var broken = [], bi;
-      for (bi = 0; bi < words.length; bi++) {
-        var wOne = words[bi];
-        setFont(lay.eff);
-        spacingFor(wOne);
-        if (ctx.measureText(wOne).width <= maxW || wOne.length < 6) { broken.push(wOne); continue; }
-        var per = Math.max(3, Math.floor(wOne.length * maxW / ctx.measureText(wOne).width) - 1);
-        for (var cpos = 0; cpos < wOne.length; cpos += per) broken.push(wOne.substr(cpos, per));
-      }
-      if (broken.length !== words.length) { words = broken; lay = layout(fit); }
-    }
-    base = lay.eff;
-    var meta = lay.meta, lines = lay.lines, hlSize = lay.hlSize, spaceW = lay.spaceW;
     // Record the line count the layout ACTUALLY produced. Counting lines from
     // pixels afterwards is unreliable for tight-leading styles (pro-boldpop has
     // lineGap 1.04, so its two lines nearly touch and merge into one blob at
     // some scales but not others) — the renderer already knows the answer.
-    try { canvas._cpLines = lines.length; } catch (eLn) {}
+    try {
+      canvas._cpLines = lines.length;
+      canvas._cpLayout = { size: base, hlSize: hlSize, budget: lay.budget, ext: lay.ext, fits: lay.fits,
+                           lines: lines.map(function (l) { return l.items.map(function (i) { return i.word; }).join(' '); }) };
+    } catch (eLn) {}
 
     var lineStep = hlSize * style.lineGap;
-    var blockH = lines.length * lineStep;
-    // per-line baselines. Uniform stepping for normal styles; two-tier styles
-    // (subScale<1) use each line's own height so a big headline + small subline
-    // sit at a natural, tight distance.
+    var stroke = (style.stroke && style.strokeWidth) ? style.strokeWidth : 0;
+    // per-line baselines, bottom-anchored at the Position. Uniform stepping for
+    // normal styles; two-tier styles (subScale<1) use each line's own height so
+    // a big headline + small subline sit at a natural, tight distance. A line
+    // pair holding Hindi steps at least far enough that the matras of one line
+    // (above the headline and below it) never touch the next line's — at the
+    // designed 1.05 leading of Two-Tone Stack they overlapped by 11-13 px.
     var twoTier = (style.subScale && style.subScale < 1 && lines.length > 1);
     var lineY = [], baseY;
-    if (twoTier) {
-      var lastY = H * style.yPct;            // bottom-anchored, same as uniform
-      lineY[lines.length - 1] = lastY;
-      for (var lb = lines.length - 2; lb >= 0; lb--) {
-        var adv = (lines[lb].height + lines[lb + 1].height) / 2 * style.lineGap;
-        lineY[lb] = lineY[lb + 1] - adv;
+    lineY[lines.length - 1] = H * style.yPct;
+    for (var lb = lines.length - 2; lb >= 0; lb--) {
+      var adv = twoTier ? (lines[lb].height + lines[lb + 1].height) / 2 * style.lineGap : lineStep;
+      if (lines[lb].deva || lines[lb + 1].deva) {
+        adv = Math.max(adv, lines[lb].desc + lines[lb + 1].asc + stroke + hlSize * 0.06);
       }
-      baseY = lineY[0];
-    } else {
-      baseY = H * style.yPct - blockH + lineStep; // baseline of first line
-      for (var lc = 0; lc < lines.length; lc++) lineY[lc] = baseY + lc * lineStep;
+      lineY[lb] = lineY[lb + 1] - adv;
     }
+    baseY = lineY[0];
 
     // vertically centre the whole block in the frame (gallery thumbnails) so a
     // 1- or 2-line caption never clips off the top/bottom of a short card.
@@ -441,6 +729,16 @@
       var shift = (H - (botY - topY)) / 2 - topY;
       for (var vc = 0; vc < lineY.length; vc++) lineY[vc] += shift;
       baseY += shift;
+    } else if (lines.length) {
+      // a real frame: the whole block (ink, outline, box) stays inside it
+      var padY0 = hasBox(style) ? base * 0.22 * (style.boxPad != null ? style.boxPad : 1) : 0;
+      var inkTop = lineY[0] - Math.max(lines[0].asc, lines[0].height * 0.82) - stroke / 2 - padY0;
+      var last = lines[lines.length - 1];
+      var inkBot = lineY[lines.length - 1] + Math.max(last.desc, last.height * 0.18) + stroke / 2 + padY0 + (style.box3dDepth || 0);
+      var room = H * 0.02, fix = 0;
+      if (inkBot > H - room) fix = (H - room) - inkBot;
+      if (inkTop + fix < room) fix = room - inkTop;
+      if (fix) { for (var fv = 0; fv < lineY.length; fv++) lineY[fv] += fix; baseY += fix; }
     }
 
     // speaker label pill above the block
@@ -493,7 +791,7 @@
 
     // horizontal alignment within the safe text column
     var margin = (W - maxW) / 2;
-    var mi = 0;   // running word index across the caption (drives colour cycling)
+    var mi = 0;   // running word index across the caption
     for (var li = 0; li < lines.length; li++) {
       var line = lines[li];
       var x = (style.align === 'left') ? margin
@@ -600,13 +898,13 @@
         // progressive reveal (frame.reveal = N): words past N are still LAID OUT
         // (so the line never re-centres / shifts) but not drawn — a clean
         // word-by-word reveal in stable positions, no jitter.
-        if (frame.reveal != null && mi >= frame.reveal) { x += it.w + lineSpace; mi++; continue; }
+        if (frame.reveal != null && it.src >= frame.reveal) { x += it.w + lineSpace; mi++; continue; }
         setFontFor(it.px, it.hl);   // keyword may use a different (italic serif) face
         spacingFor(it.word);        // no letter spacing inside a Hindi word
         // per-word highlight colour — cycle the palette word-to-word when set
         var hlColor = style.highlight;
         if (style.highlightColors && style.highlightColors.length) {
-          hlColor = style.highlightColors[mi % style.highlightColors.length];
+          hlColor = style.highlightColors[it.src % style.highlightColors.length];
         }
         var shape = it.hl ? (style.highlightStyle || 'color') : null;
         var filled = (shape === 'box' || shape === 'bar');   // word sits on a solid shape
@@ -682,7 +980,7 @@
         ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
         // fade words not yet spoken (3-state karaoke: past=full, current=highlight, future=dim)
         var prevA = ctx.globalAlpha;
-        if (wordSync && style.upcomingOpacity < 1 && frame.active != null && mi > frame.active && !it.hl) {
+        if (wordSync && style.upcomingOpacity < 1 && frame.active != null && it.src > frame.active && !it.hl) {
           ctx.globalAlpha = style.upcomingOpacity;
         }
         // soft glow halo around the highlighted keyword (the "shiny" look) —
@@ -798,11 +1096,12 @@
      for exactly as long as the per-image clip would sit on the timeline. The
      canvas stays full-frame, so CP_placeOverlay places it exactly as before. */
 
-  /* Everything drawFrame reads from a frame, minus its timing: two frames with
-     the same key draw the same pixels, so they share one PNG. */
+  /* Everything drawFrame reads from a frame, minus its timing (and which
+     caption it belongs to): two frames with the same key draw the same
+     pixels, so they share one PNG. */
   function overlayStateKey(frame) {
     var keys = [], k;
-    for (k in frame) if (Object.prototype.hasOwnProperty.call(frame, k) && k !== 'start' && k !== 'end') keys.push(k);
+    for (k in frame) if (Object.prototype.hasOwnProperty.call(frame, k) && k !== 'start' && k !== 'end' && k !== 'cap') keys.push(k);
     keys.sort();
     var o = {};
     for (var i = 0; i < keys.length; i++) o[keys[i]] = frame[keys[i]];
@@ -1171,6 +1470,14 @@
     wrapLines: wrapLines,
     styleForFrame: styleForFrame,
     drawFrame: drawFrame,
+    // one layout per caption, and the fit question the caption grouper asks
+    captionLayout: captionLayout,
+    breakLines: breakLines,
+    sideExtent: sideExtent,
+    measurerFor: measurerFor,
+    estimateMeasurer: estimateMeasurer,
+    wordsFit: wordsFit,
+    fitter: fitter,
     renderFrames: renderFrames,
     preloadFaces: preloadFaces,
     jobCharset: jobCharset,

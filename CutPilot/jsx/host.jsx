@@ -1791,8 +1791,15 @@ function CP_importSrtCaptions(argsJson) {
     if (typeof seq.createCaptionTrack !== 'function') {
       return CP_fail('This Premiere version has no createCaptionTrack scripting API (needs 22.0+). The SRT is imported — drag it onto the timeline manually.');
     }
-    var okCt = seq.createCaptionTrack(item, 0);
-    return CP_ok({ captionTrackCreated: okCt !== false });
+    // Ask for SUBTITLE captions by name (the documented default, but some
+    // projects came out CEA-708, which cuts lines at 32 letters on export).
+    var fmt;
+    try {
+      if (typeof Sequence !== 'undefined' && Sequence && Sequence.CAPTION_FORMAT_SUBTITLE !== undefined) fmt = Sequence.CAPTION_FORMAT_SUBTITLE;
+    } catch (eFmt) { fmt = undefined; }
+    var okCt = (fmt !== undefined) ? seq.createCaptionTrack(item, 0, fmt) : seq.createCaptionTrack(item, 0);
+    // Premiere answers true when it made the track; anything else is not a track
+    return CP_ok({ captionTrackCreated: okCt === true, format: (fmt !== undefined) ? 'subtitle' : 'default' });
   } catch (e) { return CP_fail(e.message); }
 }
 

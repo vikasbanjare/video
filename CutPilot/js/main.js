@@ -1259,7 +1259,9 @@
      steps a fresh transcription takes (Auto-transcribe below), so a transcript
      loaded from the store lands exactly where a new one would. */
   function placeTranscript(t, pieces) {
-    var cues = CPCaptions.dedupeRepeatedCues(CPCaptions.mediaToTimeline(t.lines, pieces));
+    // a word-level transcript's lines ARE words: a repeated short word
+    // ("na na", "haan haan") is real speech, so only true echoes merge
+    var cues = CPCaptions.dedupeRepeatedCues(CPCaptions.mediaToTimeline(t.lines, pieces), t.wordLevel ? { word: true } : null);
     var words = null;
     if (t.wordLevel) {
       words = cues.slice();                                  // the lines were single words
@@ -5156,9 +5158,11 @@
     },
     sample: function (p) { return tileSampleText(p); }
   };
-  function tileSampleText(p) {
-    // Auto (0) is grouped 4 at a time by both surfaces (drawCardPreview and
-    // renderPreview use `wordsPerCue || 4`), so size the sample the same way
+  /* The phrases a tile (and the editor preview) captions. Each phrase is
+     spoken as its own sentence (sampleCues leaves a pause after it), so the
+     grouping never runs one phrase into the next. */
+  function tileSamplePhrases(p) {
+    // ✨ Auto (0) gets two 4-word phrases: two whole captions to compare
     var wpc = (p && p.wordsPerCue != null) ? (parseInt(p.wordsPerCue, 10) || 4) : 4;
     var want = Math.max(5, Math.min(20, wpc * 2));
     try {
@@ -5169,14 +5173,14 @@
           var wd = tw[i] && (tw[i].text || tw[i].word);
           if (wd) ws.push(String(wd));
         }
-        if (ws.length >= 3) return ws.join(' ').replace(/[.,!?]+$/, '');
+        if (ws.length >= 3) return [ws.join(' ').replace(/[.,!?]+$/, '')];
       }
     } catch (eT) {}
     var h = 0, id = String((p && p.id) || '');
     for (var k = 0; k < id.length; k++) h = (h * 31 + id.charCodeAt(k)) & 0xffff;
     var deva = (p && p.script === 'deva');
     var lines = deva ? TILE_SAMPLES_HI : TILE_SAMPLES;
-    if (wpc <= 1) return lines[h % lines.length];          // one word per caption: any line reads whole
+    if (wpc <= 1) return [lines[h % lines.length]];        // one word per caption: any line reads whole
     var byLen = deva ? TILE_PHRASES_HI : TILE_PHRASES;
     var n = byLen[wpc] ? wpc : null;
     if (!n) {                                               // longer than the pool: the longest phrases, still whole
@@ -5185,7 +5189,34 @@
     }
     var pool = byLen[n];
     // two whole phrases of exactly the caption size → two whole captions
-    return pool[h % pool.length] + ' ' + pool[(h + 1) % pool.length];
+    return [pool[h % pool.length], pool[(h + 1) % pool.length]];
+  }
+  function tileSampleText(p) { return tileSamplePhrases(p).join(' '); }
+  /* The fit a style's captions get on this sequence once the style is
+     picked (the lines and width picking it sets: the style's own, else 2
+     lines at 86%) — so a tile groups its sample the way the timeline will. */
+  function tileFit(p) {
+    try {
+      var sz = seqSize();
+      var st = CPRender.styleForFrame(p, sz.H, {
+        maxLines: (p.maxLines != null ? p.maxLines : 2),
+        maxWidthPct: (p.maxWidthPct != null ? p.maxWidthPct : 0.86)
+      }, sz.W);
+      return CPRender.fitter(st, sz.W, sz.H);
+    } catch (e) { return null; }
+  }
+  /* Sample phrases as timed words: 0.35 s a word, 0.6 s of silence after
+     each phrase (a pause starts a new caption, as it does on the timeline). */
+  var SAMPLE_DUR = 0.35;
+  function sampleCues(phrases) {
+    var words = [], t = 0;
+    for (var i = 0; i < phrases.length; i++) {
+      var ws = String(phrases[i]).split(' ').filter(Boolean);
+      for (var k = 0; k < ws.length; k++) { words.push({ start: t, end: t + SAMPLE_DUR, text: ws[k] }); t += SAMPLE_DUR; }
+      t += 0.6;
+    }
+    var all = words.map(function (w) { return w.text; });
+    return { words: all, wordCues: words, cues: [{ start: 0, end: Math.max(SAMPLE_DUR, t), text: all.join(' ') }] };
   }
   function layoutYPct(p) {
     var l = p && p.layout;
@@ -5195,10 +5226,9 @@
     try {
       var raw = t;
       t = previewBasis(t);             // full fidelity for Pulse renders, engine-shaped for editable
-      var sample = tileSampleText(raw);
-      if (t.uppercase) sample = sample.toUpperCase();
-      var sw = sample.split(' '), DUR = 0.35;
-      var wordCues = sw.map(function (w, i) { return { start: i * DUR, end: (i + 1) * DUR, text: w }; });
+      var phrases = tileSamplePhrases(raw);
+      if (t.uppercase) phrases = phrases.map(function (ph) { return ph.toUpperCase(); });
+      var S = sampleCues(phrases), sw = S.words;
       // FRAME CONTENT follows the RENDER's rule — the pipeline builds frames with
       // currentAnim() = word-by-word ? karaoke : the style's own animation. The
       // ENTRANCE is a CLIP-level motion Premiere applies at the caption's start;
@@ -5211,14 +5241,20 @@
       var animId = (raw.wordHl !== false)
         ? ((rawAnimId === 'reveal') ? 'reveal' : 'karaoke')
         : rawAnimId;
+      // Words per caption exactly as picking this style sets it (an unset
+      // count is 4, like setWordCount), and the words of each caption fitted
+      // to the sequence's frame at the style's own size — the same grouping
+      // the editor preview and the timeline make.
+      var tileN = (raw.wordsPerCue == null || isNaN(parseInt(raw.wordsPerCue, 10))) ? 4 : Math.max(0, parseInt(raw.wordsPerCue, 10));
       var frames;
       try {
-        frames = CPCaptions.buildCaptionFrames([{ start: 0, end: sw.length * DUR, text: sample }], {
-          anim: animId, wordsPerCue: (t.wordsPerCue || 4), uppercase: !!t.uppercase,
+        frames = CPCaptions.buildCaptionFrames(S.cues, {
+          anim: animId, wordsPerCue: tileN, uppercase: !!t.uppercase,
           keyword: { on: false }, speaker: { on: false },   // sweep (active word) supplies the highlight, like the backbone
           build: !!raw.build,                               // same flag the pipeline and the editor preview pass
           textCase: raw.textCase || 'original',             // a lowercase style reads lowercase on its card too
-          wordCues: wordCues, window: 0
+          wordCues: S.wordCues, window: 0,
+          fit: tileFit(raw)
         });
       } catch (eF) { frames = null; }
       if (!frames || !frames.length) frames = [{ words: sw }];
@@ -5238,7 +5274,7 @@
                   vCenter: true };
       canvas._animFrames = frames;
       canvas._animId = animId;                    // exposed for the motion-parity proof
-      canvas._animWpc = (t.wordsPerCue || 4);
+      canvas._animWpc = tileN;
       canvas._animStyle = CPRender.styleForFrame(t, canvas.height, pov);
       canvas._animLen = frames.length;
       drawCardTickFrame(canvas, _cardTick);
@@ -5952,9 +5988,11 @@
 
     setFontValue(p.font);
     $('c-size').value = p.fontSize;
-    $('c-pos').value = (p.posPct != null) ? p.posPct
-                     : (p.layout === 'top') ? 18 : (p.layout === 'center') ? 50 : 76;
+    $('c-pos').value = stylePos(p);
     setLayoutButton($('c-pos').value);
+    // picking a style puts the caption at the style's own spot again
+    state.posUserSet = false;
+    syncAutoPos();
     // Each style carries its own entrance identity, but an entrance the USER
     // explicitly chose outranks it — otherwise picking a style silently undoes
     // their choice (🎬 As spoken reverting to None).
@@ -6108,6 +6146,43 @@
     }
   }
 
+  /* Where a style puts its caption (the Position slider's value for it). */
+  function stylePos(p) {
+    return (p && p.posPct != null) ? p.posPct
+         : (p && p.layout === 'top') ? 18 : (p && p.layout === 'center') ? 50 : 76;
+  }
+  /* VERTICAL VIDEO: the bottom third of a reel sits under TikTok / Reels /
+     Shorts' own buttons and caption. Until the owner moves Position, a style
+     that sits lower than the Reels-safe line starts there on a vertical
+     sequence (the "Reels" safe-zone button lights up); on a landscape one it
+     keeps its own spot. Moving the slider, a layout or safe-zone button is the
+     owner's choice and always wins. */
+  var REELS_SAFE_POS = 62;
+  function portraitSeq() { return !!(state.env && +state.env.height > +state.env.width); }
+  function autoPos() {
+    var def = stylePos(currentPreset());
+    return (portraitSeq() && def > REELS_SAFE_POS) ? REELS_SAFE_POS : def;
+  }
+  /* The Position the captions use: the owner's, else the automatic one. */
+  function effectivePos() {
+    var v = parseInt($('c-pos').value, 10);
+    if (!isFinite(v)) v = 76;
+    // the slider still shows the style's spot, or the automatic one: the
+    // automatic one for THIS sequence (it may have changed shape since)
+    if (!state.posUserSet && (v === stylePos(currentPreset()) || v === state.autoPosShown)) return autoPos();
+    return v;
+  }
+  /* Show the automatic Position on the slider (when the owner hasn't set one). */
+  function syncAutoPos() {
+    if (state.posUserSet || !$('c-pos')) return;
+    var want = autoPos();
+    state.autoPosShown = want;
+    if (parseInt($('c-pos').value, 10) === want) return;
+    $('c-pos').value = want;
+    setLayoutButton(want);
+    try { setSafeZoneButton(want); } catch (e) {}
+    try { $('c-pos-val').textContent = want + '%'; } catch (e2) {}
+  }
   function setLayoutButton(pos) {
     var btns = document.querySelectorAll('#c-layout button');
     for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('on', btns[i].dataset.pos === String(pos));
@@ -6455,6 +6530,9 @@
     // of a hand-written copy that silently goes stale (Words-per-line sat
     // outside the old 16-control list and was dead for months).
     window._cpPreviewControlIds = ids.slice();
+    // Moving Position makes it the owner's spot — marked BEFORE the repaint
+    // below, which would otherwise put the automatic (Reels-safe) spot back.
+    if ($('c-pos')) $('c-pos').addEventListener('input', function () { state.posUserSet = true; });
     ids.forEach(function (id) {
       if (!$(id)) return;
       $(id).addEventListener('input', function () { updateVals(); renderPreview(); });
@@ -6478,6 +6556,7 @@
     var lay = document.querySelectorAll('#c-layout button');
     for (var i = 0; i < lay.length; i++) {
       lay[i].addEventListener('click', function () {
+        state.posUserSet = true;
         $('c-pos').value = this.dataset.pos;
         setLayoutButton(this.dataset.pos);
         updateVals(); renderPreview();
@@ -6515,6 +6594,7 @@
     var sz = document.querySelectorAll('#c-safezone button');
     for (var z = 0; z < sz.length; z++) {
       sz[z].addEventListener('click', function () {
+        state.posUserSet = true;
         $('c-pos').value = this.dataset.z;
         setLayoutButton(this.dataset.z); setSafeZoneButton(this.dataset.z);
         updateVals(); renderPreview();
@@ -6554,11 +6634,9 @@
     });
     $('wc-plus').addEventListener('click', function () {
       var w = parseInt($('c-words').value, 10) || 0;
+      // every count is real now — 1 is one word at a time, 2 is two (word-by-
+      // word captions used to force two words, so "+" from 1 skipped to 3)
       var next = (w === 0) ? 1 : w + 1;
-      // With word-by-word on, a caption always holds at least TWO words (the
-      // sweep needs a neighbour), so 1 and 2 look identical — step past 2 or
-      // the first "+" does nothing you can see.
-      if (w === 1 && cchk('c-wordhl')) next = 3;
       setWordCount(next); renderPreview();
     });
     $('wc-full').addEventListener('click', function () {
@@ -6596,7 +6674,9 @@
   function shiftWordCues(wordCues, off) {
     if (!wordCues || !off) return wordCues;
     return wordCues.map(function (w) {
-      return { start: Math.max(0, w.start + off), end: Math.max(0, w.end + off), text: w.text };
+      var o = { start: Math.max(0, w.start + off), end: Math.max(0, w.end + off), text: w.text };
+      if (w.speaker != null) o.speaker = w.speaker;   // who said it: a new speaker starts a new caption
+      return o;
     });
   }
 
@@ -7117,7 +7197,7 @@
     return {
       font: $('c-font').value,
       fontSize: parseInt($('c-size').value, 10),
-      yPct: parseInt($('c-pos').value, 10) / 100,
+      yPct: effectivePos() / 100,
       fill: $('c-fill').value,
       highlight: $('c-hl').value,
       stroke: $('c-stroke').value,
@@ -7311,7 +7391,7 @@
       localStorage.setItem(LOOK_KEY, JSON.stringify({
         presetId: state.presetId, animId: state.animId,
         font: $('c-font').value, words: $('c-words').value,
-        size: $('c-size').value, pos: $('c-pos').value,
+        size: $('c-size').value, pos: $('c-pos').value, posUserSet: !!state.posUserSet,
         fill: $('c-fill').value, hl: $('c-hl').value, stroke: $('c-stroke').value, box: $('c-box').value,
         strokew: $('c-strokew').value, boxOn: $('c-box-on').checked, upper: $('c-upper').checked,
         kw: $('c-kw').checked, kwMode: $('c-kw-mode').value, hlScale: $('c-hl-scale').value,
@@ -7339,6 +7419,10 @@
       if (look.font && look.font !== '__custom__') setFontValue(look.font);
       if (look.size != null) $('c-size').value = look.size;
       if (look.pos != null) { $('c-pos').value = look.pos; setLayoutButton(look.pos); }
+      // a look saved before this was remembered: a Position that is not the
+      // style's own was the owner's choice
+      state.posUserSet = (look.posUserSet != null) ? !!look.posUserSet
+        : (look.pos != null && parseInt(look.pos, 10) !== stylePos(findTemplate(look.presetId) || currentPreset()));
       if (look.fill) $('c-fill').value = look.fill;
       if (look.hl) $('c-hl').value = look.hl;
       if (look.stroke) $('c-stroke').value = look.stroke;
@@ -7392,6 +7476,7 @@
 
   // --------------------------------------------------------- live preview ----
   var previewTimer = null;
+  var _pvWordsOverride = null;   // { words, wordCues, cues } a gate shows in the preview
   // Fixed font size the live preview always renders at, so the preview reads as a
   // STYLE reference and never shrinks when the user lowers the output Size slider.
   var PREVIEW_REF_SIZE = 120;
@@ -7408,6 +7493,7 @@
     // its real relative size (the engine's authored face ≈4.7% of frame height
     // at Size=default, scaled by the Size slider) and at the Position slider's
     // real spot — a shrunken version of the final frame, not a zoomed swatch.
+    try { syncAutoPos(); } catch (eAp) {}
     var styled = styledPreset();
     var engineMode = (_capOut === 'editable');
     var carry = previewBasis(styled);      // same basis as the tile, in both modes
@@ -7478,46 +7564,37 @@
                                       canvas.height, pov);
     }
     canvas._pvStyle = pStyle;   // exposed so the parity harness can machine-compare tile vs preview
-    var sample = tileSampleText(styled);
+    var phrases = tileSamplePhrases(styled);
     // content demo (see wirePreviewDemos) — the tile keeps its own sample
     var demo = (_pvDemo && _pvDemo.id === state.presetId) ? _pvDemo.kind : null;
     var demoText = demo ? previewDemoText(demo, styled) : null;
-    if (demoText) sample = demoText;
+    if (demoText) phrases = [demoText];
     var wrapDemo = (demo === 'layout');
     // a stacked style breaks lines by word count: show it TWO stacked lines of
     // long words, which max width can still squeeze (more would only shrink)
-    if (wrapDemo && styled.wordsPerLine > 0) sample = sample.split(' ').slice(0, styled.wordsPerLine * 2).join(' ');
-    if (carry.uppercase) sample = sample.toUpperCase();
-    var sw = sample.split(' ');
-    // MOTION PARITY with the gallery tile. These three inputs used to differ
-    // (tile: entrance-or-anim + the style's wordsPerCue; editor: anim only +
-    // every word in one cue), which is why a card could move one way in the
-    // gallery and another way once opened — and why the Words-per-line control
-    // looked dead in the editor preview. Both surfaces now derive motion the
-    // same way, and proof B2 fails the build if they ever drift apart again.
+    if (wrapDemo && styled.wordsPerLine > 0) phrases = [phrases.join(' ').split(' ').slice(0, styled.wordsPerLine * 2).join(' ')];
+    if (carry.uppercase) phrases = phrases.map(function (ph) { return ph.toUpperCase(); });
+    var S = sampleCues(phrases);
+    if (_pvWordsOverride) S = _pvWordsOverride;      // a test's own timed words (CP_DEBUG_EXT.captions)
+    var sample = S.words.join(' '), sw = S.words;
+    // MOTION PARITY with the gallery tile, and GROUPING PARITY with the
+    // timeline: the frames come from captionFrameOpts — the very options
+    // "Add captions" uses (Words per caption, the fit to this sequence's frame
+    // at the style's own size, case, emoji, CAPS on key words, strip
+    // punctuation, censor) — so the preview splits the words into captions
+    // exactly as the timeline will. Proof B2 keeps the tile identical too.
     var pvAnimId = currentAnim();   // the EXACT call the render pipeline makes
-    var pvWpc = wrapDemo ? sw.length : (styled.wordsPerCue || 4);
+    var pvWpc = wrapDemo ? sw.length : (parseInt($('c-words').value, 10) || 0);
     canvas._pvAnimId = pvAnimId; canvas._pvWpc = pvWpc;
-    var DUR = 0.35;                                   // seconds per word — same pacing as the tile
-    var wordCues = sw.map(function (w, i) { return { start: i * DUR, end: (i + 1) * DUR, text: w }; });
+    var DUR = SAMPLE_DUR;                             // seconds per word — same pacing as the tile
     var frames;
     try {
-      // Mirror the PIPELINE's frame options (see runCaptionPipeline). Keyword
-      // highlighting, speaker labels, text case, censoring, auto-emoji and
-      // strip-punctuation were all pinned off here, so those controls changed
-      // the OUTPUT while the preview sat still — the same dead-control class
-      // the style fields had.
-      var pvOv = povOpts;
-      frames = CPCaptions.buildCaptionFrames([{ start: 0, end: sw.length * DUR, text: sample }], {
-        anim: pvAnimId, wordsPerCue: pvWpc, uppercase: carry.uppercase,
-        keyword: readKeyword(), speaker: readSpeaker(),
-        emoji: !!($('c-emoji') && $('c-emoji').checked),
-        stripPunctuation: pvOv.stripPunctuation,
-        textCase: pvOv.textCase,
-        censor: pvOv.censor,
-        build: !!styled.build,
-        wordCues: wordCues, window: 0
-      });
+      var _sz = seqSize(), _pvPreset = currentPreset() || styled, _pvOv = readOverrides();
+      frames = CPCaptions.buildCaptionFrames(S.cues, captionFrameOpts({
+        preset: _pvPreset, overrides: _pvOv, W: _sz.W, H: _sz.H, fps: _sz.fps,
+        anim: pvAnimId, words: pvWpc, wordCues: S.wordCues,
+        keyword: readKeyword(), capsWords: capsKeywordSet(S.cues)
+      }));
     } catch (eF) { frames = null; }
     if (!frames || !frames.length) frames = [{ words: sw }];
     canvas._pvFrames = frames;                      // exposed for the motion-parity proof
@@ -7593,65 +7670,26 @@
     if (mode === 'title') return s.replace(/\S+/g, function (w) { return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(); });
     return s;   // 'as-spoken' / false / undefined
   }
-  /* ✨ Smart emphasis — TEXT-level, so it lands identically on every output
-     path (editable engine clips, burned captions, SRT). One fitting emoji per
-     matching line; the video's most important words (TF-IDF over the whole
+  /* ✨ Smart emphasis — TEXT-level for the Premiere-graphics and native
+     caption tracks (the Pulse-rendered captions apply the same two settings
+     per caption in CPCaptions.buildCaptionFrames). One fitting emoji per
+     line; the video's most important words (TF-IDF over the whole
      transcript) in CAPITALS. Both opt-in toggles. */
-  var EMOJI_LEX = [
-    [/\b(money|cash|paid|price|prices|cost|profit|revenue|rupees?|dollars?|lakhs?|crores?)\b/i, '💰'],
-    [/\b(grow|growth|growing|increase|increasing|rising|rise|scale|scaling|boost)\b/i, '📈'],
-    [/\b(drop|fall|falling|decrease|crash|collapse)\b/i, '📉'],
-    [/\b(fire|hot|burn|burning|lit|heat|heatwaves?)\b/i, '🔥'],
-    [/\b(idea|ideas|think|thinking|brain|smart|genius)\b/i, '💡'],
-    [/\b(love|heart|care|caring)\b/i, '❤️'],
-    [/\b(warning|danger|dangerous|careful|risk|risky|alert|crisis)\b/i, '⚠️'],
-    [/\b(time|clock|minutes?|hours?|deadline|schedule)\b/i, '⏰'],
-    [/\b(goal|goals|target|aim|focus|focused)\b/i, '🎯'],
-    [/\b(win|winner|won|success|successful|victory)\b/i, '🏆'],
-    [/\b(work|working|grind|hustle|effort)\b/i, '💪'],
-    [/\b(secret|secrets|hidden|nobody tells)\b/i, '🤫'],
-    [/\b(crazy|insane|unbelievable|shocking|shocked|mind ?blown)\b/i, '🤯'],
-    [/\b(stop|never|avoid|quit)\b/i, '🚫'],
-    [/\b(new|launch|launched|launching|announcement|announcing)\b/i, '🚀'],
-    [/\b(look|watch|see this|attention)\b/i, '👀'],
-    [/\b(health|healthy|doctor|hospital|medicine|disease)\b/i, '🩺'],
-    [/\b(food|eat|eating|meal|diet|nutrition)\b/i, '🍽️'],
-    [/\b(video|camera|filming|shoot|record)\b/i, '🎬'],
-    [/\b(music|song|sound|audio|voice)\b/i, '🎵'],
-    [/\b(free|gift|bonus|giveaway)\b/i, '🎁'],
-    [/\b(number one|the best|top rated|first place)\b/i, '🥇'],
-    [/\b(world|global|everyone|everywhere|planet)\b/i, '🌍'],
-    [/\b(phone|mobile|app|apps)\b/i, '📱'],
-    [/\b(sleep|sleeping|tired|exhausted|rest)\b/i, '😴'],
-    [/\b(happy|happiness|smile|joy|fun)\b/i, '😊'],
-    [/\b(sad|crying|pain|painful|hurt)\b/i, '😢'],
-    [/\b(india|indian|desi)\b/i, '🇮🇳']
-  ];
   function applySmartEmphasis(cues) {
     var emojiOn = cchk('c-emoji');
-    var capsOn = cchk('c-kwcaps');
-    if (!emojiOn && !capsOn) return cues;
-    var kw = null;
-    if (capsOn && typeof CPTranscript !== 'undefined' && CPTranscript.topKeywordSet) {
-      // budget scales with the video: a short clip gets ~4 CAPS words, a long
-      // talk up to 14 — a fixed cap over-CAPSed short transcripts with filler.
-      var totalWords = 0;
-      for (var tw = 0; tw < cues.length; tw++) totalWords += (String(cues[tw].text || '').split(/\s+/).length);
-      var budget = Math.max(4, Math.min(14, Math.round(totalWords / 12)));
-      try { kw = CPTranscript.topKeywordSet(cues, { maxWords: budget }); } catch (eKw) { kw = null; }
-    }
+    var kw = capsKeywordSet(cues);              // 🔠 CAPS on key words (null when off)
+    if (!emojiOn && !kw) return cues;
     return cues.map(function (c) {
       var text = c.text;
       if (kw) {
         text = text.split(' ').map(function (w) {
-          var k = w.toLowerCase().replace(/[^a-z0-9']/g, '');
-          return (k && kw[k]) ? w.toUpperCase() : w;
+          return kw[CPCaptions.capsKey(w)] ? w.toUpperCase() : w;
         }).join(' ');
       }
       if (emojiOn) {
-        for (var i = 0; i < EMOJI_LEX.length; i++) {
-          if (EMOJI_LEX[i][0].test(c.text)) { text = text + ' ' + EMOJI_LEX[i][1]; break; }
-        }
+        // the same one-per-caption lexicon the Pulse-rendered captions use
+        var e = CPCaptions.emojiForText(c.text);
+        if (e) text = text + ' ' + e;
       }
       var out = { start: c.start, end: c.end, text: text };
       if (c.words) out.words = c.words;   // keep word timings for the sweep
@@ -7659,7 +7697,7 @@
     });
   }
 
-  function textCues(cues, words, caseMode) {
+  function textCues(cues, words, caseMode, perLineOverride) {
     if (!cues || !cues.length) return [];   // no transcript → no captions, never a crash
     var mode = (caseMode === true) ? 'upper' : (caseMode === false ? 'as-spoken' : (caseMode || 'as-spoken'));
     // Keep whole sentences together. A caption wraps to ~2 lines, so the width
@@ -7669,7 +7707,7 @@
     // a sentence never splits it (only sentence punctuation or a long pause does).
     // The font size never changes — we only choose how many words share a caption.
     var portrait = !!(state.env && state.env.height > state.env.width);
-    var perLine = portrait ? 17 : 24;                 // safe chars per line for the frame width
+    var perLine = perLineOverride || (portrait ? 17 : 24);   // safe chars per line for the frame width
     var perCap = (words > 0) ? words : 14;            // 0 = ✨ Auto (sentence-fit to the frame)
     var maxChars = (words > 0) ? Math.max(perLine, words * 9) : (perLine * 2);   // ~2 lines per caption
     if (state.captionMaxChars) maxChars = state.captionMaxChars;                 // explicit override wins
@@ -7995,6 +8033,81 @@
     if (!on && $('cap1-editor')) $('cap1-editor').classList.add('hidden');
   }
 
+  /* ---- what "Add captions" builds — ONE recipe for the timeline AND the preview ----
+     Which words share a caption (Words per caption, sentence ends, pauses,
+     the frame's width at the style's own size), when each caption shows (on
+     the sequence's frames) and what it shows (case, CAPS on key words,
+     emoji) are decided by this one call for the per-image render, the
+     one-clip overlay and the editor's preview, so the preview groups the
+     words exactly as the timeline will. */
+  function seqSize() {
+    return { W: (state.env && state.env.width) || 1080, H: (state.env && state.env.height) || 1920,
+             fps: (state.env && state.env.fps > 0) ? state.env.fps : 30 };
+  }
+  /* "🔠 CAPS on key words": the video's most important words (TF-IDF over the
+     whole transcript), as the set buildCaptionFrames capitalises. The budget
+     grows with the video: ~4 for a short clip, up to 14 for a long talk. */
+  function capsKeywordSet(cues) {
+    if (!cchk('c-kwcaps') || typeof CPTranscript === 'undefined' || !CPTranscript.topKeywordSet) return null;
+    var total = 0;
+    for (var i = 0; i < (cues || []).length; i++) total += String(cues[i].text || '').split(/\s+/).length;
+    var kw = null, stop = {}, k0;
+    // English stop words plus Hindi / Hinglish function words ("hai", "tha",
+    // "ka", "aur"…): a key word is a word that carries the meaning
+    for (k0 in (CPTranscript.STOP || {})) if (CPTranscript.STOP.hasOwnProperty(k0)) stop[k0] = 1;
+    for (k0 in CPCaptions.FUNCTION_WORDS) if (CPCaptions.FUNCTION_WORDS.hasOwnProperty(k0)) stop[k0] = 1;
+    try { kw = CPTranscript.topKeywordSet(cues, { maxWords: Math.max(4, Math.min(14, Math.round(total / 12))), stop: stop }); } catch (e) { kw = null; }
+    if (!kw) return null;
+    var out = {};
+    for (var k in kw) if (kw.hasOwnProperty(k) && kw[k]) out[CPCaptions.capsKey(k)] = 1;
+    return out;
+  }
+  /* buildCaptionFrames options for a caption job. job: { preset, overrides,
+     W, H, fps, anim, words (Words per caption), wordCues, keyword, capsWords } */
+  function captionFrameOpts(job) {
+    var preset = job.preset || {}, ov = job.overrides || {};
+    var st = CPRender.styleForFrame(preset, job.H, ov, job.W);
+    return {
+      anim: job.anim,
+      wordsPerCue: job.words,
+      uppercase: ov.uppercase,
+      keyword: job.keyword,
+      speaker: readSpeaker(),
+      emoji: cchk('c-emoji'),                     // ✨ Auto-emoji, one per caption
+      capsWords: job.capsWords || null,           // 🔠 CAPS on key words
+      stripPunctuation: ov.stripPunctuation,
+      textCase: ov.textCase,
+      censor: ov.censor,
+      build: !!preset.build,                      // word-by-word keyword build (Editorial)
+      wordCues: job.wordCues,
+      window: (preset.window || 0),
+      fit: CPRender.fitter(st, job.W, job.H),     // the caption fits this frame at the style's own size
+      fps: job.fps
+    };
+  }
+  /* The frames "Add captions" places for these cues and word timings, with
+     the Captions screen as it is now. */
+  function captionJobFrames(cues, wordCues, preset, overrides) {
+    var sz = seqSize();
+    return CPCaptions.buildCaptionFrames(cues, captionFrameOpts({
+      preset: preset, overrides: overrides, W: sz.W, H: sz.H, fps: sz.fps,
+      anim: currentAnim(), words: parseInt($('c-words').value, 10) || 0,
+      wordCues: wordCues, keyword: resolveKeyword(cues), capsWords: capsKeywordSet(cues)
+    }));
+  }
+  /* Load the faces a job draws with, with ITS letters, before measuring how
+     its captions fit — measured in a stand-in font, a caption could be
+     grouped for one width and drawn at another. */
+  function preloadJobFaces(preset, overrides, cues, wordCues) {
+    try {
+      var sz = seqSize();
+      var st = CPRender.styleForFrame(preset, sz.H, overrides, sz.W);
+      var txt = (wordCues && wordCues.length) ? wordCues.map(function (w) { return w.text; })
+                                              : (cues || []).map(function (c) { return c.text; });
+      return CPRender.preloadFaces(st, [{ words: txt }], 4000).then(null, function () {});
+    } catch (e) { return Promise.resolve(); }
+  }
+
   /*
    * Build → render → place captions with the CURRENTLY selected template +
    * customizer settings. When replaceTrack (1-based) is given, the captions
@@ -8034,6 +8147,7 @@
     }
 
     var preset = currentPreset();
+    try { syncAutoPos(); } catch (eAp) {}           // the sequence's shape is known now
     var overrides = readOverrides();
     var words = parseInt($('c-words').value, 10) || 0;
     var anim = currentAnim();
@@ -8054,23 +8168,16 @@
     var wordCuesPromise = (opts.wordCues !== undefined)
       ? Promise.resolve(opts.wordCues)
       : getCaptionWordCues(cues, wantSync);
-    wordCuesPromise.then(function (wordCues) {
+    wordCuesPromise.then(function (wc) {
+      return preloadJobFaces(preset, overrides, cues, wc).then(function () { return wc; });
+    }).then(function (wordCues) {
       wordCues = shiftWordCues(wordCues, captionSyncOffset());   // apply the timing nudge
       // for a segment restyle, only keep word timing inside the range
       if (range && wordCues) wordCues = wordCues.filter(function (w) { return w.end > range.start + 1e-3 && w.start < range.end - 1e-3; });
-      var frames = CPCaptions.buildCaptionFrames(cues, {
-        anim: anim,
-        wordsPerCue: words,
-        uppercase: overrides.uppercase,
-        keyword: resolveKeyword(cues),
-        speaker: readSpeaker(),
-        emoji: !!($('c-emoji') && $('c-emoji').checked),   // v1.0 auto-emoji
-        stripPunctuation: overrides.stripPunctuation,
-        textCase: overrides.textCase,
-        censor: overrides.censor,
-        build: !!preset.build,                              // word-by-word keyword build (Editorial)
-        wordCues: wordCues, window: (currentPreset().window || 0)
-      });
+      // grouping, timing on the sequence's frames, fit, case, emoji, CAPS —
+      // the same call the editor preview makes (captionJobFrames)
+      var frames = captionJobFrames(cues, wordCues, preset, overrides);
+      try { if (window.CP_DEBUG_EXT && window.CP_DEBUG_EXT.captions) window.CP_DEBUG_EXT.captions._lastJob = { frames: frames, wordCues: wordCues, cues: cues, W: state.env.width, H: state.env.height, fps: state.env.fps, preset: preset, overrides: overrides }; } catch (eDbg) {}
 
       // ONE-CLIP OVERLAY. A long job becomes one transparent .mov drawn from
       // exactly these frames (so it looks exactly like the per-image render),
@@ -8369,7 +8476,7 @@
         var aligned = runs.length > 0 && (hit / words.length) >= 0.6;
         try { diag('align', 'precise-timing ' + (aligned ? 'snap+shape' : 'shape-only') + ' — ' + hit + '/' + words.length + ' words on speech · ' + placed + ' placed on ' + src.pieces.length + ' piece' + (src.pieces.length === 1 ? '' : 's')); } catch (eD) {}
         if (!aligned) return shapeOnly();
-        var out = words.map(function (w) { return { start: w.start, end: w.end, text: w.text, conf: w.conf }; });
+        var out = words.map(function (w) { var o = { start: w.start, end: w.end, text: w.text, conf: w.conf }; if (w.speaker != null) o.speaker = w.speaker; return o; });
         var byPiece = {};
         at.forEach(function (m, i) { if (m) (byPiece[m.piece] = byPiece[m.piece] || []).push(i); });
         Object.keys(byPiece).forEach(function (k) {
@@ -9098,6 +9205,30 @@
       runCaptionPipeline(cues, withOpts(opts, { noOverlay: true, overlay: false, overlayFailed: first }));
     });
   }
+
+  // Hooks for test/gates/captions-*.js: what "Add captions" builds, read
+  // without rendering or placing anything.
+  try {
+    window.CP_DEBUG_EXT = window.CP_DEBUG_EXT || {};
+    window.CP_DEBUG_EXT.captions = {
+      // the sequence the panel believes is open
+      setEnv: function (env) { state.env = env; },
+      // the frames "Add captions" places for these timed words — the same
+      // call runCaptionPipeline makes, with the Captions screen as it is
+      jobFrames: function (cues, wordCues) { return captionJobFrames(cues, wordCues, currentPreset(), readOverrides()); },
+      jobStyle: function () { var sz = seqSize(); return CPRender.styleForFrame(currentPreset(), sz.H, readOverrides(), sz.W); },
+      // the editor preview showing these timed words: its frames
+      previewWith: function (cues, wordCues) {
+        _pvWordsOverride = { words: wordCues.map(function (w) { return w.text; }), wordCues: wordCues, cues: cues };
+        try { renderPreview(); } finally { _pvWordsOverride = null; }
+        var pv = $('preview-canvas');
+        return pv ? pv._pvFrames : null;
+      },
+      position: function () { return { userSet: !!state.posUserSet, slider: parseInt($('c-pos').value, 10), used: effectivePos() }; },
+      nativeCues: nativeCaptionCues,
+      _lastJob: null
+    };
+  } catch (eDbgCap) {}
 
   // Hooks for test/gates/overlay-*.js (the shared CP_DEBUG block stays as is).
   try {
@@ -10373,19 +10504,37 @@
     return L.join('\n');
   }
 
+  function nativeCaptionCues(cues) {
+    var perLine = portraitSeq() ? 24 : 42;
+    return CPCaptions.nativeSubtitleCues(
+      textCues(cues, parseInt($('c-words').value, 10) || 0, $('c-upper').checked, perLine),
+      { fps: seqSize().fps, perLine: perLine });
+  }
   function applyNative() {
     if (!ensureTranscriptThen('native')) return;
     var cues;
     try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
     var preset = currentPreset();
-    var ncues = textCues(cues, parseInt($('c-words').value, 10) || 0, $('c-upper').checked);
+    // Premiere's own caption track: up to two lines of ~42 letters on a 16:9
+    // frame (~24 on a vertical one), broken by Pulse where the grammar allows
+    // (Premiere would re-wrap unbroken text at its box, often into 3 lines),
+    // each caption on screen at least 1 s where the silence after it allows,
+    // 2 frames or half a second apart on the sequence's frames.
+    var ncues = nativeCaptionCues(cues);
     try {
       var pathMod = nodeReq('path');
       var out = pathMod.join(nodeReq('os').tmpdir(), 'cutpilot-' + Date.now() + '.srt');
       nodeReq('fs').writeFileSync(out, CPCaptions.toSRT(ncues), 'utf8');
       capProgress('Creating caption track');
-      CPBridge.callHost('CP_importSrtCaptions', { srtPath: out }).then(function () {
+      CPBridge.callHost('CP_importSrtCaptions', { srtPath: out }).then(function (r) {
         capProgress(null);
+        // Premiere imported the file but made no caption track: say so, and
+        // how to finish by hand, instead of claiming a track that is not there
+        if (r && r.captionTrackCreated === false) {
+          toast('The captions file is in your Project panel, but Premiere did not make a caption track from it. ' +
+                'Drag it onto the timeline to add the captions.', true);
+          return;
+        }
         var rec = $('native-recipe');
         if (rec) { rec.textContent = templateStyleRecipe(preset); rec.classList.remove('hidden'); }
         toast('✓ Editable caption track added (' + ncues.length + ' lines) — edit any line in ' +

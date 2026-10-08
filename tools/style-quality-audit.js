@@ -14,6 +14,13 @@
  *   5. NOT HUGE    — never wider than 96% of the frame / taller than 40%
  *   6. IN PLACE    — the caption sits at the style's own declared position
  *   7. HIGHLIGHT   — the spoken-word colour is actually distinguishable
+ *   8. NOT OVERSIZED — on a 1920×1080 podcast no style's capitals pass 6.5%
+ *                    of the frame height, and the DEFAULT style (what one
+ *                    click gives) lands at 4.5–5.5% (subtitle practice)
+ *   9. HINGLISH + HINDI — a real Hinglish/Devanagari transcript, grouped the
+ *                    way ✨ Add captions groups it (Words per caption, the fit
+ *                    to the frame), draws every caption inside the frame at
+ *                    the style's own size, never under 5% of the short side
  *
  * Run: node tools/style-quality-audit.js            (all styles, summary)
  *      node tools/style-quality-audit.js --verbose  (per-style measurements)
@@ -75,6 +82,48 @@ function resolveBrowser(pptr) {
     // compound word. These used to run off both edges of the frame because the
     // shrink loop only counted lines, never measured width.
     const UNBREAKABLE = 'visit pulse.aifloh.com/get-started Pneumonoultramicroscopicsilicovolcanoconiosis';
+    // the owner's own kind of speech: Hinglish with Devanagari, word-timed
+    const HI_SAMPLE = 'Dekho bhai, consistency सबसे ज़रूरी चीज़ है. Agar tum roz content banaoge toh audience automatically grow karegi. ' +
+                      'फिर हम लोग मेज़ पर बैठ गए और YouTube par video daala.';
+    const BOOT_ID = (window.CP_DEBUG_EXT && window.CP_DEBUG_EXT.gallery && window.CP_DEBUG_EXT.gallery.currentPreset())
+      ? window.CP_DEBUG_EXT.gallery.currentPreset().id : 'hormozi';
+    /* The height of a capital at the style's size, outline included, as a
+       share of the frame's height. */
+    function capShare(t) {
+      const st = R.styleForFrame(t, H, {}, W);
+      const c = document.createElement('canvas').getContext('2d');
+      c.font = (st.weight || 800) + ' ' + st.size + 'px "' + st.font + '", "' + st.fallbacks + '", sans-serif';
+      const cap = c.measureText('H').actualBoundingBoxAscent + ((st.stroke && st.strokeWidth) ? st.strokeWidth : 0);
+      return { pct: cap / H * 100, size: st.size };
+    }
+    /* A Hinglish + Hindi transcript through the real grouping and fit. */
+    function hindiFit(t, carry) {
+      const fails = [];
+      const style = R.styleForFrame(t, H, { yPct: 0.62, maxLines: (t.maxLines != null ? t.maxLines : 2) }, W);
+      const toks = HI_SAMPLE.split(' ');
+      const wc = toks.map((w, i) => ({ start: i * 0.35, end: i * 0.35 + 0.3, text: w }));
+      const frames = C.buildCaptionFrames([{ start: 0, end: toks.length * 0.35, text: HI_SAMPLE }], {
+        anim: C.animIdForConcept(carry.anim), wordsPerCue: carry.wordsPerCue || 0, uppercase: carry.uppercase,
+        build: !!t.build, wordCues: wc, fit: R.fitter(style, W, H), fps: 30 });
+      const lastOf = {};
+      frames.forEach(f => { lastOf[f.cap] = f; });
+      const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      const g = cv.getContext('2d');
+      Object.keys(lastOf).forEach(k => {
+        const f = lastOf[k];
+        R.drawFrame(cv, f, style);
+        const L = cv._cpLayout || {};
+        if (L.size < style.minSize - 0.01) fails.push('Hindi caption "' + f.words.join(' ') + '" drawn at ' + L.size + 'px, under 5% of the short side');
+        if (f.words.length > 1 && Math.abs(L.size - style.size) > 0.01) fails.push('Hindi caption "' + f.words.join(' ') + '" shrank to ' + L.size + 'px (style ' + style.size + ')');
+        const d = g.getImageData(0, 0, W, H).data;
+        let mnX = W, mxX = -1, mnY = H, mxY = -1;
+        for (let y = 0; y < H; y += 3) for (let x = 0; x < W; x += 3) {
+          if (d[(y * W + x) * 4 + 3] > 24) { if (x < mnX) mnX = x; if (x > mxX) mxX = x; if (y < mnY) mnY = y; if (y > mxY) mxY = y; }
+        }
+        if (mxX > 0 && (mnX < 3 || mxX > W - 4 || mnY < 3 || mxY > H - 4)) fails.push('Hindi caption "' + f.words.join(' ') + '" reaches the frame edge (' + mnX + '–' + mxX + 'px)');
+      });
+      return fails;
+    }
 
     // Render one style to a TRUE-SIZE transparent canvas (drawFrame clears the
     // canvas, so the backdrop must be composited AFTER), then measure what a
@@ -217,6 +266,15 @@ function resolveBrowser(pptr) {
           fails.push('caption sits at ' + (m.centerY * 100).toFixed(0) + '% but the style says ' + (m.wantY * 100).toFixed(0) + '%');
       }
       try { const an = animates(t); if (!an.ok) fails.push(an.why); } catch (eAn) { fails.push('animation check threw: ' + eAn.message); }
+      // NOT OVERSIZED on a landscape podcast; the default lands at 4.5-5.5%
+      if (W > H) {
+        try {
+          const cs = capShare(t);
+          if (cs.pct > 6.5) fails.push('oversized on a 1920×1080 podcast: capitals ' + cs.pct.toFixed(1) + '% of the frame height (' + cs.size + 'px)');
+          if (t.id === BOOT_ID && (cs.pct < 4.5 || cs.pct > 5.5)) fails.push('the DEFAULT style\'s capitals are ' + cs.pct.toFixed(2) + '% of a 1920×1080 frame (want 4.5–5.5%)');
+        } catch (eCs) { fails.push('size check threw: ' + eCs.message); }
+      }
+      try { hindiFit(t, D.carryableStyle(t)).forEach(f => fails.push(f)); } catch (eHi) { fails.push('Hinglish/Hindi check threw: ' + eHi.message); }
       // unbreakable text must still fit inside the frame
       try {
         const cv2 = document.createElement('canvas'); cv2.width = W; cv2.height = H;
