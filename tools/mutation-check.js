@@ -846,8 +846,8 @@ const MUTANTS = [
   {
     name: 'pfit-comp-scale',
     file: 'CutPilot/jsx/host.jsx',
-    find: '  var s = (Math.min(sw, sh) / Math.min(cw, ch)) * 100;',
-    repl: '  var s = (sh > sw) ? (sw / 1920) * 100 : 100;',
+    find: "  var s = (fitMode === 'short') ? (Math.min(sw, sh) / Math.min(cw, ch)) * 100",
+    repl: "  var s = (fitMode === 'short') ? ((sh > sw) ? (sw / 1920) * 100 : 100)",
     gate: 'CutPilot/test/gates/premium-fit.js',
     why: 'every 1080×1920 Premium template is shrunk to 56.25% on a reel again (the 1920-wide guess)'
   },
@@ -1022,8 +1022,8 @@ const MUTANTS = [
   {
     name: 'pfit-replace-editable',
     file: 'CutPilot/js/main.js',
-    find: '    if (edTrack) {',
-    repl: '    if (false) {',
+    find: '        replaceEd = { track: pjE.track, names: captionGraphicNames(pjE.mogrtPath) };',
+    repl: '        replaceEd = null;',
     gate: 'CutPilot/test/gates/premium-fit.js',
     why: '✨ Add captions stacks a second set over the Premium captions again'
   },
@@ -1154,6 +1154,63 @@ const MUTANTS = [
     repl: "      'c-wordsperline-val': function () { return $('c-wordsperline').value; },\n      'c-animspeed-val': function () { return $('c-animspeed').value + '%'; },",
     gate: 'tools/dom-id-check.js',
     why: 'the removed animation-speed slider is read again, a control that does not exist'
+  },
+  // ---- review round: replace only after the new captions exist; contain fit ----
+  {
+    name: 'pfit-clear-before-render',
+    file: 'CutPilot/js/main.js',
+    find: '    addPulseCaptions(mCues, null, replaceEd);',
+    repl: '    if (replaceEd) clearReplacedTemplateSet({ replaceEditable: replaceEd });\n    addPulseCaptions(mCues, null, replaceEd);',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: '✨ Add captions deletes the Premium set before the new captions exist again — a Cancel or a failed render leaves no captions'
+  },
+  {
+    name: 'pfit-replace-own-template',
+    file: 'CutPilot/js/main.js',
+    find: '        replaceEd = { track: pjE.track, names: captionGraphicNames(pjE.mogrtPath) };',
+    repl: '        replaceEd = { track: pjE.track, names: captionGraphicNames() };',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'a set made from the owner\'s own uploaded template is stacked over instead of replaced'
+  },
+  {
+    name: 'pfit-contain-fit',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "    var fitMode = (args.fitMode === 'short' && compW > 0 && compH > 0) ? 'short' : 'contain';",
+    repl: "    var fitMode = 'short';",
+    gate: 'CutPilot/test/host-tests.js',
+    why: 'the owner\'s own 1920×1080 .mogrt is 100% on a 1080×1920 reel again — ~420 px cropped off each side'
+  },
+  {
+    name: 'pfit-contain-preview',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "    var rfScale = CP_fitScalePct(seq, args.compW, args.compH, args.width, args.height, args.fitMode);",
+    repl: "    var rfScale = CP_fitScalePct(seq, args.compW, args.compH, args.width, args.height, 'short');",
+    gate: 'CutPilot/test/gates/host-render-mogrt-frames.js',
+    why: 'a card render crops an unplanned landscape comp on a reel, unlike the insert'
+  },
+  {
+    name: 'pfit-short-sent',
+    file: 'CutPilot/js/main.js',
+    find: "             fitMode: plan.known ? 'short' : 'contain' };",
+    repl: "             fitMode: 'contain' };",
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'every 1080×1920 Premium template shrinks to 56.25% on a podcast frame — the panel no longer says it planned the lines'
+  },
+  {
+    name: 'pfit-editable-preview-row',
+    file: 'CutPilot/js/main.js',
+    find: '        posYPct: pvPos });',
+    repl: '        posYPct: (params && params._posYPct != null) ? params._posYPct : null });',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'the ✏️ Editable ▶ Real preview sits at the raw slider row, not where the insert puts the captions'
+  },
+  {
+    name: 'pfit-editable-preview-lines',
+    file: 'CutPilot/js/main.js',
+    find: "      var pvText = (fitP.cues[0] && fitP.cues[0].text) || sample;",
+    repl: "      var pvText = sample;",
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'the ✏️ Editable ▶ Real preview drops the words unbroken, so a long first line is cropped where the insert breaks it'
   }
 ];
 

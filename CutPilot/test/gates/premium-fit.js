@@ -38,7 +38,7 @@
  *      style and the template's first section unfolded, the size control shown;
  *   M. the ✏️ Editable path (the Flux Halo engine, same host function): its
  *      comp fitted by its real size, every line fits, at the Position slider's
- *      row on 16:9 as on 9:16;
+ *      row on 16:9 as on 9:16; its ▶ Real preview the same fit, row and breaks;
  *   I. Text case and the hold come from the sheet — the 📁 Upload view's case
  *      and stretch no longer change Premium output; the owner's own Font size
  *      makes the words bigger (and they re-break to fit); one word a graphic
@@ -46,7 +46,9 @@
  *   J. ↺ Reset puts back what the sheet shows, and that is what is sent;
  *   K. ＋ Save as custom shows in the ⚡ Premium grid; the insert is remembered
  *      (template, params, text style, words); the sync nudge moves the captions;
- *   L. ✨ Add captions after a Premium set clears that verified track first;
+ *   L. ✨ Add captions after a Premium set replaces it, clearing the verified
+ *      track only once the new captions have rendered (a Cancel or a failed
+ *      render leaves the set); a set from the owner's own template too;
  *   O. the sheet's Position slider (and its ✨ Auto), hold, stretch and Words
  *      each change what is sent;
  *   N. ▶ Try on timeline — in the Premium sheet and in the 📁 Upload view —
@@ -246,8 +248,10 @@ async function scriptedPage(browser, W, H, opts) {
   }, W, H, !!opts.inspectFails, liveProps('Flux_Halo2_r3.mogrt'));
   return page;
 }
+/* long words first: five of them unbroken are wider than any caption line */
+const LONG_FIRST = 'Consistency matters because creators misunderstand audiences completely, and algorithms reward patience over shortcuts.';
 async function useTranscript(page, dir, lang) {
-  const T = transcript(TEXTS[lang]);
+  const T = transcript(lang === 'longwords' ? LONG_FIRST : TEXTS[lang]);
   const p = path.join(dir, lang + '.srt');
   fs.writeFileSync(p, T.srt);
   await page.evaluate((p, words) => { window.CP_DEBUG_EXT.sync.setTranscript({ transcript: { label: 'Episode', path: p }, words }); }, p, T.words);
@@ -274,6 +278,48 @@ async function captionWith(page, name, before) {
     for (let i = 0; i < 40 && window.__ins.length === n0; i++) await sl(50);
     return window.__ins.length > n0 ? window.__ins[window.__ins.length - 1] : { err: 'no insert was sent for ' + name };
   }, name, before ? String(before) : null);
+}
+
+/* ✨ Add captions (Pulse-rendered) with the render scripted: 'ok' renders,
+   'fail' throws, 'cancel' presses Cancel at the "N caption graphics" question.
+   Returns the host calls in order. */
+async function magicRun(page, mode) {
+  return page.evaluate(async (mode) => {
+    const sl = ms => new Promise(r => setTimeout(r, ms));
+    window.__calls.length = 0;
+    const real = window.CPRender.renderFrames;
+    let renders = 0, asked = '';
+    window.CPRender.renderFrames = function (frames) {
+      renders++;
+      if (mode === 'fail') return Promise.reject(new Error('the render broke'));
+      return Promise.resolve(frames.map((f, i) => ({ path: '/x/cap_' + i + '.png', start: f.start, end: f.end })));
+    };
+    try {
+      document.querySelector('[data-tab="captions"]').click(); await sl(150);
+      document.querySelector('[data-view="templates"]').click(); await sl(200);
+      const png = document.querySelector('#cap-output button[data-out="png"]'); if (png) { png.click(); await sl(150); }
+      document.getElementById('btn-magic').click();
+      if (mode === 'cancel') {
+        let ov = null;
+        for (let i = 0; i < 200 && !(ov = document.getElementById('cp-confirm-ov')); i++) await sl(50);
+        if (!ov) return { err: 'the “caption graphics will be created” question never came' };
+        asked = ov.textContent.slice(0, 40);
+        Array.from(ov.querySelectorAll('button')).find(b => b.textContent === 'Cancel').click();
+        await sl(500);
+      } else if (mode === 'fail') {
+        for (let i = 0; i < 100 && !renders; i++) await sl(50);
+        await sl(500);
+        if (!renders) return { err: 'nothing rendered' };
+      } else {
+        for (let i = 0; i < 100 && !window.__calls.some(c => c.fn === 'CP_placeCaptionImages'); i++) await sl(50);
+        await sl(400);   // the job is remembered after Premiere answers
+      }
+    } finally { window.CPRender.renderFrames = real; }
+    const fns = window.__calls.map(c => c.fn);
+    const clr = window.__calls.find(c => c.fn === 'CP_clearCaptionTrack'), pl = window.__calls.find(c => c.fn === 'CP_placeCaptionImages');
+    return { fns, asked, renders, clear: clr ? clr.a : null, place: pl ? { replaceTrack: pl.a && pl.a.replaceTrack } : null,
+             clearIdx: fns.indexOf('CP_clearCaptionTrack'), placeIdx: fns.indexOf('CP_placeCaptionImages') };
+  }, mode);
 }
 
 (async () => {
@@ -441,7 +487,7 @@ async function captionWith(page, name, before) {
       let mLines = 0, mInserts = 0;
       for (const [W, H] of [[1920, 1080], [1080, 1920]]) {
         const page = await scriptedPage(browser, W, H);
-        for (const lang of ['hinglish', 'devanagari']) {
+        for (const lang of ['hinglish', 'devanagari', 'longwords']) {
           await useTranscript(page, dir, lang);
           const a = await page.evaluate(async () => {
             const sl = ms => new Promise(r => setTimeout(r, ms));
@@ -477,11 +523,31 @@ async function captionWith(page, name, before) {
           const half = 2 * px * 1.2 / 2 + pad.y * fit / 100 + H * 0.015;
           const want = Math.max(half, Math.min(H - half, a._yPct * H)) / H;
           if (!(Math.abs(a.posYPct - want) < 0.01)) mBad.push(tag + ': graphic at ' + a.posYPct + ', the Position slider says ' + a._yPct + ' (→ ' + want.toFixed(3) + ' inside the frame)');
+          // ▶ Real preview on timeline (✏️ Editable): the same comp fit, row and
+          // line breaks as that insert — it used to send the raw slider row
+          // and the words unbroken
+          const rp = await page.evaluate(async () => {
+            const sl = ms => new Promise(r => setTimeout(r, ms));
+            const b = document.querySelector('#cap-output button[data-out="editable"]'); if (b) b.click(); await sl(150);
+            window.__pv = [];
+            document.getElementById('btn-real-preview').click();
+            for (let i = 0; i < 60 && !window.__pv.length; i++) await sl(50);
+            const png = document.querySelector('#cap-output button[data-out="png"]'); if (png) png.click();
+            return window.__pv[0] || null;
+          });
+          if (!rp) mBad.push(tag + ': ▶ Real preview sent nothing');
+          else {
+            if (rp.compW !== a.compW || rp.fitMode !== a.fitMode || a.fitMode !== 'short') mBad.push(tag + ': ▶ Real preview fitted ' + rp.compW + '/' + rp.fitMode + ', the insert ' + a.compW + '/' + a.fitMode);
+            if (!(rp.posYPct != null && Math.abs(rp.posYPct - a.posYPct) < 1e-6)) mBad.push(tag + ': ▶ Real preview at row ' + rp.posYPct + ', the insert at ' + a.posYPct);
+            const pls = String(rp.text).split('\r').map(x => x.trim());
+            const pws = await measure(page, pls.map(t => ({ text: t, px, font: (rp.textStyle && rp.textStyle.font) || font })));
+            if (pls.length > 2 || pws.some(w => w + 2 * pad.x * fit / 100 > visW)) mBad.push(tag + ': ▶ Real preview words “' + String(rp.text).replace(/\r/g, '⏎') + '” do not fit (' + pws.map(Math.round).join('/') + ' px)');
+          }
         }
         await page.close();
       }
-      (mInserts === 4 && !mBad.length ? R.ok : R.bad)('M. ✏️ Editable captions (Flux Halo engine): fitted by the comp’s real size, all ' + mLines +
-        ' lines fit the comp, at the Position slider’s row on 16:9 and 9:16' + (mBad.length ? ' — ' + mBad.slice(0, 5).join(' | ') : ''));
+      (mInserts === 6 && !mBad.length ? R.ok : R.bad)('M. ✏️ Editable captions (Flux Halo engine): fitted by the comp’s real size, all ' + mLines +
+        ' lines fit the comp, at the Position slider’s row on 16:9 and 9:16; ▶ Real preview the same fit, row and line breaks' + (mBad.length ? ' — ' + mBad.slice(0, 5).join(' | ') : ''));
       // …and the owner's sync nudge moves them too (they used to ignore it)
       {
         const page = await scriptedPage(browser, 1920, 1080);
@@ -653,19 +719,49 @@ async function captionWith(page, name, before) {
       (shift === wantShift ? R.ok : R.bad)('K. the owner’s sync nudge moves Premium captions too (' + offBefore + ' → +200 ms: first caption ' +
         (base.cues && base.cues[0].start) + ' → ' + (nudged.cues && nudged.cues[0].start) + ' s)');
       await page.evaluate((v) => { const e = document.getElementById('c-sync-offset'); e.value = String(v); e.dispatchEvent(new Event('input')); e.dispatchEvent(new Event('change')); }, offBefore);
-      // L. ✨ Add captions after a Premium set clears that verified track first
-      const l = await page.evaluate(async () => {
-        const sl = ms => new Promise(r => setTimeout(r, ms));
-        window.__calls.length = 0;
-        document.querySelector('[data-view="templates"]').click(); await sl(200);
-        // ✨ Pulse-rendered captions (the caption type is remembered across sessions)
-        const png = document.querySelector('#cap-output button[data-out="png"]'); if (png) { png.click(); await sl(150); }
-        document.getElementById('btn-magic').click();
-        for (let i = 0; i < 60 && !window.__calls.some(c => c.fn === 'CP_clearCaptionTrack'); i++) await sl(50);
-        const c = window.__calls.find(x => x.fn === 'CP_clearCaptionTrack');
-        return c ? { track: c.a.track, names: c.a.names } : null;
+      // L. ✨ Add captions after a Premium set REPLACES it — but the old set is
+      // cleared only once the new captions exist: a Cancel at the "N caption
+      // graphics" question or a failed render leaves the owner's Premium
+      // captions where they were (they used to be deleted before anything
+      // rendered). The render is scripted: it succeeds or throws on demand.
+      const lBad = [];
+      const longT = transcript(Array(90).fill(TEXTS.english).join(' '));
+      const longP = path.join(dir, 'long.srt'); fs.writeFileSync(longP, longT.srt);
+      await page.evaluate((p, words) => { window.CP_DEBUG_EXT.sync.setTranscript({ transcript: { label: 'Episode', path: p }, words }); }, longP, longT.words);
+      const lCancel = await magicRun(page, 'cancel');
+      if (lCancel.err) lBad.push('Cancel: ' + lCancel.err);
+      else if (lCancel.clearIdx >= 0) lBad.push('Cancel at “' + lCancel.asked + '” still cleared the Premium set (' + lCancel.fns.join(',') + ')');
+      await useTranscript(page, dir, 'hinglish');
+      const lFail = await magicRun(page, 'fail');
+      if (lFail.err) lBad.push('render failure: ' + lFail.err);
+      else if (lFail.clearIdx >= 0) lBad.push('a failed render still cleared the Premium set (' + lFail.fns.join(',') + ')');
+      const lJob = await page.evaluate(() => window.CP_DEBUG_EXT.premium.lastJob());
+      if (!(lJob && lJob.kind === 'premium' && lJob.track === 3)) lBad.push('after Cancel / a failed render the Premium set is no longer remembered: ' + JSON.stringify(lJob && { kind: lJob.kind, track: lJob.track }));
+      const lOk = await magicRun(page, 'ok');
+      if (lOk.err) lBad.push('replace: ' + lOk.err);
+      else if (!(lOk.clear && lOk.clear.track === 3 && lOk.clear.names.indexOf('flux_halo2_r3') >= 0)) lBad.push('the verified V3 set was not cleared: ' + JSON.stringify(lOk.clear));
+      else if (!(lOk.placeIdx > lOk.clearIdx && lOk.renders > 0)) lBad.push('cleared before the new captions rendered (' + lOk.fns.join(',') + ')');
+      else if (lOk.place.replaceTrack !== 3) lBad.push('the new captions did not go back onto the emptied V3 (' + lOk.place.replaceTrack + ')');
+      // a set made from the owner's OWN uploaded template is replaced too: its
+      // name is part of the signature the host checks
+      await page.evaluate(() => {
+        localStorage.setItem('cutpilot.lastcap', JSON.stringify({ cues: [{ start: 0.5, end: 2, text: 'Dekho bhai' }], track: 3, mode: 'editable', seq: 'Seq',
+          kind: 'template', mogrtPath: '/Users/me/Packs/My Lower Third.mogrt', params: [], textStyle: null, words: 0, prem: null }));
       });
-      ((l && l.track === 3 && l.names.indexOf('flux_halo2_r3') >= 0) ? R.ok : R.bad)('L. ✨ Add captions after the Premium set asks Premiere to clear that verified caption track (V3) first, so nothing stacks — ' + JSON.stringify(l && { track: l.track }));
+      {
+        const p2 = await scriptedPage(browser, 1920, 1080);
+        await useTranscript(p2, dir, 'hinglish');
+        const ownJob = await p2.evaluate(() => window.CP_DEBUG_EXT.premium.lastJob());
+        const own = (ownJob && /My Lower Third/.test(ownJob.mogrtPath || '')) ? await magicRun(p2, 'ok') : { err: 'the set was not brought back after a restart: ' + JSON.stringify(ownJob) };
+        if (own.err) lBad.push('own template: ' + own.err);
+        else if (!(own.clear && own.clear.track === 3 && own.clear.names.indexOf('my lower third') >= 0))
+          lBad.push('a set from the owner’s own “My Lower Third.mogrt” is not replaced (signature ' + JSON.stringify(own.clear && own.clear.names.slice(-3)) + ')');
+        await p2.close();
+      }
+      await page.evaluate(() => localStorage.removeItem('cutpilot.lastcap'));
+      (!lBad.length ? R.ok : R.bad)('L. ✨ Add captions replaces the Premium set on V3 only once the new captions have rendered (cleared after ' + lOk.renders +
+        ' render, then placed back on V3); Cancel and a failed render leave it; a set from the owner’s own template is replaced too' +
+        (lBad.length ? ' — ' + lBad.join(' | ') : ''));
       // O. the sheet's own layout controls each change what is sent: Position
       // (and ✨ Auto back to the lower third), the hold, stretch, Words
       await openPremium(page);
@@ -710,6 +806,7 @@ async function captionWith(page, name, before) {
         if (!ins || !ins.cues) { nBad.push(tag + ': no insert was sent'); return; }
         nPairs++;
         if (pv.compW !== def.comp.x || pv.compH !== def.comp.y) nBad.push(tag + ': preview comp ' + pv.compW + '×' + pv.compH + ', the template is ' + def.comp.x + '×' + def.comp.y);
+        if (pv.fitMode !== ins.fitMode || ins.fitMode !== 'short') nBad.push(tag + ': preview fitted ' + pv.fitMode + ', the insert ' + ins.fitMode + ' (planned lines → short side)');
         if (pv.posYPct == null || Math.abs(pv.posYPct - ins.posYPct) > 1e-6) nBad.push(tag + ': preview row ' + pv.posYPct + ', the insert ' + ins.posYPct);
         if (!same(pv.sizeFit, ins.sizeFit)) nBad.push(tag + ': preview size ' + JSON.stringify(pv.sizeFit) + ', the insert ' + JSON.stringify(ins.sizeFit));
         if (!same(pv.params, ins.params)) nBad.push(tag + ': preview params ' + JSON.stringify(pv.params) + ', the insert ' + JSON.stringify(ins.params));

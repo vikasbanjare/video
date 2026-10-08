@@ -101,10 +101,11 @@ function world(opts) {
   // its real size at the size asked for (a 1080×1920 comp is 200% of a 4K
   // 2160×3840 frame, 100% of a 1080×1920 one), the caption row, the
   // caption-size Scale, the line break
-  const fitAt = (width, height) => {
+  const fitAt = (width, height, fitMode, compW, compH) => {
     const w = world({});
     const res = JSON.parse(w.sandbox.CP_renderMogrtFrames(JSON.stringify({ mogrtPath: '/m/Flux_Apex.mogrt', text: 'Namaste dosto \raaj hum',
-      seconds: 3, times: [1.0], outBase: '/tmp/prem-y', width, height, compW: 1080, compH: 1920, posYPct: 0.62,
+      seconds: 3, times: [1.0], outBase: '/tmp/prem-y', width, height, compW: compW || 1080, compH: compH || 1920, posYPct: 0.62,
+      fitMode: fitMode === undefined ? 'short' : fitMode,
       params: [{ i: 1, kind: 'scale', value: 44 }], textStyle: null })));
     return { res, w, clip: w.log.created[0] && w.log.created[0].clips[0] };
   };
@@ -113,6 +114,23 @@ function world(opts) {
          k4.w.log.texts.some(t => t.indexOf('Namaste dosto \\raaj hum') >= 0) && hd.res.fitScale === 100 && hd.clip.motion.Scale === 100,
     'the same fit as the caption insert: a 1080×1920 comp at ' + (k4.clip && k4.clip.motion.Scale) + '% on 4K, ' + (hd.clip && hd.clip.motion.Scale) +
     '% on 1080×1920, the caption row, the caption-size Scale, the line break');
+}
+{
+  // the card for a podcast frame: Pulse planned the lines (fitMode 'short'), so
+  // a 1080×1920 comp is 100% on 1920×1080 like the insert; a comp nobody
+  // planned (the owner's own 1920×1080 lower third) is drawn WHOLE inside a
+  // 1080×1920 reel — 56.25% — never 100% with ~420 px cropped off each side
+  const fitAt = (width, height, fitMode, compW, compH) => {
+    const w = world({});
+    const res = JSON.parse(w.sandbox.CP_renderMogrtFrames(JSON.stringify({ mogrtPath: '/m/Flux_Apex.mogrt', text: 'x',
+      seconds: 3, times: [1.0], outBase: '/tmp/prem-z', width, height, compW, compH, fitMode, params: [], textStyle: null })));
+    return { res, clip: w.log.created[0] && w.log.created[0].clips[0] };
+  };
+  const land = fitAt(1920, 1080, 'short', 1080, 1920);
+  const own = fitAt(1080, 1920, undefined, 1920, 1080);
+  report(land.res.fitScale === 100 && land.clip.motion.Scale === 100 && own.res.fitScale === 56.25 && own.clip.motion.Scale === 56.25,
+    'a planned 1080×1920 comp renders at ' + land.res.fitScale + '% on 1920×1080; an unplanned 1920×1080 comp at ' + own.res.fitScale +
+    '% on a 1080×1920 reel (whole comp in frame, as it inserts)');
 }
 {
   const w = world({ refuse: true });

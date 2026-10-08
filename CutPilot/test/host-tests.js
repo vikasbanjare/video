@@ -1036,6 +1036,9 @@ console.log('host.jsx — a template is fitted to the sequence by its real comp 
     const args = { mogrtPath: '/tmp/Flux_Halo2_r3.mogrt', cues: CUES3, videoTrack: null, audioTrack: 0,
                    params: [], textStyle: null, stretch: false };
     if (compW) { args.compW = compW; args.compH = compH; }
+    // the panel sends fitMode 'short' only for templates whose lines it planned
+    // (Pulse's own); the owner's own .mogrt goes without it
+    args.fitMode = (extra && 'fitMode' in extra) ? extra.fitMode : 'short';
     const r = call(host, 'CP_insertMogrtCaptions', args);
     return { r, caps: w.model.vTracks[w.model.vTracks.length - 1] };
   };
@@ -1059,6 +1062,20 @@ console.log('host.jsx — a template is fitted to the sequence by its real comp 
   const h = fit(1080, 1920, 0, 0, { mgtVideoInfo: '2160 x 3840 (1.0)' });
   assert(h.caps.every(c => close(c._scale, 50, 0.01)) && h.r.compW === 2160,
     'no size from the panel → the size Premiere reports for the placed graphic is used (2160×3840 → 50%)');
+  // the owner's own 1920×1080 lower third (nothing planned its lines) on a
+  // 1080×1920 reel: fitted WHOLE inside the frame — 56.25%, as before. The
+  // short-side rule would make it 1920 px wide in a 1080 px frame and crop
+  // ~420 px off each side.
+  const u = fit(1080, 1920, 1920, 1080, { fitMode: null });
+  assert(u.caps.every(c => close(c._scale, 56.25, 0.01)) && u.r.fitMode === 'contain',
+    'the owner\'s own 1920×1080 .mogrt on a 1080×1920 reel → 56.25%, the whole comp in frame (' + u.r.fitScale + ')');
+  const u2 = fit(1920, 1080, 1080, 1920, { fitMode: null });
+  assert(u2.caps.every(c => close(c._scale, 56.25, 0.01)), '…and an unplanned 1080×1920 comp on 1920×1080 → 56.25%, never taller than the frame (' + u2.r.fitScale + ')');
+  const u3 = fit(1080, 1920, 0, 0, { mgtVideoInfo: '1920 x 1080 (1.0)', fitMode: 'short' });
+  assert(u3.caps.every(c => close(c._scale, 56.25, 0.01)),
+    'a size only Premiere reported (nothing planned against it) is fitted whole: 1920×1080 on a reel → 56.25% (' + u3.r.fitScale + ')');
+  const u4 = fit(1920, 1080, 1920, 1080, { fitMode: null });
+  assert(u4.caps.every(c => c._scale == null) && u4.r.fitScale === 100, '…and a 1920×1080 comp on 1920×1080 stays at 100%');
 }
 // Position: the whole graphic moves (Motion Position, normalised to the frame)
 {
@@ -1066,7 +1083,7 @@ console.log('host.jsx — a template is fitted to the sequence by its real comp 
   const host = loadHost(w);
   const r = call(host, 'CP_insertMogrtCaptions', {
     mogrtPath: '/tmp/Flux_Halo2_r3.mogrt', cues: CUES3, videoTrack: null, audioTrack: 0,
-    params: [], textStyle: null, stretch: false, compW: 1080, compH: 1920, posYPct: 0.86
+    params: [], textStyle: null, stretch: false, compW: 1080, compH: 1920, fitMode: 'short', posYPct: 0.86
   });
   const caps = w.model.vTracks[w.model.vTracks.length - 1];
   assert(r.ok && r.positioned === 3 && caps.every(c => c._static.Position && close(c._static.Position[0], 0.5) && close(c._static.Position[1], 0.86)),
@@ -2425,7 +2442,7 @@ console.log('host.jsx — Premium captions hold 0.5 s, never 60 s; title templat
   const host = loadHost(w);
   const r = call(host, 'CP_insertMogrtCaptions', {
     mogrtPath: '/tmp/Flux_Apex.mogrt', cues: CUES3, videoTrack: null, audioTrack: 0,
-    params: [{ i: 2, kind: 'scale', value: 43.86 }], textStyle: null, stretch: false, compW: 1080, compH: 1920,
+    params: [{ i: 2, kind: 'scale', value: 43.86 }], textStyle: null, stretch: false, compW: 1080, compH: 1920, fitMode: 'short',
     sizeFit: { i: 2, kind: 'scale', value: 43.86, factor: 0.4386 }
   });
   const caps = w.model.vTracks[w.model.vTracks.length - 1];
@@ -2437,7 +2454,7 @@ console.log('host.jsx — Premium captions hold 0.5 s, never 60 s; title templat
   const h2 = loadHost(w2);
   const r2 = call(h2, 'CP_insertMogrtCaptions', {
     mogrtPath: '/tmp/Flux_Apex.mogrt', cues: CUES3, videoTrack: null, audioTrack: 0,
-    params: [{ i: 2, kind: 'scale', value: 43.86 }], textStyle: null, stretch: false, compW: 1080, compH: 1920,
+    params: [{ i: 2, kind: 'scale', value: 43.86 }], textStyle: null, stretch: false, compW: 1080, compH: 1920, fitMode: 'short',
     sizeFit: { i: 2, kind: 'scale', value: 43.86, factor: 0.4386 }
   });
   const c2 = w2.model.vTracks[w2.model.vTracks.length - 1];
@@ -2453,7 +2470,7 @@ console.log('host.jsx — Premium captions hold 0.5 s, never 60 s; title templat
   const host = loadHost(w);
   const r = call(host, 'CP_previewMogrt', {
     path: '/tmp/Flux_Apex.mogrt', seconds: 4, params: [{ i: 2, kind: 'scale', value: 43.86 }],
-    text: 'Make every word count', textStyle: null, compW: 1080, compH: 1920, posYPct: 0.6,
+    text: 'Make every word count', textStyle: null, compW: 1080, compH: 1920, fitMode: 'short', posYPct: 0.6,
     sizeFit: { i: 2, kind: 'scale', value: 43.86, factor: 0.4386 }
   });
   const pv = w.model.vTracks[w.model.vTracks.length - 1][0];
@@ -2463,6 +2480,15 @@ console.log('host.jsx — Premium captions hold 0.5 s, never 60 s; title templat
   const h2 = loadHost(w2);
   call(h2, 'CP_previewMogrt', { path: '/tmp/Subtitle_1.mogrt', seconds: 4, params: [], text: 'x', compW: 2160, compH: 3840 });
   assert(close(w2.model.vTracks[w2.model.vTracks.length - 1][0]._scale, 50, 0.01), '…and a 2160×3840 comp previews at 50% on a 1080×1920 reel, like it inserts');
+  const w3 = makeWorld({ vTracks: 2, aTracks: 1, w: 1080, h: 1920 });
+  const h3 = loadHost(w3);
+  const r3 = call(h3, 'CP_previewMogrt', { path: '/Users/me/My Lower Third.mogrt', seconds: 4, params: [], text: 'x', compW: 1920, compH: 1080 });
+  assert(r3.fitScale === 56.25 && close(w3.model.vTracks[w3.model.vTracks.length - 1][0]._scale, 56.25, 0.01),
+    '…and the owner\'s own 1920×1080 template previews whole on a reel (56.25%), like it inserts');
+  const w4 = makeWorld({ vTracks: 2, aTracks: 1, w: 1920, h: 1080 });
+  const h4 = loadHost(w4);
+  const r4 = call(h4, 'CP_previewMogrt', { path: '/tmp/Flux_Halo2_r3.mogrt', seconds: 4, params: [], text: 'x', compW: 1080, compH: 1920, fitMode: 'short' });
+  assert(r4.fitScale === 100, '…and a planned 1080×1920 Flux comp previews at 100% on 1920×1080, like it inserts (' + r4.fitScale + ')');
 }
 {
   // ✨ Add captions after a Premium set: the verified caption track is cleared, footage never

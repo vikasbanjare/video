@@ -5787,7 +5787,7 @@
         if (!b || !b.cues.length) b = premBuildSample(path, 'Make every word count', state.env);
         var text = (b.cues[0] && b.cues[0].text) || b.sample;
         return CPBridge.callHost('CP_previewMogrt', { path: path, seconds: 4, params: b.params, textStyle: b.textStyle, text: text,
-          compW: b.compW, compH: b.compH, posYPct: b.posYPct, sizeFit: b.sizeFit });
+          compW: b.compW, compH: b.compH, fitMode: b.fitMode, posYPct: b.posYPct, sizeFit: b.sizeFit });
       }).then(function () {
         toast('▶ Placed "' + name + '" at the playhead with your first caption — play it to see exactly what “✨ Caption with this” places.');
       }).catch(function (e) { toast(e.message, true); });
@@ -6816,7 +6816,7 @@
         var sb = null;
         try { sb = premBuildSample(t.path, words, { width: W, height: H, fps: (state.env && state.env.fps) || 30 }); } catch (eSb) { sb = null; }
         var rArgs = { mogrtPath: t.path, text: sb ? sb.sample : words, seconds: 3, times: times, outBase: raw, width: W, height: H };
-        if (sb) { rArgs.params = sb.params; rArgs.textStyle = sb.textStyle; rArgs.compW = sb.compW; rArgs.compH = sb.compH; rArgs.posYPct = sb.posYPct; rArgs.sizeFit = sb.sizeFit; }
+        if (sb) { rArgs.params = sb.params; rArgs.textStyle = sb.textStyle; rArgs.compW = sb.compW; rArgs.compH = sb.compH; rArgs.fitMode = sb.fitMode; rArgs.posYPct = sb.posYPct; rArgs.sizeFit = sb.sizeFit; }
         return CPBridge.callHost('CP_renderMogrtFrames', rArgs)
           .then(function (r) { made = r.files || []; return makePremiumPreview(ff, made, path.join(dir, base), W, H); })
           .then(function () { ok++; }, function (e) { bad.push(t.name + ': ' + ((e && e.message) || e)); })
@@ -7959,22 +7959,37 @@
     if (!mCues || !mCues.length) return toast('No caption lines to add.', true);
     // After a ⚡ Premium / editable set on this sequence, ✨ Add captions
     // REPLACES it (it used to stack the new set on a second track over the
-    // old one): the host clears that track only once it has verified every
-    // clip on it is one of Pulse's caption graphics (CP_clearCaptionTrack),
-    // and the new captions go back onto it when it is the top track.
-    var pjE = state.lastCaptionJob, edTrack = null;
-    try { if (pjE && pjE.mode === 'editable' && pjE.track && pjE.seq && state.env && pjE.seq === state.env.sequenceName) edTrack = pjE.track; } catch (eE) {}
-    if (edTrack) {
-      return CPBridge.callHost('CP_clearCaptionTrack', { track: edTrack, names: captionGraphicNames() }).then(function (r) {
-        if (r && r.cleared) diag('captions', 'replacing the template captions on V' + edTrack + ' (' + r.cleared + ' graphics cleared)');
-        addPulseCaptions(mCues, (r && !r.guard && r.top) ? edTrack : null);
-      }, function () { addPulseCaptions(mCues, null); });
-    }
-    addPulseCaptions(mCues, null);
+    // old one). The old set is cleared only at the moment the new captions
+    // are placed — after they rendered and every question was answered — so
+    // a Cancel or a failed render leaves the owner's captions where they
+    // were. The host clears that track only once it has verified every clip
+    // on it is one of Pulse's caption graphics (CP_clearCaptionTrack: the
+    // template it was made from is part of that signature, the owner's own
+    // uploaded ones included), and the new captions go back onto it when it
+    // is the top track.
+    var pjE = state.lastCaptionJob, replaceEd = null;
+    try {
+      if (pjE && pjE.mode === 'editable' && pjE.track && pjE.seq && state.env && pjE.seq === state.env.sequenceName)
+        replaceEd = { track: pjE.track, names: captionGraphicNames(pjE.mogrtPath) };
+    } catch (eE) {}
+    addPulseCaptions(mCues, null, replaceEd);
   });
-  /* The Pulse-rendered "✨ Add captions" itself. intoTrack: an emptied caption
-     track to place on (a replaced template set). */
-  function addPulseCaptions(mCues, intoTrack) {
+  /* Clear a replaced Premium / editable set right before the new captions are
+     placed (see ✨ Add captions). Resolves to the track the new set may go on
+     (the emptied one when it is the top track), else null. Runs once a job. */
+  function clearReplacedTemplateSet(opts) {
+    var rep = opts && opts.replaceEditable;
+    if (!rep || !rep.track) return Promise.resolve(null);
+    opts.replaceEditable = null;
+    return CPBridge.callHost('CP_clearCaptionTrack', { track: rep.track, names: rep.names }).then(function (r) {
+      if (r && r.cleared) diag('captions', 'replacing the template captions on V' + rep.track + ' (' + r.cleared + ' graphics cleared)');
+      return (r && !r.guard && r.top) ? rep.track : null;
+    }, function () { return null; });
+  }
+  /* The Pulse-rendered "✨ Add captions" itself. intoTrack: a caption track to
+     place on; replaceEd: a Premium / editable set to clear just before the new
+     captions are placed ({ track, names }). */
+  function addPulseCaptions(mCues, intoTrack, replaceEd) {
     // SCALE GUARD (measured, not guessed): word-by-word captions render ONE
     // image per word — a 10-minute video is ~1,500 files and 1,500 timeline
     // clips, a 60-minute podcast ~9,000 (≈1.6 GB). That is unusable. Past a
@@ -7997,7 +8012,9 @@
         var motion = overlayMotionNote();
         if (canvasOv) toast('This video needs ~' + estFrames + ' caption frames — Pulse is drawing them into ONE caption overlay clip instead of ' +
           estFrames + ' images. Same renderer as the preview' + (motion ? '.' + motion : ', so it looks the same.'));
-        return runLibassCaptions(mCues, intoTrack ? { replaceTrack: intoTrack } : {});
+        var ovOpts = intoTrack ? { replaceTrack: intoTrack } : {};
+        if (replaceEd) ovOpts.replaceEditable = replaceEd;
+        return runLibassCaptions(mCues, ovOpts);
       }
     } catch (eScale) {}
     var reuse = intoTrack || null;
@@ -8006,7 +8023,9 @@
       var sameSeqM = !!(pj && pj.seq && state.env && pj.seq === state.env.sequenceName);
       if (!reuse && pj && pj.mode !== 'editable' && pj.mode !== 'overlay' && pj.track && sameSeqM) reuse = pj.track;
     } catch (eRj) {}
-    return runCaptionPipeline(mCues, reuse ? { replaceTrack: reuse } : {});
+    var pOpts = reuse ? { replaceTrack: reuse } : {};
+    if (replaceEd) pOpts.replaceEditable = replaceEd;
+    return runCaptionPipeline(mCues, pOpts);
   }
 
   /* Persist the last caption job so the edit/restyle buttons stay available even
@@ -8279,6 +8298,11 @@
           onProgress: function (done, total) { capProgress('Rendering ' + done + ' / ' + total); }
         });
       }).then(function (items) {
+        // a replaced Premium / editable set goes only now, when the new
+        // captions exist (a Cancel or a failed render above leaves it)
+        return clearReplacedTemplateSet(opts).then(function (edTrack) { return { items: items, edTrack: edTrack }; });
+      }).then(function (got) {
+        var items = got.items;
         capProgress((scoped ? 'Restyling ' : 'Placing ') + items.length + ' captions in your timeline…', items.length * 130);
         // build styles animate in word-by-word (like reveal), so the host must NOT
         // pop the whole growing chunk each step — treat them as word-sync.
@@ -8288,6 +8312,7 @@
           perWordEntranceStyle: overrides.perWordEntranceStyle };
         if (overwriteOnTrack) placeArgs.overwriteOnTrack = overwriteOnTrack;
         else if (replaceTrack) placeArgs.replaceTrack = replaceTrack;
+        else if (got.edTrack) placeArgs.replaceTrack = got.edTrack;
         if (single) placeArgs.exact = true;   // size each still exactly → never clobber the next caption
         return CPBridge.callHost('CP_placeCaptionImages', placeArgs);
       }).then(function (r) {
@@ -9063,7 +9088,11 @@
     if (cleanup.length) placeArgs.cleanup = cleanup;
     if (pending.length) placeArgs.recheck = pending;
     var asked = !!(cleanup.length || pending.length);
-    return CPBridge.callHost('CP_placeOverlay', placeArgs).then(function (r) {
+    // a replaced Premium / editable set goes only now, when the overlay exists
+    return clearReplacedTemplateSet(opts).then(function (edTrack) {
+      if (edTrack && !placeArgs.replaceTrack) placeArgs.replaceTrack = edTrack;
+      return CPBridge.callHost('CP_placeOverlay', placeArgs);
+    }).then(function (r) {
       setCaptionBusy(false); capProgress(null);
       // Recorded as the current caption job, so edit words / restyle keep
       // working on it (and keep it an overlay).
@@ -10420,7 +10449,7 @@
           var cs = readSelectedTranscript(), b = (cs && cs.length) ? premBuild(cs, path, state.env, uploadPremOpts()) : null;
           if (!b || !b.cues.length) b = premBuildSample(path, sample, state.env, uploadPremOpts());
           args.params = b.params; args.textStyle = b.textStyle; args.text = (b.cues[0] && b.cues[0].text) || sample;
-          args.posYPct = b.posYPct; args.sizeFit = b.sizeFit;
+          args.posYPct = b.posYPct; args.sizeFit = b.sizeFit; args.fitMode = b.fitMode;
         } catch (eB) {}
       }
       return CPBridge.callHost('CP_previewMogrt', args);
@@ -11041,7 +11070,11 @@
     if (sizeFit && sizeFit.kind !== 'text') params.push({ i: sizeFit.i, kind: sizeFit.kind, value: sizeFit.value });
     return { cues: out, plan: plan, params: params, textStyle: textStyle, sizeFit: sizeFit, face: face, lang: lang,
              posYPct: plan.known ? plan.posYPct : null, stretch: !!o.stretch,
-             compW: g ? g.compW : 0, compH: g ? g.compH : 0, lines: caps.map(function (c) { return c.lines; }) };
+             compW: g ? g.compW : 0, compH: g ? g.compH : 0, lines: caps.map(function (c) { return c.lines; }),
+             // the lines were measured against the part of the comp the viewer
+             // sees, so the host may fit the comp by its short side (host
+             // CP_fitScalePct); otherwise it fits the whole comp in the frame
+             fitMode: plan.known ? 'short' : 'contain' };
   }
   /* The plan applied to a few sample words (the card renders, ▶ Try on
      timeline): their first caption exactly as the insert would make it. */
@@ -11181,6 +11214,9 @@
         params: params, textStyle: textStyle, stretch: stretch, maxSpeed: 100, replaceTrack: reuseTrackM,
         captionNames: captionGraphicNames(mogrtPath),
         compW: (geom && geom.compW) || 0, compH: (geom && geom.compH) || 0,   // the comp's real size → fitted to the sequence
+        // short side only when Pulse planned the lines; the owner's own .mogrt
+        // is fitted whole inside the frame (never cropped on a reel)
+        fitMode: built ? built.fitMode : 'contain',
         posYPct: built ? built.posYPct : null,                                // whole graphic at the caption row
         sizeFit: built ? built.sizeFit : null                                 // caption size, even if its control is refused
       });
@@ -11877,11 +11913,17 @@
       var liveProps = (r && r.props) || [];
       var isFlux = String(bb.path || '').toLowerCase().indexOf('flux_halo') >= 0;
       var params = (isFlux ? mapPresetToFlux(preset, liveProps) : null) || mapPresetToMogrt(preset, liveProps);
-      // the same comp fit and row as the editable insert, so the preview is where the captions will be
+      // the same comp fit, line breaks and row as the editable insert
+      // (applyEditableStyle), so the preview is what the captions will be
       var pg = premGeometry(bb.path);
-      return CPBridge.callHost('CP_previewMogrt', { path: bb.path, seconds: 4, params: params, text: sample, textStyle: textStyle,
-        compW: (pg && pg.compW) || 0, compH: (pg && pg.compH) || 0,
-        posYPct: (params && params._posYPct != null) ? params._posYPct : null });
+      var fitP = premFitEditable([{ start: 0, end: 4, text: sample }], bb.path, state.env, sizeScale, textStyle && textStyle.font);
+      var pvText = (fitP.cues[0] && fitP.cues[0].text) || sample;
+      var pvPos = (params && params._posYPct != null)
+        ? (fitP.plan.known ? premPlan(bb.path, state.env, { fixedScale: sizeScale, pos: params._posYPct }).posYPct : params._posYPct)
+        : null;
+      return CPBridge.callHost('CP_previewMogrt', { path: bb.path, seconds: 4, params: params, text: pvText, textStyle: textStyle,
+        compW: (pg && pg.compW) || 0, compH: (pg && pg.compH) || 0, fitMode: fitP.plan.known ? 'short' : 'contain',
+        posYPct: pvPos });
     }).then(function (r) {
       if (btn) btn.disabled = false;
       toast('▶ Real preview on V' + r.track + ' at the playhead — scrub to see EXACTLY what your settings render. Delete the clip when done (or ⌘Z).' + darkNote, !!darkNote);
@@ -12019,6 +12061,7 @@
           params: params, textStyle: textStyle, stretch: false, replaceTrack: reuseTrack,
           captionNames: captionGraphicNames(bb.path),
           compW: (edGeom && edGeom.compW) || 0, compH: (edGeom && edGeom.compH) || 0,   // fitted by its real comp size (no 56.25% shrink on reels)
+          fitMode: fitE.plan.known ? 'short' : 'contain',   // lines measured above → short side; else whole comp in frame
           posYPct: edPos,   // whole-graphic placement, a fraction of the frame
           introMode: 'snappy',   // caption styles: words readable on any paused frame (templates keep fit-original)
           // animSpeed is a MULTIPLIER (1 = natural pace). 100 compressed every

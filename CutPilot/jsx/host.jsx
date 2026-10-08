@@ -3451,18 +3451,27 @@ function CP_forceIntroVisible(comp, params, clipDurSec, mode) {
  * 56.25% on a vertical reel — where the template already WAS vertical, so its
  * words came out 44% smaller than designed. The panel reads the comp size
  * from the template's definition.json (no Premiere needed) and sends it as
- * compW/compH. The scale matches the comp's short side to the sequence's: a
- * 1080×1920 comp is 100% on 1080×1920 and on 1920×1080, 200% on 4K, and a
- * 2160×3840 comp is 50% on a 1080×1920 reel. A comp of unknown size stays at
- * Premiere's own 100% — never a guess. The caption insert, ▶ Try on timeline
- * and the Premium card renders all use this one rule, so the preview the
- * owner sees is what lands on the timeline. */
-function CP_fitScalePct(seq, compW, compH, seqW, seqH) {
+ * compW/compH.
+ *
+ * Two rules. fitMode 'short' — sent only when the panel has PLANNED the lines
+ * for this template (Pulse's own templates: every line measured against the
+ * part of the comp the viewer sees) — matches the comp's short side to the
+ * sequence's: a 1080×1920 comp is 100% on 1080×1920 and on 1920×1080, 200% on
+ * 4K, and a 2160×3840 comp is 50% on a 1080×1920 reel. Anything else (the
+ * owner's own uploaded .mogrt, or a size Premiere reported) is fitted WHOLE
+ * inside the frame ("contain"): a 1920×1080 lower third on a 1080×1920 reel is
+ * 56.25%, as before — the short-side rule would make it 1920 px wide in a
+ * 1080 px frame and crop ~420 px off each side, and nothing re-breaks its
+ * lines. A comp of unknown size stays at Premiere's own 100% — never a guess.
+ * The caption insert, ▶ Try on timeline and the Premium card renders all use
+ * this one rule, so the preview the owner sees is what lands on the timeline. */
+function CP_fitScalePct(seq, compW, compH, seqW, seqH, fitMode) {
   var cw = parseFloat(compW), ch = parseFloat(compH);
   if (!(cw > 0 && ch > 0)) return 100;
   var sw = parseFloat(seqW) || parseFloat(seq.frameSizeHorizontal) || 1920;
   var sh = parseFloat(seqH) || parseFloat(seq.frameSizeVertical) || 1080;
-  var s = (Math.min(sw, sh) / Math.min(cw, ch)) * 100;
+  var s = (fitMode === 'short') ? (Math.min(sw, sh) / Math.min(cw, ch)) * 100
+                                : Math.min(sw / cw, sh / ch) * 100;
   return Math.round(s * 100) / 100;
 }
 
@@ -3576,7 +3585,9 @@ function CP_insertMogrtCaptions(argsJson) {
     // compW/compH come from the template's definition.json, else from what
     // Premiere reports for the first placed graphic, else 100%.
     var compW = parseFloat(args.compW) || 0, compH = parseFloat(args.compH) || 0;
-    var fitScale = CP_fitScalePct(seq, compW, compH), fitKnown = (compW > 0 && compH > 0);
+    // fitMode 'short' only when the panel planned the lines for this comp
+    var fitMode = (args.fitMode === 'short' && compW > 0 && compH > 0) ? 'short' : 'contain';
+    var fitScale = CP_fitScalePct(seq, compW, compH, 0, 0, fitMode), fitKnown = (compW > 0 && compH > 0);
     var positioned = 0, sizeFallbacks = 0;
     // Place MOGRT captions on a FRESH top video track (like the image engine)
     // so they never overwrite existing footage — UNLESS replaceTrack asks us to
@@ -3704,7 +3715,7 @@ function CP_insertMogrtCaptions(argsJson) {
       // from where the template's text sits in its comp).
       if (!fitKnown) {
         var csz = CP_mgtCompSize(clip);
-        if (csz) { compW = csz.w; compH = csz.h; fitScale = CP_fitScalePct(seq, compW, compH); fitKnown = true; }
+        if (csz) { compW = csz.w; compH = csz.h; fitScale = CP_fitScalePct(seq, compW, compH, 0, 0, 'contain'); fitKnown = true; }
       }
       try {
         var pg = CP_placeGraphic(clip, fitScale, (args.posYPct != null && isFinite(args.posYPct)) ? args.posYPct : null);
@@ -3986,6 +3997,7 @@ function CP_insertMogrtCaptions(argsJson) {
       templateImports: probe.imported,    // the safety probe could place this template
       introFixed: introFixed,             // authored intro fades neutralized (words visible at once)
       fitScale: fitScale,                 // Motion scale that fits the comp to the sequence (100 = untouched)
+      fitMode: fitMode,                   // 'short' (lines planned by the panel) or 'contain' (whole comp in frame)
       compW: compW, compH: compH,         // the comp size it was fitted by (0 = unknown → 100%)
       positioned: positioned,             // graphics whose Motion Position took posYPct
       sizeFallbacks: sizeFallbacks        // graphics brought to caption size another way (size control refused)
@@ -4247,7 +4259,7 @@ function CP_previewMogrt(argsJson) {
     // the SAME size and place the caption insert gives the graphic (comp fitted
     // to the sequence by its real size, whole graphic at the caption row), so
     // ▶ Try on timeline shows what ✨ Caption with this will place
-    var pvScale = CP_fitScalePct(seq, args.compW, args.compH);
+    var pvScale = CP_fitScalePct(seq, args.compW, args.compH, 0, 0, args.fitMode);
     try { CP_placeGraphic(clip, pvScale, (args.posYPct != null && isFinite(args.posYPct)) ? args.posYPct : null); } catch (ePg) {}
     // apply the panel's colour/size/font overrides + sample text to the preview
     var pParams = 0;
@@ -4400,7 +4412,7 @@ function CP_renderMogrtFrames(argsJson) {
     var clip = seq.importMGT(args.mogrtPath, CP_ticksFromSeconds(0), 0, 0);
     if (!clip) throw new Error('Premiere would not place this template');
     try { clip.end = CP_timeFromSeconds(seconds); } catch (eE) {}
-    var rfScale = CP_fitScalePct(seq, args.compW, args.compH, args.width, args.height);   // the size this render was asked for
+    var rfScale = CP_fitScalePct(seq, args.compW, args.compH, args.width, args.height, args.fitMode);   // the size this render was asked for
     try { CP_placeGraphic(clip, rfScale, (args.posYPct != null && isFinite(args.posYPct)) ? args.posYPct : null); } catch (ePg) {}
     var comp = null, rfScaled = 0;
     try {
