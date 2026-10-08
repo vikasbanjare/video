@@ -1150,8 +1150,8 @@ const MUTANTS = [
   {
     name: 'pfit-animspeed-dead',
     file: 'CutPilot/js/main.js',
-    find: '      animSpeed: 1,',
-    repl: "      animSpeed: cnum('c-animspeed', 100) / 100,",
+    find: "      'c-wordsperline-val': function () { return $('c-wordsperline').value; },",
+    repl: "      'c-wordsperline-val': function () { return $('c-wordsperline').value; },\n      'c-animspeed-val': function () { return $('c-animspeed').value + '%'; },",
     gate: 'tools/dom-id-check.js',
     why: 'the removed animation-speed slider is read again, a control that does not exist'
   }
