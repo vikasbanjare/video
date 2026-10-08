@@ -48,34 +48,50 @@ const P = require('./gallery-lib/panel');
 const C = require(path.join(P.PANEL_DIR, 'js', 'captions.js'));
 
 /* ---- word-timed transcripts (as a speech engine hands them over) ------- */
-// [p6] = 6 s of silence before the next word; ~ = a 0-length stamp; ^ = a 40 ms stamp
+// A sentence end is followed by 0.75 s of silence, a comma by 0.22 s, unless
+// marked: [run] = the speaker runs straight on (a 40 ms gap after the
+// sentence end — so only the sentence end itself can end the caption);
+// [pX] = X s of silence before the next word, mid-sentence too (a thinking
+// pause — only the pause can end the caption); ~ = a 0-length stamp;
+// ^ = a 40 ms stamp; < = the engine stretched this word 1.8 s back into the
+// silence before it, > = 1.8 s on into the silence after it (what speech
+// engines do to the first and last word around a pause).
 const HINGLISH = 'Dekho bhai, consistency sabse important cheez hai. Agar tum roz content banaoge toh audience automatically grow karegi. ' +
   'Pichle hafte humne apna video YouTube par daala tha aur Rahul ki shaadi mein bhi gaye the. Main sach bata raha hoon ~ki 50 lakh views aaye the. ' +
-  '[p6] Lekin overnight success jaisa kuch nahi hota, mehnat karni padti hai aur paisa bhi ^to lagta hai. ' +
-  'Shah Rukh Khan ne bhi yahi kaha tha ki patience sabse badi cheez hai.';
+  '[run] ^Haan ^ji. [p6] <Lekin overnight success jaisa kuch nahi hota, mehnat karni padti hai [p0.55] aur paisa bhi ^to lagta hai. ' +
+  'Shah Rukh Khan ne bhi yahi kaha tha ki patience sabse badi cheez >hai.';
 const DEVANAGARI = 'देखो भाई, कंसिस्टेंसी सबसे ज़रूरी चीज़ है। अगर तुम रोज़ कंटेंट बनाओगे तो ऑडियंस अपने आप बढ़ेगी। ' +
-  'फिर हम लोग मेज़ पर बैठ गए और राहुल की शादी की बात करने लगे। उन्होंने कहा था कि अगले पाँच साल में हर गाँव तक इंटरनेट पहुँच जाएगा। ' +
+  'फिर हम लोग मेज़ पर बैठ गए और राहुल की शादी की बात करने लगे। [run] उन्होंने कहा था कि [p0.8] अगले पाँच साल में हर गाँव तक इंटरनेट पहुँच जाएगा। ' +
   'रातों-रात सफलता जैसा कुछ नहीं होता, मेहनत करनी पड़ती है।';
 const ENGLISH = 'So the first thing you need to understand is that attention is a muscle and most people never train it which is why ' +
   'they struggle to focus for more than a few minutes at a time even when the work really matters to them and they know it. ' +
-  'Is this going to work for you? The answer is yes, because the method is simple.';
+  '[run] Is this going to work for you? [run] The answer is yes, [p0.7] because the method is simple.';
+// slow, careful speech: short breaths between words but no real pause —
+// only the 7 s limit ends a caption here
+const SLOW = 'Toh main yeh kehna chahta hoon ki aap log roz thoda thoda kaam karte raho kyunki ek din yahi aadat aapko ' +
+  'bahut aage le jayegi aur phir aap khud dekhoge ki sab kuch badal gaya';
 const URLS = 'Visit www.instagram.com/pulse.official.creators for the full list. Pneumonoultramicroscopicsilicovolcanoconiosis is a real word. ' +
   'Antidisestablishmentarianism too.';
 
-function timedWords(text, rate) {
-  const out = []; let t = 0.4, pause = 0;
+function timedWords(text, rate, gap) {
+  const out = []; let t = 0.4, pause = 0, after = 0;
   for (const raw of text.split(/\s+/).filter(Boolean)) {
-    if (raw === '[p6]') { pause = 6; continue; }
+    const pm = /^\[p([\d.]+)\]$/.exec(raw);
+    if (pm) { pause = +pm[1]; after = 0; continue; }
+    if (raw === '[run]') { after = 0; continue; }
     let w = raw, kind = '';
-    if (w[0] === '~' || w[0] === '^') { kind = w[0]; w = w.slice(1); }
-    t += pause; pause = 0;
+    if ('~^<>'.indexOf(w[0]) >= 0) { kind = w[0]; w = w.slice(1); }
+    t += after + pause; pause = 0; after = 0;
     let d = Math.min(0.7, Math.max(0.14, (0.12 + 0.055 * [...w].length) * rate));
     if (kind === '~') d = 0;
     if (kind === '^') d = 0.04;
-    out.push({ start: +t.toFixed(3), end: +(t + d).toFixed(3), text: w });
-    t += d + 0.04 * rate;
-    if (/[,;]$/.test(w)) t += 0.22;
-    if (/[.?!।]$/.test(w)) t += 0.75;
+    const o = { start: +t.toFixed(3), end: +(t + d).toFixed(3), text: w };
+    if (kind === '<') o.stretch = -1.8;
+    if (kind === '>') o.stretch = 1.8;
+    out.push(o);
+    t += d + (gap != null ? gap : 0.04 * rate);
+    if (/[,;]$/.test(w)) after = 0.22;
+    if (/[.?!।]$/.test(w)) after = 0.75;
   }
   return out;
 }
@@ -83,8 +99,31 @@ const TRANSCRIPTS = {
   hinglish: timedWords(HINGLISH, 1),
   devanagari: timedWords(DEVANAGARI, 1),
   english: timedWords(ENGLISH, 0.62),          // ~4 words a second
+  slow: timedWords(SLOW, 1.5, 0.38),
   urls: timedWords(URLS, 1)
 };
+/* Each transcript reaches Add captions the way a transcription does: as the
+   engine stamped it (stretched words included), placed on the timeline by
+   CPCaptions.mediaToTimeline (placeTranscript). The checks compare against
+   the words as actually SPOKEN, so a word lost there, or a caption shown a
+   stretched word early, shows. */
+const PLACED = {};
+Object.keys(TRANSCRIPTS).forEach(k => {
+  const stamped = TRANSCRIPTS[k].map(w => ({ start: w.stretch < 0 ? +(w.start + w.stretch).toFixed(3) : w.start,
+                                             end: w.stretch > 0 ? +(w.end + w.stretch).toFixed(3) : w.end, text: w.text }));
+  PLACED[k] = C.mediaToTimeline(stamped, [{ inPoint: 0, outPoint: 1e6, seqStart: 0 }])
+    .map(w => ({ start: w.start, end: w.end, text: w.text }));
+});
+/* reading speed as Netflix counts it: characters (code points) a second */
+const codePoints = t => [...String(t)].length;
+const cpsLimit = t => /[ऀ-ॿ]/.test(t) ? 22 : 20;
+/* The rules, written here independently of captions.js so a broken rule
+   there cannot pass by agreeing with itself. */
+const FORBID_BEFORE = new Set(('का की के को ने से में पर तक वाला वाली वाले ka ki ke ko ne se mein me par tak wala wali wale ' +
+  'है हैं था थी थे हूँ हो रहा रही रहे गया गई गए सकता सकती चाहिए hai hain tha thi hoon ho raha rahi rahe gaya gayi gaye sakta sakti chahiye').split(' '));
+const bare = t => String(t).toLowerCase().replace(/[^a-z0-9'\u0900-\u0963\u0966-\u097F]/g, '');
+const forbiddenBefore = next => /^[।॥]/.test(next) || FORBID_BEFORE.has(bare(next));
+const sentenceEnd = t => { const s = String(t).replace(/["'”’)\]]+$/, ''); return /[.?!।॥]$/.test(s) && !/^(dr|mr|mrs|ms)\.$/i.test(s) && !/^([A-Za-z]\.)+$/.test(s); };
 const ENVS = [{ width: 1920, height: 1080, fps: 25 }, { width: 1080, height: 1920, fps: 30 }];
 const norm = s => String(s).toLowerCase().replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F1E6}-\u{1F1FF}️]/gu, '')
   .replace(/[^a-z0-9'ऀ-ॣ०-ॿ]/g, '');
@@ -164,7 +203,11 @@ function pageInstall() {
       let l = 1e9, rr = -1e9, t = 1e9, b = -1e9;
       for (const x of r.runs) { l = Math.min(l, x.l); rr = Math.max(rr, x.r); t = Math.min(t, x.top); b = Math.max(b, x.bot); }
       for (const p of r.pts) { l = Math.min(l, p[0]); rr = Math.max(rr, p[0]); t = Math.min(t, p[1]); b = Math.max(b, p[1]); }
-      return { lay: cv._cpLayout, ext: [l, t, rr, b], lines, drawn: fills.map(x => x.t) };
+      // capitals as drawn: the caption's body (words at the style's size) and
+      // the tallest of all (the spoken word's pop included)
+      const body = fills.filter(x => cv._cpLayout && Math.abs(x.px - cv._cpLayout.size) < 0.01);
+      return { lay: cv._cpLayout, ext: [l, t, rr, b], lines, drawn: fills.map(x => x.t),
+               capBody: Math.max(0, ...body.map(x => x.capH)), capDrawn: Math.max(0, ...fills.map(x => x.capH)) };
     });
     // the height of a capital letter at the style's size, in the face it draws with
     const mc = cv.getContext('2d');
@@ -240,13 +283,12 @@ function check(R, name, res, words, opts) {
   if (opts.N != null && N !== opts.N) say('the label says ' + res.label + ', the setting is ' + opts.N);
   if (N > 0 && most !== N) say('label says ' + N + ' but the most words in a caption is ' + most);
 
-  const C2 = C;
   for (let ci = 0; ci < caps.length; ci++) {
     const c = caps[ci], nx = caps[ci + 1];
     const a = c.from, b = c.to - 1;
     // grouping rules
     for (let i = a; i < b; i++) {
-      if (C2.isSentenceEnd(words[i].text)) say('"' + c.words.join(' ') + '" runs across the sentence end after "' + words[i].text + '"');
+      if (sentenceEnd(words[i].text)) say('"' + c.words.join(' ') + '" runs across the sentence end after "' + words[i].text + '"');
       if (words[i + 1].start - words[i].end >= 0.5) say('"' + c.words.join(' ') + '" runs across a ' + (words[i + 1].start - words[i].end).toFixed(2) + ' s pause');
     }
     if (b > a && words[b].end - words[a].start > 7 + 1e-6) say('"' + c.words.join(' ') + '" holds ' + (words[b].end - words[a].start).toFixed(1) + ' s of speech (> 7 s)');
@@ -254,8 +296,8 @@ function check(R, name, res, words, opts) {
     // a caption boundary inside a sentence never splits a noun from its
     // postposition / a verb from its auxiliary — unless the words chained
     // that way are more than Words per caption allows
-    const ctx = C2.textContext(words), forb = (x, y) => C2.lineBreakCost(words[x].text, words[y].text, ctx) === Infinity;
-    if (nx && !C2.isSentenceEnd(words[b].text) && words[b + 1].start - words[b].end < 0.5 && forb(b, b + 1)) {
+    const forb = (x, y) => forbiddenBefore(words[y].text);
+    if (nx && !sentenceEnd(words[b].text) && words[b + 1].start - words[b].end < 0.5 && forb(b, b + 1)) {
       let lo = b, hi = b + 1;
       while (lo > 0 && forb(lo - 1, lo)) lo--;
       while (hi + 1 < words.length && forb(hi, hi + 1)) hi++;
@@ -269,7 +311,15 @@ function check(R, name, res, words, opts) {
     if (b > a && c.end - c.start < 0.833 - frame && !(nx && Math.abs((nx.start - c.end) * fps - 2) < 0.02)) {
       say('"' + c.words.join(' ') + '" is on screen only ' + (c.end - c.start).toFixed(2) + ' s with room to stay 0.833 s');
     }
-    if (c.end > words[b].end + 1.5 + frame) say('"' + c.words.join(' ') + '" lingers ' + (c.end - words[b].end).toFixed(2) + ' s after its words');
+    // reading speed: a caption needs codePoints / 20 s (22 for Hindi) on screen
+    const text = c.words.join(' '), need = codePoints(text) / cpsLimit(text), shown = c.end - c.start;
+    if (c.end > Math.max(words[b].end + 1.5, c.start + need) + frame) say('"' + text + '" lingers ' + (c.end - words[b].end).toFixed(2) + ' s after its words');
+    if (codePoints(text) / shown > cpsLimit(text) * 1.02) {
+      // too dense to read: it must have used all the silence it had —
+      // up to the next caption (2 frames before it) or 7 s on screen
+      const room = Math.min(c.start + need, nx ? nx.start - 2 * frame : Infinity, c.start + 7);
+      if (c.end < room - frame - 1e-6) say('"' + text + '" reads at ' + (codePoints(text) / shown).toFixed(1) + ' characters a second but leaves ' + (room - c.end).toFixed(2) + ' s of silence unused');
+    }
     if ((!nx || nx.start - words[b].end > 1.2) && c.end < words[b].end - 0.06 + 0.5 - frame - 1e-6) {
       say('"' + c.words.join(' ') + '" leaves ' + (c.end - words[b].end).toFixed(2) + ' s after its last word (lag-out 0.5 s)');
     }
@@ -277,7 +327,9 @@ function check(R, name, res, words, opts) {
     if (c.frames[0].active != null) {
       for (let j = 0; j < c.frames.length; j++) {
         const f = c.frames[j], w = words[a + j];
-        if (Math.abs(f.start - (w.start - 0.06)) > 0.12) say('"' + w.text + '" lights up at ' + f.start.toFixed(2) + ' s, spoken at ' + w.start.toFixed(2));
+        // (a word the engine stretched 1.8 s into the silence before it is
+        // clamped to 2.5x a typical word, so it may light up to 1 s early)
+        if (Math.abs(f.start - (w.start - 0.06)) > (w.stretch < 0 ? 1.0 : 0.12)) say('"' + w.text + '" lights up at ' + f.start.toFixed(2) + ' s, spoken at ' + w.start.toFixed(2));
         if (j + 1 < c.frames.length && f.end > words[a + j + 1].start + frame) say('"' + w.text + '" stays lit past the next word');
       }
     }
@@ -293,7 +345,7 @@ function check(R, name, res, words, opts) {
     for (let li = 1; li < lines.length; li++) {
       const prev = lines[li - 1].split(' '), first = lines[li].split(' ')[0];
       const whole = c.words.some(w => String(w).toUpperCase() === first.toUpperCase());
-      if (whole && C2.lineBreakCost(prev[prev.length - 1], first, C2.textContext(c.words)) === Infinity) say('a line of "' + c.words.join(' ') + '" starts with "' + first + '"');
+      if (whole && forbiddenBefore(first)) say('a line of "' + c.words.join(' ') + '" starts with "' + first + '"');
     }
     // every frame inside the frame (and the safe area by default)
     for (const d of c.draws) {
@@ -302,6 +354,9 @@ function check(R, name, res, words, opts) {
       if (opts.safe) {
         const sx0 = 0.05 * W, sx1 = 0.95 * W, sy0 = (H > W ? 0.10 : 0.05) * H, sy1 = (H > W ? 0.66 : 0.95) * H;
         if (l < sx0 || r > sx1 || t < sy0 || bt > sy1) { say('"' + c.words.join(' ') + '" leaves the safe area: x ' + l.toFixed(0) + '..' + r.toFixed(0) + ' y ' + t.toFixed(0) + '..' + bt.toFixed(0)); break; }
+        // line length: at most 86% of a 16:9 frame's width, 90% of a reel's
+        const maxW = (H > W ? 0.90 : 0.86) * W;
+        if (r - l > maxW + 1) { say('"' + c.words.join(' ') + '" is ' + (100 * (r - l) / W).toFixed(1) + '% of the frame wide (at most ' + (H > W ? 90 : 86) + '%)'); break; }
       }
       // two lines of Hindi never touch
       for (let li = 1; li < d.lines.length; li++) {
@@ -322,10 +377,19 @@ function check(R, name, res, words, opts) {
     const page = await P.openPanel(browser, { cep: true, gallery: false, defs: {} });
     await page.evaluate(pageInstall);
     await page.evaluate(async () => { const t = document.querySelector('[data-tab="captions"]'); if (t) t.click(); await new Promise(r => setTimeout(r, 200)); });
-    const gen = (env, key) => page.evaluate((e, ws) => window.__G.generate(e, [{ start: ws[0].start, end: ws[ws.length - 1].end, text: ws.map(w => w.text).join(' ') }], ws), env, TRANSCRIPTS[key]);
+    const gen = (env, key) => page.evaluate((e, ws) => window.__G.generate(e, [{ start: ws[0].start, end: ws[ws.length - 1].end, text: ws.map(w => w.text).join(' ') }], ws), env, PLACED[key]);
     const click = id => page.evaluate(id => { document.getElementById(id).click(); }, id);
     const setRange = (id, v) => page.evaluate((id, v) => { const el = document.getElementById(id); el.value = String(v); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }, id, v);
     const setCheck = (id, v) => page.evaluate((id, v) => { const el = document.getElementById(id); el.checked = !!v; el.dispatchEvent(new Event('change', { bubbles: true })); }, id, v);
+    const preview = res => page.evaluate((ws) => window.__G.previewGroups([{ start: ws[0].start, end: ws[ws.length - 1].end, text: ws.map(w => w.text).join(' ') }], ws), res.jobWords);
+    /* the editor preview, shown the same words, groups them exactly as the timeline did */
+    async function samePreview(label, env, res) {
+      if (!res || res.error) return;
+      const tl = captionsOf(res).map(c => c.words.join(' '));
+      const pv = await preview(res);
+      if (JSON.stringify(pv) !== JSON.stringify(tl)) R.bad(label + ' @' + env.width + ': preview groups [' + pv.slice(0, 3).join(' | ') + ' …] but the timeline gets [' + tl.slice(0, 3).join(' | ') + ' …]');
+      else R.ok(label + ' @' + env.width + ': the preview groups the words exactly as the timeline (' + tl.length + ' captions)');
+    }
 
     // ---- 1. boot: nothing touched ----------------------------------------
     const boot = {};
@@ -334,6 +398,7 @@ function check(R, name, res, words, opts) {
         const res = await gen(env, key);
         boot[key + env.width] = res;
         check(R, 'boot defaults (' + (res.style || '?') + ', words ' + res.label + ') · ' + key, res, TRANSCRIPTS[key], { safe: true });
+        if (key === 'hinglish' || key === 'devanagari') await samePreview('boot defaults · ' + key, env, res);
       }
       const r0 = boot['hinglish' + env.width];
       if (r0 && !r0.error) {
@@ -343,12 +408,26 @@ function check(R, name, res, words, opts) {
         else R.ok(env.width + 'x' + env.height + ': default position ' + want + '%' + (want === 62 ? ' (Reels-safe, above the app buttons)' : ''));
       }
     }
-    // default size on a landscape podcast: capitals 4.5-5.5% of the frame height
+    // default size on a landscape podcast: the caption's capitals 4.5-5.5% of
+    // the frame height (it was 6.6% at 90 px), the spoken word's pop on top of
+    // that at most 6%
     const land = boot.hinglish1920;
     if (land && !land.error) {
-      const pct = (land.capH + land.strokeWidth) / 1080 * 100;
+      // as drawn, outline included
+      const bodyCap = Math.max(...land.draws.map(d => d.capBody)), popCap = Math.max(...land.draws.map(d => d.capDrawn));
+      const pct = (bodyCap + land.strokeWidth) / 1080 * 100, popPct = (popCap + land.strokeWidth) / 1080 * 100;
       if (!(pct >= 4.5 && pct <= 5.5)) R.bad('default capitals are ' + pct.toFixed(2) + '% of a 1920x1080 frame (want 4.5-5.5%): size ' + land.size + ' px');
-      else R.ok('default capitals ' + pct.toFixed(2) + '% of a 1920x1080 frame (size ' + land.size + ' px, outline ' + land.strokeWidth + ')');
+      else if (popPct > 6) R.bad('the spoken word pops to capitals ' + popPct.toFixed(2) + '% of a 1920x1080 frame (at most 6%)');
+      else R.ok('default capitals ' + pct.toFixed(2) + '% of a 1920x1080 frame as drawn (size ' + land.size + ' px, outline ' + land.strokeWidth + '), the spoken word ' + popPct.toFixed(2) + '%');
+      // a reel's captions stand about as many pixels tall as a podcast's
+      // (BBC: one line height suits both 1920x1080 and 1080x1920)
+      const port = boot.hinglish1080;
+      if (port && !port.error) {
+        const pCap = Math.max(...port.draws.map(d => d.capBody)) + port.strokeWidth, lCap = bodyCap + land.strokeWidth;
+        const ratio = pCap / lCap;
+        if (!(ratio >= 0.8 && ratio <= 1.25)) R.bad('default capitals: ' + pCap.toFixed(0) + ' px on a reel vs ' + lCap.toFixed(0) + ' px on a podcast (want within 0.8-1.25x)');
+        else R.ok('default capitals ' + pCap.toFixed(0) + ' px on a 1080x1920 reel, ' + lCap.toFixed(0) + ' px on a 1920x1080 podcast (' + ratio.toFixed(2) + 'x)');
+      }
     }
 
     // ---- 2. ✨ Auto: whole phrases fitted to the frame ---------------------
@@ -359,25 +438,29 @@ function check(R, name, res, words, opts) {
         const caps = check(R, 'Auto · ' + key, res, TRANSCRIPTS[key], { safe: true, N: 0 });
         if (caps && key !== 'urls' && Math.max(...caps.map(c => c.words.length)) < 4) R.bad('Auto · ' + key + ': captions of at most ' + Math.max(...caps.map(c => c.words.length)) + ' words — not whole phrases');
         // the editor preview groups these words exactly as the timeline did
-        if (res && !res.error && (key === 'hinglish' || key === 'devanagari')) {
-          const tl = captionsOf(res).map(c => c.words.join(' '));
-          const pv = await page.evaluate((ws) => window.__G.previewGroups([{ start: ws[0].start, end: ws[ws.length - 1].end, text: ws.map(w => w.text).join(' ') }], ws), res.jobWords);
-          if (JSON.stringify(pv) !== JSON.stringify(tl)) R.bad('Auto · ' + key + ' @' + env.width + ': preview groups [' + pv.slice(0, 3).join(' | ') + ' …] but the timeline gets [' + tl.slice(0, 3).join(' | ') + ' …]');
-          else R.ok('Auto · ' + key + ' @' + env.width + ': the preview groups the words exactly as the timeline (' + tl.length + ' captions)');
-        }
+        if (key === 'hinglish' || key === 'devanagari') await samePreview('Auto · ' + key, env, res);
       }
     }
 
     // ---- 3. Words per caption 3 (+ + + from Auto) ------------------------
     await click('wc-plus'); await click('wc-plus'); await click('wc-plus');
     for (const env of ENVS) for (const key of ['hinglish', 'devanagari', 'english']) {
-      check(R, 'Words per caption 3 · ' + key, await gen(env, key), TRANSCRIPTS[key], { safe: true, N: 3 });
+      const res = await gen(env, key);
+      check(R, 'Words per caption 3 · ' + key, res, TRANSCRIPTS[key], { safe: true, N: 3 });
+      if (key === 'hinglish') await samePreview('Words per caption 3 · ' + key, env, res);
     }
-    // and back to 1: single words
+    // and back to 1: single words, each drawn at the style's own size (a word
+    // alone has nothing to pop out from — at the pop size every caption of a
+    // podcast would be oversized)
     await click('wc-minus'); await click('wc-minus');
     for (const env of ENVS) {
       const res = await gen(env, 'hinglish');
-      check(R, 'Words per caption 1 · hinglish', res, TRANSCRIPTS.hinglish, { safe: true, N: 1 });
+      const caps = check(R, 'Words per caption 1 · hinglish', res, TRANSCRIPTS.hinglish, { safe: true, N: 1 });
+      if (!caps) continue;
+      const top = Math.max(...res.draws.map(d => d.capDrawn)), body = Math.max(...res.draws.map(d => d.capBody));
+      if (top > body + 0.5) R.bad('Words per caption 1 @' + env.width + ': one-word captions pop to capitals ' + top.toFixed(1) + ' px (the style draws ' + body.toFixed(1) + ' px)');
+      else if (env.width > env.height && (top + res.strokeWidth) / env.height > 0.055) R.bad('Words per caption 1 @' + env.width + ': one-word capitals ' + (100 * (top + res.strokeWidth) / env.height).toFixed(2) + '% of the frame (at most 5.5%)');
+      else R.ok('Words per caption 1 @' + env.width + 'x' + env.height + ': every word drawn at the style\'s own size (capitals ' + (100 * (top + res.strokeWidth) / env.height).toFixed(2) + '% of the frame)');
     }
 
     // ---- 4. the owner changes settings: each one changes the captions ----
@@ -398,10 +481,25 @@ function check(R, name, res, words, opts) {
       if (!res.error && res.position.used !== 70) R.bad('the owner moved Position to 70% but captions use ' + res.position.used + '%');
       else if (!res.error) R.ok('Position moved by the owner (70%) is used on a vertical sequence');
     }
-    // a boxed style at Max width 98%: the box stays inside the frame
+    // a boxed style at Max width 98% and Box padding 200%, with ✨ Auto words
+    // so captions run the full width: the box stays inside the frame (it drew
+    // 11-12 px past both edges of a reel)
     if (!(await page.evaluate(() => window.CP_DEBUG_EXT.overlay.applyStyle('tr-hindi-podcast')))) R.bad('could not pick "Hindi Podcast Bar"');
     await setRange('c-maxwidth', 98);
-    for (const env of ENVS) for (const key of ['devanagari', 'hinglish']) check(R, 'Hindi Podcast Bar, Max width 98% · ' + key, await gen(env, key), TRANSCRIPTS[key], {});
+    await setRange('c-box-pad', 200);
+    await click('wc-full');
+    for (const env of ENVS) {
+      let widest = 0;
+      for (const key of ['devanagari', 'hinglish', 'english']) {
+        const res = await gen(env, key);
+        const caps = check(R, 'Hindi Podcast Bar, Max width 98%, Box padding 200%, Auto · ' + key, res, TRANSCRIPTS[key], { N: 0 });
+        if (caps && !res.error) widest = Math.max(widest, ...res.draws.map(d => d.ext[2] - d.ext[0]));
+      }
+      // some caption really reaches the edge, so "inside the frame" means something
+      if (widest < 0.9 * env.width) R.bad('Hindi Podcast Bar @' + env.width + ': the widest box is ' + (100 * widest / env.width).toFixed(0) + '% of the frame — the edge was never tested');
+      else R.ok('Hindi Podcast Bar @' + env.width + 'x' + env.height + ': the widest box spans ' + (100 * widest / env.width).toFixed(1) + '% of the frame, inside it');
+    }
+    await setRange('c-box-pad', 100);
     // Two-Tone Stack: tight leading, Hindi lines never overlap
     if (!(await page.evaluate(() => window.CP_DEBUG_EXT.overlay.applyStyle('tr-two-tone-stack')))) R.bad('could not pick "Two-Tone Stack"');
     for (const env of ENVS) check(R, 'Two-Tone Stack · devanagari', await gen(env, 'devanagari'), TRANSCRIPTS.devanagari, { safe: true });
@@ -418,8 +516,10 @@ function check(R, name, res, words, opts) {
       if (!emo.length) R.bad('✨ Auto-emoji added no emoji to word-timed captions @' + env.width);
       else if (!capsWords.length) R.bad('🔠 CAPS on key words capitalised nothing in word-timed captions @' + env.width);
       else R.ok('@' + env.width + ': ✨ emoji on ' + emo.length + ' captions ("' + emo[0].words.join(' ') + '"), 🔠 CAPS on ' + [...new Set(capsWords)].slice(0, 4).join(', '));
-      const pv = await page.evaluate((ws) => window.__G.previewGroups([{ start: ws[0].start, end: ws[ws.length - 1].end, text: ws.map(w => w.text).join(' ') }], ws), res.jobWords);
+      const pv = await preview(res);
       if (!pv.some(g => /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(g))) R.bad('the preview does not show the emoji @' + env.width);
+      else if (capsWords.length && !pv.some(g => g.split(' ').some(w => capsWords.indexOf(w) >= 0))) R.bad('the preview does not show the CAPS key words @' + env.width);
+      else R.ok('@' + env.width + ': the preview shows the emoji and the CAPS key words too');
     }
     await setCheck('c-emoji', false); await setCheck('c-kwcaps', false);
 

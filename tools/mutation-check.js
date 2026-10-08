@@ -841,6 +841,271 @@ const MUTANTS = [
     repl: "          if (nmR.indexOf('pulse') >= 0 || nmR.indexOf('caption') >= 0 || nmR.indexOf('cap_') === 0) { try { itR.remove(0, 0); } catch (eRem) {} }",
     gate: 'CutPilot/test/gates/overlay-host.js',
     why: 'replacing a caption track also takes the owner’s “Caption intro.mp4” off it'
+  },
+  // ---- one click lands: caption grouping, timing and fit (captions-generate-lands) ----
+  {
+    name: 'capcore-words-cap',
+    file: 'CutPilot/js/captions.js',
+    find: '        if (N && y - x > N) return false;',
+    repl: '        if (N && y - x > N + 1) return false;',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: '"Words per caption" says 1 (or 3) and a caption holds one word more'
+  },
+  {
+    name: 'capcore-sentence-end',
+    file: 'CutPilot/js/captions.js',
+    find: '      if (isSentenceEnd(w.text)) return true;',
+    repl: '',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: 'a caption runs across a sentence end, showing the next sentence early'
+  },
+  {
+    name: 'capcore-pause',
+    file: 'CutPilot/js/captions.js',
+    find: '      if (nx.start - w.end >= pause - 1e-9) return true;',
+    repl: '',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: 'a caption stays up through a pause of half a second or more'
+  },
+  {
+    name: 'capcore-7s',
+    file: 'CutPilot/js/captions.js',
+    find: '        if (words[y - 1].end - words[x].start > maxDur + 1e-9) return false;',
+    repl: '',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: 'slow speech with no pause gives a caption longer than 7 s'
+  },
+  {
+    name: 'capcore-chaining',
+    file: 'CutPilot/js/captions.js',
+    find: '        if (nx.s - e < half) {',
+    repl: '        if (false) {',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: 'a 3-11 frame flicker is left between captions instead of exactly 2 frames'
+  },
+  {
+    name: 'capcore-lag-out',
+    file: 'CutPilot/js/captions.js',
+    find: '      var want = Math.max(cp.sp + lag, cp.s + minF);',
+    repl: '      var want = Math.max(cp.sp, cp.s + minF);',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: 'a caption vanishes on its last syllable instead of holding 0.5 s'
+  },
+  {
+    name: 'capcore-min-duration',
+    file: 'CutPilot/js/captions.js',
+    find: '      var minF = Math.ceil(((cp.b - cp.a) > 1 ? R.minMulti : R.minSingle) * F - 1e-6);',
+    repl: '      var minF = Math.ceil(R.minSingle * F - 1e-6);',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: 'a quick two-word caption flashes by under 0.833 s with silence after it'
+  },
+  {
+    name: 'capcore-postposition',
+    file: 'CutPilot/js/captions.js',
+    find: '    if (_POSTPOS[nb] || _AUX[nb]) return Infinity;',
+    repl: '    if (_AUX[nb]) return Infinity;',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: 'a caption or a line starts with a Hindi postposition ("YouTube | par")'
+  },
+  {
+    name: 'capcore-short-words',
+    file: 'CutPilot/js/captions.js',
+    find: '        if (whole ? (e >= s) : (e - s > min)) {',
+    repl: '        if (e - s > min) {',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: 'quick Hindi words ("ki", "to") stamped 0-50 ms are dropped from the captions'
+  },
+  {
+    name: 'capcore-fit',
+    file: 'CutPilot/js/captions.js',
+    find: '      fits: fit ? function (a, b) { return fit(capWords(a, b)); } : null,',
+    repl: '      fits: null,',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: 'Auto groups more words than fit the frame, so captions shrink or overflow'
+  },
+  {
+    name: 'capcore-emoji',
+    file: 'CutPilot/js/captions.js',
+    find: '      if (opts.emoji) {',
+    repl: '      if (false) {',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: '✨ Auto-emoji does nothing once the words have real timing'
+  },
+  {
+    name: 'capcore-caps',
+    file: 'CutPilot/js/captions.js',
+    find: '      if (capsSet && capsSet[capsKey(w.text)]) t = t.toUpperCase();',
+    repl: '',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: '🔠 CAPS on key words does nothing once the words have real timing'
+  },
+  {
+    name: 'capcore-native-wrap',
+    file: 'CutPilot/js/captions.js',
+    find: '      out.push({ start: cur.s / F, end: e / F, text: wrapForNative(cur.text, opts.perLine || 42) });',
+    repl: '      out.push({ start: cur.s / F, end: e / F, text: cur.text });',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: 'Premiere\'s own caption track gets one long unbroken line it re-wraps at its own width'
+  },
+  {
+    name: 'capcore-landscape-size',
+    file: 'CutPilot/js/render.js',
+    find: '      if (asked > knee) scale *= (knee + (asked - knee) * LAND_SLOPE) / asked;',
+    repl: '',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: 'the default captions are oversized on a 1920x1080 podcast again (capitals 6.6%)'
+  },
+  {
+    name: 'capcore-landscape-size-audit',
+    file: 'CutPilot/js/render.js',
+    find: '      if (asked > knee) scale *= (knee + (asked - knee) * LAND_SLOPE) / asked;',
+    repl: '',
+    gate: 'tools/style-quality-audit.js',
+    why: 'the style audit cannot see an oversized default on a landscape podcast'
+  },
+  {
+    name: 'capcore-size-floor',
+    file: 'CutPilot/js/render.js',
+    find: '    var minPx = (style.minSize > 0) ? Math.min(base, style.minSize) : Math.max(6, base * 0.34);',
+    repl: '    var minPx = Math.max(6, base * 0.34);',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: 'a long URL shrinks to microscopic text instead of being broken'
+  },
+  {
+    name: 'capcore-box-extent',
+    file: 'CutPilot/js/render.js',
+    find: '      ext = Math.max(ext, padX + edge);',
+    repl: '',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: 'at Max width 98% a boxed style draws its box outside the frame'
+  },
+  {
+    name: 'capcore-hindi-line-step',
+    file: 'CutPilot/js/render.js',
+    find: '        adv = Math.max(adv, ink + air);',
+    repl: '',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: 'two lines of Hindi overlap at a tight line spacing (Two-Tone Stack)'
+  },
+  {
+    name: 'capcore-one-layout',
+    file: 'CutPilot/js/render.js',
+    find: '{ wordSync: wordSync, highlightSet: frame.words != null ? frame.highlightSet : null });',
+    repl: '{ wordSync: false, highlightSet: (frame.active != null) ? [frame.active].reduce(function (o, a) { o[a] = true; return o; }, {}) : (frame.words != null ? frame.highlightSet : null) });',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: 'the layout follows the spoken word, so lines jump while a caption is said'
+  },
+  {
+    name: 'capcore-line-grammar',
+    file: 'CutPilot/js/render.js',
+    find: '    var lay = at(base, words, srcs0, maxLines, true);',
+    repl: '    var lay = at(base, words, srcs0, maxLines, false);',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: 'a caption fits only by starting a line with a postposition or auxiliary'
+  },
+  {
+    name: 'capcore-one-word-size',
+    file: 'CutPilot/js/render.js',
+    find: '    var base = style.size, hlScale = (wordSync && words.length === 1) ? 1 : (style.highlightScale || 1);',
+    repl: '    var base = style.size, hlScale = style.highlightScale || 1;',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: 'one-word captions are all drawn at the pop size, oversized on a podcast'
+  },
+  {
+    name: 'capcore-reels-position',
+    file: 'CutPilot/js/main.js',
+    find: '    return (portraitSeq() && def > REELS_SAFE_POS) ? REELS_SAFE_POS : def;',
+    repl: '    return def;',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: 'on a vertical reel the default captions sit under the app\'s buttons (76%)'
+  },
+  {
+    name: 'capcore-owner-position',
+    file: 'CutPilot/js/main.js',
+    find: "    if ($('c-pos')) $('c-pos').addEventListener('input', function () { state.posUserSet = true; });",
+    repl: '',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: 'the owner moves Position and the captions stay at the automatic spot'
+  },
+  {
+    name: 'capcore-preview-grouping',
+    file: 'CutPilot/js/main.js',
+    find: '        anim: pvAnimId, words: pvWpc, wordCues: S.wordCues,',
+    repl: '        anim: pvAnimId, words: pvWpc || 4, wordCues: S.wordCues,',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: 'the preview groups ✨ Auto 4 words at a time while the timeline gets whole phrases'
+  },
+  {
+    name: 'capcore-track-strict',
+    file: 'CutPilot/jsx/host.jsx',
+    find: 'captionTrackCreated: okCt === true,',
+    repl: 'captionTrackCreated: okCt !== false,',
+    gate: 'CutPilot/test/host-tests.js',
+    why: 'a caption track Premiere never confirmed is reported as made'
+  },
+  {
+    name: 'capcore-track-format',
+    file: 'CutPilot/jsx/host.jsx',
+    find: 'var okCt = (fmt !== undefined) ? seq.createCaptionTrack(item, 0, fmt) : seq.createCaptionTrack(item, 0);',
+    repl: 'var okCt = seq.createCaptionTrack(item, 0);',
+    gate: 'CutPilot/test/host-tests.js',
+    why: 'the caption track is not asked for as Subtitle (CEA-708 cuts lines at 32 letters)'
+  },
+  {
+    name: 'capcore-reading-speed',
+    file: 'CutPilot/js/captions.js',
+    find: '      if (cp.s + needF > want) want = cp.s + needF;',
+    repl: '',
+    gate: 'CutPilot/test/gates/captions-timing-rules.js',
+    why: 'a caption spoken faster than it can be read vanishes half a second after its last word, with silence left unused'
+  },
+  {
+    name: 'capcore-split-reads',
+    file: 'CutPilot/js/captions.js',
+    find: ' + ((j - i2 === 1 && N !== 1) ? 4 : 0) + timeCost(i2, j);',
+    repl: ' + ((j - i2 === 1 && N !== 1) ? 4 : 0);',
+    gate: 'CutPilot/test/gates/captions-timing-rules.js',
+    why: 'a sentence splits so a quick word flashes by alone for one frame although another split avoids it'
+  },
+  {
+    name: 'capcore-ntsc',
+    file: 'CutPilot/js/captions.js',
+    find: '    for (var i = 0; i < ntsc.length; i++) if (Math.abs(fps - ntsc[i] / 1001) < 0.01) return ntsc[i] / 1001;',
+    repl: '',
+    gate: 'CutPilot/test/gates/captions-timing-rules.js',
+    why: 'on a 29.97 sequence caption times are counted at 29.97 and drift off Premiere\'s frames (gaps of 1 or 3 frames)'
+  },
+  {
+    name: 'capcore-clamp',
+    file: 'CutPilot/js/captions.js',
+    find: '      if (w.end - w.start > cap) {',
+    repl: '      if (false) {',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: 'a word the speech engine stretched into the silence shows its caption 1.8 s before it is said, or keeps it 1.8 s after'
+  },
+  {
+    name: 'capcore-reading-speed-generate',
+    file: 'CutPilot/js/captions.js',
+    find: '      if (cp.s + needF > want) want = cp.s + needF;',
+    repl: '',
+    gate: 'CutPilot/test/gates/captions-generate-lands.js',
+    why: 'after a real Generate, a caption too fast to read leaves the silence after it unused'
+  },
+  {
+    name: 'capcore-libass-same',
+    file: 'CutPilot/js/main.js',
+    find: '      try { events = eventsFromFrames(captionJobFrames(cues, wordCues, currentPreset(), ovr)); } catch (eEv) { events = null; }',
+    repl: '      events = null;',
+    gate: 'CutPilot/test/gates/captions-long-video-same.js',
+    why: 'a long video drawn by the libass fallback splits and times its captions differently from the images (no 2-frame gaps, no 0.5 s hold)'
+  },
+  {
+    name: 'capcore-libass-wordcues',
+    file: 'CutPilot/js/main.js',
+    find: '    var wordCuesP = (opts.wordCues !== undefined) ? Promise.resolve(opts.wordCues) : getCaptionWordCues(cues, true);',
+    repl: '    var wordCuesP = getCaptionWordCues(cues, true);',
+    gate: 'CutPilot/test/gates/captions-long-video-same.js',
+    why: 'falling back from Pulse\'s overlay to libass throws away the word timing the job had and re-guesses it'
   }
 ];
 

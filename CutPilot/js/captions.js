@@ -475,9 +475,15 @@
      counted a little wider than a Latin letter (shaped Hindi measures ~1.1x
      a Latin letter per cluster). Counting UTF-16 units instead counted Hindi
      ~1.5x too long, so Hindi captions were split far shorter than English. */
+  var _visMemo = {}, _visCount = 0;
   function visLen(s) {
+    s = String(s == null ? '' : s);
+    if (!/[^\x00-\x7F]/.test(s)) return s.length;           // plain ASCII: one letter a character
+    if (_visMemo.hasOwnProperty(s)) return _visMemo[s];     // a podcast repeats its words
     var g = graphemes(s), n = 0;
     for (var i = 0; i < g.length; i++) n += /[ऀ-ॿ]/.test(g[i]) ? 1.1 : 1;
+    if (_visCount++ > 20000) { _visMemo = {}; _visCount = 0; }
+    _visMemo[s] = n;
     return n;
   }
   function _joinText(ws) { return ws.map(function (w) { return w.text; }).join(' '); }
@@ -561,32 +567,6 @@
       if ((!maxChars || visLen(_joinText(merged)) <= maxChars) && (!per || merged.length <= per)) {
         chunks.splice(chunks.length - 2, 2, merged);
       }
-    }
-    return chunks;
-  }
-
-  /* Split word cues into sentence-cohesive, balanced CHUNKS of word objects
-     (the shared core behind both the text grouping and the ASS/libass events).
-     Returns an array of word-arrays. */
-  function sentenceChunks(words, per, maxChars, maxGap, opts) {
-    var hardGap = (opts && opts.hardGap != null) ? opts.hardGap : Math.max(maxGap, 1.6);
-    var sentences = [], cur = [];
-    for (var i = 0; i < words.length; i++) {
-      cur.push(words[i]);
-      var gapNext = (i + 1 < words.length) ? (words[i + 1].start - words[i].end) : 0;
-      if (isSentenceEnd(words[i].text) || gapNext > hardGap) { sentences.push(cur); cur = []; }
-    }
-    if (cur.length) sentences.push(cur);
-    var chunks = [];
-    for (var s = 0; s < sentences.length; s++) {
-      var ws = sentences[s];
-      var fitsWords = !per || ws.length <= per;
-      var fitsChars = !maxChars || visLen(_joinText(ws)) <= maxChars;
-      if (fitsWords && fitsChars) { chunks.push(ws); continue; }
-      var nW = per ? Math.ceil(ws.length / per) : 1;
-      var nC = maxChars ? Math.ceil(visLen(_joinText(ws)) / maxChars) : 1;
-      var parts = splitBalanced(ws, Math.max(2, nW, nC), per, maxChars);
-      for (var c = 0; c < parts.length; c++) chunks.push(parts[c]);
     }
     return chunks;
   }
@@ -727,6 +707,12 @@
    * Based on 2026 short-form trends: word-by-word karaoke, bold statement,
    * highlight-box, clean minimal, neon, typewriter.
    */
+  /* wordsPerCue is now exactly what a caption holds. The punchy styles that
+     said 1 were always SHOWN two words at a time (word-by-word captions forced
+     at least two), so they say 2 now: the look the owner knows, the number
+     telling the truth, and every colour / spacing / dim / reveal control
+     still has a second word to act on. 1 (one word at a time) is a press of
+     "−" away. */
   var STYLE_PRESETS = [
     {
       id: 'hormozi',
@@ -734,7 +720,7 @@
       description: 'Confident ALL-CAPS word-by-word in a clean heavy sans, with a crisp outline and a single accent colour on the spoken word.',
       font: 'Montserrat', weight: 900, fallbackFonts: ['Anton', 'Bebas Neue', 'Arial Black'],
       fontSize: 90, fill: '#FFFFFF', highlight: '#FFD400', stroke: '#000000', strokeWidth: 12,
-      uppercase: true, wordsPerCue: 1, anim: 'pop-scale',
+      uppercase: true, wordsPerCue: 2, anim: 'pop-scale',
       animNotes: 'Each word scales 0%→110%→100% over ~120ms with ease-out.'
     },
     {
@@ -772,7 +758,7 @@
       font: 'Bebas Neue', fallbackFonts: ['Anton', 'Impact'],
       fontSize: 80, fill: '#F8F8FF', highlight: '#00F0FF', stroke: '#7B2FFF', strokeWidth: 6,
       glow: '#00F0FF',
-      uppercase: true, wordsPerCue: 1, anim: 'glitch-in',
+      uppercase: true, wordsPerCue: 2, anim: 'glitch-in',
       animNotes: '2-frame RGB-split glitch on entry, outer glow pulses with audio.'
     },
     {
@@ -790,7 +776,7 @@
       description: 'Solid yellow ALL-CAPS with a heavy black stroke — high energy, very legible.',
       font: 'Anton', fallbackFonts: ['Bebas Neue', 'Impact', 'Arial Black'],
       fontSize: 88, fill: '#FFD400', highlight: '#FFFFFF', stroke: '#000000', strokeWidth: 12,
-      uppercase: true, wordsPerCue: 1, anim: 'pop-scale',
+      uppercase: true, wordsPerCue: 2, anim: 'pop-scale',
       animNotes: 'Punchy scale-in; emphasized words flip to white.'
     },
     {
@@ -881,7 +867,7 @@
     { id: 'impact', name: 'Impact II', category: 'Bold Creator', popularity: 97, layout: 'bottom', keyword: true, highlightScale: 1.18,
       font: 'Anton', fallbackFonts: ['Bebas Neue', 'Impact', 'Arial Black'],
       fontSize: 92, fill: '#FFFFFF', highlight: '#FFE53B', stroke: '#000000', strokeWidth: 13,
-      uppercase: true, wordsPerCue: 1, anim: 'pop' },
+      uppercase: true, wordsPerCue: 2, anim: 'pop' },
     { id: 'prime', name: 'Prime', category: 'Bold Creator', popularity: 94, layout: 'center', keyword: true,
       font: 'Archivo Black', fallbackFonts: ['Montserrat', 'Arial Black'],
       fontSize: 86, fill: '#FFFFFF', highlight: '#7C5CFF', stroke: '#000000', strokeWidth: 10,
@@ -925,7 +911,7 @@
     { id: 'rebel', name: 'Rebel', category: 'Gaming Stream', popularity: 85, layout: 'center', keyword: true,
       font: 'Bebas Neue', fallbackFonts: ['Anton', 'Impact'],
       fontSize: 84, fill: '#C6FF00', highlight: '#FFFFFF', stroke: '#000000', strokeWidth: 9, glow: '#C6FF00',
-      uppercase: true, wordsPerCue: 1, anim: 'shake' },
+      uppercase: true, wordsPerCue: 2, anim: 'shake' },
     { id: 'cinema', name: 'Cinematic', category: 'Cinematic', popularity: 79, layout: 'bottom', keyword: false,
       font: 'Futura', fallbackFonts: ['Oswald', 'Helvetica'],
       fontSize: 44, fill: '#EDEDED', highlight: '#EDEDED', stroke: null, strokeWidth: 0, glow: '#000000',
@@ -937,7 +923,7 @@
     { id: 'grind', name: 'Grind', category: 'Motivation', popularity: 89, layout: 'bottom', keyword: true, highlightScale: 1.16,
       font: 'Anton', fallbackFonts: ['Bebas Neue', 'Impact'],
       fontSize: 90, fill: '#FFFFFF', highlight: '#FFD400', stroke: '#000000', strokeWidth: 12,
-      uppercase: true, wordsPerCue: 1, anim: 'scale' },
+      uppercase: true, wordsPerCue: 2, anim: 'scale' },
     { id: 'chalk', name: 'Chalk', category: 'Education', popularity: 73, layout: 'bottom', keyword: true,
       font: 'Bradley Hand', fallbackFonts: ['Comic Sans MS', 'cursive'],
       fontSize: 64, fill: '#FFFFFF', highlight: '#FFE53B', stroke: '#000000', strokeWidth: 5,
@@ -963,7 +949,7 @@
     { id: 'kai', name: 'Kai', category: 'Social Growth', popularity: 86, layout: 'bottom', keyword: false,
       font: 'Archivo Black', fallbackFonts: ['Montserrat', 'Arial Black'],
       fontSize: 80, fill: '#FF2D9B', highlight: '#FFFFFF', stroke: '#000000', strokeWidth: 8,
-      uppercase: true, wordsPerCue: 1, anim: 'pop' },
+      uppercase: true, wordsPerCue: 2, anim: 'pop' },
     { id: 'y2k', name: 'Y2K', category: 'Gaming Stream', popularity: 81, layout: 'center', keyword: false,
       font: 'Verdana', fallbackFonts: ['Tahoma', 'Arial'],
       fontSize: 54, fill: '#FFFFFF', highlight: '#00F0FF', boxColor: '#141414', boxRadius: 4, stroke: null, strokeWidth: 0,
@@ -1111,12 +1097,12 @@
     { id: 'pro-velocity', name: 'Velocity', category: '⭐ Premium', popularity: 89, layout: 'bottom', keyword: true, highlightScale: 1.12,
       font: 'Montserrat', fallbackFonts: ['Archivo Black', 'Arial Black'],
       fontSize: 78, fill: '#FFFFFF', highlight: '#2D7CFF', glow: '#000000', stroke: null, strokeWidth: 0,
-      uppercase: true, wordsPerCue: 1, anim: 'pop-scale' },
+      uppercase: true, wordsPerCue: 2, anim: 'pop-scale' },
     // Neon — glowing gaming/music look (Captions.ai "Neon" / "Rocket")
     { id: 'pro-neon', name: 'Neon', category: '⭐ Premium', popularity: 88, layout: 'center', keyword: true,
       font: 'Bebas Neue', fallbackFonts: ['Anton', 'Impact'],
       fontSize: 84, fill: '#FFFFFF', highlight: '#FF2D9B', glow: '#22D3FF', stroke: '#0A0A0A', strokeWidth: 3,
-      uppercase: true, wordsPerCue: 1, anim: 'glitch-in' },
+      uppercase: true, wordsPerCue: 2, anim: 'glitch-in' },
 
     // ---- v1.0 creator presets (word reveal + viral-word pop built in) ----
     { id: 'v1-hormozi26', name: 'Statement Pro', category: '⭐ Premium', popularity: 87, layout: 'bottom', keyword: true, highlightScale: 1.12,
@@ -1138,7 +1124,7 @@
     { id: 'v1-beast', name: 'MrBeast Inspired', category: '⭐ Premium', popularity: 83, layout: 'bottom', keyword: true, highlightScale: 1.18,
       font: 'Archivo Black', fallbackFonts: ['Montserrat', 'Arial Black'],
       fontSize: 78, fill: '#FFFFFF', highlight: '#FF2A2A', glow: '#000000', stroke: '#000000', strokeWidth: 4,
-      uppercase: true, wordsPerCue: 1, anim: 'pop-scale' },
+      uppercase: true, wordsPerCue: 2, anim: 'pop-scale' },
     { id: 'v1-ali', name: 'Ali Abdaal Inspired', category: '⭐ Premium', popularity: 82, layout: 'bottom', keyword: false,
       font: 'Inter', fallbackFonts: ['Helvetica Neue', 'Arial'],
       fontSize: 50, fill: '#FFFFFF', highlight: '#FFFFFF', glow: '#000000', stroke: null, strokeWidth: 0,
@@ -1481,7 +1467,7 @@
       "strokeWidth": 6,
       "glow": "#00F0FF",
       "uppercase": true,
-      "wordsPerCue": 1,
+      "wordsPerCue": 2,
       "anim": "glitch-in",
       "animNotes": "2-frame RGB-split glitch on entry, outer glow pulses with audio.",
       "category": "🎥 Your Styles",
@@ -1815,7 +1801,7 @@
       "stroke": "#000000",
       "strokeWidth": 4,
       "uppercase": true,
-      "wordsPerCue": 1,
+      "wordsPerCue": 2,
       "anim": "pop-scale"
     },
     {
@@ -2072,7 +2058,7 @@
       "stroke": "#000000",
       "strokeWidth": 8,
       "uppercase": true,
-      "wordsPerCue": 1,
+      "wordsPerCue": 2,
       "anim": "pop"
     },
     {
@@ -2544,18 +2530,18 @@
     { id: 'tr-comic-burst', name: 'Comic Burst', category: _F, alsoIn: [_B], popularity: 92, layout: 'center',
       font: 'Bangers', weight: 400, fallbackFonts: devaChain(['Impact'], 'Baloo 2'), fontSize: 100, fill: '#FFFFFF', highlight: '#FFD400', highlightScale: 1.15,
       stroke: '#000000', strokeWidth: 12, glow: '#000000', glowBlur: 0.08, shadowDY: 8,
-      uppercase: true, wordsPerCue: 1, anim: 'bounce', keyword: false },
+      uppercase: true, wordsPerCue: 2, anim: 'bounce', keyword: false },
     { id: 'tr-sticker', name: 'Double-Stroke Sticker', category: _F, popularity: 90, layout: 'center',
       font: 'Luckiest Guy', weight: 400, fallbackFonts: devaChain(['Arial Black'], 'Baloo 2'), fontSize: 92, fill: '#FFFFFF', highlight: '#3BFF6A',
       stroke: '#000000', strokeWidth: 12, glow: '#FFFFFF', glowBlur: 0.12,
       uppercase: true, wordsPerCue: 2, anim: 'zoom', keyword: false },
     { id: 'tr-slam', name: 'Condensed Slam', category: _T, alsoIn: [_B], popularity: 97, layout: 'center',
       font: 'Anton', weight: 400, fallbackFonts: devaChain(['Impact'], 'Teko'), fontSize: 110, fill: '#FFFFFF', highlight: '#FF2E4D', highlightScale: 1.15,
-      stroke: '#000000', strokeWidth: 8, uppercase: true, wordsPerCue: 1, anim: 'zoom', keyword: false },
+      stroke: '#000000', strokeWidth: 8, uppercase: true, wordsPerCue: 2, anim: 'zoom', keyword: false },
     { id: 'tr-poster', name: 'Tall Poster', category: _B, popularity: 91, layout: 'center',
       font: 'Bebas Neue', weight: 400, fallbackFonts: devaChain(['Impact'], 'Teko'), fontSize: 110, fill: '#FFFFFF', highlight: '#FFE600',
       letterSpacing: 2, glow: '#000000', glowBlur: 0.45, shadowDY: 8, stroke: null, strokeWidth: 0,
-      uppercase: true, wordsPerCue: 1, anim: 'pop', keyword: false },
+      uppercase: true, wordsPerCue: 2, anim: 'pop', keyword: false },
     { id: 'tr-ghost-solid', name: 'Ghost to Solid', category: _B, popularity: 88, layout: 'center',
       font: 'Archivo Black', weight: 400, fallbackFonts: devaChain(['Arial Black'], 'Baloo 2'), fontSize: 82, fill: '#FFFFFF', highlight: '#FFFFFF',
       upcomingOpacity: 0.35, stroke: '#FFFFFF', strokeWidth: 2, glow: '#000000', glowBlur: 0.4, shadowDY: 5,
@@ -2563,7 +2549,7 @@
     { id: 'tr-extrude', name: '3D Extrude', category: _B, alsoIn: [_F], popularity: 90, layout: 'center',
       font: 'Archivo Black', weight: 400, fallbackFonts: devaChain(['Arial Black'], 'Baloo 2'), fontSize: 96, fill: '#FFFFFF', highlight: '#FFE600', highlightScale: 1.1,
       stroke: '#000000', strokeWidth: 6, glow: '#FF3B30', glowBlur: 0.06, shadowDX: 0, shadowDY: 9,
-      uppercase: true, wordsPerCue: 1, anim: 'bounce', keyword: false },
+      uppercase: true, wordsPerCue: 2, anim: 'bounce', keyword: false },
     { id: 'tr-two-tone-stack', name: 'Two-Tone Stack', category: _T, alsoIn: [_B], popularity: 96, layout: 'center',
       font: 'Montserrat', weight: 900, fallbackFonts: MONT(), fontSize: 80, fill: '#FFFFFF', highlight: '#FFD400', highlightScale: 1.3,
       stroke: '#000000', strokeWidth: 8, wordsPerLine: 2, lineGap: 1.05,
@@ -2659,7 +2645,7 @@
     { id: 'tr-chrome', name: 'Chrome Y2K', category: _N, popularity: 88, layout: 'center',
       font: 'Unbounded', weight: 800, fallbackFonts: devaChain(['Arial Black'], 'Baloo 2'), fontSize: 80, fill: '#FFFFFF', fill2: '#9AA4B2', highlight: '#7DF9FF',
       glow: '#7DF9FF', glowBlur: 0.4, stroke: '#0B0B0B', strokeWidth: 5,
-      uppercase: true, wordsPerCue: 1, anim: 'zoom', keyword: false },
+      uppercase: true, wordsPerCue: 2, anim: 'zoom', keyword: false },
     { id: 'tr-terminal', name: 'Terminal Typewriter', category: _N, alsoIn: [_C], popularity: 87, layout: 'bottom', posPct: 78,
       font: 'Space Mono', weight: 700, fallbackFonts: devaChain(['Courier New'], 'Mukta', 'monospace'), fontSize: 52, fill: '#EDEDED', highlight: '#39FF14',
       boxColor: '#000000', boxOpacity: 0.75, boxRadius: 6, boxPad: 1.1, stroke: null, strokeWidth: 0, maxLines: 2,
@@ -2667,7 +2653,7 @@
     { id: 'tr-rgb-glitch', name: 'RGB Glitch', category: _N, alsoIn: [_F], popularity: 89, layout: 'center',
       font: 'Space Grotesk', weight: 700, fallbackFonts: devaChain(['Arial'], 'Mukta'), fontSize: 90, fill: '#FFFFFF', highlight: '#FFFFFF',
       stroke: '#FF0040', strokeWidth: 3, glow: '#00E5FF', glowBlur: 0.06, shadowDX: 5, shadowDY: 0,
-      uppercase: true, wordsPerCue: 1, anim: 'glitch', keyword: false },
+      uppercase: true, wordsPerCue: 2, anim: 'glitch', keyword: false },
     // ---- 😂 fun & meme ----
     { id: 'tr-hard-sticker', name: 'Hard Shadow Sticker', category: _F, popularity: 90, layout: 'center',
       font: 'Rubik', weight: 900, fallbackFonts: devaChain(['Arial Black'], 'Baloo 2'), fontSize: 86, fill: '#FFFFFF', highlight: '#FFB800',
@@ -2717,7 +2703,7 @@
       stroke: '#000000', strokeWidth: 4, lineGap: 1.4, uppercase: false, wordsPerCue: 3, anim: 'pop', keyword: false },
     { id: 'tr-teko-hype', name: 'Tall Hype', category: _H, alsoIn: [_B], script: 'deva', popularity: 91, layout: 'center',
       font: 'Teko', weight: 600, fallbackFonts: devaFirstChain(['Mukta']), fontSize: 110, fill: '#FFFFFF', highlight: '#00E676',
-      stroke: '#000000', strokeWidth: 6, lineGap: 1.3, uppercase: true, wordsPerCue: 1, anim: 'zoom', keyword: false },
+      stroke: '#000000', strokeWidth: 6, lineGap: 1.3, uppercase: true, wordsPerCue: 2, anim: 'zoom', keyword: false },
     { id: 'tr-tiro-doc', name: 'Documentary Serif', category: _H, alsoIn: [_C], script: 'deva', popularity: 88, layout: 'bottom', posPct: 80,
       font: 'Tiro Devanagari Hindi', weight: 400, fallbackFonts: devaFirstChain(['Georgia'], 'serif'), fontSize: 60, fill: '#E6E6E6', highlight: '#FFFFFF',
       upcomingOpacity: 0.6, glow: '#000000', glowBlur: 0.55, stroke: null, strokeWidth: 0, lineGap: 1.3, maxLines: 2,
@@ -3415,18 +3401,22 @@
          (the renderer measures it: opts.fits), so nothing has to shrink;
        · its words are spoken within 7 s;
        · where a sentence must split, it splits where the grammar allows
-         (lineBreakCost) into captions of even length, never one word alone.
+         (lineBreakCost) into captions of even length, never one word alone,
+         none so dense it cannot be read in the time it has (20 characters a
+         second, 22 for Hindi) and none that would flash by in under 0.2 s
+         when another split avoids it.
      Timing, on the sequence's own frames:
        · a caption starts on its first word and stays at least 0.833 s
          (a one-word caption 0.3 s), growing only into the silence after it;
        · it holds 0.5 s after its last word when nothing follows soon;
        · two captions are exactly 2 frames apart or at least half a second —
          a shorter gap is closed to 2 frames (it read as a flicker);
-       · it stays long enough to read (20 characters a second, 22 for Hindi)
-         when the silence after it allows. */
+       · it stays long enough to read (20 characters a second, 22 for Hindi):
+         a caption spoken faster than that stays on into the silence after
+         it, up to the next caption (2 frames before it) and 7 s on screen. */
   var CAPTION_RULES = {
-    pause: 0.5, maxDur: 7, minMulti: 0.833, minSingle: 0.3, lagOut: 0.5, maxLate: 1.5,
-    cps: 20, cpsDeva: 22, gapFrames: 2
+    pause: 0.5, maxDur: 7, minMulti: 0.833, minSingle: 0.3, lagOut: 0.5,
+    cps: 20, cpsDeva: 22, gapFrames: 2, flash: 0.2
   };
   function _copyWord(w) {
     var o = { start: w.start, end: w.end, text: w.text };
@@ -3515,6 +3505,27 @@
         bc[k] = (c === Infinity) ? 0 : c;
       }
       for (k = a; k < b; k++) pre.push(pre[pre.length - 1] + lenOf(k));
+      // letters a caption shows (code points, as reading speed is counted)
+      var cpre = [0], deva = false;
+      for (k = a; k < b; k++) {
+        cpre.push(cpre[cpre.length - 1] + _codePoints(words[k].text) + 1);
+        if (/[ऀ-ॿ]/.test(words[k].text)) deva = true;
+      }
+      var cpsLimit = deva ? CAPTION_RULES.cpsDeva : CAPTION_RULES.cps;
+      var segRoom = (b < words.length) ? words[b].start : Infinity;   // the next caption's start
+      /* What a caption [x, y) costs in time: on screen until the next one in
+         this stretch of speech starts (2 frames ≈ 0.07 s before it), or — the
+         last one — into the silence after the stretch (at most 7 s). Too
+         dense to read in that time, or a flash under 0.2 s, costs extra, so
+         the split that reads best wins. */
+      function timeCost(x, y) {
+        var until = (y < b) ? words[y].start - 0.07 : Math.min(segRoom - 0.07, words[x].start + maxDur);
+        var shown = Math.max(0.04, until - words[x].start);
+        var c2 = 0, rate = (cpre[y - a] - cpre[x - a] - 1) / shown;
+        if (rate > cpsLimit) c2 += 6 * (rate / cpsLimit - 1);
+        if (y < b && shown < CAPTION_RULES.flash) c2 += 6;
+        return c2;
+      }
       var memo = {};
       function ok(x, y) {                       // may words [x, y) be one caption?
         if (y - x === 1) return true;
@@ -3554,7 +3565,7 @@
             var pv2 = D[g - 1][i2]; if (!pv2) continue;
             var len = pre[j - a] - pre[i2 - a];
             var dev = (len - avg) / Math.max(1, avg);
-            var cc = pv2.c + (i2 > a ? bc[i2] : 0) + 2 * dev * dev + ((j - i2 === 1 && N !== 1) ? 4 : 0);
+            var cc = pv2.c + (i2 > a ? bc[i2] : 0) + 2 * dev * dev + ((j - i2 === 1 && N !== 1) ? 4 : 0) + timeCost(i2, j);
             var ff = pv2.f + (i2 > a ? forb[i2] : 0);
             if (!bestc || ff < bestc.f || (ff === bestc.f && cc < bestc.c - 1e-12)) bestc = { f: ff, c: cc, from: i2 };
           }
@@ -3590,7 +3601,7 @@
     opts = opts || {};
     var R = CAPTION_RULES, F = fpsExact(opts.fps);
     var half = Math.round(F * 0.5), two = R.gapFrames;
-    var lag = Math.round(R.lagOut * F), late = Math.round(R.maxLate * F), maxD = Math.round(R.maxDur * F);
+    var lag = Math.round(R.lagOut * F), maxD = Math.round(R.maxDur * F);
     var textOf = opts.textOf || function (a, b) { return words.slice(a, b).map(function (w) { return w.text; }).join(' '); };
     var caps = [], last = -Infinity, c, j;
     for (c = 0; c < groups.length; c++) {
@@ -3611,7 +3622,8 @@
       var txt = textOf(cp.a, cp.b);
       var limit = /[ऀ-ॿ]/.test(txt) ? R.cpsDeva : R.cps;
       var needF = Math.ceil(_codePoints(txt) / limit * F);
-      if (cp.s + needF > want) want = Math.min(cp.s + needF, cp.sp + late);
+      // spoken faster than it can be read: stay on into the silence after it
+      if (cp.s + needF > want) want = cp.s + needF;
       want = Math.min(want, Math.max(cp.sp, cp.s + maxD));      // at most 7 s on screen
       var e = want;
       if (nx) {
@@ -3677,18 +3689,6 @@
       }
     }
     return frames;
-  }
-
-  /* Split line-cues into per-word cues with even timing (when no real word timing
-     is available) so windowed/diagonal styles still work. */
-  function flattenWords(cues) {
-    var out = [];
-    for (var c = 0; c < cues.length; c++) {
-      var ws = String(cues[c].text).replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
-      var n = Math.max(1, ws.length), dur = ((cues[c].end - cues[c].start) || n * 0.4) / n;
-      for (var k = 0; k < ws.length; k++) out.push({ start: cues[c].start + k * dur, end: cues[c].start + (k + 1) * dur, text: ws[k] });
-    }
-    return out;
   }
 
   /*

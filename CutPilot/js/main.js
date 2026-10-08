@@ -6436,19 +6436,32 @@
   var PREVIEW_DEMOS = {
     layout:   ['Everything changes tomorrow when remarkable storytelling transforms ordinary conversations completely',
                'यह बेहद आसान तरीका आपकी पूरी ज़िंदगी हमेशा के लिए बदल सकता है'],
+    // a stacked style (N words a line) at its own size: short words, so two
+    // full stacked lines fit the frame and Lines / Line spacing / Max width
+    // have a two-line caption to act on (long words split into one-liners)
+    layoutStacked: ['Big wins start with small steps daily',
+                    'हर दिन छोटे कदम बड़ी जीत लाते हैं'],
+    // Max width: long words, so a narrower column visibly re-breaks them
+    width:    ['Everything changes tomorrow when remarkable storytelling transforms ordinary conversations completely',
+               'यह बेहद आसान तरीका आपकी पूरी ज़िंदगी हमेशा के लिए बदल सकता है'],
     emphasis: ['Stop scrolling now because this secret changes everything instantly',
                'Stop यह secret सच में everything बदल देगा'],
     numbers:  ['I made $5,000 in 30 days with 3 simple edits',
                'मैंने 30 दिन में ₹50,000 कमाए 3 आसान तरीकों से']
   };
-  var DEMO_FOR = { 'c-linegap': 'layout', 'c-maxwidth': 'layout', 'c-lines': 'layout', 'c-emphasize': 'emphasis',
+  var DEMO_FOR = { 'c-linegap': 'layout', 'c-maxwidth': 'width', 'c-lines': 'layout', 'c-emphasize': 'emphasis',
                    'c-numon': 'numbers', 'c-num': 'numbers', 'c-brandon': 'brand', 'c-brand': 'brand', 'c-brand-words': 'brand' };
   function previewDemoText(kind, p) {
     var hi = !!(p && p.script === 'deva');
     if (kind === 'brand') {
       var bw = (($('c-brand-words') && $('c-brand-words').value) || '').split(',')
         .map(function (s) { return s.trim(); }).filter(Boolean);
-      return (bw.length ? bw.slice(0, 2).join(' ') : (hi ? 'यह' : 'This')) + (hi ? ' सबके लिए मुफ़्त है' : ' is free for everyone today');
+      // the brand word, then a SHORT word, so one caption holds both even in a
+      // big two-word style: the brand word is at rest (in its brand colour)
+      // while the next word is spoken — with the karaoke sweep and with
+      // one-by-one reveal alike. (Spoken, it takes the highlight colour; alone
+      // in a caption it would never be at rest.)
+      return (bw.length ? bw.slice(0, 2).join(' ') : (hi ? 'यह' : 'This')) + (hi ? ' अब सबके लिए मुफ़्त है' : ' is free for everyone today');
     }
     var d = PREVIEW_DEMOS[kind];
     return d ? d[hi ? 1 : 0] : null;
@@ -6538,6 +6551,9 @@
       $(id).addEventListener('input', function () { updateVals(); renderPreview(); });
       $(id).addEventListener('change', function () { updateVals(); renderPreview(); });
     });
+    // 🔠 CAPS on key words now reaches the preview too (it capitalises the
+    // preview's own key words) — repaint when it is switched
+    if ($('c-kwcaps')) $('c-kwcaps').addEventListener('change', function () { renderPreview(); });
     // Mount the custom palette pickers over the (hidden) colour inputs so colours
     // are pickable inside Premiere's panel, where the native OS box won't open.
     ['c-fill', 'c-hl', 'c-stroke', 'c-box', 'c-shadow', 'c-fill2', 'c-hl2', 'c-hl3', 'c-hl2g', 'c-box2', 'c-num', 'c-brand',
@@ -7569,10 +7585,16 @@
     var demo = (_pvDemo && _pvDemo.id === state.presetId) ? _pvDemo.kind : null;
     var demoText = demo ? previewDemoText(demo, styled) : null;
     if (demoText) phrases = [demoText];
-    var wrapDemo = (demo === 'layout');
-    // a stacked style breaks lines by word count: show it TWO stacked lines of
-    // long words, which max width can still squeeze (more would only shrink)
-    if (wrapDemo && styled.wordsPerLine > 0) phrases = [phrases.join(' ').split(' ').slice(0, styled.wordsPerLine * 2).join(' ')];
+    var wrapDemo = (demo === 'layout' || demo === 'width');
+    // a stacked style breaks lines by word count: show it TWO stacked lines —
+    // for Lines / Line spacing of short words that fit the frame at the style's
+    // own size (a caption is only ever made of words that fit, so long words
+    // would split into one-liners); for Max width of long words, which a
+    // narrower column visibly re-breaks
+    if (wrapDemo && styled.wordsPerLine > 0) {
+      var stackedDemo = (demo === 'layout') ? PREVIEW_DEMOS.layoutStacked[(styled.script === 'deva') ? 1 : 0] : phrases.join(' ');
+      phrases = [stackedDemo.split(' ').slice(0, styled.wordsPerLine * 2).join(' ')];
+    }
     if (carry.uppercase) phrases = phrases.map(function (ph) { return ph.toUpperCase(); });
     var S = sampleCues(phrases);
     if (_pvWordsOverride) S = _pvWordsOverride;      // a test's own timed words (CP_DEBUG_EXT.captions)
@@ -7697,7 +7719,7 @@
     });
   }
 
-  function textCues(cues, words, caseMode, perLineOverride) {
+  function textCues(cues, words, caseMode) {
     if (!cues || !cues.length) return [];   // no transcript → no captions, never a crash
     var mode = (caseMode === true) ? 'upper' : (caseMode === false ? 'as-spoken' : (caseMode || 'as-spoken'));
     // Keep whole sentences together. A caption wraps to ~2 lines, so the width
@@ -7707,7 +7729,7 @@
     // a sentence never splits it (only sentence punctuation or a long pause does).
     // The font size never changes — we only choose how many words share a caption.
     var portrait = !!(state.env && state.env.height > state.env.width);
-    var perLine = perLineOverride || (portrait ? 17 : 24);   // safe chars per line for the frame width
+    var perLine = portrait ? 17 : 24;                 // safe chars per line for the frame width
     var perCap = (words > 0) ? words : 14;            // 0 = ✨ Auto (sentence-fit to the frame)
     var maxChars = (words > 0) ? Math.max(perLine, words * 9) : (perLine * 2);   // ~2 lines per caption
     if (state.captionMaxChars) maxChars = state.captionMaxChars;                 // explicit override wins
@@ -9059,6 +9081,29 @@
     });
   }
 
+  /* Caption frames (buildCaptionFrames) as libass events: one event per
+     caption, each word timed by the frame that lights it (a caption drawn
+     whole gives its words the caption's own time). null for frames that are
+     not captions of words (typewriter text, the sliding diagonal windows):
+     those keep the older grouping below. */
+  function eventsFromFrames(frames) {
+    var caps = [], cur = null;
+    if (!frames || !frames.length) return null;
+    for (var i = 0; i < frames.length; i++) {
+      var f = frames[i];
+      if (!f.words || f.cap == null) return null;
+      if (!cur || cur.cap !== f.cap) { cur = { cap: f.cap, frames: [] }; caps.push(cur); }
+      cur.frames.push(f);
+    }
+    return caps.map(function (c) {
+      var fs = c.frames, ws = fs[0].words, perWord = (fs.length === ws.length);
+      var s = fs[0].start, e = fs[fs.length - 1].end;
+      return { start: s, end: e, words: ws.map(function (t, j) {
+        return perWord ? { text: String(t), start: fs[j].start, end: fs[j].end } : { text: String(t), start: s, end: e };
+      }) };
+    });
+  }
+
   /* Entry point for every ONE-clip caption job: long videos, and word edits /
      restyles of a job that already is an overlay (saveTranscriptEditor calls
      this). The name is historical. The overlay is drawn by Pulse's own renderer
@@ -9102,7 +9147,13 @@
     setCaptionBusy(true);
     capProgress('Listening for word timing…');
 
-    getCaptionWordCues(cues, true).then(function (wordCues) {
+    // the word timing the job was given (a fallback from Pulse's own overlay
+    // passes it on), else the transcript's — the same as runCaptionPipeline
+    var wordCuesP = (opts.wordCues !== undefined) ? Promise.resolve(opts.wordCues) : getCaptionWordCues(cues, true);
+    wordCuesP.then(function (wc) {
+      // the faces loaded before the captions are measured to fit the frame
+      return preloadJobFaces(currentPreset(), ovr, cues, wc).then(function () { return wc; });
+    }).then(function (wordCues) {
       wordCues = shiftWordCues(wordCues, captionSyncOffset());
       // AUTO-FIT (orientation-agnostic): derive how many characters fit on ONE line
       // from the ACTUAL frame width + the render font size, then cap each caption to
@@ -9117,10 +9168,18 @@
       // (e.g. "What is your name?" = 18) is NEVER split into two captions, while a
       // genuinely long sentence still splits to fit.
       var maxChars = (words > 0) ? Math.max(charsPerLine, words * 9) : Math.max(28, charsPerLine * 2);
-      var events;
-      if (wordCues && wordCues.length) {
+      // The SAME captions the per-image render and Pulse's own overlay place —
+      // grouped by Words per caption, sentence ends, pauses and the frame's
+      // width at the style's size, timed on the sequence's frames (2 frames
+      // apart, 0.5 s after the last word, long enough to read), with the case,
+      // emoji and CAPS settings. libass only draws them. (It used to group by
+      // an average letter width and time each caption to its words alone, so
+      // a long video's fallback split and timed captions differently.)
+      var events = null;
+      try { events = eventsFromFrames(captionJobFrames(cues, wordCues, currentPreset(), ovr)); } catch (eEv) { events = null; }
+      if (!events && wordCues && wordCues.length) {
         events = CPCaptions.groupWordEvents(wordCues, { perCue: words || 0, maxChars: maxChars, uppercase: ovr.uppercase });
-      } else {
+      } else if (!events) {
         // no per-word timing → spread each sentence-grouped cue's words evenly so
         // the highlight still advances (graceful fallback).
         var tc = textCues(cues, words, ovr.uppercase ? 'upper' : 'as-spoken');
@@ -10504,11 +10563,30 @@
     return L.join('\n');
   }
 
+  /* The captions for Premiere's own caption track: grouped by the SAME rules
+     as Pulse's captions (Words per caption, sentence ends, 0.5 s pauses, 7 s,
+     the grammar), sized to two lines of ~42 letters (~24 on a vertical
+     sequence), with the case, emoji and CAPS settings — then balanced into
+     two lines and timed for a subtitle track (nativeSubtitleCues). */
   function nativeCaptionCues(cues) {
-    var perLine = portraitSeq() ? 24 : 42;
-    return CPCaptions.nativeSubtitleCues(
-      textCues(cues, parseInt($('c-words').value, 10) || 0, $('c-upper').checked, perLine),
-      { fps: seqSize().fps, perLine: perLine });
+    var perLine = portraitSeq() ? 24 : 42, sz = seqSize();
+    var fitsTwoLines = function (ws) {
+      var t = ws.join(' ');
+      if (CPCaptions.visLen(t) > perLine * 2) return false;
+      return CPCaptions.wrapForNative(t, perLine).split('\n').every(function (l) { return CPCaptions.visLen(l) <= perLine; });
+    };
+    var ov = {};
+    try { ov = readOverrides(); } catch (eOv) {}
+    var frames = CPCaptions.buildCaptionFrames(cues, {
+      anim: 'none', wordsPerCue: parseInt($('c-words').value, 10) || 0,
+      uppercase: $('c-upper').checked || ov.uppercase, textCase: ov.textCase,
+      emoji: cchk('c-emoji'), capsWords: capsKeywordSet(cues),
+      wordCues: (cues && cues.words && cues.words.length) ? cues.words : null,
+      fit: fitsTwoLines, fps: sz.fps
+    });
+    return CPCaptions.nativeSubtitleCues(frames.map(function (f) {
+      return { start: f.start, end: f.end, text: f.words.join(' ') };
+    }), { fps: sz.fps, perLine: perLine });
   }
   function applyNative() {
     if (!ensureTranscriptThen('native')) return;

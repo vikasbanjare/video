@@ -1989,6 +1989,9 @@ console.log('caption grouping, timing and fit (sentence ends, pauses, 7 s, 2-fra
   assert(C.groupCaptionWords(ws, {}).length === 2, 'Auto with no width limit: one caption per sentence');
   const pz = [{ start: 0, end: 0.3, text: 'one' }, { start: 0.4, end: 0.7, text: 'two' }, { start: 1.3, end: 1.6, text: 'three' }];
   assert(C.groupCaptionWords(pz, {}).length === 2, 'a 0.6 s pause starts a new caption');
+  const sp = [{ start: 0, end: 0.3, text: 'haan', speaker: 'A' }, { start: 0.32, end: 0.6, text: 'bilkul', speaker: 'A' },
+              { start: 0.62, end: 0.9, text: 'sahi', speaker: 'B' }, { start: 0.92, end: 1.2, text: 'baat', speaker: 'B' }];
+  assert(JSON.stringify(C.groupCaptionWords(sp, {})) === '[[0,2],[2,4]]', 'a change of speaker starts a new caption');
   const long = [];
   for (let i = 0; i < 40; i++) long.push({ start: i * 0.3, end: i * 0.3 + 0.28, text: 'w' + String.fromCharCode(97 + i % 26) });
   const gl = C.groupCaptionWords(long, {});
@@ -2006,6 +2009,17 @@ console.log('caption grouping, timing and fit (sentence ends, pauses, 7 s, 2-fra
   const mn = C.timeCaptions([{ start: 0, end: 0.1, text: 'a' }, { start: 0.12, end: 0.2, text: 'b' }, { start: 5, end: 5.2, text: 'c' }],
     [[0, 2], [2, 3]], { fps: 30 });
   assert(mn[0].e - mn[0].s >= Math.ceil(0.833 * 30), 'a two-word caption stays at least 0.833 s when silence follows');
+  // reading speed: 54 characters said in 0.9 s need 2.7 s at 20 a second —
+  // the caption stays on into the silence after it (it used to stop 1.5 s
+  // after the last word, still too fast to read)
+  const rd = C.timeCaptions([{ start: 0, end: 0.3, text: 'internationalization' }, { start: 0.32, end: 0.6, text: 'standardization' },
+    { start: 0.62, end: 0.9, text: 'responsibilities.' }], [[0, 3]], { fps: 25 });
+  assert(rd[0].e - rd[0].s >= Math.ceil(54 / 20 * 25), 'a caption spoken too fast to read stays on until it can be read (' + ((rd[0].e - rd[0].s) / 25).toFixed(2) + ' s)');
+  // a split never leaves a quick word flashing by alone when another split avoids it
+  const fl = [{ start: 0.0, end: 0.4, text: 'alpha' }, { start: 0.42, end: 0.8, text: 'bravo' }, { start: 0.82, end: 0.86, text: 'charlie' },
+    { start: 0.88, end: 1.3, text: 'delta' }, { start: 1.32, end: 1.7, text: 'echo.' }];
+  assert(!C.groupCaptionWords(fl, { maxWords: 2 }).some(g => g[1] - g[0] === 1 && g[0] === 2),
+    'a 40 ms word is not left as a caption of its own when the sentence splits another way: ' + JSON.stringify(C.groupCaptionWords(fl, { maxWords: 2 })));
   // no word is ever dropped
   const zl = CPCaptions.mediaToTimeline([{ start: 2, end: 2, text: 'ki' }, { start: 2.01, end: 2.05, text: 'na' }], [{ inPoint: 0, outPoint: 10, seqStart: 0 }]);
   assert(zl.length === 2, 'zero-length and 40 ms words survive placement on the timeline');

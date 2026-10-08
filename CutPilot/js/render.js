@@ -709,13 +709,18 @@
     // pair holding Hindi steps at least far enough that the matras of one line
     // (above the headline and below it) never touch the next line's — at the
     // designed 1.05 leading of Two-Tone Stack they overlapped by 11-13 px.
+    // There, Line spacing sets the AIR between the two lines' ink, so the
+    // slider still moves Hindi lines both ways (a fixed margin made every
+    // tighter setting look the same) and even the tightest never touches.
     var twoTier = (style.subScale && style.subScale < 1 && lines.length > 1);
     var lineY = [], baseY;
     lineY[lines.length - 1] = H * style.yPct;
     for (var lb = lines.length - 2; lb >= 0; lb--) {
       var adv = twoTier ? (lines[lb].height + lines[lb + 1].height) / 2 * style.lineGap : lineStep;
       if (lines[lb].deva || lines[lb + 1].deva) {
-        adv = Math.max(adv, lines[lb].desc + lines[lb + 1].asc + stroke + hlSize * 0.06);
+        var ink = lines[lb].desc + lines[lb + 1].asc + stroke;   // the two lines' ink just touching
+        var air = hlSize * (0.02 + 0.1 * Math.pow(Math.max(0, style.lineGap - 0.5), 2));
+        adv = Math.max(adv, ink + air);
       }
       lineY[lb] = lineY[lb + 1] - adv;
     }
@@ -776,12 +781,14 @@
       return g;
     }
     // smart per-word colours: brand keywords + numbers/money/percent
+    // (a brand word may be Hindi: Devanagari letters count, dandas do not —
+    // matching Latin letters only made every Hindi brand word match nothing)
+    function bareWord(w) { return String(w).toLowerCase().replace(/[^a-z0-9'\u0900-\u0963\u0966-\u097F]/g, ''); }
     var brandSet = {};
     if (style.brandWords) for (var bwI = 0; bwI < style.brandWords.length; bwI++) {
-      var bw = String(style.brandWords[bwI]).toLowerCase().replace(/[^a-z0-9']/g, '');
+      var bw = bareWord(style.brandWords[bwI]);
       if (bw) brandSet[bw] = 1;
     }
-    function bareWord(w) { return String(w).toLowerCase().replace(/[^a-z0-9']/g, ''); }
     function isNumberish(w) { return /\d/.test(String(w)); }   // 2026, $1M, 50%, 10x, 1,000
     function restColorFor(word) {
       if (style.brandColor && brandSet[bareWord(word)]) return style.brandColor;
