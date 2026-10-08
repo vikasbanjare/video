@@ -5547,6 +5547,9 @@
     var w = parseInt($('c-words').value, 10) || 0;
     var label = (w === 0) ? 'Auto' : String(w);   // 0 = ✨ Auto: whole sentences, fit to the frame
     ['wc-num', 'ms-wc-num', 'mg-wc-num'].forEach(function (id) { var e = document.getElementById(id); if (e) e.textContent = label; });
+    var wcTip = (w === 0) ? 'Auto: whole phrases, fitted to your video' : (w === 1 ? 'One word per caption' : w + ' words per caption');
+    if ($('wc-num')) $('wc-num').title = wcTip;
+    if ($('wc-block')) $('wc-block').title = wcTip;
     ['wc-full', 'ms-wc-full', 'mg-wc-full'].forEach(function (id) { var e = document.getElementById(id); if (e) e.classList.toggle('on', w === 0); });
   }
 
@@ -5658,11 +5661,11 @@
       var _caps = null, _nctl = null;
       try { _caps = mogrtCapsCached(t.path); _nctl = mogrtControlCountCached(t.path); } catch (eC) {}
       if (_nctl === 0) {
-        $('ms-hint').textContent = 'This template exposes no editable controls — it will be inserted exactly as its designer built it. For full control over colours, font, size and animation, use a Pulse style instead (≡ Browse styles).';
+        $('ms-hint').textContent = 'This template exposes no editable controls — it will be inserted exactly as its designer built it. For full control over colours, font, size and animation, use a Pulse style instead (‹ Back, then 🎨 Styles at the top of Captions).';
       } else if (_nctl != null && _nctl <= 3) {
         $('ms-hint').textContent = 'This template only exposes ' + _nctl + ' control' + (_nctl === 1 ? '' : 's') +
           ' — that is all its designer made editable' + (_caps ? ' (' + _caps + ')' : '') +
-          '. For full control, use a Pulse style instead (≡ Browse styles).';
+          '. For full control, use a Pulse style instead (‹ Back, then 🎨 Styles at the top of Captions).';
       } else {
         $('ms-hint').textContent = _caps ? ('This template can edit: ' + _caps + '.') : '';
       }
@@ -6192,13 +6195,15 @@
      moment its feature is switched on (Background box / Outline width). */
   function syncColorRelevance() {
     var boxOn = !!($('c-box-on') && $('c-box-on').checked);
-    var strokeOn = (parseInt($('c-strokew') && $('c-strokew').value, 10) || 0) > 0;
     var hlStyle = readHlStyle();
     // Highlight colour is irrelevant only when nothing is ever highlighted
     var p = currentPreset() || {};
     var usesHighlight = !!(p.keyword || (p.wordHl !== false) || hlStyle !== 'color' || p.highlightFont || p.highlightGlow);
     if ($('sw-box')) $('sw-box').style.display = boxOn ? '' : 'none';
-    if ($('sw-stroke')) $('sw-stroke').style.display = strokeOn ? '' : 'none';
+    // the Outline colour stays on screen next to its width: with no outline
+    // yet it is greyed with its reason, and tapping it gives the text one
+    // (it used to vanish on 71 of 123 styles, with the width on another tab)
+    if ($('sw-stroke')) $('sw-stroke').style.display = '';
     if ($('sw-hl')) $('sw-hl').style.display = usesHighlight ? '' : 'none';
   }
 
@@ -6210,7 +6215,7 @@
      cannot act is DISABLED with a one-line reason right under it, and comes
      back the moment the thing it needs is switched on. Runs on every preview
      repaint, so it always describes the look on screen. */
-  var _whyEls = {}, _whyLast = {};
+  var _whyEls = {}, _whyLast = {}, _whyFix = {}, _whyHosts = {};
   function _localShown(el) {
     for (var n = el; n && n !== document.body; n = n.parentNode) {
       if (n.classList && n.classList.contains('cust-pane')) return true;
@@ -6219,9 +6224,33 @@
     }
     return true;
   }
-  function setWhy(id, reason) {
+  /* A greyed control whose reason CAN be met (no box yet, no outline yet, ALL
+     CAPS on…) is not a dead click: tapping it meets the reason first — Box
+     padding switches the box on, the Outline colour gives the outline a
+     width — and the tap then acts on the now-live control. Only a reason
+     nothing can meet (a capitals-only font, a style that builds word by word)
+     keeps the control truly disabled. fix = { label, run }. */
+  function _runWhyFix(id) {
+    var f = _whyFix[id];
+    if (!f) return false;
+    _whyFix[id] = null;
+    try { f.run(); } catch (eF) { return false; }
+    try { updateVals(); syncColorFields(); } catch (eU) {}
+    try { syncControlApplicability(); } catch (eS) {}
+    try { renderPreview(); } catch (eR) {}
+    try { toast('Done — ' + f.label.charAt(0).toUpperCase() + f.label.slice(1) + ', so that setting works now.'); } catch (eT) {}
+    return true;
+  }
+  function _wireWhyHost(id, host) {
+    if (!host || _whyHosts[id] === host) return;
+    _whyHosts[id] = host;
+    var go = function () { _runWhyFix(id); };
+    ['pointerdown', 'mousedown', 'touchstart', 'click'].forEach(function (ev) { host.addEventListener(ev, go, true); });
+  }
+  function setWhy(id, reason, fix) {
     var e = $(id); if (!e) return;
     var dis = !!reason;
+    var canFix = dis && !!fix;
     var host = e.closest ? (e.closest('label') || e.parentNode) : e.parentNode;
     var box = host && host.parentNode && host.parentNode.classList &&
               (host.parentNode.classList.contains('ctrl-row') || host.parentNode.classList.contains('swatches'))
@@ -6237,13 +6266,28 @@
       box.parentNode.insertBefore(w, box.nextSibling);
       _whyEls[id] = w;
     }
+    _whyFix[id] = canFix ? fix : null;
+    if (canFix) _wireWhyHost(id, host);
     var shown = dis && !!box && _localShown(box);
-    var key = (dis ? reason : '') + '|' + shown;
+    var key = (dis ? reason : '') + '|' + shown + '|' + (canFix ? fix.label : '');
     if (_whyLast[id] === key) return;             // touch the DOM only when it changes
     _whyLast[id] = key;
-    e.disabled = dis;
-    if (host && host.style) { host.style.opacity = dis ? '0.5' : ''; host.style.pointerEvents = dis ? 'none' : ''; }
-    if (w) { w.textContent = dis ? ('↳ ' + reason) : ''; w.style.display = shown ? '' : 'none'; }
+    // a reason that can be met: greyed but tappable (aria-disabled tells the
+    // dead-control audit it is waiting on that reason); otherwise disabled
+    e.disabled = dis && !canFix;
+    if (canFix) e.setAttribute('aria-disabled', 'true'); else e.removeAttribute('aria-disabled');
+    if (host && host.style) {
+      host.style.opacity = dis ? '0.5' : '';
+      host.style.pointerEvents = (dis && !canFix) ? 'none' : '';
+      host.style.cursor = canFix ? 'pointer' : '';
+      if (canFix) host.setAttribute('data-why-fix', fix.label); else host.removeAttribute('data-why-fix');
+    }
+    if (w) {
+      w.textContent = dis ? ('↳ ' + reason + (canFix ? ' · tap it to ' + fix.label : '')) : '';
+      w.style.display = shown ? '' : 'none';
+      w.style.cursor = canFix ? 'pointer' : '';
+      if (canFix && !w._cpFixWired) { w._cpFixWired = true; w.addEventListener('click', function () { _runWhyFix(id); }); }
+    }
   }
   /* Does the face the preview really draws have small letters at all? Display
      faces like Bebas Neue draw 'a' with the SAME glyph as 'A', so on them the
@@ -6282,6 +6326,35 @@
     return caps;
   }
 
+  /* The taps that meet a reason (see setWhy). Each one switches on exactly
+     the thing its reason names, the way the owner would by hand. */
+  function _fireCtl(id, v) {
+    var e = $(id); if (!e) return;
+    if (e.type === 'checkbox') e.checked = !!v; else e.value = String(v);
+    e.dispatchEvent(new Event('input', { bubbles: true }));
+    e.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  var WHY_FIX = {
+    box:      { label: 'turn on 🟦 Box behind text', run: function () { _fireCtl('c-box-on', true); } },
+    wordhl:   { label: 'turn on ✨ Word-by-word highlight', run: function () {
+                  state.wordHlOff = false; _fireCtl('c-wordhl', true); try { syncWordHlUI(); } catch (e) {} } },
+    wordhlOff:{ label: 'turn off ✨ Word-by-word highlight', run: function () {
+                  state.wordHlOff = true; _fireCtl('c-wordhl', false); try { syncWordHlUI(); } catch (e) {} } },
+    colorLook:{ label: 'switch the highlight look to Colour', run: function () {
+                  var b = document.querySelector('#c-hlstyle button[data-s="color"]'); if (b) b.click(); } },
+    noCycle:  { label: 'turn off 🌈 Cycle highlight colours', run: function () { _fireCtl('c-multicolor', false); } },
+    hlgrad:   { label: 'turn on 🌈 Two-colour highlight', run: function () {
+                  _fireCtl('c-hlgrad', true); if ($('c-hlgrad-opts')) $('c-hlgrad-opts').style.display = ''; } },
+    depth:    { label: 'give the box a 3D depth', run: function () { _fireCtl('c-box3d-depth', 10); } },
+    lines2:   { label: 'allow two lines', run: function () { var b = document.querySelector('#c-lines button[data-l="2"]'); if (b) b.click(); } },
+    words2:   { label: 'show 2 words per caption', run: function () { setWordCount(2); } },
+    words3:   { label: 'show 3 words per caption', run: function () { setWordCount(3); } },
+    capsOff:  { label: 'turn off ALL CAPS', run: function () { _fireCtl('c-upper', false); } },
+    kwOff:    { label: 'turn off 🔑 key words', run: function () { _fireCtl('c-kw', false); $('c-kw-mode-wrap').classList.add('hidden'); } },
+    allTogether: { label: 'show all the words together', run: function () {
+                  var b = document.querySelector('#c-reveal button[data-r="karaoke"]'); if (b) b.click(); } },
+    outline:  { label: 'give the text an outline', run: function () { _fireCtl('c-strokew', 6); } }
+  };
   function syncControlApplicability() {
     var p = currentPreset() || {};
     var editable = (_capOut === 'editable');
@@ -6301,49 +6374,58 @@
     var noneLit = !wordHl && !build && !cchk('c-kw');
     var NONE_LIT = 'Nothing is highlighted in this style — turn on ✨ Word-by-word highlight first';
     var hlgradWhy = noneLit ? NONE_LIT : filled ? PILL : (cchk('c-multicolor') && wordHl ? 'Cycle highlight colours is on — it replaces the gradient' : null);
-    setWhy('c-hlgrad', hlgradWhy);
-    setWhy('c-hl2g', hlgradWhy);
-    setWhy('c-glossy', hlgradWhy || (!cchk('c-hlgrad') ? 'Turn on 🌈 Gradient highlight first — the sheen runs between its two colours' : null));
-    setWhy('c-hlglow', noneLit ? NONE_LIT : (filled ? PILL : null));
-    setWhy('c-hlserif', noneLit ? NONE_LIT : null);
+    var hlgradFix = noneLit ? WHY_FIX.wordhl : filled ? WHY_FIX.colorLook : WHY_FIX.noCycle;
+    setWhy('c-hlgrad', hlgradWhy, hlgradFix);
+    setWhy('c-hl2g', hlgradWhy, hlgradFix);
+    setWhy('c-glossy', hlgradWhy || (!cchk('c-hlgrad') ? 'Turn on 🌈 Gradient highlight first — the sheen runs between its two colours' : null),
+           hlgradWhy ? hlgradFix : WHY_FIX.hlgrad);
+    setWhy('c-hlglow', noneLit ? NONE_LIT : (filled ? PILL : null), noneLit ? WHY_FIX.wordhl : WHY_FIX.colorLook);
+    setWhy('c-hlserif', noneLit ? NONE_LIT : null, WHY_FIX.wordhl);
     // 3D depth, gloss and the gradient box all draw ON the box face, so while
     // any of them is set the face stays — the box switch alone cannot remove it
     var boxForced = cchk('c-boxgrad') || cnum('c-box3d-depth', 0) > 0 || cnum('c-boxgloss', 0) > 0;
     setWhy('c-box-on', boxForced ? 'The 3D edge, gloss or gradient box needs the box — set them to 0 / off to remove it' : null);
     var sweepOwns = wordHl && !build;
-    setWhy('c-emphasize', sweepOwns ? 'Only works while ✨ Word-by-word is off (the spoken word already pops while it is on)' : null);
-    setWhy('c-kw', sweepOwns ? 'Used when ✨ Word-by-word highlight is off — the spoken word is the highlight' : null);
-    setWhy('c-kw-mode', sweepOwns ? 'Used when ✨ Word-by-word highlight is off' : null);
+    setWhy('c-emphasize', sweepOwns ? 'Only works while ✨ Word-by-word is off (the spoken word already pops while it is on)' : null, WHY_FIX.wordhlOff);
+    setWhy('c-kw', sweepOwns ? 'Used when ✨ Word-by-word highlight is off — the spoken word is the highlight' : null, WHY_FIX.wordhlOff);
+    setWhy('c-kw-mode', sweepOwns ? 'Used when ✨ Word-by-word highlight is off' : null, WHY_FIX.wordhlOff);
     setWhy('c-hl-scale', wordHl ? 'Word-by-word is on — use Spoken-word size instead' : null);
     setWhy('c-dimupcoming', build ? 'This style builds word by word — unspoken words are not on screen yet'
-                          : (reveal ? 'One by one already hides unspoken words — nothing to dim' : null));
+                          : (reveal ? 'One by one already hides unspoken words — nothing to dim' : null), build ? null : WHY_FIX.allTogether);
     setWhy('c-multicolor', build ? 'This style lights one keyword at a time — there is nothing to cycle' : null);
-    setWhy('c-hl3', (wordHl && (wpc === 1 || wpc === 2)) ? 'A caption holds 2 words here — raise Words per caption to 3+ to reach a 3rd colour' : null);
+    setWhy('c-hl3', (wordHl && (wpc === 1 || wpc === 2)) ? 'A caption holds 2 words here — raise Words per caption to 3+ to reach a 3rd colour' : null, WHY_FIX.words3);
     if (editable) {
-      setWhy('c-box-opacity', boxOn ? null : 'Needs 🟦 Background box');
+      // the editable caption has a real box see-through and roundness too
+      setWhy('c-box-opacity', boxOn ? null : 'Needs 🟦 Background box', WHY_FIX.box);
+      setWhy('c-box-radius', boxOn ? null : 'Needs 🟦 Background box', WHY_FIX.box);
     } else {
-      setWhy('c-box-opacity', (boxOn || filled) ? null : 'Needs 🟦 Background box (or the Pill / Bar highlight look)');
-      setWhy('c-box-pad', (boxOn || hls === 'box') ? null : 'Needs 🟦 Background box (or the Pill highlight look)');
-      setWhy('c-box-radius', (boxOn || hls === 'box') ? null : 'Needs 🟦 Background box (or the Pill highlight look)');
+      setWhy('c-box-opacity', (boxOn || filled) ? null : 'Needs 🟦 Background box (or the Pill / Bar highlight look)', WHY_FIX.box);
+      setWhy('c-box-pad', (boxOn || hls === 'box') ? null : 'Needs 🟦 Background box (or the Pill highlight look)', WHY_FIX.box);
+      setWhy('c-box-radius', (boxOn || hls === 'box') ? null : 'Needs 🟦 Background box (or the Pill highlight look)', WHY_FIX.box);
     }
-    setWhy('c-boxglow-on', (boxOn || borderOn) ? null : 'Needs 🟦 Background box or ⬜ Border — the glow comes off the box edge');
-    setWhy('c-box3d', cnum('c-box3d-depth', 0) > 0 ? null : 'Set 3D depth above 0 first');
+    setWhy('c-boxglow-on', (boxOn || borderOn) ? null : 'Needs 🟦 Background box or ⬜ Border — the glow comes off the box edge', WHY_FIX.box);
+    setWhy('c-box3d', cnum('c-box3d-depth', 0) > 0 ? null : 'Set 3D depth above 0 first', WHY_FIX.depth);
+    // the Outline colour sits on the Style tab on every style now; with no
+    // outline yet, tapping it gives the text one
+    setWhy('c-stroke', (!editable && cnum('c-strokew', 0) <= 0) ? 'No outline yet' : null, WHY_FIX.outline);
     var boxHex = ($('c-box') && $('c-box').value) || '#000000';
     setWhy('c-boxgloss', (boxOn && !cchk('c-boxgrad') && CPCaptions.contrastRatio(boxHex, '#FFFFFF') < 1.3)
       ? 'A white sheen cannot show on a white box — pick a darker Box colour first' : null);
-    setWhy('c-linegap', readLines() === 1 ? 'Lines on screen is Single — there is no second line to space' : null);
-    setWhy('c-wordspace', (!wordHl && !build && wpc === 1) ? 'One word per caption — there is no gap to space' : null);
+    setWhy('c-linegap', readLines() === 1 ? 'Lines on screen is Single — there is no second line to space' : null, WHY_FIX.lines2);
+    setWhy('c-wordspace', (!wordHl && !build && wpc === 1) ? 'One word per caption — there is no gap to space' : null, WHY_FIX.words2);
     // a face that only HAS capitals draws 'a' exactly like 'A', so neither
     // ALL CAPS nor the text case can change a single pixel
     var capsOnly = faceIsCapsOnly();
     var CAPS_ONLY = 'This font only has capital letters — pick another font to use small letters';
     setWhy('c-upper', capsOnly ? CAPS_ONLY : null);
-    setWhy('c-case', capsOnly ? CAPS_ONLY : (cchk('c-upper') ? 'ALL CAPS is on — turn it off to pick a text case' : null));
+    setWhy('c-case', capsOnly ? CAPS_ONLY : (cchk('c-upper') ? 'ALL CAPS is on — turn it off to pick a text case' : null), capsOnly ? null : WHY_FIX.capsOff);
+    // every word is already in capitals: key-word CAPS cannot show
+    setWhy('c-kwcaps', capsOnly ? CAPS_ONLY : (cchk('c-upper') ? 'ALL CAPS is on — every word is already in capitals' : null), capsOnly ? null : WHY_FIX.capsOff);
     // key words in these modes already include every number, and a key word
     // takes the Highlight colour — a separate number colour cannot show
     var kwMode = ($('c-kw-mode') && $('c-kw-mode').value) || 'smart';
     setWhy('c-numon', (!sweepOwns && cchk('c-kw') && /^(smart|numbers|all)$/.test(kwMode))
-      ? 'Your 🔑 key words already include numbers — they take the Highlight colour (turn key words off to colour numbers apart)' : null);
+      ? 'Your 🔑 key words already include numbers — they take the Highlight colour (turn key words off to colour numbers apart)' : null, WHY_FIX.kwOff);
   }
 
   /* CONTENT DEMOS. Some controls act on what a caption SAYS: line spacing /
@@ -6364,10 +6446,14 @@
     emphasis: ['Stop scrolling now because this secret changes everything instantly',
                'Stop यह secret सच में everything बदल देगा'],
     numbers:  ['I made $5,000 in 30 days with 3 simple edits',
-               'मैंने 30 दिन में ₹50,000 कमाए 3 आसान तरीकों से']
+               'मैंने 30 दिन में ₹50,000 कमाए 3 आसान तरीकों से'],
+    // a caption about money / growth, so ✨ Auto-emoji has something to add
+    emoji:    ['My business made more money this year',
+               'इस साल business में money दोगुना हुआ']
   };
   var DEMO_FOR = { 'c-linegap': 'layout', 'c-maxwidth': 'layout', 'c-lines': 'layout', 'c-emphasize': 'emphasis',
-                   'c-numon': 'numbers', 'c-num': 'numbers', 'c-brandon': 'brand', 'c-brand': 'brand', 'c-brand-words': 'brand' };
+                   'c-numon': 'numbers', 'c-num': 'numbers', 'c-brandon': 'brand', 'c-brand': 'brand', 'c-brand-words': 'brand',
+                   'c-emoji': 'emoji', 'c-kwcaps': 'emphasis' };
   function previewDemoText(kind, p) {
     var hi = !!(p && p.script === 'deva');
     if (kind === 'brand') {
@@ -6413,17 +6499,26 @@
   }
 
   // Two-part customizer: 🎨 Style vs ✨ Effects & Pro, switched in the same panel.
+  /* Show one pane and light its tab. Used by the tabs AND by the caption type:
+     ✏️ Editable has no Effects tab, so picking it while Effects was open used
+     to leave an empty editor (5 controls) with no tab bar to get back. */
+  function showCustPane(pane) {
+    pane = (pane === 'pro') ? 'pro' : 'style';
+    var tabs = $('cust-tabs');
+    if (tabs) {
+      var btns = tabs.getElementsByTagName('button');
+      for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('on', btns[i].getAttribute('data-pane') === pane);
+    }
+    var ps = $('cust-pane-style'), pp = $('cust-pane-pro');
+    if (ps) ps.classList.toggle('hidden', pane !== 'style');
+    if (pp) pp.classList.toggle('hidden', pane !== 'pro');
+  }
   function wireCustomizerTabs() {
     var tabs = $('cust-tabs'); if (!tabs) return;
     tabs.addEventListener('click', function (e) {
       var b = e.target; while (b && b !== tabs && b.tagName !== 'BUTTON') b = b.parentNode;
       if (!b || b.tagName !== 'BUTTON' || !b.getAttribute('data-pane')) return;
-      var pane = b.getAttribute('data-pane');
-      var btns = tabs.getElementsByTagName('button');
-      for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('on', btns[i] === b);
-      var ps = $('cust-pane-style'), pp = $('cust-pane-pro');
-      if (ps) ps.classList.toggle('hidden', pane !== 'style');
-      if (pp) pp.classList.toggle('hidden', pane !== 'pro');
+      showCustPane(b.getAttribute('data-pane'));
     });
   }
 
@@ -6450,7 +6545,9 @@
                'c-boxstroke-on', 'c-boxstroke', 'c-boxstrokew', 'c-boxglow-on', 'c-boxglow',
                'c-box3d-depth', 'c-box3d', 'c-boxgloss',
                // auto-emoji was read by the preview but never triggered a repaint
-               'c-emoji'];
+               'c-emoji',
+               // 🔠 CAPS on key words: never repainted, never saved, never audited
+               'c-kwcaps'];
     // Exposed so the dead-control audit enumerates the REAL bound list instead
     // of a hand-written copy that silently goes stale (Words-per-line sat
     // outside the old 16-control list and was dead for months).
@@ -6565,7 +6662,7 @@
       var w = parseInt($('c-words').value, 10) || 0;
       setWordCount(w === 0 ? 1 : 0); renderPreview();
     });
-    $('c-sync').addEventListener('change', updateSyncStat);
+    $('c-sync').addEventListener('change', function () { updateSyncStat(); if (_booted) saveLook(); });
     // Highlight-timing nudge: pull every word cue earlier/later (±50ms steps) so
     // the box can be locked onto the voice when the ASR/audio timing runs a touch
     // ahead or behind. Persisted with the rest of the look.
@@ -7305,10 +7402,50 @@
     else ln.classList.add('hidden');
   }
 
+  /* Every other setting the style editor holds, saved by id so a change the
+     owner made (box roundness, line spacing, two-colour text, 🔠 CAPS on key
+     words, auto-emoji…) is still there after Premiere reopens. The settings
+     saved by name in saveLook are not repeated here. */
+  var LOOK_CTL_IDS = ['c-wordpop', 'c-multicolor', 'c-hl2', 'c-hl3', 'c-grad', 'c-fill2', 'c-hlgrad', 'c-hl2g',
+    'c-glossy', 'c-hlserif', 'c-hlglow', 'c-subscale', 'c-wordsperline', 'c-box-opacity', 'c-box-pad',
+    'c-box-radius', 'c-shadow-dx', 'c-shadow-dy', 'c-wordspace', 'c-linegap', 'c-maxwidth', 'c-emphasize',
+    'c-strippunct', 'c-perword', 'c-perword-style', 'c-dimupcoming', 'c-boxgrad', 'c-box2', 'c-case',
+    'c-censor', 'c-numon', 'c-num', 'c-brandon', 'c-brand', 'c-brand-words', 'c-boxstroke-on', 'c-boxstroke',
+    'c-boxstrokew', 'c-boxglow-on', 'c-boxglow', 'c-box3d-depth', 'c-box3d', 'c-boxgloss',
+    'c-emoji', 'c-kwcaps', 'c-sync'];
+  function readLookCtl() {
+    var out = {};
+    for (var i = 0; i < LOOK_CTL_IDS.length; i++) {
+      var e = $(LOOK_CTL_IDS[i]); if (!e) continue;
+      out[LOOK_CTL_IDS[i]] = (e.type === 'checkbox') ? !!e.checked : String(e.value);
+    }
+    return out;
+  }
+  /* The option rows these switches open follow them (setting .checked fires
+     no change event, so a restored switch would sit next to a closed row). */
+  function syncOptionRows() {
+    var rows = { 'c-grad': 'c-grad-opts', 'c-hlgrad': 'c-hlgrad-opts', 'c-multicolor': 'c-multicolor-opts',
+      'c-boxgrad': 'c-boxgrad-opts', 'c-boxstroke-on': 'c-boxstroke-opts', 'c-boxglow-on': 'c-boxglow-opts',
+      'c-numon': 'c-num-opts', 'c-brandon': 'c-brand-opts', 'c-perword': 'c-perword-style-wrap' };
+    for (var k in rows) if (rows.hasOwnProperty(k) && $(k) && $(rows[k])) $(rows[k]).style.display = $(k).checked ? '' : 'none';
+  }
+  function applyLookCtl(ctl) {
+    if (!ctl) return;
+    for (var i = 0; i < LOOK_CTL_IDS.length; i++) {
+      var id = LOOK_CTL_IDS[i], e = $(id);
+      if (!e || !ctl.hasOwnProperty(id)) continue;
+      if (e.type === 'checkbox') e.checked = !!ctl[id];
+      else if (e.tagName === 'SELECT') { for (var o = 0; o < e.options.length; o++) if (e.options[o].value === ctl[id]) { e.value = ctl[id]; break; } }
+      else e.value = ctl[id];
+    }
+    syncOptionRows();
+  }
+
   /* Remember the user's caption look between sessions. */
   function saveLook() {
     try {
       localStorage.setItem(LOOK_KEY, JSON.stringify({
+        ctl: readLookCtl(),
         presetId: state.presetId, animId: state.animId,
         font: $('c-font').value, words: $('c-words').value,
         size: $('c-size').value, pos: $('c-pos').value,
@@ -7336,6 +7473,13 @@
     try { look = JSON.parse(localStorage.getItem(LOOK_KEY)); } catch (e) { return; }
     if (!look) return;
     try {
+      // The picked style FIRST, then the saved settings over it. Boot seeds the
+      // default style (Bold Statement); only presetId used to be restored, so
+      // every setting not saved by name kept the default style's value — 37 of
+      // 41 styles looked different after Premiere reopened (the spoken word
+      // 14% bigger on 33 of them, Hindi Podcast Bar lost its see-through box).
+      var lp = look.presetId ? findTemplate(look.presetId) : null;
+      if (lp && !lp.mogrt && lp.id === look.presetId) applyTemplate(lp, { silent: true });
       if (look.font && look.font !== '__custom__') setFontValue(look.font);
       if (look.size != null) $('c-size').value = look.size;
       if (look.pos != null) { $('c-pos').value = look.pos; setLayoutButton(look.pos); }
@@ -7372,6 +7516,7 @@
         if ($('c-off-num')) $('c-off-num').textContent = (ms > 0 ? '+' : '') + (ms / 1000).toFixed(2) + 's';
       }
       if (look.words != null) setWordCount(parseInt(look.words, 10) || 0);
+      applyLookCtl(look.ctl);
       if (look.capOut) setCapOut(look.capOut);
       if (look.entrance) {
         state.captionEntrance = look.entrance;
@@ -7590,6 +7735,7 @@
     var s = String(text == null ? '' : text);
     if (mode === 'upper' || mode === true) return s.toUpperCase();
     if (mode === 'lower') return s.toLowerCase();
+    if (mode === 'sentence') return s.toLowerCase().replace(/[a-z]/, function (c) { return c.toUpperCase(); });
     if (mode === 'title') return s.replace(/\S+/g, function (w) { return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(); });
     return s;   // 'as-spoken' / false / undefined
   }
@@ -7750,12 +7896,22 @@
       ? 'Adds Premiere graphics you can retype in Premiere'
       : 'Adds your captions in the style you picked — exact look, always lined up';
   }
+  /* The Styles editor's Text case (#c-case) as a textCues case mode. ✏️
+     Editable captions used to read the 📁 Upload view's case instead, so
+     changing Text case here changed nothing on the timeline. */
+  function editorTextCase() {
+    var v = ($('c-case') && $('c-case').value) || 'original';
+    return (v === 'original') ? 'as-spoken' : v;   // upper · lower · title · sentence
+  }
   /* Single source of truth for the caption type: sets the value, lights the
      right chip and relabels the main button. Used by clicks AND by restore. */
   function setCapOut(v) {
     _capOut = (v === 'editable') ? 'editable' : 'png';
     // Show/hide the controls that only exist for the Pulse-rendered path.
     try { document.body.classList.toggle('cap-editable', _capOut === 'editable'); } catch (eCls) {}
+    // Editable has no ✨ Effects tab: always land on the Style controls
+    if (_capOut === 'editable') { try { showCustPane('style'); } catch (ePane) {} }
+    try { updateHiddenCountLine(); } catch (eHc) {}
     var box = $('cap-output');
     if (box) {
       var bs = box.querySelectorAll('button');
@@ -7772,7 +7928,36 @@
     } catch (ePt) {}
     try { renderPreview(); } catch (ePv) {}
   }
+  /* How many settings ✏️ Editable hides (the .png-only ones in the style
+     editor), said in one line under Caption type with a one-tap way back.
+     A segmented choice counts once; a colour swatch counts once. */
+  function countPulseOnlySettings() {
+    var root = $('view-editor'); if (!root) return 0;
+    var seen = [], n = 0;
+    var els = root.querySelectorAll('input, select, textarea, .seg-control, label.sw, .anim-rail');
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      if (el.type === 'hidden' && !(el.closest && el.closest('label.sw'))) continue;
+      if (el.closest && el.closest('label.sw') && el.tagName !== 'LABEL') continue;   // the swatch counts, not its input
+      if (el.classList && el.classList.contains('hidden') && el.tagName === 'INPUT') continue;   // backing inputs
+      if (!(el.closest && el.closest('.png-only'))) continue;
+      if (el.closest('.cap-type-block')) continue;
+      if (seen.indexOf(el) >= 0) continue;
+      seen.push(el); n++;
+    }
+    return n;
+  }
+  function updateHiddenCountLine() {
+    var n = $('cap-hidden-n'); if (!n) return;
+    n.textContent = String(countPulseOnlySettings());
+  }
   (function wireCapOutput() {
+    var back = $('btn-cap-to-pulse');
+    if (back) back.addEventListener('click', function () {
+      setCapOut('png');
+      saveLook();
+      toast('Caption type is now ✨ Pulse-rendered — every setting is back.');
+    });
     var box = $('cap-output'); if (!box) return;
     var btns = box.querySelectorAll('button');
     for (var i = 0; i < btns.length; i++) btns[i].addEventListener('click', function () {
@@ -10140,7 +10325,7 @@
       // Was a bare text node: "No editable controls found." - true, but it never
       // said WHY or what to do, which read as the panel being broken.
       var np = document.createElement('p'); np.className = 'hint';
-      np.textContent = 'This template has no editable controls. An .mogrt can only offer what its designer built into it in After Effects — this one exposes nothing, so it will be inserted exactly as authored. For full control over colours, font, size, outline and animation, use a Pulse style instead (≡ Browse styles).';
+      np.textContent = 'This template has no editable controls. An .mogrt can only offer what its designer built into it in After Effects — this one exposes nothing, so it will be inserted exactly as authored. For full control over colours, font, size, outline and animation, use a Pulse style instead (🎨 Styles, at the top of Captions).';
       box.appendChild(np);
       return;
     }
@@ -10465,6 +10650,9 @@
     if (ov.boxColor !== undefined) eff.boxColor = ov.boxColor;      // null = box turned off
     if (ov.boxColor2 !== undefined) eff.boxColor2 = ov.boxColor2;
     if (ov.boxOpacity != null) eff.boxOpacity = ov.boxOpacity;
+    // Box roundness reaches the ✏️ Editable caption (its BG Roundness) once the
+    // owner moves it; untouched, the style keeps its own corners
+    if (ov.boxRadius != null && ov.boxRadius !== (preset.boxRadius != null ? preset.boxRadius : 12)) eff.boxRadius = ov.boxRadius;
     if (ov.font) eff.font = ov.font;
     if (ov.weight != null) eff.weight = ov.weight;
     if (ov.uppercase != null) eff.uppercase = ov.uppercase;
@@ -11034,7 +11222,7 @@
     try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
     var words = parseInt($('c-words').value, 10) || 0;
     var caps = !!($('c-upper') && $('c-upper').checked) || !!preset.uppercase;
-    var caseMode = caps ? 'upper' : (state.mogrtCase || 'as-spoken');
+    var caseMode = caps ? 'upper' : editorTextCase();
     var tcues = textCues(cues, words, caseMode);
     if (!tcues.length) return toast('No caption lines to add.', true);
     // Place the subtitle template at its OWN designed size, scaled by the Size

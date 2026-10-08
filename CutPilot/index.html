@@ -211,14 +211,14 @@
       <details class="advanced lib-more" id="lib-more">
         <summary>More gallery options</summary>
         <div class="lib-toolbar">
-          <select id="lib-sort" class="png-only" aria-label="Sort styles">
+          <select id="lib-sort" aria-label="Sort styles">
             <option value="popular">Popular</option>
             <option value="recent">Recent</option>
             <option value="favorites">Favorites</option>
             <option value="az">A–Z</option>
           </select>
         </div>
-        <div class="niche-row png-only">
+        <div class="niche-row">
           <span class="dim">✨ Suggest for</span>
           <select id="lib-niche">
             <option value="">choose your content…</option>
@@ -320,15 +320,28 @@
         <!-- the back button above replaces this; kept for scripts -->
         <button id="btn-browse-styles" class="chip-btn step-action ui-offstage" type="button">≡ Browse styles</button>
 
+        <!-- Caption type sits FIRST: it decides which settings below exist, so
+             it used to hide ~40 of them from ~2,000 px further down -->
+        <div class="cap-type-block" id="cap-type-block">
+        <span class="field-label">Caption type <button class="info" type="button" data-info="capout-info" aria-label="Which caption type?">ⓘ</button></span>
+        <div class="seg-control" id="cap-output" style="margin-bottom:6px">
+          <button data-out="png" class="on" type="button">✨ Pulse-rendered</button>
+          <button data-out="editable" type="button">✏️ Editable</button>
+        </div>
+        <div class="info-pop hidden" id="capout-info">✨ <b>Pulse-rendered</b>: box, words and the word highlight are drawn together — always lined up, exactly your colours. You can still fix any word later from Pulse. ✏️ <b>Editable</b>: Premiere graphics you retype in Premiere itself (needs the template to behave on your Mac).</div>
+        <p class="hint png-only" style="margin:0 0 8px">Exact look, fixable any time from Pulse.</p>
+        <p class="hint editable-only cap-hidden-line" id="cap-hidden-line">✏️ Editable hides <b id="cap-hidden-n">some</b> Pulse-only settings. <button type="button" class="link-btn" id="btn-cap-to-pulse">Show them: switch to ✨ Pulse-rendered</button></p>
+        </div>
+
         <div id="wc-block" class="wc-bar">
           <span class="wc-label">Words per caption</span>
           <button class="wc-btn" id="wc-minus" type="button" aria-label="Fewer words">−</button>
           <b id="wc-num">Auto</b>
           <button class="wc-btn" id="wc-plus" type="button" aria-label="More words">+</button>
-          <button class="chip-btn" id="wc-full" type="button" title="Whole sentences, sized to your video automatically">✨ Auto</button>
+          <button class="chip-btn" id="wc-full" type="button" title="Auto: whole phrases, fitted to your video">✨ Auto</button>
         </div>
-        <label class="check sync-line png-only"><input type="checkbox" id="c-sync" checked> 🎯 Match words to the voice <span id="sync-stat" class="dim"></span></label>
-        <div class="wc-bar sync-nudge png-only" id="sync-nudge">
+        <label class="check sync-line"><input type="checkbox" id="c-sync" checked> 🎯 Match words to the voice <span id="sync-stat" class="dim"></span></label>
+        <div class="wc-bar sync-nudge" id="sync-nudge">
           <span class="wc-label">Highlight timing</span>
           <button class="wc-btn" id="c-off-minus" type="button" title="Highlight comes earlier (−0.05s per tap)" aria-label="Earlier">−</button>
           <b id="c-off-num">−0.06s</b>
@@ -371,6 +384,15 @@
                 <input type="range" id="c-weight" min="100" max="900" step="100" value="800">
               </label>
               <label class="check"><input type="checkbox" id="c-upper" checked> ALL CAPS</label>
+              <label>Text case
+                <select id="c-case">
+                  <option value="original">Original</option>
+                  <option value="upper">UPPERCASE</option>
+                  <option value="title">Title Case</option>
+                  <option value="sentence">Sentence case</option>
+                  <option value="lower">lowercase</option>
+                </select>
+              </label>
             </div>
 
             <!-- 🎨 COLOURS — everything here carries onto the editable caption clip -->
@@ -382,16 +404,34 @@
                 <label class="sw png-only" id="sw-stroke">Outline<span class="cp-mount" data-for="c-stroke"></span><input type="hidden" id="c-stroke" value="#000000"></label>
                 <label class="sw" id="sw-box">Box<span class="cp-mount" data-for="c-box"></span><input type="hidden" id="c-box" value="#ff3b6b"></label>
               </div>
+              <!-- the outline's width sits by its colour (it was on the Effects
+                   tab, so the colour looked missing on most styles) -->
+              <label class="png-only" id="c-strokew-wrap">Outline width <span class="val" id="c-strokew-val"></span>
+                <input type="range" id="c-strokew" min="0" max="24" value="10">
+              </label>
               <label class="check" title="The spoken word lights up in the Highlight colour"><input type="checkbox" id="c-wordhl" checked> ✨ Word-by-word highlight</label>
               <label class="check"><input type="checkbox" id="c-box-on"> 🟦 Box behind text</label>
               <label id="c-box-opacity-wrap">Box see-through <span class="val" id="c-box-opacity-val"></span>
                 <input type="range" id="c-box-opacity" min="20" max="100" value="100">
+              </label>
+              <label id="c-box-radius-wrap">Box roundness <span class="val" id="c-box-radius-val"></span>
+                <input type="range" id="c-box-radius" min="0" max="60" value="12">
               </label>
               <label class="check"><input type="checkbox" id="c-shadow-on"> 🌑 Soft shadow</label>
               <div class="ctrl-row hidden" id="c-shadow-row">
                 <label>Shadow colour<span class="cp-mount" data-for="c-shadow"></span><input type="hidden" id="c-shadow" value="#000000"></label>
                 <label>Shadow strength <span class="val" id="c-shadow-blur-val"></span>
                   <input type="range" id="c-shadow-blur" min="0" max="120" value="35">
+                </label>
+              </div>
+              <!-- the shadow's direction sits with the shadow (it was alone on
+                   the Effects tab once the outline width moved here) -->
+              <div class="ctrl-row hidden png-only" id="c-shadow-offset-row">
+                <label>Shadow left/right <span class="val" id="c-shadow-dx-val"></span>
+                  <input type="range" id="c-shadow-dx" min="-30" max="30" value="0">
+                </label>
+                <label>Shadow up/down <span class="val" id="c-shadow-dy-val"></span>
+                  <input type="range" id="c-shadow-dy" min="-30" max="30" value="0">
                 </label>
               </div>
               <label class="check" title="The spoken word sweeps Highlight → 2nd colour"><input type="checkbox" id="c-hlgrad"> 🌈 Two-colour highlight</label>
@@ -491,23 +531,6 @@
 
             </div><!-- /cust-pane-style -->
             <div id="cust-pane-pro" class="cust-pane hidden png-only">
-            <!-- ✨ EFFECTS -->
-            <div class="cust-group">
-              <div class="cust-group-title">✨ Effects</div>
-              <label>Outline width <span class="val" id="c-strokew-val"></span>
-                <input type="range" id="c-strokew" min="0" max="24" value="10">
-              </label>
-              <div class="ctrl-row hidden" id="c-shadow-offset-row">
-                <label>Shadow left/right <span class="val" id="c-shadow-dx-val"></span>
-                  <input type="range" id="c-shadow-dx" min="-30" max="30" value="0">
-                </label>
-                <label>Shadow up/down <span class="val" id="c-shadow-dy-val"></span>
-                  <input type="range" id="c-shadow-dy" min="-30" max="30" value="0">
-                </label>
-              </div>
-              <p class="hint" style="margin:2px 0 0">A low shadow strength + an offset gives a clean hard drop.</p>
-            </div>
-
             <!-- 🎛️ PRO CONTROLS -->
             <div class="cust-group">
               <div class="cust-group-title">🎛️ Fine polish</div>
@@ -522,11 +545,6 @@
                 <label class="sw">Box bottom<span class="cp-mount" data-for="c-box2"></span><input type="hidden" id="c-box2" value="#1b1b1b"></label>
               </div>
 
-              <div class="ctrl-row">
-                <label>Box roundness <span class="val" id="c-box-radius-val"></span>
-                  <input type="range" id="c-box-radius" min="0" max="60" value="12">
-                </label>
-              </div>
               <label>Box padding <span class="val" id="c-box-pad-val"></span>
                 <input type="range" id="c-box-pad" min="50" max="200" value="100">
               </label>
@@ -596,15 +614,6 @@
             <!-- 🎯 SMART TEXT -->
             <div class="cust-group">
               <div class="cust-group-title">🎯 Smart text</div>
-              <label>Text case
-                <select id="c-case">
-                  <option value="original">Original</option>
-                  <option value="upper">UPPERCASE</option>
-                  <option value="title">Title Case</option>
-                  <option value="sentence">Sentence case</option>
-                  <option value="lower">lowercase</option>
-                </select>
-              </label>
               <label class="check"><input type="checkbox" id="c-censor"> 🤬 Hide swear words <span class="dim">(f***, s***)</span></label>
               <label class="check"><input type="checkbox" id="c-numon"> 🔢 Colour numbers &amp; money <span class="dim">(₹1L, 50%, 2026)</span></label>
               <div class="swatches" id="c-num-opts" style="display:none">
@@ -651,13 +660,6 @@
         </details>
 
         <div id="legibility-note" class="legibility-note hidden"></div>
-        <span class="field-label">Caption type <button class="info" type="button" data-info="capout-info" aria-label="Which caption type?">ⓘ</button></span>
-        <div class="seg-control" id="cap-output" style="margin-bottom:6px">
-          <button data-out="png" class="on" type="button">✨ Pulse-rendered</button>
-          <button data-out="editable" type="button">✏️ Editable</button>
-        </div>
-        <div class="info-pop hidden" id="capout-info">✨ <b>Pulse-rendered</b>: box, words and the word highlight are drawn together — always lined up, exactly your colours. You can still fix any word later from Pulse. ✏️ <b>Editable</b>: Premiere graphics you retype in Premiere itself (needs the template to behave on your Mac).</div>
-        <p class="hint" style="margin:0 0 8px">Exact look, fixable any time from Pulse.</p>
 
         <span class="field-label png-only">Word animation</span>
         <div class="seg-control png-only" id="cap-reveal" style="margin-bottom:8px">
