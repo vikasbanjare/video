@@ -375,15 +375,20 @@ function readPng(buf) {
 
 /* Decode frame numbers `ns` (ascending) of a video as RGBA buffers. */
 function decodeFrames(ff, movPath, ns, W, H) {
-  const sel = ns.map(n => 'eq(n\\,' + n + ')').join('+');
+  // ffmpeg's select filter hands the frames back in STREAM order (and each
+  // once), whatever order they were asked in: decode the sorted, distinct
+  // numbers and give every asked n its own frame. Positional mapping compared
+  // the wrong frames as soon as a caller asked out of order.
+  const want = Array.from(new Set(ns)).sort((a, b) => a - b);
+  const sel = want.map(n => 'eq(n\\,' + n + ')').join('+');
   const r = cp.spawnSync(ff, ['-loglevel', 'error', '-i', movPath, '-vf', "select='" + sel + "'", '-vsync', '0',
     '-f', 'rawvideo', '-pix_fmt', 'rgba', '-'], { maxBuffer: 1 << 30 });
-  const fsz = W * H * 4, out = [];
-  for (let i = 0; i < ns.length; i++) {
+  const fsz = W * H * 4, byN = {};
+  for (let i = 0; i < want.length; i++) {
     const b = r.stdout ? r.stdout.subarray(i * fsz, (i + 1) * fsz) : null;
-    out.push(b && b.length === fsz ? b : null);
+    byN[want[i]] = (b && b.length === fsz) ? b : null;
   }
-  return out;
+  return ns.map(n => byN[n] || null);
 }
 
 /* Pixel difference, alpha-weighted (colour under a transparent pixel does not

@@ -66,7 +66,7 @@ const VERBOSE = process.argv.indexOf('--verbose') >= 0;
    them is verified to reach the render by other gates. Keep this list short and
    justified; a control landing here without a real reason is a bug in hiding. */
 const CANNOT_SHOW = {
-  'c-emoji':         'auto-emoji fires on transcript keywords; the fixed sample phrase has none',
+  'c-emoji':         'auto-emoji fires only on captions about money, growth, ideas…; most sample phrases mention none',
   'c-strippunct':    'the sample phrases carry no punctuation to strip',
   'c-censor':        'the sample phrases contain no profanity to mask',
   'c-speaker':       'speaker labels need cues carrying speaker identity; a one-line sample has none',

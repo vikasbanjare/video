@@ -2308,5 +2308,39 @@ console.log('host.jsx — CP_previewMogrt trims a 30s template to the preview wi
   assert(blob.textEditValue === 'Make every word count', 'preview clip carries the sample words');
 }
 
+// ═══ Premiere's own caption track from Pulse's .srt: asks for SUBTITLE
+//     captions by name and calls it a track only when Premiere says true ═══
+console.log('host.jsx — CP_importSrtCaptions (Premiere\'s own caption track)');
+{
+  function srtWorld(answer, withEnum) {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    const kids = [], calls = [];
+    w.sandbox.app.project.rootItem = {
+      children: new Proxy({}, { get(t, k) { if (k === 'numItems') return kids.length; const n = Number(k); return Number.isInteger(n) ? kids[n] : undefined; } })
+    };
+    w.sandbox.app.project.importFiles = function (paths) {
+      Array.from(paths).forEach(p => kids.push({ name: String(p).split('/').pop(), getMediaPath() { return String(p); } }));
+      return true;
+    };
+    w.sandbox.app.project.activeSequence.createCaptionTrack = function (item, at, fmt) {
+      calls.push({ args: arguments.length, at, fmt, item: item && item.name });
+      return answer;
+    };
+    if (withEnum) w.sandbox.Sequence = { CAPTION_FORMAT_SUBTITLE: 0, CAPTION_FORMAT_708: 2 };
+    return { host: loadHost(w), calls };
+  }
+  const yes = srtWorld(true, true);
+  const r1 = call(yes.host, 'CP_importSrtCaptions', { srtPath: '/tmp/cutpilot-1.srt' });
+  assert(r1.ok === true && r1.captionTrackCreated === true, 'a track Premiere confirms (true) is reported as made');
+  assert(yes.calls.length === 1 && yes.calls[0].args === 3 && yes.calls[0].fmt === 0 && yes.calls[0].item === 'cutpilot-1.srt',
+    'the SUBTITLE format is asked for by name (CAPTION_FORMAT_SUBTITLE, even when it is 0): ' + JSON.stringify(yes.calls));
+  const vague = srtWorld(undefined, true);
+  const r2 = call(vague.host, 'CP_importSrtCaptions', { srtPath: '/tmp/cutpilot-2.srt' });
+  assert(r2.ok === true && r2.captionTrackCreated === false, 'an answer that is not true is NOT reported as a caption track');
+  const old = srtWorld(true, false);
+  const r3 = call(old.host, 'CP_importSrtCaptions', { srtPath: '/tmp/cutpilot-3.srt' });
+  assert(r3.captionTrackCreated === true && old.calls[0].args === 2, 'a Premiere without the format names gets the plain two-argument call');
+}
+
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

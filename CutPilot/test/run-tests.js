@@ -194,7 +194,10 @@ console.log('captions.js');
   // reveal animation: words accumulate one at a time, newest word = active (pops)
   const rv = CPCaptions.buildCaptionFrames([{ start: 0, end: 3, text: 'one two three' }], { anim: 'reveal', wordsPerCue: 3 });
   assert(rv.length === 3, 'reveal emits one frame per word');
-  assert(rv[0].words.length === 1 && rv[1].words.length === 2 && rv[2].words.length === 3, 'reveal grows the phrase word-by-word');
+  // (every frame carries the WHOLE caption so it is laid out once and never
+  // moves; `reveal` says how many of its words are drawn so far)
+  assert(rv[0].reveal === 1 && rv[1].reveal === 2 && rv[2].reveal === 3 && rv[2].words.length === 3,
+         'reveal grows the phrase word-by-word');
   assert(rv[0].active === 0 && rv[2].active === 2, 'reveal marks the newest word active (it pops)');
   // karaoke still shows the whole phrase from the first frame (sweep, not grow)
   const ka = CPCaptions.buildCaptionFrames([{ start: 0, end: 3, text: 'one two three' }], { anim: 'karaoke', wordsPerCue: 3 });
@@ -204,7 +207,9 @@ console.log('captions.js');
   assert(CPCaptions.enrichCaptionText('I made money') === 'I made money 💰', 'auto-emoji appends an emoji after a keyword');
   assert(CPCaptions.enrichCaptionText('plain words here') === 'plain words here', 'auto-emoji leaves non-keywords alone');
   const emf = CPCaptions.buildCaptionFrames([{ start: 0, end: 2, text: 'big money today' }], { emoji: true });
-  assert(emf[0].words.indexOf('💰') !== -1, 'emoji option injects the emoji as a token');
+  // one fitting emoji per caption, kept on the caption's last word so a line
+  // break can never strand it on a line of its own
+  assert(emf[0].words.join(' ').indexOf('💰') !== -1 && emf[0].words.length === 3, 'emoji option adds the emoji to the caption');
   const vir = CPCaptions.buildCaptionFrames([{ start: 0, end: 2, text: 'the secret profit' }], { keyword: { on: true, mode: 'smart' } });
   assert(vir[0].highlightSet && vir[0].highlightSet.filter(Boolean).length >= 1, 'viral words (secret/profit) get highlighted in smart mode');
 }
@@ -653,7 +658,7 @@ console.log('captions.js (audio sync)');
 
   // reveal grows the phrase, newest word active, still on real word timing
   const rvf = CPCaptions.buildCaptionFrames(phrase, { anim: 'reveal', wordsPerCue: 3, wordCues: realWords });
-  assert(rvf.length === 3 && rvf[0].words.length === 1 && rvf[2].words.length === 3, 'reveal: phrase grows word by word');
+  assert(rvf.length === 3 && rvf[0].reveal === 1 && rvf[2].reveal === 3 && rvf[0].words.length === 3, 'reveal: phrase grows word by word');
   assert(close(rvf[2].start, 1.50, 1e-6), 'reveal: newest word appears at its real spoken time');
 
   // word-following styles must light ONLY the active word — no keyword boxes
@@ -1564,18 +1569,21 @@ console.log('ass.js (libass karaoke generator)');
   assert(ov.join(' ').indexOf('color=c=black@0.0:s=1080x1920') >= 0 && ov.join(' ').indexOf('alpha=1') >= 0 &&
          ov.indexOf('qtrle') >= 0, 'ffmpegOverlayArgs renders a transparent qtrle overlay at the sequence size');
 
-  // groupWordEvents: the WIRED grouping keeps a sentence whole across a mid-pause
+  // groupWordEvents: the long-video fallback groups with the SAME rules as the
+  // Pulse-rendered captions — a sentence end or a pause of 0.5 s or more starts
+  // a new caption (it used to keep "What is … your name?" across 1.15 s of
+  // silence, showing "your name?" over a second before it was said)
   const wc = [
     { text: 'What', start: 0.0, end: 0.3 }, { text: 'is', start: 0.3, end: 0.55 },
     { text: 'your', start: 1.7, end: 2.0 }, { text: 'name?', start: 2.0, end: 2.4 },   // 1.15s pause inside
     { text: 'I', start: 2.7, end: 2.9 }, { text: 'am', start: 2.9, end: 3.1 }, { text: 'Victor.', start: 3.1, end: 3.7 }
   ];
   const ev = CPCaptions.groupWordEvents(wc, { perCue: 0, maxChars: 34 });
-  assert(ev.length === 2, 'groupWordEvents splits into 2 sentences');
-  assert(ev[0].words.map(w => w.text).join(' ') === 'What is your name?',
-    'groupWordEvents keeps "What is your name?" whole across the mid-sentence pause');
-  assert(ev[1].words.map(w => w.text).join(' ') === 'I am Victor.', 'groupWordEvents starts a fresh event per sentence');
-  assert(ev[0].words[2].text === 'your' && close(ev[0].words[2].start, 1.7),
+  assert(ev.length === 3, 'groupWordEvents splits at the 1.15 s pause and at the sentence end');
+  assert(ev[0].words.map(w => w.text).join(' ') === 'What is' && ev[1].words.map(w => w.text).join(' ') === 'your name?',
+    'groupWordEvents never holds a caption across a real pause');
+  assert(ev[2].words.map(w => w.text).join(' ') === 'I am Victor.', 'groupWordEvents starts a fresh event per sentence');
+  assert(ev[1].words[0].text === 'your' && close(ev[1].words[0].start, 1.7),
     'groupWordEvents preserves each word\'s real timing for the highlight');
 }
 
@@ -1910,7 +1918,10 @@ console.log('word highlight rides the SPOKEN word (and the frame count stays san
     if (String((f.words || [])[f.active]) !== String(spoken.text)) wrong++;
   });
   assert(wrong === 0, 'every frame highlights the word actually being spoken (' + wrong + ' mismatched)');
-  assert(Math.abs(cover - 2.6) < 0.08, 'frames cover the whole cue with no gap (' + cover.toFixed(2) + 's of 2.60s)');
+  // every spoken moment is covered; the two captions sit exactly 2 frames
+  // apart (30 fps) and the last one holds 0.5 s after its last word
+  assert(Math.abs(cover - (2.6 - 2 / 30 + 0.5)) < 0.08,
+    'frames cover the whole cue, 2 frames between captions, 0.5 s after the last word (' + cover.toFixed(2) + 's of 3.03s)');
 
   // SCALE: word-by-word rendering writes one image per word. Measure what a
   // real video costs so the panel can switch to a single overlay clip instead
@@ -1945,6 +1956,104 @@ console.log('caption timing (no flashes, no two captions at once)');
   // out-of-order input is sorted before any of the above is applied
   const unsorted = E([{ start: 5, end: 6, text: 'late' }, { start: 0, end: 1, text: 'early' }]);
   assert(unsorted[0].text === 'early' && unsorted[1].text === 'late', 'cues are time-ordered');
+}
+
+// ---- one caption grouper + timer + layout for every path -------------------
+console.log('caption grouping, timing and fit (sentence ends, pauses, 7 s, 2-frame gaps, Hindi grammar)');
+{
+  const C = CPCaptions;
+  // grammar: where a caption / a line may break
+  assert(C.lineBreakCost('YouTube', 'par') === Infinity && C.lineBreakCost('मेज़', 'पर') === Infinity,
+    'never break before a postposition (YouTube | par, मेज़ | पर)');
+  assert(C.lineBreakCost('kar', 'rahe') === Infinity && C.lineBreakCost('jaa', 'sakta') === Infinity && C.lineBreakCost('बैठ', 'गए') === Infinity,
+    'never break before an auxiliary');
+  assert(C.lineBreakCost('है', '।') === Infinity, 'a danda never starts a line');
+  assert(C.lineBreakCost('rahe', 'the', { hinglish: true }) === Infinity && C.lineBreakCost('saw', 'the', { hinglish: false }) < 2,
+    '"the" after a Hinglish verb is the auxiliary थे; in English it is an article');
+  assert(C.lineBreakCost('hai.', 'Agar') === 0 && C.lineBreakCost('bhai,', 'consistency') < 0.5, 'after a sentence end or a comma is the best break');
+  assert(C.lineBreakCost('content', 'aur') < 1 && C.lineBreakCost('aur', 'content') >= 3, 'break before "aur", never after it');
+  assert(C.lineBreakCost('Rahul', 'ki') === Infinity && C.lineBreakCost('ki', 'shaadi') > 2, '"Rahul ki" stays together; "Rahul ki | shaadi" is a poor break');
+  assert(!C.isSentenceEnd('Dr.') && !C.isSentenceEnd('U.S.') && C.isSentenceEnd('hai।') && C.isSentenceEnd('done.'),
+    '"Dr." and "U.S." do not end a sentence; । does');
+  assert(C.graphemes('हिंदी').length === 2 && C.visLen('हिंदी') < 'हिंदी'.length, 'Hindi is counted in drawn letters, not UTF-16 units');
+  // grouping
+  const ws = 'Main sach bata raha hoon. Pichle hafte humne video YouTube par daala tha aur Rahul ki shaadi mein gaye'
+    .split(' ').map((w, i) => ({ start: i * 0.3, end: i * 0.3 + 0.25, text: w }));
+  const g1 = C.groupCaptionWords(ws, { maxWords: 1 });
+  assert(g1.length === ws.length && g1.every(g => g[1] - g[0] === 1), 'Words per caption 1: one word a caption');
+  const g3 = C.groupCaptionWords(ws, { maxWords: 3 });
+  assert(Math.max.apply(null, g3.map(g => g[1] - g[0])) === 3, 'Words per caption 3: at most — and up to — 3 words');
+  assert(!g3.some(g => g[0] > 0 && C.lineBreakCost(ws[g[0] - 1].text, ws[g[0]].text) === Infinity),
+    'Words per caption 3: no caption starts with a postposition or auxiliary');
+  assert(!g3.some(g => g[0] < 5 && g[1] > 5), 'no caption runs across a sentence end');
+  assert(C.groupCaptionWords(ws, {}).length === 2, 'Auto with no width limit: one caption per sentence');
+  const pz = [{ start: 0, end: 0.3, text: 'one' }, { start: 0.4, end: 0.7, text: 'two' }, { start: 1.3, end: 1.6, text: 'three' }];
+  assert(C.groupCaptionWords(pz, {}).length === 2, 'a 0.6 s pause starts a new caption');
+  const sp = [{ start: 0, end: 0.3, text: 'haan', speaker: 'A' }, { start: 0.32, end: 0.6, text: 'bilkul', speaker: 'A' },
+              { start: 0.62, end: 0.9, text: 'sahi', speaker: 'B' }, { start: 0.92, end: 1.2, text: 'baat', speaker: 'B' }];
+  assert(JSON.stringify(C.groupCaptionWords(sp, {})) === '[[0,2],[2,4]]', 'a change of speaker starts a new caption');
+  const long = [];
+  for (let i = 0; i < 40; i++) long.push({ start: i * 0.3, end: i * 0.3 + 0.28, text: 'w' + String.fromCharCode(97 + i % 26) });
+  const gl = C.groupCaptionWords(long, {});
+  assert(gl.every(g => long[g[1] - 1].end - long[g[0]].start <= 7), 'no caption holds more than 7 s of speech');
+  assert(Math.max.apply(null, gl.map(g => g[1] - g[0])) - Math.min.apply(null, gl.map(g => g[1] - g[0])) <= 1, 'a long run splits evenly');
+  assert(C.groupCaptionWords(ws.slice(0, 5), { fits: (a, b) => b - a <= 2 }).every(g => g[1] - g[0] <= 2), 'a caption only holds words that fit the frame');
+  // timing on the sequence's frames
+  const tc = C.timeCaptions([{ start: 1, end: 1.3, text: 'a' }, { start: 1.32, end: 1.6, text: 'b' }, { start: 3, end: 3.3, text: 'c' }],
+    [[0, 1], [1, 2], [2, 3]], { fps: 25 });
+  assert(tc[1].s - tc[0].e === 2, 'touching captions are pulled exactly 2 frames apart');
+  assert((tc[2].s - tc[1].e) / 25 >= 0.5, 'a real pause stays a gap of at least half a second');
+  assert(tc[1].e === Math.round(1.6 * 25) + Math.round(0.5 * 25), 'the caption before a pause holds 0.5 s after its last word');
+  const chain = C.timeCaptions([{ start: 0, end: 1, text: 'x' }, { start: 1.3, end: 2, text: 'z' }], [[0, 1], [1, 2]], { fps: 30 });
+  assert(chain[1].s - chain[0].e === 2, 'a gap under half a second is closed to exactly 2 frames');
+  const mn = C.timeCaptions([{ start: 0, end: 0.1, text: 'a' }, { start: 0.12, end: 0.2, text: 'b' }, { start: 5, end: 5.2, text: 'c' }],
+    [[0, 2], [2, 3]], { fps: 30 });
+  assert(mn[0].e - mn[0].s >= Math.ceil(0.833 * 30), 'a two-word caption stays at least 0.833 s when silence follows');
+  // reading speed: 54 characters said in 0.9 s need 2.7 s at 20 a second —
+  // the caption stays on into the silence after it (it used to stop 1.5 s
+  // after the last word, still too fast to read)
+  const rd = C.timeCaptions([{ start: 0, end: 0.3, text: 'internationalization' }, { start: 0.32, end: 0.6, text: 'standardization' },
+    { start: 0.62, end: 0.9, text: 'responsibilities.' }], [[0, 3]], { fps: 25 });
+  assert(rd[0].e - rd[0].s >= Math.ceil(54 / 20 * 25), 'a caption spoken too fast to read stays on until it can be read (' + ((rd[0].e - rd[0].s) / 25).toFixed(2) + ' s)');
+  // a split never leaves a quick word flashing by alone when another split avoids it
+  const fl = [{ start: 0.0, end: 0.4, text: 'alpha' }, { start: 0.42, end: 0.8, text: 'bravo' }, { start: 0.82, end: 0.86, text: 'charlie' },
+    { start: 0.88, end: 1.3, text: 'delta' }, { start: 1.32, end: 1.7, text: 'echo.' }];
+  assert(!C.groupCaptionWords(fl, { maxWords: 2 }).some(g => g[1] - g[0] === 1 && g[0] === 2),
+    'a 40 ms word is not left as a caption of its own when the sentence splits another way: ' + JSON.stringify(C.groupCaptionWords(fl, { maxWords: 2 })));
+  // no word is ever dropped
+  const zl = CPCaptions.mediaToTimeline([{ start: 2, end: 2, text: 'ki' }, { start: 2.01, end: 2.05, text: 'na' }], [{ inPoint: 0, outPoint: 10, seqStart: 0 }]);
+  assert(zl.length === 2, 'zero-length and 40 ms words survive placement on the timeline');
+  const fr0 = C.buildCaptionFrames([{ start: 0, end: 1, text: 'main ki na hai bolunga' }], { anim: 'karaoke', wordsPerCue: 1, wordCues: [
+    { start: 0, end: 0.3, text: 'main' }, { start: 0.3, end: 0.3, text: 'ki' }, { start: 0.32, end: 0.36, text: 'na' },
+    { start: 0.4, end: 0.5, text: 'hai' }, { start: 0.5, end: 0.9, text: 'bolunga' }] });
+  assert(fr0.map(f => f.words[0]).join(' ') === 'main ki na hai bolunga', 'every short word gets its own caption');
+  const cl = C.clampWordDurations([{ start: 0, end: 3, text: 'stretched' }, { start: 3.1, end: 3.4, text: 'b' }, { start: 3.5, end: 3.8, text: 'c' }]);
+  assert(cl[0].start > 1.5 && cl[0].end === 3, 'a first word stretched back into the silence is clamped from its front');
+  // emoji and CAPS act on word-timed captions
+  const em = C.buildCaptionFrames([{ start: 0, end: 2, text: 'paisa kamao' }], { anim: 'karaoke', wordsPerCue: 0, emoji: true, capsWords: { kamao: 1 },
+    wordCues: [{ start: 0, end: 0.4, text: 'paisa' }, { start: 0.45, end: 0.9, text: 'kamao' }] });
+  assert(em[0].words.join(' ') === 'paisa KAMAO 💰' && em.length === 2, 'emoji and CAPS on key words reach word-timed frames: ' + em[0].words.join(' '));
+  // Premiere's own caption track
+  const wrapped = C.wrapForNative('Pichle hafte humne apna video YouTube par daala tha yaar', 24);
+  assert(wrapped.split('\n').length === 2 && !/\npar\b/.test(wrapped), 'native captions: two lines, "YouTube par" kept together (' + JSON.stringify(wrapped) + ')');
+  const nat = C.nativeSubtitleCues([{ start: 0, end: 0.4, text: 'Haan.' }, { start: 3, end: 4, text: 'Theek hai.' }], { fps: 25 });
+  assert(nat[0].end - nat[0].start >= 1 - 1e-9, 'a native subtitle stays at least 1 s where the silence allows');
+  // renderer: one layout per caption, sized by the style, measured with a box
+  const R = require(path.join(__dirname, '..', 'js', 'render.js'));
+  const hz = C.getPreset('hormozi');
+  const land = R.styleForFrame(hz, 1080, {}, 1920), big = R.styleForFrame(hz, 1080, { fontSize: 120 }, 1920);
+  assert(land.size > 58 && land.size < 70 && big.size > land.size + 4, 'landscape: the default is not oversized (' + land.size + ' px) and Size still changes it (' + big.size + ' px)');
+  assert(R.styleForFrame(hz, 1920, {}, 1080).size === R.styleForFrame(hz, 1920, {}, 1080).size && land.minSize === 54, 'the 5% floor is known to the layout');
+  const st = R.styleForFrame(hz, 1920, { maxLines: 2 }, 1080);
+  const lay = R.captionLayout(R.estimateMeasurer(st), 'FIR HUM LOG MEZ PAR BAITH GAYE'.split(' '), st, 1080, 1920, { wordSync: true });
+  assert(lay.lines.every((l, i) => i === 0 || C.lineBreakCost(lay.items[l.from - 1].word, lay.items[l.from].word) !== Infinity),
+    'no line starts with a postposition or auxiliary');
+  assert(!R.wordsFit(st, 1080, 1920, 'AGAR TUM ROZ CONTENT BANAOGE TOH AUDIENCE AUTOMATICALLY GROW KAREGI'.split(' ')) &&
+         R.wordsFit(st, 1080, 1920, ['DEKHO', 'BHAI']), 'wordsFit: a long sentence does not fit two lines of a reel at the style\'s size; two words do');
+  const url = R.captionLayout(R.estimateMeasurer(st), ['www.instagram.com/pulse.official.creators'], st, 1080, 1920, { wordSync: true });
+  assert(url.size >= st.minSize && url.lines.length >= 2, 'a URL wider than the frame is broken, never drawn under the 5% floor');
+  const boxed = R.styleForFrame(C.getPreset('tr-hindi-podcast'), 1920, { maxWidthPct: 0.98 }, 1080);
+  assert(R.sideExtent(boxed, boxed.size) > 10, 'the box padding is counted in the width a caption may use');
 }
 
 // ---- script alignment ("fix all the script") ------------------------------
