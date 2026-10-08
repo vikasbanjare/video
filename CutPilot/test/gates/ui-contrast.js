@@ -104,6 +104,9 @@ function audit() {
       // purpose) — WCAG does not rate inactive controls
       const lab = el.closest('label');
       if (lab && lab.querySelector('input:disabled, select:disabled, textarea:disabled, button:disabled')) continue;
+      // …or dimmed with its reason shown and tappable to meet that reason
+      // (aria-disabled: still inactive, the tap turns its prerequisite on)
+      if (lab && lab.querySelector('[aria-disabled="true"]')) continue;
       const s = cs(el);
       const fg = parse(s.color);
       if (!fg || fg[3] === 0) continue;                          // gradient-clipped wordmark etc.

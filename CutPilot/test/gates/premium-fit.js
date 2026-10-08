@@ -331,7 +331,13 @@ async function magicRun(page, mode) {
   try {
     for (const [W, H] of [[1920, 1080], [1080, 1920]]) {
       const page = await scriptedPage(browser, W, H);
-      const bootWords = await page.evaluate(() => document.getElementById('c-words').value);
+      // the Styles editor's Words per caption set to 1 (the boot style no longer
+      // is): Premium must still put several words in a graphic
+      const bootWords = await page.evaluate(() => {
+        const w = document.getElementById('c-words');
+        w.value = '1'; w.dispatchEvent(new Event('input', { bubbles: true })); w.dispatchEvent(new Event('change', { bubbles: true }));
+        return w.value;
+      });
       await openPremium(page);
       for (const lang of Object.keys(TEXTS)) {
         await useTranscript(page, dir, lang);
@@ -419,7 +425,7 @@ async function magicRun(page, mode) {
             const clip = rp.clips[i];
             if (clip && Math.abs(clip.end.seconds - c.showUntil) > 1e-6) bad('E', tag + ': the host ended “' + c.text + '” at ' + clip.end.seconds + ', not ' + c.showUntil);
           });
-          // F. several words per graphic though the Styles stepper says 1
+          // F. several words per graphic though the Styles stepper is set to 1
           const wpc = a.cues.reduce((n, c) => n + String(c.text).split(/\s+/).filter(Boolean).length, 0) / a.cues.length;
           stats.words.push(wpc);
           if (bootWords !== '1') bad('F', 'the boot style’s Words stepper is ' + bootWords + ', not 1 — this check no longer proves independence');

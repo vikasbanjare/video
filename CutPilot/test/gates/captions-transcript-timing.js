@@ -72,6 +72,8 @@ function durOf(f) {
   return null;
 }
 const near = (a, b) => typeof a === 'number' && Math.abs(a - b) < 0.002;
+// captions start on the sequence's frames (25 fps here): within half a frame
+const onFrame = (a, b) => typeof a === 'number' && Math.abs(a - b) <= 0.5 / 25 + 1e-3;
 const fileArg = (args) => { const a = args.find(x => /^file=@/.test(x)); return a ? a.slice(6) : ''; };
 const clipOf = (media, dur) => ({ name: path.basename(media), mediaPath: media, seqStart: 0, seqEnd: dur, inPoint: 0, outPoint: dur, nodeId: 'n1', trackType: 'audio' });
 const hostFor = (media, dur, extra) => (fn, args) => {
@@ -317,12 +319,13 @@ async function run() {
       const tag = fmt.w + 'x' + fmt.h;
       const full = res.shots[0] || [], one = res.shots[1] || [];
       C.check(tag + ': the full run and the one-caption fix both rendered', full.length > 0 && one.length > 0, 'shots: ' + res.shots.length);
-      // a word frame starts at its word's real time (+ the owner's nudge)
+      // a word frame starts at its word's real time (+ the owner's nudge),
+      // on the sequence's own frame grid (within half a frame)
       const startOf = (txt) => { const f = one.find(fr => fr.active != null && String(fr.words[fr.active] || '').toLowerCase().replace(/[^a-z]/g, '') === txt); return f ? f.start : null; };
       const kaam = startOf('kaam'), kaisa = startOf('kaisa'), mein = startOf('mein');
-      C.check(tag + ': after the fix, "kaam" (after a 1.2 s pause) still lights at its real time 24.40 s', near(kaam, 24.4 + res.off), 'kaam frame at ' + kaam + ' (nudge ' + res.off + ')');
-      C.check(tag + ': "mein" still lights at its real time 22.95 s', near(mein, 22.95 + res.off), 'mein frame at ' + mein);
-      C.check(tag + ': the fixed word "kaisa" lights when "kaise" was said (24.75 s)', near(kaisa, 24.75 + res.off), 'kaisa frame at ' + kaisa);
+      C.check(tag + ': after the fix, "kaam" (after a 1.2 s pause) still lights at its real time 24.40 s', onFrame(kaam, 24.4 + res.off), 'kaam frame at ' + kaam + ' (nudge ' + res.off + ')');
+      C.check(tag + ': "mein" still lights at its real time 22.95 s', onFrame(mein, 22.95 + res.off), 'mein frame at ' + mein);
+      C.check(tag + ': the fixed word "kaisa" lights when "kaise" was said (24.75 s)', onFrame(kaisa, 24.75 + res.off), 'kaisa frame at ' + kaisa);
       const fw = res.words.find(w => w.text === 'kaisa'), un = res.words.filter(w => w.text !== 'kaisa');
       C.check(tag + ': the stored word timing keeps every other word exactly', !!fw && un.length === WW.length - 1 && un.every(w => WW.some(x => x.text === w.text && near(x.start, w.start) && near(x.end, w.end))),
         JSON.stringify(res.words));
