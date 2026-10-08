@@ -1,10 +1,66 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.8** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.9** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.9 — captions land right with no setting touched; every option reachable
+The owner after v0.10.8: "a lot of customization options are gone from the
+caption tab … without any setting, Generate must land perfectly — no
+oversized text, no cropping, right line length; then any setting must change
+it; after transcribing it must be accurate like Premiere's captions." Done as
+four packages (branches wp/caption-core, -premium, -options, -timing; each
+implemented, adversarially reviewed and fixed by sub-agents, then merged here)
+from a measured map (no control was ever deleted — hidden/folded/broken) and
+research (Netflix/BBC/Premiere/stable-ts/whisperX/Subtitle Edit).
+- CORE (captions.js, render.js): word-timed captions grouped at sentence ends,
+  pauses >= 0.5 s, speaker changes, 7 s max, by MEASURED fit at the style's own
+  size (CPRender.fitter; Node fallback grapheme estimate). Words per caption is
+  an exact cap (1 = one word; Auto = phrases fitted to the frame). Frames on
+  the sequence fps: gaps 2 frames or >= 0.5 s, 0.833 s min multi-word, 0.5 s
+  lag-out, CPS 20/22, clamp of stretched first/last words, no 1-word flashes.
+  Short/zero-length words kept. Hindi-aware breaks (CPCaptions.lineBreakCost:
+  never before postpositions/auxiliaries/danda; par/पर/ki no longer
+  conjunctions), balanced bottom-heavy lines. One layout per caption (no line
+  jumps). 16:9 size ceiling (Bold Statement 90 -> ~65 px, caps ~5% H; Size
+  still changes it), shrink floor 5% short side then break the word, box/outline
+  in the width fit, Devanagari line step. Portrait default position 62%.
+  Emoji / CAPS on key words at frame level. Long-video overlay (canvas and
+  libass) = the same captions. Native SRT: balanced 2 lines (~42/~24), 1 s min,
+  SUBTITLE format by name, strict true. Gates captions-generate-lands,
+  captions-timing-rules, captions-long-video-same.
+- PREMIUM: comp fitted by its REAL size from definition.json (CP_fitScalePct;
+  no more 56.25% on reels); Motion found under components; one fit for insert,
+  ▶ Try and card renders; lower third 86% / Reels 62% + a Position slider;
+  every caption measured and broken into <= 2 balanced lines; title templates
+  brought to caption size via their own Scale/Text Scale; own Words (Auto),
+  Text case, hold (0.5 s, never 60 s), stretch off; Devanagari face; sheet
+  unfolded and built without Premiere; Reset and Save as custom fixed; job
+  remembered; Add captions replaces a Premium/editable set (CP_clearCaptionTrack);
+  sync nudge applies. Editable posYPct fixed on 16:9. Gate premium-fit.
+- OPTIONS: Editable+Effects trap fixed; Caption type at the top with a hidden-
+  count line and one-tap switch back; reload re-applies the picked style
+  (restoreLook) and saves CAPS/emoji; greyed controls tappable to meet their
+  reason (aria-disabled — ui-contrast exempts them like disabled ones);
+  outline width beside its colour; box roundness/see-through in Editable;
+  gallery sort/Suggest not png-only; hints fixed; Editable text case from
+  #c-case; timing nudge in every mode. Gate captions-options-reachable.
+- TIMING: AI fix / edits reflow only changed lines (LCS), stamps assigned once;
+  Fix one caption uses real word cues and redraws whole captions
+  (framesTouchingRange); exact sizing whenever the track has clips (host finds
+  the placed clip by start); script apply keeps timing; Sarvam phrases split +
+  chunk overlap/dedupe; Groq punctuation onto words, chunk sizing by output
+  bitrate; Hinglish boundary words assigned once; hesitations dropped from
+  captions only (transcript keeps um/uh for Clean up). Gates
+  captions-transcript-timing, captions-transcript-text.
+- Merge notes: conflicts in host-tests.js, mutation-check.js, index.html (the
+  sheet keeps Premium's Position/Case/Hold AND options' timing nudge), main.js
+  (placeTranscript from timing; captionJobFrames from core + wholeCards from
+  timing; exact sizing union). Three gates updated to merged behaviour
+  (ui-contrast aria-disabled, premium-fit stepper set to 1, transcript timing
+  within half a frame on the sequence fps). 120 new mutations.
 
 ### v0.10.8 — 🧪 Test everything tries every feature in the owner's REAL Premiere
 The owner after v0.10.7: "whenever I tried I found 100s of problems … find
