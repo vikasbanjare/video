@@ -3014,6 +3014,7 @@ function CP_setMgrtParam(prop, kind, value) {
     if (kind === 'color' || kind === 'colorint') {
       return CP_setColorAny(prop, value);
     }
+    if (kind === 'scale') return CP_setScaleParam(prop, value);
     var v;
     if (kind === 'number') v = parseFloat(value);
     else if (kind === 'bool') v = !!value;
@@ -3023,6 +3024,40 @@ function CP_setMgrtParam(prop, kind, value) {
     try { prop.setValue(v, true); return true; } catch (e1) {}
     try { prop.setValue(v); return true; } catch (e2) {}
   } catch (e) {}
+  return false;
+}
+
+/* A template's own SCALE control (After Effects layer Scale, e.g. Flux Apex
+   "Scale") as one uniform percent. Premiere may hold it as [x, y(, z)] or as
+   a single number, so the write keeps the stored shape (y follows x in the
+   template's own ratio, z untouched) and is read back: the title templates
+   are brought down to caption size through this control, and a write that
+   did not land must be known so the size can go another way. */
+function CP_setScaleParam(prop, value) {
+  var sv = parseFloat(value);
+  if (isNaN(sv)) return false;
+  var cur = null;
+  try { cur = prop.getValue(); } catch (e0) { cur = null; }
+  var tries = [];
+  if (cur && typeof cur === 'object' && typeof cur.length === 'number' && cur.length >= 2) {
+    var ratio = (Number(cur[0]) > 0) ? Number(cur[1]) / Number(cur[0]) : 1;
+    var arr = [sv, sv * ratio];
+    for (var z = 2; z < cur.length; z++) arr.push(cur[z]);
+    tries.push(arr);
+  }
+  tries.push(sv);
+  tries.push([sv, sv]);
+  function landed() {
+    var back = null;
+    try { back = prop.getValue(); } catch (eB) { return true; }   // nothing to read back: trust the write
+    if (typeof back === 'number') return Math.abs(back - sv) < 0.5;
+    if (back && typeof back === 'object' && back.length) return Math.abs(Number(back[0]) - sv) < 0.5;
+    return true;
+  }
+  for (var t = 0; t < tries.length; t++) {
+    try { prop.setValue(tries[t], true); if (landed()) return true; } catch (e1) {}
+    try { prop.setValue(tries[t]); if (landed()) return true; } catch (e2) {}
+  }
   return false;
 }
 
@@ -3217,6 +3252,31 @@ function CP_trackIsPulseCaptions(ti, names) {
   } catch (e) { return false; }
 }
 
+/* "✨ Add captions" after a Premium / editable set: take that set off its
+ * track so the new captions REPLACE it instead of stacking a second set on
+ * top. argsJson: { track (1-based), names:[template basenames] }. The track
+ * is cleared only when every clip on it is one of our caption graphics
+ * (CP_trackIsPulseCaptions — a stale index pointing at footage is refused).
+ * Returns { cleared, track, top } — top: it is the top video track, so the
+ * new set can go right back on it — or { cleared:0, guard }. */
+function CP_clearCaptionTrack(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var seq = CP_activeSequence();
+    var n = seq.videoTracks.numTracks;
+    if (!(args.track >= 1 && args.track <= n)) return CP_ok({ cleared: 0, guard: 'out-of-range' });
+    var ti = args.track - 1, names = [];
+    for (var i = 0; args.names && i < args.names.length; i++) names.push(CP_sigNorm(args.names[i]));
+    if (!names.length || !CP_trackIsPulseCaptions(ti, names)) return CP_ok({ cleared: 0, guard: 'foreign' });
+    var before = 0;
+    try { before = seq.videoTracks[ti].clips.numItems; } catch (eB) {}
+    CP_clearTrackClips(ti);
+    var after = 0;
+    try { after = CP_activeSequence().videoTracks[ti].clips.numItems; } catch (eA) {}
+    return CP_ok({ cleared: before - after, track: args.track, top: ti === n - 1 });
+  } catch (e) { return CP_fail(e.message); }
+}
+
 function CP_clearTrackClips(ti) {
   try {
     app.enableQE();
@@ -3384,6 +3444,123 @@ function CP_forceIntroVisible(comp, params, clipDurSec, mode) {
   return fixed;
 }
 
+/* ---- fit a template's comp to the sequence ----------------------------------
+ * A .mogrt is drawn at its comp's own pixel size, centred. Every Flux comp is
+ * 1080×1920 (the bundled Subtitle comps are 2160×3840 and 3840×2160), but the
+ * old code assumed 1920-wide landscape templates and shrank every graphic to
+ * 56.25% on a vertical reel — where the template already WAS vertical, so its
+ * words came out 44% smaller than designed. The panel reads the comp size
+ * from the template's definition.json (no Premiere needed) and sends it as
+ * compW/compH. The scale matches the comp's short side to the sequence's: a
+ * 1080×1920 comp is 100% on 1080×1920 and on 1920×1080, 200% on 4K, and a
+ * 2160×3840 comp is 50% on a 1080×1920 reel. A comp of unknown size stays at
+ * Premiere's own 100% — never a guess. The caption insert, ▶ Try on timeline
+ * and the Premium card renders all use this one rule, so the preview the
+ * owner sees is what lands on the timeline. */
+function CP_fitScalePct(seq, compW, compH, seqW, seqH) {
+  var cw = parseFloat(compW), ch = parseFloat(compH);
+  if (!(cw > 0 && ch > 0)) return 100;
+  var sw = parseFloat(seqW) || parseFloat(seq.frameSizeHorizontal) || 1920;
+  var sh = parseFloat(seqH) || parseFloat(seq.frameSizeVertical) || 1080;
+  var s = (Math.min(sw, sh) / Math.min(cw, ch)) * 100;
+  return Math.round(s * 100) / 100;
+}
+
+/* The comp size Premiere reports for a placed graphic (its project item's
+   "Video Info", e.g. "1080 x 1920 (1.0)") — used only when the panel could
+   not read the template's definition.json. null when unknown. */
+function CP_mgtCompSize(clip) {
+  try {
+    var md = String(clip.projectItem.getProjectMetadata() || '');
+    var m = md.match(/VideoInfo[^>]*>\s*(\d+)\s*x\s*(\d+)/);
+    if (m) return { w: parseFloat(m[1]), h: parseFloat(m[2]) };
+  } catch (e) {}
+  return null;
+}
+
+/* Every Motion effect on a clip (Premiere names the effect stack
+   `components`; some builds and the test imitation call it videoComponents —
+   the old code only looked there). */
+function CP_motionComponents(clip) {
+  var out = [], lists = [], i, k;
+  try { if (clip.components) lists.push(clip.components); } catch (e1) {}
+  try { if (clip.videoComponents) lists.push(clip.videoComponents); } catch (e2) {}
+  for (k = 0; k < lists.length; k++) {
+    try {
+      for (i = 0; i < lists[k].numItems; i++) {
+        var fx = lists[k][i], mn = '';
+        try { mn = String(fx.matchName || ''); } catch (eMn) {}
+        if (fx && (String(fx.displayName || '').toLowerCase().indexOf('motion') === 0 || mn === 'AE.ADBE Motion')) out.push(fx);
+      }
+    } catch (e3) {}
+  }
+  return out;
+}
+function CP_effectProp(fx, name) {
+  if (!fx || !fx.properties) return null;
+  try { if (fx.properties.getNamedProperty) { var p = fx.properties.getNamedProperty(name); if (p) return p; } } catch (e1) {}
+  try {
+    for (var i = 0; i < fx.properties.numItems; i++) {
+      if (String(fx.properties[i].displayName || '').toLowerCase() === String(name).toLowerCase()) return fx.properties[i];
+    }
+  } catch (e2) {}
+  return null;
+}
+
+/* Size and place the WHOLE graphic through its Motion effect: Scale in
+   percent, Position normalised to the frame ([0.5, y] = centred across, y
+   down the frame). Moving the clip, not a layer inside the template, keeps
+   the box and its words together (HANDOFF decision 4). Returns what landed. */
+function CP_placeGraphic(clip, scalePct, posY) {
+  var out = { scaled: false, placed: false };
+  var wantScale = (scalePct != null && isFinite(scalePct) && Math.abs(scalePct - 100) > 0.01);
+  var wantPos = (posY != null && isFinite(posY));
+  if (wantPos) { if (posY < 0.05) posY = 0.05; else if (posY > 0.95) posY = 0.95; }
+  var comps = CP_motionComponents(clip);
+  for (var c = 0; c < comps.length; c++) {
+    if (wantScale && !out.scaled) {
+      var sp = CP_effectProp(comps[c], 'Scale');
+      if (sp) {
+        try { sp.setValue(scalePct, true); out.scaled = true; }
+        catch (eS1) { try { sp.setValue(scalePct); out.scaled = true; } catch (eS2) {} }
+      }
+    }
+    if (wantPos && !out.placed) {
+      var pp = CP_effectProp(comps[c], 'Position');
+      if (pp) {
+        try { pp.setValue([0.5, posY], true); out.placed = true; }
+        catch (eP1) { try { pp.setValue([0.5, posY]); out.placed = true; } catch (eP2) {} }
+      }
+    }
+  }
+  return out;
+}
+
+/* The words must come out at caption size even when Premiere refuses the
+   template's own size control. fit = { i, kind, value, factor } from the
+   panel: the control that carries the caption size and how far it moves the
+   template's design size. When that write did not land (or the size rides
+   the text's font size — kind 'text' — and no text layer took it), the same
+   factor goes through the text's font size when its rich text may be written,
+   else through the whole graphic's Motion scale. Returns true when a fallback
+   was used. */
+function CP_sizeFallback(comp, clip, fit, allowRich, scalePct, textScaled) {
+  if (!fit || !(fit.factor > 0) || Math.abs(fit.factor - 1) < 0.01) return false;
+  if (fit.kind === 'text') {
+    if (textScaled > 0) return false;
+  } else {
+    var landed = false;
+    try {
+      if (comp && comp.properties && fit.i != null && fit.i >= 0 && fit.i < comp.properties.numItems) {
+        landed = CP_setMgrtParam(comp.properties[fit.i], fit.kind, fit.value);
+      }
+    } catch (eL) { landed = false; }
+    if (landed) return false;
+    if (allowRich && CP_scaleAllTextSizes(comp, fit.factor) > 0) return true;
+  }
+  return CP_placeGraphic(clip, (scalePct || 100) * fit.factor, null).scaled;
+}
+
 function CP_insertMogrtCaptions(argsJson) {
   try {
     var args = JSON.parse(argsJson);
@@ -3395,14 +3572,12 @@ function CP_insertMogrtCaptions(argsJson) {
       args.cues.sort(function (a, b) { return (a && a.start || 0) - (b && b.start || 0); });
     }
     var seq = CP_activeSequence();
-    // Detect portrait sequences. Flux/MOGRT templates are authored for 1920×1080
-    // landscape; on a portrait sequence (e.g. 1080×1920 for Shorts/Reels) the
-    // MOGRT composition overflows the narrower frame by ~420px on each side.
-    // We scale every placed clip down to seqWidth/1920 so it fits.
-    var seqW = parseFloat(seq.frameSizeHorizontal) || 1920;
-    var seqH = parseFloat(seq.frameSizeVertical) || 1080;
-    var isPortrait = (seqH > seqW);
-    var portraitScale = isPortrait ? Math.round((seqW / 1920) * 10000) / 100 : 100;
+    // The template's comp fits the sequence by its REAL size (CP_fitScalePct):
+    // compW/compH come from the template's definition.json, else from what
+    // Premiere reports for the first placed graphic, else 100%.
+    var compW = parseFloat(args.compW) || 0, compH = parseFloat(args.compH) || 0;
+    var fitScale = CP_fitScalePct(seq, compW, compH), fitKnown = (compW > 0 && compH > 0);
+    var positioned = 0, sizeFallbacks = 0;
     // Place MOGRT captions on a FRESH top video track (like the image engine)
     // so they never overwrite existing footage — UNLESS replaceTrack asks us to
     // reuse a track Pulse captioned before (regenerating after a style change).
@@ -3522,42 +3697,21 @@ function CP_insertMogrtCaptions(argsJson) {
         if (nat > maxTemplateDur) maxTemplateDur = nat;
       } catch (eNat) {}
 
-      // Portrait scaling: scale the clip down so it fits within the narrower frame.
-      if (isPortrait && portraitScale < 99) {
-        try {
-          var motionFx = clip.getMGTComponent ? null : null;   // reset
-          // Try the standard Motion effect property (available on all video clips)
-          for (var mi = 0; mi < clip.videoComponents.numItems; mi++) {
-            var fx = clip.videoComponents[mi];
-            if (String(fx.displayName || '').toLowerCase().indexOf('motion') === 0) {
-              var scaleProp = fx.properties.getNamedProperty('Scale');
-              if (scaleProp) { scaleProp.setValue(portraitScale, true); break; }
-            }
-          }
-        } catch (eScale) {}
+      // SIZE + PLACE the whole graphic (CP_fitScalePct / CP_placeGraphic): the
+      // comp fits the sequence by its real size, and Position moves the clip's
+      // Motion — box and words together. posYPct is where the comp's centre
+      // goes, as a fraction of the frame height (the panel works out the row
+      // from where the template's text sits in its comp).
+      if (!fitKnown) {
+        var csz = CP_mgtCompSize(clip);
+        if (csz) { compW = csz.w; compH = csz.h; fitScale = CP_fitScalePct(seq, compW, compH); fitKnown = true; }
       }
+      try {
+        var pg = CP_placeGraphic(clip, fitScale, (args.posYPct != null && isFinite(args.posYPct)) ? args.posYPct : null);
+        if (pg.placed) positioned++;
+      } catch (ePg) {}
 
-      // WHOLE-GRAPHIC POSITION: move the clip's Motion, not the text layer —
-      // the BG box is its own layer, so moving text alone split them apart
-      // ("the text is not aligned with the box"). Motion Position is
-      // normalized; the engine's caption sits at the comp centre (0.5), so the
-      // wanted caption row IS the Y to set.
-      if (args.posYPct != null && isFinite(args.posYPct)) {
-        try {
-          for (var mvI = 0; mvI < clip.videoComponents.numItems; mvI++) {
-            var mvFx = clip.videoComponents[mvI];
-            if (String(mvFx.displayName || '').toLowerCase().indexOf('motion') !== 0) continue;
-            var posP = mvFx.properties.getNamedProperty('Position');
-            if (!posP) break;
-            var wantY = args.posYPct;
-            if (wantY < 0.05) wantY = 0.05; else if (wantY > 0.95) wantY = 0.95;
-            try { posP.setValue([0.5, wantY], true); } catch (eMv1) { try { posP.setValue([0.5, wantY]); } catch (eMv2) {} }
-            break;
-          }
-        } catch (eMv) {}
-      }
-
-      var textSetBefore = textSet;
+      var textSetBefore = textSet, textScaled = 0;
       try {
         var comp = clip.getMGTComponent();
         if (comp && comp.properties) {
@@ -3670,7 +3824,7 @@ function CP_insertMogrtCaptions(argsJson) {
           // Overall font size: scale EVERY text layer together (so a template's
           // second "echo" layer grows with the caption instead of mismatching).
           if (allowRich && args.textStyle && args.textStyle.sizeScale && args.textStyle.sizeScale !== 1) {
-            try { CP_scaleAllTextSizes(comp, args.textStyle.sizeScale); } catch (eSc) {}
+            try { textScaled = CP_scaleAllTextSizes(comp, args.textStyle.sizeScale); } catch (eSc) {}
           }
           // READBACK (once): the face the graphic actually STORED after our
           // write — ground truth for "I changed the font but the video didn't"
@@ -3697,6 +3851,12 @@ function CP_insertMogrtCaptions(argsJson) {
       // white box with the template's default white text while the preview was
       // right. CP_applyMgrtParams is idempotent, so a second pass is free.
       try { if (comp && comp.properties) paramsApplied += CP_applyMgrtParams(comp, args.params); } catch (eReap) {}
+      // Caption SIZE must land even where Premiere refuses the template's own
+      // size control (a 171–200 px title template would otherwise caption the
+      // whole video at title size): CP_sizeFallback.
+      if (args.sizeFit) {
+        try { if (CP_sizeFallback(comp, clip, args.sizeFit, allowRich, fitScale, textScaled)) sizeFallbacks++; } catch (eSf) {}
+      }
       // "AS SPOKEN" SAFETY (after the re-apply, which would undo it): that mode
       // makes the BASE text invisible (Text Opacity 0) and relies on the word
       // sweep to paint each word — on a clip where the sweep did NOT engage,
@@ -3740,21 +3900,29 @@ function CP_insertMogrtCaptions(argsJson) {
       //   huge Fit all  – squeeze the whole animation into the word (can be very fast).
       // wordEnd = the spoken word's end; nextStart = where the next caption begins
       // (we never overlap it). Templates shorter than the word just hold to wordEnd.
+      // HOLD: the panel sends showUntil per caption — its last word + a short
+      // lag-out (0.5 s), never into the next caption (a 2-frame gap, or at
+      // least half a second). Without it the graphic ends with its words. The
+      // stretch path may run the animation on, but never past that hold, and
+      // the LAST caption never past 3 s after its words (it used to stay for
+      // the template's whole 60 s).
       var wordEnd = wantEnd;
-      var nextStart = (g + 1 < groups.length) ? groups[g + 1][0].start : (wordEnd + nat + 3600);
+      var nextStart = (g + 1 < groups.length) ? groups[g + 1][0].start : null;
+      var showUntil = grp[grp.length - 1].showUntil;
+      var hasHold = (showUntil != null && isFinite(showUntil) && showUntil > startSec + 0.001);
+      var limit = hasHold ? showUntil : (nextStart != null ? nextStart : wordEnd + 3);
+      if (nextStart != null && nextStart > startSec && limit > nextStart) limit = nextStart;
       var MAX_SPEED = (args.maxSpeed && args.maxSpeed > 0) ? args.maxSpeed : 200;
       if (MAX_SPEED > 500) MAX_SPEED = 500;   // ABSOLUTE ceiling — a caption animation must never become a sub-frame flash, whatever the panel asks for
-      var needed = wordEnd - clipStart;
-      var endSec = wordEnd;
+      var endSec = hasHold ? limit : wordEnd;
+      var needed = endSec - clipStart;
       if (args.stretch && nat > 0.05 && needed > 0.05 && nat > needed + 0.05) {
-        var fitPct = (nat / needed) * 100;                  // speed to exactly fill the word (>100)
+        var fitPct = (nat / needed) * 100;                  // speed to exactly fill the caption (>100)
         var pct = (fitPct <= MAX_SPEED) ? fitPct : MAX_SPEED;
-        if (fitPct <= MAX_SPEED) {
-          endSec = wordEnd;                                 // animation fits within the cap → fill the word
-        } else {
+        if (fitPct > MAX_SPEED) {
           endSec = clipStart + nat / (pct / 100);           // capped speed → play the (sped) animation…
-          if (endSec > nextStart) endSec = nextStart;       // …but never into the next caption
-          if (endSec < wordEnd) endSec = wordEnd;           // …and at least cover the spoken word
+          if (endSec > limit) endSec = limit;               // …but never into the next caption or past the hold
+          if (endSec < wordEnd && wordEnd <= limit) endSec = wordEnd;   // …and at least cover the spoken word
         }
         if ((pct < 99 || pct > 101) && CP_stretchLastClip(vTrack, pct)) stretched++;
       }
@@ -3816,7 +3984,11 @@ function CP_insertMogrtCaptions(argsJson) {
       replaceMode: replaceMode,           // 'fresh' | 'reused' | 'fresh-after-clear' | 'explicit'
       replaceGuard: replaceGuard,         // null | 'foreign' | 'out-of-range' — why a reuse was refused
       templateImports: probe.imported,    // the safety probe could place this template
-      introFixed: introFixed              // authored intro fades neutralized (words visible at once)
+      introFixed: introFixed,             // authored intro fades neutralized (words visible at once)
+      fitScale: fitScale,                 // Motion scale that fits the comp to the sequence (100 = untouched)
+      compW: compW, compH: compH,         // the comp size it was fitted by (0 = unknown → 100%)
+      positioned: positioned,             // graphics whose Motion Position took posYPct
+      sizeFallbacks: sizeFallbacks        // graphics brought to caption size another way (size control refused)
     });
   } catch (e) { return CP_fail(e.message); }
 }
@@ -4072,6 +4244,11 @@ function CP_previewMogrt(argsJson) {
     if (!clip) return CP_fail('Premiere could not place this template.');
     var pvEnd = at + (args.seconds || 4);
     try { clip.end = CP_timeFromSeconds(pvEnd); } catch (eE) {}
+    // the SAME size and place the caption insert gives the graphic (comp fitted
+    // to the sequence by its real size, whole graphic at the caption row), so
+    // ▶ Try on timeline shows what ✨ Caption with this will place
+    var pvScale = CP_fitScalePct(seq, args.compW, args.compH);
+    try { CP_placeGraphic(clip, pvScale, (args.posYPct != null && isFinite(args.posYPct)) ? args.posYPct : null); } catch (ePg) {}
     // apply the panel's colour/size/font overrides + sample text to the preview
     var pParams = 0;
     try {
@@ -4079,13 +4256,15 @@ function CP_previewMogrt(argsJson) {
       if (pcomp) {
         pParams = CP_applyMgrtParams(pcomp, args.params);
         try { CP_forceIntroVisible(pcomp, args.params, args.seconds || 4); } catch (eIv) {}   // entrance fitted to the preview length
+        var pvScaled = 0;
         if (args.text && pcomp.properties) {
           var ptp = CP_findTextProp(pcomp.properties, ['text', 'caption', 'title', 'subtitle', 'headline', 'body']);
           if (ptp) CP_setMgrtText(ptp, args.text, true, args.textStyle);
           if (args.textStyle && args.textStyle.sizeScale && args.textStyle.sizeScale !== 1) {
-            try { CP_scaleAllTextSizes(pcomp, args.textStyle.sizeScale); } catch (eSc) {}
+            try { pvScaled = CP_scaleAllTextSizes(pcomp, args.textStyle.sizeScale); } catch (eSc) {}
           }
         }
+        if (args.sizeFit) { try { CP_sizeFallback(pcomp, clip, args.sizeFit, true, pvScale, pvScaled); } catch (eSf) {} }
       }
     } catch (ePv) {}
     // same broken-end-setter trap as the caption inserter: if the end
@@ -4095,7 +4274,7 @@ function CP_previewMogrt(argsJson) {
       var pvActual = clip.end.seconds;
       if (pvActual > pvEnd + 0.2) CP_razorTrimTail(seq, vTrack, pvEnd, pvActual);
     } catch (ePvTrim) {}
-    return CP_ok({ placedAt: at, track: vTrack + 1, paramsSet: pParams });
+    return CP_ok({ placedAt: at, track: vTrack + 1, paramsSet: pParams, fitScale: pvScale });
   } catch (e) { return CP_fail(e.message); }
 }
 
@@ -4192,9 +4371,13 @@ function CP_renderStylePreviews(argsJson) {
  * showed the template author's small low-resolution clip with its sample
  * text). A TEMP sequence at the owner's frame size (their timeline is never
  * touched): import the template, set its text, then export one PNG per time
- * via QE (QE adds ".png" itself to outBase_NN). Cleans up after.
- * argsJson: { mogrtPath, text, seconds, times:[s], outBase, width, height }
- * Returns { files:[path], failed:[time], cleaned }.
+ * via QE (QE adds ".png" itself to outBase_NN). Cleans up after. The graphic
+ * gets the SAME fit as the caption insert — comp scaled by its real size,
+ * caption-size params, the resolved font, line breaks and the caption row —
+ * so the card shows what "✨ Caption with this" will place.
+ * argsJson: { mogrtPath, text, seconds, times:[s], outBase, width, height,
+ *             compW?, compH?, params?, textStyle?, posYPct?, sizeFit? }
+ * Returns { files:[path], failed:[time], cleaned, fitScale }.
  */
 function CP_renderMogrtFrames(argsJson) {
   var prevActive = null, seq = null, files = [], failed = [];
@@ -4217,14 +4400,25 @@ function CP_renderMogrtFrames(argsJson) {
     var clip = seq.importMGT(args.mogrtPath, CP_ticksFromSeconds(0), 0, 0);
     if (!clip) throw new Error('Premiere would not place this template');
     try { clip.end = CP_timeFromSeconds(seconds); } catch (eE) {}
+    var rfScale = CP_fitScalePct(seq, args.compW, args.compH, args.width, args.height);   // the size this render was asked for
+    try { CP_placeGraphic(clip, rfScale, (args.posYPct != null && isFinite(args.posYPct)) ? args.posYPct : null); } catch (ePg) {}
+    var comp = null, rfScaled = 0;
     try {
-      var comp = clip.getMGTComponent();
-      if (comp && comp.properties && args.text) {
-        var tp = CP_findTextProp(comp.properties, ['text', 'caption', 'title', 'subtitle']);
-        if (tp) CP_setMgrtText(tp, args.text, true, null);
+      comp = clip.getMGTComponent();
+      if (comp && comp.properties) {
+        if (args.params) { try { CP_applyMgrtParams(comp, args.params); } catch (ePr) {} }
+        if (args.text) {
+          var tp = CP_findTextProp(comp.properties, ['text', 'caption', 'title', 'subtitle']);
+          if (tp) CP_setMgrtText(tp, args.text, true, args.textStyle || null);
+        }
+        if (args.textStyle && args.textStyle.sizeScale && args.textStyle.sizeScale !== 1) {
+          try { rfScaled = CP_scaleAllTextSizes(comp, args.textStyle.sizeScale); } catch (eSc) {}
+        }
       }
     } catch (eTx) {}
     try { CP_forceRerender(clip); } catch (eRr) {}
+    try { if (comp && comp.properties && args.params) CP_applyMgrtParams(comp, args.params); } catch (ePr2) {}   // text writes can revert params
+    if (args.sizeFit) { try { CP_sizeFallback(comp, clip, args.sizeFit, true, rfScale, rfScaled); } catch (eSf) {} }
     var qseq = qe.project.getActiveSequence();
     for (var k = 0; k < times.length; k++) {
       var base = args.outBase + '_' + (k < 10 ? '0' : '') + k;
@@ -4243,7 +4437,7 @@ function CP_renderMogrtFrames(argsJson) {
   try { if (prevActive) app.project.activeSequence = prevActive; } catch (eR2) {}
   var cleaned = false;
   try { if (app.project.deleteSequence && seq) { app.project.deleteSequence(seq); cleaned = true; } } catch (eDel) {}
-  return CP_ok({ files: files, failed: failed, cleaned: cleaned });
+  return CP_ok({ files: files, failed: failed, cleaned: cleaned, fitScale: rfScale });
 }
 
 /*

@@ -38,8 +38,16 @@ function world(opts) {
         if (opts.refuse) return null;
         let val = '{"textEditValue":"Flux Sample"}';
         const prop = { displayName: 'Text', getValue: () => val, setValue: (v) => { val = String(v); log.texts.push(val); } };
-        const props = [prop]; props.numItems = 1;
-        const clip = { path: p, end: null, getMGTComponent: () => ({ properties: props }) };
+        // the template's own size control (a title template's Scale, [x, y, z])
+        let scale = [100, 100, 100];
+        const scaleProp = { displayName: 'Scale', getValue: () => scale.slice(), setValue: (v) => { scale = Array.from(v); } };
+        const props = [prop, scaleProp]; props.numItems = 2;
+        // the clip's Motion effect: Scale % and Position [x, y] as fractions of the frame
+        const motion = { Scale: 100, Position: [0.5, 0.5] };
+        const mp = (n) => ({ displayName: n, getValue: () => motion[n], setValue: (v) => { motion[n] = (v && v.length) ? [v[0], v[1]] : v; } });
+        const mprops = [mp('Scale'), mp('Position')]; mprops.numItems = 2;
+        const comps = [{ displayName: 'Motion', properties: mprops }]; comps.numItems = 1;
+        const clip = { path: p, end: null, motion, components: comps, getMGTComponent: () => ({ properties: props }), get scaleCtl() { return scale; } };
         this.clips.push(clip);
         return clip;
       } };
@@ -87,6 +95,24 @@ function world(opts) {
          ex.map(e => e.base).join(',') === '/tmp/prem-x_00,/tmp/prem-x_01,/tmp/prem-x_02' &&
          (res.files || []).join(',') === '/tmp/prem-x_00.png,/tmp/prem-x_01.png,/tmp/prem-x_02.png',
     'one frame per time, at the timecode QE’s playhead writes (' + ex.map(e => e.tc).join(', ') + '), named _00, _01, _02');
+}
+{
+  // the card is drawn as "✨ Caption with this" places it: the comp fitted by
+  // its real size at the size asked for (a 1080×1920 comp is 200% of a 4K
+  // 2160×3840 frame, 100% of a 1080×1920 one), the caption row, the
+  // caption-size Scale, the line break
+  const fitAt = (width, height) => {
+    const w = world({});
+    const res = JSON.parse(w.sandbox.CP_renderMogrtFrames(JSON.stringify({ mogrtPath: '/m/Flux_Apex.mogrt', text: 'Namaste dosto \raaj hum',
+      seconds: 3, times: [1.0], outBase: '/tmp/prem-y', width, height, compW: 1080, compH: 1920, posYPct: 0.62,
+      params: [{ i: 1, kind: 'scale', value: 44 }], textStyle: null })));
+    return { res, w, clip: w.log.created[0] && w.log.created[0].clips[0] };
+  };
+  const k4 = fitAt(2160, 3840), hd = fitAt(1080, 1920);
+  report(k4.res.ok && k4.res.fitScale === 200 && k4.clip && k4.clip.motion.Scale === 200 && k4.clip.motion.Position[1] === 0.62 && k4.clip.scaleCtl[0] === 44 &&
+         k4.w.log.texts.some(t => t.indexOf('Namaste dosto \\raaj hum') >= 0) && hd.res.fitScale === 100 && hd.clip.motion.Scale === 100,
+    'the same fit as the caption insert: a 1080×1920 comp at ' + (k4.clip && k4.clip.motion.Scale) + '% on 4K, ' + (hd.clip && hd.clip.motion.Scale) +
+    '% on 1080×1920, the caption row, the caption-size Scale, the line break');
 }
 {
   const w = world({ refuse: true });
