@@ -4634,8 +4634,9 @@
                  path: m.path, popularity: 55, subcat: m.category, thumb: m.thumb });
     });
     (state.userMogrts || []).forEach(function (m) {
+      // a saved look carries its edits, so opening its card restores them
       out.push({ id: 'mogrt:' + m.path, name: m.name, category: MOGRT_CAT, mogrt: true,
-                 path: m.path, popularity: 60, subcat: 'Added by you', thumb: m.thumb });
+                 path: m.path, popularity: 60, subcat: 'Added by you', thumb: m.thumb, edits: m.edits || null });
     });
     return out;
   }
@@ -5546,8 +5547,28 @@
   function refreshWordMirrors() {
     var w = parseInt($('c-words').value, 10) || 0;
     var label = (w === 0) ? 'Auto' : String(w);   // 0 = ✨ Auto: whole sentences, fit to the frame
-    ['wc-num', 'ms-wc-num', 'mg-wc-num'].forEach(function (id) { var e = document.getElementById(id); if (e) e.textContent = label; });
-    ['wc-full', 'ms-wc-full', 'mg-wc-full'].forEach(function (id) { var e = document.getElementById(id); if (e) e.classList.toggle('on', w === 0); });
+    // (the template sheet's stepper is its own — refreshPremControls)
+    ['wc-num', 'mg-wc-num'].forEach(function (id) { var e = document.getElementById(id); if (e) e.textContent = label; });
+    ['wc-full', 'mg-wc-full'].forEach(function (id) { var e = document.getElementById(id); if (e) e.classList.toggle('on', w === 0); });
+  }
+  /* The template sheet's own options on screen: Words per caption (✨ Auto =
+     as many as fit this template's width), Position (Auto = the lower third /
+     Reels-safe row for THIS sequence's shape), Text case, hold and stretch. */
+  function refreshPremControls() {
+    var o = premOpts();
+    var wl = (o.words > 0) ? String(o.words) : 'Auto';
+    if ($('ms-wc-num')) $('ms-wc-num').textContent = wl;
+    if ($('ms-wc-full')) $('ms-wc-full').classList.toggle('on', !(o.words > 0));
+    var landscape = !(state.env && state.env.height > state.env.width);
+    var autoRow = landscape ? 86 : 62;
+    var pos = (o.pos != null && isFinite(o.pos)) ? Math.round(o.pos * 100) : null;
+    if ($('ms-pos')) $('ms-pos').value = String(pos != null ? pos : autoRow);
+    if ($('ms-pos-val')) $('ms-pos-val').textContent = (pos != null) ? (pos + '% from the top') : ('Auto · ' + autoRow + '% (' + (landscape ? 'lower third' : 'Reels-safe') + ')');
+    if ($('ms-pos-auto')) $('ms-pos-auto').classList.toggle('on', pos == null);
+    var cb = document.querySelectorAll('#ms-case button');
+    for (var i = 0; i < cb.length; i++) cb[i].classList.toggle('on', cb[i].getAttribute('data-case') === (o.caseMode || 'as-spoken'));
+    if ($('ms-hold')) $('ms-hold').value = String(o.hold == null ? '0.5' : o.hold);
+    if ($('ms-stretch')) $('ms-stretch').checked = !!o.stretch;
   }
 
   /* Swap the action sheet from its real render to the live "your colours" swatch.
@@ -5582,6 +5603,19 @@
   function openMogrtSheet(t) {
     state.selectedMogrt = { path: t.path, name: t.name };
     state.selectedMogrtTpl = t;
+    // a saved look ("＋ Save as custom") opens with everything it saved — the
+    // template's controls AND the sheet's layout; the plain card opens clean
+    var from = t.edits ? ('custom:' + t.name) : 'base';
+    if (t.edits) {
+      state.mogrtParams = (t.edits.params || []).slice();
+      state.mogrtTextStyle = t.edits.textStyle || null;
+      state.mogrtRBSwap = !!t.edits.rbSwap;
+      state.mogrtParamsPath = t.path;
+      if (t.edits.prem) setPremOpts(t.edits.prem);
+    } else if (state.mogrtParamsFrom && state.mogrtParamsFrom !== 'base' && state.mogrtParamsPath === t.path) {
+      state.mogrtParams = []; state.mogrtTextStyle = null; state.mogrtRBSwap = false; state.mogrtParamsPath = null;
+    }
+    state.mogrtParamsFrom = from;
     try { state.selectedMogrtBase = mogrtCardStyle(t); } catch (eBase) { state.selectedMogrtBase = null; }
     $('ms-name').textContent = t.name;
     // "each word lights up exactly when it's spoken" is a CAPTION template's
@@ -5669,6 +5703,7 @@
     }
     $('ms-inspect-out').classList.add('hidden');
     refreshWordMirrors();
+    refreshPremControls();
     $('mogrt-sheet').classList.remove('hidden');
     // Build the colour / font / size editor right here so it's reachable (it used
     // to live in a separate advanced section the user never saw).
@@ -5685,24 +5720,37 @@
   }
 
   function wireMogrtSheet() {
-    // action-sheet stepper drives the SAME words-per-caption value (1–10)
+    // the sheet's OWN words-per-caption (0 = ✨ Auto: as many words as fit this
+    // template's width). It used to drive the Styles editor's stepper, whose
+    // boot style says 1 — every untouched Premium insert was one word a graphic.
+    function setPremWords(w) { premOpts().words = Math.max(0, Math.min(10, w)); savePremOpts(); refreshPremControls(); }
     if ($('ms-wc-minus')) $('ms-wc-minus').addEventListener('click', function () {
-      var w = parseInt($('c-words').value, 10) || 0; setWordCount(w <= 1 ? 1 : w - 1);
+      var w = premOpts().words || 0; setPremWords(w <= 1 ? 1 : w - 1);
     });
     if ($('ms-wc-plus')) $('ms-wc-plus').addEventListener('click', function () {
-      var w = parseInt($('c-words').value, 10) || 0; setWordCount(w === 0 ? 1 : w + 1);
+      var w = premOpts().words || 0; setPremWords(w === 0 ? 4 : w + 1);
     });
     if ($('ms-wc-full')) $('ms-wc-full').addEventListener('click', function () {
-      var w = parseInt($('c-words').value, 10) || 0; setWordCount(w === 0 ? 1 : 0);
+      var w = premOpts().words || 0; setPremWords(w === 0 ? 4 : 0);
     });
+    // Position: the whole graphic's row (✨ Auto = lower third / Reels-safe)
+    if ($('ms-pos')) $('ms-pos').addEventListener('input', function () {
+      var v = parseFloat(this.value);
+      premOpts().pos = isFinite(v) ? Math.max(0.1, Math.min(0.92, v / 100)) : null; savePremOpts(); refreshPremControls();
+    });
+    if ($('ms-pos-auto')) $('ms-pos-auto').addEventListener('click', function () { premOpts().pos = null; savePremOpts(); refreshPremControls(); });
+    var caseBtns = document.querySelectorAll('#ms-case button');
+    for (var cbi = 0; cbi < caseBtns.length; cbi++) {
+      caseBtns[cbi].addEventListener('click', function () { premOpts().caseMode = this.getAttribute('data-case') || 'as-spoken'; savePremOpts(); refreshPremControls(); });
+    }
+    if ($('ms-hold')) $('ms-hold').addEventListener('change', function () { premOpts().hold = this.value; savePremOpts(); });
+    if ($('ms-stretch')) $('ms-stretch').addEventListener('change', function () { premOpts().stretch = !!this.checked; savePremOpts(); });
     if ($('ms-transcribe')) $('ms-transcribe').addEventListener('click', autoTranscribe);
-    // "↺ Original" — wipe every sheet edit for this template so the next insert
-    // is 100% as-authored (colours, font, animation all the template's own)
+    // "↺ Back to original" — wipe every sheet edit for this template (and the
+    // sheet's layout choices) so the next insert is the template as authored,
+    // fitted as caption — the same as the customizer's ↺ Reset
     if ($('ms-reset-orig')) $('ms-reset-orig').addEventListener('click', function () {
-      state.mogrtParams = []; state.mogrtTextStyle = null; state.mogrtRBSwap = false; state.mogrtParamsPath = null;
-      var tpl = state.selectedMogrtTpl;
-      if (tpl) openMogrtSheet(tpl);   // rebuild the sheet clean (original render + fresh controls)
-      toast('↺ Back to the template\'s ORIGINAL look — captions will use its own colours, font and animation.');
+      resetMogrtEdits(state.selectedMogrt && state.selectedMogrt.path, $('ms-customizer'));
     });
     // (Animation speed is no longer a manual control — the word-by-word reveal
     //  follows the transcript's word timing, i.e. your actual speaking pace.)
@@ -5729,18 +5777,25 @@
     $('ms-preview').addEventListener('click', function () {
       if (!state.selectedMogrt) return;
       var path = state.selectedMogrt.path;
-      var params = (state.mogrtParamsPath === path) ? state.mogrtParams : [];
-      var textStyle = resolveTextStyleFont((state.mogrtParamsPath === path) ? state.mogrtTextStyle : null);
-      var sample = 'Sample caption';                         // show colour/font on real-ish text
-      try { var cs = readSelectedTranscript(); if (cs && cs[0] && cs[0].text) sample = cs[0].text; } catch (e) {}
-      CPBridge.callHost('CP_previewMogrt', { path: path, seconds: 4, params: params, textStyle: textStyle, text: sample }).then(function (r) {
-        toast('▶ Placed "' + state.selectedMogrt.name + '" at the playhead — play to preview your colour/font.');
+      var name = state.selectedMogrt.name;
+      // the FIRST caption exactly as "✨ Caption with this" will place it —
+      // same lines, size, face, row and comp fit (premBuild)
+      CPBridge.callHost('CP_getEnv').catch(function () { return null; }).then(function (env) {
+        if (env && env.width) state.env = env;
+        var b = null;
+        try { var cs = readSelectedTranscript(); if (cs && cs.length) b = premBuild(cs, path, state.env, premOpts()); } catch (e) { b = null; }
+        if (!b || !b.cues.length) b = premBuildSample(path, 'Make every word count', state.env);
+        var text = (b.cues[0] && b.cues[0].text) || b.sample;
+        return CPBridge.callHost('CP_previewMogrt', { path: path, seconds: 4, params: b.params, textStyle: b.textStyle, text: text,
+          compW: b.compW, compH: b.compH, posYPct: b.posYPct, sizeFit: b.sizeFit });
+      }).then(function () {
+        toast('▶ Placed "' + name + '" at the playhead with your first caption — play it to see exactly what “✨ Caption with this” places.');
       }).catch(function (e) { toast(e.message, true); });
     });
     $('ms-use').addEventListener('click', function () {
       if (!state.selectedMogrt) return;
       $('mogrt-sheet').classList.add('hidden');
-      applyMogrtWithPath(state.selectedMogrt.path, $('ms-use'));
+      applyMogrtWithPath(state.selectedMogrt.path, $('ms-use'), false, { premium: true });
     });
     $('ms-inspect').addEventListener('click', function () {
       if (!state.selectedMogrt) return;
@@ -6756,7 +6811,14 @@
         var base = path.basename(t.path).replace(/\.mogrt$/i, '');
         var raw = path.join(os.tmpdir(), 'pulse-prem-' + Date.now() + '-' + i);
         var made = [];
-        return CPBridge.callHost('CP_renderMogrtFrames', { mogrtPath: t.path, text: words, seconds: 3, times: times, outBase: raw, width: W, height: H })
+        // drawn EXACTLY as "✨ Caption with this" places it: the comp fitted by
+        // its real size, caption size, the face that draws these words, the
+        // line breaks and the caption row (premBuildSample)
+        var sb = null;
+        try { sb = premBuildSample(t.path, words, { width: W, height: H, fps: (state.env && state.env.fps) || 30 }); } catch (eSb) { sb = null; }
+        var rArgs = { mogrtPath: t.path, text: sb ? sb.sample : words, seconds: 3, times: times, outBase: raw, width: W, height: H };
+        if (sb) { rArgs.params = sb.params; rArgs.textStyle = sb.textStyle; rArgs.compW = sb.compW; rArgs.compH = sb.compH; rArgs.posYPct = sb.posYPct; rArgs.sizeFit = sb.sizeFit; }
+        return CPBridge.callHost('CP_renderMogrtFrames', rArgs)
           .then(function (r) { made = r.files || []; return makePremiumPreview(ff, made, path.join(dir, base), W, H); })
           .then(function () { ok++; }, function (e) { bad.push(t.name + ': ' + ((e && e.message) || e)); })
           .then(function () { made.forEach(function (f) { try { fs.unlinkSync(f); } catch (eU) {} }); });
@@ -6780,6 +6842,8 @@
     var grid = $('flux-grid'); if (!grid) return;
     var q = (state.fluxSearch || '').trim();
     var list = mogrtTemplates().filter(function (t) { return t.flux; });
+    // the owner's saved looks of these templates ("＋ Save as custom") sit with them
+    (state.userMogrts || []).forEach(function (m) { var c = premiumCustomFor(m); if (c) list.push(c); });
     if (q) list = list.filter(function (t) { return (t.name + ' ' + (t.subcat || '') + ' ' + (t.desc || '')).toLowerCase().indexOf(q) >= 0; });
     grid.innerHTML = '';
     if (!list.length) {
@@ -6805,6 +6869,22 @@
         _fluxRO.observe(grid);
       }
     } catch (eRO) {}
+  }
+
+  /* A saved look of a ⚡ Premium template as a Premium card: the template's
+     own preview, the owner's name, and the edits it restores when opened. */
+  function premiumCustomFor(m) {
+    if (!m || !m.edits || !m.path) return null;
+    var list = mogrtTemplates();
+    for (var i = 0; i < list.length; i++) {
+      var t = list[i];
+      if (t.flux && !t.edits && t.path === m.path) {
+        return { id: 'mogrt-custom:' + m.name, name: m.name, category: t.category, mogrt: true, path: t.path, popularity: 95,
+                 subcat: 'Your look · ' + t.name, desc: t.desc, thumb: t.thumb, video: t.video, premium: true, flux: true,
+                 kind: t.kind, edits: m.edits, custom: true };
+      }
+    }
+    return null;
   }
 
   /* Show the right controls for the active section. The Templates tab edits a
@@ -6917,19 +6997,45 @@
     renderMogrtUploads();
   }
 
-  /* Reset every edit on the selected template back to its built-in defaults. */
-  function resetMogrtEdits(path) {
+  /* Reset every edit on the selected template back to its built-in defaults —
+     and rebuild the box the ↺ Reset was pressed in. (It always rebuilt the
+     hidden 📁 Upload box, so the template sheet kept showing the old values
+     while the next insert sent none.) In the template sheet the layout
+     choices (words, position, case, hold, stretch) go back to Auto too, and
+     the sheet then shows exactly what the next insert sends. */
+  function resetMogrtEdits(path, box) {
     state.mogrtParams = []; state.mogrtTextStyle = null; state.mogrtRBSwap = false; state.mogrtParamsPath = null;
-    buildMogrtCustomizer($('tpl-params'), path);   // rebuilds showing the defaults
+    box = box || $('tpl-params');
+    if (box && box.id === 'ms-customizer') {
+      setPremOpts(null);
+      state.mogrtParamsFrom = 'base';
+      var tpl = state.selectedMogrtTpl;
+      if (tpl && tpl.edits) tpl = mogrtBaseOf(tpl) || tpl;   // a saved look resets to its template
+      if (tpl) openMogrtSheet(tpl);   // the original render + fresh controls
+      else buildMogrtCustomizer(box, path);
+      toast('↺ Back to the template’s own look — fitted as captions for your video. ▶ Try on timeline to check.');
+      return;
+    }
+    buildMogrtCustomizer(box, path);   // rebuilds showing the defaults
     toast('↺ Reset to the template’s original settings. ▶ Preview to check.');
+  }
+  /* The bundled card a saved look was made from. */
+  function mogrtBaseOf(t) {
+    var list = mogrtTemplates();
+    for (var i = 0; i < list.length; i++) if (list[i].path === t.path && !list[i].edits) return list[i];
+    return null;
   }
 
   /* Save the current edits as a reusable custom template in "Your templates".
      It points at the same .mogrt file but remembers your colour/font/size/etc.,
-     and stays fully re-editable. */
-  function saveCustomMogrt(path) {
+     and stays fully re-editable. Saved from the template sheet it also keeps
+     the sheet's layout choices and shows up in the ⚡ Premium grid next to its
+     template (it used to land only in the 📁 Upload list). */
+  function saveCustomMogrt(path, box) {
+    var fromSheet = !!(box && box.id === 'ms-customizer');
     var base = '', list = state.userMogrts || [];
-    for (var i = 0; i < list.length; i++) {
+    if (fromSheet && state.selectedMogrt && state.selectedMogrt.name) base = state.selectedMogrt.name;
+    for (var i = 0; i < list.length && !base; i++) {
       if (list[i].path === path && (list[i].name || '') === (state.mogrtSelName || '')) { base = list[i].name; break; }
     }
     if (!base) base = path.split(/[\\/]/).pop().replace(/\.mogrt$/i, '');
@@ -6937,12 +7043,17 @@
       if (!name || !name.trim()) return;
       name = name.trim();
       var edits = { params: (state.mogrtParams || []).slice(), textStyle: state.mogrtTextStyle || null, rbSwap: !!state.mogrtRBSwap };
+      if (fromSheet) edits.prem = JSON.parse(JSON.stringify(premOpts()));
       state.userMogrts = (state.userMogrts || []).filter(function (m) { return (m.name || '') !== name; });   // replace same-name
-      state.userMogrts.unshift({ name: name, path: path, edits: edits });
+      var entry = { name: name, path: path, edits: edits };
+      if (fromSheet) entry.premium = true;
+      state.userMogrts.unshift(entry);
       saveUserMogrts();
       state.mogrtSelName = name;
       renderMogrtUploads();
-      toast('✅ Saved “' + name + '” to Your templates — selecting it restores these edits.');
+      try { renderFluxGrid(); } catch (eFg) {}
+      var where = (fromSheet && premiumCustomFor(entry)) ? 'the ⚡ Premium grid (and Your templates)' : 'Your templates';
+      toast('✅ Saved “' + name + '” to ' + where + ' — opening it restores these edits.');
     });
   }
 
@@ -7845,6 +7956,24 @@
     var mCues;
     try { mCues = readSelectedTranscript(); } catch (eM) { return toast(eM.message, true); }
     if (!mCues || !mCues.length) return toast('No caption lines to add.', true);
+    // After a ⚡ Premium / editable set on this sequence, ✨ Add captions
+    // REPLACES it (it used to stack the new set on a second track over the
+    // old one): the host clears that track only once it has verified every
+    // clip on it is one of Pulse's caption graphics (CP_clearCaptionTrack),
+    // and the new captions go back onto it when it is the top track.
+    var pjE = state.lastCaptionJob, edTrack = null;
+    try { if (pjE && pjE.mode === 'editable' && pjE.track && pjE.seq && state.env && pjE.seq === state.env.sequenceName) edTrack = pjE.track; } catch (eE) {}
+    if (edTrack) {
+      return CPBridge.callHost('CP_clearCaptionTrack', { track: edTrack, names: captionGraphicNames() }).then(function (r) {
+        if (r && r.cleared) diag('captions', 'replacing the template captions on V' + edTrack + ' (' + r.cleared + ' graphics cleared)');
+        addPulseCaptions(mCues, (r && !r.guard && r.top) ? edTrack : null);
+      }, function () { addPulseCaptions(mCues, null); });
+    }
+    addPulseCaptions(mCues, null);
+  });
+  /* The Pulse-rendered "✨ Add captions" itself. intoTrack: an emptied caption
+     track to place on (a replaced template set). */
+  function addPulseCaptions(mCues, intoTrack) {
     // SCALE GUARD (measured, not guessed): word-by-word captions render ONE
     // image per word — a 10-minute video is ~1,500 files and 1,500 timeline
     // clips, a 60-minute podcast ~9,000 (≈1.6 GB). That is unusable. Past a
@@ -7867,17 +7996,17 @@
         var motion = overlayMotionNote();
         if (canvasOv) toast('This video needs ~' + estFrames + ' caption frames — Pulse is drawing them into ONE caption overlay clip instead of ' +
           estFrames + ' images. Same renderer as the preview' + (motion ? '.' + motion : ', so it looks the same.'));
-        return runLibassCaptions(mCues, {});
+        return runLibassCaptions(mCues, intoTrack ? { replaceTrack: intoTrack } : {});
       }
     } catch (eScale) {}
-    var reuse = null;
+    var reuse = intoTrack || null;
     try {
       var pj = state.lastCaptionJob;
       var sameSeqM = !!(pj && pj.seq && state.env && pj.seq === state.env.sequenceName);
-      if (pj && pj.mode !== 'editable' && pj.mode !== 'overlay' && pj.track && sameSeqM) reuse = pj.track;
+      if (!reuse && pj && pj.mode !== 'editable' && pj.mode !== 'overlay' && pj.track && sameSeqM) reuse = pj.track;
     } catch (eRj) {}
     return runCaptionPipeline(mCues, reuse ? { replaceTrack: reuse } : {});
-  });
+  }
 
   /* Persist the last caption job so the edit/restyle buttons stay available even
      after the panel/Premiere is reopened — editing is never "lost" once you've
@@ -7885,10 +8014,15 @@
   function saveLastCaptionJob() {
     try {
       if (!state.lastCaptionJob) return;
+      var lj = state.lastCaptionJob;
       localStorage.setItem('cutpilot.lastcap', JSON.stringify({
-        cues: state.lastCaptionJob.cues, track: state.lastCaptionJob.track,
-        mode: state.lastCaptionJob.mode || null,   // 'editable' vs a legacy PNG job
-        seq: state.lastCaptionJob.seq || (state.env && state.env.sequenceName) || ''
+        cues: lj.cues, track: lj.track,
+        mode: lj.mode || null,   // 'editable' vs a legacy PNG job
+        seq: lj.seq || (state.env && state.env.sequenceName) || '',
+        // a template set (⚡ Premium / editable): which template, with which
+        // edits — so it can be redone or replaced after a restart too
+        kind: lj.kind || null, mogrtPath: lj.mogrtPath || null, params: lj.params || null,
+        textStyle: lj.textStyle || null, words: (lj.words != null ? lj.words : null), prem: lj.prem || null
       }));
     } catch (e) {}
   }
@@ -7899,7 +8033,9 @@
       // sequence's entry, is NOT restored: its track index could point at real
       // footage here (the host's clip-signature check is the second seatbelt).
       if (j && j.cues && j.cues.length && j.seq && state.env && j.seq === state.env.sequenceName) {
-        state.lastCaptionJob = { cues: j.cues, track: j.track, mode: j.mode || null, seq: j.seq };
+        state.lastCaptionJob = { cues: j.cues, track: j.track, mode: j.mode || null, seq: j.seq,
+                                 kind: j.kind || null, mogrtPath: j.mogrtPath || null, params: j.params || null,
+                                 textStyle: j.textStyle || null, words: j.words, prem: j.prem || null };
         reflectCaptionsPlaced();
       }
     } catch (e) {}
@@ -7985,7 +8121,14 @@
           'A range cannot get its own style inside one clip.';
         hint.classList.remove('hidden');
       } else if (editable) {
-        hint.innerHTML = 'Editable captions are on your timeline — click any caption clip and edit its <b>text or styling</b> in Window → Essential Graphics. Running “Add captions” again replaces this set.';
+        // truthful: both ways of redoing them really replace this set (the host
+        // verifies the track holds only Pulse's caption graphics first)
+        var how = (job.kind === 'premium' || job.kind === 'template')
+          ? 'open the same template again and tap <b>✨ Caption with this</b>, or use <b>✨ Add captions</b> — either one replaces'
+          : 'tap the <b>Add captions</b> button again — it replaces';
+        hint.innerHTML = 'Editable captions are on your timeline' + (job.track ? ' (V' + job.track + ')' : '') +
+          ' — click any caption clip to change its <b>words or styling</b> in Window → Essential Graphics. ' +
+          'To redo them all, ' + how + ' this set instead of adding a second.';
         hint.classList.remove('hidden');
       } else {
         hint.innerHTML = CAP_RESTYLE_HINT_HTML;
@@ -9653,16 +9796,26 @@
      tree — types, names, ranges, groups — so the editor mirrors Premiere's
      Essential Graphics exactly. Returns clientControls[] or null. */
   function readMogrtDefinition(path) {
+    var d = readMogrtDefinitionFull(path);
+    return (d && d.clientControls) ? d.clientControls : null;
+  }
+  /* The whole definition.json (controls AND the comp's frame size, length and
+     fonts — what the Premium fit plans from), read once per template. */
+  var _mogrtDefCache = {};
+  function readMogrtDefinitionFull(path) {
+    if (!path || !/\.mogrt$/i.test(path)) return null;
+    if (_mogrtDefCache.hasOwnProperty(path)) return _mogrtDefCache[path];
+    var d = null;
     try {
-      if (!path || !/\.mogrt$/i.test(path)) return null;
       var cp = nodeReq('child_process');
       // execFileSync with an args ARRAY — no shell. The old quoted-string form
       // was POSIX-escaped but NOT cmd.exe-safe: a mogrt filename containing a
       // quote (or %VAR%) could break out of the quoting on Windows.
       var buf = cp.execFileSync('unzip', ['-p', String(path), 'definition.json'], { maxBuffer: 64 * 1024 * 1024 });
-      var d = JSON.parse(buf.toString('utf8'));
-      return (d && d.clientControls) ? d.clientControls : null;
-    } catch (e) { return null; }
+      d = JSON.parse(buf.toString('utf8'));
+    } catch (e) { d = null; }
+    if (d) _mogrtDefCache[path] = d;   // a failed read is retried next time
+    return d;
   }
   function ctrlName(c) { try { return c.uiName.strDB[0].str; } catch (e) { return ''; } }
   /* type-4 colour value is [r,g,b,a] floats 0..1 → "#rrggbb". */
@@ -9842,15 +9995,15 @@
     box.classList.remove('hidden');
     box.innerHTML = '<p class="hint">Reading template…</p>';
     var defs = readMogrtDefinition(path);   // the .mogrt's own control tree (or null)
-    // Inspecting drops a throwaway graphic on the timeline to read the live
-    // Essential-Graphics fields. Cache the result per template so re-opening the
-    // same card never re-imports — less timeline churn, instant re-open.
+    // The controls come from the template's own definition.json RIGHT AWAY —
+    // no Premiere needed (an unsaved project or a failed read used to leave
+    // "Couldn't read template" and zero controls). Premiere's live list
+    // (CP_inspectMogrt drops a throwaway graphic to read it — cached per
+    // template so re-opening never re-imports) only refines it: when its
+    // controls sit at other places than the file says, the sheet is rebuilt
+    // on them and every edit made so far is carried across by name.
     var cached = _inspectCache[path];
-    var inspectP = cached
-      ? Promise.resolve(cached)
-      : CPBridge.callHost('CP_inspectMogrt', { path: path }).then(function (r) { _inspectCache[path] = r; return r; });
-    inspectP.then(function (r) {
-      var props = r.props || [];
+    function build(props) {
       box.innerHTML = '';
       var head = document.createElement('div'); head.className = 'mp-head';
       head.textContent = '✏️ Customize';
@@ -9860,10 +10013,10 @@
       var bar = document.createElement('div'); bar.className = 'mp-toolbar';
       var rb = document.createElement('button'); rb.type = 'button'; rb.className = 'chip-btn';
       rb.textContent = '↺ Reset'; rb.title = 'Reset every edit back to the template default';
-      rb.addEventListener('click', function () { resetMogrtEdits(path); });
+      rb.addEventListener('click', function () { resetMogrtEdits(path, box); });
       var sb = document.createElement('button'); sb.type = 'button'; sb.className = 'chip-btn';
       sb.textContent = '＋ Save as custom'; sb.title = 'Save these edits as a reusable template in “Your templates”';
-      sb.addEventListener('click', function () { saveCustomMogrt(path); });
+      sb.addEventListener('click', function () { saveCustomMogrt(path, box); });
       bar.appendChild(rb); bar.appendChild(sb); box.appendChild(bar);
 
       // live colour/font preview — repaints as the controls below are edited.
@@ -9887,7 +10040,9 @@
       }
 
       if (defs && defs.length) {
-        renderFromDefinition(box, defs, props);   // exact Essential-Graphics layout
+        // exact Essential-Graphics layout (the template sheet also shows the
+        // caption size it will send; the 📁 Upload view inserts as authored)
+        renderFromDefinition(box, defs, props, box.id === 'ms-customizer' ? path : null);
       } else {
         renderFromInspect(box, props);            // fallback: types guessed from values
       }
@@ -9896,7 +10051,23 @@
       // leave it until the first edit (renderMogrtPreview reveals the canvas then).
       if (box.id !== 'ms-customizer' || !state.mogrtShowingReal) renderMogrtPreview();
       makeCustomizerCollapsible(box);   // fold the controls into expandable sections
-    }).catch(function (e) {
+    }
+    if (defs && defs.length) {
+      build((cached && cached.props) || []);
+      if (!cached && CPBridge.isCEP()) {
+        CPBridge.callHost('CP_inspectMogrt', { path: path }).then(function (r) {
+          _inspectCache[path] = r;
+          var moved = premRemapToLive(path, defs, (r && r.props) || []);
+          if (moved && box.isConnected !== false && state.mogrtParamsPath === path) build(r.props || []);
+        }).catch(function () { /* the file's own controls stay — they need no Premiere */ });
+      }
+      return;
+    }
+    // no readable definition.json (no unzip here): Premiere's live list is the only source
+    var inspectP = cached
+      ? Promise.resolve(cached)
+      : CPBridge.callHost('CP_inspectMogrt', { path: path }).then(function (r) { _inspectCache[path] = r; return r; });
+    inspectP.then(function (r) { build((r && r.props) || []); }).catch(function (e) {
       // build via textContent so a template name/path with < > & in the error
       // can't break the panel layout (or inject markup)
       box.innerHTML = '';
@@ -9905,16 +10076,36 @@
       box.appendChild(p);
     });
   }
+  /* Premiere's live control list may place controls differently from the
+     template file (group headers dropped, say). Move every edit already made
+     onto its live place, by name. True when anything sits elsewhere live. */
+  function premRemapToLive(path, defs, props) {
+    if (!props || !props.length) return false;
+    var byName = {}, i, moved = false, map = {};
+    for (i = 0; i < props.length; i++) { var nm = normName(props[i].name); if (nm && !(nm in byName)) byName[nm] = (props[i].i != null ? props[i].i : i); }
+    for (i = 0; i < defs.length; i++) {
+      var dn = normName(ctrlName(defs[i]));
+      if (dn && (dn in byName) && byName[dn] !== i) { map[i] = byName[dn]; moved = true; }
+    }
+    if (moved && state.mogrtParamsPath === path) {
+      (state.mogrtParams || []).forEach(function (p) { if (map.hasOwnProperty(p.i)) p.i = map[p.i]; });
+    }
+    return moved;
+  }
 
   /* Fold the generated controls into expandable sections so the customizer is a
      few tidy parts instead of one long form. Each section header (mp-head / mp-sub)
-     toggles the controls beneath it up to the next header; the FIRST section stays
-     open, the rest start collapsed — "click to open the part you want". */
+     toggles the controls beneath it up to the next header. OPEN on arrival: the
+     first part (Reset / Save), "Text style (all lines)" and the template's own
+     first section — only the first part used to open, and that holds just the
+     two buttons, so every Premium sheet looked like it had no options at all
+     ("a lot of customization options are gone"). The rest start folded. */
   function makeCustomizerCollapsible(box) {
     var kids = Array.prototype.slice.call(box.children);
     function isHead(el) { return el && el.classList && (el.classList.contains('mp-head') || el.classList.contains('mp-sub')); }
     var heads = kids.filter(isHead);
     if (heads.length < 2) return;   // nothing to fold
+    var firstOwnOpened = false;
     heads.forEach(function (h, hi) {
       var group = [], k = h.nextElementSibling;
       while (k && !isHead(k)) { group.push(k); k = k.nextElementSibling; }
@@ -9925,7 +10116,12 @@
       if (!group.length) { try { h.parentNode.removeChild(h); } catch (eRm) {} return; }
       h.classList.add('mp-collapsible');
       var caret = document.createElement('span'); caret.className = 'mp-caret'; h.appendChild(caret);
-      var collapsed = hi > 0;   // first part open, rest folded
+      var isTextStyle = /^Text style/.test(h.textContent || '');
+      // …and the part holding the template's size control (Apex's "Scale")
+      var holdsSize = group.some(function (el) { return el.getAttribute && el.getAttribute('data-prem-size') === '1'; });
+      var openNow = (hi === 0) || isTextStyle || holdsSize || (!firstOwnOpened && hi > 0);
+      if (hi > 0 && !isTextStyle && !firstOwnOpened) firstOwnOpened = true;
+      var collapsed = !openNow;
       function apply() {
         for (var g = 0; g < group.length; g++) group[g].style.display = collapsed ? 'none' : '';
         h.classList.toggle('collapsed', collapsed);
@@ -9945,8 +10141,19 @@
      control to its REAL live property BY NAME, and set that. Index is only a
      last-resort fallback. This is what makes colour editing work on the complex
      "auto-subtitle" templates, not just the simple ones. */
-  function renderFromDefinition(box, defs, props) {
+  function renderFromDefinition(box, defs, props, path) {
     var firstTextDone = false;
+    // The caption size Pulse will send (premPlan): the template's size control
+    // shows THAT number — Flux Apex's Scale reads 44%, not its 100% title size
+    // — so what the sheet shows is what lands; moving it sends what was set.
+    var sizePlan = null;
+    try { sizePlan = (path && premGeometry(path)) ? premPlan(path, state.env, premOpts()) : null; } catch (eSp) { sizePlan = null; }
+    var sizeDef = -1;
+    if (sizePlan && sizePlan.fit && sizePlan.geom) {
+      if (sizePlan.knob === 'textScale' && sizePlan.geom.textScale) sizeDef = sizePlan.geom.textScale.i;
+      else if (sizePlan.knob === 'layerScale' && sizePlan.geom.layerScale) sizeDef = sizePlan.geom.layerScale.i;
+    }
+    function markSize(defIdx) { if (defIdx === sizeDef && box.lastElementChild) box.lastElementChild.setAttribute('data-prem-size', '1'); }
 
     // live (Premiere) properties indexed by display name → real settable index
     var liveByName = {};
@@ -10028,8 +10235,23 @@
       if (t === MT.SLIDER || t === MT.ANGLE) {
         var spN = savedParam(liveIdx);
         var cv = (spN && spN.kind === 'number') ? spN.value
+               : (i === sizeDef) ? sizePlan.knobValue
                : (typeof ip.value === 'number') ? ip.value : (c.value != null ? c.value : 0);
         (function (idx) { mpAddSlider(box, name, cv, c.min, c.max, function (v) { setMogrtParam(idx, 'number', v); sheetFirstEdit(); }); })(liveIdx);
+        markSize(i);
+        continue;
+      }
+      if (t === MT.SCALE) {
+        // the template's own SCALE (Apex / Orbit / Vector / Vortex "Scale"),
+        // as one % slider — on the title templates it is what brings the words
+        // to caption size. An animator's scale (Vortex "Animator Scale" 0→100)
+        // is part of the motion, not a size, and stays as authored.
+        if (/animator/.test(normName(name))) continue;
+        var spS = savedParam(liveIdx);
+        var dv = c.value, defPct = Number((dv && typeof dv === 'object' && dv.length) ? dv[0] : dv) || 100;
+        var sv = (spS && (spS.kind === 'scale' || spS.kind === 'number')) ? spS.value : (i === sizeDef ? sizePlan.knobValue : defPct);
+        (function (idx) { mpAddSlider(box, name + ' %', sv, 5, 300, function (v) { setMogrtParam(idx, 'scale', v); sheetFirstEdit(); }); })(liveIdx);
+        markSize(i);
         continue;
       }
       if (t === MT.BOOL) {
@@ -10057,6 +10279,10 @@
         continue;
       }
       if (t === MT.POINT) {
+        // the words' own layer position (Halo's Text Position and its gradient
+        // twin): moving it alone splits the words from their box (HANDOFF
+        // decision 4) — the sheet's Position slider moves the whole graphic
+        if (/^(gradient fg )?text position$/.test(normName(name))) continue;
         var spP = savedParam(liveIdx);
         // prefer Premiere's LIVE value (its real scale) over the tiny definition
         // default, so editing padding/position actually moves things.
@@ -10109,7 +10335,11 @@
           }
           mpAddFontSelect(box, 'Font', startPs, function (v) { if (v) { fFamily = (String(v).split('-')[0]) || fFamily; applyFont(); } });
           mpAddSelect(box, 'Weight', WEIGHTS.map(function (x) { return { value: x, label: x }; }), fWeight, function (v) { fWeight = v || 'Regular'; applyFont(); });
-          mpAddSlider(box, 'Font size', Math.round((richStyle().sizeScale || 1) * 100), 50, 300, function (v) { richStyle().sizeScale = (parseFloat(v) || 100) / 100; sheetFirstEdit(); });
+          // a template with no size control of its own (Flux Echo) is brought to
+          // caption size through its font size: show that, not 100%
+          var fsNow = (state.mogrtTextStyle && state.mogrtTextStyle.sizeScale != null) ? state.mogrtTextStyle.sizeScale
+                    : (sizePlan && sizePlan.fit && sizePlan.knob === 'sizeScale') ? sizePlan.knobValue : 1;
+          mpAddSlider(box, 'Font size', Math.round(fsNow * 100), 10, 300, function (v) { richStyle().sizeScale = (parseFloat(v) || 100) / 100; sheetFirstEdit(); });
           if (blob && (blob.fillColorEditValue || blob.fontFillColorEditValue || blob.FillColorEditValue)) {
             // seed as a LOW-priority fallback (a dedicated "Text Color" colour
             // control, when present, is the real editable text colour and wins).
@@ -10255,34 +10485,651 @@
     return out;
   }
 
-  /* Caption the whole transcript with a specific .mogrt (used by the gallery
-     sheet and the advanced section). Honors the MOGRT word-count control. */
-  function applyMogrtWithPath(mogrtPath, btn, _envRefreshed) {
+  /* ================= Premium (.mogrt) captions that land right =============
+     The owner: "when I click Generate captions it must land perfectly: no
+     oversized text, no cropping, right line length. After that, if I change
+     any setting it must change." A .mogrt offers only what its designer built,
+     so Pulse plans every Premium insert from the template's own
+     definition.json (read without Premiere):
+       SIZE  the comp's real frame size (every Flux comp is 1080×1920) sets the
+             clip scale that fits it to the sequence (host CP_fitScalePct), and
+             the template's own size control — Text Scale, else its layer
+             Scale, else the text's font size — brings the words to caption
+             size: cap height about 5% of the frame's short side. Six of the
+             seven Premium cards are TITLE templates drawn at 139–200 px.
+       LINES every caption is measured at that size against the part of the
+             comp the viewer can see (×0.9), split at sentence ends, pauses of
+             0.5 s and 7 s of speech, and broken into balanced lines (two where
+             the template has Line Spacing, else one) — never one word alone,
+             never between a word and its Hindi postposition or auxiliary.
+       PLACE the whole graphic, box and words together, in the lower third
+             (86%) of a 16:9 frame and at the Reels-safe 62% of a 9:16 one,
+             unless the owner moved the Position slider; never past an edge.
+       TIME  each caption stays 0.5 s after its last word and never runs into
+             the next one: captions are 2 frames apart or at least 0.5 s.
+     The sheet shows the values this plan sends; a control the owner changes
+     is sent as he set it. */
+  var PREM_CAP = 0.05;          // cap height ÷ the frame's short side (BBC: one pixel size suits 16:9 and 9:16)
+  var PREM_CAP_RATIO = 0.72;    // cap height ÷ font size of these sans faces
+  var PREM_FLOOR = 0.05;        // a font never smaller than 5% of the short side — an over-long word is broken instead
+  var PREM_MAX_SPEECH = 7;      // seconds of speech in one caption at most
+  var PREM_PAUSE = 0.5;         // a pause this long starts a new caption
+  var PREM_DEFAULTS = { words: 0, caseMode: 'as-spoken', hold: '0.5', stretch: false, pos: null };
+
+  /* The Premium sheet's own options (words per caption, text case, hold,
+     stretch, position) — they no longer come from the Styles editor's stepper
+     or the 📁 Upload view's case/stretch controls, which the owner cannot see
+     from here. words 0 = ✨ Auto (fit to the template's width). */
+  function premOpts() {
+    if (!state.prem) {
+      var saved = null, o = {}, k;
+      try { saved = JSON.parse(localStorage.getItem('cutpilot.premium') || 'null'); } catch (e) { saved = null; }
+      for (k in PREM_DEFAULTS) if (PREM_DEFAULTS.hasOwnProperty(k)) o[k] = (saved && saved.hasOwnProperty(k)) ? saved[k] : PREM_DEFAULTS[k];
+      state.prem = o;
+    }
+    return state.prem;
+  }
+  function savePremOpts() { try { localStorage.setItem('cutpilot.premium', JSON.stringify(premOpts())); } catch (e) {} }
+  function setPremOpts(o) {
+    var cur = premOpts(), k;
+    for (k in PREM_DEFAULTS) if (PREM_DEFAULTS.hasOwnProperty(k)) cur[k] = (o && o.hasOwnProperty(k)) ? o[k] : PREM_DEFAULTS[k];
+    savePremOpts();
+    return cur;
+  }
+
+  /* What a template's definition.json says about its geometry: comp size,
+     natural length, the caption text control (face + size), the size
+     controls, the box padding and where the words sit in the comp. */
+  var _premGeomCache = {};
+  function premGeometry(path) {
+    if (!path) return null;
+    if (_premGeomCache.hasOwnProperty(path)) return _premGeomCache[path];
+    var g = null;
+    try { g = premGeometryFrom(readMogrtDefinitionFull(path)); } catch (e) { g = null; }
+    if (g) _premGeomCache[path] = g;
+    return g;
+  }
+  function premGeometryFrom(d) {
+    if (!d || !d.clientControls) return null;
+    var si = null;
+    try { si = d.sourceInfoLocalized.en_US; } catch (e0) {}
+    if (!si) { try { for (var lk in d.sourceInfoLocalized) { si = d.sourceInfoLocalized[lk]; break; } } catch (e1) {} }
+    var fsz = si && si.framesize && si.framesize.size;
+    var g = { compW: fsz ? Number(fsz.x) || 0 : 0, compH: fsz ? Number(fsz.y) || 0 : 0,
+              natDur: (si && si.duration) ? (Number(si.duration.value) || 0) / (Number(si.duration.scale) || 1) : 0,
+              texts: 0, textIdx: -1, font: '', fontPx: 0, caps: false,
+              textScale: null, layerScale: null, lineSpacing: null, pad: null, textY: null, names: [] };
+    var defs = d.clientControls, posCands = [];
+    for (var i = 0; i < defs.length; i++) {
+      var c = defs[i], t = c.type, nm = normName(ctrlName(c));
+      g.names.push(nm);
+      if (t === MT.TEXT) {
+        if (/readonly|read only|\bnote\b|change font only/.test(nm)) continue;
+        g.texts++;
+        if (g.textIdx < 0) {
+          g.textIdx = i;
+          var fei = c.fonteditinfo || {};
+          var fv = fei.fontEditValue, sv = fei.fontSizeEditValue;
+          g.font = String((fv && typeof fv === 'object' && fv.length) ? fv[0] : (fv || ''));
+          g.fontPx = Number((sv && typeof sv === 'object' && sv.length) ? sv[0] : sv) || 0;
+          g.caps = !!fei.fontFSAllCapsValue;
+        }
+      } else if (t === MT.SLIDER && nm === 'text scale' && !g.textScale) {
+        g.textScale = { i: i, value: Number(c.value) || 100, name: nm };
+      } else if (t === MT.SLIDER && nm === 'line spacing' && !g.lineSpacing) {
+        g.lineSpacing = { i: i, value: Number(c.value) || 0, name: nm };
+      } else if (t === MT.SCALE && (nm === 'scale' || nm === 'global scale') && !g.layerScale) {
+        var v = c.value;
+        g.layerScale = { i: i, value: Number((v && typeof v === 'object' && v.length) ? v[0] : v) || 100, name: nm };
+      } else if (t === MT.POINT && nm === 'bg box padding' && c.value) {
+        g.pad = { i: i, x: Number(c.value.x) || 0, y: Number(c.value.y) || 0, name: nm };
+      } else if (t === MT.POINT && (nm === 'text position' || nm === 'position') && c.value) {
+        posCands.push({ named: nm === 'text position', x: Number(c.value.x), y: Number(c.value.y) });
+      }
+    }
+    // where the words sit: an absolute point inside the comp near its middle
+    // (Halo's Text Position 540,960; Apex's text layer 550,1003). Offsets the
+    // template measures from a parent (Subtitle_1: 0.9,-55) say nothing → centre.
+    for (var p = 0; p < posCands.length && g.compW; p++) {
+      var pc = posCands[p];
+      if (Math.abs(pc.x - g.compW / 2) <= g.compW * 0.1 && pc.y > 0 && pc.y < g.compH) {
+        if (g.textY == null || pc.named) g.textY = pc.y;
+      }
+    }
+    return g;
+  }
+
+  /* Width of a line of caption text at `px` (frame pixels) in the face `ps`.
+     Measured with Arial Bold's metrics (Liberation Sans has the same widths),
+     times the face's measured width over Arial Bold (Inter SemiBold ≤ 1.09,
+     Poppins SemiBold ≤ 1.18 — the widest of a Hinglish/English corpus), so a
+     line that measures as fitting fits in the real face. Hindi letters are
+     measured in the system's own Devanagari face, plus a 10% margin. */
+  var _premCtx = null;
+  function premFaceFactor(ps) {
+    var s = String(ps || '').toLowerCase();
+    if (/devanagari|nirmala|mukta|\bhind\b|baloo|kohinoor/.test(s)) return 1.1;
+    if (/^(arial|liberation|helvetica)/.test(s)) return 1.0;
+    if (/^inter/.test(s)) return 1.1;
+    if (/^poppins/.test(s)) return 1.18;
+    if (/haas/.test(s)) return 1.08;
+    if (/^(montserrat|archivo|unbounded|rubik|lexend)/.test(s)) return 1.3;   // the wide heavy display faces
+    return 1.25;   // a face not measured: assume wide, so a line that fits on paper fits on screen
+  }
+  function premMeasure(text, px, ps) {
+    var s = String(text == null ? '' : text), em = 0;
+    try {
+      if (!_premCtx) _premCtx = document.createElement('canvas').getContext('2d');
+      _premCtx.font = '700 100px Arial, "Liberation Sans", "Helvetica Neue", Helvetica, sans-serif';
+      em = _premCtx.measureText(s).width / 100;
+    } catch (e) { em = 0; }
+    if (!(em > 0)) {   // no canvas: a per-letter estimate of a bold sans
+      for (var i = 0; i < s.length; i++) {
+        var ch = s.charAt(i);
+        em += /[A-Z]/.test(ch) ? 0.72 : /[a-z0-9]/.test(ch) ? 0.58 : /\s/.test(ch) ? 0.28 : /[ऀ-ॿ]/.test(ch) ? 0.5 : 0.4;
+      }
+    }
+    var f = premFaceFactor(ps);
+    if (/[ऀ-ॿ]/.test(s)) f = Math.max(f, 1.1);
+    return em * px * f;
+  }
+
+  /* Hindi / Hinglish line-break rules. Romanised Hindi function words only
+     count as Hindi when the transcript is Hinglish ("the" is थे there, an
+     English article elsewhere). */
+  var PREM_POSTPOS_DEVA = { 'का': 1, 'की': 1, 'के': 1, 'को': 1, 'ने': 1, 'से': 1, 'में': 1, 'पर': 1, 'तक': 1, 'वाला': 1, 'वाली': 1, 'वाले': 1 };
+  var PREM_POSTPOS_ROMAN = { ka: 1, ki: 1, ke: 1, ko: 1, ne: 1, se: 1, mein: 1, me: 1, par: 1, tak: 1, wala: 1, wali: 1, wale: 1 };
+  var PREM_AUX_DEVA = { 'है': 1, 'हैं': 1, 'था': 1, 'थी': 1, 'थे': 1, 'हूँ': 1, 'हूं': 1, 'हो': 1, 'रहा': 1, 'रही': 1, 'रहे': 1,
+                        'गया': 1, 'गई': 1, 'गए': 1, 'सकता': 1, 'सकती': 1, 'सकते': 1, 'चाहिए': 1 };
+  var PREM_AUX_ROMAN = { hai: 1, hain: 1, tha: 1, thi: 1, the: 1, hoon: 1, hun: 1, ho: 1, raha: 1, rahi: 1, rahe: 1,
+                         gaya: 1, gayi: 1, gaye: 1, sakta: 1, sakti: 1, sakte: 1, chahiye: 1 };
+  var PREM_CONJ = { 'और': 1, 'लेकिन': 1, 'कि': 1, 'तो': 1, 'क्योंकि': 1, aur: 1, lekin: 1, toh: 1, kyunki: 1, kyonki: 1,
+                    but: 1, and: 1, so: 1, because: 1 };
+  var PREM_BAD_END_HI = { aur: 1, 'और': 1, nahi: 1, nahin: 1, na: 1, mat: 1, 'नहीं': 1, 'न': 1, 'मत': 1 };
+  var PREM_BAD_END_EN = { a: 1, an: 1, the: 1, of: 1, to: 1, 'in': 1, on: 1, at: 1, 'for': 1, 'with': 1, from: 1, by: 1, into: 1, not: 1, and: 1 };
+  var PREM_HINGLISH = /^(hai|hain|ka|ki|ke|ko|ne|se|mein|nahi|nahin|kya|aur|bhi|toh|yeh|woh|kar|raha|rahe|rahi|tha|thi|apne|aap|hum|main|bahut|kyunki|sabse|pehle)$/;
+  function premBare(t) { return String(t == null ? '' : t).toLowerCase().replace(/^[^a-z0-9ऀ-ॿ]+|[^a-z0-9ऀ-ॿ]+$/g, ''); }
+  function premLang(words) {
+    var deva = 0, hi = 0, n = words.length;
+    for (var i = 0; i < n; i++) {
+      var t = String(words[i].text || '');
+      if (/[ऀ-ॿ]/.test(t)) deva++;
+      else if (PREM_HINGLISH.test(premBare(t))) hi++;
+    }
+    if (deva && deva >= n * 0.2) return 'deva';
+    return (n && hi / n >= 0.06) ? 'hinglish' : 'english';
+  }
+  function premNoStart(w, lang) {
+    var raw = String(w.text || '').replace(/^\s+/, ''), b = premBare(raw);
+    if (/^[।॥]/.test(raw)) return true;                          // never before a danda
+    if (PREM_POSTPOS_DEVA[b] || PREM_AUX_DEVA[b]) return true;    // never split a word from its postposition / auxiliary
+    return lang !== 'english' && !!(PREM_POSTPOS_ROMAN[b] || PREM_AUX_ROMAN[b]);
+  }
+  function premPunctEnd(w) { return /[,.;:?!।॥…]["'”’)\]]*$/.test(String(w.text || '')); }
+  function premSentenceEnd(w) { return /[.?!।॥]["'”’)\]]*$/.test(String(w.text || '')); }
+  function premBadEnd(w, lang) {
+    if (premPunctEnd(w)) return false;
+    var b = premBare(w.text);
+    if (lang !== 'english' && PREM_BAD_END_HI[b]) return true;   // a caption never ends on "aur" or a negation
+    return lang !== 'deva' && !!PREM_BAD_END_EN[b] && !(lang === 'hinglish' && PREM_AUX_ROMAN[b]);
+  }
+  function premConj(w) { return !!PREM_CONJ[premBare(w.text)]; }
+
+  /* The plan for one template on one sequence: clip scale, caption font size,
+     the line budget, lines per caption and the graphic's row. o = premOpts()
+     (+ fixedScale: the editable path's own size). */
+  function premPlan(path, env, o) {
+    o = o || {};
+    var g = premGeometry(path);
+    var W = (env && env.width) || 1920, H = (env && env.height) || 1080, shortSide = Math.min(W, H);
+    var plan = { path: path, geom: g, seqW: W, seqH: H, known: !!(g && g.compW > 0 && g.compH > 0),
+                 fps: (env && env.fps) || 30, words: o.words || 0 };
+    plan.clipScale = plan.known ? Math.round(10000 * shortSide / Math.min(g.compW, g.compH)) / 100 : 100;
+    var C = plan.clipScale / 100;
+    plan.fit = !!(plan.known && g.fontPx > 0 && g.texts === 1);
+    // the editable path sizes the engine from its own style (o.fixedScale), never from this sheet's edits
+    var ex = o.fixedScale ? { textScale: null, layerScale: null, sizeScale: null, pad: null } : premExplicit(path, g);
+    plan.explicit = ex;
+    var T = (ex.textScale != null) ? ex.textScale : (g && g.textScale ? g.textScale.value : 100);
+    var L = (ex.layerScale != null) ? ex.layerScale : (g && g.layerScale ? g.layerScale.value : 100);
+    var S = (ex.sizeScale != null) ? ex.sizeScale : 1;
+    if (o.fixedScale) S = o.fixedScale;
+    plan.knob = !g ? null : (g.textScale ? 'textScale' : (g.layerScale ? 'layerScale' : 'sizeScale'));
+    var knobOwned = !!o.fixedScale || (plan.knob === 'textScale' && ex.textScale != null) ||
+                    (plan.knob === 'layerScale' && ex.layerScale != null) || (plan.knob === 'sizeScale' && ex.sizeScale != null);
+    // the template's DESIGN size on this frame (its own control values), and the
+    // factor that makes it caption size — carried by the one size control the
+    // owner has not set himself; whatever he did set multiplies on top, so a
+    // change he makes always shows
+    var Tdef = (g && g.textScale) ? g.textScale.value : 100, Ldef = (g && g.layerScale) ? g.layerScale.value : 100;
+    var designPx = (g ? g.fontPx : 0) * (Tdef / 100) * (Ldef / 100) * C;
+    plan.targetPx = PREM_CAP * shortSide / PREM_CAP_RATIO;          // 75 px on a 1080-class frame
+    var k = 1;
+    if (plan.fit && !knobOwned && designPx > 0) {
+      k = plan.targetPx / designPx;
+      if (Math.abs(k - 1) < 0.06) k = 1;                             // already caption size (Flux Halo: exactly)
+      k = Math.max(0.25, Math.min(4, k));
+    }
+    plan.autoK = k;
+    plan.knobValue = (plan.knob === 'textScale') ? Math.round(T * k * 100) / 100
+                   : (plan.knob === 'layerScale') ? Math.round(L * k * 100) / 100
+                   : Math.round(S * k * 10000) / 10000;
+    plan.fontPx = (g ? g.fontPx : 0) * (T / 100) * (L / 100) * S * C * k;
+    plan.minPx = PREM_FLOOR * shortSide;
+    plan.maxLines = (g && g.lineSpacing && g.texts === 1) ? 2 : 1;
+    // the box's padding (the editable path grows it with the text: mapPresetToFlux)
+    var padK = o.fixedScale ? o.fixedScale : 1;
+    var padX = (g && g.pad) ? ((ex.pad ? ex.pad.x : g.pad.x) * padK * C) : 0;
+    var padY = (g && g.pad) ? ((ex.pad ? ex.pad.y : g.pad.y) * padK * C) : 0;
+    plan.visW = plan.known ? Math.min(g.compW * C, W) : W;
+    // the line budget: 90% of the comp the viewer sees, within ~86% (16:9) /
+    // 90% (9:16) of the frame, less the box's own padding either side
+    plan.maxW = Math.min(plan.visW * 0.9, W * (H > W ? 0.9 : 0.86)) - 2 * padX;
+    plan.padX = padX; plan.padY = padY;
+    // ROW: the owner's Position, else the lower third / Reels-safe 62%; the
+    // whole graphic (its lines and box) is kept inside the frame
+    var autoRow = (H > W) ? 0.62 : 0.86;
+    plan.autoRow = autoRow;
+    var row = (o.pos != null && isFinite(o.pos)) ? Number(o.pos) : autoRow;
+    var lineH = plan.fontPx * 1.2;                                   // After Effects' auto leading
+    var half = (plan.maxLines * lineH) / 2 + padY + H * 0.015;
+    var rowPx = Math.max(half, Math.min(H - half, row * H));
+    plan.row = rowPx / H;
+    var dy = (g && g.textY != null && g.compH) ? (g.textY - g.compH / 2) * C : 0;
+    plan.posYPct = Math.round(10000 * (rowPx - dy) / H) / 10000;
+    return plan;
+  }
+
+  /* Index in Premiere's live component of the definition control `defIdx`
+     (the same order on the Flux templates; matched by name when the live list
+     differs). */
+  function premLiveIdx(path, defIdx) {
+    var cached = _inspectCache[path], g = premGeometry(path);
+    var props = cached && cached.props;
+    if (!props || !props.length || !g || !g.names[defIdx]) return defIdx;
+    for (var i = 0; i < props.length; i++) if (normName(props[i].name) === g.names[defIdx]) return props[i].i != null ? props[i].i : i;
+    return defIdx;
+  }
+  /* The size / padding values the owner set himself in the sheet (null =
+     untouched: the plan's own value goes out). */
+  function premExplicit(path, g) {
+    var own = (state.mogrtParamsPath === path) ? (state.mogrtParams || []) : [];
+    function ownVal(ctrl) {
+      if (!ctrl) return null;
+      var li = premLiveIdx(path, ctrl.i);
+      for (var i = 0; i < own.length; i++) if (own[i].i === li) return own[i].value;
+      return null;
+    }
+    var ts = (state.mogrtParamsPath === path && state.mogrtTextStyle) ? state.mogrtTextStyle.sizeScale : null;
+    var t = g ? ownVal(g.textScale) : null, l = g ? ownVal(g.layerScale) : null, pd = g ? ownVal(g.pad) : null;
+    return { textScale: (t != null && isFinite(parseFloat(t))) ? parseFloat(t) : null,
+             layerScale: (l != null && isFinite(parseFloat(l))) ? parseFloat(l) : null,
+             sizeScale: (ts != null && isFinite(ts)) ? Number(ts) : null,
+             pad: (pd && pd.x != null) ? pd : null };
+  }
+  /* The plan's size control as it will be SENT: { i, kind, value, factor }
+     (null when nothing changes) — the sheet shows the same number. */
+  function premSizeFit(plan) {
+    var g = plan.geom;
+    if (!g || plan.autoK === 1) return null;
+    if (plan.knob === 'textScale') return { i: premLiveIdx(plan.path, g.textScale.i), kind: 'number', value: plan.knobValue, factor: plan.autoK };
+    if (plan.knob === 'layerScale') return { i: premLiveIdx(plan.path, g.layerScale.i), kind: 'scale', value: plan.knobValue, factor: plan.autoK };
+    return { i: -1, kind: 'text', value: plan.knobValue, factor: plan.autoK };
+  }
+
+  /* The face the words go out in: the template's own (or the one the owner
+     picked) unless it cannot draw them — the same resolver the editable path
+     uses (editableFamily), plus what is known about the template faces before
+     the installed-font scan has run: Inter, Arial and Neue Haas have no Hindi
+     letters, and Premiere would put blank Hindi on the timeline. */
+  var PREM_NO_DEVA = /^(inter|arial|helvetica|nhaas|neuehaas|montserrat|roboto|opensans|lato|oswald|bebas|anton|archivo|spacegrotesk|dmsans|manrope|sora|outfit|syne|rubik|barlow|raleway|worksans|nunito|playfair|merriweather|lora|rethink)/i;
+  var _premFontToasted = {};
+  function premDevaFace() {
+    var cands = ['Kohinoor Devanagari', 'Nirmala UI', 'Noto Sans Devanagari', 'Mukta'];
+    for (var i = 0; i < cands.length; i++) if (fontInstalled(cands[i]) === true) return cands[i];
+    var plat = '';
+    try { plat = String((typeof navigator !== 'undefined' && navigator.platform) || ''); } catch (e) {}
+    return /mac/i.test(plat) ? 'Kohinoor Devanagari' : (/win/i.test(plat) ? 'Nirmala UI' : 'Noto Sans Devanagari');
+  }
+  function premFont(g, text, ownerFont) {
+    var ps = String(ownerFont || (g && g.font) || '');
+    var family = mogrtFontFamily(ps) || ps;
+    var needs = (typeof CPFonts !== 'undefined' && CPFonts.scriptNeeds) ? CPFonts.scriptNeeds(text || '')
+              : { latin: /[A-Za-z]/.test(text || ''), devanagari: /[ऀ-ॿ]/.test(text || '') };
+    var out = { font: ownerFont || null, ps: ps, family: family, why: null };
+    var pick = null;
+    try { pick = editableFamily(family, needs, null, false); } catch (e) { pick = null; }
+    var cov = fontCoverage(family);
+    var noDeva = !!needs.devanagari && ((cov && cov.devanagari === false) || (!cov && PREM_NO_DEVA.test(ps.replace(/\s+/g, ''))));
+    var swapTo = null;
+    if (pick && pick.family && pick.family !== family) { swapTo = pick.family; out.why = pick.why; }
+    if (noDeva && (!swapTo || PREM_NO_DEVA.test(String(swapTo).replace(/\s+/g, '')))) { swapTo = premDevaFace(); out.why = 'script'; }
+    if (swapTo) {
+      out.family = swapTo;
+      out.font = CPCaptions.psFontName(swapTo, 'Bold');
+      out.ps = out.font;
+      var key = family + '>' + swapTo;
+      if (!_premFontToasted[key]) {
+        _premFontToasted[key] = 1;
+        try { diag('fonts', 'premium: "' + family + '" ' + (out.why === 'missing' ? 'is not installed' : 'cannot draw these words') + ' → "' + swapTo + '"'); } catch (eD) {}
+        toast(out.why === 'missing'
+          ? '“' + family + '” isn’t installed on this computer, so these captions use “' + swapTo + '” (Premiere can only draw installed fonts).'
+          : '“' + family + '” has no Hindi letters, so these captions use “' + swapTo + '” — never blank Hindi on the timeline.');
+      }
+    }
+    return out;
+  }
+
+  /* Lay words a..b (each with .w = its width) into at most maxLines lines no
+     wider than maxW: one line when it fits, else the best balanced break.
+     { breaks:[k], width, cost } or null. */
+  function premLayout(ws, a, b, span, maxW, maxLines, lang) {
+    var total = span(a, b);
+    if (total <= maxW) return { breaks: [], width: total, cost: 0 };
+    if (maxLines < 2 || b - a < 2) return null;
+    var best = null, n = b - a, minPer = (n >= 6) ? 3 : (n >= 3 ? 2 : 1);
+    for (var k = a + 1; k < b; k++) {
+      var w1 = span(a, k), w2 = span(k, b);
+      if (w1 > maxW || w2 > maxW) continue;
+      var c = Math.abs(w2 - 1.05 * w1) / maxW * 100;          // balanced, the bottom line ~5% longer
+      if (k - a < minPer || b - k < minPer) c += 200;          // never one or two words alone on a line…
+      if (n >= 3 && (k - a === 1 || b - k === 1)) c += 1500;   // …a lone word above all (an extra caption is better)
+      if (premNoStart(ws[k], lang)) c += 5000;                 // never before a postposition / auxiliary / danda (an extra caption is better)
+      if (premBadEnd(ws[k - 1], lang)) c += 60;                 // not right after "aur", a negation or an article
+      if (premPunctEnd(ws[k - 1])) c -= 40;                     // after punctuation reads best
+      if (premConj(ws[k])) c -= 25;                             // …or before a conjunction
+      if (!best || c < best.cost) best = { breaks: [k], width: Math.max(w1, w2), cost: c };
+    }
+    return best;
+  }
+
+  /* One phrase (no sentence end / long pause / speaker change inside) →
+     captions: the fewest that fit, then the most even, with the same grammar
+     rules at caption boundaries. words>0 = the owner's fixed words per caption. */
+  function premSplitPhrase(ws, plan, lang) {
+    var n = ws.length, span = premSpan(ws, plan.space);
+    var cap = plan.maxW * plan.maxLines;
+    var kEst = Math.max(1, Math.ceil(span(0, n) / (cap * 0.9)));
+    if (plan.words > 0) kEst = Math.max(kEst, Math.ceil(n / plan.words));
+    var target = span(0, n) / kEst;
+    var best = [0], from = [-1], lay = [null];
+    for (var j = 1; j <= n; j++) {
+      best[j] = Infinity; from[j] = -1; lay[j] = null;
+      for (var a = j - 1; a >= 0 && j - a <= 40; a--) {
+        if (plan.words > 0 && j - a > plan.words) break;
+        if (j - a > 1 && ws[j - 1].end - ws[a].start > PREM_MAX_SPEECH) break;
+        if (best[a] === Infinity) continue;
+        var L = premLayout(ws, a, j, span, plan.maxW, plan.maxLines, lang);
+        if (!L) { if (j - a > 1) continue; L = { breaks: [], width: span(a, j), cost: 0, over: true }; }
+        var c = 1000 + L.cost + 150 * Math.abs(span(a, j) - target) / Math.max(1, target);
+        if (j < n) {
+          if (premNoStart(ws[j], lang)) c += 3000;               // nor split across two captions
+          if (premBadEnd(ws[j - 1], lang)) c += 400;               // a caption does not end on "aur", a negation or an article
+          if (premPunctEnd(ws[j - 1])) c -= 80;
+          if (premConj(ws[j])) c -= 40;
+        }
+        if (j - a === 1 && n >= 3) c += 300;                    // no lone-word caption mid-sentence
+        if (best[a] + c < best[j]) { best[j] = best[a] + c; from[j] = a; lay[j] = L; }
+      }
+    }
+    var out = [], e = n;
+    while (e > 0) { var s = from[e]; out.unshift({ a: s, b: e, L: lay[e] }); e = s; }
+    return out;
+  }
+
+  /* Words laid out by premLayout → one caption: its time, its lines joined by
+     " \r" (the break keeps a space, so the template's own word count — and
+     Pulse's sweep — still sees every word). */
+  function premCaption(ws, L, base) {
+    var lines = [], prev = 0, br = (L && L.breaks) || [];
+    base = base || 0;   // L's breaks count from here (the caption's first word in its phrase)
+    for (var b = 0; b < br.length; b++) { lines.push(ws.slice(prev, br[b] - base)); prev = br[b] - base; }
+    lines.push(ws.slice(prev));
+    return { start: ws[0].start, end: ws[ws.length - 1].end, nWords: ws.length, lines: lines.length, ws: ws,
+             text: lines.map(function (l) { return l.map(function (w) { return w.text; }).join(' '); }).join(' \r') };
+  }
+  /* Width of words a..b of `ws` on one line (their measured .w plus spaces). */
+  function premSpan(ws, space) {
+    var pre = [0];
+    for (var i = 0; i < ws.length; i++) pre.push(pre[i] + ws[i].w);
+    return function (a, b) { return pre[b] - pre[a] + space * Math.max(0, b - a - 1); };
+  }
+
+  /* A word wider than a whole line at caption size: break it into pieces
+     that fit (the size never drops below the legible floor for it). */
+  function premBreakWord(text, maxW, px, ps) {
+    var s = String(text), pieces = [], cur = '';
+    for (var i = 0; i < s.length; i++) {
+      var nx = cur + s.charAt(i);
+      if (cur && premMeasure(nx + '-', px, ps) > maxW) { pieces.push(cur + '-'); cur = s.charAt(i); }
+      else cur = nx;
+    }
+    if (cur) pieces.push(cur);
+    return pieces;
+  }
+
+  /* How long each caption stays: its last word + the hold (0.5 s), at least
+     0.833 s for a caption of several words (0.3 s for one word), longer when
+     it would be read faster than 20 characters a second (22 in Hindi) — only
+     ever into silence: never into the next caption, and a gap under 0.5 s
+     closes to exactly 2 frames. Sets .showUntil. */
+  function premTiming(caps, plan, hold) {
+    var f = 1 / (plan.fps || 30), lag = (hold === 'next') ? 3 : (parseFloat(hold) || 0);
+    for (var i = 0; i < caps.length; i++) {
+      var c = caps[i], nx = caps[i + 1];
+      var chars = String(c.text).replace(/\s+/g, '').length;
+      var cps = /[ऀ-ॿ]/.test(c.text) ? 22 : 20;
+      var want = c.end + lag;
+      want = Math.max(want, c.start + (c.nWords > 1 ? 0.833 : 0.3), c.start + chars / cps);
+      if (nx) {
+        var limit = nx.start - 2 * f;
+        if (want > limit || nx.start - want < PREM_PAUSE) want = limit;   // 2 frames apart, or at least half a second
+      }
+      if (want < c.start + f) want = c.start + f;
+      c.showUntil = Math.round(want * 1000) / 1000;
+    }
+    return caps;
+  }
+
+  /* The transcript's words with their real timing (the whisper word pass),
+     else each line's words spread over it. */
+  function premWords(cues) {
+    var src = (cues && cues.words && cues.words.length > 3) ? cues.words : null;
+    var out = [];
+    if (src) {
+      for (var i = 0; i < src.length; i++) {
+        var t = String(src[i].text || src[i].word || '').replace(/\s+/g, ' ').replace(/^ | $/g, '');
+        if (t) out.push({ start: +src[i].start || 0, end: +src[i].end || 0, text: t, speaker: src[i].speaker });
+      }
+      return out;
+    }
+    return CPCaptions.explodeWords(cues || [], { wordsPerCue: 1 });
+  }
+
+  /* Everything one Premium insert sends, from the transcript: the cues (each
+     with its line breaks and hold), the template's params including the
+     caption-size control, the text style with the resolved face, the row,
+     and the size fallback for the host. */
+  function premBuild(cues, path, env, o) {
+    o = o || premOpts();
+    var plan = premPlan(path, env, o);
+    var g = plan.geom;
+    var words = premWords(cues);
+    var off = captionSyncOffset();
+    if (off) words = words.map(function (w) { return { start: Math.max(0, w.start + off), end: Math.max(0, w.end + off), text: w.text, speaker: w.speaker }; });
+    var mode = o.caseMode || 'as-spoken';
+    if (mode !== 'as-spoken') words = words.map(function (w) { return { start: w.start, end: w.end, text: applyCase(w.text, mode), speaker: w.speaker }; });
+    var ownStyle = resolveTextStyleFont((state.mogrtParamsPath === path) ? state.mogrtTextStyle : null);
+    var textStyle = {};
+    if (ownStyle) for (var k in ownStyle) if (ownStyle.hasOwnProperty(k)) textStyle[k] = ownStyle[k];
+    var allText = words.map(function (w) { return w.text; }).join(' ');
+    var face = premFont(g, allText, textStyle.font || null);
+    if (face.font) { textStyle.font = face.font; if (face.font !== (ownStyle && ownStyle.font)) textStyle.bold = false; }
+    if (plan.knob === 'sizeScale' && plan.autoK !== 1) textStyle.sizeScale = plan.knobValue;
+    var upper = !!(textStyle.caps || (g && g.caps && textStyle.caps !== false));
+    var lang = premLang(words);
+    plan.space = premMeasure(' ', plan.fontPx || 75, face.ps);
+    var caps = [];
+    if (plan.fit && words.length) {
+      for (var i = 0; i < words.length; i++) words[i].w = premMeasure(upper ? words[i].text.toUpperCase() : words[i].text, plan.fontPx, face.ps);
+      var phrase = [];
+      var flush = function () {
+        if (!phrase.length) return;
+        premSplitPhrase(phrase, plan, lang).forEach(function (seg) {
+          var ws = phrase.slice(seg.a, seg.b);
+          if (seg.L && seg.L.over) {
+            // one word wider than a whole line: break it into pieces that fit
+            var parts = premBreakWord(ws[0].text, plan.maxW, plan.fontPx, face.ps);
+            var per = Math.max(1, plan.maxLines);
+            for (var p = 0; p < parts.length; p += per) {
+              var span = ws[0].end - ws[0].start, t0 = ws[0].start + span * p / parts.length;
+              var t1 = ws[0].start + span * Math.min(parts.length, p + per) / parts.length;
+              caps.push({ start: t0, end: t1, text: parts.slice(p, p + per).join(' \r'), nWords: 1, lines: Math.min(per, parts.length - p) });
+            }
+            return;
+          }
+          caps.push(premCaption(ws, seg.L, seg.a));
+        });
+        phrase = [];
+      };
+      for (var w2 = 0; w2 < words.length; w2++) {
+        phrase.push(words[w2]);
+        var nx = words[w2 + 1];
+        var spk = nx && words[w2].speaker != null && nx.speaker != null && words[w2].speaker !== nx.speaker;
+        if (!nx || premSentenceEnd(words[w2]) || (nx.start - words[w2].end) >= PREM_PAUSE || spk) flush();
+      }
+      flush();
+      // a caption that could show for under 0.2 s before the next one (2
+      // frames apart) — fast one-word "pop" captions — would only flash: it
+      // joins the next caption when the two still fit together
+      var gap2 = 2 / (plan.fps || 30);
+      for (var fm = 0; fm + 1 < caps.length; fm++) {
+        var fc = caps[fm], fnx = caps[fm + 1];
+        if (!fc.ws || !fnx.ws || fnx.start - gap2 - fc.start >= 0.2) continue;
+        var mws = fc.ws.concat(fnx.ws);
+        var mL = premLayout(mws, 0, mws.length, premSpan(mws, plan.space), plan.maxW, plan.maxLines, lang);
+        if (mL) { caps.splice(fm, 2, premCaption(mws, mL)); fm--; }
+      }
+    } else if (words.length) {
+      // geometry unknown (no definition.json): sentence-aware grouping by characters
+      var perLine = (plan.seqH > plan.seqW) ? 17 : 24;
+      caps = CPCaptions.regroupWords(words, o.words > 0 ? o.words : 14,
+        { maxChars: o.words > 0 ? Math.max(perLine, o.words * 9) : perLine * plan.maxLines, sentenceBreak: true, hardGap: PREM_PAUSE })
+        .map(function (c) { return { start: c.start, end: c.end, text: c.text, nWords: String(c.text).split(/\s+/).length, lines: 1 }; });
+    }
+    premTiming(caps, plan, o.hold);
+    var out = caps.map(function (c) { return { start: c.start, end: c.end, text: c.text, showUntil: c.showUntil }; });
+    var params = ((state.mogrtParamsPath === path) ? (state.mogrtParams || []) : []).map(function (p) { return { i: p.i, kind: p.kind, value: p.value }; });
+    var sizeFit = premSizeFit(plan);
+    if (sizeFit && sizeFit.kind !== 'text') params.push({ i: sizeFit.i, kind: sizeFit.kind, value: sizeFit.value });
+    return { cues: out, plan: plan, params: params, textStyle: textStyle, sizeFit: sizeFit, face: face, lang: lang,
+             posYPct: plan.known ? plan.posYPct : null, stretch: !!o.stretch,
+             compW: g ? g.compW : 0, compH: g ? g.compH : 0, lines: caps.map(function (c) { return c.lines; }) };
+  }
+  /* The plan applied to a few sample words (the card renders, ▶ Try on
+     timeline): their first caption exactly as the insert would make it. */
+  function premBuildSample(path, text, env) {
+    var ws = String(text || '').split(/\s+/).filter(function (x) { return x; });
+    var t = 0, words = ws.map(function (w) { var o = { start: t, end: t + 0.3, text: w }; t += 0.32; return o; });
+    var cues = [{ start: 0, end: Math.max(0.3, t), text: ws.join(' ') }];
+    cues.words = words.length > 3 ? words : null;
+    var o = {}, cur = premOpts(), k;
+    for (k in cur) if (cur.hasOwnProperty(k)) o[k] = cur[k];
+    o.words = 0;
+    var b = premBuild(cues, path, env, o);
+    b.sample = b.cues.length ? b.cues[0].text : String(text || '');
+    return b;
+  }
+  /* The editable path (Flux Halo engine) puts textCues' lines into the same
+     comp: break any line wider than the comp into two balanced lines, and
+     split a caption that cannot fit two, so nothing is ever cropped. */
+  function premFitEditable(tcues, path, env, sizeScale, fontPs) {
+    var plan = premPlan(path, env, { fixedScale: sizeScale || 1 });
+    if (!plan.fit) return { cues: tcues, plan: plan };
+    var allText = tcues.map(function (c) { return c.text; }).join(' ');
+    var face = { ps: fontPs || plan.geom.font };   // measured in the face the style sends
+    plan.space = premMeasure(' ', plan.fontPx, face.ps);
+    var lang = premLang(allText.split(/\s+/).map(function (t) { return { text: t }; }));
+    var out = [];
+    tcues.forEach(function (c) {
+      var toks = String(c.text).split(/\s+/).filter(function (x) { return x; });
+      if (!toks.length) return;
+      var dur = Math.max(0.01, c.end - c.start), chars = toks.join('').length, at = 0;
+      var ws = toks.map(function (tx) {   // words spread over the caption by length
+        var s = c.start + dur * at / chars; at += tx.length;
+        return { text: tx, start: s, end: c.start + dur * at / chars, w: premMeasure(tx, plan.fontPx, face.ps) };
+      });
+      premSplitPhrase(ws, plan, lang).forEach(function (seg) {
+        var cap = premCaption(ws.slice(seg.a, seg.b), seg.L, seg.a);
+        out.push({ start: (seg.a === 0) ? c.start : cap.start, end: (seg.b === ws.length) ? c.end : cap.end, text: cap.text });
+      });
+    });
+    return { cues: out, plan: plan };
+  }
+  // read-only views for the Premium gates (test/gates/premium-fit.js)
+  window.CP_DEBUG_EXT = window.CP_DEBUG_EXT || {};
+  window.CP_DEBUG_EXT.premium = {
+    geometry: function (path) { return premGeometry(path); },
+    plan: function (path, w, h) {
+      var p = premPlan(path, { width: w, height: h, fps: 30 }, premOpts()), o = {}, k;
+      for (k in p) if (p.hasOwnProperty(k) && k !== 'geom') o[k] = p[k];
+      return o;
+    },
+    opts: function () { return JSON.parse(JSON.stringify(premOpts())); },
+    lastJob: function () { return state.lastCaptionJob ? JSON.parse(JSON.stringify(state.lastCaptionJob)) : null; },
+    sheetEdits: function () { return { path: state.mogrtParamsPath || null, params: (state.mogrtParams || []).slice(), textStyle: state.mogrtTextStyle || null }; }
+  };
+
+  /* Caption the whole transcript with a specific .mogrt. From the template
+     sheet (⚡ Premium cards and the advanced templates: opts.premium) every
+     choice comes from the sheet and the plan above (premBuild); the 📁 Upload
+     view keeps its own Words / Text case / stretch controls. Both send the
+     template's real comp size, so the host fits it to the sequence. */
+  function applyMogrtWithPath(mogrtPath, btn, _envRefreshed, opts) {
     // Always refresh env before inserting — so portrait/landscape dimensions are current.
     if (!_envRefreshed && CPBridge.isCEP()) {
       CPBridge.callHost('CP_getEnv').then(function (env) {
         state.env = env;
         try { $('env-status').textContent = env.sequenceName + ' · ' + env.width + '×' + env.height; $('env-status').className = 'env-status ok'; } catch (e2) {}
-        applyMogrtWithPath(mogrtPath, btn, true);
-      }).catch(function () { applyMogrtWithPath(mogrtPath, btn, true); });
+        applyMogrtWithPath(mogrtPath, btn, true, opts);
+      }).catch(function () { applyMogrtWithPath(mogrtPath, btn, true, opts); });
       return;
     }
     var cues;
     try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
-    var words = parseInt($('c-words').value, 10) || 0;   // the one Words-per-caption stepper
-    // textCues derives the per-caption width budget from the sequence orientation
-    // (portrait vs landscape) and keeps whole sentences together, wrapping to ~2
-    // lines rather than splitting a sentence across two graphics.
-    var tcues = textCues(cues, words, state.mogrtCase || 'as-spoken');   // Editor text-case control
+    var built = null, tcues, words;
+    // Pulse's OWN templates are fitted from either view: the 📁 Upload list
+    // shows them too, and one template must not land differently (cropped,
+    // tiny or mid-frame) just because it was picked there. That view keeps
+    // its own Words / Text case / stretch; a user's own .mogrt is inserted as
+    // its designer made it (only its comp is fitted to the sequence).
+    var bundledTpl = (state.bundledMogrts || []).some(function (m) { return m.path === mogrtPath; });
+    if ((opts && opts.premium) || bundledTpl) {
+      var po = (opts && opts.premium) ? premOpts()
+             : { words: parseInt($('c-words').value, 10) || 0, caseMode: state.mogrtCase || 'as-spoken', hold: '0.5',
+                 stretch: !!($('mg-stretch') && $('mg-stretch').checked), pos: null };
+      built = premBuild(cues, mogrtPath, state.env, po);
+      tcues = built.cues;
+      words = po.words || 0;
+    } else {
+      words = parseInt($('c-words').value, 10) || 0;   // the 📁 Upload view's Words-per-caption stepper
+      // textCues derives the per-caption width budget from the sequence orientation
+      // (portrait vs landscape) and keeps whole sentences together, wrapping to ~2
+      // lines rather than splitting a sentence across two graphics.
+      tcues = textCues(cues, words, state.mogrtCase || 'as-spoken');   // the Upload view's text-case control
+    }
     if (!tcues.length) return toast('No caption lines to add — your transcript has no usable words. Transcribe again (or check the transcript).', true);
     if (tcues.length > 120 && !state._bigOk) {
       confirmInline(tcues.length + ' template graphics will be inserted — one per caption. MOGRTs insert slowly, so this can take a long time and Premiere may sit near the end of its import bar. Tip: raise "Words per graphic" (fewer, longer captions), or use the Animated style instead.\n\nContinue anyway?', 'Insert them', function (yes) {
         if (!yes) return toast('Cancelled — no captions were added.');
         state._bigOk = true;
-        try { applyMogrtWithPath(mogrtPath, btn, _envRefreshed); } finally { state._bigOk = false; }
+        try { applyMogrtWithPath(mogrtPath, btn, _envRefreshed, opts); } finally { state._bigOk = false; }
       });
       return;
     }
+    var geom = premGeometry(mogrtPath);
+    var params = built ? built.params : ((state.mogrtParamsPath === mogrtPath) ? state.mogrtParams : []);
+    var textStyle = built ? built.textStyle : resolveTextStyleFont((state.mogrtParamsPath === mogrtPath) ? state.mogrtTextStyle : null);
     if (btn) btn.disabled = true;
     capProgress('Saving project…');
     ensureProjectSaved().then(function (ok) {
@@ -10290,10 +11137,9 @@
       // the classic "I clicked and nothing appeared, no idea why" case.
       if (!ok) { if (btn) btn.disabled = false; capProgress('⚠️ Save your Premiere project first (⌘S / Ctrl+S), then click again.'); return null; }
       capProgress('Adding ' + tcues.length + ' template graphics…', tcues.length * 230);
-      var params = (state.mogrtParamsPath === mogrtPath) ? state.mogrtParams : [];
-      var textStyle = resolveTextStyleFont((state.mogrtParamsPath === mogrtPath) ? state.mogrtTextStyle : null);
-      var stretch = !!($('mg-stretch') && $('mg-stretch').checked);
-      var maxSpeed = state.mogrtMaxSpeed || 100;   // Animation-speed choice (action sheet); default Natural
+      // Premium: the sheet's own "speed the animation to fit" (off by default);
+      // Upload: its "Longer captions stay on screen longer" box
+      var stretch = built ? built.stretch : !!($('mg-stretch') && $('mg-stretch').checked);
       // Reuse the SAME track as the last editable job (any editable job — canvas
       // style or MOGRT card) so re-running with a different template/colour
       // REPLACES the previous set instead of stacking a second one on top.
@@ -10305,8 +11151,13 @@
       var reuseTrackM = (prevJobM && prevJobM.mode === 'editable' && prevJobM.track && sameSeqM) ? prevJobM.track : null;
       return CPBridge.callHost('CP_insertMogrtCaptions', {
         mogrtPath: mogrtPath, cues: tcues, videoTrack: null, audioTrack: 0,
-        params: params, textStyle: textStyle, stretch: stretch, maxSpeed: maxSpeed, replaceTrack: reuseTrackM,
-        captionNames: captionGraphicNames(mogrtPath)
+        // maxSpeed: how far "stretch" may speed a template's own animation up
+        // (100 = its natural pace; the old Animation-speed control is gone)
+        params: params, textStyle: textStyle, stretch: stretch, maxSpeed: 100, replaceTrack: reuseTrackM,
+        captionNames: captionGraphicNames(mogrtPath),
+        compW: (geom && geom.compW) || 0, compH: (geom && geom.compH) || 0,   // the comp's real size → fitted to the sequence
+        posYPct: built ? built.posYPct : null,                                // whole graphic at the caption row
+        sizeFit: built ? built.sizeFit : null                                 // caption size, even if its control is refused
       });
     }).then(function (r) {
       if (r == null) return;
@@ -10316,8 +11167,18 @@
         var why = (r.sampleErrors && r.sampleErrors.length) ? ' (' + r.sampleErrors[0] + ')' : '';
         return toast('Couldn\'t add this template' + why + '. Try another, or use an Animated style.', true);
       }
+      // what the host did with the plan — one Diagnostics copy shows it
+      try {
+        diag('premium', JSON.stringify({ tpl: String(mogrtPath).split(/[\\/]/).pop(), graphics: r.inserted, fitScale: r.fitScale,
+          compW: r.compW, compH: r.compH, positioned: r.positioned, sizeFallbacks: r.sizeFallbacks,
+          size: built && built.sizeFit, face: built && built.face && built.face.font, lines2: built ? built.lines.filter(function (n) { return n > 1; }).length : null }));
+      } catch (eDg) {}
+      // everything needed to redo or restyle this set later
       state.lastCaptionJob = { cues: tcues, track: r.track, mode: 'editable',
-                              seq: (state.env && state.env.sequenceName) || '' };
+                              seq: (state.env && state.env.sequenceName) || '',
+                              kind: (opts && opts.premium) ? 'premium' : 'template', mogrtPath: mogrtPath,
+                              params: params, textStyle: textStyle, words: words,
+                              prem: (opts && opts.premium) ? JSON.parse(JSON.stringify(premOpts())) : null };
       saveLastCaptionJob();
       reflectCaptionsPlaced();
       if (r.textSet === 0) {
@@ -10920,22 +11781,19 @@
     }
 
     // ---- vertical position ---------------------------------------------------
-    // The engine's comp is 1080×1920. On a portrait sequence comp-space maps to
-    // the screen 1:1; on a landscape sequence only the middle 1080px band of the
-    // comp is visible (the comp sits centred at 100%), so the slider maps into
-    // that band. The gradient overlay's position AND the gradient anchors move
-    // with the text so the word-highlight stays glued to the words.
+    // DO NOT move the text layer: the BG box is a separate layer that stays at
+    // its authored place, so moving the text alone splits them apart — "the
+    // text is not aligned with the box". Position rides the CLIP's Motion
+    // (host: args.posYPct), which moves box + text + highlight together as one
+    // graphic; gradient anchors stay authored for the same reason. Motion
+    // Position is a fraction of the SEQUENCE frame, and the engine's words sit
+    // at its comp's centre, so the slider's row IS the value — on both
+    // orientations. (It used to send the comp-space row (420 + 1080·y)/1920 on
+    // 16:9, which put the captions ~124 px higher than the slider said.)
     var yp = preset.yPct;
     if (yp != null && isFinite(yp)) {
       yp = Math.max(0.1, Math.min(0.92, yp));
-      var compY = preset.seqLandscape ? Math.round(420 + 1080 * yp) : Math.round(1920 * yp);
-      // DO NOT move the text layer: the BG box is a separate layer that stays
-      // at its authored place, so moving the text alone splits them apart —
-      // "the text is not aligned with the box". Position now rides the CLIP's
-      // Motion (host: args.posYPct), which moves box + text + highlight
-      // together as one graphic. Gradient anchors stay authored for the same
-      // reason (they are glued to the text's authored row).
-      out._posYPct = preset.seqLandscape ? (420 + 1080 * yp) / 1920 : yp;
+      out._posYPct = yp;
     }
 
     // ---- glow → the engine's soft shadow as a centred halo ------------------
@@ -10994,7 +11852,11 @@
       var liveProps = (r && r.props) || [];
       var isFlux = String(bb.path || '').toLowerCase().indexOf('flux_halo') >= 0;
       var params = (isFlux ? mapPresetToFlux(preset, liveProps) : null) || mapPresetToMogrt(preset, liveProps);
-      return CPBridge.callHost('CP_previewMogrt', { path: bb.path, seconds: 4, params: params, text: sample, textStyle: textStyle });
+      // the same comp fit and row as the editable insert, so the preview is where the captions will be
+      var pg = premGeometry(bb.path);
+      return CPBridge.callHost('CP_previewMogrt', { path: bb.path, seconds: 4, params: params, text: sample, textStyle: textStyle,
+        compW: (pg && pg.compW) || 0, compH: (pg && pg.compH) || 0,
+        posYPct: (params && params._posYPct != null) ? params._posYPct : null });
     }).then(function (r) {
       if (btn) btn.disabled = false;
       toast('▶ Real preview on V' + r.track + ' at the playhead — scrub to see EXACTLY what your settings render. Delete the clip when done (or ⌘Z).' + darkNote, !!darkNote);
@@ -11037,6 +11899,10 @@
     var caseMode = caps ? 'upper' : (state.mogrtCase || 'as-spoken');
     var tcues = textCues(cues, words, caseMode);
     if (!tcues.length) return toast('No caption lines to add.', true);
+    // the owner's timing nudge (± ms) moves these captions too, not only the
+    // Pulse-rendered ones
+    var syncOff = captionSyncOffset();
+    if (syncOff) tcues = tcues.map(function (c) { return { start: Math.max(0, c.start + syncOff), end: Math.max(0, c.end + syncOff), text: c.text }; });
     // Place the subtitle template at its OWN designed size, scaled by the Size
     // slider RELATIVE to the style's default — untouched slider = scale 1 (the
     // template's designed size), dragged bigger/smaller = the host scales every
@@ -11112,12 +11978,23 @@
         var isFlux = String(bb.path || '').toLowerCase().indexOf('flux_halo') >= 0;
         var params = (isFlux ? mapPresetToFlux(preset, liveProps) : null) || mapPresetToMogrt(preset, liveProps);
         sentParams = params;
+        // NEVER CROPPED: each line is measured at the engine's size against
+        // its comp; a line wider than the comp breaks into two balanced lines
+        // and a caption that cannot fit two splits (premFitEditable). The
+        // Position row is kept far enough from the edges for the whole graphic.
+        var edGeom = premGeometry(bb.path);
+        var fitE = premFitEditable(tcues, bb.path, state.env, sizeScale, textStyle && textStyle.font);
+        tcues = fitE.cues;
+        var edPos = (params && params._posYPct != null)
+          ? (fitE.plan.known ? premPlan(bb.path, state.env, { fixedScale: sizeScale, pos: params._posYPct }).posYPct : params._posYPct)
+          : null;
         capProgress('Adding ' + tcues.length + ' editable, styled captions…', tcues.length * 230);
         return CPBridge.callHost('CP_insertMogrtCaptions', {
           mogrtPath: bb.path, cues: tcues, videoTrack: null, audioTrack: 0,
           params: params, textStyle: textStyle, stretch: false, replaceTrack: reuseTrack,
           captionNames: captionGraphicNames(bb.path),
-          posYPct: (params && params._posYPct != null) ? params._posYPct : null,   // whole-graphic placement
+          compW: (edGeom && edGeom.compW) || 0, compH: (edGeom && edGeom.compH) || 0,   // fitted by its real comp size (no 56.25% shrink on reels)
+          posYPct: edPos,   // whole-graphic placement, a fraction of the frame
           introMode: 'snappy',   // caption styles: words readable on any paused frame (templates keep fit-original)
           // animSpeed is a MULTIPLIER (1 = natural pace). 100 compressed every
           // entrance into ~1ms — Pop/Slide/Fade were invisible on the timeline.
@@ -11168,7 +12045,8 @@
       // it — editable captions are re-edited natively in Essential Graphics) and
       // remember the track so the NEXT regenerate replaces it instead of stacking.
       state.lastCaptionJob = { cues: tcues, track: r.track, mode: 'editable',
-                              seq: (state.env && state.env.sequenceName) || '' };
+                              seq: (state.env && state.env.sequenceName) || '',
+                              kind: 'editable-style', mogrtPath: bb.path, params: sentParams, textStyle: textStyle, words: words };
       saveLastCaptionJob();
       reflectCaptionsPlaced();
       verifyCaptionRender(tcues, preset);   // prove it on a REAL frame of THIS sequence (verdict → Diagnostics)
