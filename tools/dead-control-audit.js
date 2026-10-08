@@ -31,7 +31,9 @@
  *     the way a real user's hand lands on it before dragging (the preview arms
  *     its content demo for controls that act on what a caption says);
  *   · a control may be DISABLED — but only with a visible one-line reason next
- *     to it ([data-why-for="<id>"]), and a reason is a promise: a control that
+ *     to it ([data-why-for="<id>"]); a control whose reason a tap can meet is
+ *     greyed but tappable (aria-disabled="true", the tap switches on what it
+ *     needs) and is judged the same way. A reason is a promise: a control that
  *     is disabled on every style swept must, once its reason is satisfied
  *     (ENABLE below), come back enabled and change the pixels;
  *   · a VISIBLE change is at least 16 pixels moving by more than 24 levels —
@@ -62,9 +64,14 @@ const PANEL = 'file://' + path.join(PANEL_DIR, 'index.html');
 const VERBOSE = process.argv.indexOf('--verbose') >= 0;
 
 /* Controls that CANNOT be observable in a frame preview, each with the reason.
-   These are limits of what a preview can show, not broken wiring — every one of
-   them is verified to reach the render by other gates. Keep this list short and
-   justified; a control landing here without a real reason is a bug in hiding. */
+   These are limits of what a preview can show, not broken wiring. Keep this
+   list short and justified; a control landing here without a real reason is a
+   bug in hiding. What reaches the PLACED captions is proven elsewhere — and
+   for ✨ Auto-emoji that proof was missing: with real word timings (every
+   transcribed video) it added nothing to the Pulse-rendered captions. The
+   caption-core change makes it act there (its gate, captions-generate-lands,
+   checks emoji and 🔠 CAPS on key words on word-timed captions); until that
+   change is in, PENDING_CORE below reports both instead of failing. */
 const CANNOT_SHOW = {
   'c-emoji':         'auto-emoji fires only on captions about money, growth, ideas…; most sample phrases mention none',
   'c-strippunct':    'the sample phrases carry no punctuation to strip',
@@ -75,6 +82,18 @@ const CANNOT_SHOW = {
   // switching it on opens the keyword box; with the box still empty there is
   // no word to colour. ENABLE below types one and requires the colour to show.
   'c-brandon':       'colours only the words typed in the box it opens — with the box empty there is nothing to colour'
+};
+/* Controls whose effect on the preview arrives with the caption-core change
+   (the preview and the word-timed captions apply ✨ Auto-emoji and 🔠 CAPS on
+   key words). `ready` is evaluated in the page: true once that change is
+   merged, and from then on each must change the pixels on at least one style
+   swept (reaching for it shows a content demo that has something to change).
+   Until then a no-change is reported as PENDING, not as a failure. */
+const PENDING_CORE = {
+  'c-kwcaps': { ready: '!!(window.CPCaptions && window.CPCaptions.capsKey)',
+                why: '🔠 CAPS on key words: the preview applies it once the caption-core change is merged' },
+  'c-emoji':  { ready: '!!(window.CPCaptions && window.CPCaptions.emojiForText)',
+                why: '✨ Auto-emoji: the preview and word-timed captions apply it once the caption-core change is merged' }
 };
 /* Hidden until another switch is on — flip that switch ONLY when the control is
    not on screen (see the header). Values: [id, value] pairs to apply in order. */
@@ -120,7 +139,9 @@ const ENABLE = {
   'c-brandon':     [['value', 'c-brand-words', 'ZZTEST']],
   'c-numon':       [['check', 'c-kw', false]],
   'c-hlserif':     [['check', 'c-wordhl', true]],
-  'c-box-on':      [['check', 'c-boxgrad', false], ['value', 'c-box3d-depth', '0'], ['value', 'c-boxgloss', '0']]
+  'c-box-on':      [['check', 'c-boxgrad', false], ['value', 'c-box3d-depth', '0'], ['value', 'c-boxgloss', '0']],
+  'c-stroke':      [['value', 'c-strokew', '8']],
+  'c-kwcaps':      [['check', 'c-upper', false]]
 };
 /* TWO CONTROLS IN A ROW. The sweep re-opens the style before EVERY control, so
    a control that leaves the preview in a state where the NEXT one looks dead
@@ -311,13 +332,17 @@ async function sweepStyle(page, styleId, cfg, opts) {
       if (!visible(e) && cfg.GATE[id]) {
         // flip the switch that reveals it — the way a user would, so a switch
         // that is itself disabled (with its reason) keeps the control hidden
+        // (a greyed switch waiting on its own reason — aria-disabled — is left
+        // alone too: tapping it would first switch on what IT needs)
         for (const [gid, gv] of cfg.GATE[id]) {
-          const g = el(gid); if (!g || g.disabled) continue;
+          const g = el(gid); if (!g || g.disabled || g.getAttribute('aria-disabled') === 'true') continue;
           setVal(g, gv);
         }
       }
       if (!visible(e)) { results.push({ id, hidden: true }); continue; }
-      if (e.disabled) {
+      // greyed with a reason a tap can meet (aria-disabled): judged like a
+      // disabled control — its reason must be on screen and must hold
+      if (e.disabled || e.getAttribute('aria-disabled') === 'true') {
         const w = why(id);
         results.push(w ? { id, disabledWhy: w } : { id, disabledNoWhy: true });
         continue;
@@ -535,6 +560,11 @@ async function judgeSweep(page, reps, opts) {
   const deadRows = [];                 // {mode, style, cat, id, how}
   const noWhyRows = [];
   const cannotShowSeen = new Set();
+  const pendingSeen = new Map();       // control → styles where it changed nothing while the core change is not in
+  const coreReady = {};
+  for (const id of Object.keys(PENDING_CORE)) {
+    try { coreReady[id] = !!(await page.evaluate(PENDING_CORE[id].ready)); } catch (e) { coreReady[id] = false; }
+  }
 
   async function runMode(mode) {
     for (const r of reps) {
@@ -546,6 +576,12 @@ async function judgeSweep(page, reps, opts) {
         if (x.disabledNoWhy) { noWhyRows.push({ mode, style: r.id, cat: r.cat, id: x.id }); continue; }
         if (x.disabledWhy) { if (!disabledOn.has(x.id)) disabledOn.set(x.id, x.disabledWhy); continue; }
         if (x.changed === true) { if (!seenLive.has(x.id)) seenLive.set(x.id, mode + ' on ' + r.id); continue; }
+        // judged as a whole below: live on at least one style once ready
+        if (x.changed === false && PENDING_CORE[x.id]) {
+          if (!pendingSeen.has(x.id)) pendingSeen.set(x.id, []);
+          pendingSeen.get(x.id).push(mode + ' ' + r.id);
+          continue;
+        }
         if (x.changed === false && CANNOT_SHOW[x.id]) { cannotShowSeen.add(x.id); continue; }
         if (x.changed === false) deadRows.push({ mode, style: r.id, cat: r.cat, id: x.id, how: x.how });
       }
@@ -563,7 +599,7 @@ async function judgeSweep(page, reps, opts) {
   const promised = [];
   if (opts.promise !== false) {
     const owed = Array.from(new Set(Array.from(disabledOn.keys()).concat(Array.from(cannotShowSeen))))
-      .filter(id => !seenLive.has(id) && ENABLE[id]);
+      .filter(id => !seenLive.has(id) && ENABLE[id] && !(PENDING_CORE[id] && !coreReady[id]));
     for (const id of owed) {
       let proof = null;
       for (const r of reps) {
@@ -577,6 +613,15 @@ async function judgeSweep(page, reps, opts) {
     }
     const unowed = Array.from(disabledOn.keys()).filter(id => !seenLive.has(id) && !ENABLE[id]);
     for (const id of unowed) fail('DISABLED EVERYWHERE, no way shown to enable it: ' + id + ' ("' + disabledOn.get(id) + '") — add its ENABLE recipe');
+  }
+
+  // 🔠 CAPS on key words and ✨ Auto-emoji: covered now, enforced once the
+  // caption-core change that makes the preview apply them is merged
+  for (const id of Object.keys(PENDING_CORE)) {
+    if (seenLive.has(id)) { ok(id + ' changes the preview (' + seenLive.get(id) + ')'); continue; }
+    const where = (pendingSeen.get(id) || []).length;
+    if (coreReady[id]) fail('DEAD: ' + id + ' changes no pixels on any style swept (' + where + ' tried) — ' + PENDING_CORE[id].why);
+    else log('  · PENDING ' + id + ': no change on ' + where + ' style(s) swept — ' + PENDING_CORE[id].why + '; this audit enforces it from then on');
   }
 
   // A harness that silently stops exercising things is the failure mode that
@@ -673,7 +718,7 @@ async function runAudit(opts) {
   return { failed, styles: reps.length };
 }
 
-module.exports = { CANNOT_SHOW, GATE, ENABLE, SEGS, DRIVERS, EXTRA_IDS, SEQUENCES, SEQ_THEN, runAudit, sweepStyle,
+module.exports = { CANNOT_SHOW, PENDING_CORE, GATE, ENABLE, SEGS, DRIVERS, EXTRA_IDS, SEQUENCES, SEQ_THEN, runAudit, sweepStyle,
                    sequenceSweep, judgeSequences, openAuditPage, pickReps, setCapOut };
 
 if (require.main === module) {

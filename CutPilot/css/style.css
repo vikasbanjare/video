@@ -1080,7 +1080,7 @@ footer { border: 1px solid var(--line); border-radius: 10px; background: var(--c
 
 /* highlight-timing nudge: keep it compact, push the hint to its own line */
 .sync-nudge { margin-top: 6px; }
-.sync-nudge #c-off-num { min-width: 56px; text-align: center; }
+.sync-nudge #c-off-num, .sync-nudge #ms-off-num { min-width: 56px; text-align: center; }
 .sync-nudge .dim { flex-basis: 100%; font-size: var(--fs-xs); margin-top: 2px; }
 
 /* searchable font picker + readability warning */
@@ -1284,6 +1284,11 @@ footer { border: 1px solid var(--line); border-radius: 10px; background: var(--c
 /* The mirror of .png-only: shown ONLY in editable (.mogrt) caption type. */
 .editable-only { display: none; }
 body.cap-editable .editable-only { display: block; }
+/* Caption type, first in the style editor; in ✏️ Editable one line says how
+   many settings it hides, with the way back */
+.cap-type-block { margin: 4px 0 10px; }
+.cap-hidden-line { margin: 0 0 8px; }
+.cap-hidden-line .link-btn { padding: 2px 4px; text-align: left; }
 
 /* ================= Multicam tab — scoped to #tab-multicam ================= */
 #tab-multicam .mc-map-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; }
