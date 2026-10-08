@@ -2024,6 +2024,16 @@ function CP_clipAtStart(track, startSec) {
   return (bestD <= 0.25) ? best : null;
 }
 
+/* True when a timeline clip was made from this project item (or when either
+   side cannot say, so an older Premiere without nodeId keeps working). */
+function CP_clipIsItem(clip, pItem) {
+  var a = null, b = null;
+  try { a = clip.projectItem ? clip.projectItem.nodeId : null; } catch (eA) { a = null; }
+  try { b = pItem ? pItem.nodeId : null; } catch (eB) { b = null; }
+  if (a == null || b == null) return true;
+  return String(a) === String(b);
+}
+
 /* BETA: additive talking-head "punch-in" zooms. For each sequence time, find the
    clip on videoTrack covering it and add Scale keyframes (100 → amount → hold →
    100) in clip-local time, reusing the proven CP_setKeys path. Purely additive
@@ -2120,9 +2130,14 @@ function CP_placeCaptionImages(argsJson) {
 
     // EXACT mode (single-caption fix): size each still to its exact slot via
     // source in/out BEFORE the overwrite, so re-rendering ONE cue mid-track can't
-    // spill past its slot and wipe the following caption. The placed clip is then
-    // located by position (not last-index, which only holds on a fresh track).
+    // spill past its slot and wipe the following caption. A track that already
+    // holds clips (a range restyle, "Add captions" again next to the owner's
+    // own logo or intro clip) always takes this mode too: a still dropped at
+    // its default length there covered the captions after it, and trimming
+    // "the last clip on the track" cut the owner's clip instead of ours.
+    // The placed clip is always found by its start time, never by index.
     var exact = !!args.exact;
+    try { if (track.clips.numItems > 0) exact = true; } catch (eNi) {}
     var placed = 0, animated = 0;
     for (i = 0; i < args.items.length; i++) {
       var it = args.items[i];
@@ -2147,11 +2162,13 @@ function CP_placeCaptionImages(argsJson) {
           track.overwriteClip(pItem, it.start);
           try { pItem.clearInPoint(4); } catch (eCi) {}
           try { pItem.clearOutPoint(4); } catch (eCo) {}
-          clip = CP_clipAtStart(track, it.start);
         } else {
           track.overwriteClip(pItem, it.start);
-          clip = track.clips[track.clips.numItems - 1];
         }
+        clip = CP_clipAtStart(track, it.start);
+        // only ever trim the still we just placed: a clip made from another
+        // project item (the owner's own clip near this time) is left alone
+        if (clip && !CP_clipIsItem(clip, pItem)) clip = null;
         if (clip) { try { clip.end = CP_timeFromSeconds(endT); } catch (eEnd) {} }
         placed++;
         if (clip) {

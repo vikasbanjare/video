@@ -24,7 +24,36 @@
 
   // ---- English syllable estimate (heuristic): count vowel groups, trim the
   //      common silent endings. Good enough as a *relative* duration weight. ----
+  // ---- Hindi (Devanagari) syllables come from the vowel signs: each
+  //      independent vowel or vowel sign (matra) is one, and a consonant with
+  //      no sign and no halant carries the inherent "a" — except the last one
+  //      of a word, which Hindi does not say (कमल = ka-mal, 2). Without this
+  //      every Hindi word counted 1, so the shape pass pulled long and short
+  //      words toward the same length. ----
+  function devanagariSyllables(word) {
+    var w = String(word == null ? '' : word), n = 0, lastBare = -1;
+    for (var i = 0; i < w.length; i++) {
+      var c = w.charCodeAt(i);
+      if ((c >= 0x0904 && c <= 0x0914) || (c >= 0x0960 && c <= 0x0961)) { n++; lastBare = -1; continue; }   // अ … औ
+      if ((c >= 0x093E && c <= 0x094C) || (c >= 0x0962 && c <= 0x0963)) { n++; lastBare = -1; continue; }   // ा … ौ
+      if ((c >= 0x0915 && c <= 0x0939) || (c >= 0x0958 && c <= 0x095F)) {                                  // क … ह
+        var j = i + 1;
+        while (j < w.length && w.charCodeAt(j) === 0x093C) j++;                                                // nukta
+        var nx = (j < w.length) ? w.charCodeAt(j) : 0;
+        if (nx === 0x094D) continue;                                                                          // halant: no vowel
+        if ((nx >= 0x093E && nx <= 0x094C) || (nx >= 0x0962 && nx <= 0x0963)) continue;                      // its sign counts
+        n++; lastBare = i;
+      }
+    }
+    if (lastBare >= 0 && n > 1) {                         // final inherent "a" is silent
+      var rest = w.slice(lastBare + 1).replace(/[\u093C\u0901-\u0903]/g, '');
+      if (!rest) n--;
+    }
+    return Math.max(1, n);
+  }
+
   function syllableCount(word) {
+    if (/[\u0900-\u097F]/.test(String(word == null ? '' : word))) return devanagariSyllables(word);
     var w = String(word == null ? '' : word).toLowerCase().replace(/[^a-z]/g, '');
     if (!w) return 1;
     if (w.length <= 3) return 1;

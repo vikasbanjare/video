@@ -739,6 +739,100 @@
     return p;
   }
 
+  /* Word lists from the speech engines come without punctuation (Groq) or as
+     whole phrases (Indian Voices); these helpers make them real, punctuated,
+     one-word-each stamps without moving any time the engine gave. All pure. */
+  // The words of each line take that line's spelling and punctuation: the
+  // line's tokens are matched to its words (each word in one line, by its
+  // middle) with a word diff, a matched word takes the line's token ("kya"
+  // → "kya?"), and a punctuation-only token ("।") joins the word before it.
+  function punctuateWords(lines, words) {
+    var by = wordsByLine(lines || [], words);
+    (lines || []).forEach(function (ln, li) {
+      var ws = by[li];
+      if (!ws.length) return;
+      var toks = String(ln.text || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+      var nt = toks.map(_reflowNorm), nw = ws.map(function (w) { return _reflowNorm(w.text); });
+      var n = nt.length, m = nw.length, D = [], r, c;
+      for (r = 0; r <= n; r++) { D.push(new Array(m + 1)); for (c = 0; c <= m; c++) D[r][c] = 0; }
+      for (r = n - 1; r >= 0; r--) for (c = m - 1; c >= 0; c--) {
+        D[r][c] = (nt[r] && nt[r] === nw[c]) ? D[r + 1][c + 1] + 1 : Math.max(D[r + 1][c], D[r][c + 1]);
+      }
+      r = 0; c = 0;
+      var last = null;
+      while (r < n) {
+        if (!nt[r]) {                                  // "।", "?", "—" on its own
+          if (last) last.text += toks[r];          // one token: never a space inside a word
+          r++; continue;
+        }
+        if (c < m && nt[r] === nw[c] && D[r][c] === D[r + 1][c + 1] + 1) { ws[c].text = toks[r]; last = ws[c]; r++; c++; }
+        else if (c < m && D[r][c + 1] >= D[r + 1][c]) { last = ws[c]; c++; }
+        else r++;
+      }
+    });
+    return words;
+  }
+  // An entry holding several words ("main theek hoon", as Indian Voices sends
+  // phrases) becomes one stamp per word, splitting the phrase's own time by
+  // word length. A one-word entry is kept exactly.
+  function splitPhraseWords(words) {
+    var out = [];
+    (words || []).forEach(function (w) {
+      var toks = String(w.text || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+      if (toks.length <= 1) { out.push(w); return; }
+      var st = +w.start || 0, en = Math.max(st, +w.end || 0), tot = 0, t = st;
+      toks.forEach(function (x) { tot += Math.max(1, x.length); });
+      toks.forEach(function (x) {
+        var d = (en - st) * Math.max(1, x.length) / tot;
+        out.push({ start: t, end: t + d, text: x, conf: w.conf }); t += d;
+      });
+    });
+    return out;
+  }
+  // Long recordings go up in pieces that overlap by about a second so no word
+  // is cut at a piece edge. Each piece keeps only what is said in its own
+  // part: an item is kept when its middle is in [lo, hi) — the seams sit in
+  // the middle of each overlap, so a word heard twice is kept once.
+  function inSeam(items, lo, hi) {
+    return (items || []).filter(function (it) {
+      var mid = (+it.start + +(it.end != null ? it.end : it.start)) / 2;
+      return mid >= lo && mid < hi;
+    });
+  }
+  // Belt and braces after the seam: the same word heard by BOTH pieces of a
+  // seam is one word. Only words within a second of a seam are looked at,
+  // only two words from different pieces, and only when their times really
+  // overlap (or are the same moment) — so a quick real repeat ("na na",
+  // "haan haan", "no no no") is never merged, near a seam or anywhere else.
+  // words[i] came from piece pieceOf[i]; seams: the seam times.
+  function dedupeSeamWords(words, seams, pieceOf) {
+    var idx = (words || []).map(function (w, i) { return i; });
+    idx.sort(function (a, b) { return (words[a].start - words[b].start) || (a - b); });
+    var out = [];
+    idx.forEach(function (i) {
+      var w = words[i], n = _reflowNorm(w.text);
+      var mid = (+w.start + +(w.end != null ? w.end : w.start)) / 2;
+      var nearSeam = (seams || []).some(function (t) { return Math.abs(mid - t) <= 1; });
+      if (nearSeam) {
+        for (var j = out.length - 1; j >= Math.max(0, out.length - 3); j--) {
+          var pi = out[j], p = words[pi];
+          if (pieceOf && pieceOf[pi] === pieceOf[i]) continue;
+          if (_reflowNorm(p.text) === n && (+w.start < +p.end - 0.02 || Math.abs(+w.start - +p.start) < 0.03)) return;
+        }
+      }
+      out.push(i);
+    });
+    return out.map(function (i) { return words[i]; });
+  }
+  // A line that crosses a seam keeps only the words this piece owns
+  // (ownWords: this piece's words already cut to its seams).
+  function trimLineToSeam(c, ownWords, lo, hi) {
+    if (c.start >= lo && c.end <= hi) return c;
+    var ws = inSeam(ownWords, Math.max(lo, c.start), Math.min(hi, c.end + 1e-6));
+    if (!ws.length) return null;
+    return { start: Math.max(c.start, ws[0].start), end: Math.min(c.end, ws[ws.length - 1].end), text: ws.map(function (w) { return w.text; }).join(' ') };
+  }
+
   /* Cloud transcription via Groq (OpenAI-compatible Whisper-large-v3). Uploads the
      extracted audio and returns [{start,end,text}] cues. Used when Accuracy =
      "☁️ Cloud · Groq". Needs a free API key (settings.groqKey). curl handles the
@@ -806,12 +900,25 @@
                      : (w.confidence != null) ? +w.confidence : segConf(st);
             wa.push({ start: st, end: +w.end || 0, text: tx, conf: conf });
           });
-          if (wa.length) cues.words = wa;
+          // the engine's word list has no punctuation; the sentence text does.
+          // Copy it across so captions keep "?" and "." and can end on a
+          // sentence.
+          if (wa.length) cues.words = punctuateWords(cues, wa);
         }
         if (j.language) cues.detectedLang = String(j.language).toLowerCase();   // e.g. "hindi" (verbose_json)
         resolve(cues);
       });
     });
+  }
+  /* How a too-big recording is cut for the cloud. Each piece is re-encoded at
+     `kbps`, so its size comes from THAT rate (and its one-second overlap), not
+     from the compressed file's: a 24 kbps file cut by its own size became
+     pieces at 64 kbps up to 2.7x over the upload limit. Pure. */
+  function cloudChunkPlan(size, durSec, limit) {
+    var kbps = 64, over = 1;
+    var maxDur = Math.floor(limit * 0.95 / (kbps * 1000 / 8)) - over;   // seconds one piece may hold
+    var chunks = Math.max(Math.ceil(size / limit), Math.ceil(durSec / Math.max(30, maxDur)), 1);
+    return { chunks: chunks, chunkDur: Math.ceil(durSec / chunks), over: over, kbps: kbps };
   }
   /* Cloud transcription that never fails on long files: if the (already
      compressed) audio is still over the upload limit, split it into time chunks,
@@ -822,21 +929,32 @@
     var size = 0; try { size = fs.statSync(audioPath).size; } catch (e2) {}
     var LIMIT = 23 * 1024 * 1024;
     if (size <= LIMIT || !ff || !durSec || durSec <= 0) return transcribeViaGroq(audioPath, lang);
-    var chunks = Math.ceil(size / LIMIT), chunkDur = Math.ceil(durSec / chunks);
-    var all = [], allWords = [];
+    var plan = cloudChunkPlan(size, durSec, LIMIT);
+    var chunks = plan.chunks, chunkDur = plan.chunkDur, OVER = plan.over;
+    var all = [], allWords = [], wordPiece = [], seams = [];
     var seq = Promise.resolve();
     for (var i = 0; i < chunks; i++) {
       (function (idx) {
         var startT = idx * chunkDur;
+        if (idx) seams.push(startT + OVER / 2);
+        // each piece hears one second past its end; the seam is half way
+        var lo = idx ? startT + OVER / 2 : -Infinity, hi = (idx + 1 < chunks) ? startT + chunkDur + OVER / 2 : Infinity;
         var part = pathMod.join(os.tmpdir(), 'cutpilot-asr-part' + idx + '-' + Date.now() + '.mp3');
         seq = seq.then(function () {
-          return runProc(ff, ['-y', '-ss', String(startT), '-t', String(chunkDur), '-i', audioPath, '-ac', '1', '-ar', '16000', '-c:a', 'libmp3lame', '-b:a', '64k', part])
+          return runProc(ff, ['-y', '-ss', String(startT), '-t', String(chunkDur + (idx + 1 < chunks ? OVER : 0)), '-i', audioPath, '-ac', '1', '-ar', '16000', '-c:a', 'libmp3lame', '-b:a', plan.kbps + 'k', part])
             .then(function () { return transcribeViaGroq(part, lang); })
             .then(function (cues) {
               cues.forEach(function (c) { c.start += startT; c.end += startT; });
               if (cues.words) cues.words.forEach(function (w) { w.start += startT; w.end += startT; });
               if (cues.detectedLang && !all.detectedLang) all.detectedLang = cues.detectedLang;
-              all = all.concat(cues); if (cues.words) allWords = allWords.concat(cues.words);
+              var ownW = cues.words ? inSeam(cues.words, lo, hi) : null;
+              var ownC = [];
+              cues.forEach(function (c) {
+                var t = ownW ? trimLineToSeam(c, ownW, lo, hi) : (inSeam([c], lo, hi).length ? c : null);
+                if (t) ownC.push(t);
+              });
+              all = all.concat(ownC);
+              if (ownW) ownW.forEach(function (w) { allWords.push(w); wordPiece.push(idx); });
               try { fs.unlinkSync(part); } catch (eU) {}
               setTranscriptBar('', '☁️', 'Transcribing in the cloud… (' + all.length + ' lines)', null);
             });
@@ -845,7 +963,7 @@
     }
     return seq.then(function () {
       all.sort(function (a, b) { return a.start - b.start; });
-      if (allWords.length) { allWords.sort(function (a, b) { return a.start - b.start; }); all.words = allWords; }
+      if (allWords.length) all.words = dedupeSeamWords(allWords, seams, wordPiece);
       if (!all.length) throw new Error('Cloud returned no speech.');
       return all;
     });
@@ -907,6 +1025,10 @@
         } else if (j.words && j.words.length) {
           j.words.forEach(function (w) { pushWord(w.word != null ? w.word : w.value, w.start_timestamp != null ? w.start_timestamp : w.start, w.end_timestamp != null ? w.end_timestamp : w.end); });
         }
+        // Indian Voices stamps whole phrases ("main theek hoon"), not words:
+        // one stamp per word keeps captions word-sized and the highlight on
+        // the word being said. Every phrase keeps its own start and end.
+        words = splitPhraseWords(words);
         var cues = [];
         if (text || words.length) cues.push({ start: words.length ? words[0].start : 0, end: words.length ? words[words.length - 1].end : 5, text: text || words.map(function (w) { return w.text; }).join(' ') });
         if (!cues.length) return reject(CPApiErr.toError('sarvam', { raw: 'no speech' }));
@@ -923,17 +1045,28 @@
     try { fs = nodeReq('fs'); os = nodeReq('os'); pathMod = nodeReq('path'); } catch (e) { return transcribeViaSwara(audioPath, lang); }
     var CHUNK = 28;                                   // seconds per request (Sarvam sync limit ~30s)
     if (!ff || !durSec || durSec <= CHUNK + 2) return transcribeViaSwara(audioPath, lang);
-    var chunks = Math.ceil(durSec / CHUNK), allWords = [], allCues = [];
+    // each piece hears 1 s past its end, so no word is cut at an edge. Not
+    // when translating: that answer has no word times to cut the overlap
+    // out by, so an overlap would repeat its words in the text.
+    var OVER = (lang === 'translate-en') ? 0 : 1;
+    var chunks = Math.ceil(durSec / CHUNK), allWords = [], wordPiece = [], seams = [], allCues = [];
     var seq = Promise.resolve();
     for (var i = 0; i < chunks; i++) {
       (function (idx) {
         var startT = idx * CHUNK, partEnd = Math.min(durSec, startT + CHUNK);
+        var last = (idx + 1 >= chunks);
+        // seams half way through each overlap: a word heard twice is kept once
+        var lo = idx ? startT + OVER / 2 : -Infinity, hi = last ? Infinity : startT + CHUNK + OVER / 2;
+        if (idx) seams.push(startT + OVER / 2);
         var part = pathMod.join(os.tmpdir(), 'cutpilot-swara-' + idx + '-' + Date.now() + '.wav');
         seq = seq.then(function () {
-          return runProc(ff, ['-y', '-ss', String(startT), '-t', String(CHUNK), '-i', audioPath, '-ac', '1', '-ar', '16000', part])
+          return runProc(ff, ['-y', '-ss', String(startT), '-t', String(CHUNK + (last ? 0 : OVER)), '-i', audioPath, '-ac', '1', '-ar', '16000', part])
             .then(function () { return transcribeViaSwara(part, lang); })
             .then(function (cues) {
-              if (cues.words) cues.words.forEach(function (w) { w.start += startT; w.end += startT; allWords.push(w); });
+              if (cues.words) {
+                cues.words.forEach(function (w) { w.start += startT; w.end += startT; });
+                inSeam(cues.words, lo, hi).forEach(function (w) { allWords.push(w); wordPiece.push(idx); });
+              }
               // also keep per-chunk cues so TRANSLATE mode (no word timing) still yields
               // several cues instead of one giant block.
               cues.forEach(function (c) { if (c.text) allCues.push({ start: (c.start || 0) + startT, end: Math.min(partEnd, (c.end || 0) + startT) || partEnd, text: c.text }); });
@@ -946,7 +1079,7 @@
     return seq.then(function () {
       var cues;
       if (allWords.length) {
-        allWords.sort(function (a, b) { return a.start - b.start; });
+        allWords = dedupeSeamWords(allWords, seams, wordPiece);
         var oneWord = allWords.map(function (w) { return { start: w.start, end: w.end, text: w.text }; });
         cues = CPCaptions.regroupWords(oneWord, 12, { maxGap: 0.7, sentenceBreak: true });
         cues.words = allWords;
@@ -1258,16 +1391,45 @@
      show the recording NOW: { cues, words } in timeline seconds. The same
      steps a fresh transcription takes (Auto-transcribe below), so a transcript
      loaded from the store lands exactly where a new one would. */
+  /* Word stamps onto the timeline pieces, keeping the short ones: a word of
+     50 ms or less ("to", "ki", "na" — whisper even stamps some at zero
+     length) is a real word, not a sliver a cut left behind, so it lands
+     where the piece holding its middle plays it. Longer words take the
+     normal placement. */
+  function placeWordStamps(items, pieces) {
+    var longW = [], shortW = [];
+    (items || []).forEach(function (it) { ((+it.end - +it.start) > 0.05 ? longW : shortW).push(it); });
+    var out = CPCaptions.mediaToTimeline(longW, pieces);
+    var have = {};
+    out.forEach(function (w) { have[w.start.toFixed(3) + '|' + w.text] = 1; });
+    shortW.forEach(function (it) {
+      var mid = (+it.start + +it.end) / 2;
+      (pieces || []).forEach(function (p) {
+        if (mid < +p.inPoint || mid >= +p.outPoint) return;
+        var sp = (+p.speed > 0) ? +p.speed : 1;
+        var s0 = Math.max(+it.start, +p.inPoint), e0 = Math.max(s0, Math.min(+it.end, +p.outPoint));
+        var w = { start: +p.seqStart + (s0 - p.inPoint) / sp, end: +p.seqStart + (e0 - p.inPoint) / sp, text: it.text, conf: it.conf };
+        var k = w.start.toFixed(3) + '|' + w.text;
+        if (have[k]) return;                     // a placement that already kept it
+        have[k] = 1; out.push(w);
+      });
+    });
+    out.sort(function (a, b) { return a.start - b.start; });
+    return out;
+  }
   function placeTranscript(t, pieces) {
-    // a word-level transcript's lines ARE words: a repeated short word
-    // ("na na", "haan haan") is real speech, so only true echoes merge
-    var cues = CPCaptions.dedupeRepeatedCues(CPCaptions.mediaToTimeline(t.lines, pieces), t.wordLevel ? { word: true } : null);
-    var words = null;
+    var cues, words = null;
     if (t.wordLevel) {
-      words = cues.slice();                                  // the lines were single words
+      // the lines are single words: place them as words (short ones kept) and
+      // only merge a word heard twice at the same moment, never "na na"
+      cues = CPCaptions.dedupeRepeatedCues(placeWordStamps(t.lines, pieces), { word: true });
+      words = cues.slice();
       cues = CPCaptions.regroupWords(cues, 7, { maxGap: 0.8 });
-    } else if (t.words && t.words.length) {
-      words = CPCaptions.mediaToTimeline(t.words, pieces);
+    } else {
+      cues = CPCaptions.dedupeRepeatedCues(CPCaptions.mediaToTimeline(t.lines, pieces));
+    }
+    if (!t.wordLevel && t.words && t.words.length) {
+      words = placeWordStamps(t.words, pieces);
       if (t.dedupeWords) words = CPCaptions.dedupeRepeatedCues(words, { word: true });
     }
     return { cues: cues, words: (words && words.length) ? words : null };
@@ -1305,6 +1467,9 @@
     // an explicit pick is sent as is. autoTranscribe hands Hinglish in as
     // 'hi', so the panel's own choice decides here.
     var ui = settings.whisperLang || 'auto';
+    // The stored transcript stays word for word (with "um"/"uh"): Clean up's
+    // filler removal, the retake finder and Smart Cleanup read it. Captions
+    // leave those sounds out themselves (dropHesitations).
     var opts = { language: (ui === 'auto' || ui === 'hinglish') ? ui : (lang || ui) };
     return _curlJson(['-sS', '--max-time', '900', CPVerbatim.deepgramUrl(opts),
       '-H', 'Content-Type: audio/mpeg', '--data-binary', '@' + audioPath],
@@ -1335,6 +1500,23 @@
     ['btn-tr-auto-main', 'btn-tr-auto-ai', 'ms-transcribe', 'btn-tr-auto'].forEach(function (id) {
       var b = $(id); if (b) b.disabled = !!on;
     });
+  }
+
+  /* Each word in exactly one line: the line whose [start, end) holds the
+     word's middle, else the nearest line (no overlap margin). Returns one
+     word list per line, in line order. Pure. */
+  function wordsByLine(lines, words) {
+    var out = lines.map(function () { return []; });
+    (words || []).forEach(function (w) {
+      var mid = (+w.start + +(w.end != null ? w.end : w.start)) / 2, best = -1, bestD = Infinity;
+      for (var j = 0; j < lines.length; j++) {
+        var d = (mid < lines[j].start) ? lines[j].start - mid : (mid >= lines[j].end ? mid - lines[j].end : 0);
+        if (d === 0) { best = j; break; }
+        if (d < bestD) { bestD = d; best = j; }
+      }
+      if (best >= 0) out[best].push(w);
+    });
+    return out;
   }
 
   /* Turn a Hindi (Devanagari) transcript into NATURAL Hinglish — Hindi written in
@@ -1371,9 +1553,13 @@
         });
       });
       return seq.then(function () {
-        // rebuild each line from its (now romanised) words so the line text matches
-        rc.forEach(function (c) {
-          var ws = words.filter(function (w) { return w.start >= c.start - 0.05 && w.start < c.end + 0.05; });
+        // rebuild each line from its (now romanised) words so the line text
+        // matches. Each word goes to exactly ONE line (wordsByLine), so a word
+        // on the edge between two lines is never repeated in both or dropped
+        // from both.
+        var by = wordsByLine(rc, words);
+        rc.forEach(function (c, ci) {
+          var ws = by[ci];
           c.text = ws.length ? ws.map(function (w) { return w.text; }).join(' ') : CPCaptions.devanagariToLatin(c.text);
         });
         return rc;
@@ -2867,34 +3053,166 @@
      the old find-and-replace caught. Each corrected line is then guarded by a
      word-overlap check, so any line where the model dropped or rewrote too much
      is rejected and the original kept: more power, without losing your words. */
-  /* After an AI text fix, push the corrected words back onto the per-word
-     timeline so word-following captions (karaoke / reveal / Editorial) show the
-     FIXED words — not the raw misheard ones. When a line's corrected word count
-     matches its original words, exact per-word timing is kept; otherwise the
-     corrected words are spread across that line's span (approximate but right). */
-  function reflowWordTimingFromLines(lineCues, origWords) {
+  /* After a text fix (the AI fix, "✏️ Review & edit", fixing one caption, a
+     script), push the corrected words back onto the per-word timeline so
+     word-following captions show the FIXED words at the time they were said.
+     - Every word stamp belongs to exactly ONE line: the line whose time holds
+       its middle, else the nearest line. No overlap margin, so a word sitting
+       on the edge between two lines can never re-time both of them.
+     - Each line's words are matched to the stamps around it with a word diff
+       (longest common subsequence): an unchanged word keeps its real spoken
+       time exactly, even when the engine's line edges and word stamps
+       disagree by a word. Only edited words are estimated — a corrected word
+       takes the time of the misheard word it replaced, an added word shares
+       the gap between its neighbours, a whole new line spreads over its own
+       span.
+     - oldLines (the lines before the edit, optional): stamps outside the time
+       those lines covered never belonged to the edit and are kept as they
+       are; stamps inside it whose words were deleted go away with them.
+     Returns the new word list sorted by start, or null. */
+  function _reflowNorm(t) {
+    return String(t == null ? '' : t).toLowerCase()
+      .replace(/^[\s.,!?;:"'()\[\]…¿¡—–\-।॥]+|[\s.,!?;:"'()\[\]…¿¡—–\-।॥]+$/g, '');
+  }
+  function reflowWordTimingFromLines(lineCues, origWords, oldLines) {
     if (!origWords || !origWords.length) return null;
-    var res = [];
-    for (var i = 0; i < lineCues.length; i++) {
-      var line = lineCues[i];
-      var words = String(line.text).replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
-      if (!words.length) continue;
-      var orig = [];
-      for (var k = 0; k < origWords.length; k++) {
-        var mid = (origWords[k].start + origWords[k].end) / 2;
-        if (mid >= line.start - 0.06 && mid < line.end + 0.06) orig.push(origWords[k]);
+    var lines = (lineCues || []).filter(function (c) { return c && String(c.text || '').trim(); })
+      .slice().sort(function (a, b) { return a.start - b.start; });
+    var ow = origWords.filter(function (w) { return w && isFinite(+w.start); })
+      .slice().sort(function (a, b) { return a.start - b.start; });
+    var kept = [];
+    if (oldLines && oldLines.length) {
+      var cLo = Infinity, cHi = -Infinity;
+      oldLines.forEach(function (c) { if (+c.start < cLo) cLo = +c.start; if (+c.end > cHi) cHi = +c.end; });
+      ow = ow.filter(function (w) {
+        var m = (+w.start + +(w.end != null ? w.end : w.start)) / 2;
+        if (m < cLo || m >= cHi) { kept.push(w); return false; }
+        return true;
+      });
+    }
+    var N = ow.length, L = lines.length, res = [];
+    if (!L) return kept.length ? kept : null;
+    // 1. one owner line per stamp (middle inside, else nearest)
+    var owner = new Array(N), lo = [], hi = [];
+    for (var li = 0; li < L; li++) { lo.push(-1); hi.push(-1); }
+    for (var k = 0; k < N; k++) {
+      var mid = (+ow[k].start + +(ow[k].end != null ? ow[k].end : ow[k].start)) / 2, best = -1, bestD = Infinity;
+      for (var j = 0; j < L; j++) {
+        var d = (mid < lines[j].start) ? lines[j].start - mid : (mid >= lines[j].end ? mid - lines[j].end : 0);
+        if (d === 0) { best = j; break; }
+        if (d < bestD) { bestD = d; best = j; }
       }
-      if (orig.length === words.length) {
-        for (var a = 0; a < words.length; a++) res.push({ start: orig[a].start, end: orig[a].end, text: words[a] });
-      } else {
-        var span = Math.max(0.3, line.end - line.start), tot = 0, t = line.start;
-        for (var b = 0; b < words.length; b++) tot += Math.max(1, words[b].length);
-        for (var c = 0; c < words.length; c++) {
-          var d = span * Math.max(1, words[c].length) / tot;
-          res.push({ start: t, end: t + d, text: words[c] }); t += d;
+      owner[k] = best;
+      if (lo[best] < 0) lo[best] = k;
+      hi[best] = k;
+    }
+    function spread(toks, a, b, out) {        // length-weighted inside [a, b]
+      if (b < a) b = a;
+      var tot = 0, t = a;
+      toks.forEach(function (w) { tot += Math.max(1, w.length); });
+      toks.forEach(function (w) {
+        var dd = (b - a) * Math.max(1, w.length) / tot;
+        out.push({ start: t, end: t + dd, text: w }); t += dd;
+      });
+    }
+    // 2. walk the lines in order; ptr = first stamp no earlier line used
+    function toksOf(t) { return String(t || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean); }
+    var ptr = 0, prevEnd = -Infinity;
+    for (var i = 0; i < L; i++) {
+      var line = lines[i];
+      var toks = toksOf(line.text);
+      var n = toks.length;
+      // the stamps still open to this line: the ones it owns, plus any an
+      // earlier line owned but did not use (that word sat on the wrong side
+      // of the engine's line edge)
+      var own0 = ptr, own1 = (hi[i] >= 0) ? hi[i] + 1 : ptr;
+      if (own1 < own0) own1 = own0;
+      // a line whose words are exactly its stamps' words (the line the edit
+      // did not touch) keeps every stamp as it is — no diff, no estimate
+      var same = (own1 - own0 === n) && n > 0;
+      for (var s0 = 0; same && s0 < n; s0++) if (_reflowNorm(toks[s0]) !== _reflowNorm(ow[own0 + s0].text)) same = false;
+      if (same) {
+        for (s0 = 0; s0 < n; s0++) {
+          var sw = ow[own0 + s0];
+          var cw = { start: +sw.start, end: +(sw.end != null ? sw.end : sw.start), text: toks[s0], conf: sw.conf };
+          res.push(cw); if (cw.end > prevEnd) prevEnd = cw.end;
+        }
+        ptr = own1;
+        continue;
+      }
+      // a changed line looks at its own stamps, plus at most ONE leading
+      // stamp of the next line — and only when the next line's text does
+      // not have that word at all (then it is this line's word that the
+      // engine put across the edge). It never reaches further, so a fixed
+      // word can never take the next line's time.
+      var w0 = own0, w1 = own1;
+      if (w1 < N && owner[w1] > i && i + 1 < L) {
+        var sNorm = _reflowNorm(ow[w1].text);
+        if (!toksOf(lines[i + 1].text).some(function (t) { return _reflowNorm(t) === sNorm; })) w1++;
+      }
+      var m = w1 - w0;
+      // LCS over (line words × nearby stamps); a stamp this line owns wins a tie
+      var D = [], r, c2;
+      for (r = 0; r <= n; r++) { D.push(new Array(m + 1)); for (c2 = 0; c2 <= m; c2++) D[r][c2] = 0; }
+      var nt = toks.map(_reflowNorm), ns = [];
+      for (c2 = 0; c2 < m; c2++) ns.push(_reflowNorm(ow[w0 + c2].text));
+      for (r = n - 1; r >= 0; r--) {
+        for (c2 = m - 1; c2 >= 0; c2--) {
+          var v = Math.max(D[r + 1][c2], D[r][c2 + 1]);
+          if (nt[r] && nt[r] === ns[c2]) v = Math.max(v, D[r + 1][c2 + 1] + 1000 + (owner[w0 + c2] === i ? 1 : 0));
+          D[r][c2] = v;
         }
       }
+      var pairOf = new Array(n);
+      r = 0; c2 = 0;
+      while (r < n && c2 < m) {
+        if (nt[r] && nt[r] === ns[c2] && D[r][c2] === D[r + 1][c2 + 1] + 1000 + (owner[w0 + c2] === i ? 1 : 0)) { pairOf[r] = w0 + c2; r++; c2++; }
+        else if (D[r + 1][c2] >= D[r][c2 + 1]) r++;
+        else c2++;
+      }
+      var out = [], lastK = -1;
+      for (r = 0; r < n; ) {
+        if (pairOf[r] != null) {
+          var st = ow[pairOf[r]];
+          out.push({ start: +st.start, end: +(st.end != null ? st.end : st.start), text: toks[r], conf: st.conf });
+          if (pairOf[r] > lastK) lastK = pairOf[r];
+          r++; continue;
+        }
+        var a = r; while (r < n && pairOf[r] == null) r++;
+        var run = toks.slice(a, r);
+        var kL = (a > 0) ? pairOf[a - 1] : null, kR = (r < n) ? pairOf[r] : null;
+        // the stamps this run replaced: this line's own, between its neighbours
+        var from = (kL != null) ? kL + 1 : w0, to = (kR != null) ? kR : Math.max(w1, (hi[i] >= 0 ? hi[i] + 1 : w1));
+        var rep = [];
+        for (var q = Math.max(from, ptr); q < to && q < N; q++) if (owner[q] <= i) rep.push(ow[q]);
+        if (rep.length) {
+          var usedK = ow.indexOf(rep[rep.length - 1]);
+          if (usedK > lastK) lastK = usedK;
+        }
+        if (rep.length === run.length) {
+          for (var z = 0; z < run.length; z++) out.push({ start: +rep[z].start, end: +(rep[z].end != null ? rep[z].end : rep[z].start), text: run[z], conf: rep[z].conf });
+        } else if (rep.length) {
+          spread(run, +rep[0].start, +(rep[rep.length - 1].end != null ? rep[rep.length - 1].end : rep[rep.length - 1].start), out);
+        } else {
+          // an added word: said next to the word it was typed beside — right
+          // before the next real word at a line start, else right after the
+          // previous one — about 0.4 s a word, never through a whole pause
+          var sa = (kL != null) ? +(ow[kL].end != null ? ow[kL].end : ow[kL].start) : Math.max(+line.start, prevEnd);
+          var sb = (kR != null) ? +ow[kR].start : +line.end;
+          var want = 0.4 * run.length;
+          if (kL == null && kR == null) { sa = Math.max(+line.start, prevEnd); sb = Math.max(sa + 0.3, +line.end); }
+          else if (kL == null) { if (sb - sa > want) sa = sb - want; }
+          else if (sb - sa > want) sb = sa + want;
+          spread(run, sa, sb, out);
+        }
+      }
+      out.forEach(function (w) { res.push(w); if (w.end > prevEnd) prevEnd = w.end; });
+      // a stamp this line owns but did not use stays open to the next line:
+      // that is the word the engine's line edge put on the wrong side
+      if (lastK >= 0) ptr = lastK + 1;
     }
+    res = res.concat(kept);
+    res.sort(function (a, b) { return a.start - b.start; });
     return res.length ? res : null;
   }
 
@@ -2949,7 +3267,7 @@
         // keep the word-by-word highlight in sync with the corrected text so
         // karaoke/reveal/Editorial show the FIXED words (not the raw ones).
         if (state.transcriptWords && state.transcriptWords.length) {
-          var rw = reflowWordTimingFromLines(out, state.transcriptWords);
+          var rw = reflowWordTimingFromLines(out, state.transcriptWords, cues);
           if (rw) state.transcriptWords = rw;
         }
         setTranscriptBar('ok', '✅', 'AI fixed ' + changed + ' line' + (changed === 1 ? '' : 's') + ' — all ' + out.length + ' kept.', 'Change');
@@ -3026,6 +3344,7 @@
 
   // ---- transcript editor: fix wording / delete junk / merge before captioning ----
   var _treCues = null;
+  var _treOrig = null;           // the lines as they were when the editor opened
   var _treMode = 'transcript';   // 'transcript' = edit words; 'captions' = edit placed captions
   function openTranscriptEditor() {
     var cues;
@@ -3033,6 +3352,7 @@
     catch (e) { return toast(e.message, true); }
     _treMode = 'transcript';
     _treCues = cues.map(function (c) { return { start: c.start, end: c.end, text: c.text }; });
+    _treOrig = cues.map(function (c) { return { start: c.start, end: c.end, text: c.text }; });
     if ($('tre-title')) $('tre-title').textContent = '✏️ Review & edit the words';
     renderTrEditor();
     $('tr-editor').classList.remove('hidden');
@@ -3045,6 +3365,7 @@
     if (!state.lastCaptionJob || !state.lastCaptionJob.cues) return toast('Add captions first, then you can edit their text.', true);
     _treMode = 'captions';
     _treCues = state.lastCaptionJob.cues.map(function (c) { return { start: c.start, end: c.end, text: c.text }; });
+    _treOrig = state.lastCaptionJob.cues.map(function (c) { return { start: c.start, end: c.end, text: c.text }; });
     if ($('tre-title')) $('tre-title').textContent = '✏️ Edit your caption words';
     renderTrEditor();
     $('tr-editor').classList.remove('hidden');
@@ -3100,14 +3421,16 @@
     if (!newText) return toast('Type some words first, or tap Cancel.', true);
     var cue = state.lastCaptionJob.cues[_cap1Idx];
     if (newText === cue.text) { closeOneCaptionEditor(); return toast('No change — caption left as-is.'); }
+    var before = state.lastCaptionJob.cues.map(function (c) { return { start: c.start, end: c.end, text: c.text }; });
     cue.text = newText;            // persist the fix into the remembered job
     // ...and into the word timing. Word-by-word captions are BUILT from it, so
     // without this the next re-render ("Apply to all", or any overlay) brought
-    // the old word back. Lines whose word count is unchanged keep their exact
-    // spoken times (the same reflow "Edit words" uses).
+    // the old word back. Every word that did not change keeps its exact
+    // spoken time; only the edited word is placed where the old one was said
+    // (the same reflow "Edit words" uses).
     try {
       if (state.transcriptWords && state.transcriptWords.length) {
-        var rw = reflowWordTimingFromLines(state.lastCaptionJob.cues, state.transcriptWords);
+        var rw = reflowWordTimingFromLines(state.lastCaptionJob.cues, state.transcriptWords, before);
         if (rw && rw.length) state.transcriptWords = rw;
       }
     } catch (eRw) {}
@@ -3119,14 +3442,23 @@
       toast('✏️ Fixed — Pulse is re-drawing your caption clip with the change (a few minutes on a long video).');
       return runLibassCaptions(state.lastCaptionJob.cues, { replaceTrack: state.lastCaptionJob.track });
     }
-    // re-render ONLY this cue and overwrite just that clip on the same track.
-    // wordCues:null keeps it instant — no whole-audio re-analysis for one line.
-    runCaptionPipeline(state.lastCaptionJob.cues, {
+    // re-render the captions on screen while this line is said and overwrite
+    // just those clips on the same track. With real word stamps the word
+    // timing is derived exactly as the full run did (the stamps, refined the
+    // same way, and the timing nudge applied by the pipeline), so the fixed
+    // caption lights each word when it is spoken, like the rest — it used to
+    // pass no word timing and re-time the line with guesses up to 2 s off.
+    // Without stamps it stays instant: no whole-audio pass for one line.
+    // wholeCards: a caption that also shows words of the next line is
+    // re-drawn whole, so no old word is left on screen beside the fix.
+    var fixOpts = {
       overwriteOnTrack: state.lastCaptionJob.track,
       range: { start: cue.start, end: cue.end },
-      wordCues: null,
+      wholeCards: true,
       single: true
-    });
+    };
+    if (!(state.transcriptWords && state.transcriptWords.length)) fixOpts.wordCues = null;
+    runCaptionPipeline(state.lastCaptionJob.cues, fixOpts);
   }
   function renderTrEditor() {
     var list = $('tre-list'); if (!list) return;
@@ -3196,7 +3528,7 @@
       // untouched lines keep their real spoken times; a line whose word count
       // changed is redistributed within its own span.
       try {
-        var rw = reflowWordTimingFromLines(cues, state.transcriptWords);
+        var rw = reflowWordTimingFromLines(cues, state.transcriptWords, _treOrig);
         state.transcriptWords = rw && rw.length ? rw : null;
       } catch (eRw) { state.transcriptWords = null; }
       state.transcriptManual = true;
@@ -4721,7 +5053,16 @@
         fs2.writeFileSync(outP, CPCaptions.toSRT(r.cues), 'utf8');
         state.transcript = { label: 'Script-corrected (' + r.cues.length + ' lines)', path: outP, mtime: 1e16 };
         state.transcriptManual = true;
-        state.transcriptWords = null;      // words changed → re-derive timing on next use
+        // KEEP the spoken word times, as the manual editor does: unchanged
+        // words keep their real stamps and only corrected words are placed
+        // where the misheard word was. (Dropping them sent every caption back
+        // to timing guessed from the audio while this said "timing kept".)
+        try {
+          if (state.transcriptWords && state.transcriptWords.length) {
+            var rwS = reflowWordTimingFromLines(r.cues, state.transcriptWords, cues);
+            state.transcriptWords = rwS && rwS.length ? rwS : null;
+          }
+        } catch (eRwS) { state.transcriptWords = null; }
         setTranscriptBar('ok', '✅', 'Script applied — ' + r.replaced + ' words corrected, timing kept', 'Change');
         refreshMogrtSheetTr(); refreshMogrtEditorTr();
         if ($('script-status')) $('script-status').textContent =
@@ -8561,6 +8902,52 @@
     } catch (e) { return Promise.resolve(); }
   }
 
+  /* The frames of every caption on screen during `range`: frames that overlap
+     it, widened to the whole caption they belong to. Frames of one caption run
+     back to back and show the same words (word-by-word highlight) or a growing
+     start of them (reveal), so a neighbour joined that way is the same caption.
+     Pure: used by "Fix one caption" so a caption shared with the next line is
+     re-drawn whole. */
+  function framesTouchingRange(frames, range) {
+    function key(f) { return (f.words || []).join(' ') || String(f.text || ''); }
+    function sameCard(a, b) {
+      if (Math.abs(+a.end - +b.start) > 1e-3) return false;
+      var ka = key(a), kb = key(b);
+      return !!ka && (ka === kb || kb.indexOf(ka + ' ') === 0);
+    }
+    var lo = -1, hi = -1;
+    for (var i = 0; i < frames.length; i++) {
+      if (+frames[i].end > range.start + 1e-3 && +frames[i].start < range.end - 1e-3) { if (lo < 0) lo = i; hi = i; }
+    }
+    if (lo < 0) return [];
+    while (lo > 0 && sameCard(frames[lo - 1], frames[lo])) lo--;
+    while (hi + 1 < frames.length && sameCard(frames[hi], frames[hi + 1])) hi++;
+    return frames.slice(lo, hi + 1);
+  }
+
+  /* Captions never show a pure hesitation sound ("um", "uh", "hmm"): the
+     transcript keeps them (Clean up and the retake finder cut them), the
+     caption text and its word timing leave them out. Real words — Hindi
+     "to", "accha", English "like" — are never touched. Pure. */
+  var HESITATIONS = { um: 1, umm: 1, ummm: 1, uh: 1, uhh: 1, uhm: 1, erm: 1, hmm: 1, hmmm: 1, hm: 1, mm: 1, mmm: 1, mhm: 1, mhmm: 1 };
+  function isHesitation(t) { return HESITATIONS.hasOwnProperty(_reflowNorm(t)); }
+  function dropHesitations(cues) {
+    var out = [];
+    (cues || []).forEach(function (c) {
+      var toks = String(c.text || '').split(/\s+/).filter(Boolean);
+      var keep = toks.filter(function (t) { return !isHesitation(t); });
+      if (!keep.length) return;
+      if (keep.length === toks.length) { out.push(c); return; }
+      var n = {}; for (var k in c) if (c.hasOwnProperty(k)) n[k] = c[k];
+      n.text = keep.join(' ').replace(/^[,;:\s]+/, '');
+      out.push(n);
+    });
+    return out;
+  }
+  function dropHesitationWords(words) {
+    return words ? words.filter(function (w) { return !isHesitation(w.text); }) : words;
+  }
+
   /*
    * Build → render → place captions with the CURRENTLY selected template +
    * customizer settings. When replaceTrack (1-based) is given, the captions
@@ -8594,10 +8981,15 @@
     }
 
     // Segment restyle: keep only the cues that fall inside the selected range.
-    if (range) {
+    // (wholeCards builds every caption as a full run would, then keeps the
+    // whole captions that touch the range — see framesTouchingRange.)
+    if (range && !opts.wholeCards) {
       cues = cues.filter(function (c) { return c.end > range.start + 1e-3 && c.start < range.end - 1e-3; });
       if (!cues.length) { toast('No captions fall inside the selected range.', true); return; }
     }
+
+    cues = dropHesitations(cues);
+    if (!cues.length) { toast('No captions to add — the transcript only has "um"/"uh".', true); return; }
 
     var preset = currentPreset();
     try { syncAutoPos(); } catch (eAp) {}           // the sequence's shape is known now
@@ -8625,12 +9017,17 @@
       return preloadJobFaces(preset, overrides, cues, wc).then(function () { return wc; });
     }).then(function (wordCues) {
       wordCues = shiftWordCues(wordCues, captionSyncOffset());   // apply the timing nudge
+      wordCues = dropHesitationWords(wordCues);
       // for a segment restyle, only keep word timing inside the range
-      if (range && wordCues) wordCues = wordCues.filter(function (w) { return w.end > range.start + 1e-3 && w.start < range.end - 1e-3; });
+      if (range && wordCues && !opts.wholeCards) wordCues = wordCues.filter(function (w) { return w.end > range.start + 1e-3 && w.start < range.end - 1e-3; });
       // grouping, timing on the sequence's frames, fit, case, emoji, CAPS —
       // the same call the editor preview makes (captionJobFrames)
       var frames = captionJobFrames(cues, wordCues, preset, overrides);
       try { if (window.CP_DEBUG_EXT && window.CP_DEBUG_EXT.captions) window.CP_DEBUG_EXT.captions._lastJob = { frames: frames, wordCues: wordCues, cues: cues, W: state.env.width, H: state.env.height, fps: state.env.fps, preset: preset, overrides: overrides }; } catch (eDbg) {}
+      if (range && opts.wholeCards) {
+        frames = framesTouchingRange(frames, range);
+        if (!frames.length) { setCaptionBusy(false); capProgress(null); return toast('No captions fall inside that caption\'s time.', true); }
+      }
 
       // ONE-CLIP OVERLAY. A long job becomes one transparent .mov drawn from
       // exactly these frames (so it looks exactly like the per-image render),
@@ -8710,7 +9107,10 @@
         if (overwriteOnTrack) placeArgs.overwriteOnTrack = overwriteOnTrack;
         else if (replaceTrack) placeArgs.replaceTrack = replaceTrack;
         else if (got.edTrack) placeArgs.replaceTrack = got.edTrack;
-        if (single) placeArgs.exact = true;   // size each still exactly → never clobber the next caption
+        // size each still exactly whenever it lands on a track that already
+        // has clips (one-caption fix, a range restyle, "Add captions" again):
+        // a still at its default length covered the captions after it there
+        if (single || overwriteOnTrack || placeArgs.replaceTrack) placeArgs.exact = true;
         return CPBridge.callHost('CP_placeCaptionImages', placeArgs);
       }).then(function (r) {
         setCaptionBusy(false);
@@ -8882,6 +9282,7 @@
       }
       if (state.transcriptWords && state.transcriptWords.length) state.transcriptWords = move(state.transcriptWords);
       if (typeof _treCues !== 'undefined' && _treCues && _treCues.length) _treCues = move(_treCues);
+      if (typeof _treOrig !== 'undefined' && _treOrig && _treOrig.length) _treOrig = move(_treOrig);
       if (lines) {
         var nt = {}, k;
         for (k in t) if (t.hasOwnProperty(k)) nt[k] = t[k];
@@ -9010,6 +9411,19 @@
       followMovedRecording: followMovedRecording,
       refineWordCues: refineWordCues,
       getCaptionWordCues: getCaptionWordCues
+    };
+    // the pure pieces that keep transcript timing exact (captions-transcript-timing gate)
+    window.CP_DEBUG_EXT.timing = {
+      reflow: reflowWordTimingFromLines,
+      wordsByLine: wordsByLine,
+      punctuateWords: punctuateWords,
+      splitPhraseWords: splitPhraseWords,
+      dedupeSeamWords: dedupeSeamWords,
+      cloudChunkPlan: cloudChunkPlan,
+      placeWordStamps: placeWordStamps,
+      framesTouchingRange: framesTouchingRange,
+      job: function () { return state.lastCaptionJob ? JSON.parse(JSON.stringify(state.lastCaptionJob)) : null; },
+      setJob: function (j) { state.lastCaptionJob = j; }
     };
   } catch (eDbgS) {}
 
@@ -13885,6 +14299,7 @@
     }
     if (state.lastCaptionJob && state.lastCaptionJob.cues) state.lastCaptionJob.cues = remapFn(state.lastCaptionJob.cues);
     if (typeof _treCues !== 'undefined' && _treCues && _treCues.length) _treCues = remapFn(_treCues);
+    if (typeof _treOrig !== 'undefined' && _treOrig && _treOrig.length) _treOrig = remapFn(_treOrig);
     // the transcript FILE is not re-timed — remember that its times are now
     // stale, so the retake/filler passes never cut at them (a new transcript
     // is a new object and starts clean)

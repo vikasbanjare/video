@@ -1656,6 +1656,158 @@ const MUTANTS = [
     repl: "id=\"ms-wc-full\" type=\"button\" title=\"Whole sentences, sized to your video automatically\"",
     gate: "CutPilot/test/gates/captions-options-reachable.js",
     why: "✨ Auto on the ⚡ Premium sheet promises whole sentences again"
+  },
+  {
+    name: 'tt-reflow-no-diff',
+    file: 'CutPilot/js/main.js',
+    find: '          if (nt[r] && nt[r] === ns[c2]) v = Math.max(v, D[r + 1][c2 + 1] + 1000',
+    repl: '          if (false) v = Math.max(v, D[r + 1][c2 + 1] + 1000',
+    gate: 'CutPilot/test/gates/captions-transcript-timing.js',
+    why: 'after ✨ Transcribe’s AI fix, lines whose edge splits a word are re-guessed and light up early'
+  },
+  {
+    name: 'tt-fix1-guessed-timing',
+    file: 'CutPilot/js/main.js',
+    find: '    if (!(state.transcriptWords && state.transcriptWords.length)) fixOpts.wordCues = null;',
+    repl: '    fixOpts.wordCues = null;',
+    gate: 'CutPilot/test/gates/captions-transcript-timing.js',
+    why: '“Fix one caption” re-times its line with guesses instead of the real word stamps'
+  },
+  {
+    name: 'tt-fix1-half-card',
+    file: 'CutPilot/js/main.js',
+    find: '    while (lo > 0 && sameCard(frames[lo - 1], frames[lo])) lo--;',
+    repl: '',
+    gate: 'CutPilot/test/gates/captions-transcript-timing.js',
+    why: '“Fix one caption” leaves half of a caption shared with the line before it un-drawn'
+  },
+  {
+    name: 'tt-script-drops-timing',
+    file: 'CutPilot/js/main.js',
+    find: '            state.transcriptWords = rwS && rwS.length ? rwS : null;',
+    repl: '            state.transcriptWords = null;',
+    gate: 'CutPilot/test/gates/captions-transcript-timing.js',
+    why: '“✅ Script applied” throws the word timing away while saying it was kept'
+  },
+  {
+    name: 'tt-sarvam-phrases',
+    file: 'CutPilot/js/main.js',
+    find: '        words = splitPhraseWords(words);',
+    repl: '',
+    gate: 'CutPilot/test/gates/captions-transcript-timing.js',
+    why: 'Indian Voices phrases are stored as one "word" each (11-18 word cards, shrunken text)'
+  },
+  {
+    name: 'tt-sarvam-no-overlap',
+    file: 'CutPilot/js/main.js',
+    find: "    var OVER = (lang === 'translate-en') ? 0 : 1;",
+    repl: '    var OVER = 0;',
+    gate: 'CutPilot/test/gates/captions-transcript-timing.js',
+    why: 'Indian Voices pieces stop overlapping, so a word cut at the 28 s seam is lost or doubled'
+  },
+  {
+    name: 'tt-groq-punctuation',
+    file: 'CutPilot/js/main.js',
+    find: '          if (wa.length) cues.words = punctuateWords(cues, wa);',
+    repl: '          if (wa.length) cues.words = wa;',
+    gate: 'CutPilot/test/gates/captions-transcript-timing.js',
+    why: 'Groq words lose the sentence punctuation, so captions lose "?" and "." and cannot end on a sentence'
+  },
+  {
+    name: 'tt-groq-chunk-size',
+    file: 'CutPilot/js/main.js',
+    find: '    var chunks = Math.max(Math.ceil(size / limit), Math.ceil(durSec / Math.max(30, maxDur)), 1);',
+    repl: '    var chunks = Math.max(Math.ceil(size / limit), 1);',
+    gate: 'CutPilot/test/gates/captions-transcript-timing.js',
+    why: 'Groq pieces are sized from the 24 kbps file, so the 64 kbps re-encode goes over the upload limit'
+  },
+  {
+    name: 'tt-groq-seams',
+    file: 'CutPilot/js/main.js',
+    find: '        var lo = idx ? startT + OVER / 2 : -Infinity, hi = (idx + 1 < chunks) ? startT + chunkDur + OVER / 2 : Infinity;',
+    repl: '        var lo = -Infinity, hi = Infinity;',
+    gate: 'CutPilot/test/gates/captions-transcript-timing.js',
+    why: 'overlapping Groq pieces both keep the words they share, doubling text at every seam'
+  },
+  {
+    name: 'tt-hinglish-window',
+    file: 'CutPilot/js/main.js',
+    find: '      if (best >= 0) out[best].push(w);',
+    repl: '      for (var jj = 0; jj < lines.length; jj++) if (+w.start >= lines[jj].start - 0.05 && +w.start < lines[jj].end + 0.05) out[jj].push(w);',
+    gate: 'CutPilot/test/gates/captions-transcript-timing.js',
+    why: 'Hinglish lines rebuilt with an overlap window repeat or drop the word where two lines meet'
+  },
+  {
+    name: 'tt-short-words',
+    file: 'CutPilot/js/main.js',
+    find: '    (items || []).forEach(function (it) { ((+it.end - +it.start) > 0.05 ? longW : shortW).push(it); });',
+    repl: '    (items || []).forEach(function (it) { longW.push(it); });',
+    gate: 'CutPilot/test/gates/captions-transcript-timing.js',
+    why: 'words of 50 ms or less ("ho", "to") vanish from the transcript'
+  },
+  {
+    name: 'tt-panel-exact',
+    file: 'CutPilot/js/main.js',
+    find: '        if (single || overwriteOnTrack || replaceTrack) placeArgs.exact = true;',
+    repl: '        if (single) placeArgs.exact = true;',
+    gate: 'CutPilot/test/gates/captions-transcript-timing.js',
+    why: 'a range restyle or “Apply to all” places stills at their default length over the next captions'
+  },
+  {
+    name: 'tt-host-exact-on-busy-track',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '    try { if (track.clips.numItems > 0) exact = true; } catch (eNi) {}',
+    repl: '',
+    gate: 'CutPilot/test/host-tests.js',
+    why: 'a range restyle without the exact flag covers the captions after it and trims the wrong clip'
+  },
+  {
+    name: 'tt-dedupe-short-line',
+    file: 'CutPilot/js/captions.js',
+    find: '        var reach = shortLine ? -0.05 : margin;          // short line: must truly overlap',
+    repl: '        var reach = margin;',
+    gate: 'CutPilot/test/gates/captions-transcript-text.js',
+    why: 'a short line said twice ("Haan." "Haan.") is merged into one'
+  },
+  {
+    name: 'tt-deepgram-fillers',
+    file: 'CutPilot/js/main.js',
+    find: "    return _curlJson(['-sS', '--max-time', '900', CPVerbatim.deepgramUrl(opts),",
+    repl: "    return _curlJson(['-sS', '--max-time', '900', CPVerbatim.deepgramUrl(opts).replace('filler_words=true', 'filler_words=false'),",
+    gate: 'CutPilot/test/gates/captions-transcript-timing.js',
+    why: 'transcribing with Deepgram drops "um"/"uh" from the transcript, so Clean up\'s filler removal and the retake finder find nothing'
+  },
+  {
+    name: 'tt-hindi-syllables',
+    file: 'CutPilot/js/align.js',
+    find: "    if (/[\\u0900-\\u097F]/.test(String(word == null ? '' : word))) return devanagariSyllables(word);",
+    repl: '',
+    gate: 'CutPilot/test/gates/captions-transcript-text.js',
+    why: 'every Hindi word counts one syllable, so long and short words get the same highlight time'
+  },
+  {
+    name: 'tt-reflow-borrows-next-line',
+    file: 'CutPilot/js/main.js',
+    find: '      if (w1 < N && owner[w1] > i && i + 1 < L) {',
+    repl: '      w1 = Math.min(N, w1 + 5); if (false) {',
+    gate: 'CutPilot/test/gates/captions-transcript-timing.js',
+    why: 'after a fix, a corrected word takes the next line\'s time ("accha" lights 1.6 s late) and the untouched next line is squeezed'
+  },
+  {
+    name: 'tt-seam-merges-repeats',
+    file: 'CutPilot/js/main.js',
+    find: '(+w.start < +p.end - 0.02 || Math.abs(+w.start - +p.start) < 0.03)) return;',
+    repl: '(+w.start < +p.end - 0.02 || Math.abs(+w.start - +p.start) < 0.15)) return;',
+    gate: 'CutPilot/test/gates/captions-transcript-timing.js',
+    why: 'a quick real repeat ("no no no") near a seam of a long recording loses a word'
+  },
+  {
+    name: 'tt-captions-show-um',
+    file: 'CutPilot/js/main.js',
+    find: '  function isHesitation(t) { return HESITATIONS.hasOwnProperty(_reflowNorm(t)); }',
+    repl: '  function isHesitation(t) { return false; }',
+    gate: 'CutPilot/test/gates/captions-transcript-timing.js',
+    why: 'captions made from a Deepgram transcript show "um" and "uh"'
   }
 ];
 

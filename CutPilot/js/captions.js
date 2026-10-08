@@ -2874,7 +2874,11 @@
    * their windows overlap (starts within `slack`) — a speaker legitimately
    * repeating a line later is never touched (no overlap). The kept cue's
    * window widens to cover both. opts.word uses tighter limits for per-word
-   * cues (short words legitimately repeat often). Pure + tested.
+   * cues (short words legitimately repeat often). A SHORT line (three words
+   * or fewer: "Haan." "Haan.", "No no.") is a duplicate only when the two
+   * windows really overlap — said twice back to back it is two lines; only a
+   * longer line repeated end to end is whisper's repetition glitch. Pure +
+   * tested.
    */
   function dedupeRepeatedCues(cues, opts) {
     if (!cues || !cues.length) return cues;
@@ -2887,9 +2891,11 @@
       var c = cues[i], cn = norm(c.text), dup = false;
       if (cn) {
         var back = Math.max(0, out.length - 4);          // duplicates land adjacent — check the last few
+        var shortLine = !opts.word && cn.split(' ').length <= 3;
+        var reach = shortLine ? -0.05 : margin;          // short line: must truly overlap
         for (var j = out.length - 1; j >= back; j--) {
           var p = out[j];
-          if (norm(p.text) === cn && c.start < p.end + margin && Math.abs(c.start - p.start) <= slack) {
+          if (norm(p.text) === cn && c.start < p.end + reach && Math.abs(c.start - p.start) <= slack) {
             if (c.end > p.end) p.end = c.end;            // keep the wider window
             dup = true; break;
           }
