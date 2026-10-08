@@ -885,7 +885,7 @@ const MUTANTS = [
   {
     name: 'tt-sarvam-no-overlap',
     file: 'CutPilot/js/main.js',
-    find: '    var OVER = 1;                                     // each piece hears 1 s past its end, so no word is cut at an edge',
+    find: "    var OVER = (lang === 'translate-en') ? 0 : 1;",
     repl: '    var OVER = 0;',
     gate: 'CutPilot/test/gates/captions-transcript-timing.js',
     why: 'Indian Voices pieces stop overlapping, so a word cut at the 28 s seam is lost or doubled'
@@ -956,11 +956,11 @@ const MUTANTS = [
   },
   {
     name: 'tt-deepgram-fillers',
-    file: 'CutPilot/js/verbatim.js',
-    find: "      'filler_words=' + (opts.fillers === false ? 'false' : 'true'), 'utterances=true'",
-    repl: "      'filler_words=true', 'utterances=true'",
-    gate: 'CutPilot/test/gates/captions-transcript-text.js',
-    why: 'captions made with Deepgram show "um" and "uh"'
+    file: 'CutPilot/js/main.js',
+    find: "    return _curlJson(['-sS', '--max-time', '900', CPVerbatim.deepgramUrl(opts),",
+    repl: "    return _curlJson(['-sS', '--max-time', '900', CPVerbatim.deepgramUrl(opts).replace('filler_words=true', 'filler_words=false'),",
+    gate: 'CutPilot/test/gates/captions-transcript-timing.js',
+    why: 'transcribing with Deepgram drops "um"/"uh" from the transcript, so Clean up\'s filler removal and the retake finder find nothing'
   },
   {
     name: 'tt-hindi-syllables',
@@ -969,6 +969,30 @@ const MUTANTS = [
     repl: '',
     gate: 'CutPilot/test/gates/captions-transcript-text.js',
     why: 'every Hindi word counts one syllable, so long and short words get the same highlight time'
+  },
+  {
+    name: 'tt-reflow-borrows-next-line',
+    file: 'CutPilot/js/main.js',
+    find: '      if (w1 < N && owner[w1] > i && i + 1 < L) {',
+    repl: '      w1 = Math.min(N, w1 + 5); if (false) {',
+    gate: 'CutPilot/test/gates/captions-transcript-timing.js',
+    why: 'after a fix, a corrected word takes the next line\'s time ("accha" lights 1.6 s late) and the untouched next line is squeezed'
+  },
+  {
+    name: 'tt-seam-merges-repeats',
+    file: 'CutPilot/js/main.js',
+    find: '(+w.start < +p.end - 0.02 || Math.abs(+w.start - +p.start) < 0.03)) return;',
+    repl: '(+w.start < +p.end - 0.02 || Math.abs(+w.start - +p.start) < 0.15)) return;',
+    gate: 'CutPilot/test/gates/captions-transcript-timing.js',
+    why: 'a quick real repeat ("no no no") near a seam of a long recording loses a word'
+  },
+  {
+    name: 'tt-captions-show-um',
+    file: 'CutPilot/js/main.js',
+    find: '  function isHesitation(t) { return HESITATIONS.hasOwnProperty(_reflowNorm(t)); }',
+    repl: '  function isHesitation(t) { return false; }',
+    gate: 'CutPilot/test/gates/captions-transcript-timing.js',
+    why: 'captions made from a Deepgram transcript show "um" and "uh"'
   }
 ];
 

@@ -7,8 +7,9 @@
  *      it used to be merged into one when the second came within 0.3 s; a
  *      long line repeated end to end (whisper's repetition glitch) and two
  *      copies of a line at the same moment are still merged;
- *   2. captions made with Deepgram never show "um"/"uh" (the retake finder
- *      still asks for them, it needs them to find false starts);
+ *   2. Deepgram is always asked for "um"/"uh" (the stored transcript stays
+ *      word for word: Clean up and the retake finder need them; captions
+ *      leave them out themselves — see captions-transcript-timing);
  *   3. Hindi words are weighed by their syllables (counted from the vowel
  *      signs) when the highlight timing is shaped, so a long Hindi word gets
  *      more time than a short one — every Devanagari word used to count 1.
@@ -46,9 +47,9 @@ console.log('captions: transcript text rules keep what was said');
 
 // 2 — Deepgram fillers
 {
-  const cap = CPVerbatim.deepgramUrl({ language: 'hi', fillers: false });
+  const tr = CPVerbatim.deepgramUrl({ language: 'hi' });
   const ret = CPVerbatim.deepgramUrl({ language: 'hi', diarize: true });
-  check('captions ask Deepgram for no filler words', /filler_words=false/.test(cap) && !/filler_words=true/.test(cap), cap);
+  check('transcribing asks Deepgram for every word, fillers included', /filler_words=true/.test(tr) && !/filler_words=false/.test(tr), tr);
   check('the retake finder still asks for them', /filler_words=true/.test(ret), ret);
 }
 

@@ -36,7 +36,13 @@
  *      are sized exactly;
  *   6. "✅ Script applied" keeps the word timing: unchanged words keep their
  *      times, the corrected word takes the time of the one it replaced;
- *   7. Deepgram as the caption engine asks for no filler words.
+ *   7. Deepgram: the stored transcript keeps "um"/"uh" (Clean up and the
+ *      retake finder cut them), the captions made from it never show them;
+ *   8. a fixed word never takes the next line's time: "acha" → "accha"
+ *      through the real AI fix when the next line starts with "accha", a word
+ *      added at a line end, English "gonna" → "going to" before "to the
+ *      shop", and Devanagari; quick real repeats ("na na", "no no no",
+ *      "haan haan") are never merged at a seam or anywhere else.
  *
  * Exit 0 = pass, 1 = fail, 2 = skipped (no ffmpeg / puppeteer / Chromium).
  */
@@ -356,22 +362,124 @@ async function run() {
       await page.close();
     }
 
-    // ── 7 ── Deepgram for captions: no "um" / "uh" ──────────────────────────
+    // ── 7 ── Deepgram: transcript keeps "um", captions leave it out ────────
     {
       const urls = [];
       const curl = (args) => {
         const url = args.find(a => /^https:\/\//.test(a)) || '';
         urls.push(url);
         if (/deepgram/.test(url)) return JSON.stringify({ results: { channels: [{ alternatives: [{ words: [
-          { word: 'hello', punctuated_word: 'Hello', start: 0.5, end: 0.9, confidence: 0.99 },
-          { word: 'everyone', punctuated_word: 'everyone.', start: 0.95, end: 1.5, confidence: 0.99 }] }] }] } });
+          { word: 'um', punctuated_word: 'Um,', start: 0.2, end: 0.45, confidence: 0.9 },
+          { word: 'hello', punctuated_word: 'hello', start: 0.5, end: 0.9, confidence: 0.99 },
+          { word: 'everyone', punctuated_word: 'everyone.', start: 0.95, end: 1.5, confidence: 0.99 },
+          { word: 'uh', punctuated_word: 'uh', start: 1.6, end: 1.8, confidence: 0.9 },
+          { word: 'aaj', punctuated_word: 'aaj', start: 1.85, end: 2.1, confidence: 0.99 },
+          { word: 'hum', punctuated_word: 'hum', start: 2.15, end: 2.4, confidence: 0.99 },
+          { word: 'baat', punctuated_word: 'baat', start: 2.45, end: 2.7, confidence: 0.99 },
+          { word: 'karenge', punctuated_word: 'karenge.', start: 2.75, end: 3.2, confidence: 0.99 }] }] }] } });
         return '{}';
       };
-      const { page } = await H.openPanel(browser, { host: hostFor(SHORT, 12), curl, settings: { deepgramKey: 'dg-test', whisperQuality: 'cloud-deepgram', ffmpegPath: FF, whisperLang: 'en' }, ffmpeg: FF });
+      const host = hostFor(SHORT, 12, (fn, args) => {
+        if (fn === 'CP_getEnv') return { sequenceName: 'Seq', width: 1920, height: 1080, fps: 25 };
+        if (fn === 'CP_placeCaptionImages') return { placed: (args.items || []).length, track: 3 };
+        return null;
+      });
+      const { page } = await H.openPanel(browser, { host, curl, settings: { deepgramKey: 'dg-test', whisperQuality: 'cloud-deepgram', ffmpegPath: FF, whisperLang: 'en' }, ffmpeg: FF });
       await page.evaluate(() => { document.getElementById('btn-tr-auto-main').click(); });
       await waitLabel(page, /Pulse transcript/);
       const dg = urls.find(u => /deepgram/.test(u)) || '';
-      C.check('Deepgram as the caption engine asks for no filler words (filler_words=false)', /filler_words=false/.test(dg), dg);
+      C.check('Deepgram is asked for every word, "um"/"uh" included (filler_words=true)', /filler_words=true/.test(dg) && !/filler_words=false/.test(dg), dg);
+      const tw = await words(page);
+      C.check('the stored transcript keeps "um" and "uh" (Clean up\'s filler removal and the retake finder need them)',
+        tw.some(w => /^um\b/i.test(w.text)) && tw.some(w => /^uh\b/i.test(w.text)), JSON.stringify(tw.map(w => w.text)));
+      const shots = await page.evaluate(async () => {
+        const D = window.CP_DEBUG_EXT, shots = [];
+        CPRender.renderFrames = function (frames) {
+          shots.push(frames.map(f => ({ words: (f.words || []).slice(), text: String(f.text || '') })));
+          return Promise.resolve(frames.map((f, i) => ({ path: '/x/cap_' + i + '.png', start: f.start, end: f.end })));
+        };
+        D.timing.setJob({ cues: D.sync.transcript().cues, track: 3, seq: 'Seq' });
+        document.getElementById('btn-cap-restyle').click();
+        for (let i = 0; i < 200 && !shots.length; i++) await new Promise(r => setTimeout(r, 50));
+        return shots;
+      });
+      const shown = (shots[0] || []).map(f => (f.words.length ? f.words.join(' ') : f.text)).join(' | ');
+      C.check('Deepgram captions never show "um" or "uh", and keep every real word',
+        shots.length > 0 && !/\b(um|uh)\b/i.test(shown) && ['hello', 'everyone', 'aaj', 'hum', 'baat', 'karenge'].every(x => new RegExp('\\b' + x + '\\b', 'i').test(shown)), shown);
+      await page.close();
+    }
+
+    // ── 8 ── a fixed word never takes the next line's time ──────────────────
+    {
+      // (a) through the REAL ✨ AI fix: "acha" → "accha", and the next,
+      // untouched line starts with the same word "accha"
+      const segs = [{ start: 0, end: 1.6, text: 'yeh bahut acha' }, { start: 2.5, end: 3.8, text: 'accha hai na.' }];
+      const W = [[' yeh', 0.2, 0.5], [' bahut', 0.55, 0.9], [' acha', 1.0, 1.4], [' accha', 2.6, 3.0], [' hai', 3.05, 3.3], [' na', 3.35, 3.6]]
+        .map(x => ({ word: x[0], start: x[1], end: x[2] }));
+      let fixAsked = 0;
+      const curl = (args) => {
+        const url = args.find(a => /^https:\/\//.test(a)) || '';
+        if (/audio\/transcriptions/.test(url)) return JSON.stringify({ text: segs.map(s => s.text).join(' '), segments: segs, words: W, language: 'hindi' });
+        if (/groq\.com\/openai\/v1\/models/.test(url)) return JSON.stringify({ data: [{ id: 'llama-3.3-70b-versatile' }] });
+        if (/groq\.com\/openai\/v1\/chat/.test(url)) {
+          fixAsked++;
+          const body = JSON.parse(fs.readFileSync(args[args.indexOf('--data-binary') + 1].replace(/^@/, ''), 'utf8'));
+          const ls = JSON.parse(body.messages[body.messages.length - 1].content).lines;
+          return JSON.stringify({ choices: [{ message: { content: JSON.stringify({ lines: ls.map(l => l.replace(/\bacha\b/, 'accha')) }) }, finish_reason: 'stop' }] });
+        }
+        return '{}';
+      };
+      const { page } = await H.openPanel(browser, { host: hostFor(SHORT, 12), curl, settings: { groqKey: 'gsk-test-key', ffmpegPath: FF, whisperLang: 'auto' }, ffmpeg: FF });
+      await page.evaluate(() => { document.getElementById('btn-tr-auto-ai').click(); });
+      await waitLabel(page, /AI-corrected/);
+      const w = await words(page);
+      const want = [['yeh', 0.2, 0.5], ['bahut', 0.55, 0.9], ['accha', 1.0, 1.4], ['accha', 2.6, 3.0], ['hai', 3.05, 3.3], ['na.', 3.35, 3.6]];
+      const ok = fixAsked > 0 && w.length === want.length && want.every((x, i) => w[i].text.toLowerCase() === x[0] && near(w[i].start, x[1]) && near(w[i].end, x[2]));
+      C.check('✨ AI fix "acha" → "accha": the fixed word keeps its own time (1.00 s) and the next line\'s "accha" keeps 2.60 s',
+        ok, JSON.stringify(w.map(x => x.text + '@' + x.start.toFixed(2) + '-' + x.end.toFixed(2))));
+      // (b) (c) and Devanagari, through the panel's own reflow
+      const res = await page.evaluate(() => {
+        const R = window.CP_DEBUG_EXT.timing.reflow;
+        const Wd = (t, s, e) => ({ text: t, start: s, end: e });
+        const out = {};
+        let ow = [Wd('yeh', 0.2, 0.5), Wd('bahut', 0.55, 0.9), Wd('accha', 1.0, 1.4), Wd('aur', 3.8, 4.0), Wd('woh', 4.05, 4.3), Wd('bhi', 4.35, 4.6), Wd('hai', 4.65, 4.9), Wd('sahi', 4.95, 5.3)];
+        let old = [{ start: 0, end: 1.6, text: 'yeh bahut accha' }, { start: 3.7, end: 5.5, text: 'aur woh bhi hai sahi' }];
+        out.b = R([{ start: 0, end: 1.6, text: 'yeh bahut accha hai' }, old[1]], ow, old);
+        ow = [Wd('I', 0.2, 0.4), Wd('am', 0.45, 0.7), Wd('gonna', 0.75, 1.2), Wd('to', 1.6, 1.7), Wd('the', 1.75, 1.9), Wd('shop', 1.95, 2.4)];
+        old = [{ start: 0, end: 1.3, text: 'I am gonna' }, { start: 1.5, end: 2.6, text: 'to the shop' }];
+        out.c = R([{ start: 0, end: 1.3, text: 'I am going to' }, old[1]], ow, old);
+        ow = [Wd('यह', 0.2, 0.5), Wd('बहुत', 0.55, 0.9), Wd('अचा', 1.0, 1.4), Wd('अच्छा', 2.6, 3.0), Wd('है', 3.05, 3.3), Wd('ना', 3.35, 3.6)];
+        old = [{ start: 0, end: 1.6, text: 'यह बहुत अचा' }, { start: 2.5, end: 3.8, text: 'अच्छा है ना' }];
+        out.d = R([{ start: 0, end: 1.6, text: 'यह बहुत अच्छा' }, old[1]], ow, old);
+        return out;
+      });
+      const fmt = (r) => JSON.stringify((r || []).map(x => x.text + '@' + x.start.toFixed(2) + '-' + x.end.toFixed(2)));
+      const at = (r, txt, n) => (r || []).filter(x => x.text === txt)[n || 0];
+      const b = res.b || [];
+      C.check('"hai" added at the end of a line: the next line "aur woh bhi hai sahi" keeps every real time',
+        b.length === 9 && near(at(b, 'aur').start, 3.8) && near(at(b, 'woh').start, 4.05) && near(at(b, 'bhi').start, 4.35) && near(at(b, 'hai', 1).start, 4.65) && near(at(b, 'sahi').start, 4.95), fmt(b));
+      C.check('…and the added "hai" sits right after "accha" (before 2 s), not at the next line\'s time', !!at(b, 'hai') && at(b, 'hai').start >= 1.4 - 1e-6 && at(b, 'hai').end <= 2.0, fmt(b));
+      const c = res.c || [];
+      C.check('English "gonna" → "going to": the next line\'s "to" keeps 1.60-1.70 s and the new words stay in "gonna"\'s time (0.75-1.20 s)',
+        c.length === 7 && near(at(c, 'to', 1).start, 1.6) && near(at(c, 'to', 1).end, 1.7) && near(at(c, 'going').start, 0.75) && at(c, 'to').end <= 1.2 + 1e-6, fmt(c));
+      const d = res.d || [];
+      C.check('Devanagari "अचा" → "अच्छा": the fixed word keeps 1.00 s and the next line\'s "अच्छा है ना" keep 2.60 / 3.05 / 3.35 s',
+        d.length === 6 && near(at(d, 'अच्छा').start, 1.0) && near(at(d, 'अच्छा', 1).start, 2.6) && near(at(d, 'है').start, 3.05) && near(at(d, 'ना').start, 3.35), fmt(d));
+      // seams: a quick real repeat is never merged; a word both pieces heard is
+      const sd = await page.evaluate(() => {
+        const T = window.CP_DEBUG_EXT.timing;
+        const nana = T.splitPhraseWords([{ text: 'मैं ने कहा', start: 3.0, end: 4.6 }, { text: 'na na', start: 5.0, end: 5.28 }]);
+        return {
+          nana: T.dedupeSeamWords(nana, [5.2], nana.map(() => 0)).map(w => w.text),
+          nono: T.dedupeSeamWords([{ text: 'no', start: 10, end: 10.13 }, { text: 'no,', start: 10.13, end: 10.26 }, { text: 'no', start: 10.26, end: 10.4 }], [10.2], [0, 0, 1]).map(w => w.text),
+          haan: T.dedupeSeamWords([{ text: 'haan', start: 40, end: 40.2 }, { text: 'haan', start: 40.12, end: 40.3 }], [], [0, 0]).map(w => w.text),
+          twice: T.dedupeSeamWords([{ text: 'money', start: 27.9, end: 28.4 }, { text: 'money', start: 28.0, end: 28.4 }], [28.5], [0, 1]).map(w => w.text)
+        };
+      });
+      C.check('a quick real repeat at a seam stays: Indian Voices "na na" → 2 words, Groq "no no no" → 3 words',
+        sd.nana.filter(x => x === 'na').length === 2 && sd.nono.length === 3, JSON.stringify(sd));
+      C.check('…and far from any seam nothing is merged ("haan haan")', sd.haan.length === 2, JSON.stringify(sd.haan));
+      C.check('…while one word heard by both pieces of a seam is kept once', sd.twice.length === 1, JSON.stringify(sd.twice));
       await page.close();
     }
   } finally {

@@ -32,7 +32,7 @@
     return l;
   }
   /* Listen URL — nova-3 keeps every utterance; filler_words keeps um/uh; word
-     timings + confidence come standard. opts:{model,language,diarize,fillers}.
+     timings + confidence come standard. opts:{model,language,diarize}.
      opts.language is the panel's choice (mapped by deepgramLanguage);
      diarize asks for a speaker label on every word, which the retake finder
      uses so one person echoing another is never taken for a retake. */
@@ -40,10 +40,7 @@
     opts = opts || {};
     var q = [
       'model=' + (opts.model || 'nova-3'),
-      'smart_format=true', 'punctuate=true',
-      // the retake finder needs um/uh to find false starts; captions do not
-      // (opts.fillers === false), so they never show "um" on screen
-      'filler_words=' + (opts.fillers === false ? 'false' : 'true'), 'utterances=true'
+      'smart_format=true', 'punctuate=true', 'filler_words=true', 'utterances=true'
     ];
     if (opts.language) q.push('language=' + encodeURIComponent(deepgramLanguage(opts.language)));
     if (opts.diarize) q.push('diarize=true');
