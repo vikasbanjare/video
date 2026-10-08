@@ -5250,7 +5250,11 @@
       try {
         frames = CPCaptions.buildCaptionFrames(S.cues, {
           anim: animId, wordsPerCue: tileN, uppercase: !!t.uppercase,
-          keyword: { on: false }, speaker: { on: false },   // sweep (active word) supplies the highlight, like the backbone
+          // key words exactly as picking this style sets 🔑 (a sweep ignores
+          // them — the spoken word is the highlight); on a static style they
+          // are lit at the pop size, so the caption is grouped for that width
+          // here as on the timeline and in the editor preview
+          keyword: { on: !!raw.keyword, mode: raw.keywordMode || 'smart' }, speaker: { on: false },
           build: !!raw.build,                               // same flag the pipeline and the editor preview pass
           textCase: raw.textCase || 'original',             // a lowercase style reads lowercase on its card too
           wordCues: S.wordCues, window: 0,

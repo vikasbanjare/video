@@ -1130,6 +1130,14 @@ const MUTANTS = [
     repl: "              highlightSet: null };",
     gate: 'CutPilot/test/gates/captions-generate-lands.js',
     why: 'the fit ignores the key words lit at the pop size on static captions, so those captions shrink'
+  },
+  {
+    name: 'capcore-static-fit-tile',
+    file: 'CutPilot/js/main.js',
+    find: "          keyword: { on: !!raw.keyword, mode: raw.keywordMode || 'smart' }, speaker: { on: false },",
+    repl: "          keyword: { on: false }, speaker: { on: false },",
+    gate: 'CutPilot/test/panel-proofs.js',
+    why: 'a static key-word style (Bold Pop) splits its sample differently on the gallery tile than in the editor preview and on the timeline'
   }
 ];
 
