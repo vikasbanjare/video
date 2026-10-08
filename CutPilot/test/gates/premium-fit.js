@@ -489,17 +489,24 @@ async function magicRun(page, mode) {
         const page = await scriptedPage(browser, W, H);
         for (const lang of ['hinglish', 'devanagari', 'longwords']) {
           await useTranscript(page, dir, lang);
-          const a = await page.evaluate(async () => {
+          // the long words go in with the Position slider at its lowest (92%):
+          // the insert lifts the graphic so its box stays inside the frame,
+          // and ▶ Real preview must sit at that same row
+          const a = await page.evaluate(async (low) => {
             const sl = ms => new Promise(r => setTimeout(r, ms));
             document.querySelector('[data-tab="captions"]').click(); await sl(200);
+            const pos = document.getElementById('c-pos');
+            const was = pos.value;
+            if (low) { pos.value = '92'; pos.dispatchEvent(new Event('input')); pos.dispatchEvent(new Event('change')); await sl(100); }
             const b = document.querySelector('#cap-output button[data-out="editable"]'); if (b) b.click(); await sl(200);
             const n0 = window.__ins.length;
             document.getElementById('btn-magic').click();
             for (let i = 0; i < 80 && window.__ins.length === n0; i++) await sl(50);
             const snap = window.CP_DEBUG.snapshot() || {};
             const png = document.querySelector('#cap-output button[data-out="png"]'); if (png) png.click();   // leave the caption type as found
+            window.__posWas = was;
             return window.__ins.length > n0 ? Object.assign({}, window.__ins[window.__ins.length - 1], { _yPct: snap.yPct }) : { err: 'no editable insert was sent' };
-          });
+          }, lang === 'longwords');
           const tag = '✏️ Editable ' + W + '×' + H + ' ' + lang;
           if (a.err) { mBad.push(tag + ': ' + a.err); continue; }
           mInserts++;
@@ -543,6 +550,8 @@ async function magicRun(page, mode) {
             const pws = await measure(page, pls.map(t => ({ text: t, px, font: (rp.textStyle && rp.textStyle.font) || font })));
             if (pls.length > 2 || pws.some(w => w + 2 * pad.x * fit / 100 > visW)) mBad.push(tag + ': ▶ Real preview words “' + String(rp.text).replace(/\r/g, '⏎') + '” do not fit (' + pws.map(Math.round).join('/') + ' px)');
           }
+          await page.evaluate(() => { const pos = document.getElementById('c-pos'); pos.value = window.__posWas; pos.dispatchEvent(new Event('input')); pos.dispatchEvent(new Event('change')); });
+          if (lang === 'longwords' && !(a._yPct >= 0.9 && a.posYPct < a._yPct - 0.005)) mBad.push(tag + ': the slider at ' + a._yPct + ' did not test the lifted row (sent ' + a.posYPct + ')');
         }
         await page.close();
       }
