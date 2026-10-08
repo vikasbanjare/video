@@ -34,8 +34,7 @@ const KNOWN_DEAD = {
   'btn-native-main':       'caption-type buttons replaced by the ≡ Browse styles sheet',
   'btn-native-apply':      'same as btn-native-main',
   'btn-editable-style':    'same as btn-native-main',
-  'btn-tr-auto':           'split into btn-tr-auto-main / btn-tr-auto-ai',
-  'c-animspeed':           'animation-speed slider folded into the per-style preset'
+  'btn-tr-auto':           'split into btn-tr-auto-main / btn-tr-auto-ai'
 };
 
 function idsInHtml(html) {

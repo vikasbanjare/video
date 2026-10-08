@@ -1090,6 +1090,70 @@ const MUTANTS = [
     repl: '    var rfScale = 100;',
     gate: 'CutPilot/test/gates/host-render-mogrt-frames.js',
     why: 'the Premium card renders are drawn at a different size than the timeline gets'
+  },
+  {
+    name: 'pfit-sheet-preview',
+    file: 'CutPilot/js/main.js',
+    find: '          compW: b.compW, compH: b.compH, posYPct: b.posYPct, sizeFit: b.sizeFit });',
+    repl: '          compW: b.compW, compH: b.compH });',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: '▶ Try on timeline in the Premium sheet drops the template mid-frame at its title size, not where the captions go'
+  },
+  {
+    name: 'pfit-upload-preview-comp',
+    file: 'CutPilot/js/main.js',
+    find: '                   compW: (geom && geom.compW) || 0, compH: (geom && geom.compH) || 0 };',
+    repl: '                   compW: 0, compH: 0 };',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'the 📁 Upload view\'s ▶ Try on timeline drops the template unfitted while its insert is fitted'
+  },
+  {
+    name: 'pfit-upload-preview-plan',
+    file: 'CutPilot/js/main.js',
+    find: '      if (isBundledMogrt(path)) {',
+    repl: '      if (false) {',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'the 📁 Upload view\'s ▶ Try on timeline shows Pulse\'s templates at title size, not as the captions will be'
+  },
+  {
+    name: 'pfit-sheet-position',
+    file: 'CutPilot/js/main.js',
+    find: '      premOpts().pos = isFinite(v) ? Math.max(0.1, Math.min(0.92, v / 100)) : null; savePremOpts(); refreshPremControls();',
+    repl: '      premOpts().pos = null; savePremOpts(); refreshPremControls();',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'moving the Premium sheet\'s Position slider changes nothing'
+  },
+  {
+    name: 'pfit-sheet-stretch',
+    file: 'CutPilot/js/main.js',
+    find: "    if ($('ms-stretch')) $('ms-stretch').addEventListener('change', function () { premOpts().stretch = !!this.checked; savePremOpts(); });",
+    repl: '',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'the Premium sheet\'s stretch box changes nothing'
+  },
+  {
+    name: 'pfit-hold-next',
+    file: 'CutPilot/js/main.js',
+    find: "    var f = 1 / (plan.fps || 30), lag = (hold === 'next') ? 3 : (parseFloat(hold) || 0);",
+    repl: "    var f = 1 / (plan.fps || 30), lag = (hold === 'next') ? 0.5 : (parseFloat(hold) || 0);",
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: '“Stay until the next caption” does the same as the 0.5 s default'
+  },
+  {
+    name: 'pfit-editable-sync',
+    file: 'CutPilot/js/main.js',
+    find: '    if (syncOff) tcues = tcues.map(',
+    repl: '    if (false) tcues = tcues.map(',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'the owner\'s timing nudge stops reaching ✏️ Editable captions'
+  },
+  {
+    name: 'pfit-animspeed-dead',
+    file: 'CutPilot/js/main.js',
+    find: '      animSpeed: 1,',
+    repl: "      animSpeed: cnum('c-animspeed', 100) / 100,",
+    gate: 'tools/dom-id-check.js',
+    why: 'the removed animation-speed slider is read again, a control that does not exist'
   }
 ];
 

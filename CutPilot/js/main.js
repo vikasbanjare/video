@@ -6223,7 +6223,6 @@
       'c-maxwidth-val': function () { return $('c-maxwidth').value + '%'; },
       'c-subscale-val': function () { return $('c-subscale').value + '%'; },
       'c-wordsperline-val': function () { return $('c-wordsperline').value; },
-      'c-animspeed-val': function () { return $('c-animspeed').value + '%'; },
       'c-boxstrokew-val': function () { return $('c-boxstrokew').value; },
       'c-box3d-depth-val': function () { return $('c-box3d-depth').value; },
       'c-boxgloss-val': function () { return $('c-boxgloss').value + '%'; }
@@ -6497,7 +6496,7 @@
                'c-hlgrad', 'c-hl2g', 'c-glossy', 'c-hlserif', 'c-hlglow', 'c-subscale', 'c-wordsperline',
                'c-box-opacity', 'c-box-pad', 'c-box-radius', 'c-shadow-dx', 'c-shadow-dy',
                'c-wordspace', 'c-linegap', 'c-maxwidth', 'c-emphasize', 'c-strippunct',
-               'c-animspeed', 'c-perword', 'c-perword-style', 'c-dimupcoming',
+               'c-perword', 'c-perword-style', 'c-dimupcoming',
                // smart text + box gradient
                'c-boxgrad', 'c-box2', 'c-case', 'c-censor', 'c-numon', 'c-num',
                'c-brandon', 'c-brand', 'c-brand-words',
@@ -7277,7 +7276,9 @@
       maxWidthPct: cnum('c-maxwidth', 86) / 100,
       emphasizeWords: cchk('c-emphasize'),
       stripPunctuation: cchk('c-strippunct'),
-      animSpeed: cnum('c-animspeed', 100) / 100,
+      // entrances play at their natural pace: there is no animation-speed
+      // control (the old slider was removed; captions follow the voice)
+      animSpeed: 1,
       perWordEntrance: cchk('c-perword'),
       perWordEntranceStyle: ($('c-perword-style') ? $('c-perword-style').value : 'pop'),
       // the style's OWN dim level (Ghost to Solid 0.35, Cinema Subtitle 0.6…):
@@ -10406,8 +10407,24 @@
     var params = (state.mogrtParamsPath === path) ? state.mogrtParams : [];
     var textStyle = resolveTextStyleFont((state.mogrtParamsPath === path) ? state.mogrtTextStyle : null);
     toast('Dropping a preview at the playhead…');
-    CPBridge.callHost('CP_previewMogrt', { path: path, seconds: 4, params: params, text: sample, textStyle: textStyle })
-      .then(function (r) { toast('▶ Preview placed on V' + r.track + ' at the playhead. Scrub to see it.'); })
+    // the SAME fit "Apply" gives it: the comp scaled by its real size (any
+    // template), and for Pulse's own templates the first caption exactly as
+    // it will be placed — size, lines, face and row (premBuild)
+    CPBridge.callHost('CP_getEnv').catch(function () { return null; }).then(function (env) {
+      if (env && env.width) state.env = env;
+      var geom = premGeometry(path);
+      var args = { path: path, seconds: 4, params: params, text: sample, textStyle: textStyle,
+                   compW: (geom && geom.compW) || 0, compH: (geom && geom.compH) || 0 };
+      if (isBundledMogrt(path)) {
+        try {
+          var cs = readSelectedTranscript(), b = (cs && cs.length) ? premBuild(cs, path, state.env, uploadPremOpts()) : null;
+          if (!b || !b.cues.length) b = premBuildSample(path, sample, state.env, uploadPremOpts());
+          args.params = b.params; args.textStyle = b.textStyle; args.text = (b.cues[0] && b.cues[0].text) || sample;
+          args.posYPct = b.posYPct; args.sizeFit = b.sizeFit;
+        } catch (eB) {}
+      }
+      return CPBridge.callHost('CP_previewMogrt', args);
+    }).then(function (r) { toast('▶ Preview placed on V' + r.track + ' at the playhead. Scrub to see it.'); })
       .catch(function (e) { toast(e.message, true); });
   }
 
@@ -11028,12 +11045,12 @@
   }
   /* The plan applied to a few sample words (the card renders, ▶ Try on
      timeline): their first caption exactly as the insert would make it. */
-  function premBuildSample(path, text, env) {
+  function premBuildSample(path, text, env, base) {
     var ws = String(text || '').split(/\s+/).filter(function (x) { return x; });
     var t = 0, words = ws.map(function (w) { var o = { start: t, end: t + 0.3, text: w }; t += 0.32; return o; });
     var cues = [{ start: 0, end: Math.max(0.3, t), text: ws.join(' ') }];
     cues.words = words.length > 3 ? words : null;
-    var o = {}, cur = premOpts(), k;
+    var o = {}, cur = base || premOpts(), k;
     for (k in cur) if (cur.hasOwnProperty(k)) o[k] = cur[k];
     o.words = 0;
     var b = premBuild(cues, path, env, o);
@@ -11085,6 +11102,16 @@
      choice comes from the sheet and the plan above (premBuild); the 📁 Upload
      view keeps its own Words / Text case / stretch controls. Both send the
      template's real comp size, so the host fits it to the sequence. */
+  /* One of Pulse's own templates (mogrts/index.json), wherever it was picked. */
+  function isBundledMogrt(path) {
+    return (state.bundledMogrts || []).some(function (m) { return m.path === path; });
+  }
+  /* The 📁 Upload view's own choices for Pulse's templates, in the plan's
+     shape: its Words stepper, its Text case and its stretch box. */
+  function uploadPremOpts() {
+    return { words: parseInt($('c-words').value, 10) || 0, caseMode: state.mogrtCase || 'as-spoken', hold: '0.5',
+             stretch: !!($('mg-stretch') && $('mg-stretch').checked), pos: null };
+  }
   function applyMogrtWithPath(mogrtPath, btn, _envRefreshed, opts) {
     // Always refresh env before inserting — so portrait/landscape dimensions are current.
     if (!_envRefreshed && CPBridge.isCEP()) {
@@ -11103,11 +11130,9 @@
     // tiny or mid-frame) just because it was picked there. That view keeps
     // its own Words / Text case / stretch; a user's own .mogrt is inserted as
     // its designer made it (only its comp is fitted to the sequence).
-    var bundledTpl = (state.bundledMogrts || []).some(function (m) { return m.path === mogrtPath; });
+    var bundledTpl = isBundledMogrt(mogrtPath);
     if ((opts && opts.premium) || bundledTpl) {
-      var po = (opts && opts.premium) ? premOpts()
-             : { words: parseInt($('c-words').value, 10) || 0, caseMode: state.mogrtCase || 'as-spoken', hold: '0.5',
-                 stretch: !!($('mg-stretch') && $('mg-stretch').checked), pos: null };
+      var po = (opts && opts.premium) ? premOpts() : uploadPremOpts();
       built = premBuild(cues, mogrtPath, state.env, po);
       tcues = built.cues;
       words = po.words || 0;

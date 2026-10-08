@@ -46,7 +46,13 @@
  *   J. ↺ Reset puts back what the sheet shows, and that is what is sent;
  *   K. ＋ Save as custom shows in the ⚡ Premium grid; the insert is remembered
  *      (template, params, text style, words); the sync nudge moves the captions;
- *   L. ✨ Add captions after a Premium set clears that verified track first.
+ *   L. ✨ Add captions after a Premium set clears that verified track first;
+ *   O. the sheet's Position slider (and its ✨ Auto), hold, stretch and Words
+ *      each change what is sent;
+ *   N. ▶ Try on timeline — in the Premium sheet and in the 📁 Upload view —
+ *      drops the FIRST caption exactly as the insert places it: the same comp
+ *      size, row, caption-size control, face and line breaks, on 16:9 and 9:16
+ *      (the old preview dropped the template at its title size, mid-frame).
  * Exit 0 pass, 1 fail, 2 skipped (no Chromium / unzip).
  */
 'use strict';
@@ -233,6 +239,7 @@ async function scriptedPage(browser, W, H, opts) {
       if (fn === 'CP_inspectMogrt' && inspectFails) return reply({ ok: false, error: 'Save your project first' });
       if (fn === 'CP_inspectMogrt' && /Flux_Halo2_r3/.test((a && a.path) || '')) return reply({ ok: true, props: haloProps });
       if (fn === 'CP_insertMogrtCaptions') { window.__ins.push(a); return reply({ ok: true, inserted: a.cues.length, textSet: a.cues.length, track: 3, swept: 0 }); }
+      if (fn === 'CP_previewMogrt') { (window.__pv = window.__pv || []).push(a); return reply({ ok: true, placedAt: 0, track: 4, paramsSet: (a.params || []).length }); }
       if (fn === 'CP_clearCaptionTrack') return reply({ ok: true, cleared: 12, track: a.track, top: true });
       return orig.call(this, s, cb);
     };
@@ -475,6 +482,32 @@ async function captionWith(page, name, before) {
       }
       (mInserts === 4 && !mBad.length ? R.ok : R.bad)('M. ✏️ Editable captions (Flux Halo engine): fitted by the comp’s real size, all ' + mLines +
         ' lines fit the comp, at the Position slider’s row on 16:9 and 9:16' + (mBad.length ? ' — ' + mBad.slice(0, 5).join(' | ') : ''));
+      // …and the owner's sync nudge moves them too (they used to ignore it)
+      {
+        const page = await scriptedPage(browser, 1920, 1080);
+        await useTranscript(page, dir, 'hinglish');
+        const ed = await page.evaluate(async () => {
+          const sl = ms => new Promise(r => setTimeout(r, ms));
+          document.querySelector('[data-tab="captions"]').click(); await sl(200);
+          const b = document.querySelector('#cap-output button[data-out="editable"]'); if (b) b.click(); await sl(200);
+          const off = document.getElementById('c-sync-offset');
+          const run = async (v) => {
+            off.value = String(v); off.dispatchEvent(new Event('input')); off.dispatchEvent(new Event('change'));
+            const n0 = window.__ins.length;
+            document.getElementById('btn-magic').click();
+            for (let i = 0; i < 80 && window.__ins.length === n0; i++) await sl(50);
+            return window.__ins.length > n0 ? window.__ins[window.__ins.length - 1] : null;
+          };
+          const was = off.value;
+          const a = await run(0), c = await run(250);
+          off.value = was; off.dispatchEvent(new Event('input')); off.dispatchEvent(new Event('change'));
+          const png = document.querySelector('#cap-output button[data-out="png"]'); if (png) png.click();
+          return { a: a && a.cues.slice(0, 3).map(x => x.start), c: c && c.cues.slice(0, 3).map(x => x.start) };
+        });
+        const shifted = ed.a && ed.c && ed.a.length === ed.c.length && ed.a.every((t, i) => Math.abs(ed.c[i] - t - 0.25) < 1e-3);
+        (shifted ? R.ok : R.bad)('M. the owner’s sync nudge (+250 ms) moves ✏️ Editable captions too (' + JSON.stringify(ed.a) + ' → ' + JSON.stringify(ed.c) + ')');
+        await page.close();
+      }
     }
 
     // ---- I–L: the sheet's own settings change the output -------------------------
@@ -633,9 +666,107 @@ async function captionWith(page, name, before) {
         return c ? { track: c.a.track, names: c.a.names } : null;
       });
       ((l && l.track === 3 && l.names.indexOf('flux_halo2_r3') >= 0) ? R.ok : R.bad)('L. ✨ Add captions after the Premium set asks Premiere to clear that verified caption track (V3) first, so nothing stacks — ' + JSON.stringify(l && { track: l.track }));
+      // O. the sheet's own layout controls each change what is sent: Position
+      // (and ✨ Auto back to the lower third), the hold, stretch, Words
+      await openPremium(page);
+      const nw = c => String(c.text).split(/\s+/).filter(Boolean).length;
+      const o0 = await captionWith(page, 'Flux Halo');
+      const oPos = await captionWith(page, 'Flux Halo', function () { const r = document.getElementById('ms-pos'); r.value = '40'; r.dispatchEvent(new Event('input')); });
+      const oPosShown = await page.evaluate(() => document.getElementById('ms-pos-val').textContent);
+      const oAuto = await captionWith(page, 'Flux Halo', function () { document.getElementById('ms-pos-auto').click(); });
+      const oNext = await captionWith(page, 'Flux Halo', function () { const h = document.getElementById('ms-hold'); h.value = 'next'; h.dispatchEvent(new Event('change')); });
+      const oStretch = await captionWith(page, 'Flux Halo', function () {
+        const h = document.getElementById('ms-hold'); h.value = '0.5'; h.dispatchEvent(new Event('change'));
+        const st = document.getElementById('ms-stretch'); st.checked = true; st.dispatchEvent(new Event('change'));
+      });
+      const oWords = await captionWith(page, 'Flux Halo', function () {
+        const st = document.getElementById('ms-stretch'); st.checked = false; st.dispatchEvent(new Event('change'));
+        document.getElementById('ms-wc-plus').click();   // ✨ Auto → 4 words a graphic
+      });
+      await page.evaluate(() => { document.getElementById('ms-wc-full').click(); });   // back to ✨ Auto
+      const oBad = [];
+      if (!(oPos.posYPct != null && Math.abs(oPos.posYPct - 0.40) < 0.01)) oBad.push('Position 40% sent ' + oPos.posYPct);
+      if (!/40%/.test(oPosShown)) oBad.push('the slider reads “' + oPosShown + '”');
+      if (!(o0.posYPct > 0.8 && oAuto.posYPct === o0.posYPct)) oBad.push('✨ Auto row ' + oAuto.posYPct + ', untouched ' + o0.posYPct);
+      const f2o = 2 / 30;
+      if (!(oNext.cues && oNext.cues.some((c, i) => o0.cues[i] && c.showUntil > o0.cues[i].showUntil + 0.05))) oBad.push('“Stay until the next caption” changed nothing');
+      if (oNext.cues && oNext.cues.some((c, i) => c.showUntil > c.end + 3 + 1e-3 || (oNext.cues[i + 1] && c.showUntil > oNext.cues[i + 1].start - f2o + 1e-3))) oBad.push('“Stay until the next caption” runs past 3 s or into the next one');
+      if (!(o0.stretch === false && oStretch.stretch === true)) oBad.push('stretch sent ' + o0.stretch + ' → ' + oStretch.stretch);
+      if (!(o0.cues.some(c => nw(c) > 4) && oWords.cues.every(c => nw(c) <= 4))) oBad.push('Words 4: ' + Math.max.apply(null, oWords.cues.map(nw)) + ' words in one graphic');
+      (!oBad.length ? R.ok : R.bad)('O. the sheet’s Position (40% → ' + oPos.posYPct + ', ✨ Auto → ' + oAuto.posYPct + '), “Stay until the next caption”, stretch and Words (4) each change what is sent' +
+        (oBad.length ? ' — ' + oBad.join(' | ') : ''));
       const errs = page._cpErrors.slice();
       (!errs.length ? R.ok : R.bad)('no script errors' + (errs.length ? ': ' + errs.slice(0, 2).join(' | ') : ''));
       await page.close();
+    }
+
+    // ---- N. ▶ Try on timeline shows what the insert places ---------------------
+    {
+      const nBad = []; let nPairs = 0;
+      const same = (x, y) => JSON.stringify(x == null ? null : x) === JSON.stringify(y == null ? null : y);
+      const compare = (tag, file, pv, ins) => {
+        const def = defOf(file);
+        if (!pv) { nBad.push(tag + ': no preview was sent'); return; }
+        if (!ins || !ins.cues) { nBad.push(tag + ': no insert was sent'); return; }
+        nPairs++;
+        if (pv.compW !== def.comp.x || pv.compH !== def.comp.y) nBad.push(tag + ': preview comp ' + pv.compW + '×' + pv.compH + ', the template is ' + def.comp.x + '×' + def.comp.y);
+        if (pv.posYPct == null || Math.abs(pv.posYPct - ins.posYPct) > 1e-6) nBad.push(tag + ': preview row ' + pv.posYPct + ', the insert ' + ins.posYPct);
+        if (!same(pv.sizeFit, ins.sizeFit)) nBad.push(tag + ': preview size ' + JSON.stringify(pv.sizeFit) + ', the insert ' + JSON.stringify(ins.sizeFit));
+        if (!same(pv.params, ins.params)) nBad.push(tag + ': preview params ' + JSON.stringify(pv.params) + ', the insert ' + JSON.stringify(ins.params));
+        if (!same(pv.textStyle, ins.textStyle)) nBad.push(tag + ': preview text style ' + JSON.stringify(pv.textStyle) + ', the insert ' + JSON.stringify(ins.textStyle));
+        if (pv.text !== ins.cues[0].text) nBad.push(tag + ': preview words “' + String(pv.text).replace(/\r/g, '⏎') + '”, the first caption “' + String(ins.cues[0].text).replace(/\r/g, '⏎') + '”');
+      };
+      for (const [W, H] of [[1920, 1080], [1080, 1920]]) {
+        const page = await scriptedPage(browser, W, H);
+        await openPremium(page);
+        for (const lang of ['hinglish', 'devanagari']) {
+          await useTranscript(page, dir, lang);
+          for (const m of VISIBLE.filter(x => /Apex|Echo|Halo/.test(x.name))) {
+            const tag = 'Premium ' + m.name + ' ' + W + '×' + H + ' ' + lang;
+            const pv = await page.evaluate(async (name) => {
+              const sl = ms => new Promise(r => setTimeout(r, ms));
+              const card = Array.from(document.querySelectorAll('#flux-grid .tpl-card')).find(c => ((c.querySelector('.tpl-name') || {}).textContent || '') === name);
+              if (!card) return null;
+              card.click(); await sl(250);
+              window.__pv = [];
+              document.getElementById('ms-preview').click();
+              for (let i = 0; i < 40 && !window.__pv.length; i++) await sl(50);
+              const out = window.__pv[0] || null;
+              document.getElementById('ms-x').click(); await sl(80);
+              return out;
+            }, m.name);
+            const ins = await captionWith(page, m.name);
+            compare(tag, m.file, pv, ins);
+          }
+        }
+        // the 📁 Upload view lists Pulse's own templates too: its ▶ Try on
+        // timeline and its 🎬 Add template captions agree the same way
+        await useTranscript(page, dir, 'hinglish');
+        for (const m of VISIBLE.filter(x => /Apex|Halo/.test(x.name))) {
+          const tag = '📁 Upload ' + m.name + ' ' + W + '×' + H;
+          const r = await page.evaluate(async (name) => {
+            const sl = ms => new Promise(r => setTimeout(r, ms));
+            document.querySelector('[data-view="editor"]').click(); await sl(300);
+            const b = Array.from(document.querySelectorAll('#mogrt-uploads .mogrt-up')).find(x => ((x.querySelector('.mu-name') || {}).textContent || '') === name);
+            if (!b) return { err: 'no “' + name + '” in the Upload list' };
+            b.click(); await sl(250);
+            window.__pv = [];
+            document.getElementById('btn-tpl-preview').click();
+            for (let i = 0; i < 40 && !window.__pv.length; i++) await sl(50);
+            const n0 = window.__ins.length;
+            document.getElementById('btn-alt-apply').click();
+            for (let i = 0; i < 60 && window.__ins.length === n0; i++) await sl(50);
+            const out = { pv: window.__pv[0] || null, ins: window.__ins.length > n0 ? window.__ins[window.__ins.length - 1] : null };
+            document.querySelector('[data-view="flux"]').click(); await sl(250);
+            return out;
+          }, m.name);
+          if (r.err) { nBad.push(tag + ': ' + r.err); continue; }
+          compare(tag, m.file, r.pv, r.ins);
+        }
+        await page.close();
+      }
+      (nPairs >= 16 && !nBad.length ? R.ok : R.bad)('N. ▶ Try on timeline (Premium sheet and 📁 Upload) drops the first caption exactly as the insert places it — comp size, row, size control, face, line breaks (' +
+        nPairs + ' preview/insert pairs on 16:9 and 9:16)' + (nBad.length ? ' — ' + nBad.slice(0, 5).join(' | ') : ''));
     }
   } finally {
     await browser.close();
