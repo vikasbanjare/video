@@ -305,11 +305,44 @@ function makeWorld(opts) {
           0: {
             displayName: 'Motion',
             properties: { getNamedProperty(n) {
-              return n === 'Scale' ? { setValue(v) { clip._scale = v; } } : null;
+              // Motion Scale (percent) and Position (normalised [x, y])
+              if (n === 'Scale') return { setValue(v) { clip._scale = v; } };
+              if (n === 'Position') return { setValue(v) { clip._pos = [v[0], v[1]]; } };
+              return null;
             } }
           }
-        }
+        },
+        // what Premiere reports for a placed graphic ("Video Info") — the host's
+        // last way to learn the comp size when the panel sent none
+        projectItem: opts.mgtVideoInfo ? { getProjectMetadata() {
+          return '<x:xmpmeta><premierePrivateProjectMetaData:Column.Intrinsic.VideoInfo>' + opts.mgtVideoInfo +
+                 '</premierePrivateProjectMetaData:Column.Intrinsic.VideoInfo></x:xmpmeta>';
+        } } : undefined
       });
+      if (opts.titleComponent) {
+        // A Flux TITLE template (Apex/Orbit/Vector/Vortex): one rich text layer
+        // at title size and the layer's own SCALE control, stored as [x, y, z]
+        // like After Effects. opts.scaleRefused models a Premiere that will not
+        // take a write to it (the size must then land another way).
+        const T = clip._title = {
+          text: JSON.stringify({ capPropFontEdit: true, capPropTextRunCount: 1, textEditValue: 'Flux Apex',
+                                 capPropTextRunLength: [9], fontEditValue: ['Arial-BoldMT'], fontSizeEditValue: [171],
+                                 fontFSBoldValue: [false], fontFSAllCapsValue: [false], fontFSItalicValue: [false],
+                                 fillColorEditValue: [[1, 1, 1]] }),
+          scale: [100, 100, 100]
+        };
+        const props = [
+          { displayName: 'Change text', getValue() { return T.text; }, setValue(v) { T.text = String(v); } },
+          { displayName: 'Fill Color', getValue() { return 16777215; }, setColorValue() {}, getColorValue() { return [255, 255, 255, 255]; } },
+          { displayName: 'Scale', getValue() { return T.scale.slice(); },
+            setValue(v) {
+              if (opts.scaleRefused) throw new Error('invalid value');
+              T.scale = (v && v.length) ? Array.from(v) : [v, v, T.scale[2]];
+            } }
+        ];
+        Object.defineProperty(props, 'numItems', { get() { return props.length; } });
+        clip.getMGTComponent = () => ({ properties: props });
+      }
       if (opts.fluxComponent) {
         // The FLUX caption engine (Flux_Halo2) — the template every gallery
         // style now rides. Exact control set + display names from the real
@@ -425,8 +458,11 @@ function makeWorld(opts) {
         // (setTimeVarying/addKey/setValueAtKey) so entrance animations are testable
         clip.inPoint = mkT(start);
         const keys = clip._keys = {};
+        clip._static = {};   // plain (un-keyframed) Motion values: Scale %, Position [x, y]
         const kfProp = (name) => ({
           displayName: name,
+          getValue() { return clip._static[name]; },
+          setValue(v) { clip._static[name] = (v && v.length) ? Array.from(v) : v; },
           setTimeVarying(v) { (keys[name] = keys[name] || { keys: [] }).tv = v; },
           addKey(t) { (keys[name] = keys[name] || { keys: [] }).keys.push({ t }); },
           setValueAtKey(t, v) {
@@ -987,17 +1023,73 @@ const CUES3 = [
   assert(!overlap, 'a 3.5s template NEVER overlaps the next caption (end is clamped)');
   assert(caps.every(c => c._scale == null), 'landscape sequence → Motion scale left alone');
 }
+// A template's comp is fitted to the sequence by its REAL size (the panel reads
+// it from the template's definition.json). The old rule assumed every template
+// was 1920 wide and shrank all of them to 56.25% on a vertical reel — but every
+// Flux comp is 1080×1920 (the owner's reels got captions 44% smaller than
+// designed), and Subtitle_1 is 2160×3840.
+console.log('host.jsx — a template is fitted to the sequence by its real comp size');
 {
-  const w = makeWorld({ vTracks: 1, aTracks: 1, w: 1080, h: 1920 });   // portrait Shorts sequence
+  const fit = (seqW, seqH, compW, compH, extra) => {
+    const w = makeWorld(Object.assign({ vTracks: 1, aTracks: 1, w: seqW, h: seqH }, extra || {}));
+    const host = loadHost(w);
+    const args = { mogrtPath: '/tmp/Flux_Halo2_r3.mogrt', cues: CUES3, videoTrack: null, audioTrack: 0,
+                   params: [], textStyle: null, stretch: false };
+    if (compW) { args.compW = compW; args.compH = compH; }
+    // the panel sends fitMode 'short' only for templates whose lines it planned
+    // (Pulse's own); the owner's own .mogrt goes without it
+    args.fitMode = (extra && 'fitMode' in extra) ? extra.fitMode : 'short';
+    const r = call(host, 'CP_insertMogrtCaptions', args);
+    return { r, caps: w.model.vTracks[w.model.vTracks.length - 1] };
+  };
+  const a = fit(1080, 1920, 1080, 1920);
+  assert(a.r.ok && a.caps.length === 3 && a.caps.every(c => c._scale == null) && a.r.fitScale === 100,
+    '1080×1920 Flux comp on a 1080×1920 reel → 100% (left alone), not 56.25% (' + a.r.fitScale + ')');
+  const b = fit(1920, 1080, 1080, 1920);
+  assert(b.r.ok && b.caps.every(c => c._scale == null) && b.r.fitScale === 100,
+    '1080×1920 Flux comp on a 1920×1080 podcast → 100%: its 75 px words are caption size there too (' + b.r.fitScale + ')');
+  const c4 = fit(3840, 2160, 1080, 1920);
+  assert(c4.caps.every(c => close(c._scale, 200, 0.01)), '…on a 4K 3840×2160 sequence → 200% (' + c4.r.fitScale + ')');
+  const d = fit(2160, 3840, 1080, 1920);
+  assert(d.caps.every(c => close(c._scale, 200, 0.01)), '…on a 4K 2160×3840 reel → 200%');
+  const e = fit(1080, 1920, 2160, 3840);
+  assert(e.caps.every(c => close(c._scale, 50, 0.01)), 'Subtitle_1 (2160×3840 comp) on a 1080×1920 reel → 50%: the comp fills the frame exactly');
+  const f = fit(1920, 1080, 3840, 2160);
+  assert(f.caps.every(c => close(c._scale, 50, 0.01)), 'a 3840×2160 comp on 1920×1080 → 50%');
+  const g = fit(1080, 1920, 0, 0);
+  assert(g.r.ok && g.caps.every(c => c._scale == null) && g.r.fitScale === 100,
+    'a comp of UNKNOWN size is left at Premiere\'s own 100% — never the old 1920-wide guess');
+  const h = fit(1080, 1920, 0, 0, { mgtVideoInfo: '2160 x 3840 (1.0)' });
+  assert(h.caps.every(c => close(c._scale, 50, 0.01)) && h.r.compW === 2160,
+    'no size from the panel → the size Premiere reports for the placed graphic is used (2160×3840 → 50%)');
+  // the owner's own 1920×1080 lower third (nothing planned its lines) on a
+  // 1080×1920 reel: fitted WHOLE inside the frame — 56.25%, as before. The
+  // short-side rule would make it 1920 px wide in a 1080 px frame and crop
+  // ~420 px off each side.
+  const u = fit(1080, 1920, 1920, 1080, { fitMode: null });
+  assert(u.caps.every(c => close(c._scale, 56.25, 0.01)) && u.r.fitMode === 'contain',
+    'the owner\'s own 1920×1080 .mogrt on a 1080×1920 reel → 56.25%, the whole comp in frame (' + u.r.fitScale + ')');
+  const u2 = fit(1920, 1080, 1080, 1920, { fitMode: null });
+  assert(u2.caps.every(c => close(c._scale, 56.25, 0.01)), '…and an unplanned 1080×1920 comp on 1920×1080 → 56.25%, never taller than the frame (' + u2.r.fitScale + ')');
+  const u3 = fit(1080, 1920, 0, 0, { mgtVideoInfo: '1920 x 1080 (1.0)', fitMode: 'short' });
+  assert(u3.caps.every(c => close(c._scale, 56.25, 0.01)),
+    'a size only Premiere reported (nothing planned against it) is fitted whole: 1920×1080 on a reel → 56.25% (' + u3.r.fitScale + ')');
+  const u4 = fit(1920, 1080, 1920, 1080, { fitMode: null });
+  assert(u4.caps.every(c => c._scale == null) && u4.r.fitScale === 100, '…and a 1920×1080 comp on 1920×1080 stays at 100%');
+}
+// Position: the whole graphic moves (Motion Position, normalised to the frame)
+{
+  const w = makeWorld({ vTracks: 1, aTracks: 1, w: 1920, h: 1080, fluxComponent: true });
   const host = loadHost(w);
   const r = call(host, 'CP_insertMogrtCaptions', {
-    mogrtPath: '/tmp/Subtitle_1.mogrt', cues: CUES3, videoTrack: null, audioTrack: 0,
-    params: [], textStyle: null, stretch: false
+    mogrtPath: '/tmp/Flux_Halo2_r3.mogrt', cues: CUES3, videoTrack: null, audioTrack: 0,
+    params: [], textStyle: null, stretch: false, compW: 1080, compH: 1920, fitMode: 'short', posYPct: 0.86
   });
   const caps = w.model.vTracks[w.model.vTracks.length - 1];
-  const want = Math.round((1080 / 1920) * 10000) / 100;   // 56.25
-  assert(r.ok && caps.length === 3 && caps.every(c => close(c._scale, want, 0.01)),
-    'portrait sequence → every caption scaled to ' + want + '% so the 1920-wide template fits');
+  assert(r.ok && r.positioned === 3 && caps.every(c => c._static.Position && close(c._static.Position[0], 0.5) && close(c._static.Position[1], 0.86)),
+    'posYPct moves the WHOLE graphic through the clip\'s own Motion (Premiere\'s `components`) — box and words together, lower third');
+  assert(caps.every(c => c._flux.textPos.x === 540 && c._flux.textPos.y === 960),
+    '…and the template\'s Text Position layer is never moved (it would split the words from their box)');
 }
 {
   // regression: replaceTrack must REPLACE (clear + reuse), never stack a second set
@@ -2340,6 +2432,113 @@ console.log('host.jsx — CP_importSrtCaptions (Premiere\'s own caption track)')
   const old = srtWorld(true, false);
   const r3 = call(old.host, 'CP_importSrtCaptions', { srtPath: '/tmp/cutpilot-3.srt' });
   assert(r3.captionTrackCreated === true && old.calls[0].args === 2, 'a Premiere without the format names gets the plain two-argument call');
+}
+
+// ═══ Premium captions: hold, title size, the preview == the timeline ═══
+console.log('host.jsx — Premium captions hold 0.5 s, never 60 s; title templates come down to caption size');
+{
+  // the panel's hold per caption (showUntil) is what the clip ends on; the LAST
+  // caption of a 60 s template (Flux Halo/Prism) used to stay a whole minute
+  const w = makeWorld({ vTracks: 1, aTracks: 1, w: 1080, h: 1920, fluxComponent: true, mogrtNaturalDur: 60 });
+  const host = loadHost(w);
+  const cues = [{ start: 1.0, end: 2.4, text: 'pehle aapko', showUntil: 2.9 },
+                { start: 3.0, end: 4.2, text: 'audience samajhna hai', showUntil: 4.7 }];
+  const r = call(host, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2_r3.mogrt', cues, videoTrack: null, audioTrack: 0,
+    params: [], textStyle: null, stretch: false, compW: 1080, compH: 1920
+  });
+  const caps = w.model.vTracks[w.model.vTracks.length - 1];
+  assert(r.ok && caps.length === 2 && close(caps[0].end.seconds, 2.9, 1e-6) && close(caps[1].end.seconds, 4.7, 1e-6),
+    'each caption ends on the panel\'s hold (its last word + 0.5 s): ' + JSON.stringify(trackSpans(caps)));
+  // stretch on, 60 s template: the animation may run on — never past the hold
+  const w2 = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true, mogrtNaturalDur: 60 });
+  const h2 = loadHost(w2);
+  call(h2, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2_r3.mogrt', cues, videoTrack: null, audioTrack: 0,
+    params: [], textStyle: null, stretch: true, maxSpeed: 100, compW: 1080, compH: 1920
+  });
+  const c2 = w2.model.vTracks[w2.model.vTracks.length - 1];
+  assert(c2.length === 2 && c2[1].end.seconds <= 4.7 + 1e-6 && c2[0].end.seconds <= 3.0 + 1e-6,
+    'with "stretch" on, a 60 s template still ends on the hold — the last caption does not linger for a minute (' + JSON.stringify(trackSpans(c2)) + ')');
+  // no hold sent (older callers): the last caption ends with its words + at most 3 s, even with stretch
+  const w3 = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true, mogrtNaturalDur: 60 });
+  const h3 = loadHost(w3);
+  call(h3, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Halo2_r3.mogrt', cues: [{ start: 1, end: 2, text: 'last words here' }],
+    videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: true, maxSpeed: 100
+  });
+  const c3 = w3.model.vTracks[w3.model.vTracks.length - 1];
+  assert(c3[0].end.seconds <= 2 + 3 + 1e-6, 'no hold sent + stretch: the last caption still ends within 3 s of its words (' + c3[0].end.seconds + ' s)');
+}
+{
+  // A title template's SCALE control carries the caption size (Apex: 171 px → ~75 px = Scale 44%)
+  const w = makeWorld({ vTracks: 1, aTracks: 1, w: 1920, h: 1080, titleComponent: true });
+  const host = loadHost(w);
+  const r = call(host, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Apex.mogrt', cues: CUES3, videoTrack: null, audioTrack: 0,
+    params: [{ i: 2, kind: 'scale', value: 43.86 }], textStyle: null, stretch: false, compW: 1080, compH: 1920, fitMode: 'short',
+    sizeFit: { i: 2, kind: 'scale', value: 43.86, factor: 0.4386 }
+  });
+  const caps = w.model.vTracks[w.model.vTracks.length - 1];
+  assert(r.ok && caps.length === 3 && caps.every(c => close(c._title.scale[0], 43.86, 1e-6) && close(c._title.scale[1], 43.86, 1e-6) && c._title.scale[2] === 100),
+    'the template\'s own Scale control takes the caption size as [x, y, z] (' + JSON.stringify(caps[0] && caps[0]._title.scale) + ')');
+  assert(r.sizeFallbacks === 0 && caps.every(c => c._scale == null), '…so no fallback is needed and the comp keeps its fitted scale');
+  // Premiere refuses that write: the words still come down — through the text's own font size
+  const w2 = makeWorld({ vTracks: 1, aTracks: 1, w: 1920, h: 1080, titleComponent: true, scaleRefused: true });
+  const h2 = loadHost(w2);
+  const r2 = call(h2, 'CP_insertMogrtCaptions', {
+    mogrtPath: '/tmp/Flux_Apex.mogrt', cues: CUES3, videoTrack: null, audioTrack: 0,
+    params: [{ i: 2, kind: 'scale', value: 43.86 }], textStyle: null, stretch: false, compW: 1080, compH: 1920, fitMode: 'short',
+    sizeFit: { i: 2, kind: 'scale', value: 43.86, factor: 0.4386 }
+  });
+  const c2 = w2.model.vTracks[w2.model.vTracks.length - 1];
+  const px = c2.map(c => JSON.parse(c._title.text).fontSizeEditValue[0]);
+  assert(r2.ok && r2.sizeFallbacks === 3 && px.every(p => close(p, 171 * 0.4386, 0.01)),
+    'Scale refused → the same factor goes through the font size (171 → ' + (px[0] || 0).toFixed(1) + ' px), never left at title size');
+  const numProp = { v: 80, getValue() { return this.v; }, setValue(v) { if (typeof v !== 'number') throw new Error('number only'); this.v = v; } };
+  assert(host.CP_setScaleParam(numProp, 50) === true && numProp.v === 50, 'a Scale held as one number takes the percent as one number');
+}
+{
+  // ▶ Try on timeline gets the SAME fit as the insert: comp size, caption row, size control
+  const w = makeWorld({ vTracks: 2, aTracks: 1, w: 1080, h: 1920, titleComponent: true });
+  const host = loadHost(w);
+  const r = call(host, 'CP_previewMogrt', {
+    path: '/tmp/Flux_Apex.mogrt', seconds: 4, params: [{ i: 2, kind: 'scale', value: 43.86 }],
+    text: 'Make every word count', textStyle: null, compW: 1080, compH: 1920, fitMode: 'short', posYPct: 0.6,
+    sizeFit: { i: 2, kind: 'scale', value: 43.86, factor: 0.4386 }
+  });
+  const pv = w.model.vTracks[w.model.vTracks.length - 1][0];
+  assert(r.ok && r.fitScale === 100 && pv._scale == null && pv._pos && close(pv._pos[1], 0.6) && close(pv._title.scale[0], 43.86, 1e-6),
+    '▶ Try on timeline: 100% on a 1080×1920 reel, the caption row, the caption-size Scale — same as the insert');
+  const w2 = makeWorld({ vTracks: 2, aTracks: 1, w: 1080, h: 1920 });
+  const h2 = loadHost(w2);
+  call(h2, 'CP_previewMogrt', { path: '/tmp/Subtitle_1.mogrt', seconds: 4, params: [], text: 'x', compW: 2160, compH: 3840 });
+  assert(close(w2.model.vTracks[w2.model.vTracks.length - 1][0]._scale, 50, 0.01), '…and a 2160×3840 comp previews at 50% on a 1080×1920 reel, like it inserts');
+  const w3 = makeWorld({ vTracks: 2, aTracks: 1, w: 1080, h: 1920 });
+  const h3 = loadHost(w3);
+  const r3 = call(h3, 'CP_previewMogrt', { path: '/Users/me/My Lower Third.mogrt', seconds: 4, params: [], text: 'x', compW: 1920, compH: 1080 });
+  assert(r3.fitScale === 56.25 && close(w3.model.vTracks[w3.model.vTracks.length - 1][0]._scale, 56.25, 0.01),
+    '…and the owner\'s own 1920×1080 template previews whole on a reel (56.25%), like it inserts');
+  const w4 = makeWorld({ vTracks: 2, aTracks: 1, w: 1920, h: 1080 });
+  const h4 = loadHost(w4);
+  const r4 = call(h4, 'CP_previewMogrt', { path: '/tmp/Flux_Halo2_r3.mogrt', seconds: 4, params: [], text: 'x', compW: 1080, compH: 1920, fitMode: 'short' });
+  assert(r4.fitScale === 100, '…and a planned 1080×1920 Flux comp previews at 100% on 1920×1080, like it inserts (' + r4.fitScale + ')');
+}
+{
+  // ✨ Add captions after a Premium set: the verified caption track is cleared, footage never
+  const w = makeWorld({ vTracks: 3, aTracks: 1 });
+  w.model.addClip('vTracks', 0, 0, 60, { name: 'Episode 12.mp4' });
+  w.model.addClip('vTracks', 2, 1, 2, { name: 'Flux_Halo2_r3' });
+  w.model.addClip('vTracks', 2, 2, 3, { name: 'Flux_Halo2_r3' });
+  const host = loadHost(w);
+  const r = call(host, 'CP_clearCaptionTrack', { track: 3, names: ['flux_halo2_r3', 'flux_apex'] });
+  assert(r.ok && r.cleared === 2 && r.top === true && w.model.vTracks[2].length === 0,
+    'a verified Premium caption track is emptied so the new captions replace it (' + JSON.stringify(r) + ')');
+  const r2 = call(host, 'CP_clearCaptionTrack', { track: 1, names: ['flux_halo2_r3'] });
+  assert(r2.ok && r2.cleared === 0 && r2.guard === 'foreign' && w.model.vTracks[0].length === 1,
+    'a track holding the owner\'s footage is refused and left untouched');
+  const r3 = call(host, 'CP_clearCaptionTrack', { track: 9, names: ['flux_halo2_r3'] });
+  assert(r3.ok && r3.cleared === 0 && r3.guard === 'out-of-range', 'a remembered track that no longer exists is refused');
 }
 
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');

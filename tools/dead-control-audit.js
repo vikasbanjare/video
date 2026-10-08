@@ -72,7 +72,6 @@ const CANNOT_SHOW = {
   'c-speaker':       'speaker labels need cues carrying speaker identity; a one-line sample has none',
   'c-perword':       'per-word entrance is applied by Premiere to the placed clip, not baked into the frames',
   'c-perword-style': 'ditto — the style of a clip-level entrance the frames never contain',
-  'c-animspeed':     'intentionally absent: animation follows the voice (see the hint in index.html)',
   // switching it on opens the keyword box; with the box still empty there is
   // no word to colour. ENABLE below types one and requires the colour to show.
   'c-brandon':       'colours only the words typed in the box it opens — with the box empty there is nothing to colour'

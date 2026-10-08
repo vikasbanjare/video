@@ -133,7 +133,10 @@ function probe(file) {
     if (process.env.DEBUG_PREM) console.log((A.diag.split('\n').filter(l => /previews/.test(l)).join('\n')).slice(0, 1500));
     const n = A.after.length;
     const sentAll = A.calls.length === n && n > 0;
-    const words = A.calls.every(c => c.text === 'Namaste dosto aaj hum');
+    // the owner's words, with the line break the caption insert would give
+    // them in that template ("\r") — the card is drawn as the timeline gets
+    // it, comp fitted by its real size (premium-fit.js checks the fit itself)
+    const words = A.calls.every(c => String(c.text).replace(/\s*\r\s*/g, ' ') === 'Namaste dosto aaj hum' && c.compW > 0 && c.compH > 0);
     const size = A.env ? A.calls.every(c => c.width === A.env.width && c.height === A.env.height) : A.calls.every(c => c.width === 1920 && c.height === 1080);
     const span = A.calls.every(c => c.times.length >= 15 && c.times[0] < 0.3 && c.times[c.times.length - 1] > 2.5);
     (sentAll && words && size && span ? r.ok : r.bad)('A. all ' + n + ' Premium templates sent to Premiere with the owner’s words (“' + (A.calls[0] || {}).text + '”) at ' +

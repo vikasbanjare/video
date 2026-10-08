@@ -145,9 +145,13 @@ function fluxProps() {
       if (b3[I('text position')] || b3[I('gradient fg text position')])
         b('text/overlay layer position must NOT be moved (box would stay behind)');
       if (!near(p3._posYPct, 0.76)) b('whole-graphic position wrong: ' + p3._posYPct);
+      // Motion Position is a fraction of the SEQUENCE frame on both shapes (the
+      // engine's words sit at its comp's centre), so a 16:9 timeline gets the
+      // slider's own row — the old comp-space (420 + 1080·y)/1920 put the
+      // captions ~124 px higher than the slider said
       const t4 = Object.assign({}, t3, { seqLandscape: true });
       const p4 = D.mapPresetToFlux(t4, PROPS) || [];
-      if (!near(p4._posYPct, (420 + 1080 * 0.76) / 1920)) b('landscape whole-graphic position wrong: ' + p4._posYPct);
+      if (!near(p4._posYPct, 0.76)) b('landscape whole-graphic position wrong: ' + p4._posYPct);
       const wantFont = t.font || 'Inter';
       if (cs.font !== wantFont) b('preview face ' + cs.font + ' != ' + wantFont);
     });

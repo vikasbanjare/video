@@ -1138,6 +1138,376 @@ const MUTANTS = [
     repl: "          keyword: { on: false }, speaker: { on: false },",
     gate: 'CutPilot/test/panel-proofs.js',
     why: 'a static key-word style (Bold Pop) splits its sample differently on the gallery tile than in the editor preview and on the timeline'
+  },
+  // ---- ⚡ Premium (.mogrt) captions land right untouched (premium-fit.js) ----
+  {
+    name: 'pfit-comp-scale',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "  var s = (fitMode === 'short') ? (Math.min(sw, sh) / Math.min(cw, ch)) * 100",
+    repl: "  var s = (fitMode === 'short') ? ((sh > sw) ? (sw / 1920) * 100 : 100)",
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'every 1080×1920 Premium template is shrunk to 56.25% on a reel again (the 1920-wide guess)'
+  },
+  {
+    name: 'pfit-motion-components',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '  try { if (clip.components) lists.push(clip.components); } catch (e1) {}',
+    repl: '',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'the host looks for the clip\'s Motion only where Premiere does not keep it, so nothing is sized or placed'
+  },
+  {
+    name: 'pfit-comp-size-sent',
+    file: 'CutPilot/js/main.js',
+    find: "        compW: (geom && geom.compW) || 0, compH: (geom && geom.compH) || 0,   // the comp's real size → fitted to the sequence",
+    repl: '        compW: 0, compH: 0,',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'the panel stops telling the host the template\'s real comp size'
+  },
+  {
+    name: 'pfit-caption-size',
+    file: 'CutPilot/js/main.js',
+    find: '      k = plan.targetPx / designPx;',
+    repl: '      k = 1;',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'the title templates caption the whole video at their 139–200 px title size'
+  },
+  {
+    name: 'pfit-line-width',
+    file: 'CutPilot/js/main.js',
+    find: '    if (total <= maxW) return { breaks: [], width: total, cost: 0 };',
+    repl: '    return { breaks: [], width: total, cost: 0 };',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'captions are no longer measured against the comp, so long lines are cropped'
+  },
+  {
+    name: 'pfit-measure-poppins',
+    file: 'CutPilot/js/main.js',
+    find: '    if (/^poppins/.test(s)) return 1.18;',
+    repl: '    if (/^poppins/.test(s)) return 0.85;',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'Flux Prism\'s wide Poppins is measured as if narrow, so its lines overrun its box'
+  },
+  {
+    name: 'pfit-grammar-roman',
+    file: 'CutPilot/js/main.js',
+    find: "    return lang !== 'english' && !!(PREM_POSTPOS_ROMAN[b] || PREM_AUX_ROMAN[b]);",
+    repl: '    return false;',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'a Hinglish line can start with "raha" / "ka", split from the word it belongs to'
+  },
+  {
+    name: 'pfit-position',
+    file: 'CutPilot/js/main.js',
+    find: '        posYPct: built ? built.posYPct : null,                                // whole graphic at the caption row',
+    repl: '        posYPct: null,',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'Premium captions sit in the middle of the frame again, over faces'
+  },
+  {
+    name: 'pfit-hold-host',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '      var endSec = hasHold ? limit : wordEnd;',
+    repl: '      var endSec = wordEnd;',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'the host ignores the hold the panel planned, so captions blink off with the last word'
+  },
+  {
+    name: 'pfit-hold-panel',
+    file: 'CutPilot/js/main.js',
+    find: '      var want = c.end + lag;',
+    repl: '      var want = c.end + 60;',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'the last Premium caption lingers a minute after the speech'
+  },
+  {
+    name: 'pfit-gap-rule',
+    file: 'CutPilot/js/main.js',
+    find: '        if (want > limit || nx.start - want < PREM_PAUSE) want = limit;   // 2 frames apart, or at least half a second',
+    repl: '        if (want > limit) want = limit;',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'captions leave flickery 0.1–0.4 s gaps instead of 2 frames or half a second'
+  },
+  {
+    name: 'pfit-flash-merge',
+    file: 'CutPilot/js/main.js',
+    find: '        if (!fc.ws || !fnx.ws || fnx.start - gap2 - fc.start >= 0.2) continue;',
+    repl: '        continue;',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'one-word captions on fast speech flash by in under 0.2 s'
+  },
+  {
+    name: 'pfit-own-words',
+    file: 'CutPilot/js/main.js',
+    find: '                 fps: (env && env.fps) || 30, words: o.words || 0 };',
+    repl: "                 fps: (env && env.fps) || 30, words: parseInt($('c-words').value, 10) || 0 };",
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'Premium inherits the Styles editor\'s stepper again — one word per graphic'
+  },
+  {
+    name: 'pfit-deva-font',
+    file: 'CutPilot/js/main.js',
+    find: "    if (noDeva && (!swapTo || PREM_NO_DEVA.test(String(swapTo).replace(/\\s+/g, '')))) { swapTo = premDevaFace(); out.why = 'script'; }",
+    repl: '',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'Hindi captions go out in Inter / Arial / Neue Haas and come out blank'
+  },
+  {
+    name: 'pfit-sheet-unfolded',
+    file: 'CutPilot/js/main.js',
+    find: '      var collapsed = !openNow;',
+    repl: '      var collapsed = hi > 0;',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'every Premium sheet opens with all its controls folded ("the options are gone")'
+  },
+  {
+    name: 'pfit-sheet-no-premiere',
+    file: 'CutPilot/js/main.js',
+    find: '      build((cached && cached.props) || []);',
+    repl: '      if (cached) build(cached.props || []);',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'the sheet shows no controls until a live Premiere read succeeds'
+  },
+  {
+    name: 'pfit-sheet-case',
+    file: 'CutPilot/js/main.js',
+    find: "    var mode = o.caseMode || 'as-spoken';",
+    repl: "    var mode = state.mogrtCase || 'as-spoken';",
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'Premium text case comes from the hidden Upload view again, not the sheet'
+  },
+  {
+    name: 'pfit-explicit-size',
+    file: 'CutPilot/js/main.js',
+    find: '    var designPx = (g ? g.fontPx : 0) * (Tdef / 100) * (Ldef / 100) * C;',
+    repl: '    var designPx = (g ? g.fontPx : 0) * (T / 100) * (L / 100) * S * C;',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'the auto size cancels the owner\'s own Font size change, so changing it does nothing'
+  },
+  {
+    name: 'pfit-reset-box',
+    file: 'CutPilot/js/main.js',
+    find: "    box = box || $('tpl-params');\n    if (box && box.id === 'ms-customizer') {",
+    repl: "    box = $('tpl-params');\n    if (box && box.id === 'ms-customizer') {",
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'the sheet\'s ↺ Reset rebuilds the hidden Upload box and the sheet keeps showing the old values'
+  },
+  {
+    name: 'pfit-custom-grid',
+    file: 'CutPilot/js/main.js',
+    find: '    (state.userMogrts || []).forEach(function (m) { var c = premiumCustomFor(m); if (c) list.push(c); });',
+    repl: '',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'a look saved with ＋ Save as custom disappears from the Premium grid'
+  },
+  {
+    name: 'pfit-sync-nudge',
+    file: 'CutPilot/js/main.js',
+    find: '    var off = captionSyncOffset();',
+    repl: '    var off = 0;',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'the owner\'s timing nudge stops reaching Premium captions'
+  },
+  {
+    name: 'pfit-job-remembered',
+    file: 'CutPilot/js/main.js',
+    find: "                              kind: (opts && opts.premium) ? 'premium' : 'template', mogrtPath: mogrtPath,",
+    repl: '                              kind: null, mogrtPath: null,',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'a Premium insert forgets its template, so it cannot be redone and the hint misleads'
+  },
+  {
+    name: 'pfit-replace-editable',
+    file: 'CutPilot/js/main.js',
+    find: '        replaceEd = { track: pjE.track, names: captionGraphicNames(pjE.mogrtPath) };',
+    repl: '        replaceEd = null;',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: '✨ Add captions stacks a second set over the Premium captions again'
+  },
+  {
+    name: 'pfit-editable-posy',
+    file: 'CutPilot/js/main.js',
+    find: '      out._posYPct = yp;',
+    repl: '      out._posYPct = preset.seqLandscape ? (420 + 1080 * yp) / 1920 : yp;',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'editable captions on 16:9 sit ~124 px higher than the Position slider says'
+  },
+  {
+    name: 'pfit-card-render-plan',
+    file: 'CutPilot/js/main.js',
+    find: '        if (sb) { rArgs.params = sb.params; rArgs.textStyle = sb.textStyle; rArgs.compW = sb.compW; rArgs.compH = sb.compH; rArgs.posYPct = sb.posYPct; rArgs.sizeFit = sb.sizeFit; }',
+    repl: '',
+    gate: 'CutPilot/test/gates/gallery-premium-render.js',
+    why: 'the Premium cards are drawn unfitted, so the preview no longer matches the timeline'
+  },
+  {
+    name: 'pfit-last-caption',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '      var limit = hasHold ? showUntil : (nextStart != null ? nextStart : wordEnd + 3);',
+    repl: '      var limit = hasHold ? showUntil : (nextStart != null ? nextStart : wordEnd + nat + 3600);',
+    gate: 'CutPilot/test/host-tests.js',
+    why: 'with stretch on and no hold, the last caption of a 60 s template stays a minute'
+  },
+  {
+    name: 'pfit-scale-param',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "    if (kind === 'scale') return CP_setScaleParam(prop, value);",
+    repl: '',
+    gate: 'CutPilot/test/host-tests.js',
+    why: 'a title template\'s own Scale control can no longer take the caption size'
+  },
+  {
+    name: 'pfit-size-fallback',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '    if (landed) return false;',
+    repl: '    return false;',
+    gate: 'CutPilot/test/host-tests.js',
+    why: 'when Premiere refuses the Scale write, the words stay at title size'
+  },
+  {
+    name: 'pfit-clear-guard',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "    if (!names.length || !CP_trackIsPulseCaptions(ti, names)) return CP_ok({ cleared: 0, guard: 'foreign' });",
+    repl: '',
+    gate: 'CutPilot/test/host-tests.js',
+    why: 'replacing a Premium set can empty a track that holds the owner\'s footage'
+  },
+  {
+    name: 'pfit-preview-fit',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '    var pvScale = CP_fitScalePct(seq, args.compW, args.compH);',
+    repl: '    var pvScale = 100;',
+    gate: 'CutPilot/test/host-tests.js',
+    why: '▶ Try on timeline shows the template at a different size than the insert'
+  },
+  {
+    name: 'pfit-render-fit',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '    var rfScale = CP_fitScalePct(seq, args.compW, args.compH, args.width, args.height);   // the size this render was asked for',
+    repl: '    var rfScale = 100;',
+    gate: 'CutPilot/test/gates/host-render-mogrt-frames.js',
+    why: 'the Premium card renders are drawn at a different size than the timeline gets'
+  },
+  {
+    name: 'pfit-sheet-preview',
+    file: 'CutPilot/js/main.js',
+    find: '          compW: b.compW, compH: b.compH, posYPct: b.posYPct, sizeFit: b.sizeFit });',
+    repl: '          compW: b.compW, compH: b.compH });',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: '▶ Try on timeline in the Premium sheet drops the template mid-frame at its title size, not where the captions go'
+  },
+  {
+    name: 'pfit-upload-preview-comp',
+    file: 'CutPilot/js/main.js',
+    find: '                   compW: (geom && geom.compW) || 0, compH: (geom && geom.compH) || 0 };',
+    repl: '                   compW: 0, compH: 0 };',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'the 📁 Upload view\'s ▶ Try on timeline drops the template unfitted while its insert is fitted'
+  },
+  {
+    name: 'pfit-upload-preview-plan',
+    file: 'CutPilot/js/main.js',
+    find: '      if (isBundledMogrt(path)) {',
+    repl: '      if (false) {',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'the 📁 Upload view\'s ▶ Try on timeline shows Pulse\'s templates at title size, not as the captions will be'
+  },
+  {
+    name: 'pfit-sheet-position',
+    file: 'CutPilot/js/main.js',
+    find: '      premOpts().pos = isFinite(v) ? Math.max(0.1, Math.min(0.92, v / 100)) : null; savePremOpts(); refreshPremControls();',
+    repl: '      premOpts().pos = null; savePremOpts(); refreshPremControls();',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'moving the Premium sheet\'s Position slider changes nothing'
+  },
+  {
+    name: 'pfit-sheet-stretch',
+    file: 'CutPilot/js/main.js',
+    find: "    if ($('ms-stretch')) $('ms-stretch').addEventListener('change', function () { premOpts().stretch = !!this.checked; savePremOpts(); });",
+    repl: '',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'the Premium sheet\'s stretch box changes nothing'
+  },
+  {
+    name: 'pfit-hold-next',
+    file: 'CutPilot/js/main.js',
+    find: "    var f = 1 / (plan.fps || 30), lag = (hold === 'next') ? 3 : (parseFloat(hold) || 0);",
+    repl: "    var f = 1 / (plan.fps || 30), lag = (hold === 'next') ? 0.5 : (parseFloat(hold) || 0);",
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: '“Stay until the next caption” does the same as the 0.5 s default'
+  },
+  {
+    name: 'pfit-editable-sync',
+    file: 'CutPilot/js/main.js',
+    find: '    if (syncOff) tcues = tcues.map(',
+    repl: '    if (false) tcues = tcues.map(',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'the owner\'s timing nudge stops reaching ✏️ Editable captions'
+  },
+  {
+    name: 'pfit-animspeed-dead',
+    file: 'CutPilot/js/main.js',
+    find: "      'c-wordsperline-val': function () { return $('c-wordsperline').value; },",
+    repl: "      'c-wordsperline-val': function () { return $('c-wordsperline').value; },\n      'c-animspeed-val': function () { return $('c-animspeed').value + '%'; },",
+    gate: 'tools/dom-id-check.js',
+    why: 'the removed animation-speed slider is read again, a control that does not exist'
+  },
+  // ---- review round: replace only after the new captions exist; contain fit ----
+  {
+    name: 'pfit-clear-before-render',
+    file: 'CutPilot/js/main.js',
+    find: '    addPulseCaptions(mCues, null, replaceEd);',
+    repl: '    if (replaceEd) clearReplacedTemplateSet({ replaceEditable: replaceEd });\n    addPulseCaptions(mCues, null, replaceEd);',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: '✨ Add captions deletes the Premium set before the new captions exist again — a Cancel or a failed render leaves no captions'
+  },
+  {
+    name: 'pfit-replace-own-template',
+    file: 'CutPilot/js/main.js',
+    find: '        replaceEd = { track: pjE.track, names: captionGraphicNames(pjE.mogrtPath) };',
+    repl: '        replaceEd = { track: pjE.track, names: captionGraphicNames() };',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'a set made from the owner\'s own uploaded template is stacked over instead of replaced'
+  },
+  {
+    name: 'pfit-contain-fit',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "    var fitMode = (args.fitMode === 'short' && compW > 0 && compH > 0) ? 'short' : 'contain';",
+    repl: "    var fitMode = 'short';",
+    gate: 'CutPilot/test/host-tests.js',
+    why: 'the owner\'s own 1920×1080 .mogrt is 100% on a 1080×1920 reel again — ~420 px cropped off each side'
+  },
+  {
+    name: 'pfit-contain-preview',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "    var rfScale = CP_fitScalePct(seq, args.compW, args.compH, args.width, args.height, args.fitMode);",
+    repl: "    var rfScale = CP_fitScalePct(seq, args.compW, args.compH, args.width, args.height, 'short');",
+    gate: 'CutPilot/test/gates/host-render-mogrt-frames.js',
+    why: 'a card render crops an unplanned landscape comp on a reel, unlike the insert'
+  },
+  {
+    name: 'pfit-short-sent',
+    file: 'CutPilot/js/main.js',
+    find: "             fitMode: plan.known ? 'short' : 'contain' };",
+    repl: "             fitMode: 'contain' };",
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'every 1080×1920 Premium template shrinks to 56.25% on a podcast frame — the panel no longer says it planned the lines'
+  },
+  {
+    name: 'pfit-editable-preview-row',
+    file: 'CutPilot/js/main.js',
+    find: '        posYPct: pvPos });',
+    repl: '        posYPct: (params && params._posYPct != null) ? params._posYPct : null });',
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'the ✏️ Editable ▶ Real preview sits at the raw slider row, not where the insert puts the captions'
+  },
+  {
+    name: 'pfit-editable-preview-lines',
+    file: 'CutPilot/js/main.js',
+    find: "      var pvText = (fitP.cues[0] && fitP.cues[0].text) || sample;",
+    repl: "      var pvText = sample;",
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'the ✏️ Editable ▶ Real preview drops the words unbroken, so a long first line is cropped where the insert breaks it'
   }
 ];
 

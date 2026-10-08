@@ -270,10 +270,33 @@
           <button class="wc-btn" id="ms-wc-minus" type="button" aria-label="Fewer words">−</button>
           <b id="ms-wc-num">Auto</b>
           <button class="wc-btn" id="ms-wc-plus" type="button" aria-label="More words">+</button>
-          <button class="chip-btn" id="ms-wc-full" type="button" title="Whole sentences, sized to your video automatically">✨ Auto</button>
+          <button class="chip-btn" id="ms-wc-full" type="button" title="As many words as fit this template on your video — whole sentences when they fit">✨ Auto</button>
         </div>
         <p class="hint" style="margin:6px 0 4px">⚡ Word-by-word timing is automatic. <button class="info" type="button" data-info="ms-timing-info" aria-label="More about timing">ⓘ</button></p>
         <div class="info-pop hidden" id="ms-timing-info">Each word lights up exactly when it's spoken. If Premiere shows an "Animation Controls" section (Type, Word Index…), leave it — Pulse sets it for you.</div>
+        <!-- where these captions sit, their case and how long they stay — this
+             template's own choices (not the Styles editor's or the Upload view's) -->
+        <div class="ms-layout" id="ms-layout">
+          <label class="field-label" for="ms-pos">Position on screen <span class="val" id="ms-pos-val">Auto</span></label>
+          <div class="ms-pos-row">
+            <input type="range" id="ms-pos" min="10" max="92" step="1" value="86" aria-label="Caption position, percent from the top">
+            <button class="chip-btn" id="ms-pos-auto" type="button" title="Lower third on 16:9, Reels-safe on 9:16">✨ Auto</button>
+          </div>
+          <label class="field-label">Text case</label>
+          <div class="seg-control sub" id="ms-case">
+            <button type="button" data-case="as-spoken" class="on">As spoken</button>
+            <button type="button" data-case="upper">UPPER</button>
+            <button type="button" data-case="lower">lower</button>
+            <button type="button" data-case="title">Title</button>
+          </div>
+          <label class="field-label" for="ms-hold">After the last word</label>
+          <select id="ms-hold">
+            <option value="0.5">Stay 0.5 s (recommended)</option>
+            <option value="next">Stay until the next caption (up to 3 s)</option>
+            <option value="0">Leave with the last word</option>
+          </select>
+          <label class="check"><input type="checkbox" id="ms-stretch"> ↔ Speed up the template's own animation to fit each caption</label>
+        </div>
         <!-- editable text colour / font / size / template colours, built on open -->
         <button id="ms-reset-orig" class="chip-btn" type="button">↺ Back to original</button>
         <div id="ms-customizer" class="ms-customizer"></div>
