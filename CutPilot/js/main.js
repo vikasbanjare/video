@@ -6241,10 +6241,61 @@
     try { toast('Done — ' + f.label.charAt(0).toUpperCase() + f.label.slice(1) + ', so that setting works now.'); } catch (eT) {}
     return true;
   }
+  /* ONE fix per tap. A tap sends pointerdown, mousedown and click (touchstart
+     too on a touch screen); the fix runs on the first of them only. Without
+     that, a fix that left the control greyed for a second reason (Two-colour
+     highlight: word-by-word turned on, but the style's Pill still hides the
+     gradient) armed the next fix, and the same tap's mousedown ran it too —
+     the Pill was swapped for Colour without the owner ever being told. Now
+     the new reason stays on screen for a second tap, and the tap's click does
+     not tick a control that is still greyed. A click with no pointer events
+     before it (keyboard) is a tap of its own. */
+  var WHY_TAP_MS = 600;
+  function _whyTop(id) {
+    var e = $(id); if (!e || !e.getBoundingClientRect) return null;
+    var r = e.getBoundingClientRect();
+    return (r.width || r.height) ? r.top : null;
+  }
+  function _keepUnderFinger(from, dy) {
+    if (!dy || Math.abs(dy) < 1) return;
+    for (var n = from && from.parentNode; n && n.nodeType === 1; n = n.parentNode) {
+      var oy = '';
+      try { oy = getComputedStyle(n).overflowY; } catch (eO) {}
+      if ((oy === 'auto' || oy === 'scroll') && n.scrollHeight > n.clientHeight) { n.scrollTop += dy; return; }
+    }
+    var se = document.scrollingElement || document.documentElement;
+    if (se) se.scrollTop += dy;
+  }
   function _wireWhyHost(id, host) {
     if (!host || _whyHosts[id] === host) return;
     _whyHosts[id] = host;
-    var go = function () { _runWhyFix(id); };
+    var go = function (ev) {
+      var now = Date.now(), start = host._cpTapAt || 0, sameTap;
+      if (ev.type === 'click') {                 // the click ends the tap it belongs to
+        sameTap = start && (now - start) < 5000;
+        host._cpTapAt = 0;
+      } else {                                   // pointerdown / mousedown / touchstart
+        sameTap = start && (now - start) < WHY_TAP_MS;
+        if (!sameTap) { start = now; host._cpTapAt = now; }
+      }
+      var ran = false;
+      if (!sameTap && _whyFix[id]) {
+        var y0 = _whyTop(id);
+        ran = _runWhyFix(id);
+        if (ran) host._cpFixTap = (ev.type === 'click') ? -1 : start;
+        // the fix can open or close rows above (Pill → Colour shows the
+        // colour rows): keep the control under the finger so the rest of
+        // the tap lands on it, not on whatever slid into its place
+        if (ran && y0 != null) _keepUnderFinger(host, _whyTop(id) - y0);
+      }
+      var fixedThisTap = ran || (sameTap && start && host._cpFixTap === start);
+      // still greyed after this tap's fix: the rest of the tap must not act on it
+      var e = $(id);
+      if (fixedThisTap && e && (e.disabled || e.getAttribute('aria-disabled') === 'true')) {
+        if (ev.type === 'click' || ev.type === 'mousedown') { try { ev.preventDefault(); } catch (eP) {} }
+        try { ev.stopPropagation(); } catch (eS) {}
+      }
+    };
     ['pointerdown', 'mousedown', 'touchstart', 'click'].forEach(function (ev) { host.addEventListener(ev, go, true); });
   }
   function setWhy(id, reason, fix) {
@@ -6426,6 +6477,8 @@
     var kwMode = ($('c-kw-mode') && $('c-kw-mode').value) || 'smart';
     setWhy('c-numon', (!sweepOwns && cchk('c-kw') && /^(smart|numbers|all)$/.test(kwMode))
       ? 'Your 🔑 key words already include numbers — they take the Highlight colour (turn key words off to colour numbers apart)' : null, WHY_FIX.kwOff);
+    // the 'Editable hides N settings' line follows what is on screen now
+    if (editable) { try { updateHiddenCountLine(); } catch (eHc) {} }
   }
 
   /* CONTENT DEMOS. Some controls act on what a caption SAYS: line spacing /
@@ -6666,27 +6719,37 @@
     // Highlight-timing nudge: pull every word cue earlier/later (±50ms steps) so
     // the box can be locked onto the voice when the ASR/audio timing runs a touch
     // ahead or behind. Persisted with the rest of the look.
+    // The ⚡ Premium sheet has the same nudge (ms-off-*): one value, so both
+    // read the same and either one changes every caption type.
     function bumpOffset(deltaMs) {
       var ms = (parseInt($('c-sync-offset').value, 10) || 0) + deltaMs;
       ms = Math.max(-800, Math.min(800, ms));
       $('c-sync-offset').value = ms;
-      $('c-off-num').textContent = (ms > 0 ? '+' : '') + (ms / 1000).toFixed(2) + 's';
+      showSyncOffset();
       renderPreview();
+      if (_booted) { try { saveLook(); } catch (eSv) {} }
     }
-    if ($('c-off-minus')) $('c-off-minus').addEventListener('click', function () { bumpOffset(-50); });
-    if ($('c-off-plus')) $('c-off-plus').addEventListener('click', function () { bumpOffset(50); });
-    // Reset → the default slight lead (−60ms), since whisper marks word starts a
-    // touch late; a small lead makes each word light up AS it's spoken.
-    if ($('c-off-reset')) $('c-off-reset').addEventListener('click', function () { $('c-sync-offset').value = -60; bumpOffset(0); });
+    ['c', 'ms'].forEach(function (pre) {
+      if ($(pre + '-off-minus')) $(pre + '-off-minus').addEventListener('click', function () { bumpOffset(-50); });
+      if ($(pre + '-off-plus')) $(pre + '-off-plus').addEventListener('click', function () { bumpOffset(50); });
+      // Reset → the default slight lead (−60ms), since whisper marks word starts a
+      // touch late; a small lead makes each word light up AS it's spoken.
+      if ($(pre + '-off-reset')) $(pre + '-off-reset').addEventListener('click', function () { $('c-sync-offset').value = -60; bumpOffset(0); });
+    });
     // reflect the saved / default offset in the label on load
-    if ($('c-off-num') && $('c-sync-offset')) {
-      var ims = parseInt($('c-sync-offset').value, 10) || 0;
-      $('c-off-num').textContent = (ims > 0 ? '+' : '') + (ims / 1000).toFixed(2) + 's';
-    }
+    showSyncOffset();
     $('btn-replay').addEventListener('click', renderPreview);
     wirePreviewDemos();
   }
 
+  /* Both highlight-timing labels (Styles editor + ⚡ Premium sheet). */
+  function showSyncOffset() {
+    var e = $('c-sync-offset'); if (!e) return;
+    var ms = parseInt(e.value, 10) || 0;
+    var t = (ms > 0 ? '+' : '') + (ms / 1000).toFixed(2) + 's';
+    if ($('c-off-num')) $('c-off-num').textContent = t;
+    if ($('ms-off-num')) $('ms-off-num').textContent = t;
+  }
   /* Highlight-timing nudge in seconds (positive = highlight later). */
   function captionSyncOffset() { return (parseInt($('c-sync-offset').value, 10) || 0) / 1000; }
   /* Shift word cues by the nudge, keeping starts non-negative and ordered. */
@@ -7513,7 +7576,7 @@
       if (look.syncOffset != null && $('c-sync-offset')) {
         var ms = parseInt(look.syncOffset, 10) || 0;
         $('c-sync-offset').value = ms;
-        if ($('c-off-num')) $('c-off-num').textContent = (ms > 0 ? '+' : '') + (ms / 1000).toFixed(2) + 's';
+        showSyncOffset();
       }
       if (look.words != null) setWordCount(parseInt(look.words, 10) || 0);
       applyLookCtl(look.ctl);
@@ -7928,9 +7991,24 @@
     } catch (ePt) {}
     try { renderPreview(); } catch (ePv) {}
   }
-  /* How many settings ✏️ Editable hides (the .png-only ones in the style
-     editor), said in one line under Caption type with a one-tap way back.
-     A segmented choice counts once; a colour swatch counts once. */
+  /* How many settings ✏️ Editable hides, said in one line under Caption type
+     with a one-tap way back. The number is what switching back really puts
+     within reach: Pulse-only settings (and the ✨ Effects tab's) that are not
+     ALSO hidden for another reason (a box option while there is no box, a
+     sub-row whose switch is off) — it used to count those too and promised
+     52 when 34 came back. A segmented choice counts once; a colour swatch
+     counts once; the Style / Effects tab bar is not a setting. */
+  function _shownOncePulse(el, root) {
+    for (var n = el; n && n !== root; n = n.parentNode) {
+      if (!n.classList) continue;
+      if (n.classList.contains('png-only')) continue;        // shown again in ✨ Pulse-rendered
+      if (n.classList.contains('cust-pane')) continue;       // one tab away
+      if (n.classList.contains('hidden')) return false;
+      if (n.style && n.style.display === 'none') return false;
+      try { if (getComputedStyle(n).display === 'none') return false; } catch (eC) {}
+    }
+    return true;
+  }
   function countPulseOnlySettings() {
     var root = $('view-editor'); if (!root) return 0;
     var seen = [], n = 0;
@@ -7941,7 +8019,8 @@
       if (el.closest && el.closest('label.sw') && el.tagName !== 'LABEL') continue;   // the swatch counts, not its input
       if (el.classList && el.classList.contains('hidden') && el.tagName === 'INPUT') continue;   // backing inputs
       if (!(el.closest && el.closest('.png-only'))) continue;
-      if (el.closest('.cap-type-block')) continue;
+      if (el.closest('.cap-type-block') || el.id === 'cust-tabs') continue;
+      if (!_shownOncePulse(el, root)) continue;
       if (seen.indexOf(el) >= 0) continue;
       seen.push(el); n++;
     }

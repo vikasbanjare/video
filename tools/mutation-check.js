@@ -939,6 +939,56 @@ const MUTANTS = [
     repl: "    var wcTip = (w === 0) ? 'Whole sentences'",
     gate: "CutPilot/test/gates/captions-options-reachable.js",
     why: "the Words per caption stepper no longer says what Auto does"
+  },
+  // review round: one fix per tap, a truthful hidden count, the nudge and the
+  // Auto label on the ⚡ Premium sheet
+  {
+    name: "optfix-one-fix-per-tap",
+    file: "CutPilot/js/main.js",
+    find: "      if (!sameTap && _whyFix[id]) {",
+    repl: "      if (_whyFix[id]) {",
+    gate: "CutPilot/test/gates/captions-options-reachable.js",
+    why: "one tap on Two-colour highlight runs every fix in a row and swaps the style's Pill for Colour"
+  },
+  {
+    name: "optfix-keep-under-finger",
+    file: "CutPilot/js/main.js",
+    find: "        if (ran && y0 != null) _keepUnderFinger(host, _whyTop(id) - y0);",
+    repl: "        if (false) _keepUnderFinger(host, _whyTop(id) - y0);",
+    gate: "CutPilot/test/gates/captions-options-reachable.js",
+    why: "a tap's fix opens rows above the control and the rest of the tap lands on whatever slid under the finger"
+  },
+  {
+    name: "optfix-hidden-count-truth",
+    file: "CutPilot/js/main.js",
+    find: "      if (!_shownOncePulse(el, root)) continue;\n",
+    repl: "",
+    gate: "CutPilot/test/gates/captions-options-reachable.js",
+    why: "✏️ Editable promises more hidden settings than switching back brings"
+  },
+  {
+    name: "optfix-premium-nudge-shown",
+    file: "CutPilot/index.html",
+    find: "<div class=\"wc-bar sync-nudge\" id=\"ms-sync-nudge\">",
+    repl: "<div class=\"wc-bar sync-nudge hidden\" id=\"ms-sync-nudge\">",
+    gate: "CutPilot/test/gates/captions-options-reachable.js",
+    why: "the ⚡ Premium sheet has no highlight-timing nudge"
+  },
+  {
+    name: "optfix-premium-nudge-wired",
+    file: "CutPilot/js/main.js",
+    find: "    ['c', 'ms'].forEach(function (pre) {",
+    repl: "    ['c'].forEach(function (pre) {",
+    gate: "CutPilot/test/gates/captions-options-reachable.js",
+    why: "the ⚡ Premium sheet's timing buttons do nothing"
+  },
+  {
+    name: "optfix-premium-auto-tip",
+    file: "CutPilot/index.html",
+    find: "id=\"ms-wc-full\" type=\"button\" title=\"Auto: whole phrases, fitted to your video\"",
+    repl: "id=\"ms-wc-full\" type=\"button\" title=\"Whole sentences, sized to your video automatically\"",
+    gate: "CutPilot/test/gates/captions-options-reachable.js",
+    why: "✨ Auto on the ⚡ Premium sheet promises whole sentences again"
   }
 ];
 

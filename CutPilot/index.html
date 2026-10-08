@@ -270,10 +270,20 @@
           <button class="wc-btn" id="ms-wc-minus" type="button" aria-label="Fewer words">−</button>
           <b id="ms-wc-num">Auto</b>
           <button class="wc-btn" id="ms-wc-plus" type="button" aria-label="More words">+</button>
-          <button class="chip-btn" id="ms-wc-full" type="button" title="Whole sentences, sized to your video automatically">✨ Auto</button>
+          <button class="chip-btn" id="ms-wc-full" type="button" title="Auto: whole phrases, fitted to your video">✨ Auto</button>
         </div>
         <p class="hint" style="margin:6px 0 4px">⚡ Word-by-word timing is automatic. <button class="info" type="button" data-info="ms-timing-info" aria-label="More about timing">ⓘ</button></p>
         <div class="info-pop hidden" id="ms-timing-info">Each word lights up exactly when it's spoken. If Premiere shows an "Animation Controls" section (Type, Word Index…), leave it — Pulse sets it for you.</div>
+        <!-- the same highlight-timing nudge as the Styles editor (one value,
+             saved with the look): Premium captions are timed from it too -->
+        <div class="wc-bar sync-nudge" id="ms-sync-nudge">
+          <span class="wc-label">Highlight timing</span>
+          <button class="wc-btn" id="ms-off-minus" type="button" title="Highlight comes earlier (−0.05s per tap)" aria-label="Earlier">−</button>
+          <b id="ms-off-num">−0.06s</b>
+          <button class="wc-btn" id="ms-off-plus" type="button" title="Highlight comes later (+0.05s per tap)" aria-label="Later">+</button>
+          <button class="chip-btn" id="ms-off-reset" type="button">Reset</button>
+          <span class="dim">Too early? Tap +. Too late? Tap −.</span>
+        </div>
         <!-- editable text colour / font / size / template colours, built on open -->
         <button id="ms-reset-orig" class="chip-btn" type="button">↺ Back to original</button>
         <div id="ms-customizer" class="ms-customizer"></div>
@@ -710,7 +720,7 @@
             <button class="wc-btn" id="mg-wc-minus" type="button" aria-label="Fewer words">−</button>
             <b id="mg-wc-num">Auto</b>
             <button class="wc-btn" id="mg-wc-plus" type="button" aria-label="More words">+</button>
-            <button class="chip-btn" id="mg-wc-full" type="button" title="Whole sentences, sized to your video automatically">✨ Auto</button>
+            <button class="chip-btn" id="mg-wc-full" type="button" title="Auto: whole phrases, fitted to your video">✨ Auto</button>
           </div>
           <span class="field-label">Text case</span>
           <div class="seg-control sub" id="mg-case">

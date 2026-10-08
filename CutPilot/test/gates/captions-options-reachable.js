@@ -147,11 +147,16 @@ async function reloadPanel(page) {
     const lineBelowType = line ? (line.getBoundingClientRect().top - document.getElementById('cap-output').getBoundingClientRect().bottom) : 1e9;
     document.getElementById('btn-cap-to-pulse').click(); await sleep(350);
     // the settings that came back: Pulse-only ones on the Style tab + the Effects tab
+    // counted the way the owner would: a swatch once (not its input), a
+    // segmented choice once, the Style / Effects tab bar is not a setting
     const SET = ['input:not([type=hidden])', 'select', '.seg-control', 'label.sw', '.anim-rail'];
-    const inPane = id => SET.map(s => '#' + id + ' ' + s).join(', ');
-    const back = Array.from(document.querySelectorAll(inPane('cust-pane-style'))).filter(el => el.closest('.png-only') && vis(el)).length;
+    const setting = el => !(el.tagName !== 'LABEL' && el.closest('label.sw')) && !(el.tagName === 'INPUT' && el.classList.contains('hidden')) &&
+      el.id !== 'cust-tabs' && !el.closest('.cap-type-block');
+    const inEd = () => Array.from(document.querySelectorAll(SET.map(s => '#view-editor ' + s).join(', '))).filter(el => el.closest('.png-only') && setting(el) && vis(el));
+    const seen = new Set(inEd());
     const fxb = document.querySelector('#cust-tabs button[data-pane="pro"]'); if (fxb) fxb.click(); await sleep(150);
-    const fx = Array.from(document.querySelectorAll(inPane('cust-pane-pro'))).filter(vis).length;
+    inEd().forEach(el => seen.add(el));
+    const back = 0, fx = seen.size;
     const stb = document.querySelector('#cust-tabs button[data-pane="style"]'); if (stb) stb.click(); await sleep(100);
     return { capY, order, linePng, lineShown, text, n, pngOnlyShownInEditable, lineBelowType,
              after: window.CP_DEBUG.capOut(), lineAfter: vis(line), tabsAfter: vis(document.getElementById('cust-tabs')),
@@ -163,9 +168,11 @@ async function reloadPanel(page) {
   if (top.linePng) R.bad('B: the "hidden settings" line shows in ✨ Pulse-rendered, where nothing is hidden');
   if (!top.lineShown || !(top.n >= 10) || !/hides\s+\d+/.test(top.text) || top.lineBelowType > 80)
     R.bad('B: ✏️ Editable does not say how many settings it hides right under Caption type ("' + top.text + '", n=' + top.n + ')');
-  else if (top.after !== 'png' || top.lineAfter || !top.tabsAfter || top.fxAfter < top.n / 2)
-    R.bad('B: the one-tap switch did not bring the settings back (type ' + top.after + ', line still shown ' + top.lineAfter + ', tabs ' + top.tabsAfter + ', ' + top.fxAfter + ' Pulse-only things on screen)');
-  else R.ok('B: ✏️ Editable says "' + top.text.slice(0, 60) + '…" under Caption type; one tap switches back and ' + top.fxAfter + ' Pulse-only settings are reachable again');
+  else if (top.after !== 'png' || top.lineAfter || !top.tabsAfter)
+    R.bad('B: the one-tap switch did not bring the settings back (type ' + top.after + ', line still shown ' + top.lineAfter + ', tabs ' + top.tabsAfter + ')');
+  else if (top.fxAfter !== top.n)
+    R.bad('B: the line promises ' + top.n + ' hidden settings but switching back puts ' + top.fxAfter + ' on screen');
+  else R.ok('B: ✏️ Editable says "' + top.text.slice(0, 60) + '…" under Caption type; one tap switches back and exactly those ' + top.fxAfter + ' Pulse-only settings are on screen again');
 
   // ---- D. a greyed control whose reason one tap can meet -------------------
   const noBox = shown.find(id => !byId[id].box && byId[id].hls === 'color' && !byId[id].build);
@@ -207,6 +214,42 @@ async function reloadPanel(page) {
   okFix(fixRes.pad, p => p.box, 'Box padding with no box: one tap switches the box on');
   okFix(fixRes.stroke, p => p.strokew > 0, 'Outline colour with no outline: one tap gives the text an outline');
   okFix(fixRes.cs, p => !p.upper, 'Text case under ALL CAPS: one tap turns ALL CAPS off');
+  /* one tap = one fix: a Pill style with word-by-word and key words off greys
+     🌈 Two-colour highlight for TWO reasons in turn (nothing lit → then the
+     Pill). One real click may meet the first reason only — it used to run the
+     second fix too in the same tap (pointerdown, mousedown and click each ran
+     one), swapping the style's Pill for Colour behind the owner's back. */
+  const pillStyle = shown.find(id => byId[id].hls === 'box' && !byId[id].build);
+  if (!pillStyle) R.bad('D: no Pill-highlight style to test one-fix-per-tap on');
+  else {
+    await openStyle(page, pillStyle);
+    const pre = await page.evaluate(async () => {
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      const fire = e => { e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); };
+      const off = id => { const e = document.getElementById(id); if (e.checked) { e.checked = false; fire(e); } };
+      off('c-wordhl'); off('c-kw'); off('c-hlgrad');
+      const st = document.querySelector('#cust-tabs button[data-pane="style"]'); if (st) st.click(); await sleep(250);
+      document.getElementById('c-hlgrad').scrollIntoView({ block: 'center' }); await sleep(100);
+      const w = document.querySelector('[data-why-for="c-hlgrad"]');
+      return { why: w ? w.textContent : '', pill: !!document.querySelector('#c-hlstyle button[data-s="box"].on') };
+    });
+    const state = () => page.evaluate(() => {
+      const w = document.querySelector('[data-why-for="c-hlgrad"]');
+      return { wordhl: document.getElementById('c-wordhl').checked, grad: document.getElementById('c-hlgrad').checked,
+               pill: !!document.querySelector('#c-hlstyle button[data-s="box"].on'),
+               colour: !!document.querySelector('#c-hlstyle button[data-s="color"].on'),
+               why: (w && w.offsetParent !== null) ? w.textContent : '' };
+    });
+    await page.click('#c-hlgrad'); await sleep(400);
+    const one = await state();
+    await page.click('#c-hlgrad'); await sleep(400);
+    const two = await state();
+    if (!pre.pill || !/Word-by-word/.test(pre.why)) R.bad('D: could not set up the Pill style with nothing lit (' + JSON.stringify(pre) + ')');
+    else if (!one.wordhl || !one.pill || one.grad || !/Pill/.test(one.why))
+      R.bad('D: one tap on a greyed control ran more than the fix its reason named: ' + JSON.stringify(one));
+    else if (!two.colour || !two.grad) R.bad('D: the second tap did not meet the second reason (' + JSON.stringify(two) + ')');
+    else R.ok('D: one tap = one fix: the 1st tap turned word-by-word on and left the Pill with its new reason on screen; the 2nd switched to Colour and ticked Two-colour highlight');
+  }
   if (buildStyle) {
     await openStyle(page, buildStyle);
     const b = await page.evaluate(() => {
@@ -367,6 +410,45 @@ async function reloadPanel(page) {
   else if (wc.set.text !== wc.set.val || wc.set.tip.indexOf(wc.set.val + ' word') !== 0)
     R.bad('I: the stepper shows "' + wc.set.text + '" / "' + wc.set.tip + '" for ' + wc.set.val + ' words per caption');
   else R.ok('I: Words per caption shows the value it uses ("' + wc.auto.tip + '"; then "' + wc.set.tip + '")');
+
+  // the ✨ Auto chip says the same on the ⚡ Premium sheet and the 📁 Upload view
+  {
+    const html = fs.readFileSync(path.join(G.PANEL_DIR, 'index.html'), 'utf8');
+    const tip = id => { const m = new RegExp('id="' + id + '"[^>]*title="([^"]*)"').exec(html); return m ? m[1] : ''; };
+    const bad = ['ms-wc-full', 'mg-wc-full'].filter(id => !/whole phrases, fitted to your video/i.test(tip(id)) || /whole sentences/i.test(tip(id)));
+    if (bad.length) R.bad('I: ✨ Auto still promises something else on ' + bad.map(id => id + ' ("' + tip(id) + '")').join(', '));
+    else R.ok('I: ✨ Auto says "whole phrases, fitted to your video" on the ⚡ Premium sheet and the 📁 Upload view too');
+  }
+
+  // ---- I. the highlight-timing nudge on the ⚡ Premium sheet ------------------
+  const prem = await page.evaluate(async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const vis = el => !!(el && el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden');
+    const fx = document.querySelector('[data-view="flux"]'); if (fx) fx.click();
+    let card = null;
+    for (let i = 0; i < 40 && !card; i++) { await sleep(100); card = document.querySelector('#flux-grid .tpl-card'); }
+    if (!card) return { err: 'no Premium card' };
+    card.click(); await sleep(500);
+    const sheet = document.getElementById('mogrt-sheet');
+    if (!vis(sheet)) return { err: 'the Premium sheet did not open' };
+    const nudge = document.getElementById('ms-sync-nudge');
+    document.getElementById('ms-off-plus').scrollIntoView({ block: 'center' }); await sleep(100);
+    return { shown: vis(nudge), inSheet: !!(nudge && sheet.contains(nudge)), before: +document.getElementById('c-sync-offset').value };
+  });
+  let premAfter = null;
+  if (!prem.err && prem.shown) {
+    await page.click('#ms-off-plus'); await sleep(150);
+    await page.click('#ms-off-plus'); await sleep(250);
+    premAfter = await page.evaluate(() => ({ v: +document.getElementById('c-sync-offset').value,
+      ms: document.getElementById('ms-off-num').textContent, c: document.getElementById('c-off-num').textContent }));
+    await reloadPanel(page);
+    premAfter.reload = await page.evaluate(() => +document.getElementById('c-sync-offset').value);
+  }
+  if (prem.err) R.bad('I: ' + prem.err);
+  else if (!prem.shown || !prem.inSheet) R.bad('I: the highlight-timing nudge is not on the ⚡ Premium sheet');
+  else if (premAfter.v !== prem.before + 100 || premAfter.ms !== premAfter.c) R.bad('I: two taps of + on the ⚡ Premium sheet: ' + prem.before + ' → ' + JSON.stringify(premAfter));
+  else if (premAfter.reload !== premAfter.v) R.bad('I: the ⚡ Premium sheet\'s timing nudge was not saved (' + premAfter.v + ' → ' + premAfter.reload + ' after a reload)');
+  else R.ok('I: the ⚡ Premium sheet has the timing nudge: two taps of + moved it ' + prem.before + ' → ' + premAfter.v + ' ms (' + premAfter.ms + ', the Styles editor reads the same) and it survives a reload');
 
   // ---- C. a reload keeps the picked style's look — and the owner's changes ----
   const diffOv = (a, b) => {

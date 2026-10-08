@@ -1074,7 +1074,7 @@ footer { border: 1px solid var(--line); border-radius: 10px; background: var(--c
 
 /* highlight-timing nudge: keep it compact, push the hint to its own line */
 .sync-nudge { margin-top: 6px; }
-.sync-nudge #c-off-num { min-width: 56px; text-align: center; }
+.sync-nudge #c-off-num, .sync-nudge #ms-off-num { min-width: 56px; text-align: center; }
 .sync-nudge .dim { flex-basis: 100%; font-size: var(--fs-xs); margin-top: 2px; }
 
 /* searchable font picker + readability warning */
