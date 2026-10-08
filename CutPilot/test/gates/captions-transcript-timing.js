@@ -257,6 +257,8 @@ async function run() {
         w.length === TRUTH.length && w.every((x, i) => x.text.replace(/[.]$/, '') === TRUTH[i].text && near(x.start, TRUTH[i].start)),
         JSON.stringify(w.map(x => x.text + '@' + x.start.toFixed(2))));
       const lineToks = l.map(c => c.text.replace(/[.]/g, '').split(/\s+/).filter(Boolean)).reduce((a, b) => a.concat(b), []);
+      C.check('Groq pieces: the words carry the line\'s punctuation (the last word of a line ends with ".")',
+        w.some(x => /\.$/.test(x.text)), JSON.stringify(w.map(x => x.text)));
       C.check('Groq pieces: the transcript lines hold each word once (no doubled text at a seam)', lineToks.join(' ') === said.join(' '), JSON.stringify(l.map(c => c.text)));
       const plan = await page.evaluate(() => window.CP_DEBUG_EXT.timing.cloudChunkPlan(3 * 3600 * 3000, 3 * 3600, 23 * 1024 * 1024));
       C.check('a 3-hour podcast (24 kbps, 32 MB) is cut into pieces that stay under the upload limit once re-encoded at ' + plan.kbps + ' kbps',
@@ -266,10 +268,12 @@ async function run() {
 
     // ── 5 ── Fix one caption: real word times, whole captions, exact stills ──
     for (const fmt of [{ w: 1920, h: 1080 }, { w: 1080, h: 1920 }]) {
-      const L = [{ start: 20.0, end: 21.8, text: 'aaj hum baat karenge' },
+      // three words on the first line, so with two-word captions "karenge
+      // business" is one caption shared by both lines
+      const L = [{ start: 20.3, end: 21.8, text: 'hum baat karenge' },
                  { start: 22.0, end: 26.0, text: 'business ke baare mein kaam kaise hota hai' },
                  { start: 26.2, end: 27.6, text: 'sabse pehle' }];
-      const WW = [['aaj', 20.0, 20.3], ['hum', 20.35, 20.6], ['baat', 20.65, 21.0], ['karenge', 21.05, 21.8],
+      const WW = [['hum', 20.35, 20.6], ['baat', 20.65, 21.0], ['karenge', 21.05, 21.8],
                   ['business', 22.0, 22.4], ['ke', 22.45, 22.6], ['baare', 22.65, 22.9], ['mein', 22.95, 23.2],
                   ['kaam', 24.4, 24.7], ['kaise', 24.75, 25.1], ['hota', 25.15, 25.5], ['hai', 25.55, 25.9],
                   ['sabse', 26.2, 26.7], ['pehle', 26.75, 27.4]].map(x => ({ text: x[0], start: x[1], end: x[2] }));
@@ -314,15 +318,16 @@ async function run() {
       C.check(tag + ': "mein" still lights at its real time 22.95 s', near(mein, 22.95 + res.off), 'mein frame at ' + mein);
       C.check(tag + ': the fixed word "kaisa" lights when "kaise" was said (24.75 s)', near(kaisa, 24.75 + res.off), 'kaisa frame at ' + kaisa);
       const fw = res.words.find(w => w.text === 'kaisa'), un = res.words.filter(w => w.text !== 'kaisa');
-      C.check(tag + ': the stored word timing keeps every other word exactly', !!fw && un.length === 13 && un.every(w => WW.some(x => x.text === w.text && near(x.start, w.start) && near(x.end, w.end))),
+      C.check(tag + ': the stored word timing keeps every other word exactly', !!fw && un.length === WW.length - 1 && un.every(w => WW.some(x => x.text === w.text && near(x.start, w.start) && near(x.end, w.end))),
         JSON.stringify(res.words));
       // whole captions: every caption of the full run that shows a word of the
       // fixed line is re-drawn, from its first frame to its last
       const L2 = L[1].text.split(' ');
       const touching = full.filter(f => f.words.some(x => L2.indexOf(String(x).toLowerCase().replace(/[^a-z]/g, '')) >= 0));
       const missing = touching.filter(f => !one.some(o => near(o.start, f.start) && near(o.end, f.end)));
-      C.check(tag + ': every caption showing a word of the fixed line is re-drawn whole (' + touching.length + ' frames, captions shared with the next line included)',
-        touching.length > 0 && missing.length === 0, 'not re-drawn: ' + JSON.stringify(missing.map(f => [f.start, f.words.join(' ')])));
+      const shared = touching.some(f => f.start < L[1].start - 1e-3);
+      C.check(tag + ': every caption showing a word of the fixed line is re-drawn whole (' + touching.length + ' frames, the caption shared with the line before included)',
+        touching.length > 0 && shared && missing.length === 0, 'not re-drawn: ' + JSON.stringify(missing.map(f => [f.start, f.words.join(' ')])));
       const fixPlace = placed[placed.length - 1] || {};
       C.check(tag + ': the fix is placed with exact still sizes on the caption track', fixPlace.exact === true && fixPlace.overwriteOnTrack === 3, JSON.stringify(Object.keys(fixPlace)));
       C.check(tag + ': "Apply to all" (regenerate on a track that has clips) also asks for exact sizes', (placed[0] || {}).exact === true, JSON.stringify(Object.keys(placed[0] || {})));
