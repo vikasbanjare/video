@@ -1,10 +1,51 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.9** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.10** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.10 — Premium cards show settled words; Edit words before captions; AI-fix switch; any font fits
+The owner's v0.10.9 diagnostics were all ✅ on Premiere 26.5.0 / macOS 26.5.1.
+Then a screenshot of the ⚡ Premium grid ("fix this preview also") and a list:
+"transcription view option is not there if I have to edit caption text before
+creating captions … all the captions should have basic editing options colors
+font size … whenever we create any font it should not crop on left and right";
+asked which auto-fix: "in Transcribe I want one option where I can turn off
+auto correction with AI — by default it should be on".
+- PREMIUM CARDS (tools/real-mogrt-previews.js, thumbs regenerated): the still
+  is the SETTLED frame (middle of the longest motionless stretch of the
+  author's thumb.mp4); a clip that settles into 2.5×+ the ink of the author's
+  still (Orbit, Vector: a glossy blob over the words for ~95% of the loop)
+  ships NO clip and keeps the author's clean still; the crop fits the still's
+  words (80% wide / half high, ≤3× zoom) — Halo/Prism were a tiny box. Cards
+  show the still and play the clip only while hovered (.tpl-thumb-clip).
+  "Preview with my words" renders crop to the 3/4 still's words the same way.
+  Flux Echo renamed Flux Drift (its design draws "Flux Drift").
+  Gates gallery-real-previews (settled poster, words fill ≥45% w / 35% h),
+  gallery-premium-cards (still, hover clip, Orbit/Vector still-only, name).
+- ✏️ EDIT WORDS on the Captions page (#btn-cap-words, until captions are
+  placed — then 📝 Edit caption words), the Premium sheet (#ms-edit-words) and
+  Upload (#btn-mogrt-edit-words): the transcript editor, word timing reflowed.
+  Gate captions-edit-words.
+- TRANSCRIBE: one ✨ Transcribe + "✨ Fix misheard words with AI" switch
+  (#tr-aifix, settings.trAiFix, on by default) that EVERY Transcribe button
+  follows; no key → words transcribed, the hint says why nothing was fixed.
+  The "Fast" button (#btn-tr-auto-main) is gone; gates switch AI off instead.
+- FIT: Premium/Upload line breaks measure the picked face itself when this
+  computer has it (premRealEm; the Arial×factor table stays the floor) — a
+  wide face was measured as Arial×1.25 and ran off both sides. Gate
+  captions-any-font-fits: all 128 styles and all 69 fonts at Size 160 +
+  Letter spacing 20 inside 16:9 and 9:16; Premium lines never measured
+  narrower than their face. (Font/size/colour: Styles editor, Premium sheet
+  "Customize" + Text style, Upload's live editor — all present.)
+- Fonts: Hindi-first styles keep their Devanagari face during the style audit
+  (the owner's log showed swaps to Avenir Next + ~25 toasts); the audit is
+  quiet; diagnostics show "Premiere script: loaded — answering" when the env
+  answers. fonts-coverage checks it.
+- Mutations: v10-* entries; tt-fix1-half-card now killed by a direct
+  framesTouchingRange check; tt-short-words retired (mediaToTimeline decides).
 
 ### v0.10.9 — captions land right with no setting touched; every option reachable
 The owner after v0.10.8: "a lot of customization options are gone from the
