@@ -502,6 +502,18 @@ async function run() {
         sd.nana.filter(x => x === 'na').length === 2 && sd.nono.length === 3, JSON.stringify(sd));
       C.check('…and far from any seam nothing is merged ("haan haan")', sd.haan.length === 2, JSON.stringify(sd.haan));
       C.check('…while one word heard by both pieces of a seam is kept once', sd.twice.length === 1, JSON.stringify(sd.twice));
+      // "Fix one caption": the frames a fixed line touches widen to the WHOLE
+      // caption both ways — a word-by-word caption that began on the line
+      // before (frames "aaj" → "aaj hum" → "aaj hum baat", the fix only covering
+      // "baat") is re-drawn from its first frame, else half of it stays old
+      const ft = await page.evaluate(() => {
+        const F = window.CP_DEBUG_EXT.timing.framesTouchingRange;
+        const fr = [{ start: 0, end: 0.5, words: ['aaj'] }, { start: 0.5, end: 1, words: ['aaj', 'hum'] }, { start: 1, end: 1.6, words: ['aaj', 'hum', 'baat'] },
+                    { start: 1.6, end: 2.2, words: ['karenge'] }, { start: 2.2, end: 2.8, words: ['karenge', 'kal'] }, { start: 3.5, end: 4, words: ['phir'] }];
+        return F(fr, { start: 1.1, end: 1.5 }).map(f => f.words.join(' '));
+      });
+      C.check('"Fix one caption" re-draws a caption that began on the line before from its first frame (and stops at the next caption)',
+        JSON.stringify(ft) === JSON.stringify(['aaj', 'aaj hum', 'aaj hum baat']), JSON.stringify(ft));
       await page.close();
     }
   } finally {

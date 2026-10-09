@@ -1737,14 +1737,9 @@ const MUTANTS = [
     gate: 'CutPilot/test/gates/captions-transcript-timing.js',
     why: 'Hinglish lines rebuilt with an overlap window repeat or drop the word where two lines meet'
   },
-  {
-    name: 'tt-short-words',
-    file: 'CutPilot/js/main.js',
-    find: '    (items || []).forEach(function (it) { ((+it.end - +it.start) > 0.05 ? longW : shortW).push(it); });',
-    repl: '    (items || []).forEach(function (it) { longW.push(it); });',
-    gate: 'CutPilot/test/gates/captions-transcript-timing.js',
-    why: 'words of 50 ms or less ("ho", "to") vanish from the transcript'
-  },
+  // (tt-short-words retired in v0.10.10: keeping 0-50 ms words is decided by
+  // the caption core's mediaToTimeline since v0.10.9 — placeWordStamps' split
+  // no longer changes the outcome; capcore-short-words breaks the real rule)
   {
     name: 'tt-panel-exact',
     file: 'CutPilot/js/main.js',
@@ -1808,6 +1803,70 @@ const MUTANTS = [
     repl: '  function isHesitation(t) { return false; }',
     gate: 'CutPilot/test/gates/captions-transcript-timing.js',
     why: 'captions made from a Deepgram transcript show "um" and "uh"'
+  },
+  {
+    name: 'v10-prev-settled-poster',
+    file: 'tools/real-mogrt-previews.js',
+    find: "  let posterAt = mid / 10, poster = 'frame', noVideo = null, stillPath = null;",
+    repl: "  let posterAt = 0.3, poster = 'frame', noVideo = null, stillPath = null;",
+    gate: 'CutPilot/test/gates/gallery-real-previews.js',
+    why: 'a Premium card shows its template mid-animation ("FluxVor t") instead of the settled words'
+  },
+  {
+    name: 'v10-prev-blob-clip',
+    file: 'tools/real-mogrt-previews.js',
+    find: '    if (si > 0 && settledInk > si * 2.5) {',
+    repl: '    if (false) {',
+    gate: 'CutPilot/test/gates/gallery-real-previews.js',
+    why: 'Orbit and Vector cards play their blob clip and show the blob as their still'
+  },
+  {
+    name: 'v10-prev-tiny-crop',
+    file: 'tools/real-mogrt-previews.js',
+    find: '  let W = Math.min(FW, Math.max(w / 0.8, (h / 0.5) * 2, OUT_W / 3));',
+    repl: '  let W = Math.min(FW, Math.max(w * 1.3 + 24, (h * 1.6 + 24) * 2, 320));',
+    gate: 'CutPilot/test/gates/gallery-real-previews.js',
+    why: 'Halo and Prism cards are a tiny box in a big black card again'
+  },
+  {
+    name: 'v10-card-hover-clip',
+    file: 'CutPilot/js/main.js',
+    find: '    if (showReal && isMogrt && t.flux && t.thumb && t.video && !userPrev) {',
+    repl: '    if (false) {',
+    gate: 'CutPilot/test/gates/gallery-premium-cards.js',
+    why: 'Premium cards play their loop all the time and are caught mid-animation'
+  },
+  {
+    name: 'v10-edit-words-hidden',
+    file: 'CutPilot/js/main.js',
+    find: "    if ($('btn-cap-words')) $('btn-cap-words').classList.toggle('hidden', !has || placed);",
+    repl: "    if ($('btn-cap-words')) $('btn-cap-words').classList.toggle('hidden', true);",
+    gate: 'CutPilot/test/gates/captions-edit-words.js',
+    why: 'no way to fix the words from the Captions page before making captions'
+  },
+  {
+    name: 'v10-prem-real-face',
+    file: 'CutPilot/js/main.js',
+    find: '    var real = premRealEm(s, ps);',
+    repl: '    var real = 0;',
+    gate: 'CutPilot/test/gates/captions-any-font-fits.js',
+    why: 'a Premium caption in a face wider than the table runs off both sides'
+  },
+  {
+    name: 'v10-aifix-always',
+    file: 'CutPilot/js/main.js',
+    find: '  function aiFixWanted() { return settings.trAiFix !== false; }',
+    repl: '  function aiFixWanted() { return true; }',
+    gate: 'CutPilot/test/gates/captions-transcript-timing.js',
+    why: 'switching off “Fix misheard words with AI” still rewrites the words'
+  },
+  {
+    name: 'v10-hindi-first-face',
+    file: 'CutPilot/js/main.js',
+    find: "    if (preset && preset.script) devaStyle = preset.script === 'deva';",
+    repl: '',
+    gate: 'CutPilot/test/gates/fonts-coverage.js',
+    why: 'Hindi-first styles swap to a Latin face (Avenir Next) when the style audit draws them'
   }
 ];
 
