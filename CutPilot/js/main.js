@@ -1997,6 +1997,7 @@
       // last style. Now it always opens on the gallery; "✨ Add captions" sits
       // in a bar pinned under it, so the action is never more than one tap away.
       if (this.dataset.tab === 'captions') {
+        try { refreshEditWordsButtons(); } catch (eEw) {}
         try {
           var vt = $('view-templates');
           _galleryScroll = 0;
@@ -2684,6 +2685,7 @@
     else b.classList.add('hidden');
     var er = $('tr-tools'); if (er) er.classList.toggle('hidden', !state.transcript);  // export/translate/speaker only when words exist
     updateSyncStat();   // transcript changed → refresh the word-timing indicator
+    refreshEditWordsButtons();
 
     // One-click captions: if a caption button kicked off transcription, finish
     // that SAME action now that the words are ready — so the user never has to
@@ -6130,6 +6132,7 @@
   /* Transcript status shown inside the MOGRT sheet (so transcribe is reachable
      from the .mogrt section too, not only the styles editor). */
   function refreshMogrtSheetTr() {
+    refreshEditWordsButtons();
     var el = $('ms-tr'); if (!el) return;
     if (state.transcript) { el.textContent = '✅ Words ready — ' + (state.transcript.label || 'transcript loaded'); el.className = 'ms-tr ok'; }
     else { el.textContent = 'No words yet — tap Auto-transcribe, or load a transcript in the editor.'; el.className = 'ms-tr'; }
@@ -7696,6 +7699,7 @@
 
   /* Transcript status shown inside the Editor (.mogrt) section. */
   function refreshMogrtEditorTr() {
+    refreshEditWordsButtons();
     var el = $('mogrt-tr'); if (!el) return;
     if (state.transcript) { el.textContent = '✅ Words ready — ' + (state.transcript.label || 'transcript loaded'); el.className = 'ms-tr ok'; }
     else { el.textContent = 'No words yet — tap Auto-transcribe, or use the Transcribe tab.'; el.className = 'ms-tr'; }
@@ -8862,7 +8866,24 @@
       }
     }
     if (!on && $('cap1-editor')) $('cap1-editor').classList.add('hidden');
+    refreshEditWordsButtons();
   }
+
+  /* ✏️ Edit words on the Captions page, the Premium sheet and Upload — the
+     owner: "transcription view option is not there if I have to edit caption
+     text before creating captions". Shown once there are words; on the
+     Captions page it gives way to 📝 Edit caption words once captions are
+     placed (that one edits the placed captions in place). */
+  function refreshEditWordsButtons() {
+    var has = !!state.transcript;
+    var placed = !!($('btn-cap-edit') && !$('btn-cap-edit').classList.contains('hidden'));
+    if ($('btn-cap-words')) $('btn-cap-words').classList.toggle('hidden', !has || placed);
+    if ($('ms-edit-words')) $('ms-edit-words').classList.toggle('hidden', !has);
+    if ($('btn-mogrt-edit-words')) $('btn-mogrt-edit-words').classList.toggle('hidden', !has);
+  }
+  ['btn-cap-words', 'ms-edit-words', 'btn-mogrt-edit-words'].forEach(function (id) {
+    if ($(id)) $(id).addEventListener('click', openTranscriptEditor);
+  });
 
   /* ---- what "Add captions" builds — ONE recipe for the timeline AND the preview ----
      Which words share a caption (Words per caption, sentence ends, pauses,

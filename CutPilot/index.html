@@ -178,6 +178,7 @@
 
     <!-- after captions are placed: edit / restyle them (empty until then) -->
     <div id="cap-placed" class="cap-placed">
+      <button id="btn-cap-words" class="chip-btn hidden" title="Fix any word before the captions are made — they use your edited words">✏️ Edit words</button>
       <button id="btn-cap-edit" class="chip-btn hidden">📝 Edit caption words</button>
       <button id="btn-cap-fix1" class="chip-btn hidden" title="Edit the one caption under the playhead — it updates on the timeline">✏️ Fix one line</button>
       <button id="btn-cap-restyle" class="chip-btn hidden">🔄 Restyle all</button>
@@ -265,6 +266,7 @@
         <p class="hint" id="ms-hint">Try it on your timeline, then caption your video in one tap.</p>
         <div id="ms-tr" class="ms-tr"></div>
         <button id="ms-transcribe" class="chip-btn">🎙️ Transcribe my clip</button>
+        <button id="ms-edit-words" class="chip-btn hidden" title="Fix any word before the captions are made">✏️ Edit words</button>
         <label class="field-label">Words per caption</label>
         <div class="wc-bar" id="ms-words">
           <button class="wc-btn" id="ms-wc-minus" type="button" aria-label="Fewer words">−</button>
@@ -714,6 +716,7 @@
           <!-- words (transcript) status + transcribe, so it's reachable right here -->
           <div id="mogrt-tr" class="ms-tr"></div>
           <button id="btn-mogrt-transcribe" class="chip-btn">🎙️ Transcribe my clip</button>
+          <button id="btn-mogrt-edit-words" class="chip-btn hidden" title="Fix any word before the captions are made">✏️ Edit words</button>
 
           <!-- saved uploads -->
           <div class="section-label sub">Your templates</div>
