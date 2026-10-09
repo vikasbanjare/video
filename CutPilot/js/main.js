@@ -10229,6 +10229,7 @@
       // recent still opens them). false when no style has that id or the
       // click left another style in force: never a silent stand-in, so a gate
       // cannot pass on the wrong style.
+      styleIds: function () { return allTemplates().filter(function (t) { return !t.mogrt; }).map(function (t) { return t.id; }); },
       applyStyle: function (id) {
         var all = allTemplates(), t = null;
         for (var i = 0; i < all.length; i++) if (all[i].id === id && !all[i].mogrt) { t = all[i]; break; }
@@ -11607,7 +11608,40 @@
     }
     var f = premFaceFactor(ps);
     if (/[ऀ-ॿ]/.test(s)) f = Math.max(f, 1.1);
-    return em * px * f;
+    // the face itself when this computer has it: a face wider than the table
+    // assumes (a heavy display font picked in the sheet) ran off both sides
+    // ("it should not crop on left and right side because of over size")
+    var real = premRealEm(s, ps);
+    return Math.max(em * f, real * 1.05) * px;
+  }
+  /* The width of s in the face ps at 1 px (bold), measured in that face — 0
+     when this computer can't draw it (then the table above stands). */
+  var _premFaceOk = {};
+  function premRealEm(s, ps) {
+    if (!ps || !_premCtx) return 0;
+    // the family as Premiere names it, and the PostScript name without its weight
+    var cands = [], fam = '';
+    try { cands.push(mogrtFontFamily(ps) || ''); } catch (e) {}
+    cands.push(String(ps).replace(/-(Bold|Black|Heavy|Regular|Medium|SemiBold|Semibold|ExtraBold|Italic|BoldItalic)$/i, ''));
+    try {
+      for (var c = 0; c < cands.length && !fam; c++) {
+        var f = String(cands[c] || '').replace(/["\\]/g, '');
+        if (!f) continue;
+        if (!(f in _premFaceOk)) {
+          var probe = 'mmmmmmmmmmlli WWW 0123', ok = false;
+          ['monospace', 'serif'].forEach(function (gen) {
+            _premCtx.font = '700 100px ' + gen; var a = _premCtx.measureText(probe).width;
+            _premCtx.font = '700 100px "' + f + '", ' + gen; var b = _premCtx.measureText(probe).width;
+            if (Math.abs(a - b) > 0.5) ok = true;
+          });
+          _premFaceOk[f] = ok;
+        }
+        if (_premFaceOk[f]) fam = f;
+      }
+      if (!fam) return 0;
+      _premCtx.font = '700 100px "' + fam + '", Arial, sans-serif';
+      return _premCtx.measureText(s).width / 100;
+    } catch (e2) { return 0; }
   }
 
   /* Hindi / Hinglish line-break rules. Romanised Hindi function words only
@@ -12056,6 +12090,7 @@
       return o;
     },
     opts: function () { return JSON.parse(JSON.stringify(premOpts())); },
+    measure: function (text, px, ps) { return premMeasure(text, px, ps); },
     lastJob: function () { return state.lastCaptionJob ? JSON.parse(JSON.stringify(state.lastCaptionJob)) : null; },
     sheetEdits: function () { return { path: state.mogrtParamsPath || null, params: (state.mogrtParams || []).slice(), textStyle: state.mogrtTextStyle || null }; }
   };
