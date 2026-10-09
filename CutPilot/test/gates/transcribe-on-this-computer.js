@@ -104,7 +104,7 @@ function whiteLabelCopy() {
       };
     });
     await page.goto('file://' + path.join(dir, 'index.html'), { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => window.CP_DEBUG && window.CPVoices && document.getElementById('btn-tr-auto-main'), { timeout: 20000 });
+    await page.waitForFunction(() => window.CP_DEBUG && window.CPVoices && document.getElementById('btn-tr-auto-ai'), { timeout: 20000 });
     await new Promise(r => setTimeout(r, 800));
 
     const res = await page.evaluate(async () => {
@@ -114,7 +114,7 @@ function whiteLabelCopy() {
       // B. Auto, no key
       out.auto = D.setKeys({ groq: '', swara: '', deepgram: '', verbatimKey: '', quality: '' }).engine;
       let n0 = log.children.length;
-      document.getElementById('btn-tr-auto-main').click();
+      { const af = document.getElementById('tr-aifix'); af.checked = false; af.dispatchEvent(new Event('change')); } document.getElementById('btn-tr-auto-ai').click();
       await sl(300);
       out.autoToasts = Array.from(log.children).slice(n0).map(e => e.textContent);
       // C. "On this computer", no engine yet
@@ -130,7 +130,7 @@ function whiteLabelCopy() {
       D.setKeys({ quality: 'large-v3-turbo-q5_0' });
       const tap = async (answer) => {
         const n = log.children.length, s0 = window.__spawns.length;
-        document.getElementById('btn-tr-auto-main').click();
+        { const af = document.getElementById('tr-aifix'); af.checked = false; af.dispatchEvent(new Event('change')); } document.getElementById('btn-tr-auto-ai').click();
         let ov = null;
         for (let i = 0; i < 100 && !(ov = document.getElementById('cp-confirm-ov')); i++) await sl(50);
         const asked = ov ? ov.textContent : null;

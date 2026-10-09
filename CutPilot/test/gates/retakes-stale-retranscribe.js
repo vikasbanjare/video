@@ -94,7 +94,7 @@ async function run() {
        transcription is requested, or the run stops with an error. */
     async function autoTranscribe(page) {
       const before = transcribed;
-      await page.evaluate(() => { document.getElementById('toast').textContent = ''; document.getElementById('btn-tr-auto-main').click(); });
+      await page.evaluate(() => { document.getElementById('toast').textContent = ''; { const af = document.getElementById('tr-aifix'); af.checked = false; af.dispatchEvent(new Event('change')); } document.getElementById('btn-tr-auto-ai').click(); });
       let toast = '';
       for (let i = 0; i < 300; i++) {
         toast = await page.evaluate(() => { const t = document.getElementById('toast'); return (/\berr\b/.test(t.className) ? 'ERROR: ' : '') + t.textContent; });

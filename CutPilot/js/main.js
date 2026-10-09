@@ -1599,7 +1599,7 @@
     if (cb) cb.checked = aiFixWanted();
     if (hint) {
       var noKey = aiFixWanted() && !cpKey();
-      hint.textContent = noKey ? 'AI fixes need your free speech key (Settings → Auto-transcribe, the ☁️ box) — until then the words are kept as heard.' : '';
+      hint.textContent = noKey ? 'Needs your free key (Settings → ☁️) — words kept as heard.' : '';
       hint.classList.toggle('hidden', !noKey);
     }
   }
