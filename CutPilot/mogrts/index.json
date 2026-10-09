@@ -73,12 +73,12 @@
  },
  {
   "file": "Flux_Echo.mogrt",
-  "name": "Flux Echo",
+  "name": "Flux Drift",
   "category": "Flux",
   "section": "flux",
   "premium": true,
   "kind": "title",
-  "desc": "Echoed text reveal"
+  "desc": "Drifting text reveal"
  },
  {
   "file": "Flux_Halo2_r3.mogrt",
@@ -127,7 +127,7 @@
   "kind": "title",
   "desc": "Pulsing text reveal",
   "hidden": true,
-  "hiddenWhy": "same reveal family as Flux Echo"
+  "hiddenWhy": "same reveal family as Flux Drift"
  },
  {
   "file": "Flux_Surge.mogrt",
@@ -138,7 +138,7 @@
   "kind": "title",
   "desc": "Surging text reveal",
   "hidden": true,
-  "hiddenWhy": "same reveal family as Flux Echo (and only one working colour control)"
+  "hiddenWhy": "same reveal family as Flux Drift (and only one working colour control)"
  },
  {
   "file": "Flux_Vector.mogrt",

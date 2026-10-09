@@ -453,6 +453,7 @@ body.theme-light .tpl-card.on .tpl-thumb { box-shadow: 0 0 0 3px #7aa01f; }
   display: block; width: 100%; height: 100%; object-fit: contain; background: #000;
 }
 .tpl-thumb.has-media .tpl-thumb-media { object-fit: cover; }
+.tpl-thumb-clip { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }   /* a ⚡ Premium clip plays over its still while pointed at */
 #ms-thumb { object-fit: cover; object-position: 50% 50%; width: 100%; height: 132px; }
 
 /* favorite: a quiet ☆ you can always see (it was invisible until hovered —

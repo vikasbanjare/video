@@ -833,7 +833,7 @@ async function magicRun(page, mode) {
         await openPremium(page);
         for (const lang of ['hinglish', 'devanagari']) {
           await useTranscript(page, dir, lang);
-          for (const m of VISIBLE.filter(x => /Apex|Echo|Halo/.test(x.name))) {
+          for (const m of VISIBLE.filter(x => /Apex|Drift|Halo/.test(x.name))) {
             const tag = 'Premium ' + m.name + ' ' + W + '×' + H + ' ' + lang;
             const pv = await page.evaluate(async (name) => {
               const sl = ms => new Promise(r => setTimeout(r, ms));

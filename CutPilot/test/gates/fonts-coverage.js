@@ -148,10 +148,21 @@ if (!pptr || !exe) { console.log('  ? no puppeteer/Chromium — panel part skipp
       out.macFaceOnMac = X.resolve('Helvetica Neue', 'Make every word count');
     } finally { if (plat) Object.defineProperty(Navigator.prototype, 'platform', plat); }
     out.macFaceElsewhere = X.resolve('Helvetica Neue', 'Make every word count');
+    // a Hindi-first style drawn while another (Latin) style is picked — the
+    // style audit after 🧪 Test everything: its face must still draw Hindi
+    // (the owner's v0.10.9 log: Tiro, Anek, Mukta… went out as Avenir Next)
+    X.setCoverage([{ name: 'Avenir Next', latin: true, devanagari: false }, { name: 'Kohinoor Devanagari', latin: true, devanagari: true },
+                   { name: 'Helvetica Neue', latin: true, devanagari: false }]);
+    out.devaStyleWhileLatinPicked = ['tr-desi-punch', 'tr-hindi-podcast', 'tr-bubble-pop'].map(id => {
+      const f = X.resolveStyle(id, 'Your words here');
+      return id + ':' + (f && f.family);
+    });
     return out;
   });
   await browser.close();
   if (r.fatal) { bad(r.fatal); process.exit(1); }
+  if (!r.devaStyleWhileLatinPicked.every(x => /Kohinoor Devanagari$/.test(x))) bad('a Hindi-first style drawn while a Latin style is picked goes out in a face without Hindi: ' + r.devaStyleWhileLatinPicked.join(', '));
+  else ok('a Hindi-first style keeps a Hindi face whichever style is picked (' + r.devaStyleWhileLatinPicked.join(', ') + ')');
   if (r.copticOffered || r.adlamOffered) bad('the font picker still offers faces that draw neither English nor Hindi');
   else ok('the picker hides faces that draw neither English nor Hindi (' + r.hidden.join(', ') + ')');
   if (!/हिंदी/.test(r.kohinoorLabel) || /only/.test(r.kohinoorLabel)) bad('a Hindi+English font is not labelled "हिंदी": ' + r.kohinoorLabel);

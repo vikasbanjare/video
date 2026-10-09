@@ -279,7 +279,13 @@
     try { row('Platform: ' + ((typeof navigator !== 'undefined' && navigator.platform) || '?') + ' · in Premiere: ' + (typeof CPBridge !== 'undefined' && CPBridge.isCEP() ? 'yes' : 'no')); } catch (e) {}
     try { row('ffmpeg: ' + (resolveFfmpeg() || 'NOT FOUND')); } catch (e) {}
     // whether Premiere loaded Pulse's script (jsx/host.jsx) — "unknown" until a call needed checking
-    try { var hs = CPBridge.hostState ? CPBridge.hostState() : null; if (hs) row('Premiere script: ' + hs.state + (hs.detail ? ' — ' + hs.detail : '')); } catch (e) {}
+    try {
+      var hs = CPBridge.hostState ? CPBridge.hostState() : null;
+      // 'unknown' only means Pulse never had to repair it: if Premiere has
+      // answered (the sequence was read), the script is loaded and working
+      if (hs && hs.state === 'unknown' && state.env) row('Premiere script: loaded — answering');
+      else if (hs) row('Premiere script: ' + hs.state + (hs.detail ? ' — ' + hs.detail : ''));
+    } catch (e) {}
     try { row('Transcribe key: ' + (cpKey() ? 'set' : 'none') + ' · Deepgram: ' + (cpDeepgramKey() ? 'set' : 'none') + ' · Indian Voices: ' + (cpSarvamKey() ? 'set' : 'none') + ' · engine: ' + resolveQuality()); } catch (e) {}
     // Which text model the AI features settled on. A retired model broke every
     // one of them at once and the panel could not say which model it had asked
@@ -5851,8 +5857,34 @@
       img.src = t.thumb;
       thumb.appendChild(img);
     }
-    if (showReal) {
-      if (userPrev || (isMogrt && !t.video)) thumb.className += ' has-media';   // compact band, cover-cropped
+    // A ⚡ Premium card with a still shows the still — the template's words
+    // settled, cropped to them — and plays its clip only while the pointer is
+    // on it. The owner's screenshot ("fix this preview also"): cards playing
+    // their loop were caught mid-animation — blobs over the words, "FluxVor t".
+    if (showReal && isMogrt && t.flux && t.thumb && t.video && !userPrev) {
+      var clipUrl = t.video, hoverClip = null;
+      thumb.setAttribute('data-clip', clipUrl);
+      mountImg();
+      card.addEventListener('mouseenter', function () {
+        if (hoverClip) return;
+        hoverClip = document.createElement('video');
+        hoverClip.muted = true; hoverClip.loop = true; hoverClip.autoplay = true;
+        hoverClip.setAttribute('muted', ''); hoverClip.setAttribute('playsinline', '');
+        hoverClip.className = 'tpl-thumb-media tpl-thumb-clip';
+        hoverClip.poster = t.thumb;
+        hoverClip.addEventListener('error', function () { try { thumb.removeChild(hoverClip); } catch (eC) {} hoverClip = null; });
+        hoverClip.src = clipUrl;
+        thumb.appendChild(hoverClip);
+        try { var hp = hoverClip.play(); if (hp && hp.catch) hp.catch(function () {}); } catch (eHp) {}
+      });
+      card.addEventListener('mouseleave', function () {
+        if (!hoverClip) return;
+        try { hoverClip.pause(); thumb.removeChild(hoverClip); } catch (eL) {}
+        hoverClip = null;
+      });
+    } else if (showReal) {
+      // ⚡ Premium stills are cropped to their words: shown whole (contain), never cut
+      if (userPrev || (isMogrt && !t.video && !t.flux)) thumb.className += ' has-media';   // compact band, cover-cropped
       var mogrtStillPos = (isMogrt && !t.video && !userPrev) ? '50% 50%' : null;   // shipped stills: centred caption band
       var srcUrl = userPrev ? userPrev.url : (t.video || t.thumb);
       var isVid = userPrev ? userPrev.video : !!t.video;
@@ -6350,6 +6382,8 @@
     setCoverage: function (list) { setInstalledFontCoverage(list); buildFontSelect($('c-font').value); },
     options: function () { return fontOptionList().map(function (o) { return { value: o.value, label: o.label }; }); },
     resolve: function (font, text) { var p = {}; var sp = styledPreset(); for (var k in sp) p[k] = sp[k]; p.font = font; return resolvedEditorFont(p, text); },
+    // a given STYLE (not the one picked on screen), as the style audit draws it
+    resolveStyle: function (id, text) { return resolvedEditorFont(findTemplate(id), text); },
     setFont: function (f) { setFontValue(f); },
     font: function () { return $('c-font').value; },
     repair: function () { repairUndrawableFont(); return $('c-font').value; },
@@ -7352,26 +7386,29 @@
     }
     return picked.length >= 3 ? picked.join(' ') : 'Make every word count';
   }
-  /* Rendered frames (<base>_00.png, _01…) → the card's preview: the area
-     around the caption over all frames (2:1, padded, at least 40% of the
-     frame wide), a loop at 7 fps and a still from three quarters in.
-     FW × FH = the size the frames were rendered at. */
+  /* Rendered frames (<base>_00.png, _01…) → the card's preview: a still from
+     three quarters in (the caption has settled), the crop fitted to ITS
+     words (2:1, the words 80% of the card wide or half its height, at most
+     3× zoom — the area the caption covered over all frames, entry animation
+     included, left Halo/Prism a tiny box in a big card), and a loop at 7 fps
+     under the same crop. FW × FH = the size the frames were rendered at. */
   function makePremiumPreview(ff, files, outNoExt, FW, FH) {
     if (!files || files.length < 2) return Promise.reject(new Error('Premiere exported no frames'));
     var pattern = String(files[0]).replace(/_00\.png$/, '_%02d.png');
     // ffmpeg's bbox: the exact box of non-black pixels in each frame (cropdetect
     // averages whole columns, so a thin caption in a tall frame read as nothing)
-    return runProc(ff, ['-hide_banner', '-framerate', '7', '-i', pattern, '-vf', 'bbox=min_val=24', '-f', 'null', '-']).then(function (err) {
+    var still = files[Math.floor(files.length * 0.75)];
+    return runProc(ff, ['-hide_banner', '-i', still, '-vf', 'bbox=min_val=24', '-f', 'null', '-']).then(function (err) {
       var c = premiumBox(err);
       if (!c) throw new Error('nothing visible in Premiere’s frames');
       var even = function (v) { return Math.max(2, Math.round(v / 2) * 2); };
-      var W = Math.min(FW, Math.max(c[0] * 1.3 + 24, (c[1] * 1.6 + 24) * 2, FW * 0.4)), H = Math.min(FH, W / 2);
+      var W = Math.min(FW, Math.max(c[0] / 0.8, (c[1] / 0.5) * 2, 128)), H = Math.min(FH, W / 2);
       W = even(H * 2 > FW ? FW : H * 2); H = even(W / 2);
       var X = Math.min(FW - W, even(Math.max(0, c[2] + c[0] / 2 - W / 2))), Y = Math.min(FH - H, even(Math.max(0, c[3] + c[1] / 2 - H / 2)));
       var crop = 'crop=' + W + ':' + H + ':' + X + ':' + Y + ',scale=384:192:flags=lanczos';
       return runProc(ff, ['-y', '-hide_banner', '-framerate', '7', '-i', pattern, '-vf', crop + ',format=yuv420p', '-an',
         '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '20', '-movflags', '+faststart', outNoExt + '.mp4']).then(function () {
-        return runProc(ff, ['-y', '-hide_banner', '-i', files[Math.floor(files.length * 0.75)], '-vf', crop, outNoExt + '.png']);
+        return runProc(ff, ['-y', '-hide_banner', '-i', still, '-vf', crop, outNoExt + '.png']);
       });
     });
   }
@@ -11237,7 +11274,7 @@
           }
           mpAddFontSelect(box, 'Font', startPs, function (v) { if (v) { fFamily = (String(v).split('-')[0]) || fFamily; applyFont(); } });
           mpAddSelect(box, 'Weight', WEIGHTS.map(function (x) { return { value: x, label: x }; }), fWeight, function (v) { fWeight = v || 'Regular'; applyFont(); });
-          // a template with no size control of its own (Flux Echo) is brought to
+          // a template with no size control of its own (Flux Drift) is brought to
           // caption size through its font size: show that, not 100%
           var fsNow = (state.mogrtTextStyle && state.mogrtTextStyle.sizeScale != null) ? state.mogrtTextStyle.sizeScale
                     : (sizePlan && sizePlan.fit && sizePlan.knob === 'sizeScale') ? sizePlan.knobValue : 1;
@@ -12393,6 +12430,12 @@
     var needs = CPFonts.scriptNeeds(text || '');
     var own = null, devaStyle = false;
     try { var t = currentPreset && currentPreset(); own = t && t.font; devaStyle = !!(t && t.script === 'deva'); } catch (e) {}
+    // the style being drawn decides, not the one picked on screen: the style
+    // audit renders all 128, and a Hindi-first face (Tiro, Anek, Mukta…) went
+    // out as Avenir Next — no Hindi letters — because the picked style was not
+    // Hindi-first
+    if (preset && preset.script) devaStyle = preset.script === 'deva';
+    if (preset && preset.id && t && preset.id !== t.id) own = null;
     var pick = editableFamily(want, needs, own, devaStyle);
     var c = pick.family;
     if (c !== want) {
@@ -12401,7 +12444,9 @@
         _fontSwapToasted[key] = 1;
         var script = (needs.devanagari && !(fontCoverage(want) || {}).devanagari) ? 'Hindi' : 'English';
         try { diag('fonts', 'send-time swap: "' + want + '" ' + (pick.why === 'missing' ? 'is not installed' : 'cannot draw these words') + ' → "' + c + '"'); } catch (eD) {}
-        toast(pick.why === 'missing'
+        // the background style audit renders every style: one quiet line each
+        // in Diagnostics, not a stack of error messages on screen
+        if (!_truePrevBusy) toast(pick.why === 'missing'
           ? '“' + want + '” isn’t installed on this computer, and Premiere can only use installed fonts — so these editable captions use “' + c + '” instead.'
           : '“' + want + '” can’t draw ' + script + ' letters, so these captions use “' + c + '” instead.', true);
       }
