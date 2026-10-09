@@ -1503,7 +1503,7 @@
   // spawn two whisper/ffmpeg passes racing on the same temp files.
   function setTranscribing(on) {
     state.transcribing = !!on;
-    ['btn-tr-auto-main', 'btn-tr-auto-ai', 'ms-transcribe', 'btn-tr-auto'].forEach(function (id) {
+    ['btn-tr-auto-ai', 'ms-transcribe', 'btn-tr-auto', 'btn-mogrt-transcribe'].forEach(function (id) {
       var b = $(id); if (b) b.disabled = !!on;
     });
   }
@@ -1588,17 +1588,31 @@
   /* "Transcribe + auto-correct": same transcription, then an automatic AI
      proofread pass (fixes misheard words like "indiyya" → "India"). Needs the
      free Groq key for the correction step. */
+  /* The owner: "in Transcribe I want one option where I can turn off auto
+     correction with AI — by default it should be on". ✨ Fix misheard words
+     with AI (settings.trAiFix, on unless switched off) decides whether every
+     Transcribe button runs the AI proofread after; without a speech key the
+     words are still transcribed, and the switch says why nothing was fixed. */
+  function aiFixWanted() { return settings.trAiFix !== false; }
+  function refreshAiFixSwitch() {
+    var cb = $('tr-aifix'), hint = $('tr-aifix-hint');
+    if (cb) cb.checked = aiFixWanted();
+    if (hint) {
+      var noKey = aiFixWanted() && !cpKey();
+      hint.textContent = noKey ? 'AI fixes need your free speech key (Settings → Auto-transcribe, the ☁️ box) — until then the words are kept as heard.' : '';
+      hint.classList.toggle('hidden', !noKey);
+    }
+  }
   function autoTranscribeAI() {
     if (state.transcribing) return toast('Already transcribing — hang tight…');
-    if (!cpKey()) {
-      return toast('“Transcribe” fixes misheard words with your free speech key: paste it in Settings → Auto-transcribe (the ☁️ box), or tap “Fast”. Get one at console.groq.com/keys.', true);
-    }
-    state.autoFixAfter = true;     // the terminal of autoTranscribe runs the AI fix
-    autoTranscribe();
+    state.autoFixAfter = aiFixWanted() && !!cpKey();   // the terminal of autoTranscribe runs the AI fix
+    autoTranscribe(true);
   }
 
-  function autoTranscribe() {
+  function autoTranscribe(viaSwitch) {
     if (state.transcribing) return toast('Already transcribing — hang tight, this can take a minute…');
+    // every Transcribe button follows ✨ Fix misheard words with AI
+    if (viaSwitch !== true) state.autoFixAfter = aiFixWanted() && !!cpKey();
     var cloud = (resolveQuality() === 'cloud-groq');
     var swara = (resolveQuality() === 'cloud-swara');     // Sarvam AI (Indian languages)
     var dgram = (resolveQuality() === 'cloud-deepgram');  // Deepgram nova-3 (user's own key)
@@ -1996,6 +2010,7 @@
       // go back to check if we have any." It used to land in the editor of the
       // last style. Now it always opens on the gallery; "✨ Add captions" sits
       // in a bar pinned under it, so the action is never more than one tap away.
+      if (this.dataset.tab === 'transcribe') { try { refreshAiFixSwitch(); } catch (eAf) {} }
       if (this.dataset.tab === 'captions') {
         try { refreshEditWordsButtons(); } catch (eEw) {}
         try {
@@ -2883,8 +2898,11 @@
     });
     $('btn-tr-again').addEventListener('click', findTranscript);
     if ($('btn-tr-auto')) $('btn-tr-auto').addEventListener('click', autoTranscribe);
-    if ($('btn-tr-auto-main')) $('btn-tr-auto-main').addEventListener('click', autoTranscribe);
     if ($('btn-tr-auto-ai')) $('btn-tr-auto-ai').addEventListener('click', autoTranscribeAI);
+    if ($('tr-aifix')) $('tr-aifix').addEventListener('change', function () {
+      settings.trAiFix = !!this.checked; saveSettings(); refreshAiFixSwitch();
+    });
+    refreshAiFixSwitch();
     // "↻ Redo" — ALWAYS listens again from scratch, ignoring any saved
     // transcript for this clip (use after trimming/re-editing the video).
     if ($('btn-retranscribe')) $('btn-retranscribe').addEventListener('click', function () {

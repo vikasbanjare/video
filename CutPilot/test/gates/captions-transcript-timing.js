@@ -148,7 +148,26 @@ async function run() {
       const fixed = w1.find(w => w.text === 'achha');
       C.check('the corrected word "achha" lights at the time "accha" was said (6.25-6.70 s)', !!fixed && near(fixed.start, 6.25) && near(fixed.end, 6.7), JSON.stringify(fixed));
       C.check('no word is doubled or lost by the fix (13 words)', w1.length === 13, w1.length + ': ' + JSON.stringify(w1.map(w => w.text)));
+      // ✨ Fix misheard words with AI: on by default; switched off, the words
+      // stay as heard (the owner: "one option where I can turn off auto
+      // correction with AI — by default it should be on") — and it is remembered
+      const sw0 = await page.evaluate(() => { const e = document.getElementById('tr-aifix'); return !!(e && e.checked); });
       await page.close();
+      const asked0 = fixAsked;
+      const p2 = (await H.openPanel(browser, { host: hostFor(SHORT, 12), curl, settings: { groqKey: 'gsk-test-key', ffmpegPath: FF, whisperLang: 'auto' }, ffmpeg: FF })).page;
+      const remembered = await p2.evaluate(() => {
+        const af = document.getElementById('tr-aifix'); af.checked = false; af.dispatchEvent(new Event('change'));
+        let saved = null; try { saved = JSON.parse(localStorage.getItem('cutpilot.settings')).trAiFix; } catch (e) {}
+        document.getElementById('btn-tr-auto-ai').click();
+        return saved;
+      });
+      await waitLabel(p2, /Pulse transcript|AI-corrected/);
+      await new Promise(res => setTimeout(res, 800));
+      const w2 = await words(p2), label2 = await p2.evaluate(() => window.CP_DEBUG_EXT.sync.transcript().label || '');
+      C.check('✨ Fix misheard words with AI is on by default, and switched off (remembered) Transcribe keeps the words as heard — no AI asked',
+        sw0 && remembered === false && fixAsked === asked0 && !/AI-corrected/.test(label2) && w2.some(w => /^accha$/i.test(w.text)),
+        JSON.stringify({ onByDefault: sw0, remembered, asked: fixAsked - asked0, label: label2 }));
+      await p2.close();
     }
 
     // ── 2 ── Hinglish: a word on the edge of two lines is in exactly one ────
@@ -162,7 +181,7 @@ async function run() {
         return '{}';     // the AI romaniser is unavailable → the built-in one
       };
       const { page } = await H.openPanel(browser, { host: hostFor(SHORT, 12), curl, settings: { groqKey: 'gsk-test-key', ffmpegPath: FF, whisperLang: 'hinglish' }, ffmpeg: FF });
-      await page.evaluate(() => { document.getElementById('btn-tr-auto-main').click(); });
+      await page.evaluate(() => { { const af = document.getElementById('tr-aifix'); af.checked = false; af.dispatchEvent(new Event('change')); } document.getElementById('btn-tr-auto-ai').click(); });
       await waitLabel(page, /Pulse transcript/);
       const l = await lines(page), w = await words(page);
       const lineToks = l.map(c => c.text.split(/\s+/).filter(Boolean)).reduce((a, b) => a.concat(b), []);
@@ -202,7 +221,7 @@ async function run() {
       };
       const { page } = await H.openPanel(browser, { host: hostFor(LONG, 40), curl,
         settings: { sarvamKey: 'sk-test', whisperQuality: 'cloud-swara', sarvamLang: 'hi-IN', ffmpegPath: FF }, ffmpeg: FF });
-      await page.evaluate(() => { document.getElementById('btn-tr-auto-main').click(); });
+      await page.evaluate(() => { { const af = document.getElementById('tr-aifix'); af.checked = false; af.dispatchEvent(new Event('change')); } document.getElementById('btn-tr-auto-ai').click(); });
       await waitLabel(page, /Pulse transcript/, 60000);
       const w = await words(page);
       C.check('Indian Voices: the 40 s recording went up in 2 pieces', asked === 2, 'requests: ' + asked);
@@ -256,7 +275,7 @@ async function run() {
             ? { size: 60 * 1024 * 1024, mtimeMs: 0, mtime: new Date(0), isFile: () => true, isDirectory: () => false } : mod.statSync(p) });
         };
       });
-      await page.evaluate(() => { document.getElementById('btn-tr-auto-main').click(); });
+      await page.evaluate(() => { { const af = document.getElementById('tr-aifix'); af.checked = false; af.dispatchEvent(new Event('change')); } document.getElementById('btn-tr-auto-ai').click(); });
       await waitLabel(page, /Pulse transcript/, 60000);
       const w = await words(page), l = await lines(page);
       C.check('Groq: the too-big recording went up in overlapping pieces', parts.length >= 3 && parts.slice(0, -1).every(p => p.dur > 4.5),
@@ -388,7 +407,7 @@ async function run() {
         return null;
       });
       const { page } = await H.openPanel(browser, { host, curl, settings: { deepgramKey: 'dg-test', whisperQuality: 'cloud-deepgram', ffmpegPath: FF, whisperLang: 'en' }, ffmpeg: FF });
-      await page.evaluate(() => { document.getElementById('btn-tr-auto-main').click(); });
+      await page.evaluate(() => { { const af = document.getElementById('tr-aifix'); af.checked = false; af.dispatchEvent(new Event('change')); } document.getElementById('btn-tr-auto-ai').click(); });
       await waitLabel(page, /Pulse transcript/);
       const dg = urls.find(u => /deepgram/.test(u)) || '';
       C.check('Deepgram is asked for every word, "um"/"uh" included (filler_words=true)', /filler_words=true/.test(dg) && !/filler_words=false/.test(dg), dg);

@@ -34,7 +34,7 @@ const KEPT = [
   "btn-script-load", "btn-selftest", "btn-sfx-add", "btn-sfx-preview", "btn-smart-cleanup",
   "btn-speaker-reframe", "btn-takes-apply", "btn-takes-cut", "btn-takes-find", "btn-tpl-import",
   "btn-tpl-inspect", "btn-tpl-preview", "btn-tpl-rescan", "btn-tpl-testfill", "btn-tr-again", "btn-tr-auto-ai",
-  "btn-tr-auto-main", "btn-tr-change", "btn-tr-edit", "btn-tr-pick", "btn-translate", "btn-true-prev",
+  "btn-tr-change", "btn-tr-edit", "btn-tr-pick", "btn-translate", "btn-true-prev",
   "btn-verbatim-retakes", "btn-viral-edit", "c-align", "c-box", "c-box-on", "c-box-opacity",
   "c-box-opacity-val", "c-box-opacity-wrap", "c-box-pad", "c-box-pad-val", "c-box-radius", "c-box-radius-val",
   "c-box2", "c-box3d", "c-box3d-depth", "c-box3d-depth-val", "c-boxgloss", "c-boxgloss-val", "c-boxglow",

@@ -116,7 +116,7 @@ async function run() {
       await page.evaluate(() => {
         window.CP_DEBUG_EXT.sync.setTranscript({});
         document.getElementById('toast').textContent = '';
-        document.getElementById('btn-tr-auto-main').click();
+        { const af = document.getElementById('tr-aifix'); af.checked = false; af.dispatchEvent(new Event('change')); } document.getElementById('btn-tr-auto-ai').click();
       });
       let t = null, toast = '';
       for (let i = 0; i < 400; i++) {

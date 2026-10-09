@@ -114,9 +114,12 @@
         <button class="link-btn" id="btn-tr-change">Change</button>
       </div>
       <div class="page-actions">
-        <button id="btn-tr-auto-ai" class="hero-btn" title="Transcribe, then let AI fix misheard words (recommended)">✨ Transcribe</button>
-        <button id="btn-tr-auto-main" class="hero-btn alt" title="Transcribe without AI fixes — fastest">Fast</button>
+        <button id="btn-tr-auto-ai" class="hero-btn" title="Turn your clip's speech into words">✨ Transcribe</button>
       </div>
+      <label class="check" style="margin:6px 0 0" title="After transcribing, AI corrects words it misheard (e.g. “indiyya” → “India”). Turn off to keep exactly what was heard.">
+        <input type="checkbox" id="tr-aifix" checked> ✨ Fix misheard words with AI <span class="dim">(recommended)</span>
+      </label>
+      <p class="hint hidden" id="tr-aifix-hint" style="margin:2px 0 0"></p>
       <div class="row tight">
         <button id="btn-tr-edit" class="chip-btn">✏️ Review &amp; edit</button>
         <button id="btn-retranscribe" class="chip-btn" title="Listen to the audio again from scratch (after you trimmed or re-edited the video)">↻ Redo</button>
