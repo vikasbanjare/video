@@ -1332,3 +1332,9 @@ body #tab-organize .cpo-run .cpo-spinner { border-color: rgba(20,24,10,.3); bord
 /* Shorts → 👥 Mark the people: a frame of the video with a box per person */
 .sh-mark-stage { margin-top: 8px; }
 .sh-mark-stage canvas { display: block; width: 100%; border-radius: 8px; background: #000; touch-action: none; cursor: crosshair; }
+
+/* 📝 Premiere captions: its own one-line note under Caption type */
+.premiere-only { display: none; }
+body.cap-premiere .premiere-only { display: block; }
+body.cap-premiere .png-only.hint { display: none; }
+body.cap-premiere #wc-block { display: none; }   /* Premiere captions group whole phrases */

@@ -364,10 +364,12 @@
         <span class="field-label">Caption type <button class="info" type="button" data-info="capout-info" aria-label="Which caption type?">ⓘ</button></span>
         <div class="seg-control" id="cap-output" style="margin-bottom:6px">
           <button data-out="png" class="on" type="button">✨ Pulse-rendered</button>
-          <button data-out="editable" type="button">✏️ Editable</button>
+          <button data-out="editable" type="button" title="Your style as Premiere graphics you retype in Premiere — beta">✏️ Styled (beta)</button>
+          <button data-out="premiere" type="button" title="Premiere's own caption track — every word editable, always visible">📝 Premiere</button>
         </div>
-        <div class="info-pop hidden" id="capout-info">✨ <b>Pulse-rendered</b>: box, words and the word highlight are drawn together — always lined up, exactly your colours. You can still fix any word later from Pulse. ✏️ <b>Editable</b>: Premiere graphics you retype in Premiere itself (needs the template to behave on your Mac).</div>
+        <div class="info-pop hidden" id="capout-info">✨ <b>Pulse-rendered</b>: box, words and the word highlight are drawn together — always lined up, exactly your colours. You can still fix any word later from Pulse. ✏️ <b>Styled (beta)</b>: your style as Premiere graphics you retype in Premiere itself (needs the template to behave on your Mac). 📝 <b>Premiere</b>: Premiere's own caption track — every word editable in Window → Text, always visible; its look comes from Premiere's caption style, not Pulse's styles.</div>
         <p class="hint png-only" style="margin:0 0 8px">Exact look, fixable any time from Pulse.</p>
+        <p class="hint premiere-only" style="margin:0 0 8px">Premiere's own captions, as spoken — edit in Window → Text.</p>
         <p class="hint editable-only cap-hidden-line" id="cap-hidden-line">✏️ Editable hides <b id="cap-hidden-n">some</b> Pulse-only settings. <button type="button" class="link-btn" id="btn-cap-to-pulse">Show them: switch to ✨ Pulse-rendered</button></p>
         </div>
 

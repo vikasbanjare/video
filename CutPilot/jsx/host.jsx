@@ -4760,41 +4760,6 @@ function CP_probeRealSequence(argsJson) {
 /* Export ONE real frame of the ACTIVE sequence at `at` seconds (QE PNG).
    Used by the panel's automatic after-insert render check — the proof that
    the words are visible comes from the user's own timeline, not a test rig. */
-/* Are the captions on a track really visible? For each time: a frame of
-   the sequence as it is, then the same frame with that track's output off.
-   The panel compares the pairs — a caption that paints nothing makes no
-   difference. The track's own on/off state is put back. (A contrast test on
-   one frame passed on any real video: the picture behind has contrast.) */
-function CP_captionVisibility(argsJson) {
-  try {
-    var args = JSON.parse(argsJson);
-    var seq = CP_activeSequence();
-    if (!seq) return CP_fail('No active sequence.');
-    var ti = (args.track || 1) - 1, track = seq.videoTracks[ti];
-    if (!track) return CP_fail('No video track V' + (ti + 1) + '.');
-    app.enableQE();
-    var qseq = qe.project.getActiveSequence();
-    var times = args.times || [], base = String(args.base || ''), out = [];
-    var wasMuted = false;
-    try { wasMuted = (typeof track.isMuted === 'function') && !!track.isMuted(); } catch (eM) {}
-    function grab(at, name) {
-      try { seq.setPlayerPosition(CP_ticksFromSeconds(at)); } catch (eP) {}
-      var tc = null;
-      try { tc = qseq.CTI.timecode; } catch (eT) {}
-      var ok = false;
-      try { ok = qseq.exportFramePNG(tc, name); } catch (eX) {}
-      return ok !== false;
-    }
-    var i;
-    try { if (track.setMute) track.setMute(0); } catch (eU0) {}
-    for (i = 0; i < times.length; i++) out.push({ at: times[i], on: base + '_' + i + '_on.png', off: base + '_' + i + '_off.png', okOn: grab(times[i], base + '_' + i + '_on') });
-    try { if (track.setMute) track.setMute(1); } catch (eU1) {}
-    for (i = 0; i < times.length; i++) out[i].okOff = grab(times[i], base + '_' + i + '_off');
-    try { if (track.setMute) track.setMute(wasMuted ? 1 : 0); } catch (eU2) {}
-    return CP_ok({ frames: out, track: ti + 1 });
-  } catch (e) { return CP_fail(e.message); }
-}
-
 function CP_captureSequenceFrame(argsJson) {
   try {
     var args = JSON.parse(argsJson);

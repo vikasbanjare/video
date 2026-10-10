@@ -138,15 +138,6 @@ function scriptedPremiere(o) {
       fs.writeFileSync(a.outPath.replace(/\.png$/i, '') + '.png', frameAt(a.at, null));
       return ok({ exported: true, at: a.at, file: a.outPath });
     },
-    // the editable captions' check: each time with the track's output on, then off
-    CP_captionVisibility(a) {
-      if (o.noFrames) return ok({ track: a.track, frames: a.times.map((t, i) => ({ at: t, on: a.base + '_' + i + '_on.png', off: a.base + '_' + i + '_off.png', okOn: false, okOff: false })) });
-      return ok({ track: a.track, frames: a.times.map((t, i) => {
-        const on = a.base + '_' + i + '_on.png', off = a.base + '_' + i + '_off.png';
-        fs.writeFileSync(on, frameAt(t, null)); fs.writeFileSync(off, frameAt(t, a.track));
-        return { at: t, on, off, okOn: true, okOff: true };
-      }) });
-    },
     CP_clearCaptionTrack(a) { const n = tl.captions.length; tl.captions = tl.captions.filter(c => c.track !== a.track); return ok({ cleared: n - tl.captions.length, top: true }); },
     CP_importClip(a) { tl.short = { name: a.name, path: a.path }; tl.active = a.name; log.short = a; return ok({ imported: true, sequence: a.name }); },
     CP_applyMulticamPlan(a) {

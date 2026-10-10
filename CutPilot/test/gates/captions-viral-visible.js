@@ -11,12 +11,20 @@
  * real fs and ffmpeg; Premiere is the mini-Premiere with the calls recorded):
  *   A. Viral edit with ✨ Pulse-rendered picked: the zoom punch-ins, then
  *      Pulse-rendered captions placed (caption images) — no template inserted;
- *   B. Viral edit with ✏️ Editable picked: the editable path (template
- *      inserted), as the owner chose;
- *   C. editable captions that paint nothing (frames identical with their
- *      track on and off, at the first, middle and last caption): Pulse says
- *      so and replaces them with Pulse-rendered captions on that track;
- *   D. editable captions that show: left alone, and the check says where.
+ *   B. Viral edit with ✏️ Styled (beta) picked: the editable path (template
+ *      inserted), as the owner chose; with 📝 Premiere picked (the owner:
+ *      "both, I choose each time"): Premiere's own caption track from an
+ *      .srt of the words, no template, no caption images;
+ *   C. editable captions that paint nothing (frames identical before and
+ *      after they go in, at the first, middle and last caption): Pulse says
+ *      so and ASKS — they stay on the timeline (v0.10.13 deleted them by
+ *      itself: "it lays out all the layers, then deletes everything and puts
+ *      the captions back non-editable"); only "Use Pulse-rendered" replaces them;
+ *   D. editable captions that show: left alone, no question, and the check
+ *      says where it looked.
+ * (v0.10.13 compared frames with the caption track's output off and on —
+ * Premiere can ignore a script turning a video track off, so every caption
+ * read as blank on the owner's Mac.)
  */
 'use strict';
 const fs = require('fs');
@@ -53,18 +61,21 @@ function png(file, words) {
     const harness = L.loadHostHarness();
     const prem = L.newPremiere(harness, { width: 1080, height: 1920, fps: 30, sequenceName: 'Tax-Efficient Funds', projectPath: path.join(root, label, 'P.prproj') });
     const calls = [];
+    let inserted = false;
     const real = prem.host;
     const rec = (fn, ret) => (a) => { calls.push({ fn, args: a ? JSON.parse(a) : null }); return JSON.stringify(Object.assign({ ok: true }, typeof ret === 'function' ? ret(a ? JSON.parse(a) : null) : ret)); };
     prem.host = Object.assign({}, real, {
       CP_addZoomPunches: rec('CP_addZoomPunches', { applied: 1, skipped: 0 }),
       CP_placeCaptionImages: rec('CP_placeCaptionImages', (a) => ({ track: 3, placed: (a.items || []).length })),
-      CP_insertMogrtCaptions: rec('CP_insertMogrtCaptions', { inserted: 3, textSet: 3, track: 3 }),
+      CP_insertMogrtCaptions: rec('CP_insertMogrtCaptions', () => { inserted = true; return { inserted: 3, textSet: 3, track: 3 }; }),
       CP_clearCaptionTrack: rec('CP_clearCaptionTrack', { cleared: 3, top: true }),
-      CP_captionVisibility: rec('CP_captionVisibility', (a) => ({ track: a.track, frames: a.times.map((t, i) => {
-        const on = a.base + '_' + i + '_on.png', off = a.base + '_' + i + '_off.png';
-        png(on, visible); png(off, false);
-        return { at: t, on, off, okOn: true, okOff: true };
-      }) }))
+      CP_importSrtCaptions: rec('CP_importSrtCaptions', { captionTrackCreated: true }),
+      // a frame of the sequence: the captions once they are in (when they paint)
+      CP_captureSequenceFrame: rec('CP_captureSequenceFrame', (a) => {
+        const file = String(a.outPath).replace(/\.png$/i, '') + '.png';
+        png(file, inserted && visible);
+        return { exported: true, at: a.at, file };
+      })
     });
     P.bridge.state.premiere = prem;
     return { P, calls };
@@ -104,6 +115,27 @@ function png(file, words) {
       'B. ✏️ Editable picked: Viral edit takes the editable path the owner chose (' + fns.join(' → ') + ')');
     await P.close();
   }
+  // ---- B2. Viral edit, 📝 Premiere picked ----
+  {
+    const { P, calls } = await panel('b2', true);
+    const label = await P.page.evaluate(async (srt) => {
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      window.CP_DEBUG_EXT.sync.setTranscript({ transcript: { label: 'test', path: srt, mtime: 1e16 } });
+      document.querySelector('.tab[data-tab="captions"]').click(); await sleep(300);
+      window.CP_DEBUG_EXT.shorts.setCapOut('premiere');
+      const l = document.getElementById('btn-magic').textContent;
+      window.CP_DEBUG_EXT.shorts.viral();
+      await sleep(3000);
+      return l;
+    }, srt);
+    const fns = calls.map(c => c.fn), srtCall = calls.find(c => c.fn === 'CP_importSrtCaptions');
+    let srtText = '';
+    try { srtText = fs.readFileSync(srtCall.args.srtPath, 'utf8'); } catch (e) {}
+    (/Premiere captions/.test(label) && fns.indexOf('CP_addZoomPunches') >= 0 && srtCall && /Why\s+do\s+most\s+people\s+fail/.test(srtText) && !/WHY/.test(srtText) &&
+     fns.indexOf('CP_insertMogrtCaptions') < 0 && fns.indexOf('CP_placeCaptionImages') < 0 ? ok : bad)(
+      'B. 📝 Premiere picked: the button says “' + label + '”; Viral edit adds the zooms, then Premiere\'s own caption track, whole phrases as spoken (' + fns.join(' → ') + ': ' + JSON.stringify(srtText.split('\n')[2]) + ')');
+    await P.close();
+  }
   // ---- C / D. the check after editable captions ----
   for (const visible of [false, true]) {
     const { P, calls } = await panel(visible ? 'd' : 'c', visible);
@@ -111,21 +143,25 @@ function png(file, words) {
       const sleep = ms => new Promise(r => setTimeout(r, ms));
       window.CP_DEBUG_EXT.sync.setTranscript({ transcript: { label: 'test', path: srt, mtime: 1e16 } });
       document.querySelector('.tab[data-tab="captions"]').click(); await sleep(300);
-      const toasts = [];
-      new MutationObserver(() => toasts.push((document.getElementById('toast') || {}).textContent)).observe(document.getElementById('toast'), { childList: true, characterData: true, subtree: true });
-      window.CP_DEBUG_EXT.shorts.verifyEditable([{ start: 0.5, end: 2, text: 'a' }, { start: 2.2, end: 4, text: 'b' }, { start: 4.2, end: 6, text: 'c' }], 3, '/x/Flux_Halo2_r3.mogrt');
-      for (let i = 0; i < 100; i++) { await sleep(100); }
-      return { toast: toasts.join(' | '), diag: window.CP_DEBUG_EXT.multicam.diagText() };
+      await window.CP_DEBUG_EXT.shorts.verifyEditable([{ start: 0.5, end: 2, text: 'a' }, { start: 2.2, end: 4, text: 'b' }, { start: 4.2, end: 6, text: 'c' }], 3, '/x/Flux_Halo2_r3.mogrt');
+      for (let i = 0; i < 60 && !document.getElementById('cp-confirm-ov'); i++) await sleep(100);
+      const ov = document.getElementById('cp-confirm-ov');
+      return { asked: ov ? ov.textContent : null, diag: window.CP_DEBUG_EXT.multicam.diagText() };
     }, srt);
-    const fns = calls.map(c => c.fn);
+    const before = calls.map(c => c.fn);
     const line = (r.diag.split('\n').find(l => /render-check: editable captions/.test(l)) || '').trim();
     if (!visible) {
-      const vis = calls.find(c => c.fn === 'CP_captionVisibility');
-      (vis && vis.args.times.length === 3 && /BLANK/.test(line) && fns.indexOf('CP_clearCaptionTrack') >= 0 && fns.indexOf('CP_placeCaptionImages') >= 0 && /blank/i.test(r.toast) ? ok : bad)(
-        'C. blank editable captions (checked at ' + (vis ? vis.args.times.join(' / ') : '?') + ' s) are replaced by Pulse-rendered ones, and Pulse says so — ' + line + ' · ' + fns.join(' → '));
+      const kept = before.indexOf('CP_clearCaptionTrack') < 0 && before.indexOf('CP_placeCaptionImages') < 0;
+      // the owner taps "Use Pulse-rendered"
+      await P.page.evaluate(async () => { document.getElementById('cp-confirm-ok').click(); await new Promise(r => setTimeout(r, 2500)); });
+      const after = calls.map(c => c.fn);
+      (/BLANK/.test(line) && kept && r.asked && /still on V3/.test(r.asked) ? ok : bad)(
+        'C. blank editable captions are reported and KEPT, and Pulse asks — ' + line.slice(0, 160) + ' · asked: ' + JSON.stringify((r.asked || '').slice(0, 90)));
+      (after.indexOf('CP_clearCaptionTrack') >= 0 && after.indexOf('CP_placeCaptionImages') >= 0 ? ok : bad)(
+        'C. only the owner\'s “Use Pulse-rendered” replaces them (' + after.slice(before.length).join(' → ') + ')');
     } else {
-      (/visible \(/.test(line) && !/BLANK/.test(line) && fns.indexOf('CP_clearCaptionTrack') < 0 && fns.indexOf('CP_placeCaptionImages') < 0 ? ok : bad)(
-        'D. visible editable captions are left alone — ' + line);
+      (/visible \(/.test(line) && !/BLANK/.test(line) && !r.asked && before.indexOf('CP_clearCaptionTrack') < 0 && before.indexOf('CP_placeCaptionImages') < 0 ? ok : bad)(
+        'D. visible editable captions are left alone, no question — ' + line.slice(0, 160));
     }
     await P.close();
   }

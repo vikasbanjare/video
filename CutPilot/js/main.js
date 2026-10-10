@@ -4313,8 +4313,8 @@
         return { state: r.applied === 1 ? 'ok' : 'fail', note: 'applied ' + r.applied + ', skipped ' + r.skipped };
       });
     });
-    // first of the caption rows: the check hides this set's own track, so no
-    // other test caption may sit where its words are
+    // first of the caption rows: frames before and after this set, so no
+    // other test caption may come or go where its words are
     add('Editable captions: every caption visible', function () {
       if (!saved) return Promise.resolve({ state: 'warn', note: 'not tried — editable captions need a saved project: save yours once (⌘S), then test again' });
       var preset = styledPreset(), bb = bundledBackbone(preset);
@@ -4323,18 +4323,23 @@
       // the editable-captions engine itself, as it paints words: the first,
       // middle and last of a set must each show (the owner's Viral edit set
       // showed nothing)
-      return host('CP_insertMogrtCaptions', { mogrtPath: bb.path, cues: cues, videoTrack: null, audioTrack: 0, params: [], textStyle: null,
-        stretch: false, replaceTrack: null, captionNames: captionGraphicNames(bb.path), introMode: 'snappy' }).then(function (r) {
+      var before = null;
+      return (framesWork ? grabFrames(visibilityTimes(cues), 'st-before') : Promise.resolve(null)).then(function (bf) {
+        before = bf;
+        return host('CP_insertMogrtCaptions', { mogrtPath: bb.path, cues: cues, videoTrack: null, audioTrack: 0, params: [], textStyle: null,
+          stretch: false, replaceTrack: null, captionNames: captionGraphicNames(bb.path), introMode: 'snappy' });
+      }).then(function (r) {
         if (!r.inserted) return { state: 'fail', note: 'no caption was inserted' + ((r.sampleErrors && r.sampleErrors.length) ? ' · ' + r.sampleErrors[0] : '') };
-        if (!framesWork) return { state: 'warn', note: 'inserted ' + r.inserted + ' (Premiere draws no frames here, so visibility was not measured)' };
-        return checkCaptionsVisible(cues, r.track).then(function (v) {
+        if (!framesWork || !before) return { state: 'warn', note: 'inserted ' + r.inserted + ' (Premiere draws no frames here, so visibility was not measured)' };
+        return grabFrames(visibilityTimes(cues), 'st-after').then(function (after) { return measureVisible(before, after); }).then(function (v) {
+          keepCheckFrames(v.files, 'selftest-editable');
           // take this set off again, so the rows after it measure only their own captions
           return host('CP_clearCaptionTrack', { track: r.track, names: captionGraphicNames(bb.path) }).then(function () { return v; }, function () { return v; });
         }).then(function (v) {
           var rows = v.rows.map(function (x) { return x.at.toFixed(1) + ' s ' + (x.share == null ? 'unreadable' : (x.share < 0.0015 ? 'BLANK' : 'visible')); });
           return { state: v.checked === cues.length && !v.blank.length ? 'ok' : 'fail',
                    note: 'editable captions on V' + r.track + ': ' + rows.join(', ') +
-                     (v.blank.length ? ' — after editable captions Pulse replaces a blank set with ✨ Pulse-rendered ones' : '') };
+                     (v.blank.length ? ' — Premiere drew no words there (its frames: Documents → Pulse → caption-check)' : '') };
         });
       });
     });
@@ -8671,10 +8676,11 @@
     // One short label: the button is pinned under the gallery AND the editor at
     // every panel width. Which kind of captions it makes is picked (and
     // explained, behind its ⓘ) in the editor's "Caption type".
-    b.textContent = (_capOut === 'editable') ? '✏️ Add editable captions' : '✨ Add captions';
+    b.textContent = (_capOut === 'editable') ? '✏️ Add editable captions' : (_capOut === 'premiere' ? '📝 Add Premiere captions' : '✨ Add captions');
     b.title = (_capOut === 'editable')
       ? 'Adds Premiere graphics you can retype in Premiere'
-      : 'Adds your captions in the style you picked — exact look, always lined up';
+      : (_capOut === 'premiere' ? 'Adds Premiere’s own caption track — every word editable in Window → Text'
+                                : 'Adds your captions in the style you picked — exact look, always lined up');
   }
   /* The Styles editor's Text case (#c-case) as a textCues case mode. ✏️
      Editable captions used to read the 📁 Upload view's case instead, so
@@ -8686,9 +8692,10 @@
   /* Single source of truth for the caption type: sets the value, lights the
      right chip and relabels the main button. Used by clicks AND by restore. */
   function setCapOut(v) {
-    _capOut = (v === 'editable') ? 'editable' : 'png';
+    _capOut = (v === 'editable' || v === 'premiere') ? v : 'png';
     // Show/hide the controls that only exist for the Pulse-rendered path.
     try { document.body.classList.toggle('cap-editable', _capOut === 'editable'); } catch (eCls) {}
+    try { document.body.classList.toggle('cap-premiere', _capOut === 'premiere'); } catch (eClp) {}
     // Editable has no ✨ Effects tab: always land on the Style controls
     if (_capOut === 'editable') { try { showCustPane('style'); } catch (ePane) {} }
     try { updateHiddenCountLine(); } catch (eHc) {}
@@ -8822,6 +8829,8 @@
     // and tools/style-quality-audit.js verifies every style at true output
     // size on every build. The editable-template path stays available.
     if (_capOut === 'editable') return applyEditableStyle();
+    // 📝 Premiere's own caption track — the owner: "both, I choose each time"
+    if (_capOut === 'premiere') return applyNative();
     if (!ensureTranscriptThen('magic')) return;
     var mCues;
     try { mCues = readSelectedTranscript(); } catch (eM) { return toast(eM.message, true); }
@@ -12433,9 +12442,15 @@
     };
     var ov = {};
     try { ov = readOverrides(); } catch (eOv) {}
+    // 📝 Premiere captions are subtitles: whole phrases up to two balanced
+    // lines, as spoken — not the picked STYLE's own grouping and capitals
+    // ("Bold Statement" made Premiere captions of two CAPITAL words each).
+    // (the style's ALL CAPS rides along with the style, so it is left out
+    // too: Premiere captions are the words as said — restyle them in Premiere)
+    var asSubtitles = (_capOut === 'premiere');
     var frames = CPCaptions.buildCaptionFrames(cues, {
-      anim: 'none', wordsPerCue: parseInt($('c-words').value, 10) || 0,
-      uppercase: $('c-upper').checked || ov.uppercase, textCase: ov.textCase,
+      anim: 'none', wordsPerCue: asSubtitles ? 0 : (parseInt($('c-words').value, 10) || 0),
+      uppercase: asSubtitles ? false : ($('c-upper').checked || ov.uppercase), textCase: asSubtitles ? null : ov.textCase,
       emoji: cchk('c-emoji'), capsWords: capsKeywordSet(cues),
       wordCues: (cues && cues.words && cues.words.length) ? cues.words : null,
       fit: fitsTwoLines, fps: sz.fps
@@ -13113,52 +13128,86 @@
       return n / (W * H);
     } catch (e) { return null; }
   }
-  /* Are the captions placed on `track` really on screen? At the first,
-     middle and last caption: the frame with the track on vs off
-     (CP_captionVisibility). The old check (contrast in the caption band of
-     one frame) passed on any real video — the picture behind has contrast —
-     so it said "words visible" while the owner saw nothing. Resolves
-     { checked, rows: [{at, share}], blank: [times] }. */
-  function checkCaptionsVisible(cues, track) {
-    var fs = nodeReq('fs'), pathMod = nodeReq('path'), os = nodeReq('os');
+  /* Are captions really on screen? Frames of the sequence at the first,
+     middle and last caption BEFORE they are inserted and again AFTER: what
+     differs is the captions. (v0.10.13 turned the caption track's output
+     off and on to compare — Premiere can ignore a script turning a video
+     track off, so every caption read as blank, and Pulse then deleted the
+     owner's editable captions: "it lays out all the layers, then deletes
+     everything and puts the captions back non-editable".) */
+  function visibilityTimes(cues) {
     var pick = [cues[0], cues[Math.floor(cues.length / 2)], cues[cues.length - 1]].filter(function (c, i, a) { return c && a.indexOf(c) === i; });
-    var times = pick.map(function (c) { return +(c.start + Math.min(0.6, Math.max(0.3, (c.end - c.start) / 2))).toFixed(3); });
-    var base = pathMod.join(os.tmpdir(), 'pulse-visible-' + Date.now());
-    return CPBridge.callHost('CP_captionVisibility', { track: track, times: times, base: base }).then(function (r) {
-      return (r.frames || []).reduce(function (p, f) {
-        return p.then(function (acc) {
-          return new Promise(function (res) {
-            loadRenderedFrame(f.on, function (on) {
-              loadRenderedFrame(f.off, function (off) {
-                var d = (on && off) ? framesDiffer(on, off) : null;
-                [f.on, f.off].forEach(function (x) { try { fs.unlinkSync(x); } catch (eU) {} });
-                acc.push({ at: f.at, share: d });
-                res(acc);
-              });
+    return pick.map(function (c) { return +(c.start + Math.min(0.6, Math.max(0.3, (c.end - c.start) / 2))).toFixed(3); });
+  }
+  /* Frames of the active sequence at these times: [{ at, file }] (file null
+     when Premiere drew none). */
+  function grabFrames(times, tag) {
+    var pathMod = nodeReq('path'), os = nodeReq('os'), stamp = Date.now();
+    return times.reduce(function (p, t, i) {
+      return p.then(function (acc) {
+        var png = pathMod.join(os.tmpdir(), 'pulse-vis-' + stamp + '-' + tag + '-' + i + '.png');
+        return CPBridge.callHost('CP_captureSequenceFrame', { at: t, outPath: png }).then(function (r) {
+          acc.push({ at: t, file: (r && r.exported !== false) ? (r.file || png) : null }); return acc;
+        }, function () { acc.push({ at: t, file: null }); return acc; });
+      });
+    }, Promise.resolve([]));
+  }
+  /* before / after frames → { checked, rows: [{at, share}], blank: [times],
+     files: [after frames] } — share = how much of the frame the captions changed. */
+  function measureVisible(before, after) {
+    var fs = nodeReq('fs');
+    return after.reduce(function (p, f, i) {
+      return p.then(function (acc) {
+        var b = before[i];
+        if (!f.file || !b || !b.file) { acc.rows.push({ at: f.at, share: null }); return acc; }
+        return new Promise(function (res) {
+          loadRenderedFrame(b.file, function (bi) {
+            loadRenderedFrame(f.file, function (ai) {
+              acc.rows.push({ at: f.at, share: (bi && ai) ? framesDiffer(bi, ai) : null });
+              acc.files.push(f.file);
+              try { fs.unlinkSync(b.file); } catch (eU) {}
+              res(acc);
             });
           });
         });
-      }, Promise.resolve([]));
-    }).then(function (rows) {
-      var known = rows.filter(function (x) { return x.share != null; });
-      return { checked: known.length, rows: rows, blank: known.filter(function (x) { return x.share < 0.0015; }).map(function (x) { return x.at; }) };
+      });
+    }, Promise.resolve({ rows: [], files: [] })).then(function (acc) {
+      var known = acc.rows.filter(function (x) { return x.share != null; });
+      return { checked: known.length, rows: acc.rows, files: acc.files, blank: known.filter(function (x) { return x.share < 0.0015; }).map(function (x) { return x.at; }) };
     });
   }
-  /* After editable captions: any that paints nothing → the set is replaced
-     by Pulse-rendered captions (the self-test proves those visible), and the
-     owner is told. Never leaves invisible captions on the timeline. */
-  function verifyEditableVisible(tcues, track, mogrtPath) {
-    if (!CPBridge.isCEP() || !tcues || !tcues.length || !track) return;
-    checkCaptionsVisible(tcues, track).then(function (v) {
+  /* What Premiere drew is kept where the owner can open it (and send it):
+     ~/Documents/Pulse/caption-check/. Returns that folder. */
+  function keepCheckFrames(files, tag) {
+    var fs = nodeReq('fs'), pathMod = nodeReq('path'), os = nodeReq('os');
+    var dir = pathMod.join(os.homedir(), 'Documents', 'Pulse', 'caption-check');
+    try { fs.mkdirSync(dir, { recursive: true }); } catch (eM) {}
+    (files || []).forEach(function (f, i) {
+      try { fs.writeFileSync(pathMod.join(dir, tag + '-' + (i + 1) + '.png'), fs.readFileSync(f)); fs.unlinkSync(f); } catch (eC) {}
+    });
+    return dir;
+  }
+  /* After editable captions: say what Premiere drew. A caption that paints
+     nothing is REPORTED, with a button to switch — the owner chose editable
+     captions, so Pulse never deletes them by itself. */
+  function verifyEditableVisible(tcues, track, mogrtPath, before) {
+    if (!CPBridge.isCEP() || !tcues || !tcues.length || !track || !before) return;
+    grabFrames(before.map(function (b) { return b.at; }), 'after').then(function (after) {
+      return measureVisible(before, after);
+    }).then(function (v) {
+      var dir = keepCheckFrames(v.files, 'editable');
       diag('render-check', 'editable captions on V' + track + ': ' + v.rows.map(function (x) {
         return x.at.toFixed(1) + ' s ' + (x.share == null ? 'unreadable' : (x.share < 0.0015 ? 'BLANK' : 'visible (' + (x.share * 100).toFixed(1) + '%)'));
-      }).join(', '));
+      }).join(', ') + ' · what Premiere drew: ' + dir);
       if (!v.checked || !v.blank.length) return;
-      toast('⚠️ The editable captions came out blank on your timeline (at ' + v.blank.map(function (t) { return t.toFixed(1) + ' s'; }).join(', ') +
-            '). Pulse is replacing them with ✨ Pulse-rendered captions — same style, always visible.', true);
-      var mCues;
-      try { mCues = readSelectedTranscript(); } catch (eR) { return; }
-      addPulseCaptions(mCues, null, { track: track, names: captionGraphicNames(mogrtPath) });
+      confirmInline('⚠️ Premiere drew NO words for your editable captions at ' + v.blank.map(function (t) { return t.toFixed(1) + ' s'; }).join(', ') +
+        ' (its frames are in Documents → Pulse → caption-check). Your editable captions are still on V' + track + '.\n\n' +
+        'Replace them with ✨ Pulse-rendered captions — same style, always visible?', 'Use Pulse-rendered', function (yes) {
+        if (!yes) return toast('Kept your editable captions on V' + track + '. Tap 📋 Copy diagnostics in Settings and send it — it says what Premiere drew.');
+        var mCues;
+        try { mCues = readSelectedTranscript(); } catch (eR) { return toast(eR.message, true); }
+        addPulseCaptions(mCues, null, { track: track, names: captionGraphicNames(mogrtPath) });
+      });
     }, function (e) { diag('render-check', 'editable visibility check failed: ' + (e && e.message)); });
   }
   function applyEditableStyle() {
@@ -13253,7 +13302,7 @@
     // refreshed first so a track index remembered on another sequence/project
     // is never applied here (the host additionally verifies the track really
     // holds our caption clips before clearing anything).
-    var reuseTrack = null;
+    var reuseTrack = null, edBefore = null;
     var sentParams = null;   // kept for the style trace (includes ._bind slot→control names)
     capProgress('Saving project…');
     CPBridge.callHost('CP_getEnv').catch(function () { return null; }).then(function (env) {
@@ -13287,7 +13336,10 @@
           ? (fitE.plan.known ? premPlan(bb.path, state.env, { fixedScale: sizeScale, pos: params._posYPct }).posYPct : params._posYPct)
           : null;
         capProgress('Adding ' + tcues.length + ' editable, styled captions…', tcues.length * 230);
-        return CPBridge.callHost('CP_insertMogrtCaptions', {
+        // the frames before the captions go in — compared with after, to see they show
+        return grabFrames(visibilityTimes(tcues), 'before').catch(function () { return null; }).then(function (bf) {
+          edBefore = bf;
+          return CPBridge.callHost('CP_insertMogrtCaptions', {
           mogrtPath: bb.path, cues: tcues, videoTrack: null, audioTrack: 0,
           params: params, textStyle: textStyle, stretch: false, replaceTrack: reuseTrack,
           captionNames: captionGraphicNames(bb.path),
@@ -13302,6 +13354,7 @@
           // lets the host force text VISIBLE on any clip whose sweep fails.
           revealSpoken: (entrance === 'spoken'),
           anim: (entrance !== 'none' && entrance !== 'spoken' ? entrance : null), animSpeed: 1
+        });
         });
       });
     }).then(function (r) {
@@ -13348,7 +13401,7 @@
                               kind: 'editable-style', mogrtPath: bb.path, params: sentParams, textStyle: textStyle, words: words };
       saveLastCaptionJob();
       reflectCaptionsPlaced();
-      verifyEditableVisible(tcues, r.track, bb.path);   // prove it on REAL frames of THIS sequence — first, middle, last
+      verifyEditableVisible(tcues, r.track, bb.path, edBefore);   // prove it on REAL frames of THIS sequence — first, middle, last
       if (r.textSet === 0) {
         // be HONEST instead of claiming success: the graphics are there but the
         // words/styling could not be written into this template's text.
@@ -16097,7 +16150,12 @@
                                    viral: function () { viralEdit(); },
                                    setMarks: function (p, boxes) { saveMarks(p, boxes); }, marks: function (p) { return shortMarksFor(p); },
                                    markCameras: function () { return loadMarkCameras().then(function () { return _mark.cams.map(function (c) { return c.label; }); }); },
-                                   verifyEditable: function (cues, track, path) { verifyEditableVisible(cues, track, path); },
+                                   verifyEditable: function (cues, track, path) {
+                                     // the real order: frames before, the captions go in, frames after
+                                     return grabFrames(visibilityTimes(cues), 'before').then(function (bf) {
+                                       return CPBridge.callHost('CP_insertMogrtCaptions', { mogrtPath: path, cues: cues }).then(function () { verifyEditableVisible(cues, track, path, bf); });
+                                     });
+                                   },
                                    setCapOut: function (v) { setCapOut(v); },
                                    setCameras: function (o) { if (o.plan) state.plan = o.plan; if (o.map) { state.mcMap = o.map.slice(); state.mcMapAuto = o.map.map(function () { return false; }); }
                                      if (o.angles && $('mc-angles')) $('mc-angles').value = String(o.angles); state.mcAudioTracks = null; },

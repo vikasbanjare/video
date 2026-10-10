@@ -2001,18 +2001,18 @@ const MUTANTS = [
   {
     name: 'v13-visibility-blind',
     file: 'CutPilot/js/main.js',
-    find: "      return { checked: known.length, rows: rows, blank: known.filter(function (x) { return x.share < 0.0015; })",
-    repl: "      return { checked: known.length, rows: rows, blank: known.filter(function (x) { return x.share < 0; })",
+    find: "files: acc.files, blank: known.filter(function (x) { return x.share < 0.0015; })",
+    repl: "files: acc.files, blank: known.filter(function (x) { return x.share < 0; })",
     gate: 'CutPilot/test/gates/captions-viral-visible.js',
     why: 'editable captions that paint nothing are reported as visible'
   },
   {
     name: 'v13-blank-kept',
     file: 'CutPilot/js/main.js',
-    find: "      addPulseCaptions(mCues, null, { track: track, names: captionGraphicNames(mogrtPath) });",
+    find: "        addPulseCaptions(mCues, null, { track: track, names: captionGraphicNames(mogrtPath) });",
     repl: "",
     gate: 'CutPilot/test/gates/captions-viral-visible.js',
-    why: 'blank editable captions stay on the timeline'
+    why: 'the owner taps “Use Pulse-rendered” and nothing is replaced'
   },
   {
     name: 'v13-st-edges-unchecked',
@@ -2045,6 +2045,30 @@ const MUTANTS = [
     repl: "          var touches = false;",
     gate: 'CutPilot/test/gates/selftest-panel-captions.js',
     why: 'the every-style check never sees a caption cut at the edge'
+  },
+  {
+    name: 'v14-editable-autodelete',
+    file: 'CutPilot/js/main.js',
+    find: "      if (!v.checked || !v.blank.length) return;\n      confirmInline(",
+    repl: "      if (!v.checked || !v.blank.length) return;\n      addPulseCaptions(readSelectedTranscript(), null, { track: track, names: captionGraphicNames(mogrtPath) });\n      confirmInline(",
+    gate: 'CutPilot/test/gates/captions-viral-visible.js',
+    why: 'Pulse deletes the owner\'s editable captions by itself (v0.10.13)'
+  },
+  {
+    name: 'v14-premiere-type-ignored',
+    file: 'CutPilot/js/main.js',
+    find: "    if (_capOut === 'premiere') return applyNative();",
+    repl: "",
+    gate: 'CutPilot/test/gates/captions-viral-visible.js',
+    why: '📝 Premiere captions picked, but ✨ Add captions / Viral edit makes something else'
+  },
+  {
+    name: 'v14-premiere-style-grouping',
+    file: 'CutPilot/js/main.js',
+    find: "      anim: 'none', wordsPerCue: asSubtitles ? 0 : (parseInt($('c-words').value, 10) || 0),",
+    repl: "      anim: 'none', wordsPerCue: (parseInt($('c-words').value, 10) || 0),",
+    gate: 'CutPilot/test/gates/captions-viral-visible.js',
+    why: 'Premiere captions take the style\'s two-words-a-caption grouping'
   }
 ];
 
