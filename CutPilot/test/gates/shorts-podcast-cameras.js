@@ -17,7 +17,8 @@
  * and each mic has a tone exactly while its person talks.
  *   V1 close — person A at 28% of the frame (not centred), mic A1;
  *   V2 close — person B at 72%, mic A2;
- *   V3 wide  — both, small: A at 24%, B at 73%; no mic (the wide shot);
+ *   V3 wide  — A at 24%, a listening guest in the middle, B at 73%; no mic
+ *              (the wide shot);
  *   above them a caption overlay, caption images and the V1 file again —
  *   none of them a camera.
  * A talks 0–4 s, B 4–8.5 s, both 8.5–10.5 s, A 10.5–16 s. The director's plan:
@@ -25,9 +26,10 @@
  *   A. three cameras found (not the caption tracks or the duplicate); the
  *      short follows the plan V1 → V2 → V3 → V1 → V3, 1080×1920, with the mics;
  *   B. each close camera is framed on its face (28% / 72%), not the middle;
- *   C. on the wide shot Pulse found both faces and matched them to their
- *      mics (A1 → 24%, A2 → 73%);
- *   D. both talking on the wide shot: both stacked; A alone: zoomed in on A;
+ *   C. on the wide shot Pulse found the three faces and matched the two
+ *      talkers to their mics (A1 → 24%, A2 → 73%; the listener to none);
+ *   D. both talking on the wide shot: the two TALKERS stacked (not the
+ *      listener); A alone: zoomed in on A;
  *   E. in the rendered short the talker's face is in the middle of the
  *      picture (the face finder run on the short's own frames);
  *   F. ONE camera (the wide shot) with a caption overlay on V2 — the owner's
@@ -72,7 +74,8 @@ function camera(file, people) {
     // the mouth: a dark bar over the lower face, shown every other 1/8 s while talking
     const mw = Math.round(p.size * 0.11), mh = Math.round(p.size * 0.035);
     const mx = Math.round(p.x + p.size * (p.flip ? 1 - p.mouthX : p.mouthX) - mw / 2), my = Math.round(p.y + p.size * p.mouthY);
-    fc.push('[o' + i + ']drawbox=x=' + mx + ':y=' + my + ':w=' + mw + ':h=' + mh + ':color=0x301818:t=fill:enable=\'' + talk(p.talk) + '*lt(mod(t,0.25),0.125)\'[m' + i + ']');
+    if (!p.talk.length) fc.push('[o' + i + ']null[m' + i + ']');     // a listener: the mouth never moves
+    else fc.push('[o' + i + ']drawbox=x=' + mx + ':y=' + my + ':w=' + mw + ':h=' + mh + ':color=0x301818:t=fill:enable=\'' + talk(p.talk) + '*lt(mod(t,0.25),0.125)\'[m' + i + ']');
     cur = '[m' + i + ']';
   });
   args.push('-filter_complex', fc.join(';'), '-map', cur, '-t', '16', '-r', '30', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', file);
@@ -101,7 +104,9 @@ function faceIn(file, t) {
   // the face sits at ~45% across and ~33% down the picture; its mouth at ~45% / ~52%
   camera(V1, [{ x: 256, y: 300, size: 640, mouthX: 0.44, mouthY: 0.34, talk: A_TALK }]);
   camera(V2, [{ x: 1024, y: 300, size: 640, flip: true, mouthX: 0.44, mouthY: 0.34, talk: B_TALK }]);
-  camera(V3, [{ x: 330, y: 380, size: 300, mouthX: 0.44, mouthY: 0.34, talk: A_TALK }, { x: 1230, y: 380, size: 300, flip: true, mouthX: 0.44, mouthY: 0.34, talk: B_TALK }]);
+  // the wide shot: A, a guest who only listens (C, in the middle), and B
+  camera(V3, [{ x: 330, y: 380, size: 300, mouthX: 0.44, mouthY: 0.34, talk: A_TALK }, { x: 790, y: 400, size: 260, mouthX: 0.44, mouthY: 0.34, talk: [] },
+              { x: 1230, y: 380, size: 300, flip: true, mouthX: 0.44, mouthY: 0.34, talk: B_TALK }]);
   mic(A1, A_TALK, 300); mic(A2, B_TALK, 700);
   const seg = (p, extra) => Object.assign({ mediaPath: p, seqStart: 0, seqEnd: 16, dur: 16, inPoint: 0, outPoint: 16, speed: 1, reversed: false, disabled: false }, extra || {});
   const words = [];
@@ -172,12 +177,12 @@ function faceIn(file, t) {
     (Math.abs(b1 - 0.28) < 0.04 && Math.abs(b2 - 0.72) < 0.04 ? ok : bad)('B. each close camera framed on its face: V1 at ' + (b1 * 100).toFixed(0) + '% (the face is at 28%), V2 at ' + (b2 * 100).toFixed(0) + '% (72%)');
     const W3 = pod.framing['2'] || {}, fc = W3.faces || [], bv = W3.byVoice || [];
     const fa = fc[bv[0]], fb = fc[bv[1]];
-    (fc.length === 2 && fa && fb && Math.abs(fa.cx - 0.24) < 0.04 && Math.abs(fb.cx - 0.73) < 0.04 ? ok : bad)('C. the wide shot: ' + fc.length + ' faces, matched to the mics — A1 → ' +
+    (fc.length === 3 && fa && fb && Math.abs(fa.cx - 0.24) < 0.04 && Math.abs(fb.cx - 0.73) < 0.04 ? ok : bad)('C. the wide shot: ' + fc.length + ' faces, the talkers matched to the mics — A1 → ' +
       (fa ? (fa.cx * 100).toFixed(0) + '%' : 'nobody') + ' (24%), A2 → ' + (fb ? (fb.cx * 100).toFixed(0) + '%' : 'nobody') + ' (73%)');
     const both = pod.segs[2], solo = pod.segs[4];
     const bothOk = both && both.crops.length === 2 && Math.abs(mid(both.crops[0], 1920) - 0.24) < 0.05 && Math.abs(mid(both.crops[1], 1920) - 0.73) < 0.05;
     const soloOk = solo && solo.crops.length === 1 && Math.abs(mid(solo.crops[0], 1920) - 0.24) < 0.05 && solo.crops[0].h < 1080 * 0.75;
-    (bothOk && soloOk ? ok : bad)('D. both talking on the wide shot: both stacked (' + (both ? both.crops.map(c => (mid(c, 1920) * 100).toFixed(0) + '%').join(' + ') : '?') +
+    (bothOk && soloOk ? ok : bad)('D. both talking on the wide shot: the two talkers stacked (' + (both ? both.crops.map(c => (mid(c, 1920) * 100).toFixed(0) + '%').join(' + ') : '?') +
       '); A alone: zoomed in on A (' + (solo ? (mid(solo.crops[0], 1920) * 100).toFixed(0) + '% across, ' + solo.crops[0].h + ' of 1080 px tall' : '?') + ')');
     if (out) {
       const at = [1.5, 5.5, 13.5].map(t => faceIn(out, t));
