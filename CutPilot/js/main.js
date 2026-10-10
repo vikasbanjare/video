@@ -15318,14 +15318,11 @@
       card.appendChild(row); box.appendChild(card);
     });
   }
-  /* Which part of the source to keep when cropping to vertical (the "keep in
-     frame" control) — center uses the full frame (centre cover-crop); left/right
-     bias toward that side of the source for off-centre subjects. */
-  function shFocusRegion() {
+  /* "Keep in frame": where the window goes when a camera shows no face —
+     the middle, or the left / right third. */
+  function shFocusX() {
     var f = ($('sh-focus') && $('sh-focus').value) || 'center';
-    if (f === 'left') return { x: 0, y: 0, w: 0.62, h: 1 };
-    if (f === 'right') return { x: 0.38, y: 0, w: 0.62, h: 1 };
-    return { x: 0, y: 0, w: 1, h: 1 };
+    return f === 'left' ? 0.31 : (f === 'right' ? 0.69 : 0.5);
   }
   /* Make a name safe to use as a Premiere sequence name. */
   function sanitizeName(s) {
@@ -15392,68 +15389,330 @@
     nodeReq('fs').writeFileSync(p, Buffer.from(b64, 'base64'));
     return p;
   }
-  function renderShortFile(ff, clip, plan, region, rt, hookTitle, prog) {
-    var fs = nodeReq('fs'), os = nodeReq('os'), pathMod = nodeReq('path');
-    var toMedia = function (t) { return Math.max(0, (t - (clip.seqStart || 0)) + (clip.inPoint || 0)); };
-    var segs = plan.segments.map(function (s) { return { start: toMedia(s.start), end: toMedia(s.end) }; });
-    var base = Math.max(0, segs[0].start - 0.5), stop = segs[segs.length - 1].end + 0.5;
-    var dir = pathMod.join(os.tmpdir(), 'pulse-short-' + Date.now());
-    try { fs.mkdirSync(dir); } catch (e) {}
-    prog.textContent = 'Measuring the video…';
-    return runFfmpeg(ff, ['-hide_banner', '-i', clip.mediaPath], 20000).then(function (r) {
-      var m = /,\s*(\d{2,5})x(\d{2,5})/.exec(r.stderr || ''), src = m ? { w: +m[1], h: +m[2] } : { w: 1920, h: 1080 };
-      var hasAudio = /Stream #[^\n]*Audio:/.test(r.stderr || '');
-      var target = rt ? CPReframe.targetSize(rt.label) : { w: src.w - (src.w % 2), h: src.h - (src.h % 2) };
-      var hookPng = null;
-      if (hookTitle) { try { hookPng = writeHookCard(hookTitle, target.w, target.h, dir); } catch (eH) { hookPng = null; } }
-      var expr = CPShorts.selectExpr(segs, base);
-      var fc = '[0:v]fps=30,select=\'' + expr + '\',setpts=N/30/TB[cut];' +
-        CPReframe.coverChain('cut', rt ? region : { x: 0, y: 0, w: 1, h: 1 }, src, target, 'v');
-      var vout = 'v';
-      if (hookPng) { fc += ';[v][1:v]overlay=0:0:eof_action=pass:enable=\'lt(t,3)\'[vo]'; vout = 'vo'; }
-      if (hasAudio) fc += ';[0:a]aselect=\'' + expr + '\',asetpts=N/SR/TB[a]';
-      var outPath = pathMod.join(dir, 'pulse-short.mp4');
-      var args = ['-y', '-hide_banner', '-ss', base.toFixed(3), '-t', (stop - base).toFixed(3), '-i', clip.mediaPath];
-      if (hookPng) args = args.concat(['-loop', '1', '-t', '3.2', '-i', hookPng]);
-      args = args.concat(['-filter_complex', fc, '-map', '[' + vout + ']']);
-      if (hasAudio) args = args.concat(['-map', '[a]', '-c:a', 'aac', '-ar', '48000']);
-      args = args.concat(['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', '-r', '30', '-movflags', '+faststart', outPath]);
-      prog.textContent = 'Making the short' + (plan.removed > 0.2 ? ' (' + plan.removed.toFixed(1) + ' s of pauses cut)' : '') + '…';
-      return runFfmpeg(ff, args, 600000).then(function (rr) {
-        if (rr.error || (rr.code && rr.code !== 0)) throw new Error('the render failed: ' + String(rr.stderr || rr.error || '').slice(-160));
-        try { if (hookPng) fs.unlinkSync(hookPng); } catch (eU) {}
-        return outPath;
-      });
+  /* ---- the short's cameras, framed on faces (CPPodShort + CPPico) ----
+     ONE pipeline for every setup. A single camera: the talker's face inside
+     that frame (who talks: the "Who's talking" voices, else whose mouth
+     moves). Several cameras (a camera per video track, mics named on
+     Podcast cameras' rows, a row with no mic = the wide shot): the
+     director's camera plan, each camera framed on its person's face, the
+     wide shot on whoever talks (both stacked when both do). The owner
+     (v0.10.12): "it's supposed to zoom in to the person; here it is
+     zooming anywhere, randomly … based on the face in the frame", and the
+     log showed a "2-camera" short from a single camera — a caption track
+     counted as a camera. */
+  var SHORT_VIDEO_EXT = /\.(mp4|mov|m4v|mxf|avi|mkv|mts|m2ts|webm|r3d|braw|mpg|mpeg|3gp|hevc)$/i;
+  var SHORT_NOT_CAMERA = /(^|[\\/])(pulse-captions|captions|cap[-_]?\d+|pulse-short|pulse-podcast-short|pulse-vertical)[^\\/]*$/i;
+  function cameraSegments(segs, S0, S1) {
+    return (segs || []).filter(function (x) {
+      return x && x.mediaPath && !x.disabled && SHORT_VIDEO_EXT.test(x.mediaPath) && !SHORT_NOT_CAMERA.test(x.mediaPath) &&
+        (x.seqEnd == null || x.seqEnd > S0 + 0.05) && (x.seqStart == null || x.seqStart < S1 - 0.05);
     });
   }
-  function makeVerticalClip(h, rt) {
-    var ff = resolveFfmpeg();
-    if (!ff) return toast('Making a clip needs the audio engine — tap Settings → ⬇️ Set up audio engine.', true);
-    if (typeof CPReframe === 'undefined' || typeof CPShorts === 'undefined') return toast('Shorts module missing.', true);
-    var o = shortOpts();
-    var plan = shortPlanFor(h, o);
-    if (!plan.segments.length) return toast('No words in this moment — transcribe the video again, then try.', true);
-    var name = sanitizeName(h.title || 'Pulse clip');
-    var prog = $('shorts-progress'); prog.classList.remove('hidden'); prog.textContent = 'Finding the source video…';
-    var hook = o.hook ? CPShorts.hookText(h) : '';
-    var made = (o.cams && rt && typeof CPPodShort !== 'undefined')
-      ? podcastCameras().then(function (pc) {
-          if (pc) return renderPodcastShort(ff, pc, plan, rt, hook, prog);
-          return null;
-        })
-      : Promise.resolve(null);
-    made.then(function (out) {
-      if (out) return out;
+  /* The cameras of the moment [S0, S1]: video tracks holding real camera
+     footage there (not captions, graphics, still images, Pulse's own
+     renders, or the same file twice). Resolves { cams, map, tracks, n } —
+     cams.length 1 for a single camera. */
+  function shortCameras(S0, S1, o) {
+    function single() {
       return CPBridge.callHost('CP_getSelectedClip').then(
         function (s) { return (s && s.clip && s.clip.mediaPath) ? s : CPBridge.callHost('CP_getTranscribeSource'); },
         function () { return CPBridge.callHost('CP_getTranscribeSource'); }
       ).then(function (s) {
         if (!s || !s.clip || !s.clip.mediaPath) throw new Error('Put the source video on the timeline (select it) so I can cut the clip from it.');
-        return { path: null, single: s.clip };
+        var c = s.clip, len = (c.outPoint != null && c.inPoint != null) ? c.outPoint - c.inPoint : 1e7;
+        return { cams: [{ index: 0, name: 'V1', segments: [{ mediaPath: c.mediaPath, seqStart: c.seqStart || 0, seqEnd: (c.seqStart || 0) + len, inPoint: c.inPoint || 0, speed: 1 }] }],
+                 map: [], tracks: [], n: 1 };
       });
-    }).then(function (r) {
-      if (r.path) return r;
-      return renderShortFile(ff, r.single, plan, shFocusRegion(), rt, hook, prog).then(function (p) { return { path: p }; });
+    }
+    if (!o.cams) return single();
+    return CPBridge.callHost('CP_getVideoTracks').then(function (r) {
+      var seen = {}, cams = [];
+      (r.videoTracks || []).forEach(function (t) {
+        var segs = cameraSegments(t.segments, S0, S1);
+        if (!segs.length) return;
+        var key = segs.map(function (x) { return x.mediaPath; }).join('|');
+        if (seen[key]) return;                       // the same footage twice is one camera
+        seen[key] = true;
+        cams.push({ index: t.index, name: t.name, segments: segs });
+      });
+      // the cameras are V1…Vn of Podcast cameras (a camera's number is its
+      // track's: the director's plan and the mic rows count them that way)
+      var nAng = parseInt($('mc-angles') && $('mc-angles').value, 10) || 0;
+      if (nAng >= 2) cams = cams.filter(function (c) { return c.index < nAng; });
+      if (cams.length < 2) return single();
+      return ensureAudioTracks().catch(function () { return []; }).then(function (tracks) {
+        var n = Math.max.apply(null, cams.map(function (c) { return c.index + 1; }));
+        var map = (tracks && tracks.length) ? mcEnsureMap(tracks, n).slice() : [];
+        return { cams: cams, tracks: tracks || [], map: map, n: n };
+      });
+    }, function () { return single(); });
+  }
+  /* The media second a track plays at sequence second t (the clip under t,
+     else the nearest one). */
+  function mediaAt(segments, t) {
+    var segs = (segments || []).filter(function (x) { return x && x.mediaPath && !x.disabled; });
+    if (!segs.length) return null;
+    var best = segs[0], bd = Infinity;
+    segs.forEach(function (x) {
+      var end = x.seqEnd != null ? x.seqEnd : Infinity;
+      var d = t < x.seqStart ? x.seqStart - t : (t > end ? t - end : 0);
+      if (d < bd) { bd = d; best = x; }
+    });
+    return { path: best.mediaPath, t: Math.max(0, (best.inPoint || 0) + (t - best.seqStart) * (best.speed || 1)) };
+  }
+  function readBytes(p) {
+    var b64 = nodeReq('fs').readFileSync(p).toString('base64'), bin = atob(b64), u = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+    return u;
+  }
+  var POD_FW = 640, POD_STEP = 0.5;
+  /* A camera's frames over [t0, t0+dur] of its media, 2 a second, grey,
+     640 wide (a face across a wide shot is still ~25 px: pico finds it). */
+  function podFrames(ff, path, t0, dur, src, dir, tag) {
+    var fh = Math.max(2, Math.round(POD_FW * src.h / src.w / 2) * 2);
+    var out = nodeReq('path').join(dir, 'frames-' + tag + '.gray');
+    return runFfmpeg(ff, ['-y', '-hide_banner', '-loglevel', 'error', '-ss', t0.toFixed(3), '-t', dur.toFixed(3), '-i', path,
+      '-vf', 'fps=' + (1 / POD_STEP) + ',scale=' + POD_FW + ':' + fh, '-f', 'rawvideo', '-pix_fmt', 'gray', out], 300000).then(function () {
+      var u = readBytes(out), fr = [], n = POD_FW * fh;
+      for (var i = 0; i + n <= u.length; i += n) fr.push(u.subarray(i, i + n));
+      try { nodeReq('fs').unlinkSync(out); } catch (e) {}
+      return { frames: fr, w: POD_FW, h: fh };
+    });
+  }
+  /* The camera's MOVEMENT over the same steps: each frame's difference from
+     the frame before, averaged over the half-second — a mouth that opens
+     and shuts between two sampled frames still shows (sampling 2 frames a
+     second alone can land on the same phase every time and see none). */
+  function podMotion(ff, path, t0, dur, src, dir, tag) {
+    var fh = Math.max(2, Math.round(POD_FW * src.h / src.w / 2) * 2);
+    var out = nodeReq('path').join(dir, 'motion-' + tag + '.gray');
+    return runFfmpeg(ff, ['-y', '-hide_banner', '-loglevel', 'error', '-ss', t0.toFixed(3), '-t', dur.toFixed(3), '-i', path,
+      '-vf', 'scale=' + POD_FW + ':' + fh + ',format=gray,tblend=all_mode=difference,tmix=frames=15,fps=' + (1 / POD_STEP),
+      '-f', 'rawvideo', '-pix_fmt', 'gray', out], 300000).then(function () {
+      var u = readBytes(out), fr = [], n = POD_FW * fh;
+      for (var i = 0; i + n <= u.length; i += n) fr.push(u.subarray(i, i + n));
+      try { nodeReq('fs').unlinkSync(out); } catch (e) {}
+      return fr;
+    }, function () { return null; });
+  }
+  /* A mic's loudness (dB per 0.5 s) over [t0, t0+dur] of its media. */
+  function podMic(ff, path, channel, t0, dur, dir, tag) {
+    var out = nodeReq('path').join(dir, 'mic-' + tag + '.pcm');
+    var af = (channel != null ? 'pan=mono|c0=c' + channel + ',' : '') + 'aresample=8000';
+    return runFfmpeg(ff, ['-y', '-hide_banner', '-loglevel', 'error', '-ss', t0.toFixed(3), '-t', dur.toFixed(3), '-i', path,
+      '-af', af, '-ac', '1', '-f', 's16le', out], 180000).then(function () {
+      var lv = CPPodShort.levels(readBytes(out), 8000, POD_STEP);
+      try { nodeReq('fs').unlinkSync(out); } catch (e) {}
+      return lv;
+    });
+  }
+  /* dB per step → how much this voice is talking (0 when quiet). */
+  function micActivity(lv) {
+    var top = -90; lv.forEach(function (v) { if (v > top) top = v; });
+    return lv.map(function (v) { return Math.max(0, v - Math.max(top - 25, -55)); });
+  }
+  /* The "Who's talking" voices of the moment as activity per step, from the
+     transcript's own words (Voice 1, Voice 2…). [] when it names nobody. */
+  function wordActivity(S0, span) {
+    var ws = (state.transcriptWords || []).filter(function (w) { return w && w.speaker != null && w.end > S0 && w.start < S0 + span; });
+    var ids = []; ws.forEach(function (w) { if (ids.indexOf(String(w.speaker)) < 0) ids.push(String(w.speaker)); });
+    if (ids.length < 2) return [];
+    var n = Math.ceil(span / POD_STEP) + 1;
+    return ids.map(function (id) {
+      var a = []; for (var i = 0; i < n; i++) a.push(0);
+      ws.forEach(function (w) {
+        if (String(w.speaker) !== id) return;
+        for (var i = Math.max(0, Math.floor((w.start - S0) / POD_STEP)); i <= Math.min(n - 1, Math.floor((w.end - S0) / POD_STEP)); i++) a[i] = 1;
+      });
+      return a;
+    });
+  }
+  function probeMedia(ff, path) {
+    return runFfmpeg(ff, ['-hide_banner', '-i', path], 20000).then(function (r) {
+      var m = /,\s*(\d{2,5})x(\d{2,5})/.exec(r.stderr || '');
+      return { src: m ? { w: +m[1], h: +m[2] } : { w: 1920, h: 1080 }, audio: /Stream #[^\n]*Audio:/.test(r.stderr || '') };
+    });
+  }
+  function camOf(setup, angle) {
+    for (var i = 0; i < setup.cams.length; i++) if (setup.cams[i].index === angle) return setup.cams[i];
+    return setup.cams.length === 1 ? setup.cams[0] : null;
+  }
+  function renderFramedShort(ff, setup, plan, rt, hookTitle, prog) {
+    var fs = nodeReq('fs'), os = nodeReq('os'), pathMod = nodeReq('path');
+    var S0 = plan.segments[0].start, S1 = plan.segments[plan.segments.length - 1].end, span = S1 - S0;
+    var dir = pathMod.join(os.tmpdir(), 'pulse-short-' + Date.now());
+    try { fs.mkdirSync(dir); } catch (e) {}
+    var target = rt ? CPReframe.targetSize(rt.label) : null, multi = setup.cams.length > 1;
+    var mics = [];
+    setup.map.forEach(function (v, cam) {
+      var src = mcParseSource(v);
+      if (!src || String(v) === '-1' || !setup.tracks[src.track]) return;
+      mics.push({ cam: cam, track: setup.tracks[src.track], channel: src.channel != null ? src.channel : null });
+    });
+    var wide = [];
+    setup.cams.forEach(function (c) { if (multi && (!setup.map[c.index] || String(setup.map[c.index]) === '-1')) wide.push(c.index); });
+    var activity = [], info = {}, framing = {};
+    prog.textContent = multi ? 'Reading the camera plan…' : 'Looking at the video…';
+    var planP = !multi ? Promise.resolve(null)
+      : ((state.plan && state.plan.length && state.plan[0].start <= S0 + 0.5 && state.plan[state.plan.length - 1].end >= S1 - 0.5)
+        ? Promise.resolve(state.plan) : buildMcPlan());
+    return planP.then(function (camPlan) {
+      // who talks: the mics, else the transcript's voices
+      return mics.reduce(function (pr, m, i) {
+        return pr.then(function () {
+          var at = mediaAt(m.track.segments || [m.track], S0);
+          if (!at) { activity[i] = []; return; }
+          return podMic(ff, at.path, m.channel, at.t, span, dir, i).then(function (lv) { activity[i] = micActivity(lv); });
+        });
+      }, Promise.resolve()).then(function () {
+        if (!mics.length) activity = wordActivity(S0, span);
+        return camPlan;
+      });
+    }).then(function (camPlan) {
+      var angles = multi ? {} : { 0: true };
+      if (multi) (camPlan || []).forEach(function (p) { if (p.end > S0 && p.start < S1 && camOf(setup, p.angle)) angles[p.angle] = true; });
+      prog.textContent = 'Finding the faces…';
+      return Object.keys(angles).reduce(function (pr, ang) {
+        return pr.then(function () {
+          var cam = camOf(setup, +ang), at = cam && mediaAt(cam.segments, S0);
+          if (!at) return;
+          return probeMedia(ff, at.path).then(function (pm) {
+            info[ang] = pm;
+            return Promise.all([podFrames(ff, at.path, at.t, span, pm.src, dir, ang), podMotion(ff, at.path, at.t, span, pm.src, dir, ang)]).then(function (both) {
+              var fr = both[0], mo = { motion: both[1] };
+              // the people the owner marked on this camera win; else its faces
+              var marks = shortMarksFor(at.path);
+              var faces = marks.length ? CPPodShort.regionTracks(fr.frames, fr.w, fr.h, marks, mo)
+                                       : CPPodShort.faceTracks(fr.frames, fr.w, fr.h, window.CPPico, window.CP_FACEFINDER_B64, mo);
+              var byVoice = activity.length ? CPPodShort.assign(faces, activity) : [];
+              framing[ang] = { faces: faces, byVoice: byVoice, src: pm.src };
+            });
+          });
+        });
+      }, Promise.resolve()).then(function () { return camPlan; });
+    }).then(function (camPlan) {
+      // the pieces: the director's plan (several cameras), or the talk turns
+      // inside one frame (a single camera with more than one face)
+      var speech = function (t0, t1) { return activity.length ? CPPodShort.talker(activity.map(function (s) { return s.map(function (v) { return v > 0 ? -10 : -90; }); }),
+        Math.floor((t0 - S0) / POD_STEP), Math.ceil((t1 - S0) / POD_STEP)) : -1; };
+      var cplan = camPlan;
+      if (!multi) {
+        var fr0 = framing[0] || { faces: [] };
+        var turns = [];
+        if (fr0.faces.length > 1) {
+          var by = activity.length
+            ? activity.map(function (s, k) { return fr0.byVoice[k] >= 0 ? s : null; })
+            : fr0.faces.map(function (f) { return f.series; });
+          var idxs = []; by.forEach(function (s, k) { if (s) idxs.push(k); });
+          turns = idxs.length > 1 ? CPPodShort.turnsFrom(idxs.map(function (k) { return by[k]; }), POD_STEP, 1.5).map(function (t) {
+            var k = idxs[t.spk];
+            return { start: S0 + t.start, end: S0 + t.end, angle: 0, spk: activity.length ? fr0.byVoice[k] : k };
+          }) : [];
+        }
+        cplan = turns.length ? turns : [{ start: S0 - 1, end: S1 + 1, angle: 0, spk: fr0.faces.length ? biggestFace(fr0.faces) : -1 }];
+      }
+      // a plan step on a camera that isn't one (no footage there) goes to the wide shot
+      if (multi) cplan = (cplan || []).map(function (p) { return camOf(setup, p.angle) ? p : { start: p.start, end: p.end, angle: wide.length ? wide[0] : setup.cams[0].index }; });
+      var pieces = CPPodShort.pieces(plan.segments, cplan, multi ? speech : null, { fallbackAngle: wide.length ? wide[0] : setup.cams[0].index });
+      var inputs = [], idx = {}, notes = [];
+      function inputOf(path, t) {
+        if (idx[path] == null) { idx[path] = inputs.length; inputs.push({ path: path, base: t }); }
+        inputs[idx[path]].base = Math.min(inputs[idx[path]].base, t);
+        return idx[path];
+      }
+      var segs = pieces.map(function (p) {
+        var cam = camOf(setup, p.angle), fr = framing[p.angle] || { faces: [], byVoice: [], src: (info[p.angle] || {}).src || { w: 1920, h: 1080 } };
+        var at0 = mediaAt(cam.segments, p.start), src = fr.src || { w: 1920, h: 1080 };
+        var tgt = target || { w: src.w - (src.w % 2), h: src.h - (src.h % 2) }, aspect = tgt.w / tgt.h;
+        var faces = fr.faces, crops, micOfCam = -1;
+        mics.forEach(function (m, i) { if (m.cam === p.angle) micOfCam = i; });
+        var face = function (k) { return (k != null && k >= 0 && faces[k]) ? faces[k] : null; };
+        var who = multi ? p.who : -1;
+        if (!target) crops = [{ x: 0, y: 0, w: tgt.w, h: tgt.h }];
+        else if (multi && micOfCam >= 0) {
+          // a close camera: the face that moves with its mic, else the biggest
+          var f1 = face(fr.byVoice[micOfCam]) || face(biggestFace(faces));
+          crops = [personCrop(f1, src, aspect, { fallbackCx: shFocusX() })];
+          notes.push('V' + (p.angle + 1) + (f1 ? ' face' : ' centre'));
+        } else if (multi && who === 'both' && fr.byVoice.filter(function (x) { return x >= 0; }).length >= 2) {
+          var two = fr.byVoice.filter(function (x) { return x >= 0; }).slice(0, 2).map(face).sort(function (u, v) { return u.cx - v.cx; });
+          crops = two.map(function (f2) { return personCrop(f2, src, tgt.w / (tgt.h / 2), { minHeight: 0.3 }); });
+          notes.push('V' + (p.angle + 1) + ' both');
+        } else {
+          var k = multi ? (typeof who === 'number' && who >= 0 ? fr.byVoice[who] : -1) : p.spk;
+          var f3 = face(k);
+          if (!f3 && faces.length === 1) f3 = faces[0];
+          if (!f3 && faces.length > 1) {
+            // nobody known to be talking: both, stacked (two faces), else the biggest
+            if (faces.length === 2) {
+              crops = faces.slice().sort(function (u, v) { return u.cx - v.cx; }).map(function (f4) { return personCrop(f4, src, tgt.w / (tgt.h / 2), { minHeight: 0.3 }); });
+              notes.push('V' + (p.angle + 1) + ' both');
+            } else f3 = faces[biggestFace(faces)];
+          }
+          if (!crops) { crops = [personCrop(f3, src, aspect, { fallbackCx: shFocusX() })]; notes.push('V' + (p.angle + 1) + (f3 ? ' face at ' + Math.round(f3.cx * 100) + '%' : ' centre (no face)')); }
+        }
+        var input = inputOf(at0.path, at0.t);
+        return { input: input, from: at0.t, to: at0.t + (p.end - p.start), crops: crops, fromAudio: {}, toAudio: {}, target: tgt };
+      });
+      // the sound: the podcast's mics (each file once), else the camera's own
+      var audio = [], seen = {};
+      mics.forEach(function (m) {
+        var at = mediaAt(m.track.segments || [m.track], S0);
+        if (!at) return;
+        var key = at.path + ':' + m.channel;
+        if (seen[key]) return; seen[key] = true;
+        audio.push({ input: inputOf(at.path, at.t), channel: m.channel, track: m.track });
+      });
+      var byFile = {};
+      audio.forEach(function (x) { byFile[x.input] = (byFile[x.input] || 0) + 1; });
+      audio = audio.filter(function (x, i) { return byFile[x.input] === 1 || audio.findIndex(function (b) { return b.input === x.input; }) === i; })
+        .map(function (x) { return byFile[x.input] > 1 ? { input: x.input, channel: null, track: x.track } : x; });
+      if (!audio.length && (info[pieces[0].angle] || {}).audio) audio.push({ input: segs[0].input, channel: null, track: null, cam: camOf(setup, pieces[0].angle) });
+      pieces.forEach(function (p, i) {
+        audio.forEach(function (x) {
+          var at = x.track ? mediaAt(x.track.segments || [x.track], p.start) : (x.cam ? mediaAt(x.cam.segments, p.start) : { t: segs[i].from });
+          segs[i].fromAudio[x.input] = at.t; segs[i].toAudio[x.input] = at.t + (p.end - p.start);
+          inputs[x.input].base = Math.min(inputs[x.input].base, at.t);
+        });
+      });
+      inputs.forEach(function (inp) { inp.base = Math.max(0, inp.base - 0.5); });
+      var tgt0 = segs[0].target, hookPng = null;
+      if (hookTitle) { try { hookPng = writeHookCard(hookTitle, tgt0.w, tgt0.h, dir); } catch (eH) { hookPng = null; } }
+      var outPath = pathMod.join(dir, 'pulse-short.mp4');
+      var args = CPPodShort.filterArgs(inputs, segs, audio, tgt0, hookPng, outPath);
+      var nCams = Object.keys(framing).length;
+      prog.textContent = 'Making the short' + (multi ? ' from ' + nCams + ' cameras' : '') + (plan.removed > 0.2 ? ' (' + plan.removed.toFixed(1) + ' s of pauses cut)' : '') + '…';
+      _podLast = { pieces: pieces, segs: segs, framing: framing, voices: activity.length, notes: notes, multi: multi };
+      return runFfmpeg(ff, args, 900000).then(function (rr) {
+        if (rr.error || (rr.code && rr.code !== 0)) throw new Error('the render failed: ' + String(rr.stderr || rr.error || '').slice(-200));
+        return { path: outPath, cams: multi ? nCams : 0, diag: pieces.length + ' piece(s): ' + notes.join(', ') +
+          ' · faces ' + Object.keys(framing).map(function (k) { return 'V' + (+k + 1) + ':' + framing[k].faces.length; }).join(' ') };
+      });
+    });
+  }
+  /* The window for a person: a marked box keeps its whole box in view, a
+     face is framed as a talking head. */
+  function personCrop(p, src, aspect, o) {
+    return (p && p.marked) ? CPPodShort.markCrop(p.box, src, aspect, o) : CPPodShort.faceCrop(p, src, aspect, o);
+  }
+  function biggestFace(faces) {
+    var b = -1, bs = 0;
+    (faces || []).forEach(function (f, i) { if (f.s > bs) { bs = f.s; b = i; } });
+    return b;
+  }
+  function makeVerticalClip(h, rt) {
+    var ff = resolveFfmpeg();
+    if (!ff) return toast('Making a clip needs the audio engine — tap Settings → ⬇️ Set up audio engine.', true);
+    if (typeof CPReframe === 'undefined' || typeof CPShorts === 'undefined' || typeof CPPodShort === 'undefined') return toast('Shorts module missing.', true);
+    var o = shortOpts();
+    var plan = shortPlanFor(h, o);
+    if (!plan.segments.length) return toast('No words in this moment — transcribe the video again, then try.', true);
+    var name = sanitizeName(h.title || 'Pulse clip');
+    var prog = $('shorts-progress'); prog.classList.remove('hidden'); prog.textContent = 'Finding the cameras…';
+    var hook = o.hook ? CPShorts.hookText(h) : '';
+    var S0 = plan.segments[0].start, S1 = plan.segments[plan.segments.length - 1].end;
+    shortCameras(S0, S1, o).then(function (setup) {
+      return renderFramedShort(ff, setup, plan, rt, hook, prog);
     }).then(function (r) {
       prog.textContent = 'Importing “' + name + '”…';
       return CPBridge.callHost('CP_importClip', { path: r.path, name: name }).then(function (res) { return { res: res, info: r }; });
@@ -15462,7 +15721,7 @@
       var what = (rt ? rt.label + ' ' : '') + 'short “' + (res && res.sequence ? res.sequence : name) + '”' +
         (info.cams ? ' from ' + info.cams + ' cameras' : '') +
         (plan.removed > 0.2 ? ' — ' + plan.removed.toFixed(1) + ' s of pauses and “um”s cut' : '');
-      diag('shorts', 'made ' + what + ' · ' + plan.segments.length + ' piece(s), ' + plan.duration.toFixed(1) + ' s' + (o.hook ? ', hook title' : '') + (o.caps ? ', captions' : '') +
+      diag('shorts', 'made ' + what + ' · ' + plan.segments.length + ' stretch(es), ' + plan.duration.toFixed(1) + ' s' + (o.hook ? ', hook title' : '') + (o.caps ? ', captions' : '') +
         (info.diag ? ' · ' + info.diag : ''));
       if (o.caps && plan.words.length && res && res.sequence) {
         prog.textContent = 'Adding captions in your caption style…';
@@ -15477,194 +15736,143 @@
       toast('🎬 Made the ' + what + (o.caps && !plan.words.length ? '. (No word timing for captions — transcribe first.)' : '.'));
     }).catch(function (e) { prog.classList.add('hidden'); toast('Make clip failed: ' + e.message, true); });
   }
-
-  /* ---- a short from a multi-camera podcast (CPPodShort) ----
-     The cameras are the sequence's video tracks (V1, V2, V3…); each camera
-     row on Podcast cameras names the mic that is on it, and a row with no
-     mic is the wide shot. Which camera shows when is the director's plan
-     (the one Podcast cameras builds — built here if there is none yet);
-     where the 9:16 window sits inside each camera is found in its own
-     frames: the person (movement and skin), matched to their mic. */
-  function podcastCameras() {
-    return CPBridge.callHost('CP_getVideoTracks').then(function (r) {
-      var cams = (r.videoTracks || []).filter(function (t) { return t.segments && t.segments.some(function (x) { return !x.disabled; }); });
-      if (cams.length < 2) return null;                      // one camera: the plain short
-      return ensureAudioTracks().catch(function () { return []; }).then(function (tracks) {
-        var n = Math.min(cams.length, parseInt($('mc-angles') && $('mc-angles').value, 10) || cams.length);
-        var map = (tracks && tracks.length) ? mcEnsureMap(tracks, n).slice() : [];
-        return { cams: (r.videoTracks || []).slice(0, n), tracks: tracks || [], map: map, n: n };
-      });
-    }, function () { return null; });
-  }
-  /* The media second a track plays at sequence second t (the clip under t,
-     else the nearest one). */
-  function mediaAt(segments, t) {
-    var segs = (segments || []).filter(function (x) { return x && x.mediaPath && !x.disabled; });
-    if (!segs.length) return null;
-    var best = segs[0], bd = Infinity;
-    segs.forEach(function (x) {
-      var d = t < x.seqStart ? x.seqStart - t : (t > x.seqEnd ? t - x.seqEnd : 0);
-      if (d < bd) { bd = d; best = x; }
-    });
-    return { path: best.mediaPath, t: Math.max(0, (best.inPoint || 0) + (t - best.seqStart) * (best.speed || 1)) };
-  }
-  function readBytes(p) {
-    var b64 = nodeReq('fs').readFileSync(p).toString('base64'), bin = atob(b64), u = new Uint8Array(bin.length);
-    for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
-    return u;
-  }
-  var POD_FW = 160, POD_FH = 90, POD_STEP = 0.5;
-  /* A camera's frames over [t0, t1] of its media, 2 a second, 160×90 RGB. */
-  function podFrames(ff, path, t0, dur, dir, tag) {
-    var out = nodeReq('path').join(dir, 'frames-' + tag + '.rgb');
-    return runFfmpeg(ff, ['-y', '-hide_banner', '-loglevel', 'error', '-ss', t0.toFixed(3), '-t', dur.toFixed(3), '-i', path,
-      '-vf', 'fps=' + (1 / POD_STEP) + ',scale=' + POD_FW + ':' + POD_FH, '-f', 'rawvideo', '-pix_fmt', 'rgb24', out], 180000).then(function () {
-      var u = readBytes(out), fr = [], n = POD_FW * POD_FH * 3;
-      for (var i = 0; i + n <= u.length; i += n) fr.push(u.subarray(i, i + n));
-      try { nodeReq('fs').unlinkSync(out); } catch (e) {}
-      return fr;
-    });
-  }
-  /* A mic's loudness (dB per 0.5 s) over [t0, t1] of its media. */
-  function podMic(ff, path, channel, t0, dur, dir, tag) {
-    var out = nodeReq('path').join(dir, 'mic-' + tag + '.pcm');
-    var af = (channel != null ? 'pan=mono|c0=c' + channel + ',' : '') + 'aresample=8000';
-    return runFfmpeg(ff, ['-y', '-hide_banner', '-loglevel', 'error', '-ss', t0.toFixed(3), '-t', dur.toFixed(3), '-i', path,
-      '-af', af, '-ac', '1', '-f', 's16le', out], 180000).then(function () {
-      var lv = CPPodShort.levels(readBytes(out), 8000, POD_STEP);
-      try { nodeReq('fs').unlinkSync(out); } catch (e) {}
-      return lv;
-    });
-  }
-  function renderPodcastShort(ff, pc, plan, rt, hookTitle, prog) {
-    var fs = nodeReq('fs'), os = nodeReq('os'), pathMod = nodeReq('path');
-    var S0 = plan.segments[0].start, S1 = plan.segments[plan.segments.length - 1].end, span = S1 - S0;
-    var dir = pathMod.join(os.tmpdir(), 'pulse-podshort-' + Date.now());
-    try { fs.mkdirSync(dir); } catch (e) {}
-    var target = CPReframe.targetSize(rt.label), aspect = target.w / target.h;
-    // the mics: one per camera row that names one (row order)
-    var mics = [];
-    pc.map.forEach(function (v, cam) {
-      var src = mcParseSource(v);
-      if (!src || String(v) === '-1' || !pc.tracks[src.track]) return;
-      mics.push({ cam: cam, track: pc.tracks[src.track], channel: src.channel != null ? src.channel : null });
-    });
-    var wide = [];
-    for (var a = 0; a < pc.n; a++) if (!pc.map[a] || String(pc.map[a]) === '-1') wide.push(a);
-    prog.textContent = 'Reading the camera plan…';
-    var planP = (state.plan && state.plan.length && state.plan[0].start <= S0 + 0.5 && state.plan[state.plan.length - 1].end >= S1 - 0.5)
-      ? Promise.resolve(state.plan) : buildMcPlan();
-    var micSeries = [];
-    return planP.then(function (camPlan) {
-      prog.textContent = 'Listening to the mics…';
-      return mics.reduce(function (pr, m, i) {
-        return pr.then(function () {
-          var at = mediaAt(m.track.segments || [m.track], S0);
-          if (!at) { micSeries[i] = []; return; }
-          return podMic(ff, at.path, m.channel, at.t, span, dir, i).then(function (lv) { micSeries[i] = lv; });
-        });
-      }, Promise.resolve()).then(function () { return camPlan; });
-    }).then(function (camPlan) {
-      var speech = function (t0, t1) {
-        var w = mics.length ? CPPodShort.talker(micSeries, Math.floor((t0 - S0) / POD_STEP), Math.ceil((t1 - S0) / POD_STEP)) : -1;
-        return w;
-      };
-      var pieces = CPPodShort.pieces(plan.segments, camPlan, speech, { fallbackAngle: wide.length ? wide[0] : 0 });
-      var used = {}; pieces.forEach(function (p) { used[p.angle] = true; });
-      // each camera used: its people, matched to the mics
-      var framing = {};
-      prog.textContent = 'Finding the people in each camera…';
-      return Object.keys(used).reduce(function (pr, ang) {
-        return pr.then(function () {
-          var cam = pc.cams[+ang], at = cam && mediaAt(cam.segments, S0);
-          if (!at) { framing[ang] = { subjects: [], src: null }; return; }
-          return Promise.all([podFrames(ff, at.path, at.t, span, dir, ang), runFfmpeg(ff, ['-hide_banner', '-i', at.path], 20000)]).then(function (r) {
-            var m = /,\s*(\d{2,5})x(\d{2,5})/.exec(r[1].stderr || '');
-            var subj = CPPodShort.subjects(r[0], POD_FW, POD_FH);
-            framing[ang] = { subjects: subj, src: m ? { w: +m[1], h: +m[2] } : { w: 1920, h: 1080 },
-                             byMic: CPPodShort.assign(subj, micSeries.map(function (s) { return s.slice(1); })) };
-          });
-        });
-      }, Promise.resolve()).then(function () { return { pieces: pieces, framing: framing }; });
-    }).then(function (an) {
-      // the inputs: every camera file and mic file once
-      var inputs = [], idx = {};
-      function inputOf(path, t) {
-        if (idx[path] == null) { idx[path] = inputs.length; inputs.push({ path: path, base: t }); }
-        inputs[idx[path]].base = Math.min(inputs[idx[path]].base, t);
-        return idx[path];
-      }
-      var notes = [];
-      var segs = an.pieces.map(function (p) {
-        var cam = pc.cams[p.angle], fr = an.framing[p.angle] || { subjects: [] };
-        var at0 = mediaAt(cam.segments, p.start), src = fr.src || { w: 1920, h: 1080 };
-        var crops, micOfCam = -1;
-        mics.forEach(function (m, i) { if (m.cam === p.angle) micOfCam = i; });
-        if (micOfCam >= 0) {
-          // a close camera: its own person (the one moving with its mic), else the biggest
-          var si = fr.byMic && fr.byMic[micOfCam] >= 0 ? fr.byMic[micOfCam] : 0;
-          crops = [CPPodShort.cropFor(fr.subjects[si] || null, src, aspect, { zoom: false })];
-          notes.push('V' + (p.angle + 1) + ' close');
-        } else if (p.who === 'both' && fr.byMic && fr.byMic.filter(function (x) { return x >= 0; }).length >= 2) {
-          // a wide shot while two talk: both, stacked
-          var two = fr.byMic.filter(function (x) { return x >= 0; }).slice(0, 2).map(function (x) { return fr.subjects[x]; })
-            .sort(function (u, v) { return u.cx - v.cx; });
-          // each half is half as tall, so it can come closer and stay sharp
-          crops = two.map(function (sj) { return CPPodShort.cropFor(sj, src, target.w / (target.h / 2), { minHeight: 0.36 }); });
-          notes.push('V' + (p.angle + 1) + ' both');
-        } else if (typeof p.who === 'number' && p.who >= 0 && fr.byMic && fr.byMic[p.who] >= 0) {
-          // a wide shot: zoom in on whoever is talking
-          crops = [CPPodShort.cropFor(fr.subjects[fr.byMic[p.who]], src, aspect, {})];
-          notes.push('V' + (p.angle + 1) + ' on mic ' + (p.who + 1));
-        } else {
-          // nobody to follow: the middle of everyone in the frame
-          var ss = fr.subjects;
-          var mid = ss.length ? { x0: Math.min.apply(null, ss.map(function (x) { return x.x0; })), x1: Math.max.apply(null, ss.map(function (x) { return x.x1; })),
-                                  y0: Math.min.apply(null, ss.map(function (x) { return x.y0; })), y1: 1 } : null;
-          if (mid) mid.cx = (mid.x0 + mid.x1) / 2;
-          crops = [CPPodShort.cropFor(mid, src, aspect, { zoom: false })];
-          notes.push('V' + (p.angle + 1) + ' wide');
-        }
-        var input = inputOf(at0.path, at0.t);
-        var seg = { input: input, from: at0.t, to: at0.t + (p.end - p.start) * 1, crops: crops, fromAudio: {}, toAudio: {} };
-        return seg;
-      });
-      // the sound: the podcast's mics (each file once), else the first camera's
-      var audio = [], seen = {};
-      mics.forEach(function (m) {
-        var at = mediaAt(m.track.segments || [m.track], S0);
-        if (!at) return;
-        var key = at.path + ':' + m.channel;
-        if (seen[key]) return; seen[key] = true;
-        audio.push({ input: inputOf(at.path, at.t), channel: m.channel, track: m.track });
-      });
-      // a mic file used whole (both of its channels as two mics) plays once, both channels
-      var byFile = {};
-      audio.forEach(function (a) { byFile[a.input] = (byFile[a.input] || 0) + 1; });
-      audio = audio.filter(function (a, i) { return byFile[a.input] === 1 || audio.findIndex(function (b) { return b.input === a.input; }) === i; })
-        .map(function (a) { return byFile[a.input] > 1 ? { input: a.input, channel: null, track: a.track } : a; });
-      if (!audio.length) audio.push({ input: segs[0].input, channel: null, track: null });
-      an.pieces.forEach(function (p, i) {
-        audio.forEach(function (a) {
-          var at = a.track ? mediaAt(a.track.segments || [a.track], p.start) : { t: segs[i].from };
-          segs[i].fromAudio[a.input] = at.t; segs[i].toAudio[a.input] = at.t + (p.end - p.start);
-          inputs[a.input].base = Math.min(inputs[a.input].base, at.t);
-        });
-      });
-      inputs.forEach(function (inp) { inp.base = Math.max(0, inp.base - 0.5); });
-      var hookPng = null;
-      if (hookTitle) { try { hookPng = writeHookCard(hookTitle, target.w, target.h, dir); } catch (eH) { hookPng = null; } }
-      var outPath = pathMod.join(dir, 'pulse-podcast-short.mp4');
-      var args = CPPodShort.filterArgs(inputs, segs, audio, target, hookPng, outPath);
-      prog.textContent = 'Making the short from ' + Object.keys(an.framing).length + ' cameras…';
-      _podLast = { pieces: an.pieces, segs: segs, framing: an.framing, mics: mics.length, notes: notes };
-      return runFfmpeg(ff, args, 900000).then(function (rr) {
-        if (rr.error || (rr.code && rr.code !== 0)) throw new Error('the render failed: ' + String(rr.stderr || rr.error || '').slice(-200));
-        return { path: outPath, cams: Object.keys(an.framing).length, diag: an.pieces.length + ' camera pieces: ' + notes.join(', ') };
-      });
-    });
-  }
   var _podLast = null;
+
+  /* ---- 👥 Mark the people (Shorts) ----
+     The owner: "add a function where I can mark on the screen — left, right,
+     center, how many people there are — so you zoom in at that section and
+     create a reel". A frame of each camera; a box per person, dragged and
+     resized on it; kept per video file (settings.shMarks) so every reel from
+     that footage uses them. A camera with marks is framed on them instead of
+     the faces Pulse finds; Clear goes back to the faces. */
+  var MARK_COLORS = ['#ffcc33', '#33ccff', '#ff6699'];
+  var _mark = { cams: [], cur: 0, img: null, drag: null };
+  function markKey(p) { return String(p || '').split(/[\\/]/).pop().toLowerCase(); }
+  function shortMarksFor(p) {
+    var m = settings.shMarks && settings.shMarks[markKey(p)];
+    return (m && m.length) ? m.map(function (b) { return { x: b.x, y: b.y, w: b.w, h: b.h }; }) : [];
+  }
+  function saveMarks(p, boxes) {
+    settings.shMarks = settings.shMarks || {};
+    if (boxes && boxes.length) settings.shMarks[markKey(p)] = boxes.map(function (b) {
+      return { x: +b.x.toFixed(4), y: +b.y.toFixed(4), w: +b.w.toFixed(4), h: +b.h.toFixed(4) };
+    }); else delete settings.shMarks[markKey(p)];
+    saveSettings();
+  }
+  function defaultMarks(n) {
+    var out = [];
+    for (var i = 0; i < n; i++) { var w = 0.72 / n; out.push({ x: (i + 0.5) / n - w / 2, y: 0.1, w: w, h: 0.82 }); }
+    return out;
+  }
+  function markCam() { return _mark.cams[_mark.cur] || null; }
+  function markStatus() {
+    var c = markCam(), el = $('sh-mark-status'); if (!el) return;
+    if (!c) { el.textContent = ''; return; }
+    var n = shortMarksFor(c.path).length;
+    el.textContent = n ? (n + ' ' + (n === 1 ? 'person' : 'people') + ' marked on ' + c.label + ' — reels from it frame these. Clear to let Pulse find the faces.')
+                       : 'Nothing marked on ' + c.label + ' — Pulse finds the faces itself. Pick how many people to mark them.';
+  }
+  function drawMarks() {
+    var cv = $('sh-mark-canvas'), c = markCam(); if (!cv || !c || !_mark.img) return;
+    var W = cv.width, H = cv.height, g = cv.getContext('2d');
+    g.drawImage(_mark.img, 0, 0, W, H);
+    shortMarksFor(c.path).forEach(function (b, i) {
+      var col = MARK_COLORS[i % MARK_COLORS.length];
+      g.strokeStyle = col; g.lineWidth = 3; g.strokeRect(b.x * W, b.y * H, b.w * W, b.h * H);
+      g.fillStyle = col; g.fillRect((b.x + b.w) * W - 14, (b.y + b.h) * H - 14, 14, 14);   // the resize handle
+      g.font = '700 16px sans-serif'; g.fillText(String(i + 1), b.x * W + 6, b.y * H + 20);
+    });
+  }
+  function showMarkFrame() {
+    var ff = resolveFfmpeg(), c = markCam();
+    if (!c) return;
+    if (!ff) return toast('Showing a frame needs the audio engine — tap Settings → ⬇️ Set up audio engine.', true);
+    var out = nodeReq('path').join(nodeReq('os').tmpdir(), 'pulse-mark-' + Date.now() + '.png');
+    $('sh-mark-status').textContent = 'Reading a frame of ' + c.label + '…';
+    runFfmpeg(ff, ['-y', '-hide_banner', '-loglevel', 'error', '-ss', c.t.toFixed(3), '-i', c.path, '-frames:v', '1', '-vf', 'scale=640:-2', out], 30000).then(function () {
+      loadRenderedFrame(out, function (im) {
+        try { nodeReq('fs').unlinkSync(out); } catch (e) {}
+        if (!im) { $('sh-mark-status').textContent = 'Could not read a frame of ' + c.label + '.'; return; }
+        _mark.img = im;
+        var cv = $('sh-mark-canvas');
+        cv.width = 640; cv.height = Math.round(640 * (im.naturalHeight || im.height) / Math.max(1, im.naturalWidth || im.width));
+        $('sh-mark-stage').classList.remove('hidden');
+        var n = shortMarksFor(c.path).length;
+        document.querySelectorAll('#sh-mark-n button').forEach(function (b) { b.classList.toggle('on', +b.dataset.n === n); });
+        drawMarks(); markStatus();
+      });
+    });
+  }
+  function loadMarkCameras() {
+    return CPBridge.callHost('CP_getVideoTracks').then(function (r) {
+      var seen = {}, cams = [];
+      (r.videoTracks || []).forEach(function (t) {
+        cameraSegments(t.segments, -1e9, 1e9).forEach(function (x) {
+          if (seen[x.mediaPath]) return; seen[x.mediaPath] = true;
+          cams.push({ label: (t.name || ('V' + (t.index + 1))) + ' · ' + markKey(x.mediaPath), path: x.mediaPath, t: (x.inPoint || 0) + 2 });
+        });
+      });
+      return cams;
+    }, function () { return []; }).then(function (cams) {
+      if (cams.length) return cams;
+      return CPBridge.callHost('CP_getTranscribeSource').then(function (s) {
+        var c = s && s.clip; return (c && c.mediaPath) ? [{ label: markKey(c.mediaPath), path: c.mediaPath, t: (c.inPoint || 0) + 2 }] : [];
+      }, function () { return []; });
+    }).then(function (cams) {
+      _mark.cams = cams; _mark.cur = 0;
+      var sel = $('sh-mark-cam'); sel.innerHTML = '';
+      cams.forEach(function (c, i) { var o = document.createElement('option'); o.value = String(i); o.textContent = c.label; sel.appendChild(o); });
+      if (!cams.length) { $('sh-mark-status').textContent = 'No video on the timeline yet — put your footage on it, then tap 📷.'; return; }
+      showMarkFrame();
+    });
+  }
+  if ($('sh-mark-load')) $('sh-mark-load').addEventListener('click', function () {
+    if (!CPBridge.isCEP()) return toast('Marking people needs Premiere (open Pulse inside Premiere).', true);
+    loadMarkCameras();
+  });
+  if ($('sh-mark-cam')) $('sh-mark-cam').addEventListener('change', function () { _mark.cur = parseInt(this.value, 10) || 0; showMarkFrame(); });
+  if ($('sh-mark-clear')) $('sh-mark-clear').addEventListener('click', function () {
+    var c = markCam(); if (!c) return;
+    saveMarks(c.path, []);
+    document.querySelectorAll('#sh-mark-n button').forEach(function (b) { b.classList.remove('on'); });
+    drawMarks(); markStatus();
+  });
+  document.querySelectorAll('#sh-mark-n button').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var c = markCam();
+      document.querySelectorAll('#sh-mark-n button').forEach(function (b) { b.classList.toggle('on', b === btn); });
+      if (!c) return toast('Tap 📷 Show a frame first.');
+      saveMarks(c.path, defaultMarks(+btn.dataset.n));
+      drawMarks(); markStatus();
+    });
+  });
+  (function () {
+    var cv = $('sh-mark-canvas'); if (!cv) return;
+    function at(e) { var r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }; }
+    cv.addEventListener('pointerdown', function (e) {
+      var c = markCam(); if (!c) return;
+      var p = at(e), boxes = shortMarksFor(c.path), hit = null;
+      var hx = 14 / Math.max(1, cv.getBoundingClientRect().width), hy = 14 / Math.max(1, cv.getBoundingClientRect().height);
+      for (var i = boxes.length - 1; i >= 0 && !hit; i--) {
+        var b = boxes[i];
+        if (p.x >= b.x + b.w - hx * 1.5 && p.x <= b.x + b.w + hx && p.y >= b.y + b.h - hy * 1.5 && p.y <= b.y + b.h + hy) hit = { i: i, mode: 'size' };
+        else if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) hit = { i: i, mode: 'move' };
+      }
+      if (!hit) return;
+      _mark.drag = { i: hit.i, mode: hit.mode, from: p, box: boxes[hit.i], boxes: boxes };
+      try { cv.setPointerCapture(e.pointerId); } catch (eC) {}
+    });
+    cv.addEventListener('pointermove', function (e) {
+      var d = _mark.drag, c = markCam(); if (!d || !c) return;
+      var p = at(e), dx = p.x - d.from.x, dy = p.y - d.from.y, b = d.box, nb;
+      if (d.mode === 'move') nb = { x: Math.max(0, Math.min(1 - b.w, b.x + dx)), y: Math.max(0, Math.min(1 - b.h, b.y + dy)), w: b.w, h: b.h };
+      else nb = { x: b.x, y: b.y, w: Math.max(0.05, Math.min(1 - b.x, b.w + dx)), h: Math.max(0.08, Math.min(1 - b.y, b.h + dy)) };
+      var boxes = d.boxes.slice(); boxes[d.i] = nb;
+      saveMarks(c.path, boxes); drawMarks();
+    });
+    function end() { if (_mark.drag) { _mark.drag = null; markStatus(); } }
+    cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+  })();
 
   function runHighlightFinder() {
     if (typeof CPSmartEdit === 'undefined') return toast('Shorts module missing.', true);
@@ -15707,12 +15915,14 @@
     window.CP_DEBUG_EXT = window.CP_DEBUG_EXT || {};
     window.CP_DEBUG_EXT.shorts = { show: renderShorts, plan: function (h) { return shortPlanFor(h, shortOpts()); },
                                    viral: function () { viralEdit(); },
+                                   setMarks: function (p, boxes) { saveMarks(p, boxes); }, marks: function (p) { return shortMarksFor(p); },
+                                   markCameras: function () { return loadMarkCameras().then(function () { return _mark.cams.map(function (c) { return c.label; }); }); },
                                    verifyEditable: function (cues, track, path) { verifyEditableVisible(cues, track, path); },
                                    setCapOut: function (v) { setCapOut(v); },
                                    setCameras: function (o) { if (o.plan) state.plan = o.plan; if (o.map) { state.mcMap = o.map.slice(); state.mcMapAuto = o.map.map(function () { return false; }); }
                                      if (o.angles && $('mc-angles')) $('mc-angles').value = String(o.angles); state.mcAudioTracks = null; },
                                    podcast: function () { return _podLast ? JSON.parse(JSON.stringify({ pieces: _podLast.pieces, segs: _podLast.segs, notes: _podLast.notes, mics: _podLast.mics,
-                                     framing: Object.keys(_podLast.framing).reduce(function (o, k) { var f = _podLast.framing[k]; o[k] = { src: f.src, byMic: f.byMic, subjects: (f.subjects || []).map(function (x) { return { cx: x.cx, x0: x.x0, x1: x.x1, y0: x.y0 }; }) }; return o; }, {}) })) : null; } };
+                                     framing: Object.keys(_podLast.framing).reduce(function (o, k) { var f = _podLast.framing[k]; o[k] = { src: f.src, byVoice: f.byVoice, faces: (f.faces || []).map(function (x) { return { cx: x.cx, cy: x.cy, s: x.s, marked: !!x.marked }; }) }; return o; }, {}), multi: _podLast.multi, voices: _podLast.voices })) : null; } };
   } catch (eDbgSh) {}
 
   // ---- Speaker-aware vertical (podcast, separate mics) ----

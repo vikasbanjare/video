@@ -8,20 +8,20 @@
  * if someone in the center frame is talking to the left side, focus there
  * and fit them in the frame. Same for the left and right cameras."
  *
- * Which camera shows when is the podcast director's own plan (Podcast
- * cameras: each camera row names its mic; a row with no mic is the wide
- * shot). This module decides WHERE inside each camera the 9:16 window goes:
- *   subjects(frames, w, h)       the people in a camera's frames — where the
- *                                picture moves (people do, the set doesn't)
- *                                and where there is skin — with each one's
- *                                movement over time
- *   assign(subjects, mics)       which person is which mic: the person whose
- *                                head moves while that mic is loud
- *   cropFor(subject, src, aspect, o)  the window: the person centred, head
- *                                room above, zoomed in on a wide shot
- *   pieces(keep, plan, speech, o)    the short's stretches cut by the
- *                                camera plan, each wide piece told who talks
- *                                (or that both do: then both are stacked)
+ * Then (v0.10.12): "it is zooming anywhere, randomly — it was supposed to
+ * check where to zoom in based on the face in the frame … on all formats,
+ * three cameras, one camera", and "let me mark on the screen where the
+ * people are". So the framing is by FACES (pico, CPPico) or by the boxes
+ * the owner marked:
+ *   detectFaces / faceTracks     the faces in a camera's frames, followed
+ *                                across frames, with how much each mouth
+ *                                moves (who talks moves their mouth)
+ *   regionTracks / markCrop      the people the owner marked, as boxes
+ *   assign(people, voices)       which person is which mic / voice
+ *   faceCrop(face, src, aspect)  the 9:16 window: the face about a third of
+ *                                its width, the eyes in its upper third
+ *   turnsFrom(series, step)      who talks when (one camera, two people)
+ *   pieces(keep, plan, speech)   the short's stretches by camera / talker
  *   filterArgs(...)              the one ffmpeg pass that makes it
  * Pure (no DOM, no Node) — it unit-tests in Node; main.js reads the frames
  * and the mics with ffmpeg and runs the render.
@@ -32,119 +32,6 @@
   if (root) root.CPPodShort = lib;
 })(typeof window !== 'undefined' ? window : this, function () {
   'use strict';
-
-  /* Skin likelihood of one RGB pixel (YCbCr box rule widened for Indian
-     skin tones and warm studio light), 0..1. */
-  function skin(r, g, b) {
-    var y = 0.299 * r + 0.587 * g + 0.114 * b;
-    var cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
-    var cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
-    if (y < 40 || y > 245) return 0;
-    if (cr < 133 || cr > 180 || cb < 77 || cb > 130) return 0;
-    return 1;
-  }
-
-  /* The people in a camera's frames. frames: [Uint8Array(w*h*3) RGB], in
-     time order (e.g. 2 a second). Returns up to 4 subjects, biggest first:
-     { x0, x1, y0, y1 (0..1 of the frame), cx, energy, series: [movement per
-     frame step] }. Empty when nothing moves and nothing looks like skin. */
-  function subjects(frames, w, h, o) {
-    o = o || {};
-    var n = frames ? frames.length : 0;
-    if (!n || !w || !h) return [];
-    var N = w * h, motion = new Float32Array(N), sk = new Float32Array(N), luma = [];
-    for (var f = 0; f < n; f++) {
-      var fr = frames[f], L = new Float32Array(N);
-      for (var p = 0, q = 0; p < N; p++, q += 3) {
-        L[p] = 0.299 * fr[q] + 0.587 * fr[q + 1] + 0.114 * fr[q + 2];
-        sk[p] += skin(fr[q], fr[q + 1], fr[q + 2]);
-      }
-      if (f > 0) { var P = luma[f - 1]; for (p = 0; p < N; p++) motion[p] += Math.abs(L[p] - P[p]); }
-      luma.push(L);
-    }
-    var mN = Math.max(1, n - 1);
-    // what a person adds: movement (weighted up where there is skin) and
-    // skin itself, the upper part of the frame counting more (heads)
-    var score = new Float32Array(N), col = new Float32Array(w);
-    for (var y = 0; y < h; y++) {
-      var wy = y < h * 0.7 ? 1 : 0.5;
-      for (var x = 0; x < w; x++) {
-        var i = y * w + x, m = motion[i] / mN, s = sk[i] / n;
-        var v = (Math.min(40, m) / 40) * (0.4 + s) + s * 0.35;
-        score[i] = v; col[x] += v * wy;
-      }
-    }
-    // smooth the column profile (5% of the width)
-    var rad = Math.max(1, Math.round(w * 0.025)), sm = new Float32Array(w);
-    for (x = 0; x < w; x++) {
-      var t = 0, c = 0;
-      for (var k = Math.max(0, x - rad); k <= Math.min(w - 1, x + rad); k++) { t += col[k]; c++; }
-      sm[x] = t / c;
-    }
-    var max = 0; for (x = 0; x < w; x++) if (sm[x] > max) max = sm[x];
-    if (!(max > h * 0.02)) return [];
-    // the peaks: each a person, at least 12% of the width apart
-    var peaks = [], minSep = Math.round(w * 0.12);
-    var order = []; for (x = 0; x < w; x++) order.push(x);
-    order.sort(function (a, b) { return sm[b] - sm[a]; });
-    for (var oi = 0; oi < order.length && peaks.length < 4; oi++) {
-      var px = order[oi];
-      if (sm[px] < max * 0.35) break;
-      if (peaks.some(function (pk) { return Math.abs(pk - px) < minSep; })) continue;
-      if ((px > 0 && sm[px - 1] > sm[px]) || (px < w - 1 && sm[px + 1] > sm[px])) continue;
-      peaks.push(px);
-    }
-    peaks.sort(function (a, b) { return a - b; });
-    // two peaks are ONE person (both shoulders of someone who sways, the
-    // moving edges of one body) when there is no real dip between them, or
-    // when that person's skin runs unbroken from one to the other — two
-    // people always have some of the set between them
-    var skCol = new Float32Array(w);
-    for (x = 0; x < w; x++) { var sc = 0; for (y = 0; y < Math.round(h * 0.8); y++) sc += sk[y * w + x] / n; skCol[x] = sc / Math.round(h * 0.8); }
-    for (var pi0 = 0; pi0 + 1 < peaks.length;) {
-      var lo = Infinity, skLo = Infinity, pa = peaks[pi0], pb = peaks[pi0 + 1];
-      for (var xv = pa; xv <= pb; xv++) { if (sm[xv] < lo) lo = sm[xv]; if (skCol[xv] < skLo) skLo = skCol[xv]; }
-      var skEnds = Math.min(skCol[pa], skCol[pb]);
-      var one = lo > 0.6 * Math.min(sm[pa], sm[pb]) || (skEnds > 0.05 && skLo > 0.5 * skEnds && pb - pa < w * 0.3);
-      if (one) {
-        // one person: a peak in the middle of them both
-        var keep = Math.round((pa + pb) / 2);
-        peaks.splice(pi0, 2, keep);
-      } else pi0++;
-    }
-    var out = peaks.map(function (pk, pi) {
-      // the band: out to where the profile falls under 40% of the peak, or
-      // halfway to the next person
-      var lim0 = pi > 0 ? Math.round((peaks[pi - 1] + pk) / 2) : 0;
-      var lim1 = pi < peaks.length - 1 ? Math.round((peaks[pi + 1] + pk) / 2) : w - 1;
-      var x0 = pk, x1 = pk;
-      while (x0 > lim0 && sm[x0 - 1] > sm[pk] * 0.4) x0--;
-      while (x1 < lim1 && sm[x1 + 1] > sm[pk] * 0.4) x1++;
-      // rows: where this band holds a person
-      var rows = new Float32Array(h), rmax = 0;
-      for (var yy = 0; yy < h; yy++) {
-        var rs = 0; for (var xx = x0; xx <= x1; xx++) rs += score[yy * w + xx];
-        rows[yy] = rs / (x1 - x0 + 1); if (rows[yy] > rmax) rmax = rows[yy];
-      }
-      var y0 = 0, y1 = h - 1;
-      while (y0 < h - 1 && rows[y0] < rmax * 0.3) y0++;
-      while (y1 > y0 && rows[y1] < rmax * 0.3) y1--;
-      // movement inside the band, frame step by frame step
-      var series = [];
-      for (var ff = 1; ff < n; ff++) {
-        var A = luma[ff], B = luma[ff - 1], sum = 0;
-        for (yy = y0; yy <= y1; yy++) for (xx = x0; xx <= x1; xx++) sum += Math.abs(A[yy * w + xx] - B[yy * w + xx]);
-        series.push(sum / ((x1 - x0 + 1) * (y1 - y0 + 1)));
-      }
-      // the person's middle: the weighted centre of the whole band (the
-      // peak sits on a moving edge — a swaying shoulder — not the middle)
-      var energy = 0, mx = 0;
-      for (xx = x0; xx <= x1; xx++) { energy += sm[xx]; mx += sm[xx] * (xx + 0.5); }
-      return { x0: x0 / w, x1: (x1 + 1) / w, y0: y0 / h, y1: (y1 + 1) / h, cx: (energy > 0 ? mx / energy : pk + 0.5) / w, energy: energy, series: series };
-    });
-    out.sort(function (a, b) { return b.energy - a.energy; });
-    return out;
-  }
 
   function pearson(a, b) {
     var n = Math.min(a.length, b.length);
@@ -175,32 +62,6 @@
     return out;
   }
 
-  /* The source window (pixels) for a subject in a src.w × src.h frame at
-     aspect (w/h of the short). The person is centred, with head room above:
-     a close shot keeps the full height; a wide shot (the person takes less
-     than ~45% of the window) zooms in until they fill about 60% of its width,
-     never past o.minHeight of the frame's height (default 62%, so the picture
-     stays sharp). No subject → the centre of the frame. */
-  function cropFor(subj, src, aspect, o) {
-    o = o || {};
-    var minH = (o.minHeight || 0.62) * src.h;
-    var ch = src.h, cw = ch * aspect;
-    if (cw > src.w) { cw = src.w; ch = cw / aspect; }
-    var cx = src.w / 2, top = 0;
-    if (subj) {
-      var pw = (subj.x1 - subj.x0) * src.w;
-      cx = subj.cx * src.w;
-      if (o.zoom !== false && pw < cw * 0.45) {
-        var want = Math.max(minH, Math.min(ch, (pw / 0.6) / aspect));
-        ch = want; cw = ch * aspect;
-      }
-      top = subj.y0 * src.h - ch * 0.12;          // head room above the head
-    }
-    var x = Math.round(Math.max(0, Math.min(src.w - cw, cx - cw / 2)));
-    var y = Math.round(Math.max(0, Math.min(src.h - ch, top)));
-    return { x: x, y: y, w: Math.round(cw) - (Math.round(cw) % 2), h: Math.round(ch) - (Math.round(ch) % 2) };
-  }
-
   /* The short's stretches cut by the camera plan. keep: [{start,end}] (the
      tightened short, sequence time); plan: [{start,end,angle}] (the podcast
      director's); speech(t0, t1) → index of the mic talking most, or -1 when
@@ -216,7 +77,7 @@
         .sort(function (a, b) { return a.start - b.start; });
       if (!covered.length) { out.push({ start: k.start, end: k.end, angle: o.fallbackAngle || 0 }); return; }
       covered.forEach(function (p) {
-        out.push({ start: Math.max(k.start, p.start), end: Math.min(k.end, p.end), angle: p.angle });
+        out.push({ start: Math.max(k.start, p.start), end: Math.min(k.end, p.end), angle: p.angle, spk: p.spk });
       });
     });
     // a piece too short to read joins the one before it (when they touch):
@@ -225,8 +86,9 @@
     out.forEach(function (p) {
       var last = merged[merged.length - 1];
       var touches = last && Math.abs(last.end - p.start) < 1e-3;
-      if (touches && (p.angle === last.angle || p.end - p.start < minPiece)) { last.end = p.end; return; }
-      merged.push({ start: p.start, end: p.end, angle: p.angle });
+      // (one camera with two talkers: each talker's turn is its own piece)
+      if (touches && ((p.angle === last.angle && p.spk === last.spk) || p.end - p.start < minPiece)) { last.end = p.end; return; }
+      merged.push({ start: p.start, end: p.end, angle: p.angle, spk: p.spk });
     });
     // …and a too-short FIRST piece joins the one after it
     if (merged.length > 1 && merged[0].end - merged[0].start < minPiece && Math.abs(merged[0].end - merged[1].start) < 1e-3) {
@@ -333,6 +195,174 @@
     return order[0];
   }
 
-  return { skin: skin, subjects: subjects, pearson: pearson, assign: assign, cropFor: cropFor, pieces: pieces,
+  // ---- faces (pico: CPPico + the facefinder cascade) ----------------------
+  var _cascade = null;
+  function cascadeOf(lib, b64) {
+    if (_cascade) return _cascade;
+    if (!lib || !b64) return null;
+    var bin = (typeof atob === 'function') ? atob(b64) : Buffer.from(b64, 'base64').toString('binary');
+    var bytes = new Int8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i) << 24 >> 24;
+    _cascade = lib.unpack_cascade(bytes);
+    return _cascade;
+  }
+  /* The faces in one grey frame (w×h bytes): [{cx, cy, s, q}] as fractions of
+     the frame (s = the face's width over the frame's width), strongest first.
+     q > 10 keeps faces and drops pico's weak false hits (5–7 on shirts). */
+  function detectFaces(gray, w, h, lib, b64, o) {
+    o = o || {};
+    var classify = cascadeOf(lib, b64);
+    if (!classify) return [];
+    var minsize = Math.max(16, Math.round(Math.min(w, h) * (o.minFace || 0.05)));
+    var dets = lib.run_cascade({ pixels: gray, nrows: h, ncols: w, ldim: w }, classify,
+      { shiftfactor: 0.1, minsize: minsize, maxsize: Math.round(Math.min(w, h) * 0.95), scalefactor: 1.1 });
+    dets = lib.cluster_detections(dets, 0.2).filter(function (d) { return d[3] > (o.minQ || 10); });
+    dets.sort(function (a, b) { return b[3] - a[3]; });
+    return dets.map(function (d) { return { cx: d[1] / w, cy: d[0] / h, s: d[2] / w, q: d[3] }; });
+  }
+
+  /* The people in a camera's frames, by their faces: each detection joined
+     to the face it continues (near where it was, a similar size), a track
+     kept when it is seen in at least 20% of the frames. Each track: its
+     middle position and size (medians), how often it was seen, and how much
+     its MOUTH moves frame to frame (the lower part of the face box) — the
+     one who talks moves their mouth. frames: grey w×h. */
+  /* Movement inside [x0..x1] × [y0..y1] per step. With o.motion — frames of
+     the movement itself (ffmpeg: each frame's difference from the one
+     before, averaged over the step, so a mouth that opens and shuts between
+     two sampled frames still counts) — read straight from them; else the
+     difference between consecutive sampled frames. Same length as frames. */
+  function movementIn(frames, motion, w, x0, x1, y0, y1) {
+    var n = frames.length, series = [], f, y, x, sum, cnt;
+    for (f = 0; f < n; f++) {
+      sum = 0; cnt = 0;
+      if (motion && motion[f]) {
+        var M = motion[f];
+        for (y = y0; y <= y1; y++) for (x = x0; x <= x1; x++) { sum += M[y * w + x]; cnt++; }
+      } else if (f > 0) {
+        var A = frames[f], B = frames[f - 1];
+        for (y = y0; y <= y1; y++) for (x = x0; x <= x1; x++) { sum += Math.abs(A[y * w + x] - B[y * w + x]); cnt++; }
+      }
+      series.push(cnt ? sum / cnt : 0);
+    }
+    return series;
+  }
+  function faceTracks(frames, w, h, lib, b64, o) {
+    var tracks = [], n = frames.length;
+    frames.forEach(function (g, fi) {
+      detectFaces(g, w, h, lib, b64, o).forEach(function (d) {
+        var best = null, bd = Infinity;
+        tracks.forEach(function (t) {
+          if (t.last === fi) return;
+          var ratio = d.s / t.s, dist = Math.abs(d.cx - t.cx) + Math.abs(d.cy - t.cy) * 0.5;
+          if (ratio > 0.6 && ratio < 1.6 && dist < Math.max(t.s * 1.2, 0.06) && dist < bd) { bd = dist; best = t; }
+        });
+        if (!best) { best = { xs: [], ys: [], ss: [], qs: [], cx: d.cx, cy: d.cy, s: d.s, last: -1, seen: [] }; tracks.push(best); }
+        best.xs.push(d.cx); best.ys.push(d.cy); best.ss.push(d.s); best.qs.push(d.q); best.seen.push(fi); best.last = fi;
+        var k = best.xs.length;
+        best.cx += (d.cx - best.cx) / k; best.cy += (d.cy - best.cy) / k; best.s += (d.s - best.s) / k;
+      });
+    });
+    function median(a) { var b = a.slice().sort(function (x, y) { return x - y; }); return b.length ? b[Math.floor(b.length / 2)] : 0; }
+    var out = tracks.filter(function (t) { return t.xs.length >= Math.max(1, Math.round(n * 0.2)); }).map(function (t) {
+      var tr = { cx: median(t.xs), cy: median(t.ys), s: median(t.ss), seen: t.xs.length / Math.max(1, n), q: median(t.qs) };
+      // mouth movement per step: the lower part of the face box
+      var x0 = Math.max(0, Math.round((tr.cx - tr.s * 0.35) * w)), x1 = Math.min(w - 1, Math.round((tr.cx + tr.s * 0.35) * w));
+      var y0 = Math.max(0, Math.round((tr.cy + tr.s * 0.05 * w / h) * h)), y1 = Math.min(h - 1, Math.round((tr.cy + tr.s * 0.55 * w / h) * h));
+      tr.series = movementIn(frames, (o && o.motion) || null, w, x0, x1, y0, y1);
+      tr.x0 = tr.cx - tr.s / 2; tr.x1 = tr.cx + tr.s / 2; tr.y0 = tr.cy - tr.s * 0.5 * w / h; tr.y1 = tr.cy + tr.s * 0.5 * w / h;
+      return tr;
+    });
+    out.sort(function (a, b) { return a.cx - b.cx; });
+    return out;
+  }
+
+  /* The 9:16 window for a face in a src.w × src.h frame. A vertical short
+     frames a talking head with the face about a third of the window wide
+     and the eyes in its upper third: a close shot (big face) keeps the full
+     height; a wide shot zooms in until the face fills ~34% of the width —
+     never past o.minHeight of the frame's height (default 50%, so the
+     picture stays sharp). */
+  function faceCrop(face, src, aspect, o) {
+    o = o || {};
+    var ch = src.h, cw = ch * aspect;
+    if (cw > src.w) { cw = src.w; ch = cw / aspect; }
+    if (!face) {
+      // no face: the part of the frame "Keep in frame" names (the middle by default)
+      var fx = o.fallbackCx != null ? o.fallbackCx * src.w : src.w / 2;
+      return { x: Math.round(Math.max(0, Math.min(src.w - cw, fx - cw / 2))) & ~1, y: Math.round((src.h - ch) / 2) & ~1, w: Math.round(cw) & ~1, h: Math.round(ch) & ~1 };
+    }
+    var fw = face.s * src.w, minH = (o.minHeight || 0.5) * src.h;
+    var wantW = fw / (o.faceShare || 0.34);
+    if (wantW < cw) { cw = Math.max(minH * aspect, wantW); ch = cw / aspect; }
+    var cx = face.cx * src.w, cy = face.cy * src.h;
+    var x = Math.max(0, Math.min(src.w - cw, cx - cw / 2));
+    var y = Math.max(0, Math.min(src.h - ch, cy - ch * 0.36));      // the face's middle at 36% from the top
+    return { x: Math.round(x) & ~1, y: Math.round(y) & ~1, w: Math.round(cw) & ~1, h: Math.round(ch) & ~1 };
+  }
+
+  /* People the owner MARKED on a frame (Shorts → 👥 Mark the people): each
+     box {x, y, w, h} (fractions of the frame) becomes a person like a face
+     track — its middle, and how much the picture moves inside it frame to
+     frame (who talks moves), so the mics and voices match it the same way. */
+  function regionTracks(frames, w, h, boxes, o) {
+    return (boxes || []).map(function (b) {
+      var x0 = Math.max(0, Math.round(b.x * w)), x1 = Math.min(w - 1, Math.round((b.x + b.w) * w));
+      var y0 = Math.max(0, Math.round(b.y * h)), y1 = Math.min(h - 1, Math.round((b.y + b.h) * h));
+      var series = movementIn(frames, (o && o.motion) || null, w, x0, x1, y0, y1);
+      return { marked: true, box: b, cx: b.x + b.w / 2, cy: b.y + b.h * 0.3, s: b.w * 0.5, x0: b.x, x1: b.x + b.w, y0: b.y, y1: b.y + b.h, series: series, seen: 1 };
+    });
+  }
+  /* The window for a marked person: the whole box in view with a little room
+     (8%), its top near the window's top; never smaller than o.minHeight of
+     the frame (sharpness), never bigger than the frame. */
+  function markCrop(box, src, aspect, o) {
+    o = o || {};
+    var bw = box.w * src.w, bh = box.h * src.h, minH = (o.minHeight || 0.4) * src.h;
+    var ch = Math.max(minH, bh * 1.08, (bw * 1.08) / aspect);
+    ch = Math.min(ch, src.h);
+    var cw = ch * aspect;
+    if (cw > src.w) { cw = src.w; ch = cw / aspect; }
+    var cx = (box.x + box.w / 2) * src.w;
+    var x = Math.max(0, Math.min(src.w - cw, cx - cw / 2));
+    var y = Math.max(0, Math.min(src.h - ch, box.y * src.h - ch * 0.04));
+    return { x: Math.round(x) & ~1, y: Math.round(y) & ~1, w: Math.round(cw) & ~1, h: Math.round(ch) & ~1 };
+  }
+
+  /* Who talks when, as turns of at least minHold seconds: series[k] is
+     speaker k's activity per step (louder / moving more = talking). Each step
+     goes to the most active speaker when they clearly lead (1.4× the next),
+     else stays with whoever had it; turns shorter than minHold join the one
+     before. → [{start, end, spk}] in seconds from the first step. */
+  function turnsFrom(series, step, minHold) {
+    var n = 0; series.forEach(function (s) { n = Math.max(n, s.length); });
+    if (!n || !series.length) return [];
+    var cur = -1, lab = [];
+    for (var i = 0; i < n; i++) {
+      var order = series.map(function (s, k) { return k; }).sort(function (a, b) { return (series[b][i] || 0) - (series[a][i] || 0); });
+      var top = order[0], second = order[1];
+      var lead = series.length < 2 || (series[top][i] || 0) > 1.4 * (series[second][i] || 0) + 1e-6;
+      if (cur < 0 || (lead && top !== cur)) cur = top;
+      lab.push(cur);
+    }
+    var turns = [];
+    lab.forEach(function (k, i) {
+      var last = turns[turns.length - 1];
+      if (last && last.spk === k) last.end = (i + 1) * step;
+      else turns.push({ start: i * step, end: (i + 1) * step, spk: k });
+    });
+    var merged = [];
+    turns.forEach(function (t) {
+      var last = merged[merged.length - 1];
+      if (last && (t.end - t.start < minHold || t.spk === last.spk)) last.end = t.end;
+      else merged.push({ start: t.start, end: t.end, spk: t.spk });
+    });
+    if (merged.length > 1 && merged[0].end - merged[0].start < minHold) { merged[1].start = 0; merged.shift(); }
+    return merged;
+  }
+
+  return { detectFaces: detectFaces, faceTracks: faceTracks, faceCrop: faceCrop, turnsFrom: turnsFrom,
+           regionTracks: regionTracks, markCrop: markCrop,
+           pearson: pearson, assign: assign, pieces: pieces,
            filterArgs: filterArgs, levels: levels, talker: talker };
 });

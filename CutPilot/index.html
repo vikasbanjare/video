@@ -1007,7 +1007,7 @@
             <option value="none">Keep original</option>
           </select>
         </label>
-        <label>Keep in frame
+        <label title="Pulse frames the face it finds; this is where it looks when a camera shows no face">If no face
           <select id="sh-focus">
             <option value="center" selected>Center</option>
             <option value="left">Left side</option>
@@ -1021,6 +1021,22 @@
         <label class="check" title="Captions in the style picked on the Captions page, on their own track — still editable"><input type="checkbox" id="sh-caps" checked> 💬 Add captions (your caption style)</label>
         <label class="check" title="With a camera on each video track (V1, V2, V3…): shows whoever is talking, zoomed in to fit the vertical frame — set up the mics on Podcast cameras"><input type="checkbox" id="sh-cams" checked> 🎥 Use my podcast cameras</label>
       </div>
+      <details class="advanced sh-mark" id="sh-mark-wrap">
+        <summary>👥 Mark the people <span class="dim">— optional</span></summary>
+        <p class="hint">Drag a box over each person — the reel zooms into whoever talks.</p>
+        <div class="row tight">
+          <select id="sh-mark-cam" aria-label="Which camera"><option value="">Tap 📷 first</option></select>
+          <div class="seg-control sub" id="sh-mark-n" aria-label="How many people">
+            <button type="button" data-n="1">1 person</button><button type="button" data-n="2" class="on">2</button><button type="button" data-n="3">3</button>
+          </div>
+        </div>
+        <div class="row tight">
+          <button id="sh-mark-load" class="chip-btn" type="button">📷 Show a frame</button>
+          <button id="sh-mark-clear" class="chip-btn" type="button">Clear</button>
+        </div>
+        <div id="sh-mark-stage" class="sh-mark-stage hidden"><canvas id="sh-mark-canvas" aria-label="A frame of your video with the people marked"></canvas></div>
+        <p class="hint" id="sh-mark-status"></p>
+      </details>
       <div class="page-actions">
         <button id="btn-find-shorts" class="hero-btn">✨ Find viral moments</button>
         <div id="shorts-progress" class="progress hidden"></div>
@@ -1504,6 +1520,8 @@
   <script src="js/chapters.js?v=v0.10.12"></script>
   <script src="js/align.js?v=v0.10.12"></script>
   <script src="js/shorts.js?v=v0.10.12"></script>
+  <script src="js/lib/pico.js?v=v0.10.12"></script>
+  <script src="js/lib/facefinder.js?v=v0.10.12"></script>
   <script src="js/podshort.js?v=v0.10.12"></script>
   <script src="js/main.js?v=v0.10.12"></script>
   <script src="js/organize.js?v=v0.10.12"></script>

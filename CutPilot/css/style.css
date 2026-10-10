@@ -1328,3 +1328,7 @@ body #tab-organize .cpo-run .cpo-spinner { border-color: rgba(20,24,10,.3); bord
    the customizer with an inline 10.5 px size — nothing here goes under 11 px) */
 .cp-why { font-size: var(--fs-xs) !important; grid-column: 1 / -1; }
 .chip-btn { min-width: var(--tap); }
+
+/* Shorts → 👥 Mark the people: a frame of the video with a box per person */
+.sh-mark-stage { margin-top: 8px; }
+.sh-mark-stage canvas { display: block; width: 100%; border-radius: 8px; background: #000; touch-action: none; cursor: crosshair; }

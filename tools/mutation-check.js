@@ -1908,53 +1908,87 @@ const MUTANTS = [
     gate: 'CutPilot/test/gates/shorts-finished.js',
     why: 'without an AI key no moments are found'
   },
+  // (v12-* retired in v0.10.13: the movement/skin guesser they broke is gone —
+  // shorts are framed on faces or on the boxes the owner marks)
   {
-    name: 'v12-pod-split-person',
+    name: 'v13-face-not-framed',
     file: 'CutPilot/js/podshort.js',
-    find: '      var one = lo > 0.6 * Math.min(sm[pa], sm[pb]) || (skEnds > 0.05 && skLo > 0.5 * skEnds && pb - pa < w * 0.3);',
-    repl: '      var one = false;',
+    find: '    var x = Math.max(0, Math.min(src.w - cw, cx - cw / 2));\n    var y = Math.max(0, Math.min(src.h - ch, cy - ch * 0.36));',
+    repl: '    var x = (src.w - cw) / 2;\n    var y = Math.max(0, Math.min(src.h - ch, cy - ch * 0.36));',
     gate: 'CutPilot/test/gates/shorts-podcast-cameras.js',
-    why: 'a close camera frames one shoulder of its person instead of the person'
+    why: 'the vertical window sits in the middle of the frame, not on the face'
   },
   {
-    name: 'v12-pod-no-mic-match',
+    name: 'v13-no-voice-match',
     file: 'CutPilot/js/podshort.js',
-    find: '      if (p.r < 0.05) return;            // no tie between this mic and anyone\'s movement',
+    find: "      if (p.r < 0.05) return;            // no tie between this mic and anyone's movement",
     repl: '      return;',
     gate: 'CutPilot/test/gates/shorts-podcast-cameras.js',
-    why: 'the wide shot never learns who is who, so it never zooms on the talker'
+    why: 'the wide shot never learns which face is which mic, so it never zooms on the talker'
   },
   {
-    name: 'v12-pod-ignore-plan',
+    name: 'v13-mouth-sampled-only',
     file: 'CutPilot/js/main.js',
-    find: '      var pieces = CPPodShort.pieces(plan.segments, camPlan, speech, { fallbackAngle: wide.length ? wide[0] : 0 });',
-    repl: '      var pieces = CPPodShort.pieces(plan.segments, [], speech, { fallbackAngle: wide.length ? wide[0] : 0 });',
+    find: "              var fr = both[0], mo = { motion: both[1] };",
+    repl: "              var fr = both[0], mo = { motion: null };",
     gate: 'CutPilot/test/gates/shorts-podcast-cameras.js',
-    why: 'the podcast short stays on one camera instead of following the director'
+    why: 'mouth movement read from 2 sampled frames a second misses a mouth that moves between them'
   },
   {
-    name: 'v12-pod-no-stack',
+    name: 'v13-caption-is-camera',
     file: 'CutPilot/js/main.js',
-    find: "        } else if (p.who === 'both' && fr.byMic && fr.byMic.filter(function (x) { return x >= 0; }).length >= 2) {",
+    find: '      return x && x.mediaPath && !x.disabled && SHORT_VIDEO_EXT.test(x.mediaPath) && !SHORT_NOT_CAMERA.test(x.mediaPath) &&',
+    repl: '      return x && x.mediaPath && !x.disabled && SHORT_VIDEO_EXT.test(x.mediaPath) &&',
+    gate: 'CutPilot/test/gates/shorts-podcast-cameras.js',
+    why: 'a caption overlay track is taken for a second camera (the owner\'s "from 2 cameras")'
+  },
+  {
+    name: 'v13-ignore-plan',
+    file: 'CutPilot/js/main.js',
+    find: '      var pieces = CPPodShort.pieces(plan.segments, cplan, multi ? speech : null,',
+    repl: '      var pieces = CPPodShort.pieces(plan.segments, [], multi ? speech : null,',
+    gate: 'CutPilot/test/gates/shorts-podcast-cameras.js',
+    why: 'the short stays on one camera instead of following the director'
+  },
+  {
+    name: 'v13-no-stack',
+    file: 'CutPilot/js/main.js',
+    find: "        } else if (multi && who === 'both' && fr.byVoice.filter(function (x) { return x >= 0; }).length >= 2) {",
     repl: "        } else if (false) {",
     gate: 'CutPilot/test/gates/shorts-podcast-cameras.js',
     why: 'when both talk on the wide shot only one of them is shown'
   },
   {
-    name: 'v12-pod-camera-sound',
+    name: 'v13-camera-sound',
     file: 'CutPilot/js/main.js',
     find: '        audio.push({ input: inputOf(at.path, at.t), channel: m.channel, track: m.track });',
     repl: '',
     gate: 'CutPilot/test/gates/shorts-podcast-cameras.js',
-    why: 'the podcast short takes the camera\'s scratch sound instead of the mics'
+    why: 'the short takes the camera\'s scratch sound instead of the mics'
   },
   {
-    name: 'v12-pod-close-centre',
+    name: 'v13-one-camera-no-turns',
     file: 'CutPilot/js/main.js',
-    find: '          crops = [CPPodShort.cropFor(fr.subjects[si] || null, src, aspect, { zoom: false })];',
-    repl: '          crops = [CPPodShort.cropFor(null, src, aspect, { zoom: false })];',
+    find: '        if (fr0.faces.length > 1) {',
+    repl: '        if (false) {',
     gate: 'CutPilot/test/gates/shorts-podcast-cameras.js',
-    why: 'a close camera crops the middle of its frame, not its person'
+    why: 'one camera with two people stays on one face while the other talks'
+  },
+  {
+    name: 'v13-marks-ignored',
+    file: 'CutPilot/js/main.js',
+    find: '              var marks = shortMarksFor(at.path);',
+    repl: '              var marks = [];',
+    gate: 'CutPilot/test/gates/shorts-podcast-cameras.js',
+    why: 'the people the owner marked are not used'
+  },
+  {
+    name: 'v13-marks-not-saved',
+    file: 'CutPilot/js/main.js',
+    find: '    saveSettings();\n  }\n  function defaultMarks(n) {',
+    repl: '  }\n  function defaultMarks(n) {',
+    gate: 'CutPilot/test/gates/shorts-mark-people.js',
+    why: 'the marked people are forgotten when Pulse restarts'
   }
 ];
 
