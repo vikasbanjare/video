@@ -1,10 +1,19 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.15** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.16** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.16 — dark-on-light styles no longer refused as editable
+The owner, after v0.10.15, sent the popup "“Clean Card” has dark words on a
+light box … Use Pulse-rendered?". That guard (6dbdf54) blamed dark colours
+for the blank words; the cause was the v0.10.15 timing units (every style
+blank). Removed: card note, editor note (DARK_EDITABLE_NOTE), real-preview
+note, the refusal in applyEditableStyle. Kept: isDarkOnLight, near-black
+highlight lifting, the before/after check. Gate gallery-editable-dark C
+rewritten; mutation v16-dark-refused.
 
 ### v0.10.15 — ✏️ Styled captions: timing written in Premiere's units
 The owner's v0.10.14 screenshots: Essential Graphics showed "Start Time,
