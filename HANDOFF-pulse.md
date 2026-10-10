@@ -1,10 +1,30 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.13** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.14** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.14 — Pulse never deletes editable captions; honest check; 📝 Premiere captions
+The owner (v0.10.13): "Add editable captions lays out all the layers, then
+deletes everything and puts the captions again non-editable … not even a
+single editable caption works properly". The check compared frames with the
+caption track's output off/on (CP_captionVisibility) — Premiere can ignore a
+script turning a video track off → every caption read BLANK → Pulse replaced
+the owner's editable set by itself.
+- Check = frames BEFORE insert vs AFTER (grabFrames / measureVisible at first,
+  middle, last caption); CP_captionVisibility removed. Frames kept in
+  ~/Documents/Pulse/caption-check (keepCheckFrames). Blank → confirmInline
+  asking; only "Use Pulse-rendered" replaces (addPulseCaptions with the track).
+- Caption type: ✨ Pulse-rendered · ✏️ Styled (beta) · 📝 Premiere (owner chose
+  "both, I choose each time"). 📝 = applyNative (CP_importSrtCaptions): whole
+  phrases as spoken (wordsPerCue 0, no style caps/case), two balanced lines;
+  #wc-block hidden. btn-magic / Viral edit follow _capOut.
+- ✏️ Styled still renders the 128 styles through the Flux Halo engine — the
+  owner says none look right; NEXT: his caption-check PNGs + diagnostics.
+- Gates: captions-viral-visible (kept + asked; tap replaces; 📝 via Viral
+  edit), selftest-premiere (before/after). Mutations v14-*.
 
 ### v0.10.13 — Viral edit visible; shorts framed on faces; 👥 Mark the people; Test everything checks it all
 The owner after v0.10.12 (diagnostics pasted): Viral edit put captions all

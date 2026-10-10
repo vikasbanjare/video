@@ -145,6 +145,9 @@ function png(file, words) {
       document.querySelector('.tab[data-tab="captions"]').click(); await sleep(300);
       await window.CP_DEBUG_EXT.shorts.verifyEditable([{ start: 0.5, end: 2, text: 'a' }, { start: 2.2, end: 4, text: 'b' }, { start: 4.2, end: 6, text: 'c' }], 3, '/x/Flux_Halo2_r3.mogrt');
       for (let i = 0; i < 60 && !document.getElementById('cp-confirm-ov'); i++) await sleep(100);
+      // give anything Pulse might do by itself time to happen (a replacement
+      // renders before it places) — then nothing may have been touched
+      await sleep(3000);
       const ov = document.getElementById('cp-confirm-ov');
       return { asked: ov ? ov.textContent : null, diag: window.CP_DEBUG_EXT.multicam.diagText() };
     }, srt);
