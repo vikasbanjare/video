@@ -1,10 +1,50 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.12** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.13** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.13 — Viral edit visible; shorts framed on faces; 👥 Mark the people; Test everything checks it all
+The owner after v0.10.12 (diagnostics pasted): Viral edit put captions all
+through the timeline but nothing showed; shorts "zoom anywhere, randomly —
+it should zoom on the face, on every format, three cameras or one"; a
+"2-camera" short from one camera; "let me mark on the screen where the
+people are"; Test everything "only tests one caption — check every
+function, long words, colour and animation changes"; his report's "⚠️
+Preview matches the render — preview 1 line, render 2".
+- VIRAL EDIT: zooms, then exactly ✨ Add captions (the picked caption type;
+  it always took the editable path). After editable captions,
+  checkCaptionsVisible (host CP_captionVisibility: frames with the track on
+  vs off, at first/middle/last caption) replaces a blank set with
+  Pulse-rendered captions and says so. The old one-frame contrast check
+  (verifyCaptionRender) passed on any real video and is gone.
+- FACES: pico.js (MIT, js/lib/pico.js + facefinder.js cascade,
+  LICENSE-pico.txt). CPPodShort detectFaces (640-wide grey, q > 10),
+  faceTracks (followed across frames; mouth movement from ffmpeg
+  tblend=difference + tmix over each 0.5 s — 2 fps sampling can alias a
+  moving mouth), faceCrop (face ~34% of window width, its middle 36% from
+  the top, min height 50%), turnsFrom, regionTracks/markCrop (marks).
+  renderFramedShort = ONE pipeline: one camera follows the talker's face
+  (transcript voices, else mouth movement); several follow the director's
+  plan (cameras by TRACK number; caption overlays, cap_*.png, Pulse renders,
+  stills and duplicate files are not cameras). The movement/skin guesser
+  (subjects/cropFor) is gone.
+- 👥 MARK THE PEOPLE (Shorts, settings.shMarks per file basename): frame per
+  camera, 1/2/3 people, drag/resize boxes; marks beat faces; Clear = faces.
+  "Keep in frame" is now "If no face".
+- TEST EVERYTHING (in Premiere): editable set visible (first/middle/last,
+  then cleared), long text + long words at Size 160 inside the frame, the
+  picked colour on the timeline, the highlight moves, a 9:16 short with its
+  hook (sequence "Pulse self-test short", deleted by the tidy-up). Panel:
+  every style × a long line at the biggest Size clear of the edges (~1 s);
+  Preview matches the render draws the SAME frame both ways.
+- Gates: captions-viral-visible, shorts-podcast-cameras (real face fixture
+  test/fixtures/faces/astronaut.jpg, NASA, public domain; 3 cameras incl. a
+  listener, 1 camera by voices / by mouth, marks), shorts-mark-people,
+  selftest-panel-captions; selftest-premiere's stand-in now composites the
+  real caption PNGs and has a bad-day scenario. Mutations v13-*.
 
 ### v0.10.12 — Shorts from a 3-camera podcast: the right camera, framed on the talker
 The owner: left / right / center cameras; a vertical short must show the
