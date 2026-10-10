@@ -75,6 +75,43 @@ function scriptedPremiere(o) {
   const ok = (x) => JSON.stringify(Object.assign({ ok: true }, x || {}));
   const fail = (msg, info) => JSON.stringify({ ok: false, error: msg, info: info || null });
   const isPng = (p) => { try { return fs.readFileSync(p).slice(1, 4).toString() === 'PNG'; } catch (e) { return false; } };
+  // a frame as Premiere would draw it: the short (its own video), or the top
+  // camera with every caption over it — Pulse's caption images composited
+  // as they are (their colours, size and place), the template / overlay
+  // captions as a band of words; `hide` = a track whose output is off
+  const pngs = {};
+  function frameAt(at, hide) {
+    const W = 640, Hh = 360;
+    if (tl.short && tl.active === tl.short.name) {
+      const r = require('child_process').spawnSync(o.ff, ['-hide_banner', '-loglevel', 'error', '-ss', String(at), '-i', tl.short.path, '-frames:v', '1', '-f', 'image2pipe', '-vcodec', 'png', '-'], { maxBuffer: 1 << 26 });
+      return r.stdout;
+    }
+    const shot = tl.shots.find(s => at >= s[0] && at < s[1]) || tl.shots[0];
+    const caps = tl.captions.filter(c => at >= c.start && at < c.end && c.drawn && c.track !== hide);
+    const layers = [];
+    caps.forEach(c => {
+      if (!c.items) { layers.push({ band: true }); return; }
+      const it = c.items.find(x => at >= x.start && at < x.end) || null;
+      if (!it) return;
+      if (!pngs[it.path]) { try { pngs[it.path] = L.readPng(fs.readFileSync(it.path)); } catch (e) { pngs[it.path] = null; } }
+      if (pngs[it.path]) layers.push({ img: pngs[it.path] });
+    });
+    return png(W, Hh, (x, y) => {
+      let c = shot[2];
+      layers.forEach(l => {
+        if (l.band) { if (y > Hh * 0.72 && y < Hh * 0.82 && x > W * 0.3 && x < W * 0.7) c = ((x >> 3) % 2) ? [255, 255, 255] : [20, 20, 20]; return; }
+        // o.shiftLeft: Premiere draws the captions a fifth of the frame to the left
+        // (their words cut at the edge); o.grey: it loses their colour
+        const xs = o.shiftLeft ? x + Math.round(W * 0.2) : x;
+        if (xs >= W) return;
+        const im = l.img, sx = Math.min(im.w - 1, Math.floor(xs * im.w / W)), sy = Math.min(im.h - 1, Math.floor(y * im.h / Hh)), k = (sy * im.w + sx) * 4, al = im.px[k + 3] / 255;
+        let r = im.px[k], g = im.px[k + 1], b = im.px[k + 2];
+        if (o.grey) { const v = Math.round(0.299 * r + 0.587 * g + 0.114 * b); r = g = b = v; }
+        if (al > 0) c = [Math.round(r * al + c[0] * (1 - al)), Math.round(g * al + c[1] * (1 - al)), Math.round(b * al + c[2] * (1 - al))];
+      });
+      return c;
+    });
+  }
   const H = {
     CP_selfTestSetup(a) {
       for (const p of [a.mediaPath, a.mediaPath2]) {
@@ -90,21 +127,28 @@ function scriptedPremiere(o) {
                   v1Clips: 1, a1Clips: 1, secondCamera: 'yes', endSeconds: 10, premiere: '25.1.0', os: 'Macintosh OS 14.5.0' });
     },
     CP_getProjectInfo() { return ok({ name: 'Episode 7.prproj', path: o.unsaved ? '' : '/Users/owner/Shows/Episode 7.prproj' }); },
-    CP_getEnv() { return ok({ sequenceName: tl.active, width: tl.active === 'Episode 7' ? 1080 : 1280, height: tl.active === 'Episode 7' ? 1920 : 720,
+    CP_getEnv() {
+      if (tl.short && tl.active === tl.short.name) return ok({ sequenceName: tl.active, width: 1080, height: 1920, fps: 30 });
+      return ok({ sequenceName: tl.active, width: tl.active === 'Episode 7' ? 1080 : 1280, height: tl.active === 'Episode 7' ? 1920 : 720,
                               fps: tl.active === 'Episode 7' ? (o.envFps || 30) : 30 }); },
     CP_getAudioTracks() { return ok({ audioTracks: [{ name: 'A1', mediaPath: log.imported[0].path }] }); },
     CP_getTranscribeSource() { return ok({ clip: { mediaPath: log.imported[0].path, inPoint: 0 } }); },
     CP_captureSequenceFrame(a) {
       if (o.noFrames) return ok({ exported: false, at: a.at });
-      const shot = tl.shots.find(s => a.at >= s[0] && a.at < s[1]) || tl.shots[0];
-      const cap = tl.captions.find(c => a.at >= c.start && a.at < c.end && c.drawn);
-      const W = 640, Hh = 360;
-      fs.writeFileSync(a.outPath.replace(/\.png$/i, '') + '.png', png(W, Hh, (x, y) => {
-        if (cap && y > Hh * 0.72 && y < Hh * 0.82 && x > W * 0.3 && x < W * 0.7) return ((x >> 3) % 2) ? [255, 255, 255] : [20, 20, 20];
-        return shot[2];
-      }));
+      fs.writeFileSync(a.outPath.replace(/\.png$/i, '') + '.png', frameAt(a.at, null));
       return ok({ exported: true, at: a.at, file: a.outPath });
     },
+    // the editable captions' check: each time with the track's output on, then off
+    CP_captionVisibility(a) {
+      if (o.noFrames) return ok({ track: a.track, frames: a.times.map((t, i) => ({ at: t, on: a.base + '_' + i + '_on.png', off: a.base + '_' + i + '_off.png', okOn: false, okOff: false })) });
+      return ok({ track: a.track, frames: a.times.map((t, i) => {
+        const on = a.base + '_' + i + '_on.png', off = a.base + '_' + i + '_off.png';
+        fs.writeFileSync(on, frameAt(t, null)); fs.writeFileSync(off, frameAt(t, a.track));
+        return { at: t, on, off, okOn: true, okOff: true };
+      }) });
+    },
+    CP_clearCaptionTrack(a) { const n = tl.captions.length; tl.captions = tl.captions.filter(c => c.track !== a.track); return ok({ cleared: n - tl.captions.length, top: true }); },
+    CP_importClip(a) { tl.short = { name: a.name, path: a.path }; tl.active = a.name; log.short = a; return ok({ imported: true, sequence: a.name }); },
     CP_applyMulticamPlan(a) {
       if (o.multicamFails) return fail('Multicam wasn’t applied: Premiere didn’t make any of the 2 camera cuts', { fps: 30, timecodeSent: '00:00:03:00', playheadTimecode: '00:00:03:00', qeClipsBefore: '1/1', qeClipsAfter: '1/1' });
       // multicamWrongCamera: every cut and switch reported, but the top camera still shows
@@ -125,7 +169,7 @@ function scriptedPremiere(o) {
     CP_placeCaptionImages(a) {
       if (o.captionsStop) throw new Error('Premiere stopped (Illegal Parameter type)');
       a.items.forEach(it => log.captionFiles.push({ path: it.path, png: isPng(it.path) }));
-      tl.captions.push({ start: a.items[0].start, end: a.items[a.items.length - 1].end, drawn: true, kind: 'images' });
+      tl.captions.push({ start: a.items[0].start, end: a.items[a.items.length - 1].end, drawn: true, kind: 'images', track: 3, items: a.items });
       return ok({ placed: a.items.length, animated: 0, track: 3 });
     },
     CP_placeSfx(a) { tl.sfxTrack = a.times.map(t => ({ mediaPath: a.wavPath, seqStart: t })); return ok({ placed: a.times.length, track: 2 }); },
@@ -134,12 +178,14 @@ function scriptedPremiere(o) {
     },
     CP_insertMogrtCaptions(a) {
       log.mogrt = a.mogrtPath;
-      tl.captions.push({ start: a.cues[0].start, end: a.cues[0].end, drawn: !o.premiumInvisible, kind: 'premium' });
-      return ok({ inserted: 1, track: 4, textSet: 1 });
+      // one Premium caption (track 4), or a set of editable captions (track 6)
+      const track = a.cues.length > 1 ? 6 : 4;
+      a.cues.forEach(c => tl.captions.push({ start: c.start, end: c.end, drawn: !(track === 4 ? o.premiumInvisible : o.editableInvisible), kind: track === 4 ? 'premium' : 'editable', track }));
+      return ok({ inserted: a.cues.length, track, textSet: a.cues.length });
     },
     CP_placeOverlay(a) {
       log.overlay = { path: a.path, size: fs.existsSync(a.path) ? fs.statSync(a.path).size : 0 };
-      tl.captions.push({ start: 6.4, end: 7.8, drawn: true, kind: 'overlay' });
+      tl.captions.push({ start: 6.4, end: 7.8, drawn: true, kind: 'overlay', track: 5 });
       return ok({ track: 5, unused: [], free: [], checked: true });
     },
     CP_importSrtCaptions(a) { log.srt = fs.existsSync(a.srtPath) ? fs.readFileSync(a.srtPath, 'utf8') : null; return ok({ captionTrackCreated: true }); },
@@ -156,7 +202,7 @@ function scriptedPremiere(o) {
       return ok({ cuts: a.ranges.length, removedSec: cut });
     },
     CP_selfTestCleanup() {
-      tl.active = 'Episode 7';
+      tl.active = 'Episode 7'; tl.short = null;
       return ok({ done: ['your sequence is active again', '1 test sequence deleted', '4 test bins deleted'],
                   left: o.cleanupLeaves ? ['the bin “Pulse SFX 456”'] : [] });
     },
@@ -248,8 +294,11 @@ function scriptedPremiere(o) {
     const names = ['Test clips made on this computer', 'A test sequence (yours is not touched)', 'Pulse’s script reads the sequence',
       'Mic tracks (Podcast cameras, Clean up)', 'Transcribe finds the talking clip', 'Premiere draws frames for Pulse’s checks', 'Multicam: Apply',
       'Razor by timecode (Clean up, retakes)', 'Razor at the playhead', 'Markers (silence preview, chapters, hooks)', 'Zoom punch-ins',
-      'Captions (Pulse’s own look)', 'Sound effects', 'Premium (Flux) captions', 'Long videos: one overlay clip', 'Premiere captions from an .srt',
-      'Remove Pulse’s captions', 'Premium previews with your words', 'Clean up (silence cut)', 'Everything the test made is deleted'];
+      'Captions (Pulse’s own look)', 'Captions: long text and long words stay in the frame', 'Captions: the colour you pick shows on the timeline',
+      'Captions: the word-by-word highlight moves', 'Sound effects', 'Premium (Flux) captions', 'Editable captions: every caption visible',
+      'Long videos: one overlay clip', 'Premiere captions from an .srt',
+      'Remove Pulse’s captions', 'Premium previews with your words', 'Clean up (silence cut)', 'Shorts: a 9:16 short with its hook title', 'Everything the test made is deleted'];
+    if (process.env.SHOW_ROWS) R.rows.forEach(l => console.log('    ' + l));
     const missing = names.filter(n => !R.rows.some(l => l.indexOf('In Premiere: ' + n) >= 0));
     const notOk = R.rows.filter(l => !/^✅/.test(l));
     report(!missing.length && !notOk.length && R.rows.length === names.length,
@@ -331,6 +380,19 @@ function scriptedPremiere(o) {
       '2b. a project never saved: the Premium steps say to save once instead of failing (' + short(R.rowOf('Premium (Flux) captions')) + ')');
     report(/^❌/.test(R.rowOf('Multicam: Apply')) && /blue \/ blue \/ blue \(expected red \/ blue \/ red\)/.test(R.rowOf('Multicam: Apply')),
       '2b. a Multicam Apply Premiere reports as done while the wrong camera stays on screen is caught by the frames: ' + short(R.rowOf('Multicam: Apply')));
+  }
+
+  // 2c. what the owner meets on a bad day: editable captions that paint
+  // nothing, captions cut at the frame's edge, a picked colour that never
+  // reaches the timeline — each row says so
+  {
+    const R = await run('broken', { editableInvisible: true, shiftLeft: true, grey: true });
+    report(/^❌/.test(R.rowOf('Editable captions: every caption visible')) && /BLANK/.test(R.rowOf('Editable captions: every caption visible')),
+      '2c. editable captions that paint nothing: ' + short(R.rowOf('Editable captions: every caption visible')));
+    report(/^❌/.test(R.rowOf('Captions: long text and long words')) && /cut at the edge/.test(R.rowOf('Captions: long text and long words')),
+      '2c. captions cut at the frame\'s edge: ' + short(R.rowOf('Captions: long text and long words')));
+    report(/^❌/.test(R.rowOf('Captions: the colour you pick')),
+      '2c. a picked colour that never reaches the timeline: ' + short(R.rowOf('Captions: the colour you pick')));
   }
 
   // 3. no test sequence

@@ -3942,14 +3942,48 @@
 
     // does what you SEE match what will RENDER? same frame, both sizes.
     var _pv = $('preview-canvas');
-    if (_pv && _pv._pvFrames && _pv._pvFrames.length && _pv._cpLines != null) {
+    // EVERY style, a long line with long words (a URL, "internationalisation",
+    // a long Hindi word) at the biggest Size, at THIS sequence's size, with
+    // THIS Mac's fonts: no caption may touch the frame's edge (cut off). The
+    // owner: "check with the longer text — if there is a long word, will it
+    // crop or hide".
+    try {
+      var _cvE = document.createElement('canvas'); _cvE.width = _sw; _cvE.height = _sh;
+      var _gE = _cvE.getContext('2d'), _cut = [], _styles = 0, _caps = 0, _edge = 4;
+      allTemplates().filter(function (t) { return !t.mogrt; }).forEach(function (t) {
+        var ov = { fontSize: 160 }, st = CPRender.styleForFrame(t, _sh, ov, _sw), last = null;
+        var frs = captionJobFrames([{ start: 0, end: 8, text: ST_LONG }], null, t, ov);
+        _styles++;
+        frs.forEach(function (f) {
+          if (f.cap === last) return; last = f.cap; _caps++;
+          _gE.clearRect(0, 0, _sw, _sh);
+          CPRender.drawFrame(_cvE, f, st);
+          var strips = [_gE.getImageData(0, 0, _edge, _sh), _gE.getImageData(_sw - _edge, 0, _edge, _sh), _gE.getImageData(0, 0, _sw, _edge), _gE.getImageData(0, _sh - _edge, _sw, _edge)];
+          var touches = strips.some(function (im) { for (var i = 3; i < im.data.length; i += 4) if (im.data[i] > 96) return true; return false; });
+          if (touches && _cut.length < 4) _cut.push((t.name || t.id) + ' (“' + (f.words || []).join(' ') + '”)');
+          else if (touches) _cut.push('');
+        });
+      });
+      row('Every style: long text and long words stay in your frame', _cut.length ? 'fail' : 'ok',
+        _cut.length ? _cut.length + ' caption(s) touch the edge at ' + _sw + '×' + _sh + ': ' + _cut.filter(Boolean).join('; ')
+                    : _styles + ' styles, ' + _caps + ' captions of long words at the biggest Size — every one inside your ' + _sw + '×' + _sh + ' frame');
+    } catch (eE) { row('Every style: long text and long words stay in your frame', 'warn', 'could not check: ' + eE.message); }
+
+    // The SAME frame (the last, every word in) drawn as the preview draws it
+    // and as the render draws it. (It compared the render's last frame with
+    // whatever animation frame the preview happened to be showing — an early
+    // frame of a reveal has fewer words, so "preview 1 line, render 2" was a
+    // false alarm in the owner's report.)
+    if (_pv && _pv._pvFrames && _pv._pvFrames.length && _pv._pvStyle) {
       var _lf = _pv._pvFrames[_pv._pvFrames.length - 1];
+      var _cvP = document.createElement('canvas'); _cvP.width = _pv.width; _cvP.height = _pv.height;
+      CPRender.drawFrame(_cvP, _lf, _pv._pvStyle);
       var _cv2 = document.createElement('canvas'); _cv2.width = _sw; _cv2.height = _sh;
       CPRender.drawFrame(_cv2, _lf, CPRender.styleForFrame(styledPreset(), _sh, readOverrides(), _sw));
-      var _same = (_cv2._cpLines != null) && (_pv._cpLines === _cv2._cpLines);
+      var _same = (_cv2._cpLines != null) && (_cvP._cpLines === _cv2._cpLines);
       row('Preview matches the render', _same ? 'ok' : 'warn',
-        _same ? 'same line breaks at your sequence size'
-              : 'preview shows ' + _pv._cpLines + ' line(s), the render ' + _cv2._cpLines +
+        _same ? 'same line breaks at your sequence size (' + _cv2._cpLines + ' line' + (_cv2._cpLines === 1 ? '' : 's') + ')'
+              : 'the preview breaks “' + (_lf.words || []).join(' ') + '” into ' + _cvP._cpLines + ' line(s), the render into ' + _cv2._cpLines +
                 ' — send this report and I\'ll fix it');
     }
     // HINDI. The owner's content is Hindi/Hinglish and most styles use
@@ -4061,6 +4095,45 @@
     return n / (w * h);
   }
 
+  /* Where the non-camera pixels are: their share and their bounding box
+     (fractions of the frame). */
+  function stInkBox(img) {
+    var W = img.naturalWidth || img.width, H = img.naturalHeight || img.height;
+    var w = 320, h = Math.max(1, Math.round(320 * H / W));
+    var c = document.createElement('canvas'); c.width = w; c.height = h;
+    var g = c.getContext('2d'); g.drawImage(img, 0, 0, w, h);
+    var bg = stPatch(img, 0.04, 0.06), d = g.getImageData(0, 0, w, h).data, n = 0, x0 = w, x1 = -1, y0 = h, y1 = -1;
+    for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) {
+      var i = (y * w + x) * 4;
+      if (Math.abs(d[i] - bg[0]) + Math.abs(d[i + 1] - bg[1]) + Math.abs(d[i + 2] - bg[2]) > 90) {
+        n++; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      }
+    }
+    return { share: n / (w * h), x0: x0 / w, x1: (x1 + 1) / w, y0: y0 / h, y1: (y1 + 1) / h };
+  }
+  /* The share of pixels close to one colour, and their middle across. */
+  function stColour(img, rgb) {
+    var W = img.naturalWidth || img.width, H = img.naturalHeight || img.height;
+    var w = 320, h = Math.max(1, Math.round(320 * H / W));
+    var c = document.createElement('canvas'); c.width = w; c.height = h;
+    var g = c.getContext('2d'); g.drawImage(img, 0, 0, w, h);
+    var d = g.getImageData(0, 0, w, h).data, n = 0, sx = 0;
+    for (var i = 0; i < d.length; i += 4) {
+      if (Math.abs(d[i] - rgb[0]) + Math.abs(d[i + 1] - rgb[1]) + Math.abs(d[i + 2] - rgb[2]) < 110) { n++; sx += (i / 4) % w; }
+    }
+    return { share: n / (w * h), cx: n ? sx / n / w : -1 };
+  }
+  /* The share of white pixels in the band 10–22% down the frame (where a
+     short's hook card sits). */
+  function stTopWhite(img) {
+    var W = img.naturalWidth || img.width, H = img.naturalHeight || img.height;
+    var c = document.createElement('canvas'); c.width = 108; c.height = 192;
+    var g = c.getContext('2d'); g.drawImage(img, 0, 0, 108, 192);
+    var d = g.getImageData(0, 19, 108, 23).data, n = 0;
+    for (var i = 0; i < d.length; i += 4) if (d[i] > 225 && d[i + 1] > 225 && d[i + 2] > 225) n++;
+    return n / (d.length / 4);
+  }
+  var ST_LONG = 'Pulse checks internationalisation www.aiflohstudio.com/subscribe-karo अंतर्राष्ट्रीयकरण supercalifragilisticexpialidocious';
   function premiereFeatureTest(row, ff, progress) {
     var fs = nodeReq('fs'), pathMod = nodeReq('path'), os = nodeReq('os');
     var dir = pathMod.join(os.homedir(), '.cutpilot', 'pulse-selftest');
@@ -4240,6 +4313,31 @@
         return { state: r.applied === 1 ? 'ok' : 'fail', note: 'applied ' + r.applied + ', skipped ' + r.skipped };
       });
     });
+    // first of the caption rows: the check hides this set's own track, so no
+    // other test caption may sit where its words are
+    add('Editable captions: every caption visible', function () {
+      if (!saved) return Promise.resolve({ state: 'warn', note: 'not tried — editable captions need a saved project: save yours once (⌘S), then test again' });
+      var preset = styledPreset(), bb = bundledBackbone(preset);
+      if (!bb) return Promise.resolve({ state: 'warn', note: 'no editable caption template is installed with Pulse' });
+      var cues = [{ start: 1.0, end: 2.0, text: 'Editable first words' }, { start: 4.0, end: 5.0, text: 'Editable middle words' }, { start: 7.0, end: 8.0, text: 'Editable last words' }];
+      // the editable-captions engine itself, as it paints words: the first,
+      // middle and last of a set must each show (the owner's Viral edit set
+      // showed nothing)
+      return host('CP_insertMogrtCaptions', { mogrtPath: bb.path, cues: cues, videoTrack: null, audioTrack: 0, params: [], textStyle: null,
+        stretch: false, replaceTrack: null, captionNames: captionGraphicNames(bb.path), introMode: 'snappy' }).then(function (r) {
+        if (!r.inserted) return { state: 'fail', note: 'no caption was inserted' + ((r.sampleErrors && r.sampleErrors.length) ? ' · ' + r.sampleErrors[0] : '') };
+        if (!framesWork) return { state: 'warn', note: 'inserted ' + r.inserted + ' (Premiere draws no frames here, so visibility was not measured)' };
+        return checkCaptionsVisible(cues, r.track).then(function (v) {
+          // take this set off again, so the rows after it measure only their own captions
+          return host('CP_clearCaptionTrack', { track: r.track, names: captionGraphicNames(bb.path) }).then(function () { return v; }, function () { return v; });
+        }).then(function (v) {
+          var rows = v.rows.map(function (x) { return x.at.toFixed(1) + ' s ' + (x.share == null ? 'unreadable' : (x.share < 0.0015 ? 'BLANK' : 'visible')); });
+          return { state: v.checked === cues.length && !v.blank.length ? 'ok' : 'fail',
+                   note: 'editable captions on V' + r.track + ': ' + rows.join(', ') +
+                     (v.blank.length ? ' — after editable captions Pulse replaces a blank set with ✨ Pulse-rendered ones' : '') };
+        });
+      });
+    });
     add('Captions (Pulse’s own look)', function () {
       var cues = [{ start: 0.4, end: 1.8, text: 'Pulse test words' }];
       var frames = CPCaptions.buildCaptionFrames(cues, { anim: 'none', wordsPerCue: 3 });
@@ -4250,6 +4348,66 @@
         return inkAt(1).then(function (ink) {
           var note = 'placed ' + r.placed + ' on V' + r.track + (ink == null ? '' : ' · ' + pct(ink) + ' of the frame is caption');
           return { state: r.placed > 0 && (ink == null || ink > 0.002) ? (ink == null ? 'warn' : 'ok') : 'fail', note: note };
+        });
+      });
+    });
+    // Pulse's captions as a viewer sees them, with what the owner changes:
+    // long text and long words at the biggest Size, a colour picked, the
+    // word-by-word highlight — each placed on the test sequence and measured
+    // on Premiere's own frames
+    function placeFrames(frames, preset, ov, sub) {
+      return CPRender.renderFrames(frames, { width: setup.width, height: setup.height, preset: preset,
+                                            overrides: ov, outDir: pathMod.join(dir, sub) }).then(function (items) {
+        return host('CP_placeCaptionImages', { items: items, anim: 'none' });
+      });
+    }
+    add('Captions: long text and long words stay in the frame', function () {
+      var ov = readOverrides(); ov.fontSize = 160;                    // the biggest Size there is
+      var frames = captionJobFrames([{ start: 8.1, end: 9.7, text: ST_LONG }], null, currentPreset(), ov);
+      var caps = [], last = null;
+      frames.forEach(function (f) { if (f.cap !== last) { caps.push(f); last = f.cap; } });
+      return placeFrames(frames, styledPreset(), ov, 'long').then(function (r) {
+        if (!framesWork) return { state: r.placed > 0 ? 'warn' : 'fail', note: 'placed ' + r.placed + ' (Premiere draws no frames here, so the edges were not measured)' };
+        var seen = [];
+        return caps.slice(0, 5).reduce(function (p, f) {
+          return p.then(function () {
+            return frameAt((f.start + (f.end != null ? f.end : f.start + 0.3)) / 2).then(function (im) { seen.push({ words: (f.words || []).join(' '), b: im ? stInkBox(im) : null }); });
+          });
+        }, Promise.resolve()).then(function () {
+          var bad = seen.filter(function (x) { return !x.b || x.b.share < 0.001 || x.b.x0 < 0.005 || x.b.x1 > 0.995 || x.b.y0 < 0.005 || x.b.y1 > 0.995; });
+          return { state: bad.length ? 'fail' : 'ok', note: seen.length + ' caption(s) of a long line with long words, at the biggest Size: ' +
+            (bad.length ? bad.map(function (x) { return '“' + x.words + '” ' + (!x.b || x.b.share < 0.001 ? 'NOT visible' : 'cut at the edge'); }).join('; ')
+                        : 'every one visible and inside the frame (widest ' + Math.round(Math.max.apply(null, seen.map(function (x) { return (x.b.x1 - x.b.x0) * 100; }))) + '% of it)') };
+        });
+      });
+    });
+    add('Captions: the colour you pick shows on the timeline', function () {
+      var ov = readOverrides(); ov.fill = '#00ff00'; ov.highlight = '#00ff00';
+      var frames = CPCaptions.buildCaptionFrames([{ start: 2.0, end: 3.2, text: 'Colour check words' }], { anim: 'none', wordsPerCue: 3 });
+      return placeFrames(frames, styledPreset(), ov, 'colour').then(function (r) {
+        if (!framesWork) return { state: 'warn', note: 'placed ' + r.placed + ' (no frames to look at)' };
+        return frameAt(2.6).then(function (im) {
+          var g = im ? stColour(im, [0, 255, 0]) : { share: 0 };
+          return { state: g.share > 0.0008 ? 'ok' : 'fail', note: 'text colour set to green: ' + Math.round(g.share * 1000) / 10 + '% of the frame is that green' +
+            (g.share > 0.0008 ? '' : ' — the colour you pick did not reach the timeline with “' + (currentPreset() || {}).name + '”') };
+        });
+      });
+    });
+    add('Captions: the word-by-word highlight moves', function () {
+      var ov = readOverrides(); ov.highlight = '#ff00ff'; ov.fill = '#ffffff';
+      // inside one camera shot (Multicam's test cut is at 6 s): only the words change
+      var ws = ['One', 'two', 'three', 'four'], frames = ws.map(function (w, i) {
+        return { start: 5.0 + i * 0.24, end: 5.0 + (i + 1) * 0.24, words: ws, active: i, cap: 0 };
+      });
+      return placeFrames(frames, styledPreset(), ov, 'anim').then(function (r) {
+        if (!framesWork) return { state: 'warn', note: 'placed ' + r.placed + ' (no frames to look at)' };
+        var a = null, b = null;
+        return frameAt(5.1).then(function (im) { a = im; return frameAt(5.85); }).then(function (im) {
+          b = im;
+          var d = (a && b) ? framesDiffer(a, b) : null, ma = a ? stColour(a, [255, 0, 255]) : null, mb = b ? stColour(b, [255, 0, 255]) : null;
+          var moved = ma && mb && ma.share > 0.0003 && mb.share > 0.0003 && mb.cx > ma.cx + 0.05;
+          return { state: (d != null && d > 0.0015) ? 'ok' : 'fail', note: (d == null ? 'no frames' : 'the caption changes as the words are said (' + Math.round(d * 1000) / 10 + '% of the frame)') +
+            (moved ? ' · the highlight moves from “One” to “four”' : (ma && ma.share > 0.0003 ? '' : ' · this style shows no highlight colour')) };
         });
       });
     });
@@ -4338,6 +4496,27 @@
         return { state: Math.abs(cut - 1) < 0.05 ? 'ok' : 'fail', note: 'the sequence went from ' + Math.round(endBefore * 100) / 100 + ' s to ' +
           Math.round(m.end * 100) / 100 + ' s (1 s of silence removed: ' + (Math.abs(cut - 1) < 0.05 ? 'yes' : 'no') + ')' };
       }, function (e) { throw new Error(e.message + facts(e)); });
+    });
+
+    add('Shorts: a 9:16 short with its hook title', function () {
+      var cam = { index: 0, name: 'V1', segments: [{ mediaPath: cam1, seqStart: 0, seqEnd: 10, inPoint: 0, speed: 1 }] };
+      var plan = { segments: [{ start: 1, end: 4 }], words: [], duration: 3, removed: 0 };
+      var out = pathMod.join(dir, 'pulse-selftest-short.mp4');
+      return renderFramedShort(ff, { cams: [cam], map: [], tracks: [], n: 1 }, plan, { label: '9:16', num: 9, den: 16 }, 'Pulse test hook', { textContent: '' }).then(function (r) {
+        fs.writeFileSync(out, fs.readFileSync(r.path));
+        try { fs.unlinkSync(r.path); } catch (eU) {}
+        return host('CP_importClip', { path: out, name: 'Pulse self-test short' });
+      }).then(function (r) {
+        return host('CP_getEnv').then(function (env) {
+          var shape = env && env.sequenceName === 'Pulse self-test short' && Number(env.width) === 1080 && Number(env.height) === 1920;
+          if (!framesWork || !shape) return { state: shape ? 'ok' : 'fail', note: 'sequence “' + (env && env.sequenceName) + '” ' + (env && env.width) + '×' + (env && env.height) };
+          return frameAt(1).then(function (im) {
+            // the hook card: white, across the top of the frame (its dark words in the middle)
+            var top = im ? stTopWhite(im) : 0, white = top > 0.05;
+            return { state: white ? 'ok' : 'fail', note: 'its own 1080×1920 sequence, ' + (white ? 'the hook title on screen' : 'NO hook title at the top (' + Math.round(top * 100) + '% of the top band is white)') };
+          });
+        });
+      });
     });
 
     var stopped = false;
@@ -8305,6 +8484,7 @@
     } catch (eF) { frames = null; }
     if (!frames || !frames.length) frames = [{ words: sw }];
     canvas._pvFrames = frames;                      // exposed for the motion-parity proof
+    canvas._pvStyle = pStyle;                       // …and the style it is drawn with (the self-test's line check)
 
     // tiny 9:16 frame gauge (top-right): the marker = the Position slider's
     // real spot, so geometry stays visible without wasting the whole preview

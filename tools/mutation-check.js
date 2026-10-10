@@ -1989,6 +1989,62 @@ const MUTANTS = [
     repl: '  }\n  function defaultMarks(n) {',
     gate: 'CutPilot/test/gates/shorts-mark-people.js',
     why: 'the marked people are forgotten when Pulse restarts'
+  },
+  {
+    name: 'v13-viral-always-editable',
+    file: 'CutPilot/js/main.js',
+    find: "      .then(function () { $('btn-magic').click(); });",
+    repl: "      .then(function () { applyEditableStyle(); });",
+    gate: 'CutPilot/test/gates/captions-viral-visible.js',
+    why: 'Viral edit ignores the caption type picked and always makes editable captions'
+  },
+  {
+    name: 'v13-visibility-blind',
+    file: 'CutPilot/js/main.js',
+    find: "      return { checked: known.length, rows: rows, blank: known.filter(function (x) { return x.share < 0.0015; })",
+    repl: "      return { checked: known.length, rows: rows, blank: known.filter(function (x) { return x.share < 0; })",
+    gate: 'CutPilot/test/gates/captions-viral-visible.js',
+    why: 'editable captions that paint nothing are reported as visible'
+  },
+  {
+    name: 'v13-blank-kept',
+    file: 'CutPilot/js/main.js',
+    find: "      addPulseCaptions(mCues, null, { track: track, names: captionGraphicNames(mogrtPath) });",
+    repl: "",
+    gate: 'CutPilot/test/gates/captions-viral-visible.js',
+    why: 'blank editable captions stay on the timeline'
+  },
+  {
+    name: 'v13-st-edges-unchecked',
+    file: 'CutPilot/js/main.js',
+    find: "x.b.share < 0.001 || x.b.x0 < 0.005 || x.b.x1 > 0.995 || x.b.y0 < 0.005 || x.b.y1 > 0.995;",
+    repl: "x.b.share < 0.001;",
+    gate: 'CutPilot/test/gates/selftest-premiere.js',
+    why: 'Test everything says long words fit when they are cut at the frame\'s edge'
+  },
+  {
+    name: 'v13-st-colour-unchecked',
+    file: 'CutPilot/js/main.js',
+    find: "          return { state: g.share > 0.0008 ? 'ok' : 'fail', note: 'text colour set to green: '",
+    repl: "          return { state: 'ok', note: 'text colour set to green: '",
+    gate: 'CutPilot/test/gates/selftest-premiere.js',
+    why: 'Test everything says the colour reached the timeline when it did not'
+  },
+  {
+    name: 'v13-st-editable-unchecked',
+    file: 'CutPilot/js/main.js',
+    find: "          return { state: v.checked === cues.length && !v.blank.length ? 'ok' : 'fail',",
+    repl: "          return { state: 'ok',",
+    gate: 'CutPilot/test/gates/selftest-premiere.js',
+    why: 'Test everything says editable captions show when they are blank'
+  },
+  {
+    name: 'v13-st-every-style-blind',
+    file: 'CutPilot/js/main.js',
+    find: "          var touches = strips.some(function (im) { for (var i = 3; i < im.data.length; i += 4) if (im.data[i] > 96) return true; return false; });",
+    repl: "          var touches = false;",
+    gate: 'CutPilot/test/gates/selftest-panel-captions.js',
+    why: 'the every-style check never sees a caption cut at the edge'
   }
 ];
 
