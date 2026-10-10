@@ -2069,6 +2069,22 @@ const MUTANTS = [
     repl: "      anim: 'none', wordsPerCue: (parseInt($('c-words').value, 10) || 0),",
     gate: 'CutPilot/test/gates/captions-viral-visible.js',
     why: 'Premiere captions take the style\'s two-words-a-caption grouping'
+  },
+  {
+    name: 'v15-seconds-raw',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "  var x = a / u.w, y = b / u.h;",
+    repl: "  var x = a, y = b;",
+    gate: 'CutPilot/test/host-tests.js',
+    why: 'timing written as raw seconds into a point Premiere reads as fractions of the comp: a 0.25 s pop-in becomes 480 s, the words never appear'
+  },
+  {
+    name: 'v15-type-written',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "  var info = { dur: durSec, durSet: false, durName: String(durProp.displayName) };",
+    repl: "  for (i = 0; i < props.numItems; i++) { if (/^type$/i.test(String(props[i].displayName || ''))) { try { props[i].setValue(2, true); } catch (eT) {} } }\n  var info = { dur: durSec, durSet: false, durName: String(durProp.displayName) };",
+    gate: 'CutPilot/test/host-tests.js',
+    why: 'the highlight Type written as 2 — past the end of a two-item menu, the dropdown goes blank'
   }
 ];
 

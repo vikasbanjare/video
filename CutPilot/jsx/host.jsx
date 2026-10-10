@@ -3347,8 +3347,35 @@ function CP_zeroInsertResult(args, msg) {
   };
 }
 
-function CP_setWordSweep(comp, durSec, wordCount) {
+/* A template's POINT controls hold pixels of its comp, but Premiere's
+   setValue / getValue take them as FRACTIONS of the comp (the Essential
+   Graphics panel shows them multiplied back). Two engine controls are
+   points that mean SECONDS — "Animation Start Time, Duration" and "Start
+   Time, Duration(Automated)" — and Pulse wrote seconds straight in: the
+   owner's panel showed −745.2 / 3532.8 (0.69 s × 1080, 1.84 s × 1920), and
+   a 0.25 s pop-in became a 480 s fade, so NO editable caption ever showed
+   its words. u = the comp size; without one, the Flux comps' 1080×1920. */
+function CP_compUnits(clip, w, h) {
+  var c = null;
+  try { c = CP_mgtCompSize(clip); } catch (e) {}
+  return { w: (c && c.w) || w || 1080, h: (c && c.h) || h || 1920 };
+}
+function CP_setSecondsPoint(prop, a, b, u) {
+  var x = a / u.w, y = b / u.h;
+  try { prop.setValue([x, y], true); return true; }
+  catch (e1) { try { prop.setValue([x, y]); return true; } catch (e2) { try { prop.setValue({ x: x, y: y }, true); return true; } catch (e3) {} } }
+  return false;
+}
+function CP_readSecondsPoint(prop, u) {
+  var v = null;
+  try { v = prop.getValue(); } catch (e) {}
+  if (v && v.x != null) return [v.x * u.w, v.y * u.h];
+  if (v && v.length >= 2) return [v[0] * u.w, v[1] * u.h];
+  return null;
+}
+function CP_setWordSweep(comp, durSec, wordCount, u) {
   if (!comp || !comp.properties || !(durSec > 0)) return null;
+  u = u || { w: 1080, h: 1920 };
   // RELAXED name matching. The old code demanded the byte-exact prefix
   // "Start Time, Duration(Automated)" — one space difference in the live
   // display name (e.g. "Duration (Automated)") and it bailed with null: NO
@@ -3356,29 +3383,18 @@ function CP_setWordSweep(comp, durSec, wordCount) {
   // Same class of bug the colour mapper had. Now: normalize (lowercase, strip
   // non-letters) and match on substance, and NEVER bind the entrance
   // "Animation Type" dropdown as the highlight Type.
-  var props = comp.properties, typeProp = null, durProp = null, idxProp = null, i;
+  var props = comp.properties, durProp = null, i;
   for (i = 0; i < props.numItems; i++) {
     var dn = String(props[i].displayName || '');
     var nn = dn.toLowerCase().replace(/[^a-z]/g, '');     // "Start Time, Duration (Automated)" → "starttimedurationautomated"
     if (!durProp && (nn.indexOf('starttimeduration') === 0 || (nn.indexOf('duration') >= 0 && nn.indexOf('automated') >= 0))) durProp = props[i];
-    else if (!typeProp && (nn === 'type' || nn === 'highlighttype') && nn.indexOf('animation') < 0) typeProp = props[i];
-    else if (!idxProp && nn === 'wordindex') idxProp = props[i];
   }
   if (!durProp) return null;                       // not a word-highlight template
-  var info = { dur: durSec, typeSet: false, durSet: false,
-               typeName: typeProp ? String(typeProp.displayName) : null,
-               durName: String(durProp.displayName) };
-  // Type → "Duration Based" (2nd menu option; Premiere dropdowns are 1-based).
-  if (typeProp) {
-    try { typeProp.setValue(2, true); info.typeSet = true; }
-    catch (e1) { try { typeProp.setValue(2); info.typeSet = true; } catch (e2) {} }
-  }
-  // GRACEFUL DEGRADATION: if the mode switch didn't take (or doesn't exist) the
-  // template may sit in Index mode where "Word Index" 0 highlights NOTHING —
-  // point it at the first word so there is always a visible highlight.
-  if (!info.typeSet && idxProp) {
-    try { idxProp.setValue(1, true); } catch (eI1) { try { idxProp.setValue(1); } catch (eI2) {} }
-  }
+  // The highlight "Type" is left as the template has it: every word-highlight
+  // template Pulse ships is authored "Duration Based" already (definition.json),
+  // and writing 2 into it left the owner's dropdown BLANK — Premiere counts
+  // menu items from 0, so 2 is past the end of a two-item menu.
+  var info = { dur: durSec, durSet: false, durName: String(durProp.displayName) };
   // THE ENGINE'S OWN MATH (read from the .aep):
   //   activeIndex = round(linear(time, d[0], d[0]+d[1], 0, words+1))
   // Index 0 (before word 1) and words+1 (past the last word) highlight
@@ -3393,9 +3409,7 @@ function CP_setWordSweep(comp, durSec, wordCount) {
   var d1 = durSec * (W + 1) / (W - 0.5);
   var d0 = -0.75 * durSec / (W - 0.5);
   info.words = W; info.d0 = d0; info.d1 = d1;
-  try { durProp.setValue([d0, d1], true); info.durSet = true; }
-  catch (e3) { try { durProp.setValue([d0, d1]); info.durSet = true; }
-    catch (e4) { try { durProp.setValue({ x: d0, y: d1 }, true); info.durSet = true; } catch (e5) {} } }
+  info.durSet = CP_setSecondsPoint(durProp, d0, d1, u);
   return info;
 }
 
@@ -3414,8 +3428,9 @@ function CP_setWordSweep(comp, durSec, wordCount) {
  * make sure "Animation Type" holds a VALID variant (1..8) — an out-of-range
  * value blanks EVERY text layer. A value the USER explicitly sent in params
  * (template sheet) always wins. */
-function CP_forceIntroVisible(comp, params, clipDurSec, mode) {
+function CP_forceIntroVisible(comp, params, clipDurSec, mode, u) {
   if (!comp || !comp.properties) return 0;
+  u = u || { w: 1080, h: 1920 };
   var props = comp.properties, fixed = 0;
   var dur = (clipDurSec && clipDurSec > 0) ? clipDurSec : 1;
   function userSet(idx) {
@@ -3436,22 +3451,17 @@ function CP_forceIntroVisible(comp, params, clipDurSec, mode) {
         var fitS = 0.4 * dur;
         if (fitS > 0.25) fitS = 0.25;
         if (fitS < 0.12) fitS = 0.12;
-        try { props[i].setValue([0, fitS], true); fixed++; }
-        catch (eS1) { try { props[i].setValue({ x: 0, y: fitS }, true); fixed++; } catch (eS2) {} }
+        if (CP_setSecondsPoint(props[i], 0, fitS, u)) fixed++;
         continue;
       }
       var stime = 0, atime = 1;
-      try {
-        var cv = props[i].getValue();
-        if (cv && cv.x != null) { stime = +cv.x || 0; atime = +cv.y || 1; }
-        else if (cv && cv.length >= 2) { stime = +cv[0] || 0; atime = +cv[1] || 1; }
-      } catch (eR) {}
+      var cv = CP_readSecondsPoint(props[i], u);
+      if (cv) { stime = +cv[0] || 0; atime = +cv[1] || 1; }
       if (stime + atime <= 0.6 * dur) continue;   // authored intro FITS → keep the ORIGINAL animation untouched
       var fit = 0.5 * dur;
       if (fit > atime) fit = atime;               // never slower than authored
       if (fit < 0.12) fit = 0.12;                 // never a hard pop (still animated)
-      try { props[i].setValue([0, fit], true); fixed++; }
-      catch (e1) { try { props[i].setValue({ x: 0, y: fit }, true); fixed++; } catch (e2) {} }
+      if (CP_setSecondsPoint(props[i], 0, fit, u)) fixed++;
     } else if (nn === 'animationtype') {
       if (userSet(i)) continue;
       var cur = null; try { cur = props[i].getValue(); } catch (eG) {}
@@ -3763,14 +3773,14 @@ function CP_insertMogrtCaptions(argsJson) {
           var swOk = null;
           try {
             var swWords = String(grp[0].text || '').replace(/\s+/g, ' ').replace(/^ | $/g, '').split(' ').length;
-            swOk = CP_setWordSweep(comp, wantEnd - startSec, swWords);
+            swOk = CP_setWordSweep(comp, wantEnd - startSec, swWords, CP_compUnits(clip, compW, compH));
             if (swOk) { swept++; if (!sweepSample) sweepSample = swOk; }
           } catch (eSw) {}
 
           // fit the template's own entrance animation to THIS caption's length —
           // the authored 1s intro left short captions as an empty box, but the
           // animation itself is the Flux signature look, so it plays scaled
-          try { introFixed += CP_forceIntroVisible(comp, args.params, wantEnd - startSec, args.introMode); } catch (eIv) {}
+          try { introFixed += CP_forceIntroVisible(comp, args.params, wantEnd - startSec, args.introMode, CP_compUnits(clip, compW, compH)); } catch (eIv) {}
 
           var tprops = CP_textPropsOf(comp);
           if (probe.mirrorText && tprops.length > 1) {
@@ -4325,7 +4335,7 @@ function CP_previewMogrt(argsJson) {
       var pcomp = clip.getMGTComponent();
       if (pcomp) {
         pParams = CP_applyMgrtParams(pcomp, args.params);
-        try { CP_forceIntroVisible(pcomp, args.params, args.seconds || 4); } catch (eIv) {}   // entrance fitted to the preview length
+        try { CP_forceIntroVisible(pcomp, args.params, args.seconds || 4, null, CP_compUnits(clip, args.compW, args.compH)); } catch (eIv) {}   // entrance fitted to the preview length
         var pvScaled = 0;
         if (args.text && pcomp.properties) {
           var ptp = CP_findTextProp(pcomp.properties, ['text', 'caption', 'title', 'subtitle', 'headline', 'body']);
@@ -4391,11 +4401,11 @@ function CP_renderStylePreviews(argsJson) {
           // individual writes to isolate which one kills the render on a
           // given machine.
           try { CP_applyMgrtParams(comp, stl.params || []); } catch (ePr) {}
-          if (!stl.noIntro) { try { CP_forceIntroVisible(comp, stl.params || [], seconds, 'snappy'); } catch (eIv) {} }
+          if (!stl.noIntro) { try { CP_forceIntroVisible(comp, stl.params || [], seconds, 'snappy', CP_compUnits(clip)); } catch (eIv) {} }
           if (!stl.noSweep) {
             try {
               var pvW = String(stl.text || '').replace(/\s+/g, ' ').replace(/^ | $/g, '').split(' ').length;
-              CP_setWordSweep(comp, seconds, pvW);
+              CP_setWordSweep(comp, seconds, pvW, CP_compUnits(clip));
             } catch (eSw) {}
           }
           if (stl.text && comp.properties) {

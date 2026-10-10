@@ -22,6 +22,9 @@ const vm = require('vm');
 const ES3 = require(path.join(__dirname, 'es3-runtime.js'));
 
 let passed = 0, failed = 0;
+/* A time control's value in SECONDS, from the fraction of the 1080×1920
+   comp that Premiere stores for a point. */
+const sec = (p) => ({ x: p.x * 1080, y: p.y * 1920 });
 function assert(cond, name) {
   if (cond) { passed++; console.log('  ✓ ' + name); }
   else { failed++; console.error('  ✗ ' + name); }
@@ -404,8 +407,12 @@ function makeWorld(opts) {
           // (Index mode) so the Duration-Based switch is a real 1→2 transition;
           // tOpacity/shSoft/bgOpacity/shOn boot "dimmed/mis-set" so the forced
           // values are provably written, not inherited.
+          // the two TIME controls are points: Premiere hands them back as
+          // FRACTIONS of the 1080×1920 comp (the owner's panel showed Pulse's
+          // seconds multiplied back: −745.2 / 3532.8) — seeded as Premiere
+          // reads the authored [0.5 s, 2 s] and [0, 1 s]
           animType: { v: (opts.animTypeSeed != null ? opts.animTypeSeed : 4) }, sweepType: { v: 1 }, wordIdx: { v: 0 },
-          sweepDur: { x: 0.5, y: 2 }, animDur: { x: 0, y: 1 },
+          sweepDur: { x: 0.5 / 1080, y: 2 / 1920 }, animDur: { x: 0, y: 1 / 1920 },
           gradA: { x: 284, y: 960 }, gradB: { x: 791, y: 960 },
           textPos: { x: 540, y: 960 }, fgPos: { x: 540, y: 960 }, pad: { x: 50, y: 50 },
           scale: { v: 100 }, tOpacity: { v: 40 }, lineSp: { v: 0 },
@@ -1611,8 +1618,8 @@ console.log('host.jsx — As-spoken reveal params (base text invisible, sweep pa
   const f = w.model.vTracks[w.model.vTracks.length - 1][0]._flux;
   assert(r.ok && r.inserted === 1, 'as-spoken insert succeeds');
   assert(f.tOpacity.v === 0, 'base Text Opacity is 0 — unspoken words are INVISIBLE until the sweep reaches them');
-  assert(f.sweepType.v === 2 && Math.abs(f.sweepDur.x - (-0.3)) < 1e-9 && Math.abs(f.sweepDur.y - 1.6) < 1e-9,
-    'sweep window covers the WHOLE caption (word 1 live at t=0, last word held to the end): ' + JSON.stringify(f.sweepDur));
+  assert(f.sweepType.v === 1 && Math.abs(sec(f.sweepDur).x - (-0.3)) < 1e-6 && Math.abs(sec(f.sweepDur).y - 1.6) < 1e-6,
+    'sweep window covers the WHOLE caption (word 1 live at t=0, last word held to the end), written as Premiere reads a point (fractions of the comp), the highlight Type left as authored: ' + JSON.stringify(sec(f.sweepDur)));
 }
 
 // ═══ As-spoken SAFETY: a clip whose sweep fails must NEVER be invisible ═══
@@ -1987,7 +1994,7 @@ console.log('host.jsx — intro-fade neutralizer (empty-box-with-no-words bug)')
   });
   const f = w.model.vTracks[w.model.vTracks.length - 1][0]._flux;
   assert(f.animType.v === 8, 'an invalid Animation Type (0) is forced to variant 8 — the ONLY one whose intro expression is not dead (1-7 have the stime typo)');
-  assert(f.animDur.x === 0 && Math.abs(f.animDur.y - 0.5) < 1e-9,
+  assert(f.animDur.x === 0 && Math.abs(sec(f.animDur).y - 0.5) < 1e-6,
     'a 1.0s cue scales the authored 1s intro to 0.5s alongside');
 
   // SHORT cue: scaled to half the cue with a 0.12s floor — still animated,
@@ -1999,7 +2006,7 @@ console.log('host.jsx — intro-fade neutralizer (empty-box-with-no-words bug)')
     videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false
   });
   const fS = wS.model.vTracks[wS.model.vTracks.length - 1][0]._flux;
-  assert(Math.abs(fS.animDur.y - 0.15) < 1e-9,
+  assert(Math.abs(sec(fS.animDur).y - 0.15) < 1e-6,
     'a 0.3s cue scales the entrance to 0.15s — animated AND readable');
 
   // LONG cue: the AUTHORED animation FITS (1s ≤ 60% of 4s) → left completely
@@ -2011,7 +2018,7 @@ console.log('host.jsx — intro-fade neutralizer (empty-box-with-no-words bug)')
     videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false
   });
   const fL = wL.model.vTracks[wL.model.vTracks.length - 1][0]._flux;
-  assert(fL.animDur.x === 0 && Math.abs(fL.animDur.y - 1) < 1e-9,
+  assert(fL.animDur.x === 0 && Math.abs(sec(fL.animDur).y - 1) < 1e-6,
     'a 4s cue KEEPS the authored [0, 1s] intro untouched — the ORIGINAL template animation');
   assert(rL.introFixed === 0, 'nothing was "fixed" when the original animation already fits');
 
@@ -2026,9 +2033,9 @@ console.log('host.jsx — intro-fade neutralizer (empty-box-with-no-words bug)')
     videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false, introMode: 'snappy'
   });
   const t = wQ.model.vTracks[wQ.model.vTracks.length - 1];
-  assert(Math.abs(t[0]._flux.animDur.y - 0.25) < 1e-9,
+  assert(Math.abs(sec(t[0]._flux.animDur).y - 0.25) < 1e-6,
     'snappy: a 4s caption pops in over 0.25s (authored 1s overridden — styles need readable words on any frame)');
-  assert(Math.abs(t[1]._flux.animDur.y - 0.16) < 1e-9,
+  assert(Math.abs(sec(t[1]._flux.animDur).y - 0.16) < 1e-6,
     'snappy: a 0.4s caption pops in over 0.16s (0.4×dur, floor 0.12s)');
 }
 {
@@ -2122,8 +2129,8 @@ console.log('host.jsx — colour params re-applied AFTER text writes (preview ==
   // and this template (like real ones) has a space before "(Automated)" → no sweep.
   assert(r.swept === 1, 'word-sweep ENGAGED despite the spaced "(Automated)" name (was 0 before)');
   const sw = clip._sweep();
-  assert(sw.type === 2, 'highlight Type switched to Duration-Based (2)');
-  assert(Array.isArray(sw.dur) && Math.abs(sw.dur[0] - (-0.45)) < 1e-9 && Math.abs(sw.dur[1] - 2.4) < 1e-9,
+  assert(sw.type === null, 'the highlight Type is left as the template has it (Duration Based) — writing 2 left the owner\'s dropdown BLANK');
+  assert(Array.isArray(sw.dur) && Math.abs(sw.dur[0] * 1080 - (-0.45)) < 1e-6 && Math.abs(sw.dur[1] * 1920 - 2.4) < 1e-6,
     'sweep window per the ENGINE\'s round(linear(…, 0, words+1)) math — full caption coverage (' + JSON.stringify(sw.dur) + ')');
 }
 
@@ -2211,8 +2218,8 @@ console.log('host.jsx — Flux engine (Halo2 control set): text, exact-name para
   assert(f0.shOn.v === false && f0.shOpacity.v === 0, 'no glow → the engine shadow is OFF');
   assert(f0.tOpacity.v === 100, 'text opacity forced fully visible');
   assert(r.swept === 2, 'word-by-word sweep engaged on every clip');
-  assert(f0.sweepType.v === 2 && f1.sweepType.v === 2,
-    'highlight Type WRITTEN 1 → 2 (Duration Based) on each — a real transition, not the seed');
+  assert(f0.sweepType.v === 1 && f1.sweepType.v === 1,
+    'the highlight Type is NEVER written (every word-highlight template is authored Duration Based; 2 blanked the owner\'s dropdown)');
   assert(f0.animType.v === 4 && f1.animType.v === 4,
     'the entrance "Animation Type" enum is NEVER bound as the sweep Type (stays 4)');
   // the engine's text layers are opacity-gated by the authored [0,1s] intro
@@ -2220,13 +2227,13 @@ console.log('host.jsx — Flux engine (Halo2 control set): text, exact-name para
   // EMPTY BOX. Rule: the ORIGINAL animation is kept whenever it fits (≤60% of
   // the caption); only a too-short caption scales it down to half its length.
   // Both cues here are 1.2s: authored 1s > 0.72s → scaled to 0.6s.
-  assert(f0.animDur.x === 0 && Math.abs(f0.animDur.y - 0.6) < 1e-9 &&
-         Math.abs(f1.animDur.y - 0.6) < 1e-9,
+  assert(f0.animDur.x === 0 && Math.abs(sec(f0.animDur).y - 0.6) < 1e-6 &&
+         Math.abs(sec(f1.animDur).y - 0.6) < 1e-6,
     'a 1.2s cue is too short for the authored 1s intro → scaled to 0.6s (animated, never an empty box)');
   assert(r.introFixed >= 2, 'the result reports the intro fix ran on each clip (' + r.introFixed + ')');
-  assert(Math.abs(f0.sweepDur.x - (-0.36)) < 1e-6 && Math.abs(f0.sweepDur.y - 1.92) < 1e-6 &&
-         Math.abs(f1.sweepDur.y - 1.92) < 1e-6,
-    'each caption gets its own FULL-COVERAGE sweep window (' + JSON.stringify(f0.sweepDur) + ')');
+  assert(Math.abs(sec(f0.sweepDur).x - (-0.36)) < 1e-6 && Math.abs(sec(f0.sweepDur).y - 1.92) < 1e-6 &&
+         Math.abs(sec(f1.sweepDur).y - 1.92) < 1e-6,
+    'each caption gets its own FULL-COVERAGE sweep window (' + JSON.stringify(sec(f0.sweepDur)) + ' s)');
 }
 
 // glow styles: the engine's soft shadow becomes a centred halo
@@ -2280,8 +2287,8 @@ console.log('host.jsx — insert edge cases (empty / tiny / overlapping / unsort
   });
   const c1 = w1.model.vTracks[w1.model.vTracks.length - 1][0];
   assert(r1.ok && r1.inserted === 1 && r1.textSet === 1, 'a 0.2s one-word cue inserts with its text');
-  assert(Math.abs(c1._flux.sweepDur.y - 0.8) < 1e-9 && Math.abs(c1._flux.sweepDur.x - (-0.3)) < 1e-9,
-    'a ONE-word cue\'s window keeps that word active for the ENTIRE cue (W=1: d=[-1.5,4]·dur): ' + JSON.stringify(c1._flux.sweepDur));
+  assert(Math.abs(sec(c1._flux.sweepDur).y - 0.8) < 1e-6 && Math.abs(sec(c1._flux.sweepDur).x - (-0.3)) < 1e-6,
+    'a ONE-word cue\'s window keeps that word active for the ENTIRE cue (W=1: d=[-1.5,4]·dur): ' + JSON.stringify(sec(c1._flux.sweepDur)));
   assert(c1.end.seconds <= 2.2 + 1e-6, 'clip never outlives its lonely cue');
 
   // OVERLAPPING cues (ASR sometimes emits them): earlier clip must be clamped
@@ -2368,7 +2375,7 @@ console.log('host.jsx — entrance keyframes (pop/slide/fade at NATURAL pace)');
   assert(Math.abs(sc.keys[1].t - sc.keys[0].t - 0.09) < 1e-6,
     'keyframes run at NATURAL pace (0.09s apart — animSpeed=100 compressed them into ~1ms: entrances were invisible)');
   assert(sc.keys[2].v === 100, 'pop settles at 100% scale');
-  assert(c._flux.sweepType.v === 2, 'the word sweep still engages alongside the entrance');
+  assert(c._flux.sweepType.v === 1 && sec(c._flux.sweepDur).y >= 1.5 && sec(c._flux.sweepDur).x <= 0, 'the word sweep still engages alongside the entrance (its window covers the cue; Type left as authored): ' + JSON.stringify(sec(c._flux.sweepDur)));
 
   const w2 = makeWorld({ vTracks: 1, aTracks: 1, fluxComponent: true });
   const h2 = loadHost(w2);
