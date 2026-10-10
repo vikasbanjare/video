@@ -1,10 +1,33 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.11** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.12** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.12 — Shorts from a 3-camera podcast: the right camera, framed on the talker
+The owner: left / right / center cameras; a vertical short must show the
+speaker's camera (sometimes the center) and know where to zoom in each
+camera so the person fits 9:16.
+- js/podshort.js (CPPodShort, pure): subjects() — people in 160×90 frames
+  (2 fps) by temporal movement × skin (YCbCr rule) per column, peaks ≥12% w
+  apart, merged when no dip or unbroken skin between them (one swaying
+  person = one subject), centre = weighted band centre, rows → head top,
+  movement series per subject; assign() — Pearson of a subject's movement
+  vs a mic's dB series, greedy unique; cropFor() — 9:16 window on the
+  person, 12% head room, wide shots zoom so the person fills ~60% of the
+  width (≥62% of frame height; stacked halves ≥36%); pieces() — the short's
+  stretches × the director's plan, flashes < 0.7 s merged, who talks on
+  each (talker(): mic loud > 1/3 → 'both'); levels(); filterArgs() — one
+  ffmpeg pass: per piece trim+crop (+vstack for both), per-piece mic mix
+  (amix), concat, hook overlay.
+- host.jsx CP_getVideoTracks. main.js: Make clip with #sh-cams (on;
+  settings.shCams) and ≥2 camera tracks → podcastCameras() (video tracks,
+  mic map from Podcast cameras rows; '-1' row = wide) → renderPodcastShort
+  (state.plan if it covers the moment, else buildMcPlan()), sound = mics.
+- Gate shorts-podcast-cameras (3 generated camera files + 2 mic tones);
+  mutations v12-*.
 
 ### v0.10.11 — Shorts: one click makes a short ready to post
 The owner: "how can we make the caption and short videos content more better".
