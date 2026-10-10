@@ -3863,46 +3863,7 @@
     } catch (e) { return null; }
   }
 
-  /* AFTER-INSERT RENDER CHECK: capture ONE real frame of the user's own
-     sequence at the first caption and verify the words are actually painted.
-     The verdict goes to Diagnostics + a toast — every "Add captions" run now
-     proves (or disproves) itself with zero extra buttons. */
-  function verifyCaptionRender(tcues, preset) {
-    try {
-      if (!CPBridge.isCEP() || !tcues || !tcues.length) return;
-      if (!preset || !preset.boxColor) return;   // band check is only conclusive on box styles
-      var fs = nodeReq('fs'), pathMod = nodeReq('path'), os = nodeReq('os');
-      var c0 = tcues[0];
-      var at = c0.start + Math.min(0.6, Math.max(0.3, (c0.end - c0.start) / 2));
-      var png = pathMod.join(os.tmpdir(), 'pulse-rendercheck.png');
-      try { if (fs.existsSync(png)) fs.unlinkSync(png); } catch (eU) {}
-      CPBridge.callHost('CP_captureSequenceFrame', { at: at, outPath: png }).then(function (r) {
-        if (!r || r.exported === false) { diag('render-check', 'frame export refused'); return; }
-        loadRenderedFrame(png, function (im) {
-          if (!im) { diag('render-check', 'frame never appeared'); return; }
-          var yp = (preset.yPct != null && isFinite(preset.yPct)) ? Math.max(0.1, Math.min(0.92, preset.yPct)) : 0.76;
-          var hasText = captionBandHasText(im, yp);
-          if (hasText === true) {
-            diag('render-check', '✅ REAL frame at ' + at.toFixed(2) + 's: words are visible in the caption band');
-          } else if (hasText === false) {
-            diag('render-check', '❌ REAL frame at ' + at.toFixed(2) + 's: caption band is a FLAT box — no words painted (yPct ' + yp + ')');
-            // AUTO-LADDER: don't wait for anyone to find the 🧪 button — a
-            // measured flat box triggers the full A–I diagnostic ladder by
-            // itself, and its verdicts land in the same diagnostics copy.
-            if (!state._autoLadderRan) {
-              state._autoLadderRan = true;
-              toast('⚠️ Words are NOT painted on your timeline — Pulse is now testing itself (~40s). When the report card appears, tap 📋 Copy diagnostics and send it over.', true);
-              setTimeout(function () { try { runSelfTest(); } catch (eL) {} }, 400);
-            } else {
-              toast('⚠️ Caption words are still not painted. Tap 📋 Copy diagnostics and send it over.', true);
-            }
-          } else {
-            diag('render-check', 'frame captured but band unreadable');
-          }
-        });
-      }).catch(function (e) { try { diag('render-check', 'failed: ' + e.message); } catch (eD) {} });
-    } catch (e2) {}
-  }
+
 
   /* The self-test row for long videos. It asks exactly what the long-video
      routing asks (✨ Add captions and runLibassCaptions): Pulse's own one-clip
@@ -12961,6 +12922,65 @@
     }).catch(function (e) { if (btn) btn.disabled = false; toast(e.message, true); });
   }
 
+  /* Two frames differ where a caption is: the share of sampled pixels whose
+     colour moved by more than a little. */
+  function framesDiffer(a, b) {
+    try {
+      var W = 192, H = Math.max(2, Math.round(192 * (a.naturalHeight || a.height) / Math.max(1, a.naturalWidth || a.width)));
+      function px(im) { var c = document.createElement('canvas'); c.width = W; c.height = H; var g = c.getContext('2d'); g.drawImage(im, 0, 0, W, H); return g.getImageData(0, 0, W, H).data; }
+      var A = px(a), B = px(b), n = 0;
+      for (var i = 0; i < A.length; i += 4) if (Math.abs(A[i] - B[i]) + Math.abs(A[i + 1] - B[i + 1]) + Math.abs(A[i + 2] - B[i + 2]) > 60) n++;
+      return n / (W * H);
+    } catch (e) { return null; }
+  }
+  /* Are the captions placed on `track` really on screen? At the first,
+     middle and last caption: the frame with the track on vs off
+     (CP_captionVisibility). The old check (contrast in the caption band of
+     one frame) passed on any real video — the picture behind has contrast —
+     so it said "words visible" while the owner saw nothing. Resolves
+     { checked, rows: [{at, share}], blank: [times] }. */
+  function checkCaptionsVisible(cues, track) {
+    var fs = nodeReq('fs'), pathMod = nodeReq('path'), os = nodeReq('os');
+    var pick = [cues[0], cues[Math.floor(cues.length / 2)], cues[cues.length - 1]].filter(function (c, i, a) { return c && a.indexOf(c) === i; });
+    var times = pick.map(function (c) { return +(c.start + Math.min(0.6, Math.max(0.3, (c.end - c.start) / 2))).toFixed(3); });
+    var base = pathMod.join(os.tmpdir(), 'pulse-visible-' + Date.now());
+    return CPBridge.callHost('CP_captionVisibility', { track: track, times: times, base: base }).then(function (r) {
+      return (r.frames || []).reduce(function (p, f) {
+        return p.then(function (acc) {
+          return new Promise(function (res) {
+            loadRenderedFrame(f.on, function (on) {
+              loadRenderedFrame(f.off, function (off) {
+                var d = (on && off) ? framesDiffer(on, off) : null;
+                [f.on, f.off].forEach(function (x) { try { fs.unlinkSync(x); } catch (eU) {} });
+                acc.push({ at: f.at, share: d });
+                res(acc);
+              });
+            });
+          });
+        });
+      }, Promise.resolve([]));
+    }).then(function (rows) {
+      var known = rows.filter(function (x) { return x.share != null; });
+      return { checked: known.length, rows: rows, blank: known.filter(function (x) { return x.share < 0.0015; }).map(function (x) { return x.at; }) };
+    });
+  }
+  /* After editable captions: any that paints nothing → the set is replaced
+     by Pulse-rendered captions (the self-test proves those visible), and the
+     owner is told. Never leaves invisible captions on the timeline. */
+  function verifyEditableVisible(tcues, track, mogrtPath) {
+    if (!CPBridge.isCEP() || !tcues || !tcues.length || !track) return;
+    checkCaptionsVisible(tcues, track).then(function (v) {
+      diag('render-check', 'editable captions on V' + track + ': ' + v.rows.map(function (x) {
+        return x.at.toFixed(1) + ' s ' + (x.share == null ? 'unreadable' : (x.share < 0.0015 ? 'BLANK' : 'visible (' + (x.share * 100).toFixed(1) + '%)'));
+      }).join(', '));
+      if (!v.checked || !v.blank.length) return;
+      toast('⚠️ The editable captions came out blank on your timeline (at ' + v.blank.map(function (t) { return t.toFixed(1) + ' s'; }).join(', ') +
+            '). Pulse is replacing them with ✨ Pulse-rendered captions — same style, always visible.', true);
+      var mCues;
+      try { mCues = readSelectedTranscript(); } catch (eR) { return; }
+      addPulseCaptions(mCues, null, { track: track, names: captionGraphicNames(mogrtPath) });
+    }, function (e) { diag('render-check', 'editable visibility check failed: ' + (e && e.message)); });
+  }
   function applyEditableStyle() {
     if (!CPBridge.isCEP()) return toast('Editable captions need Premiere (open Pulse inside Premiere).', true);
     // Use the editor-aware preset so the placed caption matches the preview:
@@ -13148,7 +13168,7 @@
                               kind: 'editable-style', mogrtPath: bb.path, params: sentParams, textStyle: textStyle, words: words };
       saveLastCaptionJob();
       reflectCaptionsPlaced();
-      verifyCaptionRender(tcues, preset);   // prove it on a REAL frame of THIS sequence (verdict → Diagnostics)
+      verifyEditableVisible(tcues, r.track, bb.path);   // prove it on REAL frames of THIS sequence — first, middle, last
       if (r.textSet === 0) {
         // be HONEST instead of claiming success: the graphics are there but the
         // words/styling could not be written into this template's text.
@@ -13191,7 +13211,11 @@
       .then(function (r) {
         if (r && r.applied) toast('⚡ Added ' + r.applied + ' zoom punches (beta) to your top clip. Now placing captions… (Ctrl/Cmd+Z removes the zooms if you don\'t like them.)');
       }, function () { /* zoom is best-effort; ignore and still caption */ })
-      .then(function () { applyEditableStyle(); });   // 2) captions — EDITABLE native clips on the timeline
+      // 2) captions exactly as ✨ Add captions makes them — the caption type
+      // picked on the Captions page (Pulse-rendered by default, or Editable).
+      // It always took the editable path, whatever was picked: the owner's
+      // "Viral edit puts captions through the timeline but nothing shows".
+      .then(function () { $('btn-magic').click(); });
   }
 
   // ========================================================== SMART CUT ====
@@ -15682,6 +15706,9 @@
   try {
     window.CP_DEBUG_EXT = window.CP_DEBUG_EXT || {};
     window.CP_DEBUG_EXT.shorts = { show: renderShorts, plan: function (h) { return shortPlanFor(h, shortOpts()); },
+                                   viral: function () { viralEdit(); },
+                                   verifyEditable: function (cues, track, path) { verifyEditableVisible(cues, track, path); },
+                                   setCapOut: function (v) { setCapOut(v); },
                                    setCameras: function (o) { if (o.plan) state.plan = o.plan; if (o.map) { state.mcMap = o.map.slice(); state.mcMapAuto = o.map.map(function () { return false; }); }
                                      if (o.angles && $('mc-angles')) $('mc-angles').value = String(o.angles); state.mcAudioTracks = null; },
                                    podcast: function () { return _podLast ? JSON.parse(JSON.stringify({ pieces: _podLast.pieces, segs: _podLast.segs, notes: _podLast.notes, mics: _podLast.mics,
