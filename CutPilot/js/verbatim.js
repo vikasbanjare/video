@@ -254,6 +254,12 @@
   /* Group a word stream into sentence-ish cues (so the rest of the pipeline,
      which expects {text,start,end}, can use a verbatim transcript). Splits on
      sentence punctuation or a pause > gap. */
+  // a line ends at its LATEST word's end (overlapping stamps), never before it starts
+  function spanEnd(ws) {
+    var e = -Infinity;
+    for (var i = 0; i < ws.length; i++) if (ws[i].end > e) e = ws[i].end;
+    return Math.max(e, ws[0].start);
+  }
   function wordsToCues(words, gap) {
     gap = (gap != null) ? gap : 0.7;
     var cues = [], cur = [];
@@ -262,11 +268,11 @@
       var endsSentence = /[.!?।॥۔؟…]["'”’)\]]*$/.test(words[i].text);   // incl. the Hindi full stop "।"
       var g = (i + 1 < words.length) ? (words[i + 1].start - words[i].end) : 99;
       if (endsSentence || g > gap || cur.length >= 16) {
-        cues.push({ text: cur.map(function (x) { return x.text; }).join(' '), start: cur[0].start, end: cur[cur.length - 1].end });
+        cues.push({ text: cur.map(function (x) { return x.text; }).join(' '), start: cur[0].start, end: spanEnd(cur) });
         cur = [];
       }
     }
-    if (cur.length) cues.push({ text: cur.map(function (x) { return x.text; }).join(' '), start: cur[0].start, end: cur[cur.length - 1].end });
+    if (cur.length) cues.push({ text: cur.map(function (x) { return x.text; }).join(' '), start: cur[0].start, end: spanEnd(cur) });
     return cues;
   }
 

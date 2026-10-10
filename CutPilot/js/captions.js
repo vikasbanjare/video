@@ -487,7 +487,16 @@
     return n;
   }
   function _joinText(ws) { return ws.map(function (w) { return w.text; }).join(' '); }
-  function _cueOf(ws) { return { start: ws[0].start, end: ws[ws.length - 1].end, text: _joinText(ws) }; }
+  /* A caption's end: the LATEST end among its words, never before its start.
+     Speech-to-text can stamp a repeated word ("आज आज") so the second starts
+     before the first ends, or two lines overlap — taking only the last word's
+     end then made a caption end before it began (Premiere drops or flashes it). */
+  function lastEnd(ws) {
+    var e = -Infinity;
+    for (var i = 0; i < ws.length; i++) if (ws[i].end > e) e = ws[i].end;
+    return Math.max(e, ws[0].start);
+  }
+  function _cueOf(ws) { return { start: ws[0].start, end: lastEnd(ws), text: _joinText(ws) }; }
 
   function groupSentenceAware(words, per, maxChars, maxGap, opts) {
     // A real pause still forces a break even without punctuation; an ordinary
@@ -595,7 +604,7 @@
     return groups.map(function (g) {
       var ws = words.slice(g[0], g[1]);
       return {
-        start: ws[0].start, end: ws[ws.length - 1].end,
+        start: ws[0].start, end: lastEnd(ws),
         words: ws.map(function (w) { return { text: w.text, start: w.start, end: w.end }; })
       };
     });
@@ -620,7 +629,7 @@
       if (!group.length) return;
       out.push({
         start: group[0].start,
-        end: group[group.length - 1].end,
+        end: lastEnd(group),
         text: group.map(function (w) { return w.text; }).join(' ')
       });
       group = []; groupChars = 0;

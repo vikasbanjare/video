@@ -5206,6 +5206,24 @@
       chipBox.appendChild(chip);
     });
     if ($('btn-true-prev')) $('btn-true-prev').addEventListener('click', function () { renderTruePreviews(); });
+    // A double click is one click. A stress run on a real-speed Premiere found
+    // a quick second click on these did the work twice — Viral edit's zooms
+    // twice as deep, every sound effect doubled, two caption tracks, markers
+    // twice. The owner's second click on the same action within 1.5 s is
+    // dropped here, before any of its handlers run; a deliberate later click works.
+    var ACTION_BTNS = ['btn-magic', 'btn-viral-edit', 'btn-sfx-add', 'btn-markers', 'btn-clear-markers', 'btn-cut', 'btn-autoclean',
+      'btn-rebuild', 'btn-takes-apply', 'btn-takes-cut', 'btn-mc-apply', 'btn-mc-redo', 'btn-ch-markers', 'btn-mark-hooks', 'btn-add-mogrt',
+      'btn-alt-apply', 'btn-mg-copystyle', 'btn-real-preview', 'btn-cap-to-pulse', 'btn-clean-caps', 'btn-flux-render', 'btn-speaker-reframe',
+      'btn-script-apply', 'btn-smart-cleanup', 'btn-verbatim-retakes', 'btn-analyze', 'btn-find-shorts'];
+    var lastAct = { el: null, t: 0 };
+    document.addEventListener('click', function (ev) {
+      if (!ev.isTrusted) return;   // Pulse's own .click() (e.g. Viral edit → captions) is never a double click
+      var el = ev.target && ev.target.closest ? ev.target.closest('button') : null;
+      if (!el || !(ACTION_BTNS.indexOf(el.id) >= 0 || el.hasAttribute('data-act'))) return;
+      var now = Date.now();
+      if (lastAct.el === el && now - lastAct.t < 1500) { ev.stopImmediatePropagation(); ev.preventDefault(); return; }
+      lastAct = { el: el, t: now };
+    }, true);
     if ($('btn-selftest')) $('btn-selftest').addEventListener('click', runSelfTest);
     // 📄 SCRIPT FIX — the creator's own script corrects every misheard word
     // while the transcript keeps the timing that makes captions land on voice.
@@ -15506,7 +15524,7 @@
       if (h.reason) { meta.appendChild(document.createElement('br')); var sp = document.createElement('span'); sp.className = 'dim'; sp.textContent = h.reason; meta.appendChild(sp); }
       card.appendChild(meta);
       var row = document.createElement('div'); row.className = 'row tight';
-      function btn(label, cls, fn) { var x = document.createElement('button'); x.className = cls; x.textContent = label; x.addEventListener('click', fn); row.appendChild(x); }
+      function btn(label, cls, fn) { var x = document.createElement('button'); x.className = cls; x.textContent = label; x.setAttribute('data-act', '1'); x.addEventListener('click', fn); row.appendChild(x); }
       btn('▶ Preview', 'chip-btn', function () {
         CPBridge.callHost('CP_setInOut', { start: h.start, end: h.end })
           .then(function () { toast('In/Out set to this moment — press Play, or Export to render just this clip.'); })

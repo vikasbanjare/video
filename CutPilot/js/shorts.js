@@ -99,13 +99,19 @@
   }
 
   /* Sentence-sized lines of the short's words, for the caption pipeline. */
+  // a line ends at its LATEST word's end (overlapping stamps), never before it starts
+  function spanEnd(ws) {
+    var e = -Infinity;
+    for (var i = 0; i < ws.length; i++) if (ws[i].end > e) e = ws[i].end;
+    return Math.max(e, ws[0].start);
+  }
   function sentenceCues(words) {
     var cues = [], cur = [];
     (words || []).forEach(function (w, i, all) {
       cur.push(w);
       var nx = all[i + 1];
       if (/[.!?।॥۔؟…]["'”’)\]]*$/.test(w.text) || !nx || nx.start - w.end > 0.6 || cur.length >= 14) {
-        cues.push({ start: cur[0].start, end: cur[cur.length - 1].end, text: cur.map(function (x) { return x.text; }).join(' ') });
+        cues.push({ start: cur[0].start, end: spanEnd(cur), text: cur.map(function (x) { return x.text; }).join(' ') });
         cur = [];
       }
     });

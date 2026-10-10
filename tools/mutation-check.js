@@ -2101,6 +2101,30 @@ const MUTANTS = [
     repl: "",
     gate: 'CutPilot/test/gates/selftest-premiere.js',
     why: 'the every-style check runs but its verdict is not on screen (only in Diagnostics)'
+  },
+  {
+    name: 'v18-double-click',
+    file: 'CutPilot/js/main.js',
+    find: "      if (lastAct.el === el && now - lastAct.t < 1500) { ev.stopImmediatePropagation(); ev.preventDefault(); return; }",
+    repl: "",
+    gate: 'CutPilot/test/gates/actions-double-click.js',
+    why: 'a double click does the work twice (Viral edit zooms twice as deep, SFX doubled, two caption tracks)'
+  },
+  {
+    name: 'v18-own-click-blocked',
+    file: 'CutPilot/js/main.js',
+    find: "      if (!ev.isTrusted) return;   // Pulse's own .click() (e.g. Viral edit → captions) is never a double click",
+    repl: "",
+    gate: 'CutPilot/test/gates/actions-double-click.js',
+    why: 'Pulse\'s own click (Viral edit → captions) is taken for a double click and dropped'
+  },
+  {
+    name: 'v18-caption-span',
+    file: 'CutPilot/js/captions.js',
+    find: "    return Math.max(e, ws[0].start);",
+    repl: "    return ws[ws.length - 1].end;",
+    gate: 'CutPilot/test/gates/captions-messy-timing.js',
+    why: 'a caption ends before it starts when speech stamps overlap'
   }
 ];
 
