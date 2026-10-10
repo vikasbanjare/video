@@ -1,10 +1,24 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.14** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.15** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.15 — ✏️ Styled captions: timing written in Premiere's units
+The owner's v0.10.14 screenshots: Essential Graphics showed "Start Time,
+Duration(Automated)" = −745.2 / 3532.8 and a blank Type dropdown; render-check
+BLANK at every caption. Cause: MOGRT point params are FRACTIONS of the comp
+(Premiere shows value × compW/compH); Pulse wrote seconds raw, so the snappy
+0.25 s intro became ~480 s and the words never faded in. Type=2 blanked a
+0-based two-item menu (all bundled templates already default Duration Based).
+- host.jsx: CP_compUnits(clip) (CP_mgtCompSize, fallback 1080×1920),
+  CP_setSecondsPoint / CP_readSecondsPoint; CP_setWordSweep and
+  CP_forceIntroVisible take the units; Type and Word Index no longer written.
+- Owner's theory "the After Effects-made mogrt is the problem": no — Pulse's
+  units were. NEXT: his caption-check PNGs after retrying ✏️ Styled.
+- host-tests mock seeds are fractions (sec() helper). Mutations v15-*.
 
 ### v0.10.14 — Pulse never deletes editable captions; honest check; 📝 Premiere captions
 The owner (v0.10.13): "Add editable captions lays out all the layers, then
