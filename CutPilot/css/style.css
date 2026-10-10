@@ -430,7 +430,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px 
   color: var(--dim); overflow-wrap: anywhere;
 }
 .tpl-card.on .tpl-name { color: var(--accent-text); }
-.tpl-dark-note { font-size: var(--fs-xs) !important; color: var(--warn-text) !important; }
 
 /* one flat dark preview tile per card */
 .tpl-thumb {

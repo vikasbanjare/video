@@ -2085,6 +2085,14 @@ const MUTANTS = [
     repl: "  for (i = 0; i < props.numItems; i++) { if (/^type$/i.test(String(props[i].displayName || ''))) { try { props[i].setValue(2, true); } catch (eT) {} } }\n  var info = { dur: durSec, durSet: false, durName: String(durProp.displayName) };",
     gate: 'CutPilot/test/host-tests.js',
     why: 'the highlight Type written as 2 — past the end of a two-item menu, the dropdown goes blank'
+  },
+  {
+    name: 'v16-dark-refused',
+    file: 'CutPilot/js/main.js',
+    find: "    if (!ensureTranscriptThen('editstyle')) return;",
+    repl: "    if (CPCaptions.isDarkOnLight(preset)) { confirmInline('“' + (preset.name || 'This style') + '” has dark words on a light box. Add it as ✨ Pulse-rendered captions instead?', 'Use Pulse-rendered', function () {}); return; }\n    if (!ensureTranscriptThen('editstyle')) return;",
+    gate: 'CutPilot/test/gates/gallery-editable-dark.js',
+    why: 'dark-on-light styles refused as editable again (the owner\'s popup), though the blank words were the timing units'
   }
 ];
 

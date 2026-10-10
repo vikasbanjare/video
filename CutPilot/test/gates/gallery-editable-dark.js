@@ -1,6 +1,6 @@
 /*
- * gallery-editable-dark — editable captions never silently place words that
- * may not show.
+ * gallery-editable-dark — dark words on a light box: no near-black highlight,
+ * and placed as editable like any other style.
  *
  * From the owner's Mac: through the editable (Flux Halo) engine, the styles
  * with dark text on a light box came out with NO visible words, only the box.
@@ -15,10 +15,12 @@
  *   B. every dark-on-light style is recognised — the 10 the Mac showed blank
  *      plus the 3 new ones (Plain Subtitle twin, Comic Speech Bubble, 3D Push
  *      Button) — and no light-text style is;
- *   C. in editable mode their gallery cards and the editor say so in one line
- *      (and say nothing in Pulse-rendered mode), and Add captions places
- *      NOTHING: it offers Pulse-rendered instead, and accepting switches the
- *      caption type. A light-text style is placed with no such question.
+ *   C. (v0.10.16) the owner's v0.10.14 screenshots showed the real cause of
+ *      the blank words: the template's timing was written in the wrong units,
+ *      so EVERY style was blank — dark-on-light ones were just the first
+ *      noticed. Those styles are no longer refused: no note on their cards or
+ *      in the editor, and Add captions places them as editable like any other
+ *      (the before/after check after insertion still asks if a set is blank).
  * Exit 0 pass, 1 fail, 2 skipped (no browser / puppeteer / unzip).
  */
 'use strict';
@@ -79,37 +81,15 @@ const FLUX = ['Text Color', 'Highlighted Word Color 1', 'Highlighted Word Color 
       document.getElementById('btn-magic').click(); await sleep(400);
       const ov = document.getElementById('cp-confirm-ov');
       out.dialog = ov ? ov.textContent : '';
+      out.toast = (document.getElementById('toast') || {}).textContent || '';
       out.placed = window.__hostCalls.filter(f => /CP_insertMogrtCaptions|CP_inspectMogrt/.test(f));
       out.capOutBefore = D.capOut();
       return out;
     };
     ui.dark = await tryAdd('twin-plain-subtitle');
-    // ▶ Real preview on timeline (the Mac check): its report says what a blank result means
-    const oldOv = document.getElementById('cp-confirm-ov'); if (oldOv) oldOv.remove();
-    const rp = document.getElementById('btn-real-preview');
-    const tEl = document.getElementById('toast'); if (tEl) tEl.textContent = '';
-    if (rp) { rp.click(); await sleep(500); }
-    ui.realPreviewToast = tEl ? tEl.textContent : '';
-    const ok = document.getElementById('cp-confirm-ok');
-    if (ok) { ok.click(); await sleep(400); }
-    // re-open the offer (the real preview dismissed it) and accept it
-    const ov0 = document.getElementById('cp-confirm-ov'); if (ov0) ov0.remove();
-    document.getElementById('btn-magic').click(); await sleep(400);
-    const ok2 = document.getElementById('cp-confirm-ok'); if (ok2) { ok2.click(); await sleep(400); }
-    ui.dark.capOutAfter = D.capOut();
-    ui.dark.placedAfter = window.__hostCalls.filter(f => /CP_insertMogrtCaptions/.test(f));
-    const ov2 = document.getElementById('cp-confirm-ov'); if (ov2) ov2.remove();
-    await setOut('editable');
+    const ovD = document.getElementById('cp-confirm-ov'); if (ovD) ovD.remove();
     ui.light = await tryAdd('tr-punch-gold');
-    const ov3 = document.getElementById('cp-confirm-ov'); if (ov3) ov3.remove();
-    // the note follows the owner's own colours: light text on the same box clears it
-    await tryAdd('mars');
-    const ov4 = document.getElementById('cp-confirm-ov'); if (ov4) ov4.remove();
-    const fillIn = document.getElementById('c-fill');
-    fillIn.value = '#ffffff'; fillIn.dispatchEvent(new Event('input', { bubbles: true })); fillIn.dispatchEvent(new Event('change', { bubbles: true }));
-    await sleep(200);
-    const n2 = document.getElementById('editable-dark-note');
-    ui.marsWhite = vis(n2) ? n2.textContent : '';
+    const ovL = document.getElementById('cp-confirm-ov'); if (ovL) ovL.remove();
     return { rows, ui };
   }, FLUX);
   await browser.close();
@@ -131,31 +111,16 @@ const FLUX = ['Text Color', 'Highlighted Word Color 1', 'Highlighted Word Color 
   if (!missing.length && !wrong.length) R.ok(dark.length + ' dark-on-light styles recognised (the 10 the Mac drew blank + ' + NEW_DARK.length + ' new' +
     (dark.length > 13 ? ' + ' + (dark.length - 13) + ' hidden' : '') + '), no light-text style');
 
-  // C — what the owner sees and what Add does
+  // C — no refusal: no notes, Add goes to the editable engine
   const u = res.ui;
-  const cardBad = ['twin-plain-subtitle', 'mars', 'tr-push-button'].filter(id => !u.cardsEditable[id]);
-  const cardExtra = ['tr-punch-gold', 'hormozi'].filter(id => u.cardsEditable[id]);
-  const cardPulse = Object.keys(u.cardsPulse).filter(id => u.cardsPulse[id]);
-  if (cardBad.length) R.bad('editable mode: no one-line note on the cards of ' + cardBad.join(', '));
-  if (cardExtra.length) R.bad('editable mode: the dark-words note shows on light-text cards: ' + cardExtra.join(', '));
-  if (cardPulse.length) R.bad('Pulse-rendered mode still shows the editable-only note on ' + cardPulse.join(', '));
-  if (!cardBad.length && !cardExtra.length && !cardPulse.length) R.ok('cards: the one-line note shows in editable mode on dark-on-light styles only ("' + u.cardsEditable['mars'] + '"), never in Pulse-rendered mode');
-  if (u.dark.err) R.bad(u.dark.err);
-  else {
-    if (!/light box/.test(u.dark.editorNote)) R.bad('editor: no one-line note for a dark-on-light style in editable mode');
-    if (u.dark.placed.length) R.bad('Add captions went to the editable engine for a dark-on-light style (' + u.dark.placed.join(', ') + ')');
-    if (!/Pulse-rendered/.test(u.dark.dialog)) R.bad('Add captions on a dark-on-light style did not offer Pulse-rendered ("' + u.dark.dialog.slice(0, 80) + '")');
-    if (u.dark.capOutAfter !== 'png') R.bad('accepting the offer left the caption type ' + u.dark.capOutAfter);
-    if (u.dark.placedAfter.length) R.bad('accepting the offer still placed editable captions');
-    if (/light box/.test(u.dark.editorNote) && !u.dark.placed.length && /Pulse-rendered/.test(u.dark.dialog) && u.dark.capOutAfter === 'png' && !u.dark.placedAfter.length)
-      R.ok('Plain Subtitle in editable mode: the editor says it in one line, Add places nothing and offers Pulse-rendered; accepting switches the caption type');
+  const noted = Object.keys(u.cardsEditable).concat(Object.keys(u.cardsPulse)).filter(id => u.cardsEditable[id] || u.cardsPulse[id]);
+  if (noted.length) R.bad('a "dark words may not show" note is still on the cards of ' + noted.join(', '));
+  else R.ok('no dark-words note on any card, editable or Pulse-rendered mode');
+  for (const [name, r] of [['Plain Subtitle (dark on light)', u.dark], ['Punch Gold (light text)', u.light]]) {
+    if (r.err) { R.bad(r.err); continue; }
+    if (r.editorNote || /light box/.test(r.dialog) || r.capOutBefore !== 'editable' || !(r.placed.length || /First get your words/.test(r.toast)))
+      R.bad(name + ': Add captions did not go to the editable engine (note "' + r.editorNote + '", dialog "' + r.dialog.slice(0, 80) + '", calls ' + r.placed.join(', ') + ', toast "' + (r.toast || '').slice(0, 120) + '")');
+    else R.ok(name + ': Add captions goes on to place editable captions, no note, no question (' + (r.placed.join(', ') || 'next step: ' + r.toast.slice(0, 30)) + ')');
   }
-  if (!/light box/.test(u.realPreviewToast || '')) R.bad('▶ Real preview on timeline on a dark-on-light style does not say what a blank result means ("' + (u.realPreviewToast || '') + '")');
-  else R.ok('▶ Real preview on timeline (the check the Mac has to make) says what a blank result means');
-  if (u.light.err) R.bad(u.light.err);
-  else if (u.light.editorNote || /light box/.test(u.light.dialog)) R.bad('a light-text style (tr-punch-gold) gets the dark-words note or question');
-  else R.ok('a light-text style is not questioned: no note, no dark-words dialog');
-  if (u.marsWhite) R.bad('the note ignores the owner\'s own text colour: Mars with white text still warns');
-  else R.ok('the note follows the edited colours: Mars with white text is not warned');
-  R.done('GALLERY EDITABLE DARK: editable captions never silently place words that may not show ✓', 'GALLERY EDITABLE DARK: failures above');
+  R.done('GALLERY EDITABLE DARK: no near-black highlight; dark-on-light styles placed as editable ✓', 'GALLERY EDITABLE DARK: failures above');
 })().catch(e => { console.log('  ✗ harness error: ' + (e && e.stack || e)); process.exit(1); });

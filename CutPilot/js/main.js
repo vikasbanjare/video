@@ -5983,15 +5983,6 @@
     });
     head.appendChild(fav);
     card.appendChild(head);
-    // editable captions only (.editable-only): the one-line reliability note
-    if (!isMogrt && CPCaptions.isDarkOnLight(t)) {
-      var dk = document.createElement('div');
-      dk.className = 'tpl-dark-note editable-only';
-      dk.style.cssText = 'font-size:9.5px;line-height:1.25;color:#ffcf5c;margin:1px 0 2px;';
-      dk.textContent = '⚠️ Dark words may not show as editable';
-      dk.title = DARK_EDITABLE_NOTE;
-      card.appendChild(dk);
-    }
 
     // Preview box. Templates that SHIP a real render show it — the Flux cards'
     // looping .mp4 previews ("flux preview is gone" when these were dropped) and
@@ -8193,27 +8184,6 @@
      no-op so any older call site stays safe. */
   /* Inline readability warning under the preview — captions over unknown
      footage need an outline/box/glow, not just a fill color. */
-  /* Editable captions + dark words on a light box: on the owner's Mac the
-     editable engine drew these with NO visible words (only the box). Until a
-     test there says otherwise, the editor says so in one line whenever the
-     edited style is that look (hidden in Pulse-rendered mode by .editable-only),
-     and Add captions offers Pulse-rendered instead (applyEditableStyle). */
-  var DARK_EDITABLE_NOTE = '⚠️ Dark words on a light box may not show up as editable captions — Premiere can show just the box. ' +
-    'Use ✨ Pulse-rendered captions for this style (same look, always visible), or pick a light text colour.';
-  function updateDarkEditableNote(styled) {
-    var n = $('editable-dark-note');
-    if (!n) {
-      var anchor = $('editable-note');
-      if (!anchor || !anchor.parentNode) return;
-      n = document.createElement('p');
-      n.id = 'editable-dark-note';
-      n.className = 'hint editable-only';
-      n.style.color = '#ffcf5c';
-      n.textContent = DARK_EDITABLE_NOTE;
-      anchor.parentNode.insertBefore(n, anchor.nextSibling);
-    }
-    n.style.display = CPCaptions.isDarkOnLight(styled) ? '' : 'none';
-  }
   function updateLegibilityNote(st) {
     var ln = $('legibility-note');
     if (!ln) return;
@@ -8386,7 +8356,6 @@
     // and nothing ever called it — so it never once appeared. It belongs on every
     // repaint: the moment a style has no outline/box/glow, say so.
     try { updateLegibilityNote(styled); } catch (eLg) {}
-    try { updateDarkEditableNote(styled); } catch (eDk) {}
 
     // CAPTION-BAND preview: the region of the frame around the caption, at a
     // readable size (the full 9:16 frame wasted the panel on empty backdrop).
@@ -13072,10 +13041,6 @@
     var preset = styledPreset();
     var bb = bundledBackbone(preset);
     if (!bb) return toast('No caption engine loaded — reinstall the full Pulse folder.', true);
-    // the check the owner's Mac has to make: say what a blank result means (in
-    // the toast that reports the preview — an earlier one is replaced by it)
-    var darkNote = CPCaptions.isDarkOnLight(preset)
-      ? ' This style has dark words on a light box: if the preview shows no words, use ✨ Pulse-rendered captions for it.' : '';
     var basePreset = currentPreset() || {};
     var sizeScale = 1;
     try {
@@ -13113,7 +13078,7 @@
         posYPct: pvPos });
     }).then(function (r) {
       if (btn) btn.disabled = false;
-      toast('▶ Real preview on V' + r.track + ' at the playhead — scrub to see EXACTLY what your settings render. Delete the clip when done (or ⌘Z).' + darkNote, !!darkNote);
+      toast('▶ Real preview on V' + r.track + ' at the playhead — scrub to see EXACTLY what your settings render. Delete the clip when done (or ⌘Z).');
     }).catch(function (e) { if (btn) btn.disabled = false; toast(e.message, true); });
   }
 
@@ -13226,18 +13191,10 @@
         '. Your install may be missing the “mogrts” folder' + (where ? ' (looked in ' + where + '\\mogrts)' : '') +
         '. Reinstall the full Pulse folder, or copy Diagnostics and send it over.', true);
     }
-    // Dark words on a light box: never place captions that may show no words
-    // (see updateDarkEditableNote) — offer the Pulse-rendered path instead.
-    if (CPCaptions.isDarkOnLight(preset)) {
-      confirmInline('“' + (preset.name || 'This style') + '” has dark words on a light box. As editable captions, Premiere can show just the box with no words.\n\n' +
-        'Add it as ✨ Pulse-rendered captions instead? Same look, always visible.', 'Use Pulse-rendered', function (yes) {
-        if (!yes) return toast('No captions added. To keep editable captions for this style, pick a light text colour.');
-        setCapOut('png'); saveLook();
-        toast('Caption type is now ✨ Pulse-rendered — adding your captions.');
-        $('btn-magic').click();
-      });
-      return;
-    }
+    // (Dark words on a light box used to be refused here. The blank words the
+    // owner saw were the timing written in the wrong units — every style was
+    // blank, the dark ones were just the first noticed. The before/after check
+    // after insertion (verifyEditableVisible) still asks if a set paints nothing.)
     if (!ensureTranscriptThen('editstyle')) return;
     var cues;
     try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
