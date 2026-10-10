@@ -4038,6 +4038,40 @@ function CP_insertMogrtCaptions(argsJson) {
  * exact media↔timeline mapping: where it sits (seqStart/seqEnd), what it plays
  * (inPoint/outPoint), its speed and whether it plays reversed.
  */
+/* Every video track's clips with their media — the cameras of a podcast
+   short (the panel cuts and frames each camera itself). Same shape as
+   CP_getAudioTracks' segments: where each clip sits on the timeline and which
+   stretch of which media file it plays. */
+function CP_getVideoTracks() {
+  try {
+    var seq = CP_activeSequence();
+    if (!seq) return CP_fail('No active sequence — open your timeline first.');
+    var out = [];
+    for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+      var track = seq.videoTracks[t];
+      var clips = track.clips, nClips = (clips && clips.numItems) ? clips.numItems : 0, segments = [];
+      for (var i = 0; i < nClips; i++) {
+        var c = clips[i];
+        if (!c || !c.projectItem) continue;
+        var p = null;
+        try { p = c.projectItem.getMediaPath(); } catch (e1) {}
+        if (!(p && p.length)) continue;
+        var sStart = 0, sEnd = 0, sIn = 0, sOut = 0;
+        try { sStart = c.start.seconds; } catch (eS) {}
+        try { sEnd = c.end.seconds; } catch (eE) {}
+        try { sIn = c.inPoint.seconds; } catch (eI) {}
+        try { sOut = c.outPoint.seconds; } catch (eO) {}
+        if (!(sEnd - sStart > 0.001)) continue;
+        var speed = (sOut > sIn) ? (sOut - sIn) / (sEnd - sStart) : 1;
+        segments.push({ mediaPath: p, seqStart: sStart, seqEnd: sEnd, inPoint: sIn, outPoint: sOut,
+                        speed: Math.round(speed * 10000) / 10000, disabled: CP_clipDisabled(c) });
+      }
+      out.push({ index: t, name: track.name || ('V' + (t + 1)), segments: segments });
+    }
+    return CP_ok({ videoTracks: out });
+  } catch (e) { return CP_fail(e.message); }
+}
+
 function CP_getAudioTracks() {
   try {
     var seq = CP_activeSequence();

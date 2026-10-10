@@ -1907,6 +1907,54 @@ const MUTANTS = [
     repl: '      var hl = [];',
     gate: 'CutPilot/test/gates/shorts-finished.js',
     why: 'without an AI key no moments are found'
+  },
+  {
+    name: 'v12-pod-split-person',
+    file: 'CutPilot/js/podshort.js',
+    find: '      var one = lo > 0.6 * Math.min(sm[pa], sm[pb]) || (skEnds > 0.05 && skLo > 0.5 * skEnds && pb - pa < w * 0.3);',
+    repl: '      var one = false;',
+    gate: 'CutPilot/test/gates/shorts-podcast-cameras.js',
+    why: 'a close camera frames one shoulder of its person instead of the person'
+  },
+  {
+    name: 'v12-pod-no-mic-match',
+    file: 'CutPilot/js/podshort.js',
+    find: '      if (p.r < 0.05) return;            // no tie between this mic and anyone\'s movement',
+    repl: '      return;',
+    gate: 'CutPilot/test/gates/shorts-podcast-cameras.js',
+    why: 'the wide shot never learns who is who, so it never zooms on the talker'
+  },
+  {
+    name: 'v12-pod-ignore-plan',
+    file: 'CutPilot/js/main.js',
+    find: '      var pieces = CPPodShort.pieces(plan.segments, camPlan, speech, { fallbackAngle: wide.length ? wide[0] : 0 });',
+    repl: '      var pieces = CPPodShort.pieces(plan.segments, [], speech, { fallbackAngle: wide.length ? wide[0] : 0 });',
+    gate: 'CutPilot/test/gates/shorts-podcast-cameras.js',
+    why: 'the podcast short stays on one camera instead of following the director'
+  },
+  {
+    name: 'v12-pod-no-stack',
+    file: 'CutPilot/js/main.js',
+    find: "        } else if (p.who === 'both' && fr.byMic && fr.byMic.filter(function (x) { return x >= 0; }).length >= 2) {",
+    repl: "        } else if (false) {",
+    gate: 'CutPilot/test/gates/shorts-podcast-cameras.js',
+    why: 'when both talk on the wide shot only one of them is shown'
+  },
+  {
+    name: 'v12-pod-camera-sound',
+    file: 'CutPilot/js/main.js',
+    find: '        audio.push({ input: inputOf(at.path, at.t), channel: m.channel, track: m.track });',
+    repl: '',
+    gate: 'CutPilot/test/gates/shorts-podcast-cameras.js',
+    why: 'the podcast short takes the camera\'s scratch sound instead of the mics'
+  },
+  {
+    name: 'v12-pod-close-centre',
+    file: 'CutPilot/js/main.js',
+    find: '          crops = [CPPodShort.cropFor(fr.subjects[si] || null, src, aspect, { zoom: false })];',
+    repl: '          crops = [CPPodShort.cropFor(null, src, aspect, { zoom: false })];',
+    gate: 'CutPilot/test/gates/shorts-podcast-cameras.js',
+    why: 'a close camera crops the middle of its frame, not its person'
   }
 ];
 
