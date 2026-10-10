@@ -339,6 +339,9 @@ function scriptedPremiere(o) {
       R.shelf.audit.length + ' audit files left)');
     report(/In Premiere: Multicam: Apply/.test(A.text || '') && /Pulse style report — 2 of/.test(A.text || ''),
       '1. its report goes under the test’s report instead of replacing it');
+    const evLine = (A.text || '').split('\n').find(l => /Every editable style shows its words/.test(l)) || '(no line)';
+    report(/^❌ Every editable style shows its words — 2 of \d+ did not/.test(evLine),
+      '1. and the owner sees its verdict as a line of the report, every time: ' + evLine.slice(0, 120));
   }
 
   // 2. failures say what Premiere answered; the rest still runs

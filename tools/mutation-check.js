@@ -2093,6 +2093,14 @@ const MUTANTS = [
     repl: "    if (CPCaptions.isDarkOnLight(preset)) { confirmInline('“' + (preset.name || 'This style') + '” has dark words on a light box. Add it as ✨ Pulse-rendered captions instead?', 'Use Pulse-rendered', function () {}); return; }\n    if (!ensureTranscriptThen('editstyle')) return;",
     gate: 'CutPilot/test/gates/gallery-editable-dark.js',
     why: 'dark-on-light styles refused as editable again (the owner\'s popup), though the blank words were the timing units'
+  },
+  {
+    name: 'v17-style-verdict-hidden',
+    file: 'CutPilot/js/main.js',
+    find: "                if (so0 && /In Premiere: /.test(so0.textContent)) { so0.classList.remove('hidden'); so0.textContent += '\\n' + line; }",
+    repl: "",
+    gate: 'CutPilot/test/gates/selftest-premiere.js',
+    why: 'the every-style check runs but its verdict is not on screen (only in Diagnostics)'
   }
 ];
 

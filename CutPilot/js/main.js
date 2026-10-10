@@ -4675,9 +4675,10 @@
       // style cards to these renders too (an opt-in the owner never chose, and
       // not how ✨ Pulse-rendered captions are drawn), so a card could show
       // something other than what lands.
-      if (!state._stylesAuditRan && CPBridge.isCEP()) {
-        state._stylesAuditRan = true;
-        toast('🎥 Now checking EVERY caption style automatically (~2 min) — the per-style report will be in 📋 Copy diagnostics.');
+      // every Test everything (the owner: "test every single one of them"),
+      // and its verdict lands on screen under the report, pass or fail
+      if (CPBridge.isCEP()) {
+        toast('🎥 Now checking EVERY editable caption style (~2 min) — the result appears at the bottom of the report.');
         setTimeout(function () { try { renderTruePreviews({ auditOnly: true }); } catch (eA) {} }, 900);
       }
     }
@@ -4911,6 +4912,20 @@
             });
           });
           scanChain.then(function () {
+            // one line under the self-test's report, pass or fail — a pass used
+            // to be written only to Diagnostics, so the owner never saw it ran
+            if (audit) {
+              var bad = boxOnly.concat(failAll.map(function (id) { return id + ' (Premiere could not draw it)'; }));
+              var all = okAll.length + failAll.length;
+              var line = bad.length
+                ? '❌ Every editable style shows its words — ' + bad.length + ' of ' + all + ' did not: ' + bad.slice(0, 6).join('; ') + (bad.length > 6 ? '; …' : '')
+                : '✅ Every editable style shows its words — all ' + all + ' styles drawn by Premiere, words visible';
+              try {
+                var so0 = $('selftest-out');
+                if (so0 && /In Premiere: /.test(so0.textContent)) { so0.classList.remove('hidden'); so0.textContent += '\n' + line; }
+                diag('selftest', line);
+              } catch (eL) {}
+            }
             if (boxOnly.length) {
               diag('previews', 'STYLE QUALITY failures: ' + boxOnly.length + ' of ' + okAll.length + ' styles');
               for (var bo = 0; bo < boxOnly.length; bo += 5) {
