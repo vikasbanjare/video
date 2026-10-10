@@ -1,10 +1,22 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.16** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.17** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.17 — every editable style checked on every Test everything
+The owner confirmed ✏️ editable captions work after v0.10.16 and asked that
+every style be tested. renderTruePreviews({auditOnly}) already drew each
+style via CP_renderStylePreviews and blank-scanned it, but ran once per
+session (_stylesAuditRan) and reported a pass only to Diagnostics. Now: every
+Test everything, plus a "✅/❌ Every editable style shows its words" line under
+the report (render failures count). The owner also asked about "Gradient FG
+Text (Change font only)" showing "Flux Halo": the template's highlight layer;
+its words come from Text by expression, only the font is synced (fgFontSet).
+Writing words there was tried in v0.9.321 and reverted — left as is.
+Mutation v17-style-verdict-hidden.
 
 ### v0.10.16 — dark-on-light styles no longer refused as editable
 The owner, after v0.10.15, sent the popup "“Clean Card” has dark words on a
