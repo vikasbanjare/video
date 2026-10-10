@@ -1,10 +1,34 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.10** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.11** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.11 — Shorts: one click makes a short ready to post
+The owner: "how can we make the caption and short videos content more better".
+Research (Opus Clip / Vizard / Submagic reviews, Shorts retention data): half
+the drop-off is in the first 3 s; burned-in captions +15–25% retention; cut
+every pause and "um"; a text hook on screen. Make clip cut the moment as
+spoken, no captions/title, and Find moments needed an AI key.
+- js/shorts.js (CPShorts, pure + drawHookCard): trimEnds (no "So… accha…"
+  lead-in / "so" trail-off), tightenPlan (pauses > 0.35 s → 0.14 s, um/uh
+  cut, words remapped to the short's clock), localHighlights (no-key moment
+  finder: question / bold claim / number / "you" openers, whole sentences,
+  never mid-thought, brisk speech), hookText, drawHookCard (white card at
+  12% height, ≤3 balanced lines, shrinks to fit 84% width), selectExpr.
+- main.js makeVerticalClip → ONE ffmpeg pass: -ss window, fps=30 + select
+  (stretches) + setpts, coverChain crop, hook PNG overlay for 3 s, aselect
+  audio (skipped when the source has none); CP_importClip (opens the new
+  sequence), then runCaptionPipeline(sentenceCues, {wordCues}) on it in the
+  picked Styles look (own track, editable). Options #sh-tight #sh-hook
+  #sh-caps (settings.shTight/shHook/shCaps). Find moments: no key or AI
+  error → localHighlights.
+- Gate shorts-finished (overlay-lib, real ffmpeg, tone-per-word source):
+  length = plan, no inner gap > 0.3 s, 1080×1920, card at 1 s gone at 4 s,
+  captions on the short's clock, options-off cut as spoken, no-key finder.
+  Mutations v11-*.
 
 ### v0.10.10 — Premium cards show settled words; Edit words before captions; AI-fix switch; any font fits
 The owner's v0.10.9 diagnostics were all ✅ on Premiere 26.5.0 / macOS 26.5.1.
