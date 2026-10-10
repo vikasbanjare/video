@@ -15331,13 +15331,84 @@
     });
   }
 
-  /* Render a highlight moment as a vertical (or original) clip with ffmpeg and
-     import it as a sequence named after the moment's title. Reliable on every
-     Premiere version (no dependency on the Auto Reframe script method). */
+  /* The finished short (CPShorts): the moment's words without the warm-up
+     ("so… accha…") and trail-off, every pause shortened and every "um" cut
+     (✂️), cropped to the shape, the hook title on screen for the first 3 s
+     (🪝), rendered in ONE ffmpeg pass (select keeps the stretches, so the
+     cuts are frame-exact and the sound stays with the picture), imported as
+     its own sequence, then captioned there by Pulse's own caption pipeline in
+     the style picked on the Captions page (💬) — on their own track, still
+     editable. Without word timing the moment is cut as spoken. */
+  function shortOpts() {
+    function on(id, def) { var e = $(id); return e ? !!e.checked : def; }
+    return { tight: on('sh-tight', true), hook: on('sh-hook', true), caps: on('sh-caps', true) };
+  }
+  ['sh-tight', 'sh-hook', 'sh-caps'].forEach(function (id) {
+    var e = $(id); if (!e) return;
+    var key = { 'sh-tight': 'shTight', 'sh-hook': 'shHook', 'sh-caps': 'shCaps' }[id];
+    if (settings[key] === false) e.checked = false;
+    e.addEventListener('change', function () { settings[key] = !!e.checked; saveSettings(); });
+  });
+  /* The moment's words on the timeline, as the short will use them. */
+  function shortPlanFor(h, o) {
+    var all = (state.transcriptWords || []).filter(function (w) { return w && +w.end > h.start - 0.05 && +w.start < h.end + 0.05; });
+    if (!all.length || typeof CPShorts === 'undefined') {
+      return { segments: [{ start: h.start, end: h.end }], words: [], duration: h.end - h.start, removed: 0, asSpoken: true };
+    }
+    var words = o.tight ? CPShorts.trimEnds(all) : all;
+    return CPShorts.tightenPlan(words, { tight: o.tight });
+  }
+  /* The hook card as a PNG file (W×H, transparent but for the card). */
+  function writeHookCard(text, W, H, dir) {
+    var cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    var box = CPShorts.drawHookCard(cv, text);
+    if (!box) return null;
+    var b64 = cv.toDataURL('image/png').split(',')[1];
+    var p = nodeReq('path').join(dir, 'hook.png');
+    nodeReq('fs').writeFileSync(p, Buffer.from(b64, 'base64'));
+    return p;
+  }
+  function renderShortFile(ff, clip, plan, region, rt, hookTitle, prog) {
+    var fs = nodeReq('fs'), os = nodeReq('os'), pathMod = nodeReq('path');
+    var toMedia = function (t) { return Math.max(0, (t - (clip.seqStart || 0)) + (clip.inPoint || 0)); };
+    var segs = plan.segments.map(function (s) { return { start: toMedia(s.start), end: toMedia(s.end) }; });
+    var base = Math.max(0, segs[0].start - 0.5), stop = segs[segs.length - 1].end + 0.5;
+    var dir = pathMod.join(os.tmpdir(), 'pulse-short-' + Date.now());
+    try { fs.mkdirSync(dir); } catch (e) {}
+    prog.textContent = 'Measuring the video…';
+    return runFfmpeg(ff, ['-hide_banner', '-i', clip.mediaPath], 20000).then(function (r) {
+      var m = /,\s*(\d{2,5})x(\d{2,5})/.exec(r.stderr || ''), src = m ? { w: +m[1], h: +m[2] } : { w: 1920, h: 1080 };
+      var hasAudio = /Stream #[^\n]*Audio:/.test(r.stderr || '');
+      var target = rt ? CPReframe.targetSize(rt.label) : { w: src.w - (src.w % 2), h: src.h - (src.h % 2) };
+      var hookPng = null;
+      if (hookTitle) { try { hookPng = writeHookCard(hookTitle, target.w, target.h, dir); } catch (eH) { hookPng = null; } }
+      var expr = CPShorts.selectExpr(segs, base);
+      var fc = '[0:v]fps=30,select=\'' + expr + '\',setpts=N/30/TB[cut];' +
+        CPReframe.coverChain('cut', rt ? region : { x: 0, y: 0, w: 1, h: 1 }, src, target, 'v');
+      var vout = 'v';
+      if (hookPng) { fc += ';[v][1:v]overlay=0:0:eof_action=pass:enable=\'lt(t,3)\'[vo]'; vout = 'vo'; }
+      if (hasAudio) fc += ';[0:a]aselect=\'' + expr + '\',asetpts=N/SR/TB[a]';
+      var outPath = pathMod.join(dir, 'pulse-short.mp4');
+      var args = ['-y', '-hide_banner', '-ss', base.toFixed(3), '-t', (stop - base).toFixed(3), '-i', clip.mediaPath];
+      if (hookPng) args = args.concat(['-loop', '1', '-t', '3.2', '-i', hookPng]);
+      args = args.concat(['-filter_complex', fc, '-map', '[' + vout + ']']);
+      if (hasAudio) args = args.concat(['-map', '[a]', '-c:a', 'aac', '-ar', '48000']);
+      args = args.concat(['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', '-r', '30', '-movflags', '+faststart', outPath]);
+      prog.textContent = 'Making the short' + (plan.removed > 0.2 ? ' (' + plan.removed.toFixed(1) + ' s of pauses cut)' : '') + '…';
+      return runFfmpeg(ff, args, 600000).then(function (rr) {
+        if (rr.error || (rr.code && rr.code !== 0)) throw new Error('the render failed: ' + String(rr.stderr || rr.error || '').slice(-160));
+        try { if (hookPng) fs.unlinkSync(hookPng); } catch (eU) {}
+        return outPath;
+      });
+    });
+  }
   function makeVerticalClip(h, rt) {
     var ff = resolveFfmpeg();
     if (!ff) return toast('Making a clip needs the audio engine — tap Settings → ⬇️ Set up audio engine.', true);
-    if (typeof CPReframe === 'undefined') return toast('Reframe module missing.', true);
+    if (typeof CPReframe === 'undefined' || typeof CPShorts === 'undefined') return toast('Shorts module missing.', true);
+    var o = shortOpts();
+    var plan = shortPlanFor(h, o);
+    if (!plan.segments.length) return toast('No words in this moment — transcribe the video again, then try.', true);
     var name = sanitizeName(h.title || 'Pulse clip');
     var prog = $('shorts-progress'); prog.classList.remove('hidden'); prog.textContent = 'Finding the source video…';
     CPBridge.callHost('CP_getSelectedClip').then(
@@ -15345,23 +15416,25 @@
       function () { return CPBridge.callHost('CP_getTranscribeSource'); }
     ).then(function (s) {
       if (!s || !s.clip || !s.clip.mediaPath) throw new Error('Put the source video on the timeline (select it) so I can cut the clip from it.');
-      var clip = s.clip;
-      var ms = Math.max(0, (h.start - (clip.seqStart || 0)) + (clip.inPoint || 0));
-      var me = (h.end - (clip.seqStart || 0)) + (clip.inPoint || 0);
-      if (!(me > ms)) me = ms + Math.max(1, h.dur || 5);
-      prog.textContent = 'Measuring the video…';
-      return probeDims(ff, clip.mediaPath).then(function (src) {
-        var target = rt ? CPReframe.targetSize(rt.label) : src;
-        var ctx = { source: clip.mediaPath, src: src, plan: [{ start: ms, end: me, mode: 'single', speaker: 0 }] };
-        var rtTag = rt || { num: src.w, den: src.h, label: 'orig' };
-        return renderReframe(ff, ctx, [shFocusRegion()], target, rtTag, prog);
-      });
+      return renderShortFile(ff, s.clip, plan, shFocusRegion(), rt, o.hook ? CPShorts.hookText(h) : '', prog);
     }).then(function (outPath) {
       prog.textContent = 'Importing “' + name + '”…';
       return CPBridge.callHost('CP_importClip', { path: outPath, name: name });
     }).then(function (res) {
+      var what = (rt ? rt.label + ' ' : '') + 'short “' + (res && res.sequence ? res.sequence : name) + '”' +
+        (plan.removed > 0.2 ? ' — ' + plan.removed.toFixed(1) + ' s of pauses and “um”s cut' : '');
+      diag('shorts', 'made ' + what + ' · ' + plan.segments.length + ' piece(s), ' + plan.duration.toFixed(1) + ' s' + (o.hook ? ', hook title' : '') + (o.caps ? ', captions' : ''));
+      if (o.caps && plan.words.length && res && res.sequence) {
+        prog.textContent = 'Adding captions in your caption style…';
+        setTimeout(function () {
+          prog.classList.add('hidden');
+          runCaptionPipeline(CPShorts.sentenceCues(plan.words), { wordCues: plan.words });
+        }, 400);
+        toast('🎬 Made the ' + what + '. Adding captions now…');
+        return;
+      }
       prog.classList.add('hidden');
-      toast('🎬 Created “' + (res && res.sequence ? res.sequence : name) + '”' + (rt ? ' — ' + rt.label + ' vertical.' : '.'));
+      toast('🎬 Made the ' + what + (o.caps && !plan.words.length ? '. (No word timing for captions — transcribe first.)' : '.'));
     }).catch(function (e) { prog.classList.add('hidden'); toast('Make clip failed: ' + e.message, true); });
   }
 
@@ -15376,6 +15449,17 @@
     var use = truncated ? segs.slice(0, MAXSEG) : segs;
     var chunks = CPSmartEdit.chunk(use, 80);
     var prog = $('shorts-progress'); prog.classList.remove('hidden');
+    // without an AI key (or when the AI is out), Pulse picks them by their
+    // own words: hooks (a question, a bold claim, a number, "you"), whole
+    // sentences, brisk speech — never a moment that opens mid-thought
+    function local(why) {
+      var hl = (typeof CPShorts !== 'undefined') ? CPShorts.localHighlights(segs, { min: len.min, max: len.max, count: 8 }) : [];
+      prog.classList.add('hidden');
+      renderShorts(hl);
+      toast(hl.length ? ('Found ' + hl.length + ' moment' + (hl.length === 1 ? '' : 's') + ' by their words' + why + ' — preview or make any of them.')
+                      : 'No standout moments found' + why + '.', !hl.length);
+    }
+    if (!cpKey()) return local(' (add your free key in Settings → Auto-transcribe for AI picks)');
     processChunks(chunks, function (cs) {
       var prompt = CPSmartEdit.buildHighlightPrompt(cs, { min: len.min, max: len.max, count: 6 });
       return aiChatRetry(prompt, { maxTokens: 1500 }).then(function (content) {
@@ -15387,9 +15471,14 @@
       prog.classList.add('hidden');
       renderShorts(hl);
       if (hl.length) toast('Found ' + hl.length + ' viral moment' + (hl.length === 1 ? '' : 's') + (truncated ? ' (first ' + MAXSEG + ' lines)' : '') + ' — preview or clip any of them.');
-    }).catch(function (e) { prog.classList.add('hidden'); toast('Couldn’t find moments: ' + e.message, true); });
+    }).catch(function (e) { diag('shorts', 'AI moments failed: ' + e.message); local(' (the AI was not reachable: ' + e.message + ')'); });
   }
   if ($('btn-find-shorts')) $('btn-find-shorts').addEventListener('click', runHighlightFinder);
+  // test hooks for gates/shorts-finished.js
+  try {
+    window.CP_DEBUG_EXT = window.CP_DEBUG_EXT || {};
+    window.CP_DEBUG_EXT.shorts = { show: renderShorts, plan: function (h) { return shortPlanFor(h, shortOpts()); } };
+  } catch (eDbgSh) {}
 
   // ---- Speaker-aware vertical (podcast, separate mics) ----
   function regionsForArrange(a) {

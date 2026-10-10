@@ -989,7 +989,7 @@
     <div class="card">
       <div class="step-head"><span class="step-title">🎬 Viral Shorts</span>
         <button class="info" type="button" data-info="sh-info" aria-label="How it works">ⓘ</button></div>
-      <p class="hint">Finds the best short clips in a long video.</p>
+      <p class="hint">Finds the best short clips in a long video — and makes each one ready to post.</p>
       <div class="info-pop hidden" id="sh-info">Pulse reads your transcript and finds the moments most likely to pop as short clips — each one a self-contained <b>hook → payoff</b>. Get your words first (Transcribe). For each moment you can <b>preview</b> it, <b>mark</b> it, or cut it out as a <b>vertical clip</b> — Premiere's Auto Reframe keeps the subject in frame.</div>
       <div class="grid2">
         <label>Clip length
@@ -1014,6 +1014,11 @@
             <option value="right">Right side</option>
           </select>
         </label>
+      </div>
+      <div class="sh-opts">
+        <label class="check" title="Removes every pause and um/uh inside the clip, and starts it on the first real word"><input type="checkbox" id="sh-tight" checked> ✂️ Cut pauses &amp; “um”s</label>
+        <label class="check" title="The moment's title on screen while the hook is said"><input type="checkbox" id="sh-hook" checked> 🪝 Hook title for the first 3 s</label>
+        <label class="check" title="Captions in the style picked on the Captions page, on their own track — still editable"><input type="checkbox" id="sh-caps" checked> 💬 Add captions (your caption style)</label>
       </div>
       <div class="page-actions">
         <button id="btn-find-shorts" class="hero-btn">✨ Find viral moments</button>
@@ -1497,6 +1502,7 @@
   <script src="js/command.js?v=v0.10.10"></script>
   <script src="js/chapters.js?v=v0.10.10"></script>
   <script src="js/align.js?v=v0.10.10"></script>
+  <script src="js/shorts.js?v=v0.10.10"></script>
   <script src="js/main.js?v=v0.10.10"></script>
   <script src="js/organize.js?v=v0.10.10"></script>
   <script src="js/safezone.js?v=v0.10.10"></script>

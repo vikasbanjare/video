@@ -1867,6 +1867,46 @@ const MUTANTS = [
     repl: '',
     gate: 'CutPilot/test/gates/fonts-coverage.js',
     why: 'Hindi-first styles swap to a Latin face (Avenir Next) when the style audit draws them'
+  },
+  {
+    name: 'v11-shorts-no-tighten',
+    file: 'CutPilot/js/shorts.js',
+    find: '      if (gap > maxGap) {',
+    repl: '      if (false) {',
+    gate: 'CutPilot/test/gates/shorts-finished.js',
+    why: 'a short keeps every pause (the 1.4 s gap stays in)'
+  },
+  {
+    name: 'v11-shorts-no-trim',
+    file: 'CutPilot/js/shorts.js',
+    find: '    while (b - a > keep && has(LEAD_IN, w[a].text)) a++;',
+    repl: '',
+    gate: 'CutPilot/test/gates/shorts-finished.js',
+    why: 'a short starts on "So… accha…" instead of its hook'
+  },
+  {
+    name: 'v11-shorts-no-hook-card',
+    file: 'CutPilot/js/main.js',
+    find: '      if (hookTitle) { try { hookPng = writeHookCard(hookTitle, target.w, target.h, dir); } catch (eH) { hookPng = null; } }',
+    repl: '',
+    gate: 'CutPilot/test/gates/shorts-finished.js',
+    why: 'the hook title never shows on the short'
+  },
+  {
+    name: 'v11-shorts-no-captions',
+    file: 'CutPilot/js/main.js',
+    find: '      if (o.caps && plan.words.length && res && res.sequence) {',
+    repl: '      if (false) {',
+    gate: 'CutPilot/test/gates/shorts-finished.js',
+    why: 'the short comes out without captions'
+  },
+  {
+    name: 'v11-shorts-need-key',
+    file: 'CutPilot/js/main.js',
+    find: "      var hl = (typeof CPShorts !== 'undefined') ? CPShorts.localHighlights(segs, { min: len.min, max: len.max, count: 8 }) : [];",
+    repl: '      var hl = [];',
+    gate: 'CutPilot/test/gates/shorts-finished.js',
+    why: 'without an AI key no moments are found'
   }
 ];
 
