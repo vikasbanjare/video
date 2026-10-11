@@ -647,6 +647,7 @@
   // dropdown (native <select> doesn't open in Premiere's CEP).
   var TRANSLATE_LANGS = [
     { value: '', label: 'language…' },
+    { value: 'hinglish|Hinglish', label: 'Hinglish (Hindi in English letters)' },
     { value: 'es|Spanish', label: 'Spanish' }, { value: 'fr|French', label: 'French' },
     { value: 'de|German', label: 'German' }, { value: 'hi|Hindi', label: 'Hindi' },
     { value: 'pt|Portuguese', label: 'Portuguese' }, { value: 'it|Italian', label: 'Italian' },
@@ -3317,6 +3318,10 @@
     setTranscriptBar('', '🌐', 'Translating ' + lines.length + ' lines to ' + name + '…', null);
     var sys = 'You are a professional subtitle translator. The input lines are auto-transcribed and may contain misheard words; ' +
       'first silently correct any obvious transcription errors, then translate the intended meaning into ' + name + '. ' +
+      // Hinglish is not a language code: say what it is, or the model writes Hindi letters or plain English
+      (code === 'hinglish' ? 'Hinglish means the Hindi-English mix Indians speak, written ENTIRELY in Roman (English) letters the way people type it online ' +
+        '(e.g. "Aaj hum baat karenge ki investing kaise start karein"). Never use Devanagari. Keep English words people normally say in English (investing, market, video) as they are. ' +
+        'If a line is already Hindi in Devanagari, keep the same words and only change the letters. ' : '') +
       (vocab ? ('Keep these names/terms correct (do not translate them): ' + vocab + '. ') : '') +
       'Return JSON {"lines":[...]} containing EXACTLY ' + lines.length + ' strings — one translation per input line, same order. ' +
       'Never merge, split, add, or drop lines. Keep each translation natural, concise and suitable for on-screen captions. Output ONLY the translated text, no notes.';
@@ -12262,6 +12267,8 @@
     opts: function () { return JSON.parse(JSON.stringify(premOpts())); },
     measure: function (text, px, ps) { return premMeasure(text, px, ps); },
     lastJob: function () { return state.lastCaptionJob ? JSON.parse(JSON.stringify(state.lastCaptionJob)) : null; },
+    // reload the shipped templates (a test panel learns its install folder after boot)
+    reloadTemplates: function () { loadBundledMogrts(); renderFluxGrid(); return (state.bundledMogrts || []).length; },
     sheetEdits: function () { return { path: state.mogrtParamsPath || null, params: (state.mogrtParams || []).slice(), textStyle: state.mogrtTextStyle || null }; }
   };
 
@@ -12325,6 +12332,7 @@
     var textStyle = built ? built.textStyle : resolveTextStyleFont((state.mogrtParamsPath === mogrtPath) ? state.mogrtTextStyle : null);
     if (btn) btn.disabled = true;
     capProgress('Saving project…');
+    var premBefore = null;
     ensureProjectSaved().then(function (ok) {
       // PERSISTENT banner (not just a transient toast) — an unsaved project was
       // the classic "I clicked and nothing appeared, no idea why" case.
@@ -12342,6 +12350,11 @@
       var prevJobM = state.lastCaptionJob;
       var sameSeqM = !!(prevJobM && prevJobM.seq && state.env && prevJobM.seq === state.env.sequenceName);
       var reuseTrackM = (prevJobM && prevJobM.mode === 'editable' && prevJobM.track && sameSeqM) ? prevJobM.track : null;
+      // frames before the graphics go in — compared with after, so Pulse can
+      // SAY whether Premiere drew the words (Premium had no such check: the
+      // owner's "premium captions are not working" left nothing to go on)
+      return grabFrames(visibilityTimes(tcues), 'before').catch(function () { return null; }).then(function (bf) {
+      premBefore = bf;
       return CPBridge.callHost('CP_insertMogrtCaptions', {
         mogrtPath: mogrtPath, cues: tcues, videoTrack: null, audioTrack: 0,
         // maxSpeed: how far "stretch" may speed a template's own animation up
@@ -12354,6 +12367,7 @@
         fitMode: built ? built.fitMode : 'contain',
         posYPct: built ? built.posYPct : null,                                // whole graphic at the caption row
         sizeFit: built ? built.sizeFit : null                                 // caption size, even if its control is refused
+      });
       });
     }).then(function (r) {
       if (r == null) return;
@@ -12401,6 +12415,9 @@
         toast('🎬 Added ' + r.inserted + ' graphics (' + r.textSet + ' with text)' + multi +
               (r.failed ? ' · ' + r.failed + ' failed' : '') + str + dur + safe + sweep + '.');
       }
+      // what Premiere drew at the first, middle and last graphic → Diagnostics,
+      // and a question (never a deletion) when they show no words
+      if (r.textSet > 0) verifyEditableVisible(tcues, r.track, mogrtPath, premBefore);
     }).catch(function (e) { if (btn) btn.disabled = false; capProgress(null); toast(e.message, true); });
   }
 

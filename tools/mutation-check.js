@@ -2125,6 +2125,22 @@ const MUTANTS = [
     repl: "    return ws[ws.length - 1].end;",
     gate: 'CutPilot/test/gates/captions-messy-timing.js',
     why: 'a caption ends before it starts when speech stamps overlap'
+  },
+  {
+    name: 'v19-premium-unchecked',
+    file: 'CutPilot/js/main.js',
+    find: "      if (r.textSet > 0) verifyEditableVisible(tcues, r.track, mogrtPath, premBefore);",
+    repl: "",
+    gate: 'CutPilot/test/gates/premium-visible.js',
+    why: 'Premium captions go in and nobody looks whether Premiere drew their words'
+  },
+  {
+    name: 'v19-no-hinglish-translate',
+    file: 'CutPilot/js/main.js',
+    find: "    { value: 'hinglish|Hinglish', label: 'Hinglish (Hindi in English letters)' },\n",
+    repl: "",
+    gate: 'CutPilot/test/gates/translate-hinglish.js',
+    why: 'Translate to has no Hinglish'
   }
 ];
 
