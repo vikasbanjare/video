@@ -90,6 +90,7 @@ function scriptedPremiere(o) {
     const caps = tl.captions.filter(c => at >= c.start && at < c.end && c.drawn && c.track !== hide);
     const layers = [];
     caps.forEach(c => {
+      if (c.giant) { layers.push({ giant: true }); return; }
       if (!c.items) { layers.push({ band: true }); return; }
       const it = c.items.find(x => at >= x.start && at < x.end) || null;
       if (!it) return;
@@ -99,6 +100,7 @@ function scriptedPremiere(o) {
     return png(W, Hh, (x, y) => {
       let c = shot[2];
       layers.forEach(l => {
+        if (l.giant) { c = ((x >> 4) % 2) ? [255, 255, 255] : [240, 90, 20]; return; }
         if (l.band) { if (y > Hh * 0.72 && y < Hh * 0.82 && x > W * 0.3 && x < W * 0.7) c = ((x >> 3) % 2) ? [255, 255, 255] : [20, 20, 20]; return; }
         // o.shiftLeft: Premiere draws the captions a fifth of the frame to the left
         // (their words cut at the edge); o.grey: it loses their colour
@@ -171,7 +173,9 @@ function scriptedPremiere(o) {
       log.mogrt = a.mogrtPath;
       // one Premium caption (track 4), or a set of editable captions (track 6)
       const track = a.cues.length > 1 ? 6 : 4;
-      a.cues.forEach(c => tl.captions.push({ start: c.start, end: c.end, drawn: !(track === 4 ? o.premiumInvisible : o.editableInvisible), kind: track === 4 ? 'premium' : 'editable', track }));
+      a.cues.forEach(c => tl.captions.push({ start: c.start, end: c.end, drawn: !(track === 4 ? o.premiumInvisible : o.editableInvisible), kind: track === 4 ? 'premium' : 'editable', track,
+        // o.premiumGiant: one giant letter fills the frame (the owner's Flux Orbit at 44506.8%)
+        giant: track === 4 && !!o.premiumGiant && /Orbit/.test(a.mogrtPath) }));
       return ok({ inserted: a.cues.length, track, textSet: a.cues.length });
     },
     CP_placeOverlay(a) {
@@ -356,7 +360,7 @@ function scriptedPremiere(o) {
     report(/^❌/.test(R.rowOf('Captions (Pulse’s own look)')) && /Illegal Parameter type/.test(R.rowOf('Captions (Pulse’s own look)')) &&
            /^✅/.test(R.rowOf('Sound effects')),
       '2. a caption call that stops is named, and the next feature still runs: ' + short(R.rowOf('Captions (Pulse’s own look)')));
-    report(/^❌/.test(R.rowOf('Premium (Flux) captions')) && /inserted 1/.test(R.rowOf('Premium (Flux) captions')) && /0% of the frame is caption/.test(R.rowOf('Premium (Flux) captions')),
+    report(/^❌/.test(R.rowOf('Premium (Flux) captions')) && /Flux Apex: no words on screen/.test(R.rowOf('Premium (Flux) captions')) && /\d+ template\(s\) placed/.test(R.rowOf('Premium (Flux) captions')),
       '2. Premium captions placed but not drawn: ' + short(R.rowOf('Premium (Flux) captions')));
     report(/^⚠️/.test(R.rowOf('Everything the test made is deleted')) && /still there: the bin “Pulse SFX 456”/.test(R.rowOf('Everything the test made is deleted')) &&
            R.prem.log.calls.filter(c => c === 'CP_selfTestCleanup').length === 1 && /^❌ \d+ problems? found/.test(R.out.text),
@@ -374,6 +378,15 @@ function scriptedPremiere(o) {
       '2b. a project never saved: the Premium steps say to save once instead of failing (' + short(R.rowOf('Premium (Flux) captions')) + ')');
     report(/^❌/.test(R.rowOf('Multicam: Apply')) && /blue \/ blue \/ blue \(expected red \/ blue \/ red\)/.test(R.rowOf('Multicam: Apply')),
       '2b. a Multicam Apply Premiere reports as done while the wrong camera stays on screen is caught by the frames: ' + short(R.rowOf('Multicam: Apply')));
+  }
+
+  // 2c. a Premium template whose words come out giant (its Scale written in the
+  // wrong units — the owner's Flux Orbit filled the frame): the row says which
+  {
+    const R = await run('giant', { premiumGiant: true });
+    report(/^❌/.test(R.rowOf('Premium (Flux) captions')) && /Flux Orbit: the caption fills \d+(\.\d+)?% of the frame \(far too big\)/.test(R.rowOf('Premium (Flux) captions')) &&
+           !/Flux Apex: the caption fills/.test(R.rowOf('Premium (Flux) captions')),
+      '2c. a Premium template that fills the frame is named: ' + short(R.rowOf('Premium (Flux) captions')));
   }
 
   // 2c. what the owner meets on a bad day: editable captions that paint

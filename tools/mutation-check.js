@@ -2149,6 +2149,14 @@ const MUTANTS = [
     repl: "    point = false;",
     gate: 'CutPilot/test/gates/premium-fit.js',
     why: 'a Premium template\'s Scale gets the percent raw: 41% shows as 44506.8%, one giant letter fills the frame (the owner\'s Flux Orbit)'
+  },
+  {
+    name: 'v20-selftest-giant-ok',
+    file: 'CutPilot/js/main.js',
+    find: "                        : (ink != null && ink > 0.35) ? 'the caption fills ' + pct(ink) + ' of the frame (far too big)' : '';",
+    repl: "                        : '';",
+    gate: 'CutPilot/test/gates/selftest-premiere.js',
+    why: 'Test everything says ✅ while a Premium template fills the frame with one giant letter'
   }
 ];
 

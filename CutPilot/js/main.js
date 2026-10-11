@@ -4434,17 +4434,38 @@
     });
     add('Premium (Flux) captions', function () {
       try { if (!(state.bundledMogrts || []).length) loadBundledMogrts(); } catch (eL) {}
-      var t = (state.bundledMogrts || []).filter(function (m) { return m.premium; })[0];
-      if (!t) return Promise.resolve({ state: 'warn', note: 'no Premium template is installed with Pulse' });
+      var all = (state.bundledMogrts || []).filter(function (m) { return m.premium; });
+      if (!all.length) return Promise.resolve({ state: 'warn', note: 'no Premium template is installed with Pulse' });
       if (!saved) return Promise.resolve({ state: 'warn', note: 'not tried — Premium templates need a saved project: save yours once (⌘S), then test again' });
-      return host('CP_insertMogrtCaptions', { mogrtPath: t.path, cues: [{ start: 3.4, end: 4.9, text: 'Premium test words' }],
-        videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false, maxSpeed: 100, replaceTrack: null,
-        captionNames: captionGraphicNames(t.path) }).then(function (r) {
-        return inkAt(4.3).then(function (ink) {
-          var note = t.name + ': inserted ' + r.inserted + ' on V' + r.track + (r.textSet != null ? ', words set ' + r.textSet : '') +
-            ((r.sampleErrors && r.sampleErrors.length) ? ' · ' + r.sampleErrors[0] : '') + (ink == null ? '' : ' · ' + pct(ink) + ' of the frame is caption');
-          return { state: r.inserted > 0 && (ink == null || ink > 0.002) ? (ink == null ? 'warn' : 'ok') : 'fail', note: note };
+      // EVERY Premium template, placed the way "✨ Caption with this" places it
+      // (its caption size, font, position): the owner's Flux Orbit came out as
+      // one giant letter filling the frame while this row, which sent no
+      // settings, said ✅. Words must show, and must not fill the frame.
+      var env = { width: setup.width, height: setup.height, sequenceName: ST_SEQ };
+      var rows = [], bad = [];
+      return all.reduce(function (p, t) {
+        return p.then(function () {
+          var b = premBuildSample(t.path, 'Premium test words', env);
+          return host('CP_insertMogrtCaptions', { mogrtPath: t.path, cues: [{ start: 3.4, end: 4.9, text: 'Premium test words' }],
+            videoTrack: null, audioTrack: 0, params: b.params, textStyle: b.textStyle, stretch: false, maxSpeed: 100, replaceTrack: null,
+            captionNames: captionGraphicNames(t.path), compW: b.compW, compH: b.compH, fitMode: b.fitMode, posYPct: b.posYPct, sizeFit: b.sizeFit })
+            .then(function (r) {
+              return inkAt(4.3).then(function (ink) {
+                var why = !(r.inserted > 0) ? 'not inserted' + ((r.sampleErrors && r.sampleErrors.length) ? ' (' + r.sampleErrors[0] + ')' : '')
+                        : (ink != null && ink <= 0.002) ? 'no words on screen'
+                        : (ink != null && ink > 0.35) ? 'the caption fills ' + pct(ink) + ' of the frame (far too big)' : '';
+                if (why) bad.push(t.name + ': ' + why);
+                rows.push(t.name + (ink == null ? '' : ' ' + pct(ink)));
+                // take it off again, so the next template is measured alone
+                return r.track ? host('CP_clearCaptionTrack', { track: r.track, names: captionGraphicNames(t.path) }).catch(function () {}) : null;
+              });
+            }, function (e) { bad.push(t.name + ': ' + ((e && e.message) || e)); });
         });
+      }, Promise.resolve()).then(function () {
+        return { state: bad.length ? 'fail' : (framesWork ? 'ok' : 'warn'),
+                 note: (bad.length ? bad.join(' · ') + ' — ' : '') + all.length + ' template(s) placed as “Caption with this” does' +
+                   (rows.length ? ': ' + rows.join(', ') + (framesWork ? ' of the frame is caption' : '') : '') +
+                   (framesWork ? '' : ' (Premiere draws no frames here, so the size was not measured)') };
       });
     });
     add('Long videos: one overlay clip', function () {
