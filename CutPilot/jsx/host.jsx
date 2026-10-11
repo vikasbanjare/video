@@ -3017,7 +3017,7 @@ function CP_classifyMgrtProp(p) {
 
 /* Apply one override to a MOGRT property (colour/size/toggle/font). Best
    effort — never throws, returns true on success. */
-function CP_setMgrtParam(prop, kind, value) {
+function CP_setMgrtParam(prop, kind, value, u) {
   try {
     if (kind === 'point') {
       // position param — getValue returns {x,y}; try object then array forms
@@ -3038,7 +3038,7 @@ function CP_setMgrtParam(prop, kind, value) {
     if (kind === 'color' || kind === 'colorint') {
       return CP_setColorAny(prop, value);
     }
-    if (kind === 'scale') return CP_setScaleParam(prop, value);
+    if (kind === 'scale') return CP_setScaleParam(prop, value, u);
     var v;
     if (kind === 'number') v = parseFloat(value);
     else if (kind === 'bool') v = !!value;
@@ -3056,26 +3056,40 @@ function CP_setMgrtParam(prop, kind, value) {
    a single number, so the write keeps the stored shape (y follows x in the
    template's own ratio, z untouched) and is read back: the title templates
    are brought down to caption size through this control, and a write that
-   did not land must be known so the size can go another way. */
-function CP_setScaleParam(prop, value) {
+   did not land must be known so the size can go another way.
+   Premiere holds a template's [x, y(, z)] Scale like a point: x and y as
+   FRACTIONS of the comp (x / comp width, y / comp height), shown as the
+   value × the comp size — 67% reads back as 0.062. Pulse wrote the percent
+   itself, so 41% became 44506.8% on the owner's Flux Orbit (41.21 × 1080):
+   one giant letter filling the frame. A stored x below 1 is that form (no
+   real scale is under 1%); u = { w, h } is the comp's size (CP_compUnits). */
+function CP_setScaleParam(prop, value, u) {
   var sv = parseFloat(value);
   if (isNaN(sv)) return false;
+  u = u || { w: 1080, h: 1920 };
   var cur = null;
   try { cur = prop.getValue(); } catch (e0) { cur = null; }
-  var tries = [];
+  var tries = [], point = false;
   if (cur && typeof cur === 'object' && typeof cur.length === 'number' && cur.length >= 2) {
-    var ratio = (Number(cur[0]) > 0) ? Number(cur[1]) / Number(cur[0]) : 1;
-    var arr = [sv, sv * ratio];
+    var c0 = Number(cur[0]), c1 = Number(cur[1]);
+    point = (c0 > 0 && c0 < 1);
+    var arr;
+    if (point) {
+      var pr = (c0 > 0) ? (c1 * u.h) / (c0 * u.w) : 1;      // the template's own y:x, in percent
+      arr = [sv / u.w, (sv * pr) / u.h];
+    } else {
+      var ratio = (c0 > 0) ? c1 / c0 : 1;
+      arr = [sv, sv * ratio];
+    }
     for (var z = 2; z < cur.length; z++) arr.push(cur[z]);
     tries.push(arr);
   }
-  tries.push(sv);
-  tries.push([sv, sv]);
+  if (!point) { tries.push(sv); tries.push([sv, sv]); }
   function landed() {
     var back = null;
     try { back = prop.getValue(); } catch (eB) { return true; }   // nothing to read back: trust the write
     if (typeof back === 'number') return Math.abs(back - sv) < 0.5;
-    if (back && typeof back === 'object' && back.length) return Math.abs(Number(back[0]) - sv) < 0.5;
+    if (back && typeof back === 'object' && back.length) return Math.abs(Number(back[0]) * (point ? u.w : 1) - sv) < 0.5;
     return true;
   }
   for (var t = 0; t < tries.length; t++) {
@@ -3086,13 +3100,13 @@ function CP_setScaleParam(prop, value) {
 }
 
 /* Apply a list of overrides [{i, kind, value}] to a clip's MGT component. */
-function CP_applyMgrtParams(comp, params) {
+function CP_applyMgrtParams(comp, params, u) {
   if (!comp || !comp.properties || !params) return 0;
   var n = 0;
   for (var k = 0; k < params.length; k++) {
     var pr = params[k];
     if (pr == null || pr.i == null || pr.i < 0 || pr.i >= comp.properties.numItems) continue;
-    if (CP_setMgrtParam(comp.properties[pr.i], pr.kind, pr.value)) n++;
+    if (CP_setMgrtParam(comp.properties[pr.i], pr.kind, pr.value, u)) n++;
   }
   return n;
 }
@@ -3595,7 +3609,7 @@ function CP_sizeFallback(comp, clip, fit, allowRich, scalePct, textScaled) {
     var landed = false;
     try {
       if (comp && comp.properties && fit.i != null && fit.i >= 0 && fit.i < comp.properties.numItems) {
-        landed = CP_setMgrtParam(comp.properties[fit.i], fit.kind, fit.value);
+        landed = CP_setMgrtParam(comp.properties[fit.i], fit.kind, fit.value, CP_compUnits(clip));
       }
     } catch (eL) { landed = false; }
     if (landed) return false;
@@ -3765,7 +3779,7 @@ function CP_insertMogrtCaptions(argsJson) {
             fieldNames = [];
             for (var fn = 0; fn < props.numItems; fn++) fieldNames.push(String(props[fn].displayName || ('#' + fn)));
           }
-          paramsApplied += CP_applyMgrtParams(comp, args.params);   // colour/size/font overrides
+          paramsApplied += CP_applyMgrtParams(comp, args.params, CP_compUnits(clip, compW, compH));   // colour/size/font overrides
 
           // Word-by-word: if this is a word-highlight template, make its highlight
           // sweep across the words over THIS caption's visible length, so it
@@ -3895,7 +3909,7 @@ function CP_insertMogrtCaptions(argsJson) {
       // can revert param-driven styling on some templates, which left e.g. a
       // white box with the template's default white text while the preview was
       // right. CP_applyMgrtParams is idempotent, so a second pass is free.
-      try { if (comp && comp.properties) paramsApplied += CP_applyMgrtParams(comp, args.params); } catch (eReap) {}
+      try { if (comp && comp.properties) paramsApplied += CP_applyMgrtParams(comp, args.params, CP_compUnits(clip, compW, compH)); } catch (eReap) {}
       // Caption SIZE must land even where Premiere refuses the template's own
       // size control (a 171–200 px title template would otherwise caption the
       // whole video at title size): CP_sizeFallback.
@@ -4334,7 +4348,7 @@ function CP_previewMogrt(argsJson) {
     try {
       var pcomp = clip.getMGTComponent();
       if (pcomp) {
-        pParams = CP_applyMgrtParams(pcomp, args.params);
+        pParams = CP_applyMgrtParams(pcomp, args.params, CP_compUnits(clip, args.compW, args.compH));
         try { CP_forceIntroVisible(pcomp, args.params, args.seconds || 4, null, CP_compUnits(clip, args.compW, args.compH)); } catch (eIv) {}   // entrance fitted to the preview length
         var pvScaled = 0;
         if (args.text && pcomp.properties) {
@@ -4400,7 +4414,7 @@ function CP_renderStylePreviews(argsJson) {
           // stl.noIntro / stl.noSweep: the self-test's diagnostic LADDER skips
           // individual writes to isolate which one kills the render on a
           // given machine.
-          try { CP_applyMgrtParams(comp, stl.params || []); } catch (ePr) {}
+          try { CP_applyMgrtParams(comp, stl.params || [], CP_compUnits(clip)); } catch (ePr) {}
           if (!stl.noIntro) { try { CP_forceIntroVisible(comp, stl.params || [], seconds, 'snappy', CP_compUnits(clip)); } catch (eIv) {} }
           if (!stl.noSweep) {
             try {
@@ -4413,7 +4427,7 @@ function CP_renderStylePreviews(argsJson) {
             if (tp) { try { CP_setMgrtText(tp, stl.text, true, stl.textStyle || null); } catch (eTx) {} }
           }
           try { CP_forceRerender(clip); } catch (eRr) {}
-          try { CP_applyMgrtParams(comp, stl.params || []); } catch (ePr2) {}   // re-apply (text writes can revert params)
+          try { CP_applyMgrtParams(comp, stl.params || [], CP_compUnits(clip)); } catch (ePr2) {}   // re-apply (text writes can revert params)
         }
         try { seq.setPlayerPosition(CP_ticksFromSeconds(at)); } catch (eCt) {}
         var qseq = qe.project.getActiveSequence();
@@ -4486,7 +4500,7 @@ function CP_renderMogrtFrames(argsJson) {
     try {
       comp = clip.getMGTComponent();
       if (comp && comp.properties) {
-        if (args.params) { try { CP_applyMgrtParams(comp, args.params); } catch (ePr) {} }
+        if (args.params) { try { CP_applyMgrtParams(comp, args.params, CP_compUnits(clip, args.compW, args.compH)); } catch (ePr) {} }
         if (args.text) {
           var tp = CP_findTextProp(comp.properties, ['text', 'caption', 'title', 'subtitle']);
           if (tp) CP_setMgrtText(tp, args.text, true, args.textStyle || null);
@@ -4497,7 +4511,7 @@ function CP_renderMogrtFrames(argsJson) {
       }
     } catch (eTx) {}
     try { CP_forceRerender(clip); } catch (eRr) {}
-    try { if (comp && comp.properties && args.params) CP_applyMgrtParams(comp, args.params); } catch (ePr2) {}   // text writes can revert params
+    try { if (comp && comp.properties && args.params) CP_applyMgrtParams(comp, args.params, CP_compUnits(clip, args.compW, args.compH)); } catch (ePr2) {}   // text writes can revert params
     if (args.sizeFit) { try { CP_sizeFallback(comp, clip, args.sizeFit, true, rfScale, rfScaled); } catch (eSf) {} }
     var qseq = qe.project.getActiveSequence();
     for (var k = 0; k < times.length; k++) {

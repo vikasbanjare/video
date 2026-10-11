@@ -2141,6 +2141,14 @@ const MUTANTS = [
     repl: "",
     gate: 'CutPilot/test/gates/translate-hinglish.js',
     why: 'Translate to has no Hinglish'
+  },
+  {
+    name: 'v20-scale-raw-percent',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "    point = (c0 > 0 && c0 < 1);",
+    repl: "    point = false;",
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'a Premium template\'s Scale gets the percent raw: 41% shows as 44506.8%, one giant letter fills the frame (the owner\'s Flux Orbit)'
   }
 ];
 

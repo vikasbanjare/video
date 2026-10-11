@@ -155,7 +155,11 @@ function replay(file, args, W, H) {
         vals[i] = JSON.stringify({ capPropFontEdit: true, capPropTextRunCount: 1, textEditValue: 'x', capPropTextRunLength: [1],
           fontEditValue: [String(f.fontEditValue)], fontSizeEditValue: [Number(f.fontSizeEditValue)], fontFSBoldValue: [false],
           fontFSAllCapsValue: [false], fontFSItalicValue: [false], fillColorEditValue: [[1, 1, 1]] });
-      } else if (c.type === 9) vals[i] = c.value.slice();
+      } else if (c.type === 9) {
+        // as Premiere holds a template's Scale: x and y as FRACTIONS of the comp
+        // (the owner's Flux Orbit showed 44506.8% when a percent went in raw)
+        vals[i] = [c.value[0] / def.comp.x, c.value[1] / def.comp.y].concat(c.value.slice(2));
+      }
       else if (c.type === 5) vals[i] = { x: c.value.x, y: c.value.y };
       else if (c.type === 10) vals[i] = 'b7358fe1-9ef6-4156-9886-6834d89c8406;bed39a3c-2f72-4bad-93a2-3b3b54bfe4e0';
       else if (c.type === 8) vals[i] = '{"strDB":[{"localeString":"en_US","str":"note"}]}';
@@ -362,7 +366,10 @@ async function magicRun(page, mode) {
           const capPct = px * 0.72 / short * 100;
           if (capPct < 4.5 || capPct > 5.5) bad('B', tag + ': cap height ' + capPct.toFixed(2) + '% of the short side (font ' + px.toFixed(0) + ' px)');
           const c0 = rp.clips[0];
-          if (c0 && def.scale && Math.abs(Number(c0.vals[def.scale.i][0]) - lsc) > 0.01) bad('B', tag + ': the Scale control did not take ' + lsc + '% in the graphic');
+          if (c0 && def.scale) {
+            const sx = Number(c0.vals[def.scale.i][0]) * def.comp.x, sy = Number(c0.vals[def.scale.i][1]) * def.comp.y;   // what Premiere shows
+            if (Math.abs(sx - lsc) > 0.01 || Math.abs(sy - lsc) > 0.01) bad('B', tag + ': the Scale control shows ' + sx.toFixed(1) + '% × ' + sy.toFixed(1) + '%, not ' + lsc + '% (Premiere holds it as a fraction of the comp)');
+          }
           if (c0 && def.textScale && Math.abs(Number(c0.vals[def.textScale.i]) - tsc) > 0.01) bad('B', tag + ': Text Scale did not take ' + tsc);
           if (c0 && ss !== 1) {
             const blob = JSON.parse(c0.vals[def.text.i]);
