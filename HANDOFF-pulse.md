@@ -1,10 +1,24 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.18** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.19** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.19 — Hinglish in Translate to; Premium visibility check
+- Owner: "in transcribe I want in language section Hinglish option also".
+  WHISPER_LANGS / SWARA_LANGS already had it; TRANSLATE_LANGS did not →
+  'hinglish|Hinglish' added, translateTranscript explains Hinglish to the
+  model (Roman letters, English words kept, Devanagari only re-scripted).
+- Owner: "premium captions are not working". His v0.10.18 diagnostics: all
+  of Test everything ✅ incl. "Every editable style shows its words — all
+  128", editable render-check visible; Premium Flux_Orbit inserted 6 with no
+  error, but Premium (applyMogrtWithPath) had NO visibility check → now
+  before/after frames + verifyEditableVisible like editable. NEXT: his
+  render-check line for a Premium insert + what "not working" means.
+- CP_DEBUG_EXT.premium.reloadTemplates (test panels learn the install path
+  after boot). Gates translate-hinglish, premium-visible; mutations v19-*.
 
 ### v0.10.18 — stress-test fixes
 The owner: "pressure test and check all the tools, any error we have not
