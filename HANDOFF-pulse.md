@@ -1,10 +1,24 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.19** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.20** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.20 — Premium captions: the template's Scale in Premiere's units
+The owner's screenshot (Flux Orbit): Text Control → Scale 44506.8 × 44506.8,
+one giant orange letter filling the frame. premBuild sent sizeFit
+{kind:'scale', value:41.21} (67% × 0.615); CP_setScaleParam wrote it raw,
+but Premiere holds a template's [x, y(, z)] Scale like a point — x/compW,
+y/compH (67% reads back 0.062) — and the read-back used the same wrong
+units. Now: a stored x below 1 = that form → [sv/u.w, sv·ratio/u.h, z…];
+CP_setMgrtParam / CP_applyMgrtParams take u = CP_compUnits(clip, compW,
+compH) at every call. premium-fit's imitation stores Scale as Premiere does.
+Test everything's Premium row now places EVERY Premium template the way
+"✨ Caption with this" does (premBuildSample), fails "no words" or "> 35% of
+the frame". Mutations v20-*. The owner's "editing tab: different options":
+each Premium template shows its own controls — ask if he meant more.
 
 ### v0.10.19 — Hinglish in Translate to; Premium visibility check
 - Owner: "in transcribe I want in language section Hinglish option also".
