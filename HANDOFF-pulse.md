@@ -1,10 +1,27 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.17** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.18** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.18 — stress-test fixes
+The owner: "pressure test and check all the tools, any error we have not
+detected". Full battery (158/159, whisper-transcribe skipped: no model
+download here) and all 258 mutations caught. Stress probes (scratchpad
+fuzz/): 3,000+ generated transcripts through every pure module (no throw
+even on NaN/Infinity input; 3-hour transcript < 200 ms per step); all 41
+host entry points fed bad JSON (always a JSON answer); caption burn-in on
+hostile folder names via real ffmpeg; 40,000 face/mark crops in-frame;
+real mouse double clicks on a real-speed Premiere. Found and fixed:
+- a double click did the work twice (Viral edit zooms, Add SFX, 📝 Premiere
+  captions, markers) → document capture-phase guard: the same action
+  button's trusted second click within 1.5 s is dropped (ACTION_BTNS + the
+  shorts card buttons, data-act); Pulse's own .click() untouched.
+- overlapping speech stamps made regroupWords / wordsToCues / sentenceCues
+  build captions ending before they start → end = latest word end.
+Gates actions-double-click, captions-messy-timing; mutations v18-*.
 
 ### v0.10.17 — every editable style checked on every Test everything
 The owner confirmed ✏️ editable captions work after v0.10.16 and asked that
