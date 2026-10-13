@@ -12806,8 +12806,26 @@
     return (_capOut === 'editable') ? carryableStyle(p) : renderableStyle(p);
   }
 
+  /* A style's own look for EDITABLE captions (preset.editable), where
+     Premiere's engine cannot draw what the Pulse-rendered caption does — e.g.
+     Green Word Box's box behind the spoken word becomes a bright-green spoken
+     word with a dark halo. Each override applies only while that setting is
+     still the style's own: a colour the owner picked always wins. Used by the
+     editable preview and by what is sent, so they agree. */
+  function editableLook(p) {
+    if (!p || !p.editable) return p;
+    var base = null;
+    try { base = CPCaptions.TEMPLATES.filter(function (t) { return t.id === p.id; })[0] || null; } catch (e) { base = null; }
+    var o = {}, k;
+    for (k in p) if (p.hasOwnProperty(k)) o[k] = p[k];
+    for (k in p.editable) {
+      if (!p.editable.hasOwnProperty(k)) continue;
+      if (!base || p[k] === base[k] || (p[k] == null && base[k] == null)) o[k] = p.editable[k];
+    }
+    return o;
+  }
   function carryableStyle(p) {
-    p = p || {};
+    p = editableLook(p || {});
     // Word-by-word is the product's signature: the sweep is ON for EVERY style
     // unless it explicitly opts out (wordHl:false — 4 quiet/minimal templates) or
     // the user unticks the toggle. keyword:false only ever meant "no static
@@ -12997,6 +13015,7 @@
      mapper. `props` are CP_inspectMogrt's LIVE records ({i,name,kind,num,point}). */
   function mapPresetToFlux(preset, props) {
     if (!preset || !props || !props.length) return null;
+    preset = editableLook(preset);
     var byName = {};
     for (var i = 0; i < props.length; i++) {
       // normalize: lowercase, collapse spaces — display names are otherwise exact
