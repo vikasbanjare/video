@@ -75,7 +75,7 @@ const FLUX = ['Text Color', 'Highlighted Word Color 1', 'Highlighted Word Color 
       const k = (y * im.w + x) * 4, p = [im.px[k], im.px[k + 1], im.px[k + 2], im.px[k + 3]];
       if (test(p)) { n++; if (x < x0) x0 = x; if (x > x1) x1 = x; }
     }
-    return { n, cx: n ? (x0 + x1) / 2 : null };
+    return { n, cx: n ? (x0 + x1) / 2 : null, x0, x1 };
   }
   const gf = r.files['pack-green-word-box'] || [];
   if (gf.length < 2) bad('B. Green Word Box rendered ' + gf.length + ' frame(s)');
@@ -91,6 +91,23 @@ const FLUX = ['Text Color', 'Highlighted Word Color 1', 'Highlighted Word Color 
     const im = img(mf[0]), m = scan(im, isMaroon), w = scan(im, isWhite);
     (m.n > 3000 && w.n > 500 && Math.abs(m.cx - w.cx) < 40 ? ok : bad)('B. Maroon Label: a maroon label with the white words on it (' + m.n + ' maroon px, ' + w.n + ' white px)');
   }
+  // the reel's animation: the SPOKEN word grows, the label stays its size; square corners
+  if (mf.length < 3) bad('B. Maroon Label: only ' + mf.length + ' frame(s) — the spoken word does not move word by word');
+  else {
+    const f0 = img(mf[0]), f2 = img(mf[mf.length - 1]);
+    const b0 = scan(f0, isMaroon), b2 = scan(f2, isMaroon), w0 = scan(f0, isWhite), w2 = scan(f2, isWhite);
+    // a square corner: the box's own corner pixel is maroon
+    let corner = false;
+    for (let y = 0; y < f0.h && !corner; y++) { const k = (y * f0.w + b0.x0) * 4; if (isMaroon([f0.px[k], f0.px[k + 1], f0.px[k + 2], f0.px[k + 3]])) {
+      const k2 = ((y + 1) * f0.w + b0.x0) * 4; corner = isMaroon([f0.px[k2], f0.px[k2 + 1], f0.px[k2 + 2], f0.px[k2 + 3]]); } }
+    // the spoken word is bigger: more white on its side of the line (first word: left; last: right)
+    const half = (im, lo, hi) => { let n = 0; for (let y = 0; y < im.h; y++) for (let x = lo; x < hi; x++) { const k = (y * im.w + x) * 4; if (isWhite([im.px[k], im.px[k + 1], im.px[k + 2], im.px[k + 3]])) n++; } return n; };
+    const mid = Math.round((b0.x0 + b0.x1) / 2);
+    const lr0 = half(f0, 0, mid) / Math.max(1, half(f0, mid, f0.w)), lr2 = half(f2, 0, mid) / Math.max(1, half(f2, mid, f2.w));
+    (Math.abs(b0.x0 - b2.x0) <= 2 && Math.abs(b0.x1 - b2.x1) <= 2 && lr0 > lr2 * 1.15 && corner ? ok : bad)(
+      'B. Maroon Label: the spoken word grows while the label keeps its size (box ' + b0.x0 + '–' + b0.x1 + ' then ' + b2.x0 + '–' + b2.x1 +
+      ', white left:right ' + lr0.toFixed(2) + ' then ' + lr2.toFixed(2) + '), square corners: ' + corner);
+  }
 
   // C. editable
   const S = (id, name) => { const e = (r.sent[id] || []).find(x => x[0] === name); return e ? e[1] : undefined; };
@@ -99,7 +116,7 @@ const FLUX = ['Text Color', 'Highlighted Word Color 1', 'Highlighted Word Color 
   (S('pack-green-word-box', 'Text Color') === '#FFFFFF' && gh && parseInt(gh.slice(3, 5), 16) > parseInt(gh.slice(1, 3), 16) && lum(gh) > 0.45 &&
    S('pack-green-word-box', 'Shadow On/Off') === true && S('pack-green-word-box', 'Shadow Opacity') >= 50 && S('pack-green-word-box', 'BG Opacity') === 0 ? ok : bad)(
     'C. editable Green Word Box: white words, a bright-green spoken word (' + gh + '), a dark halo (' + S('pack-green-word-box', 'Shadow Opacity') + '%), no line box');
-  (/^#7E2F33$/i.test(S('pack-maroon-label', 'BG Color') || '') && S('pack-maroon-label', 'BG Roundness') === 0 && S('pack-maroon-label', 'BG Opacity') >= 80 &&
+  (/^#7A3034$/i.test(S('pack-maroon-label', 'BG Color') || '') && S('pack-maroon-label', 'BG Roundness') === 0 && S('pack-maroon-label', 'BG Opacity') >= 80 &&
    S('pack-maroon-label', 'Shadow On/Off') === true && S('pack-maroon-label', 'Shadow Opacity') >= 40 ? ok : bad)(
     'C. editable Maroon Label: a square maroon box (' + S('pack-maroon-label', 'BG Color') + ', ' + S('pack-maroon-label', 'BG Opacity') + '%) and a dark shadow (' + S('pack-maroon-label', 'Shadow Opacity') + '%)');
   // D

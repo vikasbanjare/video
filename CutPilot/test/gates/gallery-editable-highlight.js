@@ -48,7 +48,9 @@ function dist(a, b) { const x = rgb(a), y = rgb(b); if (!x || !y) return 999; re
   const res = await page.evaluate(async () => {
     const D = window.CP_DEBUG, C = window.CPCaptions, Rn = window.CPRender;
     if (!D || !D.carryableStyle) return { fatal: 'CP_DEBUG.carryableStyle missing' };
-    const rows = C.TEMPLATES.filter(t => t.wordHl !== false).map(t => {
+    // a style that sweeps in editable mode (its own editable look may keep the
+    // words still: Maroon Label grows the spoken word, which the engine cannot)
+    const rows = C.TEMPLATES.filter(t => t.wordHl !== false && !(t.editable && t.editable.wordHl === false)).map(t => {
       const cs = D.carryableStyle(t);
       return { id: t.id, name: t.name, fill: t.fill, ownHl: t.highlight, box: t.boxColor || null,
                hl: cs.highlight, csFill: cs.fill, csBox: cs.boxColor };

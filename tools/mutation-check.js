@@ -2197,6 +2197,22 @@ const MUTANTS = [
     repl: "",
     gate: 'CutPilot/test/gates/gallery-from-my-videos.js',
     why: 'Green Word Box goes editable as a dark-green word on white text with no halo'
+  },
+  {
+    name: 'v21-box-not-steady',
+    file: 'CutPilot/js/render.js',
+    find: "        if (style.boxSteady && line.restWidth > 0 && line.restWidth < line.width) {",
+    repl: "        if (false) {",
+    gate: 'CutPilot/test/gates/gallery-from-my-videos.js',
+    why: 'Maroon Label\'s box widens and narrows with every spoken word'
+  },
+  {
+    name: 'v21-radius-zero-rounded',
+    file: 'CutPilot/js/render.js',
+    find: "      boxRadius: Math.round((o.boxRadius != null ? o.boxRadius : (preset.boxRadius != null ? preset.boxRadius : 10)) * scale),",
+    repl: "      boxRadius: Math.round(((o.boxRadius != null ? o.boxRadius : preset.boxRadius) || 10) * scale),",
+    gate: 'CutPilot/test/gates/gallery-from-my-videos.js',
+    why: 'a square box (roundness 0) comes out rounded'
   }
 ];
 
