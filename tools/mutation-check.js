@@ -2185,8 +2185,8 @@ const MUTANTS = [
   {
     name: 'v21-green-box-not-mine',
     file: 'CutPilot/js/captions.js',
-    find: "      \"category\": \"🎬 From My Videos\",\n      \"popularity\": 100,\n      \"layout\": \"bottom\",\n      \"posPct\": 69,",
-    repl: "      \"category\": \"🎤 Karaoke\",\n      \"popularity\": 100,\n      \"layout\": \"bottom\",\n      \"posPct\": 69,",
+    find: "    'pack-green-word-box': [_MV, _K], 'pack-maroon-label': [_MV, _M],",
+    repl: "    'pack-green-word-box': [_K], 'pack-maroon-label': [_M],",
     gate: 'CutPilot/test/gates/gallery-from-my-videos.js',
     why: 'the reel styles leave From My Videos'
   },
