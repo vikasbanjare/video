@@ -70,12 +70,12 @@ const FLUX = ['Text Color', 'Highlighted Word Color 1', 'Highlighted Word Color 
   const isMaroon = (p) => p[0] > 95 && p[0] < 160 && p[1] < 70 && p[2] < 75 && p[3] > 150;
   const isWhite = (p) => p[0] > 235 && p[1] > 235 && p[2] > 235 && p[3] > 200;
   function scan(im, test) {
-    let n = 0, x0 = 1e9, x1 = -1;
+    let n = 0, x0 = 1e9, x1 = -1, y0 = 1e9;
     for (let y = 0; y < im.h; y++) for (let x = 0; x < im.w; x++) {
       const k = (y * im.w + x) * 4, p = [im.px[k], im.px[k + 1], im.px[k + 2], im.px[k + 3]];
-      if (test(p)) { n++; if (x < x0) x0 = x; if (x > x1) x1 = x; }
+      if (test(p)) { n++; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; }
     }
-    return { n, cx: n ? (x0 + x1) / 2 : null, x0, x1 };
+    return { n, cx: n ? (x0 + x1) / 2 : null, x0, x1, y0 };
   }
   const gf = r.files['pack-green-word-box'] || [];
   if (gf.length < 2) bad('B. Green Word Box rendered ' + gf.length + ' frame(s)');
@@ -96,10 +96,10 @@ const FLUX = ['Text Color', 'Highlighted Word Color 1', 'Highlighted Word Color 
   else {
     const f0 = img(mf[0]), f2 = img(mf[mf.length - 1]);
     const b0 = scan(f0, isMaroon), b2 = scan(f2, isMaroon), w0 = scan(f0, isWhite), w2 = scan(f2, isWhite);
-    // a square corner: the box's own corner pixel is maroon
-    let corner = false;
-    for (let y = 0; y < f0.h && !corner; y++) { const k = (y * f0.w + b0.x0) * 4; if (isMaroon([f0.px[k], f0.px[k + 1], f0.px[k + 2], f0.px[k + 3]])) {
-      const k2 = ((y + 1) * f0.w + b0.x0) * 4; corner = isMaroon([f0.px[k2], f0.px[k2 + 1], f0.px[k2 + 2], f0.px[k2 + 3]]); } }
+    // a square corner: the pixel just inside the box's top-left corner is maroon
+    // (a rounded box leaves it empty)
+    const kc = ((b0.y0 + 1) * f0.w + b0.x0 + 1) * 4;
+    const corner = isMaroon([f0.px[kc], f0.px[kc + 1], f0.px[kc + 2], f0.px[kc + 3]]);
     // the spoken word is bigger: more white on its side of the line (first word: left; last: right)
     const half = (im, lo, hi) => { let n = 0; for (let y = 0; y < im.h; y++) for (let x = lo; x < hi; x++) { const k = (y * im.w + x) * 4; if (isWhite([im.px[k], im.px[k + 1], im.px[k + 2], im.px[k + 3]])) n++; } return n; };
     const mid = Math.round((b0.x0 + b0.x1) / 2);
