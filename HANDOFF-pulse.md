@@ -1,10 +1,33 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.20** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.21** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.21 — the owner's two reels as styles; caption-file fixes
+The owner sent two reference reels (uploads bhai_01.mp4, bhai_02.mp4) to add
+under 🎬 From My Videos, as close as possible (colours, fonts, animation),
+Pulse-rendered and editable:
+- pack-green-word-box (bhai_01): white bold caps (Montserrat → Avenir Next),
+  thin dark outline + small shadow, spoken word in a #04420E rounded box
+  that jumps word to word, 4 words, 69% down.
+- pack-maroon-label (bhai_02): Poppins (→ Futura), #7A3034 square label,
+  dark drop shadow, the spoken word grows 25% in white while the label keeps
+  its resting size (render.js boxSteady), 77% down.
+- preset.editable: a style's own editable look (editableLook in main.js),
+  applied unless the owner changed that setting — green: bright-green
+  spoken word + dark halo (the engine cannot box one word); maroon: words
+  still (the engine cannot grow one word), stronger shadow.
+- Pulse keeps a readable minimum size, so captions are a touch bigger than
+  the reels (the Size slider makes them smaller).
+Also: box roundness 0 was read as unset (|| 10) in render.js and the
+editor; parseSRT rewritten (VTT times without hours, fractions, no blank
+lines between captions, formatting tags); cuesToVTT wrote 00:00:01.1000;
+panel-proofs' Hindi check compares pictures (a button style's box made real
+Hindi look like tofu). Gates gallery-from-my-videos, captions-srt-parse;
+mutations v21-*. Battery 164/165 (whisper-transcribe skipped here, green in CI).
 
 ### v0.10.20 — Premium captions: the template's Scale in Premiere's units
 The owner's screenshot (Flux Orbit): Text Control → Scale 44506.8 × 44506.8,
