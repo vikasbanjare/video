@@ -2157,6 +2157,46 @@ const MUTANTS = [
     repl: "                        : '';",
     gate: 'CutPilot/test/gates/selftest-premiere.js',
     why: 'Test everything says ✅ while a Premium template fills the frame with one giant letter'
+  },
+  {
+    name: 'v21-vtt-no-hours',
+    file: 'CutPilot/js/captions.js',
+    find: "    var m = /(?:(\\d+):)?(\\d+):(\\d+)(?:[,.](\\d+))?/.exec(String(t || '').trim());",
+    repl: "    var m = /(\\d+):(\\d+):(\\d+)[,.](\\d+)/.exec(String(t || '').trim()); if (m) m = [m[0], m[1], m[2], m[3], m[4]];",
+    gate: 'CutPilot/test/gates/captions-srt-parse.js',
+    why: 'a WebVTT time without hours reads as 0 — every caption piles up at the start'
+  },
+  {
+    name: 'v21-fraction-as-ms',
+    file: 'CutPilot/js/captions.js',
+    find: "    var frac = m[4] ? (+m[4]) / Math.pow(10, m[4].length) : 0;",
+    repl: "    var frac = m[4] ? (+m[4]) / 1000 : 0;",
+    gate: 'CutPilot/test/gates/captions-srt-parse.js',
+    why: '00:00:01.5 reads as 1.005 s'
+  },
+  {
+    name: 'v21-tags-kept',
+    file: 'CutPilot/js/captions.js',
+    find: "    return t.replace(/<\\/?[a-z][^>]*>/gi, '').replace(/<\\d[\\d:.,]*>/g, '').replace(/\\{\\\\[^}]*\\}/g, '')",
+    repl: "    return t",
+    gate: 'CutPilot/test/gates/captions-srt-parse.js',
+    why: 'formatting tags show up as letters in the captions'
+  },
+  {
+    name: 'v21-green-box-not-mine',
+    file: 'CutPilot/js/captions.js',
+    find: "    'pack-green-word-box': [_MV, _K], 'pack-maroon-label': [_MV, _M],",
+    repl: "",
+    gate: 'CutPilot/test/gates/gallery-from-my-videos.js',
+    why: 'the reel styles leave From My Videos'
+  },
+  {
+    name: 'v21-editable-look-ignored',
+    file: 'CutPilot/js/main.js',
+    find: "    preset = editableLook(preset);\n",
+    repl: "",
+    gate: 'CutPilot/test/gates/gallery-from-my-videos.js',
+    why: 'Green Word Box goes editable as a dark-green word on white text with no halo'
   }
 ];
 

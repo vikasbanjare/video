@@ -150,7 +150,8 @@
       // caption rounded to 1 px, and the preview lost the outline the render has
       strokeWidth: Math.round(strokeW * scale * 100) / 100,
       boxColor: box,
-      boxRadius: Math.round(((o.boxRadius != null ? o.boxRadius : preset.boxRadius) || 10) * scale),
+      // 0 is a square box, not "unset" (|| 10 rounded every square corner)
+      boxRadius: Math.round((o.boxRadius != null ? o.boxRadius : (preset.boxRadius != null ? preset.boxRadius : 10)) * scale),
       glow: (o.glow !== undefined) ? o.glow : (preset.glow || null),
       glowBlur: (o.glowBlur != null) ? o.glowBlur : (preset.glowBlur != null ? preset.glowBlur : 0.35),
       // Fractional, not whole pixels: canvas letter spacing takes 0.01 px steps.
@@ -167,6 +168,7 @@
       highlightColors: o.highlightColors || preset.highlightColors || null,    // cycle colours word-to-word
       boxOpacity: (o.boxOpacity != null) ? o.boxOpacity : (preset.boxOpacity != null ? preset.boxOpacity : 1),
       boxPad: (o.boxPad != null) ? o.boxPad : (preset.boxPad != null ? preset.boxPad : 1),  // padding multiplier
+      boxSteady: !!preset.boxSteady,
       shadowDX: Math.round(((o.shadowDX != null ? o.shadowDX : (preset.shadowDX || 0))) * scale),
       shadowDY: Math.round(((o.shadowDY != null ? o.shadowDY : (preset.shadowDY || 0))) * scale),
       wordSpacing: Math.round(((o.wordSpacing != null ? o.wordSpacing : (preset.wordSpacing || 0))) * scale),
@@ -673,16 +675,17 @@
     _lsNow = null;                                   // the measurer moved the canvas's spacing
     var lines = [];
     for (var lr0 = 0; lr0 < lay.lines.length; lr0++) {
-      var L0 = lay.lines[lr0], items0 = [], wsum = 0, hMax = base;
+      var L0 = lay.lines[lr0], items0 = [], wsum = 0, rsum = 0, hMax = base;
       for (var k0 = L0.from; k0 < L0.to; k0++) {
         var m0 = lay.items[k0], hlNow = isHL(m0.src);
         var it0 = { word: m0.word, src: m0.src, hl: hlNow, px: hlNow ? m0.hlPx : m0.px,
                     w: hlNow ? (wordSync && !m0.stat ? m0.wh : m0.w) : m0.w };
         items0.push(it0);
-        wsum += it0.w;
+        wsum += it0.w; rsum += m0.w;
         hMax = Math.max(hMax, wordSync ? m0.hlPx : it0.px);   // the widest case: boxes never change size mid-caption
       }
       lines.push({ items: items0, width: wsum + spaceW * Math.max(0, items0.length - 1), height: hMax,
+                   restWidth: rsum + spaceW * Math.max(0, items0.length - 1),   // every word at its normal size
                    spaceW: spaceW, scale: 1, asc: L0.asc, desc: L0.desc, deva: L0.deva });
     }
     // two-tier "stacked" editorial look: lines after the first shrink to subScale.
@@ -841,6 +844,12 @@
         var padX = base * 0.32 * style.boxPad, padY = base * 0.22 * style.boxPad;
         var bxTop = y - line.height - padY + line.height * 0.18, bxH = line.height + padY * 2;
         var bxLeft = x - padX, bxW = line.width + padX * 2;
+        // boxSteady: the box keeps the size of the line at rest and the spoken
+        // word grows past it (the owner's Maroon Label reel) — it no longer
+        // widens and narrows with every word
+        if (style.boxSteady && line.restWidth > 0 && line.restWidth < line.width) {
+          bxLeft = x + (line.width - line.restWidth) / 2 - padX; bxW = line.restWidth + padX * 2;
+        }
         barTop = bxTop; barH = bxH;
         ctx.save();
 

@@ -3004,12 +3004,9 @@
 
   // ---- export the transcript as a real file (SRT / VTT / plain text) ----------
   function cuesToVTT(cues) {
-    function ts(s) {
-      s = Math.max(0, s || 0);
-      var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60), ms = Math.round((s - Math.floor(s)) * 1000);
-      function p(n, w) { n = String(n); while (n.length < w) n = '0' + n; return n; }
-      return p(h, 2) + ':' + p(m, 2) + ':' + p(sec, 2) + '.' + p(ms, 3);
-    }
+    // the SRT clock with a dot (whole milliseconds first: 1.9996 s rounded its
+    // fraction to "1000" and wrote the invalid 00:00:01.1000)
+    function ts(s) { return CPCaptions.secondsToSrtTime(Math.max(0, s || 0)).replace(',', '.'); }
     var out = 'WEBVTT\n\n';
     for (var i = 0; i < cues.length; i++) out += ts(cues[i].start) + ' --> ' + ts(cues[i].end) + '\n' + cues[i].text + '\n\n';
     return out;
@@ -7954,7 +7951,7 @@
       font: o.font, fallbackFonts: currentPreset().fallbackFonts || [],
       fontSize: o.fontSize, fill: o.fill, highlight: o.highlight,
       stroke: o.strokeWidth ? o.stroke : null, strokeWidth: o.strokeWidth,
-      boxColor: o.boxColor, boxRadius: o.boxRadius != null ? o.boxRadius : (currentPreset().boxRadius || 10),
+      boxColor: o.boxColor, boxRadius: o.boxRadius != null ? o.boxRadius : (currentPreset().boxRadius != null ? currentPreset().boxRadius : 10),
       boxColor2: o.boxColor2, boxOpacity: o.boxOpacity, boxPad: o.boxPad,
       // button-pack box effects so a saved/duplicated button keeps its look
       boxStroke: o.boxStroke, boxStrokeWidth: o.boxStrokeWidth, boxGlow: o.boxGlow,

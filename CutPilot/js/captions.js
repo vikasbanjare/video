@@ -12,11 +12,13 @@
 })(typeof window !== 'undefined' ? window : this, function () {
   'use strict';
 
-  /* "00:01:02,345" -> seconds */
+  /* "00:01:02,345" -> seconds. Also "01:02.345" (VTT without hours) and a
+     fraction of any length ("1.5" is half a second, not 5 ms). */
   function srtTimeToSeconds(t) {
-    var m = /(\d+):(\d+):(\d+)[,.](\d+)/.exec(t.trim());
+    var m = /(?:(\d+):)?(\d+):(\d+)(?:[,.](\d+))?/.exec(String(t || '').trim());
     if (!m) return 0;
-    return (+m[1]) * 3600 + (+m[2]) * 60 + (+m[3]) + (+m[4]) / 1000;
+    var frac = m[4] ? (+m[4]) / Math.pow(10, m[4].length) : 0;
+    return (+(m[1] || 0)) * 3600 + (+m[2]) * 60 + (+m[3]) + frac;
   }
 
   function secondsToSrtTime(sec) {
@@ -29,23 +31,37 @@
     return p(h, 2) + ':' + p(min, 2) + ':' + p(s, 2) + ',' + p(ms, 3);
   }
 
-  /* Parse SRT text into [{start, end, text}] */
+  /* Parse SRT (or WebVTT) text into [{start, end, text}]. Line by line: a
+     timing line starts a caption, its text runs to a blank line or the next
+     timing line — so a file with no blank lines between captions does not
+     swallow the next caption into this one. A number right before a timing
+     line is its index. Formatting tags (<b>, <i>, VTT <v Name>, <00:01.000>,
+     {\an8}) are dropped: they used to show as letters in the captions. */
+  var TIMING_RE = /((?:\d+:)?\d+:\d+(?:[,.]\d+)?)\s*-->\s*((?:\d+:)?\d+:\d+(?:[,.]\d+)?)/;
+  function cleanCueText(t) {
+    return t.replace(/<\/?[a-z][^>]*>/gi, '').replace(/<\d[\d:.,]*>/g, '').replace(/\{\\[^}]*\}/g, '')
+            .replace(/[ \t]+\n/g, '\n').trim();
+  }
   function parseSRT(text) {
-    var blocks = text.replace(/\r/g, '').split(/\n\n+/);
-    var cues = [];
-    for (var i = 0; i < blocks.length; i++) {
-      var lines = blocks[i].split('\n').filter(function (l) { return l.trim() !== ''; });
-      if (!lines.length) continue;
-      if (/^\d+$/.test(lines[0].trim())) lines.shift(); // optional index line
-      if (!lines.length) continue;
-      var tm = /([\d:,.]+)\s*-->\s*([\d:,.]+)/.exec(lines[0]);
-      if (!tm) continue;
-      cues.push({
-        start: srtTimeToSeconds(tm[1]),
-        end: srtTimeToSeconds(tm[2]),
-        text: lines.slice(1).join('\n').trim()
-      });
+    var lines = String(text || '').replace(/^\ufeff/, '').replace(/\r/g, '').split('\n');
+    var cues = [], cur = null;
+    function close() {
+      if (cur) { cur.text = cleanCueText(cur.lines.join('\n')); delete cur.lines; cues.push(cur); cur = null; }
     }
+    for (var i = 0; i < lines.length; i++) {
+      var ln = lines[i], tm = TIMING_RE.exec(ln);
+      if (tm) {
+        close();
+        cur = { start: srtTimeToSeconds(tm[1]), end: srtTimeToSeconds(tm[2]), lines: [] };
+        continue;
+      }
+      if (!cur) continue;
+      if (ln.trim() === '') { if (cur.lines.length) close(); continue; }
+      // an index line: a bare number with the next timing line right after it
+      if (/^\d+$/.test(ln.trim()) && i + 1 < lines.length && TIMING_RE.test(lines[i + 1])) { close(); continue; }
+      cur.lines.push(ln);
+    }
+    close();
     return cues;
   }
 
@@ -1464,7 +1480,7 @@
       "category": "🎬 From My Videos",
       "popularity": 100,
       "layout": "bottom",
-      "posPct": 72,
+      "posPct": 69,
       "keyword": true,
       "highlightScale": 1,
       "font": "Montserrat",
@@ -1473,11 +1489,15 @@
       "fontSize": 48,
       "letterSpacing": -2,
       "fill": "#FFFFFF",
-      "highlight": "#0E4A1C",
+      "highlight": "#04420E",
       "highlightStyle": "box",
       "boxColor": null,
       "stroke": "#0A0A0A",
       "strokeWidth": 4,
+      "glow": "#000000",
+      "glowBlur": 0.12,
+      "shadowDX": 1,
+      "shadowDY": 2,
       "uppercase": true,
       "wordsPerCue": 4,
       "anim": "karaoke",
@@ -1490,19 +1510,20 @@
       "category": "🎬 From My Videos",
       "popularity": 100,
       "layout": "bottom",
-      "posPct": 74,
+      "posPct": 77,
       "keyword": false,
-      "highlightScale": 1,
-      "font": "Montserrat",
+      "highlightScale": 1.25,
+      "font": "Poppins",
       "weight": 800,
-      "fallbackFonts": ["Poppins", "Inter", "Arial Black", "sans-serif"],
+      "fallbackFonts": ["Montserrat", "Inter", "Arial Black", "sans-serif"],
       "fontSize": 46,
       "fill": "#FFFFFF",
       "highlight": "#FFFFFF",
-      "boxColor": "#7E2F33",
-      "boxOpacity": 0.9,
+      "boxColor": "#7A3034",
+      "boxOpacity": 0.88,
       "boxRadius": 0,
       "boxPad": 1.3,
+      "boxSteady": true,
       "glow": "#000000",
       "glowBlur": 0.08,
       "shadowDX": 2,
@@ -1511,10 +1532,10 @@
       "strokeWidth": 0,
       "uppercase": true,
       "wordsPerCue": 3,
-      "wordHl": false,
-      "anim": "none",
-      "editable": { "glowBlur": 0.6 },
-      "animNotes": "One to three words in white bold caps with a small dark drop shadow on a square maroon label (learned from the owner's reference reel bhai_02)."
+      "wordHl": true,
+      "anim": "karaoke",
+      "editable": { "glowBlur": 0.6, "wordHl": false },
+      "animNotes": "One to three words in white bold caps with a small dark drop shadow on a square maroon label; the SPOKEN word grows a quarter bigger, same white (learned from the owner's reference reel bhai_02). Editable: Premiere's engine cannot grow one word, so the words stay still there."
     },
     {
       "id": "pack-neon",

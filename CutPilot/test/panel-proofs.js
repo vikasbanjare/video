@@ -1081,15 +1081,24 @@ function fluxProps() {
   const hindi = await page.evaluate(async () => {
     const R = window.CPRender, C = window.CPCaptions;
     const A = 'कमल', B = 'नमन';
-    const ink = (words, style) => {
+    const draw = (words, style) => {
       const cv = document.createElement('canvas'); cv.width = 1080; cv.height = 600;
       R.drawFrame(cv, { words: words, active: 0 }, style);
-      const d = cv.getContext('2d').getImageData(0, 0, 1080, 600).data;
-      let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] >= 96) n++;
+      return cv.getContext('2d').getImageData(0, 0, 1080, 600).data;
+    };
+    const inkOf = (d) => { let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] >= 96) n++; return n; };
+    const ink = (words, style) => inkOf(draw(words, style));
+    // how many pixels differ between the two words' pictures: tofu boxes are
+    // the same picture; real glyphs are not. (Comparing ink TOTALS failed on a
+    // button style, whose solid box is most of the ink — 3D Push Button drew
+    // real Hindi and was called tofu.)
+    const differ = (A, B, style) => {
+      const a = draw([A], style), b = draw([B], style); let n = 0;
+      for (let i = 0; i < a.length; i += 4) if (Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]) + Math.abs(a[i + 3] - b[i + 3]) > 96) n++;
       return n;
     };
     const plain = R.styleForFrame({ fill: '#ffffff', fontSize: 90 }, 600, { yPct: 0.5, vCenter: true }, 1080);
-    const control = { a: ink([A], plain), b: ink([B], plain) };
+    const control = { a: ink([A], plain), b: ink([B], plain), d: differ(A, B, plain) };
     const out = [];
     const T = (C.TEMPLATES || []);
     const step = Math.max(1, Math.floor(T.length / 12));
@@ -1097,19 +1106,20 @@ function fluxProps() {
       const t = T[i];
       const st = R.styleForFrame(t, 600, { yPct: 0.5, vCenter: true, fontSize: t.fontSize || 90 }, 1080);
       out.push({ id: t.id, font: t.font, chain: st.fallbacks,
-                 a: ink([A], st), b: ink([B], st), lat: ink(['Hello'], st) });
+                 a: ink([A], st), b: ink([B], st), d: differ(A, B, st), lat: ink(['Hello'], st) });
     }
     return { control, out };
   });
-  const looksTofu = (a, b) => a >= 200 && Math.abs(a - b) < Math.max(60, a * 0.06);
+  // two different words that draw the SAME picture are tofu boxes
+  const looksTofu = (a, b, d) => a >= 200 && d < Math.max(60, a * 0.06);
   const hC = hindi.control;
-  if (hC.a < 200 || hC.b < 200 || looksTofu(hC.a, hC.b)) {
+  if (hC.a < 200 || hC.b < 200 || looksTofu(hC.a, hC.b, hC.d)) {
     console.log('  · Hindi: this machine cannot draw Devanagari at all (control ' + hC.a + '/' + hC.b +
                 ' px) — the styles cannot be judged here, so this check is skipped rather than failed');
   } else {
     const rows = hindi.out;
     const hBlank = rows.filter(h => h.a < 200 || h.b < 200);
-    const hTofu = rows.filter(h => !looksTofu(h.a, h.b) ? false : true);
+    const hTofu = rows.filter(h => looksTofu(h.a, h.b, h.d));
     if (hBlank.length) hBlank.slice(0, 5).forEach(h => bad('Hindi: ' + h.id + ' draws NOTHING for Devanagari (' +
       h.a + '/' + h.b + ' px, Latin ' + h.lat + ') — font chain "' + h.font + '", ' + h.chain));
     else if (hTofu.length) hTofu.slice(0, 5).forEach(h => bad('Hindi: ' + h.id + ' renders two different Devanagari words identically (' +
