@@ -14,7 +14,10 @@
  *      1 s before one of their small sounds and covering it, at least 20 s
  *      apart, the talker on screen before and after;
  *   C. Often: more of them, at least 8 s apart;
- *   D. the choice is remembered (settings) and the plan list marks them.
+ *   D. the choice is remembered (settings) and the plan list marks them;
+ *   E. a QUIET "hmm" under a louder talker (the talker stays the loudest on
+ *      both mics) is still heard: the listener's mic rises against its usual
+ *      level of the talker's voice.
  */
 'use strict';
 const P = require('./multicam-lib/panel');
@@ -69,6 +72,25 @@ const bad = (m) => { failed++; console.log('  ✗ ' + m); };
   (J2.rs.length > J1.rs.length && !J2.wrong.length && !J2.gapBad ? ok : bad)('C. Often: ' + J2.rs.length + ' reaction shots (more than Sometimes\' ' + J1.rs.length + '), ≥ 8 s apart' +
     (J2.wrong.length ? ' — wrong: ' + J2.wrong.slice(0, 3).join('; ') : '') + (J2.gapBad ? ' — ' + J2.gapBad + ' too close' : ''));
   (res.often.saved === 'often' && /reaction/.test(res.some.planView || '') ? ok : bad)('D. the choice is remembered (' + res.often.saved + ') and the plan list marks reaction shots');
+  // E. a quiet "hmm" under the talker: only the listener's mic level gives it away
+  {
+    const M = require('../../js/multicam.js');
+    const step = 0.1, W = 600, A = [], B = [];
+    for (let w = 0; w < W; w++) {
+      const t = w * step;
+      A.push(-20 + (w % 7) * 0.3);                 // the talker's mic: talking all along
+      let b = -38 + (w % 5) * 0.3;                 // the listener's mic: the talker's voice leaking in, 18 dB down
+      if ((t >= 20 && t < 20.5) || (t >= 41 && t < 41.4)) b = -30;   // their own quiet "hmm": +8 dB, still under the talker
+      B.push(b);
+    }
+    const regions = [[{ start: 0, end: 60 }], []];   // the loudest-mic rule never gave the listener a moment
+    const bu = M.listenerBursts(regions, { dbGrids: [A, B], step });
+    const got = bu[1].map(b => b.start.toFixed(1) + '–' + b.end.toFixed(1)).join(', ');
+    const plan = M.reactionShots([{ start: 0, end: 60, angle: 0 }], bu, { every: 8 });
+    const rx = plan.filter(p => p.reaction);
+    (bu[1].length === 2 && Math.abs(bu[1][0].start - 20) < 0.15 && Math.abs(bu[1][1].start - 41) < 0.15 && rx.length === 2 && Math.abs(rx[0].start - 19) < 0.15 ? ok : bad)(
+      'E. a quiet "hmm" under a louder talker is heard (' + (got || 'none') + ') and shown from ' + (rx[0] ? rx[0].start.toFixed(1) : '—') + ' s');
+  }
   if (failed) { console.log('MULTICAM REACTIONS: ' + failed + ' failed'); process.exit(1); }
   console.log('MULTICAM REACTIONS: the listener\'s small reactions are shown, as often as the owner picks ✓');
 })().catch((e) => { console.log('  ✗ ' + (e && e.stack || e)); process.exit(1); });
