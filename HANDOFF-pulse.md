@@ -1,10 +1,24 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.22** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.23** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.23 — multicam reaction shots
+The owner: "one person is talking and sometimes the other says something
+small (hmm, oho) — show their reaction starting 1 s before; let me set how
+often" / "not exactly these words, anything small". CPMulticam.listenerBursts
+(any 0.15–1.5 s burst of a listener inside another's talk: short regions, or
+the listener's mic rising ≥ 6 dB against its usual bleed of the talker) →
+reactionShots (1 s lead, +0.6 s after, ≥ 1.5 s, inside that talker's shot,
+min hold both sides, ≥ every s apart and from cutaways). Multicam step
+"Show the listener's reactions?" Off / Rarely 45 s / Sometimes 20 s
+(default) / Often 8 s (settings.mcReact); mcWithReactions in follow, voices
+and transcript modes; plan list marks "· reaction". Silent nods (no sound)
+are NOT detected — would need the listener camera's motion (podMotion-style).
+Gate multicam-reactions; mutations v23-*.
 
 ### v0.10.22 — multicam cuts on whole frames (25 fps)
 The owner: "6 of 630 camera cuts didn't land (the first at 7:49.90)" and
