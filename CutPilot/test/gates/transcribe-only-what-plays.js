@@ -49,6 +49,12 @@ const cut = [{ inPoint: 0, outPoint: 4, seqStart: 0, speed: 1 }, { inPoint: 6.3,
   // the piece shows a sliver of the line but none of its words: gone
   const sliver = C.placeLinesOnPieces([{ start: 4, end: 6.5, text: 'five' }], [{ start: 5, end: 5.5, text: 'five' }], cut);
   (!sliver.length ? ok : bad)('A. a line whose words were all cut out is dropped (' + show(sliver) + ')');
+  // uneven speech: the real stamps decide, not the words' lengths ("hello big"
+  // fill the first 2 s of a 10 s line, then a long pause)
+  const un = C.placeLinesOnPieces([{ start: 0, end: 10, text: 'hello big gap end' }],
+    [{ start: 0, end: 1, text: 'hello' }, { start: 1, end: 2, text: 'big' }, { start: 8, end: 9, text: 'gap' }, { start: 9, end: 10, text: 'end' }],
+    [{ inPoint: 0, outPoint: 3, seqStart: 0, speed: 1 }]);
+  (un.length === 1 && un[0].text === 'hello big' ? ok : bad)('A. uneven speech: the words heard in the piece, by their real times (' + show(un) + ')');
   // no word stamps: kept by length
   const nw = C.placeLinesOnPieces([{ start: 0, end: 10, text: 'aaaa bbbb cccc dddd eeee' }], null, [{ inPoint: 0, outPoint: 4, seqStart: 0, speed: 1 }, { inPoint: 8, outPoint: 10, seqStart: 4, speed: 1 }]);
   (nw.length === 2 && nw[0].text === 'aaaa bbbb' && nw[1].text === 'eeee' ? ok : bad)('A. without word stamps a cut line keeps the words of its share (' + show(nw) + ')');
