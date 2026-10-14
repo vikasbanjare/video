@@ -2253,6 +2253,54 @@ const MUTANTS = [
     repl: "",
     gate: 'CutPilot/test/gates/multicam-reactions.js',
     why: 'the how-often setting is ignored — reaction shots back to back'
+  },
+  {
+    name: 'v24-cell-input-short',
+    file: 'CutPilot/js/podshort.js',
+    find: "      (p.cells || []).forEach(function (c) { last[c.input] = Math.max(last[c.input] || 0, c.to); });",
+    repl: "",
+    gate: 'CutPilot/test/gates/shorts-editable-timeline.js',
+    why: 'the one-file render reads a split screen\'s second camera too short — its cell goes black'
+  },
+  {
+    name: 'v24-no-motion-scale',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "          if (sp && !sOk) { try { sp.setValue(L.scale, true); sOk = true; } catch (eS) { try { sp.setValue(L.scale); sOk = true; } catch (eS2) {} } }",
+    repl: "          if (sp && !sOk) { sOk = true; }",
+    gate: 'CutPilot/test/gates/shorts-editable-timeline.js',
+    why: 'the editable short never zooms — every camera at 100%'
+  },
+  {
+    name: 'v24-no-cell-crop',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "        if (L.cropIt && cropFx) {",
+    repl: "        if (false) {",
+    gate: 'CutPilot/test/gates/shorts-editable-timeline.js',
+    why: 'a split-screen half is never cropped — the lower camera covers the frame'
+  },
+  {
+    name: 'v24-own-frame-ignored',
+    file: 'CutPilot/js/main.js',
+    find: "        if (own && crops.length === 1) { seg.crops = [framePx(own, src)]; notes.push('V' + (p.angle + 1) + ' your frame'); }",
+    repl: "",
+    gate: 'CutPilot/test/gates/shorts-editable-timeline.js',
+    why: 'the frame the owner set on a camera is ignored'
+  },
+  {
+    name: 'v24-layout-ignored',
+    file: 'CutPilot/js/main.js',
+    find: "    var layout = (CPPodShort.LAYOUTS.indexOf(layoutIn) >= 0) ? layoutIn : 'auto';",
+    repl: "    var layout = 'auto';",
+    gate: 'CutPilot/test/gates/shorts-editable-timeline.js',
+    why: 'the layout the owner picks (Split, Big + small…) is ignored'
+  },
+  {
+    name: 'v24-frame-box-loses-shape',
+    file: 'CutPilot/js/main.js',
+    find: "          var w = Math.max(0.08, b.w + dx), h = frameH(w, cv);",
+    repl: "          var w = Math.max(0.08, b.w + dx), h = b.h;",
+    gate: 'CutPilot/test/gates/shorts-mark-people.js',
+    why: 'resizing the frame box loses its 9:16 shape'
   }
 ];
 
