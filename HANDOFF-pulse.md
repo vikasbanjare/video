@@ -1,10 +1,19 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.25** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.26** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.26 — everything switched off never falls back to the camera picture
+Found by fuzzing CP_getTranscribeSource (1,500 random timelines): with every
+audio piece of the recording switched off, the camera clip on V1 (same file)
+was heard instead, over the whole timeline. Now the switched-off audio pieces
+are heard (quietOnly, the panel says so). Fuzzed also: placeLinesOnPieces
+(20,000 timelines: no cut word, none twice, none lost), the keyed highlight
+(5,000 captions, 3.6 M moments, 0 wrong), transcript re-placement after cuts
+(5,000: identical to a fresh placement). Mutation v25-off-falls-to-camera.
 
 ### v0.10.25 — transcribe only what plays; editable highlight on the spoken word
 The owner: "when I cut and trim, the transcription sometimes also takes the
