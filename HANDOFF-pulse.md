@@ -1,10 +1,41 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.24** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.25** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.25 — transcribe only what plays; editable highlight on the spoken word
+The owner: "when I cut and trim, the transcription sometimes also takes the
+clips I have cut; with In and Out it should transcribe only that section"
+and "editable text is not working properly … it just keeps going".
+- Cut words: mediaToTimeline cut a LINE's time to each piece but kept all its
+  text, so a sentence spoken across a cut came back with the cut-out words
+  (once per piece). Editable captions read those lines (readSelectedTranscript
+  → textCues), so they showed words not on the timeline. CPCaptions
+  .placeLinesOnPieces keeps each piece's own words (word stamps by middle;
+  by length without stamps; a clipped copy with none is dropped); used by
+  placeTranscript and followMovedRecording.
+- CP_getTranscribeSource({ useInOut }) (Auto-transcribe, its retry and
+  followMovedRecording only): sequence In/Out (getInPointAsTime /
+  getInPoint) → only what plays between them; unset = 0…end. Muted audio
+  tracks and disabled clips are skipped (used only when nothing else is
+  left: quietOnly). A recording with any audio-track piece is heard through
+  those only — a camera clip on V1 whose audio piece was deleted no longer
+  brings its words back; a selected V clip still picks its recording.
+- Editable highlight: the engine's window (Start Time, Duration(Automated))
+  was set once per caption — an even sweep, off the voice ~35% of the time
+  on uneven speech. Premium (premBuild → wt from c.ws) and Styled
+  (editableWordStarts: only when the words heard inside a caption are exactly
+  its words) captions send each word's start; CP_setWordSweep keys d0 with
+  d1 = W+1 (activeIndex = round(time − d0)), two linear keys per word, reads
+  back at each word's middle (getValueAtTime) and restores the even sweep if
+  anything is off. Result sweptTimed; diag 'editable' line. NOT yet confirmed
+  in real Premiere (whether MOGRT point params take keys / getValueAtTime).
+Gates transcribe-only-what-plays, editable-highlight-follows-voice;
+caption-sync-placement, premium-fit P, captions-options-reachable H2;
+mutations v25-*.
 
 ### v0.10.24 — shorts: editable 9:16 timeline, layouts, framing per camera
 The owner: "editable layer, more accurate result… what's missing for a pro
