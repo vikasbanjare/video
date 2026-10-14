@@ -2213,6 +2213,14 @@ const MUTANTS = [
     repl: "      boxRadius: Math.round(((o.boxRadius != null ? o.boxRadius : preset.boxRadius) || 10) * scale),",
     gate: 'CutPilot/test/gates/gallery-from-my-videos.js',
     why: 'a square box (roundness 0) comes out rounded'
+  },
+  {
+    name: 'v22-mc-off-frame',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "      var ps = Math.round(Number(pIn[pq].start) * fps) / fps, pe = Math.round(Number(pIn[pq].end) * fps) / fps;",
+    repl: "      var ps = Number(pIn[pq].start), pe = Number(pIn[pq].end);",
+    gate: 'CutPilot/test/gates/multicam-halfframe.js',
+    why: 'on a 25 fps timeline cuts between two frames are reported missing, on every Apply and Redo'
   }
 ];
 

@@ -1539,7 +1539,17 @@ function CP_applyMulticamPlan(argsJson) {
     var n = Math.min(args.numAngles, nTracks);
     var fps = CP_sequenceFps(seq);
     var half = 0.5 / fps;
-    var plan = args.plan || [];
+    // Every boundary on a whole FRAME. Premiere can only cut on a frame: a
+    // boundary between two frames (7:49.90 is frame 11747.5 at 25 fps — every
+    // odd tenth of a second is) was cut on the next frame, exactly half a frame
+    // away, and the "edge within half a frame" check then read that cut as
+    // missing ("6 of 630 camera cuts didn't land") — again on every Apply.
+    var plan = [], pIn = args.plan || [];
+    for (var pq = 0; pq < pIn.length; pq++) {
+      var ps = Math.round(Number(pIn[pq].start) * fps) / fps, pe = Math.round(Number(pIn[pq].end) * fps) / fps;
+      if (pe > ps) plan.push({ start: ps, end: pe, angle: pIn[pq].angle });
+      else if (plan.length) plan[plan.length - 1].end = Math.max(plan[plan.length - 1].end, pe);   // a shot under one frame joins the one before
+    }
 
     // A shot on a camera with no video track here would play as BLACK (every
     // camera track below it is switched off) while every shot on the real
