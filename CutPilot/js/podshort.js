@@ -103,10 +103,88 @@
      (from/to in that input's media seconds; one crop fills the frame, two
      are stacked top/bottom); audio: [{input, channel|null}] mixed under every
      piece; target {w,h}; hookPng (optional, shown for 3 s); out path. */
+  /* The same window as an EDITABLE Premiere clip: the original camera clip in
+     a W×H sequence with Motion Scale / Position (and a Crop effect) showing
+     exactly what filterArgs renders — the owner can then nudge the zoom or the
+     framing in Effect Controls. crop {x,y,w,h} and src {w,h} in source pixels;
+     slot / slots: this crop's row in a stack (0 of 1 = the whole frame).
+     Premiere draws the clip at its own size, centred, times scale, moved by
+     Position (in sequence pixels here; the host writes fractions). A stacked
+     cell keeps the middle of the crop that covers W × H/slots, like the
+     render's force_original_aspect_ratio=increase + centre crop.
+     → { scale (%), x, y (sequence px of the clip's centre), crop: {left, top,
+     right, bottom} (% of the source, Premiere's Crop effect) }. */
+  function motionFor(crop, src, W, H, slot, slots) {
+    slots = slots || 1; slot = slot || 0;
+    if (slots === 1) return cellMotion(crop, src, { x: 0, y: 0, w: W, h: H }, true);
+    var cellH = H / slots;
+    return cellMotion(crop, src, { x: 0, y: cellH * slot, w: W, h: cellH });
+  }
+  /* A crop shown in any rectangle of the frame (a layout's cell: the whole
+     frame, a half, the big or small part, a corner box): it covers the cell
+     and keeps its middle; `stretch` fills the cell exactly (the whole-frame
+     crop, already the frame's shape). → { scale (%), x, y (frame px of the
+     clip's centre), crop: {left, top, right, bottom} (% of the source) }. */
+  function cellMotion(crop, src, rect, mode) {
+    var c = { x: crop.x, y: crop.y, w: crop.w, h: crop.h }, s;
+    if (mode === 'fit') s = Math.min(rect.w / c.w, rect.h / c.h);       // the whole crop inside the cell
+    else if (mode) s = rect.w / c.w;
+    else {
+      s = Math.max(rect.w / c.w, rect.h / c.h);
+      var vw = rect.w / s, vh = rect.h / s;
+      c = { x: c.x + (c.w - vw) / 2, y: c.y + (c.h - vh) / 2, w: vw, h: vh };
+    }
+    var cx = c.x + c.w / 2, cy = c.y + c.h / 2;
+    var tx = rect.x + rect.w / 2, ty = rect.y + rect.h / 2;
+    var pct = function (v, of) { return Math.max(0, Math.min(100, v / of * 100)); };
+    return {
+      scale: s * 100,
+      x: tx + (src.w / 2 - cx) * s,
+      y: ty + (src.h / 2 - cy) * s,
+      crop: { left: pct(c.x, src.w), top: pct(c.y, src.h), right: pct(src.w - c.x - c.w, src.w), bottom: pct(src.h - c.y - c.h, src.h) }
+    };
+  }
+  /* The cells of a short's layout in a W×H frame (the owner: "give top-to-
+     bottom, one big one small" — and what OpusClip / Podcast Clips offer):
+     fill (one person), fit (the whole shot over a blurred copy), split (two,
+     top and bottom), bigsmall (the talker big on top, the other small below),
+     pip (the talker fills, the other in a corner box), three (three stacked).
+     → { cells: [{ x, y, w, h, role }], blurBack: bool } — role 'main' = the
+     talker, 'other' = the next person, 'third'. */
+  /* What Premiere draws for a cellMotion, in whole frame pixels: the source
+     rectangle kept by the Crop (sx, sy, sw, sh) scaled to (dw × dh) at (dx, dy). */
+  function cellDraw(m, src) {
+    var s = m.scale / 100;
+    var sx = src.w * m.crop.left / 100, sy = src.h * m.crop.top / 100;
+    var sw = src.w - sx - src.w * m.crop.right / 100, sh = src.h - sy - src.h * m.crop.bottom / 100;
+    var e = function (v) { return Math.max(2, Math.round(v / 2) * 2); };
+    return { sx: Math.round(sx), sy: Math.round(sy), sw: e(sw), sh: e(sh), dw: e(sw * s), dh: e(sh * s),
+             dx: Math.round(m.x - src.w * s / 2 + sx * s), dy: Math.round(m.y - src.h * s / 2 + sy * s) };
+  }
+  var LAYOUTS = ['auto', 'fill', 'fit', 'split', 'bigsmall', 'pip', 'three'];
+  function layoutCells(layout, W, H) {
+    var e = function (v) { return Math.round(v / 2) * 2; };
+    if (layout === 'split') return { cells: [{ x: 0, y: 0, w: W, h: e(H / 2), role: 'main' }, { x: 0, y: e(H / 2), w: W, h: H - e(H / 2), role: 'other' }] };
+    if (layout === 'bigsmall') { var hb = e(H * 0.62); return { cells: [{ x: 0, y: 0, w: W, h: hb, role: 'main' }, { x: 0, y: hb, w: W, h: H - hb, role: 'other' }] }; }
+    if (layout === 'pip') {
+      var pw = e(W * 0.36), phh = e(pw * 4 / 3), m = e(W * 0.04);
+      return { cells: [{ x: 0, y: 0, w: W, h: H, role: 'main' }, { x: W - pw - m, y: e(H * 0.08), w: pw, h: phh, role: 'other' }] };
+    }
+    if (layout === 'three') { var h3 = e(H / 3); return { cells: [{ x: 0, y: 0, w: W, h: h3, role: 'main' }, { x: 0, y: h3, w: W, h: h3, role: 'other' }, { x: 0, y: 2 * h3, w: W, h: H - 2 * h3, role: 'third' }] }; }
+    if (layout === 'fit') return { cells: [{ x: 0, y: 0, w: W, h: H, role: 'main', fit: true }], blurBack: true };
+    return { cells: [{ x: 0, y: 0, w: W, h: H, role: 'main' }] };
+  }
+
   function filterArgs(inputs, segs, audio, target, hookPng, outPath) {
     var args = ['-y', '-hide_banner'];
     var last = {};
-    segs.forEach(function (p) { last[p.input] = Math.max(last[p.input] || 0, p.to); });
+    segs.forEach(function (p) {
+      last[p.input] = Math.max(last[p.input] || 0, p.to);
+      // a layout's cells (and the blurred backdrop) read their own cameras too:
+      // each input must be read up to the last moment any of them needs
+      (p.cells || []).forEach(function (c) { last[c.input] = Math.max(last[c.input] || 0, c.to); });
+      if (p.blurBack) last[p.blurBack.input] = Math.max(last[p.blurBack.input] || 0, p.blurBack.to);
+    });
     audio.forEach(function (a) { segs.forEach(function (p) { last[a.input] = Math.max(last[a.input] || 0, p.toAudio != null ? p.toAudio[a.input] : p.to); }); });
     inputs.forEach(function (inp, i) {
       args.push('-ss', Math.max(0, inp.base).toFixed(3), '-t', Math.max(1, (last[i] || inp.base + 1) - inp.base + 0.5).toFixed(3), '-i', inp.path);
@@ -114,7 +192,12 @@
     var hookIdx = -1;
     if (hookPng) { hookIdx = inputs.length; args.push('-loop', '1', '-t', '3.2', '-i', hookPng); }
     var useV = {}, useA = {};
-    segs.forEach(function (p) { useV[p.input] = (useV[p.input] || 0) + p.crops.length; });
+    segs.forEach(function (p) {
+      if (p.cells) {
+        p.cells.forEach(function (c) { useV[c.input] = (useV[c.input] || 0) + 1; });
+        if (p.blurBack) useV[p.blurBack.input] = (useV[p.blurBack.input] || 0) + 1;
+      } else useV[p.input] = (useV[p.input] || 0) + p.crops.length;
+    });
     audio.forEach(function (a) { useA[a.input] = (useA[a.input] || 0) + segs.length; });
     var fc = [], vq = {}, aq = {};
     Object.keys(useV).forEach(function (k) {
@@ -130,7 +213,25 @@
     var concatIn = [];
     segs.forEach(function (p, si) {
       var b = inputs[p.input].base, from = (p.from - b).toFixed(3), to = (p.to - b).toFixed(3);
-      if (p.crops.length === 1) {
+      if (p.cells) {
+        // a layout: each cell drawn as Premiere draws its clip (cellMotion), over
+        // a blurred copy of the shot (fit) or black
+        var dur = (p.to - p.from).toFixed(3), base = 'bg' + si;
+        if (p.blurBack) {
+          var bb = p.blurBack, bbb = inputs[bb.input].base;
+          fc.push('[' + vq[bb.input].shift() + ']trim=start=' + (bb.from - bbb).toFixed(3) + ':end=' + (bb.to - bbb).toFixed(3) +
+            ',setpts=PTS-STARTPTS,scale=' + target.w + ':' + target.h + ':force_original_aspect_ratio=increase,crop=' + target.w + ':' + target.h +
+            ',boxblur=24:2,setsar=1[' + base + ']');
+        } else fc.push('color=c=black:s=' + target.w + 'x' + target.h + ':r=30:d=' + dur + ',setsar=1[' + base + ']');
+        p.cells.forEach(function (c, ci) {
+          var cb = inputs[c.input].base, m = c.motion || cellMotion(c.crop, c.src, c.rect, c.fit ? 'fit' : (c.full ? true : false)), d = cellDraw(m, c.src);
+          fc.push('[' + vq[c.input].shift() + ']trim=start=' + (c.from - cb).toFixed(3) + ':end=' + (c.to - cb).toFixed(3) +
+            ',setpts=PTS-STARTPTS,crop=' + d.sw + ':' + d.sh + ':' + d.sx + ':' + d.sy + ',scale=' + d.dw + ':' + d.dh + ',setsar=1[pc' + si + '_' + ci + ']');
+          var nb = (ci === p.cells.length - 1) ? 'pv' + si : 'bg' + si + '_' + ci;
+          fc.push('[' + base + '][pc' + si + '_' + ci + ']overlay=' + d.dx + ':' + d.dy + ':shortest=1[' + nb + ']');
+          base = nb;
+        });
+      } else if (p.crops.length === 1) {
         var c = p.crops[0];
         fc.push('[' + vq[p.input].shift() + ']trim=start=' + from + ':end=' + to + ',setpts=PTS-STARTPTS,crop=' + c.w + ':' + c.h + ':' + c.x + ':' + c.y +
           ',scale=' + target.w + ':' + target.h + ',setsar=1[pv' + si + ']');
@@ -364,5 +465,6 @@
   return { detectFaces: detectFaces, faceTracks: faceTracks, faceCrop: faceCrop, turnsFrom: turnsFrom,
            regionTracks: regionTracks, markCrop: markCrop,
            pearson: pearson, assign: assign, pieces: pieces,
-           filterArgs: filterArgs, levels: levels, talker: talker };
+           filterArgs: filterArgs,
+    motionFor: motionFor, cellMotion: cellMotion, cellDraw: cellDraw, layoutCells: layoutCells, LAYOUTS: LAYOUTS, levels: levels, talker: talker };
 });

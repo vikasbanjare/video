@@ -136,7 +136,7 @@ function faceIn(file, t) {
       window.CP_DEBUG_EXT.retakes.setTranscript({ words: o.words });
       window.CP_DEBUG_EXT.shorts.setCameras({ plan: o.plan || null, map: o.map || [], angles: o.angles || 2 });
       (o.marks || []).forEach(m => window.CP_DEBUG_EXT.shorts.setMarks(m.path, m.boxes));
-      document.querySelector('.tab[data-tab="shorts"]').click(); await sleep(200);
+      document.querySelector('.tab[data-tab="shorts"]').click(); await sleep(200); { const ob = document.querySelector('#sh-output button[data-out="file"]'); if (ob) ob.click(); }   // this gate checks the one-file render
       for (const [id, v] of Object.entries({ 'sh-tight': true, 'sh-hook': false, 'sh-caps': false, 'sh-cams': true })) {
         const e = document.getElementById(id); e.checked = v; e.dispatchEvent(new Event('change'));
       }

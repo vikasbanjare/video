@@ -96,7 +96,7 @@ function cardLevel(file, t, W, H) {
     const res = await P.page.evaluate(async (said, moment, opts) => {
       const sleep = ms => new Promise(r => setTimeout(r, ms));
       window.CP_DEBUG_EXT.retakes.setTranscript({ words: said });
-      document.querySelector('.tab[data-tab="shorts"]').click(); await sleep(200);
+      document.querySelector('.tab[data-tab="shorts"]').click(); await sleep(200); { const ob = document.querySelector('#sh-output button[data-out="file"]'); if (ob) ob.click(); }   // this gate checks the one-file render
       for (const [id, v] of Object.entries(opts)) { const e = document.getElementById(id); e.checked = v; e.dispatchEvent(new Event('change')); }
       window.CP_DEBUG_EXT.shorts.show([moment]);
       const make = Array.from(document.querySelectorAll('#shorts-results button')).find(b => /Make/.test(b.textContent));
@@ -166,7 +166,7 @@ function cardLevel(file, t, W, H) {
     const F = await P.page.evaluate(async (words) => {
       const sleep = ms => new Promise(r => setTimeout(r, ms));
       window.CP_DEBUG_EXT.retakes.setTranscript({ words, transcript: null, captionCues: null });
-      document.querySelector('.tab[data-tab="shorts"]').click(); await sleep(200);
+      document.querySelector('.tab[data-tab="shorts"]').click(); await sleep(200); { const ob = document.querySelector('#sh-output button[data-out="file"]'); if (ob) ob.click(); }   // this gate checks the one-file render
       const len = document.getElementById('sh-len'); len.value = '10-30'; len.dispatchEvent(new Event('change'));
       document.getElementById('btn-find-shorts').click(); await sleep(600);
       return { cards: Array.from(document.querySelectorAll('#shorts-results .card')).map(c => c.textContent.replace(/\s+/g, ' ').slice(0, 160)),

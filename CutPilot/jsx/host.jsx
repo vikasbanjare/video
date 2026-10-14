@@ -1307,6 +1307,167 @@ function CP_rebuildTrimmed(argsJson) {
   } catch (e) { return CP_fail(e.message); }
 }
 
+/*
+ * The short as an EDITABLE timeline (the owner: "short video — I want
+ * editable layers"): a new W×H sequence with the original camera clips cut on
+ * it, each framed by its own Motion Scale / Position (a split-screen half
+ * also gets a Crop effect), the mics on audio tracks and the hook title as a
+ * still on top — every choice Pulse made can be changed in Premiere.
+ * argsJson: {
+ *   name, placeholder (a W×H clip at the cameras' frame rate — Premiere makes
+ *   the sequence from it, then it is taken off), W, H,
+ *   pieces: [{ at, dur, layers: [{ path, from, scale, x, y (sequence px),
+ *             crop: {left, top, right, bottom} (%), slot, slots }] }],
+ *   audio: [{ path, pieces: [{ at, from, dur }] }]   (empty = the cameras' own sound),
+ *   hook: { path, dur } | null }
+ */
+function CP_buildShortSequence(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var W = args.W || 1080, H = args.H || 1920, paths = [args.placeholder], i, j, k;
+    var pieces = args.pieces || [], audio = args.audio || [];
+    for (i = 0; i < pieces.length; i++) for (j = 0; j < pieces[i].layers.length; j++) paths.push(pieces[i].layers[j].path);
+    for (i = 0; i < audio.length; i++) paths.push(audio[i].path);
+    if (args.hook && args.hook.path) paths.push(args.hook.path);
+    // every file once, imported if the project does not have it yet
+    var items = {}, want = [];
+    for (i = 0; i < paths.length; i++) {
+      var key = CP_normPath(paths[i]);
+      if (items[key] !== undefined) continue;
+      items[key] = CP_findProjectItemByMediaPath(app.project.rootItem, paths[i]);
+      if (!items[key]) want.push(paths[i]);
+    }
+    if (want.length) {
+      try { app.project.importFiles(want, true, app.project.rootItem, false); } catch (eImp) { return CP_fail('Premiere could not import ' + want.join(', ') + ': ' + eImp.message); }
+      for (i = 0; i < want.length; i++) items[CP_normPath(want[i])] = CP_findProjectItemByMediaPath(app.project.rootItem, want[i]);
+    }
+    function itemOf(p) { return items[CP_normPath(p)] || null; }
+    var ph = itemOf(args.placeholder);
+    if (!ph) return CP_fail('Premiere could not import the short’s frame clip.');
+    if (typeof app.project.createNewSequenceFromClips !== 'function') return CP_fail('This Premiere cannot make a sequence by script — use “One video file” for the short.');
+    var seq = app.project.createNewSequenceFromClips(args.name || 'Pulse short', [ph]);
+    if (!seq) return CP_fail('Premiere did not make the short’s sequence.');
+    CP_activateSequence(seq);
+    seq = CP_activeSequence() || seq;
+    // take the frame clip off again
+    app.enableQE();
+    var qseq = qe.project.getActiveSequence(), t;
+    for (t = 0; t < qseq.numVideoTracks; t++) { var qv = qseq.getVideoTrackAt(t); for (i = qv.numItems - 1; i >= 0; i--) { var a0 = qv.getItemAt(i); if (a0 && a0.type !== 'Empty') { try { a0.remove(0, 0); } catch (eR0) {} } } }
+    for (t = 0; t < qseq.numAudioTracks; t++) { var qa = qseq.getAudioTrackAt(t); for (i = qa.numItems - 1; i >= 0; i--) { var b0 = qa.getItemAt(i); if (b0 && b0.type !== 'Empty') { try { b0.remove(0, 0); } catch (eR1) {} } } }
+    // tracks: one per stacked row, one for the hook; one audio track per mic
+    var rows = 1;
+    for (i = 0; i < pieces.length; i++) if (pieces[i].layers.length > rows) rows = pieces[i].layers.length;
+    var needV = rows + (args.hook ? 1 : 0), needA = Math.max(1, audio.length);
+    try { if (seq.videoTracks.numTracks < needV) qseq.addTracks(needV - seq.videoTracks.numTracks, seq.videoTracks.numTracks, 0); } catch (eT1) {}
+    try { if (seq.audioTracks.numTracks < needA) qseq.addTracks(0, 0, needA - seq.audioTracks.numTracks); } catch (eT2) {}
+    seq = CP_activeSequence() || seq;
+    var placed = 0, framed = 0, cropped = 0, blurred = 0, missed = [], cropFx = null;
+    try { cropFx = qe.project.getVideoEffectByName('Crop'); } catch (eFx) { cropFx = null; }
+    function setRange(it, from, dur) {
+      it.setInPoint(CP_ticksFromSeconds(from), 4);
+      it.setOutPoint(CP_ticksFromSeconds(from + dur), 4);
+    }
+    function clipAt(track, at) {
+      var best = null;
+      for (var c = 0; c < track.clips.numItems; c++) { var cl = track.clips[c]; if (cl && Math.abs(cl.start.seconds - at) < 0.02) best = cl; }
+      return best;
+    }
+    function put(track, it, at) {
+      try { track.overwriteClip(it, at); } catch (e1) { track.overwriteClip(it, CP_ticksFromSeconds(at)); }
+    }
+    for (i = 0; i < pieces.length; i++) {
+      var pc = pieces[i];
+      for (j = 0; j < pc.layers.length; j++) {
+        var L = pc.layers[j], it = itemOf(L.path), tr = seq.videoTracks[j];
+        if (!it || !tr) { missed.push(pc.at); continue; }
+        try { setRange(it, L.from, pc.dur); put(tr, it, pc.at); } catch (eP) { missed.push(pc.at); continue; }
+        var cl = clipAt(tr, pc.at);
+        if (!cl) { missed.push(pc.at); continue; }
+        placed++;
+        // the framing: Motion Scale and Position (fractions of the frame)
+        var comps = CP_motionComponents(cl), sOk = false, pOk = false;
+        for (k = 0; k < comps.length; k++) {
+          var sp = CP_effectProp(comps[k], 'Scale'), pp = CP_effectProp(comps[k], 'Position');
+          if (sp && !sOk) { try { sp.setValue(L.scale, true); sOk = true; } catch (eS) { try { sp.setValue(L.scale); sOk = true; } catch (eS2) {} } }
+          if (pp && !pOk) { try { pp.setValue([L.x / W, L.y / H], true); pOk = true; } catch (eQ) { try { pp.setValue([L.x / W, L.y / H]); pOk = true; } catch (eQ2) {} } }
+        }
+        if (sOk && pOk) framed++;
+        // a blurred backdrop (the Fit layout): Gaussian Blur on it
+        if (L.blur) {
+          try {
+            var bq = qseq.getVideoTrackAt(j), bi = null, gb = qe.project.getVideoEffectByName('Gaussian Blur');
+            for (k = 0; k < bq.numItems; k++) { var bc = bq.getItemAt(k); if (bc && bc.type !== 'Empty' && Math.abs(parseFloat(bc.start.secs) - pc.at) < 0.02) bi = bc; }
+            if (bi && gb) {
+              bi.addVideoEffect(gb);
+              var bcs = cl.components;
+              for (k = 0; k < bcs.numItems; k++) if (String(bcs[k].displayName) === 'Gaussian Blur') { var bl = CP_effectProp(bcs[k], 'Blurriness'); if (bl) { try { bl.setValue(60, true); blurred++; } catch (eBl) {} } }
+            }
+          } catch (eBlur) {}
+        }
+        // a cell smaller than the frame (a split half, the small box): crop it to its cell
+        if (L.cropIt && cropFx) {
+          try {
+            var qt = qseq.getVideoTrackAt(j), qi = null;
+            for (k = 0; k < qt.numItems; k++) { var cand = qt.getItemAt(k); if (cand && cand.type !== 'Empty' && Math.abs(parseFloat(cand.start.secs) - pc.at) < 0.02) qi = cand; }
+            if (qi) {
+              qi.addVideoEffect(cropFx);
+              var cc = cl.components, done = 0;
+              for (k = 0; k < cc.numItems; k++) {
+                if (String(cc[k].displayName) !== 'Crop') continue;
+                var sides = ['Left', 'Top', 'Right', 'Bottom'], vals = [L.crop.left, L.crop.top, L.crop.right, L.crop.bottom];
+                for (var sd = 0; sd < 4; sd++) { var cp = CP_effectProp(cc[k], sides[sd]); if (cp) { try { cp.setValue(vals[sd], true); done++; } catch (eC) {} } }
+              }
+              if (done === 4) cropped++;
+            }
+          } catch (eCrop) {}
+        }
+      }
+    }
+    // the bin items keep no in/out of ours
+    for (var key2 in items) if (items.hasOwnProperty(key2) && items[key2]) { try { items[key2].clearInPoint(4); items[key2].clearOutPoint(4); } catch (eCl) {} }
+    // the sound: the mics on their own tracks, the cameras' sound taken off
+    var camPaths = {}, audioPlaced = 0, camAudioOff = 0;
+    if (audio.length) {
+      for (i = 0; i < pieces.length; i++) for (j = 0; j < pieces[i].layers.length; j++) camPaths[CP_normPath(pieces[i].layers[j].path)] = true;
+      for (t = 0; t < seq.audioTracks.numTracks; t++) {
+        var at2 = seq.audioTracks[t];
+        for (i = at2.clips.numItems - 1; i >= 0; i--) {
+          var ac = at2.clips[i], mp = '';
+          try { mp = CP_normPath(ac.projectItem.getMediaPath()); } catch (eMp) {}
+          if (camPaths[mp]) { try { ac.remove(false, false); camAudioOff++; } catch (eRm) { try { ac.disabled = true; camAudioOff++; } catch (eDis) {} } }
+        }
+      }
+      for (i = 0; i < audio.length; i++) {
+        var ai = itemOf(audio[i].path), atr = seq.audioTracks[i];
+        if (!ai || !atr) continue;
+        for (j = 0; j < audio[i].pieces.length; j++) {
+          var ap = audio[i].pieces[j];
+          try { setRange(ai, ap.from, ap.dur); put(atr, ai, ap.at); audioPlaced++; } catch (eA) {}
+        }
+        try { ai.clearInPoint(4); ai.clearOutPoint(4); } catch (eAc) {}
+      }
+    }
+    // the hook title: a still on the top track for its first seconds
+    var hooked = false;
+    if (args.hook && args.hook.path) {
+      var hi = itemOf(args.hook.path), htr = seq.videoTracks[rows];
+      if (hi && htr) {
+        try {
+          put(htr, hi, 0);
+          var hc = clipAt(htr, 0);
+          if (hc) { try { hc.end = CP_timeFromSeconds(args.hook.dur || 3); } catch (eHe) {} hooked = true; }
+        } catch (eH) {}
+      }
+    }
+    var total = 0;
+    for (i = 0; i < pieces.length; i++) total += pieces[i].layers.length;
+    return CP_ok({ sequence: args.name || 'Pulse short', placed: placed, of: total, framed: framed, cropped: cropped,
+                   toCrop: (function () { var n = 0; for (var q = 0; q < pieces.length; q++) for (var r = 0; r < pieces[q].layers.length; r++) if (pieces[q].layers[r].cropIt) n++; return n; })(),
+                   blurred: blurred, toBlur: (function () { var n = 0; for (var q = 0; q < pieces.length; q++) for (var r = 0; r < pieces[q].layers.length; r++) if (pieces[q].layers[r].blur) n++; return n; })(),
+                   missedAt: missed.slice(0, 5), audioPlaced: audioPlaced, camAudioOff: camAudioOff, hook: hooked, cropEffect: !!cropFx });
+  } catch (e) { return CP_fail(e.message); }
+}
+
 // --------------------------------------------------- viral shorts ----------
 /* Make the active sequence active by object (best-effort across versions). */
 function CP_activateSequence(seqObj) {

@@ -11,7 +11,11 @@
  *   B. "2" marks two people — two boxes, left and right — kept for that file;
  *   C. dragging a box moves it (kept), dragging its corner resizes it;
  *   D. the other camera keeps its own marks; Clear removes them (back to faces);
- *   E. the marks are remembered after Pulse restarts (settings).
+ *   E. the marks are remembered after Pulse restarts (settings);
+ *   F. 🔲 Set the frame (the owner: "I can't select the area of each camera
+ *      myself"): one 9:16 box on the picture — dragging moves it, its corner
+ *      resizes it and the 9:16 shape holds, it is kept for that file, and
+ *      🤖 Auto takes it away again.
  */
 'use strict';
 const fs = require('fs');
@@ -61,12 +65,13 @@ if (cp.spawnSync(FF, ['-version']).status !== 0) { console.log('  ? no ffmpeg �
   });
   (A.cams.length === 2 && /wide\.mp4/.test(A.cams[0]) && /close\.mp4/.test(A.cams[1]) && A.shown && Math.abs(A.px[2] - 0x77) < 20 ? ok : bad)(
     'A. 📷 lists the 2 cameras (not the caption overlay) and shows a frame of the first (' + A.cams.join(', ') + ' · ' + A.size + ', centre pixel ' + A.px.join(',') + ')');
-  // B. two people
+  // B. two people (👥 Mark people, then "2")
+  await page.evaluate(() => document.querySelector('#sh-mark-mode button[data-mode="people"]').click());
   await page.click('#sh-mark-n button[data-n="2"]');
   const B = await page.evaluate((p) => window.CP_DEBUG_EXT.shorts.marks(p), C1);
   (B.length === 2 && B[0].x + B[0].w / 2 < 0.4 && B[1].x + B[1].w / 2 > 0.6 ? ok : bad)('B. “2” marks two people, left and right (' + JSON.stringify(B) + ')');
   // C. drag the first box to the right by a quarter of the canvas; resize the second
-  const box = await page.evaluate(() => { const r = document.getElementById('sh-mark-canvas').getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; });
+  const box = await page.evaluate(() => { document.getElementById('sh-mark-canvas').scrollIntoView({ block: 'center' }); const r = document.getElementById('sh-mark-canvas').getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; });
   const b0 = B[0], b1 = B[1];
   await page.mouse.move(box.x + (b0.x + b0.w / 2) * box.w, box.y + (b0.y + b0.h / 2) * box.h);
   await page.mouse.down(); await page.mouse.move(box.x + (b0.x + b0.w / 2 + 0.1) * box.w, box.y + (b0.y + b0.h / 2) * box.h, { steps: 5 }); await page.mouse.up();
@@ -95,6 +100,38 @@ if (cp.spawnSync(FF, ['-version']).status !== 0) { console.log('  ? no ffmpeg �
   const disk = onDisk && onDisk['wide.mp4'];
   (E.length === 2 && Math.abs(E[0].x - C[0].x) < 0.001 && disk && disk.length === 2 && !onDisk['close.mp4'] ? ok : bad)(
     'E. the marks are remembered — in Pulse\'s settings file (' + (disk ? disk.length : 0) + ' boxes for wide.mp4) and after the panel reloads (' + E.length + ')');
+  // F. 🔲 Set the frame on the second camera
+  const P2 = await L.launchPanel({ env });
+  P2.bridge.state.premiere = prem;
+  const pg = P2.page;
+  await pg.evaluate(async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    document.querySelector('.tab[data-tab="shorts"]').click(); await sleep(200);
+    document.getElementById('sh-mark-wrap').open = true; await sleep(100);
+    document.getElementById('sh-mark-load').click();
+    for (let i = 0; i < 100 && document.getElementById('sh-mark-stage').classList.contains('hidden'); i++) await sleep(100);
+    await sleep(300);
+    document.querySelector('#sh-mark-mode button[data-mode="frame"]').click(); await sleep(100);
+  });
+  const cvs = await pg.evaluate(() => { const cv = document.getElementById('sh-mark-canvas'); cv.scrollIntoView({ block: 'center' }); const r = cv.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height, cw: cv.width, ch: cv.height }; });
+  const f0 = await pg.evaluate((p) => window.CP_DEBUG_EXT.shorts.frame(p), C1);
+  const ratio = (f) => (f.w * cvs.cw) / (f.h * cvs.ch);
+  await pg.mouse.move(cvs.x + (f0.x + f0.w / 2) * cvs.w, cvs.y + (f0.y + f0.h / 2) * cvs.h);
+  await pg.mouse.down(); await pg.mouse.move(cvs.x + (f0.x + f0.w / 2 - 0.15) * cvs.w, cvs.y + (f0.y + f0.h / 2) * cvs.h, { steps: 5 }); await pg.mouse.up();
+  const f1 = await pg.evaluate((p) => window.CP_DEBUG_EXT.shorts.frame(p), C1);
+  await pg.mouse.move(cvs.x + (f1.x + f1.w) * cvs.w - 5, cvs.y + (f1.y + f1.h) * cvs.h - 5);
+  await pg.mouse.down(); await pg.mouse.move(cvs.x + (f1.x + f1.w - 0.08) * cvs.w - 5, cvs.y + (f1.y + f1.h) * cvs.h - 5, { steps: 5 }); await pg.mouse.up();
+  const f2 = await pg.evaluate((p) => window.CP_DEBUG_EXT.shorts.frame(p), C1);
+  const st = await pg.evaluate(() => document.getElementById('sh-mark-status').textContent);
+  let disk2 = null; try { disk2 = JSON.parse(fs.readFileSync(path.join(env.homedir, '.cutpilot-settings.json'), 'utf8')).shFrames; } catch (e) {}
+  await pg.evaluate(() => document.querySelector('#sh-mark-mode button[data-mode="auto"]').click());
+  const f3 = await pg.evaluate((p) => window.CP_DEBUG_EXT.shorts.frame(p), C1);
+  const errs2 = (pg.__errors || []).slice();
+  await P2.close();
+  (f0 && Math.abs(ratio(f0) - 9 / 16) < 0.02 && f0.h > 0.85 && Math.abs(f1.x - (f0.x - 0.15)) < 0.02 && Math.abs(f2.w - (f1.w - 0.08)) < 0.02 && Math.abs(ratio(f2) - 9 / 16) < 0.02 &&
+   /exactly this box/.test(st) && disk2 && disk2['wide.mp4'] && f3 === null && !errs2.length ? ok : bad)(
+    'F. 🔲 Set the frame: a 9:16 box (' + (f0 ? ratio(f0).toFixed(3) : '?') + '), dragged ' + (f0 ? f0.x.toFixed(2) + ' → ' + f1.x.toFixed(2) : '?') + ', resized ' + (f1 ? f1.w.toFixed(2) + ' → ' + f2.w.toFixed(2) : '?') +
+    ' still 9:16 (' + (f2 ? ratio(f2).toFixed(3) : '?') + '), kept for wide.mp4, 🤖 Auto clears it (' + JSON.stringify(f3) + ')' + (errs2.length ? ' — errors ' + errs2.join(' | ') : ''));
   (!errs.length ? ok : bad)('no script errors' + (errs.length ? ': ' + errs.slice(0, 2).join(' | ') : ''));
   try { fs.rmSync(root, { recursive: true, force: true }); } catch (e) {}
   if (failed) { console.log('MARK PEOPLE: ' + failed + ' failed'); process.exit(1); }

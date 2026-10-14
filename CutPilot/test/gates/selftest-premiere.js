@@ -43,6 +43,8 @@ const os = require('os');
 const path = require('path');
 const zlib = require('zlib');
 const L = require('./overlay-lib.cjs');
+const SQ = require('./shortseq-standin.cjs');
+const HOST_SRC = fs.readFileSync(path.join(L.ROOT, 'CutPilot', 'jsx', 'host.jsx'), 'utf8');
 const { findFfmpeg } = require(path.join(L.ROOT, 'tools', 'ffmpeg-find.js'));
 
 let failed = 0;
@@ -82,6 +84,13 @@ function scriptedPremiere(o) {
   const pngs = {};
   function frameAt(at, hide) {
     const W = 640, Hh = 360;
+    // the editable short: drawn from its timeline (Motion, Crop) like Premiere
+    if (tl.edshort && tl.active === tl.edshort.name) {
+      const tmp = path.join(os.tmpdir(), 'pulse-st-ed-' + process.pid + '.png');
+      SQ.drawFrame(tl.edshort, at, tmp);
+      const b = fs.readFileSync(tmp); try { fs.unlinkSync(tmp); } catch (e) {}
+      return b;
+    }
     if (tl.short && tl.active === tl.short.name) {
       const r = require('child_process').spawnSync(o.ff, ['-hide_banner', '-loglevel', 'error', '-ss', String(at), '-i', tl.short.path, '-frames:v', '1', '-f', 'image2pipe', '-vcodec', 'png', '-'], { maxBuffer: 1 << 26 });
       return r.stdout;
@@ -142,6 +151,14 @@ function scriptedPremiere(o) {
     },
     CP_clearCaptionTrack(a) { const n = tl.captions.length; tl.captions = tl.captions.filter(c => c.track !== a.track); return ok({ cleared: n - tl.captions.length, top: true }); },
     CP_importClip(a) { tl.short = { name: a.name, path: a.path }; tl.active = a.name; log.short = a; return ok({ imported: true, sequence: a.name }); },
+    // the editable short, built by the REAL host.jsx on the timeline stand-in;
+    // o.noCropEffect: a Premiere without a Crop effect
+    CP_buildShortSequence(a) {
+      const st = SQ.create(HOST_SRC, { noCrop: !!o.noCropEffect });
+      const r = st.call('CP_buildShortSequence', a);
+      tl.edshort = st.seq(); if (tl.edshort) { tl.active = tl.edshort.name; log.edshort = JSON.parse(r); }
+      return r;
+    },
     CP_applyMulticamPlan(a) {
       if (o.multicamFails) return fail('Multicam wasn’t applied: Premiere didn’t make any of the 2 camera cuts', { fps: 30, timecodeSent: '00:00:03:00', playheadTimecode: '00:00:03:00', qeClipsBefore: '1/1', qeClipsAfter: '1/1' });
       // multicamWrongCamera: every cut and switch reported, but the top camera still shows
@@ -197,7 +214,7 @@ function scriptedPremiere(o) {
       return ok({ cuts: a.ranges.length, removedSec: cut });
     },
     CP_selfTestCleanup() {
-      tl.active = 'Episode 7'; tl.short = null;
+      tl.active = 'Episode 7'; tl.short = null; tl.edshort = null;
       return ok({ done: ['your sequence is active again', '1 test sequence deleted', '4 test bins deleted'],
                   left: o.cleanupLeaves ? ['the bin “Pulse SFX 456”'] : [] });
     },
@@ -292,7 +309,7 @@ function scriptedPremiere(o) {
       'Captions (Pulse’s own look)', 'Captions: long text and long words stay in the frame', 'Captions: the colour you pick shows on the timeline',
       'Captions: the word-by-word highlight moves', 'Sound effects', 'Premium (Flux) captions', 'Editable captions: every caption visible',
       'Long videos: one overlay clip', 'Premiere captions from an .srt',
-      'Remove Pulse’s captions', 'Premium previews with your words', 'Clean up (silence cut)', 'Shorts: a 9:16 short with its hook title', 'Everything the test made is deleted'];
+      'Remove Pulse’s captions', 'Premium previews with your words', 'Clean up (silence cut)', 'Shorts: a 9:16 short with its hook title', 'Shorts: an editable 9:16 timeline (split screen)', 'Everything the test made is deleted'];
     if (process.env.SHOW_ROWS) R.rows.forEach(l => console.log('    ' + l));
     const missing = names.filter(n => !R.rows.some(l => l.indexOf('In Premiere: ' + n) >= 0));
     const notOk = R.rows.filter(l => !/^✅/.test(l));
@@ -380,6 +397,14 @@ function scriptedPremiere(o) {
       '2b. a Multicam Apply Premiere reports as done while the wrong camera stays on screen is caught by the frames: ' + short(R.rowOf('Multicam: Apply')));
   }
 
+  // 2d. a Premiere with no Crop effect: the editable short's lower camera
+  // covers the whole frame — the row says so instead of passing
+  {
+    const R = await run('nocrop', { noCropEffect: true });
+    const row = R.rowOf('Shorts: an editable 9:16 timeline (split screen)');
+    report(/^❌/.test(row) && /no Crop effect/.test(row) && /expected red on top/.test(row) && !/top red/.test(row),
+      '2d. a Premiere without a Crop effect is caught by the editable-short row: ' + short(row));
+  }
   // 2c. a Premium template whose words come out giant (its Scale written in the
   // wrong units — the owner's Flux Orbit filled the frame): the row says which
   {
