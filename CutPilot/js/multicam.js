@@ -903,6 +903,143 @@
     return { perAngle: counts, switches: switches, segments: plan.length };
   }
 
+  /*
+   * The listener's small reactions while someone else talks — ANY short sound
+   * of theirs ("hmm", "haan", "oh", a laugh, one word): the owner's
+   * podcasts, "one person is talking and sometimes the other person says
+   * something small for a second — show their reaction". No word list.
+   * Two ways in, per camera a (its person's voice):
+   *  1. a short region of theirs (from the regions the plan was made from:
+   *     mics, voices or the transcript) inside another person's talk — the
+   *     talker before it and after it within `around` seconds;
+   *  2. with per-mic levels (dbGrids on a shared `step` grid): while talker S
+   *     is on, the listener's mic rises at least `rise` dB above how it
+   *     usually sits against S's mic (S's voice leaking into it) — a sound
+   *     said OVER the talker, which a loudest-mic rule never hears.
+   * Each burst lasts minLen–maxLen seconds. → per angle [{start, end, over}]
+   * (over = the talker it was said over). Pure + tested.
+   */
+  function listenerBursts(regions, opts) {
+    opts = opts || {};
+    var minLen = opts.minLen != null ? opts.minLen : 0.15;
+    var maxLen = opts.maxLen != null ? opts.maxLen : 1.5;
+    var around = opts.around != null ? opts.around : 2.5;
+    var nA = regions.length, out = [], a, k, b;
+    for (a = 0; a < nA; a++) out.push([]);
+    function talkerAt(t, notA) {
+      for (var x = 0; x < nA; x++) {
+        if (x === notA || !regions[x]) continue;
+        for (var j = 0; j < regions[x].length; j++) if (t >= regions[x][j].start - 1e-6 && t < regions[x][j].end - 1e-6) return x;
+      }
+      return -1;
+    }
+    function talkerNear(t, notA, dir) {
+      // the talker within `around` s before (dir -1) or after (dir +1) t
+      for (var d = 0.05; d <= around + 1e-6; d += 0.1) { var x = talkerAt(t + dir * d, notA); if (x >= 0) return x; }
+      return -1;
+    }
+    // 1. short regions inside someone else's talk
+    for (a = 0; a < nA; a++) {
+      var rg = regions[a] || [];
+      for (k = 0; k < rg.length; k++) {
+        var len = rg[k].end - rg[k].start;
+        if (len < minLen - 1e-6 || len > maxLen + 1e-6) continue;
+        var before = talkerNear(rg[k].start, a, -1), after = talkerNear(rg[k].end, a, 1);
+        if (before >= 0 && before === after) out[a].push({ start: rg[k].start, end: rg[k].end, over: before });
+      }
+    }
+    // 2. said over the talker: the listener's mic jumps against the talker's
+    var db = opts.dbGrids, step = opts.step || 0.1, rise = opts.rise != null ? opts.rise : 6;
+    if (db && db.length === nA) {
+      var len2 = 0;
+      for (a = 0; a < nA; a++) if (db[a]) len2 = Math.max(len2, db[a].length);
+      var talkAt = new Array(len2);
+      for (var w = 0; w < len2; w++) talkAt[w] = talkerAt(w * step + step / 2, -1);
+      for (a = 0; a < nA; a++) {
+        if (!db[a] || !db[a].length) continue;
+        // per talker S: how the listener's mic usually sits against S's (median)
+        var base = {};
+        for (var S = 0; S < nA; S++) {
+          if (S === a || !db[S] || !db[S].length) continue;
+          var ds = [];
+          for (w = 0; w < len2; w++) if (talkAt[w] === S && db[a][w] > -99 && db[S][w] > -99) ds.push(db[a][w] - db[S][w]);
+          if (ds.length < 20) continue;
+          ds.sort(function (x, y) { return x - y; });
+          base[S] = ds[Math.floor(ds.length / 2)];
+        }
+        var runS = -1, runOver = -1;
+        for (w = 0; w <= len2; w++) {
+          var S2 = w < len2 ? talkAt[w] : -1, hit = false;
+          if (S2 >= 0 && S2 !== a && base[S2] != null && db[a][w] > -99 && db[S2][w] > -99) hit = (db[a][w] - db[S2][w]) - base[S2] >= rise;
+          if (hit && runS < 0) { runS = w; runOver = S2; }
+          if ((!hit || S2 !== runOver) && runS >= 0) {
+            var st = runS * step, en = w * step, ln = en - st;
+            if (ln >= minLen - 1e-6 && ln <= maxLen + 1e-6) {
+              var dup = false;
+              for (b = 0; b < out[a].length; b++) if (out[a][b].start < en + 0.3 && out[a][b].end > st - 0.3) dup = true;
+              if (!dup) out[a].push({ start: st, end: en, over: runOver });
+            }
+            runS = -1;
+            if (hit) { runS = w; runOver = S2; }
+          }
+        }
+      }
+    }
+    for (a = 0; a < nA; a++) out[a].sort(function (x, y) { return x.start - y.start; });
+    return out;
+  }
+
+  /*
+   * Reaction shots: while one person talks, cut to the listener as they react
+   * — `lead` seconds BEFORE their small sound (so the face is on screen as the
+   * reaction starts), through it, `after` seconds past it, then back to the
+   * talker. At most one every `every` seconds (the owner's "how often"; 0 =
+   * off), only inside a talker's shot of that same talker, never leaving a
+   * sliver of the talker shorter than minSeg on either side, never closer
+   * than `every` to an earlier cutaway. bursts = listenerBursts(); a burst's
+   * camera is its index (the person's own camera). → a new plan; the reaction
+   * pieces carry reaction:true. Pure + tested.
+   */
+  function reactionShots(plan, bursts, opts) {
+    opts = opts || {};
+    var every = opts.every || 0;
+    if (!(every > 0) || !plan || !plan.length || !bursts) return plan ? plan.slice() : [];
+    var lead = opts.lead != null ? opts.lead : 1.0, after = opts.after != null ? opts.after : 0.6;
+    var minSeg = opts.minSeg != null ? opts.minSeg : 1.2, minShot = opts.minShot != null ? opts.minShot : 1.5;
+    var cand = [], a, k;
+    for (a = 0; a < bursts.length; a++) for (k = 0; k < (bursts[a] || []).length; k++) cand.push({ angle: a, b: bursts[a][k] });
+    cand.sort(function (x, y) { return x.b.start - y.b.start; });
+    var out = plan.map(function (p) { var o = {}; for (var key in p) if (p.hasOwnProperty(key)) o[key] = p[key]; return o; });
+    var lastEnd = -Infinity;
+    // earlier cutaways count against the frequency too
+    var cuts = out.filter(function (p) { return p.cutaway; }).map(function (p) { return p.end; });
+    for (var c = 0; c < cand.length; c++) {
+      var an = cand[c].angle, bb = cand[c].b;
+      var st = bb.start - lead, en = Math.max(bb.end + after, st + minShot);
+      if (st - lastEnd < every) continue;
+      var near = false;
+      for (k = 0; k < cuts.length; k++) if (Math.abs(cuts[k] - st) < every) near = true;
+      if (near) continue;
+      // the talker's shot that holds the whole reaction
+      var idx = -1;
+      for (k = 0; k < out.length; k++) if (out[k].start <= st + 1e-6 && out[k].end >= en - 1e-6) { idx = k; break; }
+      if (idx < 0) continue;
+      var sh = out[idx];
+      if (sh.angle === an || sh.cutaway || sh.reaction) continue;
+      if (bb.over != null && bb.over !== sh.angle) continue;
+      if (st - sh.start < minSeg - 1e-6 || sh.end - en < minSeg - 1e-6) continue;
+      var pieces = [
+        copyShot(sh, sh.start, st),
+        { start: st, end: en, angle: an, reaction: true },
+        copyShot(sh, en, sh.end)
+      ];
+      out.splice.apply(out, [idx, 1].concat(pieces));
+      lastEnd = en;
+    }
+    return out;
+    function copyShot(p, s0, e0) { var o = {}; for (var key in p) if (p.hasOwnProperty(key)) o[key] = p[key]; o.start = s0; o.end = e0; return o; }
+  }
+
   return {
     buildAnglePlan: buildAnglePlan,
     planStats: planStats,
@@ -924,6 +1061,8 @@
     burstStarts: burstStarts,
     estimateOffset: estimateOffset,
     speakerCuesToRegions: speakerCuesToRegions,
+    listenerBursts: listenerBursts,
+    reactionShots: reactionShots,
     _mulberry32: mulberry32
   };
 });

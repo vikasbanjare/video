@@ -2221,6 +2221,38 @@ const MUTANTS = [
     repl: "      var ps = Number(pIn[pq].start), pe = Number(pIn[pq].end);",
     gate: 'CutPilot/test/gates/multicam-halfframe.js',
     why: 'on a 25 fps timeline cuts between two frames are reported missing, on every Apply and Redo'
+  },
+  {
+    name: 'v23-react-no-lead',
+    file: 'CutPilot/js/multicam.js',
+    find: "    var lead = opts.lead != null ? opts.lead : 1.0, after = opts.after != null ? opts.after : 0.6;",
+    repl: "    var lead = 0, after = opts.after != null ? opts.after : 0.6;",
+    gate: 'CutPilot/test/gates/multicam-reactions.js',
+    why: 'the reaction shot starts on the sound, not a second before it'
+  },
+  {
+    name: 'v23-react-not-wired',
+    file: 'CutPilot/js/main.js',
+    find: "        plan = mcWithReactions(plan, act.regions, dbGrids);\n",
+    repl: "",
+    gate: 'CutPilot/test/gates/multicam-reactions.js',
+    why: 'reaction shots never reach the plan of a mic-per-person podcast'
+  },
+  {
+    name: 'v23-react-over-speech-deaf',
+    file: 'CutPilot/js/multicam.js',
+    find: "    if (db && db.length === nA) {",
+    repl: "    if (false) {",
+    gate: 'CutPilot/test/gates/multicam-reactions.js',
+    why: 'a small sound said OVER the talker is never heard'
+  },
+  {
+    name: 'v23-react-frequency-ignored',
+    file: 'CutPilot/js/multicam.js',
+    find: "      if (st - lastEnd < every) continue;",
+    repl: "",
+    gate: 'CutPilot/test/gates/multicam-reactions.js',
+    why: 'the how-often setting is ignored — reaction shots back to back'
   }
 ];
 

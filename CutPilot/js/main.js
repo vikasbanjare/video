@@ -16802,6 +16802,40 @@
     applyMcPace('medium');   // sensible default
   })();
 
+  /* Reaction shots (the owner: "one person is talking and sometimes the other
+     says something small for a second — show that, starting a second before,
+     and let me set how often"): at most one every N seconds. */
+  var MC_REACT = {
+    off:   { every: 0,  hint: 'Off — the camera stays on whoever is talking.' },
+    rare:  { every: 45, hint: 'The listener’s “hmm”, a second early — every 45 s at most.' },
+    some:  { every: 20, hint: 'The listener’s “hmm”, a second early — every 20 s at most.' },
+    often: { every: 8,  hint: 'The listener’s small reactions — as often as every 8 s.' }
+  };
+  function mcReactEvery() { return (MC_REACT[settings.mcReact] || MC_REACT.some).every; }
+  function applyMcReact(k) {
+    settings.mcReact = MC_REACT[k] ? k : 'some';
+    var btns = document.querySelectorAll('#mc-react button');
+    for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('on', btns[i].dataset.react === settings.mcReact);
+    if ($('mc-react-hint')) $('mc-react-hint').textContent = MC_REACT[settings.mcReact].hint;
+  }
+  (function wireMcReact() {
+    var btns = document.querySelectorAll('#mc-react button');
+    for (var i = 0; i < btns.length; i++) btns[i].addEventListener('click', function () { applyMcReact(this.dataset.react); saveSettings(); });
+    applyMcReact(settings.mcReact || 'some');
+  })();
+  /* The director's plan with the listener's reactions cut in (regions = whose
+     voice when, per camera; dbGrids = per-mic levels when there are mics). */
+  function mcWithReactions(plan, regions, dbGrids) {
+    var every = mcReactEvery();
+    if (!(every > 0) || !plan || plan.length === 0 || !regions || regions.length < 2) return plan;
+    var bursts = CPMulticam.listenerBursts(regions, { dbGrids: dbGrids || null, step: MC_STEP });
+    var out = CPMulticam.reactionShots(plan, bursts, { every: every, minSeg: mcMinHold() });
+    var n = out.filter(function (p) { return p.reaction; }).length, heard = 0;
+    bursts.forEach(function (b) { heard += b.length; });
+    try { diag('multicam', 'reaction shots: ' + n + ' (heard ' + heard + ' small reactions; at most one every ' + every + ' s)'); } catch (eD) {}
+    return out;
+  }
+
   /* Resolve switch-point segments for the pattern sources (not speaker).
      Returns a Promise of [{start,end}]. */
   function mcSegments() {
@@ -17033,7 +17067,7 @@
     var plan = CPMulticam.directorPlan(regions, dur, {
       minSegment: minSeg, leadIn: mcLeadIn(), maxShot: mcMaxShot(), centerHold: minSeg, cutawayHold: mcCutawayHold()
     });
-    return Promise.resolve(plan);
+    return Promise.resolve(mcWithReactions(plan, regions, null));
   }
 
   /* How much of the timeline the transcript speaks for. The plan itself always
@@ -17240,6 +17274,7 @@
           maxShot: mcMaxShot(),
           cutawayHold: mcCutawayHold()
         });
+        plan = mcWithReactions(plan, act.regions, dbGrids);
         var talkers = act.clearShare.filter(function (x) { return x >= 0.03; }).length;
         return { plan: plan, micFor: micFor, nWin: nWin,
                  stuck: micCount >= 2 && (talkers < 2 || mcSpeakerSwitches(plan) === 0) };
@@ -17496,7 +17531,7 @@
           '“How many people talk?” and Pulse listens again.';
       }
       var regions = CPVoices.voicesToRegions(v.turns, numAngles, angleOf, v.start);
-      return CPMulticam.directorPlan(regions, dur, {
+      return mcWithReactions(CPMulticam.directorPlan(regions, dur, {
         minSegment: mcMinHold(),
         wideAngles: wides,
         wideOnSilence: wides.length > 0,
@@ -17505,7 +17540,7 @@
         leadIn: mcLeadIn(),
         maxShot: mcMaxShot(),
         cutawayHold: mcCutawayHold()
-      });
+      }), regions, null);
     }, function (e) { capMcProgress(null); throw e; });
   }
   /* One mic for everyone (`why` = the plain reason the mics can't be told
@@ -17792,6 +17827,7 @@
       var who = mcAngleName(p.angle);
       var lead = (who === ('V' + (p.angle + 1))) ? '' : (who + '  ');
       span.textContent = '#' + (i + 1) + '  ' + lead + fmt(p.start) + ' → ' + fmt(p.end);
+      if (p.reaction) span.textContent += '  · reaction';
       item.appendChild(span);
       view.appendChild(item);
     });
