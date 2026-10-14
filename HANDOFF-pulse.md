@@ -1,10 +1,19 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.21** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.22** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.22 — multicam cuts on whole frames (25 fps)
+The owner: "6 of 630 camera cuts didn't land (the first at 7:49.90)" and
+"Redo all cuts is also not working". At 25 fps every odd tenth of a second
+is between two frames (469.9 s = frame 11747.5): Premiere cut on the next
+frame, half a frame away, and the verify (edge within half a frame, strict)
+read it as missing — float noise picked which; Redo rebuilt and re-applied
+the same way. CP_applyMulticamPlan snaps the plan to whole frames first.
+Gate multicam-halfframe (5 frame rates, Apply + Redo); mutation v22-*.
 
 ### v0.10.21 — the owner's two reels as styles; caption-file fixes
 The owner sent two reference reels (uploads bhai_01.mp4, bhai_02.mp4) to add
