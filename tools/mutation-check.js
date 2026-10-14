@@ -2301,6 +2301,46 @@ const MUTANTS = [
     repl: "          var w = Math.max(0.08, b.w + dx), h = b.h;",
     gate: 'CutPilot/test/gates/shorts-mark-people.js',
     why: 'resizing the frame box loses its 9:16 shape'
+  },
+  {
+    name: 'v25-cut-words-kept',
+    file: 'CutPilot/js/main.js',
+    find: "CPCaptions.placeLinesOnPieces(t.lines, t.words, pieces)",
+    repl: "CPCaptions.mediaToTimeline(t.lines, pieces)",
+    gate: 'CutPilot/test/gates/caption-sync-placement.js',
+    why: 'a caption line across a cut keeps the words the owner cut out'
+  },
+  {
+    name: 'v25-line-words-ignored',
+    file: 'CutPilot/js/captions.js',
+    find: "        if (lw.length) {\n          var kept",
+    repl: "        if (false) {\n          var kept",
+    gate: 'CutPilot/test/gates/transcribe-only-what-plays.js',
+    why: 'with word stamps, a cut line is trimmed by length instead of by its real words'
+  },
+  {
+    name: 'v25-inout-ignored',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "    if (inOut) collect(seq, inOut.inPoint, inOut.inPoint, inOut.outPoint, 0, {}, false, 1, false, false);",
+    repl: "    if (false) collect(seq, inOut.inPoint, inOut.inPoint, inOut.outPoint, 0, {}, false, 1, false, false);",
+    gate: 'CutPilot/test/gates/transcribe-only-what-plays.js',
+    why: 'the sequence In and Out marks are ignored by Transcribe'
+  },
+  {
+    name: 'v25-muted-heard',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "              if (quiet) { silent.push(rec); continue; }",
+    repl: "              if (false) { silent.push(rec); continue; }",
+    gate: 'CutPilot/test/gates/transcribe-only-what-plays.js',
+    why: 'a muted track or a switched-off clip is transcribed'
+  },
+  {
+    name: 'v25-video-track-heard',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "    if (heardAll.length) {\n      all = heardAll;",
+    repl: "    if (false) {\n      all = heardAll;",
+    gate: 'CutPilot/test/gates/transcribe-only-what-plays.js',
+    why: 'a camera clip on a video track brings back the audio deleted under it'
   }
 ];
 

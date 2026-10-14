@@ -1433,7 +1433,8 @@
       words = cues.slice();
       cues = CPCaptions.regroupWords(cues, 7, { maxGap: 0.8 });
     } else {
-      cues = CPCaptions.dedupeRepeatedCues(CPCaptions.mediaToTimeline(t.lines, pieces));
+      // each piece's copy of a line says only the words that piece plays
+      cues = CPCaptions.dedupeRepeatedCues(CPCaptions.placeLinesOnPieces(t.lines, t.words, pieces));
     }
     if (!t.wordLevel && t.words && t.words.length) {
       words = placeWordStamps(t.words, pieces);
@@ -1693,13 +1694,14 @@
       }
       var NO_AUD_MSG = 'No audio found in your timeline clips — Pulse can\'t hear a voice to transcribe. ' +
         'Make sure the clip with the voice (video with sound, or the audio clip on an A track) is on the timeline and not offline, then try again.';
-      return CPBridge.callHost('CP_getTranscribeSource').then(function (res0) {
+      // only what plays between the sequence's In and Out marks, when set
+      return CPBridge.callHost('CP_getTranscribeSource', { useInOut: true }).then(function (res0) {
         var c0 = res0 && res0.clip;
         if (!c0 || !c0.mediaPath) throw new Error('Put your video or audio clip on the timeline first.');
         return mediaHasAudio(c0.mediaPath).then(function (ok) {
           if (ok) return res0;
           try { diag('asr', 'no audio inside ' + String(c0.mediaPath).split(/[\\/]/).pop() + ' — auto-switching to an audio clip'); } catch (eD) {}
-          return CPBridge.callHost('CP_getTranscribeSource', { ignoreSelection: true, excludeMediaPath: c0.mediaPath }).then(function (alt) {
+          return CPBridge.callHost('CP_getTranscribeSource', { ignoreSelection: true, excludeMediaPath: c0.mediaPath, useInOut: true }).then(function (alt) {
             if (!alt || !alt.clip || !alt.clip.mediaPath) throw new Error(NO_AUD_MSG);
             return mediaHasAudio(alt.clip.mediaPath).then(function (ok2) {
               if (!ok2) throw new Error(NO_AUD_MSG);
@@ -1712,6 +1714,11 @@
         var clip = res.clip;
         if (!clip || !clip.mediaPath) throw new Error('Put your video or audio clip on the timeline first.');
         var shortName = (clip.name || 'clip').replace(/\.[^.]+$/, '');
+        if (res.inOut) {
+          toast('🎯 Transcribing only between your In and Out marks (' + fmt(res.inOut.inPoint) + '–' + fmt(res.inOut.outPoint) + '). Clear them in Premiere to hear the whole timeline.');
+          try { diag('asr', 'sequence In/Out ' + res.inOut.inPoint.toFixed(2) + '–' + res.inOut.outPoint.toFixed(2) + ' s: only that part is heard'); } catch (eIo) {}
+        }
+        if (res.quietOnly) toast('🔇 Every clip of this recording is muted or switched off, so Pulse listened to them anyway.');
         // Every timeline piece that uses this recording (jump-cuts of one source),
         // each with its speed.
         var insts = transcribePieces(res);
@@ -1768,7 +1775,7 @@
             state.transcript = { label: 'Saved transcript (' + shortName + ')', path: writePlacedTranscript(placed.cues, 'saved'), mtime: 1e16 };
             state.transcriptWords = placed.words;
             state.transcriptMedia = clip.mediaPath;
-            state.transcriptPlacement = { mediaPath: clip.mediaPath, pieces: insts };
+            state.transcriptPlacement = { mediaPath: clip.mediaPath, pieces: insts, inOut: res.inOut || null };
             state.transcriptManual = true;
             state._cacheServedKey = cacheKeyNow;
             $('tr-help').classList.add('hidden');
@@ -1930,7 +1937,7 @@
             var cues = placed.cues;
             state.transcriptWords = placed.words;
             state.transcriptMedia = clip.mediaPath;
-            state.transcriptPlacement = { mediaPath: clip.mediaPath, pieces: insts };
+            state.transcriptPlacement = { mediaPath: clip.mediaPath, pieces: insts, inOut: res.inOut || null };
             var finalPath = pathMod.join(os.tmpdir(), 'cutpilot-transcript-' + stamp + '.srt');
             fs.writeFileSync(finalPath, CPCaptions.toSRT(cues), 'utf8');
             try { fs.unlinkSync(wav); } catch (eU) {}
@@ -9551,14 +9558,23 @@
   function followMovedRecording() {
     var pl = state.transcriptPlacement;
     if (!pl || !pl.mediaPath || !pl.pieces || !pl.pieces.length) return Promise.resolve(false);
-    return CPBridge.callHost('CP_getTranscribeSource', { onlyMediaPath: pl.mediaPath }).then(function (res) {
+    return CPBridge.callHost('CP_getTranscribeSource', { onlyMediaPath: pl.mediaPath, useInOut: !!pl.inOut }).then(function (res) {
       var now = transcribePieces(res);
       if (!now.length || !res.clip || res.clip.mediaPath !== pl.mediaPath || samePieces(now, pl.pieces)) return false;
       if (state.transcriptPlacement !== pl) return false;              // replaced while Premiere answered
       var move = function (items) { return CPCaptions.retimeThroughRecording(items, pl.pieces, now); };
       var t = state.transcript, lines = null;
       if (t && t.path) {
-        lines = move(CPCaptions.parseSRT(nodeReq('fs').readFileSync(t.path, 'utf8')));
+        // the lines go back to the recording and onto the pieces as they are
+        // now, keeping only the words each piece plays (a line the owner cut
+        // through must not keep the words cut out of it)
+        var old = CPCaptions.parseSRT(nodeReq('fs').readFileSync(t.path, 'utf8'));
+        var atL = CPCaptions.timelineToMedia(old, pl.pieces), medL = [], keepL = [];
+        old.forEach(function (c, i) { if (atL[i]) medL.push({ start: atL[i].start, end: atL[i].end, text: c.text, conf: c.conf }); else keepL.push(c); });
+        var tw = state.transcriptWords || [], atW = CPCaptions.timelineToMedia(tw, pl.pieces), medW = [];
+        tw.forEach(function (w, i) { if (atW[i]) medW.push({ start: atW[i].start, end: atW[i].end, text: w.text }); });
+        lines = CPCaptions.placeLinesOnPieces(medL, medW.length ? medW : null, now).concat(keepL)
+          .sort(function (x, y) { return x.start - y.start; });
         if (!lines.length) return false;       // none of its words is on the timeline now: leave it as it is
       }
       if (state.transcriptWords && state.transcriptWords.length) state.transcriptWords = move(state.transcriptWords);
@@ -9570,7 +9586,7 @@
         nt.path = writePlacedTranscript(lines, 'moved');
         state.transcript = nt;
       }
-      state.transcriptPlacement = { mediaPath: pl.mediaPath, pieces: now };
+      state.transcriptPlacement = { mediaPath: pl.mediaPath, pieces: now, inOut: pl.inOut || null };
       try { diag('asr', 'the recording moved on the timeline since it was heard: transcript re-placed on ' + now.length + ' piece' + (now.length === 1 ? '' : 's')); } catch (eD) {}
       return true;
     }).then(null, function () { return false; });

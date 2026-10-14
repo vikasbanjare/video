@@ -173,6 +173,9 @@ async function run() {
       C.check('cut by hand: the saved transcript is laid onto both pieces (seven at 24.7 s)', !r.listened && near((word(r.t, 'seven') || {}).start, 24.7), fmt(word(r.t, 'seven')) + ' · ' + r.toast);
       C.check('cut by hand: the word in the cut-out stretch is gone, the one before the cut stays at 21 s',
         !word(r.t, 'five') && near((word(r.t, 'one') || {}).start, 21), JSON.stringify((r.t.words || []).map(fmt)));
+      C.check('cut by hand: no caption LINE still says the word that was cut out, and none says a word twice',
+        (r.t.cues || []).length > 0 && !(r.t.cues || []).some(c => /\bfive\b/.test(c.text)) &&
+        (r.t.cues || []).map(c => c.text).join(' ').split(/\s+/).filter(x => x === 'seven').length === 1, JSON.stringify(r.t.cues));
 
       // selecting the clip later (the panel's own scan) offers the same saved words, placed where the clip is NOW
       place = { media: TALK, pieces: [{ inPoint: 0, outPoint: 10, seqStart: 30, speed: 1 }] };

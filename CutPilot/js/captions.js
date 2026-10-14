@@ -317,6 +317,68 @@
   }
 
   /*
+   * Transcript LINES onto the timeline pieces, keeping only the words each
+   * piece plays. mediaToTimeline cuts a line's TIME to a piece but keeps all
+   * of its text, so a sentence spoken across a cut came back with the words
+   * the owner cut out ("it also takes the transcription of the clips I have
+   * cut"), once per piece. Here each piece's copy of a line says only what
+   * that piece plays:
+   *   · with word stamps (recording seconds): each word goes to the one line
+   *     holding its middle (else the nearest), and a piece keeps the line's
+   *     words whose middle it plays; a clipped copy with none of them is
+   *     dropped;
+   *   · a line no stamp falls in (or no stamps at all): a whole copy keeps its
+   *     text; a clipped copy keeps the words whose share of the line (by
+   *     length) has its middle inside the part the piece plays.
+   * Same times as mediaToTimeline. Returns [{ start, end, text, conf }]
+   * sorted by start. Pure + tested.
+   */
+  function placeLinesOnPieces(lines, words, pieces, minLen) {
+    var min = (minLen != null) ? minLen : 0.05, ps = pieces || [], ls = lines || [];
+    var byLine = ls.map(function () { return []; });
+    (words || []).forEach(function (w) {
+      var mid = (+w.start + +(w.end != null ? w.end : w.start)) / 2, best = -1, bestD = Infinity;
+      for (var j = 0; j < ls.length; j++) {
+        var d = (mid < +ls[j].start) ? +ls[j].start - mid : (mid >= +ls[j].end ? mid - +ls[j].end : 0);
+        if (d === 0) { best = j; break; }
+        if (d < bestD) { bestD = d; best = j; }
+      }
+      if (best >= 0) byLine[best].push({ mid: mid, text: String(w.text != null ? w.text : (w.word || '')).trim() });
+    });
+    var out = [];
+    for (var i = 0; i < ls.length; i++) {
+      var it = ls[i], a0 = +it.start, a1 = +it.end, lw = byLine[i];
+      for (var k = 0; k < ps.length; k++) {
+        var p = ps[k], sp = (+p.speed > 0) ? +p.speed : 1;
+        var s = Math.max(a0, +p.inPoint), e = Math.min(a1, +p.outPoint);
+        var whole = s <= a0 + 1e-9 && e >= a1 - 1e-9 && (e > s || (s >= +p.inPoint && s < +p.outPoint));
+        if (!(whole ? (e >= s) : (e - s > min))) continue;
+        var text = it.text;
+        if (lw.length) {
+          var kept = lw.filter(function (w) { return w.mid >= +p.inPoint && w.mid < +p.outPoint && w.text; });
+          if (!kept.length) continue;
+          if (kept.length < lw.length || !whole) text = kept.map(function (w) { return w.text; }).join(' ');
+        } else if (!whole) {
+          var toks = String(it.text || '').split(/\s+/).filter(Boolean), tot = 0, at = 0, keep = [];
+          toks.forEach(function (t) { tot += t.length + 1; });
+          var f0 = (s - a0) / Math.max(1e-6, a1 - a0), f1 = (e - a0) / Math.max(1e-6, a1 - a0);
+          toks.forEach(function (t) {
+            var m = (at + (t.length + 1) / 2) / Math.max(1, tot); at += t.length + 1;
+            if (m >= f0 && m < f1) keep.push(t);
+          });
+          if (!keep.length) continue;
+          text = keep.join(' ');
+        }
+        var o = { start: +p.seqStart + (s - p.inPoint) / sp, end: +p.seqStart + (e - p.inPoint) / sp, text: text, conf: it.conf };
+        if (it.speaker != null) o.speaker = it.speaker;
+        out.push(o);
+      }
+    }
+    out.sort(function (x, y) { return x.start - y.start; });
+    return out;
+  }
+
+  /*
    * The way back: for each timeline-time item, the piece that plays its middle
    * and where that is in the recording — { piece: index into pieces, start,
    * end } in recording seconds, or null when no piece plays it (the words of
@@ -4034,6 +4096,7 @@
     regroupWords: regroupWords,
     remapCuesToKeeps: remapCuesToKeeps,
     mediaToTimeline: mediaToTimeline,
+    placeLinesOnPieces: placeLinesOnPieces,
     timelineToMedia: timelineToMedia,
     retimeThroughRecording: retimeThroughRecording,
     STYLE_PRESETS: STYLE_PRESETS,

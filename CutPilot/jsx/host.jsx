@@ -258,8 +258,8 @@ function CP_getTranscribeSource(argsJson) {
     // left the last sixth of the recording untranscribed and put every caption
     // later and later behind the voice. Each piece carries `speed` = recording
     // seconds per master second, so the panel maps words onto it exactly.
-    var reversedPieces = 0;
-    function collect(sq, offset, winIn, winOut, depth, pathIds, parentSel, rate, parentRev) {
+    var reversedPieces = 0, silent = [], audioMedia = {};
+    function collect(sq, offset, winIn, winOut, depth, pathIds, parentSel, rate, parentRev, parentQuiet) {
       if (!(rate > 0)) rate = 1;
       if (!sq || depth > 4) return;
       var idKey = null;
@@ -272,8 +272,12 @@ function CP_getTranscribeSource(argsJson) {
       for (var g = 0; g < groups.length; g++) {
         for (var t = 0; t < groups[g].numTracks; t++) {
           var track = groups[g][t];
+          // what the owner can't hear (a muted audio track, a clip switched
+          // off) is only listened to when nothing else is left
+          var trackQuiet = g === 0 && CP_trackIs(track, 'isMuted');
           for (var i = 0; i < track.clips.numItems; i++) {
             var clip = track.clips[i];
+            var quiet = !!parentQuiet || trackQuiet || CP_clipDisabled(clip);
             var st = clip.start.seconds, en = clip.end.seconds;
             var visStart = st > winIn ? st : winIn;
             var visEnd = en < winOut ? en : winOut;
@@ -302,6 +306,8 @@ function CP_getTranscribeSource(argsJson) {
                 dur: sDur,
                 selected: isSel
               };
+              if (g === 0) audioMedia[mp] = 1;
+              if (quiet) { silent.push(rec); continue; }
               all.push(rec);
               if (rec.selected) selected.push(rec);
             } else if (!mp) {
@@ -309,14 +315,43 @@ function CP_getTranscribeSource(argsJson) {
               if (inner) {
                 collect(inner, offset + (visStart - winIn) / rate,
                         ip + (visStart - st) * sp, ip + (visEnd - st) * sp,
-                        depth + 1, childPath, isSel, rate * sp, rev);
+                        depth + 1, childPath, isSel, rate * sp, rev, quiet);
               }
             }
           }
         }
       }
     }
-    collect(seq, 0, 0, 3600 * 100, 0, {}, false, 1, false);
+    // The sequence's In and Out marks: when the owner set them, only what
+    // plays between them is heard (unset, Premiere reports 0 and the end).
+    var inOut = null;
+    if (opts.useInOut) {
+      var sIn = 0, sOut = 0, sEnd = 0;
+      try { sEnd = parseFloat(seq.end) / CP_TICKS_PER_SECOND; } catch (eEnd) {}
+      try { sIn = seq.getInPointAsTime ? seq.getInPointAsTime().seconds : parseFloat(seq.getInPoint()); } catch (eIn) { sIn = 0; }
+      try { sOut = seq.getOutPointAsTime ? seq.getOutPointAsTime().seconds : parseFloat(seq.getOutPoint()); } catch (eOut) { sOut = 0; }
+      if (!(sIn > 0)) sIn = 0;
+      if (!(sOut > 0) || (sEnd > 0 && sOut > sEnd)) sOut = sEnd > 0 ? sEnd : 0;
+      if (sOut > sIn + 0.5 && (sIn > 0.05 || (sEnd > 0 && sOut < sEnd - 0.05))) inOut = { inPoint: sIn, outPoint: sOut };
+    }
+    if (inOut) collect(seq, inOut.inPoint, inOut.inPoint, inOut.outPoint, 0, {}, false, 1, false, false);
+    else collect(seq, 0, 0, 3600 * 100, 0, {}, false, 1, false, false);
+    var quietOnly = false;
+    if (!all.length && silent.length) { all = silent; quietOnly = true; for (var sq0 = 0; sq0 < all.length; sq0++) if (all[sq0].selected) selected.push(all[sq0]); }
+    // a VIDEO track never plays sound: a recording that has pieces on an
+    // audio track is heard through those alone (a camera clip whose audio
+    // piece was deleted or switched off must not bring its words back)
+    var heardAll = [];
+    for (var ha = 0; ha < all.length; ha++) if (all[ha].trackType === 'audio' || !audioMedia[all[ha].mediaPath]) heardAll.push(all[ha]);
+    if (heardAll.length) {
+      all = heardAll;
+      var sel2 = [];
+      for (var hs = 0; hs < selected.length; hs++) if (selected[hs].trackType === 'audio' || !audioMedia[selected[hs].mediaPath]) sel2.push(selected[hs]);
+      // a selected camera clip still points at its recording
+      if (!sel2.length && selected.length) for (var hs2 = 0; hs2 < all.length; hs2++) if (all[hs2].mediaPath === selected[0].mediaPath) { all[hs2].selected = true; sel2.push(all[hs2]); }
+      selected = sel2;
+    }
+    if (!all.length && inOut) return CP_fail('Nothing with sound plays between the In and Out marks of this sequence. Move the marks (or clear them: right-click the time ruler ▸ Clear In and Out), then try again.');
     if (!all.length && reversedPieces) return CP_fail('The clip with the voice plays in reverse, and speech played backwards has no words to caption. Turn off Reverse Speed on it (right-click ▸ Speed/Duration), then try again.');
     if (!all.length) return CP_fail('No clip with audio found. Put your video or audio clip on the timeline, then try again.');
     // Pick the media file by TOTAL COVERAGE, strongly preferring files that sit
@@ -380,7 +415,7 @@ function CP_getTranscribeSource(argsJson) {
       }
       if (!dup) instances.push({ inPoint: cnd.inPoint, outPoint: cnd.outPoint, seqStart: cnd.seqStart, speed: cnd.speed });
     }
-    return CP_ok({ clip: main, instances: instances, fromSelection: selected.length > 0, candidates: all.length });
+    return CP_ok({ clip: main, instances: instances, fromSelection: selected.length > 0, candidates: all.length, inOut: inOut, quietOnly: quietOnly });
   } catch (e) { return CP_fail(e.message); }
 }
 
