@@ -1,10 +1,39 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.23** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.24** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.24 — shorts: editable 9:16 timeline, layouts, framing per camera
+The owner: "editable layer, more accurate result… what's missing for a pro
+editor" and "frame selection is confusing, I can't pick the area of each
+camera… give a top/bottom option, one big one small — research and build".
+Researched Opus Clip layouts, Podcast Clips, Descript and CapCut split screen.
+- Output (#sh-output, settings.shOutput): "timeline" (default) builds a real
+  9:16 sequence in Premiere via CP_buildShortSequence (each camera piece is a
+  clip with Motion Scale/Position + a Crop effect, blurred backdrop as a clip
+  with Gaussian Blur, mics on audio tracks, hook still on top); "file" keeps
+  the one-file ffmpeg render. The timeline is made from a 1 s ffmpeg
+  placeholder at the camera fps (createNewSequenceFromClips), its item then
+  removed.
+- Layout (#sh-layout, settings.shLayout): Auto, Fill, Fit (blurred back),
+  Split (top/bottom), Big + small, 🔲 Corner box, Three. CPPodShort.LAYOUTS /
+  layoutCells / cellMotion / cellDraw; both outputs use the same geometry.
+- Framing (🎯 "what each camera shows", #sh-mark-mode): Auto (faces),
+  Mark people, Set the frame — a 9:16 box you drag/resize per camera
+  (settings.shFrames by file name); the owner's frame wins over auto.
+- Bug fixed: in the one-file render a split's second camera came out black
+  (filterArgs counted inputs from the main camera only).
+- Test everything row "Shorts: an editable 9:16 timeline (split screen)".
+- Not yet confirmed on real Premiere: QE Crop/Gaussian Blur by name,
+  createNewSequenceFromClips on the placeholder, "Scale to frame size"
+  preference, mic channel split (whole mic file placed). The new Test
+  everything row checks these on the owner's Mac.
+Gates shorts-editable-timeline (stand-in shortseq-standin.cjs draws the
+timeline and compares it with the render), shorts-mark-people F;
+mutations v24-*.
 
 ### v0.10.23 — multicam reaction shots
 The owner: "one person is talking and sometimes the other says something
