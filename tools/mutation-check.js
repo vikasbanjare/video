@@ -2381,6 +2381,14 @@ const MUTANTS = [
     repl: "        tcues = fitE.cues;",
     gate: 'CutPilot/test/gates/captions-options-reachable.js',
     why: 'Styled editable captions do not send their words\u2019 starts'
+  },
+  {
+    name: 'v25-off-falls-to-camera',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "    if (!heardAll.length && silent.length) {",
+    repl: "    if (!all.length && silent.length) {",
+    gate: 'CutPilot/test/gates/transcribe-only-what-plays.js',
+    why: 'with every audio piece switched off, the camera picture\u2019s copy of the recording is transcribed'
   }
 ];
 

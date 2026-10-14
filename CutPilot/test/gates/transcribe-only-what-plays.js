@@ -115,6 +115,12 @@ const seqWith = (o) => Object.assign({ sequenceID: 'sq-' + Math.random(), end: S
   const allOff = voice().map(c => Object.assign(c, { disabled: true }));
   const r3 = source(seqWith({ audioTracks: mkTracks([track(allOff)]) }), { useInOut: true });
   (r3.ok && (r3.instances || []).length === 3 && r3.quietOnly === true ? ok : bad)('C. everything switched off: heard anyway, and the panel is told (' + JSON.stringify({ ok: r3.ok, n: (r3.instances || []).length, q: r3.quietOnly }) + ')');
+  // …with the camera clip on V1 too: the switched-off AUDIO pieces are heard,
+  // never the camera picture's copy of the whole recording (found by fuzzing)
+  const allOff2 = voice().map(c => Object.assign(c, { disabled: true }));
+  const r4 = source(seqWith({ audioTracks: mkTracks([track(allOff2)]), videoTracks: mkTracks([track([clip('Cam', '/m/voice.wav', 0, 30, 0)])]) }), { useInOut: true });
+  (r4.ok && r4.quietOnly === true && (r4.instances || []).length === 3 && !(r4.instances || []).some(p => p.outPoint - p.inPoint > 10.001) ? ok : bad)(
+    'C. everything switched off, camera on V1: the switched-off audio pieces, not the camera\'s copy (' + JSON.stringify(r4.instances) + ')');
 }
 {
   // D. the camera file: V1 0–30 (rec 0–30); its audio on A1 only 0–10 (the

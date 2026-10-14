@@ -337,12 +337,17 @@ function CP_getTranscribeSource(argsJson) {
     if (inOut) collect(seq, inOut.inPoint, inOut.inPoint, inOut.outPoint, 0, {}, false, 1, false, false);
     else collect(seq, 0, 0, 3600 * 100, 0, {}, false, 1, false, false);
     var quietOnly = false;
-    if (!all.length && silent.length) { all = silent; quietOnly = true; for (var sq0 = 0; sq0 < all.length; sq0++) if (all[sq0].selected) selected.push(all[sq0]); }
     // a VIDEO track never plays sound: a recording that has pieces on an
     // audio track is heard through those alone (a camera clip whose audio
     // piece was deleted or switched off must not bring its words back)
     var heardAll = [];
     for (var ha = 0; ha < all.length; ha++) if (all[ha].trackType === 'audio' || !audioMedia[all[ha].mediaPath]) heardAll.push(all[ha]);
+    if (!heardAll.length && silent.length) {
+      // nothing the owner can hear: listen to what is muted / switched off
+      // (and say so) rather than to a camera picture's copy of it
+      all = silent; heardAll = silent; quietOnly = true; selected = [];
+      for (var sq0 = 0; sq0 < all.length; sq0++) if (all[sq0].selected) selected.push(all[sq0]);
+    }
     if (heardAll.length) {
       all = heardAll;
       var sel2 = [];
