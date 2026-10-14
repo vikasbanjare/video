@@ -437,6 +437,16 @@ async function magicRun(page, mode) {
           stats.words.push(wpc);
           if (bootWords !== '1') bad('F', 'the boot style’s Words stepper is ' + bootWords + ', not 1 — this check no longer proves independence');
           if (wpc < 2.5) bad('F', tag + ': ' + wpc.toFixed(1) + ' words per graphic');
+          // P. each caption carries its words' starts, so Premiere can key the
+          //    highlight to the spoken word (not an even sweep)
+          a.cues.forEach((c) => {
+            const n = String(c.text).split(/\s+/).filter(Boolean).length;
+            if (n < 2 || /-\s*\r/.test(String(c.text))) return;   // one long word broken over lines: one spoken word
+            const wt = c.wt;
+            if (!wt || wt.length !== n) { bad('P', tag + ': “' + c.text.replace(/\r/g, '⏎') + '” sent ' + (wt ? wt.length : 'no') + ' word starts for ' + n + ' words'); return; }
+            if (wt[0] !== 0 || wt.some((x, i) => i && x < wt[i - 1]) || wt[n - 1] > c.end - c.start + 1e-3) bad('P', tag + ': word starts ' + JSON.stringify(wt) + ' do not fit “' + c.text + '” (' + c.start + '–' + c.end + ')');
+            stats.timed = (stats.timed || 0) + 1;
+          });
           // G. Hindi words in a face that draws them
           if (lang === 'devanagari') {
             const face = String((a.textStyle && a.textStyle.font) || def.text.font);
@@ -447,7 +457,7 @@ async function magicRun(page, mode) {
       await page.close();
     }
     const wAvg = stats.words.reduce((x, y) => x + y, 0) / Math.max(1, stats.words.length);
-    for (const k of ['A', 'B', 'C', 'D', 'E', 'F', 'G']) {
+    for (const k of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'P']) {
       const msg = {
         A: 'the comp is fitted by its real size — ' + stats.replays + ' inserts replayed through host.jsx at 100% on 1920×1080 and 1080×1920',
         B: 'caption size on every template (cap height 4.5–5.5% of the short side), the title templates brought down through their own Scale / font size',
@@ -455,7 +465,8 @@ async function magicRun(page, mode) {
         D: 'the whole graphic in the lower third on 16:9 and at the Reels-safe 62% on 9:16',
         E: 'each caption stays 0.5 s after its last word, 2 frames or ≥ 0.5 s before the next, and the host ends it there (no 60 s last caption)',
         F: '✨ Auto: ' + wAvg.toFixed(1) + ' words a graphic on average, though the Styles stepper says 1',
-        G: 'Hindi words go out in a face that draws them'
+        G: 'Hindi words go out in a face that draws them',
+        P: 'every caption of 2+ words carries its words\u2019 starts (' + (stats.timed || 0) + ' captions), so the highlight is keyed to the spoken word'
       }[k];
       if (fails[k]) fails[k].slice(0, 6).forEach(m => R.bad(k + '. ' + m)), (fails[k].length > 6 && R.note(k + '. …and ' + (fails[k].length - 6) + ' more'));
       else R.ok(k + '. ' + msg);

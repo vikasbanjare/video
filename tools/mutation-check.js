@@ -2341,6 +2341,46 @@ const MUTANTS = [
     repl: "    if (false) {\n      all = heardAll;",
     gate: 'CutPilot/test/gates/transcribe-only-what-plays.js',
     why: 'a camera clip on a video track brings back the audio deleted under it'
+  },
+  {
+    name: 'v25-sweep-even',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "  if (info.durSet && starts && starts.length === W && W > 1) {",
+    repl: "  if (false) {",
+    gate: 'CutPilot/test/gates/editable-highlight-follows-voice.js',
+    why: 'the editable highlight sweeps evenly instead of lighting the word being spoken'
+  },
+  {
+    name: 'v25-sweep-no-readback',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "    if (x == null || Math.round(Tm - x * u.w) !== k) return false;",
+    repl: "    if (x == null) return false;",
+    gate: 'CutPilot/test/gates/editable-highlight-follows-voice.js',
+    why: 'keys Premiere did not take are kept instead of putting the even sweep back'
+  },
+  {
+    name: 'v25-sweep-wrong-word',
+    file: 'CutPilot/jsx/host.jsx',
+    find: "    var v = [(T - keys[i].k) / u.w, D / u.h];",
+    repl: "    var v = [(T - keys[i].k + 1) / u.w, D / u.h];",
+    gate: 'CutPilot/test/gates/editable-highlight-follows-voice.js',
+    why: 'the keyed highlight lights the word after the one being spoken'
+  },
+  {
+    name: 'v25-premium-no-word-starts',
+    file: 'CutPilot/js/main.js',
+    find: "      if (c.ws && c.ws.length > 1) o.wt = c.ws.map(",
+    repl: "      if (false) o.wt = c.ws.map(",
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'Premium captions do not send their words\u2019 starts'
+  },
+  {
+    name: 'v25-styled-no-word-starts',
+    file: 'CutPilot/js/main.js',
+    find: "        tcues = editableWordStarts(fitE.cues, cues.words, syncOff);",
+    repl: "        tcues = fitE.cues;",
+    gate: 'CutPilot/test/gates/captions-options-reachable.js',
+    why: 'Styled editable captions do not send their words\u2019 starts'
   }
 ];
 

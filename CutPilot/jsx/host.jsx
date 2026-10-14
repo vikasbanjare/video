@@ -3593,7 +3593,7 @@ function CP_readSecondsPoint(prop, u) {
   if (v && v.length >= 2) return [v[0] * u.w, v[1] * u.h];
   return null;
 }
-function CP_setWordSweep(comp, durSec, wordCount, u) {
+function CP_setWordSweep(comp, durSec, wordCount, u, starts, t0) {
   if (!comp || !comp.properties || !(durSec > 0)) return null;
   u = u || { w: 1080, h: 1920 };
   // RELAXED name matching. The old code demanded the byte-exact prefix
@@ -3630,7 +3630,55 @@ function CP_setWordSweep(comp, durSec, wordCount, u) {
   var d0 = -0.75 * durSec / (W - 0.5);
   info.words = W; info.d0 = d0; info.d1 = d1;
   info.durSet = CP_setSecondsPoint(durProp, d0, d1, u);
+  // The owner: the editable highlight "just keeps going" — an even sweep
+  // across the caption, not the voice. With each word's start (seconds into
+  // the caption) the window is KEYFRAMED so the engine's own math lands on the
+  // word being spoken: with d[1] = W+1, activeIndex = round(time - d[0]), so
+  // d[0] = time - k keeps word k on from its start to just before the next
+  // (linear keys at both ends of each word; the jump to the next word takes
+  // 20 ms). Read back at every word's middle; anything off and the even
+  // sweep above is put back.
+  if (info.durSet && starts && starts.length === W && W > 1) {
+    try { info.timed = CP_keySweepToWords(durProp, durSec, starts, u, t0 || 0); } catch (eT) { info.timed = false; }
+    if (!info.timed) {
+      try { durProp.setTimeVarying(false); } catch (eTv) {}
+      CP_setSecondsPoint(durProp, d0, d1, u);
+    }
+  }
   return info;
+}
+/* The keys for CP_setWordSweep's timed highlight; true when Premiere read
+   back the word each key set. */
+function CP_keySweepToWords(prop, durSec, starts, u, t0) {
+  if (typeof prop.setTimeVarying !== 'function' || typeof prop.addKey !== 'function' || typeof prop.setValueAtKey !== 'function') return false;
+  var W = starts.length, D = W + 1, keys = [], last = -1, k;
+  for (k = 1; k <= W; k++) {
+    var a = Number(starts[k - 1]), b = (k < W) ? Number(starts[k]) : durSec;
+    if (!(a >= 0)) a = 0;
+    if (a > durSec) a = durSec;
+    if (!(b > a)) b = a;
+    if (b > durSec) b = durSec;
+    if (k === 1) a = 0;                               // the caption opens on word 1
+    var tb = (b - a > 0.04) ? b - 0.02 : a + (b - a) / 2;
+    if (a <= last + 0.001) a = last + 0.002;
+    if (tb <= a + 0.001) tb = a + 0.002;
+    keys.push({ t: a, k: k }); keys.push({ t: tb, k: k });
+    last = tb;
+  }
+  prop.setTimeVarying(true);
+  for (var i = 0; i < keys.length; i++) {
+    var T = t0 + keys[i].t;
+    prop.addKey(T);
+    var v = [(T - keys[i].k) / u.w, D / u.h];
+    try { prop.setValueAtKey(T, v, true); } catch (e1) { prop.setValueAtKey(T, v); }
+  }
+  if (typeof prop.getValueAtTime !== 'function') return true;   // nothing to read back with
+  for (k = 1; k <= W; k++) {
+    var m = (keys[2 * k - 2].t + keys[2 * k - 1].t) / 2, Tm = t0 + m;
+    var r = prop.getValueAtTime(Tm), x = r && r.x != null ? r.x : (r && r.length ? r[0] : null);
+    if (x == null || Math.round(Tm - x * u.w) !== k) return false;
+  }
+  return true;
 }
 
 /* The engine's text layers are OPACITY-GATED by their authored intro animation:
@@ -3882,7 +3930,7 @@ function CP_insertMogrtCaptions(argsJson) {
       seq = CP_activeSequence();
     }
     var aTrack = args.audioTrack != null ? args.audioTrack : 0;
-    var inserted = 0, textSet = 0, clamped = 0, maxTemplateDur = 0, swept = 0, sweepSample = null, introFixed = 0;
+    var inserted = 0, textSet = 0, clamped = 0, maxTemplateDur = 0, swept = 0, sweptTimed = 0, sweepSample = null, introFixed = 0;
     var errors = [];
     var fieldNames = null; // captured once for diagnostics
     var paramsApplied = 0; // how many colour/number overrides actually landed (all passes)
@@ -3993,8 +4041,11 @@ function CP_insertMogrtCaptions(argsJson) {
           var swOk = null;
           try {
             var swWords = String(grp[0].text || '').replace(/\s+/g, ' ').replace(/^ | $/g, '').split(' ').length;
-            swOk = CP_setWordSweep(comp, wantEnd - startSec, swWords, CP_compUnits(clip, compW, compH));
-            if (swOk) { swept++; if (!sweepSample) sweepSample = swOk; }
+            // each word's start (seconds into the caption), when the panel sent them
+            var swStarts = (grp.length === 1 && grp[0].wt && grp[0].wt.length === swWords) ? grp[0].wt : null;
+            var swT0 = 0; try { swT0 = clip.inPoint.seconds || 0; } catch (eIp) {}
+            swOk = CP_setWordSweep(comp, wantEnd - startSec, swWords, CP_compUnits(clip, compW, compH), swStarts, swT0);
+            if (swOk) { swept++; if (swOk.timed) sweptTimed++; if (!sweepSample) sweepSample = swOk; }
           } catch (eSw) {}
 
           // fit the template's own entrance animation to THIS caption's length —
@@ -4230,6 +4281,7 @@ function CP_insertMogrtCaptions(argsJson) {
       stretched: stretched,
       maxTemplateDur: maxTemplateDur,
       swept: swept,                       // # graphics switched to word-by-word sweep
+      sweptTimed: sweptTimed,             // …of them keyed to each spoken word (read back by Premiere)
       sweepSample: sweepSample,           // what we set on the first one (diagnostic)
       graphics: groups.length,
       linesPerGraphic: perGraphic,

@@ -394,6 +394,51 @@ async function reloadPanel(page) {
     else R.ok('H: ✏️ Editable captions follow Text case (lower: "' + caseRes.lower[0] + '", Title: "' + caseRes.title[0] + '") even with the 📁 Upload view set to UPPER');
   }
 
+  // ---- H2. ✏️ Editable captions carry each word's real start ----------------
+  //   (Premiere keys the highlight to them: the owner's "editable text … just
+  //   keeps going" was an even sweep across each caption)
+  {
+    const tmp2 = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-gate-wt-'));
+    const srt2 = path.join(tmp2, 'talk.srt');
+    fs.writeFileSync(srt2, '1\n00:00:00,000 --> 00:00:03,000\nso this is really important\n\n2\n00:00:03,400 --> 00:00:05,000\ntrust me\n');
+    // uneven: "so" quick, "really" long
+    const W = [['so', 0, 0.15], ['this', 0.2, 0.4], ['is', 0.45, 0.55], ['really', 0.6, 2.1], ['important', 2.2, 3.0], ['trust', 3.4, 3.9], ['me', 4.0, 5.0]]
+      .map(([text, start, end]) => ({ text, start, end }));
+    let wtRes;
+    try {
+      wtRes = await page.evaluate(async (srt, W) => {
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+        window.CP_DEBUG_EXT.sync.setTranscript({ transcript: { path: srt, label: 'talk.srt' }, words: W });
+        document.querySelector('#cap-output button[data-out="editable"]').click(); await sleep(300);
+        const cs = document.getElementById('c-case'); cs.value = 'original'; cs.dispatchEvent(new Event('change', { bubbles: true }));
+        window.__hostScripts.length = 0;
+        const ov = document.getElementById('cp-confirm-ov'); if (ov) ov.remove();
+        document.getElementById('btn-magic').click();
+        let s = null;
+        for (let i = 0; i < 40 && !s; i++) { await sleep(100); s = window.__hostScripts.find(x => /^CP_insertMogrtCaptions\(/.test(x)); }
+        document.querySelector('#cap-output button[data-out="png"]').click(); await sleep(200);
+        if (!s) return null;
+        const off = (parseInt(document.getElementById('c-sync-offset').value, 10) || 0) / 1000;
+        return (JSON.parse(JSON.parse(s.slice('CP_insertMogrtCaptions('.length, s.lastIndexOf(')')))).cues || []).map(c => ({ start: c.start, end: c.end, text: c.text, wt: c.wt || null, off }));
+      }, srt2, W);
+    } finally { try { fs.rmSync(tmp2, { recursive: true, force: true }); } catch (e) {} }
+    const bad = [];
+    if (!wtRes || !wtRes.length) bad.push('no editable captions were placed');
+    else wtRes.forEach(c => {
+      const toks = String(c.text).split(/\s+/).filter(Boolean);
+      if (toks.length < 2) return;
+      if (!c.wt || c.wt.length !== toks.length) { bad.push('“' + c.text + '” sent ' + JSON.stringify(c.wt)); return; }
+      toks.forEach((t, i) => {
+        const w = W.find(x => x.text === t.toLowerCase());
+        // the owner's sync nudge moves the words with the captions
+        const want = i ? Math.max(0, w.start + c.off - c.start) : 0;
+        if (!w || Math.abs(c.wt[i] - want) > 0.002) bad.push('“' + t + '” in “' + c.text + '” starts at +' + c.wt[i] + ', spoken at +' + (w && (w.start + c.off - c.start).toFixed(3)));
+      });
+    });
+    if (bad.length) R.bad('H2: ✏️ Editable captions do not carry each word\'s real start: ' + bad.slice(0, 4).join('; '));
+    else R.ok('H2: ✏️ Editable captions carry each word\'s real start, so the highlight is keyed to the voice (' + wtRes.map(c => c.text + ' ' + JSON.stringify(c.wt)).join(' · ') + ')');
+  }
+
   // ---- I. Words per caption says what it does --------------------------------
   const wc = await page.evaluate(async () => {
     const sleep = ms => new Promise(r => setTimeout(r, ms));

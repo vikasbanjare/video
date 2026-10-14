@@ -12267,7 +12267,14 @@
         .map(function (c) { return { start: c.start, end: c.end, text: c.text, nWords: String(c.text).split(/\s+/).length, lines: 1 }; });
     }
     premTiming(caps, plan, o.hold);
-    var out = caps.map(function (c) { return { start: c.start, end: c.end, text: c.text, showUntil: c.showUntil }; });
+    var out = caps.map(function (c) {
+      var o = { start: c.start, end: c.end, text: c.text, showUntil: c.showUntil };
+      // each word's start, seconds into the caption: Premiere keys the
+      // template's highlight to them, so it lights the word being SPOKEN
+      // (without them it sweeps evenly across the caption)
+      if (c.ws && c.ws.length > 1) o.wt = c.ws.map(function (w) { return Math.max(0, Math.round((w.start - c.start) * 1000) / 1000); });
+      return o;
+    });
     var params = ((state.mogrtParamsPath === path) ? (state.mogrtParams || []) : []).map(function (p) { return { i: p.i, kind: p.kind, value: p.value }; });
     var sizeFit = premSizeFit(plan);
     if (sizeFit && sizeFit.kind !== 'text') params.push({ i: sizeFit.i, kind: sizeFit.kind, value: sizeFit.value });
@@ -12476,6 +12483,7 @@
         var safe = (r.probeKind === 'rich') ? ' · saved first, so ⌘Z undoes it all' : '';
         // word-by-word: how many graphics got the highlight set to sweep with the voice
         var sweep = (r.swept > 0) ? ' · ⚡ word-by-word on ' + r.swept : '';
+        try { if (r.swept > 0) diag('editable', 'highlight on the spoken word: ' + (r.sweptTimed || 0) + ' of ' + r.swept + ' graphics keyed to each word (the rest sweep evenly)'); } catch (eSw) {}
         toast('🎬 Added ' + r.inserted + ' graphics (' + r.textSet + ' with text)' + multi +
               (r.failed ? ' · ' + r.failed + ' failed' : '') + str + dur + safe + sweep + '.');
       }
@@ -13288,6 +13296,30 @@
   /* After editable captions: say what Premiere drew. A caption that paints
      nothing is REPORTED, with a button to switch — the owner chose editable
      captions, so Pulse never deletes them by itself. */
+  /* Each editable caption's word starts (seconds into it) from the
+     transcript's real word timing, so Premiere keys the highlight to the
+     word being spoken (host CP_setWordSweep). A caption gets them only when
+     the words heard inside it are exactly the words it shows — anything else
+     (a word dropped as "um", a long word broken over two lines) keeps the even
+     sweep. Words are timeline time; off = the owner's sync nudge. */
+  function editableWordStarts(tcues, words, off) {
+    if (!words || !words.length) return tcues;
+    off = off || 0;
+    var ws = words.map(function (w) { return { s: +w.start + off, m: (+w.start + +(w.end != null ? w.end : w.start)) / 2 + off, t: String(w.text || w.word || '') }; })
+      .sort(function (a, b) { return a.s - b.s; });
+    var norm = function (x) { return String(x).toLowerCase().replace(/[\s.,!?;:"'\u201c\u201d\u2018\u2019()\[\]\u2026\-\u2013\u2014\u0964\u0965]+/g, ''); };
+    return tcues.map(function (c) {
+      var toks = String(c.text || '').split(/\s+/).filter(Boolean);
+      if (toks.length < 2) return c;
+      var inC = ws.filter(function (w) { return w.m >= c.start - 0.02 && w.m < c.end + 0.02; });
+      if (inC.length !== toks.length) return c;
+      for (var i = 0; i < toks.length; i++) if (norm(toks[i]) !== norm(inC[i].t) && norm(inC[i].t)) return c;
+      var o = {}, k;
+      for (k in c) if (c.hasOwnProperty(k)) o[k] = c[k];
+      o.wt = inC.map(function (w, i) { return i ? Math.max(0, Math.round((w.s - c.start) * 1000) / 1000) : 0; });
+      return o;
+    });
+  }
   function verifyEditableVisible(tcues, track, mogrtPath, before) {
     if (!CPBridge.isCEP() || !tcues || !tcues.length || !track || !before) return;
     grabFrames(before.map(function (b) { return b.at; }), 'after').then(function (after) {
@@ -13421,7 +13453,7 @@
         // Position row is kept far enough from the edges for the whole graphic.
         var edGeom = premGeometry(bb.path);
         var fitE = premFitEditable(tcues, bb.path, state.env, sizeScale, textStyle && textStyle.font);
-        tcues = fitE.cues;
+        tcues = editableWordStarts(fitE.cues, cues.words, syncOff);
         var edPos = (params && params._posYPct != null)
           ? (fitE.plan.known ? premPlan(bb.path, state.env, { fixedScale: sizeScale, pos: params._posYPct }).posYPct : params._posYPct)
           : null;
@@ -13457,7 +13489,8 @@
           ver: ($('ver') && $('ver').textContent) || '?', backbone: bb.name || bb.path,
           probeKind: r.probeKind, textSet: r.textSet, inserted: r.inserted,
           bind: (sentParams && sentParams._bind) || null,   // WHICH control took fill/highlight — catches wrong-binding instantly
-          richBlocked: !!r.richBlocked, swept: r.swept,
+          richBlocked: !!r.richBlocked, swept: r.swept, sweptTimed: r.sweptTimed,
+          wordTimed: tcues.filter(function (c) { return c.wt; }).length + '/' + tcues.length,
           replaceMode: r.replaceMode, guard: r.replaceGuard,   // how the target track was chosen
           paramsSent: (r.paramsSent != null ? r.paramsSent : undefined),
           paramsApplied: (r.paramsApplied != null ? r.paramsApplied : undefined),
