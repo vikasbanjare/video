@@ -3308,19 +3308,21 @@
      the first of these that its words match. English, Hinglish and Hindi.
      (The Premiere-graphics paths and the Pulse-rendered captions share it, so
      the same caption gets the same emoji everywhere.) */
+  // (a Hindi word that is the start of other words — आग/आगे, दिल/दिल्ली,
+  // राज/राजा — must stand alone: "मैं दिल्ली गया" got ❤️, "आगरा" 🔥)
   var EMOJI_LEX = [
     [/\b(money|cash|paid|price|prices|cost|profit|revenue|rupees?|dollars?|lakhs?|crores?|paisa|paise|rupaye|kamai)\b|पैस[ाे]|रुपय[ेा]|कमाई|लाख|करोड़/i, '💰'],
     [/\b(grow|growth|growing|increase|increasing|rising|rise|scale|scaling|boost|badh|badhega|badhegi)\b|बढ़/i, '📈'],
     [/\b(drop|fall|falling|decrease|crash|collapse)\b|गिर/i, '📉'],
-    [/\b(fire|hot|burn|burning|lit|heat|heatwaves?|aag)\b|आग/i, '🔥'],
+    [/\b(fire|hot|burn|burning|lit|heat|heatwaves?|aag)\b|(?:^|[^\u0900-\u097F])आग(?![\u0900-\u097F])/i, '🔥'],
     [/\b(idea|ideas|think|thinking|brain|smart|genius|soch|socho)\b|सोच|आइडिया/i, '💡'],
-    [/\b(love|heart|care|caring|pyaar|pyar|dil)\b|प्यार|दिल/i, '❤️'],
+    [/\b(love|heart|care|caring|pyaar|pyar|dil)\b|प्यार|(?:^|[^\u0900-\u097F])दिल(?![\u0900-\u097F])/i, '❤️'],
     [/\b(warning|danger|dangerous|careful|risk|risky|alert|crisis|khatra|savdhaan)\b|खतरा|सावधान/i, '⚠️'],
     [/\b(time|clock|minutes?|hours?|deadline|schedule|samay|waqt)\b|समय|वक़्त|वक्त/i, '⏰'],
     [/\b(goal|goals|target|aim|focus|focused|lakshya)\b|लक्ष्य/i, '🎯'],
     [/\b(win|winner|won|success|successful|victory|jeet|safalta|kamyabi)\b|जीत|सफलता|कामयाबी/i, '🏆'],
     [/\b(work|working|grind|hustle|effort|mehnat)\b|मेहनत/i, '💪'],
-    [/\b(secret|secrets|hidden|nobody tells|raaz)\b|राज़|राज/i, '🤫'],
+    [/\b(secret|secrets|hidden|nobody tells|raaz)\b|(?:^|[^\u0900-\u097F])(?:राज़|राज)(?![\u0900-\u097F])/i, '🤫'],
     [/\b(crazy|insane|unbelievable|shocking|shocked|mind ?blown)\b/i, '🤯'],
     [/\b(stop|never|avoid|quit)\b/i, '🚫'],
     [/\b(new|launch|launched|launching|announcement|announcing)\b/i, '🚀'],

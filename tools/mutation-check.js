@@ -2597,6 +2597,14 @@ const MUTANTS = [
     repl: "  var L = 'A-Za-z0-9_';",
     gate: 'CutPilot/test/gates/shorts-hooks-hindi.js',
     why: 'Devanagari hook words never match (a Hindi transcript has no hooks)'
+  },
+  {
+    name: 'v30-emoji-delhi-heart',
+    file: 'CutPilot/js/captions.js',
+    find: "|प्यार|(?:^|[^\\u0900-\\u097F])दिल(?![\\u0900-\\u097F])/i",
+    repl: "|प्यार|दिल/i",
+    gate: 'CutPilot/test/gates/captions-emoji-hindi.js',
+    why: 'Auto-emoji puts a heart on Delhi (दिल्ली)'
   }
 ];
 
