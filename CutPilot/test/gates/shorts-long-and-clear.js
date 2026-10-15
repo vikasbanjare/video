@@ -62,7 +62,7 @@ async function run() {
     // ── A / C ──
     failPart = -1; parts = [];
     await page.evaluate(() => { document.getElementById('toast').textContent = ''; document.getElementById('btn-find-shorts').click(); });
-    await H.waitFor(page, () => document.querySelectorAll('#shorts-results .card').length > 1, 120000);
+    await H.waitFor(page, () => document.querySelectorAll('#shorts-results .card:not(.sh-lead)').length > 1, 120000);
     let res = await page.evaluate(() => ({ titles: Array.from(document.querySelectorAll('#shorts-results .step-title')).map(e => e.textContent), toast: document.getElementById('toast').textContent }));
     C.check('A. every part of a 2-hour transcript is read, to its last line (' + parts.length + ' parts)',
       parts.length >= 5 && parts[parts.length - 1] === 'END', JSON.stringify(parts));
@@ -72,7 +72,7 @@ async function run() {
     // ── B ── one part fails
     failPart = 1; parts = [];
     await page.evaluate(() => { document.getElementById('toast').textContent = ''; document.getElementById('shorts-results').innerHTML = ''; document.getElementById('btn-find-shorts').click(); });
-    await H.waitFor(page, () => document.querySelectorAll('#shorts-results .card').length > 1, 120000);
+    await H.waitFor(page, () => document.querySelectorAll('#shorts-results .card:not(.sh-lead)').length > 1, 120000);
     res = await page.evaluate(() => ({ titles: Array.from(document.querySelectorAll('#shorts-results .step-title')).map(e => e.textContent), toast: document.getElementById('toast').textContent }));
     C.check('B. one part the AI could not answer: the other parts keep the AI\'s picks', res.titles.some(t => /The ending that wins/.test(t)) && res.titles.some(t => /Part from line/.test(t)), JSON.stringify(res.titles.slice(0, 5)));
     C.check('B. …and the message says which parts were picked by their words', /1 of \d+ parts picked by their words/.test(res.toast), res.toast);
@@ -90,15 +90,34 @@ async function run() {
       return { nums, sum0, sum1, srFolded: !!sr && sr.tagName === 'DETAILS' && !sr.open, srLast: tab.lastElementChild === sr || tab.lastElementChild.contains(sr) };
     });
     C.check('D. the steps read 1 → 2 → 3 down the page', d.nums.join(',') === '1,2,3', JSON.stringify(d.nums));
-    C.check('D. step 1 says the transcript is ready and how long (' + status + ')', /Transcript ready — 2 h 0 min of talk/.test(status), status);
+    C.check('D. step 1 says the transcript is ready and how long (' + status + ')', /Transcript ready — 2 h 0 min, all of it read/.test(status), status);
     C.check('D. step 2\'s summary follows the choices (' + d.sum1 + ')', /Each short: 9:16 vertical/.test(d.sum0) && /pauses cut/.test(d.sum0) && /Split layout/.test(d.sum1) && !/pauses cut/.test(d.sum1), JSON.stringify(d));
     C.check('D. the whole-video tool is folded away at the bottom', d.srFolded && d.srLast, JSON.stringify(d));
+    // E. the caption choice in step 2
+    const e = await page.evaluate(async () => {
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      const sel = document.getElementById('sh-cap-style');
+      const n = sel.options.length;
+      sel.value = 'pack-green-word-box'; sel.dispatchEvent(new Event('change')); await sleep(100);
+      const editorName = (document.getElementById('editor-tpl-name') || {}).textContent;
+      document.querySelector('#sh-cap-out button[data-out="editable"]').click(); await sleep(100);
+      const capsEditable = document.body.classList.contains('cap-editable');
+      const sum = document.getElementById('sh-summary').textContent;
+      document.querySelector('#sh-cap-out button[data-out="png"]').click();
+      const caps = document.getElementById('sh-caps'); caps.checked = false; caps.dispatchEvent(new Event('change'));
+      const hidden = document.getElementById('sh-cap-row').classList.contains('hidden');
+      caps.checked = true; caps.dispatchEvent(new Event('change'));
+      return { n, editorName, capsEditable, sum, hidden };
+    });
+    C.check('E. step 2 lists every caption style (' + e.n + ') and the one picked is the caption style (' + e.editorName + ')', e.n > 50 && e.editorName === 'Green Word Box', JSON.stringify(e));
+    C.check('E. ✏️ Editable makes the short\'s captions editable, and the summary says which style and how (' + e.sum + ')', e.capsEditable && /captions in “Green Word Box” \(editable\)/.test(e.sum), JSON.stringify(e));
+    C.check('E. with captions off the style choice is put away', e.hidden, JSON.stringify(e));
     // no transcript: the line says so and leads to Transcribe
     const none = await page.evaluate(async () => {
       window.CP_DEBUG_EXT.sync.setTranscript({}); window.CP_DEBUG_EXT.shorts.show && 0;
       document.querySelector('.tab[data-tab="transcribe"]').click(); await new Promise(r => setTimeout(r, 100));
       document.querySelector('.tab[data-tab="shorts"]').click(); await new Promise(r => setTimeout(r, 100));
-      const el = document.getElementById('sh-tr-status'), a = el.querySelector('a');
+      const el = document.getElementById('sh-tr-status'), a = el.querySelector('button');
       const txt = el.textContent;
       if (a) a.click();
       await new Promise(r => setTimeout(r, 100));

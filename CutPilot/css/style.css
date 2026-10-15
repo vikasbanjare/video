@@ -1340,6 +1340,8 @@ body.cap-premiere #wc-block { display: none; }   /* Premiere captions group whol
 
 /* Shorts: three numbered steps (find → look → make) */
 .sh-step { margin-top: 10px; }
-.sh-summary { margin: 2px 0 8px; padding: 6px 8px; border-radius: 8px; background: var(--card2); }
+.sh-summary { margin: 2px 0 8px; padding: 6px 8px; border-radius: 8px; background: var(--card2); font-size: var(--fs-sm); }
 .sh-lead { padding-bottom: 6px; }
 #sr-wrap > summary { font-weight: 600; }
+.sh-cap-row { margin: 6px 0 4px 0; }
+.sh-cap-row .seg-control { margin-top: 6px; }

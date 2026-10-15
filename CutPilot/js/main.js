@@ -2109,7 +2109,7 @@
       if (this.dataset.tab !== 'captions') { if (previewTimer) { clearInterval(previewTimer); previewTimer = null; } stopCardAnimator(); }
       // Safe Zone tab → refresh its preview from the current sequence dimensions.
       if (this.dataset.tab === 'safezone' && window.CPSafezone) { try { CPSafezone.onShow(); } catch (eSZ) {} }
-      if (this.dataset.tab === 'shorts') { try { refreshShortsStatus(); refreshShortsSummary(); } catch (eSh) {} }
+      if (this.dataset.tab === 'shorts') { try { fillShortCapStyles(); refreshShortsStatus(); refreshShortsSummary(); } catch (eSh) {} }
       // Re-check for a transcript when returning to Captions (e.g. after
       // exporting one), and refresh the preview now the frame has a size.
       // OPENING CAPTIONS SHOWS THE STYLES. "When we open the Captions tab it's
@@ -15750,8 +15750,8 @@
     lh.querySelector('.step-title').textContent = 'Make the ones you like (' + list.length + ' found)';
     lead.appendChild(lh);
     var lp = document.createElement('p'); lp.className = 'hint';
-    lp.textContent = 'Each one is made with the look in step 2 (above). ';
-    var lk = document.createElement('a'); lk.href = '#'; lk.textContent = 'Change the look';
+    lp.textContent = 'Made with the look in step 2. ';
+    var lk = document.createElement('button'); lk.type = 'button'; lk.className = 'chip-btn'; lk.textContent = '🎨 Change it';
     lk.addEventListener('click', function (ev) { ev.preventDefault(); var t = $('sh-look'); if (t && t.scrollIntoView) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
     lp.appendChild(lk); lead.appendChild(lp); box.appendChild(lead);
     // the list sits under step 2: bring it into view when it arrives
@@ -15866,16 +15866,57 @@
     var segs = null; try { segs = highlightSegments(); } catch (e) { segs = null; }
     if (segs && segs.length >= 4) {
       var span = segs[segs.length - 1].end - segs[0].start;
-      el.textContent = '✅ Transcript ready — ' + spokenLength(span) + ' of talk. Pulse reads all of it.';
+      el.textContent = '✅ Transcript ready — ' + spokenLength(span) + ', all of it read.';
       el.classList.remove('warn');
     } else {
-      el.textContent = '⚠️ No transcript yet — Pulse finds the moments in its words. ';
-      var go = document.createElement('a'); go.href = '#'; go.textContent = 'Go to Transcribe';
+      el.textContent = '⚠️ No transcript yet — ';
+      var go = document.createElement('button'); go.type = 'button'; go.className = 'chip-btn'; go.textContent = '🎙 Transcribe first';
       go.addEventListener('click', function (ev) { ev.preventDefault(); var tb = document.querySelector('.tab[data-tab="transcribe"]'); if (tb) tb.click(); });
       el.appendChild(go);
       el.classList.add('warn');
     }
   }
+  /* Step 2's caption choice: the style (the same one the Captions page
+     uses — picking it here picks it there) and how the captions are made.
+     The owner: "captions are generated automatically without selecting
+     which caption style I need". */
+  function fillShortCapStyles() {
+    var sel = $('sh-cap-style'); if (!sel) return;
+    if (!sel.options.length) {
+      var groups = {}, order = [];
+      allTemplates().forEach(function (t) {
+        if (!t || t.hidden) return;
+        var g = t.category || 'Styles';
+        if (!groups[g]) { groups[g] = document.createElement('optgroup'); groups[g].label = g; order.push(g); }
+        var o = document.createElement('option'); o.value = t.id; o.textContent = t.name; groups[g].appendChild(o);
+      });
+      order.forEach(function (g) { sel.appendChild(groups[g]); });
+    }
+    var cur = currentPreset();
+    if (cur) {
+      var has = false; for (var i = 0; i < sel.options.length; i++) if (sel.options[i].value === cur.id) has = true;
+      if (!has) { var o2 = document.createElement('option'); o2.value = cur.id; o2.textContent = cur.name; sel.insertBefore(o2, sel.firstChild); }
+      sel.value = cur.id;
+    }
+    var ob = document.querySelectorAll('#sh-cap-out button');
+    for (var j = 0; j < ob.length; j++) ob[j].classList.toggle('on', ob[j].dataset.out === (_capOut === 'editable' ? 'editable' : 'png'));
+    var row = $('sh-cap-row'), on = $('sh-caps');
+    if (row) row.classList.toggle('hidden', !!(on && !on.checked));
+  }
+  (function wireShortCapStyle() {
+    var sel = $('sh-cap-style');
+    if (sel) sel.addEventListener('change', function () {
+      var t = findTemplate(sel.value);
+      if (t) { try { applyTemplate(t, { silent: true }); } catch (eA) {} }
+      fillShortCapStyles(); refreshShortsSummary();
+    });
+    var ob = document.querySelectorAll('#sh-cap-out button');
+    for (var i = 0; i < ob.length; i++) ob[i].addEventListener('click', function () {
+      try { setCapOut(this.dataset.out); } catch (eO) {}
+      fillShortCapStyles(); refreshShortsSummary();
+    });
+    var caps = $('sh-caps'); if (caps) caps.addEventListener('change', function () { fillShortCapStyles(); });
+  })();
   /* Step 2's line: everything a short will be made with, in one sentence. */
   function refreshShortsSummary() {
     var el = $('sh-summary'); if (!el) return;
@@ -15887,7 +15928,7 @@
     var extras = [];
     if (o.tight) extras.push('pauses cut');
     if (o.hook) extras.push('hook title');
-    if (o.caps) extras.push('captions');
+    if (o.caps) { var cp = currentPreset(); extras.push('captions in “' + (cp ? cp.name : 'your style') + '”' + (_capOut === 'editable' ? ' (editable)' : '')); }
     if (o.cams) extras.push('your cameras');
     el.textContent = 'Each short: ' + bits.join(' · ') + (extras.length ? ' — with ' + extras.join(', ') : '') + '.';
   }
@@ -16405,7 +16446,7 @@
       diag('shorts', 'made ' + what + ' · ' + plan.segments.length + ' stretch(es), ' + plan.duration.toFixed(1) + ' s' + (o.hook ? ', hook title' : '') + (o.caps ? ', captions' : '') +
         (info.diag ? ' · ' + info.diag : ''));
       if (o.caps && plan.words.length && res && res.sequence) {
-        prog.textContent = 'Adding captions in your caption style…';
+        prog.textContent = 'Adding captions in “' + ((currentPreset() || {}).name || 'your caption style') + '”…';
         setTimeout(function () {
           prog.classList.add('hidden');
           runCaptionPipeline(CPShorts.sentenceCues(plan.words), { wordCues: plan.words });

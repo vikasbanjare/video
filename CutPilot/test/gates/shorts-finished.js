@@ -97,7 +97,9 @@ function cardLevel(file, t, W, H) {
       const sleep = ms => new Promise(r => setTimeout(r, ms));
       window.CP_DEBUG_EXT.retakes.setTranscript({ words: said });
       document.querySelector('.tab[data-tab="shorts"]').click(); await sleep(200); { const ob = document.querySelector('#sh-output button[data-out="file"]'); if (ob) ob.click(); }   // this gate checks the one-file render
-      for (const [id, v] of Object.entries(opts)) { const e = document.getElementById(id); e.checked = v; e.dispatchEvent(new Event('change')); }
+      for (const [id, v] of Object.entries(opts)) { if (id[0] === '_') continue; const e = document.getElementById(id); e.checked = v; e.dispatchEvent(new Event('change')); }
+      // the caption style picked in step 2 (the owner: "captions are generated without selecting which style I need")
+      if (opts._style) { const cs = document.getElementById('sh-cap-style'); cs.value = opts._style; cs.dispatchEvent(new Event('change')); }
       window.CP_DEBUG_EXT.shorts.show([moment]);
       const make = Array.from(document.querySelectorAll('#shorts-results button')).find(b => /Make/.test(b.textContent));
       make.click();
@@ -111,7 +113,8 @@ function cardLevel(file, t, W, H) {
         if (!opts['sh-caps'] && /Made the/.test(t)) break;
       }
       await sleep(300);
-      return { job: job ? { words: (job.wordCues || []).map(w => [w.text, w.start, w.end]), W: job.W, H: job.H } : null,
+      return { job: job ? { words: (job.wordCues || []).map(w => [w.text, w.start, w.end]), W: job.W, H: job.H, style: job.preset && job.preset.id } : null,
+               summary: (document.getElementById('sh-summary') || {}).textContent,
                plan: window.CP_DEBUG_EXT.shorts.plan(moment), toast: (document.getElementById('toast') || {}).textContent };
     }, SAID, MOMENT, opts);
     res.imported = imported; res.placed = placed; res.errors = (P.page.__errors || []).slice();
@@ -120,8 +123,10 @@ function cardLevel(file, t, W, H) {
   }
 
   // ---- all on (the defaults) ----
-  const A = await makeShort('on', { 'sh-tight': true, 'sh-hook': true, 'sh-caps': true });
+  const A = await makeShort('on', { 'sh-tight': true, 'sh-hook': true, 'sh-caps': true, _style: 'pack-maroon-label' });
   if (A.error) bad('Make clip failed: ' + A.error);
+  (A.job && A.job.style === 'pack-maroon-label' && /captions in “Maroon Label”/.test(A.summary || '') ? ok : bad)(
+    'G. the caption style picked in step 2 (Maroon Label) is the one the short is captioned in, and the summary names it (' + (A.job && A.job.style) + ' · ' + A.summary + ')');
   const out = A.imported && A.imported.path;
   if (!out || !fs.existsSync(out)) { bad('no short was imported (' + JSON.stringify(A.imported) + ')'); }
   else {
@@ -169,7 +174,7 @@ function cardLevel(file, t, W, H) {
       document.querySelector('.tab[data-tab="shorts"]').click(); await sleep(200); { const ob = document.querySelector('#sh-output button[data-out="file"]'); if (ob) ob.click(); }   // this gate checks the one-file render
       const len = document.getElementById('sh-len'); len.value = '10-30'; len.dispatchEvent(new Event('change'));
       document.getElementById('btn-find-shorts').click(); await sleep(600);
-      return { cards: Array.from(document.querySelectorAll('#shorts-results .card')).map(c => c.textContent.replace(/\s+/g, ' ').slice(0, 160)),
+      return { cards: Array.from(document.querySelectorAll('#shorts-results .card:not(.sh-lead)')).map(c => c.textContent.replace(/\s+/g, ' ').slice(0, 160)),
                toast: (document.getElementById('toast') || {}).textContent };
     }, words);
     await P.close();

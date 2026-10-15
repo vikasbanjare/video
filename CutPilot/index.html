@@ -991,10 +991,10 @@
     <div class="card">
       <div class="step-head"><span class="step-title">🎬 Viral Shorts</span>
         <button class="info" type="button" data-info="sh-info" aria-label="How it works">ⓘ</button></div>
-      <p class="hint">Find your best moments, choose the look, then make the ones you like.</p>
+      <p class="hint">Find moments, pick a look, make shorts.</p>
       <div class="info-pop hidden" id="sh-info">Pulse reads your transcript (the whole video) and finds the moments most likely to pop as short clips — each one a self-contained <b>hook → payoff</b>. Get your words first (Transcribe). For each moment you can <b>preview</b> it, <b>mark</b> it, or <b>make it into a short</b>: Pulse frames each camera on whoever is talking, cuts the pauses, and adds the hook title and captions — as an editable timeline or one video file.</div>
       <div class="step-head sh-step"><span class="step-num">1</span><span class="step-title">Find your best moments</span></div>
-      <p class="hint" id="sh-tr-status">Uses your transcript — make one on the Transcribe page first.</p>
+      <p class="hint" id="sh-tr-status">Uses your transcript.</p>
       <label>Clip length
           <select id="sh-len">
             <option value="15-60" selected>15–60s · standard</option>
@@ -1009,7 +1009,7 @@
     </div>
     <div class="card" id="sh-look">
       <div class="step-head sh-step"><span class="step-num">2</span><span class="step-title">How every short looks</span></div>
-      <p class="hint sh-summary" id="sh-summary"></p>
+      <p class="sh-summary" id="sh-summary"></p>
       <label>Shape
           <select id="sh-ratio">
             <option value="9:16" selected>9:16 vertical</option>
@@ -1038,8 +1038,17 @@
       <div class="sh-opts">
         <label class="check" title="Removes every pause and um/uh inside the clip, and starts it on the first real word"><input type="checkbox" id="sh-tight" checked> ✂️ Cut pauses &amp; “um”s</label>
         <label class="check" title="The moment's title on screen while the hook is said"><input type="checkbox" id="sh-hook" checked> 🪝 Hook title for the first 3 s</label>
-        <label class="check" title="Captions in the style picked on the Captions page, on their own track — still editable"><input type="checkbox" id="sh-caps" checked> 💬 Add captions (your caption style)</label>
+        <label class="check" title="Captions in the style picked on the Captions page, on their own track — still editable"><input type="checkbox" id="sh-caps" checked> 💬 Add captions</label>
         <label class="check" title="With a camera on each video track (V1, V2, V3…): shows whoever is talking, zoomed in to fit the vertical frame — set up the mics on Podcast cameras"><input type="checkbox" id="sh-cams" checked> 🎥 Use my podcast cameras</label>
+      </div>
+      <div id="sh-cap-row" class="sh-cap-row">
+        <label>Caption style
+          <select id="sh-cap-style" aria-label="Caption style for the short"></select>
+        </label>
+        <div class="seg-control" id="sh-cap-out" aria-label="How the captions are made">
+          <button type="button" data-out="png">🖼 Drawn by Pulse</button>
+          <button type="button" data-out="editable">✏️ Editable</button>
+        </div>
       </div>
       <details class="advanced sh-mark" id="sh-mark-wrap">
         <summary>🎯 Framing — what each camera shows <span class="dim">— optional</span></summary>

@@ -2389,6 +2389,70 @@ const MUTANTS = [
     repl: "    if (!all.length && silent.length) {",
     gate: 'CutPilot/test/gates/transcribe-only-what-plays.js',
     why: 'with every audio piece switched off, the camera picture\u2019s copy of the recording is transcribed'
+  },
+  {
+    name: 'v27-stdout-unread',
+    file: 'CutPilot/js/main.js',
+    find: "      if (p.stdout) p.stdout.on('data', function (d) { if (onOut) { try { onOut(d.toString()); } catch (eO) {} } });",
+    repl: "      if (p.stdout && onOut) p.stdout.on('data', function (d) { try { onOut(d.toString()); } catch (eO) {} });",
+    gate: 'CutPilot/test/gates/transcribe-long-podcast.js',
+    why: 'the speech engine\u2019s output is not read, so a 1\u20132 hour podcast never finishes'
+  },
+  {
+    name: 'v27-no-retry',
+    file: 'CutPilot/js/main.js',
+    find: "        if (!passing || tries >= ASR_RETRIES) throw e;",
+    repl: "        if (true) throw e;",
+    gate: 'CutPilot/test/gates/transcribe-long-podcast.js',
+    why: 'one cloud hiccup or free-limit reply throws the whole long transcript away'
+  },
+  {
+    name: 'v27-no-resume',
+    file: 'CutPilot/js/main.js',
+    find: "          var heardBefore = pKey && _asrPieces[pKey];",
+    repl: "          var heardBefore = null;",
+    gate: 'CutPilot/test/gates/transcribe-long-podcast.js',
+    why: 'tapping Transcribe again starts the long podcast over instead of carrying on'
+  },
+  {
+    name: 'v27-one-big-upload',
+    file: 'CutPilot/js/main.js',
+    find: "    if (Math.ceil(durSec / 900) > plan.chunks) { plan.chunks = Math.ceil(durSec / 900); plan.chunkDur = Math.ceil(durSec / plan.chunks); }",
+    repl: "",
+    gate: 'CutPilot/test/gates/transcribe-long-podcast.js',
+    why: 'a long podcast goes up as one upload'
+  },
+  {
+    name: 'v27-first-600-lines',
+    file: 'CutPilot/js/main.js',
+    find: "    var chunks = CPSmartEdit.chunk(segs, 80);\n    var failedParts = [], lastErr = null;",
+    repl: "    var chunks = CPSmartEdit.chunk(segs.slice(0, 600), 80);\n    var failedParts = [], lastErr = null;",
+    gate: 'CutPilot/test/gates/shorts-long-and-clear.js',
+    why: 'Find viral moments reads only the first 600 lines of a long podcast'
+  },
+  {
+    name: 'v27-one-part-fails-all',
+    file: 'CutPilot/js/main.js',
+    find: "        lastErr = e; failedParts.push(cs);",
+    repl: "        throw e;",
+    gate: 'CutPilot/test/gates/shorts-long-and-clear.js',
+    why: 'one part the AI could not answer throws every AI pick away'
+  },
+  {
+    name: 'v27-twins-shown',
+    file: 'CutPilot/js/main.js',
+    find: "      if (!clash) out.push(h);",
+    repl: "      out.push(h);",
+    gate: 'CutPilot/test/gates/shorts-long-and-clear.js',
+    why: 'two picks of mostly the same stretch are both listed'
+  },
+  {
+    name: 'v27-style-pick-ignored',
+    file: 'CutPilot/js/main.js',
+    find: "      if (t) { try { applyTemplate(t, { silent: true }); } catch (eA) {} }",
+    repl: "",
+    gate: 'CutPilot/test/gates/shorts-long-and-clear.js',
+    why: 'the caption style picked for shorts is not the one used'
   }
 ];
 
