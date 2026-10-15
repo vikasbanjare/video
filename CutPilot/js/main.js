@@ -6078,9 +6078,17 @@
     if (_cardAnimTimer) return;
     _cardAnimTimer = setInterval(function () {
       _cardTick++;
-      var cs = document.querySelectorAll('.tpl-thumb-canvas'), any = false;
+      // a hidden panel animates nothing (Premiere keeps docked panels alive)
+      if (document.hidden) return;
+      var cs = document.querySelectorAll('.tpl-thumb-canvas'), any = false, vh = window.innerHeight || 0;
       for (var i = 0; i < cs.length; i++) {
-        if (cs[i]._animFrames && cs[i]._animLen > 1) { drawCardTickFrame(cs[i], _cardTick); any = true; }
+        if (!(cs[i]._animFrames && cs[i]._animLen > 1)) continue;
+        any = true;
+        // only the cards on screen are redrawn: all 125 were, 2½ times a
+        // second, while 10 were visible (a steady ~7% of a core in Premiere)
+        var b = cs[i].getBoundingClientRect();
+        if (b.bottom < -40 || b.top > vh + 40 || (!b.width && !b.height)) continue;
+        drawCardTickFrame(cs[i], _cardTick);
       }
       if (!any) stopCardAnimator();
     }, 420);
