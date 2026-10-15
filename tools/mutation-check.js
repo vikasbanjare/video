@@ -2589,6 +2589,14 @@ const MUTANTS = [
     repl: "  function clean(w) { return String(w).toLowerCase().replace(/[^a-z0-9']/g, ''); }",
     gate: 'CutPilot/test/gates/chapters-topics.js',
     why: 'Hindi words can never be a chapter title'
+  },
+  {
+    name: 'v30-hooks-ascii-edges',
+    file: 'CutPilot/js/shorts.js',
+    find: "  var L = 'A-Za-z0-9_\\\\u0900-\\\\u097F';",
+    repl: "  var L = 'A-Za-z0-9_';",
+    gate: 'CutPilot/test/gates/shorts-hooks-hindi.js',
+    why: 'Devanagari hook words never match (a Hindi transcript has no hooks)'
   }
 ];
 

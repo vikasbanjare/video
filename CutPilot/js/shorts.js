@@ -119,12 +119,20 @@
   }
 
   // ---- finding moments without an AI key ---------------------------------
-  var QUESTION_START = /^(why|how|what|who|when|where|which|is|are|do|does|did|can|should|would|kya|kyun|kyon|kaise|kaun|kitna|kitne|kab|kahan|क्या|क्यों|कैसे|कौन|कितना|कब|कहाँ)\b/i;
-  var STRONG = /\b(secret|secrets|mistake|mistakes|never|nobody|no one|truth|biggest|best|worst|stop|money|million|crore|lakh|lakhs|rich|broke|free|hack|hacks|why|warning|shocking|actually|exactly|important|problem|easy|simple|fastest|only|everyone|nobody|sach|galti|kabhi|sabse|raaz|paisa|paise|zindagi|asli|seedha|bilkul|sach|सच|गलती|कभी|सबसे|राज़|पैसा|ज़िंदगी|असली)\b/i;
-  var NUMBER = /(\d|\b(one|two|three|five|ten|hundred|thousand|ek|do|teen|paanch|das|sau|hazaar|lakh|crore)\b|%)/i;
-  var YOU = /\b(you|your|you're|aap|aapko|aapka|aapki|tum|tumhe|tumhara|आप|तुम)\b/i;
-  var CONNECTIVE = /^(and|but|so|because|also|then|which|that|aur|lekin|par|toh|to|kyunki|isliye|phir|और|लेकिन|तो|क्योंकि|फिर)\b/i;
-  var BACKREF = /\b(as i said|like i said|earlier|that one|this one|jaise maine kaha|pehle bataya|wahi)\b/i;
+  // Word edges that know Devanagari: JavaScript's \b only sees a–z/0–9, so
+  // every Hindi word in these lists (क्या, सच, गलती, आप, और…) could never
+  // match — a Hindi transcript had no hooks and "और फिर…" never read as
+  // mid-thought.
+  var L = 'A-Za-z0-9_\\u0900-\\u097F';
+  function words(list, anchored) {
+    return new RegExp((anchored ? '^' : '(?:^|[^' + L + '])') + '(' + list + ')(?=$|[^' + L + '])', 'i');
+  }
+  var QUESTION_START = words('why|how|what|who|when|where|which|is|are|do|does|did|can|should|would|kya|kyun|kyon|kaise|kaun|kitna|kitne|kab|kahan|क्या|क्यों|कैसे|कौन|कितना|कितने|कब|कहाँ|कहां', true);
+  var STRONG = words('secret|secrets|mistake|mistakes|never|nobody|no one|truth|biggest|best|worst|stop|money|million|crore|lakh|lakhs|rich|broke|free|hack|hacks|why|warning|shocking|actually|exactly|important|problem|easy|simple|fastest|only|everyone|sach|galti|kabhi|sabse|raaz|paisa|paise|zindagi|asli|seedha|bilkul|सच|सच्चाई|गलती|गलतियां|कभी|सबसे|राज़|राज|पैसा|पैसे|ज़िंदगी|जिंदगी|असली|करोड़|लाख');
+  var NUMBER = new RegExp('(\\d|[०-९]|%|(?:^|[^' + L + '])(one|two|three|five|ten|hundred|thousand|ek|teen|paanch|das|sau|hazaar|lakh|crore|एक|दो|तीन|पांच|पाँच|दस|सौ|हज़ार|हजार)(?=$|[^' + L + ']))', 'i');
+  var YOU = words("you|your|you're|aap|aapko|aapka|aapki|tum|tumhe|tumhara|आप|आपको|आपका|आपकी|तुम|तुम्हें|तुम्हारा");
+  var CONNECTIVE = words('and|but|so|because|also|then|which|that|aur|lekin|par|toh|to|kyunki|isliye|phir|और|लेकिन|पर|तो|क्योंकि|इसलिए|फिर', true);
+  var BACKREF = words('as i said|like i said|earlier|that one|this one|jaise maine kaha|pehle bataya|wahi|जैसा मैंने कहा|पहले बताया|वही');
   var ENDS = /[.!?।॥۔؟…]["'”’)\]]*\s*$/;
 
   function hookScore(text) {
