@@ -1,10 +1,40 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.26** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.27** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.27 — long podcasts transcribe; Shorts in three steps with a caption style
+The owner: "1–2 hours long podcast failed to transcribe", "the shorts section
+is still confusing … sometimes not working", "captions are generated
+automatically without selecting which caption style I need".
+- runProc never read a program's stdout: whisper.cpp prints every line it
+  hears, the pipe filled ~15 min into a podcast and the engine blocked for
+  good (reproduced in plain Node: a 2 MB printer never exits). stdout is
+  always read now; the local engine shows % (from its line times) and runs
+  with -t (cores, 2–8). The test bridges always drained stdout, which is why
+  no gate saw it: transcribe-long-podcast A runs runProc from main.js on
+  real Node.
+- Cloud: asrRetry (rate_limit / network / provider_down; waits the "try
+  again in" time, else backoff; 5 tries; bar says it carries on). Groq: a
+  recording > 20 min goes up in ≤ 15-min pieces; Sarvam's 28 s pieces and
+  Deepgram retry too. Pieces heard are kept for the session (_asrPieces,
+  keyed by media/span/engine/lang/enhance), so tapping Transcribe again
+  carries on.
+- Find viral moments read only the first 600 lines (20–30 min of a long
+  podcast): every part is read; a part the AI cannot answer is picked by its
+  words (others keep AI picks); bestDistinctMoments drops near-twins.
+- Shorts page: 1 Find (sh-tr-status: transcript ready + length, or a
+  Transcribe-first button), 2 How every short looks (sh-summary one line of
+  every choice; shape, layout, output, extras, caption style #sh-cap-style
+  — picking it applies the template on the Captions page — and
+  #sh-cap-out Drawn by Pulse / Editable; framing incl. "If no face"),
+  3 the moments (header card .sh-lead, "Make this 9:16 short"). The
+  whole-video speaker-follow tool is folded at the bottom (#sr-wrap).
+Gates transcribe-long-podcast, shorts-long-and-clear; shorts-finished G;
+mutations v27-*.
 
 ### v0.10.26 — everything switched off never falls back to the camera picture
 Found by fuzzing CP_getTranscribeSource (1,500 random timelines): with every
