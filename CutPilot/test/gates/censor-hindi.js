@@ -15,6 +15,6 @@ console.log('🤐 Censor in Hindi and Hinglish');
 [['shit!', 's***!'], ['chutiya', 'c******'], ['Bhenchod!', 'B*******!'], ['MC', 'M*']].forEach(([w, want]) => check(C.censorWord(w) === want, '"' + w + '" → "' + C.censorWord(w) + '"'));
 ['चूतिया', 'मादरचोद।', 'हरामी'].forEach(w => { const r = C.censorWord(w); check(r !== w && /\*/.test(r) && r[0] === w[0] && !/[ा-ौ]/.test(r.slice(1).replace(/।$/, '')), '"' + w + '" → "' + r + '" (first letter kept, the rest starred)'); });
 check(C.censorWord('मादरचोद।').slice(-1) === '।', 'the full stop । stays');
-['hello', 'चुप', 'gandhi', 'हम', 'कुत्ते'].forEach(w => check(C.censorWord(w) === w, '"' + w + '" is left alone'));
+['hello', 'चुप', 'gandhi', 'हम', 'कुत्ते', 'chod', 'kutta', 'chhod', 'छोड़'].forEach(w => check(C.censorWord(w) === w, '"' + w + '" is left alone'));
 if (failed) { console.log('CENSOR HINDI: ' + failed + ' failed'); process.exit(1); }
 console.log('CENSOR HINDI: swear words starred in Hindi and Hinglish too ✓');

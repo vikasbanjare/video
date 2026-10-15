@@ -206,8 +206,9 @@
   // Hindi / Hinglish swear words too (a Hindi podcast's gaalis went through
   // uncensored): the common ones, in English letters and in Devanagari
   ['chutiya', 'chutiye', 'chutia', 'bhenchod', 'behenchod', 'bhenchodd', 'madarchod', 'maderchod', 'mc', 'bc', 'bsdk', 'bhosdike',
-   'bhosdi', 'bhosda', 'gaand', 'gand', 'gaandu', 'gandu', 'harami', 'haramkhor', 'kutta', 'kutti', 'kamina', 'kamine', 'randi', 'lavda', 'lauda',
-   'lund', 'chod', 'chodu', 'tatte', 'jhaat', 'jhatu',
+   'bhosdi', 'bhosda', 'gaand', 'gand', 'gaandu', 'gandu', 'harami', 'haramkhor', 'kamina', 'kamine', 'randi', 'lavda', 'lauda',
+   'lund', 'chodu', 'tatte', 'jhaat', 'jhatu',
+   // (never "chod" — "chod do" is "leave it" — nor "kutta", a dog)
    'चूतिया', 'चुतिया', 'चूतिये', 'भेनचोद', 'बहनचोद', 'मादरचोद', 'भोसडीके', 'भोसड़ीके', 'भोसड़ा', 'गांड', 'गाँड', 'गांडू', 'हरामी', 'हरामखोर',
    'कमीना', 'कमीने', 'रंडी', 'लवड़ा', 'लौड़ा', 'लंड', 'झाट', 'झाटू'].forEach(function (x) { PROFANITY[x] = 1; });
   function censorWord(w) {
