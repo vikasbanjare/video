@@ -2,6 +2,11 @@
  * retakes-keywords-unchanged.js — the filler work does not change which words
  * captions emphasise or which B-roll ideas come up.
  *
+ * UPDATED (keywords-hindi.js): the caption side now looks keywords up with
+ * the transcript's own key (Hindi letters kept), so the reason Hindi keywords
+ * were held back is gone: Hindi and Hinglish keywords are meaning words now
+ * (the little words of every sentence are left out). English is unchanged.
+ *
  * transcript.js holds both the filler finder (this stream's job) and the
  * TF-IDF keyword scorer that caption emphasis and B-roll ideas use. The filler
  * work made the word splitter keep Devanagari/Urdu words and added Hindi /
@@ -45,36 +50,36 @@ const MIXED = cuesOf([
   'तो आज से posting शुरू करो और reel बनाओ'
 ]);
 const ENGLISH = cuesOf(['The main idea is simple', 'Our main character wins in the end', 'That is the main reason we post', 'Post every day and grow']);
-/* the caption side's lookup key (captions.js markKeywords, main.js applySmartEmphasis) */
-const captionKey = (w) => String(w).toLowerCase().replace(/[^a-z0-9']/g, '');
+/* the caption side's lookup key: since the Hindi keyword fix (keywords-hindi.js)
+   captions look a word up with the transcript's own key, Hindi letters kept */
+const captionKey = (w) => T.kwClean(w);
 const keys = (set) => Object.keys(set).join(',');
+const LITTLE = ['aaj', 'aur', 'bahut', 'hai', 'hain', 'doston', 'यह', 'के', 'लिए', 'है', 'हर', 'एक', 'तो', 'से', 'करो', 'और'];
 
-console.log('keyword emphasis and B-roll ideas are unchanged by the filler work');
+console.log('keyword emphasis and B-roll ideas: English as before, Hindi and Hinglish read');
 for (const n of [14, 4]) {
   const set = T.topKeywordSet(MIXED, { maxWords: n });
   const unusable = Object.keys(set).filter(w => captionKey(w) !== w);
   check('mixed-script transcript, ' + n + '-word budget: every keyword is one captions can emphasise',
     Object.keys(set).length === n && unusable.length === 0, 'unusable: ' + unusable.join(',') + ' · ' + keys(set));
+  const little = Object.keys(set).filter(w => LITTLE.indexOf(w) >= 0 && w !== 'doston');
+  check('mixed-script transcript, ' + n + '-word budget: no little words of every sentence (aaj, aur, bahut, hai, के, लिए…)', !little.length, keys(set));
 }
 check('English transcript: "main" is a keyword again', !!T.topKeywordSet(ENGLISH, { maxWords: 4 }).main, keys(T.topKeywordSet(ENGLISH, { maxWords: 4 })));
 
-// outputs recorded from transcript.js as it was before the retakes work
+// English outputs recorded from transcript.js as it was before the retakes work
 const BEFORE = {
-  mixed14: 'reel,consistency,important,main,posting,aaj,aur,bahut,business,dono,doston,every,fail,hai',
-  mixed4: 'reel,consistency,important,main',
   english14: 'main,post,character,day,end,every,grow,idea,reason,simple,wins',
-  english4: 'main,post,character,day',
-  broll: '[{"term":"reel","time":0},{"term":"bahut","time":0},{"term":"important","time":0},{"term":"doston","time":0},{"term":"business","time":3},{"term":"main","time":6}]'
+  english4: 'main,post,character,day'
 };
-check('keyword sets are the same as before (mixed 14 / 4, English 14 / 4)',
-  keys(T.topKeywordSet(MIXED, { maxWords: 14 })) === BEFORE.mixed14 && keys(T.topKeywordSet(MIXED, { maxWords: 4 })) === BEFORE.mixed4 &&
+check('English keyword sets are the same as before (14 / 4)',
   keys(T.topKeywordSet(ENGLISH, { maxWords: 14 })) === BEFORE.english14 && keys(T.topKeywordSet(ENGLISH, { maxWords: 4 })) === BEFORE.english4,
-  [14, 4].map(n => keys(T.topKeywordSet(MIXED, { maxWords: n }))).concat([14, 4].map(n => keys(T.topKeywordSet(ENGLISH, { maxWords: n })))).join(' | '));
-check('B-roll ideas are the same as before', JSON.stringify(T.extractBrollSuggestions(MIXED, { max: 6 })) === BEFORE.broll,
-  JSON.stringify(T.extractBrollSuggestions(MIXED, { max: 6 })));
-const TOK = [["Don’t stop, now!", '["don","t","stop","now"]'], ['café crème', '["caf","cr","me"]'], ['यह reel आपके लिए है', '["reel"]'],
+  [14, 4].map(n => keys(T.topKeywordSet(ENGLISH, { maxWords: n }))).join(' | '));
+const broll = T.extractBrollSuggestions(MIXED, { max: 6 });
+check('B-roll ideas are meaning words, Hindi read too (no aaj / aur / bahut)', broll.length >= 4 && !broll.some(b => LITTLE.indexOf(b.term) >= 0 && b.term !== 'doston'), JSON.stringify(broll));
+const TOK = [["Don’t stop, now!", '["don","t","stop","now"]'], ['café crème', '["caf","cr","me"]'], ['यह reel आपके लिए है।', '["यह","reel","आपके","लिए","है"]'],
              ["Don't stop, now!", '["don\'t","stop","now"]']];
-check('the keyword word-splitter is the same as before', TOK.every(t => JSON.stringify(T.tokenize(t[0])) === t[1]),
+check('the keyword word-splitter: English as before, Devanagari words kept (the danda । is not a letter)', TOK.every(t => JSON.stringify(T.tokenize(t[0])) === t[1]),
   TOK.map(t => t[0] + ' → ' + JSON.stringify(T.tokenize(t[0]))).join(' | '));
 check('markSalient is the same as before', JSON.stringify(T.markSalient(['Main,', 'café', 'मैं', 'Don’t'], { main: true, caf: true, dont: true })) === '[true,true,false,true]',
   JSON.stringify(T.markSalient(['Main,', 'café', 'मैं', 'Don’t'], { main: true, caf: true, dont: true })));

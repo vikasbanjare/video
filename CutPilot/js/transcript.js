@@ -115,16 +115,28 @@
    'such than that the their them then there these they this those to too up ' +
    'us was we were what when where which while who whom why will with would you ' +
    'your yours yeah ok okay gonna wanna got get really very much many one also ' +
-   'now then thing things way').split(/\s+/).forEach(function (w) { STOP[w] = 1; });
+   'now then thing things way ' +
+   // Hinglish: the little words of every sentence are not keywords
+   'aaj hum aap mein me hai hain tha thi the ho hota hoti ki ka ke ko se aur ya toh to ' +
+   'ye yeh wo woh vo nahi nahin kya bhi par pe jo ek liye kar karna karte karo karein kijiye karta karti raha rahe rahi ' +
+   'baat baare karenge kuch koi sab abhi phir fir agar lekin bahut matlab accha acha achha haan ' +
+   'bhai yaar dekho apna apni apne unka unki unke iska uska jab tab kaise kyun kab kahan ' +
+   // Devanagari
+   'आज हम आप मैं में है हैं था थी थे हो की का के को से और या तो ये यह वो वह नहीं क्या भी पर ' +
+   'करो करें कीजिए करिए करता करती जो एक लिए कर करना करते रहा रहे रही बात बारे करेंगे कुछ कोई सब अभी फिर अगर लेकिन बहुत मतलब ' +
+   'अच्छा हाँ हां अपना अपनी अपने जब तब कैसे क्यों कब कहाँ').split(/\s+/).forEach(function (w) { STOP[w] = 1; });
 
   /* The keyword side's word key: lowercase a–z / 0–9 / apostrophe only. */
-  function kwClean(w) { return String(w).toLowerCase().replace(/[^a-z0-9']/g, ''); }
+  // Devanagari letters and signs count too (not the danda । ॥): a Hindi
+  // transcript had NO keywords — every word was thrown away
+  function kwClean(w) { var s = String(w); if (s.normalize) s = s.normalize('NFC'); return s.toLowerCase().replace(/[^a-z0-9'\u0900-\u0963\u0966-\u097f]/g, ''); }
 
   /* Split a string into lowercased alphanumeric tokens (apostrophes kept
      inside words, e.g. "don't") — for keyword salience. */
   function tokenize(text) {
     var out = [];
-    var raw = String(text || '').toLowerCase().split(/[^a-z0-9']+/);
+    var src = String(text || ''); if (src.normalize) src = src.normalize('NFC');
+    var raw = src.toLowerCase().split(/[^a-z0-9'\u0900-\u0963\u0966-\u097f]+/);
     for (var i = 0; i < raw.length; i++) {
       var t = raw[i].replace(/^'+|'+$/g, '');
       if (t) out.push(t);
@@ -454,6 +466,7 @@
     STOP: STOP,
     clean: clean,
     tokenize: tokenize,
+    kwClean: kwClean,
     wordTimings: wordTimings,
     mergeRanges: mergeRanges,
     findFillerRanges: findFillerRanges,

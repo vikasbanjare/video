@@ -3372,7 +3372,10 @@
     if (mode === 'auto') {
       var set = opts.set || {};
       for (i = 0; i < words.length; i++) {
-        var key = String(words[i]).toLowerCase().replace(/[^a-z0-9']/g, '');
+        // the same key the transcript's keywords use (Hindi letters kept:
+        // a Hindi keyword could never light up)
+        var key = (typeof CPTranscript !== 'undefined' && CPTranscript.kwClean) ? CPTranscript.kwClean(words[i])
+          : String(words[i]).toLowerCase().replace(/[^a-z0-9'\u0900-\u0963\u0966-\u097f]/g, '');
         flags[i] = !!set[key] || !!VIRAL_WORDS[key];   // v1.0: viral words always pop
       }
       return flags;

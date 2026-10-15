@@ -2613,6 +2613,22 @@ const MUTANTS = [
     repl: "    return false;",
     gate: 'CutPilot/test/gates/fillers-hindi.js',
     why: 'captions show Hindi-script um/hmm sounds'
+  },
+  {
+    name: 'v30-keywords-ascii',
+    file: 'CutPilot/js/transcript.js',
+    find: "    var raw = src.toLowerCase().split(/[^a-z0-9'\\u0900-\\u0963\\u0966-\\u097f]+/);",
+    repl: "    var raw = src.toLowerCase().split(/[^a-z0-9']+/);",
+    gate: 'CutPilot/test/gates/keywords-hindi.js',
+    why: 'a Hindi transcript has no keywords'
+  },
+  {
+    name: 'v30-keywords-little-words',
+    file: 'CutPilot/js/transcript.js',
+    find: "   'aaj hum aap mein me hai hain",
+    repl: "   'xaaj xhum aap mein me hai hain",
+    gate: 'CutPilot/test/gates/keywords-hindi.js',
+    why: 'Hinglish keywords are aaj / hum'
   }
 ];
 

@@ -9292,10 +9292,18 @@
     // "ka", "aur"…): a key word is a word that carries the meaning
     for (k0 in (CPTranscript.STOP || {})) if (CPTranscript.STOP.hasOwnProperty(k0)) stop[k0] = 1;
     for (k0 in CPCaptions.FUNCTION_WORDS) if (CPCaptions.FUNCTION_WORDS.hasOwnProperty(k0)) stop[k0] = 1;
-    try { kw = CPTranscript.topKeywordSet(cues, { maxWords: Math.max(4, Math.min(14, Math.round(total / 12))), stop: stop }); } catch (e) { kw = null; }
+    var budget = Math.max(4, Math.min(14, Math.round(total / 12)));
+    // Hindi script has no capitals: a Devanagari keyword would spend one of
+    // the few CAPS slots and change nothing, so the slots go to words that
+    // can be written in capitals (taken in score order)
+    try { kw = CPTranscript.topKeywordSet(cues, { maxWords: budget * 3, stop: stop }); } catch (e) { kw = null; }
     if (!kw) return null;
-    var out = {};
-    for (var k in kw) if (kw.hasOwnProperty(k) && kw[k]) out[CPCaptions.capsKey(k)] = 1;
+    var out = {}, n = 0;
+    for (var k in kw) {
+      if (!kw.hasOwnProperty(k) || !kw[k] || n >= budget) continue;
+      if (!/[a-z]/.test(k)) continue;
+      out[CPCaptions.capsKey(k)] = 1; n++;
+    }
     return out;
   }
   /* buildCaptionFrames options for a caption job. job: { preset, overrides,
