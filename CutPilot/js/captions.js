@@ -203,10 +203,23 @@
     fuck: 1, shit: 1, bitch: 1, asshole: 1, bastard: 1, dick: 1, cunt: 1,
     pussy: 1, slut: 1, whore: 1, damn: 1, crap: 1, fucking: 1, motherfucker: 1
   };
+  // Hindi / Hinglish swear words too (a Hindi podcast's gaalis went through
+  // uncensored): the common ones, in English letters and in Devanagari
+  ['chutiya', 'chutiye', 'chutia', 'bhenchod', 'behenchod', 'bhenchodd', 'madarchod', 'maderchod', 'mc', 'bc', 'bsdk', 'bhosdike',
+   'bhosdi', 'bhosda', 'gaand', 'gand', 'gaandu', 'gandu', 'harami', 'haramkhor', 'kutta', 'kutti', 'kamina', 'kamine', 'randi', 'lavda', 'lauda',
+   'lund', 'chod', 'chodu', 'tatte', 'jhaat', 'jhatu',
+   'चूतिया', 'चुतिया', 'चूतिये', 'भेनचोद', 'बहनचोद', 'मादरचोद', 'भोसडीके', 'भोसड़ीके', 'भोसड़ा', 'गांड', 'गाँड', 'गांडू', 'हरामी', 'हरामखोर',
+   'कमीना', 'कमीने', 'रंडी', 'लवड़ा', 'लौड़ा', 'लंड', 'झाट', 'झाटू'].forEach(function (x) { PROFANITY[x] = 1; });
   function censorWord(w) {
-    var bare = String(w).toLowerCase().replace(/[^a-z]/g, '');
+    var bare = String(w).toLowerCase().replace(/[^a-z\u0900-\u0963\u0966-\u097f]/g, '');
     if (!PROFANITY[bare]) return w;
-    return String(w).replace(/[A-Za-z]/g, function (ch, idx) { return idx === 0 ? ch : '*'; });
+    // keep the first letter (a Devanagari letter with its vowel sign), star the
+    // rest of the letters; punctuation stays where it was
+    var first = true;
+    return String(w).replace(/[A-Za-z]|[\u0900-\u0963\u0966-\u097f]/g, function (ch) {
+      if (first) { first = false; return ch; }
+      return /[\u093a-\u094f\u0900-\u0903\u0962\u0963]/.test(ch) ? '' : '*';
+    });
   }
 
   /*
@@ -4097,6 +4110,7 @@
     enrichCaptionText: enrichCaptionText,
     devanagariToLatin: devanagariToLatin,
     explodeWords: explodeWords,
+    censorWord: censorWord,
     framesKeywordBuild: framesKeywordBuild,
     regroupWords: regroupWords,
     remapCuesToKeeps: remapCuesToKeeps,

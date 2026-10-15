@@ -231,7 +231,7 @@
   };
   /* Extra size multiplier for a word: viral words pop biggest, long words a bit. */
   function wordScale(word) {
-    var w = String(word).toLowerCase().replace(/[^a-z0-9']/g, '');
+    var w = String(word).toLowerCase().replace(/[^a-z0-9'\u0900-\u0963\u0966-\u097f]/g, '');
     if (VIRAL_WORDS[w]) return 1.5;
     if (w.length > 8) return 1.15;
     return 1;

@@ -9634,7 +9634,8 @@
     if (trigger === 'word') return words.map(function (w) { return w.start; });
     if (trigger === 'number') return words.filter(function (w) { return /\d/.test(w.text); }).map(function (w) { return w.start; });
     if (trigger === 'keyword') return words.filter(function (w) {
-      var c = w.text.replace(/[^a-z0-9']/gi, ''); return /\d/.test(c) || c.length >= 6;
+      // Hindi words count too (their letters were thrown away, so none ever triggered)
+      var c = w.text.replace(/[^a-z0-9'\u0900-\u0963\u0966-\u097f]/gi, ''); return /\d/.test(c) || c.length >= 6;
     }).map(function (w) { return w.start; });
     return [];
   }
