@@ -867,9 +867,11 @@
           // curl 6=can't resolve host, 7=can't connect, 28=timeout, 5=proxy —
           // i.e. no internet / blocked. Point the user at the offline engine.
           if (code === 6 || code === 7 || code === 28 || code === 5) {
-            return reject(new Error('Cloud transcription needs internet and couldn\'t reach Groq. ' +
+            var eNet = new Error('Cloud transcription needs internet and couldn\'t reach Groq. ' +
               'Switch “Accuracy / engine” (Transcribe tab) from “Cloud · Groq” to a local model ' +
-              '(e.g. Base or Large v3) to transcribe offline.'));
+              '(e.g. Base or Large v3) to transcribe offline.');
+            eNet.cpKind = 'network';
+            return reject(eNet);
           }
           return reject(CPApiErr.toError('groq', { curl: code, raw: err.slice(-160) }));
         }
@@ -917,6 +919,52 @@
       });
     });
   }
+  /* One cloud request, tried again when the trouble is passing: the free
+     hourly limit ("try again in 4m10s" — waits that long), a dropped
+     connection or the service's own hiccup. A 1–2 hour podcast is many
+     requests, and one of them failing used to throw the whole transcript
+     away. Anything else (a wrong key, no credit) fails at once. onWait(s, n)
+     says how long it waits. */
+  var ASR_RETRIES = 5;
+  function asrWaitSeconds(text) {
+    var m = /try again in\s*(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:([\d.]+)s)?/i.exec(String(text || ''));
+    if (!m || !(m[1] || m[2] || m[3])) return 0;
+    return (+m[1] || 0) * 3600 + (+m[2] || 0) * 60 + (+m[3] || 0);
+  }
+  function asrRetry(run, onWait) {
+    var tries = 0;
+    function go() {
+      return run().then(null, function (e) {
+        var kind = e && e.cpKind, txt = String((e && (e.cpDetail || '')) + ' ' + (e && e.message || ''));
+        var passing = kind === 'rate_limit' || kind === 'network' || kind === 'provider_down';
+        if (!passing || tries >= ASR_RETRIES) throw e;
+        tries++;
+        var told = asrWaitSeconds(txt);
+        var wait = told > 0 ? Math.min(3900, Math.ceil(told) + 2) : Math.min(120, (kind === 'rate_limit' ? 20 : 3) * Math.pow(2, tries - 1));
+        try { diag('asr', 'cloud request failed (' + kind + '), try ' + tries + ' of ' + ASR_RETRIES + ' in ' + wait + ' s: ' + txt.slice(0, 160)); } catch (eD) {}
+        if (onWait) { try { onWait(wait, tries); } catch (eW) {} }
+        return new Promise(function (res) { setTimeout(res, asrTestScale(wait) * 1000); }).then(go);
+      });
+    }
+    return go();
+  }
+  // gates shorten the waits (window.__asrWaitScale); always 1 for the owner
+  function asrTestScale(s) { var k = (typeof window !== 'undefined' && window.__asrWaitScale > 0) ? window.__asrWaitScale : 1; return s * k; }
+  /* Pieces of a long recording already heard, kept for this panel session:
+     tapping Transcribe again after a failure carries on from where it
+     stopped instead of starting over. Keyed by the recording, the span, the
+     engine, the language and the piece. */
+  var _asrPieces = {};
+  var _asrPieceKey = null;   // set by autoTranscribe for the recording it is hearing
+  function asrPiece(idx, startT, dur) {
+    return _asrPieceKey ? _asrPieceKey + '|' + idx + '|' + Math.round(startT * 100) + '|' + Math.round(dur * 100) : null;
+  }
+  function waitBar(icon, what) {
+    return function (s) {
+      var m = Math.floor(s / 60), r = Math.round(s % 60);
+      setTranscriptBar('warn', icon, what + ' Trying again in ' + (m ? m + ' min ' : '') + (r ? r + ' s' : '') + ' — it carries on by itself.', null);
+    };
+  }
   /* How a too-big recording is cut for the cloud. Each piece is re-encoded at
      `kbps`, so its size comes from THAT rate (and its one-second overlap), not
      from the compressed file's: a 24 kbps file cut by its own size became
@@ -934,9 +982,15 @@
     var fs, os, pathMod;
     try { fs = nodeReq('fs'); os = nodeReq('os'); pathMod = nodeReq('path'); } catch (e) { return transcribeViaGroq(audioPath, lang); }
     var size = 0; try { size = fs.statSync(audioPath).size; } catch (e2) {}
-    var LIMIT = 23 * 1024 * 1024;
-    if (size <= LIMIT || !ff || !durSec || durSec <= 0) return transcribeViaGroq(audioPath, lang);
+    var LIMIT = 23 * 1024 * 1024, LONG = 20 * 60;
+    var groqWait = waitBar('☁️', 'The cloud is busy or its free hourly limit is used up.');
+    // short and small: one upload (tried again if the connection drops)
+    if ((size <= LIMIT && !(durSec > LONG)) || !ff || !durSec || durSec <= 0) return asrRetry(function () { return transcribeViaGroq(audioPath, lang); }, groqWait);
+    // a long podcast goes up in pieces of at most 15 minutes: each one is a
+    // small request that is tried again on its own, and a piece heard once is
+    // never sent again (one upload of a 2-hour file failed as a whole)
     var plan = cloudChunkPlan(size, durSec, LIMIT);
+    if (Math.ceil(durSec / 900) > plan.chunks) { plan.chunks = Math.ceil(durSec / 900); plan.chunkDur = Math.ceil(durSec / plan.chunks); }
     var chunks = plan.chunks, chunkDur = plan.chunkDur, OVER = plan.over;
     var all = [], allWords = [], wordPiece = [], seams = [];
     var seq = Promise.resolve();
@@ -947,9 +1001,18 @@
         // each piece hears one second past its end; the seam is half way
         var lo = idx ? startT + OVER / 2 : -Infinity, hi = (idx + 1 < chunks) ? startT + chunkDur + OVER / 2 : Infinity;
         var part = pathMod.join(os.tmpdir(), 'cutpilot-asr-part' + idx + '-' + Date.now() + '.mp3');
+        var pDur = chunkDur + (idx + 1 < chunks ? OVER : 0), pKey = asrPiece(idx, startT, pDur);
         seq = seq.then(function () {
-          return runProc(ff, ['-y', '-ss', String(startT), '-t', String(chunkDur + (idx + 1 < chunks ? OVER : 0)), '-i', audioPath, '-ac', '1', '-ar', '16000', '-c:a', 'libmp3lame', '-b:a', plan.kbps + 'k', part])
-            .then(function () { return transcribeViaGroq(part, lang); })
+          setTranscriptBar('', '☁️', 'Transcribing in the cloud… part ' + (idx + 1) + ' of ' + chunks, null);
+          var heardBefore = pKey && _asrPieces[pKey];
+          var got = heardBefore ? Promise.resolve(JSON.parse(heardBefore)).then(function (c) { var a = c.cues; if (c.words) a.words = c.words; if (c.lang) a.detectedLang = c.lang; return a; })
+            : runProc(ff, ['-y', '-ss', String(startT), '-t', String(pDur), '-i', audioPath, '-ac', '1', '-ar', '16000', '-c:a', 'libmp3lame', '-b:a', plan.kbps + 'k', part])
+              .then(function () { return asrRetry(function () { return transcribeViaGroq(part, lang); }, groqWait); })
+              .then(function (cues) {
+                if (pKey) _asrPieces[pKey] = JSON.stringify({ cues: cues.slice(), words: cues.words || null, lang: cues.detectedLang || null });
+                return cues;
+              });
+          return got
             .then(function (cues) {
               cues.forEach(function (c) { c.start += startT; c.end += startT; });
               if (cues.words) cues.words.forEach(function (w) { w.start += startT; w.end += startT; });
@@ -963,8 +1026,8 @@
               all = all.concat(ownC);
               if (ownW) ownW.forEach(function (w) { allWords.push(w); wordPiece.push(idx); });
               try { fs.unlinkSync(part); } catch (eU) {}
-              setTranscriptBar('', '☁️', 'Transcribing in the cloud… (' + all.length + ' lines)', null);
-            });
+              setTranscriptBar('', '☁️', 'Transcribing in the cloud… part ' + (idx + 1) + ' of ' + chunks + ' done (' + all.length + ' lines)', null);
+            }, function (e) { try { fs.unlinkSync(part); } catch (eU2) {} throw e; });
         });
       })(i);
     }
@@ -1016,8 +1079,10 @@
       p.on('close', function (code) {
         if (code !== 0) {
           if (code === 6 || code === 7 || code === 28 || code === 5) {
-            return reject(new Error('Indian Voices needs internet and couldn\'t reach the server. ' +
-              'Switch “Accuracy / engine” to a local model to transcribe offline.'));
+            var eNet2 = new Error('Indian Voices needs internet and couldn\'t reach the server. ' +
+              'Switch “Accuracy / engine” to a local model to transcribe offline.');
+            eNet2.cpKind = 'network';
+            return reject(eNet2);
           }
           return reject(CPApiErr.toError('sarvam', { curl: code, raw: err.slice(-160) }));
         }
@@ -1066,9 +1131,17 @@
         var lo = idx ? startT + OVER / 2 : -Infinity, hi = last ? Infinity : startT + CHUNK + OVER / 2;
         if (idx) seams.push(startT + OVER / 2);
         var part = pathMod.join(os.tmpdir(), 'cutpilot-swara-' + idx + '-' + Date.now() + '.wav');
+        var sDur = CHUNK + (last ? 0 : OVER), sKey = asrPiece(idx, startT, sDur);
         seq = seq.then(function () {
-          return runProc(ff, ['-y', '-ss', String(startT), '-t', String(CHUNK + (last ? 0 : OVER)), '-i', audioPath, '-ac', '1', '-ar', '16000', part])
-            .then(function () { return transcribeViaSwara(part, lang); })
+          var heardBefore = sKey && _asrPieces[sKey];
+          var got = heardBefore ? Promise.resolve(JSON.parse(heardBefore)).then(function (c) { var a = c.cues; if (c.words) a.words = c.words; return a; })
+            : runProc(ff, ['-y', '-ss', String(startT), '-t', String(sDur), '-i', audioPath, '-ac', '1', '-ar', '16000', part])
+              .then(function () { return asrRetry(function () { return transcribeViaSwara(part, lang); }, waitBar('🇮🇳', 'Indian Voices is busy.')); })
+              .then(function (cues) {
+                if (sKey) _asrPieces[sKey] = JSON.stringify({ cues: cues.slice(), words: cues.words || null });
+                return cues;
+              });
+          return got
             .then(function (cues) {
               if (cues.words) {
                 cues.words.forEach(function (w) { w.start += startT; w.end += startT; });
@@ -1249,11 +1322,17 @@
     });
   }
 
-  function runProc(bin, args, onLog) {
+  /* Run a program; resolves with its stderr. Its stdout is ALWAYS read
+     (onOut sees it): a pipe nobody reads fills up and the program stops
+     there for good. The speech engine prints every line it hears, so a 1–2
+     hour podcast filled the pipe about a quarter of an hour in and its
+     transcription never finished ("1–2 hour podcast failed to transcribe"). */
+  function runProc(bin, args, onLog, onOut) {
     return new Promise(function (resolve, reject) {
       var cp; try { cp = nodeReq('child_process'); } catch (e) { return reject(e); }
       var p; try { p = cp.spawn(bin, args); } catch (e2) { return reject(e2); }
       var err = '';
+      if (p.stdout) p.stdout.on('data', function (d) { if (onOut) { try { onOut(d.toString()); } catch (eO) {} } });
       if (p.stderr) p.stderr.on('data', function (d) { err += d.toString(); if (onLog) onLog(d.toString()); });
       p.on('error', reject);
       p.on('close', function (code) { code === 0 ? resolve(err) : reject(new Error('exit ' + code + (err ? ': ' + err.slice(-240) : ''))); });
@@ -1496,7 +1575,7 @@
      there is no chunking to do — but keep the same signature as the other
      engines so the dispatch site stays uniform. */
   function deepgramTranscribe(audioPath, lang, ff, durSec) {
-    return transcribeViaDeepgram(audioPath, lang);
+    return asrRetry(function () { return transcribeViaDeepgram(audioPath, lang); }, waitBar('🎧', 'Deepgram is busy.'));
   }
   /* Auto-transcribe the selected clip locally (ffmpeg → whisper.cpp → SRT) so
      the user never needs Premiere's Transcribe/Export. Produces a sequence-time
@@ -1809,6 +1888,9 @@
                         : extractArgs([], wav);
         }
         var ffArgs = buildFfArgs();
+        // pieces of THIS recording heard by the cloud are kept, so tapping
+        // Transcribe again after a failure carries on where it stopped
+        _asrPieceKey = [clip.mediaPath, minIn.toFixed(2), maxOut.toFixed(2), resolveQuality(), wlang, romanize ? 'r' : '', audioEnhanceEnabled() ? 'e' : ''].join('|');
         var pieces = insts.length > 1 ? (' (' + insts.length + ' cuts)') : '';
         setTranscriptBar('', ico, 'Extracting audio from “' + shortName + '”' + pieces + '…', null);
         // a clip with NO audio stream makes every extract fail with ffmpeg's
@@ -1846,8 +1928,24 @@
                       fs: fs, os: os, pathMod: pathMod, stamp: stamp,
                       setBar: function (m) { setTranscriptBar('', ico, m, null); } };
           // Normal line-level decode (the quality the user is happy with).
+          // how far through the recording the engine is, from the times of
+          // the lines it prints (a long podcast takes a while on a laptop)
+          var wThreads = String(Math.max(2, Math.min(8, (function () { try { return nodeReq('os').cpus().length; } catch (eC) { return 4; } })())));
+          var lastPct = -1;
+          function wProgress(label) {
+            return function (txt) {
+              if (!(dur > 0)) return;
+              var re = /\[(\d+):(\d+):([\d.]+) -->/g, m, last = null;
+              while ((m = re.exec(txt))) last = m;
+              if (!last) return;
+              var t = (+last[1]) * 3600 + (+last[2]) * 60 + (+last[3]);
+              var pct = Math.min(99, Math.floor(t / dur * 100));
+              if (pct !== lastPct) { lastPct = pct; setTranscriptBar('', ico, label + ' — ' + pct + '% (' + fmt(t) + ' of ' + fmt(dur) + ')', null); }
+            };
+          }
           function plainPass() {
-            return runProc(wbin, ['-m', model, '-f', wav, '-osrt', '-of', outBase, '-l', wlang]).then(function () {
+            lastPct = -1;
+            return runProc(wbin, ['-m', model, '-f', wav, '-osrt', '-of', outBase, '-l', wlang, '-t', wThreads], null, wProgress('Transcribing with ' + modelLabel)).then(function () {
               var srtPath = outBase + '.srt';
               if (!fs.existsSync(srtPath)) throw new Error('the engine produced no transcript');
               var rc = CPCaptions.parseSRT(fs.readFileSync(srtPath, 'utf8'));
@@ -1859,7 +1957,7 @@
           // WORD-LEVEL decode (-ml 1 -sow) → real per-word timing so the caption
           // highlight follows the spoken word. Same model/words, just one word per
           // segment. Falls back to the line pass if the build/flags don't support it.
-          return runProc(wbin, ['-m', model, '-f', wav, '-osrt', '-of', outBase, '-l', wlang, '-ml', '1', '-sow']).then(function () {
+          return runProc(wbin, ['-m', model, '-f', wav, '-osrt', '-of', outBase, '-l', wlang, '-ml', '1', '-sow', '-t', wThreads], null, wProgress('Transcribing with ' + modelLabel)).then(function () {
             var sp = outBase + '.srt';
             var w = fs.existsSync(sp) ? CPCaptions.parseSRT(fs.readFileSync(sp, 'utf8')) : [];
             try { fs.unlinkSync(sp); } catch (e) {}
