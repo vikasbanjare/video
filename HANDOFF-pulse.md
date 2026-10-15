@@ -1,10 +1,33 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.28** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.29** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.29 — overnight loop, rounds 1–5: Stop, speed, chapters
+- Transcribe ⏹ Stop (#btn-tr-stop): _trJob tracks the job's programs (runProc,
+  curlWithSecret via trTrack); Stop kills them and ends asrRetry waits; the
+  bar says so; cloud pieces heard are kept. A cloud wait ≥ 3 min points at
+  On this computer. Gate transcribe-long-podcast E.
+- Clean up hears up to 3 mics at once (listenOne workers); each decode has
+  its own stop slot (silSubStop), silStopAll ends all; one failing stops the
+  rest. ffmpegEnvelope: stall-based (60 s quiet) not a fixed 3 min (a long
+  podcast lost the end of its word timing). Gate silence-e2e-stop (3 mics).
+- Captions page CPU: the card animator redraws only on-screen cards and
+  nothing while document.hidden (0.34 → 0.03 s script per 5 s); the big
+  preview animates only while #tab-captions is active, restarted on return.
+  Gate captions-gallery-light.
+- Podcast cameras: "More than 8 cameras?" link opens the 9+ box (it showed
+  the picked count as if typed).
+- Chapters (chapters.js) rewritten: breaks at deep dips of word-cosine
+  similarity before/after each line (rarity-weighted, W = clamp(minSec,
+  dur/40, 120 s), dips ≥ 0.25 and > median/mean+0.75sd, ≥ max(minSec, W)
+  apart, ~1 per 5 min, 2–15); titles = 1–2 words with tf·(log(n/df)+0.1);
+  Hinglish + Devanagari stopwords; Devanagari kept by clean(). It made a
+  chapter every 30 s (220 on 2 h). Gate chapters-topics.
+Mutations v29-*.
 
 ### v0.10.28 — shorts in sync with the moment; editable honoured; ranked side by side
 The owner: "when I create a short the selection is random, the voice is
