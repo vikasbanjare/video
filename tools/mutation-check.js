@@ -2605,6 +2605,14 @@ const MUTANTS = [
     repl: "|प्यार|दिल/i",
     gate: 'CutPilot/test/gates/captions-emoji-hindi.js',
     why: 'Auto-emoji puts a heart on Delhi (दिल्ली)'
+  },
+  {
+    name: 'v30-captions-hindi-um',
+    file: 'CutPilot/js/main.js',
+    find: "    try { return typeof CPShorts !== 'undefined' && CPShorts.isHesitation ? CPShorts.isHesitation(t) : false; } catch (e) { return false; }",
+    repl: "    return false;",
+    gate: 'CutPilot/test/gates/fillers-hindi.js',
+    why: 'captions show Hindi-script um/hmm sounds'
   }
 ];
 
