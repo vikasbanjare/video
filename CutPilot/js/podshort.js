@@ -68,6 +68,23 @@
      nobody, or 'both' when two talk. Pieces shorter than o.minPiece (0.7 s)
      join the one before — a camera never flashes. Each piece:
      {start,end,angle,who} in sequence time. */
+  /* The short's stretches (timeline seconds) split wherever the timeline is
+     cut: bounds = every clip start and end on the cameras' and mics' tracks.
+     A stretch across a cut otherwise played the recording straight on past
+     it — the part the owner cut out — so its picture and sound left the
+     words. Parts under 2 frames are kept whole. Pure. */
+  function splitAtCuts(segs, bounds) {
+    var b = (bounds || []).filter(function (x) { return isFinite(x); }).sort(function (a, c) { return a - c; });
+    var out = [];
+    (segs || []).forEach(function (s) {
+      var a = +s.start, e = +s.end;
+      for (var i = 0; i < b.length; i++) {
+        if (b[i] > a + 0.07 && b[i] < e - 0.07) { out.push(a === +s.start ? { start: a, end: b[i] } : { start: a, end: b[i], cut: true }); a = b[i]; }
+      }
+      out.push(a === +s.start ? { start: a, end: e } : { start: a, end: e, cut: true });
+    });
+    return out;
+  }
   function pieces(keep, plan, speech, o) {
     o = o || {};
     var minPiece = o.minPiece != null ? o.minPiece : 0.7;
@@ -75,9 +92,9 @@
     (keep || []).forEach(function (k) {
       var covered = (plan || []).filter(function (p) { return p.end > k.start + 1e-3 && p.start < k.end - 1e-3; })
         .sort(function (a, b) { return a.start - b.start; });
-      if (!covered.length) { out.push({ start: k.start, end: k.end, angle: o.fallbackAngle || 0 }); return; }
-      covered.forEach(function (p) {
-        out.push({ start: Math.max(k.start, p.start), end: Math.min(k.end, p.end), angle: p.angle, spk: p.spk });
+      if (!covered.length) { out.push({ start: k.start, end: k.end, angle: o.fallbackAngle || 0, cut: !!k.cut }); return; }
+      covered.forEach(function (p, ci) {
+        out.push({ start: Math.max(k.start, p.start), end: Math.min(k.end, p.end), angle: p.angle, spk: p.spk, cut: !ci && !!k.cut });
       });
     });
     // a piece too short to read joins the one before it (when they touch):
@@ -87,11 +104,12 @@
       var last = merged[merged.length - 1];
       var touches = last && Math.abs(last.end - p.start) < 1e-3;
       // (one camera with two talkers: each talker's turn is its own piece)
-      if (touches && ((p.angle === last.angle && p.spk === last.spk) || p.end - p.start < minPiece)) { last.end = p.end; return; }
+      // never across a cut on the timeline (splitAtCuts): each side plays its own piece
+      if (touches && !p.cut && ((p.angle === last.angle && p.spk === last.spk) || p.end - p.start < minPiece)) { last.end = p.end; return; }
       merged.push({ start: p.start, end: p.end, angle: p.angle, spk: p.spk });
     });
     // …and a too-short FIRST piece joins the one after it
-    if (merged.length > 1 && merged[0].end - merged[0].start < minPiece && Math.abs(merged[0].end - merged[1].start) < 1e-3) {
+    if (merged.length > 1 && merged[0].end - merged[0].start < minPiece && Math.abs(merged[0].end - merged[1].start) < 1e-3 && !out.some(function (q) { return q.cut && Math.abs(q.start - merged[1].start) < 1e-3; })) {
       merged[1].start = merged[0].start; merged.shift();
     }
     merged.forEach(function (p) { p.who = speech ? speech(p.start, p.end) : -1; });
@@ -464,7 +482,7 @@
 
   return { detectFaces: detectFaces, faceTracks: faceTracks, faceCrop: faceCrop, turnsFrom: turnsFrom,
            regionTracks: regionTracks, markCrop: markCrop,
-           pearson: pearson, assign: assign, pieces: pieces,
+           pearson: pearson, assign: assign, pieces: pieces, splitAtCuts: splitAtCuts,
            filterArgs: filterArgs,
     motionFor: motionFor, cellMotion: cellMotion, cellDraw: cellDraw, layoutCells: layoutCells, LAYOUTS: LAYOUTS, levels: levels, talker: talker };
 });

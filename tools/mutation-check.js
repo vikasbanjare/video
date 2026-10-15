@@ -2453,6 +2453,62 @@ const MUTANTS = [
     repl: "",
     gate: 'CutPilot/test/gates/shorts-long-and-clear.js',
     why: 'the caption style picked for shorts is not the one used'
+  },
+  {
+    name: 'v28-one-clip-for-all',
+    file: 'CutPilot/js/main.js',
+    find: "          var ins = (all && all.instances && all.instances.length) ? all.instances : null;",
+    repl: "          var ins = null;",
+    gate: 'CutPilot/test/gates/shorts-in-sync.js',
+    why: 'one camera: one clip read as the whole cut timeline (wrong picture and sound)'
+  },
+  {
+    name: 'v28-no-split-at-cuts',
+    file: 'CutPilot/js/main.js',
+    find: "      plan.segments = CPPodShort.splitAtCuts(plan.segments, bounds);",
+    repl: "",
+    gate: 'CutPilot/test/gates/shorts-in-sync.js',
+    why: 'a stretch across a timeline cut plays the part cut out'
+  },
+  {
+    name: 'v28-merge-across-cut',
+    file: 'CutPilot/js/podshort.js',
+    find: "      if (touches && !p.cut && ((p.angle === last.angle",
+    repl: "      if (touches && ((p.angle === last.angle",
+    gate: 'CutPilot/test/gates/shorts-in-sync.js',
+    why: 'pieces split at a cut are merged back into one'
+  },
+  {
+    name: 'v28-clip-ending-wins',
+    file: 'CutPilot/js/main.js',
+    find: "      var d = t < x.seqStart ? x.seqStart - t : (t >= end ? t - end + 1e-6 : 0);",
+    repl: "      var d = t < x.seqStart ? x.seqStart - t : (t > end ? t - end : 0);",
+    gate: 'CutPilot/test/gates/shorts-in-sync.js',
+    why: 'at a cut, the clip that ends there is played (the part cut out)'
+  },
+  {
+    name: 'v28-moments-from-last-captions',
+    file: 'CutPilot/js/main.js',
+    find: "    var w = state.transcriptWords;\n    if (!w || !w.length) {\n      var cues = null;",
+    repl: "    var w = (state.lastCaptionJob && state.lastCaptionJob.cues) || state.transcriptWords;\n    if (!w || !w.length) {\n      var cues = null;",
+    gate: 'CutPilot/test/gates/shorts-in-sync.js',
+    why: 'moments are found in the last caption set (a short) instead of the transcript'
+  },
+  {
+    name: 'v28-editable-ignored',
+    file: 'CutPilot/js/main.js',
+    find: "          if (_capOut === 'editable') applyEditableStyle({ cues: CPShorts.sentenceCues(plan.words), words: plan.words });",
+    repl: "          if (false) applyEditableStyle({ cues: CPShorts.sentenceCues(plan.words), words: plan.words });",
+    gate: 'CutPilot/test/gates/shorts-in-sync.js',
+    why: 'Editable picked in step 2 is ignored for the short'
+  },
+  {
+    name: 'v28-no-rerank',
+    file: 'CutPilot/js/main.js',
+    find: "      if (chunks.length < 2 || pool.length < 4 || !CPSmartEdit.buildRerankPrompt) return pool.slice(0, 12);",
+    repl: "      return pool.slice(0, 12);",
+    gate: 'CutPilot/test/gates/shorts-long-and-clear.js',
+    why: 'the moments of a long podcast are never compared side by side'
   }
 ];
 

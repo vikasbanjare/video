@@ -400,6 +400,8 @@
       '- end on a clean payoff/punchline — never mid-sentence,\n' +
       '- be roughly ' + minS + '–' + maxS + ' seconds long.\n\n' +
       'Score each 0–100 on: HOOK (grabs attention in 3s), FLOW (complete arc), VALUE (emotional or useful payoff).\n' +
+      'Use the scale honestly: an ordinary moment of a podcast is 30–60; give 80+ only to one that would truly stop someone scrolling. ' +
+      'This is one part of a longer video, so return nothing rather than a weak clip.\n' +
       'Return up to ' + want + ' clips, best first. Prefer fewer, stronger clips over many weak ones.\n\n' +
       'Reply with STRICT JSON only:\n' +
       '{"clips":[{"from":<int>,"to":<int>,"title":"<catchy 3-6 word title>","hook":"<the opening hook line>","score":<0-100>,"reason":"<why it pops, short>"}]}\n' +
@@ -408,6 +410,39 @@
     return { system: HL_SYSTEM, user: user, count: segs.length };
   }
 
+  /* The best candidates from every part of a long video, compared side by
+     side in ONE request: each part's own picks are scored against that part
+     only, so a dull part still sent its "best" with a high score and the
+     list felt random. cands: [{title, hook, text, dur}]. */
+  function buildRerankPrompt(cands) {
+    var lines = (cands || []).map(function (c, i) {
+      var body = String(c.text || c.hook || '').replace(/\s+/g, ' ').trim();
+      if (body.length > 420) body = body.slice(0, 420) + '…';
+      return '[' + i + '] (' + Math.round(+c.dur || 0) + 's) "' + String(c.title || '').replace(/"/g, "'") + '" — ' + body;
+    });
+    var user =
+      'These are candidate short clips cut from ONE long podcast, each with its full words.\n' +
+      'Rank them by how likely each is to do well as a vertical short on Instagram Reels / YouTube Shorts: ' +
+      'a hook in the first 3 seconds, a complete thought, a strong payoff (a surprising fact, a strong opinion, a funny or emotional moment, a useful tip).\n' +
+      'Compare them against EACH OTHER on one scale (0–100).\n\n' +
+      'Reply with STRICT JSON only: {"ranked":[{"i":<index>,"score":<0-100>}]} — every index once, best first.\n\n' +
+      'CANDIDATES:\n' + lines.join('\n');
+    return { system: HL_SYSTEM, user: user, count: (cands || []).length };
+  }
+  function parseRerankResponse(text, n) {
+    var raw = extractJson(text);
+    if (!raw) return null;
+    var obj; try { obj = JSON.parse(raw); } catch (e) { return null; }
+    var r = obj && (obj.ranked || obj.ranking || obj.order);
+    if (!r || !r.length) return null;
+    var seen = {}, out = [];
+    r.forEach(function (x) {
+      var i = parseInt(x && (x.i != null ? x.i : x.index), 10);
+      if (isNaN(i) || i < 0 || i >= n || seen[i]) return;
+      seen[i] = 1; out.push({ i: i, score: Math.max(0, Math.min(100, +x.score || 0)) });
+    });
+    return out.length ? out : null;
+  }
   /* Parse highlight reply → [{start,end,title,hook,score,reason,text}] sorted by
      score desc, duration-guarded. Malformed entries are dropped (never throws). */
   function parseHighlightResponse(text, segments, opts) {
@@ -492,6 +527,8 @@
     extractJson: extractJson,
     parseCleanupResponse: parseCleanupResponse,
     buildHighlightPrompt: buildHighlightPrompt,
+    buildRerankPrompt: buildRerankPrompt,
+    parseRerankResponse: parseRerankResponse,
     parseHighlightResponse: parseHighlightResponse,
     buildTitlePrompt: buildTitlePrompt,
     parseTitle: parseTitle,

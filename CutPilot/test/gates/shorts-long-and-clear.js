@@ -35,13 +35,23 @@ async function run() {
   console.log('Viral Shorts: the whole long podcast is read, and the page reads 1 → 2 → 3');
   const browser = await H.launch();
   try {
-    let parts = [], failPart = -1;
+    let parts = [], failPart = -1, rerankAsked = 0, rerankSecond = null;
     const curl = (args, stdin) => {
       const url = args.find(a => /^https:\/\//.test(a)) || '';
       if (/\/models/.test(url)) return JSON.stringify({ data: [{ id: 'llama-3.1-8b-instant' }] });
       if (!/chat\/completions/.test(url)) return '{}';
       let msg = '';
       try { msg = require('fs').readFileSync(args[args.indexOf('--data-binary') + 1].replace(/^@/, ''), 'utf8'); } catch (e) {}
+      // the side-by-side round: the ending first, then the rest BACKWARDS
+      if (/CANDIDATES:/.test(msg)) {
+        rerankAsked++;
+        const body = JSON.parse(msg); const u = body.messages[body.messages.length - 1].content;
+        const cands = []; u.replace(/\[(\d+)\] \(\d+s\) "([^"]*)"/g, (_, i, t) => { cands.push({ i: +i, t }); return ''; });
+        const end = cands.filter(c => /The ending/.test(c.t)), rest = cands.filter(c => !/The ending/.test(c.t)).reverse();
+        const order = end.concat(rest);
+        rerankSecond = order[1] ? order[1].t : null;
+        return JSON.stringify({ choices: [{ message: { content: JSON.stringify({ ranked: order.map((c, k) => ({ i: c.i, score: 97 - k })) }) } }] });
+      }
       const m = /\[0\] \([\d:]+\) we talk about line(\d+)/.exec(msg);
       const first = m ? +m[1] : -1;
       const idx = parts.length; parts.push(/line2399\b/.test(msg) ? 'END' : first);
@@ -68,6 +78,8 @@ async function run() {
       parts.length >= 5 && parts[parts.length - 1] === 'END', JSON.stringify(parts));
     C.check('A. the best moment, near the end of the podcast, is found and listed first', /^1\. The ending that wins/.test(res.titles[1] || ''), JSON.stringify(res.titles.slice(0, 3)));
     C.check('A. the message says the whole video was read', /across the whole 2 h 0 min/.test(res.toast), res.toast);
+    C.check('A. the strongest moments from every part are compared side by side once, and the list follows that ranking (second: ' + rerankSecond + ')',
+      rerankAsked === 1 && (res.titles[2] || '').replace(/^2\. /, '') === rerankSecond, JSON.stringify({ rerankAsked, second: res.titles[2], want: rerankSecond }));
     C.check('C. two picks of mostly the same stretch are shown once', !res.titles.some(t => /Nearly the same stretch/.test(t)), JSON.stringify(res.titles.slice(0, 6)));
     // ── B ── one part fails
     failPart = 1; parts = [];

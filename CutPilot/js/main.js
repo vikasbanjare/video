@@ -13439,7 +13439,10 @@
       });
     }, function (e) { diag('render-check', 'editable visibility check failed: ' + (e && e.message)); });
   }
-  function applyEditableStyle() {
+  /* given (a short): { cues, words } on that short's own clock — its words
+     are captioned, not the whole transcript's. */
+  function applyEditableStyle(given) {
+    if (given && !given.cues) given = null;   // a click event is not a short
     if (!CPBridge.isCEP()) return toast('Editable captions need Premiere (open Pulse inside Premiere).', true);
     // Use the editor-aware preset so the placed caption matches the preview:
     // your chosen text colour, highlight colour and box colour all carry through
@@ -13459,9 +13462,12 @@
     // owner saw were the timing written in the wrong units — every style was
     // blank, the dark ones were just the first noticed. The before/after check
     // after insertion (verifyEditableVisible) still asks if a set paints nothing.)
-    if (!ensureTranscriptThen('editstyle')) return;
     var cues;
-    try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
+    if (given) { cues = given.cues.slice(); cues.words = given.words || null; }
+    else {
+      if (!ensureTranscriptThen('editstyle')) return;
+      try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
+    }
     var words = parseInt($('c-words').value, 10) || 0;
     var caps = !!($('c-upper') && $('c-upper').checked) || !!preset.uppercase;
     var caseMode = caps ? 'upper' : editorTextCase();
@@ -13513,7 +13519,7 @@
       confirmInline(tcues.length + ' editable caption clips will be inserted — one per line. MOGRTs insert slowly, so this can take a while. Tip: raise "Words per caption" for fewer, longer lines.\n\nContinue?', 'Insert them', function (yes) {
         if (!yes) return toast('Cancelled — no captions were added.');
         state._bigOk = true;
-        try { applyEditableStyle(); } finally { state._bigOk = false; }
+        try { applyEditableStyle(given); } finally { state._bigOk = false; }
       });
       return;
     }
@@ -15703,15 +15709,25 @@
   // =========================================================== VIRAL SHORTS ====
   /* Sentence-level segments for the highlight finder: prefer the caption job's
      cues / an external transcript; else group the word stream into sentences. */
+  /* The lines moments are found in: the TRANSCRIPT of the timeline (its
+     words, else its lines). It used to prefer the last caption set Pulse
+     made — after one short was captioned, that was the SHORT's 40 seconds,
+     so the next search found "random" moments that were not in the podcast,
+     and their words, picture and captions disagreed. A caption set counts
+     only when there is no transcript and it was made on this sequence. */
   function highlightSegments() {
-    var cues = (state.lastCaptionJob && state.lastCaptionJob.cues) || null;
-    if (!cues || !cues.length) { try { cues = readSelectedTranscript(); } catch (e) { cues = null; } }
-    if (cues && cues.length) {
-      return cues.filter(function (c) { return c && c.text; })
-        .map(function (c) { return { text: c.text, start: +c.start || 0, end: +c.end || 0 }; });
-    }
     var w = state.transcriptWords;
-    if (!w || !w.length) return null;
+    if (!w || !w.length) {
+      var cues = null;
+      try { cues = readSelectedTranscript(); } catch (e) { cues = null; }
+      var job = state.lastCaptionJob;
+      if ((!cues || !cues.length) && job && job.cues && job.cues.length && (!job.seq || !state.env || job.seq === state.env.sequenceName)) cues = job.cues;
+      if (cues && cues.length) {
+        return cues.filter(function (c) { return c && c.text; })
+          .map(function (c) { return { text: c.text, start: +c.start || 0, end: +c.end || 0 }; });
+      }
+      return null;
+    }
     var segs = [], cur = [];
     for (var i = 0; i < w.length; i++) {
       cur.push(w[i]);
@@ -16000,9 +16016,23 @@
         function () { return CPBridge.callHost('CP_getTranscribeSource'); }
       ).then(function (s) {
         if (!s || !s.clip || !s.clip.mediaPath) throw new Error('Put the source video on the timeline (select it) so I can cut the clip from it.');
-        var c = s.clip, len = (c.outPoint != null && c.inPoint != null) ? c.outPoint - c.inPoint : 1e7;
-        return { cams: [{ index: 0, name: 'V1', segments: [{ mediaPath: c.mediaPath, seqStart: c.seqStart || 0, seqEnd: (c.seqStart || 0) + len, inPoint: c.inPoint || 0, speed: 1 }] }],
-                 map: [], tracks: [], n: 1 };
+        // EVERY piece of that recording on the timeline: a cut-up or cleaned
+        // podcast is many pieces, and one clip read as the whole timeline put
+        // the picture and sound of the wrong part under the moment's words
+        return CPBridge.callHost('CP_getTranscribeSource', { onlyMediaPath: s.clip.mediaPath }).then(null, function () { return null; }).then(function (all) {
+          var segs = [];
+          var ins = (all && all.instances && all.instances.length) ? all.instances : null;
+          if (ins) ins.forEach(function (p) {
+            var sp = (+p.speed > 0) ? +p.speed : 1;
+            segs.push({ mediaPath: s.clip.mediaPath, seqStart: +p.seqStart, seqEnd: +p.seqStart + (p.outPoint - p.inPoint) / sp, inPoint: +p.inPoint, speed: sp });
+          });
+          if (!segs.length) {
+            var c = s.clip, len = (c.outPoint != null && c.inPoint != null) ? c.outPoint - c.inPoint : 1e7;
+            segs.push({ mediaPath: c.mediaPath, seqStart: c.seqStart || 0, seqEnd: (c.seqStart || 0) + len, inPoint: c.inPoint || 0, speed: 1 });
+          }
+          segs.sort(function (a, b) { return a.seqStart - b.seqStart; });
+          return { cams: [{ index: 0, name: 'V1', segments: segs }], map: [], tracks: [], n: 1 };
+        });
       });
     }
     if (!o.cams) return single();
@@ -16036,7 +16066,9 @@
     var best = segs[0], bd = Infinity;
     segs.forEach(function (x) {
       var end = x.seqEnd != null ? x.seqEnd : Infinity;
-      var d = t < x.seqStart ? x.seqStart - t : (t > end ? t - end : 0);
+      // a clip plays [start, end): at a cut, the clip that STARTS there (the
+      // one ending there used to win, and played the part cut out)
+      var d = t < x.seqStart ? x.seqStart - t : (t >= end ? t - end + 1e-6 : 0);
       if (d < bd) { bd = d; best = x; }
     });
     return { path: best.mediaPath, t: Math.max(0, (best.inPoint || 0) + (t - best.seqStart) * (best.speed || 1)) };
@@ -16409,6 +16441,15 @@
     var S0 = plan.segments[0].start, S1 = plan.segments[plan.segments.length - 1].end;
     var editable = shortOutput() === 'timeline' && !!rt;
     shortCameras(S0, S1, o).then(function (setup) {
+      // a stretch that crosses a cut on the timeline (Clean up's, or one made
+      // by hand) is split there, so each part plays its own piece of every
+      // camera and mic: the picture and sound stay with the words
+      var bounds = [];
+      (setup.cams || []).forEach(function (c) { (c.segments || []).forEach(function (x) { bounds.push(+x.seqStart, +x.seqEnd); }); });
+      (setup.tracks || []).forEach(function (t) { (t.segments || []).forEach(function (x) { bounds.push(+x.seqStart, +x.seqEnd); }); });
+      var before = plan.segments.length;
+      plan.segments = CPPodShort.splitAtCuts(plan.segments, bounds);
+      if (plan.segments.length > before) { try { diag('shorts', 'the moment crosses ' + (plan.segments.length - before) + ' cut(s) on the timeline: each part plays its own piece'); } catch (eD) {} }
       if (!editable) {
         return renderFramedShort(ff, setup, plan, rt, hook, prog, shortLayout()).then(function (r) {
           prog.textContent = 'Importing “' + name + '”…';
@@ -16449,7 +16490,9 @@
         prog.textContent = 'Adding captions in “' + ((currentPreset() || {}).name || 'your caption style') + '”…';
         setTimeout(function () {
           prog.classList.add('hidden');
-          runCaptionPipeline(CPShorts.sentenceCues(plan.words), { wordCues: plan.words });
+          // the choice in step 2: ✏️ Editable captions, else drawn by Pulse
+          if (_capOut === 'editable') applyEditableStyle({ cues: CPShorts.sentenceCues(plan.words), words: plan.words });
+          else runCaptionPipeline(CPShorts.sentenceCues(plan.words), { wordCues: plan.words });
         }, 400);
         toast('🎬 Made the ' + what + '. Adding captions now…');
         return;
@@ -16723,7 +16766,22 @@
       if (failedParts.length && typeof CPShorts !== 'undefined') failedParts.forEach(function (cs) {
         hl = hl.concat(CPShorts.localHighlights(cs, { min: len.min, max: len.max, count: 2 }));
       });
-      hl = bestDistinctMoments(hl, 12);
+      var pool = bestDistinctMoments(hl, 20);
+      // a long video's parts are each scored on their own: one last request
+      // compares the strongest from every part on ONE scale (the owner: the
+      // picks felt random). Without an answer, the parts' own order stays.
+      if (chunks.length < 2 || pool.length < 4 || !CPSmartEdit.buildRerankPrompt) return pool.slice(0, 12);
+      if (prog) prog.textContent = '✨ Comparing the best ' + pool.length + ' moments…';
+      return aiChatRetry(CPSmartEdit.buildRerankPrompt(pool), { maxTokens: 900 }).then(function (content) {
+        var r = CPSmartEdit.parseRerankResponse(content, pool.length);
+        if (!r) return pool.slice(0, 12);
+        var ranked = r.map(function (x) { var h = pool[x.i]; h.score = x.score; return h; });
+        pool.forEach(function (h, i) { if (!r.some(function (x) { return x.i === i; })) ranked.push(h); });
+        try { diag('shorts', 'moments ranked side by side: ' + ranked.slice(0, 5).map(function (h) { return Math.round(h.score) + ' ' + (h.title || '').slice(0, 24); }).join(' · ')); } catch (eD) {}
+        return ranked.slice(0, 12);
+      }, function () { return pool.slice(0, 12); });
+    }).then(function (hl) {
+      if (!hl) return;
       prog.classList.add('hidden');
       renderShorts(hl);
       var span = segs.length ? spokenLength(segs[segs.length - 1].end - segs[0].start) : '';
@@ -16735,6 +16793,8 @@
   try {
     window.CP_DEBUG_EXT = window.CP_DEBUG_EXT || {};
     window.CP_DEBUG_EXT.shorts = { show: renderShorts, plan: function (h) { return shortPlanFor(h, shortOpts()); },
+                                   segments: function () { return highlightSegments() || []; },
+                                   setLastJob: function (cues) { state.lastCaptionJob = { cues: cues, track: 2, seq: 'Some short' }; },
                                    viral: function () { viralEdit(); },
                                    setMarks: function (p, boxes) { saveMarks(p, boxes); }, marks: function (p) { return shortMarksFor(p); },
                                    setFrame: function (p, f) { saveFrame(p, f); }, frame: function (p) { return shortFrameFor(p); },
