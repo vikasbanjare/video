@@ -55,6 +55,12 @@ const chB = CH.buildChapters(B, { minChapterSec: 30 });
 (chB.length === 3 && chB.every((c, i) => Math.abs(c.start - i * 320) <= 30) && chB.every((c, i) => c.title.split(' ').every(w => DV[i].indexOf(w) >= 0)) ? ok : bad)(
   'B. Hindi (Devanagari): 3 chapters at the changes, Hindi titles (' + CH.formatChapters(chB).replace(/\n/g, ' · ') + ')');
 
+// E. a word said in EVERY chapter (the show's own name) tells none apart
+const E = talk(TOP.slice(0, 4), 200, 3.2, (a, b) => 'podcast ' + a + ' podcast ' + b + ' podcast');
+const chE = CH.buildChapters(E, { minChapterSec: 30 });
+(chE.length === 4 && !chE.some(c => /podcast/i.test(c.title)) && chE.every((c, i) => c.title.toLowerCase().split(' ').every(w => TOP[i].indexOf(w) >= 0)) ? ok : bad)(
+  'E. a word said in every chapter ("podcast") never becomes a title (' + chE.map(c => c.title).join(' · ') + ')');
+
 // D
 const D = talk([TOP[0]], 600, 3.2, (a, b) => 'aaj hum ' + a + ' aur ' + b + ' ke baare mein baat karenge');
 const chD = CH.buildChapters(D, { minChapterSec: 30 });
