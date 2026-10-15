@@ -193,7 +193,12 @@ function scriptedPremiere(o) {
       a.cues.forEach(c => tl.captions.push({ start: c.start, end: c.end, drawn: !(track === 4 ? o.premiumInvisible : o.editableInvisible), kind: track === 4 ? 'premium' : 'editable', track,
         // o.premiumGiant: one giant letter fills the frame (the owner's Flux Orbit at 44506.8%)
         giant: track === 4 && !!o.premiumGiant && /Orbit/.test(a.mogrtPath) }));
-      return ok({ inserted: a.cues.length, track, textSet: a.cues.length });
+      // the word-by-word highlight: a word-highlight engine is swept on every
+      // caption; keyed to each word when the panel sent the starts and this
+      // Premiere takes keys (o.noKeys: it does not)
+      const withWt = a.cues.filter(c => c.wt && c.wt.length).length;
+      if (track === 6) log.wtSent = withWt;
+      return ok({ inserted: a.cues.length, track, textSet: a.cues.length, swept: track === 6 ? a.cues.length : 0, sweptTimed: track === 6 && !o.noKeys ? withWt : 0 });
     },
     CP_placeOverlay(a) {
       log.overlay = { path: a.path, size: fs.existsSync(a.path) ? fs.statSync(a.path).size : 0 };
@@ -316,6 +321,8 @@ function scriptedPremiere(o) {
     report(!missing.length && !notOk.length && R.rows.length === names.length,
       '1. every feature has a ✅ row (' + R.rows.length + ' rows' + (missing.length ? '; missing: ' + missing.join(', ') : '') +
       (notOk.length ? '; not ✅: ' + short(notOk.join(' | ')) : '') + ')');
+    report(/highlight keyed to each spoken word on 3 of 3/.test(R.rowOf('Editable captions: every caption visible')) && R.prem.log.wtSent === 3,
+      '1. the editable row sends each word\'s start and says Premiere keyed the highlight: ' + short(R.rowOf('Editable captions: every caption visible')));
     report(/red \/ blue \/ red/.test(R.rowOf('Multicam: Apply')) && /cuts landed 2 of 2 \(by timecode\)/.test(R.rowOf('Multicam: Apply')),
       '1. Multicam is judged by the camera Premiere draws: ' + short(R.rowOf('Multicam: Apply')));
     report(/of the frame is caption/.test(R.rowOf('Captions (Pulse’s own look)')) && /of the frame is caption/.test(R.rowOf('Premium (Flux) captions')) &&
@@ -425,6 +432,15 @@ function scriptedPremiere(o) {
       '2c. captions cut at the frame\'s edge: ' + short(R.rowOf('Captions: long text and long words')));
     report(/^❌/.test(R.rowOf('Captions: the colour you pick')),
       '2c. a picked colour that never reaches the timeline: ' + short(R.rowOf('Captions: the colour you pick')));
+  }
+
+  // 2e. a Premiere that will not take keys on the template's timing: the
+  // editable row warns that the highlight sweeps evenly (captions still fine)
+  {
+    const R = await run('nokeys', { noKeys: true });
+    const row = R.rowOf('Editable captions: every caption visible');
+    report(/^⚠️/.test(row) && /did not take the word timing/.test(row) && /visible/.test(row),
+      '2e. a Premiere that does not take the word timing is a warning, not an error: ' + short(row));
   }
 
   // 3. no test sequence

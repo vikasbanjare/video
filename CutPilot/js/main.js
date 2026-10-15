@@ -4471,7 +4471,10 @@
       if (!saved) return Promise.resolve({ state: 'warn', note: 'not tried — editable captions need a saved project: save yours once (⌘S), then test again' });
       var preset = styledPreset(), bb = bundledBackbone(preset);
       if (!bb) return Promise.resolve({ state: 'warn', note: 'no editable caption template is installed with Pulse' });
-      var cues = [{ start: 1.0, end: 2.0, text: 'Editable first words' }, { start: 4.0, end: 5.0, text: 'Editable middle words' }, { start: 7.0, end: 8.0, text: 'Editable last words' }];
+      // each word's start (seconds into its caption): Premiere keys the
+      // highlight to them — this row says whether it took them (sweptTimed)
+      var cues = [{ start: 1.0, end: 2.0, text: 'Editable first words', wt: [0, 0.2, 0.55] }, { start: 4.0, end: 5.0, text: 'Editable middle words', wt: [0, 0.35, 0.6] },
+                  { start: 7.0, end: 8.0, text: 'Editable last words', wt: [0, 0.15, 0.7] }];
       // the editable-captions engine itself, as it paints words: the first,
       // middle and last of a set must each show (the owner's Viral edit set
       // showed nothing)
@@ -4489,9 +4492,13 @@
           return host('CP_clearCaptionTrack', { track: r.track, names: captionGraphicNames(bb.path) }).then(function () { return v; }, function () { return v; });
         }).then(function (v) {
           var rows = v.rows.map(function (x) { return x.at.toFixed(1) + ' s ' + (x.share == null ? 'unreadable' : (x.share < 0.0015 ? 'BLANK' : 'visible')); });
-          return { state: v.checked === cues.length && !v.blank.length ? 'ok' : 'fail',
+          var visibleOk = v.checked === cues.length && !v.blank.length;
+          // the highlight on each spoken word (keyed): not taken = the even sweep (still works)
+          var timed = (r.swept > 0) ? (r.sweptTimed > 0 ? ' · highlight keyed to each spoken word on ' + r.sweptTimed + ' of ' + r.swept
+            : ' · ⚠️ Premiere did not take the word timing — the highlight sweeps evenly across each caption') : '';
+          return { state: !visibleOk ? 'fail' : (r.swept > 0 && !(r.sweptTimed > 0) ? 'warn' : 'ok'),
                    note: 'editable captions on V' + r.track + ': ' + rows.join(', ') +
-                     (v.blank.length ? ' — Premiere drew no words there (its frames: Documents → Pulse → caption-check)' : '') };
+                     (v.blank.length ? ' — Premiere drew no words there (its frames: Documents → Pulse → caption-check)' : '') + timed };
         });
       });
     });
