@@ -47,6 +47,12 @@ async function partA() {
     fn(process.execPath, ['-e', big], null, (t) => { seen += t.length; }).then(() => 'finished', (e) => 'failed: ' + e.message),
     new Promise(r => setTimeout(() => r('HUNG'), 20000))
   ]);
+  // the gap re-check and every ffmpeg call pass no reader: still read
+  const res2 = await Promise.race([
+    fn(process.execPath, ['-e', big]).then(() => 'finished', (e) => 'failed: ' + e.message),
+    new Promise(r => setTimeout(() => r('HUNG'), 20000))
+  ]);
+  C.check('A. …and with no one asking for the output (the quiet-stretch re-check, ffmpeg) it still runs to the end (' + res2 + ')', res2 === 'finished', res2);
   C.check('A. a program printing 2 MB (the engine on a 2-hour podcast) runs to the end — its output is read (' + res + ' in ' + (Date.now() - t0) + ' ms, ' + Math.round(seen / 1024) + ' KB seen)',
     res === 'finished' && seen > 1.5e6, res);
 }
