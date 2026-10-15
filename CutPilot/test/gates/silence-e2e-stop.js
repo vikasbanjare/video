@@ -63,6 +63,25 @@ const ok = (c, m) => { if (c) console.log('  ✓ ' + m); else { failed++; consol
     ok(r.shown && /Stopped/.test(r.toast) && !r.err && !results && calls.some(c => c.fn === '__kill') && r.hidden,
       'Find the silences: the same Stop, no list of cuts made from half a file ("' + r.toast + '")');
 
+    // 4) three mics (a 2-hour podcast took ~4 min, one mic after another):
+    //    they are heard AT ONCE, and Stop ends every one of them
+    const mics = ['/Volumes/Slow/host.wav', '/Volumes/Slow/guest.wav', '/Volumes/Slow/third.wav'];
+    const tl3 = { seqId: 's-slow3', video: [{}], audio: mics.map((m, i) => ({ name: 'A' + (i + 1), items: [{ name: m.split('/').pop(), mediaPath: m, seqStart: 0, seqEnd: 27.5, inPoint: 0, outPoint: 27.5 }] })) };
+    const fakes3 = { __realFor: {} };
+    mics.forEach((m, i) => { fakes3[m] = 'slow'; fakes3.__realFor[m] = [S.host.file, S.guest.file, S.floor60.file][i]; });
+    ({ page, calls } = await P.openPanel(browser, tl3, fakes3));
+    await page.evaluate(() => { document.getElementById('ac-do-takes').checked = false; });
+    const t0 = Date.now();
+    r = await tapStop(page, 'btn-autoclean', 'btn-autoclean-stop', 'autoclean-progress');
+    await page.close();
+    const decodes = calls.filter(c => c.fn === '__spawn' && mics.indexOf(c.args) >= 0);
+    const kills = calls.filter(c => c.fn === '__kill').length;
+    // the pipe decodes of all three started before Stop (each lasts ~4 s when slow)
+    ok(new Set(decodes.map(c => c.args)).size === 3 && Date.now() - t0 < 6000 && /3 mics/.test(r.listening),
+      'three mics are heard at once ("' + r.listening + '", ' + new Set(decodes.map(c => c.args)).size + ' files open before Stop)');
+    ok(kills >= 3 && /Stopped/.test(r.toast) && !calls.some(c => c.fn === 'CP_razorRipple'),
+      '…and Stop ends all three at once, cutting nothing (' + kills + ' decodes ended: "' + r.toast + '")');
+
     // 3) left alone, the slow scan finishes and cuts as usual
     ({ page, calls } = await P.openPanel(browser, tl, fakes));
     r = await P.cleanUp(page, calls, { strength: 'balanced', takes: false });

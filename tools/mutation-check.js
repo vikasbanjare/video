@@ -2509,6 +2509,30 @@ const MUTANTS = [
     repl: "      return pool.slice(0, 12);",
     gate: 'CutPilot/test/gates/shorts-long-and-clear.js',
     why: 'the moments of a long podcast are never compared side by side'
+  },
+  {
+    name: 'v29-mics-one-by-one',
+    file: 'CutPilot/js/main.js',
+    find: "    var lanes = []; for (var li = 0; li < Math.min(3, order.length); li++) lanes.push(worker());",
+    repl: "    var lanes = []; for (var li = 0; li < Math.min(1, order.length); li++) lanes.push(worker());",
+    gate: 'CutPilot/test/gates/silence-e2e-stop.js',
+    why: 'Clean up hears one mic after another (minutes longer on a long podcast)'
+  },
+  {
+    name: 'v29-stop-ends-one',
+    file: 'CutPilot/js/main.js',
+    find: "    (stop.subs || []).forEach(function (sb) { sb.stopped = true; if (sb.now) { try { sb.now(); } catch (e2) {} } });",
+    repl: "    (stop.subs || []).slice(-1).forEach(function (sb) { sb.stopped = true; if (sb.now) { try { sb.now(); } catch (e2) {} } });",
+    gate: 'CutPilot/test/gates/silence-e2e-stop.js',
+    why: 'Stop ends only one of the mics being heard'
+  },
+  {
+    name: 'v29-tr-stop-ignored',
+    file: 'CutPilot/js/main.js',
+    find: "          (function tick() { if (trStopped() || Date.now() >= until) res(); else setTimeout(tick, 250); })();",
+    repl: "          (function tick() { if (Date.now() >= until) res(); else setTimeout(tick, 250); })();",
+    gate: 'CutPilot/test/gates/transcribe-long-podcast.js',
+    why: 'Stop does not end a transcription waiting out a cloud limit'
   }
 ];
 
