@@ -733,8 +733,22 @@
   /* Spawn curl with SECRET headers delivered via a stdin config (-K -), never
      on the command line — argv is readable machine-wide (ps / Task Manager /
      any local process), the stdin pipe is not. Non-secret args stay on argv. */
+  /* The transcription running now: ⏹ Stop kills its programs (the speech
+     engine, ffmpeg, the cloud uploads) and ends its waits. A 1–2 hour
+     podcast can take half an hour on a laptop, and there was no way out but
+     closing the panel. */
+  var _trJob = null;
+  function trTrack(p) {
+    var j = _trJob;
+    if (!j || !p) return p;
+    j.procs.push(p);
+    try { p.on('close', function () { var i = j.procs.indexOf(p); if (i >= 0) j.procs.splice(i, 1); }); } catch (e) {}
+    return p;
+  }
+  function trStopped() { return !!(_trJob && _trJob.stopped); }
+  function trStopError() { var e = new Error('Stopped.'); e.stopped = true; return e; }
   function curlWithSecret(cp, args, secretHeaders) {
-    var p = cp.spawn('curl', ['-K', '-'].concat(args));
+    var p = trTrack(cp.spawn('curl', ['-K', '-'].concat(args)));
     try {
       if (p.stdin && p.stdin.on) p.stdin.on('error', function () {});   // curl exiting early must not crash the panel (EPIPE)
       var cfg = '';
@@ -937,13 +951,18 @@
       return run().then(null, function (e) {
         var kind = e && e.cpKind, txt = String((e && (e.cpDetail || '')) + ' ' + (e && e.message || ''));
         var passing = kind === 'rate_limit' || kind === 'network' || kind === 'provider_down';
+        if (trStopped()) throw trStopError();
         if (!passing || tries >= ASR_RETRIES) throw e;
         tries++;
         var told = asrWaitSeconds(txt);
         var wait = told > 0 ? Math.min(3900, Math.ceil(told) + 2) : Math.min(120, (kind === 'rate_limit' ? 20 : 3) * Math.pow(2, tries - 1));
         try { diag('asr', 'cloud request failed (' + kind + '), try ' + tries + ' of ' + ASR_RETRIES + ' in ' + wait + ' s: ' + txt.slice(0, 160)); } catch (eD) {}
         if (onWait) { try { onWait(wait, tries); } catch (eW) {} }
-        return new Promise(function (res) { setTimeout(res, asrTestScale(wait) * 1000); }).then(go);
+        // the wait ends early when ⏹ Stop is tapped
+        return new Promise(function (res) {
+          var until = Date.now() + asrTestScale(wait) * 1000;
+          (function tick() { if (trStopped() || Date.now() >= until) res(); else setTimeout(tick, 250); })();
+        }).then(function () { if (trStopped()) throw trStopError(); return go(); });
       });
     }
     return go();
@@ -962,7 +981,8 @@
   function waitBar(icon, what) {
     return function (s) {
       var m = Math.floor(s / 60), r = Math.round(s % 60);
-      setTranscriptBar('warn', icon, what + ' Trying again in ' + (m ? m + ' min ' : '') + (r ? r + ' s' : '') + ' — it carries on by itself.', null);
+      setTranscriptBar('warn', icon, what + ' Trying again in ' + (m ? m + ' min ' : '') + (r ? r + ' s' : '') + ' — it carries on by itself' +
+        (s >= 180 ? ' (or ⏹ Stop and pick 💻 On this computer under Speech accuracy).' : '.'), null);
     };
   }
   /* How a too-big recording is cut for the cloud. Each piece is re-encoded at
@@ -1003,6 +1023,7 @@
         var part = pathMod.join(os.tmpdir(), 'cutpilot-asr-part' + idx + '-' + Date.now() + '.mp3');
         var pDur = chunkDur + (idx + 1 < chunks ? OVER : 0), pKey = asrPiece(idx, startT, pDur);
         seq = seq.then(function () {
+          if (trStopped()) throw trStopError();
           setTranscriptBar('', '☁️', 'Transcribing in the cloud… part ' + (idx + 1) + ' of ' + chunks, null);
           var heardBefore = pKey && _asrPieces[pKey];
           var got = heardBefore ? Promise.resolve(JSON.parse(heardBefore)).then(function (c) { var a = c.cues; if (c.words) a.words = c.words; if (c.lang) a.detectedLang = c.lang; return a; })
@@ -1133,6 +1154,7 @@
         var part = pathMod.join(os.tmpdir(), 'cutpilot-swara-' + idx + '-' + Date.now() + '.wav');
         var sDur = CHUNK + (last ? 0 : OVER), sKey = asrPiece(idx, startT, sDur);
         seq = seq.then(function () {
+          if (trStopped()) throw trStopError();
           var heardBefore = sKey && _asrPieces[sKey];
           var got = heardBefore ? Promise.resolve(JSON.parse(heardBefore)).then(function (c) { var a = c.cues; if (c.words) a.words = c.words; return a; })
             : runProc(ff, ['-y', '-ss', String(startT), '-t', String(sDur), '-i', audioPath, '-ac', '1', '-ar', '16000', part])
@@ -1330,7 +1352,8 @@
   function runProc(bin, args, onLog, onOut) {
     return new Promise(function (resolve, reject) {
       var cp; try { cp = nodeReq('child_process'); } catch (e) { return reject(e); }
-      var p; try { p = cp.spawn(bin, args); } catch (e2) { return reject(e2); }
+      if (trStopped()) return reject(trStopError());
+      var p; try { p = trTrack(cp.spawn(bin, args)); } catch (e2) { return reject(e2); }
       var err = '';
       if (p.stdout) p.stdout.on('data', function (d) { if (onOut) { try { onOut(d.toString()); } catch (eO) {} } });
       if (p.stderr) p.stderr.on('data', function (d) { err += d.toString(); if (onLog) onLog(d.toString()); });
@@ -1587,7 +1610,18 @@
     ['btn-tr-auto-ai', 'ms-transcribe', 'btn-tr-auto', 'btn-mogrt-transcribe'].forEach(function (id) {
       var b = $(id); if (b) b.disabled = !!on;
     });
+    if (on && !_trJob) _trJob = { stopped: false, procs: [] };
+    if (!on) _trJob = null;
+    var st = $('btn-tr-stop'); if (st) { st.classList.toggle('hidden', !on); st.disabled = false; }
   }
+  function stopTranscribing() {
+    var j = _trJob; if (!j || j.stopped) return;
+    j.stopped = true;
+    var st = $('btn-tr-stop'); if (st) st.disabled = true;
+    setTranscriptBar('warn', '⏹', 'Stopping…', null);
+    j.procs.slice().forEach(function (p) { try { p.kill(); } catch (e) {} });
+  }
+  if ($('btn-tr-stop')) $('btn-tr-stop').addEventListener('click', stopTranscribing);
 
   /* Each word in exactly one line: the line whose [start, end) holds the
      word's middle, else the nearest line (no overlap margin). Returns one
@@ -2066,7 +2100,12 @@
       // "Transcribe + auto-correct" → run the AI proofread now that words exist.
       if (state.autoFixAfter) { state.autoFixAfter = false; if (state.transcript) cleanupTranscript(); }
     }, function (e) {
+      var wasStopped = trStopped() || (e && e.stopped);
       setTranscribing(false); state.autoFixAfter = false;
+      if (wasStopped) {
+        setTranscriptBar('', '⏹', 'Stopped — nothing changed. Tap Transcribe to carry on.', null);
+        return toast('⏹ Stopped. Parts already heard by the cloud are kept: tapping Transcribe again carries on from there.');
+      }
       if (e && e.cancelled) {
         setTranscriptBar('', '🎙️', 'Not transcribed — nothing was downloaded.', null);
         return toast(e.message + ' Tap Transcribe again whenever you’re ready, or use Pulse Cloud with your free key.');

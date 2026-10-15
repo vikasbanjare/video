@@ -39,7 +39,9 @@ async function partA() {
   const at = src.indexOf('  function runProc(');
   const end = src.indexOf('\n  }\n', at);
   if (at < 0 || end < 0) return C.check('A. runProc found in the panel', false, 'not found');
-  const fn = new Function('nodeReq', src.slice(at, end + 4) + '\nreturn runProc;')(require);
+  // the stop helpers it calls, as they are with no job running
+  const fn = new Function('nodeReq', 'var trStopped = function () { return false; }, trTrack = function (p) { return p; }, trStopError = function () { return new Error("stopped"); };\n' +
+    src.slice(at, end + 4) + '\nreturn runProc;')(require);
   const big = "for(let i=0;i<45000;i++) process.stdout.write('[00:'+String(i%60).padStart(2,'0')+':00.000 --> 00:00:01.000]   word '+i+'\\n'); console.error('done')";
   const t0 = Date.now();
   let seen = 0;
@@ -150,6 +152,30 @@ async function run() {
       c2.length >= 1 && c2.indexOf('C20') < 0 && c1.indexOf('C10') >= 0, JSON.stringify({ first: c1, again: c2 }));
     C.check('C. …and the transcript is whole (' + w.length + ' of ' + TRUTH.length + ' words)', w.length === TRUTH.length, JSON.stringify(w.slice(-3)));
     await page2.close();
+
+    // ── E ── ⏹ Stop, while it waits out a long free-limit reply ────────────
+    {
+      const POD3 = tone('podcast3.wav', DUR);
+      let stopAsked = 0;
+      const curl3 = (args) => {
+        const url = args.find(a => /^https:\/\//.test(a)) || '';
+        if (!/audio\/transcriptions/.test(url)) return '{}';
+        stopAsked++;
+        return JSON.stringify({ error: { message: 'Rate limit reached for model `whisper-large-v3`. Please try again in 40m0s.', code: 'rate_limit_exceeded' } });
+      };
+      const o3 = await H.openPanel(browser, { host: hostFor(POD3, DUR), curl: curl3, settings: { groqKey: 'gsk-test-key', ffmpegPath: FF, whisperLang: 'en' }, ffmpeg: FF });
+      await o3.page.evaluate(() => { const af = document.getElementById('tr-aifix'); af.checked = false; af.dispatchEvent(new Event('change')); document.getElementById('btn-tr-auto-ai').click(); });
+      await H.waitFor(o3.page, () => /Trying again in 40 min/.test(document.getElementById('tr-text').textContent), 120000);
+      const during = await o3.page.evaluate(() => ({ bar: document.getElementById('tr-text').textContent, stop: !document.getElementById('btn-tr-stop').classList.contains('hidden'), busy: document.getElementById('btn-tr-auto-ai').disabled }));
+      const t0 = Date.now();
+      await o3.page.evaluate(() => document.getElementById('btn-tr-stop').click());
+      await H.waitFor(o3.page, () => /Stopped/.test(document.getElementById('tr-text').textContent), 15000);
+      const after = await o3.page.evaluate(() => ({ bar: document.getElementById('tr-text').textContent, stop: !document.getElementById('btn-tr-stop').classList.contains('hidden'), busy: document.getElementById('btn-tr-auto-ai').disabled }));
+      C.check('E. a long wait says so, offers the computer\'s own engine, and shows ⏹ Stop (' + during.bar + ')', during.stop && during.busy && /On this computer/.test(during.bar), JSON.stringify(during));
+      C.check('E. ⏹ Stop ends it at once (' + (Date.now() - t0) + ' ms): the bar says so, Transcribe is ready again, Stop is put away',
+        /Stopped/.test(after.bar) && !after.stop && !after.busy && Date.now() - t0 < 10000, JSON.stringify(after));
+      await o3.page.close();
+    }
 
     // ── D ── Indian Voices: 28 s pieces, one busy reply ────────────────────
     {
