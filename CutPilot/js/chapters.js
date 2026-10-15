@@ -105,6 +105,16 @@
     var maxN = opts.max || Math.max(2, Math.min(15, Math.round(dur / 300)));
     var W = Math.max(minSec, Math.min(120, dur / 40));      // how much talk each side is compared
     var bags = cs.map(function (c) { var f = {}; wordsOf(c.text).forEach(function (w) { f[w] = (f[w] || 0) + 1; }); return f; });
+    // a word heard in nearly every line (the show's name, a catchphrase)
+    // says nothing about the topic: each word counts by how rare it is
+    // across the lines, so it cannot drown out the words that change
+    var lineDf = {};
+    bags.forEach(function (f) { for (var w in f) lineDf[w] = (lineDf[w] || 0) + 1; });
+    bags = bags.map(function (f) {
+      var g = {};
+      for (var w in f) { var idf = Math.log(cs.length / lineDf[w]); if (idf > 0.05) g[w] = f[w] * idf; }
+      return g;
+    });
     function bag(lo, hi) {   // cues whose middle lies in [lo, hi)
       var f = {};
       for (var k = 0; k < cs.length; k++) {
