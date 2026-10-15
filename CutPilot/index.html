@@ -1120,9 +1120,12 @@
         <button type="button" data-n="7">7</button>
         <button type="button" data-n="8">8</button>
       </div>
-      <label class="row mc-more" style="margin-top:8px">More than 8?
-        <input type="number" id="mc-angles" value="2" min="2" max="16">
-      </label>
+      <div class="row mc-more" style="margin-top:8px">
+        <button type="button" class="link-btn" id="mc-more-btn">More than 8 cameras?</button>
+        <label class="hidden" id="mc-more-row">How many
+          <input type="number" id="mc-angles" value="2" min="2" max="16">
+        </label>
+      </div>
     </div>
 
     <!-- STEP 2: set up each camera -->

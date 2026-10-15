@@ -2074,6 +2074,9 @@
             fs.writeFileSync(finalPath, CPCaptions.toSRT(cues), 'utf8');
             try { fs.unlinkSync(wav); } catch (eU) {}
             saveCachedTranscript(clip.mediaPath, minIn, maxOut, heard);  // so this clip never needs re-transcribing
+            // the pieces kept to carry on after a failure are not needed now
+            // (the whole transcript is saved): free them (MBs on a long podcast)
+            try { var pk = _asrPieceKey; Object.keys(_asrPieces).forEach(function (k) { if (pk && k.indexOf(pk + '|') === 0) delete _asrPieces[k]; }); } catch (eFree) {}
             state.transcript = { label: 'Pulse transcript (' + cues.length + ' lines)', path: finalPath, mtime: 1e16 };
             state.transcriptManual = true;
             $('tr-help').classList.add('hidden');
@@ -17128,11 +17131,22 @@
         btns[i].classList.toggle('on', parseInt(btns[i].dataset.n, 10) === n);
       }
     }
+    // the number box shows only for 9+ cameras (it used to sit there saying
+    // "2" next to "More than 8?", as if something were typed in it)
+    var more = $('mc-more-row'), mb = $('mc-more-btn');
+    if (more) more.classList.toggle('hidden', !(n > 8 || state.mcMoreOpen));
+    if (mb) mb.classList.toggle('hidden', n > 8 || !!state.mcMoreOpen);
     if ($('mc-source').value === 'follow') renderMcMap();
   }
+  if ($('mc-more-btn')) $('mc-more-btn').addEventListener('click', function () {
+    state.mcMoreOpen = true;
+    var inp = $('mc-angles'); if (inp && parseInt(inp.value, 10) <= 8) inp.value = '9';
+    setMcCount(inp ? inp.value : 9);
+    try { if (inp) inp.focus(); } catch (eF) {}
+  });
   if ($('mc-count')) $('mc-count').addEventListener('click', function (e) {
     var b = e.target; while (b && b !== this && b.tagName !== 'BUTTON') b = b.parentNode;
-    if (b && b.dataset && b.dataset.n) setMcCount(b.dataset.n);
+    if (b && b.dataset && b.dataset.n) { state.mcMoreOpen = false; setMcCount(b.dataset.n); }
   });
   $('mc-angles').addEventListener('change', function () { setMcCount(this.value); });
   // re-scan the timeline's audio tracks on demand (sequence may have opened
