@@ -2557,6 +2557,38 @@ const MUTANTS = [
     repl: "",
     gate: 'CutPilot/test/gates/captions-gallery-light.js',
     why: 'the live preview stands still after coming back to Captions'
+  },
+  {
+    name: 'v29-chapters-twins',
+    file: 'CutPilot/js/chapters.js',
+    find: "      if (picked.some(function (p) { return Math.abs(p.t - x.t) < Math.max(minSec, W); })) return;",
+    repl: "      if (picked.some(function (p) { return Math.abs(p.t - x.t) < minSec; })) return;",
+    gate: 'CutPilot/test/gates/chapters-topics.js',
+    why: 'one topic change makes two chapters 30 s apart'
+  },
+  {
+    name: 'v29-chapters-wobble',
+    file: 'CutPilot/js/chapters.js',
+    find: "      if (picked.length >= maxN - 1 || !(x.depth >= 0.25) || x.depth < bar) return;",
+    repl: "      if (picked.length >= maxN - 1 || !(x.depth > 0) || x.depth < bar) return;",
+    gate: 'CutPilot/test/gates/chapters-topics.js',
+    why: 'a talk on one topic is split into chapters at its small wobbles'
+  },
+  {
+    name: 'v29-chapters-filler-titles',
+    file: 'CutPilot/js/chapters.js',
+    find: "      var scored = Object.keys(f).map(function (w) { return { w: w, n: f[w], s: f[w] * (Math.log(n / df[w]) + 0.1) }; })",
+    repl: "      var scored = Object.keys(f).map(function (w) { return { w: w, n: f[w], s: f[w] }; })",
+    gate: 'CutPilot/test/gates/chapters-topics.js',
+    why: 'chapter titles are the most frequent words, not the ones that tell chapters apart'
+  },
+  {
+    name: 'v29-chapters-latin-only',
+    file: 'CutPilot/js/chapters.js',
+    find: "  function clean(w) { return String(w).toLowerCase().replace(/[^a-z0-9'\\u0900-\\u097f]/g, '').replace(/^'+|'+$/g, ''); }",
+    repl: "  function clean(w) { return String(w).toLowerCase().replace(/[^a-z0-9']/g, ''); }",
+    gate: 'CutPilot/test/gates/chapters-topics.js',
+    why: 'Hindi words can never be a chapter title'
   }
 ];
 
