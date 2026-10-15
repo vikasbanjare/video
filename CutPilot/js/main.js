@@ -3472,15 +3472,30 @@
       (vocab ? ('Keep these names/terms correct (do not translate them): ' + vocab + '. ') : '') +
       'Return JSON {"lines":[...]} containing EXACTLY ' + lines.length + ' strings — one translation per input line, same order. ' +
       'Never merge, split, add, or drop lines. Keep each translation natural, concise and suitable for on-screen captions. Output ONLY the translated text, no notes.';
-    groqChat([{ role: 'system', content: sys }, { role: 'user', content: JSON.stringify({ lines: lines }) }], { json: true, temperature: 0.2 })
-      .then(function (content) {
-        var parsed; try { parsed = JSON.parse(content); } catch (e) { throw new Error('Translation came back malformed.'); }
-        var tl = parsed.lines || parsed.translations || parsed.result || [];
-        if (!tl.length) throw new Error('No translation returned.');
+    // in parts of 120 lines: a 1–2 hour podcast is ~2,000 lines, more than one
+    // answer can hold — the end came back missing and silently untranslated
+    var PART = 120, tl = [], shifted = 0, parts = [];
+    for (var pi = 0; pi < lines.length; pi += PART) parts.push(lines.slice(pi, pi + PART));
+    var sysFor = function (n) { return sys.replace('EXACTLY ' + lines.length + ' strings', 'EXACTLY ' + n + ' strings'); };
+    parts.reduce(function (chain, part, k) {
+      return chain.then(function () {
+        if (parts.length > 1) setTranscriptBar('', '🌐', 'Translating to ' + name + '… part ' + (k + 1) + ' of ' + parts.length, null);
+        return asrRetry(function () {
+          return groqChat([{ role: 'system', content: sysFor(part.length) }, { role: 'user', content: JSON.stringify({ lines: part }) }], { json: true, temperature: 0.2 });
+        }, null).then(function (content) {
+          var parsed; try { parsed = JSON.parse(content); } catch (e) { throw new Error('Translation came back malformed.'); }
+          var got = parsed.lines || parsed.translations || parsed.result || [];
+          if (!got.length) throw new Error('No translation returned.');
+          if (got.length !== part.length) shifted++;
+          for (var j = 0; j < part.length; j++) tl.push(got[j] != null ? got[j] : null);
+        });
+      });
+    }, Promise.resolve())
+      .then(function () {
         var out = cues.map(function (c, i) { return { start: c.start, end: c.end, text: (tl[i] != null ? String(tl[i]) : c.text) }; });
         installNewTranscript(out, 'Translated → ' + name + ' (' + out.length + ' lines)', 'translated-' + (code || 'xx'));
         setTranscriptBar('ok', '✅', 'Translated to ' + name + ' — ' + out.length + ' lines. Now add captions.', 'Change');
-        var warn = (tl.length !== lines.length) ? ' ⚠️ line count shifted (' + tl.length + ' vs ' + lines.length + ') — check the wording.' : '';
+        var warn = shifted ? ' ⚠️ ' + shifted + ' part(s) came back with a different number of lines — check the wording there.' : '';
         toast('🌐 Translated to ' + name + '. The words are now in ' + name + ' — add captions or Export SRT. (Word-by-word highlight is off for translations.)' + warn);
       })
       .catch(function (e) { setTranscriptBar('warn', '⚠️', 'Translation failed', 'Get one →'); toast('Translate failed: ' + e.message, true); })
@@ -3499,11 +3514,30 @@
     var sys = 'You label subtitle lines with who is speaking. Decide how many distinct speakers there are (usually 1–4) using conversational cues ' +
       '(questions vs answers, pronouns, topic/turn shifts). If it is clearly one person, label every line 1. ' +
       'Return JSON {"speakers":[...]} with EXACTLY ' + lines.length + ' integers (1-based), one per input line, same order.';
-    groqChat([{ role: 'system', content: sys }, { role: 'user', content: JSON.stringify({ lines: lines }) }], { json: true, temperature: 0 })
-      .then(function (content) {
-        var parsed; try { parsed = JSON.parse(content); } catch (e) { throw new Error('Speaker data came back malformed.'); }
-        var sp = parsed.speakers || parsed.labels || [];
-        if (!sp.length) throw new Error('No speaker labels returned.');
+    // in parts of 150 lines (a long podcast is more than one answer holds),
+    // each shown the last lines before it WITH their labels, so "Speaker 1"
+    // stays the same person all through
+    var SPART = 150, sp = [], sparts = [];
+    for (var si = 0; si < lines.length; si += SPART) sparts.push(si);
+    sparts.reduce(function (chain, from, k) {
+      return chain.then(function () {
+        var part = lines.slice(from, from + SPART);
+        if (sparts.length > 1) setTranscriptBar('', '🗣️', 'Detecting speakers… part ' + (k + 1) + ' of ' + sparts.length, null);
+        var ctx = [];
+        for (var c0 = Math.max(0, from - 8); c0 < from; c0++) ctx.push({ speaker: sp[c0] || 1, line: lines[c0] });
+        var sysK = sys.replace('EXACTLY ' + lines.length + ' integers', 'EXACTLY ' + part.length + ' integers') +
+          (ctx.length ? ' The lines just before these, already labelled, are given as "before": keep the SAME numbers for the same people.' : '');
+        return asrRetry(function () {
+          return groqChat([{ role: 'system', content: sysK }, { role: 'user', content: JSON.stringify(ctx.length ? { before: ctx, lines: part } : { lines: part }) }], { json: true, temperature: 0 });
+        }, null).then(function (content) {
+          var parsed; try { parsed = JSON.parse(content); } catch (e) { throw new Error('Speaker data came back malformed.'); }
+          var got = parsed.speakers || parsed.labels || [];
+          if (!got.length) throw new Error('No speaker labels returned.');
+          for (var j = 0; j < part.length; j++) sp.push(got[j] != null ? got[j] : (sp[sp.length - 1] || 1));
+        });
+      });
+    }, Promise.resolve())
+      .then(function () {
         var n = 0, prev = null;
         var out = cues.map(function (c, i) {
           var s = parseInt(sp[i], 10) || 1; if (s > n) n = s;
@@ -9880,6 +9914,8 @@
         state.transcriptManual = !!o.manual; state._cacheServedKey = null; state._forceRetranscribe = false;
       },
       findTranscript: findTranscript,
+      translate: function (code, name) { translateTranscript(code, name); },
+      detectSpeakers: function () { detectSpeakers(); },
       followMovedRecording: followMovedRecording,
       refineWordCues: refineWordCues,
       getCaptionWordCues: getCaptionWordCues

@@ -2629,6 +2629,22 @@ const MUTANTS = [
     repl: "   'xaaj xhum aap mein me hai hain",
     gate: 'CutPilot/test/gates/keywords-hindi.js',
     why: 'Hinglish keywords are aaj / hum'
+  },
+  {
+    name: 'v31-translate-one-request',
+    file: 'CutPilot/js/main.js',
+    find: '    var PART = 120, tl = [], shifted = 0, parts = [];',
+    repl: '    var PART = 100000, tl = [], shifted = 0, parts = [];',
+    gate: 'CutPilot/test/gates/translate-long.js',
+    why: 'a 2-hour podcast is translated in one giant request'
+  },
+  {
+    name: 'v31-speakers-one-request',
+    file: 'CutPilot/js/main.js',
+    find: '    var SPART = 150, sp = [], sparts = [];',
+    repl: '    var SPART = 100000, sp = [], sparts = [];',
+    gate: 'CutPilot/test/gates/translate-long.js',
+    why: 'speakers of a 2-hour podcast in one giant request'
   }
 ];
 
