@@ -991,32 +991,33 @@
     <div class="card">
       <div class="step-head"><span class="step-title">🎬 Viral Shorts</span>
         <button class="info" type="button" data-info="sh-info" aria-label="How it works">ⓘ</button></div>
-      <p class="hint">Finds your best moments and makes ready-to-post shorts.</p>
-      <div class="info-pop hidden" id="sh-info">Pulse reads your transcript and finds the moments most likely to pop as short clips — each one a self-contained <b>hook → payoff</b>. Get your words first (Transcribe). For each moment you can <b>preview</b> it, <b>mark</b> it, or cut it out as a <b>vertical clip</b> — Premiere's Auto Reframe keeps the subject in frame.</div>
-      <div class="grid2">
-        <label>Clip length
+      <p class="hint">Find your best moments, choose the look, then make the ones you like.</p>
+      <div class="info-pop hidden" id="sh-info">Pulse reads your transcript (the whole video) and finds the moments most likely to pop as short clips — each one a self-contained <b>hook → payoff</b>. Get your words first (Transcribe). For each moment you can <b>preview</b> it, <b>mark</b> it, or <b>make it into a short</b>: Pulse frames each camera on whoever is talking, cuts the pauses, and adds the hook title and captions — as an editable timeline or one video file.</div>
+      <div class="step-head sh-step"><span class="step-num">1</span><span class="step-title">Find your best moments</span></div>
+      <p class="hint" id="sh-tr-status">Uses your transcript — make one on the Transcribe page first.</p>
+      <label>Clip length
           <select id="sh-len">
             <option value="15-60" selected>15–60s · standard</option>
             <option value="10-30">10–30s · punchy</option>
             <option value="30-90">30–90s · story</option>
           </select>
-        </label>
-        <label>Shape
+      </label>
+      <div class="page-actions">
+        <button id="btn-find-shorts" class="hero-btn">✨ Find viral moments</button>
+        <div id="shorts-progress" class="progress hidden"></div>
+      </div>
+    </div>
+    <div class="card" id="sh-look">
+      <div class="step-head sh-step"><span class="step-num">2</span><span class="step-title">How every short looks</span></div>
+      <p class="hint sh-summary" id="sh-summary"></p>
+      <label>Shape
           <select id="sh-ratio">
             <option value="9:16" selected>9:16 vertical</option>
             <option value="1:1">1:1 square</option>
             <option value="4:5">4:5 portrait</option>
             <option value="none">Keep original</option>
           </select>
-        </label>
-        <label title="Pulse frames the face it finds; this is where it looks when a camera shows no face">If no face
-          <select id="sh-focus">
-            <option value="center" selected>Center</option>
-            <option value="left">Left side</option>
-            <option value="right">Right side</option>
-          </select>
-        </label>
-      </div>
+      </label>
       <span class="field-label" style="margin-top:8px">Layout</span>
       <div class="seg-control sh-layout" id="sh-layout">
         <button type="button" data-layout="auto" class="on">🤖 Auto</button>
@@ -1061,18 +1062,21 @@
         </div>
         <div id="sh-mark-stage" class="sh-mark-stage hidden"><canvas id="sh-mark-canvas" aria-label="A picture of this camera with its framing"></canvas></div>
         <p class="hint" id="sh-mark-status"></p>
+        <label title="Pulse frames the face it finds; this is where it looks when a camera shows no face">If a camera shows no face, look at
+          <select id="sh-focus">
+            <option value="center" selected>Center</option>
+            <option value="left">Left side</option>
+            <option value="right">Right side</option>
+          </select>
+        </label>
       </details>
-      <div class="page-actions">
-        <button id="btn-find-shorts" class="hero-btn">✨ Find viral moments</button>
-        <div id="shorts-progress" class="progress hidden"></div>
-      </div>
     </div>
+
     <div id="shorts-results"></div>
 
-    <div class="card">
-      <div class="step-head"><span class="step-title">🎙 Vertical that follows the speaker</span>
-        <button class="info" type="button" data-info="sr-info" aria-label="How it works">ⓘ</button></div>
-      <p class="hint">For podcasts with a mic per person.</p>
+    <details class="advanced card" id="sr-wrap">
+      <summary>🎙 The whole video as one vertical, following the speaker <span class="dim">— a different tool</span></summary>
+      <p class="hint">For podcasts with a mic per person. <button class="info" type="button" data-info="sr-info" aria-label="How it works">ⓘ</button></p>
       <div class="info-pop hidden" id="sr-info">For 2–3 people, each on their own mic: Pulse follows whoever's talking — one person when one holds the floor, <b>split-screen</b> when they talk over each other. It uses your separate audio tracks and the shape chosen above, and puts a finished vertical clip back in your project.</div>
       <label class="fld-full">People are arranged…
         <select id="sr-arrange">
@@ -1082,7 +1086,7 @@
       </label>
       <button id="btn-speaker-reframe" class="hero-btn alt" style="margin-top:8px">🎙 Make the vertical</button>
       <div id="sr-progress" class="progress hidden"></div>
-    </div>
+    </details>
   </section>
 
   <!-- ========================== PODCAST CAMERAS ========================== -->

@@ -1337,3 +1337,9 @@ body #tab-organize .cpo-run .cpo-spinner { border-color: rgba(20,24,10,.3); bord
 body.cap-premiere .premiere-only { display: block; }
 body.cap-premiere .png-only.hint { display: none; }
 body.cap-premiere #wc-block { display: none; }   /* Premiere captions group whole phrases */
+
+/* Shorts: three numbered steps (find → look → make) */
+.sh-step { margin-top: 10px; }
+.sh-summary { margin: 2px 0 8px; padding: 6px 8px; border-radius: 8px; background: var(--card2); }
+.sh-lead { padding-bottom: 6px; }
+#sr-wrap > summary { font-weight: 600; }

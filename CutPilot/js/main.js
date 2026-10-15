@@ -2109,6 +2109,7 @@
       if (this.dataset.tab !== 'captions') { if (previewTimer) { clearInterval(previewTimer); previewTimer = null; } stopCardAnimator(); }
       // Safe Zone tab → refresh its preview from the current sequence dimensions.
       if (this.dataset.tab === 'safezone' && window.CPSafezone) { try { CPSafezone.onShow(); } catch (eSZ) {} }
+      if (this.dataset.tab === 'shorts') { try { refreshShortsStatus(); refreshShortsSummary(); } catch (eSh) {} }
       // Re-check for a transcript when returning to Captions (e.g. after
       // exporting one), and refresh the preview now the frame has a size.
       // OPENING CAPTIONS SHOWS THE STYLES. "When we open the Captions tab it's
@@ -15743,6 +15744,18 @@
       box.innerHTML = '<div class="card"><p class="hint">No standout moments found. Try a longer clip or a different clip-length — and make sure the video is transcribed.</p></div>';
       return;
     }
+    var lead = document.createElement('div'); lead.className = 'card sh-lead';
+    var lh = document.createElement('div'); lh.className = 'step-head sh-step';
+    lh.innerHTML = '<span class="step-num">3</span><span class="step-title"></span>';
+    lh.querySelector('.step-title').textContent = 'Make the ones you like (' + list.length + ' found)';
+    lead.appendChild(lh);
+    var lp = document.createElement('p'); lp.className = 'hint';
+    lp.textContent = 'Each one is made with the look in step 2 (above). ';
+    var lk = document.createElement('a'); lk.href = '#'; lk.textContent = 'Change the look';
+    lk.addEventListener('click', function (ev) { ev.preventDefault(); var t = $('sh-look'); if (t && t.scrollIntoView) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+    lp.appendChild(lk); lead.appendChild(lp); box.appendChild(lead);
+    // the list sits under step 2: bring it into view when it arrives
+    setTimeout(function () { try { if (lead.scrollIntoView && document.body.getAttribute('data-page') === 'shorts') lead.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (eS) {} }, 60);
     list.forEach(function (h, i) {
       var card = document.createElement('div'); card.className = 'card';
       var head = document.createElement('div'); head.className = 'step-head';
@@ -15766,7 +15779,7 @@
           .then(function () { toast('Marker added.'); }).catch(function (e) { toast(e.message, true); });
       });
       var rt = shRatio();
-      btn(rt ? ('⬛ Make ' + rt.label + ' clip') : '⬛ Make clip', 'hero-btn', function () {
+      btn(rt ? ('🎬 Make this ' + rt.label + ' short') : '🎬 Make this short', 'hero-btn', function () {
         makeVerticalClip(h, rt, i);
       });
       card.appendChild(row); box.appendChild(card);
@@ -15838,6 +15851,46 @@
     pip: 'The talker fills the frame, the other in a small box.',
     three: 'Three people stacked, top to bottom.'
   };
+  /* A length the way people say it: "1 h 52 min", "38 min", "45 s". */
+  function spokenLength(sec) {
+    sec = Math.max(0, Math.round(+sec || 0));
+    var h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60);
+    if (m === 60) { h++; m = 0; }
+    if (h) return h + ' h ' + m + ' min';
+    if (sec >= 60) return Math.round(sec / 60) + ' min';
+    return sec + ' s';
+  }
+  /* Step 1's line: is there a transcript to find moments in, and how much. */
+  function refreshShortsStatus() {
+    var el = $('sh-tr-status'); if (!el) return;
+    var segs = null; try { segs = highlightSegments(); } catch (e) { segs = null; }
+    if (segs && segs.length >= 4) {
+      var span = segs[segs.length - 1].end - segs[0].start;
+      el.textContent = '✅ Transcript ready — ' + spokenLength(span) + ' of talk. Pulse reads all of it.';
+      el.classList.remove('warn');
+    } else {
+      el.textContent = '⚠️ No transcript yet — Pulse finds the moments in its words. ';
+      var go = document.createElement('a'); go.href = '#'; go.textContent = 'Go to Transcribe';
+      go.addEventListener('click', function (ev) { ev.preventDefault(); var tb = document.querySelector('.tab[data-tab="transcribe"]'); if (tb) tb.click(); });
+      el.appendChild(go);
+      el.classList.add('warn');
+    }
+  }
+  /* Step 2's line: everything a short will be made with, in one sentence. */
+  function refreshShortsSummary() {
+    var el = $('sh-summary'); if (!el) return;
+    var rt = shRatio(), o = shortOpts();
+    var lay = document.querySelector('#sh-layout button.on');
+    var bits = [rt ? rt.label + ' ' + (rt.label === '9:16' ? 'vertical' : rt.label === '1:1' ? 'square' : 'portrait') : 'original shape',
+                (lay ? lay.textContent.trim() : '🤖 Auto') + ' layout',
+                (rt && shortOutput() === 'timeline') ? '✏️ editable timeline' : '🎞 one video file'];
+    var extras = [];
+    if (o.tight) extras.push('pauses cut');
+    if (o.hook) extras.push('hook title');
+    if (o.caps) extras.push('captions');
+    if (o.cams) extras.push('your cameras');
+    el.textContent = 'Each short: ' + bits.join(' · ') + (extras.length ? ' — with ' + extras.join(', ') : '') + '.';
+  }
   function syncShortChoices() {
     var lb = document.querySelectorAll('#sh-layout button');
     for (var i = 0; i < lb.length; i++) lb[i].classList.toggle('on', lb[i].dataset.layout === shortLayout());
@@ -15847,12 +15900,14 @@
     if ($('sh-output-hint')) $('sh-output-hint').textContent = shortOutput() === 'timeline'
       ? 'A 9:16 timeline you can still edit in Premiere.'
       : 'One finished video file — quickest, not editable.';
+    refreshShortsSummary();
   }
   (function wireShortChoices() {
     var lb = document.querySelectorAll('#sh-layout button');
     for (var i = 0; i < lb.length; i++) lb[i].addEventListener('click', function () { settings.shLayout = this.dataset.layout; saveSettings(); syncShortChoices(); });
     var ob = document.querySelectorAll('#sh-output button');
     for (i = 0; i < ob.length; i++) ob[i].addEventListener('click', function () { settings.shOutput = this.dataset.out; saveSettings(); syncShortChoices(); });
+    ['sh-ratio', 'sh-tight', 'sh-hook', 'sh-caps', 'sh-cams'].forEach(function (id) { var e = $(id); if (e) e.addEventListener('change', function () { refreshShortsSummary(); }); });
     syncShortChoices();
   })();
   /* The moment's words on the timeline, as the short will use them. */
@@ -16575,16 +16630,30 @@
     cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
   })();
 
+  /* The best moments, highest score first, never two that are mostly the
+     same stretch (the overlap is over half of the shorter one). Pure. */
+  function bestDistinctMoments(list, n) {
+    var out = [];
+    (list || []).slice().sort(function (a, b) { return (b.score || 0) - (a.score || 0); }).forEach(function (h) {
+      if (out.length >= n) return;
+      var clash = out.some(function (o) {
+        var ov = Math.min(o.end, h.end) - Math.max(o.start, h.start);
+        return ov > 0.5 * Math.min(o.end - o.start, h.end - h.start);
+      });
+      if (!clash) out.push(h);
+    });
+    return out;
+  }
   function runHighlightFinder() {
     if (typeof CPSmartEdit === 'undefined') return toast('Shorts module missing.', true);
     var segs = highlightSegments();
     if (!segs || segs.length < 4) return toast('Transcribe your video first (Transcribe tab) — I read the transcript to find the best moments.', true);
     var len = shLen();
-    // Chunk so each request stays under the per-minute token limit; merge + rank.
-    var MAXSEG = 600;
-    var truncated = segs.length > MAXSEG;
-    var use = truncated ? segs.slice(0, MAXSEG) : segs;
-    var chunks = CPSmartEdit.chunk(use, 80);
+    // Chunk so each request stays under the per-minute token limit; merge +
+    // rank. EVERY line is read: this stopped at 600 lines, so on a 1–2 hour
+    // podcast only the first 20–30 minutes were ever looked at.
+    var chunks = CPSmartEdit.chunk(segs, 80);
+    var failedParts = [], lastErr = null;
     var prog = $('shorts-progress'); prog.classList.remove('hidden');
     // without an AI key (or when the AI is out), Pulse picks them by their
     // own words: hooks (a question, a bold claim, a number, "you"), whole
@@ -16601,14 +16670,24 @@
       var prompt = CPSmartEdit.buildHighlightPrompt(cs, { min: len.min, max: len.max, count: 6 });
       return aiChatRetry(prompt, { maxTokens: 1500 }).then(function (content) {
         return CPSmartEdit.parseHighlightResponse(content, cs, { min: Math.max(5, len.min - 5), max: len.max + 30 });
+      }).then(null, function (e) {
+        // one part the AI could not answer costs that part only: its moments
+        // are picked by their words, the rest keep the AI's picks
+        lastErr = e; failedParts.push(cs);
+        try { diag('shorts', 'AI moments: part ' + (failedParts.length) + ' failed (' + aiErrText(e).slice(0, 120) + ') — picked by its words'); } catch (eD) {}
+        return [];
       });
     }, prog, '✨ Scanning your video for viral moments').then(function (hl) {
-      hl.sort(function (a, b) { return b.score - a.score; });
-      hl = hl.slice(0, 12);
+      if (failedParts.length === chunks.length) throw lastErr || new Error('no answer');
+      if (failedParts.length && typeof CPShorts !== 'undefined') failedParts.forEach(function (cs) {
+        hl = hl.concat(CPShorts.localHighlights(cs, { min: len.min, max: len.max, count: 2 }));
+      });
+      hl = bestDistinctMoments(hl, 12);
       prog.classList.add('hidden');
       renderShorts(hl);
-      if (hl.length) toast('Found ' + hl.length + ' viral moment' + (hl.length === 1 ? '' : 's') + (truncated ? ' (first ' + MAXSEG + ' lines)' : '') + ' — preview or clip any of them.');
-    }).catch(function (e) { diag('shorts', 'AI moments failed: ' + e.message); local(' (the AI was not reachable: ' + e.message + ')'); });
+      var span = segs.length ? spokenLength(segs[segs.length - 1].end - segs[0].start) : '';
+      if (hl.length) toast('Found ' + hl.length + ' viral moment' + (hl.length === 1 ? '' : 's') + ' across the whole ' + span + (failedParts.length ? ' (' + failedParts.length + ' of ' + chunks.length + ' parts picked by their words — the AI did not answer for those)' : '') + ' — preview or make any of them.');
+    }).catch(function (e) { diag('shorts', 'AI moments failed: ' + (e && e.message)); local(' (the AI was not reachable: ' + aiErrText(e) + ')'); });
   }
   if ($('btn-find-shorts')) $('btn-find-shorts').addEventListener('click', runHighlightFinder);
   // test hooks for gates/shorts-finished.js
