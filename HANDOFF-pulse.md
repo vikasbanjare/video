@@ -1,10 +1,35 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.27** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.28** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.28 — shorts in sync with the moment; editable honoured; ranked side by side
+The owner: "when I create a short the selection is random, the voice is
+different, the video is different, the captions are different" and "the
+caption selection in shorts is not working".
+- highlightSegments preferred state.lastCaptionJob (after one short: that
+  short's own captions) over the transcript: moments came from the wrong
+  text. Now transcript words → transcript lines → a caption set only when
+  there is no transcript and it was made on this sequence.
+- One camera (shortCameras.single): ONE clip was read as the whole timeline.
+  Now every piece of the recording (CP_getTranscribeSource onlyMediaPath).
+- A stretch across a timeline cut played the recording straight on (the
+  part cut out): makeVerticalClip splits plan.segments at every clip edge of
+  the cameras' and mics' tracks (CPPodShort.splitAtCuts, parts flagged cut);
+  CPPodShort.pieces never merges across a cut; mediaAt treats a clip as
+  [start, end) so at a cut the clip STARTING there plays.
+- ✏️ Editable in Shorts step 2 was ignored (runCaptionPipeline is always
+  drawn captions): the short calls applyEditableStyle({cues, words}) with
+  its own words on its own clock.
+- Moments: the per-part prompt asks for an honest scale; a long podcast's
+  20 strongest are ranked side by side in one request
+  (CPSmartEdit.buildRerankPrompt / parseRerankResponse); no answer keeps
+  the parts' order.
+Gate shorts-in-sync (pitch 300+50·s Hz and grey 12·s say which second of
+the recording plays); shorts-long-and-clear (rerank); mutations v28-*.
 
 ### v0.10.27 — long podcasts transcribe; Shorts in three steps with a caption style
 The owner: "1–2 hours long podcast failed to transcribe", "the shorts section
