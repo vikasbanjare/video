@@ -9372,7 +9372,12 @@
      caption text and its word timing leave them out. Real words — Hindi
      "to", "accha", English "like" — are never touched. Pure. */
   var HESITATIONS = { um: 1, umm: 1, ummm: 1, uh: 1, uhh: 1, uhm: 1, erm: 1, hmm: 1, hmmm: 1, hm: 1, mm: 1, mmm: 1, mhm: 1, mhmm: 1 };
-  function isHesitation(t) { return HESITATIONS.hasOwnProperty(_reflowNorm(t)); }
+  // the sounds Shorts leaves out, Hindi script included (this list had none:
+  // a Hindi transcript's captions showed "उम्म" and "हम्म")
+  function isHesitation(t) {
+    if (HESITATIONS.hasOwnProperty(_reflowNorm(t))) return true;
+    try { return typeof CPShorts !== 'undefined' && CPShorts.isHesitation ? CPShorts.isHesitation(t) : false; } catch (e) { return false; }
+  }
   function dropHesitations(cues) {
     var out = [];
     (cues || []).forEach(function (c) {

@@ -43,7 +43,9 @@
   var FILLER_WORDS = wordMap([
     'um', 'umm', 'ummm', 'ummmm', 'uh', 'uhh', 'uhm', 'erm', 'er', 'ah', 'ahh', 'hmm', 'hmmm', 'hmmmm', 'hm', 'mm', 'mhm',
     'mmm', 'eh', 'aaa', 'aaaa', 'aaah',
-    'उम', 'उम्म', 'उम्मम', 'अम्म', 'अं', 'अंअ', 'हम्म', 'हम्मम', 'हम्मम्म', 'आआ', 'आआआ', 'एम्म'
+    'उम', 'उम्म', 'उम्मम', 'अम्म', 'अं', 'अंअ', 'हम्म', 'हम्मम', 'हम्मम्म', 'आआ', 'आआआ', 'एम्म',
+    // more ways the engines spell a hesitation in Hindi script
+    'उह', 'उहह', 'ऊं', 'ऊँ', 'एं', 'एँ', 'हं', 'हँ', 'अंह', 'ऊह'
   ]);
 
   /* Words that are filler ONLY when said on their own. "aa" is also the verb

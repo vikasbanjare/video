@@ -35,7 +35,9 @@
 
   // sounds that carry no words — never kept in a short
   var HESITATION = { um: 1, umm: 1, ummm: 1, uh: 1, uhh: 1, uhm: 1, erm: 1, hmm: 1, hmmm: 1, hm: 1, mm: 1, mmm: 1, mhm: 1,
-                     'हम्म': 1, 'उम्म': 1, 'अं': 1 };
+                     // Hindi script: the same sounds Clean up cuts (transcript.js FILLER_WORDS)
+                     'हम्म': 1, 'हम्मम': 1, 'हम्मम्म': 1, 'उम्म': 1, 'उम': 1, 'उम्मम': 1, 'अम्म': 1, 'अं': 1, 'अंअ': 1, 'अंह': 1,
+                     'आआ': 1, 'आआआ': 1, 'एम्म': 1, 'उह': 1, 'उहह': 1, 'ऊह': 1, 'ऊं': 1, 'ऊँ': 1, 'एं': 1, 'एँ': 1, 'हं': 1, 'हँ': 1 };
   // words a speaker warms up with before the real first line. Only at the very
   // start (and end) of a clip — inside a sentence "so" and "to" are real words.
   var LEAD_IN = { so: 1, okay: 1, ok: 1, alright: 1, right: 1, well: 1, yeah: 1, yes: 1, like: 1, basically: 1, actually: 1, and: 1, but: 1,
