@@ -13867,10 +13867,24 @@
     var stop = { stopped: false, now: null }, b = $(btnId);
     if (b) {
       b.classList.remove('hidden');
-      b.onclick = function () { stop.stopped = true; if (stop.now) { try { stop.now(); } catch (e) {} } };
+      b.onclick = function () { silStopAll(stop); };
     }
     stop.done = function () { if (b) { b.classList.add('hidden'); b.onclick = null; } };
     return stop;
+  }
+  /* Several reads can run at once (one per mic): each has its own stop
+     slot, all ended together. */
+  function silStopAll(stop) {
+    if (!stop) return;
+    stop.stopped = true;
+    if (stop.now) { try { stop.now(); } catch (e) {} }
+    (stop.subs || []).forEach(function (sb) { sb.stopped = true; if (sb.now) { try { sb.now(); } catch (e2) {} } });
+  }
+  function silSubStop(stop) {
+    if (!stop) return null;
+    var sb = { stopped: !!stop.stopped, now: null };
+    (stop.subs = stop.subs || []).push(sb);
+    return sb;
   }
   function silStoppedError() { var e = new Error('Stopped — nothing was cut.'); e.stopped = true; return e; }
 
@@ -13898,7 +13912,7 @@
     if (stop && stop.stopped) return Promise.reject(silStoppedError());
     if (!ff) {
       // no audio engine: the browser decodes the file — Stop ends the wait at once
-      return CPAudio.webAudioEnvelope(mediaPath, CPSilence, { stop: stop || null }).then(function (env) {
+      return CPAudio.webAudioEnvelope(mediaPath, CPSilence, { stop: silSubStop(stop) }).then(function (env) {
         if (env.stopped || (stop && stop.stopped)) throw silStoppedError();
         return env;
       });
@@ -13912,7 +13926,7 @@
       if (info.missing) throw new Error('“' + name + '” is offline — the file isn’t where Premiere says it is. Relink it (right-click the clip → Link Media) and try again. Nothing was cut.');
       if (!info.streams) throw new Error('“' + name + '” has no sound in it — Pulse can’t listen to it. Nothing was cut.');
       var start = Math.max(0, lo - 0.5);
-      return CPAudio.ffmpegRmsEnvelope(mediaPath, ff, { start: start, duration: (hi - start) + 0.5, streams: info.streams, onProgress: onProg, stop: stop || null }, CPSilence);
+      return CPAudio.ffmpegRmsEnvelope(mediaPath, ff, { start: start, duration: (hi - start) + 0.5, streams: info.streams, onProgress: onProg, stop: silSubStop(stop) }, CPSilence);
     }).then(function (env) {
       if (env.stopped || (stop && stop.stopped)) throw silStoppedError();
       if (!env.complete) {
@@ -13983,18 +13997,26 @@
       if (s.track.name && m.names.indexOf(String(s.track.name)) < 0) m.names.push(String(s.track.name));
       if (nest && m.nests.indexOf(String(nest)) < 0) m.nests.push(String(nest));
     });
-    var total = order.reduce(function (acc, p) { return acc + (media[p].hi - media[p].lo); }, 0), done = 0;
-    var chain = Promise.resolve();
-    order.forEach(function (p, idx) {
-      chain = chain.then(function () {
+    var total = order.reduce(function (acc, p) { return acc + (media[p].hi - media[p].lo); }, 0);
+    // up to 3 mics are heard AT ONCE (each read keeps one core busy): a
+    // 2-hour podcast with 3 mics took ~4 minutes one after another
+    var heard = {}, failed = null;
+    function sayAll() {
+      var sum = 0; order.forEach(function (q) { sum += heard[q] || 0; });
+      if (prog) prog.textContent = 'Listening to ' + (order.length > 1 ? order.length + ' mics' : silBase(order[0])) + '… ' + silClock(Math.min(sum, total)) + ' of ' + silClock(total);
+    }
+    var next = 0;
+    function worker() {
+      if (failed || next >= order.length) return Promise.resolve();
+      var p = order[next++];
+      return listenOne(p).then(worker);
+    }
+    function listenOne(p) {
         var m = media[p];
-        var say = function (sec) {
-          if (prog) prog.textContent = 'Listening to ' + (order.length > 1 ? 'mic ' + (idx + 1) + ' of ' + order.length + ' (' + silBase(p) + ')' : silBase(p)) +
-            '… ' + silClock(done + Math.min(sec, m.hi - m.lo)) + ' of ' + silClock(total);
-        };
+        var say = function (sec) { heard[p] = Math.min(sec, m.hi - m.lo); sayAll(); };
         say(0);
         return listenTo(p, m.lo, m.hi, say, null, stop).then(function (env) {
-          done += (m.hi - m.lo);
+          heard[p] = m.hi - m.lo; sayAll();
           m.env = env;
           var spans = m.sources.map(function (s) {
             var sp = mediaSpan(s);
@@ -14002,10 +14024,16 @@
           });
           m.levels = CPSilence.micLevels(env.db, spans, tune);
           m.flags = CPSilence.loudFlags(env.db, m.levels.threshold);
+        }, function (e) {
+          failed = failed || e;
+          // one mic could not be heard: the others stop too (nothing is cut)
+          if (stop && !stop.stopped) (stop.subs || []).forEach(function (sb) { if (sb.now) { try { sb.now(); } catch (eS) {} } });
+          throw e;
         });
-      });
-    });
-    return chain.then(function () {
+    }
+    var lanes = []; for (var li = 0; li < Math.min(3, order.length); li++) lanes.push(worker());
+    return Promise.all(lanes).then(function () {
+      if (failed) throw failed;
       return silDecide({ src: src, tune: tune, media: media, order: order, sources: sources, range: range,
                          selection: !!sel, notes: notes, said: {}, asked: [] });
     });

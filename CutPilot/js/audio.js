@@ -247,7 +247,12 @@
       var proc, out = '', err = '', settled = false;
       try { proc = cp.spawn(ffmpegPath, args); }
       catch (e) { return reject(new Error('Could not launch ffmpeg: ' + e.message)); }
-      var timer = setTimeout(function () { try { proc.kill(); } catch (eK) {} finish(); }, 180000);
+      // given up only when ffmpeg goes QUIET for a minute (a stuck read): a
+      // fixed 3-minute limit cut a long podcast's levels off part way, and
+      // its last stretch silently lost its word timing
+      var timer = null;
+      function arm() { clearTimeout(timer); timer = setTimeout(function () { try { proc.kill(); } catch (eK) {} finish(); }, 60000); }
+      arm();
       function finish() {
         if (settled) return; settled = true; clearTimeout(timer);
         var text = out + '\n' + err;
@@ -267,8 +272,8 @@
         }
         resolve({ samples: samples, duration: duration });
       }
-      proc.stdout.on('data', function (d) { out += d.toString(); });
-      proc.stderr.on('data', function (d) { err += d.toString(); });
+      proc.stdout.on('data', function (d) { out += d.toString(); arm(); });
+      proc.stderr.on('data', function (d) { err += d.toString(); arm(); });
       proc.on('error', function (e) { if (!settled) { settled = true; clearTimeout(timer); reject(new Error('ffmpeg error: ' + e.message)); } });
       proc.on('close', function () { finish(); });
     });
