@@ -2533,6 +2533,30 @@ const MUTANTS = [
     repl: "          (function tick() { if (Date.now() >= until) res(); else setTimeout(tick, 250); })();",
     gate: 'CutPilot/test/gates/transcribe-long-podcast.js',
     why: 'Stop does not end a transcription waiting out a cloud limit'
+  },
+  {
+    name: 'v29-cards-offscreen-drawn',
+    file: 'CutPilot/js/main.js',
+    find: "        if (b.bottom < -40 || b.top > vh + 40 || (!b.width && !b.height)) continue;",
+    repl: "",
+    gate: 'CutPilot/test/gates/captions-gallery-light.js',
+    why: 'the style gallery redraws all 125 cards, not just the ones on screen'
+  },
+  {
+    name: 'v29-preview-runs-offpage',
+    file: 'CutPilot/js/main.js',
+    find: "    if (frames.length > 1 && !document.hidden && (!capPage || capPage.classList.contains('active'))) previewTimer = setInterval(",
+    repl: "    if (frames.length > 1) previewTimer = setInterval(",
+    gate: 'CutPilot/test/gates/captions-gallery-light.js',
+    why: 'the big live preview keeps animating after leaving the Captions page'
+  },
+  {
+    name: 'v29-preview-still-on-return',
+    file: 'CutPilot/js/main.js',
+    find: "      if (this.dataset.tab === 'captions' && !previewTimer && typeof renderPreview === 'function') { try { renderPreview(); } catch (ePv) {} }",
+    repl: "",
+    gate: 'CutPilot/test/gates/captions-gallery-light.js',
+    why: 'the live preview stands still after coming back to Captions'
   }
 ];
 

@@ -2149,6 +2149,8 @@
       // Safe Zone tab → refresh its preview from the current sequence dimensions.
       if (this.dataset.tab === 'safezone' && window.CPSafezone) { try { CPSafezone.onShow(); } catch (eSZ) {} }
       if (this.dataset.tab === 'shorts') { try { fillShortCapStyles(); refreshShortsStatus(); refreshShortsSummary(); } catch (eSh) {} }
+      // back on Captions: the live preview moves again (it stands still elsewhere)
+      if (this.dataset.tab === 'captions' && !previewTimer && typeof renderPreview === 'function') { try { renderPreview(); } catch (ePv) {} }
       // Re-check for a transcript when returning to Captions (e.g. after
       // exporting one), and refresh the preview now the frame has a size.
       // OPENING CAPTIONS SHOWS THE STYLES. "When we open the Captions tab it's
@@ -8734,7 +8736,10 @@
       pi++;
     }
     play();
-    if (frames.length > 1) previewTimer = setInterval(play, Math.max(150, Math.round(DUR * 1000)));
+    // the preview moves only while the Captions page shows it: a redraw
+    // after leaving (a font finishing loading) used to restart it off-screen
+    var capPage = $('tab-captions');
+    if (frames.length > 1 && !document.hidden && (!capPage || capPage.classList.contains('active'))) previewTimer = setInterval(play, Math.max(150, Math.round(DUR * 1000)));
 
     try { syncControlApplicability(); } catch (eWhy) {}
     if (_booted) saveLook();
