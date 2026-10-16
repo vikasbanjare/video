@@ -1,10 +1,24 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.32** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.33** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.33 — editable captions on Pulse's own engine
+- tools/ae/Pulse-Caption-Builder.jsx builds "Pulse Caption" in After
+  Effects (owner runs it; AE quirks met: a filled dropdown is rebuilt and
+  renamed, a save leaves refs stale, EGP adds controls at the TOP, export
+  path is a FOLDER, sliders are 0-100 in Premiere, font-edit flags have no
+  script). Bundled as mogrts/Pulse_Caption_r2.mogrt (font edit flags set in
+  definition.json); picked before Flux. 16 controls.
+- mapPresetToPulse / pulseLook / pulseCarryStyle / pulseSizeScale; one
+  mapPresetForEngine for every caller. Spoken word lit only for karaoke /
+  reveal (as the image). Size = image px / 75 px engine.
+- 🎨 Test caption styles (btn-style-test): real Premiere vs image, every
+  style → Desktop/Pulse Caption Test. Gates ae-caption-builder,
+  pulse-engine, style-test-button.
 
 ### v0.10.32 — editable captions: no engine word-slide
 - mapPresetToFlux sends "Animation Type" = 9 (None). Authored default 4 =
