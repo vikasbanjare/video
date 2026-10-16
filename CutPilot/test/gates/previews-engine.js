@@ -50,6 +50,9 @@ function png(W, H) {   // a frame with a caption-like block (not blank)
     window.CP_DEBUG.reloadBundled();
     // as after 🎥 Exact previews (the test bridge attaches after settings load)
     window.CP_DEBUG.useRealPreviews(true);
+    // as on the owner's Mac: the one-time cleanup of loose renders ran long
+    // ago, so renders saved after it (made with Flux) are still there
+    localStorage.setItem('cutpilot.prevPurged', '2');
     const T = id => window.CPCaptions.TEMPLATES.find(t => t.id === id);
     const card = name => Array.from(document.querySelectorAll('#tpl-grid .tpl-card')).find(c => (c.querySelector('.tpl-name') || {}).textContent === name);
     const look = async (mode) => {
