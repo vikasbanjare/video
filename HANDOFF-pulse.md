@@ -1,10 +1,17 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.31** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.32** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.32 — editable captions: no engine word-slide
+- mapPresetToFlux sends "Animation Type" = 9 (None). Authored default 4 =
+  "Word by Word (B-T)" slid every editable caption's words up, unlike the
+  rendered style and the preview. Style entrance stays clip Motion
+  (entranceForPreset); sweep is its own control. Gate gallery-from-my-videos
+  E; mutation v33-editable-engine-slide.
 
 ### v0.10.31 — speech model download
 - downloadModel: up to 4 curl tries resuming (-C -) into .part, stall =
