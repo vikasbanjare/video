@@ -1,10 +1,17 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.30** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.31** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.31 — speech model download
+- downloadModel: up to 4 curl tries resuming (-C -) into .part, stall =
+  <1 KB/s for 60 s, size checked against WHISPER_MB before rename; a final
+  failure names the reason (curlWhy) and opens the URL in the browser
+  (openInBrowser; Pulse already scans ~/Downloads). Gate model-download;
+  mutations v32-model-*.
 
 ### v0.10.30 — overnight loop, rounds 7–13: Hindi everywhere, long-podcast AI
 - Hindi/Hinglish: shorts hooks (Devanagari-aware regexes in shorts.js),
