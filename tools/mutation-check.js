@@ -2749,6 +2749,30 @@ const MUTANTS = [
     repl: "",
     gate: 'CutPilot/test/gates/premium-fit.js',
     why: 'a low editable caption on a 16:9 podcast hangs its box off the frame'
+  },
+  {
+    name: 'v38-highlight-only-karaoke',
+    file: 'CutPilot/js/main.js',
+    find: "    var spoken = p.wordHl !== false;",
+    repl: "    var spoken = p.wordHl !== false && /karaoke|reveal/.test(p.anim || 'karaoke');",
+    gate: 'CutPilot/test/gates/pulse-engine.js',
+    why: 'Slam with word-by-word on: no pink spoken word in the editable caption'
+  },
+  {
+    name: 'v38-spacing-thousandths',
+    file: 'CutPilot/js/main.js',
+    find: "      letterSpacing: Math.max(0, Math.min(100, Math.round((p.letterSpacing || 0) * k / 10 * 100) / 100)),",
+    repl: "      letterSpacing: Math.max(0, Math.min(100, Math.round((p.letterSpacing || 0) / ((p.fontSize > 0) ? p.fontSize : PULSE_ENGINE_PX) * 100))),",
+    gate: 'CutPilot/test/gates/pulse-engine.js',
+    why: 'letters spread far apart (and off the frame) in editable captions'
+  },
+  {
+    name: 'v38-no-image-lines',
+    file: 'CutPilot/js/main.js',
+    find: "      if (!lay || !lay.lines || lay.lines.length < 2 || lay.lines.length > 2) return c;",
+    repl: "      return c;",
+    gate: 'CutPilot/test/gates/pulse-engine.js',
+    why: 'stacked styles land on one long line in Premiere'
   }
 ];
 

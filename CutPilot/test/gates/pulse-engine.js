@@ -59,6 +59,10 @@ const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r3.mogrt
     out.sizeV = D.pulseSizeScale(T('pack-maroon-label'), { width: 1080, height: 1920 });
     out.sizeH = D.pulseSizeScale(T('pack-maroon-label'), { width: 1920, height: 1080 });
     out.sizeSent = (D.mapPresetToPulse(Object.assign({}, T('pack-maroon-label'), { sizeScale: out.sizeV }), PROPS) || []).filter(x => PROPS[x.i].name === 'Size').map(x => x.value)[0];
+    // the owner's Slam (zoom animation) with ✨ Word-by-word on: pink spoken word
+    out.slam = sent('tr-slam');
+    out.stack = window.CP_DEBUG.pulseImageLines([{ text: 'AAJ PAISE KI BAAT' }], T('tr-two-tone-stack'), { width: 1080, height: 1920 })[0].text;
+    out.oneLine = window.CP_DEBUG.pulseImageLines([{ text: 'Aaj paise ki baat' }], T('stack'), { width: 1080, height: 1920 })[0].text;
     out.popEntrance = sent(C.TEMPLATES.find(t => /pop|bounce|zoom/.test(t.anim || '') && !t.entrance).id).Animation;
     // D. image vs editable preview, every style, word 2 being said
     const text = 'Aaj paise ki baat karenge', ws = text.split(' ');
@@ -74,7 +78,8 @@ const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r3.mogrt
     for (const t of C.TEMPLATES) {
       try {
         out.rows.push({ id: t.id,
-          img: await frame(t, {}, root + '/i/' + t.id),
+          // as the panel draws it on a click: ✨ Word-by-word on unless the style opts out
+          img: await frame(Object.assign({}, t, t.wordHl !== false ? { anim: 'karaoke' } : {}), {}, root + '/i/' + t.id),
           pulse: await frame(D.pulseCarryStyle(t), { fontSize: t.fontSize }, root + '/p/' + t.id),
           flux: await frame(D.carryableStyle(t), { fontSize: t.fontSize }, root + '/f/' + t.id) });
       } catch (e) { out.rows.push({ id: t.id, err: String(e && e.message || e) }); }
@@ -94,7 +99,11 @@ const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r3.mogrt
   (r.plain.Box === 1 && /^#FFFFFF$/i.test(r.plain['Box Color']) && /^#000000$/i.test(r.plain['Text Color']) && r.plain['Outline Width'] === 0 ? ok : bad)('C. Plain Subtitle: black words on its white line box, no outline (' + JSON.stringify(r.plain) + ')');
   (r.pastel.Box === 3 && /^#FFFFFF$/i.test(r.pastel['Box Color']) && /^#FF5DA2$/i.test(r.pastel['Word Box Color']) ? ok : bad)(
     'C. Pastel: its white line box AND the pink box behind the spoken word (' + JSON.stringify(r.pastel) + ')');
-  (r.wide['Letter Spacing'] > 0 ? ok : bad)('C. a wide-spaced style keeps its letter spacing (' + r.wide['Letter Spacing'] + ')');
+  // the template's tracking acts like pixels ×10 at its 75 px face (owner's real run:
+  // Tall Poster's 2 spread every letter apart) — Luxe Wide's 6 px at 64 px → 0.7
+  (r.wide['Letter Spacing'] > 0.5 && r.wide['Letter Spacing'] < 1 ? ok : bad)('C. a wide-spaced style keeps its letter spacing, in the template\'s units (' + r.wide['Letter Spacing'] + ')');
+  (/^#FF2E4D$/i.test(r.slam['Spoken Word Color'] || '') ? ok : bad)('C. Slam (a zoom style) with word-by-word on lights its spoken word pink (' + r.slam['Spoken Word Color'] + ')');
+  (r.stack === 'AAJ PAISE KI\rBAAT' && r.oneLine === 'Aaj paise ki baat' ? ok : bad)('C. editable lines break where the image caption breaks (Two-Tone Stack ' + JSON.stringify(r.stack) + ', Stack ' + JSON.stringify(r.oneLine) + ')');
   (Math.abs(r.sizeV - 54 / 75) < 0.02 && r.sizeSent === 72 && Math.abs(r.sizeH - r.sizeV) < 0.05 ? ok : bad)(
     'C. the image caption\'s size: 54 px of the engine\'s 75 (Size ' + r.sizeSent + '), the same share on a landscape podcast (' + r.sizeV.toFixed(2) + ' / ' + r.sizeH.toFixed(2) + ')');
   (r.popEntrance === 1 ? ok : bad)('C. a style that pops in pops in (Animation menu index ' + r.popEntrance + ' = Pop; Premiere\'s menus are 0-based)');

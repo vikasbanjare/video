@@ -5257,6 +5257,7 @@
         try {
           var fitT = premFitEditable([{ start: 0, end: STYLE_TEST_SECONDS, text: text }], bb.path, env, t2.sizeScale, rf && rf.font);
           if (fitT && fitT.cues && fitT.cues[0] && fitT.cues[0].text) text = fitT.cues[0].text;
+          if (pulse) text = pulseImageLines([{ text: text }], t, env)[0].text;
         } catch (eFit) {}
         return { id: t.id, params: mapPresetForEngine(bb.path, t2, liveProps), text: text, raw: raw,
                  textStyle: rf ? { font: rf.font, bold: rf.bold, sizeScale: (pulse && t2.sizeScale > 1.02) ? t2.sizeScale : 1 } : null };
@@ -5278,6 +5279,9 @@
         return chain.then(function () {
           capProgress('🎨 Comparing ' + (idx + 1) + '/' + job.payload.length + ' — ' + pl.id, 8000);
           var t = styles[idx], rs = renderableStyle(t), ws = pl.raw.split(' '), step = STYLE_TEST_SECONDS / ws.length;
+          // as the panel draws it on a click: ✨ Word-by-word on (currentAnim → karaoke)
+          // unless the style opts out
+          if (t.wordHl !== false) rs.anim = 'karaoke';
           var words = ws.map(function (w, k) { return { start: k * step, end: (k + 1) * step - 0.02, text: w }; });
           var frames = CPCaptions.buildCaptionFrames([{ start: 0, end: STYLE_TEST_SECONDS, text: pl.raw, words: words }],
             { anim: rs.anim, wordsPerCue: t.wordsPerCue, uppercase: t.uppercase, preset: rs, wordCues: words });
@@ -13867,11 +13871,11 @@
   function pulseLook(preset) {
     var p = preset || {}, k = PULSE_ENGINE_PX / ((p.fontSize > 0) ? p.fontSize : PULSE_ENGINE_PX);
     var fill = p.fill || '#FFFFFF', hl = p.highlight || fill;
-    // the image caption lights the spoken word only in its karaoke / reveal
-    // animations (CPCaptions.buildCaptionFrames: swept); every other style
-    // shows all its words alike — the editable one must too
-    var imgAnim = p.anim || ((p.wordHl !== false) ? 'karaoke' : 'fade');
-    var spoken = p.wordHl !== false && (imgAnim === 'karaoke' || imgAnim === 'reveal');
+    // ✨ Word-by-word highlight on = the spoken word lights, whatever the
+    // style's own animation: the image caption and the preview sweep with it
+    // on (currentAnim → karaoke). Lighting only karaoke / reveal styles left
+    // the owner's Slam (zoom) with no pink in the editable caption.
+    var spoken = p.wordHl !== false;
     var shape = spoken ? (p.highlightStyle || 'color') : 'none';
     var wordBox = (shape === 'box' || shape === 'bar');
     var ent = p.entrance || entranceForPreset(p);   // styledPreset carries the Entrance picker
@@ -13892,7 +13896,10 @@
       boxOpacity: (wordBox && !p.boxColor) ? 100 : Math.max(0, Math.min(100, bo)),
       // the engine's tracking is Letter Spacing × 10 (1/1000 em); it has no
       // tighter-than-normal, so a style's negative spacing goes to 0
-      letterSpacing: Math.max(0, Math.min(100, Math.round((p.letterSpacing || 0) / ((p.fontSize > 0) ? p.fontSize : PULSE_ENGINE_PX) * 100))),
+      // the template's tracking animator runs at Letter Spacing × 10 and, on
+      // the owner's Premiere, acts like pixels at its 75 px face (Tall Poster's
+      // 2 spread every letter apart): send the style's spacing in those units
+      letterSpacing: Math.max(0, Math.min(100, Math.round((p.letterSpacing || 0) * k / 10 * 100) / 100)),
       boxRoundness: Math.max(0, Math.min(100, Math.round(((p.boxRadius != null) ? p.boxRadius : 10) * k))),
       shadowOpacity: p.glow ? Math.max(30, Math.min(100, Math.round(((p.glowBlur != null) ? p.glowBlur : 0.35) * 100) + 30)) : 0,
       shadowDistance: p.glow ? Math.min(100, Math.round(dist * 10) / 10) : 0,
@@ -13984,6 +13991,7 @@
       var pg = premGeometry(bb.path);
       var fitP = premFitEditable([{ start: 0, end: 4, text: sample }], bb.path, state.env, sizeScale, textStyle && textStyle.font);
       var pvText = (fitP.cues[0] && fitP.cues[0].text) || sample;
+      if (isPulseEngine(bb.path)) pvText = pulseImageLines([{ text: pvText }], preset, state.env)[0].text;
       var pvPos = (params && params._posYPct != null)
         ? (fitP.plan.known ? premPlan(bb.path, state.env, { fixedScale: sizeScale, pos: params._posYPct }).posYPct : params._posYPct)
         : null;
@@ -14075,6 +14083,28 @@
      the words heard inside it are exactly the words it shows — anything else
      (a word dropped as "um", a long word broken over two lines) keeps the even
      sweep. Words are timeline time; off = the owner's sync nudge. */
+  /* Pulse's engine draws exactly the lines it is given, so an editable caption
+     breaks where the IMAGE caption breaks: the renderer's own layout
+     (CPRender.captionLayout) at the style's size for this frame. The owner's
+     real run had Two-Tone Stack, Bold Pop, Cool Pop and Clean Bold on one
+     long line in Premiere and on two in the image. A caption the image keeps
+     on one line keeps the measured fit (premFitEditable). */
+  function pulseImageLines(tcues, preset, env) {
+    var W = (env && env.width) || 1080, H = (env && env.height) || 1920, style, meas;
+    try { style = CPRender.styleForFrame(preset, H, {}, W); meas = CPRender.measurerFor(style); } catch (e) { return tcues; }
+    return tcues.map(function (c) {
+      var words = String(c.text || '').replace(/\r/g, ' ').split(/\s+/).filter(Boolean);
+      if (words.length < 2) return c;
+      var lay = null;
+      try { lay = CPRender.captionLayout(meas, words, style, W, H, { wordSync: true }); } catch (e2) { lay = null; }
+      if (!lay || !lay.lines || lay.lines.length < 2 || lay.lines.length > 2) return c;
+      var lines = lay.lines.map(function (l) { return lay.items.slice(l.from, l.to).map(function (it) { return it.word; }).join(' '); });
+      if (lines.join(' ').replace(/\s+/g, ' ') !== words.join(' ')) return c;   // a long word was cut in pieces: keep the fit
+      var o = {}, k; for (k in c) if (c.hasOwnProperty(k)) o[k] = c[k];
+      o.text = lines.join('\r');
+      return o;
+    });
+  }
   function editableWordStarts(tcues, words, off) {
     if (!words || !words.length) return tcues;
     off = off || 0;
@@ -14236,6 +14266,7 @@
         // Position row is kept far enough from the edges for the whole graphic.
         var edGeom = premGeometry(bb.path);
         var fitE = premFitEditable(tcues, bb.path, state.env, sizeScale, textStyle && textStyle.font);
+        if (pulseBB) fitE.cues = pulseImageLines(fitE.cues, preset, state.env);
         tcues = editableWordStarts(fitE.cues, cues.words, syncOff);
         var edPos = (params && params._posYPct != null)
           ? (fitE.plan.known ? premPlan(bb.path, state.env, { fixedScale: sizeScale, pos: params._posYPct }).posYPct : params._posYPct)
@@ -19800,6 +19831,7 @@
       mapPresetToPulse: mapPresetToPulse,
       pulseLook: pulseLook,
       pulseSizeScale: pulseSizeScale,
+      pulseImageLines: pulseImageLines,
       setBundledMogrts: function (list, engines) { state.bundledMogrts = list || []; state.engineMogrts = engines || []; },
       parseFontFaces: parseFontFaces,
       useRealPreviews: function (on) { settings.useRealPreviews = !!on; _stylePrev = null; },
