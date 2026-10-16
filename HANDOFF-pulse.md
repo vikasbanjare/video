@@ -1,10 +1,17 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.33** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.34** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.34 — the engine really loads
+- index.json "engine": true entries load into state.engineMogrts (hidden
+  entries are dropped from the cards AND were dropped from loading: the
+  owner's first style test ran on Flux). Gate style-test-button loads the
+  real way. Next: install the missing caption fonts (owner's Mac lacks
+  Poppins, Anton, Bebas, Bangers, all Devanagari faces → editable swaps).
 
 ### v0.10.33 — editable captions on Pulse's own engine
 - tools/ae/Pulse-Caption-Builder.jsx builds "Pulse Caption" in After
