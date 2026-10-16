@@ -2741,6 +2741,14 @@ const MUTANTS = [
     repl: "      if (home) { dirs.push(path.join(home, 'Documents', 'Pulse', 'style-previews')); dirs.push(path.join(home, 'Documents', 'Pulse', 'style-previews', ek)); }",
     gate: 'CutPilot/test/gates/previews-engine.js',
     why: 'cards keep showing renders the old Flux engine made'
+  },
+  {
+    name: 'v37-pulse-box-no-padding',
+    file: 'CutPilot/js/main.js',
+    find: "      if (!g.pad) g.pad = { i: -1, x: 24, y: 12, name: 'engine box padding' };",
+    repl: "",
+    gate: 'CutPilot/test/gates/premium-fit.js',
+    why: 'a low editable caption on a 16:9 podcast hangs its box off the frame'
   }
 ];
 

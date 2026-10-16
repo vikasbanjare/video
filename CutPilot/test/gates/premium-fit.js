@@ -230,7 +230,7 @@ function liveProps(file) {
 async function scriptedPage(browser, W, H, opts) {
   opts = opts || {};
   const page = await G.openPanel(browser, { cep: true, gallery: false });
-  await page.evaluate((W, H, inspectFails, haloProps) => {
+  await page.evaluate((W, H, inspectFails, propsByFile) => {
     window.__ins = []; window.__calls = [];
     const orig = window.__adobe_cep__.evalScript;
     window.__env = { width: W, height: H };
@@ -243,13 +243,15 @@ async function scriptedPage(browser, W, H, opts) {
       if (fn === 'CP_getEnv') return reply({ ok: true, width: window.__env.width, height: window.__env.height, sequenceName: 'Seq', fps: 30 });
       if (fn === 'CP_saveProject') return reply({ ok: true });
       if (fn === 'CP_inspectMogrt' && inspectFails) return reply({ ok: false, error: 'Save your project first' });
-      if (fn === 'CP_inspectMogrt' && /Flux_Halo2_r3/.test((a && a.path) || '')) return reply({ ok: true, props: haloProps });
+      // as Premiere: the live controls of WHICHEVER template is asked about
+      const base = String((a && a.path) || '').split(/[\\/]/).pop();
+      if (fn === 'CP_inspectMogrt' && propsByFile[base]) return reply({ ok: true, props: propsByFile[base] });
       if (fn === 'CP_insertMogrtCaptions') { window.__ins.push(a); return reply({ ok: true, inserted: a.cues.length, textSet: a.cues.length, track: 3, swept: 0 }); }
       if (fn === 'CP_previewMogrt') { (window.__pv = window.__pv || []).push(a); return reply({ ok: true, placedAt: 0, track: 4, paramsSet: (a.params || []).length }); }
       if (fn === 'CP_clearCaptionTrack') return reply({ ok: true, cleared: 12, track: a.track, top: true });
       return orig.call(this, s, cb);
     };
-  }, W, H, !!opts.inspectFails, liveProps('Flux_Halo2_r3.mogrt'));
+  }, W, H, !!opts.inspectFails, { 'Flux_Halo2_r3.mogrt': liveProps('Flux_Halo2_r3.mogrt'), 'Pulse_Caption_r3.mogrt': liveProps('Pulse_Caption_r3.mogrt') });
   return page;
 }
 /* long words first: five of them unbroken are wider than any caption line */
@@ -506,11 +508,15 @@ async function magicRun(page, mode) {
     }
 
     // ---- M. the ✏️ Editable path rides the same engine and host function -------
-    {
-      const halo = defOf('Flux_Halo2_r3.mogrt'), mBad = [];
-      let mLines = 0, mInserts = 0;
+    // Both editable engines: Pulse's own (picked first since v0.10.34) and
+    // Flux (the fallback). Each is the ONLY template loaded for its pass.
+    for (const ENG of ['Flux_Halo2_r3.mogrt', 'Pulse_Caption_r3.mogrt']) {
+      const halo = defOf(ENG), mBad = [], isPulse = /Pulse_Caption/.test(ENG);
+      const sizeIdx = isPulse ? halo.controls.findIndex(c => nm(c) === 'size') : -1;
+      let mLines = 0, mInserts = 0, liftedSeen = 0;
       for (const [W, H] of [[1920, 1080], [1080, 1920]]) {
         const page = await scriptedPage(browser, W, H);
+        await page.evaluate((p) => { window.CP_DEBUG.setBundledMogrts([{ path: p, name: 'engine' }], []); }, path.join(G.MOGRT_DIR, ENG));
         for (const lang of ['hinglish', 'devanagari', 'longwords']) {
           await useTranscript(page, dir, lang);
           // the long words go in with the Position slider at its lowest (92%):
@@ -537,8 +543,12 @@ async function magicRun(page, mode) {
           const fit = 100 * Math.min(W, H) / Math.min(halo.comp.x, halo.comp.y);
           if (a.compW !== halo.comp.x || a.compH !== halo.comp.y) mBad.push(tag + ': sent comp ' + a.compW + '×' + a.compH);
           const pv = (i) => { const p = (a.params || []).find(x => x.i === i); return p ? p.value : null; };
-          const ts = pv(halo.textScale.i) != null ? Number(pv(halo.textScale.i)) : halo.textScale.v;
-          const pad = pv(22) && pv(22).x != null ? pv(22) : halo.pad;
+          // Flux: its Text Scale control and BG Box Padding; Pulse Caption: its
+          // Size control (shrinks) × the font-size write (grows), and the box
+          // padding it draws with (0.32 / 0.16 of its 75 px face)
+          const ts = isPulse ? (pv(sizeIdx) != null ? Number(pv(sizeIdx)) : 100) * ((a.textStyle && a.textStyle.sizeScale) || 1)
+                             : (pv(halo.textScale.i) != null ? Number(pv(halo.textScale.i)) : halo.textScale.v);
+          const pad = isPulse ? { x: 24, y: 12 } : (pv(22) && pv(22).x != null ? pv(22) : halo.pad);
           const px = halo.text.px * ts / 100 * fit / 100;
           const font = (a.textStyle && a.textStyle.font) || halo.text.font;
           const lines = [];
@@ -575,12 +585,19 @@ async function magicRun(page, mode) {
             if (pls.length > 2 || pws.some(w => w + 2 * pad.x * fit / 100 > visW)) mBad.push(tag + ': ▶ Real preview words “' + String(rp.text).replace(/\r/g, '⏎') + '” do not fit (' + pws.map(Math.round).join('/') + ' px)');
           }
           await page.evaluate(() => { const pos = document.getElementById('c-pos'); pos.value = window.__posWas; pos.dispatchEvent(new Event('input')); pos.dispatchEvent(new Event('change')); });
-          if (lang === 'longwords' && !(a._yPct >= 0.9 && a.posYPct < a._yPct - 0.005)) mBad.push(tag + ': the slider at ' + a._yPct + ' did not test the lifted row (sent ' + a.posYPct + ')');
+          // a lift is owed only where the box would hang out at the slider's row
+          // (Pulse Caption's smaller, image-sized text fits at 92% on 9:16)
+          if (lang === 'longwords' && !(a._yPct >= 0.9)) mBad.push(tag + ': the slider did not go to its lowest (' + a._yPct + ')');
+          if (lang === 'longwords' && want < a._yPct - 0.005 && !(a.posYPct < a._yPct - 0.005)) mBad.push(tag + ': the slider at ' + a._yPct + ' did not lift the row (sent ' + a.posYPct + ')');
+          if (lang === 'longwords' && want < a._yPct - 0.005) liftedSeen++;
         }
         await page.close();
       }
-      (mInserts === 6 && !mBad.length ? R.ok : R.bad)('M. ✏️ Editable captions (Flux Halo engine): fitted by the comp’s real size, all ' + mLines +
+      if (!liftedSeen) mBad.push('no case needed the lifted row — the lift was not tested');
+      (mInserts === 6 && !mBad.length ? R.ok : R.bad)('M. ✏️ Editable captions (' + (isPulse ? 'Pulse Caption' : 'Flux Halo') + ' engine): fitted by the comp’s real size, all ' + mLines +
         ' lines fit the comp, at the Position slider’s row on 16:9 and 9:16; ▶ Real preview the same fit, row and line breaks' + (mBad.length ? ' — ' + mBad.slice(0, 5).join(' | ') : ''));
+    }
+    {
       // …and the owner's sync nudge moves them too (they used to ignore it)
       {
         const page = await scriptedPage(browser, 1920, 1080);
