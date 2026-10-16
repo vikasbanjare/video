@@ -2653,6 +2653,30 @@ const MUTANTS = [
     repl: '          if (got.length !== part.length) { skippedParts++; }',
     gate: 'CutPilot/test/gates/translate-long.js',
     why: 'AI fix puts a short part\'s words on the wrong lines'
+  },
+  {
+    name: 'v32-model-no-resume',
+    file: 'CutPilot/js/main.js',
+    find: "'--speed-time', '60', '-C', '-', '-o', part, url]",
+    repl: "'--speed-time', '60', '-o', part, url]",
+    gate: 'CutPilot/test/gates/model-download.js',
+    why: 'a dropped 600 MB download starts over from zero'
+  },
+  {
+    name: 'v32-model-short-used',
+    file: 'CutPilot/js/main.js',
+    find: '    var whole = function (n) { return expectBytes ? n >= expectBytes * 0.97 : n > 1e6; };',
+    repl: '    var whole = function (n) { return n > 0; };',
+    gate: 'CutPilot/test/gates/model-download.js',
+    why: 'a cut-short model file is used and transcription breaks'
+  },
+  {
+    name: 'v32-model-no-browser',
+    file: 'CutPilot/js/main.js',
+    find: '          var opened = openInBrowser(url);',
+    repl: '          var opened = false;',
+    gate: 'CutPilot/test/gates/model-download.js',
+    why: 'a blocked download leaves the owner stuck'
   }
 ];
 

@@ -703,32 +703,89 @@
     // a one-time download of hundreds of MB: say so and ask first
     return (ask ? ask(WHISPER_MB[resolveQuality()] || 0) : Promise.resolve(true)).then(function (yes) {
       if (!yes) { var no = new Error('Nothing was downloaded, so nothing was transcribed.'); no.cancelled = true; throw no; }
-      return downloadModel(name, path.join(_modelsDir(), name)).catch(function (e) {
+      return downloadModel(name, path.join(_modelsDir(), name), (WHISPER_MB[resolveQuality()] || 0) * 1e6 * 0.98).catch(function (e) {
         if (tryP(settings.whisperModel)) return settings.whisperModel;   // offline fallback so it still runs
         throw e;
       });
     });
   }
-  function downloadModel(name, target) {
-    return new Promise(function (resolve, reject) {
-      var cp, fs, path; try { cp = nodeReq('child_process'); fs = nodeReq('fs'); path = nodeReq('path'); } catch (e) { return reject(e); }
-      try { fs.mkdirSync(path.dirname(target), { recursive: true }); } catch (e) {}
-      var url = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/' + name;
-      var what = WHITE_LABEL ? 'the speech model' : name;
-      setTranscriptBar('', '⬇️', 'Downloading ' + what + ' — one-time, please wait…', null);
-      var p; try { p = cp.spawn('curl', ['-L', '--fail', '-o', target, url]); } catch (e) { return reject(e); }
-      var tick = setInterval(function () {
-        var mb = 0; try { mb = Math.round(fs.statSync(target).size / 1e6); } catch (eS) {}
-        if (mb) setTranscriptBar('', '⬇️', 'Downloading ' + what + ' — ' + mb + ' MB so far (one time)…', null);
-      }, 1000);
-      p.on('error', function (e) { clearInterval(tick); reject(e); });
-      p.on('close', function (code) {
-        clearInterval(tick);
-        if (code === 0) { try { if (fs.statSync(target).size > 1e6) return resolve(target); } catch (e) {} }
-        try { fs.unlinkSync(target); } catch (e) {}
-        reject(new Error('couldn\'t download model "' + name + '" — check your internet, or set a model path in Settings.'));
+  /* The one-time speech model download (hundreds of MB from Hugging Face).
+     A home connection drops, stalls or is filtered: the old single try with
+     no resume failed the whole job with no reason given. Now: up to 4 tries,
+     each carrying on from where the last stopped (-C -), a stall (under 1 KB/s
+     for a minute) counts as a drop, the file goes to .part and only becomes
+     the model when complete (a cut-short file is never used), and a final
+     failure says why in plain words and opens the same download in the
+     browser — Pulse finds the file in Downloads. */
+  var MODEL_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/';
+  function curlWhy(code, err) {
+    var e = String(err || '');
+    if (code === 6 || /resolve host/i.test(e)) return 'this Mac can’t reach the download site (no internet, or the network blocks huggingface.co)';
+    if (code === 7) return 'the download site didn’t answer';
+    if (code === 28 || code === 18 || code === 56 || code === 52) return 'the connection kept dropping or was too slow';
+    if (code === 35 || code === 60 || code === 51 || code === 58 || code === 77) return 'a secure connection couldn’t be made (a VPN, firewall or school/office network can cause this)';
+    if (code === 22) { var m = /error: (\d{3})/.exec(e); return 'the site refused the download' + (m ? ' (' + m[1] + ')' : ''); }
+    if (code === 23) return 'the file couldn’t be saved — is the disk full?';
+    return 'the download stopped (code ' + code + ')';
+  }
+  function openInBrowser(url) {
+    try { if (window.cep && cep.util && cep.util.openURLInDefaultBrowser) { cep.util.openURLInDefaultBrowser(url); return true; } } catch (e) {}
+    try {
+      var cp = nodeReq('child_process'), os = nodeReq('os');
+      var p = os.platform() === 'win32' ? cp.spawn('cmd', ['/c', 'start', '', url]) : cp.spawn('open', [url]);
+      if (p && p.on) p.on('error', function () {});
+      return true;
+    } catch (e2) { return false; }
+  }
+  function downloadModel(name, target, expectBytes) {
+    var cp, fs, path; try { cp = nodeReq('child_process'); fs = nodeReq('fs'); path = nodeReq('path'); } catch (e) { return Promise.reject(e); }
+    try { fs.mkdirSync(path.dirname(target), { recursive: true }); } catch (e) {}
+    var url = MODEL_URL + name, part = target + '.part', TRIES = 4;
+    var what = WHITE_LABEL ? 'the speech model' : name;
+    var sizeOf = function (f) { try { return fs.statSync(f).size; } catch (e) { return 0; } };
+    var whole = function (n) { return expectBytes ? n >= expectBytes * 0.97 : n > 1e6; };
+    setTranscriptBar('', '⬇️', 'Downloading ' + what + ' — one-time, please wait…', null);
+    function attempt(k) {
+      return new Promise(function (resolve) {
+        if (trStopped()) return resolve({ code: -2, err: '' });
+        var err = '', p;
+        // -sS: no progress meter (an unread pipe fills and stalls curl), errors still said
+        try { p = trTrack(cp.spawn('curl', ['-L', '--fail', '-sS', '--connect-timeout', '20', '--speed-limit', '1000', '--speed-time', '60', '-C', '-', '-o', part, url])); }
+        catch (e) { return resolve({ code: -1, err: String(e.message || e) }); }
+        var tick = setInterval(function () {
+          var mb = Math.round(sizeOf(part) / 1e6);
+          if (mb) setTranscriptBar('', '⬇️', 'Downloading ' + what + ' — ' + mb + (expectBytes ? ' of ' + Math.round(expectBytes / 1e6) : '') + ' MB (one time)' + (k ? ' · try ' + (k + 1) + ' of ' + TRIES : '') + '…', null);
+        }, 1000);
+        if (p.stdout && p.stdout.on) p.stdout.on('data', function () {});
+        if (p.stderr && p.stderr.on) p.stderr.on('data', function (d) { err = (err + d).slice(-400); });
+        p.on('error', function (e) { clearInterval(tick); resolve({ code: -1, err: String(e && e.message || e) }); });
+        p.on('close', function (code) { clearInterval(tick); resolve({ code: code, err: err }); });
+      }).then(function (r) {
+        if (r.code === -2 || trStopped()) throw trStopError();
+        if (r.code === 0 && whole(sizeOf(part))) {
+          try { fs.renameSync(part, target); } catch (eR) { throw new Error('couldn’t save the speech model: ' + eR.message); }
+          return target;
+        }
+        // 33: the site won't resume — start the file again; 416: already past the end
+        if (r.code === 33 || /416/.test(r.err)) { try { fs.unlinkSync(part); } catch (eU) {} }
+        var giveUp = r.code === -1 || r.code === 6 || r.code === 23 || (r.code === 22 && !/(5\d\d|429)/.test(r.err));
+        if (giveUp || k + 1 >= TRIES) {
+          var why = r.code === 0 ? 'the file came down incomplete' : r.code === -1 ? 'curl couldn’t run (' + r.err + ')' : curlWhy(r.code, r.err);
+          var opened = openInBrowser(url);
+          var e = new Error('couldn’t download the speech model — ' + why + '. ' +
+            (opened ? 'I opened the same download in your browser: let it save to Downloads, then tap Transcribe again (Pulse finds it there).'
+                    : 'Download it in your browser from ' + url + ' into Downloads, then tap Transcribe again.') +
+            ' Or pick ☁️ cloud under Speech accuracy.');
+          e.cpKind = 'model_download';
+          throw e;
+        }
+        try { diag('asr', 'model download try ' + (k + 1) + ' failed (curl ' + r.code + '): ' + r.err.slice(0, 160)); } catch (eD) {}
+        var wait = Math.min(20, 3 * Math.pow(2, k));
+        setTranscriptBar('warn', '⬇️', 'Download interrupted (' + curlWhy(r.code, r.err) + ') — carrying on in ' + wait + ' s…', null);
+        return new Promise(function (res) { setTimeout(res, asrTestScale(wait) * 1000); }).then(function () { return attempt(k + 1); });
       });
-    });
+    }
+    return attempt(0);
   }
   /* Spawn curl with SECRET headers delivered via a stdin config (-K -), never
      on the command line — argv is readable machine-wide (ps / Task Manager /
@@ -9938,6 +9995,7 @@
       findTranscript: findTranscript,
       translate: function (code, name) { translateTranscript(code, name); },
       proofread: function () { cleanupTranscript(); },
+      downloadModel: function (name, target, bytes) { return downloadModel(name, target, bytes).then(function (f) { return { ok: f }; }, function (e) { return { error: e.message }; }); },
       detectSpeakers: function () { detectSpeakers(); },
       followMovedRecording: followMovedRecording,
       refineWordCues: refineWordCues,
