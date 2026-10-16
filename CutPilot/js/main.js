@@ -3409,11 +3409,32 @@
       (vocab ? ('IMPORTANT — these names/terms are spelled correctly; use them when a word sounds close: ' + vocab + '. ') : '') +
       'Examples: "we live in indiyya" → "we live in India"; "i seen there new car" → "I\'ve seen their new car". ' +
       'Return JSON {"lines":[...]} with EXACTLY ' + lines.length + ' strings, one per input line, in the same order.';
-    groqChat([{ role: 'system', content: sys }, { role: 'user', content: JSON.stringify({ lines: lines }) }], { json: true, temperature: 0 })
-      .then(function (content) {
-        var parsed; try { parsed = JSON.parse(content); } catch (e) { throw new Error('The correction came back malformed.'); }
-        var fixed = parsed.lines || parsed.corrected || parsed.result || [];
-        if (!fixed.length) throw new Error('No correction returned.');
+    // in parts of 120 lines: a 1–2 hour podcast is ~2,000 lines, more than one
+    // answer can hold. A part that fails or comes back with a different number
+    // of lines keeps its own words (shifted text would land on the wrong lines).
+    var PART = 120, fixed = [], skippedParts = 0, parts = [];
+    for (var pi = 0; pi < lines.length; pi += PART) parts.push(lines.slice(pi, pi + PART));
+    var sysFor = function (n) { return sys.replace('EXACTLY ' + lines.length + ' strings', 'EXACTLY ' + n + ' strings'); };
+    parts.reduce(function (chain, part, k) {
+      return chain.then(function () {
+        if (parts.length > 1) setTranscriptBar('', '✨', 'AI proofreading… part ' + (k + 1) + ' of ' + parts.length, null);
+        return asrRetry(function () {
+          return groqChat([{ role: 'system', content: sysFor(part.length) }, { role: 'user', content: JSON.stringify({ lines: part }) }], { json: true, temperature: 0 });
+        }, null).then(function (content) {
+          var parsed; try { parsed = JSON.parse(content); } catch (e) { parsed = {}; }
+          var got = parsed.lines || parsed.corrected || parsed.result || [];
+          if (got.length !== part.length) { skippedParts++; got = part; }
+          for (var j = 0; j < part.length; j++) fixed.push(got[j]);
+        }, function (e) {
+          var kd = e && e.cpKind;   // a wrong key or no credit: every part would fail the same way
+          if (parts.length === 1 || kd === 'bad_key' || kd === 'no_credit' || kd === 'model_gone') throw e;
+          skippedParts++;
+          for (var j = 0; j < part.length; j++) fixed.push(part[j]);
+        });
+      });
+    }, Promise.resolve())
+      .then(function () {
+        if (skippedParts && skippedParts === parts.length) throw new Error('No correction returned.');
         var out = [], changed = 0, rejected = 0, samples = [];
         for (var i = 0; i < cues.length; i++) {
           var orig = cues[i].text, corr = (fixed[i] != null) ? String(fixed[i]) : orig, keep = orig;
@@ -3447,6 +3468,7 @@
         setTranscriptBar('ok', '✅', 'AI fixed ' + changed + ' line' + (changed === 1 ? '' : 's') + ' — all ' + out.length + ' kept.', 'Change');
         toast('✨ AI fixed ' + changed + ' line' + (changed === 1 ? '' : 's') + '. e.g. ' + samples.join('; ') +
               (changed > samples.length ? '…' : '') + (rejected ? (' · skipped ' + rejected + ' risky rewrite' + (rejected === 1 ? '' : 's')) : '') +
+              (skippedParts ? ' · ' + skippedParts + ' of ' + parts.length + ' parts left as they were (try ✨ again later)' : '') +
               '. Review in “✏️ Review & edit”. (Tap “Change” to revert.)');
       })
       .catch(function (e) { setTranscriptBar('warn', '⚠️', 'AI fix failed', 'Get one →'); toast('AI fix failed: ' + e.message, true); })
@@ -9915,6 +9937,7 @@
       },
       findTranscript: findTranscript,
       translate: function (code, name) { translateTranscript(code, name); },
+      proofread: function () { cleanupTranscript(); },
       detectSpeakers: function () { detectSpeakers(); },
       followMovedRecording: followMovedRecording,
       refineWordCues: refineWordCues,

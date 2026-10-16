@@ -11,7 +11,10 @@
  *      other parts are still translated;
  *   C. a busy reply on one part is tried again;
  *   D. speakers on 330 lines: in parts, each shown the last labelled lines
- *      before it, and every line gets a label.
+ *      before it, and every line gets a label;
+ *   E. ✨ AI fix (proofreading) the same: in parts, every line fixed on its
+ *      own time; a part that comes back with the wrong number of lines keeps
+ *      its own words (never shifted onto the next line) and the toast says so.
  */
 'use strict';
 const fs = require('fs');
@@ -26,13 +29,19 @@ async function run() {
   console.log('🌐 Translate and 🗣️ speakers on a long podcast');
   const browser = await H.launch();
   try {
-    let sizes = [], mode = 'ok', busyOnce = false, spReqs = [];
+    let sizes = [], pfSizes = [], mode = 'ok', busyOnce = false, spReqs = [];
     const curl = (args) => {
       const url = args.find(a => /^https:\/\//.test(a)) || '';
       if (/\/models/.test(url)) return JSON.stringify({ data: [{ id: 'llama-3.1-8b-instant' }] });
       if (!/chat\/completions/.test(url)) return '{}';
       const body = JSON.parse(fs.readFileSync(args[args.indexOf('--data-binary') + 1].replace(/^@/, ''), 'utf8'));
       const user = JSON.parse(body.messages[body.messages.length - 1].content);
+      if (/proofreader/.test(body.messages[0].content)) {
+        pfSizes.push(user.lines.length);
+        let fx = user.lines.map(l => l.replace('helo', 'hello'));
+        if (mode === 'pf-short' && pfSizes.length === 2) fx = fx.slice(1);
+        return JSON.stringify({ choices: [{ message: { content: JSON.stringify({ lines: fx }) } }] });
+      }
       if (/speaking/.test(body.messages[0].content)) {
         spReqs.push({ n: user.lines.length, before: (user.before || []).length });
         return JSON.stringify({ choices: [{ message: { content: JSON.stringify({ speakers: user.lines.map((l, i) => (+l.split(' ')[1] % 2) + 1) }) } }] });
@@ -83,6 +92,31 @@ async function run() {
     }, srt);
     C.check('D. speakers on 330 lines go in parts, each shown the labelled lines before it, every line labelled (' + JSON.stringify(spReqs) + ')',
       spReqs.length >= 3 && spReqs.every(q => q.n <= 150) && spReqs.slice(1).every(q => q.before === 8) && sp.n === 330 && sp.labelled > 100, JSON.stringify(sp));
+    // E. ✨ AI fix
+    async function proofread(m) {
+      mode = m; pfSizes = [];
+      return page.evaluate(async (srt) => {
+        window.__mem['/tmp/pf.srt'] = srt.replace(/hello/g, 'helo world now');
+        window.CP_DEBUG_EXT.sync.setTranscript({ transcript: { path: '/tmp/pf.srt', label: 'pf', mtime: 1e16 } });
+        document.getElementById('toast').textContent = '';
+        window.CP_DEBUG_EXT.sync.proofread();
+        for (let i = 0; i < 300; i++) {
+          await new Promise(r => setTimeout(r, 100));
+          if (/AI-corrected/.test(String(window.CP_DEBUG_EXT.sync.transcript().label || '')) || /failed/i.test(document.getElementById('toast').textContent)) break;
+        }
+        const t = window.CP_DEBUG_EXT.sync.transcript();
+        return { label: t.label, cues: (t.cues || []).map(c => [c.start, c.text]), toast: document.getElementById('toast').textContent };
+      }, srt);
+    }
+    r = await proofread('pf-ok');
+    C.check('E. ✨ AI fix on 300 lines goes in parts (' + pfSizes.join(' + ') + '), every line fixed on its own time',
+      pfSizes.length >= 3 && pfSizes.every(n => n <= 120) && r.cues.length === N && r.cues.every((c, i) => c[1] === 'line ' + i + ' hello world now' && Math.abs(c[0] - i * 3) < 0.01),
+      JSON.stringify({ pfSizes, n: r.cues.length, first: r.cues[0], last: r.cues[r.cues.length - 1], toast: r.toast }));
+    r = await proofread('pf-short');
+    const mid = r.cues.slice(120, 240);
+    C.check('E. a part with the wrong number of lines keeps its own words (not shifted); the others fixed; the toast says so',
+      r.cues.length === N && mid.every((c, k) => c[1] === 'line ' + (120 + k) + ' helo world now') && r.cues.slice(0, 120).every(c => / hello /.test(c[1])) && /1 of 3 parts left/.test(r.toast),
+      JSON.stringify({ mid0: mid[0], toast: r.toast }));
     await page.close();
   } finally { await browser.close(); }
   C.finish();

@@ -2645,6 +2645,14 @@ const MUTANTS = [
     repl: '    var SPART = 100000, sp = [], sparts = [];',
     gate: 'CutPilot/test/gates/translate-long.js',
     why: 'speakers of a 2-hour podcast in one giant request'
+  },
+  {
+    name: 'v31-proofread-shifted',
+    file: 'CutPilot/js/main.js',
+    find: '          if (got.length !== part.length) { skippedParts++; got = part; }',
+    repl: '          if (got.length !== part.length) { skippedParts++; }',
+    gate: 'CutPilot/test/gates/translate-long.js',
+    why: 'AI fix puts a short part\'s words on the wrong lines'
   }
 ];
 
