@@ -303,8 +303,13 @@
            'Open Essential Graphics (Window → Essential Graphics) and click "Export Motion Graphics Template…", ' +
            'save it to the Desktop as Pulse_Caption.mogrt, and send it to Pulse\'s maker.');
     } else {
-      alert('Pulse Caption is ready.\n\nOn your Desktop:\n• the folder "Pulse Caption Template" — zip it and send it\n• Pulse_Caption.aep — the After Effects project\n\n' +
-            'Scrub the timeline to see the spoken word move.');
+      // Font editing on the Text control cannot be switched on by script, and
+      // Pulse needs it to give each style its own font in Premiere
+      alert('Pulse Caption is built. One last step by hand (After Effects has no script for it):\n\n' +
+            '1. In Essential Graphics, on the Text row, click "Edit Properties".\n' +
+            '2. Tick "Allow font editing", "Allow faux styles" and "Allow font size editing" → OK.\n' +
+            '3. Click "Export Motion Graphics Template…" → Desktop → Save (replace).\n\n' +
+            'Then zip the folder "Pulse Caption Template" on your Desktop and send it.');
     }
   } catch (e) {
     fail('Something went wrong on line ' + (e.line || '?') + ':\n' + e.toString() + '\n\nSend a screenshot of this message.');

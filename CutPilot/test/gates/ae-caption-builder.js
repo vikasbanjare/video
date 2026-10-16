@@ -101,7 +101,7 @@ if (acorn) {
 } else console.log('  ? acorn not found — ES3 parse skipped');
 try { vm.runInNewContext(code, sandbox, { filename: 'Pulse-Caption-Builder.jsx' }); } catch (e) { bad('A. the script runs', e.stack); }
 const wentWrong = rec.alerts.filter(a => /went wrong|needs After Effects|did not save/.test(a));
-(!wentWrong.length && rec.alerts.some(a => /is ready/.test(a)) ? ok : bad)('A. it runs to the end and says the template is ready', JSON.stringify(rec.alerts));
+(!wentWrong.length && rec.alerts.some(a => /is built/.test(a) && /Allow font editing/.test(a)) ? ok : bad)('A. it runs to the end, says the template is built and how to allow font editing', JSON.stringify(rec.alerts));
 
 // B. the controls Premiere shows
 const WANT = ['Text', 'Size', 'Text Color', 'Spoken Word Color', 'Spoken Word Grow', 'Outline Color', 'Outline Width',
