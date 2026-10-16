@@ -78,7 +78,7 @@ const comp = {
   openInViewer() { if (this.stale) throw new Error('Object is invalid'); }
 };
 const sandbox = {
-  app: { version: '24.1.0', beginUndoGroup() {}, endUndoGroup() {}, newProject() {},
+  app: { version: '24.1.0', beginUndoGroup() {}, endUndoGroup() {}, newProject() {}, beginSuppressDialogs() {}, endSuppressDialogs() {},
          project: { items: { addComp(n, w, h, pa, d, f) { Object.assign(comp, { name: n, width: w, height: h, duration: d, frameRate: f }); return comp; } },
                     // a save leaves the comp reference stale, as on the owner's Mac
                     save(f) { rec.saved.push(f.path); comp.stale = true; },
@@ -87,7 +87,7 @@ const sandbox = {
   ParagraphJustification: { CENTER_JUSTIFY: 'center' },
   MarkerValue: function (c) { this.comment = c; },
   File: function (p) { this.path = p; this.fsName = p; this.exists = true; },
-  Folder: { desktop: { fsName: '/Users/owner/Desktop' } },
+  Folder: Object.assign(function (p) { this.fsName = p; this.exists = false; this.create = () => true; }, { desktop: { fsName: '/Users/owner/Desktop' } }),
   alert: (m) => rec.alerts.push(String(m))
 };
 
@@ -104,7 +104,7 @@ const wentWrong = rec.alerts.filter(a => /went wrong|needs After Effects|did not
 (!wentWrong.length && rec.alerts.some(a => /is ready/.test(a)) ? ok : bad)('A. it runs to the end and says the template is ready', JSON.stringify(rec.alerts));
 
 // B. the controls Premiere shows
-const WANT = ['Text', 'Size', 'Text Color', 'Spoken Word Color', 'Spoken Word Size', 'Outline Color', 'Outline Width',
+const WANT = ['Text', 'Size', 'Text Color', 'Spoken Word Color', 'Spoken Word Grow', 'Outline Color', 'Outline Width',
   'Box', 'Box Color', 'Box Opacity', 'Box Roundness', 'Shadow Opacity', 'Shadow Distance', 'Animation'];
 const labels = rec.exposed.map(e => e.label);
 (JSON.stringify(labels) === JSON.stringify(WANT) ? ok : bad)('B. Premiere shows only the ' + WANT.length + ' caption controls, in order', JSON.stringify(labels));
@@ -140,7 +140,7 @@ function world(text, time, centred) {
     }
   };
   const env = { thisComp, time, value: [0, 0] };
-  ctl['Spoken Word Size'] = 100;
+  ctl['Spoken Word Grow'] = 0;
   for (const k of ['Spoken Index', 'Spoken Line', 'Spoken Pos']) ctl[k] = run(exprOf('Controls', new RegExp(k)), env);
   for (const m of ['Measure Line', 'Measure Upto', 'Measure Word']) measured[m] = run(exprOf(m, /Text Document/), env);
   const sz = run(exprOf('Spoken Word Box', /Rect Size/), env), pos = run(exprOf('Spoken Word Box', /Rect Position/), env);
@@ -169,7 +169,7 @@ const w2 = world(TXT, 1.25);
 // F. protected frame + saved
 const mk = rec.markers[0];
 (mk && mk.t === 0 && mk.mv.protectedRegion === true && Math.abs(mk.mv.duration - 1 / 30) < 1e-9 ? ok : bad)('F. one protected frame at the start (Premiere stretches the rest over the caption)');
-(rec.exported.length === 1 && /Pulse_Caption\.mogrt$/.test(rec.exported[0]) && rec.saved.some(p => /Pulse_Caption\.aep$/.test(p)) ? ok : bad)('F. saved as Pulse_Caption.mogrt (and the .aep) on the Desktop', JSON.stringify({ exported: rec.exported, saved: rec.saved }));
+(rec.exported.length === 1 && /Desktop\/Pulse Caption Template$/.test(rec.exported[0]) && rec.saved.some(p => /Pulse_Caption\.aep$/.test(p)) ? ok : bad)('F. saved into the Desktop folder "Pulse Caption Template" (and the .aep)', JSON.stringify({ exported: rec.exported, saved: rec.saved }));
 
 if (failed) { console.log('AE CAPTION BUILDER: ' + failed + ' failed'); process.exit(1); }
 console.log('AE CAPTION BUILDER: builds the clean template ✓');

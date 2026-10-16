@@ -13,7 +13,7 @@
  * most of them plumbing that breaks the caption when touched. This template
  * draws what Pulse's image captions draw, and shows only these controls:
  *
- *   Text · Size · Text Color · Spoken Word Color · Spoken Word Size ·
+ *   Text · Size · Text Color · Spoken Word Color · Spoken Word Grow ·
  *   Outline Color · Outline Width · Box (None / Whole line / Spoken word) ·
  *   Box Color · Box Opacity · Box Roundness · Shadow Opacity ·
  *   Shadow Distance · Animation (None / Pop / Fade / Slide up)
@@ -62,7 +62,9 @@
     slider('Size', 100);
     color('Text Color', [1, 1, 1]);
     color('Spoken Word Color', [1, 0.85, 0.1]);
-    slider('Spoken Word Size', 100);
+    // Premiere keeps a slider inside its 0–100 range, so the spoken word's
+    // size is how much it GROWS: 0 = same size, 25 = a quarter bigger
+    slider('Spoken Word Grow', 0);
     color('Outline Color', [0, 0, 0]);
     slider('Outline Width', 0);
     menu('Box', ['None', 'Whole line', 'Spoken word'], 1);
@@ -177,7 +179,7 @@
     sel = anim('Spoken Word').property('ADBE Text Selectors').property(1);
     sel.property('ADBE Text Index End').expression = C + '("Spoken Index")(1) + 1;';
     addProp('Spoken Word', 'ADBE Text Fill Color', C + '("Spoken Word Color")(1);');
-    addProp('Spoken Word', 'ADBE Text Scale 3D', 'var g = ' + C + '("Spoken Word Size")(1); value.length > 2 ? [g, g, 100] : [g, g];');
+    addProp('Spoken Word', 'ADBE Text Scale 3D', 'var g = 100 + ' + C + '("Spoken Word Grow")(1); value.length > 2 ? [g, g, 100] : [g, g];');
 
     // soft or offset shadow behind the letters
     var sh = cap.property('ADBE Effect Parade').addProperty('ADBE Drop Shadow');
@@ -241,7 +243,7 @@
       'var Lr = thisComp.layer("Measure Line").sourceRectAtTime(time, false);',
       'var Ur = thisComp.layer("Measure Upto").sourceRectAtTime(time, false);',
       'var Wr = thisComp.layer("Measure Word").sourceRectAtTime(time, false);',
-      'var g = ' + C + '("Spoken Word Size")(1) / 100;',
+      'var g = 1 + ' + C + '("Spoken Word Grow")(1) / 100;',
       'var li = Math.round(' + C + '("Spoken Line")(1));',
       // the caption is centred line by line; the measures are not
       // widths only: the caption centres each line, and the measures may be
@@ -269,7 +271,7 @@
     }
     // After Effects puts each new control at the TOP of the list (seen on the
     // owner's AE 2026), so they go in last-first and Text ends up on top
-    var order = ['Size', 'Text Color', 'Spoken Word Color', 'Spoken Word Size', 'Outline Color', 'Outline Width',
+    var order = ['Size', 'Text Color', 'Spoken Word Color', 'Spoken Word Grow', 'Outline Color', 'Outline Width',
                  'Box', 'Box Color', 'Box Opacity', 'Box Roundness', 'Shadow Opacity', 'Shadow Distance', 'Animation'];
     for (var i = order.length - 1; i >= 0; i--) expose(ctl.effect(order[i]).property(1), order[i]);
     expose(st, 'Text');
@@ -285,8 +287,15 @@
       return null;
     }
     var dir = Folder.desktop.fsName;
-    var out = dir + '/Pulse_Caption.mogrt';
-    var okExport = comp.exportAsMotionGraphicsTemplate(true, out);
+    // After Effects takes the path as a FOLDER and writes "<comp name>.mogrt"
+    // inside it (seen on the owner's Mac), so give it a folder of its own
+    var folder = new Folder(dir + '/Pulse Caption Template');
+    if (!folder.exists) folder.create();
+    var out = folder.fsName + '/' + NAME + '.mogrt';
+    var okExport;
+    try { app.beginSuppressDialogs(); } catch (eSd) {}
+    try { okExport = comp.exportAsMotionGraphicsTemplate(true, folder.fsName); }
+    finally { try { app.endSuppressDialogs(false); } catch (eEd) {} }
     try { app.project.save(new File(dir + '/Pulse_Caption.aep')); } catch (eSave) {}
     try { var shown = theComp(); if (shown) shown.openInViewer(); } catch (eView) {}
     if (okExport === false || !new File(out).exists) {
@@ -294,7 +303,7 @@
            'Open Essential Graphics (Window → Essential Graphics) and click "Export Motion Graphics Template…", ' +
            'save it to the Desktop as Pulse_Caption.mogrt, and send it to Pulse\'s maker.');
     } else {
-      alert('Pulse Caption is ready.\n\nOn your Desktop:\n• Pulse_Caption.mogrt — send this one\n• Pulse_Caption.aep — the After Effects project\n\n' +
+      alert('Pulse Caption is ready.\n\nOn your Desktop:\n• the folder "Pulse Caption Template" — zip it and send it\n• Pulse_Caption.aep — the After Effects project\n\n' +
             'Scrub the timeline to see the spoken word move.');
     }
   } catch (e) {
