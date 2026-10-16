@@ -62,7 +62,8 @@ Node.prototype.setPropertyParameters = function (items) {
 };
 Object.defineProperty(Node.prototype, 'propertyIndex', { get() { return this.owner.kids.indexOf(this) + 1; } });
 Node.prototype.canAddToMotionGraphicsTemplate = function () { return true; };
-Node.prototype.addToMotionGraphicsTemplateAs = function (comp, label) { rec.exposed.push({ label, prop: this }); return true; };
+// AE puts each newly added control at the TOP of the Essential Graphics list
+Node.prototype.addToMotionGraphicsTemplateAs = function (comp, label) { rec.exposed.unshift({ label, prop: this }); return true; };
 Object.defineProperty(Node.prototype, 'expression', { set(e) { this.expr = e; rec.expressions.push({ where: this.where(), prop: this, expr: e }); }, get() { return this.expr || ''; } });
 Object.defineProperty(Node.prototype, 'value', { get() { return this.v || { resetCharStyle() {}, resetParagraphStyle() {} }; } });
 function Layer(name) { Node.call(this, 'layer', null, null); this.layer = this; this.name = name; this.parent = null; }
@@ -122,7 +123,7 @@ function run(expr, env) {
   const linear = (t, a, b, x, y) => t <= a ? x : t >= b ? y : x + (y - x) * (t - a) / (b - a);
   return f(env.thisComp, env.time, env.value, linear, linear, env.sourceRectAtTime, expr);
 }
-function world(text, time) {
+function world(text, time, centred) {
   const ctl = {};
   const measured = {};
   const charW = 40;
@@ -134,7 +135,7 @@ function world(text, time) {
         return { text: { sourceText: st }, sourceRectAtTime: () => ({ left: -200, top: -60, width: 400, height: 150 }) };
       }
       if (n === 'Controls') return { effect: (e) => () => ctl[e] };
-      if (/^Measure /.test(n)) return { sourceRectAtTime: () => { const s = measured[n] || ''; return { left: 0, top: -55, width: s.length * charW, height: 70 }; } };
+      if (/^Measure /.test(n)) return { sourceRectAtTime: () => { const s = measured[n] || '', w = s.length * charW; return { left: centred ? -w / 2 : 0, top: -55, width: w, height: 70 }; } };
       throw new Error('no layer ' + n);
     }
   };
@@ -160,6 +161,8 @@ const w1 = world(TXT, 0.45);
 // monospace 40 px: the centred line spans -240..240, PAISE is chars 4-8 → -80..120
 (Math.abs(w1.pos[0] - 20) < 0.01 && Math.abs(w1.sz[0] - (200 + 2 * 75 * 0.32)) < 0.01 ? ok : bad)(
   'E. the spoken-word box sits on PAISE (centre x ' + w1.pos[0] + ', width ' + w1.sz[0] + ')');
+const wc = world(TXT, 0.45, true);
+(Math.abs(wc.pos[0] - 20) < 0.01 ? ok : bad)('E. the same when After Effects centres the measuring text (centre x ' + wc.pos[0] + ')');
 const w2 = world(TXT, 1.25);
 (w2.measured['Measure Word'] === 'BAAT' && Math.abs(w2.pos[1] - (90 - 55 + 35)) < 0.01 ? ok : bad)('E. on the second line the box moves down one line (y ' + w2.pos[1] + ')');
 

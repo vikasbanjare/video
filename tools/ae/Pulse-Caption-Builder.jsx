@@ -244,8 +244,9 @@
       'var g = ' + C + '("Spoken Word Size")(1) / 100;',
       'var li = Math.round(' + C + '("Spoken Line")(1));',
       // the caption is centred line by line; the measures are not
-      'var off = -Lr.width / 2 - Lr.left;',
-      'var right = Ur.left + Ur.width + off, left = right - Wr.width;'
+      // widths only: the caption centres each line, and the measures may be
+      // left- or centre-aligned (After Effects copies the caption's style)
+      'var right = -Lr.width / 2 + Ur.width, left = right - Wr.width;'
     ].join('\n');
     var spokenBox = box('Spoken Word Box',
       PAD + '\n' + WB + '\n[Wr.width * g + 2 * px, Lr.height * g + 2 * py];',
@@ -266,10 +267,12 @@
     function expose(prop, label) {
       if (prop.canAddToMotionGraphicsTemplate(comp)) prop.addToMotionGraphicsTemplateAs(comp, label);
     }
-    expose(st, 'Text');
+    // After Effects puts each new control at the TOP of the list (seen on the
+    // owner's AE 2026), so they go in last-first and Text ends up on top
     var order = ['Size', 'Text Color', 'Spoken Word Color', 'Spoken Word Size', 'Outline Color', 'Outline Width',
                  'Box', 'Box Color', 'Box Opacity', 'Box Roundness', 'Shadow Opacity', 'Shadow Distance', 'Animation'];
-    for (var i = 0; i < order.length; i++) expose(ctl.effect(order[i]).property(1), order[i]);
+    for (var i = order.length - 1; i >= 0; i--) expose(ctl.effect(order[i]).property(1), order[i]);
+    expose(st, 'Text');
 
     // ---- save the AE project (to change it later) and the template ---------
     // Saving the project leaves every reference stale ("Object is invalid"

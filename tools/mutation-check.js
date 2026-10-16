@@ -2697,8 +2697,8 @@ const MUTANTS = [
   {
     name: 'v34-ae-box-off-word',
     file: 'tools/ae/Pulse-Caption-Builder.jsx',
-    find: "      'var off = -Lr.width / 2 - Lr.left;',",
-    repl: "      'var off = 0;',",
+    find: "      'var right = -Lr.width / 2 + Ur.width, left = right - Wr.width;'",
+    repl: "      'var right = Ur.left + Ur.width, left = right - Wr.width;'",
     gate: 'CutPilot/test/gates/ae-caption-builder.js',
     why: 'the spoken-word box lands beside the word'
   }
