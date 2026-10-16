@@ -45,13 +45,18 @@
     // ---- controls (one null; its effects are the template's settings) -----
     var ctl = comp.layers.addNull(DUR);
     ctl.name = 'Controls';
-    var fx = ctl.property('ADBE Effect Parade');
-    function slider(name, v) { var e = fx.addProperty('ADBE Slider Control'); e.name = name; e.property(1).setValue(v); return name; }
-    function color(name, rgb) { var e = fx.addProperty('ADBE Color Control'); e.name = name; e.property(1).setValue(rgb); return name; }
+    function fxs() { return ctl.property('ADBE Effect Parade'); }   // fetched fresh: a filled menu rebuilds its effect
+    function slider(name, v) { var e = fxs().addProperty('ADBE Slider Control'); e.name = name; e.property(1).setValue(v); return name; }
+    function color(name, rgb) { var e = fxs().addProperty('ADBE Color Control'); e.name = name; e.property(1).setValue(rgb); return name; }
     function menu(name, items, v) {
-      var e = fx.addProperty('ADBE Dropdown Control'); e.name = name;
-      e.property(1).setPropertyParameters(items);          // invalidates e: fetch it again by name
-      ctl.effect(name).property(1).setValue(v);
+      var e = fxs().addProperty('ADBE Dropdown Control');
+      var at = e.propertyIndex;
+      // filling the menu rebuilds the effect (and resets its name): find it
+      // again by its place, then name it
+      e.property(1).setPropertyParameters(items);
+      var d = fxs().property(at);
+      d.name = name;
+      d.property(1).setValue(v);
       return name;
     }
     slider('Size', 100);
@@ -146,33 +151,33 @@
     cap.property('ADBE Transform Group').property('ADBE Opacity').expression = FADE + '100;';
     try { cap.property('ADBE Text Properties').property('ADBE Text More Options').property('ADBE Text Anchor Point Grouping').setValue(2); } catch (eGrp) {}
 
-    var anims = cap.property('ADBE Text Properties').property('ADBE Text Animators');
-    function animator(name) {
-      var a = anims.addProperty('ADBE Text Animator'); a.name = name;
-      return a;
-    }
-    function wordSelector(a) {
-      var s = a.property('ADBE Text Selectors').addProperty('ADBE Text Selector');
-      var adv = s.property('ADBE Text Range Advanced');
-      adv.property('ADBE Text Range Units').setValue(2);          // index
-      adv.property('ADBE Text Range Type2').setValue(3);          // words
-      s.property('ADBE Text Index Start').expression = C + '("Spoken Index")(1);';
-      s.property('ADBE Text Index End').expression = C + '("Spoken Index")(1) + 1;';
-      return s;
+    // After Effects can leave a reference stale after something is added next
+    // to it, so every step below looks its animator up again by name.
+    function anims() { return cap.property('ADBE Text Properties').property('ADBE Text Animators'); }
+    function anim(name) { return anims().property(name); }
+    function addAnimator(name) { var a = anims().addProperty('ADBE Text Animator'); a.name = name; }
+    function addProp(name, matchName, expr) {
+      var p = anim(name).property('ADBE Text Animator Properties').addProperty(matchName);
+      p.expression = expr;
     }
     // every letter: the text colour and the outline
-    var all = animator('Look');
-    all.property('ADBE Text Selectors').addProperty('ADBE Text Selector');
-    var allP = all.property('ADBE Text Animator Properties');
-    allP.addProperty('ADBE Text Fill Color').expression = C + '("Text Color")(1);';
-    allP.addProperty('ADBE Text Stroke Color').expression = C + '("Outline Color")(1);';
-    allP.addProperty('ADBE Text Stroke Width').expression = C + '("Outline Width")(1);';
+    addAnimator('Look');
+    anim('Look').property('ADBE Text Selectors').addProperty('ADBE Text Selector');
+    addProp('Look', 'ADBE Text Fill Color', C + '("Text Color")(1);');
+    addProp('Look', 'ADBE Text Stroke Color', C + '("Outline Color")(1);');
+    addProp('Look', 'ADBE Text Stroke Width', C + '("Outline Width")(1);');
     // the spoken word: its own colour and size
-    var spk = animator('Spoken Word');
-    wordSelector(spk);
-    var spP = spk.property('ADBE Text Animator Properties');
-    spP.addProperty('ADBE Text Fill Color').expression = C + '("Spoken Word Color")(1);';
-    spP.addProperty('ADBE Text Scale 3D').expression = 'var g = ' + C + '("Spoken Word Size")(1); value.length > 2 ? [g, g, 100] : [g, g];';
+    addAnimator('Spoken Word');
+    anim('Spoken Word').property('ADBE Text Selectors').addProperty('ADBE Text Selector');
+    var adv = anim('Spoken Word').property('ADBE Text Selectors').property(1).property('ADBE Text Range Advanced');
+    adv.property('ADBE Text Range Units').setValue(2);          // index
+    adv.property('ADBE Text Range Type2').setValue(3);          // words
+    var sel = anim('Spoken Word').property('ADBE Text Selectors').property(1);
+    sel.property('ADBE Text Index Start').expression = C + '("Spoken Index")(1);';
+    sel = anim('Spoken Word').property('ADBE Text Selectors').property(1);
+    sel.property('ADBE Text Index End').expression = C + '("Spoken Index")(1) + 1;';
+    addProp('Spoken Word', 'ADBE Text Fill Color', C + '("Spoken Word Color")(1);');
+    addProp('Spoken Word', 'ADBE Text Scale 3D', 'var g = ' + C + '("Spoken Word Size")(1); value.length > 2 ? [g, g, 100] : [g, g];');
 
     // soft or offset shadow behind the letters
     var sh = cap.property('ADBE Effect Parade').addProperty('ADBE Drop Shadow');

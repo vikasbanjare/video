@@ -44,10 +44,23 @@ Node.prototype.where = function () { const l = this.layer ? this.layer.name : '?
 Node.prototype.addProperty = function (m) { const k = new Node(m, this, this.layer); if (/Drop Shadow-0002/.test(m)) k.hasMax = true; this.kids.push(k); return k; };
 Node.prototype.property = function (x) {
   if (typeof x === 'number') { while (this.kids.length < x) this.addProperty(this.matchName + '-' + String(this.kids.length + 1).padStart(4, '0')); return this.kids[x - 1]; }
-  return this.kids.find(k => k.name === x || k.matchName === x) || this.addProperty(x);
+  const hit = this.kids.find(k => k.name === x || k.matchName === x);
+  if (hit) return hit;
+  if (this.matchName === 'ADBE Effect Parade') return null;   // AE: no effect by that name
+  return this.addProperty(x);
 };
 Node.prototype.setValue = function (v) { this.v = v; };
-Node.prototype.setPropertyParameters = function (items) { this.items = items; return this; };
+// After Effects rebuilds a dropdown effect when its menu is filled: the old
+// reference goes stale and the name resets (the owner's AE: "null is not an
+// object" when the script looked it up by the name it had set)
+Node.prototype.setPropertyParameters = function (items) {
+  const eff = this.owner, grp = eff.owner, at = grp.kids.indexOf(eff);
+  const fresh = new Node(eff.matchName, grp, eff.layer); fresh.name = 'Dropdown Menu Control';
+  const menu = fresh.property(1); menu.items = items;
+  grp.kids[at] = fresh; eff.stale = true;
+  return menu;
+};
+Object.defineProperty(Node.prototype, 'propertyIndex', { get() { return this.owner.kids.indexOf(this) + 1; } });
 Node.prototype.canAddToMotionGraphicsTemplate = function () { return true; };
 Node.prototype.addToMotionGraphicsTemplateAs = function (comp, label) { rec.exposed.push({ label, prop: this }); return true; };
 Object.defineProperty(Node.prototype, 'expression', { set(e) { this.expr = e; rec.expressions.push({ where: this.where(), prop: this, expr: e }); }, get() { return this.expr || ''; } });
