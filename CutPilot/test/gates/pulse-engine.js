@@ -1,6 +1,6 @@
 /*
  * pulse-engine.js — editable captions ride Pulse's own engine
- * (mogrts/Pulse_Caption_r1.mogrt, built in After Effects by
+ * (mogrts/Pulse_Caption_r2.mogrt, built in After Effects by
  * tools/ae/Pulse-Caption-Builder.jsx), and each style lands on it as it looks.
  *
  * Owner report: an editable caption did not look like the same style as an
@@ -25,7 +25,7 @@ const L = require('./overlay-lib.cjs');
 let failed = 0;
 const ok = (m) => console.log('  ✓ ' + m);
 const bad = (m, d) => { failed++; console.log('  ✗ ' + m + (d ? '\n      ' + d : '')); };
-const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r1.mogrt');
+const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r2.mogrt');
 
 (async () => {
   console.log('🎬 Pulse Caption: editable captions on Pulse\'s own engine');
@@ -49,11 +49,16 @@ const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r1.mogrt
     const D = window.CP_DEBUG, C = window.CPCaptions, out = {};
     const T = id => C.TEMPLATES.find(t => t.id === id);
     // B
-    D.setBundledMogrts([{ path: '/ext/mogrts/Flux_Halo2_r3.mogrt', name: 'Flux Halo' }, { path: '/ext/mogrts/Pulse_Caption_r1.mogrt', name: 'Pulse Caption' }]);
+    D.setBundledMogrts([{ path: '/ext/mogrts/Flux_Halo2_r3.mogrt', name: 'Flux Halo' }, { path: '/ext/mogrts/Pulse_Caption_r2.mogrt', name: 'Pulse Caption' }]);
     out.picked = (D.bundledBackbone({}) || {}).path;
     // C
     const sent = id => { const s = D.mapPresetToPulse(T(id), PROPS) || []; const o = {}; s.forEach(x => { o[PROPS[x.i].name] = x.value; }); return o; };
     out.green = sent('pack-green-word-box'); out.maroon = sent('pack-maroon-label'); out.plain = sent('twin-plain-subtitle');
+    out.pastel = sent('cap-pastel'); out.wide = sent('tr-luxe-wide');
+    // size: the image caption's, on a vertical reel and a landscape podcast
+    out.sizeV = D.pulseSizeScale(T('pack-maroon-label'), { width: 1080, height: 1920 });
+    out.sizeH = D.pulseSizeScale(T('pack-maroon-label'), { width: 1920, height: 1080 });
+    out.sizeSent = (D.mapPresetToPulse(Object.assign({}, T('pack-maroon-label'), { sizeScale: out.sizeV }), PROPS) || []).filter(x => PROPS[x.i].name === 'Size').map(x => x.value)[0];
     out.popEntrance = sent(C.TEMPLATES.find(t => /pop|bounce|zoom/.test(t.anim || '') && !t.entrance).id).Animation;
     // D. image vs editable preview, every style, word 2 being said
     const text = 'Aaj paise ki baat karenge', ws = text.split(' ');
@@ -78,7 +83,7 @@ const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r1.mogrt
   }, PROPS, root);
   await P.close();
 
-  (/Pulse_Caption_r1\.mogrt$/.test(r.picked || '') ? ok : bad)('B. Pulse picks its own engine over Flux (' + r.picked + ')');
+  (/Pulse_Caption_r2\.mogrt$/.test(r.picked || '') ? ok : bad)('B. Pulse picks its own engine over Flux (' + r.picked + ')');
 
   const G = r.green, M = r.maroon;
   (G.Box === 3 && /^#04420E$/i.test(G['Box Color']) && /^#FFFFFF$/i.test(G['Spoken Word Color']) && G['Outline Width'] > 5 && G['Outline Width'] < 7.5 ? ok : bad)(
@@ -87,6 +92,11 @@ const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r1.mogrt
   (M.Box === 2 && /^#7A3034$/i.test(M['Box Color']) && M['Box Opacity'] === 88 && M['Box Roundness'] === 0 && grow ? ok : bad)(
     'C. Maroon Label: a square maroon line box, the spoken word grows (' + JSON.stringify(M) + ')');
   (r.plain.Box === 2 && /^#FFFFFF$/i.test(r.plain['Box Color']) && /^#000000$/i.test(r.plain['Text Color']) && r.plain['Outline Width'] === 0 ? ok : bad)('C. Plain Subtitle: black words on its white line box, no outline (' + JSON.stringify(r.plain) + ')');
+  (r.pastel.Box === 4 && /^#FFFFFF$/i.test(r.pastel['Box Color']) && /^#FF5DA2$/i.test(r.pastel['Word Box Color']) ? ok : bad)(
+    'C. Pastel: its white line box AND the pink box behind the spoken word (' + JSON.stringify(r.pastel) + ')');
+  (r.wide['Letter Spacing'] > 0 ? ok : bad)('C. a wide-spaced style keeps its letter spacing (' + r.wide['Letter Spacing'] + ')');
+  (Math.abs(r.sizeV - 54 / 75) < 0.02 && r.sizeSent === 72 && Math.abs(r.sizeH - r.sizeV) < 0.05 ? ok : bad)(
+    'C. the image caption\'s size: 54 px of the engine\'s 75 (Size ' + r.sizeSent + '), the same share on a landscape podcast (' + r.sizeV.toFixed(2) + ' / ' + r.sizeH.toFixed(2) + ')');
   (r.popEntrance === 2 ? ok : bad)('C. a style that pops in pops in (Animation ' + r.popEntrance + ')');
 
   // D. measure

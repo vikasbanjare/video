@@ -737,6 +737,15 @@
       return true;
     } catch (e2) { return false; }
   }
+  /* Show a folder in Finder / Explorer. */
+  function openFolder(dir) {
+    try {
+      var cp = nodeReq('child_process'), os = nodeReq('os');
+      var p = os.platform() === 'win32' ? cp.spawn('explorer', [dir]) : cp.spawn('open', [dir]);
+      if (p && p.on) p.on('error', function () {});
+      return true;
+    } catch (e) { return false; }
+  }
   function downloadModel(name, target, expectBytes) {
     var cp, fs, path; try { cp = nodeReq('child_process'); fs = nodeReq('fs'); path = nodeReq('path'); } catch (e) { return Promise.reject(e); }
     try { fs.mkdirSync(path.dirname(target), { recursive: true }); } catch (e) {}
@@ -5146,6 +5155,174 @@
   /* opts.auditOnly: check every style without touching the gallery — renders
      go to a temp folder and are deleted after the scan, and the cards keep
      Pulse's own drawn previews (only 🎥 Exact previews switches them). */
+  /* 🎨 Test caption styles — EVERY style, image caption vs the editable
+     caption as REAL Premiere draws it ("there is a chance the image gives the
+     real look and the editable one is wrong — compare them"). Premiere draws
+     each style on a throwaway sequence (CP_renderStylePreviews: the owner's
+     timeline is never touched); Pulse draws the same words at the same
+     moment as an image; both are lined up on their own caption and scored
+     in 8 px blocks. Sheets + a worst-first report go to Desktop/Pulse Caption
+     Test, and the folder opens. */
+  var _styleTestBusy = false;
+  var STYLE_TEST_SECONDS = 2.5, STYLE_TEST_AT = 0.55;   // Premiere's frame: 55% in (CP_renderStylePreviews)
+  function styleTestText(t) {
+    var n = Math.max(1, Math.min(4, parseInt(t.wordsPerCue, 10) || 4));
+    var s = ['Aaj', 'paise', 'ki', 'baat'].slice(0, n).join(' ');
+    return t.uppercase ? s.toUpperCase() : s;
+  }
+  /* The caption's own box in a frame: transparent → alpha; Premiere's
+     export → anything brighter than its black background. */
+  function captionBox(data, W, H, onBlack) {
+    var x0 = W, y0 = H, x1 = -1, y1 = -1;
+    for (var y = 0; y < H; y += 2) for (var x = 0; x < W; x += 2) {
+      var i = (y * W + x) * 4;
+      var on = onBlack ? (data[i] + data[i + 1] + data[i + 2] > 60) : (data[i + 3] > 24);
+      if (on) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    }
+    return x1 < 0 ? null : { x: x0, y: y0, w: x1 - x0 + 2, h: y1 - y0 + 2 };
+  }
+  function styleTestPixels(img, onBlack) {
+    var c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+    var g = c.getContext('2d');
+    g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height);   // both on black, as Premiere exports
+    g.drawImage(img, 0, 0);
+    var d = g.getImageData(0, 0, c.width, c.height);
+    var raw = null;
+    if (!onBlack) { var c2 = document.createElement('canvas'); c2.width = img.width; c2.height = img.height; c2.getContext('2d').drawImage(img, 0, 0); raw = c2.getContext('2d').getImageData(0, 0, c.width, c.height).data; }
+    return { canvas: c, data: d.data, box: captionBox(onBlack ? d.data : raw, c.width, c.height, onBlack), W: c.width, H: c.height };
+  }
+  /* 0 = the same look … 100 = nothing alike: the two captions centred on each
+     other, compared in 8 px blocks over the larger of the two boxes. */
+  function styleTestScore(a, b) {
+    if (!a.box || !b.box) return 100;
+    var w = Math.max(a.box.w, b.box.w) + 16, h = Math.max(a.box.h, b.box.h) + 16, B = 8, d = 0, n = 0;
+    var ax = a.box.x + a.box.w / 2 - w / 2, ay = a.box.y + a.box.h / 2 - h / 2;
+    var bx = b.box.x + b.box.w / 2 - w / 2, by = b.box.y + b.box.h / 2 - h / 2;
+    function px(o, x, y) { x = Math.round(x); y = Math.round(y); if (x < 0 || y < 0 || x >= o.W || y >= o.H) return [0, 0, 0]; var i = (y * o.W + x) * 4; return [o.data[i], o.data[i + 1], o.data[i + 2]]; }
+    for (var by0 = 0; by0 < h; by0 += B) for (var bx0 = 0; bx0 < w; bx0 += B) {
+      var sa = [0, 0, 0], sb = [0, 0, 0], k = 0;
+      for (var yy = 0; yy < B; yy += 2) for (var xx = 0; xx < B; xx += 2) {
+        var p1 = px(a, ax + bx0 + xx, ay + by0 + yy), p2 = px(b, bx + bx0 + xx, by + by0 + yy);
+        for (var c = 0; c < 3; c++) { sa[c] += p1[c]; sb[c] += p2[c]; } k++;
+      }
+      if (sa[0] + sa[1] + sa[2] + sb[0] + sb[1] + sb[2] < 30 * k) continue;   // empty in both
+      d += (Math.abs(sa[0] - sb[0]) + Math.abs(sa[1] - sb[1]) + Math.abs(sa[2] - sb[2])) / (3 * 255 * k); n++;
+    }
+    return n ? Math.round(1000 * d / n) / 10 : 0;
+  }
+  function loadImageFile(p) {
+    return new Promise(function (res) { loadRenderedFrame(p, function (im) { res(im || null); }); });
+  }
+  function compareCaptionStyles() {
+    if (_styleTestBusy) return toast('Already testing the caption styles — hang tight…');
+    if (!CPBridge.isCEP()) return toast('This test needs Premiere (open Pulse inside Premiere).', true);
+    var bb = bundledBackbone(currentPreset() || {});
+    if (!bb) { try { loadBundledMogrts(); } catch (e) {} bb = bundledBackbone(currentPreset() || {}); }
+    if (!bb) return toast('The caption engine template is missing — reinstall Pulse.', true);
+    var fs, pathMod, os;
+    try { fs = nodeReq('fs'); pathMod = nodeReq('path'); os = nodeReq('os'); } catch (e2) { return toast('Node unavailable in this panel.', true); }
+    var stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 16);
+    var outDir = pathMod.join(os.homedir(), 'Desktop', 'Pulse Caption Test', stamp);
+    var premDir = pathMod.join(os.tmpdir(), 'pulse-style-test-' + Date.now());
+    try { fs.mkdirSync(outDir, { recursive: true }); fs.mkdirSync(premDir, { recursive: true }); } catch (eMk) {}
+    var styles = CPCaptions.TEMPLATES.filter(function (t) { return t && t.id && !t.mogrt; });
+    var env = { width: 1080, height: 1920 }, pulse = isPulseEngine(bb.path);
+    _styleTestBusy = true;
+    var btn = $('btn-style-test'); if (btn) btn.disabled = true;
+    capProgress('🎨 Reading the caption engine…');
+    var rows = [];
+    CPBridge.callHost('CP_inspectMogrt', { path: bb.path }).then(function (r) {
+      var liveProps = (r && r.props) || [];
+      var payload = styles.map(function (t) {
+        var text = styleTestText(t), t2 = {}, k;
+        for (k in t) if (t.hasOwnProperty(k)) t2[k] = t[k];
+        t2.sizeScale = pulse ? pulseSizeScale(t, env) : 1;
+        var rf = resolvedEditorFont(t, text);
+        return { id: t.id, params: mapPresetForEngine(bb.path, t2, liveProps), text: text,
+                 textStyle: rf ? { font: rf.font, bold: rf.bold, sizeScale: (pulse && t2.sizeScale > 1.02) ? t2.sizeScale : 1 } : null };
+      });
+      var chunks = [], done = 0, failed = {};
+      for (var i = 0; i < payload.length; i += 10) chunks.push(payload.slice(i, i + 10));
+      return chunks.reduce(function (chain, ch) {
+        return chain.then(function () {
+          capProgress('🎨 Premiere is drawing each style as an editable caption… ' + done + '/' + payload.length, 15000);
+          return CPBridge.callHost('CP_renderStylePreviews', { mogrtPath: bb.path, outDir: premDir, sep: pathMod.sep,
+            seconds: STYLE_TEST_SECONDS, at: STYLE_TEST_SECONDS * STYLE_TEST_AT, styles: ch }).then(function (rr) {
+            done += ch.length; (rr && rr.failed || []).forEach(function (id) { failed[id] = 1; });
+          }, function () { done += ch.length; ch.forEach(function (c) { failed[c.id] = 1; }); });
+        });
+      }, Promise.resolve()).then(function () { return { payload: payload, failed: failed }; });
+    }).then(function (job) {
+      // the image caption of each style, the same words at the same moment
+      return job.payload.reduce(function (chain, pl, idx) {
+        return chain.then(function () {
+          capProgress('🎨 Comparing ' + (idx + 1) + '/' + job.payload.length + ' — ' + pl.id, 8000);
+          var t = styles[idx], rs = renderableStyle(t), ws = pl.text.split(' '), step = STYLE_TEST_SECONDS / ws.length;
+          var words = ws.map(function (w, k) { return { start: k * step, end: (k + 1) * step - 0.02, text: w }; });
+          var frames = CPCaptions.buildCaptionFrames([{ start: 0, end: STYLE_TEST_SECONDS, text: pl.text, words: words }],
+            { anim: rs.anim, wordsPerCue: t.wordsPerCue, uppercase: t.uppercase, preset: rs, wordCues: words });
+          var at = STYLE_TEST_SECONDS * STYLE_TEST_AT;
+          return CPRender.renderFrames(frames, { width: 1080, height: 1920, preset: rs, overrides: {}, outDir: pathMod.join(premDir, 'img-' + t.id) }).then(function (items) {
+            var it = null;
+            for (var f = 0; f < items.length; f++) if (at >= items[f].start && at < items[f].end) { it = items[f]; break; }
+            if (!it) it = items[items.length - 1];
+            return Promise.all([loadImageFile(it ? it.path : ''), job.failed[pl.id] ? null : loadImageFile(pathMod.join(premDir, pl.id + '.png'))]);
+          }).then(function (ims) {
+            var a = ims[0] ? styleTestPixels(ims[0], false) : null, b = ims[1] ? styleTestPixels(ims[1], true) : null;
+            rows.push({ id: t.id, name: t.name || t.id, img: a, prem: b,
+                        score: (a && b) ? styleTestScore(a, b) : 100,
+                        why: !b ? 'Premiere did not draw it' : (!b.box ? 'Premiere drew no caption' : (!a || !a.box ? 'no image caption' : '')) });
+          }, function (e) { rows.push({ id: t.id, name: t.name || t.id, score: 100, why: 'test error: ' + (e && e.message) }); });
+        });
+      }, Promise.resolve());
+    }).then(function () {
+      capProgress('🎨 Writing the report…');
+      rows.sort(function (x, y) { return y.score - x.score; });
+      var per = 8, sheets = 0;
+      for (var s0 = 0; s0 < rows.length; s0 += per) {
+        var part = rows.slice(s0, s0 + per), RW = 1400, RH = 190;
+        var c = document.createElement('canvas'); c.width = RW; c.height = part.length * RH + 50;
+        var g = c.getContext('2d');
+        g.fillStyle = '#16181c'; g.fillRect(0, 0, c.width, c.height);
+        g.fillStyle = '#cfd6df'; g.font = '600 22px -apple-system, Helvetica, Arial, sans-serif';
+        g.fillText('Left: image caption   ·   Right: editable caption as Premiere draws it   ·   0% = same look', 20, 32);
+        part.forEach(function (row, k) {
+          var y = 50 + k * RH;
+          g.fillStyle = '#2a2f37'; g.fillRect(0, y, RW, RH - 6);
+          g.fillStyle = row.score >= 15 ? '#ff8a80' : (row.score >= 7 ? '#ffd27a' : '#9be89b');
+          g.fillText(row.name + '  —  ' + row.score + '%' + (row.why ? '  (' + row.why + ')' : ''), 16, y + 28);
+          [row.img, row.prem].forEach(function (o, side) {
+            if (!o || !o.box) return;
+            var bw = Math.max(row.img && row.img.box ? row.img.box.w : 0, row.prem && row.prem.box ? row.prem.box.w : 0) + 30;
+            var bh = Math.max(row.img && row.img.box ? row.img.box.h : 0, row.prem && row.prem.box ? row.prem.box.h : 0) + 30;
+            var sc = Math.min(660 / bw, 140 / bh, 1.4);
+            var cx = o.box.x + o.box.w / 2, cy = o.box.y + o.box.h / 2;
+            g.fillStyle = '#000'; g.fillRect(16 + side * 690, y + 40, 670, 140);
+            g.drawImage(o.canvas, cx - bw / 2, cy - bh / 2, bw, bh, 16 + side * 690 + (670 - bw * sc) / 2, y + 40 + (140 - bh * sc) / 2, bw * sc, bh * sc);
+          });
+        });
+        sheets++;
+        var b64 = c.toDataURL('image/png').split(',')[1];
+        fs.writeFileSync(pathMod.join(outDir, 'sheet-' + (sheets < 10 ? '0' : '') + sheets + '.png'), nodeReq('buffer').Buffer.from(b64, 'base64'));
+      }
+      var close = rows.filter(function (x) { return x.score < 7; }).length;
+      var txt = ['Pulse caption style test — ' + stamp, 'Engine: ' + (bb.name || bb.path), 'Styles: ' + rows.length + ' · close (<7%): ' + close +
+        ' · far (>=15%): ' + rows.filter(function (x) { return x.score >= 15; }).length, '', 'Worst first (difference %):']
+        .concat(rows.map(function (x) { return (x.score + '%').padStart(7) + '  ' + x.id + (x.why ? '  — ' + x.why : ''); })).join('\n');
+      fs.writeFileSync(pathMod.join(outDir, 'report.txt'), txt);
+      try { diag('style-test', txt.split('\n').slice(0, 24).join(' | ')); } catch (eD) {}
+      capProgress(null);
+      toast('🎨 Tested ' + rows.length + ' caption styles in Premiere: ' + close + ' look the same as the image caption. Sheets + report are in Desktop › Pulse Caption Test — send them over.');
+      openFolder(outDir);
+    }).catch(function (e) {
+      capProgress(null);
+      toast('The style test stopped: ' + (e && e.message ? e.message : e), true);
+    }).then(function () {
+      _styleTestBusy = false; if (btn) btn.disabled = false;
+      try { fs.rmSync(premDir, { recursive: true, force: true }); } catch (eRm) {}
+    });
+  }
+
   function renderTruePreviews(opts) {
     var audit = !!(opts && opts.auditOnly);
     if (_truePrevBusy) return toast('Already rendering — hang tight…');
@@ -5547,6 +5724,7 @@
       lastAct = { el: el, t: now };
     }, true);
     if ($('btn-selftest')) $('btn-selftest').addEventListener('click', runSelfTest);
+    if ($('btn-style-test')) $('btn-style-test').addEventListener('click', compareCaptionStyles);
     // 📄 SCRIPT FIX — the creator's own script corrects every misheard word
     // while the transcript keeps the timing that makes captions land on voice.
     if ($('btn-script-load')) $('btn-script-load').addEventListener('click', function () {
@@ -13517,6 +13695,19 @@
      so it reaches the engine's authored 75 px face as value × 75 / fontSize.
      Returns null when the file is not this engine. */
   var PULSE_ENGINE_PX = 75;
+  /* The size an editable caption on Pulse's engine must take to match the
+     image caption: the image draws the style at CPRender.styleForFrame's size
+     for the sequence; the engine's 75 px face is fitted short side to short
+     side. Most styles came out ~40% bigger as editable captions (54 px image,
+     75 px engine on a 1080×1920 reel). The style's own Size slider is in
+     preset.fontSize already (styledPreset). */
+  function pulseSizeScale(preset, env) {
+    var W = (env && env.width) || 1080, H = (env && env.height) || 1920;
+    var img = 0;
+    try { img = CPRender.styleForFrame(preset, H, {}, W).size; } catch (e) { img = 0; }
+    var eng = PULSE_ENGINE_PX * Math.min(W, H) / 1080;
+    return (img > 0 && eng > 0) ? Math.max(0.3, Math.min(2.5, img / eng)) : 1;
+  }
   function isPulseEngine(path) { return /pulse[ _]caption/i.test(String(path || '').split(/[\\/]/).pop()); }
   function pulseContrast(hex) {
     var m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '')); if (!m) return '#FFFFFF';
@@ -13571,6 +13762,8 @@
     var out = [], L = pulseLook(preset);
     function color(p, hex) { if (p && hex) out.push({ i: p.i, kind: (p.kind === 'colorint' ? 'colorint' : 'color'), value: hex }); }
     function num(p, v) { if (p && v != null && isFinite(v)) out.push({ i: p.i, kind: 'number', value: v }); }
+    // shrinking rides the Size control (0–100); growing past 100 rides the font size write
+    num(P('size'), Math.round(Math.min(100, 100 * (preset.sizeScale > 0 ? preset.sizeScale : 1))));
     color(P('text color'), L.textColor);
     color(P('spoken word color'), L.spokenColor);
     // the first build called it "Spoken Word Size" (100 = same); now "Grow" (0 = same)
@@ -13614,6 +13807,7 @@
       var basePx = basePreset.fontSize || wantPx;
       if (wantPx > 0 && basePx > 0) sizeScale = Math.max(0.5, Math.min(2.5, wantPx / basePx));
     } catch (eSz) {}
+    if (isPulseEngine(bb.path)) sizeScale = pulseSizeScale(preset, state.env);
     preset.sizeScale = sizeScale;
     preset.seqLandscape = !!(state.env && state.env.width > state.env.height);
     var sample = 'Make every word count';
@@ -13624,7 +13818,7 @@
     if (preset.uppercase || cchk('c-upper')) sample = sample.toUpperCase();
     var rfPrev = resolvedEditorFont(preset, sample);   // PostScript name — same resolve as Apply, so preview face == output face
     fontInstallWarn(rfPrev && rfPrev.family ? rfPrev.family : preset.font);
-    var textStyle = rfPrev ? { font: rfPrev.font, bold: rfPrev.bold, sizeScale: 1 } : null;
+    var textStyle = rfPrev ? { font: rfPrev.font, bold: rfPrev.bold, sizeScale: (isPulseEngine(bb.path) && sizeScale > 1.02) ? sizeScale : 1 } : null;
     if (btn) btn.disabled = true;
     toast('Dropping a real preview at the playhead…');
     CPBridge.callHost('CP_inspectMogrt', { path: bb.path }).then(function (r) {
@@ -13814,6 +14008,8 @@
       var basePx = basePreset.fontSize || wantPx;
       if (wantPx > 0 && basePx > 0) sizeScale = Math.max(0.5, Math.min(2.5, wantPx / basePx));
     } catch (eSz) {}
+    var pulseBB = isPulseEngine(bb.path);
+    if (pulseBB) sizeScale = pulseSizeScale(preset, state.env);   // the image caption's size
     // The Flux engine: colours/box/size ride the named params (the user's own
     // diagnostics show 100% of them applying; size ONLY via Text Scale —
     // sizeScale is pinned to 1 here so the rich path can never double-scale).
@@ -13836,7 +14032,8 @@
                       fill: preset.fill }
                   : { font: rf && rf.font, caps: caps,
                       bold: rf ? rf.bold : (preset.weight || 800) >= 600, fill: preset.fill,
-                      sizeScale: (Math.abs(sizeScale - 1) > 0.02 ? sizeScale : 1) };
+                      // Pulse's engine shrinks by its Size control; only growing writes the font size
+                      sizeScale: pulseBB ? (sizeScale > 1.02 ? sizeScale : 1) : (Math.abs(sizeScale - 1) > 0.02 ? sizeScale : 1) };
     preset.sizeScale = sizeScale;   // the mapper scales the backbone's text-scale control by this
     // Entrance = real Motion keyframes on each caption clip (None default).
     // Pulse's own engine plays the entrance itself (its Animation control),
@@ -19447,6 +19644,7 @@
       pulseCarryStyle: pulseCarryStyle,
       mapPresetToPulse: mapPresetToPulse,
       pulseLook: pulseLook,
+      pulseSizeScale: pulseSizeScale,
       setBundledMogrts: function (list) { state.bundledMogrts = list || []; },
       textCues: textCues,
       imageLooksBlank: imageLooksBlank,
