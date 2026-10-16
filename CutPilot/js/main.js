@@ -13404,6 +13404,14 @@
     // highlight sweep reaches it, so text appears exactly when it's said.
     // Otherwise 100: never inherit a dimmed default.
     num(P('text opacity'), preset.revealSpoken ? 0 : 100);
+    // The engine's OWN entrance off ("None", the 9th choice): authored as
+    // "Word by Word (B-T)", it slid every caption's words up one by one on
+    // top of the style's own look — Maroon Label's still label animated
+    // differently from the Pulse-rendered one and from the preview. The
+    // style's entrance plays as the clip's Motion keyframes
+    // (entranceForPreset), and the word sweep is its own control; with
+    // every animator gate on its "else 0" branch the whole line shows.
+    num(P('animation type'), 9);
 
     // ---- box ----------------------------------------------------------------
     var hasBox = !!preset.boxColor;

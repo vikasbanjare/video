@@ -2677,6 +2677,14 @@ const MUTANTS = [
     repl: '          var opened = false;',
     gate: 'CutPilot/test/gates/model-download.js',
     why: 'a blocked download leaves the owner stuck'
+  },
+  {
+    name: 'v33-editable-engine-slide',
+    file: 'CutPilot/js/main.js',
+    find: "    num(P('animation type'), 9);",
+    repl: "",
+    gate: 'CutPilot/test/gates/gallery-from-my-videos.js',
+    why: 'editable captions slide up word by word, unlike the style'
   }
 ];
 

@@ -15,7 +15,10 @@
  *   C. editable: Green Word Box sends white words, a bright-green spoken word
  *      and a dark halo (the engine cannot box one word); Maroon Label sends
  *      its maroon square box and a dark shadow;
- *   D. a highlight colour the owner picks wins over the style's editable look.
+ *   D. a highlight colour the owner picks wins over the style's editable look;
+ *   E. editable: the engine's own entrance ("Word by Word (B-T)" as authored)
+ *      is switched to None, so the words don't slide up on every caption —
+ *      the style's own entrance (none for these two) is what plays.
  */
 'use strict';
 const fs = require('fs');
@@ -27,7 +30,7 @@ let failed = 0;
 const ok = (m) => console.log('  ✓ ' + m);
 const bad = (m) => { failed++; console.log('  ✗ ' + m); };
 const FLUX = ['Text Color', 'Highlighted Word Color 1', 'Highlighted Word Color 2', 'Text Opacity', 'BG Color', 'BG Opacity',
-  'BG Roundness', 'Text Scale', 'BG Box Padding', 'Shadow On/Off', 'Shadow Color', 'Shadow Opacity', 'Shadow Distance', 'Shadow Softness']
+  'BG Roundness', 'Text Scale', 'BG Box Padding', 'Shadow On/Off', 'Shadow Color', 'Shadow Opacity', 'Shadow Distance', 'Shadow Softness', 'Animation Type']
   .map((name, i) => ({ i, name, kind: /color/i.test(name) ? 'color' : (/on\/off/i.test(name) ? 'bool' : 'number'), num: 100,
                        point: /padding/i.test(name) ? { x: 20, y: 10 } : null }));
 
@@ -121,6 +124,10 @@ const FLUX = ['Text Color', 'Highlighted Word Color 1', 'Highlighted Word Color 
     'C. editable Maroon Label: a square maroon box (' + S('pack-maroon-label', 'BG Color') + ', ' + S('pack-maroon-label', 'BG Opacity') + '%) and a dark shadow (' + S('pack-maroon-label', 'Shadow Opacity') + '%)');
   // D
   (/^#FF00AA$/i.test(r.picked || '') ? ok : bad)('D. a highlight the owner picks wins over the style\'s editable look (' + r.picked + ')');
+
+  // E
+  (S('pack-green-word-box', 'Animation Type') === 9 && S('pack-maroon-label', 'Animation Type') === 9 ? ok : bad)(
+    'E. editable: the engine\'s own word-slide entrance is off (Animation Type ' + S('pack-maroon-label', 'Animation Type') + ' = None), so the label does not animate differently');
 
   try { fs.rmSync(root, { recursive: true, force: true }); } catch (e) {}
   if (failed) { console.log('FROM MY VIDEOS: ' + failed + ' failed'); process.exit(1); }
