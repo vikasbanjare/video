@@ -194,6 +194,8 @@
     function measure(name, body) {
       var m = comp.layers.addText('M');
       m.name = name;
+      var mt = m.property('ADBE Text Properties').property('ADBE Text Document');
+      var md = mt.value; md.font = 'Arial-BoldMT'; md.fontSize = FONT_PX; mt.setValue(md);
       m.guideLayer = true;
       m.parent = cap;
       m.property('ADBE Transform Group').property('ADBE Position').setValue([0, 0]);
@@ -270,11 +272,20 @@
     for (var i = 0; i < order.length; i++) expose(ctl.effect(order[i]).property(1), order[i]);
 
     // ---- save the AE project (to change it later) and the template ---------
+    // Saving the project leaves every reference stale ("Object is invalid"
+    // on the owner's Mac): find the comp again by name after each save.
+    function theComp() {
+      for (var k = 1; k <= app.project.numItems; k++) {
+        var it = app.project.item(k);
+        if (it instanceof CompItem && it.name === NAME) return it;
+      }
+      return null;
+    }
     var dir = Folder.desktop.fsName;
-    app.project.save(new File(dir + '/Pulse_Caption.aep'));
     var out = dir + '/Pulse_Caption.mogrt';
     var okExport = comp.exportAsMotionGraphicsTemplate(true, out);
-    comp.openInViewer();
+    try { app.project.save(new File(dir + '/Pulse_Caption.aep')); } catch (eSave) {}
+    try { var shown = theComp(); if (shown) shown.openInViewer(); } catch (eView) {}
     if (okExport === false || !new File(out).exists) {
       fail('The template was built, but After Effects did not save Pulse_Caption.mogrt.\n\n' +
            'Open Essential Graphics (Window → Essential Graphics) and click "Export Motion Graphics Template…", ' +

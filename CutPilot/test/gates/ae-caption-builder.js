@@ -73,19 +73,25 @@ const comp = {
   layers: { list: [], add(l) { this.list.unshift(l); return l; },
     addNull() { return this.add(new Layer('Null')); }, addText(t) { const l = new Layer('Text'); l.text0 = t; return this.add(l); }, addShape() { return this.add(new Layer('Shape')); } },
   markerProperty: { setValueAtTime(t, mv) { rec.markers.push({ t, mv }); } },
-  exportAsMotionGraphicsTemplate(over, p) { rec.exported.push(p); return true; },
-  openInViewer() {}
+  exportAsMotionGraphicsTemplate(over, p) { if (this.stale) throw new Error('Object is invalid'); rec.exported.push(p); return true; },
+  openInViewer() { if (this.stale) throw new Error('Object is invalid'); }
 };
 const sandbox = {
   app: { version: '24.1.0', beginUndoGroup() {}, endUndoGroup() {}, newProject() {},
          project: { items: { addComp(n, w, h, pa, d, f) { Object.assign(comp, { name: n, width: w, height: h, duration: d, frameRate: f }); return comp; } },
-                    save(f) { rec.saved.push(f.path); } } },
+                    // a save leaves the comp reference stale, as on the owner's Mac
+                    save(f) { rec.saved.push(f.path); comp.stale = true; },
+                    get numItems() { return 1; }, item(k) { return k === 1 ? freshComp : null; } } },
+  CompItem: function () {},
   ParagraphJustification: { CENTER_JUSTIFY: 'center' },
   MarkerValue: function (c) { this.comment = c; },
   File: function (p) { this.path = p; this.fsName = p; this.exists = true; },
   Folder: { desktop: { fsName: '/Users/owner/Desktop' } },
   alert: (m) => rec.alerts.push(String(m))
 };
+
+const freshComp = Object.create(sandbox.CompItem.prototype);
+Object.assign(freshComp, { name: 'Pulse Caption', openInViewer() { rec.viewed = true; } });
 
 // A. ES3 + runs
 if (acorn) {
