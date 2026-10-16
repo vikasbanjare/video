@@ -2717,6 +2717,30 @@ const MUTANTS = [
     repl: "      state.engineMogrts = list.filter(function (m) { return !!m.engine && !m.hidden; }).map(function (m) {",
     gate: 'CutPilot/test/gates/style-test-button.js',
     why: 'editable captions fall back to Flux (the first owner run)'
+  },
+  {
+    name: 'v36-menu-one-based',
+    file: 'CutPilot/js/main.js',
+    find: "    num(P('box'), ((L.box === 4 && !both) ? 3 : L.box) - 1);",
+    repl: "    num(P('box'), ((L.box === 4 && !both) ? 3 : L.box));",
+    gate: 'CutPilot/test/gates/pulse-engine.js',
+    why: 'every box lands one menu item early in Premiere (no line box at all)'
+  },
+  {
+    name: 'v36-saved-render-image-mode',
+    file: 'CutPilot/js/main.js',
+    find: "    if (_capOut !== 'editable') return null;",
+    repl: "",
+    gate: 'CutPilot/test/gates/previews-engine.js',
+    why: 'an image-caption card shows a Premiere render of the editable caption'
+  },
+  {
+    name: 'v36-saved-render-any-engine',
+    file: 'CutPilot/js/main.js',
+    find: "      if (home) dirs.push(path.join(home, 'Documents', 'Pulse', 'style-previews', ek));",
+    repl: "      if (home) { dirs.push(path.join(home, 'Documents', 'Pulse', 'style-previews')); dirs.push(path.join(home, 'Documents', 'Pulse', 'style-previews', ek)); }",
+    gate: 'CutPilot/test/gates/previews-engine.js',
+    why: 'cards keep showing renders the old Flux engine made'
   }
 ];
 

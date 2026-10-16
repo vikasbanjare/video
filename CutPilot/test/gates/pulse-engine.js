@@ -1,6 +1,6 @@
 /*
  * pulse-engine.js — editable captions ride Pulse's own engine
- * (mogrts/Pulse_Caption_r2.mogrt, built in After Effects by
+ * (mogrts/Pulse_Caption_r3.mogrt, built in After Effects by
  * tools/ae/Pulse-Caption-Builder.jsx), and each style lands on it as it looks.
  *
  * Owner report: an editable caption did not look like the same style as an
@@ -25,7 +25,7 @@ const L = require('./overlay-lib.cjs');
 let failed = 0;
 const ok = (m) => console.log('  ✓ ' + m);
 const bad = (m, d) => { failed++; console.log('  ✗ ' + m + (d ? '\n      ' + d : '')); };
-const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r2.mogrt');
+const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r3.mogrt');
 
 (async () => {
   console.log('🎬 Pulse Caption: editable captions on Pulse\'s own engine');
@@ -49,7 +49,7 @@ const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r2.mogrt
     const D = window.CP_DEBUG, C = window.CPCaptions, out = {};
     const T = id => C.TEMPLATES.find(t => t.id === id);
     // B
-    D.setBundledMogrts([{ path: '/ext/mogrts/Flux_Halo2_r3.mogrt', name: 'Flux Halo' }, { path: '/ext/mogrts/Pulse_Caption_r2.mogrt', name: 'Pulse Caption' }]);
+    D.setBundledMogrts([{ path: '/ext/mogrts/Flux_Halo2_r3.mogrt', name: 'Flux Halo' }, { path: '/ext/mogrts/Pulse_Caption_r3.mogrt', name: 'Pulse Caption' }]);
     out.picked = (D.bundledBackbone({}) || {}).path;
     // C
     const sent = id => { const s = D.mapPresetToPulse(T(id), PROPS) || []; const o = {}; s.forEach(x => { o[PROPS[x.i].name] = x.value; }); return o; };
@@ -83,7 +83,7 @@ const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r2.mogrt
   }, PROPS, root);
   await P.close();
 
-  (/Pulse_Caption_r2\.mogrt$/.test(r.picked || '') ? ok : bad)('B. Pulse picks its own engine over Flux (' + r.picked + ')');
+  (/Pulse_Caption_r3\.mogrt$/.test(r.picked || '') ? ok : bad)('B. Pulse picks its own engine over Flux (' + r.picked + ')');
 
   const G = r.green, M = r.maroon;
   (G.Box === 2 && /^#04420E$/i.test(G['Box Color']) && /^#FFFFFF$/i.test(G['Spoken Word Color']) && G['Outline Width'] > 5 && G['Outline Width'] < 7.5 ? ok : bad)(

@@ -3929,11 +3929,18 @@
       if (u.charAt(0) !== '/') u = '/' + u;
       return 'file://' + encodeURI(u).replace(/#/g, '%23').replace(/\?/g, '%3F');
     }
+    // Each engine's renders live in a folder of their own: the cards kept
+    // showing renders Premiere made with Flux after editable captions moved
+    // to Pulse's own engine ("the preview shows one caption, clicking gives
+    // another"). Renders saved before this (loose files) are never used.
+    var ek = previewEngineKey();
+    if (!ek) { _stylePrev = null; return; }   // templates not loaded yet: look again later
     var dirs = [];
-    try { dirs.push(path.join(CPBridge.getExtensionPath(), 'mogrts', 'style-previews')); } catch (e1) {}
+    try { dirs.push(path.join(CPBridge.getExtensionPath(), 'mogrts', 'style-previews', ek)); } catch (e1) {}
     try {
-      var home = process.env.HOME || process.env.USERPROFILE;
-      if (home) dirs.push(path.join(home, 'Documents', 'Pulse', 'style-previews'));
+      // the same home folder 🎥 Exact previews saves into (os.homedir)
+      var home = nodeReq('os').homedir() || process.env.HOME || process.env.USERPROFILE;
+      if (home) dirs.push(path.join(home, 'Documents', 'Pulse', 'style-previews', ek));
     } catch (e2) {}
     var count = 0;
     for (var d = 0; d < dirs.length; d++) {          // later dirs (the user's) WIN
@@ -4015,7 +4022,15 @@
     });
   }
 
+  /* The engine the editable captions ride, as a folder name ("pulse_caption_r3"). */
+  function previewEngineKey() {
+    var bb = null; try { bb = bundledBackbone(currentPreset() || {}); } catch (e) {}
+    return bb ? String(bb.path || '').split(/[\\/]/).pop().replace(/\.mogrt$/i, '').toLowerCase().replace(/[^a-z0-9_]+/g, '_') : '';
+  }
   function stylePreviewFor(t) {
+    // a saved Premiere render shows what an EDITABLE caption looks like — never
+    // on the card of an image caption, which Pulse draws itself
+    if (_capOut !== 'editable') return null;
     if (_stylePrev == null) { purgeLegacyPreviewFrames(); loadStylePreviews(); }
     return _stylePrev[normPrevName(t.id)] || _stylePrev[normPrevName(t.name)] || null;
   }
@@ -5337,7 +5352,7 @@
     if (!bb) return toast('The caption engine template is missing — reinstall Pulse.', true);
     var fs, pathMod, os;
     try { fs = nodeReq('fs'); pathMod = nodeReq('path'); os = nodeReq('os'); } catch (e2) { return toast('Node unavailable in this panel.', true); }
-    var outDir = audit ? pathMod.join(os.tmpdir(), 'pulse-style-audit') : pathMod.join(os.homedir(), 'Documents', 'Pulse', 'style-previews');
+    var outDir = audit ? pathMod.join(os.tmpdir(), 'pulse-style-audit') : pathMod.join(os.homedir(), 'Documents', 'Pulse', 'style-previews', previewEngineKey() || 'engine');
     try { fs.mkdirSync(outDir, { recursive: true }); } catch (eMk) {}
     var styles = CPCaptions.TEMPLATES.concat(state.customTemplates || []).filter(function (t) { return t && t.id && !t.mogrt; });
     if (!styles.length) return toast('No styles to render.', true);
@@ -5556,6 +5571,7 @@
       state.bundledDiag = state.bundledMogrts.length
         ? ('ok:' + state.bundledMogrts.length + ' thumbs:' + withThumb + ' videos:' + withVideo)
         : ('0 files exist in ' + mdir);
+      _stylePrev = null;   // the engine may have changed: saved renders are per engine
     } catch (e) { state.bundledMogrts = []; state.bundledDiag = 'error: ' + (e && e.message); }
   }
 
@@ -9349,6 +9365,9 @@
       for (var ci = 0; ci < cvs.length; ci++) cvs[ci]._painted = false;
       schedulePaintThumbs();
     } catch (ePt) {}
+    // saved Premiere renders belong to editable cards only (stylePreviewFor):
+    // a card built in the other mode has to be built again, not just repainted
+    try { if (_stylePrev && Object.keys(_stylePrev).length && $('tpl-grid') && $('tpl-grid').children.length) renderTemplateGrid(); } catch (eRg) {}
     try { renderPreview(); } catch (ePv) {}
   }
   /* How many settings ✏️ Editable hides, said in one line under Caption type
@@ -19775,6 +19794,8 @@
       pulseSizeScale: pulseSizeScale,
       setBundledMogrts: function (list) { state.bundledMogrts = list || []; },
       parseFontFaces: parseFontFaces,
+      useRealPreviews: function (on) { settings.useRealPreviews = !!on; _stylePrev = null; },
+      stylePrevState: function () { return { real: !!(settings && settings.useRealPreviews), engine: previewEngineKey(), loaded: _stylePrev ? Object.keys(_stylePrev) : null, capOut: _capOut }; },
       missingCaptionFonts: function () { return missingCaptionFonts(); },
       reloadBundled: function () { loadBundledMogrts(); return { engines: (state.engineMogrts || []).map(function (m) { return m.path; }), bundled: (state.bundledMogrts || []).length, diag: state.bundledDiag }; },
       textCues: textCues,
