@@ -2701,6 +2701,22 @@ const MUTANTS = [
     repl: "      'var right = Ur.left + Ur.width, left = right - Wr.width;'",
     gate: 'CutPilot/test/gates/ae-caption-builder.js',
     why: 'the spoken-word box lands beside the word'
+  },
+  {
+    name: 'v35-fonts-english-only',
+    file: 'CutPilot/js/main.js',
+    find: ":400,700&subset=latin,latin-ext,devanagari';",
+    repl: ":400,700';",
+    gate: 'CutPilot/test/gates/install-fonts.js',
+    why: 'Hindi caption fonts install without a single Hindi letter'
+  },
+  {
+    name: 'v35-engine-hidden',
+    file: 'CutPilot/js/main.js',
+    find: "      state.engineMogrts = list.filter(function (m) { return !!m.engine; }).map(function (m) {",
+    repl: "      state.engineMogrts = list.filter(function (m) { return !!m.engine && !m.hidden; }).map(function (m) {",
+    gate: 'CutPilot/test/gates/style-test-button.js',
+    why: 'editable captions fall back to Flux (the first owner run)'
   }
 ];
 

@@ -5737,6 +5737,7 @@
     }, true);
     if ($('btn-selftest')) $('btn-selftest').addEventListener('click', runSelfTest);
     if ($('btn-style-test')) $('btn-style-test').addEventListener('click', compareCaptionStyles);
+    if ($('btn-install-fonts')) $('btn-install-fonts').addEventListener('click', installCaptionFonts);
     // 📄 SCRIPT FIX — the creator's own script corrects every misheard word
     // while the transcript keeps the timing that makes captions land on voice.
     if ($('btn-script-load')) $('btn-script-load').addEventListener('click', function () {
@@ -7033,6 +7034,110 @@
   /* Load EVERY font installed on this computer (read from the OS font folders)
      and fold them into the dropdown. Runs once, deferred so it never blocks
      first paint; Node/CEP only — browser preview shows the Suggested list. */
+  /* 🔤 Install caption fonts. Image captions draw with Pulse's own copies of
+     the styles' Google fonts; Premiere can only use INSTALLED fonts, so on the
+     owner's Mac 23 editable styles swapped Poppins → Futura, Anton → Impact,
+     every Hindi face → Kohinoor ("not the same design"). This fetches each
+     missing family's Regular and Bold (what the editable write asks for:
+     Family-Regular / Family-Bold) as TrueType from Google Fonts — free (OFL),
+     ~150 KB a face — into the user's own fonts folder (~/Library/Fonts: no
+     password), then rescans. Premiere reads its font list at launch, so it
+     needs one restart to see them. */
+  var _fontInstallBusy = false;
+  function captionFontFamilies() {
+    var seen = {}, out = [];
+    CPCaptions.TEMPLATES.forEach(function (t) {
+      [t.font, t.highlightFont].forEach(function (f) {
+        if (!f || seen[f]) return; seen[f] = 1;
+        if (CPCaptions.isMacFace && CPCaptions.isMacFace(f)) return;   // ships with the Mac
+        out.push(f);
+      });
+    });
+    return out;
+  }
+  function missingCaptionFonts() {
+    return captionFontFamilies().filter(function (f) { return fontInstalled(f) === false; });
+  }
+  /* the @font-face blocks of a Google Fonts css response → [{family, weight, url}] */
+  function parseFontFaces(css) {
+    var out = [], re = /@font-face\s*\{([^}]*)\}/g, m;
+    while ((m = re.exec(String(css || '')))) {
+      var b = m[1], fam = /font-family:\s*'([^']+)'/.exec(b), wt = /font-weight:\s*(\d+)/.exec(b),
+          st = /font-style:\s*(\w+)/.exec(b), url = /url\((https:[^)]+?\.ttf)\)/.exec(b);
+      if (fam && url && (!st || st[1] === 'normal')) out.push({ family: fam[1], weight: wt ? +wt[1] : 400, url: url[1] });
+    }
+    return out;
+  }
+  function curlText(args) {
+    return new Promise(function (resolve) {
+      var cp = nodeReq('child_process'), out = '', p;
+      try { p = cp.spawn('curl', args); } catch (e) { return resolve({ code: -1, out: '' }); }
+      if (p.stdout && p.stdout.on) p.stdout.on('data', function (d) { out += d; });
+      if (p.stderr && p.stderr.on) p.stderr.on('data', function () {});
+      p.on('error', function () { resolve({ code: -1, out: out }); });
+      p.on('close', function (code) { resolve({ code: code, out: out }); });
+    });
+  }
+  function installCaptionFonts() {
+    if (_fontInstallBusy) return toast('Already installing the caption fonts…');
+    if (!CPBridge.isCEP()) return toast('This needs Pulse inside Premiere.', true);
+    var fs, pathMod, os;
+    try { fs = nodeReq('fs'); pathMod = nodeReq('path'); os = nodeReq('os'); } catch (e) { return toast('Node unavailable in this panel.', true); }
+    if (os.platform() !== 'darwin') return toast('Installing fonts from Pulse works on a Mac. On Windows, install them from fonts.google.com.', true);
+    var dir = pathMod.join(os.homedir(), 'Library', 'Fonts');
+    try { fs.mkdirSync(dir, { recursive: true }); } catch (eMk) {}
+    var fams = missingCaptionFonts();
+    if (!_scanInstalled) fams = captionFontFamilies();   // no scan yet: ask for all, existing files are skipped
+    if (!fams.length) return toast('🔤 Every caption font is already installed.');
+    _fontInstallBusy = true;
+    var btn = $('btn-install-fonts'); if (btn) btn.disabled = true;
+    var got = 0, have = 0, none = [], i = 0;
+    var UA = 'Wget/1.12';   // Google Fonts answers this with plain TrueType (.ttf)
+    function next() {
+      if (i >= fams.length) return Promise.resolve();
+      var fam = fams[i++];
+      capProgress('🔤 Installing caption fonts… ' + i + '/' + fams.length + ' — ' + fam, 6000);
+      // subset: Google cuts a face down to English otherwise — the Hindi
+      // faces came down without a single Devanagari letter
+      var url = 'https://fonts.googleapis.com/css?family=' + encodeURIComponent(fam).replace(/%20/g, '+') + ':400,700&subset=latin,latin-ext,devanagari';
+      return curlText(['-sS', '-L', '--fail', '--max-time', '30', '-A', UA, url]).then(function (r) {
+        var faces = (r.code === 0) ? parseFontFaces(r.out) : [];
+        if (!faces.length) { none.push(fam); return; }
+        return faces.reduce(function (ch, f) {
+          return ch.then(function () {
+            var file = pathMod.join(dir, f.family.replace(/[^A-Za-z0-9]+/g, '') + '-' + (f.weight >= 600 ? 'Bold' : 'Regular') + '-Pulse.ttf');
+            try { if (fs.existsSync(file) && fs.statSync(file).size > 1000) { have++; return; } } catch (eE) {}
+            var part = file + '.part';
+            return curlText(['-sS', '-L', '--fail', '--max-time', '60', '-A', UA, '-o', part, f.url]).then(function (d) {
+              var ok = false;
+              try {
+                // a real font file: TrueType (00 01 00 00 / 'true') or OpenType ('OTTO')
+                var head = String(fs.readFileSync(part, 'latin1')).slice(0, 4);
+                ok = d.code === 0 && fs.statSync(part).size > 1000 && (head === '\u0000\u0001\u0000\u0000' || head === 'true' || head === 'OTTO');
+              } catch (eS) {}
+              if (ok) { try { fs.renameSync(part, file); got++; } catch (eR) { ok = false; } }
+              if (!ok) { try { fs.unlinkSync(part); } catch (eU) {} }
+            });
+          });
+        }, Promise.resolve());
+      }).then(next);
+    }
+    next().then(function () {
+      capProgress(null);
+      _fontInstallBusy = false; if (btn) btn.disabled = false;
+      _installedFontsLoaded = false; loadInstalledFonts();   // rescan: Pulse sees them at once
+      try { diag('fonts', 'installed ' + got + ' faces (' + have + ' already there); not on Google Fonts: ' + (none.join(', ') || 'none')); } catch (eD) {}
+      if (!got && have) {
+        toast('🔤 The caption fonts are already installed (' + have + ' files). If you just installed them, quit and reopen Premiere once so it can use them.' + (none.length ? ' Not available to download: ' + none.join(', ') + '.' : ''));
+      } else if (got) {
+        toast('🔤 Installed ' + got + ' caption font file' + (got === 1 ? '' : 's') + ' into your fonts folder' + (have ? ' (' + have + ' were already there)' : '') +
+              '. Quit and reopen Premiere once so it can use them in editable captions.' + (none.length ? ' Not available to download: ' + none.join(', ') + '.' : ''));
+      } else {
+        toast('Couldn\'t download the caption fonts — check your internet and try again.' + (none.length ? ' (' + none.join(', ') + ')' : ''), true);
+      }
+    });
+  }
+
   var _installedFontsLoaded = false;
   function loadInstalledFonts() {
     if (_installedFontsLoaded || typeof CPFonts === 'undefined' || !CPBridge.isCEP()) return;
@@ -13253,7 +13358,7 @@
         // the background style audit renders every style: one quiet line each
         // in Diagnostics, not a stack of error messages on screen
         if (!_truePrevBusy) toast(pick.why === 'missing'
-          ? '“' + want + '” isn’t installed on this computer, and Premiere can only use installed fonts — so these editable captions use “' + c + '” instead.'
+          ? '“' + want + '” isn’t installed on this computer, and Premiere can only use installed fonts — so these editable captions use “' + c + '” instead. Settings › 🔤 Install caption fonts adds it.'
           : '“' + want + '” can’t draw ' + script + ' letters, so these captions use “' + c + '” instead.', true);
       }
       return c;
@@ -19658,6 +19763,8 @@
       pulseLook: pulseLook,
       pulseSizeScale: pulseSizeScale,
       setBundledMogrts: function (list) { state.bundledMogrts = list || []; },
+      parseFontFaces: parseFontFaces,
+      missingCaptionFonts: function () { return missingCaptionFonts(); },
       reloadBundled: function () { loadBundledMogrts(); return { engines: (state.engineMogrts || []).map(function (m) { return m.path; }), bundled: (state.bundledMogrts || []).length, diag: state.bundledDiag }; },
       textCues: textCues,
       imageLooksBlank: imageLooksBlank,
