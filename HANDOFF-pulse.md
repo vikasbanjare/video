@@ -1,10 +1,20 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.35** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.36** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.36 — menus 0-based, fonts css2, cards = clicks
+- Premiere sets a template's drop-down by a 0-BASED index (AE reads
+  1-based): Pulse sends choice-1 for Box / Animation, Flux Animation Type 8.
+- Fonts from css2 (proper PS names; css API named Rubik Bold
+  "RubikLight-Bold"); -Pulse2.ttf replaces -Pulse.ttf.
+- Pulse_Caption_r3.mogrt: font editing ticked IN AE (definition.json flags
+  alone never reached Premiere).
+- Saved Premiere renders: editable cards only, per-engine folder
+  style-previews/<engine>. Gate previews-engine.
 
 ### v0.10.35 — install caption fonts
 - 🔤 Install caption fonts (btn-install-fonts): Google Fonts css (UA
