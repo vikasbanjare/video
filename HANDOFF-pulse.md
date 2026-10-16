@@ -1,10 +1,16 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.34** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.35** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.35 — install caption fonts
+- 🔤 Install caption fonts (btn-install-fonts): Google Fonts css (UA
+  Wget/1.12 → .ttf; subset=latin,latin-ext,devanagari) → ~/Library/Fonts
+  <Family>-<Regular|Bold>-Pulse.ttf; real-font check; rescan; restart
+  Premiere once. Gate install-fonts.
 
 ### v0.10.34 — the engine really loads
 - index.json "engine": true entries load into state.engineMogrts (hidden
