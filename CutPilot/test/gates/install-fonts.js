@@ -6,10 +6,11 @@
  * Owner's diagnostics (v0.10.33): 23 caption fonts were not installed, so
  * editable captions swapped Poppins → Futura, Anton → Impact and every Hindi
  * face → Kohinoor Devanagari. A stand-in curl answers Google Fonts:
- *   A. every caption family is asked for with its Regular + Bold AND its
- *      Hindi letters (subset=…devanagari — without it the Hindi faces came
- *      down English-only);
- *   B. each face lands in ~/Library/Fonts as <Family>-<Regular|Bold>-Pulse.ttf;
+ *   A. every caption family is asked for with its Regular + Bold from the
+ *      css2 API — whole faces named as Premiere asks for them (the css API
+ *      sent Hindi faces English-only and Rubik Bold as "RubikLight-Bold");
+ *   B. each face lands in ~/Library/Fonts as <Family>-<Regular|Bold>-Pulse2.ttf,
+ *      replacing the first install's -Pulse.ttf copy;
  *   C. a file that is not a font is never kept; a family Google does not have
  *      is named, not faked;
  *   D. Pulse says to restart Premiere once; a second run downloads nothing.
@@ -46,6 +47,9 @@ const bad = (m, d) => { failed++; console.log('  ✗ ' + m + (d ? '\n      ' + d
     '  *.ttf) { printf "\\000\\001\\000\\000"; head -c 3000 /dev/zero; } > "$out";;',
     'esac', ''].join('\n'));
   fs.chmodSync(curl, 0o755);
+  // the first install's copy of a face (v0.10.35, maybe misnamed) is replaced
+  fs.mkdirSync(path.join(env.homedir, 'Library', 'Fonts'), { recursive: true });
+  fs.writeFileSync(path.join(env.homedir, 'Library', 'Fonts', 'Rubik-Bold-Pulse.ttf'), 'old');
   const P = await L.launchPanel({ env });
   if (P.skip) { console.log('  ? ' + P.skip + ' — skipped'); process.exit(2); }
   P.bridge.state.alias = { curl };
@@ -65,12 +69,13 @@ const bad = (m, d) => { failed++; console.log('  ✗ ' + m + (d ? '\n      ' + d
   const t1 = await run();
   const calls = fs.readFileSync(log, 'utf8').trim().split('\n');
   const cssCalls = calls.filter(c => /fonts\.googleapis\.com\/css/.test(c));
-  (cssCalls.length >= 20 && cssCalls.every(c => /:400,700&subset=latin,latin-ext,devanagari/.test(c)) && cssCalls.some(c => /family=Baloo\+2/.test(c)) ? ok : bad)(
-    'A. ' + cssCalls.length + ' families asked for, each with Regular + Bold and its Hindi letters');
+  (cssCalls.length >= 20 && cssCalls.every(c => /css2\?family=[^ ]+:wght@400;700/.test(c)) && cssCalls.some(c => /family=Baloo\+2/.test(c)) ? ok : bad)(
+    'A. ' + cssCalls.length + ' families asked for, each with Regular + Bold from the css2 API (whole faces, the names Premiere asks for)');
   const dir = path.join(env.homedir, 'Library', 'Fonts');
   const files = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
-  (files.indexOf('Poppins-Bold-Pulse.ttf') >= 0 && files.indexOf('Baloo2-Regular-Pulse.ttf') >= 0 && files.indexOf('BebasNeue-Bold-Pulse.ttf') >= 0 && files.every(f => /-(Regular|Bold)-Pulse\.ttf$/.test(f)) ? ok : bad)(
+  (files.indexOf('Poppins-Bold-Pulse2.ttf') >= 0 && files.indexOf('Baloo2-Regular-Pulse2.ttf') >= 0 && files.indexOf('BebasNeue-Bold-Pulse2.ttf') >= 0 && files.every(f => /-(Regular|Bold)-Pulse2\.ttf$/.test(f)) ? ok : bad)(
     'B. ' + files.length + ' faces in ~/Library/Fonts (' + files.slice(0, 4).join(', ') + '…)');
+  (files.indexOf('Rubik-Bold-Pulse.ttf') < 0 ? ok : bad)('B. the first install\'s Rubik-Bold-Pulse.ttf is replaced');
   (!files.some(f => /^Teko/.test(f) || /\.part$/.test(f)) && /Rozha One/.test(t1) ? ok : bad)('C. a non-font file is never kept; a family Google lacks is named (' + t1.slice(-90) + ')');
   fs.writeFileSync(log, '');
   const t2 = await run();

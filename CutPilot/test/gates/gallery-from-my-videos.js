@@ -126,8 +126,8 @@ const FLUX = ['Text Color', 'Highlighted Word Color 1', 'Highlighted Word Color 
   (/^#FF00AA$/i.test(r.picked || '') ? ok : bad)('D. a highlight the owner picks wins over the style\'s editable look (' + r.picked + ')');
 
   // E
-  (S('pack-green-word-box', 'Animation Type') === 9 && S('pack-maroon-label', 'Animation Type') === 9 ? ok : bad)(
-    'E. editable: the engine\'s own word-slide entrance is off (Animation Type ' + S('pack-maroon-label', 'Animation Type') + ' = None), so the label does not animate differently');
+  (S('pack-green-word-box', 'Animation Type') === 8 && S('pack-maroon-label', 'Animation Type') === 8 ? ok : bad)(
+    'E. editable: the engine\'s own word-slide entrance is off (Animation Type index ' + S('pack-maroon-label', 'Animation Type') + ' = None, Premiere\'s menus are 0-based), so the label does not animate differently');
 
   try { fs.rmSync(root, { recursive: true, force: true }); } catch (e) {}
   if (failed) { console.log('FROM MY VIDEOS: ' + failed + ' failed'); process.exit(1); }

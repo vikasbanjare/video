@@ -2681,7 +2681,7 @@ const MUTANTS = [
   {
     name: 'v33-editable-engine-slide',
     file: 'CutPilot/js/main.js',
-    find: "    num(P('animation type'), 9);",
+    find: "    num(P('animation type'), 8);   // \"None\", the 9th choice — Premiere's menus are 0-based",
     repl: "",
     gate: 'CutPilot/test/gates/gallery-from-my-videos.js',
     why: 'editable captions slide up word by word, unlike the style'
@@ -2705,10 +2705,10 @@ const MUTANTS = [
   {
     name: 'v35-fonts-english-only',
     file: 'CutPilot/js/main.js',
-    find: ":400,700&subset=latin,latin-ext,devanagari';",
-    repl: ":400,700';",
+    find: "      var url = 'https://fonts.googleapis.com/css2?family=' + encodeURIComponent(fam).replace(/%20/g, '+') + ':wght@400;700';",
+    repl: "      var url = 'https://fonts.googleapis.com/css?family=' + encodeURIComponent(fam).replace(/%20/g, '+') + ':400,700';",
     gate: 'CutPilot/test/gates/install-fonts.js',
-    why: 'Hindi caption fonts install without a single Hindi letter'
+    why: 'the old css API: Hindi faces English-only, Rubik Bold named RubikLight-Bold'
   },
   {
     name: 'v35-engine-hidden',

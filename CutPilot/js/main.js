@@ -7097,15 +7097,21 @@
       if (i >= fams.length) return Promise.resolve();
       var fam = fams[i++];
       capProgress('🔤 Installing caption fonts… ' + i + '/' + fams.length + ' — ' + fam, 6000);
-      // subset: Google cuts a face down to English otherwise — the Hindi
-      // faces came down without a single Devanagari letter
-      var url = 'https://fonts.googleapis.com/css?family=' + encodeURIComponent(fam).replace(/%20/g, '+') + ':400,700&subset=latin,latin-ext,devanagari';
+      // css2: whole faces (Hindi letters included) named as Premiere asks for
+      // them. The older css API cut faces down to English unless told, and
+      // named some instances of variable fonts oddly — Rubik's Bold came down
+      // as "RubikLight-Bold", which Premiere never matched ("Rubik isn't
+      // installed" after installing it). A family with no Bold returns its
+      // one face.
+      var url = 'https://fonts.googleapis.com/css2?family=' + encodeURIComponent(fam).replace(/%20/g, '+') + ':wght@400;700';
       return curlText(['-sS', '-L', '--fail', '--max-time', '30', '-A', UA, url]).then(function (r) {
         var faces = (r.code === 0) ? parseFontFaces(r.out) : [];
         if (!faces.length) { none.push(fam); return; }
         return faces.reduce(function (ch, f) {
           return ch.then(function () {
-            var file = pathMod.join(dir, f.family.replace(/[^A-Za-z0-9]+/g, '') + '-' + (f.weight >= 600 ? 'Bold' : 'Regular') + '-Pulse.ttf');
+            var base = f.family.replace(/[^A-Za-z0-9]+/g, '') + '-' + (f.weight >= 600 ? 'Bold' : 'Regular');
+            var file = pathMod.join(dir, base + '-Pulse2.ttf');
+            try { fs.unlinkSync(pathMod.join(dir, base + '-Pulse.ttf')); } catch (eOld) {}   // the first install's copy (maybe misnamed)
             try { if (fs.existsSync(file) && fs.statSync(file).size > 1000) { have++; return; } } catch (eE) {}
             var part = file + '.part';
             return curlText(['-sS', '-L', '--fail', '--max-time', '60', '-A', UA, '-o', part, f.url]).then(function (d) {
@@ -13741,7 +13747,7 @@
     // style's entrance plays as the clip's Motion keyframes
     // (entranceForPreset), and the word sweep is its own control; with
     // every animator gate on its "else 0" branch the whole line shows.
-    num(P('animation type'), 9);
+    num(P('animation type'), 8);   // "None", the 9th choice — Premiere's menus are 0-based
 
     // ---- box ----------------------------------------------------------------
     var hasBox = !!preset.boxColor;
@@ -13888,7 +13894,12 @@
     color(P('outline color'), L.outlineColor);
     num(P('outline width'), L.outlineWidth);
     var both = !!P('word box color');   // the first build had one box at a time
-    num(P('box'), (L.box === 4 && !both) ? 3 : L.box);
+    // Premiere sets a template's drop-down by a 0-BASED index, After Effects'
+    // expressions read it 1-based: sending the 1-based choice landed one item
+    // early — "Whole line" became None (the owner's first real style test:
+    // Mars, Plain Subtitle, Aura, Push Button drawn with no box at all;
+    // "Line and spoken word" became "Spoken word").
+    num(P('box'), ((L.box === 4 && !both) ? 3 : L.box) - 1);
     color(P('box color'), (L.box >= 3 && !both) ? L.wordBoxColor : L.boxColor);
     color(P('word box color'), L.wordBoxColor);
     num(P('letter spacing'), L.letterSpacing);
@@ -13896,7 +13907,7 @@
     num(P('box roundness'), L.boxRoundness);
     num(P('shadow opacity'), L.shadowOpacity);
     num(P('shadow distance'), L.shadowDistance);
-    num(P('animation'), L.animation);
+    num(P('animation'), L.animation - 1);               // 0-based, as the Box menu
     if (preset.yPct != null && isFinite(preset.yPct)) out._posYPct = Math.max(0.1, Math.min(0.92, preset.yPct));
     out._bind = { engine: 'pulse', fill: P('text color') ? P('text color').name : null, hl: P('spoken word color').name };
     return out;

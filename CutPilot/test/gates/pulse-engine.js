@@ -86,18 +86,18 @@ const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r2.mogrt
   (/Pulse_Caption_r2\.mogrt$/.test(r.picked || '') ? ok : bad)('B. Pulse picks its own engine over Flux (' + r.picked + ')');
 
   const G = r.green, M = r.maroon;
-  (G.Box === 3 && /^#04420E$/i.test(G['Box Color']) && /^#FFFFFF$/i.test(G['Spoken Word Color']) && G['Outline Width'] > 5 && G['Outline Width'] < 7.5 ? ok : bad)(
+  (G.Box === 2 && /^#04420E$/i.test(G['Box Color']) && /^#FFFFFF$/i.test(G['Spoken Word Color']) && G['Outline Width'] > 5 && G['Outline Width'] < 7.5 ? ok : bad)(
     'C. Green Word Box: a dark-green box behind the spoken word, white words, its outline (' + JSON.stringify(G) + ')');
   const grow = M['Spoken Word Grow'] != null ? M['Spoken Word Grow'] === 25 : M['Spoken Word Size'] === 100;
-  (M.Box === 2 && /^#7A3034$/i.test(M['Box Color']) && M['Box Opacity'] === 88 && M['Box Roundness'] === 0 && grow ? ok : bad)(
+  (M.Box === 1 && /^#7A3034$/i.test(M['Box Color']) && M['Box Opacity'] === 88 && M['Box Roundness'] === 0 && grow ? ok : bad)(
     'C. Maroon Label: a square maroon line box, the spoken word grows (' + JSON.stringify(M) + ')');
-  (r.plain.Box === 2 && /^#FFFFFF$/i.test(r.plain['Box Color']) && /^#000000$/i.test(r.plain['Text Color']) && r.plain['Outline Width'] === 0 ? ok : bad)('C. Plain Subtitle: black words on its white line box, no outline (' + JSON.stringify(r.plain) + ')');
-  (r.pastel.Box === 4 && /^#FFFFFF$/i.test(r.pastel['Box Color']) && /^#FF5DA2$/i.test(r.pastel['Word Box Color']) ? ok : bad)(
+  (r.plain.Box === 1 && /^#FFFFFF$/i.test(r.plain['Box Color']) && /^#000000$/i.test(r.plain['Text Color']) && r.plain['Outline Width'] === 0 ? ok : bad)('C. Plain Subtitle: black words on its white line box, no outline (' + JSON.stringify(r.plain) + ')');
+  (r.pastel.Box === 3 && /^#FFFFFF$/i.test(r.pastel['Box Color']) && /^#FF5DA2$/i.test(r.pastel['Word Box Color']) ? ok : bad)(
     'C. Pastel: its white line box AND the pink box behind the spoken word (' + JSON.stringify(r.pastel) + ')');
   (r.wide['Letter Spacing'] > 0 ? ok : bad)('C. a wide-spaced style keeps its letter spacing (' + r.wide['Letter Spacing'] + ')');
   (Math.abs(r.sizeV - 54 / 75) < 0.02 && r.sizeSent === 72 && Math.abs(r.sizeH - r.sizeV) < 0.05 ? ok : bad)(
     'C. the image caption\'s size: 54 px of the engine\'s 75 (Size ' + r.sizeSent + '), the same share on a landscape podcast (' + r.sizeV.toFixed(2) + ' / ' + r.sizeH.toFixed(2) + ')');
-  (r.popEntrance === 2 ? ok : bad)('C. a style that pops in pops in (Animation ' + r.popEntrance + ')');
+  (r.popEntrance === 1 ? ok : bad)('C. a style that pops in pops in (Animation menu index ' + r.popEntrance + ' = Pop; Premiere\'s menus are 0-based)');
 
   // D. measure
   const W = 1080, H = 1920;
