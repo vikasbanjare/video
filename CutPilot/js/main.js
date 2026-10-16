@@ -5048,7 +5048,7 @@
         t.fill = '#ffffff'; t.highlight = '#ffd400'; t.boxColor = '#000000';
         t.yPct = (extra.yPct != null) ? extra.yPct : 0.76;
         if (extra.revealSpoken) t.revealSpoken = true;
-        return (mapPresetToFlux(t, liveProps) || []);
+        return mapPresetForEngine(bb.path, t, liveProps);
       }
       // pick specific controls by (normalized) name so ladder rungs can send
       // ONLY one kind of write
@@ -5086,7 +5086,7 @@
       ];
       try {
         var curP = styledPreset();
-        var curParams = mapPresetToFlux(curP, liveProps);
+        var curParams = mapPresetForEngine(bb.path, curP, liveProps);
         if (curParams) {
           var curRf = resolvedEditorFont(curP);
           probes.push({ id: 'pulse-st-current', params: curParams,
@@ -5165,10 +5165,9 @@
     capProgress('Reading the caption engine…');
     CPBridge.callHost('CP_inspectMogrt', { path: bb.path }).then(function (r) {
       var liveProps = (r && r.props) || [];
-      var isFlux = String(bb.path || '').toLowerCase().indexOf('flux_halo') >= 0;
       var payload = [];
       styles.forEach(function (t) {
-        var params = (isFlux ? mapPresetToFlux(t, liveProps) : null) || mapPresetToMogrt(t, liveProps) || [];
+        var params = mapPresetForEngine(bb.path, t, liveProps);
         var rf = resolvedEditorFont(t);
         payload.push({ id: t.id, params: params,
                        textStyle: rf ? { font: rf.font, bold: rf.bold, sizeScale: 1 } : null,
@@ -12903,7 +12902,9 @@
     // them BY NAME — the guess-matching that broke style after style is
     // bypassed entirely on this path.
     preset = preset || {};
-    var pick = find('flux_halo2') || find('flux_halo');
+    // Pulse's own engine first (draws outline, word box, growing word, the
+    // style's entrance; 14 controls in Premiere), then Flux
+    var pick = find('pulse_caption') || find('pulse caption') || find('flux_halo2') || find('flux_halo');
     if (pick) return pick;
     // Fallbacks (Flux missing from the install): the old capability-matched
     // Subtitle backbones, so editable captions still work at all.
@@ -12951,6 +12952,8 @@
     if (ov.boxRadius != null && ov.boxRadius !== (preset.boxRadius != null ? preset.boxRadius : 12)) eff.boxRadius = ov.boxRadius;
     if (ov.font) eff.font = ov.font;
     if (ov.weight != null) eff.weight = ov.weight;
+    // the outline picker reaches Pulse's engine (Outline Color / Width)
+    if (ov.strokeWidth != null && isFinite(ov.strokeWidth)) { eff.strokeWidth = ov.strokeWidth; eff.stroke = ov.strokeWidth > 0 ? (ov.stroke || eff.stroke || '#000000') : null; }
     if (ov.uppercase != null) eff.uppercase = ov.uppercase;
     // the editor's shadow toggle carries too (mapPresetToMogrt → the backbone's
     // Shadow Color / Shadow Opacity controls) — previously only a template's own
@@ -13146,7 +13149,39 @@
      express. Both the gallery tile and the editor preview go through here, so
      they can never disagree with each other in either mode. */
   function previewBasis(p) {
-    return (_capOut === 'editable') ? carryableStyle(p) : renderableStyle(p);
+    if (_capOut !== 'editable') return renderableStyle(p);
+    var bb = null; try { bb = bundledBackbone(p); } catch (e) {}
+    return (bb && isPulseEngine(bb.path)) ? pulseCarryStyle(p) : carryableStyle(p);
+  }
+
+  /* What Pulse's own engine draws for a style: the full image look minus only
+     what the engine has no control for — so the editable preview is the
+     editable caption. The choices (word box OR line box, the spoken word's
+     colour on a box, the entrance) are pulseLook's, the same ones sent. */
+  function pulseCarryStyle(p) {
+    var out = renderableStyle(p), L = pulseLook(p);
+    ['highlight2', 'fill2', 'highlightColors', 'boxColor2', 'numberColor', 'brandColor', 'brandWords', 'highlightFont',
+     'highlightWeight', 'highlightGlow', 'boxStroke', 'boxGlow', 'boxShadow', 'boxGradient', 'boxStops'].forEach(function (k) { out[k] = null; });
+    out.wordSpacing = 0; out.glossy = false; out.emphasizeWords = false; out.highlightItalic = false;
+    out.upcomingOpacity = 1; out.boxStrokeWidth = 0; out.box3d = false; out.box3dDepth = 0; out.boxGloss = 0; out.stagger = 0;
+    out.keyword = false;                                   // no static keyword colouring in the engine
+    out.weight = (p.weight || 800) >= 600 ? 800 : 500;     // the font write knows bold or regular
+    out.font = editableFamily(p.font || 'Inter', { latin: true, devanagari: p.script === 'deva' }, p.font, p.script === 'deva').family;
+    out.wordHl = L.spokenLit;
+    out.anim = L.spokenLit ? 'karaoke' : 'fade';           // the spoken word moves word by word, or all words alike
+    out.entrance = ({ 1: 'none', 2: 'pop', 3: 'fade', 4: 'slide' })[L.animation];
+    out.letterSpacing = Math.max(0, p.letterSpacing || 0);
+    if (L.box >= 3) {                                      // a box behind the spoken word (and the line, on 4)
+      out.highlightStyle = 'box'; out.boxPad = 1.45;
+      if (L.box === 3) { out.boxColor = null; out.boxOpacity = 1; }
+    } else {
+      out.highlightStyle = 'color';
+      if (L.box !== 2) out.boxColor = null;
+    }
+    out.highlight = L.box >= 3 ? (p.highlight || p.fill) : L.spokenColor;   // on a box: the box's colour (the renderer puts a readable colour on the word)
+    out.highlightScale = 1 + L.grow / 100;
+    if (!L.outlineWidth) { out.stroke = null; out.strokeWidth = 0; }
+    return out;
   }
 
   /* A style's own look for EDITABLE captions (preset.editable), where
@@ -13473,6 +13508,96 @@
     return out;
   }
 
+  /* PULSE'S OWN caption engine (Pulse_Caption.mogrt, built by
+     tools/ae/Pulse-Caption-Builder.jsx). It draws what the image captions
+     draw — outline, a box behind the line or behind only the spoken word,
+     the spoken word's colour and growth, a soft or offset shadow, the
+     entrance — and Premiere shows only its 14 controls. Each style is set
+     BY NAME onto them; every size in a style is relative to its font size,
+     so it reaches the engine's authored 75 px face as value × 75 / fontSize.
+     Returns null when the file is not this engine. */
+  var PULSE_ENGINE_PX = 75;
+  function isPulseEngine(path) { return /pulse[ _]caption/i.test(String(path || '').split(/[\\/]/).pop()); }
+  function pulseContrast(hex) {
+    var m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '')); if (!m) return '#FFFFFF';
+    var n = parseInt(m[1], 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? '#111111' : '#FFFFFF';
+  }
+  function pulseLook(preset) {
+    var p = preset || {}, k = PULSE_ENGINE_PX / ((p.fontSize > 0) ? p.fontSize : PULSE_ENGINE_PX);
+    var fill = p.fill || '#FFFFFF', hl = p.highlight || fill;
+    // the image caption lights the spoken word only in its karaoke / reveal
+    // animations (CPCaptions.buildCaptionFrames: swept); every other style
+    // shows all its words alike — the editable one must too
+    var imgAnim = p.anim || ((p.wordHl !== false) ? 'karaoke' : 'fade');
+    var spoken = p.wordHl !== false && (imgAnim === 'karaoke' || imgAnim === 'reveal');
+    var shape = spoken ? (p.highlightStyle || 'color') : 'none';
+    var wordBox = (shape === 'box' || shape === 'bar');
+    var ent = p.entrance || entranceForPreset(p);   // styledPreset carries the Entrance picker
+    var anim = ({ none: 1, pop: 2, fade: 3, slide: 4 })[ent] || 1;
+    var bo = p.boxOpacity; bo = (bo == null) ? 100 : (bo <= 1 ? Math.round(bo * 100) : bo);
+    var dist = Math.sqrt((p.shadowDX || 0) * (p.shadowDX || 0) + (p.shadowDY || 0) * (p.shadowDY || 0)) * k;
+    return {
+      textColor: fill,
+      // on a box the word takes a colour that reads on it, as the image does
+      spokenColor: !spoken ? fill : (wordBox ? pulseContrast(hl) : hl),
+      grow: spoken ? Math.max(0, Math.min(100, Math.round(((p.highlightScale || 1) - 1) * 100))) : 0,
+      outlineColor: p.stroke || '#000000',
+      outlineWidth: (p.stroke && p.strokeWidth > 0) ? Math.min(100, Math.round(p.strokeWidth * k * 10) / 10) : 0,
+      // 1 none · 2 whole line · 3 spoken word · 4 both (a word box over a line box)
+      box: wordBox ? (p.boxColor ? 4 : 3) : (p.boxColor ? 2 : 1),
+      boxColor: p.boxColor || (wordBox ? hl : '#000000'),
+      wordBoxColor: hl,
+      boxOpacity: (wordBox && !p.boxColor) ? 100 : Math.max(0, Math.min(100, bo)),
+      // the engine's tracking is Letter Spacing × 10 (1/1000 em); it has no
+      // tighter-than-normal, so a style's negative spacing goes to 0
+      letterSpacing: Math.max(0, Math.min(100, Math.round((p.letterSpacing || 0) / ((p.fontSize > 0) ? p.fontSize : PULSE_ENGINE_PX) * 100))),
+      boxRoundness: Math.max(0, Math.min(100, Math.round(((p.boxRadius != null) ? p.boxRadius : 10) * k))),
+      shadowOpacity: p.glow ? Math.max(30, Math.min(100, Math.round(((p.glowBlur != null) ? p.glowBlur : 0.35) * 100) + 30)) : 0,
+      shadowDistance: p.glow ? Math.min(100, Math.round(dist * 10) / 10) : 0,
+      animation: anim,
+      spokenLit: spoken
+    };
+  }
+  function mapPresetToPulse(preset, props) {
+    if (!preset || !props || !props.length) return null;
+    var byName = {};
+    for (var i = 0; i < props.length; i++) {
+      var key = String(props[i].name || '').toLowerCase().replace(/\s+/g, ' ').replace(/^ | $/g, '');
+      if (byName[key] === undefined) byName[key] = props[i];
+    }
+    function P(n) { return byName[n] || null; }
+    if (!P('spoken word color') || !P('box')) return null;   // not Pulse's engine
+    var out = [], L = pulseLook(preset);
+    function color(p, hex) { if (p && hex) out.push({ i: p.i, kind: (p.kind === 'colorint' ? 'colorint' : 'color'), value: hex }); }
+    function num(p, v) { if (p && v != null && isFinite(v)) out.push({ i: p.i, kind: 'number', value: v }); }
+    color(P('text color'), L.textColor);
+    color(P('spoken word color'), L.spokenColor);
+    // the first build called it "Spoken Word Size" (100 = same); now "Grow" (0 = same)
+    if (P('spoken word grow')) num(P('spoken word grow'), L.grow); else num(P('spoken word size'), Math.min(100, 100 + L.grow));
+    color(P('outline color'), L.outlineColor);
+    num(P('outline width'), L.outlineWidth);
+    var both = !!P('word box color');   // the first build had one box at a time
+    num(P('box'), (L.box === 4 && !both) ? 3 : L.box);
+    color(P('box color'), (L.box >= 3 && !both) ? L.wordBoxColor : L.boxColor);
+    color(P('word box color'), L.wordBoxColor);
+    num(P('letter spacing'), L.letterSpacing);
+    num(P('box opacity'), L.boxOpacity);
+    num(P('box roundness'), L.boxRoundness);
+    num(P('shadow opacity'), L.shadowOpacity);
+    num(P('shadow distance'), L.shadowDistance);
+    num(P('animation'), L.animation);
+    if (preset.yPct != null && isFinite(preset.yPct)) out._posYPct = Math.max(0.1, Math.min(0.92, preset.yPct));
+    out._bind = { engine: 'pulse', fill: P('text color') ? P('text color').name : null, hl: P('spoken word color').name };
+    return out;
+  }
+  /* The one way every caller turns a style into a template's settings. */
+  function mapPresetForEngine(path, preset, props) {
+    if (isPulseEngine(path)) return mapPresetToPulse(preset, props) || mapPresetToMogrt(preset, props) || [];
+    var isFlux = String(path || '').toLowerCase().indexOf('flux_halo') >= 0;
+    return (isFlux ? mapPresetToFlux(preset, props) : null) || mapPresetToMogrt(preset, props) || [];
+  }
+
   /* "▶ Real preview on timeline": drop ONE real engine caption at the playhead
      with the CURRENT edits (colours/size/position/font) applied — real Premiere
      pixels for the exact settings, without captioning the whole video. This is
@@ -13504,8 +13629,7 @@
     toast('Dropping a real preview at the playhead…');
     CPBridge.callHost('CP_inspectMogrt', { path: bb.path }).then(function (r) {
       var liveProps = (r && r.props) || [];
-      var isFlux = String(bb.path || '').toLowerCase().indexOf('flux_halo') >= 0;
-      var params = (isFlux ? mapPresetToFlux(preset, liveProps) : null) || mapPresetToMogrt(preset, liveProps);
+      var params = mapPresetForEngine(bb.path, preset, liveProps);
       // the same comp fit, line breaks and row as the editable insert
       // (applyEditableStyle), so the preview is what the captions will be
       var pg = premGeometry(bb.path);
@@ -13714,8 +13838,10 @@
                       bold: rf ? rf.bold : (preset.weight || 800) >= 600, fill: preset.fill,
                       sizeScale: (Math.abs(sizeScale - 1) > 0.02 ? sizeScale : 1) };
     preset.sizeScale = sizeScale;   // the mapper scales the backbone's text-scale control by this
-    // Entrance = real Motion keyframes on each caption clip (None default)
-    var entrance = state.captionEntrance || 'none';
+    // Entrance = real Motion keyframes on each caption clip (None default).
+    // Pulse's own engine plays the entrance itself (its Animation control),
+    // so no keyframes go on top of it.
+    var entrance = isPulseEngine(bb.path) ? 'none' : (state.captionEntrance || 'none');
     if (tcues.length > 120 && !state._bigOk) {
       confirmInline(tcues.length + ' editable caption clips will be inserted — one per line. MOGRTs insert slowly, so this can take a while. Tip: raise "Words per caption" for fewer, longer lines.\n\nContinue?', 'Insert them', function (yes) {
         if (!yes) return toast('Cancelled — no captions were added.');
@@ -13750,8 +13876,7 @@
         // The Flux engine gets its EXACT-name mapping (returns null if this
         // file isn't actually the Flux engine); anything else keeps the
         // generic best-effort matcher.
-        var isFlux = String(bb.path || '').toLowerCase().indexOf('flux_halo') >= 0;
-        var params = (isFlux ? mapPresetToFlux(preset, liveProps) : null) || mapPresetToMogrt(preset, liveProps);
+        var params = mapPresetForEngine(bb.path, preset, liveProps);
         sentParams = params;
         // NEVER CROPPED: each line is measured at the engine's size against
         // its comp; a line wider than the comp breaks into two balanced lines
@@ -19319,6 +19444,10 @@
       mapPresetToFlux: mapPresetToFlux,
       bundledBackbone: bundledBackbone,
       carryableStyle: carryableStyle,
+      pulseCarryStyle: pulseCarryStyle,
+      mapPresetToPulse: mapPresetToPulse,
+      pulseLook: pulseLook,
+      setBundledMogrts: function (list) { state.bundledMogrts = list || []; },
       textCues: textCues,
       imageLooksBlank: imageLooksBlank,
       asrLang: function () { return settings.whisperLang || 'auto'; },   // must NEVER default to 'en' again (garbled Hindi)

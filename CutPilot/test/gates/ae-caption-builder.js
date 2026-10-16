@@ -104,12 +104,12 @@ const wentWrong = rec.alerts.filter(a => /went wrong|needs After Effects|did not
 (!wentWrong.length && rec.alerts.some(a => /is built/.test(a) && /Allow font editing/.test(a)) ? ok : bad)('A. it runs to the end, says the template is built and how to allow font editing', JSON.stringify(rec.alerts));
 
 // B. the controls Premiere shows
-const WANT = ['Text', 'Size', 'Text Color', 'Spoken Word Color', 'Spoken Word Grow', 'Outline Color', 'Outline Width',
-  'Box', 'Box Color', 'Box Opacity', 'Box Roundness', 'Shadow Opacity', 'Shadow Distance', 'Animation'];
+const WANT = ['Text', 'Size', 'Text Color', 'Spoken Word Color', 'Spoken Word Grow', 'Letter Spacing', 'Outline Color', 'Outline Width',
+  'Box', 'Box Color', 'Word Box Color', 'Box Opacity', 'Box Roundness', 'Shadow Opacity', 'Shadow Distance', 'Animation'];
 const labels = rec.exposed.map(e => e.label);
 (JSON.stringify(labels) === JSON.stringify(WANT) ? ok : bad)('B. Premiere shows only the ' + WANT.length + ' caption controls, in order', JSON.stringify(labels));
 const menus = rec.exposed.filter(e => e.prop.items).map(e => e.label + ': ' + e.prop.items.join(' / '));
-(menus.length === 2 && /Box: None \/ Whole line \/ Spoken word/.test(menus[0]) && /Animation: None \/ Pop \/ Fade \/ Slide up/.test(menus[1]) ? ok : bad)('B. the two menus: ' + menus.join(' · '));
+(menus.length === 2 && /Box: None \/ Whole line \/ Spoken word \/ Line and spoken word/.test(menus[0]) && /Animation: None \/ Pop \/ Fade \/ Slide up/.test(menus[1]) ? ok : bad)('B. the two menus: ' + menus.join(' · '));
 
 // C. expressions parse
 let parseBad = [];
@@ -165,6 +165,11 @@ const wc = world(TXT, 0.45, true);
 (Math.abs(wc.pos[0] - 20) < 0.01 ? ok : bad)('E. the same when After Effects centres the measuring text (centre x ' + wc.pos[0] + ')');
 const w2 = world(TXT, 1.25);
 (w2.measured['Measure Word'] === 'BAAT' && Math.abs(w2.pos[1] - (90 - 55 + 35)) < 0.01 ? ok : bad)('E. on the second line the box moves down one line (y ' + w2.pos[1] + ')');
+
+// G. which box shows for each Box choice (1 None · 2 Line · 3 Spoken word · 4 both)
+const opOf = (layer, box) => run(exprOf(layer, /ADBE Opacity/), { thisComp: { layer: () => ({ effect: (e) => () => ({ Animation: 1, Box: box, 'Box Opacity': 88 })[e] }) }, time: 0.5 });
+const ops = [1, 2, 3, 4].map(b => [opOf('Line Box', b), opOf('Spoken Word Box', b)]);
+(JSON.stringify(ops) === '[[0,0],[88,0],[0,88],[88,100]]' ? ok : bad)('G. line box on 2 and 4, word box on 3 and 4 (solid over a line box): ' + JSON.stringify(ops));
 
 // F. protected frame + saved
 const mk = rec.markers[0];

@@ -1,5 +1,14 @@
 [
  {
+  "file": "Pulse_Caption_r1.mogrt",
+  "name": "Pulse Caption",
+  "category": "Captions",
+  "kind": "caption",
+  "desc": "Pulse's own editable caption engine: outline, word box, growing word, entrance — 14 controls",
+  "hidden": true,
+  "hiddenWhy": "the engine every caption style uses for editable captions"
+ },
+ {
   "file": "Subtitle_2.mogrt",
   "name": "Plain Subtitle",
   "category": "Captions",

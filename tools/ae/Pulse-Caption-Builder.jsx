@@ -14,9 +14,10 @@
  * draws what Pulse's image captions draw, and shows only these controls:
  *
  *   Text · Size · Text Color · Spoken Word Color · Spoken Word Grow ·
- *   Outline Color · Outline Width · Box (None / Whole line / Spoken word) ·
- *   Box Color · Box Opacity · Box Roundness · Shadow Opacity ·
- *   Shadow Distance · Animation (None / Pop / Fade / Slide up)
+ *   Letter Spacing · Outline Color · Outline Width ·
+ *   Box (None / Whole line / Spoken word / Line and spoken word) ·
+ *   Box Color · Word Box Color · Box Opacity · Box Roundness ·
+ *   Shadow Opacity · Shadow Distance · Animation (None / Pop / Fade / Slide up)
  *
  * Word timing needs no control: a one-frame protected region at the start
  * turns on Premiere's "Responsive Design – Time", so the comp stretches over
@@ -65,10 +66,12 @@
     // Premiere keeps a slider inside its 0–100 range, so the spoken word's
     // size is how much it GROWS: 0 = same size, 25 = a quarter bigger
     slider('Spoken Word Grow', 0);
+    slider('Letter Spacing', 0);                     // × 10 = After Effects tracking
     color('Outline Color', [0, 0, 0]);
     slider('Outline Width', 0);
-    menu('Box', ['None', 'Whole line', 'Spoken word'], 1);
+    menu('Box', ['None', 'Whole line', 'Spoken word', 'Line and spoken word'], 1);
     color('Box Color', [0.48, 0.19, 0.2]);
+    color('Word Box Color', [0.02, 0.26, 0.05]);
     slider('Box Opacity', 100);
     slider('Box Roundness', 12);
     slider('Shadow Opacity', 50);
@@ -168,6 +171,7 @@
     addProp('Look', 'ADBE Text Fill Color', C + '("Text Color")(1);');
     addProp('Look', 'ADBE Text Stroke Color', C + '("Outline Color")(1);');
     addProp('Look', 'ADBE Text Stroke Width', C + '("Outline Width")(1);');
+    addProp('Look', 'ADBE Text Tracking Amount', C + '("Letter Spacing")(1) * 10;');
     // the spoken word: its own colour and size
     addAnimator('Spoken Word');
     anim('Spoken Word').property('ADBE Text Selectors').addProperty('ADBE Text Selector');
@@ -208,6 +212,12 @@
         body,
         'thisComp.layer("Caption").text.sourceText.style.setText(t);'
       ].join('\n');
+      // the caption's letter spacing, so the words measure as wide as drawn
+      var ma = m.property('ADBE Text Properties').property('ADBE Text Animators').addProperty('ADBE Text Animator');
+      ma.name = 'Spacing';
+      m.property('ADBE Text Properties').property('ADBE Text Animators').property('Spacing').property('ADBE Text Selectors').addProperty('ADBE Text Selector');
+      m.property('ADBE Text Properties').property('ADBE Text Animators').property('Spacing').property('ADBE Text Animator Properties')
+        .addProperty('ADBE Text Tracking Amount').expression = C + '("Letter Spacing")(1) * 10;';
       return m;
     }
     measure('Measure Line', 'var t = w.join(" ");');
@@ -215,7 +225,8 @@
     measure('Measure Word', 'var t = w[Math.min(po, w.length - 1)];');
 
     // ---- the two boxes (below the text) -----------------------------------
-    function box(name, sizeExpr, posExpr, opMode) {
+    // Box: 1 None · 2 Whole line · 3 Spoken word · 4 Line and spoken word
+    function box(name, sizeExpr, posExpr, modes, colorName, opacityExpr) {
       var b = comp.layers.addShape();
       b.name = name;
       b.parent = cap;
@@ -228,9 +239,9 @@
       r.property('ADBE Vector Rect Position').expression = posExpr;
       r.property('ADBE Vector Rect Roundness').expression = C + '("Box Roundness")(1);';
       var f = v.addProperty('ADBE Vector Graphic - Fill');
-      f.property('ADBE Vector Fill Color').expression = C + '("Box Color")(1);';
+      f.property('ADBE Vector Fill Color').expression = C + '("' + colorName + '")(1);';
       b.property('ADBE Transform Group').property('ADBE Opacity').expression =
-        FADE + '(Math.round(' + C + '("Box")(1)) == ' + opMode + ' ? ' + C + '("Box Opacity")(1) : 0);';
+        FADE + '(' + modes + '.indexOf(Math.round(' + C + '("Box")(1))) >= 0 ? ' + opacityExpr + ' : 0);';
       b.moveAfter(cap);
       return b;
     }
@@ -238,7 +249,7 @@
     box('Line Box',
       PAD + ' var r = thisComp.layer("Caption").sourceRectAtTime(time, false); [r.width + 2 * px, r.height + 2 * py];',
       'var r = thisComp.layer("Caption").sourceRectAtTime(time, false); [r.left + r.width / 2, r.top + r.height / 2];',
-      2);
+      '[2, 4]', 'Box Color', C + '("Box Opacity")(1)');
     var WB = [
       'var Lr = thisComp.layer("Measure Line").sourceRectAtTime(time, false);',
       'var Ur = thisComp.layer("Measure Upto").sourceRectAtTime(time, false);',
@@ -253,7 +264,8 @@
     var spokenBox = box('Spoken Word Box',
       PAD + '\n' + WB + '\n[Wr.width * g + 2 * px, Lr.height * g + 2 * py];',
       WB + '\n[(left + right) / 2, li * ' + LEAD + ' + Lr.top + Lr.height / 2];',
-      3);
+      // on its own it takes Box Opacity; over a line box it stays solid (as the image does)
+      '[3, 4]', 'Word Box Color', '(Math.round(' + C + '("Box")(1)) == 4 ? 100 : ' + C + '("Box Opacity")(1))');
     spokenBox.moveAfter(cap);
 
     // ---- one protected frame: Premiere stretches the rest over the caption ---
@@ -271,8 +283,8 @@
     }
     // After Effects puts each new control at the TOP of the list (seen on the
     // owner's AE 2026), so they go in last-first and Text ends up on top
-    var order = ['Size', 'Text Color', 'Spoken Word Color', 'Spoken Word Grow', 'Outline Color', 'Outline Width',
-                 'Box', 'Box Color', 'Box Opacity', 'Box Roundness', 'Shadow Opacity', 'Shadow Distance', 'Animation'];
+    var order = ['Size', 'Text Color', 'Spoken Word Color', 'Spoken Word Grow', 'Letter Spacing', 'Outline Color', 'Outline Width',
+                 'Box', 'Box Color', 'Word Box Color', 'Box Opacity', 'Box Roundness', 'Shadow Opacity', 'Shadow Distance', 'Animation'];
     for (var i = order.length - 1; i >= 0; i--) expose(ctl.effect(order[i]).property(1), order[i]);
     expose(st, 'Text');
 
