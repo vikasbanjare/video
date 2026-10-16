@@ -2685,6 +2685,22 @@ const MUTANTS = [
     repl: "",
     gate: 'CutPilot/test/gates/gallery-from-my-videos.js',
     why: 'editable captions slide up word by word, unlike the style'
+  },
+  {
+    name: 'v34-ae-extra-control',
+    file: 'tools/ae/Pulse-Caption-Builder.jsx',
+    find: "'Box', 'Box Color', 'Box Opacity', 'Box Roundness', 'Shadow Opacity', 'Shadow Distance', 'Animation'];",
+    repl: "'Box', 'Box Color', 'Box Opacity', 'Box Roundness', 'Shadow Opacity', 'Shadow Distance', 'Animation', 'Spoken Index'];",
+    gate: 'CutPilot/test/gates/ae-caption-builder.js',
+    why: 'Premiere shows plumbing controls the owner should never touch'
+  },
+  {
+    name: 'v34-ae-box-off-word',
+    file: 'tools/ae/Pulse-Caption-Builder.jsx',
+    find: "      'var off = -Lr.width / 2 - Lr.left;',",
+    repl: "      'var off = 0;',",
+    gate: 'CutPilot/test/gates/ae-caption-builder.js',
+    why: 'the spoken-word box lands beside the word'
   }
 ];
 
