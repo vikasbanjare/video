@@ -12423,6 +12423,14 @@
         if (g.textY == null || pc.named) g.textY = pc.y;
       }
     }
+    // Pulse's own engine draws its box with a fixed padding (0.32 / 0.16 of its
+    // 75 px face, tools/ae/Pulse-Caption-Builder.jsx) and breaks a caption into
+    // lines from the text itself: tell the planner both, or a caption placed
+    // low on a 16:9 frame hung its box off the bottom (no padding to lift by)
+    if (g.names.indexOf('spoken word color') >= 0 && g.names.indexOf('box') >= 0) {
+      if (!g.pad) g.pad = { i: -1, x: 24, y: 12, name: 'engine box padding' };
+      if (!g.lineSpacing) g.lineSpacing = { i: -1, value: 0, name: 'engine lines' };
+    }
     return g;
   }
 
@@ -19792,7 +19800,7 @@
       mapPresetToPulse: mapPresetToPulse,
       pulseLook: pulseLook,
       pulseSizeScale: pulseSizeScale,
-      setBundledMogrts: function (list) { state.bundledMogrts = list || []; },
+      setBundledMogrts: function (list, engines) { state.bundledMogrts = list || []; state.engineMogrts = engines || []; },
       parseFontFaces: parseFontFaces,
       useRealPreviews: function (on) { settings.useRealPreviews = !!on; _stylePrev = null; },
       stylePrevState: function () { return { real: !!(settings && settings.useRealPreviews), engine: previewEngineKey(), loaded: _stylePrev ? Object.keys(_stylePrev) : null, capOut: _capOut }; },
