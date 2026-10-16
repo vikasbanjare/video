@@ -1,10 +1,16 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.36** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.37** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.37 — editable placed inside the frame
+- premGeometryFrom gives Pulse Caption its drawn box padding (24×12 on its
+  75 px face) + two lines; a low caption on 16:9 was not lifted. premium-fit
+  M runs for both engines; its stand-in answers CP_inspectMogrt per template
+  (CI had failed on v0.10.34–36 for this).
 
 ### v0.10.36 — menus 0-based, fonts css2, cards = clicks
 - Premiere sets a template's drop-down by a 0-BASED index (AE reads
