@@ -6,6 +6,7 @@
   "kind": "caption",
   "desc": "Pulse's own editable caption engine: outline, word box, growing word, letter spacing, entrance — 16 controls",
   "hidden": true,
+  "engine": true,
   "hiddenWhy": "the engine every caption style uses for editable captions"
  },
  {

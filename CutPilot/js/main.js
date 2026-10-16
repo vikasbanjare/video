@@ -5234,11 +5234,16 @@
     CPBridge.callHost('CP_inspectMogrt', { path: bb.path }).then(function (r) {
       var liveProps = (r && r.props) || [];
       var payload = styles.map(function (t) {
-        var text = styleTestText(t), t2 = {}, k;
+        var text = styleTestText(t), raw = text, t2 = {}, k;
         for (k in t) if (t.hasOwnProperty(k)) t2[k] = t[k];
         t2.sizeScale = pulse ? pulseSizeScale(t, env) : 1;
         var rf = resolvedEditorFont(t, text);
-        return { id: t.id, params: mapPresetForEngine(bb.path, t2, liveProps), text: text,
+        // the line breaks a real insert makes (applyEditableStyle → premFitEditable)
+        try {
+          var fitT = premFitEditable([{ start: 0, end: STYLE_TEST_SECONDS, text: text }], bb.path, env, t2.sizeScale, rf && rf.font);
+          if (fitT && fitT.cues && fitT.cues[0] && fitT.cues[0].text) text = fitT.cues[0].text;
+        } catch (eFit) {}
+        return { id: t.id, params: mapPresetForEngine(bb.path, t2, liveProps), text: text, raw: raw,
                  textStyle: rf ? { font: rf.font, bold: rf.bold, sizeScale: (pulse && t2.sizeScale > 1.02) ? t2.sizeScale : 1 } : null };
       });
       var chunks = [], done = 0, failed = {};
@@ -5257,9 +5262,9 @@
       return job.payload.reduce(function (chain, pl, idx) {
         return chain.then(function () {
           capProgress('🎨 Comparing ' + (idx + 1) + '/' + job.payload.length + ' — ' + pl.id, 8000);
-          var t = styles[idx], rs = renderableStyle(t), ws = pl.text.split(' '), step = STYLE_TEST_SECONDS / ws.length;
+          var t = styles[idx], rs = renderableStyle(t), ws = pl.raw.split(' '), step = STYLE_TEST_SECONDS / ws.length;
           var words = ws.map(function (w, k) { return { start: k * step, end: (k + 1) * step - 0.02, text: w }; });
-          var frames = CPCaptions.buildCaptionFrames([{ start: 0, end: STYLE_TEST_SECONDS, text: pl.text, words: words }],
+          var frames = CPCaptions.buildCaptionFrames([{ start: 0, end: STYLE_TEST_SECONDS, text: pl.raw, words: words }],
             { anim: rs.anim, wordsPerCue: t.wordsPerCue, uppercase: t.uppercase, preset: rs, wordCues: words });
           var at = STYLE_TEST_SECONDS * STYLE_TEST_AT;
           return CPRender.renderFrames(frames, { width: 1080, height: 1920, preset: rs, overrides: {}, outDir: pathMod.join(premDir, 'img-' + t.id) }).then(function (items) {
@@ -5520,6 +5525,13 @@
       var withThumb = 0, withVideo = 0;
       // near-duplicate designs are hidden in index.json ("if there is a similar
       // design template remove that") — the kept sibling has the full control set
+      // CAPTION ENGINES (index "engine": true) are hidden from the template
+      // cards but must still load: Pulse's own engine was marked hidden for the
+      // cards and so never loaded — every editable caption fell back to Flux
+      // (the owner's first 🎨 style test: "Engine: Flux Halo").
+      state.engineMogrts = list.filter(function (m) { return !!m.engine; }).map(function (m) {
+        return { name: m.name, path: path.join(mdir, m.file), kind: 'caption', engine: true, desc: m.desc || '' };
+      }).filter(function (m) { try { return fs.existsSync(m.path); } catch (eX) { return false; } });
       list = list.filter(function (m) { return !m.hidden; });
       state.bundledMogrts = list.map(function (m) {
         var base = String(m.file).replace(/\.mogrt$/i, '');
@@ -12158,7 +12170,7 @@
       var b = String(p || '').split(/[\\/]/).pop().replace(/\.[^.]+$/, '').toLowerCase();
       if (b && !seen[b]) { seen[b] = 1; out.push(b); }
     }
-    (state.bundledMogrts || []).forEach(function (m) { add(m.path); });
+    (state.engineMogrts || []).concat(state.bundledMogrts || []).forEach(function (m) { add(m.path); });
     // LEGACY basenames: the repaired engines ship under _r2 names (a rename
     // forces Premiere to re-import them — projects cache mogrts by path, so
     // the old broken engine stayed inside existing projects forever). Old
@@ -13062,7 +13074,7 @@
     // Prefer the shipped subtitle templates, but fall back to ANY available
     // .mogrt (user folders / installed / uploaded) so editable captions still
     // work even if the bundled set didn't load.
-    var list = (state.bundledMogrts || []).concat(state.folderMogrts || [], state.installedMogrts || [], state.userMogrts || []);
+    var list = (state.engineMogrts || []).concat(state.bundledMogrts || [], state.folderMogrts || [], state.installedMogrts || [], state.userMogrts || []);
     function find(sub) {
       for (var i = 0; i < list.length; i++) {
         var p = (list[i] && list[i].path) ? String(list[i].path).toLowerCase() : '';
@@ -19646,6 +19658,7 @@
       pulseLook: pulseLook,
       pulseSizeScale: pulseSizeScale,
       setBundledMogrts: function (list) { state.bundledMogrts = list || []; },
+      reloadBundled: function () { loadBundledMogrts(); return { engines: (state.engineMogrts || []).map(function (m) { return m.path; }), bundled: (state.bundledMogrts || []).length, diag: state.bundledDiag }; },
       textCues: textCues,
       imageLooksBlank: imageLooksBlank,
       asrLang: function () { return settings.whisperLang || 'auto'; },   // must NEVER default to 'en' again (garbled Hindi)

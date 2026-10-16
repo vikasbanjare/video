@@ -62,8 +62,13 @@ function png(W, H) {
       return JSON.stringify({ ok: true, rendered, failed: fl });
     }
   } };
-  const r = await P.page.evaluate(async (mogrt) => {
-    window.CP_DEBUG.setBundledMogrts([{ path: mogrt, name: 'Pulse Caption' }]);
+  const EXT = path.join(__dirname, '..', '..');
+  const r = await P.page.evaluate(async (ext) => {
+    // the REAL loading path: the extension folder, its mogrts/index.json —
+    // the first owner run fell back to Flux because the engine entry was
+    // filtered out as "hidden" there, which a hand-set list never showed
+    window.__adobe_cep__.getSystemPath = () => 'file://' + ext;
+    const loaded = window.CP_DEBUG.reloadBundled();
     const s = document.querySelector('.tab[data-tab="settings"]'); if (s) s.click();
     await new Promise(r => setTimeout(r, 200));
     document.getElementById('btn-style-test').click();
@@ -71,19 +76,20 @@ function png(W, H) {
       await new Promise(r => setTimeout(r, 250));
       if (/Tested \d+ caption styles|style test stopped/.test(document.getElementById('toast').textContent)) break;
     }
-    return { toast: document.getElementById('toast').textContent, n: window.CPCaptions.TEMPLATES.filter(t => !t.mogrt).length };
-  }, MOGRT);
+    return { loaded, toast: document.getElementById('toast').textContent, n: window.CPCaptions.TEMPLATES.filter(t => !t.mogrt).length };
+  }, EXT);
   await P.close();
 
+  (r.loaded && r.loaded.engines.some(p => /Pulse_Caption_r\d+\.mogrt$/.test(p)) ? ok : bad)('0. the engine loads from the real template list (' + JSON.stringify(r.loaded) + ')');
   const green = sent.find(s => s.id === 'pack-green-word-box') || {};
   const named = (green.params || []).map(x => props[x.i].name);
-  (sent.length === r.n && /^AAJ PAISE KI BAAT$/.test(green.text || '') && named.indexOf('Word Box Color') >= 0 && named.indexOf('Box') >= 0 ? ok : bad)(
+  (sent.length === r.n && /^AAJ PAISE KI BAAT$/.test(String(green.text || '').replace(/\s+/g, ' ')) && named.indexOf('Word Box Color') >= 0 && named.indexOf('Box') >= 0 ? ok : bad)(
     'A. all ' + sent.length + ' styles go to Premiere with their own settings and words (' + (green.text || '') + ')', r.toast);
   const base = path.join(env.homedir, 'Desktop', 'Pulse Caption Test');
   const runDir = fs.existsSync(base) ? path.join(base, fs.readdirSync(base)[0] || '') : '';
   const rep = runDir && fs.existsSync(path.join(runDir, 'report.txt')) ? fs.readFileSync(path.join(runDir, 'report.txt'), 'utf8') : '';
   const lines = rep.split('\n').filter(l => /^\s*[\d.]+%\s/.test(l));
-  (lines.length === r.n && /minimal\s+— Premiere did not draw it/.test(rep) && /Styles: \d+ · close/.test(rep) ? ok : bad)(
+  (lines.length === r.n && /minimal\s+— Premiere did not draw it/.test(rep) && /Styles: \d+ · close/.test(rep) && /Engine: Pulse Caption/.test(rep) ? ok : bad)(
     'B. the report lists every style worst first and names the one Premiere refused (' + lines.length + ' rows)', rep.slice(0, 300));
   const sheets = runDir ? fs.readdirSync(runDir).filter(f => /^sheet-\d+\.png$/.test(f)) : [];
   (sheets.length === Math.ceil(r.n / 8) && sheets.every(f => fs.statSync(path.join(runDir, f)).size > 5000) ? ok : bad)('C. ' + sheets.length + ' sheets on the Desktop');
