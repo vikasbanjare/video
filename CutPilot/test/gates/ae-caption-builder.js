@@ -189,18 +189,20 @@ const ops = [1, 2, 3, 4].map(b => [opOf('Line Box', b), opOf('Spoken Word Box', 
 
 // H. v4: exit, tilt, upcoming words, gradient
 const grpExpr = (re) => { const x = rec.expressions.find(e => /^Group ›/.test(e.where) && re.test(e.where)); return x ? x.expr : null; };
-function ctlEnv(vals, time) { return { thisComp: { duration: 2, layer: () => ({ effect: (e) => () => vals[e] }) }, time, value: [540, 960] }; }
+// as in After Effects, a control reaches an expression as an OBJECT (it
+// becomes a number only in arithmetic): a bare `ctrl ? a : b` is always a
+function ctlEnv(vals, time) { return { thisComp: { duration: 2, layer: () => ({ effect: (e) => () => ({ valueOf: () => vals[e] }) }) }, time, value: [540, 960] }; }
 const base = { Animation: 1, Exit: 1, Size: 100, Tilt: 0 };
 const opAt = (ex, t) => run(exprOf('Line Box', /ADBE Opacity/), ctlEnv(Object.assign({}, base, { Exit: ex, Box: 2, 'Box Opacity': 100 }), t));
 (opAt(1, 1.99) === 100 && opAt(2, 1.0) === 100 && opAt(2, 2) === 0 && opAt(2, 1.91) > 0 && opAt(2, 1.91) < 100 ? ok : bad)(
   'H. Exit Fade: full until the last stretch, gone at the end (None stays: ' + opAt(1, 1.99) + ', Fade at 1.91 s: ' + Math.round(opAt(2, 1.91)) + ')');
-const scAt = (ex, t) => run(grpExpr(/ADBE Scale/), ctlEnv(Object.assign({}, base, { Exit: ex }), t))[0];
+const scAt = (ex, t) => +run(grpExpr(/ADBE Scale/), ctlEnv(Object.assign({}, base, { Exit: ex }), t))[0];   // + : AE uses a returned control's number
 const poAt = (ex, t) => run(grpExpr(/ADBE Position/), ctlEnv(Object.assign({}, base, { Exit: ex }), t))[1];
 (scAt(3, 2) === 60 && scAt(3, 1) === 100 && poAt(4, 2) === 1020 && poAt(4, 1) === 960 && scAt(1, 2) === 100 ? ok : bad)(
   'H. Exit Shrink ends at 60%, Slide down ends 60 px lower, both untouched mid-caption');
-(run(grpExpr(/ADBE Rotate Z/), ctlEnv(Object.assign({}, base, { Tilt: -4 }), 1)) === -4 ? ok : bad)('H. Tilt turns the whole caption group');
+(+run(grpExpr(/ADBE Rotate Z/), ctlEnv(Object.assign({}, base, { Tilt: -4 }), 1)) === -4 ? ok : bad)('H. Tilt turns the whole caption group');
 const upS = exprOf('Caption', /Upcoming.*Index Start/), upO = exprOf('Caption', /Upcoming.*Opacity/);
-(upS && upO && run(upS, ctlEnv({ 'Spoken Index': 2 }, 1)) === 3 && run(upO, ctlEnv({ 'Upcoming Opacity': 35 }, 1)) === 35 ? ok : bad)(
+(upS && upO && run(upS, ctlEnv({ 'Spoken Index': 2 }, 1)) === 3 && +run(upO, ctlEnv({ 'Upcoming Opacity': 35 }, 1)) === 35 ? ok : bad)(
   'H. Upcoming Opacity reaches the words after the spoken one');
 const gOp = (on) => run(exprOf('Gradient Text', /ADBE Opacity/), ctlEnv(Object.assign({}, base, { 'Text Gradient': on }), 1));
 const gSpoken = exprOf('Gradient Text', /Spoken Word.*ADBE Text Opacity/);

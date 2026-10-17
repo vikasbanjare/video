@@ -265,7 +265,10 @@
     // hidden unless its expression says otherwise: a failing expression falls
     // back to this value, and the first v4 build showed every caption red
     gl.property('ADBE Transform Group').property('ADBE Opacity').setValue(0);
-    gl.property('ADBE Transform Group').property('ADBE Opacity').expression = FADE + '(' + C + '("Text Gradient")(1) ? 100 : 0);';
+    // Math.round: After Effects hands an expression the control itself, an
+    // object — in a yes/no test any object is "yes", so the tick box read
+    // as on even when off (the owner's self-check: Opacity 100)
+    gl.property('ADBE Transform Group').property('ADBE Opacity').expression = FADE + '(Math.round(' + C + '("Text Gradient")(1)) == 1 ? 100 : 0);';
 
     // ---- measuring layers (guides: never drawn) ---------------------------
     function measure(name, body) {

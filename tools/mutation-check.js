@@ -2909,6 +2909,14 @@ const MUTANTS = [
     repl: '',
     gate: 'CutPilot/test/gates/caption-originals.js',
     why: 'Avenir Next styles get Bold, the image Heavy'
+  },
+  {
+    name: 'v40-ae-checkbox-as-object',
+    file: 'tools/ae/Pulse-Caption-Builder.jsx',
+    find: "FADE + '(Math.round(' + C + '(\"Text Gradient\")(1)) == 1 ? 100 : 0);'",
+    repl: "FADE + '(' + C + '(\"Text Gradient\")(1) ? 100 : 0);'",
+    gate: 'CutPilot/test/gates/ae-caption-builder.js',
+    why: 'Text Gradient off still shows the gradient (every caption red)'
   }
 ];
 
