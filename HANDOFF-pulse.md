@@ -1,10 +1,26 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.39** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.40** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.40 — owner's style test on v0.10.39 (8 close / 104 far; median ≈ same as v0.10.37)
+- Editable spoken word grows ≥20% when its colour = the text's (render.js
+  rule; Crisp, Meme). No shadow with a word box (Thuban's boxed word was
+  blurred under the template's whole-layer shadow).
+- Black faces: Install caption fonts also fetches wght@900 for families a
+  style draws ≥850 (Montserrat, Poppins, Rubik → <Fam>-Black-Pulse2.ttf);
+  resolvedEditorFont sends <Fam>-Black when present, and AvenirNext-Heavy
+  for Avenir Next ≥750 (the browser draws 800 as Heavy). wantsBlackFace().
+- Owner's first v4 mogrt (Pulse_Caption_3.mogrt.zip): font editing on, but
+  "Gradient Text" visible with Text Gradient OFF (every caption red; its
+  opacity expression evidently not applied in AE). NOT bundled. Builder now:
+  static opacity 0 on that layer + a self-check that lists every
+  expressionError in the final alert. Owner re-runs it and screenshots.
+- Still open: line spacing control (image lineGap > template 1.2), subScale
+  (2nd line smaller), gloss/gradient highlight, rainbow boxes.
 
 ### v0.10.39 — caption gap-fill: 6 original styles, tilt, exit, template v4
 - Owner approved the gap report ("add all the features … and captions").

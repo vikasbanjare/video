@@ -139,7 +139,11 @@ const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r3.mogrt
   console.log('    image vs editable, median difference: Pulse engine ' + med('pulse').toFixed(1) + '% · Flux ' + med('flux').toFixed(1) + '%; close (<5%): Pulse ' + close('pulse') + ' · Flux ' + close('flux') + ' of ' + rows.length);
   (med('pulse') < med('flux') * 0.6 && close('pulse') > close('flux') * 2 ? ok : bad)('D. the editable look is far closer to the image caption than on Flux');
   const of = id => rows.find(x => x.id === id) || {};
-  (of('pack-green-word-box').pulse < 16 && of('pack-maroon-label').pulse < 6 && of('cap-pastel').pulse < 18 ? ok : bad)(
+  // 19, not 16: a word-box style is sent with no shadow (v0.10.40) — the
+  // template shades every letter, and in the owner's real Premiere test the
+  // boxed word came out blurred under it. This preview can skip the shadow
+  // per word, so it now counts the other words' missing shadow as a difference.
+  (of('pack-green-word-box').pulse < 19 && of('pack-maroon-label').pulse < 6 && of('cap-pastel').pulse < 18 ? ok : bad)(
     'D. Green Word Box, Maroon Label and Pastel (line box + word box) match their image captions (' + ['pack-green-word-box', 'pack-maroon-label', 'cap-pastel'].map(i => of(i).pulse.toFixed(1) + '%').join(' · ') + ')');
   fs.writeFileSync(path.join(root, 'rows.json'), JSON.stringify(rows.sort((a, b) => b.pulse - a.pulse), null, 1));
   console.log('    worst: ' + rows.slice(0, 6).map(x => x.id + ' ' + x.pulse.toFixed(1) + '%').join(' · ') + '  (' + root + '/rows.json)');

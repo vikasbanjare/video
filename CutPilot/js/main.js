@@ -7093,7 +7093,45 @@
     return out;
   }
   function missingCaptionFonts() {
-    return captionFontFamilies().filter(function (f) { return fontInstalled(f) === false; });
+    return captionFontFamilies().filter(function (f) {
+      return fontInstalled(f) === false || (heavyCaptionFamily(f) && fontInstalled(f) && hasBlackFace(f) === false);
+    });
+  }
+  /* Families a style draws at Black (900): Bold alone drew Headliner and Punch
+     Caps Gold visibly lighter in editable captions than in the image. */
+  function heavyCaptionFamily(f) {
+    if (CPCaptions.isMacFace && CPCaptions.isMacFace(f)) return false;
+    return CPCaptions.TEMPLATES.some(function (t) { return t.font === f && (t.weight || 800) >= 850; });
+  }
+  /* Is a Black (900) face of this family on the Mac? Avenir Next ships Heavy;
+     others: a "<Family>-Black…" file in a fonts folder. null = cannot tell. */
+  /* Does the image caption draw this weight in the family's Black / Heavy
+     face? A browser asked for 800 takes Avenir Next Heavy (its 800), so
+     Nova, Pulse, Thuban… rendered heavier than the Bold sent to Premiere. */
+  function wantsBlackFace(family, weight) {
+    var w = weight || 800;
+    if (String(family || '').toLowerCase() === 'avenir next') return w >= 750;
+    return w >= 850 && hasBlackFace(family) === true;
+  }
+  var _blackFiles = null;
+  function hasBlackFace(family) {
+    var key = String(family || '').toLowerCase();
+    if (key === 'avenir next') return true;
+    if (!_blackFiles) {
+      try {
+        var fs = nodeReq('fs'), pathMod = nodeReq('path'), os = nodeReq('os');
+        _blackFiles = [];
+        [pathMod.join(os.homedir(), 'Library', 'Fonts'), '/Library/Fonts'].forEach(function (d) {
+          try { _blackFiles = _blackFiles.concat(fs.readdirSync(d)); } catch (eD) {}
+        });
+      } catch (e) { return null; }
+    }
+    var stem = key.replace(/[^a-z0-9]+/g, '');
+    for (var i = 0; i < _blackFiles.length; i++) {
+      var n = String(_blackFiles[i]).toLowerCase();
+      if (n.indexOf(stem) === 0 && /^[a-z0-9]+[-_ ]?black/.test(n.replace(/\.(ttf|otf)$/, ''))) return true;
+    }
+    return false;
   }
   /* the @font-face blocks of a Google Fonts css response → [{family, weight, url}] */
   function parseFontFaces(css) {
@@ -7140,13 +7178,23 @@
       // as "RubikLight-Bold", which Premiere never matched ("Rubik isn't
       // installed" after installing it). A family with no Bold returns its
       // one face.
-      var url = 'https://fonts.googleapis.com/css2?family=' + encodeURIComponent(fam).replace(/%20/g, '+') + ':wght@400;700';
+      var famQ = encodeURIComponent(fam).replace(/%20/g, '+');
+      var url = 'https://fonts.googleapis.com/css2?family=' + famQ + ':wght@400;700';
       return curlText(['-sS', '-L', '--fail', '--max-time', '30', '-A', UA, url]).then(function (r) {
         var faces = (r.code === 0) ? parseFontFaces(r.out) : [];
+        // the Black face too, asked for on its own: a family without one
+        // fails only this request, never the Regular + Bold above
+        if (!faces.length || !heavyCaptionFamily(fam)) return faces;
+        return curlText(['-sS', '-L', '--fail', '--max-time', '30', '-A', UA,
+          'https://fonts.googleapis.com/css2?family=' + famQ + ':wght@900']).then(function (r9) {
+          var heavy = (r9.code === 0) ? parseFontFaces(r9.out).filter(function (f9) { return f9.weight >= 850; }) : [];
+          return faces.concat(heavy);
+        });
+      }).then(function (faces) {
         if (!faces.length) { none.push(fam); return; }
         return faces.reduce(function (ch, f) {
           return ch.then(function () {
-            var base = f.family.replace(/[^A-Za-z0-9]+/g, '') + '-' + (f.weight >= 600 ? 'Bold' : 'Regular');
+            var base = f.family.replace(/[^A-Za-z0-9]+/g, '') + '-' + (f.weight >= 850 ? 'Black' : (f.weight >= 600 ? 'Bold' : 'Regular'));
             var file = pathMod.join(dir, base + '-Pulse2.ttf');
             try { fs.unlinkSync(pathMod.join(dir, base + '-Pulse.ttf')); } catch (eOld) {}   // the first install's copy (maybe misnamed)
             try { if (fs.existsSync(file) && fs.statSync(file).size > 1000) { have++; return; } } catch (eE) {}
@@ -7168,7 +7216,7 @@
     next().then(function () {
       capProgress(null);
       _fontInstallBusy = false; if (btn) btn.disabled = false;
-      _installedFontsLoaded = false; loadInstalledFonts();   // rescan: Pulse sees them at once
+      _installedFontsLoaded = false; _blackFiles = null; loadInstalledFonts();   // rescan: Pulse sees them at once
       try { diag('fonts', 'installed ' + got + ' faces (' + have + ' already there); not on Google Fonts: ' + (none.join(', ') || 'none')); } catch (eD) {}
       if (!got && have) {
         toast('🔤 The caption fonts are already installed (' + have + ' files). If you just installed them, quit and reopen Premiere once so it can use them.' + (none.length ? ' Not available to download: ' + none.join(', ') + '.' : ''));
@@ -13380,7 +13428,9 @@
     if (!preset || !preset.font) return null;
     var family = drawableFamily(preset, text);
     var wantBold = (preset.weight || 800) >= 600;
-    var ps = CPCaptions.psFontName(family, wantBold ? 'Bold' : 'Regular');
+    // a Black (900) style gets the Black face when the Mac has one
+    var black = wantsBlackFace(family, preset.weight);
+    var ps = CPCaptions.psFontName(family, black ? 'Black' : (wantBold ? 'Bold' : 'Regular'));
     if (!ps) return null;
     return { font: ps, bold: wantBold && !CPCaptions.psIsBoldFace(ps), family: family,
              substitutedFrom: (family !== preset.font) ? preset.font : null };
@@ -13566,8 +13616,10 @@
     out.wordSpacing = 0; out.glossy = false; out.emphasizeWords = false; out.highlightItalic = false;
     out.upcomingOpacity = 1; out.boxStrokeWidth = 0; out.box3d = false; out.box3dDepth = 0; out.boxGloss = 0; out.stagger = 0;
     out.keyword = false;                                   // no static keyword colouring in the engine
-    out.weight = (p.weight || 800) >= 600 ? 800 : 500;     // the font write knows bold or regular
     out.font = editableFamily(p.font || 'Inter', { latin: true, devanagari: p.script === 'deva' }, p.font, p.script === 'deva').family;
+    // the font write knows regular, bold, and black where the Mac has it
+    out.weight = wantsBlackFace(out.font, p.weight) ? 900 : ((p.weight || 800) >= 600 ? 800 : 500);
+    if (!L.shadowOpacity) out.glow = null;
     out.wordHl = L.spokenLit;
     out.anim = L.spokenLit ? 'karaoke' : 'fade';           // the spoken word moves word by word, or all words alike
     out.entrance = ({ 1: 'none', 2: 'pop', 3: 'fade', 4: 'slide' })[L.animation];
@@ -13962,7 +14014,10 @@
       textColor: fill,
       // on a box the word takes a colour that reads on it, as the image does
       spokenColor: !spoken ? fill : (wordBox ? pulseContrast(hl) : hl),
-      grow: spoken ? Math.max(0, Math.min(100, Math.round(((p.highlightScale || 1) - 1) * 100))) : 0,
+      // the image pops a spoken word whose colour is the text's own by at
+      // least 20% (render.js), or it could not be told apart (Crisp, Meme)
+      grow: spoken ? Math.max(0, Math.min(100, Math.round(((String(hl).toLowerCase() === String(fill).toLowerCase()
+        ? Math.max(p.highlightScale || 1, 1.2) : (p.highlightScale || 1)) - 1) * 100))) : 0,
       outlineColor: p.stroke || '#000000',
       outlineWidth: (p.stroke && p.strokeWidth > 0) ? Math.min(100, Math.round(p.strokeWidth * k * 10) / 10) : 0,
       // 1 none · 2 whole line · 3 spoken word · 4 both (a word box over a line box)
@@ -13977,7 +14032,9 @@
       // 2 spread every letter apart): send the style's spacing in those units
       letterSpacing: Math.max(0, Math.min(100, Math.round((p.letterSpacing || 0) * k / 10 * 100) / 100)),
       boxRoundness: Math.max(0, Math.min(100, Math.round(((p.boxRadius != null) ? p.boxRadius : 10) * k))),
-      shadowOpacity: p.glow ? Math.max(30, Math.min(100, Math.round(((p.glowBlur != null) ? p.glowBlur : 0.35) * 100) + 30)) : 0,
+      // no shadow with a word box: the template shades every letter, and the
+      // boxed word came out blurred (the image skips the shadow on it)
+      shadowOpacity: (p.glow && !wordBox) ? Math.max(30, Math.min(100, Math.round(((p.glowBlur != null) ? p.glowBlur : 0.35) * 100) + 30)) : 0,
       shadowDistance: p.glow ? Math.min(100, Math.round(dist * 10) / 10) : 0,
       animation: anim,
       spokenLit: spoken,

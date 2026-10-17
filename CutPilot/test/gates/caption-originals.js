@@ -75,6 +75,9 @@ const OFL = ['Archivo Black', 'Poppins', 'Anton', 'Montserrat', 'Quicksand', 'Be
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-orig-'));
   const env = { tmpdir: path.join(root, 't'), homedir: path.join(root, 'h'), platform: 'darwin' };
   fs.mkdirSync(env.tmpdir, { recursive: true }); fs.mkdirSync(env.homedir, { recursive: true });
+  // a Mac with Montserrat's Black face installed (🔤 Install caption fonts), not Poppins'
+  fs.mkdirSync(path.join(env.homedir, 'Library', 'Fonts'), { recursive: true });
+  fs.writeFileSync(path.join(env.homedir, 'Library', 'Fonts', 'Montserrat-Black-Pulse2.ttf'), 'x');
   const P = await L.launchPanel({ env });
   if (P.skip) { console.log('  ? ' + P.skip + ' — skipped'); process.exit(failed ? 1 : 2); }
   const r = await P.page.evaluate(async (NAMES) => {
@@ -139,6 +142,17 @@ const OFL = ['Archivo Black', 'Poppins', 'Anton', 'Montserrat', 'Quicksand', 'Be
     D.setBundledMogrts([], [{ path: '/ext/mogrts/Pulse_Caption_r4.mogrt', name: 'Pulse Caption', engine: true, features: ['gradient', 'upcoming', 'tilt', 'exit'] }]);
     const c4 = D.pulseCarryStyle(T('af-line-ribbons')), g4 = D.pulseCarryStyle(T('af-sunset-fade')), u4 = D.pulseCarryStyle(T('af-soft-focus'));
     out.prevNew = { tilt: c4.tilt, alt: c4.tiltAlt, fill2: g4.fill2, up: u4.upcomingOpacity };
+    // F: the owner's style test on v0.10.39
+    const look = id => T(id) ? D.pulseLook(T(id)) : { grow: 'missing ' + id, shadowOpacity: 'missing ' + id };
+    out.grow = { crisp: look('cap-clarity').grow, meme: look('tr-meme').grow, pulse: look('pro-pulse').grow };
+    out.shadow = { thuban: look('pro-thuban').shadowOpacity, column: look('cap-editorial').shadowOpacity };
+    out.thubanGlow = D.pulseCarryStyle(T('pro-thuban')).glow;
+    const F = window.CP_DEBUG_EXT.fonts;
+    out.black = { headliner: (F.resolveStyle('af-headliner', 'AAJ') || {}).font, plain: (F.resolveStyle('tr-two-speaker', 'AAJ') || {}).font,
+      poppins900: (C.TEMPLATES.filter(t => t.font === 'Poppins' && (t.weight || 0) >= 850).map(t => (F.resolveStyle(t.id, 'AAJ') || {}).font))[0] };
+    out.blackWeight = D.pulseCarryStyle(T('af-headliner')).weight;
+    out.avenir = { nova: (F.resolveStyle('pro-nova', 'AAJ') || {}).font, novaW: D.pulseCarryStyle(T('pro-nova')).weight,
+      light: (F.resolveStyle('cap-clean-sub', 'AAJ') || {}).font };
     return out;
   }, NAMES);
   await P.close();
@@ -173,6 +187,17 @@ const OFL = ['Archivo Black', 'Poppins', 'Anton', 'Montserrat', 'Quicksand', 'Be
   (r.prevOld.tilt === 0 && !r.prevOld.fill2 ? ok : bad)('D. with the r3 engine the editable preview promises no tilt or gradient', JSON.stringify(r.prevOld));
   (r.prevNew.tilt === 3 && r.prevNew.alt === false && /^#ff4e50$/i.test(r.prevNew.fill2) && Math.abs(r.prevNew.up - 0.35) < 1e-9 ? ok : bad)(
     'D. with a v4 engine it shows them (the whole caption turns: no per-line lean)', JSON.stringify(r.prevNew));
+
+  // F. the owner's real style test (v0.10.39): editable differed from the image
+  (r.grow.crisp === 20 && r.grow.meme === 20 && r.grow.pulse === 10 ? ok : bad)(
+    'F. a spoken word in the text\'s own colour grows 20% in editable, as in the image (Crisp, Meme); a coloured one keeps its own (Pulse 10)', JSON.stringify(r.grow));
+  (r.shadow.thuban === 0 && r.shadow.column > 0 && r.thubanGlow === null ? ok : bad)(
+    'F. no shadow over a word box (Thuban\'s boxed word came out blurred); the preview agrees', JSON.stringify(r.shadow));
+  (r.black.headliner === 'Montserrat-Black' && r.blackWeight === 900 && /Bold$/.test(r.black.poppins900 || 'Bold') ? ok : bad)(
+    'F. a Black (900) style gets the Black face where the Mac has it (Headliner → ' + r.black.headliner + '), Bold where it does not (Poppins → ' + r.black.poppins900 + ')', JSON.stringify(r.black));
+
+  (r.avenir.nova === 'AvenirNext-Heavy' && r.avenir.novaW === 900 ? ok : bad)(
+    'F. an Avenir Next style at 800 gets Heavy, the face the image draws (Nova → ' + r.avenir.nova + ')', JSON.stringify(r.avenir));
 
   if (failed) { console.log('CAPTION ORIGINALS: ' + failed + ' failed'); process.exit(1); }
   console.log('CAPTION ORIGINALS: six new styles, tilt, exit and template v4 ✓');

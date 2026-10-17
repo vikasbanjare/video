@@ -2877,6 +2877,38 @@ const MUTANTS = [
     repl: '      copy = seq;',
     gate: 'CutPilot/test/gates/shape-copy.js',
     why: 'the owner sequence itself is reshaped'
+  },
+  {
+    name: 'v40-grow-ignores-same-colour',
+    file: 'CutPilot/js/main.js',
+    find: 'String(hl).toLowerCase() === String(fill).toLowerCase()\n        ? Math.max(p.highlightScale || 1, 1.2)',
+    repl: 'false\n        ? Math.max(p.highlightScale || 1, 1.2)',
+    gate: 'CutPilot/test/gates/caption-originals.js',
+    why: 'Crisp/Meme spoken word does not grow in editable'
+  },
+  {
+    name: 'v40-shadow-on-word-box',
+    file: 'CutPilot/js/main.js',
+    find: '      shadowOpacity: (p.glow && !wordBox) ?',
+    repl: '      shadowOpacity: (p.glow) ?',
+    gate: 'CutPilot/test/gates/caption-originals.js',
+    why: 'the boxed word is blurred by the shadow'
+  },
+  {
+    name: 'v40-no-black-face',
+    file: 'CutPilot/js/main.js',
+    find: '    var black = wantsBlackFace(family, preset.weight);',
+    repl: '    var black = false;',
+    gate: 'CutPilot/test/gates/caption-originals.js',
+    why: 'Headliner / Nova lighter in editable than the image'
+  },
+  {
+    name: 'v40-avenir-bold',
+    file: 'CutPilot/js/main.js',
+    find: "    if (String(family || '').toLowerCase() === 'avenir next') return w >= 750;",
+    repl: '',
+    gate: 'CutPilot/test/gates/caption-originals.js',
+    why: 'Avenir Next styles get Bold, the image Heavy'
   }
 ];
 

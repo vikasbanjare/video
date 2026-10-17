@@ -3034,7 +3034,7 @@
     'georgia':         { Regular: 'Georgia', Bold: 'Georgia-Bold', Italic: 'Georgia-Italic', BoldItalic: 'Georgia-BoldItalic' },
     'helvetica':       { Regular: 'Helvetica', Bold: 'Helvetica-Bold', Italic: 'Helvetica-Oblique', BoldItalic: 'Helvetica-BoldOblique' },
     'helvetica neue':  { Regular: 'HelveticaNeue', Bold: 'HelveticaNeue-Bold', Medium: 'HelveticaNeue-Medium', Light: 'HelveticaNeue-Light', Italic: 'HelveticaNeue-Italic', BoldItalic: 'HelveticaNeue-BoldItalic' },
-    'avenir next':     { Regular: 'AvenirNext-Regular', Medium: 'AvenirNext-Medium', SemiBold: 'AvenirNext-DemiBold', Bold: 'AvenirNext-Bold', Italic: 'AvenirNext-Italic', BoldItalic: 'AvenirNext-BoldItalic' },
+    'avenir next':     { Regular: 'AvenirNext-Regular', Medium: 'AvenirNext-Medium', SemiBold: 'AvenirNext-DemiBold', Bold: 'AvenirNext-Bold', Black: 'AvenirNext-Heavy', Italic: 'AvenirNext-Italic', BoldItalic: 'AvenirNext-BoldItalic' },
     'menlo':           { Regular: 'Menlo-Regular', Bold: 'Menlo-Bold', Italic: 'Menlo-Italic', BoldItalic: 'Menlo-BoldItalic' },
     'didot':           { Regular: 'Didot', Bold: 'Didot-Bold', Italic: 'Didot-Italic' },
     'marker felt':     { Regular: 'MarkerFelt-Thin', Bold: 'MarkerFelt-Wide' },

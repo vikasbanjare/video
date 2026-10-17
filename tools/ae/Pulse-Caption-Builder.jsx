@@ -262,6 +262,9 @@
     gl.effect('Gradient').property('ADBE Ramp-0002').expression = C + '("Text Color")(1);';
     gl.effect('Gradient').property('ADBE Ramp-0003').expression = 'var r = sourceRectAtTime(time, false); [r.left + r.width / 2, r.top + r.height];';
     gl.effect('Gradient').property('ADBE Ramp-0004').expression = C + '("Text Color 2")(1);';
+    // hidden unless its expression says otherwise: a failing expression falls
+    // back to this value, and the first v4 build showed every caption red
+    gl.property('ADBE Transform Group').property('ADBE Opacity').setValue(0);
     gl.property('ADBE Transform Group').property('ADBE Opacity').expression = FADE + '(' + C + '("Text Gradient")(1) ? 100 : 0);';
 
     // ---- measuring layers (guides: never drawn) ---------------------------
@@ -352,6 +355,33 @@
       comp.markerProperty.setValueAtTime(0, mv);
     } catch (eMk) {}
 
+    // ---- self-check: After Effects runs every expression; report any that
+    // fail (the owner screenshots this instead of hunting for error bars) ----
+    var exprErrors = [];
+    function scanProps(group, where) {
+      for (var pi = 1; pi <= group.numProperties; pi++) {
+        var pr = group.property(pi);
+        if (!pr) continue;
+        if (pr.propertyType === PropertyType.PROPERTY) {
+          var ee = '';
+          try { ee = pr.expressionError || ''; } catch (eEe) {}
+          var off = false;
+          try { off = pr.canSetExpression && pr.expression !== '' && pr.expressionEnabled === false; } catch (eOff) {}
+          if (ee || off) exprErrors.push(where + ' > ' + pr.name + ': ' + (ee || 'expression switched off'));
+        } else {
+          scanProps(pr, where + ' > ' + pr.name);
+        }
+      }
+    }
+    try {
+      for (var li = 1; li <= comp.numLayers; li++) scanProps(comp.layer(li), comp.layer(li).name);
+    } catch (eScan) { exprErrors.push('(could not check: ' + eScan.toString() + ')'); }
+    // with Text Gradient off, the gradient copy must be invisible
+    try {
+      var gOp = gl.property('ADBE Transform Group').property('ADBE Opacity').valueAtTime(1, false);
+      if (gOp > 0) exprErrors.push('Gradient Text > Opacity is ' + gOp + ' with Text Gradient off (should be 0)');
+    } catch (eG) {}
+
     // ---- Essential Graphics: the only controls Premiere shows --------------
     comp.motionGraphicsTemplateName = NAME;
     function expose(prop, label) {
@@ -395,7 +425,11 @@
     } else {
       // Font editing on the Text control cannot be switched on by script, and
       // Pulse needs it to give each style its own font in Premiere
-      alert('Pulse Caption is built. One last step by hand (After Effects has no script for it):\n\n' +
+      if (exprErrors.length) {
+        alert('Pulse Caption is built, but After Effects reports ' + exprErrors.length + ' problem(s). ' +
+              'Please take a screenshot of this message and send it — do not export yet.\n\n' +
+              exprErrors.slice(0, 12).join('\n'));
+      } else alert('Pulse Caption is built (self-check passed). One last step by hand (After Effects has no script for it):\n\n' +
             '1. In Essential Graphics, on the Text row, click "Edit Properties".\n' +
             '2. Tick "Allow font editing", "Allow faux styles" and "Allow font size editing" → OK.\n' +
             '3. Click "Export Motion Graphics Template…" → Desktop → Save (replace).\n\n' +

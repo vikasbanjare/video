@@ -50,6 +50,12 @@ Node.prototype.property = function (x) {
   return this.addProperty(x);
 };
 Node.prototype.setValue = function (v) { this.v = v; };
+// the self-check's view: groups hold properties; a leaf reports its
+// expression error (the stand-in can fail one on purpose: FAIL_EXPR)
+Object.defineProperty(Node.prototype, 'numProperties', { get() { return this.kids.length; } });
+Object.defineProperty(Node.prototype, 'propertyType', { get() { return this.kids.length ? 2 : 1; } });
+Object.defineProperty(Node.prototype, 'expressionError', { get() { return (process.env.FAIL_EXPR && this.expr && this.expr.indexOf(process.env.FAIL_EXPR) >= 0) ? 'Error: boom' : ''; } });
+Node.prototype.valueAtTime = function () { return this.v != null ? this.v : 0; };
 // After Effects rebuilds a dropdown effect when its menu is filled: the old
 // reference goes stale and the name resets (the owner's AE: "null is not an
 // object" when the script looked it up by the name it had set)
@@ -75,6 +81,8 @@ const comp = {
   layers: { list: [], add(l) { this.list.unshift(l); return l; },
     addNull() { return this.add(new Layer('Null')); }, addText(t) { const l = new Layer('Text'); l.text0 = t; return this.add(l); }, addShape() { return this.add(new Layer('Shape')); } },
   markerProperty: { setValueAtTime(t, mv) { rec.markers.push({ t, mv }); } },
+  get numLayers() { return this.layers.list.length; },
+  layer(i) { return this.layers.list[i - 1]; },
   exportAsMotionGraphicsTemplate(over, p) { if (this.stale) throw new Error('Object is invalid'); rec.exported.push(p); return true; },
   openInViewer() { if (this.stale) throw new Error('Object is invalid'); }
 };
@@ -85,6 +93,7 @@ const sandbox = {
                     save(f) { rec.saved.push(f.path); comp.stale = true; },
                     get numItems() { return 1; }, item(k) { return k === 1 ? freshComp : null; } } },
   CompItem: function () {},
+  PropertyType: { PROPERTY: 1, INDEXED_GROUP: 2, NAMED_GROUP: 3 },
   ParagraphJustification: { CENTER_JUSTIFY: 'center' },
   MarkerValue: function (c) { this.comment = c; },
   File: function (p) { this.path = p; this.fsName = p; this.exists = true; },
@@ -199,6 +208,19 @@ const gStroke = exprOf('Gradient Text', /Look.*Stroke Width/);
 const gC1 = exprOf('Gradient Text', /Ramp-0002/), gC2 = exprOf('Gradient Text', /Ramp-0004/);
 (gOp(1) === 100 && gOp(0) === 0 && gSpoken === '0;' && gStroke === '0;' && /Text Color"/.test(gC1) && /Text Color 2"/.test(gC2) ? ok : bad)(
   'H. Text Gradient: a letters-only copy shown only when ticked, Text Color → Text Color 2, no outline, the spoken word left to the caption');
+
+// I. the self-check: a clean build says so; the gradient copy starts hidden
+(rec.alerts.some(a => /self-check passed/.test(a)) ? ok : bad)('I. a clean build says its self-check passed', JSON.stringify(rec.alerts));
+const gOpacity = (() => { const L = comp.layers.list.find(l => l.name === 'Gradient Text'); return L && L.property('ADBE Transform Group').property('ADBE Opacity').v; })();
+(gOpacity === 0 ? ok : bad)('I. the gradient copy is hidden unless its expression shows it (a failing expression cannot paint every caption)');
+if (!process.env.FAIL_EXPR) {
+  const cpr = require('child_process').spawnSync(process.execPath, [__filename], { env: Object.assign({}, process.env, { FAIL_EXPR: 'Text Gradient' }), encoding: 'utf8' });
+  (/I\. FAILED-EXPR-REPORTED/.test(cpr.stdout) ? ok : bad)('I. an expression After Effects rejects is named in the final message, with "do not export yet"');
+} else {
+  const a = rec.alerts.find(x => /reports \d+ problem/.test(x)) || '';
+  if (/do not export yet/.test(a) && /Gradient Text > .*Opacity: Error: boom/.test(a)) console.log('  I. FAILED-EXPR-REPORTED');
+  process.exit(0);
+}
 
 // F. protected frame + saved
 const mk = rec.markers[0];
