@@ -1500,7 +1500,7 @@
       uppercase: true, letterSpacing: 1, wordsPerCue: 3, anim: 'karaoke' }
   ];
 
-  var TEMPLATES = STYLE_PRESETS.concat(PREMIUM_TEMPLATES, MORE_TEMPLATES, NEW_TEMPLATES, BUTTON_TEMPLATES, ORIGINAL_TEMPLATES);
+  var TEMPLATES = STYLE_PRESETS.concat(PREMIUM_TEMPLATES, MORE_TEMPLATES, NEW_TEMPLATES, ORIGINAL_TEMPLATES, BUTTON_TEMPLATES);
   // Retire near-duplicate styles that differed from a kept one only by colour or
   // size (both editable in the customizer) — keeps the gallery curated & distinct.
   var _RETIRED = { evo: 1, cleanwhite: 1, byline: 1, 'pro-neon': 1, rebel: 1, boldyellow: 1,

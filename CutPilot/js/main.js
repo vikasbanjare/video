@@ -9174,7 +9174,7 @@
     // at the style's own size, case, emoji, CAPS on key words, strip
     // punctuation, censor) — so the preview splits the words into captions
     // exactly as the timeline will. Proof B2 keeps the tile identical too.
-    var pvAnimId = CPCaptions.animIdForConcept((carry.entrance && carry.entrance !== 'none') ? carry.entrance : carry.anim);
+    var pvAnimId = currentAnim();   // the EXACT call the render pipeline makes
     var pvWpc = wrapDemo ? sw.length : (parseInt($('c-words').value, 10) || 0);
     canvas._pvAnimId = pvAnimId; canvas._pvWpc = pvWpc;
     var DUR = SAMPLE_DUR;                             // seconds per word — same pacing as the tile
