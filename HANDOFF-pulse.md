@@ -26,8 +26,11 @@ Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels
   ["gradient","upcoming","tilt","exit"]. Until then r3 ships and
   pulseCarryStyle shows none of these in the editable preview.
 - Translate: +21 languages (10 Indian). Gate caption-originals.
-- Still open from the gap report: export sizes (1:1 / 16:9 versions),
-  B-roll placement.
+- 📐 Shorts › "This whole video in another shape": CP_makeShapeCopy clones
+  the open sequence at 9:16 / 1:1 / 16:9, zooms each picture to fill
+  (×max(W/oldW, H/oldH)), removes Pulse's old-size captions on the copy,
+  opens it. Gate shape-copy.
+- Still open from the gap report: B-roll placement (L effort).
 
 ### v0.10.38 — editable follows word-by-word; spacing; image line breaks
 - pulseLook: spoken word lit whenever ✨ Word-by-word is on (Slam had no
