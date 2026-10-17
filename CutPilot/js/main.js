@@ -9174,7 +9174,7 @@
     // at the style's own size, case, emoji, CAPS on key words, strip
     // punctuation, censor) — so the preview splits the words into captions
     // exactly as the timeline will. Proof B2 keeps the tile identical too.
-    var pvAnimId = currentAnim();   // the EXACT call the render pipeline makes
+    var pvAnimId = CPCaptions.animIdForConcept((carry.entrance && carry.entrance !== 'none') ? carry.entrance : carry.anim);
     var pvWpc = wrapDemo ? sw.length : (parseInt($('c-words').value, 10) || 0);
     canvas._pvAnimId = pvAnimId; canvas._pvWpc = pvWpc;
     var DUR = SAMPLE_DUR;                             // seconds per word — same pacing as the tile
@@ -17733,6 +17733,30 @@
     }).catch(function (e) { prog.classList.add('hidden'); toast('Speaker reframe failed: ' + e.message, true); });
   }
   if ($('btn-speaker-reframe')) $('btn-speaker-reframe').addEventListener('click', runSpeakerReframe);
+
+  // 📐 the whole video in another shape: a copy at 9:16 / 1:1 / 16:9
+  function makeShapeCopy(btn) {
+    var st = $('shape-status');
+    if (!CPBridge.isCEP()) return toast('This needs Premiere (open Pulse inside Premiere).', true);
+    var all = document.querySelectorAll('#shape-pick button');
+    for (var i = 0; i < all.length; i++) all[i].disabled = true;
+    if (st) st.textContent = 'Making the ' + btn.dataset.label + ' copy…';
+    CPBridge.callHost('CP_makeShapeCopy', { width: +btn.dataset.w, height: +btn.dataset.h, label: btn.dataset.label }).then(function (r) {
+      for (var j = 0; j < all.length; j++) all[j].disabled = false;
+      var msg = '📐 Made “' + r.name + '” (' + r.width + '×' + r.height + ') and opened it — your original is unchanged.' +
+        (r.captionsRemoved ? ' Its old captions were for the old size: tap ✨ Add captions on the Captions page to caption it at this size.' : '');
+      if (st) st.textContent = msg;
+      toast(msg);
+      // the copy is the open sequence now: captions and previews follow its size
+      CPBridge.callHost('CP_getEnv').then(function (env) { if (env) state.env = env; }, function () {});
+    }).catch(function (e) {
+      for (var j = 0; j < all.length; j++) all[j].disabled = false;
+      if (st) st.textContent = '';
+      toast('Could not make the copy: ' + e.message, true);
+    });
+  }
+  var shapeBtns = document.querySelectorAll('#shape-pick button');
+  for (var sbi = 0; sbi < shapeBtns.length; sbi++) shapeBtns[sbi].addEventListener('click', function () { makeShapeCopy(this); });
 
   // =========================================================== MULTICAM ====
   var mcButtons = document.querySelectorAll('#mc-mode button');

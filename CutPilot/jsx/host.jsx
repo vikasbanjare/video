@@ -3471,6 +3471,65 @@ function CP_isPulseCaptionClip(clip) {
   return /^cap[-_]?\d+[^\\\/]*\.png$/i.test(file) || /^pulse-captions/i.test(file) || /^captions\.mov$/i.test(file);
 }
 
+/* "📐 This whole video in another shape": a COPY of the active sequence at a
+   new frame size (9:16 1080×1920, 1:1 1080×1080, 16:9 1920×1080). The owner's
+   sequence is never touched. In the copy every picture is zoomed to fill the
+   new frame (centred), and Pulse's captions are taken off — they were drawn
+   for the old size, so they are made again on the copy.
+   argsJson: { width, height, label } → { name, scaled, captionsRemoved } */
+function CP_makeShapeCopy(argsJson) {
+  try {
+    var args = JSON.parse(argsJson);
+    var W = Math.round(args.width), H = Math.round(args.height);
+    if (!(W > 0 && H > 0)) return CP_fail('No size given.');
+    var seq = CP_activeSequence();
+    if (!seq) return CP_fail('Open the sequence you want in another shape first.');
+    var st0 = null, oldW = 0, oldH = 0;
+    try { st0 = seq.getSettings(); oldW = st0.videoFrameWidth; oldH = st0.videoFrameHeight; } catch (eS) {}
+    if (!(oldW > 0 && oldH > 0)) return CP_fail('Premiere did not say this sequence\'s size, so Pulse cannot reshape it.');
+    if (oldW === W && oldH === H) return CP_fail('This sequence is already ' + W + '×' + H + '.');
+    var had = {}, sqs, q, copy = null;
+    try { sqs = app.project.sequences; for (q = 0; q < sqs.numSequences; q++) had[CP_seqId(sqs[q])] = 1; } catch (eL) {}
+    var cloned;
+    try { cloned = seq.clone(); } catch (eC) { return CP_fail('Premiere could not copy the sequence (' + eC.message + ').'); }
+    if (cloned === false) return CP_fail('Premiere refused to copy the sequence.');
+    try {
+      sqs = app.project.sequences;
+      for (q = 0; q < sqs.numSequences; q++) { if (!had[CP_seqId(sqs[q])]) { copy = sqs[q]; break; } }
+    } catch (eL2) {}
+    if (!copy) return CP_fail('Premiere made the copy but Pulse could not find it — look for "' + seq.name + ' Copy" in the Project panel.');
+    try { copy.name = String(seq.name) + ' · ' + (args.label || (W + 'x' + H)); } catch (eN) {}
+    var st = copy.getSettings();
+    st.videoFrameWidth = W; st.videoFrameHeight = H;
+    copy.setSettings(st);
+    // fill the new frame: the picture that filled the old one grows by the
+    // larger of the two size changes (the rest is cropped, centred)
+    var grow = Math.max(W / oldW, H / oldH);
+    var scaled = 0, removed = 0;
+    for (var t = 0; t < copy.videoTracks.numTracks; t++) {
+      var tr = copy.videoTracks[t];
+      for (var c = tr.clips.numItems - 1; c >= 0; c--) {
+        var clip = tr.clips[c];
+        if (CP_isPulseCaptionClip(clip)) {
+          try { clip.remove(false, false); removed++; } catch (eR) {}
+          continue;
+        }
+        var sc = null;
+        try { sc = CP_findProperty(CP_findComponent(clip, 'Motion'), 'Scale'); } catch (eF) { sc = null; }
+        if (!sc) continue;
+        try {
+          var v = parseFloat(sc.getValue());
+          if (!(v > 0)) v = 100;
+          sc.setValue(Math.round(v * grow * 100) / 100, true);
+          scaled++;
+        } catch (eV) {}
+      }
+    }
+    CP_activateSequence(copy);
+    return CP_ok({ name: String(copy.name), scaled: scaled, captionsRemoved: removed, width: W, height: H });
+  } catch (e) { return CP_fail(e.message); }
+}
+
 function CP_removePulseCaptionTracks(argsJson) {
   try {
     var args = {};

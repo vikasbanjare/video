@@ -2853,6 +2853,30 @@ const MUTANTS = [
     repl: 'TRENDING_TEMPLATES.concat(TWIN_TEMPLATES)',
     gate: 'CutPilot/test/gates/caption-originals.js',
     why: 'the new styles lose their own fonts for Mac faces'
+  },
+  {
+    name: 'v39-shape-fit-not-fill',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '    var grow = Math.max(W / oldW, H / oldH);',
+    repl: '    var grow = Math.min(W / oldW, H / oldH);',
+    gate: 'CutPilot/test/gates/shape-copy.js',
+    why: 'the 9:16 copy shows a small letterboxed picture'
+  },
+  {
+    name: 'v39-shape-keeps-captions',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '          try { clip.remove(false, false); removed++; } catch (eR) {}\n          continue;',
+    repl: '          continue;',
+    gate: 'CutPilot/test/gates/shape-copy.js',
+    why: 'old-size captions sit squashed on the new shape'
+  },
+  {
+    name: 'v39-shape-edits-original',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '      for (q = 0; q < sqs.numSequences; q++) { if (!had[CP_seqId(sqs[q])]) { copy = sqs[q]; break; } }',
+    repl: '      copy = seq;',
+    gate: 'CutPilot/test/gates/shape-copy.js',
+    why: 'the owner sequence itself is reshaped'
   }
 ];
 
