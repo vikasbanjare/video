@@ -1453,7 +1453,54 @@
     if (bt.maxWidthPct == null) bt.maxWidthPct = 0.9;
   });
 
-  var TEMPLATES = STYLE_PRESETS.concat(PREMIUM_TEMPLATES, MORE_TEMPLATES, NEW_TEMPLATES, BUTTON_TEMPLATES);
+  /* AI-Floh originals (caption gap audit, owner-approved names). Each fills a
+     look the library did not have: a tilted tag, ribbons per line, one word
+     per screen, a big-headline first line, dimmed upcoming words on a light
+     face, and warm gradient text. Open-licensed (Google OFL) fonts only. */
+  var ORIGINAL_TEMPLATES = [
+    // heavy caps on a solid yellow tag, the whole line turned a little
+    { id: 'af-tilt-tag', name: 'Tilt Tag', category: '💥 Bold & Viral', popularity: 97, layout: 'center', keyword: false, highlightScale: 1.06,
+      font: 'Archivo Black', fallbackFonts: ['Montserrat', 'Arial Black'],
+      fontSize: 60, fill: '#14110F', highlight: '#E8336D', highlightStyle: 'color',
+      boxColor: '#FFD23F', boxRadius: 6, boxPad: 1.2, boxOpacity: 1, tilt: -4,
+      glow: null, stroke: null, strokeWidth: 0, weight: 800, uppercase: true, maxLines: 1, maxWidthPct: 0.84,
+      wordsPerCue: 3, anim: 'karaoke' },
+    // each line on its own rounded violet ribbon, lines leaning opposite ways
+    { id: 'af-line-ribbons', name: 'Line Ribbons', category: '💥 Bold & Viral', popularity: 96, layout: 'center', keyword: false, highlightScale: 1.05,
+      font: 'Poppins', fallbackFonts: ['Montserrat', 'Arial'],
+      fontSize: 56, fill: '#FFFFFF', highlight: '#FFE45C', highlightStyle: 'color',
+      boxColor: '#6C3BFF', boxRadius: 14, boxPad: 1.1, boxOpacity: 1, tilt: 3, tiltAlt: true,
+      glow: null, stroke: null, strokeWidth: 0, weight: 800, uppercase: false, wordsPerLine: 2, lineGap: 1.32,
+      wordsPerCue: 4, anim: 'karaoke' },
+    // one word per screen, huge, thick black outline
+    { id: 'af-one-word-shout', name: 'One Word Shout', category: '💥 Bold & Viral', popularity: 95, layout: 'center', keyword: false, highlightScale: 1,
+      font: 'Anton', fallbackFonts: ['Bebas Neue', 'Impact'],
+      fontSize: 108, fill: '#FFFFFF', highlight: '#FFFFFF', highlightStyle: 'color',
+      stroke: '#000000', strokeWidth: 12, glow: '#000000', glowBlur: 0.3, boxColor: null,
+      uppercase: true, wordHl: false, wordsPerCue: 1, maxLines: 1, anim: 'pop' },
+    // a big first line over a smaller second line
+    { id: 'af-headliner', name: 'Headliner', category: '🎬 Cinematic & Editorial', popularity: 94, layout: 'center', keyword: false, highlightScale: 1.04,
+      font: 'Montserrat', fallbackFonts: ['Poppins', 'Arial Black'],
+      fontSize: 76, fill: '#FFFFFF', highlight: '#5CE1E6', highlightStyle: 'color',
+      glow: '#000000', glowBlur: 0.5, stroke: null, strokeWidth: 0, boxColor: null,
+      weight: 900, uppercase: true, wordsPerLine: 2, subScale: 0.58, lineGap: 1.0,
+      wordsPerCue: 4, anim: 'karaoke' },
+    // light rounded lowercase, words not yet spoken stay faint
+    { id: 'af-soft-focus', name: 'Soft Focus', category: '✨ Minimal & Clean', popularity: 93, layout: 'bottom', keyword: false, highlightScale: 1,
+      font: 'Quicksand', fallbackFonts: ['Nunito', 'Arial'],
+      fontSize: 54, fill: '#FFFFFF', highlight: '#FFFFFF', highlightStyle: 'color',
+      glow: '#000000', glowBlur: 0.45, stroke: null, strokeWidth: 0, boxColor: null,
+      weight: 500, textCase: 'lower', uppercase: false, upcomingOpacity: 0.35,
+      wordsPerCue: 5, anim: 'karaoke' },
+    // tall warm gradient caps (gold to coral) with a dark outline
+    { id: 'af-sunset-fade', name: 'Sunset Fade', category: '🎬 Cinematic & Editorial', popularity: 94, layout: 'center', keyword: false, highlightScale: 1.08,
+      font: 'Bebas Neue', fallbackFonts: ['Anton', 'Impact'],
+      fontSize: 92, fill: '#FFE29A', fill2: '#FF4E50', highlight: '#FFFFFF', highlightStyle: 'color',
+      stroke: '#2A0A12', strokeWidth: 6, glow: null, boxColor: null,
+      uppercase: true, letterSpacing: 1, wordsPerCue: 3, anim: 'karaoke' }
+  ];
+
+  var TEMPLATES = STYLE_PRESETS.concat(PREMIUM_TEMPLATES, MORE_TEMPLATES, NEW_TEMPLATES, BUTTON_TEMPLATES, ORIGINAL_TEMPLATES);
   // Retire near-duplicate styles that differed from a kept one only by colour or
   // size (both editable in the customizer) — keeps the gallery curated & distinct.
   var _RETIRED = { evo: 1, cleanwhite: 1, byline: 1, 'pro-neon': 1, rebel: 1, boldyellow: 1,
@@ -2897,7 +2944,7 @@
        · the older styles keep the remap as it was: the owner has used them
          with the Mac faces for months, and their tiles are what he knows. */
   var DESIGNED_FACE = {};
-  TRENDING_TEMPLATES.concat(TWIN_TEMPLATES).forEach(function (t) { DESIGNED_FACE[t.id] = 1; });
+  TRENDING_TEMPLATES.concat(TWIN_TEMPLATES, ORIGINAL_TEMPLATES).forEach(function (t) { DESIGNED_FACE[t.id] = 1; });
   TEMPLATES.forEach(function (t) {
     var safe = FONT_SAFE[t.font];
     if (!safe) return;
@@ -2942,7 +2989,7 @@
     'Impact', 'Arial Black',
     // Sans
     'Montserrat', 'Poppins', 'Inter', 'Roboto', 'Open Sans', 'Lato', 'Raleway',
-    'Work Sans', 'Nunito', 'Rubik', 'DM Sans', 'Outfit', 'Sora', 'Barlow', 'Manrope',
+    'Work Sans', 'Nunito', 'Rubik', 'DM Sans', 'Outfit', 'Sora', 'Barlow', 'Manrope', 'Quicksand',
     'Helvetica', 'Verdana', 'Tahoma', 'Futura',
     // System faces (ship with macOS/Windows — nothing to load; these are the
     // timeline-safe primaries the FONT_SAFE remap points styles at)

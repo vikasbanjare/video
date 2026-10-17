@@ -1,10 +1,33 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.38** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.39** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.39 — caption gap-fill: 6 original styles, tilt, exit, template v4
+- Owner approved the gap report ("add all the features … and captions").
+  Existing names kept (rule: never rename). New ORIGINAL_TEMPLATES in
+  captions.js (DESIGNED_FACE: keep their OFL fonts): Tilt Tag, Line Ribbons,
+  One Word Shout, Headliner, Soft Focus, Sunset Fade.
+- render.js: style.tilt (deg) + tiltAlt turn each line (box + words) about
+  its centre. Editor: Tilt slider (c-tilt), saved with a style; tiltAlt
+  is the style's own (Line Ribbons) — no extra switch (a switch that does
+  nothing at Tilt 0 failed the dead-control audit).
+- 👋 Exit (None/Fade/Shrink/Slide down, #c-exit, state.captionExit):
+  CP_exitClip keyframes on each caption's LAST still (items[].last); not
+  in the one-clip overlay (overlayMotionNote says so).
+- tools/ae/Pulse-Caption-Builder.jsx v4: Text Gradient + Text Color 2
+  (a letters-only "Gradient Text" layer, Ramp + Set Matte), Upcoming
+  Opacity, Tilt (angle on Group), Exit menu. NOT yet run in AE — the owner
+  runs it, ticks font editing, sends the zip → bundle as
+  Pulse_Caption_r4.mogrt with index.json "features":
+  ["gradient","upcoming","tilt","exit"]. Until then r3 ships and
+  pulseCarryStyle shows none of these in the editable preview.
+- Translate: +21 languages (10 Indian). Gate caption-originals.
+- Still open from the gap report: export sizes (1:1 / 16:9 versions),
+  B-roll placement.
 
 ### v0.10.38 — editable follows word-by-word; spacing; image line breaks
 - pulseLook: spoken word lit whenever ✨ Word-by-word is on (Slam had no

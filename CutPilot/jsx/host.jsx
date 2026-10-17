@@ -2191,6 +2191,28 @@ function CP_animateClip(clip, anim, speed) {
   // 'karaoke', 'typewriter', 'none': the frame sequence is the animation.
 }
 
+/* The way a caption leaves: keyframes over its last moments (fade, shrink
+   to 60% or slide down), on a still long enough to show it. */
+function CP_exitClip(clip, exit) {
+  var len = 0.18, dur;
+  try { dur = clip.end.seconds - clip.start.seconds; } catch (eD) { return false; }
+  if (!(dur > len * 2.2)) return false;
+  CP_ANIM_SPEED = 1;
+  var base = clip.inPoint.seconds + dur - len;
+  var motion = CP_findComponent(clip, 'Motion');
+  var opacity = CP_findProperty(CP_findComponent(clip, 'Opacity'), 'Opacity');
+  if (exit === 'fade') {
+    CP_setKeys(opacity, base, [{ t: 0, v: 100 }, { t: len, v: 0 }]);
+  } else if (exit === 'shrink') {
+    CP_setKeys(CP_findProperty(motion, 'Scale'), base, [{ t: 0, v: 100 }, { t: len, v: 60 }]);
+    CP_setKeys(opacity, base, [{ t: 0, v: 100 }, { t: len, v: 0 }]);
+  } else if (exit === 'slidedown') {
+    CP_setKeys(CP_findProperty(motion, 'Position'), base, [{ t: 0, v: [0.5, 0.5] }, { t: len, v: [0.5, 0.53] }]);
+    CP_setKeys(opacity, base, [{ t: 0, v: 100 }, { t: len, v: 0 }]);
+  } else return false;
+  return true;
+}
+
 /*
  * Place pre-rendered caption PNGs on a dedicated top video track and apply
  * the chosen entry animation per clip.
@@ -2396,6 +2418,7 @@ function CP_placeCaptionImages(argsJson) {
               animated++;
             }
           }
+          if (args.exit && it.last) { try { CP_exitClip(clip, args.exit); } catch (eEx) {} }
         }
       } catch (ePlace) {}
     }

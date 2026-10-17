@@ -218,7 +218,12 @@
       boxShadowBlur: (o.boxShadowBlur != null) ? o.boxShadowBlur : (preset.boxShadowBlur != null ? preset.boxShadowBlur : 0.5),
       boxShadowDY: Math.round(((o.boxShadowDY != null ? o.boxShadowDY : (preset.boxShadowDY != null ? preset.boxShadowDY : 0))) * scale),
       boxGradient: o.boxGradient || preset.boxGradient || 'v',   // 'v' vertical | 'h' horizontal
-      boxStops: o.boxStops || (boxChanged ? null : preset.boxStops) || null   // [[offset,'#hex'],…] multi-stop fill
+      boxStops: o.boxStops || (boxChanged ? null : preset.boxStops) || null,  // [[offset,'#hex'],…] multi-stop fill
+      // a tilted caption: each line (its box and its words) turns this many
+      // degrees about its own centre; tiltAlt turns every other line the other
+      // way (the stacked-ribbon look). 0 = level.
+      tilt: (o.tilt != null) ? Number(o.tilt) || 0 : (Number(preset.tilt) || 0),
+      tiltAlt: (o.tiltAlt != null) ? !!o.tiltAlt : !!preset.tiltAlt
     };
   }
 
@@ -832,6 +837,13 @@
         if (x < 6) x = 6; if (x + line.width > W - 6) x = W - 6 - line.width;
       }
       var y = lineY[li];
+      // tilt: turn this line, box and words together, about its own centre
+      var lineTilt = style.tilt ? style.tilt * ((style.tiltAlt && (li % 2)) ? -1 : 1) : 0;
+      if (lineTilt) {
+        ctx.save();
+        var tcx = x + line.width / 2, tcy = y - line.height * 0.32;
+        ctx.translate(tcx, tcy); ctx.rotate(lineTilt * Math.PI / 180); ctx.translate(-tcx, -tcy);
+      }
 
       // background box behind the whole line (opacity + padding + gradient).
       // barTop/barH are remembered so an active-word box can be centred inside it.
@@ -1061,6 +1073,7 @@
         mi++;
         x += it.w + lineSpace;
       }
+      if (lineTilt) ctx.restore();
     }
     return canvas;
   }
@@ -1102,7 +1115,7 @@
               var b64 = canvas.toDataURL('image/png').split(',')[1];
               var file = pathMod.join(outDir, 'cap_' + String(10000 + i) + '.png');
               fs.writeFileSync(file, NodeBuffer.from(b64, 'base64'));
-              results.push({ path: file, start: frames[i].start, end: frames[i].end });
+              results.push({ path: file, start: frames[i].start, end: frames[i].end, cap: frames[i].cap });
             }
             if (opts.onProgress) opts.onProgress(i, frames.length);
             if (i < frames.length) setTimeout(chunk, 0);

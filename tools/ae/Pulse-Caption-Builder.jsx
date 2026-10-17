@@ -19,6 +19,11 @@
  *   Box Color · Word Box Color · Box Opacity · Box Roundness ·
  *   Shadow Opacity · Shadow Distance · Animation (None / Pop / Fade / Slide up)
  *
+ * v4 adds: Text Gradient (on/off) + Text Color 2 (the warm top-to-bottom
+ * gradient of Sunset Fade), Upcoming Opacity (words not yet said stay faint,
+ * Soft Focus), Tilt (Tilt Tag, Line Ribbons) and Exit (None / Fade / Shrink /
+ * Slide down: the caption leaves the way the image captions can).
+ *
  * Word timing needs no control: a one-frame protected region at the start
  * turns on Premiere's "Responsive Design – Time", so the comp stretches over
  * the clip and the spoken word is the one whose share of the clip is playing.
@@ -49,6 +54,8 @@
     function fxs() { return ctl.property('ADBE Effect Parade'); }   // fetched fresh: a filled menu rebuilds its effect
     function slider(name, v) { var e = fxs().addProperty('ADBE Slider Control'); e.name = name; e.property(1).setValue(v); return name; }
     function color(name, rgb) { var e = fxs().addProperty('ADBE Color Control'); e.name = name; e.property(1).setValue(rgb); return name; }
+    function checkbox(name, v) { var e = fxs().addProperty('ADBE Checkbox Control'); e.name = name; e.property(1).setValue(v); return name; }
+    function angle(name, v) { var e = fxs().addProperty('ADBE Angle Control'); e.name = name; e.property(1).setValue(v); return name; }
     function menu(name, items, v) {
       var e = fxs().addProperty('ADBE Dropdown Control');
       var at = e.propertyIndex;
@@ -62,6 +69,8 @@
     }
     slider('Size', 100);
     color('Text Color', [1, 1, 1]);
+    checkbox('Text Gradient', 0);
+    color('Text Color 2', [1, 0.31, 0.31]);         // the gradient's bottom colour
     color('Spoken Word Color', [1, 0.85, 0.1]);
     // Premiere keeps a slider inside its 0–100 range, so the spoken word's
     // size is how much it GROWS: 0 = same size, 25 = a quarter bigger
@@ -77,6 +86,9 @@
     slider('Shadow Opacity', 50);
     slider('Shadow Distance', 0);
     menu('Animation', ['None', 'Pop', 'Fade', 'Slide up'], 1);
+    menu('Exit', ['None', 'Fade', 'Shrink', 'Slide down'], 1);
+    slider('Upcoming Opacity', 100);               // words not yet said: 100 = as bright as the rest
+    angle('Tilt', 0);                              // the whole caption turns, box and all
     // worked out, never shown in Premiere: which word is being said, its line
     // and its place on that line
     slider('Spoken Index', 0);
@@ -117,18 +129,25 @@
     var grp = comp.layers.addNull(DUR);
     grp.name = 'Group';
     grp.property('ADBE Transform Group').property('ADBE Position').setValue([W / 2, H / 2]);
-    var ANIM = 'var an = Math.round(' + C + '("Animation")(1)); var e = ease(time, 0, ' + A + ', 0, 1);';
+    // entrance (e: 0 → 1 over the first A seconds) and exit (x: 1 → 0 over
+    // the last A seconds). Exit: 1 None · 2 Fade · 3 Shrink · 4 Slide down
+    var ANIM = 'var an = Math.round(' + C + '("Animation")(1)); var e = ease(time, 0, ' + A + ', 0, 1);' +
+      ' var ex = Math.round(' + C + '("Exit")(1)); var D = thisComp.duration; var x = ease(time, D - ' + A + ', D, 1, 0);';
     grp.property('ADBE Transform Group').property('ADBE Scale').expression = [
       ANIM,
       'var s = ' + C + '("Size")(1);',
       'if (an == 2) s *= (time < ' + A + ' ? linear(time, 0, ' + A + ', 0.6, 1.06) : linear(time, ' + A + ', ' + (A * 1.6) + ', 1.06, 1));',
+      'if (ex == 3) s *= 0.6 + 0.4 * x;',
       '[s, s];'
     ].join('\n');
     grp.property('ADBE Transform Group').property('ADBE Position').expression = [
       ANIM,
-      'an == 4 ? value + [0, (1 - e) * 60] : value;'
+      // element by element: array + array is not vector maths on every engine
+      'var dy = (an == 4 ? (1 - e) * 60 : 0) + (ex == 4 ? (1 - x) * 60 : 0);',
+      '[value[0], value[1] + dy];'
     ].join('\n');
-    var FADE = ANIM + '\n(an == 3 ? e : 1) * ';
+    grp.property('ADBE Transform Group').property('ADBE Rotate Z').expression = C + '("Tilt")(1);';
+    var FADE = ANIM + '\n(an == 3 ? e : 1) * (ex == 2 || ex == 3 ? x : 1) * ';
 
     // ---- the caption text ----------------------------------------------------
     var cap = comp.layers.addText('AAJ PAISE KI BAAT');
@@ -184,6 +203,20 @@
     sel.property('ADBE Text Index End').expression = C + '("Spoken Index")(1) + 1;';
     addProp('Spoken Word', 'ADBE Text Fill Color', C + '("Spoken Word Color")(1);');
     addProp('Spoken Word', 'ADBE Text Scale 3D', 'var g = 100 + ' + C + '("Spoken Word Grow")(1); value.length > 2 ? [g, g, 100] : [g, g];');
+    // words not yet said: faint (Upcoming Opacity), every word after the spoken one
+    function upcoming(layer) {
+      var ua = layer.property('ADBE Text Properties').property('ADBE Text Animators').addProperty('ADBE Text Animator');
+      ua.name = 'Upcoming';
+      var up = function () { return layer.property('ADBE Text Properties').property('ADBE Text Animators').property('Upcoming'); };
+      up().property('ADBE Text Selectors').addProperty('ADBE Text Selector');
+      var uadv = up().property('ADBE Text Selectors').property(1).property('ADBE Text Range Advanced');
+      uadv.property('ADBE Text Range Units').setValue(2);         // index
+      uadv.property('ADBE Text Range Type2').setValue(3);         // words
+      up().property('ADBE Text Selectors').property(1).property('ADBE Text Index Start').expression = C + '("Spoken Index")(1) + 1;';
+      up().property('ADBE Text Selectors').property(1).property('ADBE Text Index End').expression = '9999;';
+      up().property('ADBE Text Animator Properties').addProperty('ADBE Text Opacity').expression = C + '("Upcoming Opacity")(1);';
+    }
+    upcoming(cap);
 
     // soft or offset shadow behind the letters
     var sh = cap.property('ADBE Effect Parade').addProperty('ADBE Drop Shadow');
@@ -195,6 +228,41 @@
     cap.effect('Shadow').property('ADBE Drop Shadow-0003').setValue(135);
     cap.effect('Shadow').property('ADBE Drop Shadow-0004').expression = C + '("Shadow Distance")(1);';
     cap.effect('Shadow').property('ADBE Drop Shadow-0005').expression = 'Math.max(6, ' + C + '("Size")(1) * 0.14);';
+
+    // ---- Text Gradient: a copy of the caption's letters, filled top to bottom
+    // from Text Color to Text Color 2, laid over the caption (the outline and
+    // the spoken word's own colour stay the caption's). Shown only when Text
+    // Gradient is ticked.
+    var gl = comp.layers.addText('M');
+    gl.name = 'Gradient Text';
+    gl.parent = cap;
+    gl.property('ADBE Transform Group').property('ADBE Position').setValue([0, 0]);
+    gl.property('ADBE Text Properties').property('ADBE Text Document').expression =
+      'var s = thisComp.layer("Caption").text.sourceText; s.style.setText("" + s);';
+    function gAnims() { return gl.property('ADBE Text Properties').property('ADBE Text Animators'); }
+    gAnims().addProperty('ADBE Text Animator').name = 'Look';
+    gAnims().property('Look').property('ADBE Text Selectors').addProperty('ADBE Text Selector');
+    gAnims().property('Look').property('ADBE Text Animator Properties').addProperty('ADBE Text Stroke Width').expression = '0;';
+    gAnims().property('Look').property('ADBE Text Animator Properties').addProperty('ADBE Text Tracking Amount').expression = C + '("Letter Spacing")(1) * 10;';
+    // the spoken word: as big as the caption's, and left to the caption's colour
+    gAnims().addProperty('ADBE Text Animator').name = 'Spoken Word';
+    gAnims().property('Spoken Word').property('ADBE Text Selectors').addProperty('ADBE Text Selector');
+    var gadv = gAnims().property('Spoken Word').property('ADBE Text Selectors').property(1).property('ADBE Text Range Advanced');
+    gadv.property('ADBE Text Range Units').setValue(2);
+    gadv.property('ADBE Text Range Type2').setValue(3);
+    gAnims().property('Spoken Word').property('ADBE Text Selectors').property(1).property('ADBE Text Index Start').expression = C + '("Spoken Index")(1);';
+    gAnims().property('Spoken Word').property('ADBE Text Selectors').property(1).property('ADBE Text Index End').expression = C + '("Spoken Index")(1) + 1;';
+    gAnims().property('Spoken Word').property('ADBE Text Animator Properties').addProperty('ADBE Text Scale 3D').expression =
+      'var g = 100 + ' + C + '("Spoken Word Grow")(1); value.length > 2 ? [g, g, 100] : [g, g];';
+    gAnims().property('Spoken Word').property('ADBE Text Animator Properties').addProperty('ADBE Text Opacity').expression = '0;';
+    upcoming(gl);
+    var ramp = gl.property('ADBE Effect Parade').addProperty('ADBE Ramp');
+    ramp.name = 'Gradient';
+    gl.effect('Gradient').property('ADBE Ramp-0001').expression = 'var r = sourceRectAtTime(time, false); [r.left + r.width / 2, r.top];';
+    gl.effect('Gradient').property('ADBE Ramp-0002').expression = C + '("Text Color")(1);';
+    gl.effect('Gradient').property('ADBE Ramp-0003').expression = 'var r = sourceRectAtTime(time, false); [r.left + r.width / 2, r.top + r.height];';
+    gl.effect('Gradient').property('ADBE Ramp-0004').expression = C + '("Text Color 2")(1);';
+    gl.property('ADBE Transform Group').property('ADBE Opacity').expression = FADE + '(' + C + '("Text Gradient")(1) ? 100 : 0);';
 
     // ---- measuring layers (guides: never drawn) ---------------------------
     function measure(name, body) {
@@ -268,6 +336,14 @@
       '[3, 4]', 'Word Box Color', '(Math.round(' + C + '("Box")(1)) == 4 ? 100 : ' + C + '("Box Opacity")(1))');
     spokenBox.moveAfter(cap);
 
+    // keep the gradient inside the letters: the layer's own alpha as its matte
+    // (a ramp can fill past the letters on some After Effects versions)
+    try {
+      var sm = gl.property('ADBE Effect Parade').addProperty('ADBE Set Matte3');
+      sm.name = 'Letters Only';
+      gl.effect('Letters Only').property('ADBE Set Matte3-0001').setValue(gl.index);
+    } catch (eSm) {}
+
     // ---- one protected frame: Premiere stretches the rest over the caption ---
     try {
       var mv = new MarkerValue('Pulse');
@@ -283,8 +359,10 @@
     }
     // After Effects puts each new control at the TOP of the list (seen on the
     // owner's AE 2026), so they go in last-first and Text ends up on top
-    var order = ['Size', 'Text Color', 'Spoken Word Color', 'Spoken Word Grow', 'Letter Spacing', 'Outline Color', 'Outline Width',
-                 'Box', 'Box Color', 'Word Box Color', 'Box Opacity', 'Box Roundness', 'Shadow Opacity', 'Shadow Distance', 'Animation'];
+    var order = ['Size', 'Text Color', 'Text Gradient', 'Text Color 2', 'Spoken Word Color', 'Spoken Word Grow', 'Upcoming Opacity',
+                 'Letter Spacing', 'Outline Color', 'Outline Width',
+                 'Box', 'Box Color', 'Word Box Color', 'Box Opacity', 'Box Roundness', 'Shadow Opacity', 'Shadow Distance',
+                 'Tilt', 'Animation', 'Exit'];
     for (var i = order.length - 1; i >= 0; i--) expose(ctl.effect(order[i]).property(1), order[i]);
     expose(st, 'Text');
 

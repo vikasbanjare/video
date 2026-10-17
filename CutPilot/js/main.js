@@ -656,7 +656,19 @@
     { value: 'ru|Russian', label: 'Russian' }, { value: 'id|Indonesian', label: 'Indonesian' },
     { value: 'tr|Turkish', label: 'Turkish' }, { value: 'nl|Dutch', label: 'Dutch' },
     { value: 'pl|Polish', label: 'Polish' }, { value: 'vi|Vietnamese', label: 'Vietnamese' },
-    { value: 'th|Thai', label: 'Thai' }, { value: 'en|English', label: 'English' }
+    { value: 'th|Thai', label: 'Thai' }, { value: 'en|English', label: 'English' },
+    // Indian languages (each in its own script) and more world languages
+    { value: 'bn|Bengali', label: 'Bengali (বাংলা)' }, { value: 'mr|Marathi', label: 'Marathi (मराठी)' },
+    { value: 'gu|Gujarati', label: 'Gujarati (ગુજરાતી)' }, { value: 'pa|Punjabi', label: 'Punjabi (ਪੰਜਾਬੀ)' },
+    { value: 'ta|Tamil', label: 'Tamil (தமிழ்)' }, { value: 'te|Telugu', label: 'Telugu (తెలుగు)' },
+    { value: 'kn|Kannada', label: 'Kannada (ಕನ್ನಡ)' }, { value: 'ml|Malayalam', label: 'Malayalam (മലയാളം)' },
+    { value: 'or|Odia', label: 'Odia (ଓଡ଼ିଆ)' }, { value: 'ur|Urdu', label: 'Urdu (اردو)' },
+    { value: 'ne|Nepali', label: 'Nepali (नेपाली)' },
+    { value: 'ms|Malay', label: 'Malay' }, { value: 'fil|Filipino', label: 'Filipino' },
+    { value: 'sw|Swahili', label: 'Swahili' }, { value: 'fa|Persian', label: 'Persian' },
+    { value: 'he|Hebrew', label: 'Hebrew' }, { value: 'el|Greek', label: 'Greek' },
+    { value: 'sv|Swedish', label: 'Swedish' }, { value: 'uk|Ukrainian', label: 'Ukrainian' },
+    { value: 'ro|Romanian', label: 'Romanian' }, { value: 'cs|Czech', label: 'Czech' }
   ];
   var _translateDD = null, _swaraDD = null;
   function _modelsDir() { try { return nodeReq('path').join(nodeReq('os').homedir(), '.cutpilot', 'models'); } catch (e) { return null; } }
@@ -5549,7 +5561,9 @@
       // cards and so never loaded — every editable caption fell back to Flux
       // (the owner's first 🎨 style test: "Engine: Flux Halo").
       state.engineMogrts = list.filter(function (m) { return !!m.engine; }).map(function (m) {
-        return { name: m.name, path: path.join(mdir, m.file), kind: 'caption', engine: true, desc: m.desc || '' };
+        // features: what this build of the engine can draw beyond the first
+        // 16 controls (index.json), so the editable preview shows only those
+        return { name: m.name, path: path.join(mdir, m.file), kind: 'caption', engine: true, desc: m.desc || '', features: m.features || [] };
       }).filter(function (m) { try { return fs.existsSync(m.path); } catch (eX) { return false; } });
       list = list.filter(function (m) { return !m.hidden; });
       state.bundledMogrts = list.map(function (m) {
@@ -6676,7 +6690,10 @@
   window.CP_DEBUG_EXT.gallery = {
     currentPreset: function () { return currentPreset(); },
     // the style runCaptionPipeline hands the renderer: {preset, overrides}
-    exportStyle: function (w, h) { return CPRender.styleForFrame(currentPreset(), h, readOverrides(), w); }
+    exportStyle: function (w, h) { return CPRender.styleForFrame(currentPreset(), h, readOverrides(), w); },
+    // pick a style the way a gallery click does; what Save / the editable send would keep
+    applyTemplate: function (id) { var t = CPCaptions.TEMPLATES.filter(function (x) { return x.id === id; })[0]; if (t) applyTemplate(t); return !!t; },
+    styleFromControls: function (name) { return styleFromControls(name); }
   };
 
   function trackRecent(id) {
@@ -7284,6 +7301,10 @@
       state.captionEntrance = entranceForPreset(p);
     }
     setEntranceButtons(state.captionEntrance);
+    // the exit follows the same rule: a style's own, unless the owner picked one
+    if (p && (p.custom || p.exit != null)) { state.captionExit = p.exit || 'none'; state.exitUserSet = false; }
+    else if (!state.exitUserSet) state.captionExit = 'none';
+    setExitButtons(state.captionExit);
     $('c-fill').value = toHex(p.fill, '#ffffff');
     $('c-hl').value = toHex(p.highlight, '#ffd400');
     // With no colour of its own, an outline / shadow / 2nd box stop starts at
@@ -7350,6 +7371,7 @@
     if ($('c-subscale-wrap')) $('c-subscale-wrap').style.display = hasSub ? '' : 'none';
     if ($('c-wordsperline-wrap')) $('c-wordsperline-wrap').style.display = hasWpl ? '' : 'none';
     if ($('c-twotier-wrap')) $('c-twotier-wrap').style.display = (hasSub || hasWpl) ? '' : 'none';
+    if ($('c-tilt')) $('c-tilt').value = Math.round(Number(p.tilt) || 0);
     // ---- restore the rest of the saved look (was missing → these settings were
     // lost on restore AND leaked from the previous template into the next one) ----
     // gradient text fill + multi-colour highlight
@@ -7519,6 +7541,7 @@
       'c-wordspace-val': function () { return $('c-wordspace').value; },
       'c-linegap-val': function () { return $('c-linegap').value + '%'; },
       'c-maxwidth-val': function () { return $('c-maxwidth').value + '%'; },
+      'c-tilt-val': function () { return $('c-tilt').value + '°'; },
       'c-subscale-val': function () { return $('c-subscale').value + '%'; },
       'c-wordsperline-val': function () { return $('c-wordsperline').value; },
       'c-boxstrokew-val': function () { return $('c-boxstrokew').value; },
@@ -7951,7 +7974,7 @@
                'c-wordpop', 'c-multicolor', 'c-hl2', 'c-hl3', 'c-grad', 'c-fill2',
                'c-hlgrad', 'c-hl2g', 'c-glossy', 'c-hlserif', 'c-hlglow', 'c-subscale', 'c-wordsperline',
                'c-box-opacity', 'c-box-pad', 'c-box-radius', 'c-shadow-dx', 'c-shadow-dy',
-               'c-wordspace', 'c-linegap', 'c-maxwidth', 'c-emphasize', 'c-strippunct',
+               'c-wordspace', 'c-linegap', 'c-maxwidth', 'c-emphasize', 'c-strippunct', 'c-tilt',
                'c-perword', 'c-perword-style', 'c-dimupcoming',
                // smart text + box gradient
                'c-boxgrad', 'c-box2', 'c-case', 'c-censor', 'c-numon', 'c-num',
@@ -8048,6 +8071,17 @@
         this.classList.add('on');
         state.captionEntrance = this.dataset.e || 'none';
         state.entranceUserSet = true;   // explicit: keep it when switching styles
+        saveLook();
+      });
+    }
+    // 👋 Exit — how each caption leaves (Premiere keyframes at its end;
+    // the Pulse engine's own Exit control for editable captions)
+    var exb = document.querySelectorAll('#c-exit button');
+    for (var xb = 0; xb < exb.length; xb++) {
+      exb[xb].addEventListener('click', function () {
+        state.captionExit = this.dataset.x || 'none';
+        state.exitUserSet = true;
+        setExitButtons(state.captionExit);
         saveLook();
       });
     }
@@ -8597,6 +8631,7 @@
       glowBlur: o.glowBlur,                            // shadow strength
       wordHl: cchk('c-wordhl'),                        // word-by-word on/off
       entrance: state.captionEntrance || 'none',       // entrance animation
+      exit: state.captionExit || 'none',               // exit animation
       posPct: parseInt($('c-pos').value, 10) || 50,    // EXACT position, not just the coarse bucket
       layout: o.yPct <= 0.3 ? 'top' : o.yPct >= 0.66 ? 'bottom' : 'center',
       keyword: $('c-kw').checked,
@@ -8615,7 +8650,7 @@
       subScale: o.subScale, wordsPerLine: o.wordsPerLine,
       fill2: o.fill2, highlightColors: o.highlightColors,
       shadowDX: o.shadowDX, shadowDY: o.shadowDY, wordSpacing: o.wordSpacing,
-      maxWidthPct: o.maxWidthPct, emphasizeWords: o.emphasizeWords,
+      maxWidthPct: o.maxWidthPct, emphasizeWords: o.emphasizeWords, tilt: o.tilt, tiltAlt: o.tiltAlt,
       stripPunctuation: o.stripPunctuation, perWordEntrance: o.perWordEntrance,
       perWordEntranceStyle: o.perWordEntranceStyle, numberColor: o.numberColor,
       brandColor: o.brandColor, brandWords: o.brandWords, textCase: o.textCase,
@@ -8754,6 +8789,10 @@
       wordSpacing: cnum('c-wordspace', 0),
       lineGap: cnum('c-linegap', 118) / 100,
       maxWidthPct: cnum('c-maxwidth', 86) / 100,
+      // a tilted caption (Tilt Tag, Line Ribbons): degrees; whether every
+      // other line leans the other way is the style's own (Line Ribbons)
+      tilt: cnum('c-tilt', 0),
+      tiltAlt: !!(currentPreset() || {}).tiltAlt,
       emphasizeWords: cchk('c-emphasize'),
       stripPunctuation: cchk('c-strippunct'),
       // entrances play at their natural pace: there is no animation-speed
@@ -8788,7 +8827,8 @@
       // kept showing the template's originals no matter what the user set.
       // 0 = "auto", which must stay distinguishable from "unset".
       wordsPerCue: (function () { var w = parseInt($('c-words').value, 10); return isFinite(w) ? w : null; })(),
-      entrance: state.captionEntrance || null
+      entrance: state.captionEntrance || null,
+      exit: state.captionExit || 'none'
     };
   }
   function readAlign() {
@@ -8883,7 +8923,7 @@
   var LOOK_CTL_IDS = ['c-wordpop', 'c-multicolor', 'c-hl2', 'c-hl3', 'c-grad', 'c-fill2', 'c-hlgrad', 'c-hl2g',
     'c-glossy', 'c-hlserif', 'c-hlglow', 'c-subscale', 'c-wordsperline', 'c-box-opacity', 'c-box-pad',
     'c-box-radius', 'c-shadow-dx', 'c-shadow-dy', 'c-wordspace', 'c-linegap', 'c-maxwidth', 'c-emphasize',
-    'c-strippunct', 'c-perword', 'c-perword-style', 'c-dimupcoming', 'c-boxgrad', 'c-box2', 'c-case',
+    'c-tilt', 'c-strippunct', 'c-perword', 'c-perword-style', 'c-dimupcoming', 'c-boxgrad', 'c-box2', 'c-case',
     'c-censor', 'c-numon', 'c-num', 'c-brandon', 'c-brand', 'c-brand-words', 'c-boxstroke-on', 'c-boxstroke',
     'c-boxstrokew', 'c-boxglow-on', 'c-boxglow', 'c-box3d-depth', 'c-box3d', 'c-boxgloss',
     'c-emoji', 'c-kwcaps', 'c-sync'];
@@ -8937,7 +8977,9 @@
         // on every panel reload — "I set it and it went back".
         capOut: _capOut,
         entrance: state.captionEntrance || 'none',
-        entranceUserSet: !!state.entranceUserSet
+        entranceUserSet: !!state.entranceUserSet,
+        exit: state.captionExit || 'none',
+        exitUserSet: !!state.exitUserSet
       }));
     } catch (e) {}
   }
@@ -9000,6 +9042,11 @@
         state.captionEntrance = look.entrance;
         state.entranceUserSet = !!look.entranceUserSet;
         setEntranceButtons(look.entrance);
+      }
+      if (look.exit) {
+        state.captionExit = look.exit;
+        state.exitUserSet = !!look.exitUserSet;
+        setExitButtons(look.exit);
       }
       if (look.animId) selectAnim(look.animId);
       if (look.presetId) {
@@ -9999,9 +10046,14 @@
         // build styles animate in word-by-word (like reveal), so the host must NOT
         // pop the whole growing chunk each step — treat them as word-sync.
         var placeAnim = preset.build ? 'reveal' : anim;
+        // the last still of each caption carries the exit
+        for (var li = 0; li < items.length; li++) {
+          if (items[li].cap == null || li + 1 >= items.length || items[li + 1].cap !== items[li].cap) items[li].last = true;
+        }
         var placeArgs = { items: items, anim: placeAnim,
           animSpeed: overrides.animSpeed, perWordEntrance: overrides.perWordEntrance,
-          perWordEntranceStyle: overrides.perWordEntranceStyle };
+          perWordEntranceStyle: overrides.perWordEntranceStyle,
+          exit: (overrides.exit && overrides.exit !== 'none') ? overrides.exit : null };
         if (overwriteOnTrack) placeArgs.overwriteOnTrack = overwriteOnTrack;
         else if (replaceTrack) placeArgs.replaceTrack = replaceTrack;
         else if (got.edTrack) placeArgs.replaceTrack = got.edTrack;
@@ -10784,11 +10836,12 @@
     try {
       var preset = currentPreset() || {}, ov = readOverrides();
       var anim = preset.build ? 'reveal' : currentAnim();
-      if (!anim || anim === 'none' || anim === 'typewriter') return '';
+      var exitNote = (ov.exit && ov.exit !== 'none') ? ' The exit animation is not part of the one clip either.' : '';
+      if (!anim || anim === 'none' || anim === 'typewriter') return exitNote ? ' Note:' + exitNote : '';
       var wordSync = (anim === 'karaoke' || anim === 'reveal');
-      if (wordSync && !ov.perWordEntrance) return '';
+      if (wordSync && !ov.perWordEntrance) return exitNote ? ' Note:' + exitNote : '';
       var nm = wordSync ? 'per-word entrance' : (((CPCaptions.getAnimation(anim) || {}).name) || 'entrance');
-      return ' Note: the "' + nm + '" entrance animation is not part of the one clip — each caption appears without it.';
+      return ' Note: the "' + nm + '" entrance animation is not part of the one clip — each caption appears without it.' + exitNote;
     } catch (e) { return ''; }
   }
 
@@ -13310,6 +13363,9 @@
     // never blank a style's derived motion.
     if (ov.wordsPerCue != null && isFinite(ov.wordsPerCue)) eff.wordsPerCue = ov.wordsPerCue;
     if (ov.entrance) eff.entrance = ov.entrance;
+    if (ov.exit) eff.exit = ov.exit;
+    if (ov.tilt != null) { eff.tilt = ov.tilt; eff.tiltAlt = !!ov.tiltAlt; }
+    if (ov.upcomingOpacity != null) eff.upcomingOpacity = ov.upcomingOpacity;
     return eff;
   }
 
@@ -13442,6 +13498,10 @@
     if (/typewriter|fade/.test(a)) return 'fade';
     return 'none';   // karaoke / colour-sweep styles: the word sweep IS the motion
   }
+  function setExitButtons(v) {
+    var bs = document.querySelectorAll('#c-exit button');
+    for (var i = 0; i < bs.length; i++) bs[i].classList.toggle('on', (bs[i].dataset.x || 'none') === v);
+  }
   function setEntranceButtons(v) {
     var bs = document.querySelectorAll('#c-entrance button');
     for (var i = 0; i < bs.length; i++) bs[i].classList.toggle('on', (bs[i].dataset.e || 'none') === v);
@@ -13490,6 +13550,15 @@
      what the engine has no control for — so the editable preview is the
      editable caption. The choices (word box OR line box, the spoken word's
      colour on a box, the entrance) are pulseLook's, the same ones sent. */
+  /* Can the bundled Pulse engine draw this (template v4: 'gradient',
+     'upcoming', 'tilt', 'exit')? */
+  function pulseEngineHas(feature) {
+    var list = state.engineMogrts || [];
+    for (var i = 0; i < list.length; i++) {
+      if (isPulseEngine(list[i].path)) return (list[i].features || []).indexOf(feature) >= 0;
+    }
+    return false;
+  }
   function pulseCarryStyle(p) {
     var out = renderableStyle(p), L = pulseLook(p);
     ['highlight2', 'fill2', 'highlightColors', 'boxColor2', 'numberColor', 'brandColor', 'brandWords', 'highlightFont',
@@ -13513,6 +13582,13 @@
     out.highlight = L.box >= 3 ? (p.highlight || p.fill) : L.spokenColor;   // on a box: the box's colour (the renderer puts a readable colour on the word)
     out.highlightScale = 1 + L.grow / 100;
     if (!L.outlineWidth) { out.stroke = null; out.strokeWidth = 0; }
+    // template v4 draws these; an older engine does not, and the preview must
+    // not promise them. The engine turns the whole caption (no per-line lean).
+    if (pulseEngineHas('gradient') && L.gradient) out.fill2 = L.textColor2;
+    if (pulseEngineHas('upcoming')) out.upcomingOpacity = L.upcoming / 100;
+    out.tilt = pulseEngineHas('tilt') ? L.tilt : 0;
+    out.tiltAlt = false;
+    out.exit = pulseEngineHas('exit') ? (p.exit || 'none') : 'none';
     return out;
   }
 
@@ -13904,7 +13980,15 @@
       shadowOpacity: p.glow ? Math.max(30, Math.min(100, Math.round(((p.glowBlur != null) ? p.glowBlur : 0.35) * 100) + 30)) : 0,
       shadowDistance: p.glow ? Math.min(100, Math.round(dist * 10) / 10) : 0,
       animation: anim,
-      spokenLit: spoken
+      spokenLit: spoken,
+      // template v4: gradient text, faint upcoming words, tilt and exit
+      // (an older template has no such controls and simply skips them)
+      gradient: !!p.fill2,
+      textColor2: p.fill2 || fill,
+      // the image fades words not yet said only while one word is lit
+      upcoming: spoken ? Math.max(0, Math.min(100, Math.round(((p.upcomingOpacity != null) ? p.upcomingOpacity : 1) * 100))) : 100,
+      tilt: Math.max(-45, Math.min(45, Number(p.tilt) || 0)),
+      exit: ({ none: 1, fade: 2, shrink: 3, slidedown: 4 })[p.exit || 'none'] || 1
     };
   }
   function mapPresetToPulse(preset, props) {
@@ -13942,6 +14026,11 @@
     num(P('shadow opacity'), L.shadowOpacity);
     num(P('shadow distance'), L.shadowDistance);
     num(P('animation'), L.animation - 1);               // 0-based, as the Box menu
+    if (P('text gradient')) out.push({ i: P('text gradient').i, kind: 'bool', value: L.gradient });
+    color(P('text color 2'), L.textColor2);
+    num(P('upcoming opacity'), L.upcoming);
+    num(P('tilt'), L.tilt);
+    num(P('exit'), L.exit - 1);                         // 0-based
     if (preset.yPct != null && isFinite(preset.yPct)) out._posYPct = Math.max(0.1, Math.min(0.92, preset.yPct));
     out._bind = { engine: 'pulse', fill: P('text color') ? P('text color').name : null, hl: P('spoken word color').name };
     return out;

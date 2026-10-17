@@ -70,6 +70,7 @@ function Layer(name) { Node.call(this, 'layer', null, null); this.layer = this; 
 Layer.prototype = Object.create(Node.prototype);
 Layer.prototype.effect = function (n) { return this.property('ADBE Effect Parade').property(n); };
 Layer.prototype.moveAfter = function (l) { this.after = l.name; };
+Object.defineProperty(Layer.prototype, 'index', { get() { return comp.layers.list.indexOf(this) + 1; } });
 const comp = {
   layers: { list: [], add(l) { this.list.unshift(l); return l; },
     addNull() { return this.add(new Layer('Null')); }, addText(t) { const l = new Layer('Text'); l.text0 = t; return this.add(l); }, addShape() { return this.add(new Layer('Shape')); } },
@@ -104,12 +105,18 @@ const wentWrong = rec.alerts.filter(a => /went wrong|needs After Effects|did not
 (!wentWrong.length && rec.alerts.some(a => /is built/.test(a) && /Allow font editing/.test(a)) ? ok : bad)('A. it runs to the end, says the template is built and how to allow font editing', JSON.stringify(rec.alerts));
 
 // B. the controls Premiere shows
-const WANT = ['Text', 'Size', 'Text Color', 'Spoken Word Color', 'Spoken Word Grow', 'Letter Spacing', 'Outline Color', 'Outline Width',
-  'Box', 'Box Color', 'Word Box Color', 'Box Opacity', 'Box Roundness', 'Shadow Opacity', 'Shadow Distance', 'Animation'];
+const WANT = ['Text', 'Size', 'Text Color', 'Text Gradient', 'Text Color 2', 'Spoken Word Color', 'Spoken Word Grow', 'Upcoming Opacity',
+  'Letter Spacing', 'Outline Color', 'Outline Width',
+  'Box', 'Box Color', 'Word Box Color', 'Box Opacity', 'Box Roundness', 'Shadow Opacity', 'Shadow Distance', 'Tilt', 'Animation', 'Exit'];
 const labels = rec.exposed.map(e => e.label);
 (JSON.stringify(labels) === JSON.stringify(WANT) ? ok : bad)('B. Premiere shows only the ' + WANT.length + ' caption controls, in order', JSON.stringify(labels));
 const menus = rec.exposed.filter(e => e.prop.items).map(e => e.label + ': ' + e.prop.items.join(' / '));
-(menus.length === 2 && /Box: None \/ Whole line \/ Spoken word \/ Line and spoken word/.test(menus[0]) && /Animation: None \/ Pop \/ Fade \/ Slide up/.test(menus[1]) ? ok : bad)('B. the two menus: ' + menus.join(' · '));
+(menus.length === 3 && /Box: None \/ Whole line \/ Spoken word \/ Line and spoken word/.test(menus[0]) && /Animation: None \/ Pop \/ Fade \/ Slide up/.test(menus[1]) &&
+  /Exit: None \/ Fade \/ Shrink \/ Slide down/.test(menus[2]) ? ok : bad)('B. the three menus: ' + menus.join(' · '));
+const kinds = {};
+rec.exposed.forEach(e => { kinds[e.label] = e.prop.owner && e.prop.owner.matchName; });
+(kinds['Tilt'] === 'ADBE Angle Control' && kinds['Text Gradient'] === 'ADBE Checkbox Control' && kinds['Text Color 2'] === 'ADBE Color Control' &&
+  kinds['Upcoming Opacity'] === 'ADBE Slider Control' ? ok : bad)('B. Tilt is an angle, Text Gradient a tick box, Text Color 2 a colour, Upcoming Opacity a slider', JSON.stringify(kinds));
 
 // C. expressions parse
 let parseBad = [];
@@ -170,6 +177,28 @@ const w2 = world(TXT, 1.25);
 const opOf = (layer, box) => run(exprOf(layer, /ADBE Opacity/), { thisComp: { layer: () => ({ effect: (e) => () => ({ Animation: 1, Box: box, 'Box Opacity': 88 })[e] }) }, time: 0.5 });
 const ops = [1, 2, 3, 4].map(b => [opOf('Line Box', b), opOf('Spoken Word Box', b)]);
 (JSON.stringify(ops) === '[[0,0],[88,0],[0,88],[88,100]]' ? ok : bad)('G. line box on 2 and 4, word box on 3 and 4 (solid over a line box): ' + JSON.stringify(ops));
+
+// H. v4: exit, tilt, upcoming words, gradient
+const grpExpr = (re) => { const x = rec.expressions.find(e => /^Group ›/.test(e.where) && re.test(e.where)); return x ? x.expr : null; };
+function ctlEnv(vals, time) { return { thisComp: { duration: 2, layer: () => ({ effect: (e) => () => vals[e] }) }, time, value: [540, 960] }; }
+const base = { Animation: 1, Exit: 1, Size: 100, Tilt: 0 };
+const opAt = (ex, t) => run(exprOf('Line Box', /ADBE Opacity/), ctlEnv(Object.assign({}, base, { Exit: ex, Box: 2, 'Box Opacity': 100 }), t));
+(opAt(1, 1.99) === 100 && opAt(2, 1.0) === 100 && opAt(2, 2) === 0 && opAt(2, 1.91) > 0 && opAt(2, 1.91) < 100 ? ok : bad)(
+  'H. Exit Fade: full until the last stretch, gone at the end (None stays: ' + opAt(1, 1.99) + ', Fade at 1.91 s: ' + Math.round(opAt(2, 1.91)) + ')');
+const scAt = (ex, t) => run(grpExpr(/ADBE Scale/), ctlEnv(Object.assign({}, base, { Exit: ex }), t))[0];
+const poAt = (ex, t) => run(grpExpr(/ADBE Position/), ctlEnv(Object.assign({}, base, { Exit: ex }), t))[1];
+(scAt(3, 2) === 60 && scAt(3, 1) === 100 && poAt(4, 2) === 1020 && poAt(4, 1) === 960 && scAt(1, 2) === 100 ? ok : bad)(
+  'H. Exit Shrink ends at 60%, Slide down ends 60 px lower, both untouched mid-caption');
+(run(grpExpr(/ADBE Rotate Z/), ctlEnv(Object.assign({}, base, { Tilt: -4 }), 1)) === -4 ? ok : bad)('H. Tilt turns the whole caption group');
+const upS = exprOf('Caption', /Upcoming.*Index Start/), upO = exprOf('Caption', /Upcoming.*Opacity/);
+(upS && upO && run(upS, ctlEnv({ 'Spoken Index': 2 }, 1)) === 3 && run(upO, ctlEnv({ 'Upcoming Opacity': 35 }, 1)) === 35 ? ok : bad)(
+  'H. Upcoming Opacity reaches the words after the spoken one');
+const gOp = (on) => run(exprOf('Gradient Text', /ADBE Opacity/), ctlEnv(Object.assign({}, base, { 'Text Gradient': on }), 1));
+const gSpoken = exprOf('Gradient Text', /Spoken Word.*ADBE Text Opacity/);
+const gStroke = exprOf('Gradient Text', /Look.*Stroke Width/);
+const gC1 = exprOf('Gradient Text', /Ramp-0002/), gC2 = exprOf('Gradient Text', /Ramp-0004/);
+(gOp(1) === 100 && gOp(0) === 0 && gSpoken === '0;' && gStroke === '0;' && /Text Color"/.test(gC1) && /Text Color 2"/.test(gC2) ? ok : bad)(
+  'H. Text Gradient: a letters-only copy shown only when ticked, Text Color → Text Color 2, no outline, the spoken word left to the caption');
 
 // F. protected frame + saved
 const mk = rec.markers[0];

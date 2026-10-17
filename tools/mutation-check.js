@@ -2773,6 +2773,86 @@ const MUTANTS = [
     repl: "      return c;",
     gate: 'CutPilot/test/gates/pulse-engine.js',
     why: 'stacked styles land on one long line in Premiere'
+  },
+  {
+    name: 'v39-tilt-ignored',
+    file: 'CutPilot/js/render.js',
+    find: '      var lineTilt = style.tilt ? style.tilt * ((style.tiltAlt && (li % 2)) ? -1 : 1) : 0;',
+    repl: '      var lineTilt = 0;',
+    gate: 'CutPilot/test/gates/caption-originals.js',
+    why: 'Tilt Tag and Line Ribbons draw level'
+  },
+  {
+    name: 'v39-tilt-no-alternate',
+    file: 'CutPilot/js/render.js',
+    find: '      var lineTilt = style.tilt ? style.tilt * ((style.tiltAlt && (li % 2)) ? -1 : 1) : 0;',
+    repl: '      var lineTilt = style.tilt || 0;',
+    gate: 'CutPilot/test/gates/caption-originals.js',
+    why: 'Line Ribbons lean the same way'
+  },
+  {
+    name: 'v39-tilt-not-read',
+    file: 'CutPilot/js/main.js',
+    find: "      tilt: cnum('c-tilt', 0),",
+    repl: '      tilt: null,',
+    gate: 'CutPilot/test/gates/caption-originals.js',
+    why: 'the Tilt slider does nothing'
+  },
+  {
+    name: 'v39-tilt-not-saved',
+    file: 'CutPilot/js/main.js',
+    find: 'emphasizeWords: o.emphasizeWords, tilt: o.tilt, tiltAlt: o.tiltAlt,',
+    repl: 'emphasizeWords: o.emphasizeWords,',
+    gate: 'CutPilot/test/gates/caption-originals.js',
+    why: 'a saved style loses its tilt'
+  },
+  {
+    name: 'v39-exit-every-still',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '          if (args.exit && it.last) { try { CP_exitClip(clip, args.exit); } catch (eEx) {} }',
+    repl: '          if (args.exit) { try { CP_exitClip(clip, args.exit); } catch (eEx) {} }',
+    gate: 'CutPilot/test/gates/caption-originals.js',
+    why: 'karaoke captions blink out at every word'
+  },
+  {
+    name: 'v39-exit-short-still',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '  if (!(dur > len * 2.2)) return false;',
+    repl: '  if (!(dur > 0)) return false;',
+    gate: 'CutPilot/test/gates/caption-originals.js',
+    why: 'a short last word fades before it can be read'
+  },
+  {
+    name: 'v39-exit-not-carried',
+    file: 'CutPilot/js/main.js',
+    find: '    if (ov.exit) eff.exit = ov.exit;\n',
+    repl: '',
+    gate: 'CutPilot/test/gates/caption-originals.js',
+    why: 'the editable caption never gets its exit'
+  },
+  {
+    name: 'v39-v4-menu-one-based',
+    file: 'CutPilot/js/main.js',
+    find: "    num(P('exit'), L.exit - 1);                         // 0-based",
+    repl: "    num(P('exit'), L.exit);",
+    gate: 'CutPilot/test/gates/caption-originals.js',
+    why: 'Exit lands one choice late in Premiere'
+  },
+  {
+    name: 'v39-preview-promises-tilt',
+    file: 'CutPilot/js/main.js',
+    find: "    out.tilt = pulseEngineHas('tilt') ? L.tilt : 0;",
+    repl: '    out.tilt = L.tilt;',
+    gate: 'CutPilot/test/gates/caption-originals.js',
+    why: 'editable preview tilts on an engine that cannot'
+  },
+  {
+    name: 'v39-font-swapped',
+    file: 'CutPilot/js/captions.js',
+    find: 'TRENDING_TEMPLATES.concat(TWIN_TEMPLATES, ORIGINAL_TEMPLATES)',
+    repl: 'TRENDING_TEMPLATES.concat(TWIN_TEMPLATES)',
+    gate: 'CutPilot/test/gates/caption-originals.js',
+    why: 'the new styles lose their own fonts for Mac faces'
   }
 ];
 

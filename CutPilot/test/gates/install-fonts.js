@@ -80,7 +80,7 @@ const bad = (m, d) => { failed++; console.log('  ✗ ' + m + (d ? '\n      ' + d
   fs.writeFileSync(log, '');
   const t2 = await run();
   const dl2 = fs.readFileSync(log, 'utf8').split('\n').filter(c => /\.ttf/.test(c) && !/Teko/.test(c));
-  (/Quit and reopen Premiere/.test(t1) && dl2.length === 0 && /already installed \(48 files\)/.test(t2) ? ok : bad)('D. "restart Premiere once"; a second run downloads nothing (' + t2.slice(0, 90) + ')');
+  (/Quit and reopen Premiere/.test(t1) && dl2.length === 0 && t2.indexOf('already installed (' + files.length + ' files)') >= 0 ? ok : bad)('D. "restart Premiere once"; a second run downloads nothing (' + t2.slice(0, 90) + ')');
   await P.close();
   if (failed) { console.log('INSTALL FONTS: ' + failed + ' failed (' + root + ')'); process.exit(1); }
   try { fs.rmSync(root, { recursive: true, force: true }); } catch (e) {}
