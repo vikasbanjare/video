@@ -1,7 +1,7 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.44** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.45** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
@@ -10,6 +10,9 @@ Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels
 - The owner zipped "Pulse Caption Test/<stamp>" 2 minutes in: an empty
   folder. Now "STILL RUNNING - wait.txt" sits there until report.txt is
   written; a stopped run writes report.txt with the reason.
+- v0.10.45: the note shows live progress (drawn N of 136 / comparing N),
+  and a toast at the start says it takes about 5–10 minutes (the owner
+  zipped again 1½ minutes in).
 
 ### v0.10.43 — template v5 bundled (Pulse_Caption_r5.mogrt)
 - Owner's AE run of builder v5 passed: no outline on a boxed spoken word.

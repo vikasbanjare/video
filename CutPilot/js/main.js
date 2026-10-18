@@ -5292,9 +5292,15 @@
     try { fs.mkdirSync(outDir, { recursive: true }); fs.mkdirSync(premDir, { recursive: true }); } catch (eMk) {}
     // the folder is never empty: a zip sent before the end, or after a stop,
     // says which (the owner zipped one 2 minutes in — nothing to read)
-    var running = pathMod.join(outDir, 'STILL RUNNING - wait.txt');
-    try { fs.writeFileSync(running, 'The caption style test started at ' + new Date().toLocaleTimeString() + ' and is still running (it takes several minutes).\n' +
-      'When it finishes, this folder opens by itself with report.txt and the sheet pictures — zip it then.\n'); } catch (eRun) {}
+    var running = pathMod.join(outDir, 'STILL RUNNING - wait.txt'), startedAt = new Date().toLocaleTimeString();
+    // the note says how far the test is, so a zip sent early still shows it
+    function note(where) {
+      try { fs.writeFileSync(running, 'The caption style test started at ' + startedAt + ' and is STILL RUNNING (about 5–10 minutes in all).\n' +
+        'Now: ' + where + ' (' + new Date().toLocaleTimeString() + ')\n' +
+        'When it finishes, this folder opens by itself with report.txt and the sheet pictures — zip it then.\n'); } catch (eRun) {}
+    }
+    note('starting');
+    toast('🎨 Testing every caption style in Premiere — about 5–10 minutes. Keep Premiere open; the result folder opens by itself when it is done.');
     var styles = CPCaptions.TEMPLATES.filter(function (t) { return t && t.id && !t.mogrt; });
     var env = { width: 1080, height: 1920 }, pulse = isPulseEngine(bb.path);
     _styleTestBusy = true;
@@ -5322,6 +5328,7 @@
       return chunks.reduce(function (chain, ch) {
         return chain.then(function () {
           capProgress('🎨 Premiere is drawing each style as an editable caption… ' + done + '/' + payload.length, 15000);
+          note('Premiere has drawn ' + done + ' of ' + payload.length + ' styles (step 1 of 2)');
           return CPBridge.callHost('CP_renderStylePreviews', { mogrtPath: bb.path, outDir: premDir, sep: pathMod.sep,
             seconds: STYLE_TEST_SECONDS, at: STYLE_TEST_SECONDS * STYLE_TEST_AT, styles: ch }).then(function (rr) {
             done += ch.length; (rr && rr.failed || []).forEach(function (id) { failed[id] = 1; });
@@ -5333,6 +5340,7 @@
       return job.payload.reduce(function (chain, pl, idx) {
         return chain.then(function () {
           capProgress('🎨 Comparing ' + (idx + 1) + '/' + job.payload.length + ' — ' + pl.id, 8000);
+          if (idx % 10 === 0) note('comparing ' + (idx + 1) + ' of ' + job.payload.length + ' styles (step 2 of 2)');
           var t = styles[idx], rs = renderableStyle(t), ws = pl.raw.split(' '), step = STYLE_TEST_SECONDS / ws.length;
           // as the panel draws it on a click: ✨ Word-by-word on (currentAnim → karaoke)
           // unless the style opts out
