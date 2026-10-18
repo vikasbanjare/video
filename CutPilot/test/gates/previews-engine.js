@@ -38,10 +38,10 @@ function png(W, H) {   // a frame with a caption-like block (not blank)
   const env = { tmpdir: path.join(root, 't'), homedir: path.join(root, 'h'), platform: 'darwin' };
   fs.mkdirSync(env.tmpdir, { recursive: true });
   const prev = path.join(env.homedir, 'Documents', 'Pulse', 'style-previews');
-  fs.mkdirSync(path.join(prev, 'pulse_caption_r4'), { recursive: true });
+  fs.mkdirSync(path.join(prev, 'pulse_caption_r5'), { recursive: true });
   fs.mkdirSync(path.join(prev, 'pulse_caption_r3'), { recursive: true });
   fs.writeFileSync(path.join(prev, 'hormozi.png'), png(270, 480));                 // an old (Flux-era) loose render
-  fs.writeFileSync(path.join(prev, 'pulse_caption_r4', 'mars.png'), png(270, 480)); // the current engine's render
+  fs.writeFileSync(path.join(prev, 'pulse_caption_r5', 'mars.png'), png(270, 480)); // the current engine's render
   fs.writeFileSync(path.join(prev, 'pulse_caption_r3', 'pastel.png'), png(270, 480)); // the previous template's (no tilt/gradient)
   const P = await L.launchPanel({ env });
   if (P.skip) { console.log('  ? ' + P.skip + ' — skipped'); process.exit(2); }
@@ -75,7 +75,7 @@ function png(W, H) {   // a frame with a caption-like block (not blank)
   }, EXT);
   await P.close();
   (r.png.mars === 'drawn' && r.png.hormozi === 'drawn' && r.png2.mars === 'drawn' ? ok : bad)('A. image captions: every card is Pulse\'s drawn preview, also after switching back (' + JSON.stringify(r.png) + ')');
-  (/pulse_caption_r4\/mars\.png/.test(r.editable.mars || '') ? ok : bad)('B. editable captions: the current engine\'s saved render shows (' + r.editable.mars + ')', JSON.stringify(r.state));
+  (/pulse_caption_r5\/mars\.png/.test(r.editable.mars || '') ? ok : bad)('B. editable captions: the current engine\'s saved render shows (' + r.editable.mars + ')', JSON.stringify(r.state));
   (r.editable.hormozi === 'drawn' ? ok : bad)('C. an older engine\'s render never shows (' + r.editable.hormozi + ')');
   if (failed) { console.log('PREVIEWS ENGINE: ' + failed + ' failed (' + root + ')'); process.exit(1); }
   try { fs.rmSync(root, { recursive: true, force: true }); } catch (e) {}
