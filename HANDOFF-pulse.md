@@ -18,7 +18,14 @@ Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels
   "Gradient Text" visible with Text Gradient OFF (every caption red; its
   opacity expression evidently not applied in AE). NOT bundled. Builder now:
   static opacity 0 on that layer + a self-check that lists every
-  expressionError in the final alert. Owner re-runs it and screenshots.
+  expressionError in the final alert. Owner re-ran: "Opacity is 100 with
+  Text Gradient off" — AE hands an expression the CONTROL (an object): in
+  `ctrl ? 100 : 0` it is always truthy. Fixed with Math.round(...) == 1;
+  the gate's stand-in hands controls as objects too.
+- Owner's next run passed → bundled as mogrts/Pulse_Caption_r4.mogrt
+  (index.json features: gradient, upcoming, tilt, exit). Gradient ramp
+  points (sourceRectAtTime in layer space) NOT VERIFIED in Premiere yet —
+  watch Sunset Fade in the next 🎨 style test.
 - Still open: line spacing control (image lineGap > template 1.2), subScale
   (2nd line smaller), gloss/gradient highlight, rainbow boxes.
 

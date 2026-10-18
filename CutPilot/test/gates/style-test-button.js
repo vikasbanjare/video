@@ -24,7 +24,7 @@ const L = require('./overlay-lib.cjs');
 let failed = 0;
 const ok = (m) => console.log('  ✓ ' + m);
 const bad = (m, d) => { failed++; console.log('  ✗ ' + m + (d ? '\n      ' + d : '')); };
-const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r3.mogrt');
+const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r4.mogrt');
 
 // a 1080x1920 black frame with a white block where a caption sits
 function png(W, H) {

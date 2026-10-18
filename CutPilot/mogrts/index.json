@@ -1,12 +1,13 @@
 [
  {
-  "file": "Pulse_Caption_r3.mogrt",
+  "file": "Pulse_Caption_r4.mogrt",
   "name": "Pulse Caption",
   "category": "Captions",
   "kind": "caption",
-  "desc": "Pulse's own editable caption engine: outline, word box, growing word, letter spacing, entrance — 16 controls",
+  "desc": "Pulse's own editable caption engine: outline, word box, growing word, letter spacing, entrance, exit, tilt, faint upcoming words, gradient text — 21 controls",
   "hidden": true,
   "engine": true,
+  "features": ["gradient", "upcoming", "tilt", "exit"],
   "hiddenWhy": "the engine every caption style uses for editable captions"
  },
  {
