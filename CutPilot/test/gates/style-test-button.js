@@ -93,6 +93,10 @@ function png(W, H) {
     'B. the report lists every style worst first and names the one Premiere refused (' + lines.length + ' rows)', rep.slice(0, 300));
   const sheets = runDir ? fs.readdirSync(runDir).filter(f => /^sheet-\d+\.png$/.test(f)) : [];
   (sheets.length === Math.ceil(r.n / 8) && sheets.every(f => fs.statSync(path.join(runDir, f)).size > 5000) ? ok : bad)('C. ' + sheets.length + ' sheets on the Desktop');
+  // the owner zipped a run 2 minutes in and sent an empty folder: while it
+  // runs the folder says so, and the note is gone once the report is there
+  (runDir && fs.readdirSync(runDir).indexOf('STILL RUNNING - wait.txt') < 0 && fs.existsSync(path.join(runDir, 'report.txt')) ? ok : bad)(
+    'C. a finished run leaves the report and no "still running" note', runDir ? fs.readdirSync(runDir).join(', ') : 'no folder');
   const opened = fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '';
   (opened.indexOf(runDir) >= 0 && /Tested \d+ caption styles/.test(r.toast) ? ok : bad)('D. the folder opens and Pulse says what it did', opened + ' · ' + r.toast);
   if (failed) { console.log('STYLE TEST BUTTON: ' + failed + ' failed (' + root + ')'); process.exit(1); }

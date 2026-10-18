@@ -5290,6 +5290,11 @@
     var outDir = pathMod.join(os.homedir(), 'Desktop', 'Pulse Caption Test', stamp);
     var premDir = pathMod.join(os.tmpdir(), 'pulse-style-test-' + Date.now());
     try { fs.mkdirSync(outDir, { recursive: true }); fs.mkdirSync(premDir, { recursive: true }); } catch (eMk) {}
+    // the folder is never empty: a zip sent before the end, or after a stop,
+    // says which (the owner zipped one 2 minutes in — nothing to read)
+    var running = pathMod.join(outDir, 'STILL RUNNING - wait.txt');
+    try { fs.writeFileSync(running, 'The caption style test started at ' + new Date().toLocaleTimeString() + ' and is still running (it takes several minutes).\n' +
+      'When it finishes, this folder opens by itself with report.txt and the sheet pictures — zip it then.\n'); } catch (eRun) {}
     var styles = CPCaptions.TEMPLATES.filter(function (t) { return t && t.id && !t.mogrt; });
     var env = { width: 1080, height: 1920 }, pulse = isPulseEngine(bb.path);
     _styleTestBusy = true;
@@ -5384,13 +5389,20 @@
         ' · far (>=15%): ' + rows.filter(function (x) { return x.score >= 15; }).length, '', 'Worst first (difference %):']
         .concat(rows.map(function (x) { return (x.score + '%').padStart(7) + '  ' + x.id + (x.why ? '  — ' + x.why : ''); })).join('\n');
       fs.writeFileSync(pathMod.join(outDir, 'report.txt'), txt);
+      try { fs.unlinkSync(running); } catch (eRm) {}
       try { diag('style-test', txt.split('\n').slice(0, 24).join(' | ')); } catch (eD) {}
       capProgress(null);
       toast('🎨 Tested ' + rows.length + ' caption styles in Premiere: ' + close + ' look the same as the image caption. Sheets + report are in Desktop › Pulse Caption Test — send them over.');
       openFolder(outDir);
     }).catch(function (e) {
       capProgress(null);
-      toast('The style test stopped: ' + (e && e.message ? e.message : e), true);
+      var why = (e && e.message ? e.message : String(e));
+      try {
+        fs.writeFileSync(pathMod.join(outDir, 'report.txt'), 'Pulse caption style test — ' + stamp + '\nThe test STOPPED before the end: ' + why + '\n' +
+          'Styles finished: ' + rows.length + '\nPulse ' + (($('ver') || {}).textContent || '') + '\n');
+        fs.unlinkSync(running);
+      } catch (eW) {}
+      toast('The style test stopped: ' + why, true);
     }).then(function () {
       _styleTestBusy = false; if (btn) btn.disabled = false;
       try { fs.rmSync(premDir, { recursive: true, force: true }); } catch (eRm) {}

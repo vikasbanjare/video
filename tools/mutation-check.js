@@ -2981,6 +2981,14 @@ const MUTANTS = [
     repl: '\'Math.round(\' + C + \'("Box")(1)) >= 9 ? 0 : \'',
     gate: 'CutPilot/test/gates/ae-caption-builder.js',
     why: 'a dark ring round the boxed word'
+  },
+  {
+    name: 'v44-style-test-note-stays',
+    file: 'CutPilot/js/main.js',
+    find: "      try { fs.unlinkSync(running); } catch (eRm) {}\n",
+    repl: "",
+    gate: 'CutPilot/test/gates/style-test-button.js',
+    why: 'a finished style test still says it is running'
   }
 ];
 
