@@ -86,11 +86,17 @@ function png(W, H) {
   (sent.length === r.n && /^AAJ PAISE KI BAAT$/.test(String(green.text || '').replace(/\s+/g, ' ')) && named.indexOf('Word Box Color') >= 0 && named.indexOf('Box') >= 0 ? ok : bad)(
     'A. all ' + sent.length + ' styles go to Premiere with their own settings and words (' + (green.text || '') + ')', r.toast);
   const base = path.join(env.homedir, 'Desktop', 'Pulse Caption Test');
-  const runDir = fs.existsSync(base) ? path.join(base, fs.readdirSync(base)[0] || '') : '';
+  const runDir = fs.existsSync(base) ? path.join(base, fs.readdirSync(base).filter(f => !/\.zip$/.test(f))[0] || '') : '';
   const rep = runDir && fs.existsSync(path.join(runDir, 'report.txt')) ? fs.readFileSync(path.join(runDir, 'report.txt'), 'utf8') : '';
   const lines = rep.split('\n').filter(l => /^\s*[\d.]+%\s/.test(l));
-  (lines.length === r.n && /minimal\s+— Premiere did not draw it/.test(rep) && /Styles: \d+ · close/.test(rep) && /Engine: Pulse Caption/.test(rep) ? ok : bad)(
+  (lines.length === r.n && /minimal\s+— Premiere did not draw it/.test(rep) && /Styles: \d+ · the same \(<7%\): \d+ · still to fix: \d+ · the template cannot draw: \d+/.test(rep) && /Engine: Pulse Caption/.test(rep) ? ok : bad)(
     'B. the report lists every style worst first and names the one Premiere refused (' + lines.length + ' rows)', rep.slice(0, 300));
+  // three groups, so one test says what is left (the owner: "fix it once and for all")
+  const sec = (title) => { const a = rep.indexOf(title); if (a < 0) return null; const b = rep.indexOf('\n\n', a); return rep.slice(a, b < 0 ? rep.length : b); };
+  const cant = sec('THE TEMPLATE CANNOT DRAW'), fixS = sec('STILL TO FIX'), same = sec('THE SAME');
+  (cant !== null && fixS !== null && same !== null && /pro-editorial .*template cannot draw: .*a smaller second line/.test(cant || '') &&
+   !/pro-editorial/.test(fixS || '') ? ok : bad)('B. the report groups the styles: still to fix · the template cannot draw (with why, e.g. Editorial: a smaller second line) · the same',
+    rep.slice(0, 600));
   const sheets = runDir ? fs.readdirSync(runDir).filter(f => /^sheet-\d+\.png$/.test(f)) : [];
   (sheets.length === Math.ceil(r.n / 8) && sheets.every(f => fs.statSync(path.join(runDir, f)).size > 5000) ? ok : bad)('C. ' + sheets.length + ' sheets on the Desktop');
   // the owner zipped a run 2 minutes in and sent an empty folder: while it
@@ -98,7 +104,12 @@ function png(W, H) {
   (runDir && fs.readdirSync(runDir).indexOf('STILL RUNNING - wait.txt') < 0 && fs.existsSync(path.join(runDir, 'report.txt')) ? ok : bad)(
     'C. a finished run leaves the report and no "still running" note', runDir ? fs.readdirSync(runDir).join(', ') : 'no folder');
   const opened = fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '';
-  (opened.indexOf(runDir) >= 0 && /Tested \d+ caption styles/.test(r.toast) ? ok : bad)('D. the folder opens and Pulse says what it did', opened + ' · ' + r.toast);
+  // the finished results as ONE zip on the Desktop, shown in Finder: nothing to zip by hand, nothing to send too early
+  const zipF = path.join(env.homedir, 'Desktop', 'Pulse Caption Test ' + path.basename(runDir) + '.zip');
+  let zipList = '';
+  try { zipList = require('child_process').execFileSync('unzip', ['-l', zipF]).toString(); } catch (e) {}
+  (/report\.txt/.test(zipList) && /sheet-01\.png/.test(zipList) && opened.indexOf('-R ' + zipF) >= 0 && /ready to send/.test(r.toast) ? ok : bad)(
+    'D. the finished results come as one zip on the Desktop, shown in Finder, and Pulse says it is ready to send', opened + ' · ' + r.toast);
   if (failed) { console.log('STYLE TEST BUTTON: ' + failed + ' failed (' + root + ')'); process.exit(1); }
   if (!process.env.KEEP_STYLE_TEST) { try { fs.rmSync(root, { recursive: true, force: true }); } catch (e) {} } else console.log('    kept: ' + runDir);
   console.log('STYLE TEST BUTTON: every style tested, report on the Desktop ✓');

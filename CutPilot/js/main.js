@@ -5278,6 +5278,52 @@
   function loadImageFile(p) {
     return new Promise(function (res) { loadRenderedFrame(p, function (im) { res(im || null); }); });
   }
+  /* What the editable template cannot draw for a style (the image can) —
+     the style test groups these as "can't match" instead of sending them
+     round again. Empty = the template has a control for every part. */
+  function pulseCannotDraw(p) {
+    p = p || {};
+    var out = [], g = String(p.glow || '').toLowerCase();
+    if (p.subScale != null && p.subScale < 1) out.push('a smaller second line');
+    if (p.highlight2 || p.glossy) out.push('a shiny / two-colour spoken word');
+    if ((p.boxStops && p.boxStops.length) || p.boxColor2) out.push('a gradient box');
+    if (p.boxStroke || p.boxGlow || p.box3d || p.boxGloss > 0 || p.boxShadow) out.push('a box border, glow or 3D edge');
+    if (p.highlightColors && p.highlightColors.length) out.push('a different colour for each word');
+    if (p.highlightFont) out.push('a different font for the spoken word');
+    if (g && !/^#?(0{3}|0{6}|000000\w*)$/.test(g.replace('#', '')) && !CPCaptions.isNearBlack(p.glow)) out.push('a coloured glow');
+    if (p.tiltAlt) out.push('lines leaning opposite ways');
+    if (/^(underline|circle|marker)$/.test(p.highlightStyle || '')) out.push('an ' + p.highlightStyle + ' highlight');
+    if (p.stagger) out.push('a staggered layout');
+    if (p.emphasizeWords) out.push('bigger punchy words');
+    if (p.numberColor || p.brandColor) out.push('coloured numbers / brand words');
+    return out;
+  }
+  /* The finished test folder as one zip on the Desktop, shown in Finder —
+     the owner zipped the folder by hand twice before the test had ended. */
+  function zipStyleTest(dir, cb) {
+    var cp, pathMod;
+    try { cp = nodeReq('child_process'); pathMod = nodeReq('path'); } catch (e) { return cb(null); }
+    var zip = pathMod.join(pathMod.dirname(pathMod.dirname(dir)), 'Pulse Caption Test ' + pathMod.basename(dir) + '.zip');
+    function run(cmd, args, next) {
+      var p; try { p = cp.spawn(cmd, args); } catch (e) { return next(false); }
+      var done = false, fin = function (ok) { if (!done) { done = true; next(ok); } };
+      p.on('error', function () { fin(false); });
+      p.on('close', function (code) { fin(code === 0); });
+    }
+    // macOS's own ditto; the zip tool where there is none
+    run('ditto', ['-c', '-k', '--keepParent', dir, zip], function (ok) {
+      if (ok) return cb(zip);
+      run('zip', ['-r', '-q', '-j', zip, dir], function (ok2) { cb(ok2 ? zip : null); });
+    });
+  }
+  function revealFile(f) {
+    try {
+      var cp = nodeReq('child_process'), os = nodeReq('os');
+      var p = os.platform() === 'win32' ? cp.spawn('explorer', ['/select,', f]) : cp.spawn('open', ['-R', f]);
+      if (p && p.on) p.on('error', function () {});
+      return true;
+    } catch (e) { return false; }
+  }
   function compareCaptionStyles() {
     if (_styleTestBusy) return toast('Already testing the caption styles — hang tight…');
     if (!CPBridge.isCEP()) return toast('This test needs Premiere (open Pulse inside Premiere).', true);
@@ -5393,15 +5439,35 @@
         fs.writeFileSync(pathMod.join(outDir, 'sheet-' + (sheets < 10 ? '0' : '') + sheets + '.png'), nodeReq('buffer').Buffer.from(b64, 'base64'));
       }
       var close = rows.filter(function (x) { return x.score < 7; }).length;
-      var txt = ['Pulse caption style test — ' + stamp, 'Engine: ' + (bb.name || bb.path), 'Styles: ' + rows.length + ' · close (<7%): ' + close +
-        ' · far (>=15%): ' + rows.filter(function (x) { return x.score >= 15; }).length, '', 'Worst first (difference %):']
-        .concat(rows.map(function (x) { return (x.score + '%').padStart(7) + '  ' + x.id + (x.why ? '  — ' + x.why : ''); })).join('\n');
+      // three groups, so one test says what is left: the same; a difference
+      // still to fix; a look the template cannot draw (and why)
+      var byId = {};
+      styles.forEach(function (t) { byId[t.id] = t; });
+      rows.forEach(function (x) { x.cannot = pulseCannotDraw(byId[x.id]); });
+      var same = rows.filter(function (x) { return x.score < 7; });
+      var cant = rows.filter(function (x) { return x.score >= 7 && x.cannot.length; });
+      var fix = rows.filter(function (x) { return x.score >= 7 && !x.cannot.length; });
+      var line = function (x) { return (x.score + '%').padStart(7) + '  ' + x.id + (x.why ? '  — ' + x.why : '') + (x.cannot && x.cannot.length && x.score >= 7 ? '  — template cannot draw: ' + x.cannot.join(', ') : ''); };
+      var txt = ['Pulse caption style test — ' + stamp, 'Pulse ' + (($('ver') || {}).textContent || '') + ' · Engine: ' + (bb.name || bb.path),
+        'Styles: ' + rows.length + ' · the same (<7%): ' + same.length + ' · still to fix: ' + fix.length + ' · the template cannot draw: ' + cant.length, '',
+        'STILL TO FIX (worst first):'].concat(fix.map(line), ['', 'THE TEMPLATE CANNOT DRAW (image captions only):'], cant.map(line),
+        ['', 'THE SAME:'], same.map(line)).join('\n');
       fs.writeFileSync(pathMod.join(outDir, 'report.txt'), txt);
       try { fs.unlinkSync(running); } catch (eRm) {}
       try { diag('style-test', txt.split('\n').slice(0, 24).join(' | ')); } catch (eD) {}
       capProgress(null);
-      toast('🎨 Tested ' + rows.length + ' caption styles in Premiere: ' + close + ' look the same as the image caption. Sheets + report are in Desktop › Pulse Caption Test — send them over.');
-      openFolder(outDir);
+      return new Promise(function (resolve) {
+        zipStyleTest(outDir, function (zip) {
+          if (zip) {
+            toast('🎨 Tested ' + rows.length + ' caption styles: ' + close + ' look the same. The results are ready to send: "' + nodeReq('path').basename(zip) + '" on your Desktop (shown in Finder).');
+            revealFile(zip);
+          } else {
+            toast('🎨 Tested ' + rows.length + ' caption styles in Premiere: ' + close + ' look the same as the image caption. Sheets + report are in Desktop › Pulse Caption Test — send them over.');
+            openFolder(outDir);
+          }
+          resolve();
+        });
+      });
     }).catch(function (e) {
       capProgress(null);
       var why = (e && e.message ? e.message : String(e));
