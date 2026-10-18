@@ -11,10 +11,10 @@
  * and the gallery stayed at two columns.
  *
  * In the real panel:
- *   1. it opens on Home: the edit as five numbered steps in order —
- *      Transcribe · Clean up · Podcast cameras · Captions · Shorts — each
- *      opening its page, step 1 marked "Start here"; More tools opens
- *      Chapters, Organize and Safe zone;
+ *   1. it opens on Home: tiles — Transcribe · Clean up · Captions · Shorts,
+ *      and Podcast cameras as its own tool (the owner: "podcast cameras is a
+ *      completely different thing") — each opening its page; More tools
+ *      opens Chapters, Organize and Safe zone;
  *   2. from every page one tap (‹) goes back where the owner came from
  *      (Home, from Home; Shorts, from its "Transcribe first"; the style
  *      gallery, from the style editor) and one tap (⚙) opens
@@ -34,8 +34,8 @@
 const U = require('./ui-lib/panel');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-const TASKS = [['home-words', 'transcribe', /transcribe/i], ['home-cleanup', 'silence', /clean up/i], ['home-cameras', 'multicam', /podcast cameras/i],
-  ['home-captions', 'captions', /captions/i], ['home-shorts', 'shorts', /shorts/i]];
+const TASKS = [['home-words', 'transcribe', /transcribe/i], ['home-cleanup', 'silence', /clean up/i], ['home-captions', 'captions', /captions/i],
+  ['home-shorts', 'shorts', /shorts/i], ['home-cameras', 'multicam', /podcast cameras/i]];
 const TOOLS = [['chapters', /chapters/i], ['organize', /organize/i], ['safezone', /safe zone/i]];
 
 const state = page => page.evaluate(() => {
@@ -53,7 +53,7 @@ const click = (page, sel) => page.evaluate(sel => {
 }, sel);
 
 (async () => {
-  const R = U.reporter('ui shell: Home = the edit in five steps, More tools, ‹ back where you came from, Settings + Diagnostics, Captions on the styles');
+  const R = U.reporter('ui shell: Home tiles, More tools, ‹ back where you came from, Settings + Diagnostics, Captions on the styles');
   const browser = await U.launch();
   try {
     const page = await U.openPanel(browser, { viewport: { width: 400, height: 640 } });
@@ -71,11 +71,11 @@ const click = (page, sel) => page.evaluate(sel => {
     }, TASKS.map(t => [t[0], t[1], t[2].source]));
     if (home.page !== 'tab-home') R.bad('the panel does not open on a Home screen (opens on ' + home.page + ')');
     else {
-      const bad = home.tasks.filter((t, i) => t.missing || !TASKS[i][2].test(t.text) || t.h < 44 || !t.onScreen || t.n !== String(i + 1) ||
-        (i > 0 && t.top <= home.tasks[i - 1].top));
-      if (bad.length) R.bad('Home\'s five steps are not all there, numbered in order, big (≥ 44px) and on screen: ' + JSON.stringify(bad));
-      else if (home.tasks[0].state !== 'Start here') R.bad('step 1 does not say where to start (' + home.tasks[0].state + ')');
-      else R.ok('it opens on Home with the edit in order: ' + home.tasks.map(t => t.n + '. ' + t.text).join(' · ') + ' — step 1 says "Start here"');
+      const bad = home.tasks.filter((t, i) => t.missing || !TASKS[i][2].test(t.text) || t.h < 44 || !t.onScreen);
+      const cam = home.tasks[4], core = home.tasks.slice(0, 4);
+      if (bad.length) R.bad('Home\'s tiles are not all there, big (≥ 44px) and on screen: ' + JSON.stringify(bad));
+      else if (!core.every(t => t.top < cam.top)) R.bad('Podcast cameras sits among the four jobs of every video instead of on its own: ' + JSON.stringify(home.tasks.map(t => [t.id, t.top])));
+      else R.ok('it opens on Home with tiles: ' + core.map(t => t.text).join(' · ') + ', and ' + cam.text + ' on its own below');
     }
     for (const [id, want] of TASKS) {
       await page.evaluate(() => { const b = document.querySelector('.tab[data-tab="home"]'); if (b) b.click(); });
@@ -100,7 +100,7 @@ const click = (page, sel) => page.evaluate(sel => {
       if (c !== 'ok' || s.page !== pageId) toolRes.push(pageId + ': ' + c + ', now on ' + s.page);
     }
     if (toolRes.length) R.bad('More tools: ' + toolRes.join('; '));
-    else R.ok('Home → each step and each More tool (Chapters, Organize, Safe zone) opens its page');
+    else R.ok('Home → each tile and each More tool (Chapters, Organize, Safe zone) opens its page');
 
     // ---- 2. back, ⚙, the bar's page name, Diagnostics --------------------------
     const nav = [];

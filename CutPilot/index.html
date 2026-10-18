@@ -10,9 +10,9 @@
   <!-- Caption faces — loaded as web fonts so the chosen font renders in the
        live preview AND the canvas-rendered PNGs even if it isn't installed. -->
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Bebas+Neue&family=Archivo+Black&family=Fjalla+One&family=Bangers&family=Luckiest+Guy&family=Alfa+Slab+One&family=Bungee&family=Titan+One&family=Passion+One&family=Permanent+Marker&family=Pacifico&family=Shadows+Into+Light&family=Montserrat:wght@400;500;600;700;800;900&family=Poppins:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800;900&family=Oswald:wght@400;700&family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Lato:wght@400;700&family=Raleway:wght@400;700&family=Work+Sans:wght@400;700&family=Nunito:wght@400;700&family=Rubik:wght@400;700;800;900&family=DM+Sans:wght@400;500;700&family=Outfit:wght@400;500;600;700;800;900&family=Sora:wght@400;500;600;700;800&family=Barlow:wght@400;700&family=Manrope:wght@400;500;600;700;800&family=Teko:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,800;1,600;1,700;1,800&family=Merriweather:wght@400;700&family=Lora:wght@400;700&family=JetBrains+Mono:wght@400;700&family=Roboto+Mono:wght@400;700&family=Space+Mono:wght@400;700&family=Caveat:wght@400;700&family=Arvo:wght@400;700&family=Space+Grotesk:wght@400;500;600;700&family=Syne:wght@600;700;800&family=Unbounded:wght@600;700;800;900&family=DM+Serif+Display:ital@0;1&family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Baloo+2:wght@400;500;600;700;800&family=Mukta:wght@400;500;600;700;800&family=Hind:wght@400;500;600;700&family=Anek+Devanagari:wght@400;500;600;700;800&family=Rozha+One&family=Kalam:wght@400;700&family=Tiro+Devanagari+Hindi:ital@0;1&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=v0.10.47">
-  <link rel="stylesheet" href="css/organize.css?v=v0.10.47">
-  <link rel="stylesheet" href="css/studio.css?v=v0.10.47">
+  <link rel="stylesheet" href="css/style.css?v=v0.10.48">
+  <link rel="stylesheet" href="css/organize.css?v=v0.10.48">
+  <link rel="stylesheet" href="css/studio.css?v=v0.10.48">
 </head>
 <body class="theme-light" data-page="home">
   <!-- ONE navigation row (≤ 12 % of a 400 px-tall panel). Home is the menu;
@@ -56,45 +56,38 @@
 
   <!-- ================================ HOME =============================== -->
   <section id="tab-home" class="tab-page active">
-    <!-- HOME = THE EDIT, IN ORDER. Words first (captions, clean-up and
-         shorts all need them), then cut, then cameras, then captions, then
-         shorts. Each step says if it is done, next, or optional. -->
-    <div class="flow-head">Your edit, step by step</div>
-    <div class="home-tasks flow-steps">
-      <button id="home-words" class="task-card step-card" type="button" data-go="transcribe" data-step="transcribe">
-        <span class="step-n">1</span>
+    <!-- HOME = TILES. The four jobs of every video, side by side; podcast
+         cameras is its own tool for multi-camera podcasts; the rest below.
+         A tile shows ✓ once its job is done for this sequence. -->
+    <div class="tile-head">Edit your video</div>
+    <div class="home-tasks tiles">
+      <button id="home-words" class="task-card step-card tile" type="button" data-go="transcribe" data-step="transcribe">
         <span class="task-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>
-        <span class="task-txt"><span class="task-name">Transcribe</span><span class="task-sub">Get the words of your video — every step below uses them</span></span>
-        <span class="step-state" data-state-for="transcribe">Start here</span>
-        <span class="task-go" aria-hidden="true">›</span>
+        <span class="step-state" data-state-for="transcribe"></span>
+        <span class="task-txt"><span class="task-name">Transcribe</span><span class="task-sub">Get the words</span></span>
       </button>
-      <button id="home-cleanup" class="task-card step-card" type="button" data-go="silence" data-step="silence">
-        <span class="step-n">2</span>
+      <button id="home-cleanup" class="task-card step-card tile" type="button" data-go="silence" data-step="silence">
         <span class="task-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><line x1="20" y1="4" x2="8.5" y2="15.5"/><line x1="14.5" y1="14.5" x2="20" y2="20"/><line x1="8.5" y1="8.5" x2="12" y2="12"/></svg></span>
-        <span class="task-txt"><span class="task-name">Clean up</span><span class="task-sub">Cut silences, retakes and “um”s</span></span>
-        <span class="step-state" data-state-for="silence">Optional</span>
-        <span class="task-go" aria-hidden="true">›</span>
+        <span class="step-state" data-state-for="silence"></span>
+        <span class="task-txt"><span class="task-name">Clean up</span><span class="task-sub">Silences, retakes, “um”s</span></span>
       </button>
-      <button id="home-cameras" class="task-card step-card" type="button" data-go="multicam" data-step="multicam">
-        <span class="step-n">3</span>
-        <span class="task-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="3.5" width="13" height="9" rx="2"/><rect x="3.5" y="9.5" width="13" height="9" rx="2"/></svg></span>
-        <span class="task-txt"><span class="task-name">Podcast cameras</span><span class="task-sub">2+ cameras? Cut to whoever is talking</span></span>
-        <span class="step-state" data-state-for="multicam">Optional</span>
-        <span class="task-go" aria-hidden="true">›</span>
-      </button>
-      <button id="home-captions" class="task-card step-card" type="button" data-go="captions" data-step="captions">
-        <span class="step-n">4</span>
+      <button id="home-captions" class="task-card step-card tile" type="button" data-go="captions" data-step="captions">
         <span class="task-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3.5"/><path d="M10 10.5a2.2 2.2 0 1 0 0 3"/><path d="M16.5 10.5a2.2 2.2 0 1 0 0 3"/></svg></span>
-        <span class="task-txt"><span class="task-name">Captions</span><span class="task-sub">Pick a look, add them in one tap</span></span>
         <span class="step-state" data-state-for="captions"></span>
-        <span class="task-go" aria-hidden="true">›</span>
+        <span class="task-txt"><span class="task-name">Captions</span><span class="task-sub">Pick a look, add in one tap</span></span>
       </button>
-      <button id="home-shorts" class="task-card step-card" type="button" data-go="shorts" data-step="shorts">
-        <span class="step-n">5</span>
+      <button id="home-shorts" class="task-card step-card tile" type="button" data-go="shorts" data-step="shorts">
         <span class="task-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="2.5" width="9" height="19" rx="2.5"/><path d="M10.5 12l4 -2.3v4.6Z" fill="currentColor" stroke="none"/></svg></span>
-        <span class="task-txt"><span class="task-name">Shorts</span><span class="task-sub">Your best moments as vertical clips</span></span>
         <span class="step-state" data-state-for="shorts"></span>
-        <span class="task-go" aria-hidden="true">›</span>
+        <span class="task-txt"><span class="task-name">Shorts</span><span class="task-sub">Best moments as vertical clips</span></span>
+      </button>
+    </div>
+    <div class="tile-head">Podcast</div>
+    <div class="home-tasks tiles">
+      <button id="home-cameras" class="task-card step-card tile tile-wide" type="button" data-go="multicam" data-step="multicam">
+        <span class="task-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="3.5" width="13" height="9" rx="2"/><rect x="3.5" y="9.5" width="13" height="9" rx="2"/></svg></span>
+        <span class="step-state" data-state-for="multicam"></span>
+        <span class="task-txt"><span class="task-name">Podcast cameras</span><span class="task-sub">2 or more cameras: cut to whoever is talking</span></span>
       </button>
     </div>
     <div class="more-tools">
@@ -105,7 +98,7 @@
         <button id="home-safezone" class="tool-btn" type="button" data-go="safezone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="2"/><rect x="9" y="7" width="6" height="6" rx="1"/><line x1="9" y1="17" x2="15" y2="17"/></svg>Safe zone</button>
       </div>
     </div>
-    <p class="home-foot"><span id="ver" class="ver">v0.10.47</span></p>
+    <p class="home-foot"><span id="ver" class="ver">v0.10.48</span></p>
   </section>
 
   <!-- ============================ TRANSCRIBE ============================ -->
@@ -1022,7 +1015,7 @@
       </div>
     </div><!-- /ae-takes -->
     </details><!-- /fine-tune drawer -->
-      <div class="next-step" id="cu-next"><span class="ns-txt"><b>Next:</b> several cameras? Cut between them. One camera? Add captions.</span><button type="button" class="hero-btn small" data-go="captions">Captions ›</button><button type="button" class="chip-btn" data-go="multicam">Podcast cameras</button></div>
+      <div class="next-step" id="cu-next"><span class="ns-txt"><b>Next:</b> add captions to the cleaned-up video.</span><button type="button" class="hero-btn small" data-go="captions">Captions ›</button></div>
   </section>
 
   <!-- =============================== SHORTS ============================= -->
@@ -1468,7 +1461,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.10.47 · auto-edit · multicam · captions · chapters · organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.10.48 · auto-edit · multicam · captions · chapters · organize</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->
@@ -1603,32 +1596,32 @@
     </div>
   </div>
 
-  <script src="js/lib/cep-bridge.js?v=v0.10.47"></script>
-  <script src="js/silence.js?v=v0.10.47"></script>
-  <script src="js/audio.js?v=v0.10.47"></script>
-  <script src="js/captions.js?v=v0.10.47"></script>
-  <script src="js/ass.js?v=v0.10.47"></script>
-  <script src="js/render.js?v=v0.10.47"></script>
-  <script src="js/multicam.js?v=v0.10.47"></script>
-  <script src="js/voices.js?v=v0.10.47"></script>
-  <script src="js/sfx.js?v=v0.10.47"></script>
-  <script src="js/takes.js?v=v0.10.47"></script>
-  <script src="js/smartedit.js?v=v0.10.47"></script>
-  <script src="js/apierr.js?v=v0.10.47"></script>
-  <script src="js/verbatim.js?v=v0.10.47"></script>
-  <script src="js/reframe.js?v=v0.10.47"></script>
-  <script src="js/scriptalign.js?v=v0.10.47"></script>
-  <script src="js/transcript.js?v=v0.10.47"></script>
-  <script src="js/fonts.js?v=v0.10.47"></script>
-  <script src="js/command.js?v=v0.10.47"></script>
-  <script src="js/chapters.js?v=v0.10.47"></script>
-  <script src="js/align.js?v=v0.10.47"></script>
-  <script src="js/shorts.js?v=v0.10.47"></script>
-  <script src="js/lib/pico.js?v=v0.10.47"></script>
-  <script src="js/lib/facefinder.js?v=v0.10.47"></script>
-  <script src="js/podshort.js?v=v0.10.47"></script>
-  <script src="js/main.js?v=v0.10.47"></script>
-  <script src="js/organize.js?v=v0.10.47"></script>
-  <script src="js/safezone.js?v=v0.10.47"></script>
+  <script src="js/lib/cep-bridge.js?v=v0.10.48"></script>
+  <script src="js/silence.js?v=v0.10.48"></script>
+  <script src="js/audio.js?v=v0.10.48"></script>
+  <script src="js/captions.js?v=v0.10.48"></script>
+  <script src="js/ass.js?v=v0.10.48"></script>
+  <script src="js/render.js?v=v0.10.48"></script>
+  <script src="js/multicam.js?v=v0.10.48"></script>
+  <script src="js/voices.js?v=v0.10.48"></script>
+  <script src="js/sfx.js?v=v0.10.48"></script>
+  <script src="js/takes.js?v=v0.10.48"></script>
+  <script src="js/smartedit.js?v=v0.10.48"></script>
+  <script src="js/apierr.js?v=v0.10.48"></script>
+  <script src="js/verbatim.js?v=v0.10.48"></script>
+  <script src="js/reframe.js?v=v0.10.48"></script>
+  <script src="js/scriptalign.js?v=v0.10.48"></script>
+  <script src="js/transcript.js?v=v0.10.48"></script>
+  <script src="js/fonts.js?v=v0.10.48"></script>
+  <script src="js/command.js?v=v0.10.48"></script>
+  <script src="js/chapters.js?v=v0.10.48"></script>
+  <script src="js/align.js?v=v0.10.48"></script>
+  <script src="js/shorts.js?v=v0.10.48"></script>
+  <script src="js/lib/pico.js?v=v0.10.48"></script>
+  <script src="js/lib/facefinder.js?v=v0.10.48"></script>
+  <script src="js/podshort.js?v=v0.10.48"></script>
+  <script src="js/main.js?v=v0.10.48"></script>
+  <script src="js/organize.js?v=v0.10.48"></script>
+  <script src="js/safezone.js?v=v0.10.48"></script>
 </body>
 </html>

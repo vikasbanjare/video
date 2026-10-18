@@ -116,29 +116,29 @@ body.theme-light .seg-control button.on, body.theme-light .subview-switch button
 .page-actions { background: var(--bg); box-shadow: 0 -1px 0 var(--line); }
 .card > .page-actions { background: var(--card); box-shadow: none; }
 
-/* ---- Home: the edit as an ordered list ---- */
-.home-tasks.flow-steps { gap: 0; border: 1px solid var(--line); border-radius: var(--r); background: var(--card); overflow: hidden; }
-.flow-steps .task-card {
-  border: none; border-radius: 0; background: transparent; box-shadow: none; transform: none;
-  border-top: 1px solid var(--line); padding: 12px 12px; min-height: 0; gap: 12px;
+/* ---- Home: tiles, two to a row ---- */
+.tile-head { font-size: var(--fs-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); margin: 4px 2px 8px; }
+.home-tasks + .tile-head { margin-top: 18px; }
+.home-tasks.tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.tile {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start;
+  gap: 10px; min-height: 108px; padding: 14px; text-align: left;
+  background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: none; transform: none;
 }
-.flow-steps .task-card:first-child { border-top: none; }
-.flow-steps .task-card:hover { background: var(--card2); transform: none; }
-.task-ic { background: transparent; color: var(--dim); width: 20px; height: 20px; }
-.task-ic svg { width: 18px; height: 18px; }
-.task-name { font-size: var(--fs-md); }
-.task-sub { font-size: var(--fs-sm); color: var(--dim); }
-.step-n { width: 20px; height: 20px; background: transparent; border: 1px solid var(--line2); color: var(--dim); font-weight: 600; }
-.step-state { background: transparent; border: 1px solid var(--line2); color: var(--dim); font-weight: 600; padding: 2px 8px; }
-.step-card.done .step-n { background: var(--ok-bg); border-color: var(--ok-line); color: var(--ok-text); }
-.step-card.done .step-state { border-color: var(--ok-line); background: transparent; color: var(--ok-text); }
-/* the next step: an accent edge and the accent's own button colour on the tag —
-   the one bright thing on Home */
-.step-card.next, .step-card.next:hover { background: var(--accent-soft); color: var(--fg); box-shadow: inset 3px 0 0 var(--accent); }
-.step-card.next .task-ic { background: transparent; color: var(--accent-text); }
-.step-card.next .task-sub { color: var(--dim); }
-.step-card.next .step-n { background: var(--accent); border-color: transparent; color: var(--accent-fg); }
-.step-card.next .step-state { background: var(--accent); border-color: transparent; color: var(--accent-fg); }
+.tile:hover { background: var(--card2); border-color: var(--line2); transform: none; }
+.tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tile .task-ic { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-text); }
+.tile .task-ic svg { width: 18px; height: 18px; }
+.tile .task-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tile .task-name { font-size: var(--fs-lg); font-weight: 650; color: var(--title); }
+.tile .task-sub { font-size: var(--fs-sm); color: var(--dim); white-space: normal; line-height: 1.35; }
+.tile-wide { grid-column: 1 / -1; flex-direction: row; align-items: center; min-height: 0; }
+/* done for this sequence: a small check in the corner, nothing louder */
+.tile .step-state { position: absolute; top: 12px; right: 12px; width: 20px; height: 20px; padding: 0; border-radius: 99px;
+  display: none; place-items: center; font-size: 12px; font-weight: 700; border: none; background: var(--ok-bg); color: var(--ok-text); }
+.tile.done .step-state { display: grid; }
+.tile-wide .step-state { top: 50%; margin-top: -10px; }
+@media (min-width: 600px) { .home-tasks.tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } .tile-wide { grid-column: 1 / -1; } }
 .task-card.primary { background: var(--card); color: var(--fg); box-shadow: none; }
 .task-card.primary .task-ic { background: transparent; color: var(--dim); }
 .task-card.primary .task-sub { color: var(--dim); }

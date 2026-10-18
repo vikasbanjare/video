@@ -1,10 +1,24 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.47** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.48** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.48 — redesign: Home tiles, ‹ back where you came from, studio look
+- Owner rejected Home as a numbered flow ("podcast camera is a completely
+  different thing", "tiles, like Google / Apple"). Home = tiles: Transcribe ·
+  Clean up · Captions · Shorts (2 to a row), Podcast cameras on its own,
+  More tools. A ✓ on a tile once its job is done for this sequence
+  (refreshFlow / markStepDone, per sequence in localStorage).
+- goBack(): the style editor → gallery; otherwise the page you came from
+  (_navHistory). Every page ends with a next-step block (.next-step).
+- css/studio.css over style.css: graphite / white surfaces, one cobalt
+  accent, hairline sections, system font, quiet controls; toasts at the
+  bottom. Leading emoji on controls hidden (emoWrap, span.emo) — text kept
+  so scripts and gates still find controls. Caption types: Exact look /
+  Editable / Premiere captions.
 
 ### v0.10.47 — the style test measures what the owner sees
 - The owner did NOT agree to stop: "make the plugin work". The test had

@@ -334,13 +334,13 @@ async function reloadPanel(page) {
       if (strings.indexOf(label) >= 0) hits.push('main.js names "' + label + '"');
       if (htmlWithout.replace(/<!--[\s\S]*?-->/g, '').indexOf(label) >= 0) hits.push('index.html names "' + label + '"');
     }
-    const pointsAtStyles = (js.match(/use a Pulse style instead \([^)]*🎨 Styles/g) || []).length;
+    const pointsAtStyles = (js.match(/use a Pulse style instead \([^)]*Styles/g) || []).length;
     if (!hidden.length) R.bad('G: found no off-stage buttons to check against (the check is not reaching the page)');
     else if (hits.length) R.bad('G: a hint still sends the owner to a button that is never shown: ' + hits.join('; '));
     else if (pointsAtStyles < 3) R.bad('G: the "use a Pulse style instead" hints do not point at 🎨 Styles (' + pointsAtStyles + ' of 3)');
     else R.ok('G: no hint names a hidden button (' + hidden.join(', ') + '); the 3 template hints point at 🎨 Styles, which is on screen');
   }
-  const stylesVisible = await page.evaluate(() => { const b = document.querySelector('#cap-view button[data-view="templates"]'); return !!(b && b.offsetParent !== null && /🎨 Styles/.test(b.textContent)); });
+  const stylesVisible = await page.evaluate(() => { const b = document.querySelector('#cap-view button[data-view="templates"]'); return !!(b && b.offsetParent !== null && /Styles/.test(b.textContent)); });
   if (!stylesVisible) R.bad('G: the 🎨 Styles button the hints point at is not on screen');
 
   // ---- H. ✏️ Editable text case follows the Styles editor's Text case ---------

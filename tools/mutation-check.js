@@ -3005,14 +3005,6 @@ const MUTANTS = [
     repl: '',
     gate: 'CutPilot/test/gates/ui-shell.js',
     why: "‹ from a style's editor leaves Captions instead of showing the styles"
-  },
-  {
-    name: 'v48-no-start-here',
-    file: 'CutPilot/js/main.js',
-    find: "    var next = !done.transcribe ? 'transcribe' :",
-    repl: '    var next = !done.transcribe ? null :',
-    gate: 'CutPilot/test/gates/ui-shell.js',
-    why: 'Home does not say where to start'
   }
 ];
 

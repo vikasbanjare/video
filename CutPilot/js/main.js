@@ -2370,21 +2370,19 @@
       captions: !!(state.lastCaptionJob && state.lastCaptionJob.cues && state.lastCaptionJob.cues.length),
       shorts: !!d.shorts
     };
-    // the next step: the first one not done that is not optional
-    var next = !done.transcribe ? 'transcribe' : (!done.captions ? 'captions' : (!done.shorts ? 'shorts' : null));
     // pages that need the words say so, with the way there (‹ back returns)
     var nw = document.querySelectorAll('.needs-words');
     for (var k = 0; k < nw.length; k++) nw[k].classList.toggle('hidden', done.transcribe);
+    // Home's tiles: a ✓ on a job done for this sequence (no order is imposed —
+    // the owner: "podcast cameras is a completely different thing")
     FLOW_STEPS.forEach(function (st) {
       var card = document.querySelector('.step-card[data-step="' + st + '"]'); if (!card) return;
       var tag = card.querySelector('.step-state');
       card.classList.toggle('done', done[st]);
-      card.classList.toggle('next', st === next);
-      card.classList.toggle('primary', st === next);
-      if (tag) tag.textContent = done[st] ? '✓ Done' : (st === next ? (st === 'transcribe' ? 'Start here' : 'Next') :
-        ((st === 'silence' || st === 'multicam') ? 'Optional' : ''));
+      if (tag) { tag.textContent = done[st] ? '✓' : ''; tag.title = done[st] ? 'Done for this sequence' : ''; }
     });
   }
+
   var _navHistory = [], _navBacking = false;
   function goBack() {
     dismissToast();
@@ -7100,11 +7098,11 @@
       var _caps = null, _nctl = null;
       try { _caps = mogrtCapsCached(t.path); _nctl = mogrtControlCountCached(t.path); } catch (eC) {}
       if (_nctl === 0) {
-        $('ms-hint').textContent = 'This template exposes no editable controls — it will be inserted exactly as its designer built it. For full control over colours, font, size and animation, use a Pulse style instead (‹ Back, then 🎨 Styles at the top of Captions).';
+        $('ms-hint').textContent = 'This template exposes no editable controls — it will be inserted exactly as its designer built it. For full control over colours, font, size and animation, use a Pulse style instead (‹ Back, then Styles at the top of Captions).';
       } else if (_nctl != null && _nctl <= 3) {
         $('ms-hint').textContent = 'This template only exposes ' + _nctl + ' control' + (_nctl === 1 ? '' : 's') +
           ' — that is all its designer made editable' + (_caps ? ' (' + _caps + ')' : '') +
-          '. For full control, use a Pulse style instead (‹ Back, then 🎨 Styles at the top of Captions).';
+          '. For full control, use a Pulse style instead (‹ Back, then Styles at the top of Captions).';
       } else {
         $('ms-hint').textContent = _caps ? ('This template can edit: ' + _caps + '.') : '';
       }
@@ -12540,7 +12538,7 @@
       // Was a bare text node: "No editable controls found." - true, but it never
       // said WHY or what to do, which read as the panel being broken.
       var np = document.createElement('p'); np.className = 'hint';
-      np.textContent = 'This template has no editable controls. An .mogrt can only offer what its designer built into it in After Effects — this one exposes nothing, so it will be inserted exactly as authored. For full control over colours, font, size, outline and animation, use a Pulse style instead (🎨 Styles, at the top of Captions).';
+      np.textContent = 'This template has no editable controls. An .mogrt can only offer what its designer built into it in After Effects — this one exposes nothing, so it will be inserted exactly as authored. For full control over colours, font, size, outline and animation, use a Pulse style instead (Styles, at the top of Captions).';
       box.appendChild(np);
       return;
     }
