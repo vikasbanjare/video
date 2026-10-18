@@ -2917,6 +2917,46 @@ const MUTANTS = [
     repl: "FADE + '(' + C + '(\"Text Gradient\")(1) ? 100 : 0);'",
     gate: 'CutPilot/test/gates/ae-caption-builder.js',
     why: 'Text Gradient off still shows the gradient (every caption red)'
+  },
+  {
+    name: 'v40-ff-no-resume',
+    file: 'CutPilot/js/main.js',
+    find: "'--speed-limit', '1000', '--speed-time', '60', '-C', '-', '-o', part, url]",
+    repl: "'--speed-limit', '1000', '--speed-time', '60', '-o', part, url]",
+    gate: 'CutPilot/test/gates/ffmpeg-download.js',
+    why: 'a drop starts the engine download over'
+  },
+  {
+    name: 'v40-ff-no-stall-limit',
+    file: 'CutPilot/js/main.js',
+    find: "'--connect-timeout', '20', '--speed-limit', '1000', '--speed-time', '60', '-C'",
+    repl: "'--connect-timeout', '20', '-C'",
+    gate: 'CutPilot/test/gates/ffmpeg-download.js',
+    why: 'a stalled download hangs forever ("still installing")'
+  },
+  {
+    name: 'v40-ff-keeps-html',
+    file: 'CutPilot/js/main.js',
+    find: "      what: 'the audio engine', expectBytes: ffmpegExpectBytes(), valid: isProgramFile,",
+    repl: "      what: 'the audio engine', expectBytes: ffmpegExpectBytes(),",
+    gate: 'CutPilot/test/gates/ffmpeg-download.js',
+    why: 'an error page is kept as the audio engine'
+  },
+  {
+    name: 'v40-ff-no-progress',
+    file: 'CutPilot/js/main.js',
+    find: "    var st = $('ffmpeg-status'); if (st) st.textContent = t;",
+    repl: '',
+    gate: 'CutPilot/test/gates/ffmpeg-download.js',
+    why: 'the set-up looks frozen: no MB shown'
+  },
+  {
+    name: 'v40-ff-no-adopt',
+    file: 'CutPilot/js/main.js',
+    find: '    if (adoptDownloadedFfmpeg(dest)) return Promise.resolve(ready());\n',
+    repl: '',
+    gate: 'CutPilot/test/gates/ffmpeg-download.js',
+    why: 'the browser download in Downloads is never used'
   }
 ];
 

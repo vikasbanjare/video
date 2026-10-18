@@ -110,6 +110,7 @@ function startBridge() {
     gunzip: (b64) => zlib.gunzipSync(Buffer.from(b64, 'base64')).toString('base64'),
     rmdirSync: (p) => { fs.rmdirSync(p); return null; },
     renameSync: (a, b) => { fs.renameSync(a, b); return null; },
+    chmodSync: (p, m) => { fs.chmodSync(p, m); return null; },
     accessSync: (p, m) => { fs.accessSync(p, m); return null; },
     execSync: (cmd) => cp.execSync(realCmd(cmd), { encoding: 'utf8', maxBuffer: 1 << 26 }),
     spawn: (cmd, args) => {
@@ -211,6 +212,7 @@ function pageInstall(port, env) {
     unlinkSync: p => rpc('unlinkSync', [String(p)]),
     rmdirSync: p => rpc('rmdirSync', [String(p)]),
     renameSync: (a, b) => rpc('renameSync', [String(a), String(b)]),
+    chmodSync: (p, m) => rpc('chmodSync', [String(p), m]),
     accessSync: (p, m) => rpc('accessSync', [String(p), m])
   };
   function norm(p) {

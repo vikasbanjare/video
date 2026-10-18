@@ -218,13 +218,20 @@
     items.forEach(function (it) {
       chain = chain.then(function () {
         try { fs.unlinkSync(it.file); } catch (x) {}
-        var timer = setInterval(function () { var n = 0; try { n = fs.statSync(it.file).size; } catch (x) {} pct(Math.min(n, it.spec.size)); }, 500);
+        // the bytes arrive in "<file>.part" (a resumable download) and the
+        // file appears only once whole: count whichever is there
+        var timer = setInterval(function () {
+          var n = 0;
+          try { n = fs.statSync(it.file).size; } catch (x) { try { n = fs.statSync(it.file + '.part').size; } catch (x2) {} }
+          pct(Math.min(n, it.spec.size));
+        }, 500);
         var stop = function () { clearInterval(timer); };
         return get(it.spec.url, it.file).then(stop, function (err) {
           stop();
           throw new Error('Couldn’t download the ' + what + ' (' + ((err && err.message) || 'network error') + '). Check the internet and try again.');
         }).then(function () {
           if (sha256File(node, it.file) !== it.spec.sha256) {
+            try { fs.unlinkSync(it.file); } catch (x) {}   // never resumed from, never used
             throw new Error('A ' + what + ' download didn’t match what Pulse expects (damaged on the way, or changed on the server), ' +
               'so nothing was installed. Try again later.');
           }

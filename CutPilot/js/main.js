@@ -402,73 +402,83 @@
     if (p === 'darwin') return base + (a === 'arm64' ? 'ffmpeg-darwin-arm64' : 'ffmpeg-darwin-x64');
     return base + (a === 'arm64' ? 'ffmpeg-linux-arm64' : 'ffmpeg-linux-x64');
   }
-  function _downloadTo(url, dest, onPct) {
-    return new Promise(function (resolve, reject) {
-      var https, fs;
-      try { https = nodeReq('https'); fs = nodeReq('fs'); } catch (e) { return reject(new Error('no network module')); }
-      function get(u, n) {
-        if (n > 6) return reject(new Error('too many redirects'));
-        https.get(u, { headers: { 'User-Agent': 'Pulse' } }, function (res) {
-          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) { res.resume(); return get(res.headers.location, n + 1); }
-          if (res.statusCode !== 200) { res.resume(); return reject(new Error('HTTP ' + res.statusCode)); }
-          var total = parseInt(res.headers['content-length'] || '0', 10), got = 0, f = fs.createWriteStream(dest);
-          res.on('data', function (c) { got += c.length; if (onPct && total) onPct(got / total); });
-          res.pipe(f);
-          f.on('finish', function () { f.close(function () { resolve(); }); });
-          f.on('error', function (e) { reject(e); });
-        }).on('error', function (e) { reject(e); });
-      }
-      get(url, 0);
-    });
-  }
   var _ffmpegSetup = null;
-  /* Download via curl (follows redirects, honours system proxy) — the same tool
-     the cloud APIs already use, so it works in CEP where Node's https can be
-     flaky. Returns a Promise. */
-  function _curlDownload(url, dest) {
-    return new Promise(function (resolve, reject) {
-      var cp; try { cp = nodeReq('child_process'); } catch (e) { return reject(e); }
-      var p; try { p = cp.spawn('curl', ['-L', '--fail', '--max-time', '900', '-o', dest, url]); } catch (e2) { return reject(e2); }
-      p.on('error', reject);
-      p.on('close', function (code) { code === 0 ? resolve() : reject(new Error('curl ' + code)); });
-    });
+  /* The engine's size per Mac (ffmpeg-static b6.0), so progress reads "23 of
+     46 MB" and a cut-short file is never kept. */
+  function ffPlatform() { return (typeof process !== 'undefined' && process.platform) || 'darwin'; }
+  var _ffExpectTest = null;
+  function ffmpegExpectBytes() {
+    if (_ffExpectTest) return _ffExpectTest;
+    var p = (typeof process !== 'undefined' && process.platform) || 'darwin';
+    var a = (typeof process !== 'undefined' && process.arch) || 'x64';
+    if (p === 'darwin') return a === 'arm64' ? 45568216 : 78829164;
+    return 0;
+  }
+  /* A real program file (Mach-O, ELF or Windows), not an error page. */
+  function isProgramFile(f) {
+    try {
+      // read as latin1 (one char a byte), like the caption-font check
+      var head = String(nodeReq('fs').readFileSync(f, 'latin1')).slice(0, 4), h = '';
+      for (var i = 0; i < head.length; i++) { var c = head.charCodeAt(i); h += (c < 16 ? '0' : '') + c.toString(16); }
+      return /^(cffaedfe|cefaedfe|feedfacf|feedface|cafebabe|7f454c46)/.test(h) || h.indexOf('4d5a') === 0;
+    } catch (e) { return false; }
+  }
+  /* Progress where the owner is looking: the Settings line by the button and
+     the bar on the Transcribe page. */
+  function ffmpegProgress(mb, total, k, note) {
+    var t = note ? ('⬇️ Audio engine: ' + note + '…')
+      : ('⬇️ Downloading the audio engine — ' + mb + (total ? ' of ' + total : '') + ' MB (one time)' + (k ? ' · try ' + (k + 1) + ' of 4' : '') + '…');
+    var st = $('ffmpeg-status'); if (st) st.textContent = t;
+    setTranscriptBar(note ? 'warn' : '', '⬇️', t.replace(/^⬇️ /, ''), null);
+  }
+  /* The same file saved by the browser (the fallback when curl cannot reach
+     GitHub): take it from Downloads, make it runnable, clear the "downloaded
+     from the internet" mark macOS would block it with. */
+  function adoptDownloadedFfmpeg(dest) {
+    try {
+      var fs = nodeReq('fs'), path = nodeReq('path'), os = nodeReq('os'), cp = nodeReq('child_process');
+      var name = ffmpegDownloadUrl().replace(/^.*\//, '');
+      var src = path.join(os.homedir(), 'Downloads', name);
+      if (!fs.existsSync(src) || !isProgramFile(src)) return false;
+      var want = ffmpegExpectBytes();
+      if (want && fs.statSync(src).size < want * 0.97) return false;
+      fs.writeFileSync(dest, fs.readFileSync(src));
+      if (ffPlatform() !== 'win32') {
+        fs.chmodSync(dest, 0o755);
+        try { cp.spawnSync('xattr', ['-d', 'com.apple.quarantine', dest]); } catch (eX) {}
+      }
+      return true;
+    } catch (e) { return false; }
   }
   function ensureFfmpeg() {
     var have = resolveFfmpeg();
     if (have) return Promise.resolve(have);
+    return setUpFfmpegDownload();
+  }
+  /* Pulse's own copy in ~/.cutpilot/bin: kept, taken from Downloads, or downloaded. */
+  function setUpFfmpegDownload() {
     if (_ffmpegSetup) return _ffmpegSetup;       // a download already in flight
     var fs, path, os;
     try { fs = nodeReq('fs'); path = nodeReq('path'); os = nodeReq('os'); }
     catch (e) { return Promise.reject(new Error('Open inside Premiere to set up the audio engine.')); }
     var dir = path.join(os.homedir(), '.cutpilot', 'bin');
-    var dest = path.join(dir, (process.platform === 'win32') ? 'ffmpeg.exe' : 'ffmpeg');
-    try { if (fs.existsSync(dest)) { settings.ffmpegPath = dest; saveSettings(); _ffmpeg = dest; return Promise.resolve(dest); } } catch (e0) {}
-    _ffmpegSetup = new Promise(function (resolve, reject) {
-      try { fs.mkdirSync(dir, { recursive: true }); } catch (eD) {}
-      setTranscriptBar('', '⬇️', 'First-time setup: downloading the audio engine (about 50 MB)…', null);
-      toast('One-time setup: downloading the audio engine (about 50 MB). This only happens once.');
-      var url = ffmpegDownloadUrl(), part = dest + '.part';
-      var nodePct = function (pct) { setTranscriptBar('', '⬇️', 'Setting up the audio engine… ' + Math.round(pct * 100) + '%', null); };
-      function finish() {
-        var big = false; try { big = fs.statSync(part).size > 1e6; } catch (eS) {}
-        if (!big) return fail(new Error('download was empty'));
-        try { fs.renameSync(part, dest); } catch (eR) { return fail(eR); }
-        try { if (process.platform !== 'win32') fs.chmodSync(dest, 0o755); } catch (eC) {}
-        settings.ffmpegPath = dest; saveSettings(); _ffmpeg = null; _ffmpegSetup = null;
-        toast('✅ Audio engine ready.'); resolve(resolveFfmpeg() || dest);
-      }
-      function fail(e) {
-        try { fs.unlinkSync(part); } catch (eU) {}
-        _ffmpegSetup = null;
-        // (it named a Settings section, "ffmpeg", that no longer exists)
-        reject(new Error('Couldn\'t download the audio engine (' + (e && e.message ? e.message : 'network error') +
-          '). Check the internet and tap Set up again, or point Settings → Advanced → Audio engine location at a copy you have.'));
-      }
-      // curl first (robust in CEP), then Node https as a fallback.
-      _curlDownload(url, part).then(finish, function () {
-        _downloadTo(url, part, nodePct).then(finish, fail);
-      });
-    });
+    var dest = path.join(dir, (ffPlatform() === 'win32') ? 'ffmpeg.exe' : 'ffmpeg');
+    try { fs.mkdirSync(dir, { recursive: true }); } catch (eD) {}
+    function ready() {
+      try { if (ffPlatform() !== 'win32') fs.chmodSync(dest, 0o755); } catch (eC) {}
+      settings.ffmpegPath = dest; saveSettings(); _ffmpeg = null; _ffmpegSetup = null;
+      return resolveFfmpeg() || dest;
+    }
+    try { if (fs.existsSync(dest) && isProgramFile(dest)) return Promise.resolve(ready()); } catch (e0) {}
+    if (adoptDownloadedFfmpeg(dest)) return Promise.resolve(ready());
+    toast('One-time setup: downloading the audio engine (about ' + (Math.round(ffmpegExpectBytes() / 1e6) || 50) + ' MB). Progress shows in Settings.');
+    // Before: one curl try that sat silent for up to 15 minutes on a stalled
+    // connection, then a fallback with no time limit — "still installing".
+    _ffmpegSetup = resumableDownload(ffmpegDownloadUrl(), dest, {
+      what: 'the audio engine', expectBytes: ffmpegExpectBytes(), valid: isProgramFile,
+      onProgress: ffmpegProgress, kind: 'ffmpeg_download', diagKey: 'ffmpeg',
+      afterBrowser: 'let it save to Downloads, then tap ⬇️ Set up audio engine again — Pulse takes it from there.'
+    }).then(function () { return ready(); }, function (e) { _ffmpegSetup = null; throw e; });
     return _ffmpegSetup;
   }
 
@@ -730,9 +740,10 @@
      failure says why in plain words and opens the same download in the
      browser — Pulse finds the file in Downloads. */
   var MODEL_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/';
-  function curlWhy(code, err) {
+  function curlWhy(code, err, url) {
     var e = String(err || '');
-    if (code === 6 || /resolve host/i.test(e)) return 'this Mac can’t reach the download site (no internet, or the network blocks huggingface.co)';
+    var host = (/^https?:\/\/([^\/]+)/.exec(String(url || '')) || [])[1] || 'huggingface.co';
+    if (code === 6 || /resolve host/i.test(e)) return 'this Mac can’t reach the download site (no internet, or the network blocks ' + host + ')';
     if (code === 7) return 'the download site didn’t answer';
     if (code === 28 || code === 18 || code === 56 || code === 52) return 'the connection kept dropping or was too slow';
     if (code === 35 || code === 60 || code === 51 || code === 58 || code === 77) return 'a secure connection couldn’t be made (a VPN, firewall or school/office network can cause this)';
@@ -759,50 +770,77 @@
     } catch (e) { return false; }
   }
   function downloadModel(name, target, expectBytes) {
+    var what = WHITE_LABEL ? 'the speech model' : name;
+    return resumableDownload(MODEL_URL + name, target, {
+      what: what, expectBytes: expectBytes, kind: 'model_download', diagKey: 'asr', stoppable: true,
+      afterBrowser: 'let it save to Downloads, then tap Transcribe again (Pulse finds it there).',
+      orElse: ' Or pick ☁️ cloud under Speech accuracy.'
+    });
+  }
+  /* One big file, over a home connection: curl tries up to 4 times, carries
+     on from where a drop stopped (-C -), gives up on a stall (under 1 KB/s
+     for a minute) instead of hanging, shows the MB as they arrive, and never
+     keeps a file that came down short. When the site can't be reached, the
+     same download opens in the browser. opts: { what, expectBytes,
+     valid(file) → bool, onProgress(mb, totalMb, try), kind, diagKey,
+     stoppable, afterBrowser, orElse } */
+  function resumableDownload(url, target, opts) {
+    opts = opts || {};
     var cp, fs, path; try { cp = nodeReq('child_process'); fs = nodeReq('fs'); path = nodeReq('path'); } catch (e) { return Promise.reject(e); }
     try { fs.mkdirSync(path.dirname(target), { recursive: true }); } catch (e) {}
-    var url = MODEL_URL + name, part = target + '.part', TRIES = 4;
-    var what = WHITE_LABEL ? 'the speech model' : name;
+    var part = target + '.part', TRIES = 4, what = opts.what || 'the file', expectBytes = opts.expectBytes || 0;
     var sizeOf = function (f) { try { return fs.statSync(f).size; } catch (e) { return 0; } };
-    var whole = function (n) { return expectBytes ? n >= expectBytes * 0.97 : n > 1e6; };
-    setTranscriptBar('', '⬇️', 'Downloading ' + what + ' — one-time, please wait…', null);
+    var whole = function (n) { return expectBytes ? n >= expectBytes * 0.97 : n > (opts.minBytes != null ? opts.minBytes : 1e6); };
+    var stopped = function () { return !!opts.stoppable && trStopped(); };
+    var show = function (mb, k) {
+      if (opts.onProgress) { try { opts.onProgress(mb, expectBytes ? Math.round(expectBytes / 1e6) : 0, k); } catch (eP) {} }
+      else setTranscriptBar('', '⬇️', 'Downloading ' + what + ' — ' + mb + (expectBytes ? ' of ' + Math.round(expectBytes / 1e6) : '') + ' MB (one time)' + (k ? ' · try ' + (k + 1) + ' of ' + TRIES : '') + '…', null);
+    };
+    if (!opts.onProgress) setTranscriptBar('', '⬇️', 'Downloading ' + what + ' — one-time, please wait…', null);
+    else show(Math.round(sizeOf(part) / 1e6), 0);
     function attempt(k) {
       return new Promise(function (resolve) {
-        if (trStopped()) return resolve({ code: -2, err: '' });
+        if (stopped()) return resolve({ code: -2, err: '' });
         var err = '', p;
         // -sS: no progress meter (an unread pipe fills and stalls curl), errors still said
-        try { p = trTrack(cp.spawn('curl', ['-L', '--fail', '-sS', '--connect-timeout', '20', '--speed-limit', '1000', '--speed-time', '60', '-C', '-', '-o', part, url])); }
-        catch (e) { return resolve({ code: -1, err: String(e.message || e) }); }
+        try {
+          p = cp.spawn('curl', ['-L', '--fail', '-sS', '--connect-timeout', '20', '--speed-limit', '1000', '--speed-time', '60', '-C', '-', '-o', part, url]);
+          if (opts.stoppable) trTrack(p);
+        } catch (e) { return resolve({ code: -1, err: String(e.message || e) }); }
         var tick = setInterval(function () {
           var mb = Math.round(sizeOf(part) / 1e6);
-          if (mb) setTranscriptBar('', '⬇️', 'Downloading ' + what + ' — ' + mb + (expectBytes ? ' of ' + Math.round(expectBytes / 1e6) : '') + ' MB (one time)' + (k ? ' · try ' + (k + 1) + ' of ' + TRIES : '') + '…', null);
+          if (mb || opts.onProgress) show(mb, k);
         }, 1000);
         if (p.stdout && p.stdout.on) p.stdout.on('data', function () {});
         if (p.stderr && p.stderr.on) p.stderr.on('data', function (d) { err = (err + d).slice(-400); });
         p.on('error', function (e) { clearInterval(tick); resolve({ code: -1, err: String(e && e.message || e) }); });
         p.on('close', function (code) { clearInterval(tick); resolve({ code: code, err: err }); });
       }).then(function (r) {
-        if (r.code === -2 || trStopped()) throw trStopError();
-        if (r.code === 0 && whole(sizeOf(part))) {
-          try { fs.renameSync(part, target); } catch (eR) { throw new Error('couldn’t save the speech model: ' + eR.message); }
+        if (r.code === -2 || stopped()) throw trStopError();
+        if (r.code === 0 && whole(sizeOf(part)) && (!opts.valid || opts.valid(part))) {
+          try { fs.renameSync(part, target); } catch (eR) { throw new Error('couldn’t save ' + what + ': ' + eR.message); }
           return target;
         }
         // 33: the site won't resume — start the file again; 416: already past the end
         if (r.code === 33 || /416/.test(r.err)) { try { fs.unlinkSync(part); } catch (eU) {} }
+        // a whole-size file that is not what was asked for (an error page): start again
+        if (r.code === 0 && whole(sizeOf(part)) && opts.valid) { try { fs.unlinkSync(part); } catch (eV) {} }
         var giveUp = r.code === -1 || r.code === 6 || r.code === 23 || (r.code === 22 && !/(5\d\d|429)/.test(r.err));
         if (giveUp || k + 1 >= TRIES) {
-          var why = r.code === 0 ? 'the file came down incomplete' : r.code === -1 ? 'curl couldn’t run (' + r.err + ')' : curlWhy(r.code, r.err);
-          var opened = openInBrowser(url);
-          var e = new Error('couldn’t download the speech model — ' + why + '. ' +
-            (opened ? 'I opened the same download in your browser: let it save to Downloads, then tap Transcribe again (Pulse finds it there).'
-                    : 'Download it in your browser from ' + url + ' into Downloads, then tap Transcribe again.') +
-            ' Or pick ☁️ cloud under Speech accuracy.');
-          e.cpKind = 'model_download';
+          var why = r.code === 0 ? 'the file came down incomplete' : r.code === -1 ? 'curl couldn’t run (' + r.err + ')' : curlWhy(r.code, r.err, url);
+          var opened = !opts.noBrowser && openInBrowser(url);
+          var e = new Error('couldn’t download ' + what + ' — ' + why + '. ' +
+            (opts.noBrowser ? 'Check the internet and try again.'
+              : opened ? 'I opened the same download in your browser: ' + (opts.afterBrowser || 'let it save to Downloads.')
+                    : 'Download it in your browser from ' + url + ' into Downloads, then try again.') +
+            (opts.orElse || ''));
+          e.cpKind = opts.kind || 'download';
           throw e;
         }
-        try { diag('asr', 'model download try ' + (k + 1) + ' failed (curl ' + r.code + '): ' + r.err.slice(0, 160)); } catch (eD) {}
+        try { diag(opts.diagKey || 'download', what + ' download try ' + (k + 1) + ' failed (curl ' + r.code + '): ' + r.err.slice(0, 160)); } catch (eD) {}
         var wait = Math.min(20, 3 * Math.pow(2, k));
-        setTranscriptBar('warn', '⬇️', 'Download interrupted (' + curlWhy(r.code, r.err) + ') — carrying on in ' + wait + ' s…', null);
+        if (opts.onProgress) { try { opts.onProgress(Math.round(sizeOf(part) / 1e6), expectBytes ? Math.round(expectBytes / 1e6) : 0, k + 1, 'interrupted (' + curlWhy(r.code, r.err, url) + ') — carrying on in ' + wait + ' s'); } catch (eP2) {} }
+        else setTranscriptBar('warn', '⬇️', 'Download interrupted (' + curlWhy(r.code, r.err, url) + ') — carrying on in ' + wait + ' s…', null);
         return new Promise(function (res) { setTimeout(res, asrTestScale(wait) * 1000); }).then(function () { return attempt(k + 1); });
       });
     }
@@ -10419,6 +10457,12 @@
       translate: function (code, name) { translateTranscript(code, name); },
       proofread: function () { cleanupTranscript(); },
       downloadModel: function (name, target, bytes) { return downloadModel(name, target, bytes).then(function (f) { return { ok: f }; }, function (e) { return { error: e.message }; }); },
+      // the audio engine set-up, as the Settings button runs it (bytes: the size the test serves)
+      setUpAudioEngine: function (bytes) {
+        _ffExpectTest = bytes || null; _ffmpeg = null; settings.ffmpegPath = '';
+        return setUpFfmpegDownload().then(function (f) { return { ok: f, status: ($('ffmpeg-status') || {}).textContent }; },
+                                   function (e) { return { error: e.message, status: ($('ffmpeg-status') || {}).textContent }; });
+      },
       detectSpeakers: function () { detectSpeakers(); },
       followMovedRecording: followMovedRecording,
       refineWordCues: refineWordCues,
@@ -18898,8 +18942,13 @@
      3+ cameras). Declined, not available for this computer, or failed: the
      talk-burst plan, as before, and the toast says why. */
   var _voicesSetup = null, _voicesOnPct = null, _mcVoices = null;
+  /* One engine file: resumes after a drop, gives up on a stall instead of
+     hanging (the old single curl try sat silent up to 15 minutes, then fell
+     back to a download with no time limit at all — "still installing").
+     Every file is then checked against its SHA-256 (CPVoices). */
   function voicesGet(url, dest) {
-    return _curlDownload(url, dest).catch(function () { return _downloadTo(url, dest); });
+    return resumableDownload(url, dest, { what: 'an engine file', minBytes: 1, noBrowser: true,
+      onProgress: function () {}, kind: 'engine_download', diagKey: 'voices' });
   }
   function voicesPlatform() { return { platform: (typeof process !== 'undefined' && process.platform) || 'darwin',
                                        arch: (typeof process !== 'undefined' && process.arch) || 'x64' }; }
