@@ -1,10 +1,17 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.45** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.46** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.46 — decision: keep both caption kinds, stop the test rounds
+- Owner chose "Keep both as now" (image = full look; editable = close,
+  not identical for ~1/3 of styles). No more 🎨 style-test rounds unless
+  asked. The test button now zips its results on the Desktop when done
+  and groups the report: still to fix / the template cannot draw
+  (pulseCannotDraw) / the same.
 
 ### v0.10.44 — the style test folder is never empty
 - The owner zipped "Pulse Caption Test/<stamp>" 2 minutes in: an empty
