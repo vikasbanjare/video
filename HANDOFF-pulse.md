@@ -1,10 +1,16 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.42** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.43** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.43 — template v5 bundled (Pulse_Caption_r5.mogrt)
+- Owner's AE run of builder v5 passed: no outline on a boxed spoken word.
+  pulse-engine reads the .aep inside the .mogrt and checks the v5
+  expressions. No more AE runs planned: what remains (subScale, gloss,
+  coloured glow, rainbow boxes) a template cannot draw.
 
 ### v0.10.42 — owner's style test on v0.10.40 (r4): 12 close / 93 far
 - r4 works in Premiere: Upcoming Opacity (Soft Focus, Ghost to Solid),
