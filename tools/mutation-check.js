@@ -2957,6 +2957,30 @@ const MUTANTS = [
     repl: '',
     gate: 'CutPilot/test/gates/ffmpeg-download.js',
     why: 'the browser download in Downloads is never used'
+  },
+  {
+    name: 'v42-no-default-yellow',
+    file: 'CutPilot/js/main.js',
+    find: "var fill = p.fill || '#FFFFFF', hl = p.highlight || '#FFD400';",
+    repl: "var fill = p.fill || '#FFFFFF', hl = p.highlight || fill;",
+    gate: 'CutPilot/test/gates/caption-originals.js',
+    why: 'Clean Minimal / Typewriter spoken word has no colour in editable'
+  },
+  {
+    name: 'v42-grow-uncapped',
+    file: 'CutPilot/js/main.js',
+    find: 'grow: spoken ? Math.max(0, Math.min(30,',
+    repl: 'grow: spoken ? Math.max(0, Math.min(100,',
+    gate: 'CutPilot/test/gates/caption-originals.js',
+    why: "Kinetic's spoken word runs into its neighbours"
+  },
+  {
+    name: 'v42-ae-outline-on-box',
+    file: 'tools/ae/Pulse-Caption-Builder.jsx',
+    find: '\'Math.round(\' + C + \'("Box")(1)) >= 3 ? 0 : \'',
+    repl: '\'Math.round(\' + C + \'("Box")(1)) >= 9 ? 0 : \'',
+    gate: 'CutPilot/test/gates/ae-caption-builder.js',
+    why: 'a dark ring round the boxed word'
   }
 ];
 

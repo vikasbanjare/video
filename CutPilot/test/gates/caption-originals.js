@@ -144,6 +144,7 @@ const OFL = ['Archivo Black', 'Poppins', 'Anton', 'Montserrat', 'Quicksand', 'Be
     out.prevNew = { tilt: c4.tilt, alt: c4.tiltAlt, fill2: g4.fill2, up: u4.upcomingOpacity };
     // F: the owner's style test on v0.10.39
     const look = id => T(id) ? D.pulseLook(T(id)) : { grow: 'missing ' + id, shadowOpacity: 'missing ' + id };
+    out.noHl = { minimal: look('minimal').spokenColor, typewriter: look('typewriter').spokenColor, kinetic: look('tr-kinetic').grow };
     out.grow = { crisp: look('cap-clarity').grow, meme: look('tr-meme').grow, pulse: look('pro-pulse').grow };
     out.shadow = { thuban: look('pro-thuban').shadowOpacity, column: look('cap-editorial').shadowOpacity };
     out.thubanGlow = D.pulseCarryStyle(T('pro-thuban')).glow;
@@ -198,6 +199,9 @@ const OFL = ['Archivo Black', 'Poppins', 'Anton', 'Montserrat', 'Quicksand', 'Be
 
   (r.avenir.nova === 'AvenirNext-Heavy' && r.avenir.novaW === 900 ? ok : bad)(
     'F. an Avenir Next style at 800 gets Heavy, the face the image draws (Nova → ' + r.avenir.nova + ')', JSON.stringify(r.avenir));
+
+  (/^#ffd400$/i.test(r.noHl.minimal) && /^#ffd400$/i.test(r.noHl.typewriter) && r.noHl.kinetic === 30 ? ok : bad)(
+    'F. a style with no highlight colour lights the spoken word yellow, as the image does (Clean Minimal, Typewriter); a big grow stops at 30% so the word never runs into its neighbours (Kinetic)', JSON.stringify(r.noHl));
 
   if (failed) { console.log('CAPTION ORIGINALS: ' + failed + ' failed'); process.exit(1); }
   console.log('CAPTION ORIGINALS: six new styles, tilt, exit and template v4 ✓');

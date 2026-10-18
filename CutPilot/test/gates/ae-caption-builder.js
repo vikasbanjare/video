@@ -224,6 +224,12 @@ if (!process.env.FAIL_EXPR) {
   process.exit(0);
 }
 
+// J. v5: no outline on the spoken word over a word box
+const swS = exprOf('Caption', /Spoken Word.*Stroke Width/);
+const swAt = (box) => +run(swS, ctlEnv({ Box: box, 'Outline Width': 6 }, 1));
+(swS && swAt(1) === 6 && swAt(2) === 6 && swAt(3) === 0 && swAt(4) === 0 ? ok : bad)(
+  'J. the spoken word keeps its outline, except on a word box (Box 3 / 4): ' + [1, 2, 3, 4].map(swAt).join(' / '));
+
 // F. protected frame + saved
 const mk = rec.markers[0];
 (mk && mk.t === 0 && mk.mv.protectedRegion === true && Math.abs(mk.mv.duration - 1 / 30) < 1e-9 ? ok : bad)('F. one protected frame at the start (Premiere stretches the rest over the caption)');

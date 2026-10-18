@@ -14042,7 +14042,9 @@
   }
   function pulseLook(preset) {
     var p = preset || {}, k = PULSE_ENGINE_PX / ((p.fontSize > 0) ? p.fontSize : PULSE_ENGINE_PX);
-    var fill = p.fill || '#FFFFFF', hl = p.highlight || fill;
+    // no highlight of its own: the image lights the word in render.js's
+    // default yellow (Clean Minimal, Typewriter came out with no colour)
+    var fill = p.fill || '#FFFFFF', hl = p.highlight || '#FFD400';
     // ✨ Word-by-word highlight on = the spoken word lights, whatever the
     // style's own animation: the image caption and the preview sweep with it
     // on (currentAnim → karaoke). Lighting only karaoke / reveal styles left
@@ -14060,7 +14062,9 @@
       spokenColor: !spoken ? fill : (wordBox ? pulseContrast(hl) : hl),
       // the image pops a spoken word whose colour is the text's own by at
       // least 20% (render.js), or it could not be told apart (Crisp, Meme)
-      grow: spoken ? Math.max(0, Math.min(100, Math.round(((String(hl).toLowerCase() === String(fill).toLowerCase()
+      // at most 30%: the template scales the word in place (the image makes
+      // room for it), so Kinetic's 50% ran into the words beside it
+      grow: spoken ? Math.max(0, Math.min(30, Math.round(((String(hl).toLowerCase() === String(fill).toLowerCase()
         ? Math.max(p.highlightScale || 1, 1.2) : (p.highlightScale || 1)) - 1) * 100))) : 0,
       outlineColor: p.stroke || '#000000',
       outlineWidth: (p.stroke && p.strokeWidth > 0) ? Math.min(100, Math.round(p.strokeWidth * k * 10) / 10) : 0,

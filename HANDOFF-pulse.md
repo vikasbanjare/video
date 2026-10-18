@@ -1,10 +1,21 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.41** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.42** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.42 — owner's style test on v0.10.40 (r4): 12 close / 93 far
+- r4 works in Premiere: Upcoming Opacity (Soft Focus, Ghost to Solid),
+  Black faces (Headliner). Prism 37→8, Sunset Gradient 19→6.
+- pulseLook: no highlight colour → render's default #FFD400 (Clean
+  Minimal, Typewriter had a white spoken word); grow capped at 30% (the
+  template scales a word in place; Kinetic's 50% overlapped).
+- Builder v5: Spoken Word animator Stroke Width 0 on a word box (Box 3/4)
+  — the image draws no outline there. Needs an AE run → r5.
+- Not fixable in the template: subScale 2nd line, gloss/gradient
+  highlight, coloured glow (RGB Glitch), rainbow boxes.
 
 ### v0.10.41 — engine downloads that finish (owner: "still installing")
 - resumableDownload(url, target, opts) is the one loop for the speech model,

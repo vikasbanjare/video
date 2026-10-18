@@ -19,6 +19,7 @@
  *   Box Color · Word Box Color · Box Opacity · Box Roundness ·
  *   Shadow Opacity · Shadow Distance · Animation (None / Pop / Fade / Slide up)
  *
+ * v5: the spoken word drops its outline when it sits on a word box.
  * v4 adds: Text Gradient (on/off) + Text Color 2 (the warm top-to-bottom
  * gradient of Sunset Fade), Upcoming Opacity (words not yet said stay faint,
  * Soft Focus), Tilt (Tilt Tag, Line Ribbons) and Exit (None / Fade / Shrink /
@@ -203,6 +204,10 @@
     sel.property('ADBE Text Index End').expression = C + '("Spoken Index")(1) + 1;';
     addProp('Spoken Word', 'ADBE Text Fill Color', C + '("Spoken Word Color")(1);');
     addProp('Spoken Word', 'ADBE Text Scale 3D', 'var g = 100 + ' + C + '("Spoken Word Grow")(1); value.length > 2 ? [g, g, 100] : [g, g];');
+    // on a box (Box: Spoken word / Line and spoken word) the spoken word has
+    // no outline, as the image draws it (Ticker, Acid Lime, Focus came out
+    // with a dark ring inside their box)
+    addProp('Spoken Word', 'ADBE Text Stroke Width', 'Math.round(' + C + '("Box")(1)) >= 3 ? 0 : ' + C + '("Outline Width")(1) * 1;');
     // words not yet said: faint (Upcoming Opacity), every word after the spoken one
     function upcoming(layer) {
       var ua = layer.property('ADBE Text Properties').property('ADBE Text Animators').addProperty('ADBE Text Animator');
