@@ -1,10 +1,21 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.40** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.41** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.41 — engine downloads that finish (owner: "still installing")
+- resumableDownload(url, target, opts) is the one loop for the speech model,
+  the audio engine (ffmpeg) and the voice / speech engine files (voicesGet):
+  4 tries, -C - resume, stall = <1 KB/s for 60 s, MB progress, opts.valid
+  (isProgramFile for ffmpeg), opts.minBytes, opts.noBrowser.
+- ffmpeg: progress on #ffmpeg-status + the transcript bar; sizes per Mac
+  (45.6 / 78.8 MB); GitHub unreachable → browser; adoptDownloadedFfmpeg
+  takes ~/Downloads/ffmpeg-darwin-<arch>, chmod + xattr -d quarantine.
+- voices.js: progress counts "<file>.part"; a SHA mismatch deletes the file.
+- Test stand-in fs gained chmodSync. Gate ffmpeg-download.
 
 ### v0.10.40 — owner's style test on v0.10.39 (8 close / 104 far; median ≈ same as v0.10.37)
 - Editable spoken word grows ≥20% when its colour = the text's (render.js
