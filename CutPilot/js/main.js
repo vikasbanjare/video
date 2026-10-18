@@ -5395,16 +5395,32 @@
           var frames = CPCaptions.buildCaptionFrames([{ start: 0, end: STYLE_TEST_SECONDS, text: pl.raw, words: words }],
             { anim: rs.anim, wordsPerCue: t.wordsPerCue, uppercase: t.uppercase, preset: rs, wordCues: words });
           var at = STYLE_TEST_SECONDS * STYLE_TEST_AT;
-          return CPRender.renderFrames(frames, { width: 1080, height: 1920, preset: rs, overrides: {}, outDir: pathMod.join(premDir, 'img-' + t.id) }).then(function (items) {
+          // the editable PREVIEW: what the panel shows in ✏️ Editable for this
+          // style — the promise "what you pick is what lands". Measured against
+          // what Premiere drew, it is the number that says the plugin works.
+          var ep = pulse ? pulseCarryStyle(t) : carryableStyle(t);
+          var eframes = CPCaptions.buildCaptionFrames([{ start: 0, end: STYLE_TEST_SECONDS, text: pl.raw, words: words }],
+            { anim: ep.anim, wordsPerCue: t.wordsPerCue, uppercase: ep.uppercase, preset: ep, wordCues: words });
+          function frameAt(items) {
             var it = null;
             for (var f = 0; f < items.length; f++) if (at >= items[f].start && at < items[f].end) { it = items[f]; break; }
-            if (!it) it = items[items.length - 1];
-            return Promise.all([loadImageFile(it ? it.path : ''), job.failed[pl.id] ? null : loadImageFile(pathMod.join(premDir, pl.id + '.png'))]);
+            return it || items[items.length - 1];
+          }
+          var imgIt = null;
+          return CPRender.renderFrames(frames, { width: 1080, height: 1920, preset: rs, overrides: {}, outDir: pathMod.join(premDir, 'img-' + t.id) }).then(function (items) {
+            imgIt = frameAt(items);
+            return CPRender.renderFrames(eframes, { width: 1080, height: 1920, preset: ep, overrides: {}, outDir: pathMod.join(premDir, 'pv-' + t.id) });
+          }).then(function (pitems) {
+            var pv = frameAt(pitems);
+            return Promise.all([loadImageFile(imgIt ? imgIt.path : ''), job.failed[pl.id] ? null : loadImageFile(pathMod.join(premDir, pl.id + '.png')),
+                                loadImageFile(pv ? pv.path : '')]);
           }).then(function (ims) {
-            var a = ims[0] ? styleTestPixels(ims[0], false) : null, b = ims[1] ? styleTestPixels(ims[1], true) : null;
-            rows.push({ id: t.id, name: t.name || t.id, img: a, prem: b,
-                        score: (a && b) ? styleTestScore(a, b) : 100,
-                        why: !b ? 'Premiere did not draw it' : (!b.box ? 'Premiere drew no caption' : (!a || !a.box ? 'no image caption' : '')) });
+            var a = ims[0] ? styleTestPixels(ims[0], false) : null, b = ims[1] ? styleTestPixels(ims[1], true) : null,
+                e = ims[2] ? styleTestPixels(ims[2], false) : null;
+            rows.push({ id: t.id, name: t.name || t.id, img: a, prem: b, pv: e,
+                        imgScore: (a && b) ? styleTestScore(a, b) : 100,
+                        score: (e && b) ? styleTestScore(e, b) : 100,
+                        why: !b ? 'Premiere did not draw it' : (!b.box ? 'Premiere drew no caption' : (!e || !e.box ? 'no editable preview' : '')) });
           }, function (e) { rows.push({ id: t.id, name: t.name || t.id, score: 100, why: 'test error: ' + (e && e.message) }); });
         });
       }, Promise.resolve());
@@ -5418,20 +5434,21 @@
         var g = c.getContext('2d');
         g.fillStyle = '#16181c'; g.fillRect(0, 0, c.width, c.height);
         g.fillStyle = '#cfd6df'; g.font = '600 22px -apple-system, Helvetica, Arial, sans-serif';
-        g.fillText('Left: image caption   ·   Right: editable caption as Premiere draws it   ·   0% = same look', 20, 32);
+        g.fillText('Image caption   ·   ✏️ Editable preview in Pulse   ·   What Premiere drew   ·   % = preview vs Premiere', 20, 32);
         part.forEach(function (row, k) {
           var y = 50 + k * RH;
           g.fillStyle = '#2a2f37'; g.fillRect(0, y, RW, RH - 6);
           g.fillStyle = row.score >= 15 ? '#ff8a80' : (row.score >= 7 ? '#ffd27a' : '#9be89b');
           g.fillText(row.name + '  —  ' + row.score + '%' + (row.why ? '  (' + row.why + ')' : ''), 16, y + 28);
-          [row.img, row.prem].forEach(function (o, side) {
+          var cols = [row.img, row.pv, row.prem], CW = 450;
+          var bw = 30, bh = 30;
+          cols.forEach(function (o) { if (o && o.box) { bw = Math.max(bw, o.box.w + 30); bh = Math.max(bh, o.box.h + 30); } });
+          cols.forEach(function (o, side) {
+            g.fillStyle = '#000'; g.fillRect(16 + side * (CW + 10), y + 40, CW, 140);
             if (!o || !o.box) return;
-            var bw = Math.max(row.img && row.img.box ? row.img.box.w : 0, row.prem && row.prem.box ? row.prem.box.w : 0) + 30;
-            var bh = Math.max(row.img && row.img.box ? row.img.box.h : 0, row.prem && row.prem.box ? row.prem.box.h : 0) + 30;
-            var sc = Math.min(660 / bw, 140 / bh, 1.4);
+            var sc = Math.min((CW - 10) / bw, 140 / bh, 1.4);
             var cx = o.box.x + o.box.w / 2, cy = o.box.y + o.box.h / 2;
-            g.fillStyle = '#000'; g.fillRect(16 + side * 690, y + 40, 670, 140);
-            g.drawImage(o.canvas, cx - bw / 2, cy - bh / 2, bw, bh, 16 + side * 690 + (670 - bw * sc) / 2, y + 40 + (140 - bh * sc) / 2, bw * sc, bh * sc);
+            g.drawImage(o.canvas, cx - bw / 2, cy - bh / 2, bw, bh, 16 + side * (CW + 10) + (CW - bw * sc) / 2, y + 40 + (140 - bh * sc) / 2, bw * sc, bh * sc);
           });
         });
         sheets++;
@@ -5439,19 +5456,23 @@
         fs.writeFileSync(pathMod.join(outDir, 'sheet-' + (sheets < 10 ? '0' : '') + sheets + '.png'), nodeReq('buffer').Buffer.from(b64, 'base64'));
       }
       var close = rows.filter(function (x) { return x.score < 7; }).length;
-      // three groups, so one test says what is left: the same; a difference
-      // still to fix; a look the template cannot draw (and why)
+      // THE number: does the ✏️ Editable preview match what Premiere drew?
+      // (what you pick is what lands). Image vs editable is shown for
+      // information, with what the template cannot draw named.
       var byId = {};
       styles.forEach(function (t) { byId[t.id] = t; });
       rows.forEach(function (x) { x.cannot = pulseCannotDraw(byId[x.id]); });
-      var same = rows.filter(function (x) { return x.score < 7; });
-      var cant = rows.filter(function (x) { return x.score >= 7 && x.cannot.length; });
-      var fix = rows.filter(function (x) { return x.score >= 7 && !x.cannot.length; });
-      var line = function (x) { return (x.score + '%').padStart(7) + '  ' + x.id + (x.why ? '  — ' + x.why : '') + (x.cannot && x.cannot.length && x.score >= 7 ? '  — template cannot draw: ' + x.cannot.join(', ') : ''); };
+      var works = rows.filter(function (x) { return x.score < 7; });
+      var fix = rows.filter(function (x) { return x.score >= 7; });
+      var simpler = rows.filter(function (x) { return x.cannot.length; });
+      var line = function (x) { return (x.score + '%').padStart(7) + '  ' + x.id + (x.why ? '  — ' + x.why : '') + '   (image vs editable ' + x.imgScore + '%)'; };
       var txt = ['Pulse caption style test — ' + stamp, 'Pulse ' + (($('ver') || {}).textContent || '') + ' · Engine: ' + (bb.name || bb.path),
-        'Styles: ' + rows.length + ' · the same (<7%): ' + same.length + ' · still to fix: ' + fix.length + ' · the template cannot draw: ' + cant.length, '',
-        'STILL TO FIX (worst first):'].concat(fix.map(line), ['', 'THE TEMPLATE CANNOT DRAW (image captions only):'], cant.map(line),
-        ['', 'THE SAME:'], same.map(line)).join('\n');
+        'Styles: ' + rows.length + ' · ✏️ Editable preview = Premiere (<7%): ' + works.length + ' · preview differs from Premiere: ' + fix.length +
+        ' · simpler in editable than as an image: ' + simpler.length, '',
+        'PREVIEW DIFFERS FROM PREMIERE — to fix (worst first, preview vs Premiere %):'].concat(fix.map(line),
+        ['', 'PREVIEW = PREMIERE (works):'], works.map(line),
+        ['', 'SIMPLER IN EDITABLE THAN AS AN IMAGE (Premiere cannot draw it — use image captions for the full look):'],
+        simpler.map(function (x) { return '         ' + x.id + '  — ' + x.cannot.join(', '); })).join('\n');
       fs.writeFileSync(pathMod.join(outDir, 'report.txt'), txt);
       try { fs.unlinkSync(running); } catch (eRm) {}
       try { diag('style-test', txt.split('\n').slice(0, 24).join(' | ')); } catch (eD) {}
@@ -5459,7 +5480,7 @@
       return new Promise(function (resolve) {
         zipStyleTest(outDir, function (zip) {
           if (zip) {
-            toast('🎨 Tested ' + rows.length + ' caption styles: ' + close + ' look the same. The results are ready to send: "' + nodeReq('path').basename(zip) + '" on your Desktop (shown in Finder).');
+            toast('🎨 Tested ' + rows.length + ' caption styles: on ' + close + ' the ✏️ Editable preview is exactly what Premiere drew. The results are ready to send: "' + nodeReq('path').basename(zip) + '" on your Desktop (shown in Finder).');
             revealFile(zip);
           } else {
             toast('🎨 Tested ' + rows.length + ' caption styles in Premiere: ' + close + ' look the same as the image caption. Sheets + report are in Desktop › Pulse Caption Test — send them over.');

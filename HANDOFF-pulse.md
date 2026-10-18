@@ -1,15 +1,23 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.46** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.47** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
 
-### v0.10.46 — decision: keep both caption kinds, stop the test rounds
+### v0.10.47 — the style test measures what the owner sees
+- The owner did NOT agree to stop: "make the plugin work". The test had
+  measured image vs editable, which can never be 100% (Premiere cannot
+  draw ~1/3 of the looks). It now measures the ✏️ Editable PREVIEW
+  (pulseCarryStyle) against what Premiere drew — "what you pick is what
+  lands" — with three columns per style (image · editable preview ·
+  Premiere). Report: preview differs from Premiere (to fix, one batch) ·
+  works · simpler in editable than as an image (pulseCannotDraw).
+
+### v0.10.46 — keep both caption kinds
 - Owner chose "Keep both as now" (image = full look; editable = close,
-  not identical for ~1/3 of styles). No more 🎨 style-test rounds unless
-  asked. The test button now zips its results on the Desktop when done
+  not identical for ~1/3 of styles). The test button now zips its results on the Desktop when done
   and groups the report: still to fix / the template cannot draw
   (pulseCannotDraw) / the same.
 

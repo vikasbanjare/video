@@ -89,14 +89,16 @@ function png(W, H) {
   const runDir = fs.existsSync(base) ? path.join(base, fs.readdirSync(base).filter(f => !/\.zip$/.test(f))[0] || '') : '';
   const rep = runDir && fs.existsSync(path.join(runDir, 'report.txt')) ? fs.readFileSync(path.join(runDir, 'report.txt'), 'utf8') : '';
   const lines = rep.split('\n').filter(l => /^\s*[\d.]+%\s/.test(l));
-  (lines.length === r.n && /minimal\s+— Premiere did not draw it/.test(rep) && /Styles: \d+ · the same \(<7%\): \d+ · still to fix: \d+ · the template cannot draw: \d+/.test(rep) && /Engine: Pulse Caption/.test(rep) ? ok : bad)(
+  (lines.length === r.n && /minimal\s+— Premiere did not draw it/.test(rep) && /Styles: \d+ · ✏️ Editable preview = Premiere \(<7%\): \d+ · preview differs from Premiere: \d+ · simpler in editable than as an image: \d+/.test(rep) && /Engine: Pulse Caption/.test(rep) ? ok : bad)(
     'B. the report lists every style worst first and names the one Premiere refused (' + lines.length + ' rows)', rep.slice(0, 300));
   // three groups, so one test says what is left (the owner: "fix it once and for all")
   const sec = (title) => { const a = rep.indexOf(title); if (a < 0) return null; const b = rep.indexOf('\n\n', a); return rep.slice(a, b < 0 ? rep.length : b); };
-  const cant = sec('THE TEMPLATE CANNOT DRAW'), fixS = sec('STILL TO FIX'), same = sec('THE SAME');
-  (cant !== null && fixS !== null && same !== null && /pro-editorial .*template cannot draw: .*a smaller second line/.test(cant || '') &&
-   !/pro-editorial/.test(fixS || '') ? ok : bad)('B. the report groups the styles: still to fix · the template cannot draw (with why, e.g. Editorial: a smaller second line) · the same',
-    rep.slice(0, 600));
+  // the measure is the ✏️ Editable PREVIEW against what Premiere drew (what you
+  // pick is what lands); image vs editable is information, with the reason
+  const fixS = sec('PREVIEW DIFFERS FROM PREMIERE'), works = sec('PREVIEW = PREMIERE'), simp = sec('SIMPLER IN EDITABLE');
+  (fixS !== null && works !== null && simp !== null && /pro-editorial\s+— .*a smaller second line/.test(simp || '') &&
+   /\(image vs editable \d+(\.\d+)?%\)/.test(rep) ? ok : bad)('B. the report measures the ✏️ Editable preview against Premiere: to fix · works · simpler than the image (with why, e.g. Editorial: a smaller second line)',
+    rep.slice(0, 700));
   const sheets = runDir ? fs.readdirSync(runDir).filter(f => /^sheet-\d+\.png$/.test(f)) : [];
   (sheets.length === Math.ceil(r.n / 8) && sheets.every(f => fs.statSync(path.join(runDir, f)).size > 5000) ? ok : bad)('C. ' + sheets.length + ' sheets on the Desktop');
   // the owner zipped a run 2 minutes in and sent an empty folder: while it
