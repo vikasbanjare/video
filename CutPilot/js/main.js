@@ -977,7 +977,7 @@
   function transcribeViaGroq(wavPath, lang) {
     return new Promise(function (resolve, reject) {
       var key = cpKey();
-      if (!key) return reject(new Error('Paste your free speech key in Settings → Auto-transcribe (the ☁️ box). Get one at console.groq.com/keys.'));
+      if (!key) return reject(new Error('Paste your free speech key in Settings → Auto-transcribe (the Speech key box). Get one at console.groq.com/keys.'));
       var cp; try { cp = nodeReq('child_process'); } catch (e) { return reject(e); }
       var args = ['-sS', '--max-time', '600', 'https://api.groq.com/openai/v1/audio/transcriptions',
         '-F', 'model=whisper-large-v3',
@@ -1183,7 +1183,7 @@
   function transcribeViaSwara(wavPath, langCode) {
     return new Promise(function (resolve, reject) {
       var key = cpSarvamKey();
-      if (!key) return reject(new Error('Paste your Indian-language key in Settings → Auto-transcribe → More speech options (the 🇮🇳 box).'));
+      if (!key) return reject(new Error('Paste your Indian-language key in Settings → Auto-transcribe → More speech options (the Indian-language key box).'));
       var cp; try { cp = nodeReq('child_process'); } catch (e) { return reject(e); }
       // 'translate-en' uses Sarvam's speech-to-text-TRANSLATE endpoint: it auto-detects
       // any Indian language and returns the text in ENGLISH (so Hindi/Tamil → English).
@@ -1430,7 +1430,7 @@
     opts = opts || {};
     return new Promise(function (resolve, reject) {
       var key = cpKey();
-      if (!key) return reject(new Error('This uses your free speech key — paste it in Settings → Auto-transcribe (the ☁️ box). Get one at console.groq.com/keys.'));
+      if (!key) return reject(new Error('This uses your free speech key — paste it in Settings → Auto-transcribe (the Speech key box). Get one at console.groq.com/keys.'));
       var cp, fs, os, pathMod;
       try { cp = nodeReq('child_process'); fs = nodeReq('fs'); os = nodeReq('os'); pathMod = nodeReq('path'); } catch (e) { return reject(e); }
       var body = { model: opts.model || GROQ_TEXT_MODELS[0],
@@ -1686,7 +1686,7 @@
      paths return -> cues array with an attached .words list. */
   function transcribeViaDeepgram(audioPath, lang) {
     var key = cpDeepgramKey();
-    if (!key) return Promise.reject(new Error('Paste your retake-finder key in Settings → Auto-transcribe → More speech options (the 🎧 box).'));
+    if (!key) return Promise.reject(new Error('Paste your retake-finder key in Settings → Auto-transcribe → More speech options (the Retake-finder key box).'));
     // Deepgram assumes ENGLISH when no language is sent — it does not detect.
     // Auto-detect and Hinglish go to nova-3's multilingual model (Hindi and
     // English mixed in one sentence; the caller romanises Hinglish after);
@@ -1858,12 +1858,12 @@
     }
     var wbin = null;
     if (cloud) {
-      if (!cpKey()) return toast('Paste your free speech key in Settings → Auto-transcribe (the ☁️ box). Get one at console.groq.com/keys. An Indian-language or retake-finder key works too, under More speech options' +
+      if (!cpKey()) return toast('Paste your free speech key in Settings → Auto-transcribe (the Speech key box). Get one at console.groq.com/keys. An Indian-language or retake-finder key works too, under More speech options' +
         (WHITE_LABEL ? ' — or pick “💻 On this computer” there (free, no key).' : '.'), true);
     } else if (swara) {
-      if (!cpSarvamKey()) return toast('Paste your Indian-language key in Settings → Auto-transcribe → More speech options (the 🇮🇳 box).', true);
+      if (!cpSarvamKey()) return toast('Paste your Indian-language key in Settings → Auto-transcribe → More speech options (the Indian-language key box).', true);
     } else if (dgram) {
-      if (!cpDeepgramKey()) return toast('Paste your retake-finder key in Settings → Auto-transcribe → More speech options (the 🎧 box).', true);
+      if (!cpDeepgramKey()) return toast('Paste your retake-finder key in Settings → Auto-transcribe → More speech options (the Retake-finder key box).', true);
     } else {
       wbin = resolveWhisper();
       // no speech engine on this computer yet: fetch Pulse's ready-built one
@@ -1878,7 +1878,7 @@
           toast(e.message, true);
         });
       }
-      if (!wbin) return toast('This computer can’t make the transcript by itself: paste your free speech key in Settings → Auto-transcribe (the ☁️ box). Get one at console.groq.com/keys.', true);
+      if (!wbin) return toast('This computer can’t make the transcript by itself: paste your free speech key in Settings → Auto-transcribe (the Speech key box). Get one at console.groq.com/keys.', true);
     }
     setTranscribing(true);   // all checks passed — commit, lock the buttons
     var lang = swara ? (settings.sarvamLang || 'unknown') : (settings.whisperLang || 'auto');   // default AUTO — never force English on non-English audio
@@ -16454,7 +16454,7 @@
   function smartCleanupErrMsg(e) {
     var k = e && e.cpKind;
     if (k === 'network' || k === 'request_failed') return 'Smart Cleanup could not reach the AI, so nothing was cut. Check your internet connection and try again.';
-    if (k === 'bad_key') return 'Smart Cleanup uses your free Groq key, and Groq did not accept it. Check the key in Settings → Auto-transcribe (the ☁️ box) — copy it again, with no spaces at the ends.';
+    if (k === 'bad_key') return 'Smart Cleanup uses your free Groq key, and Groq did not accept it. Check the key in Settings → Auto-transcribe (the Speech key box) — copy it again, with no spaces at the ends.';
     if (k === 'rate_limit') return 'Smart Cleanup stopped: your free Groq limit is used up for now, so nothing was cut. Wait a few minutes (the daily limit resets the next day) and try again.';
     if (k === 'no_credit') return 'Smart Cleanup stopped: your Groq account is out of credit, so nothing was cut. Top it up, then try again.';
     if (k === 'provider_down') return 'Smart Cleanup stopped: the AI service is having trouble on its end, so nothing was cut. This is not your setup — try again in a few minutes.';

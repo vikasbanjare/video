@@ -55,7 +55,7 @@ const PACK = ['Pack_A', 'Pack_B', 'Pack_C'];
                  wordHl: st ? st.wordHl : undefined,
                  hlIsFill: st ? String(st.highlight || '').toLowerCase() === String(st.fill || '').toLowerCase() : null };
       }
-      return { head: ((el.firstChild && el.firstChild.textContent) || el.textContent || '').trim() };
+      return { head: (((el => { let t = ''; for (const n of el.childNodes) { if (n.nodeType === 3 || (n.classList && n.classList.contains('emo'))) t += n.textContent; else break; } return t || el.textContent || '';  }))(el)).trim() };
     });
     for (const c of chips) {
       c.click(); await sleep(260);

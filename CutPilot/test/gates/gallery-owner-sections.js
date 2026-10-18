@@ -95,7 +95,7 @@ const G = require('./gallery-lib/panel.js');
     }
     // ---- All: section order ---------------------------------------------------
     const all = chip('All'); if (all) { all.click(); await sleep(500); }
-    out.allSections = Array.from(document.querySelectorAll('#tpl-grid .lib-section')).map(h => (h.firstChild && h.firstChild.textContent || h.textContent).split('  ·  ')[0].trim());
+    out.allSections = Array.from(document.querySelectorAll('#tpl-grid .lib-section')).map(h => (((el => { let t = ''; for (const n of el.childNodes) { if (n.nodeType === 3 || (n.classList && n.classList.contains('emo'))) t += n.textContent; else break; } return t || el.textContent || '';  }))(h)).split('  ·  ')[0].trim());
     out.firstCards = Array.from(document.querySelectorAll('#tpl-grid .tpl-thumb-canvas')).slice(0, 3).map(c => c._tpl && c._tpl.id);
     return out;
   });
