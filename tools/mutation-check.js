@@ -2989,6 +2989,30 @@ const MUTANTS = [
     repl: "",
     gate: 'CutPilot/test/gates/style-test-button.js',
     why: 'a finished style test still says it is running'
+  },
+  {
+    name: 'v48-back-always-home',
+    file: 'CutPilot/js/main.js',
+    find: "    if ($('nav-back')) $('nav-back').addEventListener('click', goBack);",
+    repl: "    if ($('nav-back')) $('nav-back').addEventListener('click', function () { goPage('home'); });",
+    gate: 'CutPilot/test/gates/ui-shell.js',
+    why: '‹ from the style editor or "Transcribe first" goes all the way Home'
+  },
+  {
+    name: 'v48-editor-back-skips-gallery',
+    file: 'CutPilot/js/main.js',
+    find: "      if (vt && vt.classList.contains('hidden')) { showView('templates'); return; }",
+    repl: '',
+    gate: 'CutPilot/test/gates/ui-shell.js',
+    why: "‹ from a style's editor leaves Captions instead of showing the styles"
+  },
+  {
+    name: 'v48-no-start-here',
+    file: 'CutPilot/js/main.js',
+    find: "    var next = !done.transcribe ? 'transcribe' :",
+    repl: '    var next = !done.transcribe ? null :',
+    gate: 'CutPilot/test/gates/ui-shell.js',
+    why: 'Home does not say where to start'
   }
 ];
 

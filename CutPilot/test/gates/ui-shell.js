@@ -11,10 +11,13 @@
  * and the gallery stayed at two columns.
  *
  * In the real panel:
- *   1. it opens on Home: Add captions · Clean up · Podcast cameras as big
- *      buttons, each opening its page; More tools opens Transcribe, Shorts,
+ *   1. it opens on Home: the edit as five numbered steps in order —
+ *      Transcribe · Clean up · Podcast cameras · Captions · Shorts — each
+ *      opening its page, step 1 marked "Start here"; More tools opens
  *      Chapters, Organize and Safe zone;
- *   2. from every page one tap (‹) goes back Home and one tap (⚙) opens
+ *   2. from every page one tap (‹) goes back where the owner came from
+ *      (Home, from Home; Shorts, from its "Transcribe first"; the style
+ *      gallery, from the style editor) and one tap (⚙) opens
  *      Settings, whose Diagnostics (copy, full check, recent messages) are
  *      there; the bar names the page;
  *   3. Captions opens on the style gallery — many styles and their categories
@@ -31,8 +34,9 @@
 const U = require('./ui-lib/panel');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-const TASKS = [['home-captions', 'captions', /add captions/i], ['home-cleanup', 'silence', /clean up/i], ['home-cameras', 'multicam', /podcast cameras/i]];
-const TOOLS = [['transcribe', /transcribe/i], ['shorts', /shorts/i], ['chapters', /chapters/i], ['organize', /organize/i], ['safezone', /safe zone/i]];
+const TASKS = [['home-words', 'transcribe', /transcribe/i], ['home-cleanup', 'silence', /clean up/i], ['home-cameras', 'multicam', /podcast cameras/i],
+  ['home-captions', 'captions', /captions/i], ['home-shorts', 'shorts', /shorts/i]];
+const TOOLS = [['chapters', /chapters/i], ['organize', /organize/i], ['safezone', /safe zone/i]];
 
 const state = page => page.evaluate(() => {
   const p = document.querySelector('.tab-page.active');
@@ -49,7 +53,7 @@ const click = (page, sel) => page.evaluate(sel => {
 }, sel);
 
 (async () => {
-  const R = U.reporter('ui shell: Home, three tasks, More tools, one tap back, Settings + Diagnostics, Captions on the styles');
+  const R = U.reporter('ui shell: Home = the edit in five steps, More tools, ‹ back where you came from, Settings + Diagnostics, Captions on the styles');
   const browser = await U.launch();
   try {
     const page = await U.openPanel(browser, { viewport: { width: 400, height: 640 } });
@@ -60,14 +64,18 @@ const click = (page, sel) => page.evaluate(sel => {
         const e = document.getElementById(id); if (!e) return { id, missing: true };
         const r = e.getBoundingClientRect();
         const nm = e.querySelector('.task-name') || e;
-        return { id, text: nm.textContent.replace(/\s+/g, ' ').trim(), h: Math.round(r.height), w: Math.round(r.width), onScreen: r.bottom <= innerHeight && r.top >= 0 };
+        const n = e.querySelector('.step-n'), st = e.querySelector('.step-state');
+        return { id, text: nm.textContent.replace(/\s+/g, ' ').trim(), h: Math.round(r.height), w: Math.round(r.width), top: Math.round(r.top),
+                 n: n ? n.textContent.trim() : '', state: st ? st.textContent.trim() : '', onScreen: r.bottom <= innerHeight && r.top >= 0 };
       }) };
     }, TASKS.map(t => [t[0], t[1], t[2].source]));
     if (home.page !== 'tab-home') R.bad('the panel does not open on a Home screen (opens on ' + home.page + ')');
     else {
-      const bad = home.tasks.filter((t, i) => t.missing || !TASKS[i][2].test(t.text) || t.h < 44 || !t.onScreen);
-      if (bad.length) R.bad('Home\'s three big tasks are not all there, big (≥ 44px) and on screen: ' + JSON.stringify(bad));
-      else R.ok('it opens on Home with three big tasks: ' + home.tasks.map(t => '"' + t.text + '" ' + t.h + 'px').join(', '));
+      const bad = home.tasks.filter((t, i) => t.missing || !TASKS[i][2].test(t.text) || t.h < 44 || !t.onScreen || t.n !== String(i + 1) ||
+        (i > 0 && t.top <= home.tasks[i - 1].top));
+      if (bad.length) R.bad('Home\'s five steps are not all there, numbered in order, big (≥ 44px) and on screen: ' + JSON.stringify(bad));
+      else if (home.tasks[0].state !== 'Start here') R.bad('step 1 does not say where to start (' + home.tasks[0].state + ')');
+      else R.ok('it opens on Home with the edit in order: ' + home.tasks.map(t => t.n + '. ' + t.text).join(' · ') + ' — step 1 says "Start here"');
     }
     for (const [id, want] of TASKS) {
       await page.evaluate(() => { const b = document.querySelector('.tab[data-tab="home"]'); if (b) b.click(); });
@@ -92,11 +100,13 @@ const click = (page, sel) => page.evaluate(sel => {
       if (c !== 'ok' || s.page !== pageId) toolRes.push(pageId + ': ' + c + ', now on ' + s.page);
     }
     if (toolRes.length) R.bad('More tools: ' + toolRes.join('; '));
-    else R.ok('Home → each big task and each More tool (Transcribe, Shorts, Chapters, Organize, Safe zone) opens its page');
+    else R.ok('Home → each step and each More tool (Chapters, Organize, Safe zone) opens its page');
 
     // ---- 2. back, ⚙, the bar's page name, Diagnostics --------------------------
     const nav = [];
     for (const p of ['captions', 'silence', 'multicam', 'transcribe', 'shorts', 'chapters', 'organize', 'safezone', 'settings']) {
+      await page.evaluate(() => { const b = document.querySelector('.tab[data-tab="home"]'); if (b) b.click(); });
+      await sleep(80);
       await page.evaluate(p => { const b = document.querySelector('.tab[data-tab="' + p + '"]'); if (b) b.click(); }, p);
       await sleep(150);
       const title = (await state(page)).title;
@@ -111,7 +121,32 @@ const click = (page, sel) => page.evaluate(sel => {
       if (!title) nav.push(p + ': the bar does not name the page');
     }
     if (nav.length) R.bad('navigation: ' + nav.join('; '));
-    else R.ok('from every page: ‹ goes Home in one tap, ⚙ opens Settings in one tap, and the bar names the page');
+    else R.ok('from every page opened on Home: ‹ goes back Home in one tap, ⚙ opens Settings in one tap, and the bar names the page');
+    // ‹ goes back where the owner came from, not always Home
+    await page.evaluate(() => { document.querySelector('.tab[data-tab="home"]').click(); });
+    await sleep(80);
+    await click(page, '#home-shorts'); await sleep(200);
+    const tf = await page.evaluate(() => { const b = Array.from(document.querySelectorAll('#tab-shorts button')).find(x => /transcribe first/i.test(x.textContent)); if (!b) return 'missing'; b.click(); return 'ok'; });
+    await sleep(200);
+    const onTr = (await state(page)).page;
+    await click(page, '#nav-back'); await sleep(200);
+    const backTo = (await state(page)).page;
+    await click(page, '#nav-back'); await sleep(200);
+    const thenTo = (await state(page)).page;
+    if (tf !== 'ok' || onTr !== 'transcribe' || backTo !== 'shorts' || thenTo !== 'home') R.bad('‹ from "Transcribe first" did not return to Shorts, then Home: ' + [tf, onTr, backTo, thenTo].join(' → '));
+    else R.ok('Shorts → "Transcribe first" → ‹ returns to Shorts, ‹ again to Home');
+    // the owner: "when I click a caption and go back, it goes back to the first
+    // place — I wanted to see the caption templates"
+    await page.evaluate(() => { document.querySelector('.tab[data-tab="captions"]').click(); });
+    await sleep(400);
+    await page.evaluate(() => { const c = document.querySelector('#tpl-grid .tpl-card'); if (c) c.click(); });
+    await sleep(400);
+    const inEd = await page.evaluate(() => !document.getElementById('view-editor').classList.contains('hidden'));
+    await click(page, '#nav-back'); await sleep(300);
+    const afterEd = await page.evaluate(() => ({ page: (document.querySelector('.tab-page.active') || {}).id,
+      gallery: !document.getElementById('view-templates').classList.contains('hidden') }));
+    if (inEd && afterEd.page === 'tab-captions' && afterEd.gallery) R.ok('a style\'s editor → ‹ returns to the style gallery, not Home');
+    else R.bad('‹ from the style editor did not return to the gallery: ' + JSON.stringify({ inEd, afterEd }));
     await page.evaluate(() => { const b = document.querySelector('.tab[data-tab="settings"]'); if (b) b.click(); });
     await sleep(200);
     const diag = await page.evaluate(() => {

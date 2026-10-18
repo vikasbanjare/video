@@ -28,7 +28,7 @@ const PANEL_URL = 'file://' + path.join(PANEL_DIR, 'index.html');
 /* Each main screen, how to reach it, and the one thing the owner came to do
    there. The primary action is what must be on screen without scrolling. */
 const SCREENS = [
-  { id: 'home',           tab: 'home',       primary: '#home-captions',  label: 'Home' },
+  { id: 'home',           tab: 'home',       primary: '#home-words',     label: 'Home' },   // step 1 of the edit
   { id: 'captions',       tab: 'captions',   view: 'templates', primary: '#btn-magic', label: 'Captions (style gallery)' },
   { id: 'caption-editor', tab: 'captions',   view: 'style',     primary: '#btn-magic', label: 'Caption style editor' },
   { id: 'cleanup',        tab: 'silence',    primary: '#btn-autoclean',  label: 'Clean up' },

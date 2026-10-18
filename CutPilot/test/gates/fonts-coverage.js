@@ -203,9 +203,9 @@ if (!pptr || !exe) { console.log('  ? no puppeteer/Chromium — panel part skipp
   if (!r.macFaceOnMac || r.macFaceOnMac.substitutedFrom) bad('on a Mac, a macOS face the scan could not read (Helvetica Neue) was called missing and swapped: ' + JSON.stringify(r.macFaceOnMac));
   else if (!r.macFaceElsewhere || r.macFaceElsewhere.substitutedFrom !== 'Helvetica Neue') bad('off a Mac, a Mac face that is not installed is not swapped for one that is: ' + JSON.stringify(r.macFaceElsewhere));
   else ok('a macOS face the scan could not read is kept on a Mac (' + r.macFaceOnMac.font + '), and swapped where it is really missing (→ ' + r.macFaceElsewhere.font + ')');
-  if (!/Hindi/.test(r.noHindiToast || '') || !/Pulse-rendered/.test(r.noHindiToast || ''))
+  if (!/Hindi/.test(r.noHindiToast || '') || !/Exact look/.test(r.noHindiToast || ''))
     bad('with no installed face that draws Hindi, the owner is not told (toast: "' + r.noHindiToast + '", sent ' + JSON.stringify(r.noHindiFont) + ')');
-  else ok('with no installed face that draws Hindi, the owner is told to use Pulse-rendered captions (' + r.noHindiFont.font + ' sent)');
+  else ok('with no installed face that draws Hindi, the owner is told to use 🖼 Exact look captions (' + r.noHindiFont.font + ' sent)');
   if (errs.length) bad('page errors: ' + errs.slice(0, 2).join(' | '));
   console.log(failed ? 'FONTS COVERAGE: ' + failed + ' FAILURE(S)' : 'FONTS COVERAGE: no caption is sent a font that cannot draw it ✓');
   process.exit(failed ? 1 : 0);

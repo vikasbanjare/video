@@ -205,6 +205,22 @@ body[data-page="home"] .nav-back, body[data-page="home"] .nav-title { display: n
 .task-card.primary .task-sub { color: rgba(20,24,10,.72); }
 .task-go { flex: none; font-size: var(--fs-xl); opacity: .5; }
 .more-tools { margin-top: 12px; }
+/* Home: the edit in order — a number, the step, and where it stands */
+.flow-head { font-size: var(--fs-xs); font-weight: 800; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; margin: 2px 2px 8px; }
+.step-n { flex: none; width: 22px; height: 22px; border-radius: 99px; display: grid; place-items: center;
+  font-size: var(--fs-xs); font-weight: 800; background: var(--card2); color: var(--dim); border: 1px solid var(--line); }
+.step-state { flex: none; font-size: var(--fs-xs); font-weight: 800; padding: 3px 8px; border-radius: 99px; color: var(--dim); background: var(--card2); white-space: nowrap; }
+.step-state:empty { display: none; }
+.step-card.done .step-n { background: var(--ok-bg); color: var(--ok-text); border-color: var(--ok-line); }
+.step-card.done .step-state { color: var(--ok-text); background: var(--ok-bg); }
+.step-card.next { background: var(--grad); border-color: transparent; color: var(--accent-fg); box-shadow: 0 8px 22px -8px var(--accent-glow); }
+.step-card.next .task-sub { color: rgba(20,24,10,.72); }
+.step-card.next .task-ic { background: rgba(20,24,10,.12); color: var(--accent-fg); }
+.step-card.next .step-n, .step-card.next .step-state { background: rgba(20,24,10,.15); color: var(--accent-fg); border-color: transparent; }
+/* the end of each page: what comes next in the edit */
+.next-step { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 14px 0 6px; padding: 10px 12px; border: 1px dashed var(--accent-line); border-radius: 12px; }
+.next-step .ns-txt { flex: 1 1 140px; min-width: 0; font-size: var(--fs-sm); color: var(--dim); }
+.next-step .ns-txt b { color: var(--text); }
 .more-head { font-size: var(--fs-xs); font-weight: 800; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; margin: 0 2px 6px; }
 .more-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 6px; }
 .tool-btn {
@@ -973,7 +989,9 @@ details.advanced summary:hover { color: var(--fg); }
 /* Messages drop in under the navigation bar — never over a page's own
    bottom action bar — and every one can be dismissed with a tap (✕). */
 .toast {
-  position: fixed; left: 10px; right: 10px; top: calc(var(--bar-h) + 6px); z-index: 30;
+  /* at the bottom, above the pinned action buttons: at the top it covered
+     each page's heading and its ‹ All styles button */
+  position: fixed; left: 10px; right: 10px; bottom: 78px; z-index: 30;
   max-width: 700px; margin: 0 auto; padding: 10px 34px 10px 13px;
   background: #1a2030; border: 1px solid rgba(198,242,78,.45); color: #eef1f7;
   border-radius: 12px; font-size: var(--fs-sm); font-weight: 600; line-height: 1.45; box-shadow: 0 12px 34px rgba(0,0,0,.5);

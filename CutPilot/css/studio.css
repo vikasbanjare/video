@@ -1,0 +1,171 @@
+/* Pulse Studio 2 — the panel as a Premiere tool, not a web page.
+   Layout concept: graphite surfaces like Premiere's own panels; one cobalt
+   accent (the Pulse mark's blue) only for the one main action on a screen;
+   sections divided by hairlines, not floating cards; an 8 px grid; the
+   system UI face in one scale. Loaded after style.css: it redefines the
+   tokens and the shared components, never ids or behaviour.
+   Chromium-88-safe CSS only (see style.css / ui-css-compat). */
+:root {
+  --r: 8px;
+  --r-sm: 6px;
+  --ui-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --grad: var(--accent);
+  --grad-soft: var(--accent-soft);
+  --accent: #2C57E6;
+  --accent-fg: #FFFFFF;
+}
+body.theme-dark {
+  --bg: #1D1E21; --bg2: #17181A; --card: #232427; --card2: #2A2B2F; --card3: #33353A;
+  --card-grad: #232427;
+  --line: rgba(255,255,255,.07); --line2: rgba(255,255,255,.12);
+  --fg: #E6E7EA; --dim: #A0A3AB; --title: #F4F5F7; --field: #17181A;
+  --accent: #3A66F0; --accent-fg: #FFFFFF;
+  --accent-text: #9DB7FF; --accent-soft: rgba(58,102,240,.18);
+  --accent-glow: rgba(0,0,0,0); --accent-line: rgba(157,183,255,.45);
+  --ok-text: #7FD28F; --ok-bg: rgba(90,190,110,.12); --ok-line: rgba(90,190,110,.40);
+  --warn-text: #F0C27A; --warn-bg: rgba(224,163,90,.12); --warn-line: rgba(224,163,90,.40);
+  --danger-text: #FF9B96; --danger-bg: rgba(239,111,106,.12); --danger-line: rgba(239,111,106,.45);
+  --shadow-sm: none; --shadow: none;
+}
+body.theme-light {
+  --bg: #F2F3F5; --bg2: #E8EAEE; --card: #FFFFFF; --card2: #F6F7F9; --card3: #FFFFFF;
+  --card-grad: #FFFFFF;
+  --line: rgba(16,20,30,.08); --line2: rgba(16,20,30,.15);
+  --fg: #17191E; --dim: #5B606B; --title: #0E1014; --field: #FFFFFF;
+  --accent: #2C57E6; --accent-fg: #FFFFFF;
+  --accent-text: #2347C4; --accent-soft: rgba(44,87,230,.09);
+  --accent-glow: rgba(0,0,0,0); --accent-line: rgba(44,87,230,.38);
+  --ok-text: #1F6B34; --ok-bg: rgba(40,150,70,.09); --ok-line: rgba(40,150,70,.35);
+  --warn-text: #7A4F00; --warn-bg: rgba(229,159,0,.11); --warn-line: rgba(200,140,0,.40);
+  --danger-text: #B3261E; --danger-bg: rgba(200,50,40,.07); --danger-line: rgba(200,50,40,.38);
+  --shadow-sm: none; --shadow: none;
+}
+
+/* ---- type: one face, one scale ---- */
+body { background: var(--bg); font-family: var(--ui-font); letter-spacing: 0; }
+.brand-name, .step-title, .ver, .hero-btn, .ms-name, .ms-live-tag, .nav-title, .task-name,
+.seg-control.mc-count button, .wc-num, #ms-wc-num, #mg-wc-num, .mp-snum { font-family: var(--ui-font); }
+.step-title, .task-name, .nav-title { font-weight: 650; letter-spacing: -0.01em; color: var(--title); }
+.step-title { font-size: var(--fs-lg); }
+.nav-title { font-size: var(--fs-lg); }
+.brand { font-weight: 700; letter-spacing: -0.01em; }
+label, .field-label { font-size: var(--fs-xs); font-weight: 600; color: var(--dim); letter-spacing: .01em; }
+.hint { font-size: var(--fs-sm); line-height: 1.5; }
+.flow-head, .more-head { font-size: var(--fs-xs); font-weight: 600; letter-spacing: .06em; color: var(--dim); }
+
+/* ---- app bar ---- */
+.app-bar { background: var(--bg); border-bottom: 1px solid var(--line); }
+.icon-btn { border-radius: var(--r-sm); }
+.icon-btn:hover { background: var(--card2); border-color: transparent; }
+.theme-toggle { font-size: var(--fs-md); }
+.ver { background: transparent; border: none; font-weight: 500; padding: 0; }
+
+/* ---- sections: a hairline group, not a floating card ---- */
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--r);
+  padding: 14px; margin-bottom: 12px; box-shadow: none;
+}
+.card.accent { border-color: var(--line2); }
+.step-head { gap: 8px; margin: 18px 0 10px; }
+.step-head:first-child { margin-top: 0; }
+.step-num {
+  width: 20px; height: 20px; background: transparent; color: var(--dim);
+  border: 1px solid var(--line2); box-shadow: none; font-size: var(--fs-xs); font-weight: 600;
+}
+.info { color: var(--dim); border-radius: var(--r-sm); }
+.info:hover, .info[aria-expanded="true"] { background: var(--card2); color: var(--fg); }
+.info-pop { background: var(--card2); border: 1px solid var(--line); border-left-width: 1px; border-radius: var(--r-sm); }
+
+/* ---- controls ---- */
+input[type="number"], input[type="text"], input[type="password"], select, textarea {
+  border-radius: var(--r-sm); background: var(--field); border-color: var(--line2); min-height: 30px;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.check { font-weight: 500; gap: 10px; }
+.check input[type="checkbox"] { width: 30px; height: 18px; background: var(--card3); border-color: var(--line2); }
+.check input[type="checkbox"]::after { top: 2px; left: 2px; width: 12px; height: 12px; box-shadow: none; }
+.check input[type="checkbox"]:checked::after { left: 14px; }
+body.theme-light .check input[type="checkbox"]:not(:checked) { background: #DADDE3; }
+input[type="range"]::-webkit-slider-runnable-track { height: 3px; background: var(--line2); border: none; }
+input[type="range"]::-webkit-slider-thumb { width: 14px; height: 14px; margin-top: -5.5px; background: var(--fg); border: 2px solid var(--bg); box-shadow: 0 0 0 1px var(--line2); }
+input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--accent-soft); }
+
+.seg-control, .subview-switch { background: var(--bg2); border: 1px solid var(--line); border-radius: var(--r); padding: 2px; gap: 2px; }
+.seg-control button, .subview-switch button { border-radius: var(--r-sm); font-weight: 600; color: var(--dim); }
+.seg-control button.on, .subview-switch button.on {
+  background: var(--card3); color: var(--fg); box-shadow: 0 0 0 1px var(--line2);
+}
+body.theme-light .seg-control button.on, body.theme-light .subview-switch button.on { background: #FFFFFF; }
+
+/* ---- buttons: one solid main action; everything else quiet ---- */
+.hero-btn {
+  background: var(--accent); color: var(--accent-fg); border-radius: var(--r);
+  min-height: 36px; font-size: var(--fs-md); font-weight: 600; letter-spacing: 0;
+  box-shadow: none;
+}
+.hero-btn .dim { color: rgba(255,255,255,.78); }
+.hero-btn:hover { transform: none; filter: brightness(1.08); box-shadow: none; }
+.hero-btn.alt { background: transparent; border: 1px solid var(--line2); color: var(--fg); }
+.hero-btn.alt:hover { background: var(--card2); border-color: var(--line2); filter: none; }
+.chip-btn {
+  background: transparent; border: 1px solid var(--line2); border-radius: var(--r-sm);
+  font-weight: 600; font-size: var(--fs-xs); padding: 3px 10px;
+}
+.chip-btn:hover { background: var(--card2); border-color: var(--line2); }
+.link-btn { color: var(--accent-text); font-weight: 600; }
+.page-actions { background: var(--bg); box-shadow: 0 -1px 0 var(--line); }
+.card > .page-actions { background: var(--card); box-shadow: none; }
+
+/* ---- Home: the edit as an ordered list ---- */
+.home-tasks.flow-steps { gap: 0; border: 1px solid var(--line); border-radius: var(--r); background: var(--card); overflow: hidden; }
+.flow-steps .task-card {
+  border: none; border-radius: 0; background: transparent; box-shadow: none; transform: none;
+  border-top: 1px solid var(--line); padding: 12px 12px; min-height: 0; gap: 12px;
+}
+.flow-steps .task-card:first-child { border-top: none; }
+.flow-steps .task-card:hover { background: var(--card2); transform: none; }
+.task-ic { background: transparent; color: var(--dim); width: 20px; height: 20px; }
+.task-ic svg { width: 18px; height: 18px; }
+.task-name { font-size: var(--fs-md); }
+.task-sub { font-size: var(--fs-sm); color: var(--dim); }
+.step-n { width: 20px; height: 20px; background: transparent; border: 1px solid var(--line2); color: var(--dim); font-weight: 600; }
+.step-state { background: transparent; border: 1px solid var(--line2); color: var(--dim); font-weight: 600; padding: 2px 8px; }
+.step-card.done .step-n { background: var(--ok-bg); border-color: var(--ok-line); color: var(--ok-text); }
+.step-card.done .step-state { border-color: var(--ok-line); background: transparent; color: var(--ok-text); }
+/* the next step: an accent edge and the accent's own button colour on the tag —
+   the one bright thing on Home */
+.step-card.next, .step-card.next:hover { background: var(--accent-soft); color: var(--fg); box-shadow: inset 3px 0 0 var(--accent); }
+.step-card.next .task-ic { background: transparent; color: var(--accent-text); }
+.step-card.next .task-sub { color: var(--dim); }
+.step-card.next .step-n { background: var(--accent); border-color: transparent; color: var(--accent-fg); }
+.step-card.next .step-state { background: var(--accent); border-color: transparent; color: var(--accent-fg); }
+.task-card.primary { background: var(--card); color: var(--fg); box-shadow: none; }
+.task-card.primary .task-ic { background: transparent; color: var(--dim); }
+.task-card.primary .task-sub { color: var(--dim); }
+.tool-btn { background: transparent; border: 1px solid var(--line); border-radius: var(--r); font-weight: 600; }
+.tool-btn:hover { background: var(--card2); border-color: var(--line2); }
+.tool-btn svg { color: var(--dim); }
+.next-step { border: 1px solid var(--line); border-style: solid; background: var(--card); border-radius: var(--r); }
+.next-step .hero-btn.small { margin: 0; width: auto; flex: 0 0 auto; }
+
+/* ---- captions: gallery + editor ---- */
+.cat-chip { border-radius: var(--r-sm); font-weight: 600; }
+.cat-chip.on { background: var(--fg); color: var(--bg); border-color: transparent; }
+.tpl-thumb { border-radius: var(--r); }
+.tpl-card:hover .tpl-thumb { transform: none; box-shadow: 0 0 0 1px var(--line2); }
+.tpl-card.on .tpl-thumb { box-shadow: 0 0 0 2px var(--accent); }
+.tpl-card.on .tpl-name { color: var(--accent-text); }
+.toast { background: var(--card3); color: var(--fg); border: 1px solid var(--line2); border-radius: var(--r); box-shadow: 0 8px 24px rgba(0,0,0,.28); font-weight: 500; }
+.toast.err { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger-line); }
+body.theme-light .toast { background: #1E2126; color: #F2F3F5; border-color: transparent; }
+body.theme-light .toast.err { background: #FFF1F0; color: #8E1B14; border-color: var(--danger-line); }
+.tab.active { background: var(--accent-soft); border-color: transparent; color: var(--accent-text); }
+
+/* a leading emoji on a control is kept in its text but not shown (main.js emoWrap) */
+.emo { display: none; }
+
+/* colour swatches line up on the left edge like every other control */
+.swatches { justify-content: flex-start; gap: 12px; }
+.sw { flex: 0 0 auto; align-items: flex-start; font-weight: 600; }
+.customizer .val { font-weight: 600; }
+.cust-group-title { font-size: var(--fs-xs); font-weight: 600; letter-spacing: .06em; color: var(--dim); }

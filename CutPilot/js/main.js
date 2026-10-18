@@ -2255,6 +2255,15 @@
       // the owner picked another page in the sidebar: put the old message away
       if (ev && ev.isTrusted && !wasActive) dismissToast();
       var oldTab = document.querySelector('.tab.active'), oldPage = document.querySelector('.tab-page.active');
+      // remember where the owner came from, so ‹ back returns there (it
+      // always went to Home: leaving the caption editor lost the gallery,
+      // "Transcribe first" from Shorts lost Shorts)
+      if (!wasActive && oldTab && !_navBacking) {
+        var from = oldTab.dataset.tab;
+        if (_navHistory[_navHistory.length - 1] !== from) _navHistory.push(from);
+        if (this.dataset.tab === 'home') _navHistory = [];   // Home is the start of every path
+        if (_navHistory.length > 20) _navHistory.shift();
+      }
       if (oldTab) oldTab.classList.remove('active');
       if (oldPage) oldPage.classList.remove('active');
       this.classList.add('active');
@@ -2277,6 +2286,7 @@
       // go back to check if we have any." It used to land in the editor of the
       // last style. Now it always opens on the gallery; "✨ Add captions" sits
       // in a bar pinned under it, so the action is never more than one tap away.
+      if (this.dataset.tab === 'home' || this.dataset.tab === 'chapters') { try { refreshFlow(); } catch (eFl) {} }
       if (this.dataset.tab === 'transcribe') { try { refreshAiFixSwitch(); } catch (eAf) {} }
       if (this.dataset.tab === 'captions') {
         try { refreshEditWordsButtons(); } catch (eEw) {}
@@ -2337,12 +2347,99 @@
      keeps the message that explains why. */
   function dismissToast() { var t = $('toast'); if (t) t.classList.add('hidden'); }
   function goPage(name) { dismissToast(); showPage(name); }
+  /* ‹ back: one step back, the way the owner came — out of the style editor
+     to the gallery first, then to the page before, and Home last. */
+  /* Where the edit stands, per sequence: Home shows each step done / next /
+     optional. Words and captions are read from what Pulse holds; Clean up,
+     cameras and shorts are marked when they finish. */
+  var FLOW_STEPS = ['transcribe', 'silence', 'multicam', 'captions', 'shorts'];
+  function flowKey() { return 'pulse.flow.' + (((state.env || {}).sequenceName) || 'none'); }
+  function flowDone() { try { return JSON.parse(localStorage.getItem(flowKey()) || '{}') || {}; } catch (e) { return {}; } }
+  function markStepDone(step) {
+    try { var d = flowDone(); d[step] = Date.now(); localStorage.setItem(flowKey(), JSON.stringify(d)); } catch (e) {}
+    try { refreshFlow(); } catch (e2) {}
+  }
+  function hasWords() {
+    try { var sg = highlightSegments(); if (sg && sg.length) return true; } catch (e) {}
+    return !!(state.transcriptWords && state.transcriptWords.length);
+  }
+  function refreshFlow() {
+    var d = flowDone(), done = {
+      transcribe: hasWords(),
+      silence: !!d.silence, multicam: !!d.multicam,
+      captions: !!(state.lastCaptionJob && state.lastCaptionJob.cues && state.lastCaptionJob.cues.length),
+      shorts: !!d.shorts
+    };
+    // the next step: the first one not done that is not optional
+    var next = !done.transcribe ? 'transcribe' : (!done.captions ? 'captions' : (!done.shorts ? 'shorts' : null));
+    // pages that need the words say so, with the way there (‹ back returns)
+    var nw = document.querySelectorAll('.needs-words');
+    for (var k = 0; k < nw.length; k++) nw[k].classList.toggle('hidden', done.transcribe);
+    FLOW_STEPS.forEach(function (st) {
+      var card = document.querySelector('.step-card[data-step="' + st + '"]'); if (!card) return;
+      var tag = card.querySelector('.step-state');
+      card.classList.toggle('done', done[st]);
+      card.classList.toggle('next', st === next);
+      card.classList.toggle('primary', st === next);
+      if (tag) tag.textContent = done[st] ? '✓ Done' : (st === next ? (st === 'transcribe' ? 'Start here' : 'Next') :
+        ((st === 'silence' || st === 'multicam') ? 'Optional' : ''));
+    });
+  }
+  var _navHistory = [], _navBacking = false;
+  function goBack() {
+    dismissToast();
+    var page = document.body.getAttribute('data-page') || 'home';
+    if (page === 'captions') {
+      var vt = $('view-templates');
+      if (vt && vt.classList.contains('hidden')) { showView('templates'); return; }
+    }
+    var prev = null;
+    while (_navHistory.length && (!prev || prev === page)) prev = _navHistory.pop();
+    _navBacking = true;
+    try { showPage(prev && prev !== page ? prev : 'home'); } finally { _navBacking = false; }
+  }
 
   /* The shell around the pages: ‹ back / the logo → Home, ⚙ → Settings, the
      Home task cards and More-tools buttons (data-go = the page they open), and
      every small ⓘ, which shows or hides the longer explanation it names. */
+  /* Studio look: a leading emoji on a button, label or heading is hidden on
+     screen (span.emo) — emoji as markers read as clutter — while the text
+     itself stays whole, so scripts and the tests that find a control by its
+     words still find it. Runs on what the panel adds later too. */
+  var EMO_LEAD = /^(\s*)((?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF\u2B00-\u2BFF\u2300-\u23FF]|\u25B6(?=\uFE0F))(?:\uFE0F)?(?:\u200D(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F)?)*(?:[\uD83C][\uDDE6-\uDDFF])?)(\s+)(?=\S)/;
+  var EMO_SEL = 'button, summary, label, .step-title, .cust-group-title, .field-label, .lib-section, h1, h2, h3, h4';
+  function emoWrap(el) {
+    if (!el || !el.firstChild || (el.closest && el.closest('.toast, .info-pop, .log, #diag-out, textarea'))) return;
+    var node = el.firstChild;
+    while (node && node.nodeType === 1 && /^(INPUT|SVG|svg)$/.test(node.nodeName)) node = node.nextSibling;
+    if (!node || node.nodeType !== 3) return;
+    var m = EMO_LEAD.exec(node.nodeValue);
+    if (!m || /^\u26A0/.test(m[2])) return;          // ⚠️ means "warning": it stays
+    var sp = document.createElement('span'); sp.className = 'emo'; sp.textContent = m[1] + m[2];
+    node.nodeValue = node.nodeValue.slice(m[1].length + m[2].length);
+    el.insertBefore(sp, node);
+  }
+  function emoSweep(root) {
+    try {
+      if (root.nodeType === 1 && root.matches && root.matches(EMO_SEL)) emoWrap(root);
+      var list = root.querySelectorAll ? root.querySelectorAll(EMO_SEL) : [];
+      for (var i = 0; i < list.length; i++) emoWrap(list[i]);
+    } catch (e) {}
+  }
+  function wireEmoSweep() {
+    emoSweep(document.body);
+    if (!window.MutationObserver) return;
+    new MutationObserver(function (muts) {
+      for (var i = 0; i < muts.length; i++) {
+        var t = muts[i].target;
+        if (muts[i].type === 'characterData') t = t.parentNode;
+        if (t && t.nodeType === 1) emoSweep(t);
+      }
+    }).observe(document.body, { childList: true, subtree: true, characterData: true });
+  }
   function wireShell() {
-    if ($('nav-back')) $('nav-back').addEventListener('click', function () { goPage('home'); });
+    wireEmoSweep();
+    if ($('nav-back')) $('nav-back').addEventListener('click', goBack);
     if ($('nav-home')) $('nav-home').addEventListener('click', function () { goPage('home'); });
     if ($('nav-settings')) $('nav-settings').addEventListener('click', function () { goPage('settings'); });
     var go = document.querySelectorAll('[data-go]');
@@ -2958,7 +3055,10 @@
     return out;
   }
 
+  var _flowTimer = null;
+  function refreshFlowSoon() { clearTimeout(_flowTimer); _flowTimer = setTimeout(function () { try { refreshFlow(); } catch (e) {} }, 400); }
   function setTranscriptBar(cls, ico, text, btn) {
+    refreshFlowSoon();
     $('tr-bar').className = 'tr-bar' + (cls ? ' ' + cls : '');
     $('tr-ico').textContent = ico;
     $('tr-text').textContent = text;
@@ -7635,7 +7735,9 @@
     if (!opts.silent) {
       setCapMethod('animated');   // picking a style is the Animated path
       trackRecent(p.id);
-      toast('Applied "' + p.name + '". Tweak it below, then Add captions.');
+      // the style's name heads the editor; a message on every pick only
+      // covered the page ("Applied 'Bold Pop'. Tweak it below…")
+      dismissToast();
     }
   }
 
@@ -9658,7 +9760,7 @@
     if (back) back.addEventListener('click', function () {
       setCapOut('png');
       saveLook();
-      toast('Caption type is now ✨ Pulse-rendered — every setting is back.');
+      toast('Caption type is now 🖼 Exact look — every setting is back.');
     });
     var box = $('cap-output'); if (!box) return;
     var btns = box.querySelectorAll('button');
@@ -9809,6 +9911,7 @@
      after the panel/Premiere is reopened — editing is never "lost" once you've
      generated. Keyed by sequence so it doesn't leak across projects. */
   function saveLastCaptionJob() {
+    refreshFlowSoon();
     try {
       if (!state.lastCaptionJob) return;
       var lj = state.lastCaptionJob;
@@ -13662,7 +13765,7 @@
     if (pick.none && !_fontSwapToasted[want + '>none']) {
       _fontSwapToasted[want + '>none'] = 1;
       try { diag('fonts', 'send-time: no installed font draws these Hindi words for "' + want + '"'); } catch (eD2) {}
-      toast('No font installed on this computer can draw these Hindi words in editable captions, so they may come out blank. Use ✨ Pulse-rendered captions for Hindi, or install a Hindi font such as Kohinoor Devanagari.', true);
+      toast('No font installed on this computer can draw these Hindi words in editable captions, so they may come out blank. Use 🖼 Exact look captions for Hindi, or install a Hindi font such as Kohinoor Devanagari.', true);
     }
     return want;
   }
@@ -14436,7 +14539,7 @@
       if (!v.checked || !v.blank.length) return;
       confirmInline('⚠️ Premiere drew NO words for your editable captions at ' + v.blank.map(function (t) { return t.toFixed(1) + ' s'; }).join(', ') +
         ' (its frames are in Documents → Pulse → caption-check). Your editable captions are still on V' + track + '.\n\n' +
-        'Replace them with ✨ Pulse-rendered captions — same style, always visible?', 'Use Pulse-rendered', function (yes) {
+        'Replace them with 🖼 Exact look captions — same style, always visible?', 'Use 🖼 Exact look', function (yes) {
         if (!yes) return toast('Kept your editable captions on V' + track + '. Tap 📋 Copy diagnostics in Settings and send it — it says what Premiere drew.');
         var mCues;
         try { mCues = readSelectedTranscript(); } catch (eR) { return toast(eR.message, true); }
@@ -15689,7 +15792,7 @@
         prog.classList.remove('hidden'); prog.textContent = 'Cleaning your timeline…';
         return applyCleanCuts(ranges, plan, { closeGaps: true, backup: true, flow: 'Clean up my video' }).then(function (rr) {
           prog.classList.add('hidden');
-          toast('✨ Cleaned! Removed ' + cutDoneText(rr, ranges) + '. Captions & takes follow the cut — run any other step or add captions with no re-transcribe. ' + backupText(rr));
+          markStepDone('silence'); toast('✨ Cleaned! Removed ' + cutDoneText(rr, ranges) + '. Captions & takes follow the cut — run any other step or add captions with no re-transcribe. ' + backupText(rr));
         });
       });
     }).catch(function (e) {
@@ -16192,7 +16295,7 @@
         if ($('takes-results')) $('takes-results').classList.add('hidden');
         var n = (r.cuts != null) ? r.cuts : removed.length;
         var secs = (r.removedSeconds != null) ? r.removedSeconds : removed.reduce(function (a, x) { return a + (x.end - x.start); }, 0);
-        toast('🎬 Removed ' + n + ' take' + (n === 1 ? '' : 's') + ' (' + secs.toFixed(1) + 's). Transcript auto-synced — run any other Auto-Edit step or add captions, no re-transcribe needed. ⌘Z / Ctrl+Z undoes it.');
+        markStepDone('silence'); toast('🎬 Removed ' + n + ' take' + (n === 1 ? '' : 's') + ' (' + secs.toFixed(1) + 's). Transcript auto-synced — run any other Auto-Edit step or add captions, no re-transcribe needed. ⌘Z / Ctrl+Z undoes it.');
       }).catch(function (e) { toast('Take cut failed: ' + e.message, true); });   // the list stays: nothing was cut
   }
   if ($('btn-takes-apply')) $('btn-takes-apply').addEventListener('click', function () { applyTakes(true); });
@@ -17532,11 +17635,11 @@
           if (_capOut === 'editable') applyEditableStyle({ cues: CPShorts.sentenceCues(plan.words), words: plan.words });
           else runCaptionPipeline(CPShorts.sentenceCues(plan.words), { wordCues: plan.words });
         }, 400);
-        toast('🎬 Made the ' + what + '. Adding captions now…');
+        markStepDone('shorts'); toast('🎬 Made the ' + what + '. Adding captions now…');
         return;
       }
       prog.classList.add('hidden');
-      toast('🎬 Made the ' + what + (o.caps && !plan.words.length ? '. (No word timing for captions — transcribe first.)' : '.'));
+      markStepDone('shorts'); toast('🎬 Made the ' + what + (o.caps && !plan.words.length ? '. (No word timing for captions — transcribe first.)' : '.'));
     }).catch(function (e) { prog.classList.add('hidden'); toast('Make clip failed: ' + e.message, true); });
   }
   var _podLast = null;
@@ -19415,7 +19518,7 @@
       } else if (state.mcPlanWarning) {
         // applied, but the plan itself carries a warning (unheard stretches,
         // a pairing that disagrees with the mics) — don't let it read as success
-        toast('🎬 Multicam applied — ' + r.razored + ' cuts, but: ' + state.mcPlanWarning.replace(/^⚠️\s*/, ''), true);
+        markStepDone('multicam'); toast('🎬 Multicam applied — ' + r.razored + ' cuts, but: ' + state.mcPlanWarning.replace(/^⚠️\s*/, ''), true);
       } else if (!r.razored && !r.toggled && !r.audioRestored && !r.audioKeptOff) {
         // Redo (or Apply again) with the same settings: the timeline already
         // shows exactly this edit — "applied — 0 cuts, 0 angle toggles" read as
@@ -19426,12 +19529,12 @@
         // the cameras switched as planned, but some sound the owner had
         // switched off is on again: Premiere would not switch it off without
         // taking the picture with it
-        toast('🎬 Multicam applied — ' + r.razored + ' cuts. ' + r.audioLinkedOn + ' bit' + (r.audioLinkedOn > 1 ? 's' : '') +
+        markStepDone('multicam'); toast('🎬 Multicam applied — ' + r.razored + ' cuts. ' + r.audioLinkedOn + ' bit' + (r.audioLinkedOn > 1 ? 's' : '') +
               ' of camera sound you had switched off ' + (r.audioLinkedOn > 1 ? 'are' : 'is') + ' on again, because Premiere links it to the picture. ' +
               'To keep it off: select the camera clips, right-click ▸ Unlink, then Apply again.', true);
       } else {
         var heardLine = (state.mcAnalysis && state.mcAnalysis.coverage) ? (' ' + state.mcAnalysis.coverage.line.replace(/^⏱\s*/, '') + '.') : '';
-        toast('🎬 Multicam applied — ' + r.razored + ' cuts, ' + r.toggled +
+        markStepDone('multicam'); toast('🎬 Multicam applied — ' + r.razored + ' cuts, ' + r.toggled +
               ' angle toggles across the full ' + fmt(r.seqEnd) + ' timeline.' + heardLine);
       }
       return r;
@@ -19833,19 +19936,19 @@
       el.textContent = (settings.groqKey || '').trim() ? '✅ Speech key ready — Pulse can write your words.'
         // a build with its own key hides the box — never ask for it then
         : KEY_BUNDLED ? '✅ Transcription is built in — just pick your language.'
-        : '👇 Paste your free speech key below.';
+        : 'Paste your free speech key below.';
       return;
     }
     if (resolved === 'cloud-swara') {
       el.textContent = cpSarvamKey()
         ? '✅ Indian-language key ready.'
-        : '👇 Paste your key under More speech options.';
+        : 'Paste your key under More speech options.';
       return;
     }
     if (resolved === 'cloud-deepgram') {
       el.textContent = cpDeepgramKey()
         ? '✅ Retake-finder key ready — it writes your words too.'
-        : '👇 Paste your key under More speech options.';
+        : 'Paste your key under More speech options.';
       return;
     }
     var w = resolveWhisper(), m = resolveWhisperModel();
@@ -19855,7 +19958,7 @@
     // NO key - so the panel told the user there was nothing to set up, then
     // refused to transcribe without a key. Only say "built in" when it is true.
     else if (KEY_BUNDLED) { el.textContent = '✅ Transcription is built in — just pick your language.'; }
-    else { el.textContent = '👇 Paste your free speech key below to switch it on.'; }
+    else { el.textContent = 'Paste your free speech key below to turn it on.'; }
     var note = $('set-quality-note');
     if (note) { var q = (settings.whisperQuality || 'auto-best'); var qo = WHISPER_QUALITIES.filter(function (x) { return x.value === q; })[0]; note.textContent = qo ? '· ' + qo.label.replace(/^[^·]*· /, '') : ''; }
   }
