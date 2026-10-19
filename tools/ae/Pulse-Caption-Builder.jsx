@@ -19,6 +19,8 @@
  *   Box Color · Word Box Color · Box Opacity · Box Roundness ·
  *   Shadow Opacity · Shadow Distance · Animation (None / Pop / Fade / Slide up)
  *
+ * v6: a growing spoken word spaces its letters as they grow (r5 grew each
+ * letter in place and they ran into each other in Premiere: "PA|SE").
  * v5: the spoken word drops its outline when it sits on a word box.
  * v4 adds: Text Gradient (on/off) + Text Color 2 (the warm top-to-bottom
  * gradient of Sunset Fade), Upcoming Opacity (words not yet said stay faint,
@@ -150,6 +152,18 @@
     grp.property('ADBE Transform Group').property('ADBE Rotate Z').expression = C + '("Tilt")(1);';
     var FADE = ANIM + '\n(an == 3 ? e : 1) * (ex == 2 || ex == 3 ? x : 1) * ';
 
+    // v6: a growing spoken word is spaced as it grows. Each letter grows by
+    // Grow % of its own width, so the word's letters are spread by Grow % of
+    // the word's width shared over its letters. Tracking is measured, not
+    // assumed: two guide layers (the same ten letters, with and without
+    // tracking 100) give the pixels one tracking step is on this machine.
+    var TRACK = [
+      'var g = ' + C + '("Spoken Word Grow")(1) / 100;',
+      'var m = thisComp.layer("Measure Word"), n = ("" + m.text.sourceText).length;',
+      'var u = thisComp.layer("Tracking Probe").sourceRectAtTime(time, false).width - thisComp.layer("Tracking Base").sourceRectAtTime(time, false).width;',
+      '(g > 0 && n > 0 && u > 0) ? g * m.sourceRectAtTime(time, false).width / n / (u / 900) : 0;'
+    ].join('\n');
+
     // ---- the caption text ----------------------------------------------------
     var cap = comp.layers.addText('AAJ PAISE KI BAAT');
     cap.name = 'Caption';
@@ -174,7 +188,10 @@
     cap.property('ADBE Transform Group').property('ADBE Anchor Point').expression =
       'var r = sourceRectAtTime(time, false); [0, r.top + r.height / 2];';
     cap.property('ADBE Transform Group').property('ADBE Opacity').expression = FADE + '100;';
-    try { cap.property('ADBE Text Properties').property('ADBE Text More Options').property('ADBE Text Anchor Point Grouping').setValue(2); } catch (eGrp) {}
+    // letters grow around their own middles (Anchor Point Grouping:
+    // Character, After Effects' default); the spoken word's tracking below
+    // spaces them as they grow. (r5 asked for Word by a name After Effects
+    // does not know — the letters of a growing word ran into each other.)
 
     // After Effects can leave a reference stale after something is added next
     // to it, so every step below looks its animator up again by name.
@@ -204,6 +221,7 @@
     sel.property('ADBE Text Index End').expression = C + '("Spoken Index")(1) + 1;';
     addProp('Spoken Word', 'ADBE Text Fill Color', C + '("Spoken Word Color")(1);');
     addProp('Spoken Word', 'ADBE Text Scale 3D', 'var g = 100 + ' + C + '("Spoken Word Grow")(1); value.length > 2 ? [g, g, 100] : [g, g];');
+    addProp('Spoken Word', 'ADBE Text Tracking Amount', TRACK);
     // on a box (Box: Spoken word / Line and spoken word) the spoken word has
     // no outline, as the image draws it (Ticker, Acid Lime, Focus came out
     // with a dark ring inside their box)
@@ -259,6 +277,7 @@
     gAnims().property('Spoken Word').property('ADBE Text Selectors').property(1).property('ADBE Text Index End').expression = C + '("Spoken Index")(1) + 1;';
     gAnims().property('Spoken Word').property('ADBE Text Animator Properties').addProperty('ADBE Text Scale 3D').expression =
       'var g = 100 + ' + C + '("Spoken Word Grow")(1); value.length > 2 ? [g, g, 100] : [g, g];';
+    gAnims().property('Spoken Word').property('ADBE Text Animator Properties').addProperty('ADBE Text Tracking Amount').expression = TRACK;
     gAnims().property('Spoken Word').property('ADBE Text Animator Properties').addProperty('ADBE Text Opacity').expression = '0;';
     upcoming(gl);
     var ramp = gl.property('ADBE Effect Parade').addProperty('ADBE Ramp');
@@ -302,6 +321,27 @@
     measure('Measure Line', 'var t = w.join(" ");');
     measure('Measure Upto', 'var t = w.slice(0, po + 1).join(" ");');
     measure('Measure Word', 'var t = w[Math.min(po, w.length - 1)];');
+    // ten letters in the caption's face, without and with tracking 100
+    function probe(name, trackingOn) {
+      var m = comp.layers.addText('MMMMMMMMMM');
+      m.name = name;
+      m.guideLayer = true;
+      m.parent = cap;
+      m.property('ADBE Transform Group').property('ADBE Position').setValue([0, 0]);
+      m.property('ADBE Transform Group').property('ADBE Opacity').setValue(0);
+      m.property('ADBE Text Properties').property('ADBE Text Document').expression =
+        'thisComp.layer("Caption").text.sourceText.style.setText("MMMMMMMMMM");';
+      if (trackingOn) {
+        var pa = m.property('ADBE Text Properties').property('ADBE Text Animators').addProperty('ADBE Text Animator');
+        pa.name = 'Tracking';
+        m.property('ADBE Text Properties').property('ADBE Text Animators').property('Tracking').property('ADBE Text Selectors').addProperty('ADBE Text Selector');
+        m.property('ADBE Text Properties').property('ADBE Text Animators').property('Tracking').property('ADBE Text Animator Properties')
+          .addProperty('ADBE Text Tracking Amount').setValue(100);
+      }
+      return m;
+    }
+    probe('Tracking Base', false);
+    probe('Tracking Probe', true);
 
     // ---- the two boxes (below the text) -----------------------------------
     // Box: 1 None · 2 Whole line · 3 Spoken word · 4 Line and spoken word
@@ -389,6 +429,16 @@
       var gOp = gl.property('ADBE Transform Group').property('ADBE Opacity').valueAtTime(1, false);
       if (gOp > 0) exprErrors.push('Gradient Text > Opacity is ' + gOp + ' with Text Gradient off (should be 0)');
     } catch (eG) {}
+
+    // with the spoken word growing, its letters are spaced apart
+    try {
+      var gw = ctl.effect('Spoken Word Grow').property(1);
+      gw.setValue(25);
+      var trk = cap.property('ADBE Text Properties').property('ADBE Text Animators').property('Spoken Word')
+        .property('ADBE Text Animator Properties').property('ADBE Text Tracking Amount').valueAtTime(1, false);
+      gw.setValue(0);
+      if (!(trk > 0)) exprErrors.push('Spoken Word > Tracking is ' + trk + ' with Spoken Word Grow 25 (should space the letters)');
+    } catch (eT) { exprErrors.push('(could not check the growing word: ' + eT.toString() + ')'); }
 
     // ---- Essential Graphics: the only controls Premiere shows --------------
     comp.motionGraphicsTemplateName = NAME;

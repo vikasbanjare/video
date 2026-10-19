@@ -1,10 +1,29 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.49** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.50** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.50 — from the owner's style test on v0.10.48 (12 close / 124 far)
+- The sheets showed most "far" styles look alike to the eye; the real
+  faults: (1) Premiere broke every growing spoken word ("PA|SE", letters
+  crashing): r5 asked for Anchor Point Grouping = Word by a matchName AE
+  does not know, so letters grew in place. Builder v6 adds a Spoken Word
+  tracking animator (Caption + Gradient Text) = Grow × word width / letters,
+  in tracking steps measured by two guide layers (Tracking Base / Probe);
+  its self-check reads the tracking at Grow 25. NOT VERIFIED in real AE.
+  Until the owner exports v6, the grow rides only an engine with the
+  'grow' feature (pulseGrow): r5 sends Grow 0 and the preview shows it.
+  When a v6 mogrt arrives: bundle it as Pulse_Caption_r6.mogrt and add
+  "grow" to its index.json features.
+  (2) The preview promised what Premiere cannot draw: coloured glow → black
+  shadow, a smaller second line (subScale) → one size, Bold drawn as 800
+  (ExtraBold) → 700, regular 400.
+- styleTestScore lays Premiere's caption box onto the preview's (size and
+  a hair of offset no longer count in every block), 12 px blocks, plus a
+  shape term (one line vs two); the size difference is reported apart.
 
 ### v0.10.48 — redesign: Home tiles, ‹ back where you came from, studio look
 - Owner rejected Home as a numbered flow ("podcast camera is a completely

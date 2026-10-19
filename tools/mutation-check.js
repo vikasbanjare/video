@@ -3005,6 +3005,39 @@ const MUTANTS = [
     repl: '',
     gate: 'CutPilot/test/gates/ui-shell.js',
     why: "‹ from a style's editor leaves Captions instead of showing the styles"
+  },
+  // v50: from the owner's style test on v0.10.48
+  {
+    name: 'v50-grow-on-r5',
+    file: 'CutPilot/js/main.js',
+    find: "  function pulseGrow(L) { return pulseEngineHas('grow') ? L.grow : 0; }",
+    repl: '  function pulseGrow(L) { return L.grow; }',
+    gate: 'CutPilot/test/gates/pulse-engine.js',
+    why: 'r5 grows the spoken word letter by letter and they crash ("PA|SE")'
+  },
+  {
+    name: 'v50-preview-coloured-glow',
+    file: 'CutPilot/js/main.js',
+    find: "    if (!L.shadowOpacity) out.glow = null; else out.glow = '#000000';",
+    repl: '    if (!L.shadowOpacity) out.glow = null;',
+    gate: 'CutPilot/test/gates/caption-originals.js',
+    why: 'the editable preview promises a coloured glow Premiere draws black'
+  },
+  {
+    name: 'v50-preview-two-tier',
+    file: 'CutPilot/js/main.js',
+    find: '    out.subScale = 1;',
+    repl: '',
+    gate: 'CutPilot/test/gates/caption-originals.js',
+    why: 'the editable preview shows a smaller second line Premiere draws full size'
+  },
+  {
+    name: 'v50-builder-no-spacing',
+    file: 'tools/ae/Pulse-Caption-Builder.jsx',
+    find: "    addProp('Spoken Word', 'ADBE Text Tracking Amount', TRACK);",
+    repl: '',
+    gate: 'CutPilot/test/gates/ae-caption-builder.js',
+    why: 'the v6 template grows the spoken word without spacing its letters'
   }
 ];
 

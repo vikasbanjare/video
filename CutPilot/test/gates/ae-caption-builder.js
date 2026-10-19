@@ -55,7 +55,31 @@ Node.prototype.setValue = function (v) { this.v = v; };
 Object.defineProperty(Node.prototype, 'numProperties', { get() { return this.kids.length; } });
 Object.defineProperty(Node.prototype, 'propertyType', { get() { return this.kids.length ? 2 : 1; } });
 Object.defineProperty(Node.prototype, 'expressionError', { get() { return (process.env.FAIL_EXPR && this.expr && this.expr.indexOf(process.env.FAIL_EXPR) >= 0) ? 'Error: boom' : ''; } });
-Node.prototype.valueAtTime = function () { return this.v != null ? this.v : 0; };
+Node.prototype.valueAtTime = function () {
+  // the growing word's tracking is an expression: After Effects runs it here
+  // (the builder's self-check reads it with Spoken Word Grow at 25)
+  if (this.expr && this.matchName === 'ADBE Text Tracking Amount' && this.layer && this.layer.name === 'Caption' && /Tracking Probe/.test(this.expr)) {
+    const ctlLayer = comp.layers.list.find(l => l.name === 'Controls');
+    const g = ctlLayer ? ctlLayer.effect('Spoken Word Grow').property(1).v : 0;
+    return trackingFor(this.expr, g, 0.075).T;
+  }
+  return this.v != null ? this.v : 0;
+};
+// the growing word's tracking in a small world: the spoken word PAISE (5
+// letters, 40 px each), ten probe letters 400 px wide, and one tracking step
+// of u px (1/1000 em at the 75 px face = 0.075 px; or 1 px, as the owner's
+// Premiere seemed to act on Letter Spacing)
+function trackingFor(expr, grow, u) {
+  const thisComp = { layer(n) {
+    if (n === 'Controls') return { effect: (e) => () => (e === 'Spoken Word Grow' ? grow : 0) };
+    if (n === 'Measure Word') return { text: { sourceText: { toString: () => 'PAISE' } }, sourceRectAtTime: () => ({ left: 0, top: -55, width: 200, height: 70 }) };
+    if (n === 'Tracking Base') return { sourceRectAtTime: () => ({ left: 0, top: -55, width: 400, height: 70 }) };
+    if (n === 'Tracking Probe') return { sourceRectAtTime: () => ({ left: 0, top: -55, width: 400 + 900 * u, height: 70 }) };
+    throw new Error('no layer ' + n);
+  } };
+  const T = run(expr, { thisComp, time: 1, value: 0 });
+  return { T, px: T * u };
+}
 // After Effects rebuilds a dropdown effect when its menu is filled: the old
 // reference goes stale and the name resets (the owner's AE: "null is not an
 // object" when the script looked it up by the name it had set)
@@ -222,6 +246,17 @@ if (!process.env.FAIL_EXPR) {
   const a = rec.alerts.find(x => /reports \d+ problem/.test(x)) || '';
   if (/do not export yet/.test(a) && /Gradient Text > .*Opacity: Error: boom/.test(a)) console.log('  I. FAILED-EXPR-REPORTED');
   process.exit(0);
+}
+
+// K. v6: a growing word spaces its letters (r5 grew each letter in place and
+// they ran into each other in Premiere: "PA|SE"), whatever unit a tracking
+// step is; the gradient copy is spaced the same, so it stays on the letters
+{
+  const capT = exprOf('Caption', /Spoken Word › .*Tracking Amount/), gT = exprOf('Gradient Text', /Spoken Word › .*Tracking Amount/);
+  const a = capT ? trackingFor(capT, 25, 0.075) : {}, b = capT ? trackingFor(capT, 25, 1) : {}, z = capT ? trackingFor(capT, 0, 1) : {};
+  (capT && gT === capT && Math.abs(a.px - 10) < 0.01 && Math.abs(b.px - 10) < 0.01 && z.T === 0 ? ok : bad)(
+    'K. Grow 25 on PAISE (5 letters, 200 px) spreads its letters 10 px each — in 1/1000 em or in pixels — 0 without grow; the gradient copy the same',
+    JSON.stringify({ capT: !!capT, same: gT === capT, a, b, z }));
 }
 
 // J. v5: no outline on the spoken word over a word box

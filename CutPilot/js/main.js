@@ -5354,24 +5354,37 @@
     if (!onBlack) { var c2 = document.createElement('canvas'); c2.width = img.width; c2.height = img.height; c2.getContext('2d').drawImage(img, 0, 0); raw = c2.getContext('2d').getImageData(0, 0, c.width, c.height).data; }
     return { canvas: c, data: d.data, box: captionBox(onBlack ? d.data : raw, c.width, c.height, onBlack), W: c.width, H: c.height };
   }
-  /* 0 = the same look … 100 = nothing alike: the two captions centred on each
-     other, compared in 8 px blocks over the larger of the two boxes. */
+  /* 0 = the same look … 100 = nothing alike. The two captions are laid on
+     each other box to box — the Premiere one stretched onto the preview's —
+     and compared in 12 px blocks, so a caption a few % bigger or a hair to
+     the side no longer reads as "different" in every block (the owner's
+     v0.10.48 sheets: Crisp, Monolith, Two-Speaker looked the same and scored
+     30–38%). A different SHAPE (one line vs two, a missing second line)
+     still counts, and the size is reported on its own (styleTestSize). */
   function styleTestScore(a, b) {
     if (!a.box || !b.box) return 100;
-    var w = Math.max(a.box.w, b.box.w) + 16, h = Math.max(a.box.h, b.box.h) + 16, B = 8, d = 0, n = 0;
-    var ax = a.box.x + a.box.w / 2 - w / 2, ay = a.box.y + a.box.h / 2 - h / 2;
-    var bx = b.box.x + b.box.w / 2 - w / 2, by = b.box.y + b.box.h / 2 - h / 2;
+    var pad = 8, B = 12, d = 0, n = 0;
+    var w = a.box.w + 2 * pad, h = a.box.h + 2 * pad;
+    var sx = (b.box.w + 2 * pad) / w, sy = (b.box.h + 2 * pad) / h;
+    var ax = a.box.x - pad, ay = a.box.y - pad, bx = b.box.x - pad, by = b.box.y - pad;
     function px(o, x, y) { x = Math.round(x); y = Math.round(y); if (x < 0 || y < 0 || x >= o.W || y >= o.H) return [0, 0, 0]; var i = (y * o.W + x) * 4; return [o.data[i], o.data[i + 1], o.data[i + 2]]; }
-    for (var by0 = 0; by0 < h; by0 += B) for (var bx0 = 0; bx0 < w; bx0 += B) {
+    for (var y0 = 0; y0 < h; y0 += B) for (var x0 = 0; x0 < w; x0 += B) {
       var sa = [0, 0, 0], sb = [0, 0, 0], k = 0;
       for (var yy = 0; yy < B; yy += 2) for (var xx = 0; xx < B; xx += 2) {
-        var p1 = px(a, ax + bx0 + xx, ay + by0 + yy), p2 = px(b, bx + bx0 + xx, by + by0 + yy);
+        var p1 = px(a, ax + x0 + xx, ay + y0 + yy), p2 = px(b, bx + (x0 + xx) * sx, by + (y0 + yy) * sy);
         for (var c = 0; c < 3; c++) { sa[c] += p1[c]; sb[c] += p2[c]; } k++;
       }
       if (sa[0] + sa[1] + sa[2] + sb[0] + sb[1] + sb[2] < 30 * k) continue;   // empty in both
       d += (Math.abs(sa[0] - sb[0]) + Math.abs(sa[1] - sb[1]) + Math.abs(sa[2] - sb[2])) / (3 * 255 * k); n++;
     }
-    return n ? Math.round(1000 * d / n) / 10 : 0;
+    // a caption squeezed into another shape (two lines vs one) is different
+    var shape = 40 * Math.abs(Math.log(sx / sy));
+    return Math.min(100, Math.round(10 * ((n ? 100 * d / n : 0) + shape)) / 10);
+  }
+  /* How much bigger (+) or smaller (−) Premiere drew the caption, in %. */
+  function styleTestSize(pv, prem) {
+    if (!pv || !prem || !pv.box || !prem.box) return 0;
+    return Math.round(100 * (Math.sqrt((prem.box.w * prem.box.h) / (pv.box.w * pv.box.h)) - 1));
   }
   function loadImageFile(p) {
     return new Promise(function (res) { loadRenderedFrame(p, function (im) { res(im || null); }); });
@@ -5517,7 +5530,7 @@
                 e = ims[2] ? styleTestPixels(ims[2], false) : null;
             rows.push({ id: t.id, name: t.name || t.id, img: a, prem: b, pv: e,
                         imgScore: (a && b) ? styleTestScore(a, b) : 100,
-                        score: (e && b) ? styleTestScore(e, b) : 100,
+                        score: (e && b) ? styleTestScore(e, b) : 100, size: styleTestSize(e, b),
                         why: !b ? 'Premiere did not draw it' : (!b.box ? 'Premiere drew no caption' : (!e || !e.box ? 'no editable preview' : '')) });
           }, function (e) { rows.push({ id: t.id, name: t.name || t.id, score: 100, why: 'test error: ' + (e && e.message) }); });
         });
@@ -5563,7 +5576,8 @@
       var works = rows.filter(function (x) { return x.score < 7; });
       var fix = rows.filter(function (x) { return x.score >= 7; });
       var simpler = rows.filter(function (x) { return x.cannot.length; });
-      var line = function (x) { return (x.score + '%').padStart(7) + '  ' + x.id + (x.why ? '  — ' + x.why : '') + '   (image vs editable ' + x.imgScore + '%)'; };
+      var line = function (x) { return (x.score + '%').padStart(7) + '  ' + x.id + (x.why ? '  — ' + x.why : '') + '   (image vs editable ' + x.imgScore + '%' +
+        (Math.abs(x.size || 0) >= 8 ? '; Premiere draws it ' + Math.abs(x.size) + '% ' + (x.size > 0 ? 'bigger' : 'smaller') : '') + ')'; };
       var txt = ['Pulse caption style test — ' + stamp, 'Pulse ' + (($('ver') || {}).textContent || '') + ' · Engine: ' + (bb.name || bb.path),
         'Styles: ' + rows.length + ' · ✏️ Editable preview = Premiere (<7%): ' + works.length + ' · preview differs from Premiere: ' + fix.length +
         ' · simpler in editable than as an image: ' + simpler.length, '',
@@ -13861,6 +13875,12 @@
     }
     return false;
   }
+  /* The spoken word's grow, as the engine can draw it. Templates up to r5
+     grow each LETTER around its own middle, so the letters of a growing word
+     ran into each other in Premiere ("PA|SE" — the owner's style test,
+     v0.10.48). Template v6 spaces the letters as they grow ('grow'); on an
+     older one the spoken word keeps its size, and the preview shows that. */
+  function pulseGrow(L) { return pulseEngineHas('grow') ? L.grow : 0; }
   function pulseCarryStyle(p) {
     var out = renderableStyle(p), L = pulseLook(p);
     ['highlight2', 'fill2', 'highlightColors', 'boxColor2', 'numberColor', 'brandColor', 'brandWords', 'highlightFont',
@@ -13870,8 +13890,15 @@
     out.keyword = false;                                   // no static keyword colouring in the engine
     out.font = editableFamily(p.font || 'Inter', { latin: true, devanagari: p.script === 'deva' }, p.font, p.script === 'deva').family;
     // the font write knows regular, bold, and black where the Mac has it
-    out.weight = wantsBlackFace(out.font, p.weight) ? 900 : ((p.weight || 800) >= 600 ? 800 : 500);
-    if (!L.shadowOpacity) out.glow = null;
+    // Bold is the family's 700 face (resolvedEditorFont sends <Family>-Bold):
+    // the preview drew 800, an ExtraBold where the family has one (Luxe Wide)
+    out.weight = wantsBlackFace(out.font, p.weight) ? 900 : ((p.weight || 800) >= 600 ? 700 : 400);
+    // the template's shadow is black, whatever the style's glow colour
+    // (3D Extrude's red edge, RGB Glitch's cyan were promised, never drawn)
+    if (!L.shadowOpacity) out.glow = null; else out.glow = '#000000';
+    // one size for every line: the template has no smaller second line
+    // (Headliner, Editorial were previewed two-tier, drawn one size)
+    out.subScale = 1;
     out.wordHl = L.spokenLit;
     out.anim = L.spokenLit ? 'karaoke' : 'fade';           // the spoken word moves word by word, or all words alike
     out.entrance = ({ 1: 'none', 2: 'pop', 3: 'fade', 4: 'slide' })[L.animation];
@@ -13884,7 +13911,7 @@
       if (L.box !== 2) out.boxColor = null;
     }
     out.highlight = L.box >= 3 ? (p.highlight || p.fill) : L.spokenColor;   // on a box: the box's colour (the renderer puts a readable colour on the word)
-    out.highlightScale = 1 + L.grow / 100;
+    out.highlightScale = 1 + pulseGrow(L) / 100;
     if (!L.outlineWidth) { out.stroke = null; out.strokeWidth = 0; }
     // template v4 draws these; an older engine does not, and the preview must
     // not promise them. The engine turns the whole caption (no per-line lean).
@@ -14321,7 +14348,8 @@
     color(P('text color'), L.textColor);
     color(P('spoken word color'), L.spokenColor);
     // the first build called it "Spoken Word Size" (100 = same); now "Grow" (0 = same)
-    if (P('spoken word grow')) num(P('spoken word grow'), L.grow); else num(P('spoken word size'), Math.min(100, 100 + L.grow));
+    var grow = pulseGrow(L);
+    if (P('spoken word grow')) num(P('spoken word grow'), grow); else num(P('spoken word size'), Math.min(100, 100 + grow));
     color(P('outline color'), L.outlineColor);
     num(P('outline width'), L.outlineWidth);
     var both = !!P('word box color');   // the first build had one box at a time

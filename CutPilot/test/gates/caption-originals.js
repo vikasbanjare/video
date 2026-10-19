@@ -152,6 +152,11 @@ const OFL = ['Archivo Black', 'Poppins', 'Anton', 'Montserrat', 'Quicksand', 'Be
     out.black = { headliner: (F.resolveStyle('af-headliner', 'AAJ') || {}).font, plain: (F.resolveStyle('tr-two-speaker', 'AAJ') || {}).font,
       poppins900: (C.TEMPLATES.filter(t => t.font === 'Poppins' && (t.weight || 0) >= 850).map(t => (F.resolveStyle(t.id, 'AAJ') || {}).font))[0] };
     out.blackWeight = D.pulseCarryStyle(T('af-headliner')).weight;
+    // G: the owner's style test on v0.10.48 — the preview promises only
+    // what the template draws: its shadow is black, every line one size,
+    // Bold is the family's 700
+    const ex = D.pulseCarryStyle(T('tr-extrude')), hd = D.pulseCarryStyle(T('af-headliner')), lx = D.pulseCarryStyle(T('tr-luxe-wide'));
+    out.honest = { extrudeGlow: ex.glow, extrudeImg: T('tr-extrude').glow, headSub: hd.subScale, headImg: T('af-headliner').subScale, luxeW: lx.weight };
     out.avenir = { nova: (F.resolveStyle('pro-nova', 'AAJ') || {}).font, novaW: D.pulseCarryStyle(T('pro-nova')).weight,
       light: (F.resolveStyle('cap-clean-sub', 'AAJ') || {}).font };
     return out;
@@ -202,6 +207,10 @@ const OFL = ['Archivo Black', 'Poppins', 'Anton', 'Montserrat', 'Quicksand', 'Be
 
   (/^#ffd400$/i.test(r.noHl.minimal) && /^#ffd400$/i.test(r.noHl.typewriter) && r.noHl.kinetic === 30 ? ok : bad)(
     'F. a style with no highlight colour lights the spoken word yellow, as the image does (Clean Minimal, Typewriter); a big grow stops at 30% so the word never runs into its neighbours (Kinetic)', JSON.stringify(r.noHl));
+
+  const hn = r.honest || {};
+  (/^#000000$/i.test(hn.extrudeGlow || '') && !/^#000000$/i.test(hn.extrudeImg || '') && hn.headSub === 1 && hn.headImg < 1 && hn.luxeW === 700 ? ok : bad)(
+    'G. the editable preview shows the template\'s black shadow (3D Extrude), one size for every line (Headliner), Bold as 700 (Luxe Wide)', JSON.stringify(hn));
 
   if (failed) { console.log('CAPTION ORIGINALS: ' + failed + ' failed'); process.exit(1); }
   console.log('CAPTION ORIGINALS: six new styles, tilt, exit and template v4 ✓');

@@ -77,6 +77,14 @@ const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r5.mogrt
     const sent = id => { const s = D.mapPresetToPulse(T(id), PROPS) || []; const o = {}; s.forEach(x => { o[PROPS[x.i].name] = x.value; }); return o; };
     out.green = sent('pack-green-word-box'); out.maroon = sent('pack-maroon-label'); out.plain = sent('twin-plain-subtitle');
     out.pastel = sent('cap-pastel'); out.wide = sent('tr-luxe-wide');
+    // the grow rides only a template that spaces a growing word's letters (v6)
+    out.growOld = sent('pack-maroon-label')['Spoken Word Grow'];
+    out.pvOld = D.pulseCarryStyle(T('pack-maroon-label')).highlightScale;
+    D.setBundledMogrts([{ path: '/ext/mogrts/Pulse_Caption_r5.mogrt', name: 'Pulse Caption' }],
+      [{ path: '/ext/mogrts/Pulse_Caption_r6.mogrt', name: 'Pulse Caption', engine: true, features: ['grow'] }]);
+    out.growNew = sent('pack-maroon-label')['Spoken Word Grow'];
+    out.pvNew = D.pulseCarryStyle(T('pack-maroon-label')).highlightScale;
+    D.setBundledMogrts([{ path: '/ext/mogrts/Flux_Halo2_r3.mogrt', name: 'Flux Halo' }, { path: '/ext/mogrts/Pulse_Caption_r5.mogrt', name: 'Pulse Caption' }]);
     // size: the image caption's, on a vertical reel and a landscape podcast
     out.sizeV = D.pulseSizeScale(T('pack-maroon-label'), { width: 1080, height: 1920 });
     out.sizeH = D.pulseSizeScale(T('pack-maroon-label'), { width: 1920, height: 1080 });
@@ -96,6 +104,10 @@ const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r5.mogrt
       const k = frames.findIndex(f => 0.62 >= f.start && 0.62 < f.end);
       return items[k < 0 ? 0 : k].path;
     }
+    // the engine as built (v6: a growing word spaces its letters); r5's
+    // missing grow is C's business
+    D.setBundledMogrts([{ path: '/ext/mogrts/Pulse_Caption_r5.mogrt', name: 'Pulse Caption' }],
+      [{ path: '/ext/mogrts/Pulse_Caption_r6.mogrt', name: 'Pulse Caption', engine: true, features: ['grow'] }]);
     out.rows = [];
     for (const t of C.TEMPLATES) {
       try {
@@ -115,9 +127,11 @@ const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r5.mogrt
   const G = r.green, M = r.maroon;
   (G.Box === 2 && /^#04420E$/i.test(G['Box Color']) && /^#FFFFFF$/i.test(G['Spoken Word Color']) && G['Outline Width'] > 5 && G['Outline Width'] < 7.5 ? ok : bad)(
     'C. Green Word Box: a dark-green box behind the spoken word, white words, its outline (' + JSON.stringify(G) + ')');
-  const grow = M['Spoken Word Grow'] != null ? M['Spoken Word Grow'] === 25 : M['Spoken Word Size'] === 100;
-  (M.Box === 1 && /^#7A3034$/i.test(M['Box Color']) && M['Box Opacity'] === 88 && M['Box Roundness'] === 0 && grow ? ok : bad)(
-    'C. Maroon Label: a square maroon line box, the spoken word grows (' + JSON.stringify(M) + ')');
+  (M.Box === 1 && /^#7A3034$/i.test(M['Box Color']) && M['Box Opacity'] === 88 && M['Box Roundness'] === 0 ? ok : bad)(
+    'C. Maroon Label: a square maroon line box (' + JSON.stringify(M) + ')');
+  (r.growOld === 0 && r.pvOld === 1 && r.growNew === 25 && Math.abs(r.pvNew - 1.25) < 1e-9 ? ok : bad)(
+    'C. the spoken word grows only on a template that spaces its letters (v6: 25%); on r5 it keeps its size, in Premiere and in the preview ("PA|SE")',
+    JSON.stringify({ growOld: r.growOld, pvOld: r.pvOld, growNew: r.growNew, pvNew: r.pvNew }));
   (r.plain.Box === 1 && /^#FFFFFF$/i.test(r.plain['Box Color']) && /^#000000$/i.test(r.plain['Text Color']) && r.plain['Outline Width'] === 0 ? ok : bad)('C. Plain Subtitle: black words on its white line box, no outline (' + JSON.stringify(r.plain) + ')');
   (r.pastel.Box === 3 && /^#FFFFFF$/i.test(r.pastel['Box Color']) && /^#FF5DA2$/i.test(r.pastel['Word Box Color']) ? ok : bad)(
     'C. Pastel: its white line box AND the pink box behind the spoken word (' + JSON.stringify(r.pastel) + ')');
