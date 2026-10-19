@@ -41,12 +41,21 @@ function Node(matchName, owner, layer) {
   this.hasMax = false; this.maxValue = 255;
 }
 Node.prototype.where = function () { const l = this.layer ? this.layer.name : '?'; let n = this, p = []; while (n && n !== this.layer) { p.unshift(n.name); n = n.owner; } return l + ' › ' + p.join(' › '); };
-Node.prototype.addProperty = function (m) { const k = new Node(m, this, this.layer); if (/Drop Shadow-0002/.test(m)) k.hasMax = true; this.kids.push(k); return k; };
+Node.prototype.addProperty = function (m) {
+  const k = new Node(m, this, this.layer); if (/Drop Shadow-0002/.test(m)) k.hasMax = true; this.kids.push(k);
+  // More Options holds four settings, known to a script by their names only
+  // (r5 asked for "ADBE Text Anchor Point Grouping": After Effects ignored it)
+  if (m === 'ADBE Text More Options') ['Anchor Point Grouping', 'Grouping Alignment', 'Fill & Stroke', 'Inter-Character Blending'].forEach((n, i) => {
+    const o = new Node('unknown-' + i, k, this.layer); o.name = n; o.v = (i === 1 ? [0, 0] : 1); k.kids.push(o);
+  });
+  return k;
+};
 Node.prototype.property = function (x) {
   if (typeof x === 'number') { while (this.kids.length < x) this.addProperty(this.matchName + '-' + String(this.kids.length + 1).padStart(4, '0')); return this.kids[x - 1]; }
   const hit = this.kids.find(k => k.name === x || k.matchName === x);
   if (hit) return hit;
   if (this.matchName === 'ADBE Effect Parade') return null;   // AE: no effect by that name
+  if (this.matchName === 'ADBE Text More Options') return null;
   return this.addProperty(x);
 };
 Node.prototype.setValue = function (v) { this.v = v; };
@@ -204,7 +213,10 @@ const w1 = world(TXT, 0.45);
 const wc = world(TXT, 0.45, true);
 (Math.abs(wc.pos[0] - 20) < 0.01 ? ok : bad)('E. the same when After Effects centres the measuring text (centre x ' + wc.pos[0] + ')');
 const w2 = world(TXT, 1.25);
-(w2.measured['Measure Word'] === 'BAAT' && Math.abs(w2.pos[1] - (90 - 55 + 35)) < 0.01 ? ok : bad)('E. on the second line the box moves down one line (y ' + w2.pos[1] + ')');
+(w2.measured['Measure Word'] === 'BAAT' && Math.abs(w2.pos[1] - (90 - 0.33 * 75)) < 0.01 ? ok : bad)('E. on the second line the box moves down one line (y ' + w2.pos[1] + ')');
+// v6: as tall as the image's box — 1.06 em above the baseline to 0.40 em below
+(Math.abs(w1.sz[1] - 1.46 * 75) < 0.01 && Math.abs(w1.pos[1] + 0.33 * 75) < 0.01 ? ok : bad)(
+  'E. the spoken-word box is 1.46 em tall, from 1.06 em above the baseline to 0.40 em below, as the image draws it (' + w1.sz[1] + ' · y ' + w1.pos[1] + ')');
 
 // G. which box shows for each Box choice (1 None · 2 Line · 3 Spoken word · 4 both)
 const opOf = (layer, box) => run(exprOf(layer, /ADBE Opacity/), { thisComp: { layer: () => ({ effect: (e) => () => ({ Animation: 1, Box: box, 'Box Opacity': 88 })[e] }) }, time: 0.5 });
@@ -259,11 +271,38 @@ if (!process.env.FAIL_EXPR) {
     JSON.stringify({ capT: !!capT, same: gT === capT, a, b, z }));
 }
 
-// J. v5: no outline on the spoken word over a word box
-const swS = exprOf('Caption', /Spoken Word.*Stroke Width/);
-const swAt = (box) => +run(swS, ctlEnv({ Box: box, 'Outline Width': 6 }, 1));
-(swS && swAt(1) === 6 && swAt(2) === 6 && swAt(3) === 0 && swAt(4) === 0 ? ok : bad)(
-  'J. the spoken word keeps its outline, except on a word box (Box 3 / 4): ' + [1, 2, 3, 4].map(swAt).join(' / '));
+// J. v6: the outline is its own animator, on every letter except the spoken
+// word's while it sits on a box (Box 3 / 4). Stroke Width ADDS up across
+// animators in After Effects, so r5's "0 on the spoken word" left the dark
+// ring in Premiere — no other animator may set a stroke width, and the
+// text's own is 0.
+const amtX = exprOf('Caption', /Outline › .*Expressible Amount/);
+const capLayer = comp.layers.list.find(l => l.name === 'Caption');
+function outlineMask(text, box, spoken) {
+  const f = new Function('thisComp', 'thisLayer', 'textIndex', 'return eval(arguments[3]);');
+  const thisComp = { layer: () => ({ effect: (e) => () => ({ valueOf: () => ({ Box: box, 'Spoken Index': spoken })[e] }) }) };
+  const thisLayer = { text: { sourceText: { toString: () => text } } };
+  let m = ''; for (let i = 1; i <= text.length; i++) m += +f(thisComp, thisLayer, i, amtX) === 0 ? '0' : '1';
+  return m;
+}
+{
+  const T2 = 'AAJ PAISE\rKI BAAT';
+  const m1 = amtX ? outlineMask(T2, 1, 1) : '', m3 = amtX ? outlineMask(T2, 3, 1) : '', m4 = amtX ? outlineMask(T2, 4, 2) : '';
+  const others = rec.expressions.filter(e => /Stroke Width/.test(e.where) && e.where.indexOf('Caption ›') === 0).map(e => e.where);
+  const doc = capLayer && capLayer.property('ADBE Text Properties').property('ADBE Text Document').v;
+  (m1 === '11111111111111111' && m3 === '11110000011111111' && m4 === '11111111110011111' &&
+   others.length === 1 && /Outline ›/.test(others[0]) && doc && doc.strokeWidth === 0 ? ok : bad)(
+    'J. the outline is on every letter, off the spoken word on a box (Box 3: PAISE, Box 4 on line 2: KI); one Stroke Width in the caption and the text\'s own is 0',
+    JSON.stringify({ m1, m3, m4, others, docStroke: doc && doc.strokeWidth }));
+}
+// L. the outline sits behind the letters for the whole layer (Premiere's
+// text write resets each letter's order: r5's RGB Glitch came out pink)
+{
+  const mo = capLayer && capLayer.property('ADBE Text Properties').kids.find(k => k.matchName === 'ADBE Text More Options');
+  const fs2 = mo && mo.kids.find(k => k.name === 'Fill & Stroke');
+  (fs2 && fs2.v === 2 && !rec.alerts.some(a => /Fill & Stroke could not/.test(a)) ? ok : bad)(
+    'L. Caption › More Options › Fill & Stroke is "All Fills Over All Strokes" (set by its name)', JSON.stringify({ found: !!fs2, v: fs2 && fs2.v }));
+}
 
 // F. protected frame + saved
 const mk = rec.markers[0];

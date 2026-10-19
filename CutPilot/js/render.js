@@ -169,6 +169,7 @@
       boxOpacity: (o.boxOpacity != null) ? o.boxOpacity : (preset.boxOpacity != null ? preset.boxOpacity : 1),
       boxPad: (o.boxPad != null) ? o.boxPad : (preset.boxPad != null ? preset.boxPad : 1),  // padding multiplier
       boxSteady: !!preset.boxSteady,
+      inkBoxes: !!(o.inkBoxes != null ? o.inkBoxes : preset.inkBoxes),   // boxes hug the ink (the editable preview on Pulse's engine)
       shadowDX: Math.round(((o.shadowDX != null ? o.shadowDX : (preset.shadowDX || 0))) * scale),
       shadowDY: Math.round(((o.shadowDY != null ? o.shadowDY : (preset.shadowDY || 0))) * scale),
       wordSpacing: Math.round(((o.wordSpacing != null ? o.wordSpacing : (preset.wordSpacing || 0))) * scale),
@@ -848,6 +849,19 @@
       // background box behind the whole line (opacity + padding + gradient).
       // barTop/barH are remembered so an active-word box can be centred inside it.
       var barTop = null, barH = null;
+      // inkBoxes (the editable preview on Pulse's engine): boxes hug the
+      // line's INK, as the template draws them — its letters' tops to their
+      // bottoms plus 0.16 em, 0.32 em at the sides (the em box made every
+      // preview box ~40% taller than Premiere's: Thuban, Sky, Chip)
+      function lineInk(px) {
+        setFontFor(px, false);
+        var t = '', m;
+        for (var q = 0; q < line.items.length; q++) t += (q ? ' ' : '') + line.items[q].word;
+        try { m = ctx.measureText(t); } catch (eM) { m = null; }
+        var a = (m && m.actualBoundingBoxAscent > 0) ? m.actualBoundingBoxAscent : px * 0.72;
+        var d = (m && m.actualBoundingBoxDescent >= 0) ? m.actualBoundingBoxDescent : px * 0.2;
+        return { a: a, d: d };
+      }
       // Draw the box layer when ANY box effect is set — face, border, glow, a 3D
       // extrusion, or a gloss sheen. (3D/gloss were missing here, so a preset that
       // only defined those drew nothing.)
@@ -855,6 +869,10 @@
           (style.box3d && style.box3dDepth > 0) || style.boxGloss > 0) {
         var padX = base * 0.32 * style.boxPad, padY = base * 0.22 * style.boxPad;
         var bxTop = y - line.height - padY + line.height * 0.18, bxH = line.height + padY * 2;
+        if (style.inkBoxes) {
+          var lk = lineInk(base);
+          padX = base * 0.32; bxTop = y - lk.a - base * 0.16; bxH = lk.a + lk.d + base * 0.32;
+        }
         var bxLeft = x - padX, bxW = line.width + padX * 2;
         // boxSteady: the box keeps the size of the line at rest and the spoken
         // word grows past it (the owner's Maroon Label reel) — it no longer
@@ -961,7 +979,11 @@
           if (shape === 'box') {
             var bpadX = it.px * 0.22 * style.boxPad;
             var wbTop, wbH;
-            if (barH != null) {
+            if (style.inkBoxes) {
+              var wk = lineInk(it.px);
+              setFontFor(it.px, it.hl);
+              bpadX = it.px * 0.32; wbTop = y - wk.a - it.px * 0.16; wbH = wk.a + wk.d + it.px * 0.32;
+            } else if (barH != null) {
               // sitting inside a backing bar: make the word box clearly smaller
               // than the bar and centre it vertically so top/bottom margins match.
               wbH = barH * 0.70;

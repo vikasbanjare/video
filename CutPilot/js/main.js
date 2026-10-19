@@ -13690,10 +13690,17 @@
      Also decides whether synthetic bold is still needed: when the resolved
      name already IS a Bold face, stacking the bold flag on top rendered
      smudged. Used by Apply AND the real preview so both always match. */
+  /* Families whose Bold Premiere does not draw in an editable caption: the
+     owner's style test (v0.10.48) — Monolith, Quote Pill, Elevate II, Column
+     (Didot) and Script Glow, Candy (Snell Roundhand) came out in the regular
+     face while Georgia, Avenir Next and the Google faces took their Bold.
+     They are sent as Regular and previewed as Regular, so what is picked is
+     what lands. */
+  function premDrawsRegularOnly(family) { return /^(didot|snell roundhand)$/i.test(String(family || '')); }
   function resolvedEditorFont(preset, text) {
     if (!preset || !preset.font) return null;
     var family = drawableFamily(preset, text);
-    var wantBold = (preset.weight || 800) >= 600;
+    var wantBold = (preset.weight || 800) >= 600 && !premDrawsRegularOnly(family);
     // a Black (900) style gets the Black face when the Mac has one
     var black = wantsBlackFace(family, preset.weight);
     var ps = CPCaptions.psFontName(family, black ? 'Black' : (wantBold ? 'Bold' : 'Regular'));
@@ -13892,13 +13899,16 @@
     // the font write knows regular, bold, and black where the Mac has it
     // Bold is the family's 700 face (resolvedEditorFont sends <Family>-Bold):
     // the preview drew 800, an ExtraBold where the family has one (Luxe Wide)
-    out.weight = wantsBlackFace(out.font, p.weight) ? 900 : ((p.weight || 800) >= 600 ? 700 : 400);
+    out.weight = wantsBlackFace(out.font, p.weight) ? 900 : (((p.weight || 800) >= 600 && !premDrawsRegularOnly(out.font)) ? 700 : 400);
     // the template's shadow is black, whatever the style's glow colour
     // (3D Extrude's red edge, RGB Glitch's cyan were promised, never drawn)
     if (!L.shadowOpacity) out.glow = null; else out.glow = '#000000';
     // one size for every line: the template has no smaller second line
     // (Headliner, Editorial were previewed two-tier, drawn one size)
     out.subScale = 1;
+    // r5's boxes hug the letters' ink (+0.16 em, 0.32 em at the sides);
+    // template v6 draws them as tall as the image's ('embox')
+    out.inkBoxes = !pulseEngineHas('embox');
     out.wordHl = L.spokenLit;
     out.anim = L.spokenLit ? 'karaoke' : 'fade';           // the spoken word moves word by word, or all words alike
     out.entrance = ({ 1: 'none', 2: 'pop', 3: 'fade', 4: 'slide' })[L.animation];

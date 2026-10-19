@@ -104,10 +104,10 @@ const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r5.mogrt
       const k = frames.findIndex(f => 0.62 >= f.start && 0.62 < f.end);
       return items[k < 0 ? 0 : k].path;
     }
-    // the engine as built (v6: a growing word spaces its letters); r5's
-    // missing grow is C's business
+    // the engine as built (v6: a growing word spaces its letters, boxes as
+    // tall as the image's); r5's missing grow is C's business
     D.setBundledMogrts([{ path: '/ext/mogrts/Pulse_Caption_r5.mogrt', name: 'Pulse Caption' }],
-      [{ path: '/ext/mogrts/Pulse_Caption_r6.mogrt', name: 'Pulse Caption', engine: true, features: ['grow'] }]);
+      [{ path: '/ext/mogrts/Pulse_Caption_r6.mogrt', name: 'Pulse Caption', engine: true, features: ['grow', 'embox'] }]);
     out.rows = [];
     for (const t of C.TEMPLATES) {
       try {

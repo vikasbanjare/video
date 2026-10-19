@@ -156,7 +156,24 @@ const OFL = ['Archivo Black', 'Poppins', 'Anton', 'Montserrat', 'Quicksand', 'Be
     // what the template draws: its shadow is black, every line one size,
     // Bold is the family's 700
     const ex = D.pulseCarryStyle(T('tr-extrude')), hd = D.pulseCarryStyle(T('af-headliner')), lx = D.pulseCarryStyle(T('tr-luxe-wide'));
-    out.honest = { extrudeGlow: ex.glow, extrudeImg: T('tr-extrude').glow, headSub: hd.subScale, headImg: T('af-headliner').subScale, luxeW: lx.weight };
+    out.honest = { extrudeGlow: ex.glow, extrudeImg: T('tr-extrude').glow, headSub: hd.subScale, headImg: T('af-headliner').subScale, luxeW: lx.weight,
+      ink: ex.inkBoxes === true,
+      // Premiere drew Didot and Snell Roundhand in their regular face
+      monoW: D.pulseCarryStyle(T('monolith')).weight, scriptW: D.pulseCarryStyle(T('pack-script-glow')).weight,
+      monoSent: (F.resolveStyle('monolith', 'AAJ') || {}).font, scriptSent: (F.resolveStyle('pack-script-glow', 'AAJ') || {}).font,
+      georgiaSent: (F.resolveStyle('linen', 'AAJ') || {}).font };
+    // the line box on the ink: its height = the capitals' height + 0.32 em
+    function boxH(over) {
+      const t = Object.assign({}, T('pack-maroon-label'), over);
+      const W = 1080, H = 1920, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      const st = R.styleForFrame(t, H, { yPct: 0.5 }, W);
+      R.drawFrame(cv, { words: ['AAJ', 'PAISE', 'KI'] }, st);
+      const dd = cv.getContext('2d').getImageData(0, 0, W, H).data;
+      let top = -1, bot = -1;
+      for (let y = 0; y < H; y++) { const i = (y * W + 540) * 4; if (dd[i + 3] > 200 && dd[i] > 90 && dd[i + 1] < 80) { if (top < 0) top = y; bot = y; } }
+      return { h: bot - top + 1, size: st.size };
+    }
+    out.inkBox = { ink: boxH({ inkBoxes: true }), em: boxH({}) };
     out.avenir = { nova: (F.resolveStyle('pro-nova', 'AAJ') || {}).font, novaW: D.pulseCarryStyle(T('pro-nova')).weight,
       light: (F.resolveStyle('cap-clean-sub', 'AAJ') || {}).font };
     return out;
@@ -209,8 +226,13 @@ const OFL = ['Archivo Black', 'Poppins', 'Anton', 'Montserrat', 'Quicksand', 'Be
     'F. a style with no highlight colour lights the spoken word yellow, as the image does (Clean Minimal, Typewriter); a big grow stops at 30% so the word never runs into its neighbours (Kinetic)', JSON.stringify(r.noHl));
 
   const hn = r.honest || {};
-  (/^#000000$/i.test(hn.extrudeGlow || '') && !/^#000000$/i.test(hn.extrudeImg || '') && hn.headSub === 1 && hn.headImg < 1 && hn.luxeW === 700 ? ok : bad)(
-    'G. the editable preview shows the template\'s black shadow (3D Extrude), one size for every line (Headliner), Bold as 700 (Luxe Wide)', JSON.stringify(hn));
+  (/^#000000$/i.test(hn.extrudeGlow || '') && !/^#000000$/i.test(hn.extrudeImg || '') && hn.headSub === 1 && hn.headImg < 1 && hn.luxeW === 700 && hn.ink ? ok : bad)(
+    'G. the editable preview shows the template\'s black shadow (3D Extrude), one size for every line (Headliner), Bold as 700 (Luxe Wide), boxes on the ink', JSON.stringify(hn));
+  const ib = r.inkBox || {}, ik = ib.ink || {}, em = ib.em || {};
+  (ik.h > 0 && em.h > 0 && ik.h < em.h * 0.9 && ik.h > ik.size * 0.9 && ik.h < ik.size * 1.2 ? ok : bad)(
+    'G. the preview\'s box hugs the letters as the template\'s does: capitals + 0.32 em (' + ik.h + ' px at ' + ik.size + ' px; the em box drew ' + em.h + ')', JSON.stringify(ib));
+  (hn.monoW === 400 && hn.scriptW === 400 && hn.monoSent === 'Didot' && hn.scriptSent === 'SnellRoundhand' && hn.georgiaSent === 'Georgia-Bold' ? ok : bad)(
+    'G. Didot and Snell Roundhand go out and preview Regular, as Premiere draws them (Monolith, Script Glow); Georgia keeps its Bold (Linen)', JSON.stringify(hn));
 
   if (failed) { console.log('CAPTION ORIGINALS: ' + failed + ' failed'); process.exit(1); }
   console.log('CAPTION ORIGINALS: six new styles, tilt, exit and template v4 ✓');

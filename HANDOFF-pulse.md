@@ -1,10 +1,30 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.50** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.51** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.51 — the rest of the owner's v0.10.48 sheets
+- Builder v6 also: More Options › Fill & Stroke = All Fills Over All
+  Strokes, found by NAME (setMoreOption; a matchName AE does not know is
+  ignored silently — how r5 lost its anchor grouping). r5 drew outlines
+  over the letters: RGB Glitch pink, Neon Pop lilac, Bubble Pop / Sunset /
+  Letter Wave edges twice as thick. Self-check reports it if not set.
+- Stroke Width ADDS up across text animators (why r5's "0 on the boxed
+  spoken word" left a dark ring: Focus, Surge, Rocket, Ticker, Acid Lime).
+  v6: the text's own stroke 0, one "Outline" animator with an expression
+  selector (0 on the spoken word's letters while Box ≥ 3, else 100).
+- v6 boxes are em-based like the image's: 1.06 em above each baseline to
+  0.40 em below, 0.32 em sides, font size read from sourceText.style
+  (feature 'embox'). r5's hug the ink (~40% shorter than the image's); on
+  an engine without 'embox' the preview draws ink boxes (inkBoxes). Didot and Snell Roundhand go out and preview Regular
+  (premDrawsRegularOnly): Premiere drew them Regular whatever was sent.
+- All builder changes NOT VERIFIED in real After Effects: the owner runs
+  tools/ae/Pulse-Caption-Builder.jsx once; its self-check alert names any
+  problem. Then bundle as Pulse_Caption_r6.mogrt with features
+  ["gradient","upcoming","tilt","exit","grow","embox"] and update pulse-engine A.
 
 ### v0.10.50 — from the owner's style test on v0.10.48 (12 close / 124 far)
 - The sheets showed most "far" styles look alike to the eye; the real

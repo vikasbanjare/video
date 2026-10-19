@@ -3038,6 +3038,39 @@ const MUTANTS = [
     repl: '',
     gate: 'CutPilot/test/gates/ae-caption-builder.js',
     why: 'the v6 template grows the spoken word without spacing its letters'
+  },
+  // v51: the rest of the owner's v0.10.48 sheets
+  {
+    name: 'v51-builder-stroke-over-letters',
+    file: 'tools/ae/Pulse-Caption-Builder.jsx',
+    find: "    var renderOrderSet = setMoreOption(cap, /fill.*stroke/i, 'ADBE Text Render Order', 2);",
+    repl: "    var renderOrderSet = true;",
+    gate: 'CutPilot/test/gates/ae-caption-builder.js',
+    why: 'the outline is drawn over the letters in Premiere (RGB Glitch pink)'
+  },
+  {
+    name: 'v51-builder-ring-on-boxed-word',
+    file: 'tools/ae/Pulse-Caption-Builder.jsx',
+    find: "      '(onBox && inW && w == Math.round(' + C + '(\"Spoken Index\")(1))) ? 0 : 100;'",
+    repl: "      '100;'",
+    gate: 'CutPilot/test/gates/ae-caption-builder.js',
+    why: 'the spoken word on a box keeps a dark outline ring'
+  },
+  {
+    name: 'v51-preview-em-boxes',
+    file: 'CutPilot/js/main.js',
+    find: "    out.inkBoxes = !pulseEngineHas('embox');",
+    repl: '',
+    gate: 'CutPilot/test/gates/caption-originals.js',
+    why: "the editable preview's boxes are ~40% taller than Premiere's"
+  },
+  {
+    name: 'v51-didot-bold',
+    file: 'CutPilot/js/main.js',
+    find: "  function premDrawsRegularOnly(family) { return /^(didot|snell roundhand)$/i.test(String(family || '')); }",
+    repl: '  function premDrawsRegularOnly(family) { return false; }',
+    gate: 'CutPilot/test/gates/caption-originals.js',
+    why: 'Didot / Snell styles preview Bold but Premiere draws them Regular'
   }
 ];
 

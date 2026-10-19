@@ -20,7 +20,10 @@
  *   Shadow Opacity · Shadow Distance · Animation (None / Pop / Fade / Slide up)
  *
  * v6: a growing spoken word spaces its letters as they grow (r5 grew each
- * letter in place and they ran into each other in Premiere: "PA|SE").
+ * letter in place and they ran into each other in Premiere: "PA|SE"); the
+ * outline sits behind the letters for the whole layer (r5's came out over
+ * them: RGB Glitch pink) and is exactly Outline Width; the spoken word on a
+ * box has no outline (r5 left a dark ring: stroke widths add up).
  * v5: the spoken word drops its outline when it sits on a word box.
  * v4 adds: Text Gradient (on/off) + Text Color 2 (the warm top-to-bottom
  * gradient of Sunset Fade), Upcoming Opacity (words not yet said stay faint,
@@ -164,6 +167,25 @@
       '(g > 0 && n > 0 && u > 0) ? g * m.sourceRectAtTime(time, false).width / n / (u / 900) : 0;'
     ].join('\n');
 
+    // the outline's share per letter (Based On: Characters, spaces counted):
+    // 0 on the letters of the spoken word while it sits on a box, else 100
+    var OUTLINE_AMOUNT = [
+      'var s = "" + thisLayer.text.sourceText, i = textIndex - 1, w = -1, inW = false;',
+      'for (var k = 0; k <= i && k < s.length; k++) { var sp = /[\\s\\u0003]/.test(s.charAt(k)); if (!sp && !inW) w++; inW = !sp; }',
+      'var onBox = Math.round(' + C + '("Box")(1)) >= 3;',
+      '(onBox && inW && w == Math.round(' + C + '("Spoken Index")(1))) ? 0 : 100;'
+    ].join('\n');
+    // a text layer's More Options setting, found by its name (After Effects
+    // ignores a matchName it does not know — how r5 lost its anchor grouping)
+    function setMoreOption(layer, nameRe, matchName, v) {
+      var mo = layer.property('ADBE Text Properties').property('ADBE Text More Options');
+      var p = null;
+      try { for (var i = 1; i <= mo.numProperties; i++) { if (nameRe.test(mo.property(i).name)) { p = mo.property(i); break; } } } catch (eMo) {}
+      if (!p) { try { p = mo.property(matchName); } catch (eMn) { p = null; } }
+      if (!p) return false;
+      try { p.setValue(v); return p.value === v; } catch (eSv) { return false; }
+    }
+
     // ---- the caption text ----------------------------------------------------
     var cap = comp.layers.addText('AAJ PAISE KI BAAT');
     cap.name = 'Caption';
@@ -177,7 +199,9 @@
     td.fillColor = [1, 1, 1];
     td.applyStroke = true;                          // the width comes from Outline Width
     td.strokeColor = [0, 0, 0];
-    td.strokeWidth = 1;
+    // an animator's Stroke Width ADDS to this one: 0, so Outline Width is the
+    // whole outline (r5 drew 1 px more everywhere)
+    try { td.strokeWidth = 0; } catch (eSw) { td.strokeWidth = 0.1; }
     td.strokeOverFill = false;                      // outline behind the letters, like the image captions
     td.justification = ParagraphJustification.CENTER_JUSTIFY;
     try { td.autoLeading = false; td.leading = LEAD; } catch (eLd) {}
@@ -188,6 +212,11 @@
     cap.property('ADBE Transform Group').property('ADBE Anchor Point').expression =
       'var r = sourceRectAtTime(time, false); [0, r.top + r.height / 2];';
     cap.property('ADBE Transform Group').property('ADBE Opacity').expression = FADE + '100;';
+    // outline BEHIND the letters for the whole layer: Premiere's own text
+    // write resets each letter's order, and r5 drew the outline over the
+    // letters (RGB Glitch came out pink, Bubble Pop's purple edge twice as
+    // thick). More Options › Fill & Stroke: All Fills Over All Strokes.
+    var renderOrderSet = setMoreOption(cap, /fill.*stroke/i, 'ADBE Text Render Order', 2);
     // letters grow around their own middles (Anchor Point Grouping:
     // Character, After Effects' default); the spoken word's tracking below
     // spaces them as they grow. (r5 asked for Word by a name After Effects
@@ -207,7 +236,6 @@
     anim('Look').property('ADBE Text Selectors').addProperty('ADBE Text Selector');
     addProp('Look', 'ADBE Text Fill Color', C + '("Text Color")(1);');
     addProp('Look', 'ADBE Text Stroke Color', C + '("Outline Color")(1);');
-    addProp('Look', 'ADBE Text Stroke Width', C + '("Outline Width")(1);');
     addProp('Look', 'ADBE Text Tracking Amount', C + '("Letter Spacing")(1) * 10;');
     // the spoken word: its own colour and size
     addAnimator('Spoken Word');
@@ -222,10 +250,15 @@
     addProp('Spoken Word', 'ADBE Text Fill Color', C + '("Spoken Word Color")(1);');
     addProp('Spoken Word', 'ADBE Text Scale 3D', 'var g = 100 + ' + C + '("Spoken Word Grow")(1); value.length > 2 ? [g, g, 100] : [g, g];');
     addProp('Spoken Word', 'ADBE Text Tracking Amount', TRACK);
-    // on a box (Box: Spoken word / Line and spoken word) the spoken word has
-    // no outline, as the image draws it (Ticker, Acid Lime, Focus came out
-    // with a dark ring inside their box)
-    addProp('Spoken Word', 'ADBE Text Stroke Width', 'Math.round(' + C + '("Box")(1)) >= 3 ? 0 : ' + C + '("Outline Width")(1) * 1;');
+    // the outline: every letter, except the spoken word on a box (Box: Spoken
+    // word / Line and spoken word), as the image draws it. Its own animator
+    // with an expression selector: Stroke Width ADDS up across animators, so
+    // r5's "0 on the spoken word" left the outline on (Focus, Ticker, Acid
+    // Lime, Surge: a dark ring inside the box in Premiere).
+    addAnimator('Outline');
+    anim('Outline').property('ADBE Text Selectors').addProperty('ADBE Text Expressible Selector');
+    anim('Outline').property('ADBE Text Selectors').property(1).property('ADBE Text Expressible Amount').expression = OUTLINE_AMOUNT;
+    addProp('Outline', 'ADBE Text Stroke Width', C + '("Outline Width")(1);');
     // words not yet said: faint (Upcoming Opacity), every word after the spoken one
     function upcoming(layer) {
       var ua = layer.property('ADBE Text Properties').property('ADBE Text Animators').addProperty('ADBE Text Animator');
@@ -364,10 +397,15 @@
       b.moveAfter(cap);
       return b;
     }
-    var PAD = 'var px = ' + (FONT_PX * 0.32) + ', py = ' + (FONT_PX * 0.16) + ';';
+    // v6: boxes are as tall as the image's — from the font size, 1.06 em
+    // above each baseline to 0.40 em below (1.46 em), 0.32 em at the sides —
+    // not from the letters' ink (r5's were ~30% shorter than the image's and
+    // changed height with the words: Thuban, Sky, Chip)
+    var FS = 'var fs = ' + FONT_PX + '; try { var fz = thisComp.layer("Caption").text.sourceText.style.fontSize; if (fz > 0) fs = fz; } catch (eFs) {}';
+    var PAD = FS + ' var px = 0.32 * fs;';
     box('Line Box',
-      PAD + ' var r = thisComp.layer("Caption").sourceRectAtTime(time, false); [r.width + 2 * px, r.height + 2 * py];',
-      'var r = thisComp.layer("Caption").sourceRectAtTime(time, false); [r.left + r.width / 2, r.top + r.height / 2];',
+      PAD + '\n' + WORDS + '\nvar n = Math.max(1, L.length), r = thisComp.layer("Caption").sourceRectAtTime(time, false);\n[r.width + 2 * px, (n - 1) * ' + LEAD + ' + 1.46 * fs];',
+      FS + '\n' + WORDS + '\nvar n = Math.max(1, L.length), r = thisComp.layer("Caption").sourceRectAtTime(time, false);\n[r.left + r.width / 2, (n - 1) * ' + LEAD + ' / 2 - 0.33 * fs];',
       '[2, 4]', 'Box Color', C + '("Box Opacity")(1)');
     var WB = [
       'var Lr = thisComp.layer("Measure Line").sourceRectAtTime(time, false);',
@@ -381,8 +419,8 @@
       'var right = -Lr.width / 2 + Ur.width, left = right - Wr.width;'
     ].join('\n');
     var spokenBox = box('Spoken Word Box',
-      PAD + '\n' + WB + '\n[Wr.width * g + 2 * px, Lr.height * g + 2 * py];',
-      WB + '\n[(left + right) / 2, li * ' + LEAD + ' + Lr.top + Lr.height / 2];',
+      PAD + '\n' + WB + '\n[Wr.width * g + 2 * px, 1.46 * fs * g];',
+      FS + '\n' + WB + '\n[(left + right) / 2, li * ' + LEAD + ' - 0.33 * fs * g];',
       // on its own it takes Box Opacity; over a line box it stays solid (as the image does)
       '[3, 4]', 'Word Box Color', '(Math.round(' + C + '("Box")(1)) == 4 ? 100 : ' + C + '("Box Opacity")(1))');
     spokenBox.moveAfter(cap);
@@ -430,6 +468,8 @@
       if (gOp > 0) exprErrors.push('Gradient Text > Opacity is ' + gOp + ' with Text Gradient off (should be 0)');
     } catch (eG) {}
 
+    // the outline behind the letters (Fill & Stroke: All Fills Over All Strokes)
+    if (!renderOrderSet) exprErrors.push('Caption > More Options > Fill & Stroke could not be set to "All Fills Over All Strokes" (set it by hand, then export)');
     // with the spoken word growing, its letters are spaced apart
     try {
       var gw = ctl.effect('Spoken Word Grow').property(1);
