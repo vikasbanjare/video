@@ -3146,6 +3146,23 @@ const MUTANTS = [
     repl: '    return { canvas: c, data: d.data, box: captionBox(onBlack ? d.data : raw, c.width, c.height, onBlack), W: c.width, H: c.height };',
     gate: 'CutPilot/test/gates/style-test-calibrate.js',
     why: "the preview's black outline counts as size: every style reads \"Premiere draws it smaller\""
+  },
+  // v56: no setting in Editable for what Premiere cannot draw (owner: "give no setting for that")
+  {
+    name: 'v56-glow-colour-in-editable',
+    file: 'CutPilot/index.html',
+    find: '<label class="png-only">Shadow colour<span class="cp-mount" data-for="c-shadow"></span>',
+    repl: '<label>Shadow colour<span class="cp-mount" data-for="c-shadow"></span>',
+    gate: 'CutPilot/test/gates/editable-lines.js',
+    why: 'Editable offers a glow colour Premiere draws black'
+  },
+  {
+    name: 'v56-two-colour-in-editable',
+    file: 'CutPilot/index.html',
+    find: '<label class="check png-only" title="The spoken word sweeps Highlight → 2nd colour">',
+    repl: '<label class="check" title="The spoken word sweeps Highlight → 2nd colour">',
+    gate: 'CutPilot/test/gates/editable-lines.js',
+    why: 'Editable offers a two-colour spoken word Premiere cannot draw'
   }
 ];
 

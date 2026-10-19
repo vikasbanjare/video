@@ -1,10 +1,20 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.55** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.56** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.56 — Editable shows no setting Premiere cannot draw
+- Owner: "something not possible — give no setting for that, the style's
+  own is the default". The glow colour (template shadow is black) and the
+  two-colour spoken word are png-only now; every other such control was
+  already hidden in Editable. Shadow on/off + strength stay (they change
+  the template's shadow). Gate editable-lines D lists them.
+- Decided NOT to make Premiere's style-test frames the Editable gallery
+  previews: saved frames ignore the owner's colour edits and once blanked
+  the gallery (why real previews are opt-in). Size self-calibration instead.
 
 ### v0.10.55 — the 🎨 style test corrects sizes itself
 - Owner's v0.10.54 test: 39 close (was 12); looks match, the rest is size

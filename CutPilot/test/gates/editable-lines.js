@@ -40,6 +40,13 @@ const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r6.mogrt
       out.visible = !!(el && getComputedStyle(el).display !== 'none');
       const pick = (n) => { const b = document.querySelector('#c-lines button[data-l="' + n + '"]'); if (b) b.click(); return D.styledPreset().maxLines; };
       out.sent = { single: pick(1), auto: pick(0), dbl: pick(2) };
+      // D: what Premiere's template cannot draw has no setting in Editable —
+      // the style keeps its own (owner: "give no setting for that")
+      const shown = (id) => { const e = document.getElementById(id); return !!(e && !e.closest('.png-only')); };
+      out.hidden = { shadowColour: shown('c-shadow'), twoColour: shown('c-hlgrad'), twoColourPick: shown('c-hl2g'),
+        glossy: shown('c-glossy'), serif: shown('c-hlserif'), boxGrad: shown('c-boxgrad'), box3d: shown('c-box3d'), boxStroke: shown('c-boxstroke-on'),
+        boxGlow: shown('c-boxglow-on'), hlStyle: shown('c-hlstyle'), multicolor: shown('c-multicolor') };
+      out.kept = { shadowOn: shown('c-shadow-on'), shadowStrength: shown('c-shadow-blur'), lines: shown('c-lines') };
       document.body.classList.remove('cap-editable');
       const text = 'aaj hum baat karenge paise ki aur investment ki jo har ghar mein zaroori hai samjho dhyan se';
       const cue = [{ start: 0, end: 5.5, text }];
@@ -49,6 +56,9 @@ const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r6.mogrt
       return out;
     }, MOGRT, DEF);
     (r.visible ? ok : bad)('A. Lines on screen shows in ✏️ Editable');
+    (Object.values(r.hidden).every(v => v === false) && Object.values(r.kept).every(v => v === true) ? ok : bad)(
+      'D. Editable shows no setting Premiere cannot draw (glow colour, two-colour / glossy / serif / glowing spoken word, gradient / 3D / bordered box, underline…); shadow on/off and strength stay',
+      JSON.stringify({ hidden: r.hidden, kept: r.kept }));
     (r.sent.single === 1 && r.sent.auto === 0 && r.sent.dbl === 2 ? ok : bad)('B. the picked choice rides the style that is sent (Single 1 · Auto 0 · Double 2)', JSON.stringify(r.sent));
     const max = (a) => Math.max.apply(null, a);
     (r.single.length && max(r.single) === 1 ? ok : bad)('C. Single: every editable caption is one line (' + r.single.join(',') + ')');
