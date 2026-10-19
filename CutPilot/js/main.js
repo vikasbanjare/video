@@ -5352,7 +5352,11 @@
     var d = g.getImageData(0, 0, c.width, c.height);
     var raw = null;
     if (!onBlack) { var c2 = document.createElement('canvas'); c2.width = img.width; c2.height = img.height; c2.getContext('2d').drawImage(img, 0, 0); raw = c2.getContext('2d').getImageData(0, 0, c.width, c.height).data; }
-    return { canvas: c, data: d.data, box: captionBox(onBlack ? d.data : raw, c.width, c.height, onBlack), W: c.width, H: c.height };
+    // both measured the same way — what shows on black — so a black outline
+    // or shadow (invisible on black) no longer makes the preview "bigger"
+    // (the owner's v0.10.54 test: "Premiere draws it 33% smaller" on styles
+    // that looked the same size)
+    return { canvas: c, data: d.data, box: captionBox(d.data, c.width, c.height, true), W: c.width, H: c.height };
   }
   /* 0 = the same look … 100 = nothing alike. The two captions are laid on
      each other box to box — the Premiere one stretched onto the preview's —
@@ -5530,7 +5534,7 @@
                 e = ims[2] ? styleTestPixels(ims[2], false) : null;
             rows.push({ id: t.id, name: t.name || t.id, img: a, prem: b, pv: e,
                         imgScore: (a && b) ? styleTestScore(a, b) : 100,
-                        score: (e && b) ? styleTestScore(e, b) : 100, size: styleTestSize(e, b),
+                        score: (e && b) ? styleTestScore(e, b) : 100, size: styleTestSize(e, b), sizeRatio: styleTestSizeRatio(e, b),
                         why: !b ? 'Premiere did not draw it' : (!b.box ? 'Premiere drew no caption' : (!e || !e.box ? 'no editable preview' : '')) });
           }, function (e) { rows.push({ id: t.id, name: t.name || t.id, score: 100, why: 'test error: ' + (e && e.message) }); });
         });
@@ -5573,6 +5577,8 @@
       var byId = {};
       styles.forEach(function (t) { byId[t.id] = t; });
       rows.forEach(function (x) { x.cannot = pulseCannotDraw(byId[x.id]); });
+      // the size Premiere really drew, kept per style for every insert from now on
+      var calN = pulse ? styleTestCalibrate(rows) : 0;
       var works = rows.filter(function (x) { return x.score < 7; });
       var fix = rows.filter(function (x) { return x.score >= 7; });
       var simpler = rows.filter(function (x) { return x.cannot.length; });
@@ -5580,7 +5586,8 @@
         (Math.abs(x.size || 0) >= 8 ? '; Premiere draws it ' + Math.abs(x.size) + '% ' + (x.size > 0 ? 'bigger' : 'smaller') : '') + ')'; };
       var txt = ['Pulse caption style test — ' + stamp, 'Pulse ' + (($('ver') || {}).textContent || '') + ' · Engine: ' + (bb.name || bb.path),
         'Styles: ' + rows.length + ' · ✏️ Editable preview = Premiere (<7%): ' + works.length + ' · preview differs from Premiere: ' + fix.length +
-        ' · simpler in editable than as an image: ' + simpler.length, '',
+        ' · simpler in editable than as an image: ' + simpler.length,
+        calN ? 'Size: Pulse measured how big Premiere draws each style and corrected ' + calN + ' of them — every editable caption uses the corrected size from now on (run the test again to see them match).' : 'Size: every style already lands at the size Pulse shows.', '',
         'PREVIEW DIFFERS FROM PREMIERE — to fix (worst first, preview vs Premiere %):'].concat(fix.map(line),
         ['', 'PREVIEW = PREMIERE (works):'], works.map(line),
         ['', 'SIMPLER IN EDITABLE THAN AS AN IMAGE (Premiere cannot draw it — use image captions for the full look):'],
@@ -14294,7 +14301,36 @@
     var img = 0;
     try { img = CPRender.styleForFrame(preset, H, {}, W).size; } catch (e) { img = 0; }
     var eng = PULSE_ENGINE_PX * Math.min(W, H) / 1080;
-    return (img > 0 && eng > 0) ? Math.max(0.3, Math.min(2.5, img / eng)) : 1;
+    // the size correction the 🎨 style test measured in the owner's Premiere
+    var cal = (preset && preset.id && settings && settings.pulseSizeCal && settings.pulseSizeCal[preset.id]) || 1;
+    return (img > 0 && eng > 0) ? Math.max(0.3, Math.min(2.5, cal * img / eng)) : 1;
+  }
+  /* The 🎨 style test, measured: how big Premiere drew each style against the
+     ✏️ Editable preview (sizeRatio, 1 = the same). Each style's correction is
+     kept in settings and used by every editable insert from then on — one
+     test run in the owner's Premiere replaces a round of hand fixes. Returns
+     how many styles changed. */
+  function styleTestCalibrate(rows) {
+    var cal = {}, k, n = 0;
+    var old = (settings && settings.pulseSizeCal) || {};
+    for (k in old) if (old.hasOwnProperty(k)) cal[k] = old[k];
+    (rows || []).forEach(function (x) {
+      if (!x || !x.id || !(x.sizeRatio > 0.6 && x.sizeRatio < 1.6)) return;   // a wild reading is not a size
+      var was = cal[x.id] || 1;
+      var f = Math.max(0.6, Math.min(1.8, was / x.sizeRatio));
+      if (Math.abs(f - was) < 0.03) return;                                    // already right
+      cal[x.id] = Math.round(f * 1000) / 1000; n++;
+    });
+    settings.pulseSizeCal = cal;
+    try { saveSettings(); } catch (e) {}
+    return n;
+  }
+  /* Premiere's caption against the preview's, each by its share of its own
+     frame (the two need not be the same resolution). */
+  function styleTestSizeRatio(pv, prem) {
+    if (!pv || !prem || !pv.box || !prem.box) return 0;
+    var a = Math.sqrt((pv.box.w * pv.box.h) / (pv.W * pv.H)), b = Math.sqrt((prem.box.w * prem.box.h) / (prem.W * prem.H));
+    return a > 0 ? b / a : 0;
   }
   function isPulseEngine(path) { return /pulse[ _]caption/i.test(String(path || '').split(/[\\/]/).pop()); }
   function pulseContrast(hex) {
@@ -20320,6 +20356,9 @@
       pulseSizeScale: pulseSizeScale,
       pulseImageLines: pulseImageLines,
       premFitEditable: premFitEditable,
+      styleTestCalibrate: styleTestCalibrate,
+      styleTestPixels: function (img, onBlack) { var o = styleTestPixels(img, onBlack); return { box: o.box, W: o.W, H: o.H }; },
+      sizeCal: function (v) { if (v !== undefined) settings.pulseSizeCal = v; return settings.pulseSizeCal || null; },
       seedMogrtDef: function (path, def) { _mogrtDefCache[path] = def; delete _premGeomCache[path]; },
       setBundledMogrts: function (list, engines) { state.bundledMogrts = list || []; state.engineMogrts = engines || []; },
       parseFontFaces: parseFontFaces,

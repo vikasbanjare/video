@@ -1,10 +1,22 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.54** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.55** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.55 — the 🎨 style test corrects sizes itself
+- Owner's v0.10.54 test: 39 close (was 12); looks match, the rest is size
+  ("Premiere draws it 10–40% smaller"). Two measuring bugs: the preview's
+  box counted black outlines/shadows (invisible on black) — both are now
+  measured on black by brightness; and CP_renderStylePreviews never applied
+  textStyle.sizeScale (CP_scaleAllTextSizes) as a real insert does.
+- Owner: "fix this once for all, one click". styleTestCalibrate: each test
+  run measures Premiere's size against the preview per style (sizeRatio,
+  by share of its own frame), keeps settings.pulseSizeCal[id] (0.6–1.8,
+  readings outside 0.6–1.6 ignored), and pulseSizeScale multiplies it in —
+  every editable insert uses it from then on. Gate style-test-calibrate.
 
 ### v0.10.54 — Lines on screen for editable captions
 - Owner: "in editable caption one function is missing — one line, 2 or

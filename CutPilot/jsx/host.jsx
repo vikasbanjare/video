@@ -4770,6 +4770,12 @@ function CP_renderStylePreviews(argsJson) {
           if (stl.text && comp.properties) {
             var tp = CP_findTextProp(comp.properties, ['text', 'caption', 'title', 'subtitle']);
             if (tp) { try { CP_setMgrtText(tp, stl.text, true, stl.textStyle || null); } catch (eTx) {} }
+            // a style bigger than the template's own size rides the font size,
+            // as on a real insert — the test drew Tall Poster, One Word Shout
+            // at the template's size (the owner's v0.10.54 test: 15–40% small)
+            if (stl.textStyle && stl.textStyle.sizeScale && stl.textStyle.sizeScale !== 1) {
+              try { CP_scaleAllTextSizes(comp, stl.textStyle.sizeScale); } catch (eSc) {}
+            }
           }
           try { CP_forceRerender(clip); } catch (eRr) {}
           try { CP_applyMgrtParams(comp, stl.params || [], CP_compUnits(clip)); } catch (ePr2) {}   // re-apply (text writes can revert params)

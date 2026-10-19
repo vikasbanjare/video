@@ -3121,6 +3121,31 @@ const MUTANTS = [
     repl: '    if (false) {',
     gate: 'CutPilot/test/gates/editable-lines.js',
     why: 'Auto never uses a third line'
+  },
+  // v55: the style test corrects sizes itself (owner: "fix this once for all")
+  {
+    name: 'v55-cal-not-used',
+    file: 'CutPilot/js/main.js',
+    find: '    return (img > 0 && eng > 0) ? Math.max(0.3, Math.min(2.5, cal * img / eng)) : 1;',
+    repl: '    return (img > 0 && eng > 0) ? Math.max(0.3, Math.min(2.5, img / eng)) : 1;',
+    gate: 'CutPilot/test/gates/style-test-calibrate.js',
+    why: 'the measured size correction is never used'
+  },
+  {
+    name: 'v55-cal-wild-reading',
+    file: 'CutPilot/js/main.js',
+    find: "      if (!x || !x.id || !(x.sizeRatio > 0.6 && x.sizeRatio < 1.6)) return;   // a wild reading is not a size",
+    repl: "      if (!x || !x.id || !(x.sizeRatio > 0)) return;",
+    gate: 'CutPilot/test/gates/style-test-calibrate.js',
+    why: 'a broken measurement shrinks or blows up a style'
+  },
+  {
+    name: 'v55-box-counts-black-edge',
+    file: 'CutPilot/js/main.js',
+    find: '    return { canvas: c, data: d.data, box: captionBox(d.data, c.width, c.height, true), W: c.width, H: c.height };',
+    repl: '    return { canvas: c, data: d.data, box: captionBox(onBlack ? d.data : raw, c.width, c.height, onBlack), W: c.width, H: c.height };',
+    gate: 'CutPilot/test/gates/style-test-calibrate.js',
+    why: "the preview's black outline counts as size: every style reads \"Premiere draws it smaller\""
   }
 ];
 
