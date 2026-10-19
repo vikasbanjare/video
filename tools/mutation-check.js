@@ -3088,6 +3088,39 @@ const MUTANTS = [
     repl: '',
     gate: 'CutPilot/test/gates/ae-caption-builder.js',
     why: 'an expression switched off while the template was being built stays off'
+  },
+  // v54: Lines on screen for editable captions (owner: "one line, 2 or auto, like render")
+  {
+    name: 'v54-lines-hidden-in-editable',
+    file: 'CutPilot/index.html',
+    find: '<div class="seg-control mini" id="c-lines">',
+    repl: '<div class="seg-control mini png-only" id="c-lines">',
+    gate: 'CutPilot/test/gates/editable-lines.js',
+    why: 'Lines on screen is hidden in Editable'
+  },
+  {
+    name: 'v54-lines-not-sent',
+    file: 'CutPilot/js/main.js',
+    find: '    if (ov.maxLines != null) eff.maxLines = ov.maxLines;',
+    repl: '',
+    gate: 'CutPilot/test/gates/editable-lines.js',
+    why: 'the Lines choice never reaches the editable captions'
+  },
+  {
+    name: 'v54-fit-ignores-lines',
+    file: 'CutPilot/js/main.js',
+    find: '    if (maxLines != null && plan.maxLines >= 2) plan.maxLines = (maxLines === 1) ? 1 : (maxLines === 0 ? 3 : 2);',
+    repl: '',
+    gate: 'CutPilot/test/gates/editable-lines.js',
+    why: 'Single / Auto make no difference to editable captions'
+  },
+  {
+    name: 'v54-auto-two-lines',
+    file: 'CutPilot/js/main.js',
+    find: '    if (!best && maxLines >= 3 && n >= 3) {',
+    repl: '    if (false) {',
+    gate: 'CutPilot/test/gates/editable-lines.js',
+    why: 'Auto never uses a third line'
   }
 ];
 

@@ -1,10 +1,20 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.53** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.54** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.54 — Lines on screen for editable captions
+- Owner: "in editable caption one function is missing — one line, 2 or
+  auto, like in render captions". #c-lines (Single / Double / Auto) is no
+  longer png-only; styledPreset carries maxLines; premFitEditable takes it
+  (Single 1, Double 2, Auto up to 3 — premLayout tries three balanced lines
+  when two cannot hold it); pulseImageLines keeps up to 3 lines on Auto.
+  Single splits into more captions (the template cannot shrink text per
+  caption). Gate editable-lines (CP_DEBUG.seedMogrtDef hands the panel the
+  template's definition — the stand-in has no execFileSync).
 
 ### v0.10.53 — template v6 bundled (Pulse_Caption_r6.mogrt)
 - The owner's v6 export (builder after the v0.10.52 fix): 21 controls, font

@@ -13079,6 +13079,17 @@
       if (premConj(ws[k])) c -= 25;                             // …or before a conjunction
       if (!best || c < best.cost) best = { breaks: [k], width: Math.max(w1, w2), cost: c };
     }
+    // Auto: three lines when two cannot hold it, as even as can be
+    if (!best && maxLines >= 3 && n >= 3) {
+      for (var k1 = a + 1; k1 < b - 1; k1++) for (var k2 = k1 + 1; k2 < b; k2++) {
+        var x1 = span(a, k1), x2 = span(k1, k2), x3 = span(k2, b);
+        if (x1 > maxW || x2 > maxW || x3 > maxW) continue;
+        var c3 = (Math.max(x1, x2, x3) - Math.min(x1, x2, x3)) / maxW * 100;
+        if (k1 - a < 2 || k2 - k1 < 2 || b - k2 < 2) c3 += 200;
+        if (premNoStart(ws[k1], lang) || premNoStart(ws[k2], lang)) c3 += 5000;
+        if (!best || c3 < best.cost) best = { breaks: [k1, k2], width: Math.max(x1, x2, x3), cost: c3 };
+      }
+    }
     return best;
   }
 
@@ -13293,9 +13304,13 @@
   /* The editable path (Flux Halo engine) puts textCues' lines into the same
      comp: break any line wider than the comp into two balanced lines, and
      split a caption that cannot fit two, so nothing is ever cropped. */
-  function premFitEditable(tcues, path, env, sizeScale, fontPs) {
+  /* maxLines: the owner's Lines on screen — 1 Single, 2 Double, 0 Auto (up to
+     three lines) — on a template that draws more than one line; unset = the
+     template's own (two where it can). */
+  function premFitEditable(tcues, path, env, sizeScale, fontPs, maxLines) {
     var plan = premPlan(path, env, { fixedScale: sizeScale || 1 });
     if (!plan.fit) return { cues: tcues, plan: plan };
+    if (maxLines != null && plan.maxLines >= 2) plan.maxLines = (maxLines === 1) ? 1 : (maxLines === 0 ? 3 : 2);
     var allText = tcues.map(function (c) { return c.text; }).join(' ');
     var face = { ps: fontPs || plan.geom.font };   // measured in the face the style sends
     plan.space = premMeasure(' ', plan.fontPx, face.ps);
@@ -13678,6 +13693,8 @@
     if (ov.wordsPerCue != null && isFinite(ov.wordsPerCue)) eff.wordsPerCue = ov.wordsPerCue;
     if (ov.entrance) eff.entrance = ov.entrance;
     if (ov.exit) eff.exit = ov.exit;
+    // Lines on screen (Single / Double / Auto) reaches editable captions too
+    if (ov.maxLines != null) eff.maxLines = ov.maxLines;
     if (ov.tilt != null) { eff.tilt = ov.tilt; eff.tiltAlt = !!ov.tiltAlt; }
     if (ov.upcomingOpacity != null) eff.upcomingOpacity = ov.upcomingOpacity;
     return eff;
@@ -14537,7 +14554,8 @@
       if (words.length < 2) return c;
       var lay = null;
       try { lay = CPRender.captionLayout(meas, words, style, W, H, { wordSync: true }); } catch (e2) { lay = null; }
-      if (!lay || !lay.lines || lay.lines.length < 2 || lay.lines.length > 2) return c;
+      // Double: two lines at most; Auto (maxLines 0): three
+      if (!lay || !lay.lines || lay.lines.length < 2 || lay.lines.length > (preset && preset.maxLines === 0 ? 3 : 2)) return c;
       var lines = lay.lines.map(function (l) { return lay.items.slice(l.from, l.to).map(function (it) { return it.word; }).join(' '); });
       if (lines.join(' ').replace(/\s+/g, ' ') !== words.join(' ')) return c;   // a long word was cut in pieces: keep the fit
       var o = {}, k; for (k in c) if (c.hasOwnProperty(k)) o[k] = c[k];
@@ -14705,7 +14723,7 @@
         // and a caption that cannot fit two splits (premFitEditable). The
         // Position row is kept far enough from the edges for the whole graphic.
         var edGeom = premGeometry(bb.path);
-        var fitE = premFitEditable(tcues, bb.path, state.env, sizeScale, textStyle && textStyle.font);
+        var fitE = premFitEditable(tcues, bb.path, state.env, sizeScale, textStyle && textStyle.font, preset.maxLines);
         if (pulseBB) fitE.cues = pulseImageLines(fitE.cues, preset, state.env);
         tcues = editableWordStarts(fitE.cues, cues.words, syncOff);
         var edPos = (params && params._posYPct != null)
@@ -20301,6 +20319,8 @@
       pulseLook: pulseLook,
       pulseSizeScale: pulseSizeScale,
       pulseImageLines: pulseImageLines,
+      premFitEditable: premFitEditable,
+      seedMogrtDef: function (path, def) { _mogrtDefCache[path] = def; delete _premGeomCache[path]; },
       setBundledMogrts: function (list, engines) { state.bundledMogrts = list || []; state.engineMogrts = engines || []; },
       parseFontFaces: parseFontFaces,
       useRealPreviews: function (on) { settings.useRealPreviews = !!on; _stylePrev = null; },
