@@ -251,7 +251,7 @@ async function scriptedPage(browser, W, H, opts) {
       if (fn === 'CP_clearCaptionTrack') return reply({ ok: true, cleared: 12, track: a.track, top: true });
       return orig.call(this, s, cb);
     };
-  }, W, H, !!opts.inspectFails, { 'Flux_Halo2_r3.mogrt': liveProps('Flux_Halo2_r3.mogrt'), 'Pulse_Caption_r5.mogrt': liveProps('Pulse_Caption_r5.mogrt') });
+  }, W, H, !!opts.inspectFails, { 'Flux_Halo2_r3.mogrt': liveProps('Flux_Halo2_r3.mogrt'), 'Pulse_Caption_r6.mogrt': liveProps('Pulse_Caption_r6.mogrt') });
   return page;
 }
 /* long words first: five of them unbroken are wider than any caption line */
@@ -510,7 +510,7 @@ async function magicRun(page, mode) {
     // ---- M. the ✏️ Editable path rides the same engine and host function -------
     // Both editable engines: Pulse's own (picked first since v0.10.34) and
     // Flux (the fallback). Each is the ONLY template loaded for its pass.
-    for (const ENG of ['Flux_Halo2_r3.mogrt', 'Pulse_Caption_r5.mogrt']) {
+    for (const ENG of ['Flux_Halo2_r3.mogrt', 'Pulse_Caption_r6.mogrt']) {
       const halo = defOf(ENG), mBad = [], isPulse = /Pulse_Caption/.test(ENG);
       const sizeIdx = isPulse ? halo.controls.findIndex(c => nm(c) === 'size') : -1;
       let mLines = 0, mInserts = 0, liftedSeen = 0;

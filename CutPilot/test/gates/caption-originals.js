@@ -139,7 +139,7 @@ const OFL = ['Archivo Black', 'Poppins', 'Anton', 'Montserrat', 'Quicksand', 'Be
     D.setBundledMogrts([], [{ path: '/ext/mogrts/Pulse_Caption_r3.mogrt', name: 'Pulse Caption', engine: true, features: [] }]);
     const c3 = D.pulseCarryStyle(T('af-tilt-tag')), g3 = D.pulseCarryStyle(T('af-sunset-fade'));
     out.prevOld = { tilt: c3.tilt, fill2: g3.fill2 };
-    D.setBundledMogrts([], [{ path: '/ext/mogrts/Pulse_Caption_r5.mogrt', name: 'Pulse Caption', engine: true, features: ['gradient', 'upcoming', 'tilt', 'exit'] }]);
+    D.setBundledMogrts([], [{ path: '/ext/mogrts/Pulse_Caption_r6.mogrt', name: 'Pulse Caption', engine: true, features: ['gradient', 'upcoming', 'tilt', 'exit'] }]);
     const c4 = D.pulseCarryStyle(T('af-line-ribbons')), g4 = D.pulseCarryStyle(T('af-sunset-fade')), u4 = D.pulseCarryStyle(T('af-soft-focus'));
     out.prevNew = { tilt: c4.tilt, alt: c4.tiltAlt, fill2: g4.fill2, up: u4.upcomingOpacity };
     // F: the owner's style test on v0.10.39

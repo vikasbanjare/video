@@ -1,10 +1,19 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.52** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.53** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.53 — template v6 bundled (Pulse_Caption_r6.mogrt)
+- The owner's v6 export (builder after the v0.10.52 fix): 21 controls, font
+  editing on; its .aep holds Tracking Base/Probe, the Outline expression
+  selector, Fill & Stroke (ADBE Text Render Order) and the em boxes.
+  index.json features add "grow" and "embox": the spoken word grows again
+  (spaced), the preview draws image-size boxes. r5 removed.
+- Real-Premiere result NOT VERIFIED yet: the owner's next 🎨 style test
+  measures it.
 
 ### v0.10.52 — the owner's first v6 builder run
 - Self-check: "Gradient Text > … Spoken Word > Tracking Amount: Expression

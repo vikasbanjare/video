@@ -1,6 +1,6 @@
 /*
  * pulse-engine.js — editable captions ride Pulse's own engine
- * (mogrts/Pulse_Caption_r5.mogrt, built in After Effects by
+ * (mogrts/Pulse_Caption_r6.mogrt, built in After Effects by
  * tools/ae/Pulse-Caption-Builder.jsx), and each style lands on it as it looks.
  *
  * Owner report: an editable caption did not look like the same style as an
@@ -25,7 +25,7 @@ const L = require('./overlay-lib.cjs');
 let failed = 0;
 const ok = (m) => console.log('  ✓ ' + m);
 const bad = (m, d) => { failed++; console.log('  ✗ ' + m + (d ? '\n      ' + d : '')); };
-const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r5.mogrt');
+const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r6.mogrt');
 
 (async () => {
   console.log('🎬 Pulse Caption: editable captions on Pulse\'s own engine');
@@ -34,7 +34,7 @@ const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r5.mogrt
   const names = def.clientControls.filter(c => c.type !== 10).map(c => (c.uiName && c.uiName.strDB) ? c.uiName.strDB[0].str : c.uiName);
   const WANT = ['Text', 'Size', 'Text Color', 'Spoken Word Color', 'Outline Color', 'Outline Width', 'Box', 'Box Color',
     'Box Opacity', 'Box Roundness', 'Shadow Opacity', 'Shadow Distance', 'Animation'];
-  // template v4 (Pulse_Caption_r5): the 16 caption controls + Text Gradient,
+  // template v4 (Pulse_Caption_r6): the 16 caption controls + Text Gradient,
   // Text Color 2, Upcoming Opacity, Tilt and Exit — still no plumbing
   const V4 = ['Text Gradient', 'Text Color 2', 'Upcoming Opacity', 'Tilt', 'Exit'];
   (names.length <= 21 && WANT.concat(V4).every(n => names.indexOf(n) >= 0) && names.some(n => /^Spoken Word (Grow|Size)$/.test(n)) &&
@@ -43,22 +43,24 @@ const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r5.mogrt
   // what index.json says this engine can draw must be controls it really has
   const idx = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'mogrts', 'index.json'), 'utf8'));
   const eng = idx.filter(m => m.engine && /Pulse_Caption/.test(m.file))[0] || {};
-  const NEEDS = { gradient: ['Text Gradient', 'Text Color 2'], upcoming: ['Upcoming Opacity'], tilt: ['Tilt'], exit: ['Exit'] };
+  const NEEDS = { gradient: ['Text Gradient', 'Text Color 2'], upcoming: ['Upcoming Opacity'], tilt: ['Tilt'], exit: ['Exit'],
+    grow: ['Spoken Word Grow'], embox: ['Box'] };
   const feats = eng.features || [];
-  (eng.file === path.basename(MOGRT) && feats.length === 4 && feats.every(f => (NEEDS[f] || ['?']).every(n => names.indexOf(n) >= 0)) &&
+  (eng.file === path.basename(MOGRT) && feats.length === 6 && feats.every(f => (NEEDS[f] || ['?']).every(n => names.indexOf(n) >= 0)) &&
    def.clientControls[0].fonteditinfo && def.clientControls[0].fonteditinfo.capPropFontEdit === true ? ok : bad)(
     'A. the bundled engine is ' + eng.file + ', its features (' + feats.join(', ') + ') are real controls, and font editing is on');
-  // r5: the spoken word over a word box has no outline (builder v5) — read
-  // from the template's own After Effects project inside the .mogrt
+  // r6 (builder v6, the owner's After Effects run) — read from the template's
+  // own After Effects project inside the .mogrt
   let aep = '';
   try {
     const tmpA = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-aeg-'));
     fs.writeFileSync(path.join(tmpA, 'p.aegraphic'), cp.execFileSync('unzip', ['-p', MOGRT, 'project.aegraphic'], { maxBuffer: 1 << 26 }));
     aep = cp.execFileSync('unzip', ['-p', path.join(tmpA, 'p.aegraphic')], { maxBuffer: 1 << 26 }).toString('latin1');
   } catch (eA) {}
-  (/Math\.round\(thisComp\.layer\("Controls"\)\.effect\("Box"\)\(1\)\) >= 3 \? 0 : thisComp\.layer\("Controls"\)\.effect\("Outline Width"\)\(1\)/.test(aep) &&
+  (/Tracking Probe/.test(aep) && /Tracking Base/.test(aep) && /onBox && inW/.test(aep) && /ADBE Text Render Order/.test(aep) &&
+   /1\.46 \* fs \* g/.test(aep) && /ADBE Text Expressible Selector/.test(aep) &&
    /Math\.round\(thisComp\.layer\("Controls"\)\.effect\("Text Gradient"\)\(1\)\) == 1/.test(aep) ? ok : bad)(
-    'A. the bundled template is the v5 build: no outline on a boxed word, Text Gradient read as a number');
+    'A. the bundled template is the v6 build: spaced growing word, outline behind the letters and off a boxed word, image-size boxes');
   const PROPS = def.clientControls.map((c, i) => ({ i, name: (c.uiName && c.uiName.strDB) ? c.uiName.strDB[0].str : c.uiName,
     kind: c.type === 4 ? 'color' : (c.type === 6 ? 'text' : 'number') }));
 
@@ -71,7 +73,7 @@ const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r5.mogrt
     const D = window.CP_DEBUG, C = window.CPCaptions, out = {};
     const T = id => C.TEMPLATES.find(t => t.id === id);
     // B
-    D.setBundledMogrts([{ path: '/ext/mogrts/Flux_Halo2_r3.mogrt', name: 'Flux Halo' }, { path: '/ext/mogrts/Pulse_Caption_r5.mogrt', name: 'Pulse Caption' }]);
+    D.setBundledMogrts([{ path: '/ext/mogrts/Flux_Halo2_r3.mogrt', name: 'Flux Halo' }, { path: '/ext/mogrts/Pulse_Caption_r6.mogrt', name: 'Pulse Caption' }]);
     out.picked = (D.bundledBackbone({}) || {}).path;
     // C
     const sent = id => { const s = D.mapPresetToPulse(T(id), PROPS) || []; const o = {}; s.forEach(x => { o[PROPS[x.i].name] = x.value; }); return o; };
@@ -80,11 +82,11 @@ const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r5.mogrt
     // the grow rides only a template that spaces a growing word's letters (v6)
     out.growOld = sent('pack-maroon-label')['Spoken Word Grow'];
     out.pvOld = D.pulseCarryStyle(T('pack-maroon-label')).highlightScale;
-    D.setBundledMogrts([{ path: '/ext/mogrts/Pulse_Caption_r5.mogrt', name: 'Pulse Caption' }],
+    D.setBundledMogrts([{ path: '/ext/mogrts/Pulse_Caption_r6.mogrt', name: 'Pulse Caption' }],
       [{ path: '/ext/mogrts/Pulse_Caption_r6.mogrt', name: 'Pulse Caption', engine: true, features: ['grow'] }]);
     out.growNew = sent('pack-maroon-label')['Spoken Word Grow'];
     out.pvNew = D.pulseCarryStyle(T('pack-maroon-label')).highlightScale;
-    D.setBundledMogrts([{ path: '/ext/mogrts/Flux_Halo2_r3.mogrt', name: 'Flux Halo' }, { path: '/ext/mogrts/Pulse_Caption_r5.mogrt', name: 'Pulse Caption' }]);
+    D.setBundledMogrts([{ path: '/ext/mogrts/Flux_Halo2_r3.mogrt', name: 'Flux Halo' }, { path: '/ext/mogrts/Pulse_Caption_r6.mogrt', name: 'Pulse Caption' }]);
     // size: the image caption's, on a vertical reel and a landscape podcast
     out.sizeV = D.pulseSizeScale(T('pack-maroon-label'), { width: 1080, height: 1920 });
     out.sizeH = D.pulseSizeScale(T('pack-maroon-label'), { width: 1920, height: 1080 });
@@ -106,7 +108,7 @@ const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r5.mogrt
     }
     // the engine as built (v6: a growing word spaces its letters, boxes as
     // tall as the image's); r5's missing grow is C's business
-    D.setBundledMogrts([{ path: '/ext/mogrts/Pulse_Caption_r5.mogrt', name: 'Pulse Caption' }],
+    D.setBundledMogrts([{ path: '/ext/mogrts/Pulse_Caption_r6.mogrt', name: 'Pulse Caption' }],
       [{ path: '/ext/mogrts/Pulse_Caption_r6.mogrt', name: 'Pulse Caption', engine: true, features: ['grow', 'embox'] }]);
     out.rows = [];
     for (const t of C.TEMPLATES) {
@@ -122,7 +124,7 @@ const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r5.mogrt
   }, PROPS, root);
   await P.close();
 
-  (/Pulse_Caption_r5\.mogrt$/.test(r.picked || '') ? ok : bad)('B. Pulse picks its own engine over Flux (' + r.picked + ')');
+  (/Pulse_Caption_r6\.mogrt$/.test(r.picked || '') ? ok : bad)('B. Pulse picks its own engine over Flux (' + r.picked + ')');
 
   const G = r.green, M = r.maroon;
   (G.Box === 2 && /^#04420E$/i.test(G['Box Color']) && /^#FFFFFF$/i.test(G['Spoken Word Color']) && G['Outline Width'] > 5 && G['Outline Width'] < 7.5 ? ok : bad)(
