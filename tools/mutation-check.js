@@ -3071,6 +3071,23 @@ const MUTANTS = [
     repl: '  function premDrawsRegularOnly(family) { return false; }',
     gate: 'CutPilot/test/gates/caption-originals.js',
     why: 'Didot / Snell styles preview Bold but Premiere draws them Regular'
+  },
+  // v52: the owner's first run of the v6 builder in After Effects
+  {
+    name: 'v52-tracking-written-early',
+    file: 'tools/ae/Pulse-Caption-Builder.jsx',
+    find: "    gAnims().property('Spoken Word').property('ADBE Text Animator Properties').addProperty('ADBE Text Tracking Amount');",
+    repl: "    gAnims().property('Spoken Word').property('ADBE Text Animator Properties').addProperty('ADBE Text Tracking Amount').expression = TRACK;",
+    gate: 'CutPilot/test/gates/ae-caption-builder.js',
+    why: "Gradient Text's tracking names Measure Word before it exists — After Effects switches it off"
+  },
+  {
+    name: 'v52-no-reenable',
+    file: 'tools/ae/Pulse-Caption-Builder.jsx',
+    find: "          try { if (pr.canSetExpression && pr.expression !== '' && pr.expressionEnabled === false) pr.expressionEnabled = true; } catch (eRe) {}",
+    repl: '',
+    gate: 'CutPilot/test/gates/ae-caption-builder.js',
+    why: 'an expression switched off while the template was being built stays off'
   }
 ];
 

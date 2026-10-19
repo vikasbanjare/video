@@ -63,7 +63,13 @@ Node.prototype.setValue = function (v) { this.v = v; };
 // expression error (the stand-in can fail one on purpose: FAIL_EXPR)
 Object.defineProperty(Node.prototype, 'numProperties', { get() { return this.kids.length; } });
 Object.defineProperty(Node.prototype, 'propertyType', { get() { return this.kids.length ? 2 : 1; } });
-Object.defineProperty(Node.prototype, 'expressionError', { get() { return (process.env.FAIL_EXPR && this.expr && this.expr.indexOf(process.env.FAIL_EXPR) >= 0) ? 'Error: boom' : ''; } });
+Object.defineProperty(Node.prototype, 'expressionError', { get() { return (process.env.FAIL_EXPR && this.expr && this.expr.indexOf(process.env.FAIL_EXPR) >= 0) ? 'Error: boom' : (this.exprErr || ''); } });
+// …and switched off it stays, until switched back on — then it is judged
+// again against the layers there now
+Object.defineProperty(Node.prototype, 'canSetExpression', { get() { return true; } });
+Object.defineProperty(Node.prototype, 'expressionEnabled', {
+  get() { return !this.exprErr; },
+  set(v) { if (v && this.expr != null) { const e = this.expr; this.expression = e; rec.expressions.pop(); } } });
 Node.prototype.valueAtTime = function () {
   // the growing word's tracking is an expression: After Effects runs it here
   // (the builder's self-check reads it with Spoken Word Grow at 25)
@@ -103,7 +109,14 @@ Object.defineProperty(Node.prototype, 'propertyIndex', { get() { return this.own
 Node.prototype.canAddToMotionGraphicsTemplate = function () { return true; };
 // AE puts each newly added control at the TOP of the Essential Graphics list
 Node.prototype.addToMotionGraphicsTemplateAs = function (comp, label) { rec.exposed.unshift({ label, prop: this }); return true; };
-Object.defineProperty(Node.prototype, 'expression', { set(e) { this.expr = e; rec.expressions.push({ where: this.where(), prop: this, expr: e }); }, get() { return this.expr || ''; } });
+// After Effects checks an expression as it is written: one naming a layer
+// that is not there yet is switched off ("layer named 'Measure Word' is
+// missing" — the owner's first v6 run, on Gradient Text)
+Object.defineProperty(Node.prototype, 'expression', { set(e) {
+  this.expr = e; rec.expressions.push({ where: this.where(), prop: this, expr: e, missing: null });
+  const have = comp.layers.list.map(l => l.name), re = /thisComp\.layer\("([^"]+)"\)/g; let m; this.exprErr = '';
+  while ((m = re.exec(e))) if (have.indexOf(m[1]) < 0) { this.exprErr = "Error: layer named '" + m[1] + "' is missing or does not exist"; rec.expressions[rec.expressions.length - 1].missing = m[1]; break; }
+}, get() { return this.expr || ''; } });
 Object.defineProperty(Node.prototype, 'value', { get() { return this.v || { resetCharStyle() {}, resetParagraphStyle() {} }; } });
 function Layer(name) { Node.call(this, 'layer', null, null); this.layer = this; this.name = name; this.parent = null; }
 Layer.prototype = Object.create(Node.prototype);
@@ -269,6 +282,15 @@ if (!process.env.FAIL_EXPR) {
   (capT && gT === capT && Math.abs(a.px - 10) < 0.01 && Math.abs(b.px - 10) < 0.01 && z.T === 0 ? ok : bad)(
     'K. Grow 25 on PAISE (5 letters, 200 px) spreads its letters 10 px each — in 1/1000 em or in pixels — 0 without grow; the gradient copy the same',
     JSON.stringify({ capT: !!capT, same: gT === capT, a, b, z }));
+}
+
+// K. the growing word's tracking is written once the layers it reads exist,
+// on both copies of the text (the owner's first v6 run: After Effects switched
+// Gradient Text's off — "layer named 'Measure Word' is missing")
+{
+  const tr = rec.expressions.filter(e => /Spoken Word › .*Tracking Amount/.test(e.where));
+  (tr.length === 2 && tr.every(e => !e.missing) ? ok : bad)('K. the growing word\'s tracking (Caption, Gradient Text) names only layers that exist when it is written',
+    JSON.stringify(tr.map(e => [e.where.split(' ›')[0], e.missing])));
 }
 
 // J. v6: the outline is its own animator, on every letter except the spoken

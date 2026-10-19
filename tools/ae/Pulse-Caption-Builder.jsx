@@ -249,7 +249,8 @@
     sel.property('ADBE Text Index End').expression = C + '("Spoken Index")(1) + 1;';
     addProp('Spoken Word', 'ADBE Text Fill Color', C + '("Spoken Word Color")(1);');
     addProp('Spoken Word', 'ADBE Text Scale 3D', 'var g = 100 + ' + C + '("Spoken Word Grow")(1); value.length > 2 ? [g, g, 100] : [g, g];');
-    addProp('Spoken Word', 'ADBE Text Tracking Amount', TRACK);
+    // its tracking (TRACK) is written once the layers it reads exist (below)
+    anim('Spoken Word').property('ADBE Text Animator Properties').addProperty('ADBE Text Tracking Amount');
     // the outline: every letter, except the spoken word on a box (Box: Spoken
     // word / Line and spoken word), as the image draws it. Its own animator
     // with an expression selector: Stroke Width ADDS up across animators, so
@@ -310,7 +311,7 @@
     gAnims().property('Spoken Word').property('ADBE Text Selectors').property(1).property('ADBE Text Index End').expression = C + '("Spoken Index")(1) + 1;';
     gAnims().property('Spoken Word').property('ADBE Text Animator Properties').addProperty('ADBE Text Scale 3D').expression =
       'var g = 100 + ' + C + '("Spoken Word Grow")(1); value.length > 2 ? [g, g, 100] : [g, g];';
-    gAnims().property('Spoken Word').property('ADBE Text Animator Properties').addProperty('ADBE Text Tracking Amount').expression = TRACK;
+    gAnims().property('Spoken Word').property('ADBE Text Animator Properties').addProperty('ADBE Text Tracking Amount');
     gAnims().property('Spoken Word').property('ADBE Text Animator Properties').addProperty('ADBE Text Opacity').expression = '0;';
     upcoming(gl);
     var ramp = gl.property('ADBE Effect Parade').addProperty('ADBE Ramp');
@@ -375,6 +376,18 @@
     }
     probe('Tracking Base', false);
     probe('Tracking Probe', true);
+    // After Effects checks an expression the moment it is written and switches
+    // it off if a layer it names is not there yet (the owner's first v6 run:
+    // "layer named 'Measure Word' is missing" on Gradient Text): the growing
+    // word's tracking goes in now, on both copies of the text
+    function spokenTracking(layer) {
+      var p = layer.property('ADBE Text Properties').property('ADBE Text Animators').property('Spoken Word')
+        .property('ADBE Text Animator Properties').property('ADBE Text Tracking Amount');
+      p.expression = TRACK;
+      try { p.expressionEnabled = true; } catch (eEn) {}
+    }
+    spokenTracking(cap);
+    spokenTracking(gl);
 
     // ---- the two boxes (below the text) -----------------------------------
     // Box: 1 None · 2 Whole line · 3 Spoken word · 4 Line and spoken word
@@ -449,6 +462,10 @@
         var pr = group.property(pi);
         if (!pr) continue;
         if (pr.propertyType === PropertyType.PROPERTY) {
+          // an expression written before a layer it names existed may have been
+          // switched off on the spot (the owner's first v6 run): every layer is
+          // there now, so switch it back on and let After Effects judge it again
+          try { if (pr.canSetExpression && pr.expression !== '' && pr.expressionEnabled === false) pr.expressionEnabled = true; } catch (eRe) {}
           var ee = '';
           try { ee = pr.expressionError || ''; } catch (eEe) {}
           var off = false;

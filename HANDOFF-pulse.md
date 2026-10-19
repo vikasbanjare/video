@@ -1,10 +1,19 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.51** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.52** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.52 — the owner's first v6 builder run
+- Self-check: "Gradient Text > … Spoken Word > Tracking Amount: Expression
+  disabled … layer named 'Measure Word' is missing". AE judges an expression
+  as it is written and may switch it off when a layer it names is not there
+  yet. The tracking (TRACK) is now written after the measure/probe layers
+  (spokenTracking, both copies), and the self-check first switches every
+  expression back on, then reports what still fails. The stand-in AE does
+  the same (missing layer at write → off until re-enabled).
 
 ### v0.10.51 — the rest of the owner's v0.10.48 sheets
 - Builder v6 also: More Options › Fill & Stroke = All Fills Over All
