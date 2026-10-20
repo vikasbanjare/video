@@ -42,8 +42,8 @@
     return out.replace(/\s+/g, ' ').replace(/^ +| +$/g, '');
   }
 
-  /* Parse a 'name' table at absolute offset `tableOff`, pushing
-     {nameID, name} for family records (1 = legacy family, 16 = typographic). */
+  /* Parse a 'name' table at absolute offset `tableOff`, pushing {nameID, name}
+     for family (1 legacy, 16 typographic), style (2, 17) and PostScript (6). */
   function parseNameTableAt(b, tableOff, out) {
     if (tableOff + 6 > b.length) return;
     var count = u16(b, tableOff + 2);
@@ -52,7 +52,7 @@
     for (var i = 0; i < count; i++, rec += 12) {
       if (rec + 12 > b.length) break;
       var nameID = u16(b, rec + 6);
-      if (nameID !== 1 && nameID !== 16) continue;
+      if (nameID !== 1 && nameID !== 2 && nameID !== 6 && nameID !== 16 && nameID !== 17) continue;
       var platformID = u16(b, rec);
       var len = u16(b, rec + 8);
       var so = storage + u16(b, rec + 10);
@@ -214,6 +214,7 @@
     } else {
       return [];
     }
+    out = out.filter(function (n) { return n.nameID === 1 || n.nameID === 16; });
     // prefer the typographic family (16) over the legacy family (1); dedupe
     var pref = {}, seen = {}, list = [];
     out.forEach(function (n) { if (n.nameID === 16) pref[n.name.toLowerCase()] = 1; });
@@ -224,6 +225,27 @@
       seen[key] = 1; list.push(n.name);
     });
     return list;
+  }
+
+  /* Each face in a font file: { family, style, ps } — the PostScript name
+     Premiere needs. Guessing it from the family broke on real files: the
+     Google "Arvo" Regular is PostScript "Arvo", not "Arvo-Regular", and
+     Premiere drew some other font (the owner's v0.10.57 style test). */
+  function parseFaces(buf) {
+    var b = buf, offs = [];
+    if (!b || b.length < 12) return [];
+    var tag = tag4(b, 0);
+    if (tag === 'ttcf') { for (var i = 0, p = 12, nf = u32(b, 8); i < nf && p + 4 <= b.length; i++, p += 4) offs.push(u32(b, p)); }
+    else if (u32(b, 0) === 0x00010000 || tag === 'OTTO' || tag === 'true' || tag === 'typ1') offs.push(0);
+    var faces = [];
+    offs.forEach(function (off) {
+      var out = [], by = {};
+      parseOffsetTableAt(b, off, out);
+      out.forEach(function (n) { if (!by[n.nameID]) by[n.nameID] = n.name; });
+      var fam = by[16] || by[1], ps = by[6];
+      if (fam && ps) faces.push({ family: fam, style: by[17] || by[2] || 'Regular', ps: ps.replace(/\s+/g, '') });
+    });
+    return faces;
   }
 
   /* The OS font folders for a platform (args injected for testability). */
@@ -282,9 +304,13 @@
           var buf = fs.readFileSync(full);
           var names = parseFamilyNames(buf);
           var cov = names.length ? parseCoverage(buf) : null;
+          var faces = names.length ? parseFaces(buf) : [];
           for (var n = 0; n < names.length; n++) {
             var key = names[n].toLowerCase();
-            if (!set[key]) set[key] = { name: names[n], cov: null };
+            if (!set[key]) set[key] = { name: names[n], cov: null, faces: {} };
+            for (var fi = 0; fi < faces.length; fi++) {
+              if (faces[fi].family.toLowerCase() === key && !set[key].faces[faces[fi].style.toLowerCase()]) set[key].faces[faces[fi].style.toLowerCase()] = faces[fi].ps;
+            }
             if (cov) {
               var e = set[key];
               e.cov = e.cov || { latin: false, devanagari: false };
@@ -300,7 +326,7 @@
     var out = [];
     for (var k in set) if (set.hasOwnProperty(k)) {
       var it = set[k];
-      out.push({ name: it.name, latin: it.cov ? it.cov.latin : null, devanagari: it.cov ? it.cov.devanagari : null });
+      out.push({ name: it.name, latin: it.cov ? it.cov.latin : null, devanagari: it.cov ? it.cov.devanagari : null, faces: it.faces });
     }
     out.sort(function (a, b) { return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1; });
     return out;
@@ -320,6 +346,7 @@
 
   return {
     parseFamilyNames: parseFamilyNames,
+    parseFaces: parseFaces,
     systemFontDirs: systemFontDirs,
     listInstalledFonts: listInstalledFonts,
     listInstalledFontsDetailed: listInstalledFontsDetailed,

@@ -4717,6 +4717,30 @@ function CP_previewMogrt(argsJson) {
   } catch (e) { return CP_fail(e.message); }
 }
 
+/* A throwaway sequence with no dialog. createNewSequence opens Premiere's
+ * New Sequence dialog on Premiere 2026 (the 🎨 style test asked the owner
+ * 14 times, once per 10 styles); newSequence from a preset Premiere ships
+ * does not. The caller sets the frame size. false = cannot make one. */
+function CP_newTempSequence(name, idPrefix) {
+  var preset = null;
+  try {
+    var f = new File(app.path + (/Contents\/?$/.test(app.path) ? '' : 'Contents/') + 'Settings/SequencePresets/Social/Social Media Portrait 9x16 30 fps.sqpreset');
+    if (f.exists) preset = f.fsName;
+  } catch (eP) {}
+  if (preset && app.project.newSequence) {
+    var before = {}, i;
+    try { for (i = 0; i < app.project.sequences.numSequences; i++) before[app.project.sequences[i].sequenceID] = 1; } catch (eB) {}
+    try { app.project.newSequence(name, preset); } catch (eN) {}
+    try {
+      for (i = app.project.sequences.numSequences - 1; i >= 0; i--) {
+        var sq = app.project.sequences[i];
+        if (!before[sq.sequenceID]) return sq;
+      }
+    } catch (eF) {}
+  }
+  if (!app.project.createNewSequence) return false;
+  return app.project.createNewSequence(name, idPrefix + String(Math.floor(Math.random() * 1e9)));
+}
 /*
  * Render REAL style previews with Premiere itself — the gallery cards then
  * show EXACTLY what the engine renders ("almost every caption preview is
@@ -4735,8 +4759,8 @@ function CP_renderStylePreviews(argsJson) {
     var args = JSON.parse(argsJson);
     if (!args.styles || !args.styles.length) return CP_fail('No styles given.');
     try { prevActive = app.project.activeSequence; } catch (ePA) {}
-    if (!app.project.createNewSequence) return CP_fail('This Premiere version cannot create a render sequence from a panel.');
-    seq = app.project.createNewSequence('Pulse preview render (temp)', 'pulse-prev-' + String(Math.floor(Math.random() * 1e9)));
+    seq = CP_newTempSequence('Pulse preview render (temp)', 'pulse-prev-');
+    if (seq === false) return CP_fail('This Premiere version cannot create a render sequence from a panel.');
     if (!seq) return CP_fail('Could not create the temp render sequence.');
     // vertical 1080×1920 (the cards are 9:16 true-output miniatures)
     try {
@@ -4831,8 +4855,8 @@ function CP_renderMogrtFrames(argsJson) {
     var times = args.times || [];
     if (!args.mogrtPath || !times.length || !args.outBase) return CP_fail('Nothing to render.');
     try { prevActive = app.project.activeSequence; } catch (ePA) {}
-    if (!app.project.createNewSequence) return CP_fail('This Premiere version cannot create a render sequence from a panel.');
-    seq = app.project.createNewSequence('Pulse Premium preview (temp)', 'pulse-prem-' + String(Math.floor(Math.random() * 1e9)));
+    seq = CP_newTempSequence('Pulse Premium preview (temp)', 'pulse-prem-');
+    if (seq === false) return CP_fail('This Premiere version cannot create a render sequence from a panel.');
     if (!seq) return CP_fail('Could not create the temp render sequence.');
     try {
       var st = seq.getSettings();

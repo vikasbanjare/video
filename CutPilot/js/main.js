@@ -7516,10 +7516,11 @@
      is kept — never hide a font on a guess. */
   function setInstalledFontCoverage(detailed) {
     _fontCoverage = {}; _hiddenScriptFonts = [];
-    _scanInstalled = {};
+    _scanInstalled = {}; _psFaces = {};
     var usable = [];
     detailed.forEach(function (f) {
       _scanInstalled[String(f.name).toLowerCase()] = 1;
+      if (f.faces) for (var fk in f.faces) if (f.faces.hasOwnProperty(fk)) { _psFaces[String(f.name).toLowerCase()] = f.faces; break; }
       var known = (f.latin != null || f.devanagari != null);
       if (known) _fontCoverage[String(f.name).toLowerCase()] = { latin: !!f.latin, devanagari: !!f.devanagari };
       if (known && !f.latin && !f.devanagari) _hiddenScriptFonts.push(f.name);
@@ -8062,6 +8063,36 @@
     if (ready) _capsOnlyCache[spec] = caps;
     return caps;
   }
+  /* A face with ONE weight (Archivo Black, Bradley Hand where installed) draws
+     100 and 900 alike, so the Weight slider moved zero pixels (dead-control
+     audit run on a Mac that has those faces). Measured like faceIsCapsOnly. */
+  var _oneWeightCache = {};
+  function faceHasOneWeight() {
+    if (typeof CPRender === 'undefined' || !CPRender.styleForFrame) return false;
+    var st;
+    try { st = CPRender.styleForFrame(previewBasis(styledPreset()), 1080, {}); } catch (e) { return false; }
+    if (!st || !st.font) return false;
+    var fam = '48px "' + st.font + '", "' + st.fallbacks + '", sans-serif', TXT = 'Aaj Paise Ki Baat';
+    if (_oneWeightCache.hasOwnProperty(fam)) return _oneWeightCache[fam];
+    var ready = true;
+    try { if (document.fonts && document.fonts.check) ready = document.fonts.check('900 ' + fam, TXT) && document.fonts.check('100 ' + fam, TXT); } catch (eC) {}
+    var one = false;
+    try {
+      var cv = document.createElement('canvas'); cv.width = 620; cv.height = 72;
+      var g = cv.getContext('2d');
+      var pix = function (w) {
+        g.clearRect(0, 0, cv.width, cv.height);
+        g.font = w + ' ' + fam; g.fillStyle = '#000'; g.textBaseline = 'alphabetic';
+        g.fillText(TXT, 4, 56);
+        return g.getImageData(0, 0, cv.width, cv.height).data;
+      };
+      var a = pix(100), b = pix(900), diff = 0, ink = 0;
+      for (var i = 3; i < a.length; i += 4) { if (a[i] > 24) ink++; if (Math.abs(a[i] - b[i]) > 24) diff++; }
+      one = ink > 200 && diff < 12;
+    } catch (eP) { return false; }
+    if (ready) _oneWeightCache[fam] = one;
+    return one;
+  }
 
   /* The taps that meet a reason (see setWhy). Each one switches on exactly
      the thing its reason names, the way the owner would by hand. */
@@ -8155,6 +8186,7 @@
     var capsOnly = faceIsCapsOnly();
     var CAPS_ONLY = 'This font only has capital letters — pick another font to use small letters';
     setWhy('c-upper', capsOnly ? CAPS_ONLY : null);
+    setWhy('c-weight', faceHasOneWeight() ? 'This font has only one weight — pick another font to change it' : null);
     setWhy('c-case', capsOnly ? CAPS_ONLY : (cchk('c-upper') ? 'ALL CAPS is on — turn it off to pick a text case' : null), capsOnly ? null : WHY_FIX.capsOff);
     // every word is already in capitals: key-word CAPS cannot show
     setWhy('c-kwcaps', capsOnly ? CAPS_ONLY : (cchk('c-upper') ? 'ALL CAPS is on — every word is already in capitals' : null), capsOnly ? null : WHY_FIX.capsOff);
@@ -13720,7 +13752,21 @@
      face while Georgia, Avenir Next and the Google faces took their Bold.
      They are sent as Regular and previewed as Regular, so what is picked is
      what lands. */
-  function premDrawsRegularOnly(family) { return /^(didot|snell roundhand)$/i.test(String(family || '')); }
+  /* The installed faces of a family as the scan read them from the files:
+     style (lower case) → PostScript name; null before the scan / unknown. */
+  var _psFaces = {};
+  function installedFaces(family) { return _psFaces[String(family || '').toLowerCase()] || null; }
+  function heavyFace(faces) {
+    for (var k in faces) if (faces.hasOwnProperty(k) && /bold|black|heavy/.test(k) && !/italic|oblique/.test(k)) return faces[k];
+    return null;
+  }
+  // a family with no Bold / Black face on this Mac: Premiere draws it Regular
+  // (Pacifico, Bebas Neue — the preview drew a browser-made bold)
+  function premDrawsRegularOnly(family) {
+    if (/^(didot|snell roundhand)$/i.test(String(family || ''))) return true;
+    var faces = installedFaces(family);
+    return !!faces && !heavyFace(faces);
+  }
   function resolvedEditorFont(preset, text) {
     if (!preset || !preset.font) return null;
     var family = drawableFamily(preset, text);
@@ -13728,6 +13774,12 @@
     // a Black (900) style gets the Black face when the Mac has one
     var black = wantsBlackFace(family, preset.weight);
     var ps = CPCaptions.psFontName(family, black ? 'Black' : (wantBold ? 'Bold' : 'Regular'));
+    // the PostScript name the installed file really has, when the scan read it
+    var faces = installedFaces(family);
+    if (faces) {
+      var real = black ? (faces.black || faces.heavy) : (wantBold ? (faces.bold || heavyFace(faces)) : (faces.regular || faces.book || faces.roman || faces.normal));
+      if (real) ps = real;
+    }
     if (!ps) return null;
     return { font: ps, bold: wantBold && !CPCaptions.psIsBoldFace(ps), family: family,
              substitutedFrom: (family !== preset.font) ? preset.font : null };
@@ -13933,6 +13985,7 @@
     // r5's boxes hug the letters' ink (+0.16 em, 0.32 em at the sides);
     // template v6 draws them as tall as the image's ('embox')
     out.inkBoxes = !pulseEngineHas('embox');
+    out.emBoxes = !out.inkBoxes;
     out.wordHl = L.spokenLit;
     out.anim = L.spokenLit ? 'karaoke' : 'fade';           // the spoken word moves word by word, or all words alike
     out.entrance = ({ 1: 'none', 2: 'pop', 3: 'fade', 4: 'slide' })[L.animation];

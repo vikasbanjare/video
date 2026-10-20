@@ -170,6 +170,7 @@
       boxPad: (o.boxPad != null) ? o.boxPad : (preset.boxPad != null ? preset.boxPad : 1),  // padding multiplier
       boxSteady: !!preset.boxSteady,
       inkBoxes: !!(o.inkBoxes != null ? o.inkBoxes : preset.inkBoxes),   // boxes hug the ink (the editable preview on Pulse's engine)
+      emBoxes: !!(o.emBoxes != null ? o.emBoxes : preset.emBoxes),       // template v6's em boxes (the editable preview on it)
       shadowDX: Math.round(((o.shadowDX != null ? o.shadowDX : (preset.shadowDX || 0))) * scale),
       shadowDY: Math.round(((o.shadowDY != null ? o.shadowDY : (preset.shadowDY || 0))) * scale),
       wordSpacing: Math.round(((o.wordSpacing != null ? o.wordSpacing : (preset.wordSpacing || 0))) * scale),
@@ -843,6 +844,8 @@
       if (lineTilt) {
         ctx.save();
         var tcx = x + line.width / 2, tcy = y - line.height * 0.32;
+        // template v6 turns the whole caption, box and all, about its middle
+        if (style.emBoxes) tcy = (lineY[0] + lineY[lines.length - 1]) / 2 - base * 0.33;
         ctx.translate(tcx, tcy); ctx.rotate(lineTilt * Math.PI / 180); ctx.translate(-tcx, -tcy);
       }
 
@@ -865,8 +868,8 @@
       // Draw the box layer when ANY box effect is set — face, border, glow, a 3D
       // extrusion, or a gloss sheen. (3D/gloss were missing here, so a preset that
       // only defined those drew nothing.)
-      if (style.boxColor || style.boxStroke || style.boxGlow ||
-          (style.box3d && style.box3dDepth > 0) || style.boxGloss > 0) {
+      if ((style.boxColor || style.boxStroke || style.boxGlow ||
+          (style.box3d && style.box3dDepth > 0) || style.boxGloss > 0) && !(style.emBoxes && li > 0)) {
         var padX = base * 0.32 * style.boxPad, padY = base * 0.22 * style.boxPad;
         var bxTop = y - line.height - padY + line.height * 0.18, bxH = line.height + padY * 2;
         if (style.inkBoxes) {
@@ -874,6 +877,18 @@
           padX = base * 0.32; bxTop = y - lk.a - base * 0.16; bxH = lk.a + lk.d + base * 0.32;
         }
         var bxLeft = x - padX, bxW = line.width + padX * 2;
+        // template v6 ('embox'): ONE box round every line — the widest line
+        // plus 0.32 em a side, 1.06 em above the first baseline to 0.40 em
+        // below the last (the preview drew the style's own padding, a box per
+        // line: Maroon Label, Green Pill taller, Line Ribbons in two pieces)
+        if (style.emBoxes && !style.inkBoxes) {
+          var wMax = 0;
+          for (var wq = 0; wq < lines.length; wq++) wMax = Math.max(wMax, lines[wq].width);
+          padX = base * 0.32;
+          bxTop = lineY[0] - base * 1.06; bxH = lineY[lines.length - 1] - lineY[0] + base * 1.46;
+          bxLeft = (style.align === 'left') ? x - padX : (style.align === 'right') ? x + line.width - wMax - padX : x + (line.width - wMax) / 2 - padX;
+          bxW = wMax + padX * 2;
+        }
         // boxSteady: the box keeps the size of the line at rest and the spoken
         // word grows past it (the owner's Maroon Label reel) — it no longer
         // widens and narrows with every word
@@ -983,6 +998,10 @@
               var wk = lineInk(it.px);
               setFontFor(it.px, it.hl);
               bpadX = it.px * 0.32; wbTop = y - wk.a - it.px * 0.16; wbH = wk.a + wk.d + it.px * 0.32;
+            } else if (style.emBoxes) {
+              // template v6: as tall as the line box, grown with the word
+              // (the preview drew it at 70% of the bar — Karaoke Bar, Pastel)
+              bpadX = base * 0.32; wbTop = y - it.px * 1.06; wbH = it.px * 1.46;
             } else if (barH != null) {
               // sitting inside a backing bar: make the word box clearly smaller
               // than the bar and centre it vertically so top/bottom margins match.
@@ -996,7 +1015,7 @@
             var br = Math.min(wbH * 0.32, style.boxRadius || 14);
             // the highlight box stays solid even when the bar behind it is
             // translucent (so the active word always pops).
-            ctx.globalAlpha = (barH != null) ? 1 : style.boxOpacity;
+            ctx.globalAlpha = (barH != null || (style.emBoxes && style.boxColor)) ? 1 : style.boxOpacity;
             ctx.fillStyle = hlColor;
             roundRect(ctx, x - bpadX, wbTop, it.w + bpadX * 2, wbH, br);
             ctx.fill();

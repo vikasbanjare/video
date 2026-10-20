@@ -1,10 +1,55 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.56** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.58** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.58 — editable preview draws the template's boxes; real font names (NOT yet re-tested in Premiere)
+- First style test run IN the owner's Premiere by Claude (v0.10.57, 2026-10-20):
+  97 of 136 preview = Premiere (owner's v0.10.54 run: 39); 35 sizes calibrated.
+  Folder: Desktop/Pulse Caption Test/2026-10-19-18-55.
+- What the sheets showed and the fixes:
+  · Boxes: template v6 draws the line box AND the spoken-word box 1.06 em above
+    the baseline to 0.40 em below, 0.32 em sides, ONE box round all lines. The
+    preview drew the style's own padding, a box per line, and the word box at
+    70% of the bar (Maroon Label, Green Pill, Push Button taller; Karaoke Bar,
+    Orange Word Pop, Pastel word box shorter; Line Ribbons in two pieces).
+    render.js style.emBoxes (set by pulseCarryStyle when the engine has 'embox').
+  · Fonts: the Google "Arvo" Regular file's PostScript name is "Arvo", not
+    "Arvo-Regular" — Premiere drew a fallback sans (Word Highlight). fonts.js
+    parseFaces reads each file's real PS name (name IDs 6/16/17/1/2);
+    resolvedEditorFont uses it; premDrawsRegularOnly is also true for a family
+    with no Bold/Black/Heavy face installed (Pacifico, Bebas: browser-made bold).
+- Still open from those sheets: letter spacing — Premiere spreads letters wider
+  than the preview (Align, Cinematic); a bridge measurement was started
+  (Letter Spacing 0/2/5/10 on "HHHHHHHHHH") but Premiere hung while the Mac's
+  screen was locked. Sunset Fade's gradient differs; Didot/Snell Roundhand
+  previews look heavier than Premiere's.
+- Run the 🎨 test twice more (calibration needs a second run to show).
+
+### v0.10.57 — no New Sequence dialog; one-weight fonts
+- CP_renderStylePreviews / CP_renderMogrtFrames made their temp sequence with
+  app.project.createNewSequence, which on Premiere 2026 opens the New Sequence
+  DIALOG — once per 10 styles (14 times per style test). CP_newTempSequence
+  uses app.project.newSequence with Premiere's own
+  Settings/SequencePresets/Social/Social Media Portrait 9x16 30 fps.sqpreset
+  (verified in real Premiere: no dialog), falling back to the old call.
+- Weight slider: faceHasOneWeight() (pixels at 100 vs 900, like faceIsCapsOnly)
+  gives c-weight a reason on single-weight faces (Archivo Black, Bradley Hand)
+  — the dead-control audit failed on a Mac that has those fonts.
+
+### Testing on the owner's Mac (how this session worked)
+- ~/Library/Application Support/Adobe/CEP/extensions/com.claude.bridge runs any
+  .jsx dropped in ~/ClaudeBridge/PPRO/inbox and writes outbox/<name>.out; it
+  shares Pulse's ExtendScript engine (CP_* are callable; $.evalFile the repo's
+  jsx/host.jsx to try host changes without a reinstall).
+- Install: quit Premiere, unzip Pulse-Mac.zip's Resources/Pulse.zip into the
+  extensions folder (rm the old Pulse first, clear ~/Library/Caches/CSXS).
+- Headless gates time out when the Mac is busy (Codex, After Effects open);
+  CP_SKIP_BUILD_PROOFS=1 was used for the v0.10.58 install. sim-preview
+  quotepill fails on this Mac on untouched HEAD too (fonts).
 
 ### v0.10.56 — Editable shows no setting Premiere cannot draw
 - Owner: "something not possible — give no setting for that, the style's
