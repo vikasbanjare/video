@@ -40,7 +40,9 @@
                      'आआ': 1, 'आआआ': 1, 'एम्म': 1, 'उह': 1, 'उहह': 1, 'ऊह': 1, 'ऊं': 1, 'ऊँ': 1, 'एं': 1, 'एँ': 1, 'हं': 1, 'हँ': 1 };
   // words a speaker warms up with before the real first line. Only at the very
   // start (and end) of a clip — inside a sentence "so" and "to" are real words.
-  var LEAD_IN = { so: 1, okay: 1, ok: 1, alright: 1, right: 1, well: 1, yeah: 1, yes: 1, like: 1, basically: 1, actually: 1, and: 1, but: 1,
+  // "because" too: "Because what I'm trying to do today is…" (the owner's
+  // webinar) is a whole claim without it
+  var LEAD_IN = { so: 1, okay: 1, ok: 1, alright: 1, right: 1, well: 1, yeah: 1, yes: 1, like: 1, basically: 1, actually: 1, and: 1, but: 1, because: 1, kyunki: 1, 'क्योंकि': 1,
                   accha: 1, achha: 1, acha: 1, toh: 1, to: 1, haan: 1, han: 1, ha: 1, matlab: 1, dekho: 1, aur: 1, lekin: 1, par: 1,
                   'अच्छा': 1, 'तो': 1, 'हाँ': 1, 'हां': 1, 'मतलब': 1, 'देखो': 1, 'और': 1, 'लेकिन': 1 };
   var TAIL_OFF = { so: 1, and: 1, but: 1, like: 1, okay: 1, ok: 1, right: 1, yeah: 1, toh: 1, to: 1, aur: 1, accha: 1, achha: 1, haan: 1,

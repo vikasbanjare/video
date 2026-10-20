@@ -35,6 +35,8 @@ const warm = C.check(W('toh accha Kya aap jaante ho 90 percent log paise kaise k
 (warm && warm.score === strong.score && /^Kya/.test(warm.opening) ? ok : bad)('B. the "toh… accha…" warm-up is trimmed first, as the short will be: same score (' + (warm && warm.score) + ')', JSON.stringify(warm));
 const mid = C.check(W('aur phir humne decide kiya ki ab hum aage badhenge', 10), { start: 10, end: 40, hook: 'x' });
 (mid && mid.score < 50 && /mid-thought/.test(mid.tip) ? ok : bad)('C. starting mid-thought: ' + (mid && mid.label + ' ' + mid.score) + ' — "' + (mid && mid.tip) + '"', JSON.stringify(mid));
+const because = C.check(W("Because what I'm trying to do today is not just to teach you tools", 10), { start: 10, end: 40, hook: 'x' });
+(because && because.score >= 50 && /^what/.test(because.opening) ? ok : bad)('C2. an opening "Because…" is trimmed like a warm-up — the claim after it stands on its own: ' + (because && because.label + ' ' + because.score), JSON.stringify(because));
 const slow = C.check(W('Paisa bachao yaar', 10, 1.2), { start: 10, end: 40, hook: 'x' });
 (slow && /slow first 3 seconds/i.test(slow.tip) ? ok : bad)('D. a slow start: "' + (slow && slow.tip) + '"', JSON.stringify(slow));
 
