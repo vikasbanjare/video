@@ -3163,7 +3163,25 @@ const MUTANTS = [
     repl: '<label class="check" title="The spoken word sweeps Highlight → 2nd colour">',
     gate: 'CutPilot/test/gates/editable-lines.js',
     why: 'Editable offers a two-colour spoken word Premiere cannot draw'
+  },
+  // v62: the outside of the safe area is darkened (owner: "maybe we can select the opacity")
+  {
+    name: 'v62-no-shade',
+    file: 'CutPilot/js/safezone.js',
+    find: '    shadeOutside(ctx, W, H);',
+    repl: '',
+    gate: 'CutPilot/test/gates/safezone-shade.js',
+    why: 'the outside of the safe area is not darkened'
+  },
+  {
+    name: 'v62-shade-ignores-slider',
+    file: 'CutPilot/js/safezone.js',
+    find: "        state.shade = parseInt(this.value, 10) || 0;",
+    repl: "        state.shade = 45;",
+    gate: 'CutPilot/test/gates/safezone-shade.js',
+    why: 'the darkness slider changes nothing'
   }
+
 ];
 
 const only = process.argv[2];

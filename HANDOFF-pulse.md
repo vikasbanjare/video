@@ -1,10 +1,21 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.61** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.62** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.62 — Safe zone: darken outside the safe area (cloud session)
+- Owner: "make the outside of the Shorts safe zone a little darker, maybe we
+  can select the opacity". safezone.js shadeOutside: black at
+  "Darken outside the safe area" (#sz-shade, 0–90 %, default 45, remembered
+  in localStorage cutpilot.szShade) over everything outside safeRect, in
+  the preview and the placed guide; shown for a platform safe zone or the
+  custom Margin box. The preview now draws the guide on its own layer over
+  the frame (draw() clears its canvas). Gate safezone-shade.
+- Align's font: the owner can press Settings → Install caption fonts
+  (JetBrains Mono) and restart Premiere — no code change.
 
 ### v0.10.60 – v0.10.61 — verified in the owner's Premiere (2026-10-20)
 - Caption style test: run 4 (v0.10.60) 120/136, run 5 (v0.10.61) 121/136, worst

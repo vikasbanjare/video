@@ -19,6 +19,7 @@
     ov: { margin: false, thirds: true, cross: false, action: false, title: false, diag: false },
     brandMode: 'pulse', titlePos: 'bottom', dur: 'full',   // default: Pulse (by aifloh) branding ON
     channel: 'by aifloh', title: '', handle: true, opacity: 70, replace: true,
+    shade: 45,                         // % black over everything OUTSIDE the safe area (0 = off)
     env: null, logo: null, logoName: ''
   };
 
@@ -257,9 +258,24 @@
      the BRANDING at full opacity. alpha defaults to 1 so the on-panel PREVIEW is
      always crisp & solid like the real app — the opacity slider only fades the
      placed reference clip (passed by renderOverlayPng). */
+  /* Darken everything outside the safe area (the owner: "make the outside of
+     the safe zone darker, maybe select the opacity") — the area left clear
+     stands out at a glance, in the preview and in the placed guide. */
+  function shadeOutside(ctx, W, H) {
+    var a = Math.max(0, Math.min(90, state.shade || 0)) / 100;
+    var show = (state.mode === 'safezones' && state.platform !== 'none') || (state.mode === 'custom' && state.ov.margin);
+    if (!a || !show) return;
+    var r = safeRect(W, H);
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,' + a + ')';
+    ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.rect(r.x, r.y, r.w, r.h);
+    ctx.fill('evenodd');
+    ctx.restore();
+  }
   function draw(ctx, W, H, alpha) {
     ctx.clearRect(0, 0, W, H);
     var unit = Math.min(W, H);
+    shadeOutside(ctx, W, H);
     ctx.save();
     ctx.globalAlpha = (alpha == null ? 1 : Math.max(0.08, alpha));
     if (state.mode === 'safezones' && state.platform !== 'none') {
@@ -283,8 +299,13 @@
     cv.style.width = pw + 'px'; cv.style.height = ph + 'px';
     var ctx = cv.getContext('2d');
     var bg = ctx.createLinearGradient(0, 0, 0, cv.height); bg.addColorStop(0, '#2a3340'); bg.addColorStop(1, '#10141c');
+    // the frame drawn first, the guide on a layer of its own over it (the
+    // guide clears its canvas: drawn straight on the frame, the darkened
+    // outside would wipe the picture away)
+    var lay = document.createElement('canvas'); lay.width = cv.width; lay.height = cv.height;
+    draw(lay.getContext('2d'), cv.width, cv.height, 1);      // preview = crisp, solid
     ctx.fillStyle = bg; ctx.fillRect(0, 0, cv.width, cv.height);
-    draw(ctx, cv.width, cv.height, 1);                       // preview = crisp, solid
+    ctx.drawImage(lay, 0, 0);
   }
   function renderOverlayPng() {
     var d = envDims(), cv = document.createElement('canvas'); cv.width = d.w; cv.height = d.h;
@@ -325,6 +346,17 @@
     if ($('sz-handle')) $('sz-handle').addEventListener('change', function () { state.handle = this.checked; renderPreview(); });
     if ($('sz-opacity')) $('sz-opacity').addEventListener('input', function () { state.opacity = parseInt(this.value, 10) || 70; if ($('sz-op-val')) $('sz-op-val').textContent = state.opacity + '%'; renderPreview(); });
     if ($('sz-replace')) $('sz-replace').addEventListener('change', function () { state.replace = this.checked; });
+    // Outside the safe area: how dark (remembered on this computer)
+    try { var sv = localStorage.getItem('cutpilot.szShade'); if (sv != null && sv !== '' && isFinite(+sv)) state.shade = Math.max(0, Math.min(90, +sv)); } catch (eL) {}
+    if ($('sz-shade')) {
+      $('sz-shade').value = state.shade; if ($('sz-shade-val')) $('sz-shade-val').textContent = state.shade ? state.shade + '%' : 'Off';
+      $('sz-shade').addEventListener('input', function () {
+        state.shade = parseInt(this.value, 10) || 0;
+        if ($('sz-shade-val')) $('sz-shade-val').textContent = state.shade ? state.shade + '%' : 'Off';
+        try { localStorage.setItem('cutpilot.szShade', String(state.shade)); } catch (eS) {}
+        renderPreview();
+      });
+    }
     if ($('sz-logo-pick')) $('sz-logo-pick').addEventListener('click', pickLogo);
     if ($('sz-logo-clear')) $('sz-logo-clear').addEventListener('click', function () {
       state.logo = null; state.logoName = ''; if ($('sz-logo-name')) $('sz-logo-name').textContent = 'no logo — a circle badge is used';
@@ -390,6 +422,8 @@
     }).catch(function (e) { try { toast('Remove failed: ' + e.message, true); } catch (e2) {} });
   }
 
-  window.CPSafezone = { onShow: function () { refreshEnv(); }, render: renderPreview };
+  window.CPSafezone = { onShow: function () { refreshEnv(); }, render: renderPreview,
+    // the guide image placed on the timeline (a data URL) — read by the gates
+    overlayPng: renderOverlayPng, _state: state, safeRect: safeRect };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire); else wire();
 })();
