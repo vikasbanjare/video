@@ -8026,6 +8026,8 @@
   /* The Position the captions use: the owner's, else the automatic one. */
   function effectivePos() {
     if (state.posOverride != null) return state.posOverride;   // a Fit short's captions, for its caption step
+    var fitPos = settings.shortCapPos && state.env && settings.shortCapPos[state.env.sequenceName];
+    if (fitPos && !state.posUserSet) return fitPos;             // …and every time after, on that short
     var v = parseInt($('c-pos').value, 10);
     if (!isFinite(v)) v = 76;
     // the slider still shows the style's spot, or the automatic one: the
@@ -18082,8 +18084,15 @@
         markStepDone('shorts'); toast('🎬 Made the ' + what + '. Adding captions now…');
         return new Promise(function (res) { setTimeout(res, 400); }).then(function () {
           prog.classList.add('hidden');
-          // Fit: under the shot, not on it (unless the owner set a Position)
-          if (info.capPos && !state.posUserSet) state.posOverride = info.capPos;
+          // Fit: under the shot, not on it (unless the owner set a Position) —
+          // remembered for the short, so ⚡ Viral edit or a restyle later keeps
+          // it there (they put the captions back on the shot)
+          if (info.capPos && !state.posUserSet) {
+            state.posOverride = info.capPos;
+            settings.shortCapPos = settings.shortCapPos || {};
+            settings.shortCapPos[res.sequence] = info.capPos;
+            try { saveSettings(); } catch (eSv) {}
+          }
           // the choice in step 2: ✏️ Editable captions, else drawn by Pulse
           if (_capOut === 'editable') applyEditableStyle({ cues: CPShorts.sentenceCues(plan.words), words: plan.words });
           else runCaptionPipeline(CPShorts.sentenceCues(plan.words), { wordCues: plan.words });
