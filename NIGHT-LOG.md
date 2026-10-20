@@ -5,10 +5,6 @@ What I do all night: retest every Pulse feature in the owner's real Premiere
 on the old code, build, install, verify, commit and push. Newest entries on top.
 
 ## Queue
-0. From the stopped full battery (64/190 gates): check "Premium lines are
-   measured at least as wide…" and "punchy @1080x1920 breaks before hai";
-   the rest were this Mac's environment (fontconfig list, speech model
-   present, network-download tests, quotepill sim).
 1. Full test battery on this Mac — triage every failure (machine vs real bug).
 2. Captions — the styles still 7–10% apart; word timing on line-only
    transcripts; Premiere captions (.srt track); Exact look on a long video.
@@ -20,6 +16,22 @@ on the old code, build, install, verify, commit and push. Newest entries on top.
 7. Viral edit — zoom punch-ins, sound effects.
 
 ## Done
+- 03:20 Round 3 (v0.10.79 → v0.10.81), tested in Premiere:
+  · Clean up (one button) on the webinar copy: 21 sections / 16.6 s cut,
+    the words followed the cut exactly (last word 470.42 → 453.79 s), backup
+    "QA Webinar Copy" made. ✓
+  · Smart Cleanup (AI) offered "there" for an "oh" (index one off) and
+    "know" out of "you know what?". Now each cut lands on the words the AI
+    names (else it is not offered), and "you know what" / "like 10 people"
+    are never fillers. Gate retakes-ai-parser.
+  · Fillers "Also cut like / so / actually" cut "I like it". Now only where
+    the word stands apart. Gate retakes-fillers.
+  · Shorts: a moment opening "Because…" now starts on the claim (hook 45 →
+    95). Gate hook-check C2.
+  · Shorts Fit layout: captions sat ON the slide. Now under the shot (73%),
+    verified on a made short. Gate shorts-fit-captions.
+  · Gates fixed to run right on a Mac: retakes-panel (never ran), Premium
+    measure (Linux-only fonts), punchy line break (measured unlike drawn).
 - 02:20 Round 2 (v0.10.75 → v0.10.78) — tested in Premiere through the panel's
   local debug port (no clicks needed; the port is only in the installed copy):
   · Detect speakers: the AI's one-number-per-line answer was cut off on 150
