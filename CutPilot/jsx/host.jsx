@@ -1389,7 +1389,8 @@ function CP_buildShortSequence(argsJson) {
     var ph = itemOf(args.placeholder);
     if (!ph) return CP_fail('Premiere could not import the short’s frame clip.');
     if (typeof app.project.createNewSequenceFromClips !== 'function') return CP_fail('This Premiere cannot make a sequence by script — use “One video file” for the short.');
-    var seq = app.project.createNewSequenceFromClips(args.name || 'Pulse short', [ph]);
+    var shortName = CP_uniqueSequenceName(args.name || 'Pulse short');
+    var seq = app.project.createNewSequenceFromClips(shortName, [ph]);
     if (!seq) return CP_fail('Premiere did not make the short’s sequence.');
     CP_activateSequence(seq);
     seq = CP_activeSequence() || seq;
@@ -1507,7 +1508,7 @@ function CP_buildShortSequence(argsJson) {
     }
     var total = 0;
     for (i = 0; i < pieces.length; i++) total += pieces[i].layers.length;
-    return CP_ok({ sequence: args.name || 'Pulse short', placed: placed, of: total, framed: framed, cropped: cropped,
+    return CP_ok({ sequence: shortName, placed: placed, of: total, framed: framed, cropped: cropped,
                    toCrop: (function () { var n = 0; for (var q = 0; q < pieces.length; q++) for (var r = 0; r < pieces[q].layers.length; r++) if (pieces[q].layers[r].cropIt) n++; return n; })(),
                    blurred: blurred, toBlur: (function () { var n = 0; for (var q = 0; q < pieces.length; q++) for (var r = 0; r < pieces[q].layers.length; r++) if (pieces[q].layers[r].blur) n++; return n; })(),
                    missedAt: missed.slice(0, 5), audioPlaced: audioPlaced, camAudioOff: camAudioOff, hook: hooked, cropEffect: !!cropFx });
@@ -1547,6 +1548,17 @@ function CP_findEncoderPreset() {
   for (var k = 0; k < roots.length; k++) { var hit = walk(roots[k], 0); if (hit) return hit; }
   return null;
 }
+/* A name no sequence in the project has yet: "Mass Uninstall Shock 2". A
+   short made twice from the same moment had the same name, and ⤴ Export all
+   picks shorts by name — it sent the older one, both to the same .mp4. */
+function CP_uniqueSequenceName(name) {
+  var taken = {};
+  try { for (var i = 0; i < app.project.sequences.numSequences; i++) taken[String(app.project.sequences[i].name)] = 1; } catch (e) {}
+  if (!taken[name]) return name;
+  for (var n = 2; n < 1000; n++) if (!taken[name + ' ' + n]) return name + ' ' + n;
+  return name;
+}
+
 function CP_queueShortsExport(argsJson) {
   try {
     var args = JSON.parse(argsJson), names = args.sequences || [], out = args.outDir;
@@ -1653,7 +1665,7 @@ function CP_importClip(argsJson) {
       return CP_fail('Could not import the rendered clip: ' + eImp.message);
     }
     var item = CP_findProjectItemByMediaPath(app.project.rootItem, args.path);
-    var seqName = args.name || 'Vertical clip';
+    var seqName = CP_uniqueSequenceName(args.name || 'Vertical clip');
     if (item && app.project.createNewSequenceFromClips) {
       try {
         var ns = app.project.createNewSequenceFromClips(seqName, [item]);
