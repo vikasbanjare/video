@@ -402,26 +402,32 @@
     } else { renderPreview(); }
   }
 
+  function toast(m, isErr) { if (window.CPToast) window.CPToast(m, isErr); }
   function applyOverlay() {
     if (!(window.CPBridge && CPBridge.isCEP && CPBridge.isCEP())) { try { toast('Open this in Premiere to place the overlay.', true); } catch (e) {} return; }
     refreshEnv(function () {
       var fs, pathMod, osMod;
       try { fs = require('fs'); pathMod = require('path'); osMod = require('os'); } catch (e) { try { toast('Node unavailable: ' + e.message, true); } catch (e2) {} return; }
       var png = renderOverlayPng().split(',')[1];
-      var dir = pathMod.join(osMod.tmpdir(), 'pulse-guide-' + Date.now());
-      try { fs.mkdirSync(dir, { recursive: true }); } catch (e0) {}
-      var pngPath = pathMod.join(dir, 'guide.png');
-      try { fs.writeFileSync(pngPath, Buffer.from(png, 'base64')); } catch (eW) { try { toast('Could not write overlay: ' + eW.message, true); } catch (e3) {} return; }
-      var durSec = state.dur === 'full' ? Math.max(2, (state.env && +state.env.endSeconds) || 10) : (parseFloat(state.dur) || 5);
-      var prog = $('sz-progress'); if (prog) { prog.classList.remove('hidden'); prog.textContent = 'Placing guide on timeline…'; }
-      var args = { path: pngPath, startSec: 0, durSec: durSec };
-      if (state.replace && state.lastGuideTrack) args.replaceTrack = state.lastGuideTrack;  // reuse + clear the existing guide track
-      CPBridge.callHost('CP_placeOverlay', args).then(function (r) {
-        if (prog) prog.classList.add('hidden');
-        state.lastGuideTrack = r.track;
-        try { toast('🎉 Guide on V' + r.track + ' (opacity ' + state.opacity + '%) for ' + Math.round(durSec) + 's. Toggle that track\'s eye to hide it. ⌘Z/Ctrl+Z undoes it.'); } catch (e) {}
-      }).catch(function (e) { if (prog) prog.classList.add('hidden'); try { toast('Place failed: ' + e.message, true); } catch (e2) {} });
+      // beside the captions (Pulse Media by the project), not the OS temp
+      // folder macOS clears — the guide and the owner's branding went offline
+      var where = window.CPMediaPlace ? window.CPMediaPlace().then(function (pl) { return pl.dir; }, function () { return osMod.tmpdir(); }) : Promise.resolve(osMod.tmpdir());
+      where.then(function (base) { placeGuide(fs, pathMod, pathMod.join(base, 'pulse-guide-' + Date.now()), png); });
     });
+  }
+  function placeGuide(fs, pathMod, dir, png) {
+    try { fs.mkdirSync(dir, { recursive: true }); } catch (e0) {}
+    var pngPath = pathMod.join(dir, 'guide.png');
+    try { fs.writeFileSync(pngPath, Buffer.from(png, 'base64')); } catch (eW) { try { toast('Could not write overlay: ' + eW.message, true); } catch (e3) {} return; }
+    var durSec = state.dur === 'full' ? Math.max(2, (state.env && +state.env.endSeconds) || 10) : (parseFloat(state.dur) || 5);
+    var prog = $('sz-progress'); if (prog) { prog.classList.remove('hidden'); prog.textContent = 'Placing guide on timeline…'; }
+    var args = { path: pngPath, startSec: 0, durSec: durSec };
+    if (state.replace && state.lastGuideTrack) args.replaceTrack = state.lastGuideTrack;  // reuse + clear the existing guide track
+    CPBridge.callHost('CP_placeOverlay', args).then(function (r) {
+      if (prog) prog.classList.add('hidden');
+      state.lastGuideTrack = r.track;
+      try { toast('🎉 Guide on V' + r.track + ' (opacity ' + state.opacity + '%) for ' + Math.round(durSec) + 's. Toggle that track\'s eye to hide it. ⌘Z/Ctrl+Z undoes it.'); } catch (e) {}
+    }).catch(function (e) { if (prog) prog.classList.add('hidden'); try { toast('Place failed: ' + e.message, true); } catch (e2) {} });
   }
 
   function removeOverlay() {

@@ -2671,6 +2671,22 @@ const MUTANTS = [
     why: 'an AI index counted one off cuts the wrong word'
   },
   {
+    name: 'v34-short-media-in-temp',
+    file: 'CutPilot/js/main.js',
+    find: "      var d = nodeReq('path').join(pl.dir, 'short-' + Date.now());",
+    repl: "      var d = work;",
+    gate: 'CutPilot/test/gates/shorts-editable-timeline.js',
+    why: 'a short links its hook card and frame clip from the temp folder macOS clears'
+  },
+  {
+    name: 'v34-safezone-silent',
+    file: 'CutPilot/js/safezone.js',
+    find: "  function toast(m, isErr) { if (window.CPToast) window.CPToast(m, isErr); }",
+    repl: "",
+    gate: 'CutPilot/test/gates/safezone-guide-kept.js',
+    why: 'Safe zone says nothing when the guide lands or fails'
+  },
+  {
     name: 'v33-reopened-no-saved-transcript',
     file: 'CutPilot/js/main.js',
     find: '        if (_seqMain[k]) return { clip: _seqMain[k] };',

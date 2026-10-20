@@ -175,6 +175,10 @@
   }
 
   var toastTimer = null;
+  // for the page's other scripts (safezone.js called a toast it could not
+  // reach: every Safe zone message — done, failed — was silently lost)
+  window.CPToast = function (m, e) { toast(m, e); };
+  window.CPMediaPlace = function () { return captionMediaPlace(); };
   function toast(msg, isErr) {
     var t = $('toast');
     t.textContent = msg;
@@ -17936,19 +17940,33 @@
       });
       inputs.forEach(function (inp) { inp.base = Math.max(0, inp.base - 0.5); });
       var tgt0 = segs[0].target, hookPng = null;
-      if (hookTitle) { try { hookPng = writeHookCard(hookTitle, tgt0.w, tgt0.h, dir); } catch (eH) { hookPng = null; } }
       var nCams = Object.keys(framing).length;
       _podLast = { pieces: pieces, segs: segs, framing: framing, voices: activity.length, notes: notes, multi: multi };
-      return { dir: dir, inputs: inputs, segs: segs, audio: audio, target: tgt0, hookPng: hookPng, pieces: pieces, info: info,
-               multi: multi, cams: multi ? nCams : 0, removed: plan.removed,
-               diag: pieces.length + ' piece(s): ' + notes.join(', ') +
-                 ' · faces ' + Object.keys(framing).map(function (k) { return 'V' + (+k + 1) + ':' + framing[k].faces.length; }).join(' ') };
+      // what the project links to (the hook card, the frame clip, the one-file
+      // short) goes where the captions go, not the OS temp folder: macOS
+      // clears that, and the short reopened with its hook title offline
+      return shortKeepDir(dir).then(function (keep) {
+        if (hookTitle) { try { hookPng = writeHookCard(hookTitle, tgt0.w, tgt0.h, keep); } catch (eH) { hookPng = null; } }
+        return { dir: dir, keep: keep, inputs: inputs, segs: segs, audio: audio, target: tgt0, hookPng: hookPng, pieces: pieces, info: info,
+                 multi: multi, cams: multi ? nCams : 0, removed: plan.removed,
+                 diag: pieces.length + ' piece(s): ' + notes.join(', ') +
+                   ' · faces ' + Object.keys(framing).map(function (k) { return 'V' + (+k + 1) + ':' + framing[k].faces.length; }).join(' ') };
+      });
     });
+  }
+  /* A folder of its own for one short's media, beside the captions' (Pulse
+     Media by the project); the work folder only if none can be written. */
+  function shortKeepDir(work) {
+    return captionMediaPlace().then(function (pl) {
+      var d = nodeReq('path').join(pl.dir, 'short-' + Date.now());
+      makeDirs(d);
+      return d;
+    }, function () { return work; });
   }
   /* The short as ONE video file (ffmpeg): every choice baked in. */
   function renderFramedShort(ff, setup, plan, rt, hookTitle, prog, layout) {
     return planFramedShort(ff, setup, plan, rt, hookTitle, prog, layout).then(function (P) {
-      var outPath = nodeReq('path').join(P.dir, 'pulse-short.mp4');
+      var outPath = nodeReq('path').join(P.keep || P.dir, 'pulse-short.mp4');
       var args = CPPodShort.filterArgs(P.inputs, P.segs, P.audio, P.target, P.hookPng, outPath);
       prog.textContent = 'Making the short' + (P.multi ? ' from ' + P.cams + ' cameras' : '') + (P.removed > 0.2 ? ' (' + P.removed.toFixed(1) + ' s of pauses cut)' : '') + '…';
       return runFfmpeg(ff, args, 900000).then(function (rr) {
@@ -18053,7 +18071,7 @@
       return planFramedShort(ff, setup, plan, rt, hook, prog, shortLayout()).then(function (P) {
         var fps = null; Object.keys(P.info).forEach(function (k) { if (!fps && P.info[k] && P.info[k].fps) fps = P.info[k].fps; });
         var a = editableShortArgs(P, name, fps || 30);
-        a.placeholder = nodeReq('path').join(P.dir, 'pulse-short-frame.mp4');
+        a.placeholder = nodeReq('path').join(P.keep || P.dir, 'pulse-short-frame.mp4');
         prog.textContent = 'Laying out “' + name + '” on a new timeline…';
         var rate = fps && Math.abs(fps - 29.97) < 0.01 ? '30000/1001' : (fps && Math.abs(fps - 23.976) < 0.01 ? '24000/1001' : String(fps || 30));
         return runFfmpeg(ff, ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=black:s=' + a.W + 'x' + a.H + ':r=' + rate + ':d=1',
@@ -18563,8 +18581,14 @@
       return renderReframe(ff, ctx, regions, target, rt, prog);
     }).then(function (outPath) {
       prog.textContent = 'Naming & importing…';
-      return detectTitle(highlightSegments(), 'Pulse vertical').then(function (title) {
-        return CPBridge.callHost('CP_importClip', { path: outPath, name: title + ' · ' + rt.label });
+      // kept beside the captions, not in the OS temp folder macOS clears
+      var pm = nodeReq('path'), fs = nodeReq('fs');
+      return shortKeepDir(pm.dirname(outPath)).then(function (keep) {
+        var dst = pm.join(keep, pm.basename(outPath));
+        if (dst !== outPath) { try { fs.renameSync(outPath, dst); } catch (eMv) { try { fs.copyFileSync(outPath, dst); } catch (eCp) { dst = outPath; } } }
+        return detectTitle(highlightSegments(), 'Pulse vertical').then(function (title) {
+          return CPBridge.callHost('CP_importClip', { path: dst, name: title + ' · ' + rt.label });
+        });
       });
     }).then(function (res) {
       prog.classList.add('hidden');

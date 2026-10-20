@@ -134,7 +134,7 @@ function facesIn(png) {
       return { toast: (document.getElementById('toast') || {}).textContent, pod: window.CP_DEBUG_EXT.shorts.podcast(),
                diag: window.CP_DEBUG_EXT.multicam.diagText().split('\n').filter(l => /shorts:/.test(l)).join(' | ') };
     }, { words, plan: PLAN, layout, out, frame: frame || null });
-    R.imported = imported; R.built = built; R.errors = (P.page.__errors || []).slice();
+    R.imported = imported; R.built = built; R.errors = (P.page.__errors || []).slice(); R.tmp = env.tmpdir;
     await P.close();
     return R;
   }
@@ -147,6 +147,11 @@ function facesIn(png) {
     const E = await make(layout + '-tl', lay, 'timeline');
     if (F.error || !F.imported) { bad(layout + ': the one-file short failed: ' + (F.error || F.toast)); continue; }
     if (E.error || !E.built) { bad(layout + ': the timeline short failed: ' + (E.error || E.toast)); continue; }
+    // what the project links to is never in the OS temp folder (macOS clears
+    // it: the short reopened with its hook title offline)
+    const linked = [E.built.args.placeholder, E.built.args.hook && E.built.args.hook.path, F.imported.path].filter(Boolean);
+    (linked.length === 3 && linked.every((f, i) => f.indexOf(i < 2 ? E.tmp : F.tmp) !== 0 && fs.existsSync(f)) ? ok : bad)(
+      'E. ' + layout + ': the frame clip, hook card and one-file short live beside the captions, not in the temp folder (' + linked.map(f => path.basename(path.dirname(path.dirname(f))) + '/' + path.basename(f)).join(', ') + ')');
     const r = E.built.res, a = E.built.args, seq = E.built.seq;
     const pieces = a.pieces.length, mics = (a.audio || []).reduce((n, x) => n + x.pieces.length, 0);
     const hookClip = seq.videoTracks.map(t => t.items).flat().find(c => /\.png$/i.test(c.projectItem._path));
