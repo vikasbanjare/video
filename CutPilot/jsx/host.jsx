@@ -1436,7 +1436,9 @@ function CP_buildShortSequence(argsJson) {
           if (pp && !pOk) { try { pp.setValue([L.x / W, L.y / H], true); pOk = true; } catch (eQ) { try { pp.setValue([L.x / W, L.y / H]); pOk = true; } catch (eQ2) {} } }
         }
         if (sOk && pOk) framed++;
-        // a blurred backdrop (the Fit layout): Gaussian Blur on it
+        // a blurred backdrop (the Fit layout): Gaussian Blur on it ("Blurriness";
+        // Premiere 2026's Gaussian Blur calls it "Amount" — the backdrop stayed
+        // at its default 20 and Pulse said it could not be blurred)
         if (L.blur) {
           try {
             var bq = qseq.getVideoTrackAt(j), bi = null, gb = qe.project.getVideoEffectByName('Gaussian Blur');
@@ -1444,7 +1446,7 @@ function CP_buildShortSequence(argsJson) {
             if (bi && gb) {
               bi.addVideoEffect(gb);
               var bcs = cl.components;
-              for (k = 0; k < bcs.numItems; k++) if (String(bcs[k].displayName) === 'Gaussian Blur') { var bl = CP_effectProp(bcs[k], 'Blurriness'); if (bl) { try { bl.setValue(60, true); blurred++; } catch (eBl) {} } }
+              for (k = 0; k < bcs.numItems; k++) if (String(bcs[k].displayName) === 'Gaussian Blur') { var bl = CP_effectProp(bcs[k], 'Blurriness') || CP_effectProp(bcs[k], 'Amount'); if (bl) { try { bl.setValue(60, true); blurred++; } catch (eBl) {} } }
             }
           } catch (eBlur) {}
         }

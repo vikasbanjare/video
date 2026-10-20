@@ -100,7 +100,7 @@ function facesIn(png) {
     if (P.skip) { console.log('  ? ' + P.skip + ' — skipped'); process.exit(2); }
     const harness = L.loadHostHarness();
     const prem = L.newPremiere(harness, { width: 1920, height: 1080, fps: 30, sequenceName: 'Episode 12', projectPath: path.join(root, label, 'Episode.prproj') });
-    const real = prem.host, st = SQ.create(HOST_SRC);
+    const real = prem.host, st = SQ.create(HOST_SRC, { blur2026: !!process.env.BLUR2026 || /2026/.test(label) });
     let imported = null, built = null, env2 = null;
     prem.host = Object.assign({}, real, {
       CP_getVideoTracks: () => JSON.stringify({ ok: true, videoTracks: video.map((segs, i) => ({ index: i, name: 'V' + (i + 1), segments: segs })) }),
@@ -139,10 +139,12 @@ function facesIn(png) {
     return R;
   }
 
-  const LAYOUTS = (process.env.LAYOUTS || 'auto,split,bigsmall,pip,fit,fill').split(',');
+  // fit-2026: Premiere 2026's Gaussian Blur (its strength is "Amount")
+  const LAYOUTS = (process.env.LAYOUTS || 'auto,split,bigsmall,pip,fit,fit-2026,fill').split(',');
   for (const layout of LAYOUTS) {
-    const F = await make(layout + '-file', layout, 'file');
-    const E = await make(layout + '-tl', layout, 'timeline');
+    const lay = layout.replace(/-2026$/, '');
+    const F = await make(layout + '-file', lay, 'file');
+    const E = await make(layout + '-tl', lay, 'timeline');
     if (F.error || !F.imported) { bad(layout + ': the one-file short failed: ' + (F.error || F.toast)); continue; }
     if (E.error || !E.built) { bad(layout + ': the timeline short failed: ' + (E.error || E.toast)); continue; }
     const r = E.built.res, a = E.built.args, seq = E.built.seq;
@@ -168,7 +170,7 @@ function facesIn(png) {
     const faces = facesIn(png);
     const top = faces.filter(f => f.cy < 0.5).length, bottom = faces.filter(f => f.cy >= 0.5).length, corner = faces.filter(f => f.cx > 0.6 && f.cy < 0.4).length;
     const want = { auto: faces.length >= 1, fill: faces.length === 1 && Math.abs(faces[0].cx - 0.5) < 0.15, split: top >= 1 && bottom >= 1,
-                   bigsmall: top >= 1 && bottom >= 1, pip: faces.length >= 2 && corner >= 1, fit: mid.layers.some(l => l.blur) && faces.length >= 1 }[layout];
+                   bigsmall: top >= 1 && bottom >= 1, pip: faces.length >= 2 && corner >= 1, fit: mid.layers.some(l => l.blur) && faces.length >= 1 }[lay];
     (want ? ok : bad)('C. ' + layout + ': ' + faces.length + ' face(s) ' + JSON.stringify(faces.map(f => [+(f.cx * 100).toFixed(0), +(f.cy * 100).toFixed(0)])) + ' — layers ' + mid.layers.length);
     if (E.errors.length || F.errors.length) bad(layout + ': script errors ' + E.errors.concat(F.errors).slice(0, 2).join(' | '));
   }

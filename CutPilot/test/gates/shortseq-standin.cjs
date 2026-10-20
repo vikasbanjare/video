@@ -110,7 +110,9 @@ function create(hostSrc, opts) {
     addVideoEffect(fx) {
       log.effects.push(fx.name);
       if (fx.name === 'Crop') c._comps.push(comp('Crop', [prop('Left', 0), prop('Top', 0), prop('Right', 0), prop('Bottom', 0), prop('Zoom', false)]));
-      if (fx.name === 'Gaussian Blur') c._comps.push(comp('Gaussian Blur', [prop('Blurriness', 0), prop('Blur Dimensions', 1)]));
+      // opts.blur2026: Premiere 2026's Gaussian Blur, its strength called "Amount" (default 20)
+      if (fx.name === 'Gaussian Blur') c._comps.push(opts.blur2026 ? comp('Gaussian Blur', [prop('Amount', 20), prop('Thickness', 20)])
+                                                                   : comp('Gaussian Blur', [prop('Blurriness', 0), prop('Blur Dimensions', 1)]));
     }
   });
   const qe = {
@@ -149,7 +151,7 @@ function drawFrame(seq, t, out) {
     const it = c.projectItem, src = { w: it.info.w, h: it.info.h };
     const get = (cn, pn, d) => { const cc = c._comps.find(x => x.displayName === cn); const p = cc && cc._list.find(x => x.displayName === pn); return p ? p.v : d; };
     const scale = get('Motion', 'Scale', 100) / 100, pos = get('Motion', 'Position', [0.5, 0.5]);
-    const L = get('Crop', 'Left', 0), Tp = get('Crop', 'Top', 0), R = get('Crop', 'Right', 0), B = get('Crop', 'Bottom', 0), blur = get('Gaussian Blur', 'Blurriness', 0);
+    const L = get('Crop', 'Left', 0), Tp = get('Crop', 'Top', 0), R = get('Crop', 'Right', 0), B = get('Crop', 'Bottom', 0), blur = Math.max(get('Gaussian Blur', 'Blurriness', 0), get('Gaussian Blur', 'Amount', 0) > 20 ? 1 : 0);
     const sx = Math.round(src.w * L / 100), sy = Math.round(src.h * Tp / 100);
     const e = (v) => Math.max(2, Math.round(v / 2) * 2);
     const sw = e(src.w - sx - src.w * R / 100), sh = e(src.h - sy - src.h * B / 100);
