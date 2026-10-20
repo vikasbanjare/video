@@ -64,6 +64,9 @@ async function run() {
       // the owner's webinar (lines are sentence pieces): 13 pieces moved up into
       // one line, the rest sent back as "…"
       if (mode === 'dots' && sizes.length === 2) out = out.map((x, k) => (k >= 3 && k < 16 ? { i: x.i, t: '…' } : x));
+      // pieces of one sentence ("stubborn" lines) the model will only
+      // translate when they come alone (the webinar's last 6 lines)
+      if (mode === 'stubborn' && user.lines.length > 1) out = out.filter(x => !/^line (5|6|7)\b/.test(user.lines.find(l => l.i === x.i).t));
       // …or as a plain list a few lines short, which can't be trusted to line up
       if (mode === 'plain' && sizes.length === 2) return JSON.stringify({ choices: [{ message: { content: JSON.stringify({ lines: out.slice(5).map(x => x.t) }) } }] });
       return JSON.stringify({ choices: [{ message: { content: JSON.stringify({ lines: out }) } }] });
@@ -104,6 +107,9 @@ async function run() {
     r = await translate('dots');
     C.check('B3. lines sent back as "…" count as not translated and are asked again (' + sizes.join(' + ') + ')',
       sizes[sizes.length - 1] === 13 && r.cues.every((c, i) => c[1] === 'line ' + i + ' नमस्ते'), JSON.stringify({ sizes, bad: r.cues.filter((c, i) => c[1] !== 'line ' + i + ' नमस्ते').slice(0, 3) }));
+    r = await translate('stubborn');
+    C.check('B4. lines that only come back alone are asked one by one at the end (' + sizes.slice(-4).join(' + ') + ') — all translated',
+      sizes.slice(-3).every(n => n === 1) && r.cues.every((c, i) => c[1] === 'line ' + i + ' नमस्ते') && !/⚠️/.test(r.toast), JSON.stringify({ sizes, toast: r.toast }));
     r = await translate('busy');
     C.check('C. a busy reply on one part is tried again (' + sizes.length + ' requests for 5 parts)', sizes.length === 6 && r.cues.every(c => /नमस्ते/.test(c[1])), JSON.stringify({ sizes, toast: r.toast }));
     // F. a translation made while a slow transcript scan runs is not replaced when the scan ends

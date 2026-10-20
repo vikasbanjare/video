@@ -3959,6 +3959,9 @@
     var all = lines.map(function (x, i) { return i; }), shifted = 0, lastErr = null;
     ask(all, PART)
       .then(function () { var m = missing(); return m.length && m.length < lines.length ? ask(m, 20) : null; })
+      // the last few, each on its own: pieces of one sentence came back merged
+      // into one line even when asked again together (6 of 209 on the webinar)
+      .then(function () { var m = missing(); return m.length && m.length <= 40 && m.length < lines.length ? ask(m, 1) : null; })
       .then(function () {
         shifted = missing().length;
         if (shifted === lines.length) throw lastErr || new Error('No translation returned.');
