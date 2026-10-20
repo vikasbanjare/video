@@ -177,3 +177,7 @@ body.theme-light .toast.err { background: #FFF1F0; color: #8E1B14; border-color:
 .pk-block { margin-top: 10px; }
 .pk-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .pk-line { margin: 4px 0 0; white-space: pre-wrap; word-break: break-word; }
+
+/* 🪝 Hook check on each found moment */
+.badge.bad { color: var(--danger-text); border-color: var(--danger-line); background: var(--danger-bg); }
+.sh-hook .badge { margin-right: 4px; }

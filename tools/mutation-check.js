@@ -3231,7 +3231,25 @@ const MUTANTS = [
     repl: '    for (var i = 0; i < keep; i++) out.push(lines[i]);',
     gate: 'CutPilot/test/gates/publish-kit.js',
     why: 'a long podcast is described from its first minutes only'
+  },
+  // v70: 🪝 Hook check
+  {
+    name: 'v70-hook-untrimmed',
+    file: 'CutPilot/js/hookcheck.js',
+    find: '    var plan = lib.tightenPlan(lib.trimEnds(inMoment));',
+    repl: '    var plan = lib.tightenPlan(inMoment);',
+    gate: 'CutPilot/test/gates/hook-check.js',
+    why: 'warm-up words the short will cut count against its hook'
+  },
+  {
+    name: 'v70-hook-midthought-ok',
+    file: 'CutPilot/js/hookcheck.js',
+    find: '    if (midThought) score = Math.min(score, 45);',
+    repl: '',
+    gate: 'CutPilot/test/gates/hook-check.js',
+    why: 'a short starting mid-thought is called an OK hook'
   }
+
 
 
 

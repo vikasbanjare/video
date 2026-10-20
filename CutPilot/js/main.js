@@ -17201,6 +17201,16 @@
       if (h.hook) { meta.appendChild(document.createElement('br')); meta.appendChild(document.createTextNode('“' + h.hook + '”')); }
       if (h.reason) { meta.appendChild(document.createElement('br')); var sp = document.createElement('span'); sp.className = 'dim'; sp.textContent = h.reason; meta.appendChild(sp); }
       card.appendChild(meta);
+      // 🪝 Hook check: how strong the finished short's first 3 seconds are
+      var hc = null;
+      try { hc = (window.CPHookCheck && state.transcriptWords) ? CPHookCheck.check(state.transcriptWords, h) : null; } catch (eHc) { hc = null; }
+      if (hc) {
+        var hp = document.createElement('p'); hp.className = 'hint sh-hook';
+        var hb = document.createElement('span'); hb.className = 'badge ' + (hc.score >= 75 ? 'ok' : (hc.score >= 50 ? 'warn' : 'bad'));
+        hb.textContent = '🪝 ' + hc.label + ' ' + hc.score;
+        hp.appendChild(hb); hp.appendChild(document.createTextNode(' ' + hc.tip));
+        card.appendChild(hp);
+      }
       var row = document.createElement('div'); row.className = 'row tight';
       function btn(label, cls, fn) { var x = document.createElement('button'); x.className = cls; x.textContent = label; x.setAttribute('data-act', '1'); x.addEventListener('click', fn); row.appendChild(x); }
       btn('▶ Preview', 'chip-btn', function () {
@@ -20543,6 +20553,8 @@
       pulseSizeScale: pulseSizeScale,
       pulseImageLines: pulseImageLines,
       premFitEditable: premFitEditable,
+      renderShorts: function (list) { renderShorts(list); },
+      setTranscriptWords: function (ws) { state.transcriptWords = ws; },
       styleTestCalibrate: styleTestCalibrate,
       styleTestPixels: function (img, onBlack) { var o = styleTestPixels(img, onBlack); return { box: o.box, W: o.W, H: o.H }; },
       sizeCal: function (v) { if (v !== undefined) settings.pulseSizeCal = v; return settings.pulseSizeCal || null; },

@@ -1,10 +1,18 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.69** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.70** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.70 — 🪝 Hook check (cloud session)
+- js/hookcheck.js (window.CPHookCheck.check(words, moment)): judges the
+  FINISHED short's first 3 s — CPShorts.trimEnds + tightenPlan, then
+  CPShorts.hookScore on the words in the first 3 s, word count, hook title.
+  Mid-thought starts capped at 45 (weak). renderShorts shows a badge
+  (.sh-hook, .badge ok/warn/bad) and one tip per moment. Debug hooks
+  CP_DEBUG.renderShorts / setTranscriptWords. Gate hook-check.
 
 ### v0.10.69 — 📣 Publish kit (cloud session)
 - Chapters page, card #pk-card (js/publish.js, window.CPPublish): one AI call
