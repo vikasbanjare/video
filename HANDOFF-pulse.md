@@ -1,10 +1,38 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.73** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.88** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.74 – v0.10.88 — night shift on the owner's Mac (2026-10-21, owner asleep)
+Everything below was run in the owner's real Premiere on QA copies (an
+8-minute webinar, "QA Webinar") — round-by-round detail in `NIGHT-LOG.md`.
+How: the installed panel gets a local `.debug` file (port 8092, installed copy
+only, never in the repo/zip) and is driven over Chrome DevTools Protocol;
+ExtendScript runs through the panel (`__adobe_cep__.evalScript`), frames are
+checked with QE `exportFramePNG`. No clicks needed even with the screen locked.
+- AI answers: read in any wrapping (`parseAiJson`); Detect speakers asks only
+  for the turns (a label per line was cut off); Translate by numbered lines,
+  emptied/missing lines asked again (121 → 6 English lines of 209); Smart
+  Cleanup cuts land on the words the AI names; "you know what" / "like 10"
+  never fillers; extra fillers only where they stand apart.
+- Transcript: a reopened project finds its saved words with nothing selected;
+  a slow scan never replaces a fresh translation; local-engine word timing
+  repaired (0 s words in order, a crushed sentence respread).
+- Captions: Premiere captions clamped to the sequence end, a second run says
+  both tracks show; Exact look on 7:50 verified on the word; style test
+  125/136 (unchanged — thin serif/script strokes).
+- Shorts: open on the claim not "Because"; Fit captions under the shot (kept
+  after Viral edit); Premiere 2026's Gaussian Blur ("Amount") blurred; unique
+  short names (Export all); Viral edit zooms the picture you see from its own
+  size and replaces the caption set.
+- Nothing Pulse links into a project lives in the OS temp folder any more
+  (shorts, reframe, Safe zone guide, SFX, caption .srt, B-roll copies) —
+  `captionMediaPlace()` / `window.CPMediaPlace`. Safe zone's toasts work.
+- Owner's Mac: the disk was full (117 MB free; 25 GB is Premiere's media cache
+  — not touched, the owner can clear it in Premiere › Settings › Media Cache).
 
 ### v0.10.73 — 🎞 B-roll on keywords (cloud session)
 - Clean up page, card #br-card (js/broll.js, window.CPBroll): the owner's
