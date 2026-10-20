@@ -16,6 +16,10 @@ on the old code, build, install, verify, commit and push. Newest entries on top.
 7. Viral edit — zoom punch-ins, sound effects.
 
 ## Done
+- 04:20 Checked in Premiere (v0.10.85), no bugs found: Review & edit (a
+  word fixed, timing kept), Chapters → markers (3 AI-titled), caption style
+  test 125/136 (unchanged; the 11 left are thin serif/script strokes the Mac
+  browser draws a hair heavier than Premiere — no fake-bold issue).
 - 03:55 ⚠️ DISK FULL: the Mac's drive hit 117 MB free (437 of 460 GB is the
   owner's own data). I deleted only my own test leftovers (657 MB of test
   temp folders + my scratch frames) → ~0.8 GB free. NOT touched: Premiere's
