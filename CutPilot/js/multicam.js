@@ -958,19 +958,25 @@
       for (a = 0; a < nA; a++) {
         if (!db[a] || !db[a].length) continue;
         // per talker S: how the listener's mic usually sits against S's (median)
-        var base = {};
+        // …and how loud the listener's own mic usually is meanwhile: the
+        // talker's pause between words lifts the RATIO too, so a silent
+        // listener "reacted" at every breath (a real two-camera test: 12
+        // reactions heard on a mic that was digital silence)
+        var base = {}, own = {};
         for (var S = 0; S < nA; S++) {
           if (S === a || !db[S] || !db[S].length) continue;
-          var ds = [];
-          for (w = 0; w < len2; w++) if (talkAt[w] === S && db[a][w] > -99 && db[S][w] > -99) ds.push(db[a][w] - db[S][w]);
+          var ds = [], da = [];
+          for (w = 0; w < len2; w++) if (talkAt[w] === S && db[a][w] > -99 && db[S][w] > -99) { ds.push(db[a][w] - db[S][w]); da.push(db[a][w]); }
           if (ds.length < 20) continue;
           ds.sort(function (x, y) { return x - y; });
+          da.sort(function (x, y) { return x - y; });
           base[S] = ds[Math.floor(ds.length / 2)];
+          own[S] = da[Math.floor(da.length / 2)];
         }
         var runS = -1, runOver = -1;
         for (w = 0; w <= len2; w++) {
           var S2 = w < len2 ? talkAt[w] : -1, hit = false;
-          if (S2 >= 0 && S2 !== a && base[S2] != null && db[a][w] > -99 && db[S2][w] > -99) hit = (db[a][w] - db[S2][w]) - base[S2] >= rise;
+          if (S2 >= 0 && S2 !== a && base[S2] != null && db[a][w] > -99 && db[S2][w] > -99) hit = (db[a][w] - db[S2][w]) - base[S2] >= rise && db[a][w] - own[S2] >= rise;
           if (hit && runS < 0) { runS = w; runOver = S2; }
           if ((!hit || S2 !== runOver) && runS >= 0) {
             var st = runS * step, en = w * step, ln = en - st;

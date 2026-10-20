@@ -171,6 +171,7 @@
       boxSteady: !!preset.boxSteady,
       inkBoxes: !!(o.inkBoxes != null ? o.inkBoxes : preset.inkBoxes),   // boxes hug the ink (the editable preview on Pulse's engine)
       emBoxes: !!(o.emBoxes != null ? o.emBoxes : preset.emBoxes),       // template v6's em boxes (the editable preview on it)
+      leadEm: (o.leadEm != null ? o.leadEm : preset.leadEm) || 0,         // the template's fixed line step, in em of the rest size
       shadowDX: Math.round(((o.shadowDX != null ? o.shadowDX : (preset.shadowDX || 0))) * scale),
       shadowDY: Math.round(((o.shadowDY != null ? o.shadowDY : (preset.shadowDY || 0))) * scale),
       wordSpacing: Math.round(((o.wordSpacing != null ? o.wordSpacing : (preset.wordSpacing || 0))) * scale),
@@ -727,7 +728,7 @@
                            lines: lines.map(function (l) { return l.items.map(function (i) { return i.word; }).join(' '); }) };
     } catch (eLn) {}
 
-    var lineStep = hlSize * style.lineGap;
+    var lineStep = style.leadEm ? base * style.leadEm : hlSize * style.lineGap;
     var stroke = (style.stroke && style.strokeWidth) ? style.strokeWidth : 0;
     // per-line baselines, bottom-anchored at the Position. Uniform stepping for
     // normal styles; two-tier styles (subScale<1) use each line's own height so
@@ -892,7 +893,7 @@
         // boxSteady: the box keeps the size of the line at rest and the spoken
         // word grows past it (the owner's Maroon Label reel) — it no longer
         // widens and narrows with every word
-        if (style.boxSteady && line.restWidth > 0 && line.restWidth < line.width) {
+        if (style.boxSteady && !style.emBoxes && line.restWidth > 0 && line.restWidth < line.width) {   // the template's box takes the grown line
           bxLeft = x + (line.width - line.restWidth) / 2 - padX; bxW = line.restWidth + padX * 2;
         }
         barTop = bxTop; barH = bxH;

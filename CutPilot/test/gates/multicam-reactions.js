@@ -90,6 +90,13 @@ const bad = (m) => { failed++; console.log('  ✗ ' + m); };
     const rx = plan.filter(p => p.reaction);
     (bu[1].length === 2 && Math.abs(bu[1][0].start - 20) < 0.15 && Math.abs(bu[1][1].start - 41) < 0.15 && rx.length === 2 && Math.abs(rx[0].start - 19) < 0.15 ? ok : bad)(
       'E. a quiet "hmm" under a louder talker is heard (' + (got || 'none') + ') and shown from ' + (rx[0] ? rx[0].start.toFixed(1) : '—') + ' s');
+    // F. a listener whose mic is silent never "reacts": the talker's pauses
+    // between words lift the ratio, not the listener's own level (the owner's
+    // Mac, a real two-camera test: a cut to a silent camera mid-sentence)
+    const T = [], Q = [];
+    for (let i = 0; i < 300; i++) { T.push(i % 10 < 2 ? -48 : -25); Q.push(-91); }
+    const bf = M.listenerBursts([[], [{ start: 0, end: 60 }]], { dbGrids: [Q, T], step });
+    (bf[0].length === 0 ? ok : bad)('F. a silent listener has no reactions (' + bf[0].length + ' heard)');
   }
   if (failed) { console.log('MULTICAM REACTIONS: ' + failed + ' failed'); process.exit(1); }
   console.log('MULTICAM REACTIONS: the listener\'s small reactions are shown, as often as the owner picks ✓');

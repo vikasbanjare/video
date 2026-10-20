@@ -37,10 +37,13 @@ async function run() {
       const body = JSON.parse(fs.readFileSync(args[args.indexOf('--data-binary') + 1].replace(/^@/, ''), 'utf8'));
       const user = JSON.parse(body.messages[body.messages.length - 1].content);
       if (/proofreader/.test(body.messages[0].content)) {
-        pfSizes.push(user.lines.length);
-        let fx = user.lines.map(l => l.replace('helo', 'hello'));
-        if (mode === 'pf-short' && pfSizes.length === 2) fx = fx.slice(1);
-        return JSON.stringify({ choices: [{ message: { content: JSON.stringify({ lines: fx }) } }] });
+        // numbered lines in, ONLY the changed ones back by number (a word-level
+        // transcript's parts were all lost when the model had to send back
+        // exactly n lines)
+        pfSizes.push(user.length);
+        const fixes = user.filter(x => /helo/.test(x.t)).map(x => ({ i: x.i, t: x.t.replace('helo', 'hello') }));
+        if (mode === 'pf-short' && pfSizes.length === 2) return JSON.stringify({ choices: [{ message: { content: 'sorry, I cannot' } }] });
+        return JSON.stringify({ choices: [{ message: { content: JSON.stringify({ fixes }) } }] });
       }
       if (/speaking/.test(body.messages[0].content)) {
         spReqs.push({ n: user.lines.length, before: (user.before || []).length });
@@ -114,7 +117,7 @@ async function run() {
       JSON.stringify({ pfSizes, n: r.cues.length, first: r.cues[0], last: r.cues[r.cues.length - 1], toast: r.toast }));
     r = await proofread('pf-short');
     const mid = r.cues.slice(120, 240);
-    C.check('E. a part with the wrong number of lines keeps its own words (not shifted); the others fixed; the toast says so',
+    C.check('E. a part with no usable answer keeps its own words; the others fixed; the toast says so',
       r.cues.length === N && mid.every((c, k) => c[1] === 'line ' + (120 + k) + ' helo world now') && r.cues.slice(0, 120).every(c => / hello /.test(c[1])) && /1 of 3 parts left/.test(r.toast),
       JSON.stringify({ mid0: mid[0], toast: r.toast }));
     await page.close();

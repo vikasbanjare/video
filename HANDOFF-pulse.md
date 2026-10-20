@@ -1,10 +1,75 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.58** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.61** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.60 – v0.10.61 — verified in the owner's Premiere (2026-10-20)
+- Caption style test: run 4 (v0.10.60) 120/136, run 5 (v0.10.61) 121/136, worst
+  10.2% (Desktop/Pulse Caption Test/2026-10-20-06-47). Line step (Headliner,
+  Two-Tone Stack) and Maroon Label fixed: em boxes ignore style.boxSteady (the
+  template's box takes the grown line). Left, all 7–10%: Cinematic, Script
+  Glow, Elevate II (Premiere draws thin serif/script hairlines lighter),
+  Align (JetBrains Mono not installed), Chrome Y2K, Sunset Fade (gradient).
+- ✨ AI fix sends numbered lines and takes back ONLY the changed ones
+  ({"fixes":[{"i","t"}]}); asking for exactly n lines lost every part of a
+  word-level transcript. Old {"lines":[...]} answers still accepted. Verified:
+  "AI fixed 18 lines — all 209 kept". Gates translate-long E +
+  captions-transcript-timing fakes speak the new protocol; mutation
+  v31-proofread-shifted re-anchored.
+- gpt-oss (the owner's AI model) thinks inside max_tokens: groqChatOnce sends
+  reasoning_effort 'low' and +1024 tokens for gpt-oss. Verified: Shorts found
+  8 moments with no failed part, no JSON refusal.
+- Podcast cameras fix verified in Premiere: camera 1 on only while its person
+  talks (0–8.27, 16.07–24.23 s). The owner has no multi-camera footage — do
+  not ask them to test Podcast cameras.
+- Test material left in the owner's "test" project: sequences QA Clean up (+
+  Copy), QA Shorts, Political Fallout Shifts AI, QA Podcast, bin "Pulse QA";
+  files in ~/Movies/PulseQA. Ask before deleting.
+
+
+### v0.10.59 — Clean up, Shorts, Podcast cameras run in the owner's Premiere
+- Caption style test in real Premiere on v0.10.58: run 2 115/136, run 3 116/136
+  with sizes settled ("every style already lands at the size Pulse shows").
+  Left (7–15%): Maroon Label, Headliner, Two-Tone Stack (line step — fixed
+  below, not yet re-measured), thin serif/script faces (Playfair, Snell
+  Roundhand) that Premiere's renderer draws lighter, Align (JetBrains Mono not
+  installed → swapped face).
+- Letter spacing measured in Premiere through the bridge: one "Letter Spacing"
+  unit = 10 px per letter at every font size (the font-size write does not
+  scale it; the Size control's group scale does). The current mapping
+  (LS × 75/fontSize / 10) is consistent with that — no change.
+- Preview line step = the template's: 90 px leading at its 75 px face (1.2 em),
+  NOT scaled by a font-size write, so a style drawn above the face steps
+  1.2/sizeScale em (render.js style.leadEm, set in pulseCarryStyle(p, env)).
+- Clean up on a copy of the reel: one 0.63 s retake removed ("hyphenated · oh ·
+  hyphenated"), V1/A1 aligned clip for clip, captions on V5 rippled. ✓
+- Shorts on an 8-min webinar: local transcription, 7 moments, a 26 s 9:16
+  editable short with hook title; captions on the right words at 1/6/12/18/24 s. ✓
+  Found: (1) a new sequence was offered Pulse's own OLD caption file
+  ("Using cutpilot-1792171034944.srt") — findTranscript no longer auto-picks
+  cutpilot-/pulse-<digits>.srt|vtt unless the name matches the clip/project;
+  (2) the bar said "AI fix failed · Get one →" after a good transcription —
+  now "Words ready — the AI spelling fix did not run this time";
+  (3) Groq JSON mode refused gpt-oss answers (json_validate_failed) for every
+  part of ✨ AI fix and a part of Shorts' moments: groqChatRaw asks once more
+  without the JSON switch and hands callers the object from the text (a reply
+  cut at the token limit is still left to the caller, which splits).
+- Podcast cameras on a real two-camera build (~/Movies/PulseQA/cam1/cam2.mp4,
+  speakers alternate every 8 s): cuts at 8.27 / 16.07 / 24.23 s, but one cut to
+  the SILENT camera mid-sentence. CPMulticam.listenerBursts' "said over the
+  talker" path compared only the listener/talker RATIO, which the talker's
+  pauses lift: 12 "reactions" on a mic at −91 dB. Now the listener's own level
+  must rise ≥ rise dB over its usual level too. Gate multicam-reactions F.
+- Header named the old sequence on every page but Captions: refreshEnvStatus()
+  on every page change and on panel focus.
+- Self-test (🧪 Test everything) in real Premiere: all green, incl. Multicam
+  Apply 4/4, Clean up, Shorts, editable captions, Premium, overlay.
+- NOT re-verified in Premiere after the v0.10.59 fixes at the time of writing
+  unless a later entry says so.
+
 
 ### v0.10.58 — editable preview draws the template's boxes; real font names (NOT yet re-tested in Premiere)
 - First style test run IN the owner's Premiere by Claude (v0.10.57, 2026-10-20):

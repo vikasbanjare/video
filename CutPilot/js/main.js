@@ -1426,7 +1426,28 @@
       });
     });
   }
+  /* JSON mode on Groq refuses some models' answers outright (HTTP 400
+     json_validate_failed) — gpt-oss did it to every part of the owner's ✨ AI
+     fix and to a part of Shorts' moments. Asked again without the JSON switch,
+     the same answer comes back as text; the object in it is what callers parse.
+     An answer cut off at the token limit is left to the caller (it splits). */
   function groqChatRaw(messages, opts) {
+    opts = opts || {};
+    return groqChatOnce(messages, opts).catch(function (e) {
+      var m = aiErrText(e);
+      if (!opts.json || !/json_validate_failed|failed to generate json/i.test(m) || /max(imum)?[ _]completion[ _]tokens/i.test(m)) throw e;
+      var o = {}, k;
+      for (k in opts) if (opts.hasOwnProperty(k)) o[k] = opts[k];
+      o.json = false;
+      try { diag('ai', 'JSON mode refused the answer — asking again as text'); } catch (eD) {}
+      return groqChatOnce(messages, o).then(function (c) {
+        var a = String(c).indexOf('{'), b = String(c).lastIndexOf('}');
+        if (a >= 0 && b > a) { try { JSON.parse(String(c).slice(a, b + 1)); return String(c).slice(a, b + 1); } catch (eP) {} }
+        return c;
+      });
+    });
+  }
+  function groqChatOnce(messages, opts) {
     opts = opts || {};
     return new Promise(function (resolve, reject) {
       var key = cpKey();
@@ -1437,6 +1458,10 @@
                    temperature: (opts.temperature != null ? opts.temperature : 0.2), messages: messages };
       if (opts.json) body.response_format = { type: 'json_object' };
       if (opts.maxTokens) body.max_tokens = opts.maxTokens;   // cap response → stay under tokens-per-minute
+      // gpt-oss thinks before it answers and the thinking counts against
+      // max_tokens: Shorts' moments (1,500) and titles (60) came back with no
+      // content at all on the owner's key. Think briefly; leave room to answer.
+      if (/gpt-oss/i.test(body.model)) { body.reasoning_effort = 'low'; if (body.max_tokens) body.max_tokens += 1024; }
       var tmp = pathMod.join(os.tmpdir(), 'cutpilot-groq-' + Date.now() + '.json');
       try { fs.writeFileSync(tmp, JSON.stringify(body), 'utf8'); } catch (eW) { return reject(eW); }
       var args = ['-sS', '--max-time', String(opts.timeout || 120), 'https://api.groq.com/openai/v1/chat/completions',
@@ -2271,6 +2296,9 @@
       document.body.setAttribute('data-page', this.dataset.tab);
       if ($('nav-title')) $('nav-title').textContent = PAGE_TITLES[this.dataset.tab] || '';
       if (!wasActive) page.scrollTop = 0;       // a page opens at its top
+      // every page names the sequence it will act on — after switching
+      // sequences the header kept the old one everywhere but Captions
+      if (this.dataset.tab !== 'captions') refreshEnvStatus();
       // Leaving Captions? Stop the live-preview animation loop so it isn't
       // painting an off-screen canvas forever in the background.
       if (this.dataset.tab !== 'captions') { if (previewTimer) { clearInterval(previewTimer); previewTimer = null; } stopCardAnimator(); }
@@ -2353,6 +2381,16 @@
      optional. Words and captions are read from what Pulse holds; Clean up,
      cameras and shorts are marked when they finish. */
   var FLOW_STEPS = ['transcribe', 'silence', 'multicam', 'captions', 'shorts'];
+  /* Re-read the active sequence and show it in the header (no-op outside CEP). */
+  function refreshEnvStatus() {
+    if (!CPBridge.isCEP()) return;
+    CPBridge.callHost('CP_getEnv').then(function (env) {
+      if (!env || !env.sequenceName) return;
+      state.env = env;
+      var el = $('env-status'); if (el) { el.textContent = env.sequenceName + ' · ' + env.width + '×' + env.height; el.className = 'env-status ok'; }
+    }).catch(function () {});
+  }
+  window.addEventListener('focus', function () { try { refreshEnvStatus(); } catch (e) {} });
   function flowKey() { return 'pulse.flow.' + (((state.env || {}).sequenceName) || 'none'); }
   function flowDone() { try { return JSON.parse(localStorage.getItem(flowKey()) || '{}') || {}; } catch (e) { return {}; } }
   function markStepDone(step) {
@@ -3176,7 +3214,11 @@
         var n = (s.label || '').toLowerCase();
         return ((clipBase && n.indexOf(clipBase) !== -1) || (projBase && n.indexOf(projBase) !== -1)) ? 5e15 : 0;
       }
-      var pick = found.filter(function (s) { return s.src !== 'loose' || rel(s) > 0; });
+      // Pulse's own caption files (cutpilot-<time>.srt, made for SOME sequence)
+      // are outputs, not this video's words: a new sequence was offered
+      // another video's captions ("Using cutpilot-1792171034944.srt")
+      function ownOutput(s) { return /^(cutpilot|pulse)-\d+\.(srt|vtt)$/i.test(s.label || ''); }
+      var pick = found.filter(function (s) { return rel(s) > 0 || (s.src !== 'loose' && !ownOutput(s)); });
       pick.forEach(function (s) { s.score = rel(s) + (s.base || 0) + Math.min(s.mtime || 0, 9e12) / 1e3; });
       pick.sort(function (a, b) { return b.score - a.score; });
 
@@ -3622,22 +3664,33 @@
       'the spoken words and only correct the wrong ones. ' +
       (vocab ? ('IMPORTANT — these names/terms are spelled correctly; use them when a word sounds close: ' + vocab + '. ') : '') +
       'Examples: "we live in indiyya" → "we live in India"; "i seen there new car" → "I\'ve seen their new car". ' +
-      'Return JSON {"lines":[...]} with EXACTLY ' + lines.length + ' strings, one per input line, in the same order.';
+      'The input is a list of {"i": number, "t": line}. Return JSON {"fixes":[{"i": number, "t": corrected line}]} listing ONLY ' +
+      'the lines you changed, each with its own "i"; leave out every line that is already right.';
     // in parts of 120 lines: a 1–2 hour podcast is ~2,000 lines, more than one
     // answer can hold. A part that fails or comes back with a different number
     // of lines keeps its own words (shifted text would land on the wrong lines).
     var PART = 120, fixed = [], skippedParts = 0, parts = [];
     for (var pi = 0; pi < lines.length; pi += PART) parts.push(lines.slice(pi, pi + PART));
-    var sysFor = function (n) { return sys.replace('EXACTLY ' + lines.length + ' strings', 'EXACTLY ' + n + ' strings'); };
+    // only the changed lines come back, by number: asking for EXACTLY n lines
+    // lost every part of a word-level transcript (1,461 one-word lines — the
+    // model never sends back the same count, and a part that differs is dropped)
+    var sysFor = function () { return sys; };
     parts.reduce(function (chain, part, k) {
       return chain.then(function () {
         if (parts.length > 1) setTranscriptBar('', '✨', 'AI proofreading… part ' + (k + 1) + ' of ' + parts.length, null);
         return asrRetry(function () {
-          return groqChat([{ role: 'system', content: sysFor(part.length) }, { role: 'user', content: JSON.stringify({ lines: part }) }], { json: true, temperature: 0 });
+          return groqChat([{ role: 'system', content: sysFor(part.length) },
+                           { role: 'user', content: JSON.stringify(part.map(function (t, i) { return { i: i, t: t }; })) }], { json: true, temperature: 0 });
         }, null).then(function (content) {
-          var parsed; try { parsed = JSON.parse(content); } catch (e) { parsed = {}; }
-          var got = parsed.lines || parsed.corrected || parsed.result || [];
-          if (got.length !== part.length) { skippedParts++; got = part; }
+          var parsed; try { parsed = JSON.parse(content); } catch (e) { parsed = null; }
+          var got = part.slice(), list = parsed && (parsed.fixes || parsed.lines);
+          if (!parsed || !Array.isArray(list)) skippedParts++;
+          else if (typeof list[0] === 'string') {           // every line back (the old answer)
+            if (list.length === part.length) got = list; else skippedParts++;
+          } else list.forEach(function (f) {
+            var i = f && (typeof f.i === 'number' ? f.i : parseInt(f.i, 10));
+            if (i >= 0 && i < part.length && typeof f.t === 'string') got[i] = f.t;
+          });
           for (var j = 0; j < part.length; j++) fixed.push(got[j]);
         }, function (e) {
           var kd = e && e.cpKind;   // a wrong key or no credit: every part would fail the same way
@@ -3685,7 +3738,9 @@
               (skippedParts ? ' · ' + skippedParts + ' of ' + parts.length + ' parts left as they were (try ✨ again later)' : '') +
               '. Review in “✏️ Review & edit”. (Tap “Change” to revert.)');
       })
-      .catch(function (e) { setTranscriptBar('warn', '⚠️', 'AI fix failed', 'Get one →'); toast('AI fix failed: ' + e.message, true); })
+      // the words are untouched and ready: say so (the bar read "AI fix failed ·
+      // Get one →" after a good transcription, as if there were no words)
+      .catch(function (e) { setTranscriptBar('ok', '✅', 'Words ready — the AI spelling fix did not run this time', 'Change'); toast('AI fix failed: ' + e.message, true); })
       .then(function () { state.aiBusy = false; });
   }
 
@@ -5513,7 +5568,7 @@
           // the editable PREVIEW: what the panel shows in ✏️ Editable for this
           // style — the promise "what you pick is what lands". Measured against
           // what Premiere drew, it is the number that says the plugin works.
-          var ep = pulse ? pulseCarryStyle(t) : carryableStyle(t);
+          var ep = pulse ? pulseCarryStyle(t, env) : carryableStyle(t);
           var eframes = CPCaptions.buildCaptionFrames([{ start: 0, end: STYLE_TEST_SECONDS, text: pl.raw, words: words }],
             { anim: ep.anim, wordsPerCue: t.wordsPerCue, uppercase: ep.uppercase, preset: ep, wordCues: words });
           function frameAt(items) {
@@ -13964,7 +14019,7 @@
      v0.10.48). Template v6 spaces the letters as they grow ('grow'); on an
      older one the spoken word keeps its size, and the preview shows that. */
   function pulseGrow(L) { return pulseEngineHas('grow') ? L.grow : 0; }
-  function pulseCarryStyle(p) {
+  function pulseCarryStyle(p, env) {
     var out = renderableStyle(p), L = pulseLook(p);
     ['highlight2', 'fill2', 'highlightColors', 'boxColor2', 'numberColor', 'brandColor', 'brandWords', 'highlightFont',
      'highlightWeight', 'highlightGlow', 'boxStroke', 'boxGlow', 'boxShadow', 'boxGradient', 'boxStops'].forEach(function (k) { out[k] = null; });
@@ -13986,6 +14041,10 @@
     // template v6 draws them as tall as the image's ('embox')
     out.inkBoxes = !pulseEngineHas('embox');
     out.emBoxes = !out.inkBoxes;
+    // the template's lines are 90 px apart at its 75 px face (1.2 em); a style
+    // drawn bigger than that face gets a bigger FONT but the same leading
+    // (Headliner, Two-Tone Stack: the preview stepped by the style's own gap)
+    try { out.leadEm = 1.2 / Math.max(1, pulseSizeScale(p, env || state.env)); } catch (eLd) { out.leadEm = 1.2; }
     out.wordHl = L.spokenLit;
     out.anim = L.spokenLit ? 'karaoke' : 'fade';           // the spoken word moves word by word, or all words alike
     out.entrance = ({ 1: 'none', 2: 'pop', 3: 'fade', 4: 'slide' })[L.animation];

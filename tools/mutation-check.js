@@ -2649,8 +2649,8 @@ const MUTANTS = [
   {
     name: 'v31-proofread-shifted',
     file: 'CutPilot/js/main.js',
-    find: '          if (got.length !== part.length) { skippedParts++; got = part; }',
-    repl: '          if (got.length !== part.length) { skippedParts++; }',
+    find: "            if (i >= 0 && i < part.length && typeof f.t === 'string') got[i] = f.t;",
+    repl: "            if (i >= 0 && i < part.length && typeof f.t === 'string') got[i + 1] = f.t;",
     gate: 'CutPilot/test/gates/translate-long.js',
     why: 'AI fix puts a short part\'s words on the wrong lines'
   },

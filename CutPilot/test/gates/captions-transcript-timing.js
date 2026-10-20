@@ -124,8 +124,8 @@ async function run() {
         if (/groq\.com\/openai\/v1\/chat/.test(url)) {
           fixAsked++;
           const body = JSON.parse(fs.readFileSync(args[args.indexOf('--data-binary') + 1].replace(/^@/, ''), 'utf8'));
-          const ls = JSON.parse(body.messages[body.messages.length - 1].content).lines;
-          return JSON.stringify({ choices: [{ message: { content: JSON.stringify({ lines: ls.map(l => l.replace('accha', 'achha')) }) }, finish_reason: 'stop' }] });
+          const ls = JSON.parse(body.messages[body.messages.length - 1].content);   // [{i, t}] — the changed ones come back
+          return JSON.stringify({ choices: [{ message: { content: JSON.stringify({ fixes: ls.filter(x => /accha/.test(x.t)).map(x => ({ i: x.i, t: x.t.replace('accha', 'achha') })) }) }, finish_reason: 'stop' }] });
         }
         return '{}';
       };
@@ -446,8 +446,8 @@ async function run() {
         if (/groq\.com\/openai\/v1\/chat/.test(url)) {
           fixAsked++;
           const body = JSON.parse(fs.readFileSync(args[args.indexOf('--data-binary') + 1].replace(/^@/, ''), 'utf8'));
-          const ls = JSON.parse(body.messages[body.messages.length - 1].content).lines;
-          return JSON.stringify({ choices: [{ message: { content: JSON.stringify({ lines: ls.map(l => l.replace(/\bacha\b/, 'accha')) }) }, finish_reason: 'stop' }] });
+          const ls = JSON.parse(body.messages[body.messages.length - 1].content);   // [{i, t}]
+          return JSON.stringify({ choices: [{ message: { content: JSON.stringify({ fixes: ls.filter(x => /\bacha\b/.test(x.t)).map(x => ({ i: x.i, t: x.t.replace(/\bacha\b/, 'accha') })) }) }, finish_reason: 'stop' }] });
         }
         return '{}';
       };
