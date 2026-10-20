@@ -1309,11 +1309,16 @@ console.log('transcript.js (filler removal)');
   assert(r2.ranges[0].word === 'you know' && close(r2.ranges[0].end, 2.1, 1e-2), 'matches the phrase "you know"');
   assert(r2.ranges[1].word === 'um', 'still catches the trailing "um"');
 
-  // conservative by default; opts.extra opts into real-word fillers
-  const cueSo = [{ start: 0, end: 4, text: 'so I went there' }];
+  // conservative by default; opts.extra opts into real-word fillers — and
+  // even then only where one stands apart ("so, I went…"), never where it is
+  // part of the sentence ("so I went there", "I like it": v0.10.79)
+  const cueSo = [{ start: 0, end: 4, text: 'so, I went there' }];
   assert(CPTranscript.findFillerRanges(cueSo).count === 0, 'default list does not cut "so"');
   const ex = CPTranscript.findFillerRanges(cueSo, { extra: true });
-  assert(ex.count === 1 && ex.ranges[0].word === 'so', 'extra:true cuts "so"');
+  assert(ex.count === 1 && ex.ranges[0].word === 'so', 'extra:true cuts a "so," that stands apart');
+  assert(CPTranscript.findFillerRanges([{ start: 0, end: 4, text: 'so I went there' }], { extra: true }).count === 0 &&
+         CPTranscript.findFillerRanges([{ start: 0, end: 4, text: 'I like it' }], { extra: true }).count === 0,
+         'extra:true keeps "so" / "like" that are part of the sentence');
 
   // a cue that is nothing but a filler is removed whole; clean speech is kept
   const whole = CPTranscript.findFillerRanges([{ start: 10, end: 10.5, text: 'Um.' }]);
