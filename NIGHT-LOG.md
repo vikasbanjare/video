@@ -16,6 +16,16 @@ on the old code, build, install, verify, commit and push. Newest entries on top.
 7. Viral edit — zoom punch-ins, sound effects.
 
 ## Done
+- 03:55 ⚠️ DISK FULL: the Mac's drive hit 117 MB free (437 of 460 GB is the
+  owner's own data). I deleted only my own test leftovers (657 MB of test
+  temp folders + my scratch frames) → ~0.8 GB free. NOT touched: Premiere's
+  Media Cache in ~/Library/Caches/Adobe (25 GB) — the owner can clear it in
+  Premiere › Settings › Media Cache › Delete (safe, Premiere rebuilds it).
+- 03:52 Round 5 (v0.10.85): Fit shorts' blurred backdrop was never blurred
+  in Premiere 2026 (its Gaussian Blur names the strength "Amount", Pulse set
+  "Blurriness") and every Fit short warned. Fixed, verified (blurred 1/1, no
+  warning). Gate shorts-editable-timeline fit-2026. Safe zone (Reels guide)
+  verified on a short; Crop's controls unchanged in 2026.
 - 04:15 Round 4 (v0.10.82 → v0.10.84), tested in Premiere:
   · Premiere captions (.srt) on the 7:50 webinar: "And you know happened?"
     + "what" (a 0 s word sorted after its neighbour) and a 12-word line shown
