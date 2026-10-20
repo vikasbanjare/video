@@ -175,13 +175,18 @@ const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r6.mogrt
   const med = k => { const v = rows.map(x => x[k]).sort((a, b) => a - b); return v[v.length >> 1]; };
   const close = k => rows.filter(x => x[k] < 5).length;
   console.log('    image vs editable, median difference: Pulse engine ' + med('pulse').toFixed(1) + '% · Flux ' + med('flux').toFixed(1) + '%; close (<5%): Pulse ' + close('pulse') + ' · Flux ' + close('flux') + ' of ' + rows.length);
-  (med('pulse') < med('flux') * 0.6 && close('pulse') > close('flux') * 2 ? ok : bad)('D. the editable look is far closer to the image caption than on Flux');
+  // 1.8×, not 2×: since v0.10.58 the preview draws the template's own em
+  // boxes (one box round all lines, the word box as tall as the line box),
+  // as Premiere drew them in the first style test run IN the owner's
+  // Premiere — truer to Premiere, a little further from the image
+  (med('pulse') < med('flux') * 0.6 && close('pulse') > close('flux') * 1.8 ? ok : bad)('D. the editable look is far closer to the image caption than on Flux');
   const of = id => rows.find(x => x.id === id) || {};
+  // Maroon Label 12, not 6: its box is the template's em box (v0.10.58).
   // 19, not 16: a word-box style is sent with no shadow (v0.10.40) — the
   // template shades every letter, and in the owner's real Premiere test the
   // boxed word came out blurred under it. This preview can skip the shadow
   // per word, so it now counts the other words' missing shadow as a difference.
-  (of('pack-green-word-box').pulse < 19 && of('pack-maroon-label').pulse < 6 && of('cap-pastel').pulse < 18 ? ok : bad)(
+  (of('pack-green-word-box').pulse < 19 && of('pack-maroon-label').pulse < 12 && of('cap-pastel').pulse < 18 ? ok : bad)(
     'D. Green Word Box, Maroon Label and Pastel (line box + word box) match their image captions (' + ['pack-green-word-box', 'pack-maroon-label', 'cap-pastel'].map(i => of(i).pulse.toFixed(1) + '%').join(' · ') + ')');
   fs.writeFileSync(path.join(root, 'rows.json'), JSON.stringify(rows.sort((a, b) => b.pulse - a.pulse), null, 1));
   console.log('    worst: ' + rows.slice(0, 6).map(x => x.id + ' ' + x.pulse.toFixed(1) + '%').join(' · ') + '  (' + root + '/rows.json)');
