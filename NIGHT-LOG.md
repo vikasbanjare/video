@@ -16,6 +16,22 @@ on the old code, build, install, verify, commit and push. Newest entries on top.
 7. Viral edit — zoom punch-ins, sound effects.
 
 ## Done
+- 04:55 Round 6 (v0.10.86 → v0.10.88), tested in Premiere:
+  · ⚠️ Found the hard way: everything Pulse puts in a project that is not a
+    caption image lived in the OS temp folder, which macOS clears — a
+    short's hook title + frame clip, the one-file short, speaker reframe,
+    the Safe zone guide (and branding), sound effects, the Premiere-captions
+    .srt, B-roll copies. The project then opens with a Link Media dialog
+    (it did tonight, after I cleared my test temp folders — one guide from
+    Oct 17 was among them; I put plain stand-ins at every missing path so
+    the project opens clean). Now all of it goes to "Pulse Media" beside
+    the project, like the captions. Gates shorts-editable-timeline E,
+    safezone-guide-kept, broll-keywords E.
+  · Safe zone never showed a message (it called a toast it could not
+    reach) — "Guide on V6…" and failures show now.
+  · Make all shorts: 6 of 6 in 69 s ✓. Shorts made again from the same
+    moment got the same name, so Export all would send the older one, all
+    to one .mp4 — names are unique now ("… 2"). Gate short-names-unique.
 - 04:20 Checked in Premiere (v0.10.85), no bugs found: Review & edit (a
   word fixed, timing kept), Chapters → markers (3 AI-titled), caption style
   test 125/136 (unchanged; the 11 left are thin serif/script strokes the Mac
