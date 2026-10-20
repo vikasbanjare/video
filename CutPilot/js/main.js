@@ -13852,6 +13852,7 @@
     if (endS > 0) out = out.filter(function (c) { return c.start < endS - 0.05; }).map(function (c) { if (c.end > endS) c.end = endS; return c; });
     return out;
   }
+  var _nativeTracks = {};   // caption tracks Pulse added this session, per sequence
   function applyNative() {
     if (!ensureTranscriptThen('native')) return;
     var cues;
@@ -13879,8 +13880,14 @@
         }
         var rec = $('native-recipe');
         if (rec) { rec.textContent = templateStyleRecipe(preset); rec.classList.remove('hidden'); }
+        // Premiere has no way for a panel to remove a caption track: a second
+        // run stacks a second track and both show (the owner saw two lines of
+        // text on top of each other). Say so, and how.
+        var k = envKey(state.env) || '-';
+        _nativeTracks[k] = (_nativeTracks[k] || 0) + 1;
         toast('✓ Editable caption track added (' + ncues.length + ' lines) — edit any line in ' +
-              'Window → Text. The style recipe for “' + preset.name + '” is shown below the buttons.');
+              'Window → Text. The style recipe for “' + preset.name + '” is shown below the buttons.' +
+              (_nativeTracks[k] > 1 ? ' ⚠️ This sequence now has ' + _nativeTracks[k] + ' caption tracks from Pulse and they all show — delete the older one (right-click its track header → Delete Track).' : ''));
       }).catch(function (e) { capProgress(null); toast(e.message, true); });
     } catch (e) { capProgress(null); toast(e.message, true); }
   }
