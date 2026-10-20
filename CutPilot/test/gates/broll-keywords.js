@@ -82,6 +82,9 @@ else {
   cp.spawnSync(FF, ['-hide_banner', '-nostdin', '-y', '-i', src, '-t', '3', '-an', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', out]);
   const info = cp.spawnSync(FF, ['-hide_banner', '-i', out]).stderr.toString();
   (usesAn && /Video:/.test(info) && !/Audio:/.test(info) ? ok : bad)('D. a video B-roll goes in silent: its copy has picture and no sound');
+  // E. the silent copies the timeline links to are made beside the captions
+  // (Pulse Media), not only in the OS temp folder macOS clears
+  (/window\.CPMediaPlace\(\)\.then\(function \(pl\) \{ tmp = pathMod\.join\(pl\.dir/.test(js) ? ok : bad)('E. the silent copies go beside the captions (Pulse Media), not the temp folder');
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
 }
 

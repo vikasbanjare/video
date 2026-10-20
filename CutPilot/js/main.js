@@ -10767,16 +10767,18 @@
     }
     var fs, os, pathMod;
     try { fs = nodeReq('fs'); os = nodeReq('os'); pathMod = nodeReq('path'); } catch (e) { return toast('Node unavailable: ' + e.message, true); }
-    var bytes, wavPath;
-    try {
-      bytes = CPSfx.renderWav(id, { gain: vol });
-      wavPath = pathMod.join(os.tmpdir(), 'cutpilot-sfx-' + id + '-' + Date.now() + '.wav');
-      fs.writeFileSync(wavPath, Buffer.from(bytes));
-    } catch (e) { return toast('Could not create the SFX file: ' + e.message, true); }
-    toast('Placing ' + times.length + ' ' + CPSfx.getSfx(id).name + ' hit' + (times.length === 1 ? '' : 's') + '…');
-    CPBridge.callHost('CP_placeSfx', { wavPath: wavPath, times: times, label: id }).then(function (r) {
-      toast('🔊 Added ' + r.placed + ' ' + CPSfx.getSfx(id).name + ' SFX on audio track A' + r.track + '. ⌘Z / Ctrl+Z undoes it.');
-    }).catch(function (e) { toast('SFX failed: ' + e.message, true); });
+    var bytes;
+    try { bytes = CPSfx.renderWav(id, { gain: vol }); } catch (e) { return toast('Could not create the SFX file: ' + e.message, true); }
+    // the sound the timeline links to is kept beside the captions, not in the
+    // OS temp folder macOS clears (the whoosh went offline in the project)
+    captionMediaPlace().then(function (pl) { return pl.dir; }, function () { return os.tmpdir(); }).then(function (dir) {
+      var wavPath = pathMod.join(dir, 'cutpilot-sfx-' + id + '-' + Date.now() + '.wav');
+      try { fs.writeFileSync(wavPath, Buffer.from(bytes)); } catch (e) { return toast('Could not create the SFX file: ' + e.message, true); }
+      toast('Placing ' + times.length + ' ' + CPSfx.getSfx(id).name + ' hit' + (times.length === 1 ? '' : 's') + '…');
+      CPBridge.callHost('CP_placeSfx', { wavPath: wavPath, times: times, label: id }).then(function (r) {
+        toast('🔊 Added ' + r.placed + ' ' + CPSfx.getSfx(id).name + ' SFX on audio track A' + r.track + '. ⌘Z / Ctrl+Z undoes it.');
+      }).catch(function (e) { toast('SFX failed: ' + e.message, true); });
+    });
   }
 
   function wireSfx() {
@@ -13872,32 +13874,36 @@
     // each caption on screen at least 1 s where the silence after it allows,
     // 2 frames or half a second apart on the sequence's frames.
     var ncues = nativeCaptionCues(cues);
-    try {
-      var pathMod = nodeReq('path');
-      var out = pathMod.join(nodeReq('os').tmpdir(), 'cutpilot-' + Date.now() + '.srt');
-      nodeReq('fs').writeFileSync(out, CPCaptions.toSRT(ncues), 'utf8');
-      capProgress('Creating caption track');
-      CPBridge.callHost('CP_importSrtCaptions', { srtPath: out }).then(function (r) {
-        capProgress(null);
-        // Premiere imported the file but made no caption track: say so, and
-        // how to finish by hand, instead of claiming a track that is not there
-        if (r && r.captionTrackCreated === false) {
-          toast('The captions file is in your Project panel, but Premiere did not make a caption track from it. ' +
-                'Drag it onto the timeline to add the captions.', true);
-          return;
-        }
-        var rec = $('native-recipe');
-        if (rec) { rec.textContent = templateStyleRecipe(preset); rec.classList.remove('hidden'); }
-        // Premiere has no way for a panel to remove a caption track: a second
-        // run stacks a second track and both show (the owner saw two lines of
-        // text on top of each other). Say so, and how.
-        var k = envKey(state.env) || '-';
-        _nativeTracks[k] = (_nativeTracks[k] || 0) + 1;
-        toast('✓ Editable caption track added (' + ncues.length + ' lines) — edit any line in ' +
-              'Window → Text. The style recipe for “' + preset.name + '” is shown below the buttons.' +
-              (_nativeTracks[k] > 1 ? ' ⚠️ This sequence now has ' + _nativeTracks[k] + ' caption tracks from Pulse and they all show — delete the older one (right-click its track header → Delete Track).' : ''));
-      }).catch(function (e) { capProgress(null); toast(e.message, true); });
-    } catch (e) { capProgress(null); toast(e.message, true); }
+    // the .srt the caption track is made from stays in the project: kept
+    // beside the captions, not the OS temp folder (it reopened as missing)
+    captionMediaPlace().then(function (pl) { return pl.dir; }, function () { return nodeReq('os').tmpdir(); }).then(function (dir) {
+      try {
+        var pathMod = nodeReq('path');
+        var out = pathMod.join(dir, 'cutpilot-' + Date.now() + '.srt');
+        nodeReq('fs').writeFileSync(out, CPCaptions.toSRT(ncues), 'utf8');
+        capProgress('Creating caption track');
+        CPBridge.callHost('CP_importSrtCaptions', { srtPath: out }).then(function (r) {
+          capProgress(null);
+          // Premiere imported the file but made no caption track: say so, and
+          // how to finish by hand, instead of claiming a track that is not there
+          if (r && r.captionTrackCreated === false) {
+            toast('The captions file is in your Project panel, but Premiere did not make a caption track from it. ' +
+                  'Drag it onto the timeline to add the captions.', true);
+            return;
+          }
+          var rec = $('native-recipe');
+          if (rec) { rec.textContent = templateStyleRecipe(preset); rec.classList.remove('hidden'); }
+          // Premiere has no way for a panel to remove a caption track: a second
+          // run stacks a second track and both show (the owner saw two lines of
+          // text on top of each other). Say so, and how.
+          var k = envKey(state.env) || '-';
+          _nativeTracks[k] = (_nativeTracks[k] || 0) + 1;
+          toast('✓ Editable caption track added (' + ncues.length + ' lines) — edit any line in ' +
+                'Window → Text. The style recipe for “' + preset.name + '” is shown below the buttons.' +
+                (_nativeTracks[k] > 1 ? ' ⚠️ This sequence now has ' + _nativeTracks[k] + ' caption tracks from Pulse and they all show — delete the older one (right-click its track header → Delete Track).' : ''));
+        }).catch(function (e) { capProgress(null); toast(e.message, true); });
+      } catch (e) { capProgress(null); toast(e.message, true); }
+    });
   }
 
   // ---- EDITABLE captions for ANY style (no PNG) -----------------------------

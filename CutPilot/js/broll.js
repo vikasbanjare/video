@@ -99,8 +99,10 @@
     var ff = kit.resolveFfmpeg(), pathMod = kit.nodeReq('path'), os = kit.nodeReq('os'), fs = kit.nodeReq('fs');
     if (items.some(function (x) { return !x.still; }) && !ff) return kit.toast('Video B-roll needs the audio engine — Settings → ⬇️ Set up audio engine.', true);
     busy = true;
+    // the silent copies the timeline links to: beside the captions (Pulse
+    // Media), not the OS temp folder macOS clears
     var tmp = pathMod.join(os.tmpdir(), 'pulse-broll-' + Date.now());
-    try { fs.mkdirSync(tmp, { recursive: true }); } catch (eM) {}
+    var where = window.CPMediaPlace ? window.CPMediaPlace().then(function (pl) { tmp = pathMod.join(pl.dir, 'broll-' + Date.now()); }, function () {}) : Promise.resolve();
     var silent = {}, dims = {}, i = 0;
     // each picture's size, so Premiere can fill the frame with it
     function probe(p) {
@@ -121,7 +123,7 @@
       return kit.runFfmpeg(ff, ['-hide_banner', '-nostdin', '-y', '-i', it.path, '-t', String(it.dur + 0.5), '-an', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', out], 120000)
         .then(function (r) { if (!r.error && r.code === 0) silent[it.path] = out; return probe(it.path); }).then(prep);
     }
-    prep().then(function () {
+    where.then(function () { try { fs.mkdirSync(tmp, { recursive: true }); } catch (eM) {} return prep(); }).then(function () {
       kit.capProgress('🎞 Laying B-roll on your timeline…');
       var put = items.filter(function (x) { return x.still || silent[x.path]; })
         .map(function (x) { var d = dims[x.path] || {}; return { path: x.still ? x.path : silent[x.path], at: x.at, dur: x.dur, still: x.still, w: d.w || 0, h: d.h || 0 }; });
