@@ -2341,30 +2341,51 @@ function CP_addZoomPunches(argsJson) {
     var args = JSON.parse(argsJson);
     var seq = CP_activeSequence();
     if (!seq) return CP_fail('No active sequence.');
-    var vt = (args.videoTrack != null) ? args.videoTrack : 0;
-    if (vt < 0 || vt >= seq.videoTracks.numTracks) return CP_fail('Video track ' + (vt + 1) + ' not found.');
-    var track = seq.videoTracks[vt];
     var times = args.times || [];
-    var amount = (args.amount != null) ? args.amount : 110;   // peak scale %
+    var amount = (args.amount != null) ? args.amount : 110;   // peak, % of the clip's own scale
     var hold = (args.hold != null) ? args.hold : 0.45;
     var ramp = (args.ramp != null) ? args.ramp : 0.16;
-    CP_ANIM_SPEED = 1;
-    var applied = 0, skipped = 0;
-    for (var i = 0; i < times.length; i++) {
-      var at = times[i], clip = null;
-      for (var c = 0; c < track.clips.numItems; c++) {
-        var cc = track.clips[c], s, e;
-        try { s = cc.start.seconds; e = cc.end.seconds; } catch (eS) { continue; }
-        if (at >= s && at < e) { clip = cc; break; }
+    // What the viewer sees at that moment: the TOP video clip, skipping
+    // captions, titles and stills. Only V1 was zoomed, from 100% — in a Pulse
+    // short V1 is the blurred backdrop scaled to cover the frame, so each
+    // punch shrank it and the frame went bare (the owner's webinar short).
+    var still = /\.(png|jpe?g|gif|tiff?|psd|ai|svg|bmp|webp|heic|aegraphic|mogrt|srt|vtt)$/i;
+    function topClipAt(at) {
+      for (var v = seq.videoTracks.numTracks - 1; v >= 0; v--) {
+        var tr = seq.videoTracks[v];
+        for (var c = 0; c < tr.clips.numItems; c++) {
+          var cc = tr.clips[c], s0, e0, mp = null;
+          try { s0 = cc.start.seconds; e0 = cc.end.seconds; } catch (eS) { continue; }
+          if (!(at >= s0 && at < e0)) continue;
+          try { mp = cc.projectItem ? cc.projectItem.getMediaPath() : null; } catch (eM) {}
+          if (mp && !still.test(mp)) return { clip: cc, key: v + ':' + s0 };
+        }
       }
+      return null;
+    }
+    CP_ANIM_SPEED = 1;
+    var applied = 0, skipped = 0, mine = {};   // clips this run keyed → their own scale
+    for (var i = 0; i < times.length; i++) {
+      var at = times[i], hit = topClipAt(at), clip = hit && hit.clip;
       if (!clip) { skipped++; continue; }
       var scale = CP_findProperty(CP_findComponent(clip, 'Motion'), 'Scale');
       if (!scale) { skipped++; continue; }
+      // a clip already animated (a short's own framing, a punch already there) is left alone
+      var base = mine[hit.key];
+      if (base == null) {
+        var animated = false;
+        try { animated = !!scale.isTimeVarying(); } catch (eT) {}
+        if (animated) { skipped++; continue; }
+        base = 100;
+        try { var bv = +scale.getValue(); if (bv > 0) base = bv; } catch (eV) {}
+        mine[hit.key] = base;
+      }
       var off;
       try { off = clip.inPoint.seconds + (at - clip.start.seconds); } catch (eO) { skipped++; continue; }
       var amt = (amount instanceof Array) ? amount[i % amount.length] : amount;
+      var peak = base * amt / 100;
       CP_setKeys(scale, off, [
-        { t: 0.0, v: 100 }, { t: ramp, v: amt }, { t: ramp + hold, v: amt }, { t: ramp + hold + ramp, v: 100 }
+        { t: 0.0, v: base }, { t: ramp, v: peak }, { t: ramp + hold, v: peak }, { t: ramp + hold + ramp, v: base }
       ]);
       applied++;
     }

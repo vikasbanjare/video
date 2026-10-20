@@ -10667,7 +10667,9 @@
         setCaptionBusy(false);
         capProgress(null);
         // remember the full-video job (don't let a segment restyle shrink it)
-        if (!range) { state.lastCaptionJob = { cues: cues, track: r.track }; saveLastCaptionJob(); }
+        // with its sequence: "Add captions" again (Viral edit on a made short)
+        // stacked a second set on a new track, as it could not tell the sequence
+        if (!range) { state.lastCaptionJob = { cues: cues, track: r.track, seq: (state.env && state.env.sequenceName) || '' }; saveLastCaptionJob(); }
         reflectCaptionsPlaced();
         var tempNote = inTemp
           ? ' ⚠️ Pulse could not save these caption images next to your project or in your Documents folder, so they are in a ' +

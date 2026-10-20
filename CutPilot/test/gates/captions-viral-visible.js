@@ -97,6 +97,17 @@ function png(file, words) {
     const fns = calls.map(c => c.fn);
     (fns.indexOf('CP_addZoomPunches') >= 0 && fns.indexOf('CP_placeCaptionImages') > fns.indexOf('CP_addZoomPunches') && fns.indexOf('CP_insertMogrtCaptions') < 0 ? ok : bad)(
       'A. ✨ Pulse-rendered picked: Viral edit adds the zoom punch-ins, then Pulse-rendered captions, no template (' + fns.join(' → ') + ')');
+    // A2. again on the same sequence (a made short already has its captions):
+    // the set on V3 is replaced, not a second set stacked on a new track
+    await P.page.evaluate(async () => {
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      document.getElementById('toast').textContent = '';
+      window.CP_DEBUG_EXT.shorts.viral();
+      for (let i = 0; i < 300; i++) { await sleep(100); if (/caption/i.test((document.getElementById('toast') || {}).textContent || '') && i > 20) break; }
+      await sleep(1500);
+    });
+    const places = calls.filter(c => c.fn === 'CP_placeCaptionImages');
+    (places.length === 2 && places[1].args.replaceTrack === 3 ? ok : bad)('A2. Viral edit again on the same sequence replaces its captions on V3, no second set (replaceTrack ' + (places[1] && places[1].args.replaceTrack) + ')');
     await P.close();
   }
   // ---- B. Viral edit, Editable picked ----
