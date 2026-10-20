@@ -181,3 +181,5 @@ body.theme-light .toast.err { background: #FFF1F0; color: #8E1B14; border-color:
 /* 🪝 Hook check on each found moment */
 .badge.bad { color: var(--danger-text); border-color: var(--danger-line); background: var(--danger-bg); }
 .sh-hook .badge { margin-right: 4px; }
+/* 🏷 Brand kit: the colour well is a full-size tap target */
+#bk-accent { min-height: 32px; min-width: 56px; padding: 2px; }

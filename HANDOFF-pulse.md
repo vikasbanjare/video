@@ -1,10 +1,19 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.70** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.71** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.71 — 🏷 Brand kit (cloud session)
+- Settings card #bk-card (js/brandkit.js, window.CPBrand, localStorage
+  cutpilot.brandKit): channel, logo (≤256 px PNG data URL), brand colour,
+  brand font, brand words. "Brand" (#btn-brand-tpl) in the caption editor →
+  CPKit.applyBrand: font, colour on the spoken word (c-hl), brand words
+  coloured (c-brandon/c-brand/c-brand-words — these ride readOverrides, not
+  styledPreset). Safe zone "My branding" fills from the kit; Publish kit
+  signs as the channel. Gate brand-kit.
 
 ### v0.10.70 — 🪝 Hook check (cloud session)
 - js/hookcheck.js (window.CPHookCheck.check(words, moment)): judges the

@@ -23,6 +23,7 @@
     return out.join('\n');
   }
 
+  function brandName() { try { return (window.CPBrand && CPBrand.get().channel) || ''; } catch (e) { return ''; } }
   function prompt(cues, chapters, kind) {
     return {
       system: 'You write YouTube / Instagram publishing text for an Indian creator. Write in the SAME language and script the ' +
@@ -31,6 +32,7 @@
         '"description":"2–4 short paragraphs, no chapters, no hashtags","hashtags":[5–8 strings starting with #],' +
         '"tags":[10–15 search keywords],"pinned":"one friendly pinned comment that asks viewers a question about the topic"}',
       user: 'This is a ' + (kind === 'short' ? 'short vertical reel' : 'long video / podcast') + '.' +
+        (brandName() ? ' The channel is "' + brandName() + '" — sign the pinned comment and description as that channel.' : '') +
         (chapters ? '\nIts chapters:\n' + chapters : '') + '\nTranscript:\n' + digest(cues)
     };
   }

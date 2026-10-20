@@ -20653,7 +20653,22 @@
     aiChat: aiChatRetry, readTranscript: readSelectedTranscript,
     settings: function () { return settings; }, saveSettings: saveSettings,
     env: function () { return state.env || null; },
-    transcriptLabel: function () { return state.transcript ? state.transcript.label : null; }
+    transcriptLabel: function () { return state.transcript ? state.transcript.label : null; },
+    // 🏷 Brand kit on the style being edited: the brand font, the brand
+    // colour on the spoken word, the brand words coloured
+    applyBrand: function (k) {
+      if (!k || !$('c-hl')) return false;
+      if (k.font) setFontValue(k.font);
+      if (k.accent) $('c-hl').value = k.accent;
+      if (k.words && k.words.length && $('c-brandon')) {
+        $('c-brandon').checked = true;
+        if ($('c-brand')) $('c-brand').value = k.accent || $('c-brand').value;
+        if ($('c-brand-words')) $('c-brand-words').value = k.words.join(', ');
+        if ($('c-brand-opts')) $('c-brand-opts').style.display = '';
+      }
+      syncColorFields(); updateVals(); renderPreview();
+      return true;
+    }
   };
 
   boot();

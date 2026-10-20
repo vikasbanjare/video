@@ -10,9 +10,9 @@
   <!-- Caption faces — loaded as web fonts so the chosen font renders in the
        live preview AND the canvas-rendered PNGs even if it isn't installed. -->
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Bebas+Neue&family=Archivo+Black&family=Fjalla+One&family=Bangers&family=Luckiest+Guy&family=Alfa+Slab+One&family=Bungee&family=Titan+One&family=Passion+One&family=Permanent+Marker&family=Pacifico&family=Shadows+Into+Light&family=Montserrat:wght@400;500;600;700;800;900&family=Poppins:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800;900&family=Oswald:wght@400;700&family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Lato:wght@400;700&family=Raleway:wght@400;700&family=Work+Sans:wght@400;700&family=Nunito:wght@400;700&family=Rubik:wght@400;700;800;900&family=DM+Sans:wght@400;500;700&family=Outfit:wght@400;500;600;700;800;900&family=Sora:wght@400;500;600;700;800&family=Barlow:wght@400;700&family=Manrope:wght@400;500;600;700;800&family=Teko:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,800;1,600;1,700;1,800&family=Merriweather:wght@400;700&family=Lora:wght@400;700&family=JetBrains+Mono:wght@400;700&family=Roboto+Mono:wght@400;700&family=Space+Mono:wght@400;700&family=Caveat:wght@400;700&family=Arvo:wght@400;700&family=Space+Grotesk:wght@400;500;600;700&family=Syne:wght@600;700;800&family=Unbounded:wght@600;700;800;900&family=DM+Serif+Display:ital@0;1&family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Baloo+2:wght@400;500;600;700;800&family=Mukta:wght@400;500;600;700;800&family=Hind:wght@400;500;600;700&family=Anek+Devanagari:wght@400;500;600;700;800&family=Rozha+One&family=Kalam:wght@400;700&family=Tiro+Devanagari+Hindi:ital@0;1&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=v0.10.70">
-  <link rel="stylesheet" href="css/organize.css?v=v0.10.70">
-  <link rel="stylesheet" href="css/studio.css?v=v0.10.70">
+  <link rel="stylesheet" href="css/style.css?v=v0.10.71">
+  <link rel="stylesheet" href="css/organize.css?v=v0.10.71">
+  <link rel="stylesheet" href="css/studio.css?v=v0.10.71">
 </head>
 <body class="theme-light" data-page="home">
   <!-- ONE navigation row (≤ 12 % of a 400 px-tall panel). Home is the menu;
@@ -98,7 +98,7 @@
         <button id="home-safezone" class="tool-btn" type="button" data-go="safezone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="2"/><rect x="9" y="7" width="6" height="6" rx="1"/><line x1="9" y1="17" x2="15" y2="17"/></svg>Safe zone</button>
       </div>
     </div>
-    <p class="home-foot"><span id="ver" class="ver">v0.10.70</span></p>
+    <p class="home-foot"><span id="ver" class="ver">v0.10.71</span></p>
   </section>
 
   <!-- ============================ TRANSCRIBE ============================ -->
@@ -357,6 +357,7 @@
         <button id="btn-back-lib" class="chip-btn" title="Back to all styles">‹ All styles</button>
         <span class="editor-tpl-name" id="editor-tpl-name">Spotlight</span>
         <span class="spacer"></span>
+        <button id="btn-brand-tpl" class="chip-btn" title="Put my brand kit on this style (font, colour, brand words)" aria-label="Use my brand kit">Brand</button>
         <button id="btn-save-tpl" class="chip-btn" title="Save as my own style" aria-label="Save as my own style">＋ Save</button>
         <button id="btn-dup-tpl" class="chip-btn" title="Duplicate" aria-label="Duplicate">⧉</button>
         <button id="btn-export-tpl" class="chip-btn" title="Save to a file" aria-label="Save to a file">⤴</button>
@@ -1401,6 +1402,22 @@
       <div id="voices-status" class="hint" style="margin:8px 0 0">checking…</div>
     </div>
 
+    <!-- 🏷 Brand kit (js/brandkit.js) -->
+    <div class="card" id="bk-card">
+      <div class="step-head"><span class="step-title">Brand kit</span>
+        <button class="info" type="button" data-info="bk-info" aria-label="Where it is used">ⓘ</button></div>
+      <p class="hint">Your channel's look, saved once, used everywhere.</p>
+      <div class="info-pop hidden" id="bk-info">Captions: tap <b>Brand</b> in a style's editor to put your font and colour on it (and colour your brand words). Safe zone: <b>My branding</b> starts with your name and logo. Publish kit signs as your channel.</div>
+      <label class="fld-full">Channel name<input type="text" id="bk-channel" maxlength="40" placeholder="@yourchannel"></label>
+      <div class="sz-row" style="margin:6px 0">
+        <button id="bk-logo-pick" class="chip-btn" type="button">Logo…</button>
+        <img id="bk-logo-img" class="hidden" alt="Your logo" style="height:28px;width:auto;border-radius:6px">
+        <button id="bk-logo-clear" class="chip-btn hidden" type="button" aria-label="Remove logo">✕</button>
+      </div>
+      <label class="fld-full">Brand colour<input type="color" id="bk-accent" value="#ffd400"></label>
+      <label class="fld-full">Brand font<select id="bk-font"><option value="">Keep each style's own</option></select></label>
+      <label class="fld-full">Brand words<input type="text" id="bk-words" maxlength="200" placeholder="channel or product names, comma-separated"></label>
+    </div>
     <div class="card">
       <div class="step-head"><span class="step-title">Look</span></div>
       <span class="field-label" style="margin-top:0">Colours</span>
@@ -1497,7 +1514,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.10.70 · auto-edit · multicam · captions · chapters · organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.10.71 · auto-edit · multicam · captions · chapters · organize</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->
@@ -1635,35 +1652,36 @@
     </div>
   </div>
 
-  <script src="js/lib/cep-bridge.js?v=v0.10.70"></script>
-  <script src="js/silence.js?v=v0.10.70"></script>
-  <script src="js/audio.js?v=v0.10.70"></script>
-  <script src="js/captions.js?v=v0.10.70"></script>
-  <script src="js/ass.js?v=v0.10.70"></script>
-  <script src="js/render.js?v=v0.10.70"></script>
-  <script src="js/multicam.js?v=v0.10.70"></script>
-  <script src="js/voices.js?v=v0.10.70"></script>
-  <script src="js/sfx.js?v=v0.10.70"></script>
-  <script src="js/takes.js?v=v0.10.70"></script>
-  <script src="js/smartedit.js?v=v0.10.70"></script>
-  <script src="js/apierr.js?v=v0.10.70"></script>
-  <script src="js/verbatim.js?v=v0.10.70"></script>
-  <script src="js/reframe.js?v=v0.10.70"></script>
-  <script src="js/scriptalign.js?v=v0.10.70"></script>
-  <script src="js/transcript.js?v=v0.10.70"></script>
-  <script src="js/fonts.js?v=v0.10.70"></script>
-  <script src="js/command.js?v=v0.10.70"></script>
-  <script src="js/chapters.js?v=v0.10.70"></script>
-  <script src="js/align.js?v=v0.10.70"></script>
-  <script src="js/shorts.js?v=v0.10.70"></script>
-  <script src="js/lib/pico.js?v=v0.10.70"></script>
-  <script src="js/lib/facefinder.js?v=v0.10.70"></script>
-  <script src="js/podshort.js?v=v0.10.70"></script>
-  <script src="js/main.js?v=v0.10.70"></script>
-  <script src="js/organize.js?v=v0.10.70"></script>
-  <script src="js/safezone.js?v=v0.10.70"></script>
-  <script src="js/studio.js?v=v0.10.70"></script>
-  <script src="js/publish.js?v=v0.10.70"></script>
-  <script src="js/hookcheck.js?v=v0.10.70"></script>
+  <script src="js/lib/cep-bridge.js?v=v0.10.71"></script>
+  <script src="js/silence.js?v=v0.10.71"></script>
+  <script src="js/audio.js?v=v0.10.71"></script>
+  <script src="js/captions.js?v=v0.10.71"></script>
+  <script src="js/ass.js?v=v0.10.71"></script>
+  <script src="js/render.js?v=v0.10.71"></script>
+  <script src="js/multicam.js?v=v0.10.71"></script>
+  <script src="js/voices.js?v=v0.10.71"></script>
+  <script src="js/sfx.js?v=v0.10.71"></script>
+  <script src="js/takes.js?v=v0.10.71"></script>
+  <script src="js/smartedit.js?v=v0.10.71"></script>
+  <script src="js/apierr.js?v=v0.10.71"></script>
+  <script src="js/verbatim.js?v=v0.10.71"></script>
+  <script src="js/reframe.js?v=v0.10.71"></script>
+  <script src="js/scriptalign.js?v=v0.10.71"></script>
+  <script src="js/transcript.js?v=v0.10.71"></script>
+  <script src="js/fonts.js?v=v0.10.71"></script>
+  <script src="js/command.js?v=v0.10.71"></script>
+  <script src="js/chapters.js?v=v0.10.71"></script>
+  <script src="js/align.js?v=v0.10.71"></script>
+  <script src="js/shorts.js?v=v0.10.71"></script>
+  <script src="js/lib/pico.js?v=v0.10.71"></script>
+  <script src="js/lib/facefinder.js?v=v0.10.71"></script>
+  <script src="js/podshort.js?v=v0.10.71"></script>
+  <script src="js/main.js?v=v0.10.71"></script>
+  <script src="js/organize.js?v=v0.10.71"></script>
+  <script src="js/safezone.js?v=v0.10.71"></script>
+  <script src="js/studio.js?v=v0.10.71"></script>
+  <script src="js/publish.js?v=v0.10.71"></script>
+  <script src="js/hookcheck.js?v=v0.10.71"></script>
+  <script src="js/brandkit.js?v=v0.10.71"></script>
 </body>
 </html>

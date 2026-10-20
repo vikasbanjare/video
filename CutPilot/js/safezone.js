@@ -330,9 +330,19 @@
   // empty slabs read as broken UI, not as disabled fields
   function refreshBrandVisibility() { var box = $('sz-custom-fields'); if (box) box.classList.toggle('hidden', state.brandMode !== 'custom'); }
 
+  /* 🏷 the Brand kit's name and logo start "My branding" (when it has none yet) */
+  function fromBrandKit() {
+    var k = (window.CPBrand && CPBrand.get) ? CPBrand.get() : null;
+    if (!k) return;
+    if (k.channel && (!state.channel || state.channel === 'by aifloh')) { state.channel = k.channel; if ($('sz-channel')) $('sz-channel').value = k.channel; }
+    if (k.logo && !state.logo) {
+      var img = new Image(); img.onload = function () { state.logo = img; state.logoName = 'brand logo'; if ($('sz-logo-name')) $('sz-logo-name').textContent = 'Brand kit logo'; if ($('sz-logo-clear')) $('sz-logo-clear').classList.remove('hidden'); renderPreview(); };
+      img.src = k.logo;
+    }
+  }
   function wire() {
     seg('sz-mode', 'mode', refreshModeVisibility);
-    seg('sz-platform', 'platform'); seg('sz-brandmode', 'brandMode', refreshBrandVisibility);
+    seg('sz-platform', 'platform'); seg('sz-brandmode', 'brandMode', function () { if (state.brandMode === 'custom') fromBrandKit(); refreshBrandVisibility(); });
     seg('sz-titlepos', 'titlePos'); seg('sz-dur', 'dur');
     // text + checkbox inputs
     function num(id, key) { var el = $(id); if (el) el.addEventListener('input', function () { state[key] = parseFloat(this.value) || 0; renderPreview(); }); }

@@ -3248,7 +3248,25 @@ const MUTANTS = [
     repl: '',
     gate: 'CutPilot/test/gates/hook-check.js',
     why: 'a short starting mid-thought is called an OK hook'
+  },
+  // v71: 🏷 Brand kit
+  {
+    name: 'v71-brand-no-colour',
+    file: 'CutPilot/js/main.js',
+    find: '      if (k.accent) $(\'c-hl\').value = k.accent;',
+    repl: '',
+    gate: 'CutPilot/test/gates/brand-kit.js',
+    why: 'Brand puts the font on the style but not the brand colour'
+  },
+  {
+    name: 'v71-brand-safezone-ignored',
+    file: 'CutPilot/js/safezone.js',
+    find: "    seg('sz-platform', 'platform'); seg('sz-brandmode', 'brandMode', function () { if (state.brandMode === 'custom') fromBrandKit(); refreshBrandVisibility(); });",
+    repl: "    seg('sz-platform', 'platform'); seg('sz-brandmode', 'brandMode', refreshBrandVisibility);",
+    gate: 'CutPilot/test/gates/brand-kit.js',
+    why: 'Safe zone ignores the brand kit'
   }
+
 
 
 
