@@ -142,6 +142,17 @@ function CP_ping() {
   return CP_ok({ app: app.appName, version: app.version });
 }
 
+/* The sequence's In and Out marks when the owner set them (unset, Premiere
+   reports 0 and the end): { inPoint, outPoint } in seconds, else null. */
+function CP_seqInOut(seq) {
+  var sIn = 0, sOut = 0, sEnd = 0;
+  try { sEnd = parseFloat(seq.end) / CP_TICKS_PER_SECOND; } catch (eEnd) {}
+  try { sIn = seq.getInPointAsTime ? seq.getInPointAsTime().seconds : parseFloat(seq.getInPoint()); } catch (eIn) { sIn = 0; }
+  try { sOut = seq.getOutPointAsTime ? seq.getOutPointAsTime().seconds : parseFloat(seq.getOutPoint()); } catch (eOut) { sOut = 0; }
+  if (!(sIn > 0)) sIn = 0;
+  if (!(sOut > 0) || (sEnd > 0 && sOut > sEnd)) sOut = sEnd > 0 ? sEnd : 0;
+  return (sOut > sIn + 0.5 && (sIn > 0.05 || (sEnd > 0 && sOut < sEnd - 0.05))) ? { inPoint: sIn, outPoint: sOut } : null;
+}
 function CP_getEnv() {
   try {
     var seq = CP_activeSequence();
@@ -150,6 +161,7 @@ function CP_getEnv() {
       projectName: app.project.name,
       sequenceName: seq.name,
       sequenceId: String(seq.sequenceID || ''),   // names repeat ("Sequence 01" twice)
+      inOut: CP_seqInOut(seq),                    // Transcribe hears only this part (the Transcribe page says so)
       fps: fps,
       width: seq.frameSizeHorizontal,
       height: seq.frameSizeVertical,
@@ -325,16 +337,7 @@ function CP_getTranscribeSource(argsJson) {
     }
     // The sequence's In and Out marks: when the owner set them, only what
     // plays between them is heard (unset, Premiere reports 0 and the end).
-    var inOut = null;
-    if (opts.useInOut) {
-      var sIn = 0, sOut = 0, sEnd = 0;
-      try { sEnd = parseFloat(seq.end) / CP_TICKS_PER_SECOND; } catch (eEnd) {}
-      try { sIn = seq.getInPointAsTime ? seq.getInPointAsTime().seconds : parseFloat(seq.getInPoint()); } catch (eIn) { sIn = 0; }
-      try { sOut = seq.getOutPointAsTime ? seq.getOutPointAsTime().seconds : parseFloat(seq.getOutPoint()); } catch (eOut) { sOut = 0; }
-      if (!(sIn > 0)) sIn = 0;
-      if (!(sOut > 0) || (sEnd > 0 && sOut > sEnd)) sOut = sEnd > 0 ? sEnd : 0;
-      if (sOut > sIn + 0.5 && (sIn > 0.05 || (sEnd > 0 && sOut < sEnd - 0.05))) inOut = { inPoint: sIn, outPoint: sOut };
-    }
+    var inOut = opts.useInOut ? CP_seqInOut(seq) : null;
     if (inOut) collect(seq, inOut.inPoint, inOut.inPoint, inOut.outPoint, 0, {}, false, 1, false, false);
     else collect(seq, 0, 0, 3600 * 100, 0, {}, false, 1, false, false);
     var quietOnly = false;

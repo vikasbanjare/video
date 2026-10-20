@@ -37,7 +37,7 @@ const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r6.mogrt
       const D = window.CP_DEBUG, sleep = ms => new Promise(res => setTimeout(res, ms));
       D.seedMogrtDef(MOGRT, DEF);
       // Pulse's own engine, as the panel loads it from mogrts/index.json
-      D.setBundledMogrts([], [{ path: MOGRT, name: 'Pulse Caption', engine: true, features: ['gradient', 'upcoming', 'tilt', 'exit', 'grow', 'embox'] }]);
+      D.setBundledMogrts([], [{ path: MOGRT, name: 'Pulse Caption', engine: true, features: ['upcoming', 'tilt', 'exit', 'grow', 'embox'] }]);
       const tab = document.querySelector('.tab[data-tab="captions"]'); if (tab) tab.click();
       await sleep(400);
       const card = Array.from(document.querySelectorAll('.tpl-thumb-canvas')).find(c => c._tpl && c._tpl.id === 'pro-karaokebar');

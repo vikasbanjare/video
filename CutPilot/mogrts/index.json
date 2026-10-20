@@ -7,7 +7,7 @@
   "desc": "Pulse's own editable caption engine: outline, word box, growing word, letter spacing, entrance, exit, tilt, faint upcoming words, gradient text — 21 controls",
   "hidden": true,
   "engine": true,
-  "features": ["gradient", "upcoming", "tilt", "exit", "grow", "embox"],
+  "features": ["upcoming", "tilt", "exit", "grow", "embox"],
   "hiddenWhy": "the engine every caption style uses for editable captions"
  },
  {

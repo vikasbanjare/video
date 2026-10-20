@@ -169,3 +169,6 @@ body.theme-light .toast.err { background: #FFF1F0; color: #8E1B14; border-color:
 .sw { flex: 0 0 auto; align-items: flex-start; font-weight: 600; }
 .customizer .val { font-weight: 600; }
 .cust-group-title { font-size: var(--fs-xs); font-weight: 600; letter-spacing: .06em; color: var(--dim); }
+
+/* Transcribe: the In/Out note turns into a highlighted line while In/Out is set */
+#tr-inout-now.on { color: var(--accent, #6b8cff); }

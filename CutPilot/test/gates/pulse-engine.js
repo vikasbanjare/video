@@ -46,7 +46,7 @@ const MOGRT = path.join(__dirname, '..', '..', 'mogrts', 'Pulse_Caption_r6.mogrt
   const NEEDS = { gradient: ['Text Gradient', 'Text Color 2'], upcoming: ['Upcoming Opacity'], tilt: ['Tilt'], exit: ['Exit'],
     grow: ['Spoken Word Grow'], embox: ['Box'] };
   const feats = eng.features || [];
-  (eng.file === path.basename(MOGRT) && feats.length === 6 && feats.every(f => (NEEDS[f] || ['?']).every(n => names.indexOf(n) >= 0)) &&
+  (eng.file === path.basename(MOGRT) && feats.length === 5 && feats.every(f => (NEEDS[f] || ['?']).every(n => names.indexOf(n) >= 0)) &&
    def.clientControls[0].fonteditinfo && def.clientControls[0].fonteditinfo.capPropFontEdit === true ? ok : bad)(
     'A. the bundled engine is ' + eng.file + ', its features (' + feats.join(', ') + ') are real controls, and font editing is on');
   // r6 (builder v6, the owner's After Effects run) — read from the template's

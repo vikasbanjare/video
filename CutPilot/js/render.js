@@ -171,7 +171,8 @@
       boxSteady: !!preset.boxSteady,
       inkBoxes: !!(o.inkBoxes != null ? o.inkBoxes : preset.inkBoxes),   // boxes hug the ink (the editable preview on Pulse's engine)
       emBoxes: !!(o.emBoxes != null ? o.emBoxes : preset.emBoxes),       // template v6's em boxes (the editable preview on it)
-      leadEm: (o.leadEm != null ? o.leadEm : preset.leadEm) || 0,         // the template's fixed line step, in em of the rest size
+      leadEm: (o.leadEm != null ? o.leadEm : preset.leadEm) || 0,
+      layerShadow: !!(o.layerShadow != null ? o.layerShadow : preset.layerShadow),   // one shadow behind outline AND fill (the template's Drop Shadow)         // the template's fixed line step, in em of the rest size
       shadowDX: Math.round(((o.shadowDX != null ? o.shadowDX : (preset.shadowDX || 0))) * scale),
       shadowDY: Math.round(((o.shadowDY != null ? o.shadowDY : (preset.shadowDY || 0))) * scale),
       wordSpacing: Math.round(((o.wordSpacing != null ? o.wordSpacing : (preset.wordSpacing || 0))) * scale),
@@ -1052,7 +1053,31 @@
 
         // drop shadow (blur + optional hard offset) — skip behind solid shapes
         ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
-        if (style.glow && !filled) {
+        // layerShadow (the editable preview): After Effects' Drop Shadow sits
+        // behind the whole text layer, outline included — one shadow pass
+        // first, then outline and fill drawn crisp on top. Cast per pass, the
+        // fill's shadow covered its own outline (RGB Glitch's pink showed on
+        // one side only, Premiere draws it all round).
+        // (a turned line keeps the per-pass shadow: the off-canvas trick
+        // below works in untransformed pixels)
+        var lyr = style.layerShadow && style.glow && !filled && !lineTilt;
+        if (lyr) {
+          // ONLY the shadow: the word is drawn far off the canvas and its
+          // shadow thrown back onto the word's place — a visible copy here
+          // doubled a faint upcoming word (Soft Focus, Studio)
+          var OFF = 100000;
+          ctx.save();
+          ctx.shadowColor = style.glow;
+          ctx.shadowBlur = it.px * (style.glowBlur != null ? style.glowBlur : 0.35);
+          ctx.shadowOffsetX = style.shadowDX + OFF; ctx.shadowOffsetY = style.shadowDY;
+          ctx.fillStyle = style.fill || '#FFFFFF';
+          // a word not yet said is faint, shadow and all
+          if (wordSync && style.upcomingOpacity < 1 && frame.active != null && it.src > frame.active && !it.hl) ctx.globalAlpha = style.upcomingOpacity;
+          if (style.stroke && style.strokeWidth) { ctx.strokeStyle = style.stroke; ctx.lineWidth = style.strokeWidth; ctx.strokeText(it.word, x - OFF, y); }
+          ctx.fillText(it.word, x - OFF, y);
+          ctx.restore();
+        }
+        if (style.glow && !filled && !lyr) {
           ctx.shadowColor = style.glow;
           ctx.shadowBlur = it.px * (style.glowBlur != null ? style.glowBlur : 0.35);
           ctx.shadowOffsetX = style.shadowDX; ctx.shadowOffsetY = style.shadowDY;
@@ -1061,7 +1086,11 @@
         if (style.stroke && style.strokeWidth && !filled) {
           ctx.strokeStyle = style.stroke;
           ctx.lineWidth = style.strokeWidth;
+          // the template fades the whole letter, outline too
+          var sA = ctx.globalAlpha;
+          if (style.layerShadow && wordSync && style.upcomingOpacity < 1 && frame.active != null && it.src > frame.active && !it.hl) ctx.globalAlpha = style.upcomingOpacity;
           ctx.strokeText(it.word, x, y);
+          ctx.globalAlpha = sA;
         }
         ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
         // fade words not yet spoken (3-state karaoke: past=full, current=highlight, future=dim)
@@ -1104,7 +1133,7 @@
         // shadow was applied only around the outline and cleared before the fill,
         // so a drop shadow or glow on a style WITHOUT an outline produced nothing
         // at all (the "shadow does nothing" bug).
-        if (style.glow && !filled) {
+        if (style.glow && !filled && !lyr) {
           ctx.shadowColor = style.glow;
           ctx.shadowBlur = it.px * (style.glowBlur != null ? style.glowBlur : 0.35);
           ctx.shadowOffsetX = style.shadowDX; ctx.shadowOffsetY = style.shadowDY;

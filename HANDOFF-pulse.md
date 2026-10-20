@@ -1,10 +1,50 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.63** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.66** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.65 – v0.10.66 — Transcribe: In/Out shown, cuts followed (said on the page)
+- Owner: "if I delete part of the video after transcribing it should know
+  what was deleted and adjust the captions … and an In and Out option, and
+  add a section so people know". Both already worked in code (Transcribe
+  calls CP_getTranscribeSource {useInOut}; captions re-place words through
+  followMovedRecording / placeTranscript) but nothing said so.
+- Verified in the owner's Premiere (v0.10.64): transcribe a reel copy,
+  ripple-delete 13 s from the middle, Add captions → no word from the cut
+  part, captions end inside the new length; compared with whisper on the
+  rebuilt timeline audio. Timing is within ~½ s where the transcript has only
+  line timing (local engine without word stamps) — not cut-related.
+- New: CP_seqInOut(seq) (shared), CP_getEnv returns inOut; the Transcribe
+  page has #tr-inout: always explains In (I) / Out (O) and that cuts are
+  followed; while In/Out is set it reads "🎯 In/Out is set: a – b — Transcribe
+  hears only this part" (updateInOutNote from refreshEnvStatus: every page
+  change and panel focus). ↻ Redo's tooltip no longer says to redo after a
+  trim. Gate transcribe-inout-note (fails on the old code).
+- v0.10.64's 121→114 drop: the layer-shadow pass left a visible copy of the
+  word under the real one, so a faint not-yet-said word was drawn twice
+  (Soft Focus, Studio, Aurora…). v0.10.66 casts ONLY the shadow (the word
+  drawn 100000 px off the canvas, its shadow offset back; tilted lines keep
+  the old per-pass shadow), and the outline takes the upcoming fade.
+  Style test in the owner's Premiere: 125/136, worst 10.2%
+  (Desktop/Pulse Caption Test/2026-10-20-16-12).
+- In/Out verified in Premiere (v0.10.65): In 1.96 / Out 7.76 → 4 lines heard
+  (20 for the whole reel); captions 1.92–8.22 (the last word holds ~½ s).
+
+### v0.10.64 — editable preview: one shadow behind the letters; no gradient on r6
+- The owner's own style test (2026-10-20-15-19): 121/136. RGB Glitch showed
+  its pink outline on one side only in the preview: the fill's shadow was
+  cast per word over its own outline; After Effects' Drop Shadow is behind
+  the whole layer. render.js style.layerShadow (set by pulseCarryStyle).
+- r6's Text Gradient lands by the caption's place in the frame, not on the
+  letters (measured: one line flat Text Color; two lines the colours swapped
+  per line). index.json no longer lists "gradient"; pulseLook sends Text
+  Gradient only when the engine has it; pulseCannotDraw names "a colour fade
+  in the letters". Builder fix (Ramp points in the right space) is open —
+  needs an After Effects run.
+
 
 ### v0.10.63 — the owner's own check found the words of another video
 - At 14:08 the owner added ✏️ Editable captions to their reel "Sequence 01"

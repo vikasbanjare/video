@@ -2411,6 +2411,22 @@
      optional. Words and captions are read from what Pulse holds; Clean up,
      cameras and shorts are marked when they finish. */
   var FLOW_STEPS = ['transcribe', 'silence', 'multicam', 'captions', 'shorts'];
+  /* The Transcribe page says whether In/Out is set — and that Transcribe then
+     hears only that part. The owner did not know In/Out was honoured. */
+  function updateInOutNote(env) {
+    var el = $('tr-inout-now'); if (!el) return;
+    var io = env && env.inOut;
+    if (io && io.outPoint > io.inPoint) {
+      el.innerHTML = '';
+      var b = document.createElement('b'); b.textContent = '🎯 In/Out is set: ' + fmt(io.inPoint) + ' – ' + fmt(io.outPoint);
+      el.appendChild(b);
+      el.appendChild(document.createTextNode(' — Transcribe hears only this part. To transcribe the whole video, clear them in Premiere (Markers › Clear In and Out).'));
+      el.classList.add('on');
+    } else if (el.classList.contains('on')) {
+      el.classList.remove('on');
+      el.innerHTML = '<b>Only part of the video?</b> Mark <b>In</b> (I) and <b>Out</b> (O) on your timeline, then tap Transcribe — Pulse hears only that part.';
+    }
+  }
   /* Re-read the active sequence and show it in the header (no-op outside CEP). */
   function refreshEnvStatus() {
     if (!CPBridge.isCEP()) return;
@@ -2418,6 +2434,7 @@
       if (!env || !env.sequenceName) return;
       state.env = env;
       var el = $('env-status'); if (el) { el.textContent = env.sequenceName + ' · ' + env.width + '×' + env.height; el.className = 'env-status ok'; }
+      updateInOutNote(env);
     }).catch(function () {});
   }
   window.addEventListener('focus', function () { try { refreshEnvStatus(); } catch (e) {} });
@@ -5487,6 +5504,7 @@
     if (p.subScale != null && p.subScale < 1) out.push('a smaller second line');
     if (p.highlight2 || p.glossy) out.push('a shiny / two-colour spoken word');
     if ((p.boxStops && p.boxStops.length) || p.boxColor2) out.push('a gradient box');
+    if (p.fill2 && !pulseEngineHas('gradient')) out.push('a colour fade in the letters');
     if (p.boxStroke || p.boxGlow || p.box3d || p.boxGloss > 0 || p.boxShadow) out.push('a box border, glow or 3D edge');
     if (p.highlightColors && p.highlightColors.length) out.push('a different colour for each word');
     if (p.highlightFont) out.push('a different font for the spoken word');
@@ -14079,6 +14097,7 @@
     // template v6 draws them as tall as the image's ('embox')
     out.inkBoxes = !pulseEngineHas('embox');
     out.emBoxes = !out.inkBoxes;
+    out.layerShadow = true;                                // the template's Drop Shadow is behind the whole layer
     // the template's lines are 90 px apart at its 75 px face (1.2 em); a style
     // drawn bigger than that face gets a bigger FONT but the same leading
     // (Headliner, Two-Tone Stack: the preview stepped by the style's own gap)
@@ -14536,7 +14555,11 @@
       spokenLit: spoken,
       // template v4: gradient text, faint upcoming words, tilt and exit
       // (an older template has no such controls and simply skips them)
-      gradient: !!p.fill2,
+      // only where the template's gradient is known to work: r6's Ramp lands
+      // by the caption's place in the frame, not on its letters (measured in
+      // Premiere: one line flat Text Color, two lines the colours swapped per
+      // line — Sunset Fade came out red, Chrome Y2K grey)
+      gradient: !!p.fill2 && pulseEngineHas('gradient'),
       textColor2: p.fill2 || fill,
       // the image fades words not yet said only while one word is lit
       upcoming: spoken ? Math.max(0, Math.min(100, Math.round(((p.upcomingOpacity != null) ? p.upcomingOpacity : 1) * 100))) : 100,

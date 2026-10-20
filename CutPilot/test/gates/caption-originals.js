@@ -202,7 +202,10 @@ const OFL = ['Archivo Black', 'Poppins', 'Anton', 'Montserrat', 'Quicksand', 'Be
 
   // D
   const S = r.v4sunset, G = r.v4tag, U = r.v4soft;
-  (S['Text Gradient'] === true && /^#ff4e50$/i.test(S['Text Color 2']) && /^#ffe29a$/i.test(S['Text Color']) ? ok : bad)('D. v4: Sunset Fade turns Text Gradient on, gold to coral', JSON.stringify(S));
+  // r6's gradient lands by the caption's place in the frame (measured in the
+  // owner's Premiere): its index.json no longer lists "gradient", so Sunset
+  // Fade goes out in its gold, gradient off — what the preview shows
+  (S['Text Gradient'] === false && /^#ffe29a$/i.test(S['Text Color']) ? ok : bad)('D. v4: Sunset Fade goes out gold with Text Gradient off (r6 cannot place its gradient)', JSON.stringify(S));
   (G['Tilt'] === -4 && G['Exit'] === 3 && S['Exit'] === 0 ? ok : bad)('D. v4: Tilt goes in degrees (-4), Exit 0-based (Slide down → 3, None → 0)', JSON.stringify({ tilt: G['Tilt'], exit: G['Exit'] }));
   (U['Upcoming Opacity'] === 35 && r.v4plain['Upcoming Opacity'] === 50 && r.v4plain['Text Gradient'] === false ? ok : bad)(
     'D. v4: Upcoming Opacity follows the style (Soft Focus 35, Pastel 50), no gradient where the style has none');
