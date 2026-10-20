@@ -61,6 +61,12 @@ const chE = CH.buildChapters(E, { minChapterSec: 30 });
 (chE.length === 4 && !chE.some(c => /podcast/i.test(c.title)) && chE.every((c, i) => c.title.toLowerCase().split(' ').every(w => TOP[i].indexOf(w) >= 0)) ? ok : bad)(
   'E. a word said in every chapter ("podcast") never becomes a title (' + chE.map(c => c.title).join(' · ') + ')');
 
+// F: an 8-minute talk with three topics gets all three (the cap of one per
+// 5 minutes gave the owner's 7:50 talk two; YouTube shows chapters from 3)
+const F = talk(TOP.slice(0, 3), 50, 3.2, (a, b) => 'so ' + a + ' and ' + b + ' matter here');
+const chF = CH.buildChapters(F, { minChapterSec: 30 });
+(chF.length === 3 ? ok : bad)('F. an 8-minute talk with three topics: ' + chF.length + ' chapters (' + chF.map(c => CH.formatTimecode(c.start) + ' ' + c.title).join(' · ') + ')');
+
 // D
 const D = talk([TOP[0]], 600, 3.2, (a, b) => 'aaj hum ' + a + ' aur ' + b + ' ke baare mein baat karenge');
 const chD = CH.buildChapters(D, { minChapterSec: 30 });

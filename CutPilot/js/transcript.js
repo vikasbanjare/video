@@ -436,23 +436,47 @@
   /* Suggest B-roll search terms from the transcript: the most salient content
      nouns/keywords (reuses TF-IDF) + any concrete multi-word phrases. Returns
      [{term, time}] — `time` is when the term is first spoken (for placement). */
+  /* Words a talking-head video says all the time that no camera can film:
+     B-roll ideas were "like, people, think, know, going, about, only,
+     you're" on the owner's 8-minute talk. */
+  var BROLL_SKIP = {};
+  ('like people think know going about only everybody everyone anyone someone something anything nothing ' +
+   'you\'re i\'m it\'s that\'s there\'s what\'s don\'t doesn\'t didn\'t can\'t won\'t isn\'t we\'re they\'re i\'ve you\'ve ' +
+   'actually basically literally probably maybe definitely exactly simply already still even ever never always ' +
+   'said say says saying tell told talk talking want wants wanted need needs make makes made making take takes took ' +
+   'give gives gave look looks looking see seen saw mean means meant right well good great better best more most less ' +
+   'other others another every each same different little big small first last next much many lots kind sort stuff ' +
+   'point guys guy time times year years today yesterday tomorrow day days week weeks month months ' +
+   'come comes came start started starts keep kept going goes went work works worked doing done able ' +
+   'because before after again around through without within while since until though although ' +
+   'here there where everything become becomes became thinking knowing understand happen happens happened ' +
+   'yes okay alright sure true whole part case number reason question answer example ' +
+   'smart crazy super amazing awesome huge real important hard easy simple interesting nice cool bad ' +
+   'use uses used using change changes changed changing call calls called calling name named get gets got try tried trying ' +
+   'hai hain tha thi kya nahi bas waise matlab samajh dekh bol bola bolo').split(/\s+/).forEach(function (w) { BROLL_SKIP[w] = 1; });
+
+  /* Suggest B-roll search terms from the transcript: the strongest content
+     words (TF-IDF), not the common spoken ones, each with the time it is
+     first said. Best `max` by score, listed in time order. [{term, time}] */
   function extractBrollSuggestions(cues, opts) {
     opts = opts || {};
     var max = opts.max != null ? opts.max : 12;
-    var set = topKeywordSet(cues, { maxWords: max * 2 });
-    var firstAt = {}, order = [];
+    var stop = {}, k;
+    for (k in STOP) if (STOP.hasOwnProperty(k)) stop[k] = 1;
+    for (k in BROLL_SKIP) if (BROLL_SKIP.hasOwnProperty(k)) stop[k] = 1;
+    var scored = keywordScores(cues, { stop: stop, keepNumbers: false });
+    var pick = {}, n = 0;
+    for (var s = 0; s < scored.length && n < max; s++) {
+      if (scored[s].word.replace(/'/g, '').length < 4) continue;
+      pick[scored[s].word] = 1; n++;
+    }
+    var out = [], seen = {};
     for (var i = 0; i < (cues || []).length; i++) {
       var toks = tokenize(cues[i].text);
       for (var j = 0; j < toks.length; j++) {
         var w = toks[j];
-        if (set[w] && w.length >= 4 && firstAt[w] == null) {
-          firstAt[w] = cues[i].start || 0; order.push(w);
-        }
+        if (pick[w] && !seen[w]) { seen[w] = 1; out.push({ term: w, time: cues[i].start || 0 }); }
       }
-    }
-    var out = [];
-    for (var k = 0; k < order.length && out.length < max; k++) {
-      out.push({ term: order[k], time: firstAt[order[k]] });
     }
     return out;
   }

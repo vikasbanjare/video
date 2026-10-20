@@ -17,6 +17,9 @@
    'over from not no can could would should will yeah okay ok gonna wanna lets let us ' +
    'i me my he she his her their our what when where which who how why do does did get ' +
    'got really very up out if than too also one more many thing things way ' +
+   // said all through any talk: no chapter is "about" them ("That's Talking")
+   'people think know going talking talk saying said want need make made something everything ' +
+   'anything nothing someone everyone everybody guys today time point kind sort stuff ' +
    // Hinglish
    'hai hain ki ka ke ko me mein main aur se toh to ye yeh wo woh vo nahi nahin hum aap ' +
    'kya bhi tha thi the ho hota hoti kar karna karte raha rahe rahi ek par jo ke liye ' +
@@ -39,7 +42,8 @@
     for (var j = 0; j < toks.length; j++) {
       var t = clean(toks[j]);
       // a Devanagari word of 2 letters can be a real noun; Latin needs 4
-      if (!t || STOP[t] || (/^[a-z0-9']+$/.test(t) ? t.length < 4 : t.length < 2)) continue;
+      // contractions (that's, we're, don't) are never a topic
+      if (!t || STOP[t] || t.indexOf("'") >= 0 || (/^[a-z0-9']+$/.test(t) ? t.length < 4 : t.length < 2)) continue;
       out.push(t);
     }
     return out;
@@ -102,7 +106,9 @@
     var cs = cues.filter(function (c) { return c && c.text != null; }).slice().sort(function (a, b) { return a.start - b.start; });
     if (!cs.length) return [];
     var t0 = +cs[0].start, t1 = +cs[cs.length - 1].end, dur = t1 - t0;
-    var maxN = opts.max || Math.max(2, Math.min(15, Math.round(dur / 300)));
+    // about one per 2½ minutes up to 20 minutes, one per 5 after: a 7:50
+    // talk got 2 chapters, and YouTube shows chapters only from 3
+    var maxN = opts.max || Math.max(2, Math.min(15, Math.round(dur / (dur <= 1200 ? 150 : 300))));
     var W = Math.max(minSec, Math.min(120, dur / 40));      // how much talk each side is compared
     var bags = cs.map(function (c) { var f = {}; wordsOf(c.text).forEach(function (w) { f[w] = (f[w] || 0) + 1; }); return f; });
     // a word heard in nearly every line (the show's name, a catchphrase)
@@ -159,6 +165,16 @@
       // two breaks in one dip are one topic change: as far apart as the
       // stretch compared (else 43:27 and 43:59 both made it)
       if (picked.some(function (p) { return Math.abs(p.t - x.t) < Math.max(minSec, W); })) return;
+      picked.push(x);
+    });
+    // YouTube needs 3 chapters (0:00 + two): a talk long enough for them
+    // takes its next-deepest topic changes, still apart and off the ends
+    var wantN = Math.min(maxN, dur >= 3 * minSec + 10 ? 3 : 1);
+    if (picked.length < wantN - 1) gaps.slice().sort(function (x, y) { return y.depth - x.depth || x.sim - y.sim; }).forEach(function (x) {
+      // a real change that only missed the stricter bar — never noise: one
+      // topic all along stays one chapter
+      if (picked.length >= wantN - 1 || picked.indexOf(x) >= 0 || !(x.depth >= 0.25)) return;
+      if (picked.some(function (p) { return Math.abs(p.t - x.t) < minSec; })) return;
       picked.push(x);
     });
     picked.sort(function (x, y) { return x.i - y.i; });

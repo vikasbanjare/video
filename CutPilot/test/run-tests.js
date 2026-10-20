@@ -227,6 +227,17 @@ console.log('transcript.js (v1.0 hooks + b-roll)');
   const br = CPTranscript.extractBrollSuggestions(
     [{ start: 0, end: 4, text: 'investing in semiconductor stocks and healthcare growth' }], { max: 5 });
   assert(br.length >= 1 && br[0].time != null, 'b-roll suggestions returned with timestamps');
+  // the owner's 8-minute talk got "like, people, think, know, going" as B-roll
+  const talk = [
+    { start: 0, end: 4, text: 'people think AI is like a super smart intern, you know' },
+    { start: 4, end: 8, text: 'I think people know the workshop is going to be about AI' },
+    { start: 8, end: 12, text: 'like I said people think the chatbot app store is going crazy' },
+    { start: 12, end: 16, text: 'you know, the statue of liberty is in New York, like people know' }
+  ];
+  const terms = CPTranscript.extractBrollSuggestions(talk, { max: 6 }).map(b => b.term);
+  assert(!terms.some(t => /^(like|people|think|know|going|about)$/.test(t)) &&
+         ['intern', 'workshop', 'chatbot', 'statue', 'liberty', 'york'].filter(t => terms.indexOf(t) >= 0).length >= 3,
+         'b-roll ideas are filmable things, not common spoken words (' + terms.join(', ') + ')');
 }
 
 // ------------------------------------------------ animation planners ----

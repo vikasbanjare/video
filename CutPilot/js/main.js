@@ -2586,6 +2586,34 @@
 
   // ----------------------------------------------------------- chapters ----
   var _chapters = null;
+  /* Chapter titles a viewer can read. The local titles are the 1–2 words a
+     chapter says most ("Person Increase", "Cloud Chat" on the owner's talk);
+     with the AI key set, each chapter's own words go to the AI for a 2–5 word
+     title. Shown when they arrive; any failure keeps the local titles. */
+  function aiChapterTitles(chs, cues) {
+    if (!chs || !chs.length || !cpKey() || !CPBridge.isCEP()) return;
+    var texts = chs.map(function (c, k) {
+      var end = k + 1 < chs.length ? chs[k + 1].start : Infinity;
+      return cues.filter(function (q) { return q.start >= c.start && q.start < end; }).map(function (q) { return q.text; }).join(' ').slice(0, 1500);
+    });
+    var sys = 'You write YouTube chapter titles. For each chapter text, write a short title of 2 to 5 words that says what that part is about, ' +
+      'in the same language as the text, Title Case, no quotes, no numbers in front. Return JSON {"titles":[...]} with exactly ' + chs.length + ' strings, in order.';
+    var mine = chs;
+    $('ch-out').textContent = CPChapters.formatChapters(chs) + '\n\n✨ AI is writing better titles…';
+    groqChat([{ role: 'system', content: sys }, { role: 'user', content: JSON.stringify(texts.map(function (t, i) { return { i: i, text: t }; })) }], { json: true, temperature: 0.3, maxTokens: 400 })
+      .then(function (content) {
+        if (_chapters !== mine) return;                       // made again meanwhile
+        var p = parseAiJson(content), got = p && (Array.isArray(p) ? p : p.titles);
+        if (!got || got.length !== mine.length) throw new Error('titles came back incomplete');
+        mine.forEach(function (c, i) { var t = String(got[i] || '').replace(/^["'\s\d.:-]+|["'\s]+$/g, '').slice(0, 60); if (t) c.title = t; });
+        $('ch-out').textContent = CPChapters.formatChapters(mine);
+        toast('✨ AI titled your ' + mine.length + ' chapters.');
+      })
+      .catch(function (e) {
+        if (_chapters === mine) $('ch-out').textContent = CPChapters.formatChapters(mine);
+        try { diag('ai', 'chapter titles: ' + (e && e.message)); } catch (eD) {}
+      });
+  }
   function wireChapters() {
     var mn = $('ch-min');
     if (mn) mn.addEventListener('input', function () { $('ch-min-val').textContent = this.value; });
@@ -2598,6 +2626,7 @@
       $('ch-out').textContent = CPChapters.formatChapters(_chapters);
       $('ch-results').classList.remove('hidden');
       toast(_chapters.length + ' chapters generated.');
+      aiChapterTitles(_chapters, cues);
     });
     if ($('btn-ch-copy')) $('btn-ch-copy').addEventListener('click', function () {
       if (!_chapters) return;
@@ -3317,11 +3346,38 @@
 
   /* v1.0: scan the transcript for viral hook phrases and drop named markers on
      the sequence so the user can jump to / cut around the strongest moments. */
+  /* Where a viewer would stop scrolling: the fixed hook phrases ("nobody
+     talks about…", "biggest mistake") AND every line the Shorts finder would
+     open a moment on (CPShorts.hookScore: a question, a bold claim, a number,
+     talking to "you" — Hindi too). The phrases alone found nothing in the
+     owner's 8-minute talk full of hooks. At least 5 words, 20 s apart, the
+     best 10, in time order. Pure. */
+  function viralHookMarkers(cues) {
+    var cand = [];
+    var fixed = CPTranscript.detectHooks(cues);
+    fixed.forEach(function (h) { cand.push({ time: h.time, label: h.label, text: h.text, score: 60 }); });
+    if (typeof CPShorts !== 'undefined' && CPShorts.hookScore) (cues || []).forEach(function (c) {
+      var txt = String(c.text || '').trim();
+      if (txt.split(/\s+/).length < 5) return;
+      var hs = CPShorts.hookScore(txt);
+      if (hs.score < 26) return;
+      var why = hs.why[0] || 'hook';
+      cand.push({ time: c.start || 0, label: why.charAt(0).toUpperCase() + why.slice(1), text: txt.slice(0, 80), score: hs.score });
+    });
+    cand.sort(function (a, b) { return b.score - a.score || a.time - b.time; });
+    var out = [];
+    cand.forEach(function (h) {
+      if (out.length >= 10) return;
+      for (var i = 0; i < out.length; i++) if (Math.abs(out[i].time - h.time) < 20) return;
+      out.push(h);
+    });
+    return out.sort(function (a, b) { return a.time - b.time; });
+  }
   function markViralHooks() {
     var cues;
     try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
     if (typeof CPTranscript === 'undefined' || !CPTranscript.detectHooks) return toast('Hook detection isn\'t available.', true);
-    var hooks = CPTranscript.detectHooks(cues);
+    var hooks = viralHookMarkers(cues);
     if (!hooks.length) return toast('No obvious hook phrases found in this transcript.');
     if (!CPBridge.isCEP()) return toast('Open inside Premiere to add markers.', true);
     CPBridge.callHost('CP_addHookMarkers', { markers: hooks.map(function (h) { return { time: h.time, label: h.label, comment: h.text }; }) })
@@ -3693,6 +3749,21 @@
     return res.length ? res : null;
   }
 
+  /* An AI answer as data: plain JSON, JSON in a ``` fence, or the first
+     {…} / […] inside a sentence. null when none of those parse. The owner's
+     Detect speakers failed as "malformed" on an answer JSON.parse refused. */
+  function parseAiJson(content) {
+    var t = String(content == null ? '' : content).trim();
+    try { return JSON.parse(t); } catch (e0) {}
+    var fence = /```(?:json)?\s*([\s\S]*?)```/i.exec(t);
+    if (fence) { try { return JSON.parse(fence[1].trim()); } catch (e1) {} }
+    var pairs = [['{', '}'], ['[', ']']];
+    for (var i = 0; i < pairs.length; i++) {
+      var a = t.indexOf(pairs[i][0]), b = t.lastIndexOf(pairs[i][1]);
+      if (a >= 0 && b > a) { try { return JSON.parse(t.slice(a, b + 1)); } catch (e2) {} }
+    }
+    return null;
+  }
   function cleanupTranscript() {
     if (!CPBridge.isCEP()) return toast('AI fixing needs Premiere.', true);
     if (!state.transcript) return toast('Transcribe or load a transcript first.', true);
@@ -3729,7 +3800,7 @@
           return groqChat([{ role: 'system', content: sysFor(part.length) },
                            { role: 'user', content: JSON.stringify(part.map(function (t, i) { return { i: i, t: t }; })) }], { json: true, temperature: 0 });
         }, null).then(function (content) {
-          var parsed; try { parsed = JSON.parse(content); } catch (e) { parsed = null; }
+          var parsed = parseAiJson(content);
           var got = part.slice(), list = parsed && (parsed.fixes || parsed.lines);
           if (!parsed || !Array.isArray(list)) skippedParts++;
           else if (typeof list[0] === 'string') {           // every line back (the old answer)
@@ -3821,7 +3892,9 @@
         return asrRetry(function () {
           return groqChat([{ role: 'system', content: sysFor(part.length) }, { role: 'user', content: JSON.stringify({ lines: part }) }], { json: true, temperature: 0.2 });
         }, null).then(function (content) {
-          var parsed; try { parsed = JSON.parse(content); } catch (e) { throw new Error('Translation came back malformed.'); }
+          var parsed = parseAiJson(content);
+          if (!parsed) { try { diag('ai', 'translation answer not readable: ' + String(content).slice(0, 200)); } catch (eD) {} throw new Error('Translation came back malformed.'); }
+          if (Array.isArray(parsed)) parsed = { lines: parsed };
           var got = parsed.lines || parsed.translations || parsed.result || [];
           if (!got.length) throw new Error('No translation returned.');
           if (got.length !== part.length) shifted++;
@@ -3836,7 +3909,7 @@
         var warn = shifted ? ' ⚠️ ' + shifted + ' part(s) came back with a different number of lines — check the wording there.' : '';
         toast('🌐 Translated to ' + name + '. The words are now in ' + name + ' — add captions or Export SRT. (Word-by-word highlight is off for translations.)' + warn);
       })
-      .catch(function (e) { setTranscriptBar('warn', '⚠️', 'Translation failed', 'Get one →'); toast('Translate failed: ' + e.message, true); })
+      .catch(function (e) { setTranscriptBar('ok', '✅', 'Words ready — not translated this time', 'Change'); toast('Translate failed: ' + e.message, true); })
       .then(function () { state.aiBusy = false; });
   }
 
@@ -3868,8 +3941,9 @@
         return asrRetry(function () {
           return groqChat([{ role: 'system', content: sysK }, { role: 'user', content: JSON.stringify(ctx.length ? { before: ctx, lines: part } : { lines: part }) }], { json: true, temperature: 0 });
         }, null).then(function (content) {
-          var parsed; try { parsed = JSON.parse(content); } catch (e) { throw new Error('Speaker data came back malformed.'); }
-          var got = parsed.speakers || parsed.labels || [];
+          var parsed = parseAiJson(content);
+          if (!parsed) { try { diag('ai', 'speaker answer not readable: ' + String(content).slice(0, 200)); } catch (eD) {} throw new Error('Speaker data came back malformed.'); }
+          var got = Array.isArray(parsed) ? parsed : (parsed.speakers || parsed.labels || []);
           if (!got.length) throw new Error('No speaker labels returned.');
           for (var j = 0; j < part.length; j++) sp.push(got[j] != null ? got[j] : (sp[sp.length - 1] || 1));
         });
@@ -3888,7 +3962,8 @@
         setTranscriptBar('ok', '✅', 'Labelled ' + n + ' speaker' + (n > 1 ? 's' : '') + ' — ' + out.length + ' lines. Now add captions.', 'Change');
         toast('🗣️ Found ' + n + ' speaker' + (n > 1 ? 's' : '') + ' (AI guess). Labels were added to the words — add captions or Export. Tap “Change” to go back if it looks off.');
       })
-      .catch(function (e) { setTranscriptBar('warn', '⚠️', 'Speaker detection failed', 'Get one →'); toast('Speaker detection failed: ' + e.message, true); })
+      // the words are untouched: say so (the bar read "failed · Get one →")
+      .catch(function (e) { setTranscriptBar('ok', '✅', 'Words ready — speaker labels were not added this time', 'Change'); toast('Speaker detection failed: ' + e.message, true); })
       .then(function () { state.aiBusy = false; });
   }
 
@@ -20612,6 +20687,8 @@
   try {
     if ($('btn-real-preview')) $('btn-real-preview').addEventListener('click', function () { realPreviewOnTimeline(this); });
     window.CP_DEBUG = {
+      viralHookMarkers: viralHookMarkers,
+      parseAiJson: parseAiJson,
       mapPresetToMogrt: mapPresetToMogrt,
       mapPresetToFlux: mapPresetToFlux,
       bundledBackbone: bundledBackbone,
