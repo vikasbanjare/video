@@ -1677,6 +1677,7 @@
      where the piece holding its middle plays it. Longer words take the
      normal placement. */
   function placeWordStamps(items, pieces) {
+    items = CPCaptions.respreadSqueezed(items);
     var longW = [], shortW = [];
     (items || []).forEach(function (it) { ((+it.end - +it.start) > 0.05 ? longW : shortW).push(it); });
     var out = CPCaptions.mediaToTimeline(longW, pieces);
@@ -1694,8 +1695,7 @@
         have[k] = 1; out.push(w);
       });
     });
-    out.sort(function (a, b) { return a.start - b.start; });
-    return out;
+    return CPCaptions.sortWords(out);
   }
   function placeTranscript(t, pieces) {
     var cues, words = null;
@@ -13844,9 +13844,13 @@
       wordCues: (cues && cues.words && cues.words.length) ? cues.words : null,
       fit: fitsTwoLines, fps: sz.fps
     });
-    return CPCaptions.nativeSubtitleCues(frames.map(function (f) {
+    var out = CPCaptions.nativeSubtitleCues(frames.map(function (f) {
       return { start: f.start, end: f.end, text: f.words.join(' ') };
     }), { fps: sz.fps, perLine: perLine });
+    // the last caption's half-second after its words ran past the sequence's end
+    var endS = state.env ? +state.env.endSeconds : 0;
+    if (endS > 0) out = out.filter(function (c) { return c.start < endS - 0.05; }).map(function (c) { if (c.end > endS) c.end = endS; return c; });
+    return out;
   }
   function applyNative() {
     if (!ensureTranscriptThen('native')) return;

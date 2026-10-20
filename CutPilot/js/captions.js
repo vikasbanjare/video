@@ -3092,6 +3092,41 @@
    * longer line repeated end to end is whisper's repetition glitch. Pure +
    * tested.
    */
+  /* Word stamps in time order; at the same start the shorter word first. The
+     local engine gives "what" 0 s at the start of "happened?": sorted by start
+     alone it came after it ("And you know happened? what"). */
+  function sortWords(ws) {
+    return ws.sort(function (a, b) { return (a.start - b.start) || (a.end - b.end); });
+  }
+  /* The local engine sometimes stretches a few words over seconds and crushes
+     the next sentence into a blink (the owner's webinar: "The tool changed."
+     over 7 s, then 12 words in 0.4 s, a caption no one could read). A run of
+     3+ words under 0.07 s each, right after words over 1 s each, is spread
+     back over that whole stretch by letter count. Anything else is left. */
+  function respreadSqueezed(ws) {
+    var out = (ws || []).map(function (w) { var o = {}; for (var k in w) o[k] = w[k]; return o; });
+    var dur = function (w) { return +w.end - +w.start; };
+    var i = 0;
+    while (i < out.length) {
+      var j = i;
+      while (j < out.length && dur(out[j]) < 0.07 && String(out[j].text || '').trim()) j++;
+      if (j - i >= 3) {
+        var a = i;
+        while (a > 0 && i - a < 3 && dur(out[a - 1]) > 1.0) a--;
+        if (a < i) {
+          var t0 = +out[a].start, t1 = +out[j - 1].end, total = 0, k;
+          for (k = a; k < j; k++) total += String(out[k].text).length + 1;
+          var t = t0;
+          for (k = a; k < j; k++) {
+            var d = (t1 - t0) * (String(out[k].text).length + 1) / total;
+            out[k].start = +t.toFixed(3); t += d; out[k].end = +t.toFixed(3);
+          }
+        }
+      }
+      i = Math.max(j, i + 1);
+    }
+    return out;
+  }
   function dedupeRepeatedCues(cues, opts) {
     if (!cues || !cues.length) return cues;
     opts = opts || {};
@@ -4186,6 +4221,8 @@
     psFontName: psFontName,
     psIsBoldFace: psIsBoldFace,
     dedupeRepeatedCues: dedupeRepeatedCues,
+    sortWords: sortWords,
+    respreadSqueezed: respreadSqueezed,
     enforceMinDuration: enforceMinDuration,
     mergeStyle: mergeStyle,
     ANIMATIONS: ANIMATIONS,
