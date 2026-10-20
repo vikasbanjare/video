@@ -346,7 +346,11 @@ function scriptedPremiere(o) {
       '1. the test clips take the owner’s sequence size and frame rate (' + imp.map(f => f.codec + ' ' + f.dims + ' ' + f.fps + ' fps').join(', ') +
       '), so the test sequence is like theirs');
     const calls = R.prem.log.calls, ci = calls.indexOf('CP_selfTestCleanup');
-    report(calls.filter(c => c === 'CP_selfTestCleanup').length === 1 && calls.slice(0, calls.indexOf('CP_selfTestSetup')).join() === 'CP_getEnv,CP_getProjectInfo' &&
+    // before the setup only READS (the header re-reads the active sequence,
+    // v0.10.61) — nothing that changes the owner's project
+    const before = calls.slice(0, calls.indexOf('CP_selfTestSetup'));
+    report(calls.filter(c => c === 'CP_selfTestCleanup').length === 1 && before.indexOf('CP_getProjectInfo') >= 0 &&
+           before.every(c => c === 'CP_getEnv' || c === 'CP_getProjectInfo') &&
            calls.slice(ci + 1, ci + 2)[0] === 'CP_getEnv' && calls.slice(0, ci).indexOf('CP_inspectMogrt') < 0 && /Episode 7/.test(R.out.env),
       '1. the tidy-up runs once, after every feature, and the panel’s sequence is the owner’s again (' + JSON.stringify(R.out.env) + ')');
     report(Array.isArray(R.left) && R.left.length === 0, '1. the test’s own files are deleted (' + R.dir + ': ' + JSON.stringify(R.left) + ')');
