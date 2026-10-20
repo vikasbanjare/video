@@ -773,6 +773,15 @@
       if (inkTop + fix < room) fix = room - inkTop;
       if (fix) { for (var fv = 0; fv < lineY.length; fv++) lineY[fv] += fix; baseY += fix; }
     }
+    // On Pulse's template (emBoxes) a gradient text runs ONCE down the whole
+    // caption — the template's ramp spans its text's box, the first line's
+    // tops to the last line's bottoms — not afresh on every word (Sunset
+    // Fade on two lines came out a different colour per line in Premiere)
+    var blockGrad = null;
+    if (style.emBoxes && style.fill2 && lines.length) {
+      var gTop = lineY[0] - (lines[0].asc || base * 0.72), gBot = lineY[lines.length - 1] + (lines[lines.length - 1].desc || 0);
+      if (gBot - gTop > 1) blockGrad = { top: gTop, h: gBot - gTop };
+    }
 
     // speaker label pill above the block
     if (frame.speaker) {
@@ -1127,7 +1136,8 @@
         } else {
           // smart colour for numbers/brand words, else the body fill (gradient if set)
           var rc = restColorFor(it.word);
-          ctx.fillStyle = rc ? rc : textFill(y - it.px * 0.72, it.px * 0.8, spkBody || style.fill, style.fill2);
+          ctx.fillStyle = rc ? rc : (blockGrad ? textFill(blockGrad.top, blockGrad.h, spkBody || style.fill, style.fill2)
+                                              : textFill(y - it.px * 0.72, it.px * 0.8, spkBody || style.fill, style.fill2));
         }
         // Cast the drop shadow / glow from the FILLED word itself. Previously the
         // shadow was applied only around the outline and cleared before the fill,

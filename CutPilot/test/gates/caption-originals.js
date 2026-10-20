@@ -174,6 +174,20 @@ const OFL = ['Archivo Black', 'Poppins', 'Anton', 'Montserrat', 'Quicksand', 'Be
       return { h: bot - top + 1, size: st.size };
     }
     out.inkBox = { ink: boxH({ inkBoxes: true }), em: boxH({}) };
+    // a gradient runs once down the whole caption on the template (emBoxes):
+    // the green of each line's top row (Sunset Fade: #FFE29A → #FF4E50)
+    function lineTops(over) {
+      const t = Object.assign({}, T('af-sunset-fade'), { highlight: null, wordHl: false, maxWidthPct: 0.5 }, over);
+      const W = 1080, H = 1920, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      const st = R.styleForFrame(t, H, { yPct: 0.5 }, W);
+      R.drawFrame(cv, { words: ['AAJ', 'PAISE', 'KI', 'BAAT', 'KARENGE', 'HUM'] }, st);
+      const dd = cv.getContext('2d').getImageData(0, 0, W, H).data;
+      const rowG = (y) => { let n = 0, g = 0; for (let x = 0; x < W; x += 2) { const i = (y * W + x) * 4; if (dd[i + 3] > 250 && dd[i] > 200) { n++; g += dd[i + 1]; } } return n > 4 ? g / n : -1; };
+      const tops = []; let inT = false;
+      for (let y = 0; y < H; y++) { const g = rowG(y); if (g >= 0 && !inT) { inT = true; tops.push(Math.round(rowG(y + 3))); } else if (g < 0 && inT) inT = false; }
+      return tops;
+    }
+    out.grad = { block: lineTops({ emBoxes: true }), word: lineTops({}) };
     out.avenir = { nova: (F.resolveStyle('pro-nova', 'AAJ') || {}).font, novaW: D.pulseCarryStyle(T('pro-nova')).weight,
       light: (F.resolveStyle('cap-clean-sub', 'AAJ') || {}).font };
     return out;
@@ -231,6 +245,9 @@ const OFL = ['Archivo Black', 'Poppins', 'Anton', 'Montserrat', 'Quicksand', 'Be
   const hn = r.honest || {};
   (/^#000000$/i.test(hn.extrudeGlow || '') && !/^#000000$/i.test(hn.extrudeImg || '') && hn.headSub === 1 && hn.headImg < 1 && hn.luxeW === 700 && hn.ink ? ok : bad)(
     'G. the editable preview shows the template\'s black shadow (3D Extrude), one size for every line (Headliner), Bold as 700 (Luxe Wide), boxes on the ink', JSON.stringify(hn));
+  const gb = (r.grad && r.grad.block) || [], gw = (r.grad && r.grad.word) || [];
+  (gb.length >= 2 && gw.length >= 2 && gb[1] < gb[0] - 40 && Math.abs(gw[1] - gw[0]) < 15 ? ok : bad)(
+    'G. on the template a gradient runs once down the whole caption: line 2 starts further along it (green ' + gb.join(' → ') + '); the image restarts it per line (' + gw.join(' → ') + ')', JSON.stringify(r.grad));
   const ib = r.inkBox || {}, ik = ib.ink || {}, em = ib.em || {};
   (ik.h > 0 && em.h > 0 && ik.h < em.h * 0.9 && ik.h > ik.size * 0.9 && ik.h < ik.size * 1.2 ? ok : bad)(
     'G. the preview\'s box hugs the letters as the template\'s does: capitals + 0.32 em (' + ik.h + ' px at ' + ik.size + ' px; the em box drew ' + em.h + ')', JSON.stringify(ib));

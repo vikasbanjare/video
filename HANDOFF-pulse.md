@@ -1,10 +1,16 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.66** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.67** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.67 — editable preview: one gradient down the whole caption (cloud session)
+- Template v6's Gradient Text ramp spans its text's sourceRect (first line's
+  tops to last line's bottoms); the preview restarted the gradient on every
+  word. render.js blockGrad (style.emBoxes && fill2). Sunset Fade / Chrome
+  Y2K on two lines. NOT verified in Premiere — re-run the 🎨 test.
 
 ### v0.10.65 – v0.10.66 — Transcribe: In/Out shown, cuts followed (said on the page)
 - Owner: "if I delete part of the video after transcribing it should know

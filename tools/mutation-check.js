@@ -3180,7 +3180,17 @@ const MUTANTS = [
     repl: "        state.shade = 45;",
     gate: 'CutPilot/test/gates/safezone-shade.js',
     why: 'the darkness slider changes nothing'
+  },
+  // v63: on the template a gradient runs once down the whole caption
+  {
+    name: 'v63-gradient-per-word',
+    file: 'CutPilot/js/render.js',
+    find: '    if (style.emBoxes && style.fill2 && lines.length) {',
+    repl: '    if (false) {',
+    gate: 'CutPilot/test/gates/caption-originals.js',
+    why: "a two-line gradient caption previews a colour per line Premiere does not draw"
   }
+
 
 ];
 
