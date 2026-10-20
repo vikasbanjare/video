@@ -57,6 +57,8 @@ async function run() {
       }
       sizes.push(user.lines.length);
       if (mode === 'busy' && !busyOnce) { busyOnce = true; return JSON.stringify({ error: { message: 'Rate limit reached. Please try again in 1s.', code: 'rate_limit_exceeded' } }); }
+      // the owner's key at 4:54 am: the day's tokens used up, "try again in 1h5m"
+      if (mode === 'later' && sizes.length >= 3) return JSON.stringify({ error: { message: 'Rate limit reached for model on tokens per day (TPD). Please try again in 1h5m0s.', code: 'rate_limit_exceeded' } });
       // numbered lines in, numbered lines back
       let out = user.lines.map(l => ({ i: l.i, t: l.t.replace('hello', 'नमस्ते') }));
       // the owner's 8-minute talk: a part came back 5 lines short (the first time)
@@ -110,6 +112,9 @@ async function run() {
     r = await translate('stubborn');
     C.check('B4. lines that only come back alone are asked one by one at the end (' + sizes.slice(-4).join(' + ') + ') — all translated',
       sizes.slice(-3).every(n => n === 1) && r.cues.every((c, i) => c[1] === 'line ' + i + ' नमस्ते') && !/⚠️/.test(r.toast), JSON.stringify({ sizes, toast: r.toast }));
+    { const t0 = Date.now(); r = await translate('later'); const secs = (Date.now() - t0) / 1000;
+      C.check('C2. a limit used up for an hour: no silent hour-long wait — done in ' + secs.toFixed(1) + ' s, the parts that came back kept, and it says when to try again',
+        secs < 20 && r.cues.slice(0, 120).every(c => /नमस्ते/.test(c[1])) && /try again in about 65 min/.test(r.toast), JSON.stringify({ secs, toast: r.toast })); }
     r = await translate('busy');
     C.check('C. a busy reply on one part is tried again (' + sizes.length + ' requests for 5 parts)', sizes.length === 6 && r.cues.every(c => /नमस्ते/.test(c[1])), JSON.stringify({ sizes, toast: r.toast }));
     // F. a translation made while a slow transcript scan runs is not replaced when the scan ends

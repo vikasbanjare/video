@@ -1095,7 +1095,10 @@
     if (!m || !(m[1] || m[2] || m[3])) return 0;
     return (+m[1] || 0) * 3600 + (+m[2] || 0) * 60 + (+m[3] || 0);
   }
-  function asrRetry(run, onWait) {
+  /* maxWait (s): an AI text step (Translate, Detect speakers, AI fix) has no
+     countdown and no ⏹ Stop — when the provider asks for a longer wait it
+     stops and says when to try again (it sat 65 minutes on "part 4 of 4"). */
+  function asrRetry(run, onWait, maxWait) {
     var tries = 0;
     function go() {
       return run().then(null, function (e) {
@@ -1105,6 +1108,11 @@
         if (!passing || tries >= ASR_RETRIES) throw e;
         tries++;
         var told = asrWaitSeconds(txt);
+        if (maxWait && told > maxWait) {
+          var later = new Error('The AI’s limit is used up for now — try again in about ' + Math.max(1, Math.round(told / 60)) + ' min.');
+          later.cpKind = 'rate_limit_long';
+          throw later;
+        }
         var wait = told > 0 ? Math.min(3900, Math.ceil(told) + 2) : Math.min(120, (kind === 'rate_limit' ? 20 : 3) * Math.pow(2, tries - 1));
         try { diag('asr', 'cloud request failed (' + kind + '), try ' + tries + ' of ' + ASR_RETRIES + ' in ' + wait + ' s: ' + txt.slice(0, 160)); } catch (eD) {}
         if (onWait) { try { onWait(wait, tries); } catch (eW) {} }
@@ -3839,7 +3847,7 @@
         return asrRetry(function () {
           return groqChat([{ role: 'system', content: sysFor(part.length) },
                            { role: 'user', content: JSON.stringify(part.map(function (t, i) { return { i: i, t: t }; })) }], { json: true, temperature: 0 });
-        }, null).then(function (content) {
+        }, null, 90).then(function (content) {
           var parsed = parseAiJson(content);
           var got = part.slice(), list = parsed && (parsed.fixes || parsed.lines);
           if (!parsed || !Array.isArray(list)) skippedParts++;
@@ -3938,7 +3946,7 @@
           return asrRetry(function () {
             return groqChat([{ role: 'system', content: sys }, { role: 'user', content: JSON.stringify({ lines: part.map(function (i, j) { return { i: j, t: lines[i] }; }) }) }],
               { json: true, temperature: 0.2, maxTokens: 6000 });
-          }, null).then(function (content) {
+          }, null, 90).then(function (content) {
             var parsed = parseAiJson(content);
             if (Array.isArray(parsed)) parsed = { lines: parsed };
             var got = parsed && (parsed.lines || parsed.translations || parsed.result);
@@ -3970,7 +3978,8 @@
         var out = cues.map(function (c, i) { return { start: c.start, end: c.end, text: (tl[i] != null ? String(tl[i]) : c.text) }; });
         installNewTranscript(out, 'Translated → ' + name + ' (' + out.length + ' lines)', 'translated-' + (code || 'xx'));
         setTranscriptBar('ok', '✅', 'Translated to ' + name + ' — ' + out.length + ' lines. Now add captions.', 'Change');
-        var warn = shifted ? ' ⚠️ ' + shifted + ' line(s) did not come back and stay as they were — check the wording there.' : '';
+        var warn = shifted ? ' ⚠️ ' + shifted + ' line(s) did not come back and stay as they were — ' +
+          (lastErr && lastErr.cpKind === 'rate_limit_long' ? lastErr.message + ' Then translate again.' : 'check the wording there.') : '';
         toast('🌐 Translated to ' + name + '. The words are now in ' + name + ' — add captions or Export SRT. (Word-by-word highlight is off for translations.)' + warn);
       })
       .catch(function (e) { setTranscriptBar('ok', '✅', 'Words ready — not translated this time', 'Change'); toast('Translate failed: ' + e.message, true); })
@@ -4007,7 +4016,7 @@
           // only the turns come back: one number per line (150 of them) was
           // cut off by the reply limit on the owner's 8-minute talk
           return groqChat([{ role: 'system', content: sysK }, { role: 'user', content: JSON.stringify(ctx.length ? { before: ctx, lines: part } : { lines: part }) }], { json: true, temperature: 0, maxTokens: 1500 });
-        }, null).then(function (content) {
+        }, null, 90).then(function (content) {
           var parsed = parseAiJson(content);
           if (!parsed) { try { diag('ai', 'speaker answer not readable: ' + String(content).slice(0, 200)); } catch (eD) {} throw new Error('Speaker data came back malformed.'); }
           var got = Array.isArray(parsed) ? parsed : (parsed.speakers || parsed.labels || []);
