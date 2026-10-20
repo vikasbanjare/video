@@ -433,9 +433,6 @@
     return out;
   }
 
-  /* Suggest B-roll search terms from the transcript: the most salient content
-     nouns/keywords (reuses TF-IDF) + any concrete multi-word phrases. Returns
-     [{term, time}] — `time` is when the term is first spoken (for placement). */
   /* Words a talking-head video says all the time that no camera can film:
      B-roll ideas were "like, people, think, know, going, about, only,
      you're" on the owner's 8-minute talk. */
