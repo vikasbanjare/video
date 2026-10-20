@@ -17187,7 +17187,14 @@
     lp.textContent = 'Made with the look in step 2. ';
     var lk = document.createElement('button'); lk.type = 'button'; lk.className = 'chip-btn'; lk.textContent = '🎨 Change it';
     lk.addEventListener('click', function (ev) { ev.preventDefault(); var t = $('sh-look'); if (t && t.scrollIntoView) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
-    lp.appendChild(lk); lead.appendChild(lp); box.appendChild(lead);
+    lp.appendChild(lk); lead.appendChild(lp);
+    if (list.length > 1) {
+      var all = document.createElement('button'); all.type = 'button'; all.id = 'btn-sh-all'; all.className = 'hero-btn';
+      all.textContent = '🎬 Make all ' + list.length + ' shorts';
+      all.addEventListener('click', function () { makeAllShorts(list); });
+      lead.appendChild(all);
+    }
+    box.appendChild(lead);
     // the list sits under step 2: bring it into view when it arrives
     setTimeout(function () { try { if (lead.scrollIntoView && document.body.getAttribute('data-page') === 'shorts') lead.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (eS) {} }, 60);
     list.forEach(function (h, i) {
@@ -17868,7 +17875,7 @@
     var hook = o.hook ? CPShorts.hookText(h) : '';
     var S0 = plan.segments[0].start, S1 = plan.segments[plan.segments.length - 1].end;
     var editable = shortOutput() === 'timeline' && !!rt;
-    shortCameras(S0, S1, o).then(function (setup) {
+    return shortCameras(S0, S1, o).then(function (setup) {
       // a stretch that crosses a cut on the timeline (Clean up's, or one made
       // by hand) is split there, so each part plays its own piece of every
       // camera and mic: the picture and sound stay with the words
@@ -17916,18 +17923,80 @@
         (info.diag ? ' · ' + info.diag : ''));
       if (o.caps && plan.words.length && res && res.sequence) {
         prog.textContent = 'Adding captions in “' + ((currentPreset() || {}).name || 'your caption style') + '”…';
-        setTimeout(function () {
+        markStepDone('shorts'); toast('🎬 Made the ' + what + '. Adding captions now…');
+        return new Promise(function (res) { setTimeout(res, 400); }).then(function () {
           prog.classList.add('hidden');
           // the choice in step 2: ✏️ Editable captions, else drawn by Pulse
           if (_capOut === 'editable') applyEditableStyle({ cues: CPShorts.sentenceCues(plan.words), words: plan.words });
           else runCaptionPipeline(CPShorts.sentenceCues(plan.words), { wordCues: plan.words });
-        }, 400);
-        markStepDone('shorts'); toast('🎬 Made the ' + what + '. Adding captions now…');
-        return;
+          return captionsSettled();
+        }).then(function () { return { made: true, name: what, sequence: res.sequence }; });
       }
       prog.classList.add('hidden');
       markStepDone('shorts'); toast('🎬 Made the ' + what + (o.caps && !plan.words.length ? '. (No word timing for captions — transcribe first.)' : '.'));
-    }).catch(function (e) { prog.classList.add('hidden'); toast('Make clip failed: ' + e.message, true); });
+      return { made: true, name: what, sequence: res && res.sequence };
+    }).catch(function (e) { prog.classList.add('hidden'); toast('Make clip failed: ' + e.message, true); return { made: false, error: e.message }; });
+  }
+  /* The caption step of a short has finished: its progress line has stayed
+     away a moment (the pipeline shows it while it renders and places). */
+  function captionsSettled(maxMs) {
+    var el = $('cap-progress'), quiet = 0, t0 = Date.now();
+    return new Promise(function (res) {
+      (function tick() {
+        var busy = el && !el.classList.contains('hidden');
+        quiet = busy ? 0 : quiet + 250;
+        if (quiet >= 1500 || Date.now() - t0 > (maxMs || 15 * 60 * 1000)) return res();
+        setTimeout(tick, 250);
+      })();
+    });
+  }
+  /* After a batch: one tap sends every new short to Media Encoder. */
+  function showExportAll(seqs) {
+    var lead = document.querySelector('#shorts-results .sh-lead'), old = $('btn-sh-export');
+    if (old) old.remove();
+    if (!lead || !seqs || !seqs.length) return;
+    var b = document.createElement('button'); b.type = 'button'; b.id = 'btn-sh-export'; b.className = 'chip-btn';
+    b.textContent = '⤴ Export all ' + seqs.length + ' with Media Encoder';
+    b.addEventListener('click', function () {
+      var pathMod = nodeReq('path'), os = nodeReq('os'), dir = pathMod.join(os.homedir(), 'Movies', 'Pulse Shorts');
+      try { nodeReq('fs').mkdirSync(dir, { recursive: true }); } catch (eMk) {}
+      CPBridge.callHost('CP_queueShortsExport', { sequences: seqs, outDir: dir, sep: pathMod.sep }).then(function (r) {
+        toast('⤴ ' + r.queued + ' short' + (r.queued === 1 ? '' : 's') + ' sent to Media Encoder — they export into Movies › Pulse Shorts.' +
+          (r.missing && r.missing.length ? ' Not found: ' + r.missing.join(', ') + '.' : ''));
+      }).catch(function (e) { toast(e.message, true); });
+    });
+    lead.appendChild(b);
+  }
+  /* 🎬 Make all the shorts at once: every found moment, one after the other,
+     each finished (cameras, hook, captions) before the next starts, each
+     from the sequence the moments were found on. Stop ends it after the
+     short being made. */
+  var _batch = null;
+  function makeAllShorts(list) {
+    if (_batch) { _batch.stop = true; toast('Stopping after this short…'); return Promise.resolve(); }
+    var rt = shRatio(), btn = $('btn-sh-all');
+    _batch = { stop: false, made: 0, failed: 0, seqs: [] };
+    if (btn) btn.textContent = '■ Stop';
+    var i = 0;
+    function next() {
+      if (i >= list.length || _batch.stop) return Promise.resolve();
+      var h = list[i++];
+      toast('🎬 Making short ' + i + ' of ' + list.length + ': ' + (h.title || 'Clip') + '…');
+      return toShortsSource().then(function () { return makeVerticalClip(h, rt); }).then(function (r) {
+        if (r && r.made) { _batch.made++; if (r.sequence) _batch.seqs.push(r.sequence); } else _batch.failed++;
+        return next();
+      });
+    }
+    return next().then(function () {
+      var b = _batch; _batch = null;
+      if (btn) btn.textContent = '🎬 Make all ' + list.length + ' shorts';
+      return toShortsSource().then(function () {
+        toast('🎬 Made ' + b.made + ' of ' + list.length + ' short' + (list.length === 1 ? '' : 's') + (b.failed ? ' — ' + b.failed + ' could not be made (see above)' : '') +
+          (b.stop && b.made + b.failed < list.length ? ' — stopped' : '') + '. Each is its own sequence in your project.', !!b.failed);
+        showExportAll(b.seqs);
+        return b;
+      });
+    });
   }
   var _podLast = null;
 
@@ -20554,6 +20623,8 @@
       pulseImageLines: pulseImageLines,
       premFitEditable: premFitEditable,
       renderShorts: function (list) { renderShorts(list); },
+      makeAllShorts: function (list) { return makeAllShorts(list); },
+      stubMakeShort: function (fn) { makeVerticalClip = fn; },
       setTranscriptWords: function (ws) { state.transcriptWords = ws; },
       styleTestCalibrate: styleTestCalibrate,
       styleTestPixels: function (img, onBlack) { var o = styleTestPixels(img, onBlack); return { box: o.box, W: o.W, H: o.H }; },

@@ -1,10 +1,22 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.71** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.72** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.72 — 🎬 Make all shorts at once + Media Encoder (cloud session)
+- renderShorts' lead card: "Make all N shorts" (#btn-sh-all, 2+ moments) →
+  makeAllShorts: each moment in turn (toShortsSource → makeVerticalClip, now
+  returning a promise that resolves after its captions settle —
+  captionsSettled() waits for #cap-progress to stay hidden 1.5 s), ■ Stop
+  after the current short, summary toast. Then "Export all N with Media
+  Encoder" (#btn-sh-export) → host CP_queueShortsExport: sequences by name,
+  Premiere's own "Match Source - Adaptive High Bitrate.epr" found under
+  app.path (CP_findEncoderPreset), encodeSequence into ~/Movies/Pulse Shorts,
+  startBatch. NOT verified in Premiere (app.path walk, encodeSequence).
+- Debug hooks CP_DEBUG.makeAllShorts / stubMakeShort. Gate shorts-make-all.
 
 ### v0.10.71 — 🏷 Brand kit (cloud session)
 - Settings card #bk-card (js/brandkit.js, window.CPBrand, localStorage

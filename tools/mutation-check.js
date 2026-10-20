@@ -3265,7 +3265,33 @@ const MUTANTS = [
     repl: "    seg('sz-platform', 'platform'); seg('sz-brandmode', 'brandMode', refreshBrandVisibility);",
     gate: 'CutPilot/test/gates/brand-kit.js',
     why: 'Safe zone ignores the brand kit'
+  },
+  // v72: 🎬 Make all shorts at once + Media Encoder
+  {
+    name: 'v72-batch-overlaps',
+    file: 'CutPilot/js/main.js',
+    find: "      return toShortsSource().then(function () { return makeVerticalClip(h, rt); }).then(function (r) {",
+    repl: "      makeVerticalClip(h, rt); return Promise.resolve({ made: true }).then(function (r) {",
+    gate: 'CutPilot/test/gates/shorts-make-all.js',
+    why: 'all shorts start at once, one over the other'
+  },
+  {
+    name: 'v72-batch-no-stop',
+    file: 'CutPilot/js/main.js',
+    find: '      if (i >= list.length || _batch.stop) return Promise.resolve();',
+    repl: '      if (i >= list.length) return Promise.resolve();',
+    gate: 'CutPilot/test/gates/shorts-make-all.js',
+    why: 'Stop does not stop the batch'
+  },
+  {
+    name: 'v72-export-no-start',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '    if (queued) { try { app.encoder.startBatch(); } catch (eS) {} }',
+    repl: '',
+    gate: 'CutPilot/test/gates/shorts-make-all.js',
+    why: 'the shorts wait in Media Encoder, never exported'
   }
+
 
 
 

@@ -1523,6 +1523,53 @@ function CP_activateSequence(seqObj) {
 /* Make the sequence with this sequenceID the active one again (Shorts goes
    back to the video its moments came from: a short leaves its own new
    sequence active). argsJson: { id }. */
+/* 🎬 Send the made shorts to Adobe Media Encoder: each sequence by name,
+   with Premiere's own "Match Source - Adaptive High Bitrate" H.264 preset
+   (found inside the Premiere app, so nothing for the owner to pick), into
+   args.outDir. → { queued, missing:[names], preset } */
+function CP_findEncoderPreset() {
+  var want = 'Match Source - Adaptive High Bitrate.epr', roots = [];
+  try { if (app.path) roots.push(new Folder(app.path)); } catch (eP) {}
+  function walk(f, depth) {
+    if (!f || !f.exists || depth > 7) return null;
+    var items = f.getFiles();
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      if (it instanceof File && it.name === want) return it.fsName;
+    }
+    for (var j = 0; j < items.length; j++) {
+      if (items[j] instanceof Folder) { var r = walk(items[j], depth + 1); if (r) return r; }
+    }
+    return null;
+  }
+  for (var k = 0; k < roots.length; k++) { var hit = walk(roots[k], 0); if (hit) return hit; }
+  return null;
+}
+function CP_queueShortsExport(argsJson) {
+  try {
+    var args = JSON.parse(argsJson), names = args.sequences || [], out = args.outDir;
+    if (!names.length) return CP_fail('No shorts to export.');
+    if (!app.encoder || typeof app.encoder.encodeSequence !== 'function') return CP_fail('This Premiere cannot send to Media Encoder by script — export each short with File › Export.');
+    var preset = args.presetPath || CP_findEncoderPreset();
+    if (!preset) return CP_fail('Premiere’s “Match Source” export preset was not found — export each short with File › Export › Media.');
+    try { app.encoder.launchEncoder(); } catch (eL) {}
+    var queued = 0, missing = [], seen = {};
+    for (var n = 0; n < names.length; n++) {
+      var seq = null;
+      for (var i = 0; i < app.project.sequences.numSequences; i++) {
+        var s = app.project.sequences[i];
+        if (s && s.name === names[n] && !seen[s.sequenceID]) { seq = s; break; }
+      }
+      if (!seq) { missing.push(names[n]); continue; }
+      seen[seq.sequenceID] = 1;
+      var file = out + (args.sep || '/') + String(seq.name).replace(/[\\\/:*?"<>|]+/g, ' ') + '.mp4';
+      try { app.encoder.encodeSequence(seq, file, preset, 0, 1); queued++; } catch (eQ) { missing.push(names[n]); }
+    }
+    if (queued) { try { app.encoder.startBatch(); } catch (eS) {} }
+    return CP_ok({ queued: queued, missing: missing, preset: preset });
+  } catch (e) { return CP_fail(e.message); }
+}
+
 function CP_openSequenceById(argsJson) {
   try {
     var id = String(JSON.parse(argsJson).id || '');
