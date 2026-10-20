@@ -480,7 +480,22 @@
     return merged;
   }
 
-  return { detectFaces: detectFaces, faceTracks: faceTracks, faceCrop: faceCrop, turnsFrom: turnsFrom,
+  /* Fit shows the whole shot as a band across the middle: captions at the
+     Reels-safe line sat ON the video (the owner's webinar slide, its numbers
+     covered). → the caption Position (% of the height) just under the band,
+     kept clear of the apps' bottom buttons (16%), or null when the shot
+     leaves no band under it. target {w,h}; segs: the plan's pieces. */
+  function fitCaptionPos(target, segs) {
+    var c = null;
+    (segs || []).some(function (sg) { return (sg.cells || []).some(function (x) { if (x.fit) { c = x; return true; } return false; }); });
+    if (!c || !c.src || !(c.src.w > 0) || !target || !(target.h > 0)) return null;
+    var k = Math.min(c.rect.w / c.src.w, c.rect.h / c.src.h);
+    var bottom = (c.rect.y + (c.rect.h + c.src.h * k) / 2) / target.h * 100;
+    var pos = Math.round(bottom + 7);
+    return pos <= 78 ? pos : null;
+  }
+
+  return { detectFaces: detectFaces, faceTracks: faceTracks, faceCrop: faceCrop, turnsFrom: turnsFrom, fitCaptionPos: fitCaptionPos,
            regionTracks: regionTracks, markCrop: markCrop,
            pearson: pearson, assign: assign, pieces: pieces, splitAtCuts: splitAtCuts,
            filterArgs: filterArgs,

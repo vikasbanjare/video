@@ -8025,6 +8025,7 @@
   }
   /* The Position the captions use: the owner's, else the automatic one. */
   function effectivePos() {
+    if (state.posOverride != null) return state.posOverride;   // a Fit short's captions, for its caption step
     var v = parseInt($('c-pos').value, 10);
     if (!isFinite(v)) v = 76;
     // the slider still shows the style's spot, or the automatic one: the
@@ -17937,7 +17938,7 @@
       prog.textContent = 'Making the short' + (P.multi ? ' from ' + P.cams + ' cameras' : '') + (P.removed > 0.2 ? ' (' + P.removed.toFixed(1) + ' s of pauses cut)' : '') + '…';
       return runFfmpeg(ff, args, 900000).then(function (rr) {
         if (rr.error || (rr.code && rr.code !== 0)) throw new Error('the render failed: ' + String(rr.stderr || rr.error || '').slice(-200));
-        return { path: outPath, cams: P.cams, diag: P.diag };
+        return { path: outPath, cams: P.cams, diag: P.diag, capPos: CPPodShort.fitCaptionPos(P.target, P.segs) };
       });
     });
   }
@@ -18053,7 +18054,7 @@
           diag('shorts', 'editable timeline: placed ' + res.placed + '/' + res.of + ', framed ' + res.framed + ', cropped ' + res.cropped + '/' + (res.toCrop || 0) +
             ', blurred ' + (res.blurred || 0) + '/' + (res.toBlur || 0) + ', mic pieces ' + res.audioPlaced + ', camera sound off ' + res.camAudioOff + ', hook ' + res.hook + ', layout ' + shortLayout());
           if (probs.length) toast('⚠️ The short’s timeline is made, but ' + probs.join('; ') + '. Fix it by hand in Effect Controls, or pick “One video file” and make it again.', true);
-          return { res: res, info: { cams: P.cams, diag: P.diag } };
+          return { res: res, info: { cams: P.cams, diag: P.diag, capPos: CPPodShort.fitCaptionPos(P.target, P.segs) } };
         });
       });
     }).then(function (x) {
@@ -18068,11 +18069,14 @@
         markStepDone('shorts'); toast('🎬 Made the ' + what + '. Adding captions now…');
         return new Promise(function (res) { setTimeout(res, 400); }).then(function () {
           prog.classList.add('hidden');
+          // Fit: under the shot, not on it (unless the owner set a Position)
+          if (info.capPos && !state.posUserSet) state.posOverride = info.capPos;
           // the choice in step 2: ✏️ Editable captions, else drawn by Pulse
           if (_capOut === 'editable') applyEditableStyle({ cues: CPShorts.sentenceCues(plan.words), words: plan.words });
           else runCaptionPipeline(CPShorts.sentenceCues(plan.words), { wordCues: plan.words });
           return captionsSettled();
-        }).then(function () { return { made: true, name: what, sequence: res.sequence }; });
+        }).then(function () { state.posOverride = null; return { made: true, name: what, sequence: res.sequence }; },
+                function (e) { state.posOverride = null; throw e; });
       }
       prog.classList.add('hidden');
       markStepDone('shorts'); toast('🎬 Made the ' + what + (o.caps && !plan.words.length ? '. (No word timing for captions — transcribe first.)' : '.'));
