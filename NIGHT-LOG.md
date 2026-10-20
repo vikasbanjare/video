@@ -16,6 +16,21 @@ on the old code, build, install, verify, commit and push. Newest entries on top.
 7. Viral edit — zoom punch-ins, sound effects.
 
 ## Done
+- 04:15 Round 4 (v0.10.82 → v0.10.84), tested in Premiere:
+  · Premiere captions (.srt) on the 7:50 webinar: "And you know happened?"
+    + "what" (a 0 s word sorted after its neighbour) and a 12-word line shown
+    0.5 s (the speech engine crushed it after stretching the one before).
+    Now in order and readable (4.4 s); nothing past the sequence end; a
+    second run says both caption tracks show and how to delete the old one.
+    Gates word-timing-repair, native-captions-twice.
+  · Exact look on the whole 7:50: one overlay clip in 15 s, the words on
+    screen are the words said (checked at 1:00, 2:59, 4:48). ✓
+  · Viral edit on a made short: zoom punches keyed V1 from 100% — the
+    short's blurred backdrop shrank and the frame went bare; and its captions
+    were stacked as a second set on V5, on the shot. Now the punch goes on
+    the picture the viewer sees, from its own size; captions replace the set;
+    a Fit short keeps its captions under the shot. Gates zoom-punch-top-clip,
+    captions-viral-visible A2.
 - 03:20 Round 3 (v0.10.79 → v0.10.81), tested in Premiere:
   · Clean up (one button) on the webinar copy: 21 sections / 16.6 s cut,
     the words followed the cut exactly (last word 470.42 → 453.79 s), backup
