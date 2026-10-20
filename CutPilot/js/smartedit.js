@@ -33,7 +33,8 @@
     repetition: '- "repetition": the same person said the same line more than once (a retake) — KEEP THE LAST complete attempt, cut the earlier ones.',
     filler: '- "filler": a standalone filler sound or word — English "um", "uh", "you know", "I mean", "like" used as filler; Hindi/Hinglish ' +
       '"aa", "aaa", "umm", "hmm", "उम्म", "हम्म", and "matlab"/"मतलब", "toh"/"तो", "acha"/"अच्छा", "dekho"/"देखो", "yaani"/"यानी", ' +
-      '"basically", "kya bolte hain" ONLY when said on their own as a pause-filler.',
+      '"basically", "kya bolte hain" ONLY when said on their own as a pause-filler — never when it is part of a phrase that ' +
+      'carries meaning ("you know what?" before a point, "like one in ten" meaning about).',
     dead_air: '- "dead_air": "let me think", "where was I", "give me a second", "ek second", "kya bol raha tha main" — talking that says nothing.',
     tangent: '- "tangent": a clearly abandoned off-topic aside the speaker drops.'
   };
@@ -109,7 +110,7 @@
       '5. Never cut what one speaker said because another speaker repeated it.\n' +
       '6. Index ranges are INCLUSIVE and must exist in the list above.\n\n' +
       'Reply with STRICT JSON only:\n' +
-      '{"cuts":[{"from":<int>,"to":<int>,"category":"' + cats.join('|') + '","reason":"<short>","confidence":<0..1>}]}\n' +
+      '{"cuts":[{"from":<int>,"to":<int>,"words":"<the exact words from..to>","category":"' + cats.join('|') + '","reason":"<short>","confidence":<0..1>}]}\n' +
       'If nothing should be cut, reply {"cuts":[]}.\n\n' +
       'TRANSCRIPT:\n' + lines.join('\n');
 
@@ -265,6 +266,7 @@
    *     needsReview (the review list leaves it unticked);
    *   - opts.categories limits which labels are returned.
    */
+  function nw(t) { return String(t == null ? '' : t).toLowerCase().replace(/^[^\w\u0900-\u097F]+|[^\w\u0900-\u097F]+$/g, ''); }
   function parseCleanupResponse(text, words, opts) {
     opts = opts || {};
     var minConf = (opts.minConfidence != null) ? opts.minConfidence : 0;
@@ -280,6 +282,21 @@
       if (from < 0 || from >= N || to < from) continue;
       if (to >= N) { if (to <= N + 1) to = N - 1; else continue; }
       if (!ws[from] || !ws[to]) continue;
+      // the words it means, when it says them: an index counted one off in a
+      // long list cut "there" for an "oh" and "know" out of "you know what?"
+      // on the owner's webinar. Moved onto those words nearby, else not cut.
+      if (typeof c.words === 'string' && c.words.trim()) {
+        var said = c.words.split(/\s+/).map(nw).filter(Boolean), at = -1;
+        for (var dk = 0; dk <= 6 && at < 0 && said.length; dk++) {
+          [from + dk, from - dk].forEach(function (f0) {
+            if (at >= 0 || f0 < 0 || f0 + said.length > N) return;
+            for (var q = 0; q < said.length; q++) if (nw(ws[f0 + q].text) !== said[q]) return;
+            at = f0;
+          });
+        }
+        if (at < 0) continue;
+        from = at; to = at + said.length - 1;
+      }
       var conf = (c.confidence != null) ? parseFloat(c.confidence) : 1;
       if (isNaN(conf)) conf = 1;
       if (conf > 1 && conf <= 100) conf = conf / 100;

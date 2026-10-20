@@ -29,6 +29,23 @@ function ix(c, ws) { return { f: ws.findIndex(w => w.start === c.start), t: ws.f
 function spans(r, ws) { return Array.isArray(r) ? JSON.stringify(r.map(c => ws ? [ix(c, ws).f, ix(c, ws).t, c.label] : [c.start, c.end, c.label])) : JSON.stringify(r); }
 function parse(reply, ws, opts) { try { return S.parseCleanupResponse(reply, ws, opts); } catch (e) { return { threw: e.message }; } }
 
+// ------------------------------------------- the words it names win -------
+console.log('AI parser: a cut lands on the words the AI names, not on a miscounted index');
+{
+  // the owner's webinar: "It oh, there is chat GPT" — the AI's "oh" came back one index late
+  const said = 'very few people used it. It oh, there is chat GPT. And in case you know what'.split(' ');
+  const ws = said.map((t, i) => ({ text: t, start: i, end: i + 0.8 }));
+  const oh = said.indexOf('oh,');
+  const r1 = parse(JSON.stringify({ cuts: [{ from: oh + 1, to: oh + 1, words: 'oh', category: 'filler', reason: 'oh filler' }] }), ws);
+  check('an "oh" named one word late is cut on "oh", not on "there" (' + (r1[0] && r1[0].text) + ')', Array.isArray(r1) && r1.length === 1 && r1[0].text === 'oh,', spans(r1));
+  const r2 = parse(JSON.stringify({ cuts: [{ from: 3, to: 3, words: 'banana split', category: 'filler' }] }), ws);
+  check('words that are nowhere near the index: not cut at all', Array.isArray(r2) && r2.length === 0, spans(r2));
+  const r3 = parse(JSON.stringify({ cuts: [{ from: oh, to: oh, category: 'filler' }] }), ws);
+  check('an answer without the words still cuts by its index (older answers)', Array.isArray(r3) && r3.length === 1 && r3[0].text === 'oh,', spans(r3));
+  const p = S.buildCleanupPrompt(ws, {});
+  check('the prompt asks for the exact words and says "you know what?" is not a filler', /"words":"<the exact words/.test(p.user) && /you know what\?/.test(p.user));
+}
+
 // ------------------------------------------------ bad indices never stretch ----
 console.log('AI parser: a bad index never deletes more than the AI named');
 {

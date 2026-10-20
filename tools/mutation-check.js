@@ -2663,6 +2663,14 @@ const MUTANTS = [
     why: 'lines missing from a part stay English'
   },
   {
+    name: 'v33-ai-cut-index-wins',
+    file: 'CutPilot/js/smartedit.js',
+    find: "      if (typeof c.words === 'string' && c.words.trim()) {",
+    repl: "      if (false) {",
+    gate: 'CutPilot/test/gates/retakes-ai-parser.js',
+    why: 'an AI index counted one off cuts the wrong word'
+  },
+  {
     name: 'v33-reopened-no-saved-transcript',
     file: 'CutPilot/js/main.js',
     find: '        if (_seqMain[k]) return { clip: _seqMain[k] };',
