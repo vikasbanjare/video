@@ -69,8 +69,9 @@ async function run() {
     };
     // what the timeline shows now: the recording and its pieces (recording
     // in/out, timeline start, speed = recording s per timeline s)
-    let place = null;
+    let place = null, nothingSelected = false;
     const host = (fn, args) => {
+      if (fn === 'CP_getSelectedClip' && nothingSelected) throw new Error('No clip selected. Select the clip to analyze in the timeline.');
       if (fn === 'CP_getTranscribeSource' || fn === 'CP_getSelectedClip') {
         if (!place) throw new Error('No clip with audio found.');
         if (args && args.onlyMediaPath && args.onlyMediaPath !== place.media) throw new Error('No clip with audio found.');
@@ -185,6 +186,18 @@ async function run() {
       C.check('selecting the clip: the saved transcript is offered and placed where the clip sits now (seven at 37 s)',
         t && t.src === 'cutpilot-cache' && near((word(t, 'seven') || {}).start, 37) && t.media === TALK, JSON.stringify({ src: t && t.src, seven: fmt(t && word(t, 'seven')), media: t && t.media }));
       C.check('selecting the clip: …and its caption lines too (first line at 31 s)', !!(t && t.cues && t.cues.length) && near(t.cues[0].start, 31, 0.002), JSON.stringify(t && t.cues).slice(0, 200));
+      // the project is reopened with no clip selected: the scan still finds
+      // the saved words (it said "No transcript for this video")
+      // (same page: the saved-transcript store lives in its memory)
+      const p2 = { page };
+      nothingSelected = true;
+      place = { media: TALK, pieces: [{ inPoint: 0, outPoint: 10, seqStart: 40, speed: 1 }] };
+      await p2.page.evaluate(() => { window.CP_DEBUG_EXT.sync.setTranscript({}); window.CP_DEBUG_EXT.sync.findTranscript(); });
+      let t2 = null;
+      for (let i = 0; i < 100; i++) { t2 = await T(p2.page); if (t2.src === 'cutpilot-cache') break; await new Promise(res => setTimeout(res, 100)); }
+      C.check('reopened with nothing selected: the saved transcript is found from the sequence\'s recording (seven at 47 s)',
+        t2 && t2.src === 'cutpilot-cache' && near((word(t2, 'seven') || {}).start, 47), JSON.stringify({ src: t2 && t2.src, seven: fmt(t2 && word(t2, 'seven')), bar: await p2.page.evaluate(() => document.getElementById('tr-text').textContent) }));
+      nothingSelected = false;
       C.check('the panel asked Premiere where THIS recording sits now (not just the selected clip)',
         calls.some(c => c.fn === 'CP_getTranscribeSource' && c.args && c.args.onlyMediaPath === TALK), calls.map(c => c.fn).join(', ').slice(0, 300));
       await page.close();

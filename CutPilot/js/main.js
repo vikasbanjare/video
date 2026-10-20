@@ -3215,6 +3215,7 @@
      An auto-scan clears the manual flag (so the focus rescan can keep it
      fresh); only show the "looking…" placeholder when nothing's chosen yet
      so a background rescan doesn't flicker an already-confirmed transcript. */
+  var _noSelLooked = {};
   function findTranscript() {
     // NON-DESTRUCTIVE rescan. This used to clear the manual flag + word timing
     // at ENTRY and then re-decide — so every panel focus could rip out the
@@ -3242,7 +3243,17 @@
       function (r) { (r.items || []).forEach(function (it) { add({ label: it.name, path: it.path, base: 1e14, src: 'project' }); }); },
       function () { /* Premiere not connected or project not open — keep searching */ }
     ).then(function () {
-      return CPBridge.callHost('CP_getSelectedClip').catch(function () { return null; });
+      // no clip selected (the project was just opened): the recording
+      // Transcribe would hear. Only the selected clip was looked at, so a
+      // reopened project said "No transcript for this video" over its own
+      // saved transcript
+      return CPBridge.callHost('CP_getSelectedClip').catch(function () {
+        // once per sequence: it walks the timeline and the scan runs on every focus
+        var k = envKey(state.env) || '-';
+        if (curProtected || _noSelLooked[k]) return null;
+        _noSelLooked[k] = true;
+        return CPBridge.callHost('CP_getTranscribeSource', {}).then(function (r) { return r && r.clip ? { clip: r.clip } : null; }, function () { return null; });
+      });
     }).then(function (sel) {
       var saved = Promise.resolve();
       if (sel && sel.clip && sel.clip.mediaPath && pathMod) {
@@ -3879,34 +3890,52 @@
         '(e.g. "Aaj hum baat karenge ki investing kaise start karein"). Never use Devanagari. Keep English words people normally say in English (investing, market, video) as they are. ' +
         'If a line is already Hindi in Devanagari, keep the same words and only change the letters. ' : '') +
       (vocab ? ('Keep these names/terms correct (do not translate them): ' + vocab + '. ') : '') +
-      'Return JSON {"lines":[...]} containing EXACTLY ' + lines.length + ' strings — one translation per input line, same order. ' +
-      'Never merge, split, add, or drop lines. Keep each translation natural, concise and suitable for on-screen captions. Output ONLY the translated text, no notes.';
-    // in parts of 120 lines: a 1–2 hour podcast is ~2,000 lines, more than one
-    // answer can hold — the end came back missing and silently untranslated
-    var PART = 120, tl = [], shifted = 0, parts = [];
-    for (var pi = 0; pi < lines.length; pi += PART) parts.push(lines.slice(pi, pi + PART));
-    var sysFor = function (n) { return sys.replace('EXACTLY ' + lines.length + ' strings', 'EXACTLY ' + n + ' strings'); };
-    parts.reduce(function (chain, part, k) {
-      return chain.then(function () {
-        if (parts.length > 1) setTranscriptBar('', '🌐', 'Translating to ' + name + '… part ' + (k + 1) + ' of ' + parts.length, null);
-        return asrRetry(function () {
-          return groqChat([{ role: 'system', content: sysFor(part.length) }, { role: 'user', content: JSON.stringify({ lines: part }) }], { json: true, temperature: 0.2 });
-        }, null).then(function (content) {
-          var parsed = parseAiJson(content);
-          if (!parsed) { try { diag('ai', 'translation answer not readable: ' + String(content).slice(0, 200)); } catch (eD) {} throw new Error('Translation came back malformed.'); }
-          if (Array.isArray(parsed)) parsed = { lines: parsed };
-          var got = parsed.lines || parsed.translations || parsed.result || [];
-          if (!got.length) throw new Error('No translation returned.');
-          if (got.length !== part.length) shifted++;
-          for (var j = 0; j < part.length; j++) tl.push(got[j] != null ? got[j] : null);
+      'The input is JSON {"lines":[{"i":0,"t":"…"}, …]}. Return JSON {"lines":[{"i":0,"t":"translation"}, …]} with one entry for EVERY input i, ' +
+      'keeping its i. Never merge, split, add, or drop lines. Keep each translation natural, concise and suitable for on-screen captions. Output ONLY the translated text, no notes.';
+    // Numbered lines, in parts of 60. A plain list had to come back EXACTLY as
+    // long as it went: on the owner's 8-minute talk two of three parts came
+    // back a few lines short, so 121 of 209 lines stayed English and the rest
+    // of those parts sat one line off their own time. By number, a line that
+    // comes back is always on its own time, and the ones missing are asked
+    // for once more.
+    var PART = 60, tl = [];
+    function ask(idx) {
+      var parts = [];
+      for (var pi = 0; pi < idx.length; pi += PART) parts.push(idx.slice(pi, pi + PART));
+      return parts.reduce(function (chain, part, k) {
+        return chain.then(function () {
+          if (parts.length > 1) setTranscriptBar('', '🌐', 'Translating to ' + name + '… part ' + (k + 1) + ' of ' + parts.length, null);
+          return asrRetry(function () {
+            return groqChat([{ role: 'system', content: sys }, { role: 'user', content: JSON.stringify({ lines: part.map(function (i) { return { i: i, t: lines[i] }; }) }) }],
+              { json: true, temperature: 0.2, maxTokens: 6000 });
+          }, null).then(function (content) {
+            var parsed = parseAiJson(content);
+            if (Array.isArray(parsed)) parsed = { lines: parsed };
+            var got = parsed && (parsed.lines || parsed.translations || parsed.result);
+            if (!got || !got.length) { try { diag('ai', 'translation answer not readable: ' + String(content).slice(0, 200)); } catch (eD) {} return; }
+            if (typeof got[0] === 'string') {
+              // a plain list is only trusted when every line is there (else it is shifted)
+              if (got.length === part.length) part.forEach(function (i, j) { if (got[j]) tl[i] = got[j]; });
+              return;
+            }
+            got.forEach(function (g) { var i = parseInt(g && g.i, 10); if (part.indexOf(i) !== -1 && g.t != null && String(g.t).trim()) tl[i] = String(g.t); });
+          }, function (e) { lastErr = e; try { diag('ai', 'translation part failed: ' + (e && e.message)); } catch (eD) {} });
         });
-      });
-    }, Promise.resolve())
+      }, Promise.resolve());
+    }
+    function missing() { var m = []; for (var i = 0; i < lines.length; i++) if (tl[i] == null) m.push(i); return m; }
+    var all = lines.map(function (x, i) { return i; }), shifted = 0, lastErr = null;
+    ask(all)
+      .then(function () { var m = missing(); return m.length && m.length < lines.length ? ask(m) : null; })
+      .then(function () {
+        shifted = missing().length;
+        if (shifted === lines.length) throw lastErr || new Error('No translation returned.');
+      })
       .then(function () {
         var out = cues.map(function (c, i) { return { start: c.start, end: c.end, text: (tl[i] != null ? String(tl[i]) : c.text) }; });
         installNewTranscript(out, 'Translated → ' + name + ' (' + out.length + ' lines)', 'translated-' + (code || 'xx'));
         setTranscriptBar('ok', '✅', 'Translated to ' + name + ' — ' + out.length + ' lines. Now add captions.', 'Change');
-        var warn = shifted ? ' ⚠️ ' + shifted + ' part(s) came back with a different number of lines — check the wording there.' : '';
+        var warn = shifted ? ' ⚠️ ' + shifted + ' line(s) did not come back and stay as they were — check the wording there.' : '';
         toast('🌐 Translated to ' + name + '. The words are now in ' + name + ' — add captions or Export SRT. (Word-by-word highlight is off for translations.)' + warn);
       })
       .catch(function (e) { setTranscriptBar('ok', '✅', 'Words ready — not translated this time', 'Change'); toast('Translate failed: ' + e.message, true); })
@@ -3923,8 +3952,9 @@
     state.aiBusy = true;
     setTranscriptBar('', '🗣️', 'Detecting speakers across ' + lines.length + ' lines…', null);
     var sys = 'You label subtitle lines with who is speaking. Decide how many distinct speakers there are (usually 1–4) using conversational cues ' +
-      '(questions vs answers, pronouns, topic/turn shifts). If it is clearly one person, label every line 1. ' +
-      'Return JSON {"speakers":[...]} with EXACTLY ' + lines.length + ' integers (1-based), one per input line, same order.';
+      '(questions vs answers, pronouns, topic/turn shifts). If it is clearly one person, everything is speaker 1. ' +
+      'Lines are numbered from 0. Return JSON {"changes":[{"i":0,"speaker":1}, …]} listing ONLY line 0 and every line where ' +
+      'a different person starts speaking (speakers numbered from 1). EXACTLY ' + lines.length + ' lines are given.';
     // in parts of 150 lines (a long podcast is more than one answer holds),
     // each shown the last lines before it WITH their labels, so "Speaker 1"
     // stays the same person all through
@@ -3936,14 +3966,23 @@
         if (sparts.length > 1) setTranscriptBar('', '🗣️', 'Detecting speakers… part ' + (k + 1) + ' of ' + sparts.length, null);
         var ctx = [];
         for (var c0 = Math.max(0, from - 8); c0 < from; c0++) ctx.push({ speaker: sp[c0] || 1, line: lines[c0] });
-        var sysK = sys.replace('EXACTLY ' + lines.length + ' integers', 'EXACTLY ' + part.length + ' integers') +
+        var sysK = sys.replace('EXACTLY ' + lines.length + ' lines', 'EXACTLY ' + part.length + ' lines') +
           (ctx.length ? ' The lines just before these, already labelled, are given as "before": keep the SAME numbers for the same people.' : '');
         return asrRetry(function () {
-          return groqChat([{ role: 'system', content: sysK }, { role: 'user', content: JSON.stringify(ctx.length ? { before: ctx, lines: part } : { lines: part }) }], { json: true, temperature: 0 });
+          // only the turns come back: one number per line (150 of them) was
+          // cut off by the reply limit on the owner's 8-minute talk
+          return groqChat([{ role: 'system', content: sysK }, { role: 'user', content: JSON.stringify(ctx.length ? { before: ctx, lines: part } : { lines: part }) }], { json: true, temperature: 0, maxTokens: 1500 });
         }, null).then(function (content) {
           var parsed = parseAiJson(content);
           if (!parsed) { try { diag('ai', 'speaker answer not readable: ' + String(content).slice(0, 200)); } catch (eD) {} throw new Error('Speaker data came back malformed.'); }
           var got = Array.isArray(parsed) ? parsed : (parsed.speakers || parsed.labels || []);
+          var turns = !Array.isArray(parsed) && Array.isArray(parsed.changes) ? parsed.changes : null;
+          if (turns) {
+            // a turn list → one label per line: each line keeps the last turn's speaker
+            got = []; var cur = (sp.length ? sp[sp.length - 1] : 1);
+            var at = {}; turns.forEach(function (t) { var i = parseInt(t && t.i, 10), n = parseInt(t && t.speaker, 10); if (i >= 0 && n >= 1) at[i] = n; });
+            for (var ti = 0; ti < part.length; ti++) { if (at[ti]) cur = at[ti]; got.push(cur); }
+          }
           if (!got.length) throw new Error('No speaker labels returned.');
           for (var j = 0; j < part.length; j++) sp.push(got[j] != null ? got[j] : (sp[sp.length - 1] || 1));
         });

@@ -5,6 +5,10 @@ What I do all night: retest every Pulse feature in the owner's real Premiere
 on the old code, build, install, verify, commit and push. Newest entries on top.
 
 ## Queue
+0. From the stopped full battery (64/190 gates): check "Premium lines are
+   measured at least as wide…" and "punchy @1080x1920 breaks before hai";
+   the rest were this Mac's environment (fontconfig list, speech model
+   present, network-download tests, quotepill sim).
 1. Full test battery on this Mac — triage every failure (machine vs real bug).
 2. Captions — the styles still 7–10% apart; word timing on line-only
    transcripts; Premiere captions (.srt track); Exact look on a long video.

@@ -47,12 +47,22 @@ async function run() {
       }
       if (/speaking/.test(body.messages[0].content)) {
         spReqs.push({ n: user.lines.length, before: (user.before || []).length });
-        return JSON.stringify({ choices: [{ message: { content: JSON.stringify({ speakers: user.lines.map((l, i) => (+l.split(' ')[1] % 2) + 1) }) } }] });
+        // a new person every 10 lines. A label per line is what got cut off by
+        // the reply limit on the owner's 8-minute talk ('{"speakers":[1, 1, …'):
+        // only the turns fit, so anything else gets the cut-off answer
+        if (!/"changes"/.test(body.messages[0].content)) return JSON.stringify({ choices: [{ message: { content: '{"speakers":[1, 1, 1, 1,' } }] });
+        const who = (l) => (Math.floor(+l.split(' ')[1] / 10) % 2) + 1;
+        const changes = user.lines.map((l, i) => ({ i, speaker: who(l) })).filter((c, i) => i === 0 || c.speaker !== who(user.lines[i - 1]));
+        return JSON.stringify({ choices: [{ message: { content: JSON.stringify({ changes }) } }] });
       }
       sizes.push(user.lines.length);
       if (mode === 'busy' && !busyOnce) { busyOnce = true; return JSON.stringify({ error: { message: 'Rate limit reached. Please try again in 1s.', code: 'rate_limit_exceeded' } }); }
-      let out = user.lines.map(l => l.replace('hello', 'नमस्ते'));
-      if (mode === 'short' && sizes.length === 2) out = out.slice(0, out.length - 5);
+      // numbered lines in, numbered lines back
+      let out = user.lines.map(l => ({ i: l.i, t: l.t.replace('hello', 'नमस्ते') }));
+      // the owner's 8-minute talk: a part came back 5 lines short (the first time)
+      if (mode === 'short' && sizes.length === 2) out = out.filter((x, k) => k % 12 !== 3);
+      // …or as a plain list a few lines short, which can't be trusted to line up
+      if (mode === 'plain' && sizes.length === 2) return JSON.stringify({ choices: [{ message: { content: JSON.stringify({ lines: out.slice(5).map(x => x.t) }) } }] });
       return JSON.stringify({ choices: [{ message: { content: JSON.stringify({ lines: out }) } }] });
     };
     const o = await H.openPanel(browser, { host: () => ({}), curl, settings: { groqKey: 'gsk-test-key' } });
@@ -76,13 +86,16 @@ async function run() {
     }
     let r = await translate('ok');
     const allDone = r.cues.length === N && r.cues.every((c, i) => c[1] === 'line ' + i + ' नमस्ते' && Math.abs(c[0] - i * 3) < 0.01);
-    C.check('A. 300 lines go in parts of at most 120 (' + sizes.join(' + ') + ') and every line comes back translated, in order, on its own time', sizes.length >= 3 && sizes.every(n => n <= 120) && allDone,
+    C.check('A. 300 lines go in numbered parts of at most 60 (' + sizes.join(' + ') + ') and every line comes back translated, in order, on its own time', sizes.length >= 5 && sizes.every(n => n <= 60) && allDone,
       JSON.stringify({ sizes, n: r.cues.length, first: r.cues[0], last: r.cues[r.cues.length - 1], toast: r.toast }));
     r = await translate('short');
-    const p2 = r.cues.slice(120, 240), shortKept = p2.slice(-5).every(c => /hello/.test(c[1])), othersDone = r.cues.slice(0, 120).every(c => /नमस्ते/.test(c[1])) && r.cues.slice(240).every(c => /नमस्ते/.test(c[1]));
-    C.check('B. a part that comes back short keeps its own lines and says so; the others are translated', r.cues.length === N && shortKept && othersDone && /1 part\(s\) came back/.test(r.toast), r.toast);
+    C.check('B. lines missing from a part are asked for again (' + sizes.join(' + ') + ') and every line ends up translated on its own time',
+      sizes[sizes.length - 1] === 5 && r.cues.length === N && r.cues.every((c, i) => c[1] === 'line ' + i + ' नमस्ते') && !/⚠️/.test(r.toast), JSON.stringify({ sizes, toast: r.toast }));
+    r = await translate('plain');
+    C.check('B2. a part answered as a shorter plain list is never laid one line off: it is asked again, every line on its own time',
+      r.cues.every((c, i) => c[1] === 'line ' + i + ' नमस्ते'), JSON.stringify({ sizes, bad: r.cues.filter((c, i) => c[1] !== 'line ' + i + ' नमस्ते').slice(0, 3) }));
     r = await translate('busy');
-    C.check('C. a busy reply on one part is tried again (' + sizes.length + ' requests for 3 parts)', sizes.length === 4 && r.cues.every(c => /नमस्ते/.test(c[1])), JSON.stringify({ sizes, toast: r.toast }));
+    C.check('C. a busy reply on one part is tried again (' + sizes.length + ' requests for 5 parts)', sizes.length === 6 && r.cues.every(c => /नमस्ते/.test(c[1])), JSON.stringify({ sizes, toast: r.toast }));
     // D. speakers on 330 lines
     const sp = await page.evaluate(async (srt) => {
       const many = srt + '\n' + Array.from({ length: 30 }, (_, k) => (301 + k) + '\n00:15:' + String(k).padStart(2, '0') + ',000 --> 00:15:' + String(k).padStart(2, '0') + ',900\nline ' + (300 + k) + ' hello\n').join('\n');
@@ -91,10 +104,12 @@ async function run() {
       window.CP_DEBUG_EXT.sync.detectSpeakers();
       for (let i = 0; i < 300; i++) { await new Promise(r => setTimeout(r, 100)); if (/Speaker-labelled/.test(String(window.CP_DEBUG_EXT.sync.transcript().label || ''))) break; }
       const t = window.CP_DEBUG_EXT.sync.transcript();
-      return { label: t.label, n: (t.cues || []).length, labelled: (t.cues || []).filter(c => /^Speaker \d/.test(c.text)).length };
+      const cues = t.cues || [];
+      return { label: t.label, n: cues.length, labelled: cues.filter(c => /^Speaker \d/.test(c.text)).length,
+               right: cues.every((c, i) => (i % 10 === 0) === /^Speaker \d/.test(c.text) && (i % 10 ? true : c.text.indexOf('Speaker ' + ((Math.floor(i / 10) % 2) + 1) + ':') === 0)) };
     }, srt);
-    C.check('D. speakers on 330 lines go in parts, each shown the labelled lines before it, every line labelled (' + JSON.stringify(spReqs) + ')',
-      spReqs.length >= 3 && spReqs.every(q => q.n <= 150) && spReqs.slice(1).every(q => q.before === 8) && sp.n === 330 && sp.labelled > 100, JSON.stringify(sp));
+    C.check('D. speakers on 330 lines go in parts, each shown the labelled lines before it; only the turns come back and every turn is labelled right (' + JSON.stringify(spReqs) + ')',
+      spReqs.length >= 3 && spReqs.every(q => q.n <= 150) && spReqs.slice(1).every(q => q.before === 8) && sp.n === 330 && sp.labelled === 33 && sp.right, JSON.stringify(sp));
     // E. ✨ AI fix
     async function proofread(m) {
       mode = m; pfSizes = [];

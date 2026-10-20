@@ -2633,8 +2633,8 @@ const MUTANTS = [
   {
     name: 'v31-translate-one-request',
     file: 'CutPilot/js/main.js',
-    find: '    var PART = 120, tl = [], shifted = 0, parts = [];',
-    repl: '    var PART = 100000, tl = [], shifted = 0, parts = [];',
+    find: '    var PART = 60, tl = [];',
+    repl: '    var PART = 100000, tl = [];',
     gate: 'CutPilot/test/gates/translate-long.js',
     why: 'a 2-hour podcast is translated in one giant request'
   },
@@ -2645,6 +2645,30 @@ const MUTANTS = [
     repl: '    var SPART = 100000, sp = [], sparts = [];',
     gate: 'CutPilot/test/gates/translate-long.js',
     why: 'speakers of a 2-hour podcast in one giant request'
+  },
+  {
+    name: 'v33-translate-shifted-list',
+    file: 'CutPilot/js/main.js',
+    find: '              if (got.length === part.length) part.forEach(function (i, j) { if (got[j]) tl[i] = got[j]; });',
+    repl: '              part.forEach(function (i, j) { if (got[j]) tl[i] = got[j]; });',
+    gate: 'CutPilot/test/gates/translate-long.js',
+    why: 'a short plain list is laid one line off its time'
+  },
+  {
+    name: 'v33-translate-no-second-ask',
+    file: 'CutPilot/js/main.js',
+    find: '      .then(function () { var m = missing(); return m.length && m.length < lines.length ? ask(m) : null; })',
+    repl: '      .then(function () { return null; })',
+    gate: 'CutPilot/test/gates/translate-long.js',
+    why: 'lines missing from a part stay English'
+  },
+  {
+    name: 'v33-reopened-no-saved-transcript',
+    file: 'CutPilot/js/main.js',
+    find: '        if (curProtected || _noSelLooked[k]) return null;',
+    repl: '        return null;',
+    gate: 'CutPilot/test/gates/caption-sync-placement.js',
+    why: 'a reopened project says No transcript over its own saved one'
   },
   {
     name: 'v31-proofread-shifted',
