@@ -32,7 +32,7 @@ for (const t of [path.join(PANEL_DIR, '..', 'node_modules', 'puppeteer'), '/home
   try { pptr = require(t); break; } catch (e) {}
 }
 if (!pptr) { console.log('  ? no puppeteer — retakes panel gate SKIPPED (node tools/doctor.js)'); process.exit(2); }
-const CHROME = ['/opt/pw-browsers/chromium', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(p => fs.existsSync(p));
+const CHROME = [process.env.CP_CHROMIUM, '/opt/pw-browsers/chromium', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(p => p && fs.existsSync(p));
 if (!CHROME) { console.log('  ? no Chromium — retakes panel gate SKIPPED (node tools/doctor.js)'); process.exit(2); }
 
 let failed = 0, passed = 0;

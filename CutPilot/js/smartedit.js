@@ -297,6 +297,12 @@
         if (at < 0) continue;
         from = at; to = at + said.length - 1;
       }
+      // a "filler" that is part of a phrase with meaning stays, whatever the
+      // AI says: "But you know what? At least four…", "like 10 people" (about)
+      var nx = ws[to + 1] ? nw(ws[to + 1].text) : '';
+      var cutTxt = []; for (var q2 = from; q2 <= to; q2++) cutTxt.push(nw(ws[q2].text));
+      cutTxt = cutTxt.join(' ');
+      if ((cutTxt === 'you know' && nx === 'what') || (cutTxt === 'like' && /^(\d|one|two|three|four|five|ten|a|about|half)/.test(nx))) continue;
       var conf = (c.confidence != null) ? parseFloat(c.confidence) : 1;
       if (isNaN(conf)) conf = 1;
       if (conf > 1 && conf <= 100) conf = conf / 100;

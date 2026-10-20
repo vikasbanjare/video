@@ -283,6 +283,7 @@
       var closed = PAUSE_PUNCT.test(last.raw);   // "you know, the thing is…" — the comma ends it
       if (QUESTION_PUNCT.test(last.raw)) return true;                              // "isko kya bolte hain?"
       if (n === 1 && first === 'like' && LIKE_AFTER[prev]) return true;             // "I like it"
+      if (n === 1 && first === 'like' && /^(\d|one|two|three|four|five|six|seven|eight|nine|ten|hundred|half|about|a)$|^\d/.test(next)) return true;   // "like one in ten" = about
       if (n === 1 && (first === 'matlab' || first === 'matlb' || first === clean('मतलब')) &&
           (MATLAB_AFTER[prev] || (!closed && MATLAB_BEFORE[next]))) return true;    // "iska matlab hai"
       if (n === 1 && (first === 'aa' || first === clean('आ')) && !closed && AA_BEFORE[next]) return true;   // "aa jao"
@@ -296,7 +297,11 @@
       var i = 0;
       while (i < ws.length) {
         var n = matchAt(ws, i, phrases);
-        if (!n && single[ws[i].tok]) n = 1;
+        // "Also cut like / so / actually" words: only where they stand apart
+        // (a pause or a comma each side) and are not doing a job ("I like it",
+        // "like one in ten", "so good") — the default discourse rule
+        var soft = FILLER_EXTRA[ws[i].tok] && !FILLER_WORDS[ws[i].tok];
+        if (!n && single[ws[i].tok] && (!soft || (!guarded(ws, i, 1) && (whole || (boundedLeft(ws, i) && boundedRight(ws, i)))))) n = 1;
         if (!n) {
           var d = matchAt(ws, i, dPhrases);
           if (!d && discourse[ws[i].tok]) d = 1;

@@ -42,6 +42,12 @@ console.log('AI parser: a cut lands on the words the AI names, not on a miscount
   check('words that are nowhere near the index: not cut at all', Array.isArray(r2) && r2.length === 0, spans(r2));
   const r3 = parse(JSON.stringify({ cuts: [{ from: oh, to: oh, category: 'filler' }] }), ws);
   check('an answer without the words still cuts by its index (older answers)', Array.isArray(r3) && r3.length === 1 && r3[0].text === 'oh,', spans(r3));
+  const yk = said.indexOf('you');
+  const r4 = parse(JSON.stringify({ cuts: [{ from: yk, to: yk + 1, words: 'you know', category: 'filler' }] }), ws);
+  check('"you know" in "you know what" is never cut as a filler', Array.isArray(r4) && r4.length === 0, spans(r4));
+  const ws2 = 'had 400 million downloads, like one out of 10 people like um'.split(' ').map((t, i) => ({ text: t, start: i, end: i + 0.8 }));
+  const r5 = parse(JSON.stringify({ cuts: [{ from: 4, to: 4, words: 'like', category: 'filler' }, { from: 10, to: 10, words: 'like', category: 'filler' }] }), ws2);
+  check('"like one out of 10" (about) stays; a "like" before "um" is cut', Array.isArray(r5) && r5.length === 1 && r5[0].start === 10, spans(r5));
   const p = S.buildCleanupPrompt(ws, {});
   check('the prompt asks for the exact words and says "you know what?" is not a filler', /"words":"<the exact words/.test(p.user) && /you know what\?/.test(p.user));
 }

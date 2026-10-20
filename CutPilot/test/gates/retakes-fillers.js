@@ -147,5 +147,12 @@ console.log('fillers: default phrases do not cut real English');
   check('…the opt-in "may catch real words" mode still offers them', r.count === 1 && r.ranges[0].word === 'i mean', show(r));
 }
 
+// the opt-in "Also cut like / so / actually": only where the word stands apart
+[['I like it a lot', '[]'], ['At least four, like one out of 10 people', '[]'], ['I actually went there', '[]'],
+ ['it is, like, so good', '["like"]'], ['we, um, actually, went there', '["um","actually"]']].forEach(([text, want]) => {
+  const r = T.findFillerRanges([{ start: 0, end: 4, text }], { extra: true });
+  check('"Also cut like / so / actually" on "' + text + '" → ' + want, JSON.stringify(words(r)) === want, show(r));
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
