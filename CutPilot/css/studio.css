@@ -172,3 +172,8 @@ body.theme-light .toast.err { background: #FFF1F0; color: #8E1B14; border-color:
 
 /* Transcribe: the In/Out note turns into a highlighted line while In/Out is set */
 #tr-inout-now.on { color: var(--accent, #6b8cff); }
+
+/* 📣 Publish kit: each part with its own Copy */
+.pk-block { margin-top: 10px; }
+.pk-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pk-line { margin: 4px 0 0; white-space: pre-wrap; word-break: break-word; }

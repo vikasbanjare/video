@@ -3214,7 +3214,25 @@ const MUTANTS = [
     repl: '',
     gate: 'CutPilot/test/gates/studio-sound.js',
     why: 'the voice is never balanced'
+  },
+  // v69: 📣 Publish kit
+  {
+    name: 'v69-publish-no-chapters',
+    file: 'CutPilot/js/publish.js',
+    find: "    if (chapters) parts.push('Chapters\\n' + chapters);",
+    repl: '',
+    gate: 'CutPilot/test/gates/publish-kit.js',
+    why: 'the description leaves out the chapters'
+  },
+  {
+    name: 'v69-publish-only-start',
+    file: 'CutPilot/js/publish.js',
+    find: '    for (var i = 0; i < keep; i++) out.push(lines[Math.floor(i * step)]);',
+    repl: '    for (var i = 0; i < keep; i++) out.push(lines[i]);',
+    gate: 'CutPilot/test/gates/publish-kit.js',
+    why: 'a long podcast is described from its first minutes only'
   }
+
 
 
 

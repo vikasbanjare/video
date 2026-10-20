@@ -1,10 +1,18 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.68** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.69** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.69 — 📣 Publish kit (cloud session)
+- Chapters page, card #pk-card (js/publish.js, window.CPPublish): one AI call
+  (CPKit.aiChat, JSON) from the transcript (digest: every line, or evenly
+  spread lines across the whole video up to 12k chars) + the chapters shown
+  in #ch-out → 3 titles, description (+ "Chapters" + hashtags appended),
+  hashtags, tags, pinned comment, each with Copy. Same language/script as
+  spoken. Gate publish-kit (fake AI).
 
 ### v0.10.68 — 🎚 Studio sound (cloud session)
 - Clean up page, card #ss-card (js/studio.js, window.CPStudio): per source
