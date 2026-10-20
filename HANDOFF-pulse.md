@@ -1,10 +1,23 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.72** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.73** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.73 — 🎞 B-roll on keywords (cloud session)
+- Clean up page, card #br-card (js/broll.js, window.CPBroll): the owner's
+  folder (settings.brollDir, CPKit.pickFolder), files named by what they show
+  (keywordsOf: up to 3 words, filler names/numbers out, Devanagari kept).
+  plan(): where the first word is said (or a longer form ≥5 letters), the
+  rest of a multi-word name within 4 words, ≥8 s between B-rolls, same file
+  not within 60 s, 2.5 s each (#br-dur). Video B-roll: a silent copy of its
+  first seconds (ffmpeg -an), size probed for fill. Host CP_placeBroll: one
+  new video track on top (QE addTracks(1, n, 0)), each at its time/length,
+  Motion Scale = max(W/w, H/h). NOT verified in Premiere.
+- (The older "B-roll ideas" button on Transcribe — AI suggestions — is
+  #btn-broll; this one is #btn-broll-add.) Gate broll-keywords.
 
 ### v0.10.72 — 🎬 Make all shorts at once + Media Encoder (cloud session)
 - renderShorts' lead card: "Make all N shorts" (#btn-sh-all, 2+ moments) →

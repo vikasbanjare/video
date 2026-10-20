@@ -2791,6 +2791,57 @@ function CP_studioSoundPlace(argsJson) {
   } catch (e) { return CP_fail(e.message); }
 }
 
+/* 🎞 B-roll on keywords: each picture / silent clip on ONE new video track at
+   the top, at its time, for its length, scaled to fill the frame (when its
+   size is known). args: { items:[{ path, at, dur, still, w, h }] }
+   → { placed, track (V number), scaled, missed } */
+function CP_placeBroll(argsJson) {
+  try {
+    var args = JSON.parse(argsJson), items = args.items || [], i;
+    var seq = CP_activeSequence();
+    if (!seq) return CP_fail('Open your sequence first.');
+    if (!items.length) return CP_fail('No B-roll to place.');
+    var bin = app.project.rootItem.createBin('Pulse B-roll ' + ((new Date()).getTime() % 100000));
+    var paths = [], seenP = {};
+    for (i = 0; i < items.length; i++) { var kp = CP_normPath(items[i].path); if (!seenP[kp]) { seenP[kp] = 1; paths.push(items[i].path); } }
+    try { app.project.importFiles(paths, true, bin, false); } catch (eImp) { return CP_fail('Premiere could not import the B-roll: ' + eImp.message); }
+    var byPath = {};
+    for (var c = 0; c < bin.children.numItems; c++) {
+      var ch = bin.children[c], mp = null;
+      try { mp = ch.getMediaPath(); } catch (eMp) { mp = null; }
+      if (mp) byPath[CP_normPath(mp)] = ch;
+    }
+    // a new, empty track above everything (B-roll covers the picture, never a caption track below it)
+    var before = seq.videoTracks.numTracks;
+    try { var q = CP_qeSequence(); if (q && q.addTracks) q.addTracks(1, before, 0); } catch (eAdd) {}
+    seq = CP_activeSequence() || seq;
+    var ti = seq.videoTracks.numTracks - 1, tr = seq.videoTracks[ti];
+    if (!tr || seq.videoTracks.numTracks <= before || tr.clips.numItems > 0) return CP_fail('Premiere would not add a new video track for the B-roll. Add one at the top by hand and try again.');
+    var W = 0, H = 0;
+    try { W = seq.frameSizeHorizontal; H = seq.frameSizeVertical; } catch (eFs) {}
+    var placed = 0, scaled = 0, missed = 0;
+    for (i = 0; i < items.length; i++) {
+      var it = items[i], pi = byPath[CP_normPath(it.path)];
+      if (!pi) { missed++; continue; }
+      try {
+        pi.setInPoint(CP_ticksFromSeconds(0), 4);
+        pi.setOutPoint(CP_ticksFromSeconds(it.dur), 4);
+        try { tr.overwriteClip(pi, it.at); } catch (eS) { tr.overwriteClip(pi, CP_ticksFromSeconds(it.at)); }
+        placed++;
+      } catch (eP) { missed++; continue; }
+      if (it.w > 0 && it.h > 0 && W > 0 && H > 0) {
+        var clip = null;
+        for (var k = 0; k < tr.clips.numItems; k++) { var cl = tr.clips[k]; if (cl && Math.abs(cl.start.seconds - it.at) < 0.05) clip = cl; }
+        var sc = null;
+        try { sc = clip ? CP_findProperty(CP_findComponent(clip, 'Motion'), 'Scale') : null; } catch (eF) { sc = null; }
+        if (sc) { try { sc.setValue(Math.round(Math.max(W / it.w, H / it.h) * 10000) / 100, true); scaled++; } catch (eV) {} }
+      }
+    }
+    for (var key in byPath) if (byPath.hasOwnProperty(key)) { try { byPath[key].clearInPoint(4); byPath[key].clearOutPoint(4); } catch (eCl) {} }
+    return CP_ok({ placed: placed, track: ti + 1, scaled: scaled, missed: missed });
+  } catch (e) { return CP_fail(e.message); }
+}
+
 function CP_placeSfx(argsJson) {
   try {
     var args = JSON.parse(argsJson);

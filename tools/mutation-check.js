@@ -3290,7 +3290,33 @@ const MUTANTS = [
     repl: '',
     gate: 'CutPilot/test/gates/shorts-make-all.js',
     why: 'the shorts wait in Media Encoder, never exported'
+  },
+  // v73: 🎞 B-roll on keywords
+  {
+    name: 'v73-broll-no-gap',
+    file: 'CutPilot/js/broll.js',
+    find: '      if (ws[i].start < lastEnd + gap) continue;',
+    repl: '',
+    gate: 'CutPilot/test/gates/broll-keywords.js',
+    why: 'B-roll piles up back to back'
+  },
+  {
+    name: 'v73-broll-with-sound',
+    file: 'CutPilot/js/broll.js',
+    find: "'-t', String(it.dur + 0.5), '-an', ",
+    repl: "'-t', String(it.dur + 0.5), ",
+    gate: 'CutPilot/test/gates/broll-keywords.js',
+    why: "a B-roll clip's own sound plays over the podcast"
+  },
+  {
+    name: 'v73-broll-on-footage',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '    try { var q = CP_qeSequence(); if (q && q.addTracks) q.addTracks(1, before, 0); } catch (eAdd) {}',
+    repl: '',
+    gate: 'CutPilot/test/gates/broll-keywords.js',
+    why: 'B-roll goes onto an existing track instead of its own'
   }
+
 
 
 

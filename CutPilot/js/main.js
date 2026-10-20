@@ -20725,6 +20725,8 @@
     settings: function () { return settings; }, saveSettings: saveSettings,
     env: function () { return state.env || null; },
     transcriptLabel: function () { return state.transcript ? state.transcript.label : null; },
+    words: function () { return state.transcriptWords || null; },
+    pickFolder: pickFolder,
     // 🏷 Brand kit on the style being edited: the brand font, the brand
     // colour on the spoken word, the brand words coloured
     applyBrand: function (k) {
