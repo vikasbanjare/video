@@ -2665,7 +2665,7 @@ const MUTANTS = [
   {
     name: 'v33-reopened-no-saved-transcript',
     file: 'CutPilot/js/main.js',
-    find: '        if (curProtected || _noSelLooked[k]) return null;',
+    find: '        if (_seqMain[k]) return { clip: _seqMain[k] };',
     repl: '        return null;',
     gate: 'CutPilot/test/gates/caption-sync-placement.js',
     why: 'a reopened project says No transcript over its own saved one'

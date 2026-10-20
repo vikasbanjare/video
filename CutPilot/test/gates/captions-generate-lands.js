@@ -231,7 +231,10 @@ function pageInstall() {
       let lo = b, hi = b + 1;
       while (lo > 0 && C.lineBreakCost(words[lo - 1].text, words[lo].text, ctx) === Infinity) lo--;
       while (hi + 1 < words.length && C.lineBreakCost(words[hi].text, words[hi + 1].text, ctx) === Infinity) hi++;
-      chainFits[b] = R.wordsFit(st, op.width, op.height, words.slice(lo, hi + 1).map(w => w.text));
+      // measured the way the caption is drawn: a static caption (no word lit
+      // one at a time) draws every punchy word big at once
+      const isStatic = fr.every(f => f.active == null);
+      chainFits[b] = R.wordsFit(st, op.width, op.height, words.slice(lo, hi + 1).map(w => w.text), isStatic ? { wordSync: false } : null);
     }
     return {
       env: e, size: st.size, minSize: st.minSize, strokeWidth: (st.stroke && st.strokeWidth) ? st.strokeWidth : 0,

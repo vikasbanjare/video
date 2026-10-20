@@ -79,11 +79,11 @@ async function openPanel(browser, cfg) {
   const calls = [], spawns = [], procs = {};
   page.on('pageerror', (e) => calls.push({ fn: '__pageerror', args: e.message }));
 
-  await page.exposeFunction('__hostCall', (fn, argJson) => {
+  await page.exposeFunction('__hostCall', async (fn, argJson) => {
     let args = null; try { args = JSON.parse(argJson); } catch (e) { args = argJson; }
     calls.push({ fn, args });
     try {
-      const r = cfg.host ? cfg.host(fn, args) : null;
+      const r = cfg.host ? await cfg.host(fn, args) : null;   // a promise = a slow Premiere
       return JSON.stringify(Object.assign({ ok: true }, r || {}));
     } catch (e) {
       return JSON.stringify({ ok: false, error: e.message });

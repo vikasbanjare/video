@@ -20,6 +20,24 @@ on the old code, build, install, verify, commit and push. Newest entries on top.
 7. Viral edit — zoom punch-ins, sound effects.
 
 ## Done
+- 02:20 Round 2 (v0.10.75 → v0.10.78) — tested in Premiere through the panel's
+  local debug port (no clicks needed; the port is only in the installed copy):
+  · Detect speakers: the AI's one-number-per-line answer was cut off on 150
+    lines ("malformed"). Now only the turns come back → works in Premiere
+    (209 lines, 1 speaker). Gate translate-long D.
+  · Reopening the project said "No transcript for this video" over its own
+    saved transcript (only a SELECTED clip was looked up). Now the
+    sequence's recording is used when nothing is selected → "Using your
+    saved transcript" with 1,461 timed words. Gate caption-sync-placement.
+  · Translate left 121 of 209 lines English (parts came back short and were
+    laid off by a line). Numbered lines per request, emptied "…" lines and
+    missing lines asked again → 6 of 209 left. Gate translate-long A–B3.
+  · A slow transcript scan replaced a translation finished meanwhile. Gate F.
+  · B-roll ideas: local list drops "launched/launch/world/person"; with the
+    AI key, real shots with times ("Jensen Huang speaking (2:24)").
+    Gate broll-ai-shots.
+  · Chapters with AI titles verified ("AI Threat To Jobs / Jensen Wong On AI
+    Adoption / Learning To Think With AI").
 - 01:30 Round 1 (v0.10.67) — tested in Premiere on an 8-min webinar copy:
   · Viral hooks added NO markers (knew 10 fixed phrases). Now also marks the
     lines the Shorts finder would open on (question / bold claim / number /

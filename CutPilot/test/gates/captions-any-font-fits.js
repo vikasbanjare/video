@@ -112,7 +112,7 @@ const ENVS = [{ width: 1920, height: 1080, fps: 25 }, { width: 1080, height: 192
       const ctx = document.createElement('canvas').getContext('2d'), out = [];
       const has = (fam) => ['monospace', 'serif'].some(g => { ctx.font = '700 100px ' + g; const a = ctx.measureText('mmmmmmmmmmlli WWW 0123').width; ctx.font = '700 100px "' + fam + '", ' + g; return Math.abs(ctx.measureText('mmmmmmmmmmlli WWW 0123').width - a) > 0.5; });
       const lines = ['Namaste dosto aaj hum baat karenge', 'WWW.AIFLOHSTUDIO.COM/SUBSCRIBE', 'iiii llll mmmm wwww', 'आज हम अंतर्राष्ट्रीयकरण की बात'];
-      ['Courier 10 Pitch', 'DejaVu Sans', 'DejaVu Sans Mono', 'FreeMono', 'Liberation Sans', 'FreeSans', 'Liberation Mono'].filter(has).forEach(fam => {
+      ['Courier 10 Pitch', 'DejaVu Sans', 'DejaVu Sans Mono', 'FreeMono', 'Liberation Sans', 'FreeSans', 'Liberation Mono', 'Courier New', 'Menlo', 'Verdana', 'Arial', 'Georgia'].filter(has).forEach(fam => {
         const ps = fam.replace(/\s+/g, '') + '-Bold';
         lines.forEach(t => {
           ctx.font = '700 75px "' + fam + '", Arial, sans-serif';

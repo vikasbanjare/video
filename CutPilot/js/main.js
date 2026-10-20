@@ -3215,7 +3215,7 @@
      An auto-scan clears the manual flag (so the focus rescan can keep it
      fresh); only show the "looking…" placeholder when nothing's chosen yet
      so a background rescan doesn't flicker an already-confirmed transcript. */
-  var _noSelLooked = {};
+  var _seqMain = {};   // each sequence's main recording, for the scan when nothing is selected
   function findTranscript() {
     // NON-DESTRUCTIVE rescan. This used to clear the manual flag + word timing
     // at ENTRY and then re-decide — so every panel focus could rip out the
@@ -3248,11 +3248,12 @@
       // reopened project said "No transcript for this video" over its own
       // saved transcript
       return CPBridge.callHost('CP_getSelectedClip').catch(function () {
-        // once per sequence: it walks the timeline and the scan runs on every focus
+        // asked once per sequence (it walks the timeline and the scan runs on
+        // every focus), then remembered; not while the timeline is still empty
         var k = envKey(state.env) || '-';
-        if (curProtected || _noSelLooked[k]) return null;
-        _noSelLooked[k] = true;
-        return CPBridge.callHost('CP_getTranscribeSource', {}).then(function (r) { return r && r.clip ? { clip: r.clip } : null; }, function () { return null; });
+        if (curProtected) return null;
+        if (_seqMain[k]) return { clip: _seqMain[k] };
+        return CPBridge.callHost('CP_getTranscribeSource', {}).then(function (r) { if (!r || !r.clip) return null; _seqMain[k] = r.clip; return { clip: r.clip }; }, function () { return null; });
       });
     }).then(function (sel) {
       var saved = Promise.resolve();
@@ -3309,6 +3310,10 @@
       pick.forEach(function (s) { s.score = rel(s) + (s.base || 0) + Math.min(s.mtime || 0, 9e12) / 1e3; });
       pick.sort(function (a, b) { return b.score - a.score; });
 
+      // what the panel has NOW: a translation or fix made while this scan
+      // walked the timeline was replaced by the saved transcript
+      cur = state.transcript;
+      curProtected = !!(state.transcriptManual || (cur && cur.src === 'cutpilot-cache'));
       var top = pick.length ? pick[0] : null;
       var samePath = !!(top && cur && cur.path && top.path === cur.path);
       if (cur && (curProtected || !top)) {

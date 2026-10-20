@@ -68,7 +68,11 @@ async function run() {
       if (mode === 'plain' && sizes.length === 2) return JSON.stringify({ choices: [{ message: { content: JSON.stringify({ lines: out.slice(5).map(x => x.t) }) } }] });
       return JSON.stringify({ choices: [{ message: { content: JSON.stringify({ lines: out }) } }] });
     };
-    const o = await H.openPanel(browser, { host: () => ({}), curl, settings: { groqKey: 'gsk-test-key' } });
+    // F: Premiere slow to list the project's .srt files (the scan also walks the timeline now)
+    let slowScan = false;
+    const host = (fn) => (fn === 'CP_findProjectSrts' && slowScan
+      ? new Promise(res => setTimeout(() => res({ items: [{ name: 'old.srt', path: '/tmp/old.srt' }] }), 2500)) : {});
+    const o = await H.openPanel(browser, { host, curl, settings: { groqKey: 'gsk-test-key' } });
     const page = o.page;
     async function translate(m) {
       mode = m; sizes = []; busyOnce = false;
@@ -102,6 +106,22 @@ async function run() {
       sizes[sizes.length - 1] === 13 && r.cues.every((c, i) => c[1] === 'line ' + i + ' नमस्ते'), JSON.stringify({ sizes, bad: r.cues.filter((c, i) => c[1] !== 'line ' + i + ' नमस्ते').slice(0, 3) }));
     r = await translate('busy');
     C.check('C. a busy reply on one part is tried again (' + sizes.length + ' requests for 5 parts)', sizes.length === 6 && r.cues.every(c => /नमस्ते/.test(c[1])), JSON.stringify({ sizes, toast: r.toast }));
+    // F. a translation made while a slow transcript scan runs is not replaced when the scan ends
+    slowScan = true; mode = 'ok';
+    const f = await page.evaluate(async (srt) => {
+      const S = window.CP_DEBUG_EXT.sync;
+      window.__mem['/tmp/old.srt'] = '1\n00:00:00,000 --> 00:00:02,000\nold words\n';
+      S.setTranscript({}); S.findTranscript();
+      window.__mem['/tmp/long.srt'] = srt;
+      S.setTranscript({ transcript: { path: '/tmp/long.srt', label: 'long', mtime: 1e16 } });
+      S.translate('hi', 'Hindi');
+      for (let i = 0; i < 100 && !/Translated/.test(String(S.transcript().label || '')); i++) await new Promise(r => setTimeout(r, 100));
+      const before = S.transcript().label;
+      await new Promise(r => setTimeout(r, 3500));
+      return { before, after: S.transcript().label };
+    }, srt);
+    slowScan = false;
+    C.check('F. a translation made while a slow scan runs stays when the scan ends (' + f.before + ' → ' + f.after + ')', /Translated/.test(f.before || '') && /Translated/.test(f.after || ''), JSON.stringify(f));
     // D. speakers on 330 lines
     const sp = await page.evaluate(async (srt) => {
       const many = srt + '\n' + Array.from({ length: 30 }, (_, k) => (301 + k) + '\n00:15:' + String(k).padStart(2, '0') + ',000 --> 00:15:' + String(k).padStart(2, '0') + ',900\nline ' + (300 + k) + ' hello\n').join('\n');

@@ -197,6 +197,14 @@ async function run() {
       for (let i = 0; i < 100; i++) { t2 = await T(p2.page); if (t2.src === 'cutpilot-cache') break; await new Promise(res => setTimeout(res, 100)); }
       C.check('reopened with nothing selected: the saved transcript is found from the sequence\'s recording (seven at 47 s)',
         t2 && t2.src === 'cutpilot-cache' && near((word(t2, 'seven') || {}).start, 47), JSON.stringify({ src: t2 && t2.src, seven: fmt(t2 && word(t2, 'seven')), bar: await p2.page.evaluate(() => document.getElementById('tr-text').textContent) }));
+      // …and again later in the same session (the scan forgot after its first look)
+      const walksBefore = calls.filter(c => c.fn === 'CP_getTranscribeSource' && !(c.args && c.args.onlyMediaPath)).length;
+      await p2.page.evaluate(() => { window.CP_DEBUG_EXT.sync.setTranscript({}); window.CP_DEBUG_EXT.sync.findTranscript(); });
+      let t3 = null;
+      for (let i = 0; i < 100; i++) { t3 = await T(p2.page); if (t3.src === 'cutpilot-cache') break; await new Promise(res => setTimeout(res, 100)); }
+      const walksAfter = calls.filter(c => c.fn === 'CP_getTranscribeSource' && !(c.args && c.args.onlyMediaPath)).length;
+      C.check('…and again on a later scan, without asking Premiere for the whole timeline again (' + walksBefore + ' → ' + walksAfter + ' walks)',
+        t3 && t3.src === 'cutpilot-cache' && walksAfter === walksBefore, JSON.stringify({ src: t3 && t3.src, walksBefore, walksAfter }));
       nothingSelected = false;
       C.check('the panel asked Premiere where THIS recording sits now (not just the selected clip)',
         calls.some(c => c.fn === 'CP_getTranscribeSource' && c.args && c.args.onlyMediaPath === TALK), calls.map(c => c.fn).join(', ').slice(0, 300));
