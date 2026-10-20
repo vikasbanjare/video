@@ -301,7 +301,10 @@ function scriptedPremiere(o) {
     const rowOf = (name) => rows.find(l => l.indexOf('In Premiere: ' + name) >= 0) || '(no row “' + name + '”)';
     const ls = (d) => { try { return fs.readdirSync(d); } catch (e) { return []; } };
     const shelf = { mine: ls(path.join(env.homedir, 'Documents', 'Pulse', 'style-previews')), audit: ls(path.join(env.tmpdir, 'pulse-style-audit')) };
-    return { out, rows, rowOf, prem, left, dir, shelf };
+    // a short's own folder (short-<time>) anywhere the test could have put it
+    const shorts = [];
+    (function walk(d, depth) { if (depth > 6) return; ls(d).forEach(n => { const f = path.join(d, n); try { if (fs.statSync(f).isDirectory()) { if (/^short-\d+$/.test(n)) shorts.push(f); else walk(f, depth + 1); } } catch (e) {} }); })(path.join(root, label), 0);
+    return { out, rows, rowOf, prem, left, dir, shelf, shorts };
   }
   const short = (s) => s.length > 260 ? s.slice(0, 260) + '…' : s;
 
@@ -328,6 +331,9 @@ function scriptedPremiere(o) {
     report(/of the frame is caption/.test(R.rowOf('Captions (Pulse’s own look)')) && /of the frame is caption/.test(R.rowOf('Premium (Flux) captions')) &&
            /of the frame is caption/.test(R.rowOf('Long videos: one overlay clip')) && /caption left on screen: 0% \/ 0%/.test(R.rowOf('Remove Pulse’s captions')),
       '1. captions, Premium captions and the overlay are seen in Premiere’s frames, and gone after Remove: ' + short(R.rowOf('Remove Pulse’s captions')));
+    // the test short's own folder (its hook card, kept beside the captions
+    // since v0.10.87) is removed with the rest — each run left one behind
+    report(R.shorts.length === 0, '1. no short folder of the test is left beside the captions (' + (R.shorts.map(f => path.basename(f)).join(', ') || 'none') + ')');
     const imp = R.prem.log.imported;
     report(imp.length === 2 && imp.every(f => f.size > 10000) && R.prem.log.captionFiles.length > 0 && R.prem.log.captionFiles.every(f => f.png) &&
            R.prem.log.overlay && R.prem.log.overlay.size > 1000 && /Pulse test caption/.test(R.prem.log.srt || '') && /\.mogrt$/.test(R.prem.log.mogrt || ''),

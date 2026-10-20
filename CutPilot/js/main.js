@@ -5235,6 +5235,12 @@
       return renderFramedShort(ff, { cams: [cam], map: [], tracks: [], n: 1 }, plan, { label: '9:16', num: 9, den: 16 }, 'Pulse test hook', { textContent: '' }).then(function (r) {
         fs.writeFileSync(out, fs.readFileSync(r.path));
         try { fs.unlinkSync(r.path); } catch (eU) {}
+        // the short's own folder (its hook card) is kept beside the captions
+        // now: the test's is removed, or each test run left one behind
+        var own = pathMod.dirname(r.path);
+        if (/^short-\d+$/.test(pathMod.basename(own))) {
+          try { fs.readdirSync(own).forEach(function (n) { try { fs.unlinkSync(pathMod.join(own, n)); } catch (eF) {} }); fs.rmdirSync(own); } catch (eR) {}
+        }
         return host('CP_importClip', { path: out, name: 'Pulse self-test short' });
       }).then(function (r) {
         return host('CP_getEnv').then(function (env) {
