@@ -1,10 +1,38 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.62** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.63** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.63 — the owner's own check found the words of another video
+- At 14:08 the owner added ✏️ Editable captions to their reel "Sequence 01"
+  (37 s) right after Shorts had transcribed an 8-minute webinar on another
+  sequence: 292 captions with the WEBINAR's words, the sequence stretched to
+  7:50 (still there, V8; plus a "Pulse Captions 3904" overlay made 12:29 on the
+  same sequence — ask before removing). Cause: one transcript slot for the
+  whole panel. Now state.env is a property whose setter parks the leaving
+  sequence's transcript fields (TRANSCRIPT_KEYS) and brings back the next
+  one's, or starts empty and runs findTranscript(). CP_getEnv returns
+  sequenceId (two of the owner's sequences are both "Sequence 01").
+  Gate transcript-per-sequence (A/B/C; fails on the old code).
+- Shorts: a short leaves its new sequence active, so the next moment button
+  read the short's cameras. renderShorts remembers the source sequence;
+  Preview / Mark / Make first CP_openSequenceById it (its words come back
+  through state.env). Verified: two shorts in a row, both from the webinar
+  (0:26.7–0:52.0 and 2:11.5–2:29.0), 20 and 12 captions.
+- ✏️ Editable preview on Pulse's engine now uses the true frame mapping
+  (styleForFrame(carry, cropH, …, cropW)) — it still used the Flux-era band
+  preview (191 px on the canvas HEIGHT) and drew Karaoke Bar on two big
+  lines that Premiere put on one. Gate editable-preview-true-frame (5.00% of
+  frame width in both; old code 3.95%).
+- Pre-existing on this Mac, not from these changes: sim-preview-check
+  quotepill; gallery-editable-dark C (a local speech model is installed, so
+  Add captions asks to transcribe first).
+- Verified in Premiere on v0.10.62/63: Clean up (in sync, backup), caption
+  style test 121/136 with no pop-ups, Shorts (AI fix 21 lines, 6 moments, 2
+  shorts), header follows the sequence. QA items deleted afterwards.
 
 ### v0.10.62 — Safe zone: darken outside the safe area (cloud session)
 - Owner: "make the outside of the Shorts safe zone a little darker, maybe we
@@ -16,6 +44,7 @@ Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels
   the frame (draw() clears its canvas). Gate safezone-shade.
 - Align's font: the owner can press Settings → Install caption fonts
   (JetBrains Mono) and restart Premiere — no code change.
+
 
 ### v0.10.60 – v0.10.61 — verified in the owner's Premiere (2026-10-20)
 - Caption style test: run 4 (v0.10.60) 120/136, run 5 (v0.10.61) 121/136, worst

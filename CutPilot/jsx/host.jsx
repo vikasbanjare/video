@@ -149,6 +149,7 @@ function CP_getEnv() {
     return CP_ok({
       projectName: app.project.name,
       sequenceName: seq.name,
+      sequenceId: String(seq.sequenceID || ''),   // names repeat ("Sequence 01" twice)
       fps: fps,
       width: seq.frameSizeHorizontal,
       height: seq.frameSizeVertical,
@@ -1514,6 +1515,20 @@ function CP_activateSequence(seqObj) {
   if (!seqObj) return;
   try { app.project.activeSequence = seqObj; } catch (e1) {}
   try { if (seqObj.sequenceID) app.project.openSequence(seqObj.sequenceID); } catch (e2) {}
+}
+
+/* Make the sequence with this sequenceID the active one again (Shorts goes
+   back to the video its moments came from: a short leaves its own new
+   sequence active). argsJson: { id }. */
+function CP_openSequenceById(argsJson) {
+  try {
+    var id = String(JSON.parse(argsJson).id || '');
+    for (var i = 0; i < app.project.sequences.numSequences; i++) {
+      var s = app.project.sequences[i];
+      if (String(s.sequenceID) === id) { CP_activateSequence(s); return CP_ok({ sequenceName: s.name }); }
+    }
+    return CP_fail('That sequence is no longer in the project.');
+  } catch (e) { return CP_fail(e.message); }
 }
 
 /* Set the active sequence's in/out points to a range, so the user can preview /

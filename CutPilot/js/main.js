@@ -10,7 +10,6 @@
 
   // ------------------------------------------------------------- state ----
   var state = {
-    env: null,
     clip: null,
     silencesSeq: [],
     keepsMedia: [],
@@ -50,6 +49,37 @@
     libSort: 'popular',
     libMode: 'styles'      // 'styles' (built-in) | 'mogrt' (user .mogrt files)
   };
+
+  /* Each sequence keeps its OWN words. The transcript was one slot for the
+     whole panel: after the owner switched from an 8-minute webinar to a 37 s
+     reel, "Add captions" put the webinar's words on the reel (292 captions,
+     the sequence stretched to 7:50). Every place that learns the active
+     sequence writes state.env, so that one write parks the words of the
+     sequence being left and brings back the next one's — or starts empty and
+     looks for them (findTranscript). */
+  var TRANSCRIPT_KEYS = ['transcript', 'transcriptWords', 'transcriptMedia', 'transcriptPlacement', 'transcriptManual', 'lastCaptionJob'];
+  var _seqWords = {}, _envKey = null, _env = null;
+  function envKey(e) { return e ? (e.sequenceId || e.sequenceName || null) : null; }
+  Object.defineProperty(state, 'env', {
+    enumerable: true,
+    get: function () { return _env; },
+    set: function (e) {
+      _env = e;
+      var k = envKey(e);
+      if (!k || k === _envKey) return;
+      var first = _envKey === null;
+      if (!first) {
+        var keep = {};
+        TRANSCRIPT_KEYS.forEach(function (f) { keep[f] = state[f]; state[f] = (_seqWords[k] || {})[f] || (f === 'transcriptManual' ? false : null); });
+        _seqWords[_envKey] = keep;
+      }
+      _envKey = k;
+      if (!first) {
+        try { diag('transcript', 'sequence changed → ' + (e.sequenceName || k) + (state.transcript ? ': its own words are back' : ': no words for it yet')); } catch (eD) {}
+        if (!state.transcript && typeof findTranscript === 'function') { try { findTranscript(); } catch (eF) {} }
+      }
+    }
+  });
 
   // ---- build-injected config (build-protected.js replaces these for trial /
   //      white-label builds; 0 / '' in source so the dev build is unchanged) ----
@@ -9540,8 +9570,16 @@
     try {
       // engine mode: only what a .mogrt can carry, so the preview cannot promise
       // effects the template engine will drop on the timeline.
-      pStyle = engineMode ? CPRender.styleForFrame(carry, canvas.height, pov)
-                          : CPRender.styleForFrame(styled, cropH, povOpts, cropW);
+      // Pulse's own engine draws an editable caption at the IMAGE caption's
+      // size for this frame (pulseSizeScale), so its preview takes the same
+      // true crop: the band preview (a Flux-era 191 px face on the canvas
+      // HEIGHT) drew Karaoke Bar on two big lines that Premiere put on one
+      // (the owner's reel, v0.10.62)
+      var pulsePv = false;
+      if (engineMode) { try { var _bb = bundledBackbone(styled); pulsePv = !!(_bb && isPulseEngine(_bb.path)); } catch (eBb) {} }
+      pStyle = (engineMode && !pulsePv) ? CPRender.styleForFrame(carry, canvas.height, pov)
+             : pulsePv ? CPRender.styleForFrame(carry, cropH, { vCenter: pov.vCenter, maxLines: povOpts.maxLines }, cropW)
+             : CPRender.styleForFrame(styled, cropH, povOpts, cropW);
     } catch (eStyle) {
       // a style that trips the engine must NEVER blank the preview — fall back to
       // a minimal look and record which template + why in Diagnostics.
@@ -17096,7 +17134,21 @@
     var p = (($('sh-len') && $('sh-len').value) || '15-60').split('-');
     return { min: parseInt(p[0], 10) || 15, max: parseInt(p[1], 10) || 60 };
   }
+  /* The moments belong to the sequence they were found on. Making a short
+     leaves the short's new sequence active, so the next button would read
+     the cameras of the short (and, since each sequence keeps its own words,
+     find no words): every moment button goes back to that sequence first,
+     which brings its words back too (state.env). */
+  var _shortsSrc = null;
+  function toShortsSource() {
+    var id = _shortsSrc;
+    if (!id || !CPBridge.isCEP() || envKey(state.env) === id) return Promise.resolve();
+    return CPBridge.callHost('CP_openSequenceById', { id: id })
+      .then(function () { return CPBridge.callHost('CP_getEnv'); })
+      .then(function (env) { state.env = env; refreshEnvStatus(); }, function () {});
+  }
   function renderShorts(list) {
+    _shortsSrc = envKey(state.env);
     var box = $('shorts-results'); if (!box) return;
     box.innerHTML = '';
     if (!list || !list.length) {
@@ -17129,17 +17181,17 @@
       var row = document.createElement('div'); row.className = 'row tight';
       function btn(label, cls, fn) { var x = document.createElement('button'); x.className = cls; x.textContent = label; x.setAttribute('data-act', '1'); x.addEventListener('click', fn); row.appendChild(x); }
       btn('▶ Preview', 'chip-btn', function () {
-        CPBridge.callHost('CP_setInOut', { start: h.start, end: h.end })
+        toShortsSource().then(function () { return CPBridge.callHost('CP_setInOut', { start: h.start, end: h.end }); })
           .then(function () { toast('In/Out set to this moment — press Play, or Export to render just this clip.'); })
           .catch(function (e) { toast(e.message, true); });
       });
       btn('📍 Mark', 'chip-btn', function () {
-        CPBridge.callHost('CP_addMarkers', { ranges: [{ start: h.start, end: h.end }], names: [h.title || ('Clip ' + (i + 1))], label: 'Short' })
+        toShortsSource().then(function () { return CPBridge.callHost('CP_addMarkers', { ranges: [{ start: h.start, end: h.end }], names: [h.title || ('Clip ' + (i + 1))], label: 'Short' }); })
           .then(function () { toast('Marker added.'); }).catch(function (e) { toast(e.message, true); });
       });
       var rt = shRatio();
       btn(rt ? ('🎬 Make this ' + rt.label + ' short') : '🎬 Make this short', 'hero-btn', function () {
-        makeVerticalClip(h, rt, i);
+        toShortsSource().then(function () { makeVerticalClip(h, rt, i); });
       });
       card.appendChild(row); box.appendChild(card);
     });
