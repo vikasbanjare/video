@@ -2649,15 +2649,15 @@ const MUTANTS = [
   {
     name: 'v33-translate-shifted-list',
     file: 'CutPilot/js/main.js',
-    find: '              if (got.length === part.length) part.forEach(function (i, j) { if (got[j]) tl[i] = got[j]; });',
-    repl: '              part.forEach(function (i, j) { if (got[j]) tl[i] = got[j]; });',
+    find: '              if (got.length === part.length) part.forEach(function (i, j) { if (real(got[j])) tl[i] = got[j]; });',
+    repl: '              part.forEach(function (i, j) { if (real(got[j])) tl[i] = got[j]; });',
     gate: 'CutPilot/test/gates/translate-long.js',
     why: 'a short plain list is laid one line off its time'
   },
   {
     name: 'v33-translate-no-second-ask',
     file: 'CutPilot/js/main.js',
-    find: '      .then(function () { var m = missing(); return m.length && m.length < lines.length ? ask(m) : null; })',
+    find: '      .then(function () { var m = missing(); return m.length && m.length < lines.length ? ask(m, 20) : null; })',
     repl: '      .then(function () { return null; })',
     gate: 'CutPilot/test/gates/translate-long.js',
     why: 'lines missing from a part stay English'

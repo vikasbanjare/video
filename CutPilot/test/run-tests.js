@@ -238,6 +238,15 @@ console.log('transcript.js (v1.0 hooks + b-roll)');
   assert(!terms.some(t => /^(like|people|think|know|going|about)$/.test(t)) &&
          ['intern', 'workshop', 'chatbot', 'statue', 'liberty', 'york'].filter(t => terms.indexOf(t) >= 0).length >= 3,
          'b-roll ideas are filmable things, not common spoken words (' + terms.join(', ') + ')');
+  // …and "world, person, continues, launched, launch" on the owner's webinar
+  const launch = [
+    { start: 0, end: 4, text: 'the world continues to change, every person sees it' },
+    { start: 4, end: 8, text: 'Google launched Gemini and the launch of Gemini changed the robot market' },
+    { start: 8, end: 12, text: 'the launch was big, the robot market launched again, Gemini robot world person continues' }
+  ];
+  const lt = CPTranscript.extractBrollSuggestions(launch, { max: 6 }).map(b => b.term);
+  assert(lt.indexOf('launched') < 0 && lt.filter(t => /^launch/.test(t)).length <= 1 && !lt.some(t => /^(world|person|continues)$/.test(t)) && lt.indexOf('robot') >= 0,
+         'b-roll: no past-tense verbs, one form of each word, no "world / person" (' + lt.join(', ') + ')');
 }
 
 // ------------------------------------------------ animation planners ----

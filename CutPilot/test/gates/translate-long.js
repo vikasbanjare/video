@@ -61,6 +61,9 @@ async function run() {
       let out = user.lines.map(l => ({ i: l.i, t: l.t.replace('hello', 'नमस्ते') }));
       // the owner's 8-minute talk: a part came back 5 lines short (the first time)
       if (mode === 'short' && sizes.length === 2) out = out.filter((x, k) => k % 12 !== 3);
+      // the owner's webinar (lines are sentence pieces): 13 pieces moved up into
+      // one line, the rest sent back as "…"
+      if (mode === 'dots' && sizes.length === 2) out = out.map((x, k) => (k >= 3 && k < 16 ? { i: x.i, t: '…' } : x));
       // …or as a plain list a few lines short, which can't be trusted to line up
       if (mode === 'plain' && sizes.length === 2) return JSON.stringify({ choices: [{ message: { content: JSON.stringify({ lines: out.slice(5).map(x => x.t) }) } }] });
       return JSON.stringify({ choices: [{ message: { content: JSON.stringify({ lines: out }) } }] });
@@ -94,6 +97,9 @@ async function run() {
     r = await translate('plain');
     C.check('B2. a part answered as a shorter plain list is never laid one line off: it is asked again, every line on its own time',
       r.cues.every((c, i) => c[1] === 'line ' + i + ' नमस्ते'), JSON.stringify({ sizes, bad: r.cues.filter((c, i) => c[1] !== 'line ' + i + ' नमस्ते').slice(0, 3) }));
+    r = await translate('dots');
+    C.check('B3. lines sent back as "…" count as not translated and are asked again (' + sizes.join(' + ') + ')',
+      sizes[sizes.length - 1] === 13 && r.cues.every((c, i) => c[1] === 'line ' + i + ' नमस्ते'), JSON.stringify({ sizes, bad: r.cues.filter((c, i) => c[1] !== 'line ' + i + ' नमस्ते').slice(0, 3) }));
     r = await translate('busy');
     C.check('C. a busy reply on one part is tried again (' + sizes.length + ' requests for 5 parts)', sizes.length === 6 && r.cues.every(c => /नमस्ते/.test(c[1])), JSON.stringify({ sizes, toast: r.toast }));
     // D. speakers on 330 lines

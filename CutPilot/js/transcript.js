@@ -453,7 +453,8 @@
    'yes okay alright sure true whole part case number reason question answer example ' +
    'smart crazy super amazing awesome huge real important hard easy simple interesting nice cool bad ' +
    'use uses used using change changes changed changing call calls called calling name named get gets got try tried trying ' +
-   'hai hain tha thi kya nahi bas waise matlab samajh dekh bol bola bolo').split(/\s+/).forEach(function (w) { BROLL_SKIP[w] = 1; });
+   'hai hain tha thi kya nahi bas waise matlab samajh dekh bol bola bolo ' +
+   'world person continue continues happen happens happening').split(/\s+/).forEach(function (w) { BROLL_SKIP[w] = 1; });
 
   /* Suggest B-roll search terms from the transcript: the strongest content
      words (TF-IDF), not the common spoken ones, each with the time it is
@@ -465,10 +466,15 @@
     for (k in STOP) if (STOP.hasOwnProperty(k)) stop[k] = 1;
     for (k in BROLL_SKIP) if (BROLL_SKIP.hasOwnProperty(k)) stop[k] = 1;
     var scored = keywordScores(cues, { stop: stop, keepNumbers: false });
-    var pick = {}, n = 0;
+    // past-tense verbs ("launched", "continued") and a second form of a word
+    // already picked ("launch" + "launched") are not two shots
+    var pick = {}, stems = {}, n = 0;
     for (var s = 0; s < scored.length && n < max; s++) {
-      if (scored[s].word.replace(/'/g, '').length < 4) continue;
-      pick[scored[s].word] = 1; n++;
+      var w0 = scored[s].word;
+      if (w0.replace(/'/g, '').length < 4 || /[^e]ed$/.test(w0)) continue;
+      var stem = w0.slice(0, 5);
+      if (stems[stem]) continue;
+      stems[stem] = 1; pick[w0] = 1; n++;
     }
     var out = [], seen = {};
     for (var i = 0; i < (cues || []).length; i++) {

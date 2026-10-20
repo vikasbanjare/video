@@ -3405,7 +3405,27 @@
     var ideas = CPTranscript.extractBrollSuggestions(cues, { max: 12 });
     if (!ideas.length) return toast('No B-roll keywords found — transcribe the clip first.');
     var list = ideas.map(function (b) { return b.term + ' (' + fmt(b.time) + ')'; }).join('  ·  ');
-    toast('💡 B-roll ideas — ' + list);
+    toast('💡 B-roll ideas — ' + list + (cpKey() ? '  ·  ✨ AI is picking shots…' : ''));
+    aiBrollIdeas(cues);
+  }
+  /* With the AI key: shots to film or find, each where its moment is said.
+     The local list is single words ("workshop", "cloud"); the AI reads what
+     is being said ("robot arm sorting boxes"). Any failure keeps the local list. */
+  function aiBrollIdeas(cues) {
+    if (!cpKey() || !CPBridge.isCEP()) return;
+    var text = cues.map(function (c) { return Math.round(c.start) + ' ' + c.text; }).join('\n').slice(0, 12000);
+    var sys = 'You suggest B-roll for a video editor. Read the timed transcript (each line starts with its second) and pick up to 10 moments ' +
+      'where a cutaway shot would help. For each, write a concrete stock-footage search of 2 to 6 words (something a camera can film), ' +
+      'in English. Return JSON {"ideas":[{"t":seconds,"shot":"…"}]} in time order.';
+    groqChat([{ role: 'system', content: sys }, { role: 'user', content: text }], { json: true, temperature: 0.3, maxTokens: 700 })
+      .then(function (content) {
+        var p = parseAiJson(content), got = p && (Array.isArray(p) ? p : p.ideas);
+        got = (got || []).filter(function (g) { return g && g.shot && isFinite(+g.t); }).slice(0, 10);
+        if (!got.length) throw new Error('no shots came back');
+        state.brollAi = got;
+        toast('🎬 B-roll shots — ' + got.map(function (g) { return String(g.shot).slice(0, 40) + ' (' + fmt(+g.t) + ')'; }).join('  ·  '));
+      })
+      .catch(function (e) { try { diag('ai', 'b-roll shots: ' + (e && e.message)); } catch (eD) {} });
   }
 
   function wireTranscriptBar() {
@@ -3891,7 +3911,8 @@
         'If a line is already Hindi in Devanagari, keep the same words and only change the letters. ' : '') +
       (vocab ? ('Keep these names/terms correct (do not translate them): ' + vocab + '. ') : '') +
       'The input is JSON {"lines":[{"i":0,"t":"…"}, …]}. Return JSON {"lines":[{"i":0,"t":"translation"}, …]} with one entry for EVERY input i, ' +
-      'keeping its i. Never merge, split, add, or drop lines. Keep each translation natural, concise and suitable for on-screen captions. Output ONLY the translated text, no notes.';
+      'keeping its i. Lines are often pieces of one sentence: translate EACH piece on its own line even when it is incomplete — never move words to ' +
+      'another line, never leave a line empty or "…". Never merge, split, add, or drop lines. Keep each translation natural, concise and suitable for on-screen captions. Output ONLY the translated text, no notes.';
     // Numbered lines, in parts of 60. A plain list had to come back EXACTLY as
     // long as it went: on the owner's 8-minute talk two of three parts came
     // back a few lines short, so 121 of 209 lines stayed English and the rest
@@ -3899,14 +3920,14 @@
     // comes back is always on its own time, and the ones missing are asked
     // for once more.
     var PART = 60, tl = [];
-    function ask(idx) {
+    function ask(idx, size) {
       var parts = [];
-      for (var pi = 0; pi < idx.length; pi += PART) parts.push(idx.slice(pi, pi + PART));
+      for (var pi = 0; pi < idx.length; pi += size) parts.push(idx.slice(pi, pi + size));
       return parts.reduce(function (chain, part, k) {
         return chain.then(function () {
           if (parts.length > 1) setTranscriptBar('', '🌐', 'Translating to ' + name + '… part ' + (k + 1) + ' of ' + parts.length, null);
           return asrRetry(function () {
-            return groqChat([{ role: 'system', content: sys }, { role: 'user', content: JSON.stringify({ lines: part.map(function (i) { return { i: i, t: lines[i] }; }) }) }],
+            return groqChat([{ role: 'system', content: sys }, { role: 'user', content: JSON.stringify({ lines: part.map(function (i, j) { return { i: j, t: lines[i] }; }) }) }],
               { json: true, temperature: 0.2, maxTokens: 6000 });
           }, null).then(function (content) {
             var parsed = parseAiJson(content);
@@ -3915,18 +3936,20 @@
             if (!got || !got.length) { try { diag('ai', 'translation answer not readable: ' + String(content).slice(0, 200)); } catch (eD) {} return; }
             if (typeof got[0] === 'string') {
               // a plain list is only trusted when every line is there (else it is shifted)
-              if (got.length === part.length) part.forEach(function (i, j) { if (got[j]) tl[i] = got[j]; });
+              if (got.length === part.length) part.forEach(function (i, j) { if (real(got[j])) tl[i] = got[j]; });
               return;
             }
-            got.forEach(function (g) { var i = parseInt(g && g.i, 10); if (part.indexOf(i) !== -1 && g.t != null && String(g.t).trim()) tl[i] = String(g.t); });
+            got.forEach(function (g) { var j = parseInt(g && g.i, 10); if (j >= 0 && j < part.length && real(g.t)) tl[part[j]] = String(g.t); });
           }, function (e) { lastErr = e; try { diag('ai', 'translation part failed: ' + (e && e.message)); } catch (eD) {} });
         });
       }, Promise.resolve());
     }
+    // "…" is a line the model emptied after moving its words up a line
+    function real(t) { return t != null && /[^\s.…,;:!?'"-]/.test(String(t)); }
     function missing() { var m = []; for (var i = 0; i < lines.length; i++) if (tl[i] == null) m.push(i); return m; }
     var all = lines.map(function (x, i) { return i; }), shifted = 0, lastErr = null;
-    ask(all)
-      .then(function () { var m = missing(); return m.length && m.length < lines.length ? ask(m) : null; })
+    ask(all, PART)
+      .then(function () { var m = missing(); return m.length && m.length < lines.length ? ask(m, 20) : null; })
       .then(function () {
         shifted = missing().length;
         if (shifted === lines.length) throw lastErr || new Error('No translation returned.');
