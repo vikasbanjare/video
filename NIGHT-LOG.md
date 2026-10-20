@@ -16,6 +16,13 @@ on the old code, build, install, verify, commit and push. Newest entries on top.
 7. Viral edit — zoom punch-ins, sound effects.
 
 ## Done
+- 05:25 Round 7 (v0.10.89 → v0.10.90), in Premiere:
+  · Translate on the webinar: 201 of 201 lines in Hindi (was 121 English
+    at the start of the night, then 6) — the last few are asked one by one.
+  · Found Translate stuck for 10+ min on "part 4 of 4": the AI provider
+    said "try again in 1h5m" and Pulse waited silently. AI text steps
+    (Translate, Detect speakers, AI fix) now stop past 90 s, keep what came
+    back and say when to try again. Gate translate-long C2.
 - 04:55 Round 6 (v0.10.86 → v0.10.88), tested in Premiere:
   · ⚠️ Found the hard way: everything Pulse puts in a project that is not a
     caption image lived in the OS temp folder, which macOS clears — a
