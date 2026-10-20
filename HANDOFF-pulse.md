@@ -1,10 +1,29 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.67** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.68** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.68 — 🎚 Studio sound (cloud session)
+- Clean up page, card #ss-card (js/studio.js, window.CPStudio): per source
+  file ffmpeg chain — highpass 70, 50/60 Hz notches, afftdn, clarity (EQ
+  −3 dB @250, +3 dB @3.5k, deesser), speechnorm (word-by-word leveller),
+  loudnorm −14 (YouTube & Reels) / −16 (podcast apps), each mic −3 dB when
+  2+ mics. Older ffmpeg ("No such filter"): acompressor, no deesser.
+  Output ~/Documents/Pulse/Studio Sound/<name>-studio-<stamp>.wav.
+- Host CP_studioSoundPlace: imports into bin "Pulse Studio Sound …", one new
+  empty audio track per source track (only BELOW the sources, QE addTracks
+  if needed), each piece at its own in/out/place, source tracks muted (never
+  deleted). Pieces: unmuted, enabled, speed 1, not reversed (piecesOf).
+- window.CPKit (end of main.js): helpers for feature files.
+- Owner asked for "like Adobe Podcast": that is a cloud AI model; Pulse does
+  the same audible steps locally. Heavy echo: Premiere's Enhance Speech.
+  Declined reverse-engineering Adobe's service (their terms).
+- NOT verified in Premiere (QE addTracks for audio, setMute, overwriteClip of
+  a WAV on an audio track). Gate studio-sound.
+- Transcribe hints shortened to one line (ui-short-hints failed on v0.10.66).
 
 ### v0.10.67 — editable preview: one gradient down the whole caption (cloud session)
 - Template v6's Gradient Text ramp spans its text's sourceRect (first line's

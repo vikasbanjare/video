@@ -3189,7 +3189,33 @@ const MUTANTS = [
     repl: '    if (false) {',
     gate: 'CutPilot/test/gates/caption-originals.js',
     why: "a two-line gradient caption previews a colour per line Premiere does not draw"
+  },
+  // v68: 🎚 Studio sound
+  {
+    name: 'v68-studio-original-not-muted',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '        try { seq.audioTracks[src[i]].setMute(1); muted.push(src[i] + 1); } catch (eM) {}',
+    repl: '',
+    gate: 'CutPilot/test/gates/studio-sound.js',
+    why: 'the clean sound plays on top of the original (both heard)'
+  },
+  {
+    name: 'v68-studio-takes-owner-track',
+    file: 'CutPilot/jsx/host.jsx',
+    find: '      for (var t = lowest + 1; t < seq.audioTracks.numTracks; t++) if (seq.audioTracks[t].clips.numItems === 0) e.push(t);',
+    repl: '      for (var t = 0; t < seq.audioTracks.numTracks; t++) if (seq.audioTracks[t].clips.numItems === 0) e.push(t);',
+    gate: 'CutPilot/test/gates/studio-sound.js',
+    why: "the clean sound lands on an empty track the owner kept between their mics"
+  },
+  {
+    name: 'v68-studio-no-balance',
+    file: 'CutPilot/js/studio.js',
+    find: "    if (o.level !== false) parts.push(o.legacy ? 'acompressor=threshold=0.1:ratio=3:attack=15:release=200:makeup=1' : 'speechnorm=e=6.25:r=0.00001:l=1');",
+    repl: '',
+    gate: 'CutPilot/test/gates/studio-sound.js',
+    why: 'the voice is never balanced'
   }
+
 
 
 ];

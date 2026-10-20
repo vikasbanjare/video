@@ -2678,6 +2678,72 @@ function CP_removeOverlay(argsJson) {
  * track (so the voice is never clobbered); adds one via QE when none is free.
  * argsJson: { wavPath, times:[...seconds], label }
  */
+/* 🎚 Studio sound: the cleaned copy of each piece of audio goes on a new
+   audio track, cut exactly like the original (same in/out, same place), and
+   the tracks it came from are muted — the original sound stays on the
+   timeline, one mute away (Pulse never overwrites the owner's audio).
+   args: { pieces:[{ path, from, dur, at, track }], tracks:[source track indexes] }
+   → { placed, tracks:[new A numbers], muted:[A numbers], missed } */
+function CP_studioSoundPlace(argsJson) {
+  try {
+    var args = JSON.parse(argsJson), pieces = args.pieces || [], i;
+    var seq = CP_activeSequence();
+    if (!seq) return CP_fail('Open your sequence first.');
+    if (!pieces.length) return CP_fail('No audio to place.');
+    // every cleaned file imported once, into its own bin
+    var bin = app.project.rootItem.createBin('Pulse Studio Sound ' + ((new Date()).getTime() % 100000));
+    var paths = [], seenP = {};
+    for (i = 0; i < pieces.length; i++) { var kp = CP_normPath(pieces[i].path); if (!seenP[kp]) { seenP[kp] = 1; paths.push(pieces[i].path); } }
+    try { app.project.importFiles(paths, true, bin, false); } catch (eImp) { return CP_fail('Premiere could not import the cleaned sound: ' + eImp.message); }
+    var items = {};
+    for (var c = 0; c < bin.children.numItems; c++) {
+      var ch = bin.children[c], mp = null;
+      try { mp = ch.getMediaPath(); } catch (eMp) { mp = null; }
+      if (mp) items[CP_normPath(mp)] = ch;
+    }
+    // one new, empty audio track per source track
+    var src = [], seenT = {};
+    for (i = 0; i < pieces.length; i++) if (!seenT[pieces[i].track]) { seenT[pieces[i].track] = 1; src.push(pieces[i].track); }
+    // empty tracks BELOW every source track only — never an empty track the
+    // owner left between their mics (it may be meant for music or a mic)
+    var lowest = -1;
+    for (i = 0; i < src.length; i++) if (src[i] > lowest) lowest = src[i];
+    function emptyTracks() {
+      var e = [];
+      for (var t = lowest + 1; t < seq.audioTracks.numTracks; t++) if (seq.audioTracks[t].clips.numItems === 0) e.push(t);
+      return e;
+    }
+    var free = emptyTracks();
+    if (free.length < src.length) {
+      try { var q = CP_qeSequence(); if (q && q.addTracks) q.addTracks(0, 0, src.length - free.length); } catch (eAdd) {}
+      seq = CP_activeSequence() || seq;
+      free = emptyTracks();
+    }
+    if (free.length < src.length) return CP_fail('Premiere would not add ' + src.length + ' new audio track(s) for the clean sound. Add them by hand (right-click the track heads → Add Tracks) and try again.');
+    var dest = {}, used = [];
+    for (i = 0; i < src.length; i++) { dest[src[i]] = free[i]; used.push(free[i] + 1); }
+    var placed = 0, missed = 0;
+    for (i = 0; i < pieces.length; i++) {
+      var pc = pieces[i], it = items[CP_normPath(pc.path)], tr = seq.audioTracks[dest[pc.track]];
+      if (!it || !tr) { missed++; continue; }
+      try {
+        it.setInPoint(CP_ticksFromSeconds(pc.from), 4);
+        it.setOutPoint(CP_ticksFromSeconds(pc.from + pc.dur), 4);
+        try { tr.overwriteClip(it, pc.at); } catch (eS) { tr.overwriteClip(it, CP_ticksFromSeconds(pc.at)); }
+        placed++;
+      } catch (eP) { missed++; }
+    }
+    for (var key in items) if (items.hasOwnProperty(key)) { try { items[key].clearInPoint(4); items[key].clearOutPoint(4); } catch (eCl) {} }
+    var muted = [];
+    if (placed) {
+      for (i = 0; i < src.length; i++) {
+        try { seq.audioTracks[src[i]].setMute(1); muted.push(src[i] + 1); } catch (eM) {}
+      }
+    }
+    return CP_ok({ placed: placed, tracks: used, muted: muted, missed: missed, bin: bin.name });
+  } catch (e) { return CP_fail(e.message); }
+}
+
 function CP_placeSfx(argsJson) {
   try {
     var args = JSON.parse(argsJson);

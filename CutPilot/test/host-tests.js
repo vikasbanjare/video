@@ -231,6 +231,7 @@ function makeWorld(opts) {
         name: model.names[label] || label,
         isLocked() { return !!model.locked[label]; },
         isMuted() { return !!model.muted[label]; },
+        setMute(v) { model.muted[label] = !!Number(v); },
         overwriteClip(pItem, startSec) {
           const st = Number(startSec) || 0;
           const durIn = (pItem && pItem._in != null && pItem._out != null)
@@ -585,7 +586,11 @@ function makeWorld(opts) {
             get numAudioTracks() { return model.aTracks.length; },
             getVideoTrackAt(i) { return qeTrack(model.vTracks[i], 'V' + (i + 1)); },
             getAudioTrackAt(i) { return qeTrack(model.aTracks[i], 'A' + (i + 1)); },
-            addTracks(nV) { if (opts.qeAddTracksFails) return; for (let i = 0; i < (nV || 1); i++) model.vTracks.push([]); }
+            addTracks(nV, vAt, nA) {
+              if (opts.qeAddTracksFails) return;
+              for (let i = 0; i < (nV || (nA ? 0 : 1)); i++) model.vTracks.push([]);
+              for (let j = 0; j < (nA || 0); j++) model.aTracks.push([]);
+            }
           };
         }
       }

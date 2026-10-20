@@ -2420,11 +2420,11 @@
       el.innerHTML = '';
       var b = document.createElement('b'); b.textContent = '🎯 In/Out is set: ' + fmt(io.inPoint) + ' – ' + fmt(io.outPoint);
       el.appendChild(b);
-      el.appendChild(document.createTextNode(' — Transcribe hears only this part. To transcribe the whole video, clear them in Premiere (Markers › Clear In and Out).'));
+      el.appendChild(document.createTextNode(' — only this part is heard.'));
       el.classList.add('on');
     } else if (el.classList.contains('on')) {
       el.classList.remove('on');
-      el.innerHTML = '<b>Only part of the video?</b> Mark <b>In</b> (I) and <b>Out</b> (O) on your timeline, then tap Transcribe — Pulse hears only that part.';
+      el.innerHTML = '<b>Only part of the video?</b> Mark <b>In</b> (I) and <b>Out</b> (O) first.';
     }
   }
   /* Re-read the active sequence and show it in the header (no-op outside CEP). */
@@ -20632,6 +20632,17 @@
       snapshot: function () { var y = null; try { y = carryableStyle(styledPreset()).yPct; } catch (e) {} return { entrance: state.captionEntrance || 'none', presetId: state.presetId, yPct: y }; }
     };
   } catch (eDbg) {}
+
+  /* The panel's helpers for the tools that live in their own files (studio
+     sound, publish kit, brand kit…), so those never reach into main.js. */
+  window.CPKit = {
+    toast: toast, nodeReq: nodeReq, capProgress: capProgress,
+    resolveFfmpeg: resolveFfmpeg, runFfmpeg: runFfmpeg,
+    aiChat: aiChatRetry, readTranscript: readSelectedTranscript,
+    settings: function () { return settings; }, saveSettings: saveSettings,
+    env: function () { return state.env || null; },
+    transcriptLabel: function () { return state.transcript ? state.transcript.label : null; }
+  };
 
   boot();
 })();
