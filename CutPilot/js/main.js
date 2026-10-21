@@ -1656,11 +1656,17 @@
     try {
       var fs = nodeReq('fs'), p = nodeReq('path'), dir = _tcDir();
       if (!dir || !mediaPath) return null;
-      var base = String(mediaPath).split(/[\\/]/).pop().replace(/\.[^.]+$/, '').replace(/[^\w]+/g, '_').slice(0, 40);
+      var stem = String(mediaPath).split(/[\\/]/).pop().replace(/\.[^.]+$/, '');
+      var keyOf = function (x) { return x.replace(/[^\w]+/g, '_').slice(0, 40); };
+      // 🎚 Studio sound's copy ("<name>-studio-<id>.wav") is the same recording
+      // on the same clock: it has the original's words (after Studio sound
+      // the whole video was heard again)
+      var bases = [keyOf(stem)], orig = stem.replace(/-studio-[a-z0-9]+$/i, '');
+      if (orig !== stem) bases.push(keyOf(orig));
       var curQ = resolveQuality(), curLang = (settings.whisperLang || 'auto');
       var best = null, bestM = -1;
       fs.readdirSync(dir).forEach(function (f) {
-        if (f.indexOf(base + '-' + _TC_VER + '-') !== 0 || !/\.json$/i.test(f)) return;
+        if (!bases.some(function (b) { return f.indexOf(b + '-' + _TC_VER + '-') === 0; }) || !/\.json$/i.test(f)) return;
         var full = p.join(dir, f);
         try {
           var st = fs.statSync(full);
@@ -3215,7 +3221,9 @@
         else if (act === 'viral') viralEdit();
         else if (act === 'magic' && $('btn-magic')) $('btn-magic').click();
       }, 60);
-    } else if (cls === 'warn' && state.pendingCaptionAction) {
+    } else if (cls === 'warn' && state.pendingCaptionAction && !state.transcribing) {
+      // (not while the words are being heard: a background scan's "no
+      // transcript" cancelled ⚡ Viral edit's captions mid-transcription)
       // the queued one-click caption action can't run — say so instead of
       // silently dropping it ("I clicked a style and nothing ever appeared")
       state.pendingCaptionAction = null;
@@ -3228,6 +3236,8 @@
      fresh); only show the "looking…" placeholder when nothing's chosen yet
      so a background rescan doesn't flicker an already-confirmed transcript. */
   var _seqMain = {};   // each sequence's main recording, for the scan when nothing is selected
+  // a step that swapped the sound (🎚 Studio sound) says so: look again
+  window.addEventListener('pulse:sound-changed', function () { _seqMain = {}; });
   function findTranscript() {
     // NON-DESTRUCTIVE rescan. This used to clear the manual flag + word timing
     // at ENTRY and then re-decide — so every panel focus could rip out the
@@ -3263,9 +3273,10 @@
         // asked once per sequence (it walks the timeline and the scan runs on
         // every focus), then remembered; not while the timeline is still empty
         var k = envKey(state.env) || '-';
+        // (for 20 s: the sound can change — 🎚 Studio sound puts a cleaned copy on top)
         if (curProtected) return null;
-        if (_seqMain[k]) return { clip: _seqMain[k] };
-        return CPBridge.callHost('CP_getTranscribeSource', {}).then(function (r) { if (!r || !r.clip) return null; _seqMain[k] = r.clip; return { clip: r.clip }; }, function () { return null; });
+        if (_seqMain[k] && Date.now() - _seqMain[k].at < 20000) return { clip: _seqMain[k].clip };
+        return CPBridge.callHost('CP_getTranscribeSource', {}).then(function (r) { if (!r || !r.clip) return null; _seqMain[k] = { clip: r.clip, at: Date.now() }; return { clip: r.clip }; }, function () { return null; });
       });
     }).then(function (sel) {
       var saved = Promise.resolve();
@@ -3352,7 +3363,8 @@
         }
       } else {
         state.transcript = null;
-        setTranscriptBar('warn', '⚠️', 'No transcript for this video — tap to pick / make one', 'Get one →');
+        // while Transcribe is hearing it, the bar shows that, not "no transcript"
+        if (!state.transcribing) setTranscriptBar('warn', '⚠️', 'No transcript for this video — tap to pick / make one', 'Get one →');
       }
       refreshMogrtSheetTr(); refreshMogrtEditorTr();
     }).catch(function () {

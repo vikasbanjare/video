@@ -136,6 +136,7 @@
         ' — unmute it to compare.' + (found.skipped ? ' ' + found.skipped + ' sped-up or reversed piece(s) were left as they are.' : '') +
         (r.missed ? ' ' + r.missed + ' piece(s) could not be placed.' : '');
       say(msg); kit.toast(msg);
+      try { window.dispatchEvent(new Event('pulse:sound-changed')); } catch (eEv) {}
     }).catch(function (e) {
       kit.capProgress(null);
       var m = (e && e.message) || String(e);

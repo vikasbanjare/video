@@ -45,6 +45,9 @@ function makeMedia(name, dur) {
 }
 const REEL = makeMedia('reel.wav', 12);       // the sped-up reel
 const TALK = makeMedia('talk.wav', 10);       // the clip that is moved and cut
+const FRESH = makeMedia('fresh.wav', 10);     // never heard before (no saved words)
+// 🎚 Studio sound's cleaned copy of the talk: the same recording, same clock
+const STUDIO = path.join(DIR, 'talk-studio-k9x2.wav'); fs.copyFileSync(TALK, STUDIO);
 
 const WORDS = ['one', 'three', 'five', 'seven', 'nine', 'eleven'];
 const near = (a, b, tol) => typeof a === 'number' && Math.abs(a - b) <= (tol || 0.02);
@@ -205,9 +208,47 @@ async function run() {
       const walksAfter = calls.filter(c => c.fn === 'CP_getTranscribeSource' && !(c.args && c.args.onlyMediaPath)).length;
       C.check('…and again on a later scan, without asking Premiere for the whole timeline again (' + walksBefore + ' → ' + walksAfter + ' walks)',
         t3 && t3.src === 'cutpilot-cache' && walksAfter === walksBefore, JSON.stringify({ src: t3 && t3.src, walksBefore, walksAfter }));
+      // after 🎚 Studio sound the talk plays from its cleaned copy: its saved
+      // words are the original's (it was heard all over again)
+      {
+        const before = transcribed;
+        place = { media: STUDIO, pieces: [{ inPoint: 0, outPoint: 10, seqStart: 50, speed: 1 }] };
+        await p2.page.evaluate(() => { window.dispatchEvent(new Event('pulse:sound-changed')); window.CP_DEBUG_EXT.sync.setTranscript({}); window.CP_DEBUG_EXT.sync.findTranscript(); });
+        let ts = null;
+        for (let i = 0; i < 100; i++) { ts = await T(p2.page); if (ts.src === 'cutpilot-cache') break; await new Promise(res => setTimeout(res, 100)); }
+        C.check('after Studio sound: its cleaned copy finds the talk\'s saved words, placed where it plays (seven at 57 s), nothing heard again',
+          ts && ts.src === 'cutpilot-cache' && near((word(ts, 'seven') || {}).start, 57) && transcribed === before, JSON.stringify({ src: ts && ts.src, seven: fmt(ts && word(ts, 'seven')) }));
+      }
       nothingSelected = false;
       C.check('the panel asked Premiere where THIS recording sits now (not just the selected clip)',
         calls.some(c => c.fn === 'CP_getTranscribeSource' && c.args && c.args.onlyMediaPath === TALK), calls.map(c => c.fn).join(', ').slice(0, 300));
+      await page.close();
+    }
+
+    // 2b ─ ⚡ Viral edit with no words yet: it listens first, and a background
+    // scan that finds no saved words meanwhile must not cancel the edit
+    // (on the owner's webinar it cancelled it: words came, captions never did)
+    {
+      const { page, calls } = await open();
+      place = { media: FRESH, pieces: [{ inPoint: 0, outPoint: 10, seqStart: 0, speed: 1 }] };
+      heardDur = 10;
+      nothingSelected = true;
+      const r = await page.evaluate(async () => {
+        const sleep = ms => new Promise(res => setTimeout(res, ms));
+        const S = window.CP_DEBUG_EXT.sync;
+        S.setTranscript({});
+        document.querySelector('.tab[data-tab="captions"]').click(); await sleep(300);
+        window.CP_DEBUG_EXT.shorts.setCapOut('png');
+        window.CP_DEBUG_EXT.shorts.viral();          // no words → it starts listening
+        S.findTranscript();                           // the scan on panel focus, meanwhile
+        for (let i = 0; i < 300 && !(S.transcript().words || []).length; i++) await sleep(100);
+        await sleep(2500);
+        return { words: (S.transcript().words || []).length, toast: document.getElementById('toast').textContent };
+      });
+      nothingSelected = false;
+      const zoomed = calls.filter(c => c.fn === 'CP_addZoomPunches').length;
+      C.check('⚡ Viral edit with no words: it listens, and a scan finding nothing meanwhile does not cancel it — the edit runs when the words come (' + zoomed + ' zoom call)',
+        r.words > 0 && zoomed === 1 && !/no captions were added/.test(r.toast), JSON.stringify({ words: r.words, zoomed, toast: r.toast.slice(0, 160) }));
       await page.close();
     }
 
