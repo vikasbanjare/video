@@ -18603,9 +18603,21 @@
       var tracks = (r.audioTracks || []).filter(function (t) { return t.mediaPath; });
       if (tracks.length < nPeople) throw new Error('Found ' + tracks.length + ' mic track(s) with media, but this layout needs ' + nPeople + '. Put each speaker on their own audio track — or use a highlight’s “Make clip” (single-subject Auto Reframe) instead.');
       tracks = tracks.slice(0, nPeople);
+      // the PICTURE to reframe: "the recording Transcribe hears" picks sound
+      // first — a podcast's mic .wav, or 🎚 Studio sound's copy — and ffmpeg
+      // then found no video in it ("[0:v] matches no streams")
+      var isVideo = function (p) { return !!p && !/\.(wav|mp3|aac|m4a|aiff?|flac|ogg|opus|png|jpe?g|gif|tiff?|psd|ai|svg|webp|heic|aegraphic|mogrt|srt|vtt)$/i.test(p) && !/[\\\/](pulse-captions-|cap_\d)/i.test(p); };
+      var mainVideo = function () {
+        return CPBridge.callHost('CP_getVideoTracks').then(function (v) {
+          var dur = {};
+          (v.videoTracks || []).forEach(function (t) { (t.segments || []).forEach(function (g) { if (isVideo(g.mediaPath) && !g.disabled) dur[g.mediaPath] = (dur[g.mediaPath] || 0) + (g.seqEnd - g.seqStart); }); });
+          var best = Object.keys(dur).sort(function (a, b) { return dur[b] - dur[a]; })[0];
+          return best ? { clip: { mediaPath: best } } : CPBridge.callHost('CP_getTranscribeSource');
+        }, function () { return CPBridge.callHost('CP_getTranscribeSource'); });
+      };
       return CPBridge.callHost('CP_getSelectedClip').then(
-        function (s) { return (s && s.clip) ? s : CPBridge.callHost('CP_getTranscribeSource'); },
-        function () { return CPBridge.callHost('CP_getTranscribeSource'); }
+        function (s) { return (s && s.clip && isVideo(s.clip.mediaPath)) ? s : mainVideo(); },
+        mainVideo
       ).then(function (s) {
         if (!s || !s.clip || !s.clip.mediaPath) throw new Error('Put the podcast video on the timeline (select it) so I know which video to reframe.');
         return { tracks: tracks, source: s.clip.mediaPath };
