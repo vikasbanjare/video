@@ -1,5 +1,20 @@
 # Night shift log — Pulse (started 2026-10-21, owner asleep)
 
+## ☀️ Read this first (10:15)
+- Installed now: **v0.10.103** (builds are pushed; Pulse-Mac.zip is in the repo root).
+- 60+ fixes tonight, every one tested in YOUR Premiere on QA copies and
+  locked by a gate that fails on the old code — rounds below, newest first.
+- Your project is back as it was: 10 items, Sequence 01 open, saved. Tonight's
+  QA sequences/bins are removed; the files they made are in the Trash in
+  "Pulse night QA 2026-10-21" (351 MB — empty the Trash to free the space).
+- ⚠️ Your disk is nearly full (~1.2 GB free). Premiere's media cache is 25 GB:
+  Premiere › Settings › Media Cache › Delete is safe (Premiere rebuilds it).
+- One question for you: when you add Editable captions over Exact-look ones
+  (or the other way), should the new set replace the old? Today both show.
+- My local test setup (not in the zip): the installed panel has a `.debug`
+  file (port 8092) so I could drive it without clicks; reinstalling Pulse
+  removes it.
+
 What I do all night: retest every Pulse feature in the owner's real Premiere
 (QA copies only, deleted afterwards), fix what is wrong with a gate that fails
 on the old code, build, install, verify, commit and push. Newest entries on top.
@@ -16,6 +31,11 @@ on the old code, build, install, verify, commit and push. Newest entries on top.
 7. Viral edit — zoom punch-ins, sound effects.
 
 ## Done
+- 10:10 Round 15 (v0.10.103): Hinglish transcription ✓ (Roman words with
+  timing), In/Out ✓ (only 0:02–0:08 heard), Editable captions in Devanagari
+  render correctly in Premiere ✓. Shorts now go into one "Pulse Shorts" bin
+  (twelve shorts had left 36 loose items in the project). Test everything:
+  all ✅, nothing left behind. QA cleanup done (see top).
 - 09:05 Round 14 (v0.10.102) — Hindi Clean up, in Premiere, on a QA reel
   with a false start, "अरे रुको, एक बार फिर से" and an "उम्म":
   · Before: only 2 dead-air bits (0.6 s); the retake was kept (the false

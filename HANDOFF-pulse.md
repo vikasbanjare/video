@@ -1,10 +1,32 @@
 # HANDOFF — Pulse (Premiere Pro CEP panel, internal id com.cutpilot.*)
 
 Repo: `/home/user/video` · Branch: `claude/awesome-davinci-pfsryy` · PR #1 (draft) exists.
-Current version: **v0.10.88** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
+Current version: **v0.10.103** (`CutPilot/index.html`, `CutPilot/CSXS/manifest.xml`).
 Owner is non-technical, on macOS, makes Hindi/Hinglish podcasts + vertical reels.
 
 ## State
+
+### v0.10.89 – v0.10.103 — night shift, second half (2026-10-21)
+All checked in the owner's Premiere 2026 on QA copies (an English webinar,
+two Hindi reels spoken by macOS's Hindi voice); QA items removed afterwards
+(project back to its 10 items; QA files in Trash › "Pulse night QA 2026-10-21").
+- Translate: the last lines asked one by one (201/201 translated); AI text
+  steps stop past a 90 s provider wait and say when to retry; Hinglish keeps
+  each word's timing (highlight stays on).
+- Viral edit: zoom never on the caption overlay; Add captions finds and
+  replaces this sequence's Pulse caption track (no second stacked set).
+- Studio sound's copy finds the original's saved words; a background scan
+  never cancels a queued Viral edit mid-transcription.
+- Export all → Media Encoder works in Premiere 2026 (preset renamed;
+  ExtendScript file names are URI-encoded). B-roll goes under captions.
+- Retakes: a line and its opposite, a build-up, far agenda lines are kept;
+  a false start + "arre ruko, ek baar phir se" in one breath is cut; Clean
+  up takes fillers from the verbatim words when there is no transcript.
+- Follow the speaker reframes the video (not a mic .wav). Viral hooks score
+  spoken clauses; Hindi questions count. Shorts go into a "Pulse Shorts" bin.
+- Open question for the owner: when Editable captions are added over an
+  Exact-look set (or the other way), should the new set REPLACE the old one?
+  Today both stay and show together.
 
 ### v0.10.74 – v0.10.88 — night shift on the owner's Mac (2026-10-21, owner asleep)
 Everything below was run in the owner's real Premiere on QA copies (an
