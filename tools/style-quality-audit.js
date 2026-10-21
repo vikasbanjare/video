@@ -218,7 +218,9 @@ function resolveBrowser(pptr) {
       const carry = D.carryableStyle(t);
       let frames = null;
       try {
-        frames = C.buildCaptionFrames([{ start: 0, end: 2.5, text: 'Make every word count today' }], {
+        // long enough to span two captions even at 7+ words per caption — a style
+        // that shows each phrase whole (no sweep) still changes between phrases
+        frames = C.buildCaptionFrames([{ start: 0, end: 5, text: 'Make every word count today because the first one might not work out' }], {
           anim: C.animIdForConcept(carry.anim), wordsPerCue: carry.wordsPerCue || 0,
           uppercase: carry.uppercase, keyword: { on: !!carry.keyword, mode: 'auto' }, build: !!t.build
         });

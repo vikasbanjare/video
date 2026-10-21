@@ -501,6 +501,11 @@ console.log('captions.js (keyword engine)');
   const smart = mk(['Meet', 'Sarah', 'today'], { mode: 'smart' });
   assert(smart[1] === true, 'smart mode flags a capitalized name');
   assert(mk(['a', 'b', 'c'], { mode: 'all' }).every(Boolean), 'all mode flags everything');
+  // phrase: one keyword lifts the whole caption; no keyword leaves it plain
+  assert(mk(['tech', 'collapsed'], { mode: 'auto', set: { collapsed: 1 }, phrase: true }).every(Boolean),
+         'phrase mode emphasises the whole caption when it holds a keyword');
+  assert(!mk(['because', 'it'], { mode: 'auto', set: { collapsed: 1 }, phrase: true }).some(Boolean),
+         'phrase mode leaves a caption with no keyword plain');
   // smart always flags numbers
   assert(mk(['get', '3', 'tips'], { mode: 'smart' })[1] === true, 'smart flags numbers too');
   // 'auto' mode: highlight words from a precomputed transcript-wide salient set

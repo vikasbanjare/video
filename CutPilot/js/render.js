@@ -105,7 +105,10 @@
     // Guarantee the spoken word is ALWAYS visible: if the highlight colour matches
     // the body text (so colour alone wouldn't set the active word apart), pop it by
     // size — on EVERY template, box or not — so word-by-word is never invisible.
-    if (String(highlight).toLowerCase() === String(fill).toLowerCase()) {
+    // (spokenPop: false opts out — a reveal style whose words simply appear,
+    // where the appearing word already shows where the speech is)
+    var popOk = (o.spokenPop != null ? o.spokenPop : preset.spokenPop) !== false;
+    if (popOk && String(highlight).toLowerCase() === String(fill).toLowerCase()) {
       hlScale = Math.max(hlScale, 1.2);
     }
     return {

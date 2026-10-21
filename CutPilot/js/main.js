@@ -6923,7 +6923,7 @@
           // them — the spoken word is the highlight); on a static style they
           // are lit at the pop size, so the caption is grouped for that width
           // here as on the timeline and in the editor preview
-          keyword: { on: !!raw.keyword, mode: raw.keywordMode || 'smart' }, speaker: { on: false },
+          keyword: { on: !!raw.keyword, mode: raw.keywordMode || 'smart', phrase: !!raw.keywordPhrase }, speaker: { on: false },
           build: !!raw.build,                               // same flag the pipeline and the editor preview pass
           textCase: raw.textCase || 'original',             // a lowercase style reads lowercase on its card too
           wordCues: S.wordCues, window: 0,
@@ -8847,7 +8847,8 @@
   }
 
   function readKeyword() {
-    return { on: $('c-kw').checked, mode: $('c-kw-mode').value };
+    var cp = currentPreset();
+    return { on: $('c-kw').checked, mode: $('c-kw-mode').value, phrase: !!(cp && cp.keywordPhrase) };
   }
 
   /* Keyword options for buildCaptionFrames. The 'auto' mode scores the whole
@@ -8856,7 +8857,7 @@
   function resolveKeyword(cues) {
     var kw = readKeyword();
     if (kw.on && kw.mode === 'auto' && typeof CPTranscript !== 'undefined') {
-      return { on: true, mode: 'auto', set: CPTranscript.topKeywordSet(cues, { maxWords: 14 }) };
+      return { on: true, mode: 'auto', phrase: kw.phrase, set: CPTranscript.topKeywordSet(cues, { maxWords: 14 }) };
     }
     return kw;
   }

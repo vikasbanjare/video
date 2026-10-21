@@ -1661,6 +1661,68 @@
       "animNotes": "One to three words in white bold caps with a small dark drop shadow on a square maroon label; the SPOKEN word grows a quarter bigger, same white (learned from the owner's reference reel bhai_02). Editable: Premiere's engine cannot grow one word, so the words stay still there."
     },
     {
+      "id": "pack-founder-talk",
+      "name": "Founder Talk",
+      "category": "🎬 From My Videos",
+      "popularity": 100,
+      "layout": "center",
+      "posPct": 49,
+      "keyword": false,
+      "highlightScale": 1,
+      "font": "Helvetica Neue",
+      "weight": 700,
+      "fallbackFonts": ["Inter", "Arial", "sans-serif"],
+      "fontSize": 76,
+      "fill": "#FFFFFF",
+      "highlight": "#FFFFFF",
+      "glow": "#000000",
+      "glowBlur": 0.3,
+      "shadowDY": 2,
+      "stroke": null,
+      "strokeWidth": 0,
+      "lineGap": 1.1,
+      "maxLines": 2,
+      "maxWidthPct": 0.72,
+      "uppercase": false,
+      "wordsPerCue": 7,
+      "spokenPop": false,
+      "anim": "reveal",
+      "editable": { "wordHl": false },
+      "animNotes": "Small white bold sentence-case text with a soft shadow, mid-frame, up to two lines; each word appears as it is spoken, already in its final place, so the phrase never re-centres (learned from the owner's founder-interview reel 0001). Editable: Premiere's engine can only sweep a colour, not add words one by one, so there each phrase shows whole, in plain white."
+    },
+    {
+      "id": "pack-punchline",
+      "name": "Punchline",
+      "category": "🎬 From My Videos",
+      "popularity": 100,
+      "layout": "center",
+      "posPct": 57,
+      "keyword": true,
+      "keywordMode": "auto",
+      "keywordPhrase": true,
+      "highlightScale": 1.45,
+      "font": "Helvetica Neue",
+      "weight": 500,
+      "highlightFont": "Helvetica Neue",
+      "highlightWeight": 800,
+      "fallbackFonts": ["Inter", "Arial", "sans-serif"],
+      "fontSize": 48,
+      "letterSpacing": -2,
+      "fill": "#FFFFFF",
+      "highlight": "#FFFFFF",
+      "glow": "#000000",
+      "glowBlur": 0.2,
+      "shadowDY": 1,
+      "stroke": null,
+      "strokeWidth": 0,
+      "maxLines": 1,
+      "uppercase": false,
+      "wordsPerCue": 3,
+      "wordHl": false,
+      "anim": "fade",
+      "animNotes": "One to three spoken words on one line, plain white medium sans with tight spacing, mid-frame, cut to the next phrase; a punchline phrase (any caption holding a key word) shows WHOLE about half again bigger and heavy (learned from the owner's podcast-clip reel 0001)."
+    },
+    {
       "id": "pack-neon",
       "name": "Neon Pop",
       "description": "Glowing neon text with chromatic flicker on entry. Gaming / music content.",
@@ -2602,7 +2664,7 @@
     // the two former ⭐ Premium headline looks now head 🔥 Trending
     'pro-boldpop': [_T, _B], 'pro-editorial': [_T, _C],
     'pack-orange-word-pop': [_MV, _K], 'pack-script-glow': [_MV, _C],
-    'pack-green-word-box': [_MV, _K], 'pack-maroon-label': [_MV, _M],
+    'pack-green-word-box': [_MV, _K], 'pack-maroon-label': [_MV, _M], 'pack-founder-talk': [_MV, _M], 'pack-punchline': [_MV, _M],
     'pack-neon': [_YS, _N], 'pro-spotlight': [_YS, _K], 'pro-subs-light': [_YS, _M], 'pro-clean-glow': [_YS, _M],
     'pro-karaokebar': [_YS, _K, _P], 'pro-pulse': [_YS, _K], 'pro-thuban': [_YS, _K], 'pro-runway': [_YS, _K],
     'pro-evo': [_YS, _M], 'pro-nova': [_YS, _B], 'pro-andromeda': [_YS, _P], 'pro-elevate': [_YS, _C],
@@ -3477,6 +3539,17 @@
    */
   function markKeywords(words, opts) {
     opts = opts || {};
+    // phrase: a caption holding any keyword is emphasised WHOLE — the short
+    // punchline captions ("tech collapsed") read as one unit, not one big word
+    if (opts.phrase) {
+      var one = {}, ko;
+      for (ko in opts) if (opts.hasOwnProperty(ko)) one[ko] = opts[ko];
+      one.phrase = false;
+      var fl = markKeywords(words, one), any = false, q;
+      for (q = 0; q < fl.length; q++) if (fl[q]) any = true;
+      if (any) for (q = 0; q < fl.length; q++) fl[q] = true;
+      return fl;
+    }
     var mode = opts.mode || 'smart';
     var flags = [];
     var i, w, clean, lc;
