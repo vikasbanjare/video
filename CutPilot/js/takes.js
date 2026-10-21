@@ -65,6 +65,8 @@
     'do that again', 'do it again', 'that again', 'ek baar aur', 'ek baar phir', 'ek aur baar', 'phir se', 'fir se',
     'galat ho gaya', 'nahi nahi', 'shuru se', 'फिर से', 'एक बार और', 'एक बार फिर', 'गलत हो गया', 'नहीं नहीं', 'शुरू से'];
 
+  var RETRY_OPEN = wordSet(['wait', 'sorry', 'ugh', 'oops', 'arre', 'arey', 'arrey', 'ruko', 'ruk', 'rukiye', 'अरे', 'रुको', 'रुकिए']);
+  var RETRY_AGAIN = wordSet(['again', 'redo', 'retry', 'dobara', 'दोबारा', 'phir', 'fir', 'फिर']);
   function norm(w) {
     var s = String(w == null ? '' : w);
     if (s.normalize) s = s.normalize('NFC');
@@ -381,12 +383,16 @@
     // half, and the owner's Hindi retake was kept (v0.10.101). Split where the
     // chatter starts when everything from there on is chatter.
     if (opts.asides !== false) phrases = [].concat.apply([], phrases.map(function (ph) {
+      // only where a retry OPENS ("wait", "sorry", "arre", "ruko"…) and the
+      // rest says "again" — "I want to stop and go over this again" is a line
       var t = ph.map(function (w) { return norm(w.text); });
       for (var i = 2; i < t.length - 1; i++) {
-        if (!CHAT_STRONG[t[i]]) continue;
-        var tail = t.slice(i), chat = 0;
+        if (!RETRY_OPEN[t[i]]) continue;
+        var tail = t.slice(i), chat = 0, joinedT = ' ' + tail.join(' ') + ' ';
         tail.forEach(function (x) { if (CHAT_STRONG[x] || CHAT_WEAK[x]) chat++; });
-        if (tail.length <= (opts.maxAsideWords || 8) && chat / tail.length >= 0.75) return [ph.slice(0, i), ph.slice(i)];
+        var again = tail.some(function (x) { return RETRY_AGAIN[x]; }) ||
+          CHAT_PHRASES.some(function (ph2) { return joinedT.indexOf(' ' + ph2.split(' ').map(norm).join(' ') + ' ') >= 0; });
+        if (again && tail.length <= (opts.maxAsideWords || 8) && chat / tail.length >= 0.75) return [ph.slice(0, i), ph.slice(i)];
       }
       return [ph];
     }));

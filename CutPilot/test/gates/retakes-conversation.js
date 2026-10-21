@@ -220,6 +220,12 @@ console.log('two or more people — echoes of unpunctuated or comma-ended lines'
   const oneBreath = ['आज हम पैसे बचाने के, अरे रुको, एक बार फिर से.', 'आज हम पैसे बचाने के तीन आसान तरीके देखेंगे.', 'पहला तरीका है हर महीने का बजट बनाना.'];
   const ob = run(oneBreath, 'balanced', 'one');
   check('balanced · one: a Hindi false start + "अरे रुको, एक बार फिर से" in one breath is cut, the full line kept', ob.length === 1 && /अरे रुको/.test(ob[0]) && /बचाने के,/.test(ob[0]) && !/तीन/.test(ob[0]), JSON.stringify(ob));
+  const enBreath = ['So the best way to grow is, wait, let me try that again.', 'So the best way to grow is posting every day.', 'Next, the camera.'];
+  const eb = run(enBreath, 'balanced', 'one');
+  check('balanced · one: the same in English ("…is, wait, let me try that again.") is cut, the full line kept', eb.length === 1 && /wait, let me try that again/.test(eb[0]) && !/posting/.test(eb[0]), JSON.stringify(eb));
+  const plainLine = ['I want to stop and go over this again for you.', 'Here is the plan for today.', 'The plan for today is simple.'];
+  const pl = run(plainLine, 'balanced', 'one');
+  check('balanced · one: a line that only USES "stop … again" is never split or cut', !pl.some(x => /stop and go over/.test(x)), JSON.stringify(pl));
   const twiceNeg = ['You do not need a big camera.', 'You do not need a big camera at all.', 'A phone is enough.'];
   const r2 = run(twiceNeg, 'balanced', 'one');
   check('balanced · one: the same negative line said twice is still a retake', r2.length === 1, JSON.stringify(r2));
