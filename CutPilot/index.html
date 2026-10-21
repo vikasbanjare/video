@@ -10,9 +10,9 @@
   <!-- Caption faces — loaded as web fonts so the chosen font renders in the
        live preview AND the canvas-rendered PNGs even if it isn't installed. -->
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Bebas+Neue&family=Archivo+Black&family=Fjalla+One&family=Bangers&family=Luckiest+Guy&family=Alfa+Slab+One&family=Bungee&family=Titan+One&family=Passion+One&family=Permanent+Marker&family=Pacifico&family=Shadows+Into+Light&family=Montserrat:wght@400;500;600;700;800;900&family=Poppins:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800;900&family=Oswald:wght@400;700&family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Lato:wght@400;700&family=Raleway:wght@400;700&family=Work+Sans:wght@400;700&family=Nunito:wght@400;700&family=Rubik:wght@400;700;800;900&family=DM+Sans:wght@400;500;700&family=Outfit:wght@400;500;600;700;800;900&family=Sora:wght@400;500;600;700;800&family=Barlow:wght@400;700&family=Manrope:wght@400;500;600;700;800&family=Teko:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,800;1,600;1,700;1,800&family=Merriweather:wght@400;700&family=Lora:wght@400;700&family=JetBrains+Mono:wght@400;700&family=Roboto+Mono:wght@400;700&family=Space+Mono:wght@400;700&family=Caveat:wght@400;700&family=Arvo:wght@400;700&family=Space+Grotesk:wght@400;500;600;700&family=Syne:wght@600;700;800&family=Unbounded:wght@600;700;800;900&family=DM+Serif+Display:ital@0;1&family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Baloo+2:wght@400;500;600;700;800&family=Mukta:wght@400;500;600;700;800&family=Hind:wght@400;500;600;700&family=Anek+Devanagari:wght@400;500;600;700;800&family=Rozha+One&family=Kalam:wght@400;700&family=Tiro+Devanagari+Hindi:ital@0;1&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=v0.10.105">
-  <link rel="stylesheet" href="css/organize.css?v=v0.10.105">
-  <link rel="stylesheet" href="css/studio.css?v=v0.10.105">
+  <link rel="stylesheet" href="css/style.css?v=v0.10.106">
+  <link rel="stylesheet" href="css/organize.css?v=v0.10.106">
+  <link rel="stylesheet" href="css/studio.css?v=v0.10.106">
 </head>
 <body class="theme-light" data-page="home">
   <!-- ONE navigation row (≤ 12 % of a 400 px-tall panel). Home is the menu;
@@ -98,7 +98,7 @@
         <button id="home-safezone" class="tool-btn" type="button" data-go="safezone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="2"/><rect x="9" y="7" width="6" height="6" rx="1"/><line x1="9" y1="17" x2="15" y2="17"/></svg>Safe zone</button>
       </div>
     </div>
-    <p class="home-foot"><span id="ver" class="ver">v0.10.105</span></p>
+    <p class="home-foot"><span id="ver" class="ver">v0.10.106</span></p>
   </section>
 
   <!-- ============================ TRANSCRIBE ============================ -->
@@ -1065,16 +1065,26 @@
       <div class="step-head"><span class="step-title">Viral Shorts</span>
         <button class="info" type="button" data-info="sh-info" aria-label="How it works">ⓘ</button></div>
       <p class="hint">Find moments, pick a look, make shorts.</p>
-      <div class="info-pop hidden" id="sh-info">Pulse reads your transcript (the whole video) and finds the moments most likely to pop as short clips — each one a self-contained <b>hook → payoff</b>. Get your words first (Transcribe). For each moment you can <b>preview</b> it, <b>mark</b> it, or <b>make it into a short</b>: Pulse frames each camera on whoever is talking, cuts the pauses, and adds the hook title and captions — as an editable timeline or one video file.</div>
+      <div class="info-pop hidden" id="sh-info">Pulse reads your transcript (the whole video) and finds the moments most likely to pop as short clips — each one a self-contained <b>hook → payoff</b>. Get your words first (Transcribe). For each moment you can <b>preview</b> it, <b>mark</b> it, or <b>make it into a short</b>: Pulse frames each camera on whoever is talking, cuts the pauses, and adds captions — on a new timeline you can still edit.</div>
       <div class="step-head sh-step"><span class="step-num">1</span><span class="step-title">Find your best moments</span></div>
       <p class="hint" id="sh-tr-status">Uses your transcript.</p>
       <label>Clip length
           <select id="sh-len">
-            <option value="15-60" selected>15–60s · standard</option>
-            <option value="10-30">10–30s · punchy</option>
-            <option value="30-90">30–90s · story</option>
+            <option value="auto">Auto · as long as each moment needs</option>
+            <option value="10-30">10–30 s · punchy</option>
+            <option value="15-60" selected>15–60 s · standard</option>
+            <option value="30-90">30–90 s · story</option>
+            <option value="60-180">1–3 min · long</option>
+            <option value="custom">Custom…</option>
           </select>
       </label>
+      <div class="row tight hidden" id="sh-len-custom">
+        <span class="hint" style="margin:0">From</span>
+        <input type="number" id="sh-len-min" min="5" max="600" step="5" value="20" aria-label="Shortest clip, seconds">
+        <span class="hint" style="margin:0">to</span>
+        <input type="number" id="sh-len-max" min="10" max="600" step="5" value="120" aria-label="Longest clip, seconds">
+        <span class="hint" style="margin:0">seconds</span>
+      </div>
       <div class="page-actions">
         <button id="btn-find-shorts" class="hero-btn">Find viral moments</button>
         <div id="shorts-progress" class="progress hidden"></div>
@@ -1092,35 +1102,38 @@
           </select>
       </label>
       <span class="field-label" style="margin-top:8px">Layout</span>
-      <div class="seg-control sh-layout" id="sh-layout">
-        <button type="button" data-layout="auto" class="on">Auto</button>
-        <button type="button" data-layout="fill">Fill</button>
-        <button type="button" data-layout="fit">Fit</button>
-        <button type="button" data-layout="split">Split</button>
-        <button type="button" data-layout="bigsmall">◩ Big + small</button>
-        <button type="button" data-layout="pip">Corner box</button>
-        <button type="button" data-layout="three">Three</button>
+      <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><symbol id="shp" viewBox="0 0 20 24"><circle cx="10" cy="7" r="5"/><path d="M1 24c0-6 4-9.5 9-9.5s9 3.5 9 9.5z"/></symbol></defs></svg>
+      <div class="sh-layout" id="sh-layout" role="radiogroup" aria-label="How the people fill the short">
+        <button type="button" data-layout="auto" class="on"><svg class="sh-ic" viewBox="0 0 36 64" aria-hidden="true"><rect class="fr" x="1" y="1" width="34" height="62" rx="5"/><use href="#shp" x="5" y="16" width="26" height="34"/><text x="27" y="13" class="spark">✦</text></svg><span>Auto</span></button>
+        <button type="button" data-layout="fill"><svg class="sh-ic" viewBox="0 0 36 64" aria-hidden="true"><rect class="fr" x="1" y="1" width="34" height="62" rx="5"/><use href="#shp" x="3" y="12" width="30" height="48"/></svg><span>Speaker only</span></button>
+        <button type="button" data-layout="fit"><svg class="sh-ic" viewBox="0 0 36 64" aria-hidden="true"><rect class="fr" x="1" y="1" width="34" height="62" rx="5"/><rect class="dim" x="1" y="1" width="34" height="19" rx="5"/><rect class="dim" x="1" y="44" width="34" height="19" rx="5"/><rect class="band" x="1" y="20" width="34" height="24"/><use href="#shp" x="5" y="25" width="11" height="19"/><use href="#shp" x="20" y="25" width="11" height="19"/></svg><span>Whole shot</span></button>
+        <button type="button" data-layout="split"><svg class="sh-ic" viewBox="0 0 36 64" aria-hidden="true"><rect class="fr" x="1" y="1" width="34" height="62" rx="5"/><line class="cut" x1="1" y1="32" x2="35" y2="32"/><use href="#shp" x="9" y="7" width="18" height="25"/><use href="#shp" x="9" y="38" width="18" height="25"/></svg><span>Split screen</span></button>
+        <button type="button" data-layout="bigsmall"><svg class="sh-ic" viewBox="0 0 36 64" aria-hidden="true"><rect class="fr" x="1" y="1" width="34" height="62" rx="5"/><line class="cut" x1="1" y1="44" x2="35" y2="44"/><use href="#shp" x="5" y="10" width="26" height="34"/><use href="#shp" x="12" y="48" width="12" height="15"/></svg><span>Big + small</span></button>
+        <button type="button" data-layout="pip"><svg class="sh-ic" viewBox="0 0 36 64" aria-hidden="true"><rect class="fr" x="1" y="1" width="34" height="62" rx="5"/><use href="#shp" x="3" y="12" width="30" height="48"/><rect class="box" x="19" y="40" width="13" height="19" rx="2"/><use href="#shp" x="21" y="45" width="9" height="14"/></svg><span>Picture in picture</span></button>
+        <button type="button" data-layout="three"><svg class="sh-ic" viewBox="0 0 36 64" aria-hidden="true"><rect class="fr" x="1" y="1" width="34" height="62" rx="5"/><line class="cut" x1="1" y1="22" x2="35" y2="22"/><line class="cut" x1="1" y1="43" x2="35" y2="43"/><use href="#shp" x="11" y="4" width="14" height="18"/><use href="#shp" x="11" y="25" width="14" height="18"/><use href="#shp" x="11" y="46" width="14" height="17"/></svg><span>Three people</span></button>
       </div>
       <p class="hint" id="sh-layout-hint" style="margin:4px 0 0">Pulse picks: the talker fills the frame, both people when both talk.</p>
-      <span class="field-label" style="margin-top:8px">Make it as</span>
-      <div class="seg-control" id="sh-output">
-        <button type="button" data-out="timeline" class="on">Editable timeline</button>
-        <button type="button" data-out="file">One video file</button>
-      </div>
-      <p class="hint" id="sh-output-hint" style="margin:4px 0 0">A 9:16 timeline you can still edit in Premiere.</p>
       <div class="sh-opts">
         <label class="check" title="Removes every pause and um/uh inside the clip, and starts it on the first real word"><input type="checkbox" id="sh-tight" checked> Cut pauses &amp; “um”s</label>
         <label class="check" title="Captions in the style picked on the Captions page, on their own track — still editable"><input type="checkbox" id="sh-caps" checked> Add captions</label>
         <label class="check" title="With a camera on each video track (V1, V2, V3…): shows whoever is talking, zoomed in to fit the vertical frame — set up the mics on Podcast cameras"><input type="checkbox" id="sh-cams" checked> Use my podcast cameras</label>
       </div>
       <div id="sh-cap-row" class="sh-cap-row">
-        <label>Caption style
-          <select id="sh-cap-style" aria-label="Caption style for the short"></select>
-        </label>
+        <span class="field-label">Caption style</span>
+        <div class="sh-cap-now">
+          <div class="sh-cap-cur" id="sh-cap-cur"></div>
+          <button type="button" class="chip-btn" id="sh-cap-change" aria-expanded="false">Change</button>
+        </div>
+        <select id="sh-cap-style" class="hidden" aria-hidden="true" tabindex="-1"></select>
+        <div class="sh-cap-pick hidden" id="sh-cap-pick">
+          <div class="cat-chips" id="sh-cap-cats"></div>
+          <div class="tpl-grid" id="sh-cap-grid"></div>
+        </div>
         <div class="seg-control" id="sh-cap-out" aria-label="How the captions are made">
           <button type="button" data-out="png">Exact look</button>
-          <button type="button" data-out="editable">Editable</button>
+          <button type="button" data-out="editable">Editable text</button>
         </div>
+        <p class="hint" id="sh-cap-out-hint" style="margin:4px 0 0"></p>
       </div>
       <details class="advanced sh-mark" id="sh-mark-wrap">
         <summary>Framing — what each camera shows <span class="dim">— optional</span></summary>
@@ -1154,11 +1167,10 @@
     </div>
 
     <div id="shorts-results"></div>
-    <div class="next-step" id="sh-next"><span class="ns-txt"><b>Done with this video?</b> All your tools are on Home.</span><button type="button" class="hero-btn small" data-go="home">Home</button></div>
 
     <details class="advanced card" id="shape-wrap">
-      <summary>This whole video in another shape <span class="dim">— a copy, yours stays as it is</span></summary>
-      <p class="hint">Pulse copies the open sequence at the new size and zooms the picture to fill it. Captions are made again on the copy, at its size.</p>
+      <summary>Resize the whole video</summary>
+      <p class="hint">Not a short — your <b>entire</b> video in a new shape, to post it on another platform: <b>9:16</b> for Reels / TikTok / Shorts, <b>1:1</b> for the Instagram feed, <b>16:9</b> for YouTube. Pulse makes a copy of your timeline at that size and zooms the picture to fill it; your captions are drawn again on the copy, in the same style. Your original timeline is not touched.</p>
       <div class="seg-control" id="shape-pick">
         <button type="button" data-w="1080" data-h="1920" data-label="9:16">9:16 vertical</button>
         <button type="button" data-w="1080" data-h="1080" data-label="1:1">1:1 square</button>
@@ -1168,16 +1180,15 @@
     </details>
 
     <details class="advanced card" id="sr-wrap">
-      <summary>The whole video as one vertical, following the speaker <span class="dim">— a different tool</span></summary>
-      <p class="hint">For podcasts with a mic per person. <button class="info" type="button" data-info="sr-info" aria-label="How it works">ⓘ</button></p>
-      <div class="info-pop hidden" id="sr-info">For 2–3 people, each on their own mic: Pulse follows whoever's talking — one person when one holds the floor, <b>split-screen</b> when they talk over each other. It uses your separate audio tracks and the shape chosen above, and puts a finished vertical clip back in your project.</div>
-      <label class="fld-full">People are arranged…
+      <summary>Whole podcast as one vertical video</summary>
+      <p class="hint">For a podcast filmed with <b>one wide camera</b> and <b>a mic per person</b>: Pulse turns the <b>entire</b> episode into one vertical video that always shows whoever is talking — the camera zooms to that person, and splits the screen when two talk at once. It listens to each person's mic to know who is talking. The result is added to your project as a new video; your timeline is not touched.</p>
+      <label class="fld-full">Where people sit in the shot
         <select id="sr-arrange">
-          <option value="lr" selected>Side by side (2 people)</option>
-          <option value="thirds">Left, centre, right (3)</option>
+          <option value="lr" selected>2 people, side by side</option>
+          <option value="thirds">3 people: left, middle, right</option>
         </select>
       </label>
-      <button id="btn-speaker-reframe" class="hero-btn alt" style="margin-top:8px">Make the vertical</button>
+      <button id="btn-speaker-reframe" class="hero-btn alt" style="margin-top:8px">Make the vertical video</button>
       <div id="sr-progress" class="progress hidden"></div>
     </details>
     </section>
@@ -1529,7 +1540,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.10.105 · auto-edit · multicam · captions · chapters · organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.10.106 · auto-edit · multicam · captions · chapters · organize</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->
@@ -1667,37 +1678,37 @@
     </div>
   </div>
 
-  <script src="js/lib/cep-bridge.js?v=v0.10.105"></script>
-  <script src="js/silence.js?v=v0.10.105"></script>
-  <script src="js/audio.js?v=v0.10.105"></script>
-  <script src="js/captions.js?v=v0.10.105"></script>
-  <script src="js/ass.js?v=v0.10.105"></script>
-  <script src="js/render.js?v=v0.10.105"></script>
-  <script src="js/multicam.js?v=v0.10.105"></script>
-  <script src="js/voices.js?v=v0.10.105"></script>
-  <script src="js/sfx.js?v=v0.10.105"></script>
-  <script src="js/takes.js?v=v0.10.105"></script>
-  <script src="js/smartedit.js?v=v0.10.105"></script>
-  <script src="js/apierr.js?v=v0.10.105"></script>
-  <script src="js/verbatim.js?v=v0.10.105"></script>
-  <script src="js/reframe.js?v=v0.10.105"></script>
-  <script src="js/scriptalign.js?v=v0.10.105"></script>
-  <script src="js/transcript.js?v=v0.10.105"></script>
-  <script src="js/fonts.js?v=v0.10.105"></script>
-  <script src="js/command.js?v=v0.10.105"></script>
-  <script src="js/chapters.js?v=v0.10.105"></script>
-  <script src="js/align.js?v=v0.10.105"></script>
-  <script src="js/shorts.js?v=v0.10.105"></script>
-  <script src="js/lib/pico.js?v=v0.10.105"></script>
-  <script src="js/lib/facefinder.js?v=v0.10.105"></script>
-  <script src="js/podshort.js?v=v0.10.105"></script>
-  <script src="js/main.js?v=v0.10.105"></script>
-  <script src="js/organize.js?v=v0.10.105"></script>
-  <script src="js/safezone.js?v=v0.10.105"></script>
-  <script src="js/studio.js?v=v0.10.105"></script>
-  <script src="js/publish.js?v=v0.10.105"></script>
-  <script src="js/hookcheck.js?v=v0.10.105"></script>
-  <script src="js/brandkit.js?v=v0.10.105"></script>
-  <script src="js/broll.js?v=v0.10.105"></script>
+  <script src="js/lib/cep-bridge.js?v=v0.10.106"></script>
+  <script src="js/silence.js?v=v0.10.106"></script>
+  <script src="js/audio.js?v=v0.10.106"></script>
+  <script src="js/captions.js?v=v0.10.106"></script>
+  <script src="js/ass.js?v=v0.10.106"></script>
+  <script src="js/render.js?v=v0.10.106"></script>
+  <script src="js/multicam.js?v=v0.10.106"></script>
+  <script src="js/voices.js?v=v0.10.106"></script>
+  <script src="js/sfx.js?v=v0.10.106"></script>
+  <script src="js/takes.js?v=v0.10.106"></script>
+  <script src="js/smartedit.js?v=v0.10.106"></script>
+  <script src="js/apierr.js?v=v0.10.106"></script>
+  <script src="js/verbatim.js?v=v0.10.106"></script>
+  <script src="js/reframe.js?v=v0.10.106"></script>
+  <script src="js/scriptalign.js?v=v0.10.106"></script>
+  <script src="js/transcript.js?v=v0.10.106"></script>
+  <script src="js/fonts.js?v=v0.10.106"></script>
+  <script src="js/command.js?v=v0.10.106"></script>
+  <script src="js/chapters.js?v=v0.10.106"></script>
+  <script src="js/align.js?v=v0.10.106"></script>
+  <script src="js/shorts.js?v=v0.10.106"></script>
+  <script src="js/lib/pico.js?v=v0.10.106"></script>
+  <script src="js/lib/facefinder.js?v=v0.10.106"></script>
+  <script src="js/podshort.js?v=v0.10.106"></script>
+  <script src="js/main.js?v=v0.10.106"></script>
+  <script src="js/organize.js?v=v0.10.106"></script>
+  <script src="js/safezone.js?v=v0.10.106"></script>
+  <script src="js/studio.js?v=v0.10.106"></script>
+  <script src="js/publish.js?v=v0.10.106"></script>
+  <script src="js/hookcheck.js?v=v0.10.106"></script>
+  <script src="js/brandkit.js?v=v0.10.106"></script>
+  <script src="js/broll.js?v=v0.10.106"></script>
 </body>
 </html>

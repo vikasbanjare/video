@@ -90,7 +90,7 @@ function greyAt(file, t) {
     const sleep = ms => new Promise(r => setTimeout(r, ms));
     window.CP_DEBUG_EXT.retakes.setTranscript({ words: W });
     document.querySelector('.tab[data-tab="shorts"]').click(); await sleep(200);
-    document.querySelector('#sh-output button[data-out="file"]').click();
+    window.CP_DEBUG_EXT.shorts.output('file');
     for (const [id, v] of [['sh-tight', false], ['sh-caps', false], ['sh-cams', false]]) { const e = document.getElementById(id); e.checked = v; e.dispatchEvent(new Event('change')); }
     window.CP_DEBUG_EXT.shorts.show([moment]);
     Array.from(document.querySelectorAll('#shorts-results button')).find(b => /Make/.test(b.textContent)).click();

@@ -1148,6 +1148,16 @@ console.log('smartedit.js (AI cleanup)');
     assert(b && b.dur <= 10 && b.to === 2, 'fitClip: a pick past the max drops whole sentences from its end');
     const c = CPSmart.fitClip(fs, 2, 2, 8, 20);
     assert(c && c.dur >= 8 && c.to === 4, 'fitClip: a pick under the min grows by whole sentences');
+    const qa = [sg('What is the biggest mistake founders make?', 0, 3), sg('No, it is not money.', 3.2, 5), sg('It is hiring too fast before you know the job.', 5.3, 10),
+                sg('You end up firing people you liked.', 10.2, 14), sg('So what would you do instead?', 14.3, 16), sg('Hire slowly.', 16.4, 18)];
+    const d = CPSmart.fitClip(qa, 1, 3, 5, 20);
+    assert(d && d.from === 0, 'fitClip: an answer ("No, …") opens with the question it answers, not without it');
+    const e = CPSmart.fitClip(qa, 0, 4, 5, 30);
+    assert(e && e.to === 3, 'fitClip: a clip never ends on the next question — it stops on the answer');
+    const sp = [sg('This episode is brought to you by Acme.', 0, 3), sg('Here is the real secret to sleep.', 3.2, 6), sg('Keep your room cold every night.', 6.2, 10)];
+    const f = CPSmart.fitClip(sp, 0, 2, 3, 20);
+    assert(f && f.from === 1, 'fitClip: a sponsor read at the start is trimmed off');
+    assert(CPSmart.fitClip([sp[1], sp[0], sp[2]], 0, 2, 3, 20) === null, 'fitClip: a sponsor read inside the clip sinks it');
   }
   // sorted by score desc
   const two = CPSmart.parseHighlightResponse('{"clips":[{"from":0,"to":4,"score":40},{"from":5,"to":9,"score":95}]}', segs, { min: 10, max: 90 });

@@ -423,12 +423,18 @@
       '- end on a clean payoff/punchline — never mid-sentence,\n' +
       '- be ' + minS + '–' + maxS + ' seconds long: add up the lengths of the lines you pick (the last line\'s start minus the first\'s, plus its length),\n' +
       '- start at the beginning of a sentence, never on a line that continues the one before it.\n\n' +
-      'Score each 0–100 on: HOOK (grabs attention in 3s), FLOW (complete arc), VALUE (emotional or useful payoff).\n' +
+      'Score each 0–100 on: HOOK (the first sentence alone would stop a scroll), FLOW (a complete setup → payoff that needs no outside context), ' +
+      'VALUE (a high-arousal feeling — surprise, awe, amusement, anger, worry — or a strong opinion, a conflict, real stakes, a specific number; ' +
+      'a calm explainer with nothing at stake scores low), and SEND (would someone send it to a friend?). ' +
+      'The overall score weighs HOOK most.\n' +
       'Use the scale honestly: an ordinary moment of a podcast is 30–60; give 80+ only to one that would truly stop someone scrolling. ' +
       'This is one part of a longer video, so return nothing rather than a weak clip.\n' +
       'Return up to ' + want + ' clips, best first. Prefer fewer, stronger clips over many weak ones.\n\n' +
       'Reply with STRICT JSON only:\n' +
-      '{"clips":[{"from":<int>,"to":<int>,"title":"<catchy 3-6 word title>","hook":"<the opening hook line>","score":<0-100>,"reason":"<why it pops, short>"}]}\n' +
+      '{"clips":[{"from":<int>,"to":<int>,"title":"<catchy 3-6 word title>","hook":"<the opening hook line>","score":<0-100>,' +
+      '"hook_score":<0-100>,"flow":<0-100>,"value":<0-100>,"send":<0-100>,"reason":"<why it pops, short>",' +
+      '"post_title":"<a specific title under 60 characters, no clickbait>","post_caption":"<one line for the post, the words people would search first>",' +
+      '"hashtags":["<3 to 5 specific hashtags, no #fyp/#viral>"]}]}\n' +
       'If nothing is clip-worthy, reply {"clips":[]}.\n\n' +
       'TRANSCRIPT:\n' + lines.join('\n');
     return { system: HL_SYSTEM, user: user, count: segs.length };
@@ -476,13 +482,26 @@
      a line ends clean when it ends a sentence or a pause follows. Returns
      {from, to, start, end, dur} or null when no whole-sentence fit exists. */
   var SENT_END = /[.!?\u0964\u0965\u06d4\u061f\u2026]["'\u201d\u2019)\]]*\s*$/;
+  /* A line that leans on what came before it (research: the most common
+     reason auto-clips are thrown away is missing context — Spotify's
+     previews and the clipping-tool tests alike): "that's why…", "like I
+     said…", an answer ("No, …") to a question the clip does not hold. */
+  var BACKREF = /^\W*(that'?s why|that is why|this is why|which\b|as i (said|mentioned)|like i (said|mentioned)|as we (said|discussed)|exactly\b|and that'?s|so that'?s|yes,|no,|yeah,|right,|he said|she said|they said)/i;
+  // a sponsor read never belongs in a short
+  var SPONSOR = /(sponsored by|brought to you by|today'?s sponsor|promo code|use (my |the )?code\b|discount code|link in (the )?description)/i;
   function fitClip(segs, from, to, minS, maxS) {
     var n = segs.length;
     if (!n || from < 0 || to >= n || to < from) return null;
     function gapAfter(i) { return i + 1 < n ? (+segs[i + 1].start - +segs[i].end) : 99; }
-    function endsClean(i) { return SENT_END.test(String(segs[i].text || '')) || gapAfter(i) > 0.6; }
-    function startsClean(i) { return i === 0 || endsClean(i - 1); }
+    function txt(i) { return String(segs[i].text || ''); }
+    function endsClean(i) { return SENT_END.test(txt(i)) || gapAfter(i) > 0.6; }
+    function startsClean(i) { return i === 0 || (endsClean(i - 1) && !BACKREF.test(txt(i))); }
     function dur(a, b) { return +segs[b].end - +segs[a].start; }
+    // a sponsor read at an edge is trimmed off; one in the middle sinks the clip
+    while (from <= to && SPONSOR.test(txt(from))) from++;
+    while (to >= from && SPONSOR.test(txt(to))) to--;
+    if (to < from) return null;
+    for (var k = from; k <= to; k++) if (SPONSOR.test(txt(k))) return null;
     // open on a sentence start: back up to it, unless that runs too long —
     // then move forward to the next one
     var f = from;
@@ -500,6 +519,8 @@
       if (dur(f, u) > maxS) break;
       t = u;
     }
+    // never end on a question (the host's next one): the clip stops on the answer
+    while (t > f && /\?["'\u201d\u2019)]*\s*$/.test(txt(t)) && dur(f, t - 1) >= minS - 3) { t--; while (t > f && !endsClean(t)) t--; }
     if (!endsClean(t)) return null;
     var d = dur(f, t);
     if (d > maxS + 3 || d < minS - 3) return null;
@@ -508,6 +529,23 @@
 
   /* Parse highlight reply → [{start,end,title,hook,score,reason,text}] sorted by
      score desc, each fitted to whole sentences in the asked length. Malformed entries are dropped (never throws). */
+  function num(v) { var x = parseFloat(v); return isFinite(x) ? Math.max(0, Math.min(100, Math.round(x))) : null; }
+  /* The post for a clip: title under 60 characters, one caption line, 3–5
+     specific hashtags (research: hashtags help search, not reach; the
+     generic #fyp / #viral carry nothing; YouTube ignores them all past 60). */
+  var GENERIC_TAGS = { fyp: 1, foryou: 1, foryoupage: 1, viral: 1, trending: 1, explore: 1, reels: 1, shorts: 1, tiktok: 1, xyzbca: 1 };
+  function postText(c) {
+    var title = String(c.post_title || c.title || '').replace(/\s+/g, ' ').trim();
+    if (title.length > 60) title = title.slice(0, 57).replace(/\s+\S*$/, '') + '…';
+    var tags = [], seen = {};
+    (Array.isArray(c.hashtags) ? c.hashtags : String(c.hashtags || '').split(/[\s,]+/)).forEach(function (t) {
+      var k = String(t || '').replace(/^#+/, '').replace(/[^\w\u0900-\u097f]/g, '');
+      if (!k || GENERIC_TAGS[k.toLowerCase()] || seen[k.toLowerCase()] || tags.length >= 5) return;
+      seen[k.toLowerCase()] = 1; tags.push('#' + k);
+    });
+    return { title: title, caption: String(c.post_caption || '').replace(/\s+/g, ' ').trim().slice(0, 220), hashtags: tags };
+  }
+
   function parseHighlightResponse(text, segments, opts) {
     opts = opts || {};
     var minS = opts.min != null ? opts.min : 6, maxS = opts.max != null ? opts.max : 120;
@@ -539,6 +577,10 @@
         hook: (c.hook ? String(c.hook) : '').slice(0, 120),
         score: score,
         reason: (c.reason ? String(c.reason) : '').slice(0, 120),
+        // the parts of the score, shown on the card instead of one magic number
+        parts: { hook: num(c.hook_score), flow: num(c.flow), value: num(c.value), send: num(c.send) },
+        // ready to post: a title, the first line of the post, a few specific hashtags
+        post: postText(c),
         text: bodyTxt.join(' ')
       });
     }
@@ -596,6 +638,8 @@
     parseRerankResponse: parseRerankResponse,
     parseHighlightResponse: parseHighlightResponse,
     fitClip: fitClip,
+    postText: postText,
+    BACKREF: BACKREF,
     buildTitlePrompt: buildTitlePrompt,
     parseTitle: parseTitle,
     mmss: mmss,

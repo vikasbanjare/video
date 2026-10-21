@@ -7103,7 +7103,7 @@
      no Edit pill, no category line, no ANIMATED/PREMIUM badges — the reference
      "text presets" look the user asked for. The favorite star is hidden at rest
      and fades in on hover so the grid stays uncluttered. */
-  function buildTemplateCard(t) {
+  function buildTemplateCard(t, onPick) {
     var isMogrt = !!t.mogrt;
     var card = document.createElement('div');
     card.className = 'tpl-card' + (isMogrt ? ' is-mogrt' : ' is-style') +
@@ -7252,7 +7252,7 @@
     // owner to every style picked afterwards, so after switching it off once,
     // 41 karaoke / reveal styles (Dim-to-Bright…) opened static while their
     // tiles swept. The opt-out still holds for the style it was made on.
-    else card.addEventListener('click', function () {
+    else card.addEventListener('click', onPick ? function () { onPick(t); } : function () {
       preloadStyleFonts(t, renderPreview); _pvDemo = null;
       state.wordHlOff = false;
       applyTemplate(t); showView('style');
@@ -17431,9 +17431,20 @@
     return { num: parseInt(p[0], 10), den: parseInt(p[1], 10), label: v };
   }
   function shLen() {
-    var p = (($('sh-len') && $('sh-len').value) || '15-60').split('-');
+    var v = ($('sh-len') && $('sh-len').value) || '15-60';
+    // Auto: as long as the moment needs, up to what Reels / Shorts take (3 min)
+    if (v === 'auto') return { min: 15, max: 180 };
+    if (v === 'custom') {
+      var a = parseInt($('sh-len-min') && $('sh-len-min').value, 10) || 20, b = parseInt($('sh-len-max') && $('sh-len-max').value, 10) || 120;
+      a = Math.max(5, Math.min(600, a)); b = Math.max(a + 5, Math.min(600, b));
+      return { min: a, max: b };
+    }
+    var p = v.split('-');
     return { min: parseInt(p[0], 10) || 15, max: parseInt(p[1], 10) || 60 };
   }
+  if ($('sh-len')) $('sh-len').addEventListener('change', function () {
+    if ($('sh-len-custom')) $('sh-len-custom').classList.toggle('hidden', this.value !== 'custom');
+  });
   /* The moments belong to the sequence they were found on. Making a short
      leaves the short's new sequence active, so the next button would read
      the cameras of the short (and, since each sequence keeps its own words,
@@ -17447,6 +17458,12 @@
       .then(function () { return CPBridge.callHost('CP_getEnv'); })
       .then(function (env) { state.env = env; refreshEnvStatus(); }, function () {});
   }
+  function copyFallback(text) {
+    var ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+  }
   function renderShorts(list) {
     _shortsSrc = envKey(state.env);
     var box = $('shorts-results'); if (!box) return;
@@ -17458,11 +17475,12 @@
     var lead = document.createElement('div'); lead.className = 'card sh-lead';
     var lh = document.createElement('div'); lh.className = 'step-head sh-step';
     lh.innerHTML = '<span class="step-num">3</span><span class="step-title"></span>';
-    lh.querySelector('.step-title').textContent = 'Make the ones you like (' + list.length + ' found)';
+    lh.querySelector('.step-title').textContent = 'Turn moments into shorts';
     lead.appendChild(lh);
     var lp = document.createElement('p'); lp.className = 'hint';
-    lp.textContent = 'Made with the look in step 2. ';
-    var lk = document.createElement('button'); lk.type = 'button'; lk.className = 'chip-btn'; lk.textContent = '🎨 Change it';
+    lp.textContent = 'Pulse found ' + list.length + ' moment' + (list.length === 1 ? '' : 's') + ', best first. ' +
+      '▶ Preview selects it on your timeline so you can watch it; 📍 Mark adds a marker there; Make builds the short as a new timeline, looking the way step 2 is set. ';
+    var lk = document.createElement('button'); lk.type = 'button'; lk.className = 'chip-btn'; lk.textContent = '🎨 Change the look';
     lk.addEventListener('click', function (ev) { ev.preventDefault(); var t = $('sh-look'); if (t && t.scrollIntoView) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
     lp.appendChild(lk); lead.appendChild(lp);
     if (list.length > 1) {
@@ -17479,12 +17497,33 @@
       var head = document.createElement('div'); head.className = 'step-head';
       var title = document.createElement('span'); title.className = 'step-title'; title.textContent = (i + 1) + '. ' + (h.title || 'Clip');
       var score = document.createElement('span'); score.className = 'badge ok'; score.textContent = '🔥 ' + Math.round(h.score);
+      // the parts of the score, so a high number says WHY (research: no
+      // single "virality score" predicts views; it only ranks this episode)
+      var pt = h.parts || {};
+      var partTxt = [['Hook', pt.hook], ['Story', pt.flow], ['Feeling', pt.value], ['Shareable', pt.send]]
+        .filter(function (x) { return x[1] != null; }).map(function (x) { return x[0] + ' ' + x[1]; }).join(' · ');
+      if (partTxt) score.title = partTxt;
       head.appendChild(title); head.appendChild(score); card.appendChild(head);
       var meta = document.createElement('p'); meta.className = 'hint';
       var b = document.createElement('b'); b.textContent = fmt(h.start) + ' → ' + fmt(h.end) + ' · ' + Math.round(h.dur) + 's'; meta.appendChild(b);
       if (h.hook) { meta.appendChild(document.createElement('br')); meta.appendChild(document.createTextNode('“' + h.hook + '”')); }
       if (h.reason) { meta.appendChild(document.createElement('br')); var sp = document.createElement('span'); sp.className = 'dim'; sp.textContent = h.reason; meta.appendChild(sp); }
-      card.appendChild(meta);
+      if (partTxt) { var pp = document.createElement('p'); pp.className = 'hint dim sh-parts'; pp.textContent = partTxt; card.appendChild(meta); card.appendChild(pp); }
+      else card.appendChild(meta);
+      // ready to post: a title, the post's first line and a few specific hashtags
+      var po = h.post;
+      if (po && (po.title || po.caption || (po.hashtags || []).length)) {
+        var post = document.createElement('details'); post.className = 'sh-post';
+        var ps = document.createElement('summary'); ps.textContent = '📝 Title, text & hashtags for posting'; post.appendChild(ps);
+        var full = [po.title, po.caption, (po.hashtags || []).join(' ')].filter(Boolean).join('\n\n');
+        var pre = document.createElement('p'); pre.className = 'hint sh-post-text'; pre.textContent = full; post.appendChild(pre);
+        var cpb = document.createElement('button'); cpb.type = 'button'; cpb.className = 'chip-btn'; cpb.textContent = 'Copy';
+        cpb.addEventListener('click', function () {
+          var done = function () { toast('Copied — paste it when you post this short.'); };
+          try { navigator.clipboard.writeText(full).then(done, function () { copyFallback(full); done(); }); } catch (eC) { copyFallback(full); done(); }
+        });
+        post.appendChild(cpb); card.appendChild(post);
+      }
       // 🪝 Hook check: how strong the finished short's first 3 seconds are
       var hc = null;
       try { hc = (window.CPHookCheck && state.transcriptWords) ? CPHookCheck.check(state.transcriptWords, h) : null; } catch (eHc) { hc = null; }
@@ -17568,16 +17607,19 @@
   /* How the short is made (the owner: "I want editable layers"): an editable
      timeline (the cameras cut on a 9:16 sequence, framed by Motion) or one
      rendered video file; and its layout. */
-  function shortOutput() { return settings.shOutput === 'file' ? 'file' : 'timeline'; }
+  // always an editable timeline (the owner removed "one video file"); the
+  // one-file render stays for "Keep original" and the gates (CP_DEBUG_EXT.shorts.output)
+  var _shOutTest = null;
+  function shortOutput() { return _shOutTest === 'file' ? 'file' : 'timeline'; }
   function shortLayout() { return CPPodShort.LAYOUTS.indexOf(settings.shLayout) >= 0 ? settings.shLayout : 'auto'; }
   var SH_LAYOUT_HINTS = {
-    auto: 'Pulse picks: the talker fills the frame, both people when both talk.',
-    fill: 'Whoever talks fills the frame.',
-    fit: 'The whole shot, with a blurred copy above and below.',
-    split: 'Two people, one on top, one below.',
-    bigsmall: 'The talker big on top, the other person small below.',
-    pip: 'The talker fills the frame, the other in a small box.',
-    three: 'Three people stacked, top to bottom.'
+    auto: 'Auto: Pulse chooses for each moment — the person talking fills the screen, and both show when both talk.',
+    fill: 'Speaker only: whoever is talking fills the whole screen; it switches when someone else talks.',
+    fit: 'Whole shot: nothing is cropped — the full camera picture sits in the middle, a blurred copy fills the top and bottom.',
+    split: 'Split screen: two people at once — one in the top half, the other in the bottom half.',
+    bigsmall: 'Big + small: the person talking large on top, the listener small underneath.',
+    pip: 'Picture in picture: the person talking fills the screen, the other sits in a small box in the corner.',
+    three: 'Three people: three people at once, stacked top to bottom.'
   };
   /* A length the way people say it: "1 h 52 min", "38 min", "45 s". */
   function spokenLength(sec) {
@@ -17608,6 +17650,39 @@
      uses — picking it here picks it there) and how the captions are made.
      The owner: "captions are generated automatically without selecting
      which caption style I need". */
+  /* The owner (a screenshot of the narrow list): "how people will find out
+     which caption they have to select — very weird". The style is shown as
+     its own moving preview, and Change opens the gallery's cards, by
+     category, right here. */
+  var _shCapCat = 'All';
+  function shortCapStyles() {
+    return CPCaptions.TEMPLATES.concat(state.customTemplates || []).filter(function (t) { return t && !t.hidden && !t.mogrt; });
+  }
+  function pickShortCapStyle(t) {
+    var sel = $('sh-cap-style'); if (!sel || !t) return;
+    sel.value = t.id;
+    try { sel.dispatchEvent(new Event('change')); } catch (e) {}
+    if ($('sh-cap-pick')) $('sh-cap-pick').classList.add('hidden');
+    if ($('sh-cap-change')) { $('sh-cap-change').textContent = 'Change'; $('sh-cap-change').setAttribute('aria-expanded', 'false'); }
+  }
+  function renderShortCapGrid() {
+    var grid = $('sh-cap-grid'), chips = $('sh-cap-cats'); if (!grid || !chips) return;
+    var all = shortCapStyles();
+    var cats = ['All'].concat((CPCaptions.CATEGORIES || []).filter(function (c) {
+      return c !== '🔘 Buttons' && all.some(function (t) { return CPCaptions.inCategory(t, c); });
+    }));
+    if (cats.indexOf(_shCapCat) < 0) _shCapCat = 'All';
+    chips.innerHTML = '';
+    cats.forEach(function (c) {
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'cat-chip' + (c === _shCapCat ? ' on' : ''); b.textContent = c;
+      b.addEventListener('click', function () { _shCapCat = c; renderShortCapGrid(); });
+      chips.appendChild(b);
+    });
+    grid.innerHTML = '';
+    all.filter(function (t) { return _shCapCat === 'All' || CPCaptions.inCategory(t, _shCapCat); })
+       .forEach(function (t) { grid.appendChild(buildTemplateCard(t, pickShortCapStyle)); });
+    schedulePaintThumbs();
+  }
   function fillShortCapStyles() {
     var sel = $('sh-cap-style'); if (!sel) return;
     if (!sel.options.length) {
@@ -17629,11 +17704,28 @@
     }
     var ob = document.querySelectorAll('#sh-cap-out button');
     for (var j = 0; j < ob.length; j++) ob[j].classList.toggle('on', ob[j].dataset.out === (_capOut === 'editable' ? 'editable' : 'png'));
+    if ($('sh-cap-out-hint')) $('sh-cap-out-hint').textContent = _capOut === 'editable'
+      ? 'Editable text: Premiere text you can retype and restyle later; the animation is simpler.'
+      : 'Exact look: drawn by Pulse, exactly as the preview shows — every animation included.';
+    var curBox = $('sh-cap-cur');
+    if (curBox && cur) {
+      curBox.innerHTML = '';
+      curBox.appendChild(buildTemplateCard(cur, function () { if ($('sh-cap-change')) $('sh-cap-change').click(); }));
+      schedulePaintThumbs();
+    }
     var row = $('sh-cap-row'), on = $('sh-caps');
     if (row) row.classList.toggle('hidden', !!(on && !on.checked));
   }
   (function wireShortCapStyle() {
-    ['sh-len', 'sh-ratio', 'sh-cap-style', 'sh-mark-cam', 'sh-focus'].forEach(function (id) { selectAsDropdown($(id)); });
+    ['sh-len', 'sh-ratio', 'sh-mark-cam', 'sh-focus', 'sr-arrange'].forEach(function (id) { selectAsDropdown($(id)); });
+    if ($('sh-cap-change')) $('sh-cap-change').addEventListener('click', function () {
+      var pick = $('sh-cap-pick'); if (!pick) return;
+      var open = pick.classList.contains('hidden');
+      pick.classList.toggle('hidden', !open);
+      this.textContent = open ? 'Close' : 'Change';
+      this.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open) renderShortCapGrid();
+    });
     var sel = $('sh-cap-style');
     if (sel) sel.addEventListener('change', function () {
       var t = findTemplate(sel.value);
@@ -17653,7 +17745,7 @@
     var rt = shRatio(), o = shortOpts();
     var lay = document.querySelector('#sh-layout button.on');
     var bits = [rt ? rt.label + ' ' + (rt.label === '9:16' ? 'vertical' : rt.label === '1:1' ? 'square' : 'portrait') : 'original shape',
-                (lay ? lay.textContent.trim() : '🤖 Auto') + ' layout',
+                (lay && lay.querySelector('span') ? lay.querySelector('span').textContent : 'Auto') + ' layout',
                 (rt && shortOutput() === 'timeline') ? '✏️ editable timeline' : '🎞 one video file'];
     var extras = [];
     if (o.tight) extras.push('pauses cut');
@@ -17665,18 +17757,11 @@
     var lb = document.querySelectorAll('#sh-layout button');
     for (var i = 0; i < lb.length; i++) lb[i].classList.toggle('on', lb[i].dataset.layout === shortLayout());
     if ($('sh-layout-hint')) $('sh-layout-hint').textContent = SH_LAYOUT_HINTS[shortLayout()];
-    var ob = document.querySelectorAll('#sh-output button');
-    for (i = 0; i < ob.length; i++) ob[i].classList.toggle('on', ob[i].dataset.out === shortOutput());
-    if ($('sh-output-hint')) $('sh-output-hint').textContent = shortOutput() === 'timeline'
-      ? 'A 9:16 timeline you can still edit in Premiere.'
-      : 'One finished video file — quickest, not editable.';
     refreshShortsSummary();
   }
   (function wireShortChoices() {
     var lb = document.querySelectorAll('#sh-layout button');
     for (var i = 0; i < lb.length; i++) lb[i].addEventListener('click', function () { settings.shLayout = this.dataset.layout; saveSettings(); syncShortChoices(); });
-    var ob = document.querySelectorAll('#sh-output button');
-    for (i = 0; i < ob.length; i++) ob[i].addEventListener('click', function () { settings.shOutput = this.dataset.out; saveSettings(); syncShortChoices(); });
     ['sh-ratio', 'sh-tight', 'sh-caps', 'sh-cams'].forEach(function (id) { var e = $(id); if (e) e.addEventListener('change', function () { refreshShortsSummary(); }); });
     syncShortChoices();
   })();
@@ -18533,13 +18618,27 @@
     var out = [];
     (list || []).slice().sort(function (a, b) { return (b.score || 0) - (a.score || 0); }).forEach(function (h) {
       if (out.length >= n) return;
-      var clash = out.some(function (o) {
-        var ov = Math.min(o.end, h.end) - Math.max(o.start, h.start);
-        return ov > 0.5 * Math.min(o.end - o.start, h.end - h.start);
-      });
+      // no two shorts share a second: TikTok swaps out near-duplicates and
+      // Instagram's originality check matches clips on their audio
+      var clash = out.some(function (o) { return Math.min(o.end, h.end) - Math.max(o.start, h.start) > 0; });
       if (!clash) out.push(h);
     });
     return out;
+  }
+  /* The first seconds decide a short: how many stay past second 5 predicts
+     how much of the whole clip is watched (r = 0.93 over 90,000 videos,
+     arXiv 2410.00289). A moment whose opening the 🪝 check calls weak goes,
+     as long as at least 4 others are left. */
+  function openingGate(list) {
+    if (!list || list.length <= 4 || !window.CPHookCheck || !state.transcriptWords) return list;
+    var keep = [], weak = [];
+    list.forEach(function (h) {
+      var hc = null; try { hc = CPHookCheck.check(state.transcriptWords, h); } catch (e) { hc = null; }
+      (hc && hc.score < 45 ? weak : keep).push(h);
+    });
+    while (keep.length < 4 && weak.length) keep.push(weak.shift());
+    if (list.length - keep.length) { try { diag('shorts', (list.length - keep.length) + ' moment(s) dropped for a weak opening'); } catch (eD) {} }
+    return keep;
   }
   function runHighlightFinder() {
     if (typeof CPSmartEdit === 'undefined') return toast('Shorts module missing.', true);
@@ -18565,7 +18664,7 @@
     if (!cpKey()) return local(' (add your free key in Settings → Auto-transcribe for AI picks)');
     processChunks(chunks, function (cs) {
       var prompt = CPSmartEdit.buildHighlightPrompt(cs, { min: len.min, max: len.max, count: 6 });
-      return aiChatRetry(prompt, { maxTokens: 1500 }).then(function (content) {
+      return aiChatRetry(prompt, { maxTokens: 2600 }).then(function (content) {
         return CPSmartEdit.parseHighlightResponse(content, cs, { min: len.min, max: len.max });
       }).then(null, function (e) {
         // one part the AI could not answer costs that part only: its moments
@@ -18585,16 +18684,28 @@
       // picks felt random). Without an answer, the parts' own order stays.
       if (chunks.length < 2 || pool.length < 4 || !CPSmartEdit.buildRerankPrompt) return pool.slice(0, 12);
       if (prog) prog.textContent = '✨ Comparing the best ' + pool.length + ' moments…';
-      return aiChatRetry(CPSmartEdit.buildRerankPrompt(pool), { maxTokens: 900 }).then(function (content) {
-        var r = CPSmartEdit.parseRerankResponse(content, pool.length);
-        if (!r) return pool.slice(0, 12);
-        var ranked = r.map(function (x) { var h = pool[x.i]; h.score = x.score; return h; });
-        pool.forEach(function (h, i) { if (!r.some(function (x) { return x.i === i; })) ranked.push(h); });
-        try { diag('shorts', 'moments ranked side by side: ' + ranked.slice(0, 5).map(function (h) { return Math.round(h.score) + ' ' + (h.title || '').slice(0, 24); }).join(' · ')); } catch (eD) {}
+      // twice, each time in a different order, and the two scores averaged:
+      // an AI judge favours whatever it reads first (ICLR 2025, 100k+ cases)
+      function onePass(order) {
+        return aiChatRetry(CPSmartEdit.buildRerankPrompt(order.map(function (k) { return pool[k]; })), { maxTokens: 900 }).then(function (content) {
+          var r = CPSmartEdit.parseRerankResponse(content, pool.length);
+          return r ? r.map(function (x) { return { i: order[x.i], score: x.score }; }) : null;
+        }, function () { return null; });
+      }
+      var fwd = pool.map(function (h, k) { return k; }), mixed = fwd.slice();
+      for (var q = mixed.length - 1; q > 0; q--) { var z = Math.floor(Math.random() * (q + 1)), tq = mixed[q]; mixed[q] = mixed[z]; mixed[z] = tq; }
+      return Promise.all([onePass(fwd), onePass(mixed)]).then(function (passes) {
+        var sum = {}, cnt = {};
+        passes.forEach(function (r) { (r || []).forEach(function (x) { sum[x.i] = (sum[x.i] || 0) + x.score; cnt[x.i] = (cnt[x.i] || 0) + 1; }); });
+        if (!Object.keys(cnt).length) return pool.slice(0, 12);
+        pool.forEach(function (h, k) { if (cnt[k]) h.score = sum[k] / cnt[k]; });
+        var ranked = pool.slice().sort(function (a, b) { return (b.score || 0) - (a.score || 0); });
+        try { diag('shorts', 'moments ranked side by side (2 shuffled passes): ' + ranked.slice(0, 5).map(function (h) { return Math.round(h.score) + ' ' + (h.title || '').slice(0, 24); }).join(' · ')); } catch (eD) {}
         return ranked.slice(0, 12);
-      }, function () { return pool.slice(0, 12); });
+      });
     }).then(function (hl) {
       if (!hl) return;
+      hl = openingGate(hl);
       prog.classList.add('hidden');
       renderShorts(hl);
       var span = segs.length ? spokenLength(segs[segs.length - 1].end - segs[0].start) : '';
@@ -18606,6 +18717,7 @@
   try {
     window.CP_DEBUG_EXT = window.CP_DEBUG_EXT || {};
     window.CP_DEBUG_EXT.shorts = { show: renderShorts, plan: function (h) { return shortPlanFor(h, shortOpts()); },
+                                   output: function (v) { _shOutTest = v || null; },
                                    segments: function () { return highlightSegments() || []; },
                                    setLastJob: function (cues) { state.lastCaptionJob = { cues: cues, track: 2, seq: 'Some short' }; },
                                    viral: function () { viralEdit(); },
@@ -18746,14 +18858,26 @@
     var all = document.querySelectorAll('#shape-pick button');
     for (var i = 0; i < all.length; i++) all[i].disabled = true;
     if (st) st.textContent = 'Making the ' + btn.dataset.label + ' copy…';
+    // the words of the open video, read BEFORE the copy: its captions were
+    // drawn for the old size, so the copy gets them drawn again at its own —
+    // the owner: "the moment I click square after vertical, all the captions
+    // disappear"
+    var cues = null;
+    try { cues = readSelectedTranscript(); } catch (eT) { cues = null; }
+    var words = state.transcriptWords;
     CPBridge.callHost('CP_makeShapeCopy', { width: +btn.dataset.w, height: +btn.dataset.h, label: btn.dataset.label }).then(function (r) {
       for (var j = 0; j < all.length; j++) all[j].disabled = false;
+      var again = !!(r.captionsRemoved && cues && cues.length);
       var msg = '📐 Made “' + r.name + '” (' + r.width + '×' + r.height + ') and opened it — your original is unchanged.' +
-        (r.captionsRemoved ? ' Its old captions were for the old size: tap ✨ Add captions on the Captions page to caption it at this size.' : '');
+        (again ? ' Drawing its captions again at this size…' : (r.captionsRemoved ? ' Its captions were for the old size: tap ✨ Add captions on the Captions page to caption it at this size.' : ''));
       if (st) st.textContent = msg;
       toast(msg);
       // the copy is the open sequence now: captions and previews follow its size
-      CPBridge.callHost('CP_getEnv').then(function (env) { if (env) state.env = env; }, function () {});
+      return CPBridge.callHost('CP_getEnv').then(function (env) { if (env) state.env = env; }, function () {}).then(function () {
+        if (!again) return;
+        if (_capOut === 'editable') applyEditableStyle({ cues: cues, words: words });
+        else addPulseCaptions(cues);
+      });
     }).catch(function (e) {
       for (var j = 0; j < all.length; j++) all[j].disabled = false;
       if (st) st.textContent = '';

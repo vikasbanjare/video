@@ -96,7 +96,7 @@ function cardLevel(file, t, W, H) {
     const res = await P.page.evaluate(async (said, moment, opts) => {
       const sleep = ms => new Promise(r => setTimeout(r, ms));
       window.CP_DEBUG_EXT.retakes.setTranscript({ words: said });
-      document.querySelector('.tab[data-tab="shorts"]').click(); await sleep(200); { const ob = document.querySelector('#sh-output button[data-out="file"]'); if (ob) ob.click(); }   // this gate checks the one-file render
+      document.querySelector('.tab[data-tab="shorts"]').click(); await sleep(200); window.CP_DEBUG_EXT.shorts.output('file');   // this gate checks the one-file render
       for (const [id, v] of Object.entries(opts)) { if (id[0] === '_') continue; const e = document.getElementById(id); e.checked = v; e.dispatchEvent(new Event('change')); }
       // the caption style picked in step 2 (the owner: "captions are generated without selecting which style I need")
       if (opts._style) { const cs = document.getElementById('sh-cap-style'); cs.value = opts._style; cs.dispatchEvent(new Event('change')); }
@@ -171,7 +171,7 @@ function cardLevel(file, t, W, H) {
     const F = await P.page.evaluate(async (words) => {
       const sleep = ms => new Promise(r => setTimeout(r, ms));
       window.CP_DEBUG_EXT.retakes.setTranscript({ words, transcript: null, captionCues: null });
-      document.querySelector('.tab[data-tab="shorts"]').click(); await sleep(200); { const ob = document.querySelector('#sh-output button[data-out="file"]'); if (ob) ob.click(); }   // this gate checks the one-file render
+      document.querySelector('.tab[data-tab="shorts"]').click(); await sleep(200); window.CP_DEBUG_EXT.shorts.output('file');   // this gate checks the one-file render
       const len = document.getElementById('sh-len'); len.value = '10-30'; len.dispatchEvent(new Event('change'));
       document.getElementById('btn-find-shorts').click(); await sleep(600);
       return { cards: Array.from(document.querySelectorAll('#shorts-results .card:not(.sh-lead)')).map(c => c.textContent.replace(/\s+/g, ' ').slice(0, 160)),

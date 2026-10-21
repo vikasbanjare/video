@@ -118,7 +118,7 @@ function facesIn(png) {
       window.CP_DEBUG_EXT.shorts.setCameras({ plan: o.plan, map: ['0', '1', '-1'], angles: 3 });
       if (o.frame) window.CP_DEBUG_EXT.shorts.setFrame(o.frame.path, o.frame.box);
       document.querySelector('.tab[data-tab="shorts"]').click(); await sleep(200);
-      document.querySelector('#sh-output button[data-out="' + o.out + '"]').click();
+      window.CP_DEBUG_EXT.shorts.output(o.out);
       document.querySelector('#sh-layout button[data-layout="' + o.layout + '"]').click();
       for (const [id, v] of Object.entries({ 'sh-tight': true, 'sh-caps': false, 'sh-cams': true })) {
         const e = document.getElementById(id); e.checked = v; e.dispatchEvent(new Event('change'));
