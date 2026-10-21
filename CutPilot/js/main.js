@@ -92,6 +92,7 @@
   var BUNDLED_SARVAM_KEY = ''; /*@@CP_SARVAM@@*/  // shared Sarvam (Swara) key baked into the build
   var WHITE_LABEL = false; /*@@CP_WL@@*/     // hide the underlying engine/model names
   var KEY_BUNDLED = !!BUNDLED_KEY;
+  var PRODUCT_BUILD = false; /*@@CP_PRODUCT@@*/   // the finished product: tester tools hidden
   // Valid license keys are stored ONLY as sha256 hashes (the keys themselves are
   // never in the source, so reading the build can't mint keys). Entering a key
   // whose hash is listed here unlocks the panel for good, even past a trial.
@@ -118,8 +119,12 @@
         for (var k in fileS) if (fileS.hasOwnProperty(k) && (s[k] == null || s[k] === '')) s[k] = fileS[k];
       } }
     } catch (e2) {}
-    if (BUNDLED_KEY && !(s.groqKey || '').trim()) s.groqKey = BUNDLED_KEY;   // shared key for trial copies
-    if (BUNDLED_SARVAM_KEY && !(s.sarvamKey || '').trim()) s.sarvamKey = BUNDLED_SARVAM_KEY;   // shared Swara key
+    // A bundled key is NEVER copied into the settings: they are saved as plain
+    // text (localStorage + ~/.cutpilot-settings.json), which put the key in a
+    // readable file on every customer's Mac. cpKey()/cpSarvamKey() use the
+    // bundled one when the user has none; a copy an older build saved is removed.
+    if (BUNDLED_KEY && (s.groqKey || '').trim() === BUNDLED_KEY) delete s.groqKey;
+    if (BUNDLED_SARVAM_KEY && (s.sarvamKey || '').trim() === BUNDLED_SARVAM_KEY) delete s.sarvamKey;
     return s;
   }
   function saveSettings() {
@@ -723,8 +728,10 @@
   function resolveQuality() {
     var q = settings.whisperQuality || 'auto-best';
     if (q === 'auto-best') {
-      if (cpKey()) return 'cloud-groq';
+      // a key the user entered beats the build's bundled one
+      if ((settings.groqKey || '').trim()) return 'cloud-groq';
       if (cpDeepgramKey()) return 'cloud-deepgram';   // a Deepgram key alone is enough to transcribe
+      if (cpKey()) return 'cloud-groq';
       if (cpSarvamKey()) return 'cloud-swara';
       // A white-label build stays on cloud and asks for the key: falling back
       // to a local model hid the key box (it only showed for cloud), so the key
@@ -2688,8 +2695,8 @@
       { group: 'Cameras', label: 'Plan camera cuts', keywords: 'multicam cameras angle plan', run: function () { goTab('multicam')(); clickId('btn-mc-plan')(); } },
       { group: 'Cameras', label: 'Apply camera switches', keywords: 'multicam apply cut', run: function () { goTab('multicam')(); clickId('btn-mc-apply')(); } },
       { group: 'Chapters', label: 'Make chapters', keywords: 'generate youtube timestamps', run: function () { goTab('chapters')(); clickId('btn-ch-build')(); } },
-      { group: 'Settings', label: 'Run the full check', keywords: 'diagnostic debug help support', run: function () { goTab('settings')(); clickId('btn-diag-full')(); } }
-    ];
+      { group: 'Settings', label: 'Run the full check', keywords: 'diagnostic debug help support', tester: true, run: function () { goTab('settings')(); clickId('btn-diag-full')(); } }
+    ].filter(function (a) { return !(PRODUCT_BUILD && a.tester); });   // the finished product lists no tester tools
   }
   function openPalette() {
     $('cmdk').classList.remove('hidden');
@@ -3114,6 +3121,9 @@
         var el = $(id); if (el) { var row = el.closest ? el.closest('label,div') : el; if (row) row.style.display = 'none'; }
       });
     }
+    // …and the Indian-language key when that one is built in too
+    if (BUNDLED_SARVAM_KEY) ['tr-swara-keyrow', 'set-swara-row'].forEach(function (id) { var el = $(id); if (el) el.style.display = 'none'; });
+    if (PRODUCT_BUILD) document.documentElement.classList.add('product');
     wireTheme();
     wireTextSize();
     wireShell();

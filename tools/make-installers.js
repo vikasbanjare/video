@@ -1,14 +1,14 @@
 /*
  * make-installers.js — build SELF-CONTAINED, one-click installers from
  * CutPilot-protected. Each is a SINGLE thing the user clicks; it installs the
- * panel, downloads ffmpeg (the video engine) with a progress UI, enables the
+ * panel with its video engine (ffmpeg, bundled; downloaded only if missing), enables the
  * panel, and finishes — no Terminal, no juggling multiple files.
  *
  *   • macOS:   "Install Pulse.app"  (delivered inside Pulse-Mac.zip)
- *              — embeds the panel, downloads ffmpeg, shows native status, done.
+ *              — embeds the panel + ffmpeg, shows native status, done.
  *   • Windows: "Install Pulse (Windows).hta"  (one file)
  *              — HTML window with a real progress BAR; a hidden PowerShell worker
- *                extracts the embedded panel, downloads ffmpeg, sets the registry.
+ *                extracts the embedded panel (+ ffmpeg.exe), sets the registry.
  *
  * Usage:  node tools/make-installers.js     (after build-protected.js)
  */
@@ -50,10 +50,47 @@ copyDir(EXT, stage);
     if (t.indexOf('CutPilot') >= 0) fs.writeFileSync(p, t.replace(/CutPilot/g, 'Pulse'));
   }
 })(stage);
-const payloadZip = path.join(work, 'Pulse.zip');
-sh('cd "' + work + '" && zip -qry "' + payloadZip + '" Pulse');
-const payloadBytes = fs.statSync(payloadZip).size;
-console.log('payload: Pulse.zip (' + (payloadBytes / 1048576).toFixed(1) + ' MB)');
+// ---- the video engine (ffmpeg) INSIDE the panel, so installing needs no
+// download and nothing can fail half-way: Pulse/bin/ffmpeg (one universal
+// binary for Apple Silicon + Intel Macs) and Pulse/bin/ffmpeg.exe (Windows).
+// Pulse already looks there first (resolveFfmpeg). CP_BUNDLE_FFMPEG=0 skips it
+// (the installers then download it, as before).
+const BUNDLE_FF = process.env.CP_BUNDLE_FFMPEG !== '0';
+const FFC = path.join(os.tmpdir(), 'cutpilot-buildtools', 'ffmpeg-b6.0');
+function ffCached(name) {
+  fs.mkdirSync(FFC, { recursive: true });
+  const f = path.join(FFC, name);
+  if (!fs.existsSync(f) || fs.statSync(f).size < 1e6) {
+    console.log('Fetching ' + name + ' (one-time)…');
+    cp.execSync('curl -sL --fail -o ' + JSON.stringify(f) + ' ' + JSON.stringify(FF_BASE + name), { stdio: 'inherit' });
+  }
+  return f;
+}
+function macFfmpeg() {
+  const uni = path.join(FFC, 'ffmpeg-darwin-universal');
+  if (fs.existsSync(uni) && fs.statSync(uni).size > 1e6) return uni;
+  const arm = ffCached('ffmpeg-darwin-arm64'), x64 = ffCached('ffmpeg-darwin-x64');
+  try {
+    cp.execSync('lipo -create ' + JSON.stringify(arm) + ' ' + JSON.stringify(x64) + ' -output ' + JSON.stringify(uni));
+    cp.execSync('codesign -s - --force ' + JSON.stringify(uni));   // Apple Silicon runs only signed code (ad-hoc is enough)
+    return uni;
+  } catch (e) { console.log('  (no lipo/codesign here — the Mac installer downloads ffmpeg instead)'); return null; }
+}
+function payload(name, ffSrc, ffName) {
+  const zipPath = path.join(work, name);
+  if (ffSrc) {
+    fs.mkdirSync(path.join(stage, 'bin'), { recursive: true });
+    fs.copyFileSync(ffSrc, path.join(stage, 'bin', ffName));
+    fs.chmodSync(path.join(stage, 'bin', ffName), 0o755);
+  }
+  sh('cd "' + work + '" && zip -qry "' + zipPath + '" Pulse');
+  try { fs.rmSync(path.join(stage, 'bin'), { recursive: true, force: true }); } catch (e) {}
+  console.log('payload: ' + name + ' (' + (fs.statSync(zipPath).size / 1048576).toFixed(1) + ' MB' + (ffSrc ? ', video engine included' : '') + ')');
+  return zipPath;
+}
+const macFF = BUNDLE_FF ? macFfmpeg() : null;
+const payloadZip = payload('Pulse.zip', macFF, 'ffmpeg');
+const payloadWinZip = payload('Pulse-win.zip', BUNDLE_FF ? ffCached('ffmpeg-win32-x64') : null, 'ffmpeg.exe');
 
 // =====================================================================  macOS
 // A real .app bundle. Double-click → runs Contents/MacOS/installer (a shell
@@ -86,7 +123,7 @@ const MAC_SH = [
   'fail(){ /usr/bin/osascript -e "display dialog \\"$1\\" buttons {\\"OK\\"} default button \\"OK\\" with title \\"$TITLE\\" with icon stop" >/dev/null 2>&1; exit 1; }',
   '',
   '# 0) consent + heads-up about the one-time download',
-  'A=$(/usr/bin/osascript -e "button returned of (display dialog \\"This will install the Pulse panel into Premiere Pro and download its video engine (about 40 MB — roughly a minute on a normal connection).\\n\\nPlease QUIT Premiere Pro first — an open Premiere keeps the old panel running.\\n\\nContinue?\\" buttons {\\"Cancel\\",\\"Install\\"} default button \\"Install\\" with title \\"$TITLE\\")" 2>/dev/null)',
+  'A=$(/usr/bin/osascript -e "button returned of (display dialog \\"This will install the Pulse panel into Premiere Pro' + (macFF ? ' — everything it needs is included.' : ' and download its video engine (about 40 MB — roughly a minute on a normal connection).') + '\\n\\nPlease QUIT Premiere Pro first — an open Premiere keeps the old panel running.\\n\\nContinue?\\" buttons {\\"Cancel\\",\\"Install\\"} default button \\"Install\\" with title \\"$TITLE\\")" 2>/dev/null)',
   '[ "$A" = "Install" ] || exit 0',
   '',
   '# 1) install the panel from the copy embedded in this app',
@@ -105,7 +142,10 @@ const MAC_SH = [
   'fi',
   '[ -d "$EXT/Pulse" ] || fail "The panel did not unpack correctly. Please re-download."',
   '',
-  '# 2) download the right ffmpeg for this Mac',
+  '# 2) the video engine: included in the panel (Pulse/bin/ffmpeg) — else download it',
+  'if [ -x "$EXT/Pulse/bin/ffmpeg" ]; then',
+  '  DEST="$EXT/Pulse/bin/ffmpeg"',
+  'else',
   'note "Downloading the video engine…"',
   'mkdir -p "$BIN"',
   'if [ "$(uname -m)" = "arm64" ]; then FF="ffmpeg-darwin-arm64"; else FF="ffmpeg-darwin-x64"; fi',
@@ -123,6 +163,7 @@ const MAC_SH = [
   '  sleep 1',
   'done',
   'wait $CPID || fail "Could not download the video engine. Check your internet connection and run this installer again."',
+  'fi',
   'chmod +x "$DEST" 2>/dev/null',
   '',
   '# 3) trust the freshly-downloaded files + enable unsigned panels',
@@ -151,7 +192,7 @@ function buildMac() {
     '   First time only: if macOS says it is from an unidentified developer,\r\n' +
     '   RIGHT-CLICK the app → Open → Open. (Apple requires this for apps not\r\n' +
     '   from the App Store — it is safe.)\r\n' +
-    '2) Click Install and wait for the "ready" message (it downloads ffmpeg).\r\n' +
+    '2) Click Install and wait for the "ready" message' + (macFF ? ' (everything is included — no download).' : ' (it downloads ffmpeg).') + '\r\n' +
     '3) Quit & reopen Premiere → Window → Extensions → Pulse.\r\n\r\n' +
     'No Terminal, nothing else to install.\r\n');
   // zip the .app so it travels as one download and keeps its executable bit
@@ -166,7 +207,7 @@ function buildMac() {
 // the worker HIDDEN (PowerShell is built into Windows 10/11 and is far more
 // reliable than scripting the unzip/download by hand), and polls a progress file.
 function buildWin() {
-  const b64 = fs.readFileSync(payloadZip).toString('base64');
+  const b64 = fs.readFileSync(payloadWinZip).toString('base64');
   const PS = [
     '$ErrorActionPreference = "Stop"',
     '$tmp = $env:TEMP',
@@ -193,7 +234,8 @@ function buildWin() {
     '    if (-not (Test-Path $k)) { New-Item -Path $k -Force | Out-Null }',
     '    New-ItemProperty -Path $k -Name PlayerDebugMode -Value "1" -PropertyType String -Force | Out-Null',
     '  }',
-    '  P 48 "Downloading the video engine (about 80 MB)..."',
+    '  if (Test-Path (Join-Path $ext "Pulse\\bin\\ffmpeg.exe")) { "DONE|installed" | Out-File -FilePath $prog -Append -Encoding ascii; return }',
+  '  P 48 "Downloading the video engine (about 80 MB)..."',
     '  $bin = Join-Path $env:USERPROFILE ".cutpilot\\bin"',
     '  New-Item -ItemType Directory -Force -Path $bin | Out-Null',
     '  $dest = Join-Path $bin "ffmpeg.exe"',
@@ -233,7 +275,7 @@ function buildWin() {
 '</style>\r\n</head>\r\n<body>\r\n<div class="wrap">\r\n' +
 '  <h1>Install Pulse</h1>\r\n' +
 '  <p class="sub">For Adobe Premiere Pro</p>\r\n' +
-'  <p id="status">Ready. Click Install — it sets up the panel and downloads the video engine automatically.</p>\r\n' +
+'  <p id="status">Ready. Click Install — it sets up the panel' + (BUNDLE_FF ? ' with everything it needs.' : ' and downloads the video engine automatically.') + '</p>\r\n' +
 '  <div class="bar"><div id="fill"></div></div>\r\n' +
 '  <div class="row"><button id="go" onclick="startInstall()">Install</button></div>\r\n' +
 '  <p class="note">No Terminal, nothing else to install. When it finishes, quit &amp; reopen Premiere &rarr; Window &rarr; Extensions &rarr; Pulse.</p>\r\n' +

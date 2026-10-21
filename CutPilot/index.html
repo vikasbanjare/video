@@ -119,7 +119,7 @@
         </label>
       </div>
       <div id="tr-swara-wrap" class="groq-inline hidden">
-        <label class="fld-full">Indian-language key
+        <label class="fld-full" id="tr-swara-keyrow">Indian-language key
           <input type="password" id="tr-swara-key" placeholder="paste your key…" autocomplete="off">
         </label>
         <label class="fld-full">Indian language<div id="tr-swara-lang" class="dd-mount"></div></label>
@@ -1483,21 +1483,21 @@
     <div class="card">
       <div class="step-head"><span class="step-title">Help &amp; diagnostics</span><span class="badge" id="diag-count">0</span></div>
       <p class="hint">Something wrong? Copy diagnostics and send them to aiFloh. <button class="info" type="button" data-info="diag-info" aria-label="What is included">ⓘ</button></p>
-      <div class="info-pop hidden" id="diag-info">Make the problem happen, then tap <b>Copy diagnostics</b> and paste it to aiFloh. It captures the exact error so the real bug gets fixed. <b>No keys are included.</b> <b>Test everything</b> checks Pulse inside Premiere without touching your timeline.</div>
+      <div class="info-pop hidden" id="diag-info">Make the problem happen, then tap <b>Copy diagnostics</b> and paste it to aiFloh. It captures the exact error so the real bug gets fixed. <b>No keys are included.</b><span class="tester-only"> <b>Test everything</b> checks Pulse inside Premiere without touching your timeline.</span></div>
       <div class="row tight">
         <button id="btn-diag-copy" class="chip-btn">Copy diagnostics</button>
-        <button id="btn-selftest" class="chip-btn" title="Pulse tests itself inside Premiere — renders real frames in a temporary sequence and checks the words show. Your timeline is never touched.">Test everything</button>
+        <button id="btn-selftest" class="chip-btn tester-only" title="Pulse tests itself inside Premiere — renders real frames in a temporary sequence and checks the words show. Your timeline is never touched.">Test everything</button>
         <button id="btn-install-fonts" class="chip-btn" title="Installs the free Google fonts the caption styles use into your own fonts folder, so editable captions in Premiere use the same fonts as the image captions. Restart Premiere once afterwards.">Install caption fonts</button>
-        <button id="btn-style-test" class="chip-btn" title="Premiere draws every caption style as an editable caption and Pulse compares it with the image caption. Sheets and a report go to Desktop › Pulse Caption Test. Your timeline is never touched.">Test caption styles</button>
-        <button id="btn-diag-clear" class="chip-btn">Clear</button>
+        <button id="btn-style-test" class="chip-btn tester-only" title="Premiere draws every caption style as an editable caption and Pulse compares it with the image caption. Sheets and a report go to Desktop › Pulse Caption Test. Your timeline is never touched.">Test caption styles</button>
+        <button id="btn-diag-clear" class="chip-btn tester-only">Clear</button>
         <pre id="selftest-out" class="diag-out hidden"></pre>
       </div>
       <textarea id="diag-text" readonly style="display:none;width:100%;box-sizing:border-box;height:150px;margin-top:8px;font:var(--fs-xs)/1.45 ui-monospace,Menlo,Consolas,monospace;background:var(--field);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px;resize:vertical"></textarea>
-      <details class="advanced">
+      <details class="advanced tester-only">
         <summary>Recent messages</summary>
         <footer><div id="log" class="log"></div></footer>
       </details>
-      <details class="advanced">
+      <details class="advanced tester-only">
         <summary>Full check</summary>
         <p class="hint">Checks the audio engine, your mics, a caption template and your words at once.</p>
         <button id="btn-diag-full" class="hero-btn small">Run the full check</button>

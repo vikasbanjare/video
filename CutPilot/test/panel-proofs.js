@@ -1330,8 +1330,12 @@ function fluxProps() {
   if (keys.fatal) bad('key wiring: ' + keys.fatal);
   else {
     // 1. with NO key, there must be a visible box to type one into
+    // (a build that bundles the key — the finished product — shows none, and says it is built in)
     const anyBox = keys.freshBoxes.setGroq || keys.freshBoxes.trGroq;
-    if (!anyBox) bad('key wiring: a fresh install shows NO box to paste a transcription key into — the key is unenterable');
+    if (keys.fresh.bundled) {
+      if (anyBox || !/built in/i.test(String(keys.freshStatus || ''))) bad('key wiring: a build with the key built in still asks for one (' + keys.freshStatus + ')');
+      else ok('the key is built in: no key box, and the status says so');
+    } else if (!anyBox) bad('key wiring: a fresh install shows NO box to paste a transcription key into — the key is unenterable');
     else ok('a fresh install (no keys at all) shows a visible box to paste the key into');
     // 2. the engine must not silently sit on something the panel cannot set up
     if (keys.fresh.whiteLabel && !/^cloud-/.test(keys.fresh.engine)) {
