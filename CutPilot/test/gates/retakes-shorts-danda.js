@@ -47,7 +47,7 @@ async function run() {
         const f = args[args.indexOf('--data-binary') + 1].replace(/^@/, '');
         const body = JSON.parse(fs.readFileSync(f, 'utf8'));
         body.messages[body.messages.length - 1].content.split('\n').forEach((l) => {
-          const m = /^\[(\d+)\] \(\d+:\d\d\) (.*)$/.exec(l); if (m) sent.push(m[2]);
+          const m = /^\[(\d+)\] \(\d+:\d\d(?:, \d+s)?\) (.*)$/.exec(l); if (m) sent.push(m[2]);
         });
         return JSON.stringify({ choices: [{ message: { content: '{"clips":[]}' }, finish_reason: 'stop' }] });
       }
