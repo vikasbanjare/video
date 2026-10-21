@@ -61,6 +61,10 @@ async function cached(V, url) {
   const file = path.join(cacheDir(V), url.split('/').pop());
   const want = expected(V, url);
   if (fs.existsSync(file) && (!want || sha(file) === want)) return file;
+  // the owner's own copy (Pulse keeps its speech models in ~/.cutpilot/models):
+  // a second 574 MB download filled a nearly full disk
+  const own = path.join(os.homedir(), '.cutpilot', 'models', url.split('/').pop());
+  if (want && fs.existsSync(own) && sha(own) === want) return own;
   try { await curl(url, file + '.part'); } catch (e) { try { fs.unlinkSync(file + '.part'); } catch (x) {} throw e; }
   if (want && sha(file + '.part') !== want) { fs.unlinkSync(file + '.part'); throw new Error('download of ' + url.split('/').pop() + ' did not match its SHA-256'); }
   fs.renameSync(file + '.part', file);
