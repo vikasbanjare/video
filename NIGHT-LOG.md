@@ -16,6 +16,17 @@ on the old code, build, install, verify, commit and push. Newest entries on top.
 7. Viral edit — zoom punch-ins, sound effects.
 
 ## Done
+- 09:05 Round 14 (v0.10.102) — Hindi Clean up, in Premiere, on a QA reel
+  with a false start, "अरे रुको, एक बार फिर से" and an "उम्म":
+  · Before: only 2 dead-air bits (0.6 s); the retake was kept (the false
+    start and the chatter came in one breath → one phrase, half like the
+    full line) and fillers were skipped ("No transcript yet") although the
+    verbatim engine had just heard every word.
+  · Now: the phrase is split where retry chatter starts, and fillers come
+    from the verbatim words. Result: 3 sections, 6.4 s; the cleaned reel
+    reads "आज हम पैसे बचाने के तीन आसान तरीके देखेंगे. पहला तरीका है हर महीने
+    का budget बनाना. …" — one clean take. Gates retakes-conversation,
+    silence-e2e-oneshot-words.
 - 08:25 Round 13 (v0.10.101): 🔖 Viral hooks found nothing on the Hindi reel
   although "सबसे बड़ी गलती क्या है?" is a textbook hook — it was split over two
   caption lines, and only an OPENING question word counted (Hindi asks in
