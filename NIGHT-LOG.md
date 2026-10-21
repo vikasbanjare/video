@@ -1,7 +1,7 @@
 # Night shift log — Pulse (started 2026-10-21, owner asleep)
 
 ## ☀️ Read this first (10:15)
-- Installed now: **v0.10.103** (builds are pushed; Pulse-Mac.zip is in the repo root).
+- Installed now: **v0.10.104** (builds are pushed; Pulse-Mac.zip is in the repo root).
 - About 45 fixes tonight, each tested in YOUR Premiere on QA copies and
   locked by a gate that fails on the old code — rounds below, newest first.
 - Your project is back as it was: 10 items, Sequence 01 open, saved. Tonight's
