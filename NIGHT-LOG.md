@@ -16,6 +16,15 @@ on the old code, build, install, verify, commit and push. Newest entries on top.
 7. Viral edit — zoom punch-ins, sound effects.
 
 ## Done
+- 06:40 Round 9 (v0.10.95 → v0.10.96), in Premiere:
+  · ⤴ Export all with Media Encoder failed on the owner's Premiere 2026:
+    "Match Source preset not found" (2026 renamed it; and ExtendScript gives
+    file names URI-encoded, so a name with a space never matched). Fixed —
+    two shorts exported to Movies › Pulse Shorts, real 1080×1920 H.264+AAC.
+    Gate shorts-make-all E.
+  · 🎞 B-roll on keywords placed 6 clips on the right words, but on a new top
+    track that hid Pulse's captions. It now goes under them. Verified with
+    a frame. Gate broll-keywords C2.
 - 06:15 Round 8 (v0.10.92 → v0.10.94), self-review of the night's code +
   Premiere:
   · Viral edit's zoom could have keyed Pulse's own long-video caption
