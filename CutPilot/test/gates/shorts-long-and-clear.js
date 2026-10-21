@@ -42,17 +42,20 @@ async function run() {
       if (!/chat\/completions/.test(url)) return '{}';
       let msg = '';
       try { msg = require('fs').readFileSync(args[args.indexOf('--data-binary') + 1].replace(/^@/, ''), 'utf8'); } catch (e) {}
-      // the side-by-side round: the ending first, then the rest BACKWARDS
+      // the side-by-side round: the ending first, then the rest from the
+      // latest line back — by what each pick IS, so the two shuffled rounds
+      // (v0.10.106) agree and their average is that order
       if (/CANDIDATES:/.test(msg)) {
         rerankAsked++;
         const body = JSON.parse(msg); const u = body.messages[body.messages.length - 1].content;
         const cands = []; u.replace(/\[(\d+)\] \(\d+s\) "([^"]*)"/g, (_, i, t) => { cands.push({ i: +i, t }); return ''; });
-        const end = cands.filter(c => /The ending/.test(c.t)), rest = cands.filter(c => !/The ending/.test(c.t)).reverse();
+        const lineOf = c => { const m = /line (-?\d+)/.exec(c.t); return m ? +m[1] : -1e9; };
+        const end = cands.filter(c => /The ending/.test(c.t)), rest = cands.filter(c => !/The ending/.test(c.t)).sort((a, b) => lineOf(b) - lineOf(a));
         const order = end.concat(rest);
         rerankSecond = order[1] ? order[1].t : null;
         return JSON.stringify({ choices: [{ message: { content: JSON.stringify({ ranked: order.map((c, k) => ({ i: c.i, score: 97 - k })) }) } }] });
       }
-      const m = /\[0\] \([\d:]+\) we talk about line(\d+)/.exec(msg);
+      const m = /\[0\] \([\d:]+(?:, \d+s)?\) we talk about line(\d+)/.exec(msg);
       const first = m ? +m[1] : -1;
       const idx = parts.length; parts.push(/line2399\b/.test(msg) ? 'END' : first);
       if (idx === failPart) return JSON.stringify({ error: { message: 'Request too large for model', code: 'request_too_large' } });
@@ -78,8 +81,8 @@ async function run() {
       parts.length >= 5 && parts[parts.length - 1] === 'END', JSON.stringify(parts));
     C.check('A. the best moment, near the end of the podcast, is found and listed first', /^1\. The ending that wins/.test(res.titles[1] || ''), JSON.stringify(res.titles.slice(0, 3)));
     C.check('A. the message says the whole video was read', /across the whole 2 h 0 min/.test(res.toast), res.toast);
-    C.check('A. the strongest moments from every part are compared side by side once, and the list follows that ranking (second: ' + rerankSecond + ')',
-      rerankAsked === 1 && (res.titles[2] || '').replace(/^2\. /, '') === rerankSecond, JSON.stringify({ rerankAsked, second: res.titles[2], want: rerankSecond }));
+    C.check('A. the strongest moments from every part are compared side by side in two shuffled rounds, and the list follows that ranking (second: ' + rerankSecond + ')',
+      rerankAsked === 2 && (res.titles[2] || '').replace(/^2\. /, '') === rerankSecond, JSON.stringify({ rerankAsked, second: res.titles[2], want: rerankSecond }));
     C.check('C. two picks of mostly the same stretch are shown once', !res.titles.some(t => /Nearly the same stretch/.test(t)), JSON.stringify(res.titles.slice(0, 6)));
     // ── B ── one part fails
     failPart = 1; parts = [];
@@ -103,7 +106,7 @@ async function run() {
     });
     C.check('D. the steps read 1 → 2 → 3 down the page', d.nums.join(',') === '1,2,3', JSON.stringify(d.nums));
     C.check('D. step 1 says the transcript is ready and how long (' + status + ')', /Transcript ready — 2 h 0 min, all of it read/.test(status), status);
-    C.check('D. step 2\'s summary follows the choices (' + d.sum1 + ')', /Each short: 9:16 vertical/.test(d.sum0) && /pauses cut/.test(d.sum0) && /Split layout/.test(d.sum1) && !/pauses cut/.test(d.sum1), JSON.stringify(d));
+    C.check('D. step 2\'s summary follows the choices (' + d.sum1 + ')', /Each short: 9:16 vertical/.test(d.sum0) && /pauses cut/.test(d.sum0) && /Split screen layout/.test(d.sum1) && !/pauses cut/.test(d.sum1), JSON.stringify(d));
     C.check('D. the whole-video tool is folded away at the bottom', d.srFolded && d.srLast, JSON.stringify(d));
     // E. the caption choice in step 2
     const e = await page.evaluate(async () => {

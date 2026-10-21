@@ -17635,13 +17635,13 @@
   function shortOutput() { return _shOutTest === 'file' ? 'file' : 'timeline'; }
   function shortLayout() { return CPPodShort.LAYOUTS.indexOf(settings.shLayout) >= 0 ? settings.shLayout : 'auto'; }
   var SH_LAYOUT_HINTS = {
-    auto: 'Auto: Pulse chooses for each moment — the person talking fills the screen, and both show when both talk.',
-    fill: 'Speaker only: whoever is talking fills the whole screen; it switches when someone else talks.',
-    fit: 'Whole shot: nothing is cropped — the full camera picture sits in the middle, a blurred copy fills the top and bottom.',
-    split: 'Split screen: two people at once — one in the top half, the other in the bottom half.',
-    bigsmall: 'Big + small: the person talking large on top, the listener small underneath.',
-    pip: 'Picture in picture: the person talking fills the screen, the other sits in a small box in the corner.',
-    three: 'Three people: three people at once, stacked top to bottom.'
+    auto: 'Auto: whoever talks fills the screen.',
+    fill: 'Speaker only: the talker fills the screen.',
+    fit: 'Whole shot: nothing cropped, blurred fill.',
+    split: 'Split screen: one on top, one below.',
+    bigsmall: 'Big + small: talker large, listener small.',
+    pip: 'Picture in picture: the other in a corner.',
+    three: 'Three people: all three, stacked.'
   };
   /* A length the way people say it: "1 h 52 min", "38 min", "45 s". */
   function spokenLength(sec) {
@@ -17727,8 +17727,8 @@
     var ob = document.querySelectorAll('#sh-cap-out button');
     for (var j = 0; j < ob.length; j++) ob[j].classList.toggle('on', ob[j].dataset.out === (_capOut === 'editable' ? 'editable' : 'png'));
     if ($('sh-cap-out-hint')) $('sh-cap-out-hint').textContent = _capOut === 'editable'
-      ? 'Editable text: Premiere text you can retype and restyle later; the animation is simpler.'
-      : 'Exact look: drawn by Pulse, exactly as the preview shows — every animation included.';
+      ? 'Editable text: retype and restyle in Premiere; simpler animation.'
+      : 'Exact look: exactly as the preview, every animation included.';
     var curBox = $('sh-cap-cur');
     if (curBox && cur) {
       curBox.innerHTML = '';
