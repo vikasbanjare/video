@@ -12337,6 +12337,28 @@
     wrap.appendChild(btn); wrap.appendChild(list);
     return { el: wrap, get: function () { return cur; }, set: function (v) { cur = v; refresh(); } };
   }
+  /* A native <select> shown as the panel's own dropdown: its popup can refuse
+     to open inside Premiere's panel (the owner: the Shorts caption style
+     "I tried to click that option, but it's not working"). The <select> keeps
+     the value and the change events everything already listens to; the
+     dropdown is rebuilt whenever its options change. */
+  function selectAsDropdown(sel) {
+    if (!sel || sel._dd || typeof makeDropdown !== 'function') return;
+    var host = document.createElement('span'); host.className = 'sel-dd';
+    sel.parentNode.insertBefore(host, sel.nextSibling);
+    function build() {
+      var opts = Array.prototype.map.call(sel.options, function (o) { return { value: o.value, label: o.textContent }; });
+      var dd = makeDropdown(opts, sel.value, function (v) {
+        sel.value = v;
+        try { sel.dispatchEvent(new Event('change')); } catch (e) {}
+      });
+      host.innerHTML = ''; host.appendChild(dd.el); sel._dd = dd;
+    }
+    build();
+    sel.classList.add('hidden'); sel.setAttribute('aria-hidden', 'true'); sel.tabIndex = -1;
+    sel.addEventListener('change', function () { sel._dd.set(sel.value); });
+    try { new MutationObserver(build).observe(sel, { childList: true, subtree: true }); } catch (eMO) {}
+  }
   function mpAddPoint(box, label, x, y, onChange) {
     var row = mpRow(box, label);
     var wrap = document.createElement('span'); wrap.className = 'mp-ctrl mp-point';
@@ -17535,11 +17557,11 @@
      editable. Without word timing the moment is cut as spoken. */
   function shortOpts() {
     function on(id, def) { var e = $(id); return e ? !!e.checked : def; }
-    return { tight: on('sh-tight', true), hook: on('sh-hook', true), caps: on('sh-caps', true), cams: on('sh-cams', true) };
+    return { tight: on('sh-tight', true), caps: on('sh-caps', true), cams: on('sh-cams', true) };
   }
-  ['sh-tight', 'sh-hook', 'sh-caps', 'sh-cams'].forEach(function (id) {
+  ['sh-tight', 'sh-caps', 'sh-cams'].forEach(function (id) {
     var e = $(id); if (!e) return;
-    var key = { 'sh-tight': 'shTight', 'sh-hook': 'shHook', 'sh-caps': 'shCaps', 'sh-cams': 'shCams' }[id];
+    var key = { 'sh-tight': 'shTight', 'sh-caps': 'shCaps', 'sh-cams': 'shCams' }[id];
     if (settings[key] === false) e.checked = false;
     e.addEventListener('change', function () { settings[key] = !!e.checked; saveSettings(); });
   });
@@ -17603,6 +17625,7 @@
       var has = false; for (var i = 0; i < sel.options.length; i++) if (sel.options[i].value === cur.id) has = true;
       if (!has) { var o2 = document.createElement('option'); o2.value = cur.id; o2.textContent = cur.name; sel.insertBefore(o2, sel.firstChild); }
       sel.value = cur.id;
+      if (sel._dd) sel._dd.set(cur.id);
     }
     var ob = document.querySelectorAll('#sh-cap-out button');
     for (var j = 0; j < ob.length; j++) ob[j].classList.toggle('on', ob[j].dataset.out === (_capOut === 'editable' ? 'editable' : 'png'));
@@ -17610,6 +17633,7 @@
     if (row) row.classList.toggle('hidden', !!(on && !on.checked));
   }
   (function wireShortCapStyle() {
+    ['sh-len', 'sh-ratio', 'sh-cap-style', 'sh-mark-cam', 'sh-focus'].forEach(function (id) { selectAsDropdown($(id)); });
     var sel = $('sh-cap-style');
     if (sel) sel.addEventListener('change', function () {
       var t = findTemplate(sel.value);
@@ -17633,7 +17657,6 @@
                 (rt && shortOutput() === 'timeline') ? '✏️ editable timeline' : '🎞 one video file'];
     var extras = [];
     if (o.tight) extras.push('pauses cut');
-    if (o.hook) extras.push('hook title');
     if (o.caps) { var cp = currentPreset(); extras.push('captions in “' + (cp ? cp.name : 'your style') + '”' + (_capOut === 'editable' ? ' (editable)' : '')); }
     if (o.cams) extras.push('your cameras');
     el.textContent = 'Each short: ' + bits.join(' · ') + (extras.length ? ' — with ' + extras.join(', ') : '') + '.';
@@ -17654,7 +17677,7 @@
     for (var i = 0; i < lb.length; i++) lb[i].addEventListener('click', function () { settings.shLayout = this.dataset.layout; saveSettings(); syncShortChoices(); });
     var ob = document.querySelectorAll('#sh-output button');
     for (i = 0; i < ob.length; i++) ob[i].addEventListener('click', function () { settings.shOutput = this.dataset.out; saveSettings(); syncShortChoices(); });
-    ['sh-ratio', 'sh-tight', 'sh-hook', 'sh-caps', 'sh-cams'].forEach(function (id) { var e = $(id); if (e) e.addEventListener('change', function () { refreshShortsSummary(); }); });
+    ['sh-ratio', 'sh-tight', 'sh-caps', 'sh-cams'].forEach(function (id) { var e = $(id); if (e) e.addEventListener('change', function () { refreshShortsSummary(); }); });
     syncShortChoices();
   })();
   /* The moment's words on the timeline, as the short will use them. */
@@ -17782,21 +17805,34 @@
       return { frames: fr, w: POD_FW, h: fh };
     });
   }
-  /* The camera's MOVEMENT over the same steps: each frame's difference from
-     the frame before, averaged over the half-second — a mouth that opens
-     and shuts between two sampled frames still shows (sampling 2 frames a
-     second alone can land on the same phase every time and see none). */
-  function podMotion(ff, path, t0, dur, src, dir, tag) {
-    var fh = Math.max(2, Math.round(POD_FW * src.h / src.w / 2) * 2);
-    var out = nodeReq('path').join(dir, 'motion-' + tag + '.gray');
-    return runFfmpeg(ff, ['-y', '-hide_banner', '-loglevel', 'error', '-ss', t0.toFixed(3), '-t', dur.toFixed(3), '-i', path,
-      '-vf', 'scale=' + POD_FW + ':' + fh + ',format=gray,tblend=all_mode=difference,tmix=frames=15,fps=' + (1 / POD_STEP),
-      '-f', 'rawvideo', '-pix_fmt', 'gray', out], 300000).then(function () {
-      var u = readBytes(out), fr = [], n = POD_FW * fh;
+  /* The camera's frames AND its MOVEMENT over [t0, t0+dur] from ONE decode
+     (the hardware decoder when there is one): two full decodes of a 4K
+     camera per short were most of the wait (the owner: "taking too much
+     time" — 22 s → 8 s a camera-minute, measured). Movement is each frame's
+     difference from the frame before, averaged over the half-second — a
+     mouth that opens and shuts between two sampled frames still shows.
+     Resolves {frames, w, h, motion}; a decode that fails falls back to the
+     frames alone (motion null). */
+  function podFramesMotion(ff, path, t0, dur, src, dir, tag) {
+    var fh = Math.max(2, Math.round(POD_FW * src.h / src.w / 2) * 2), n = POD_FW * fh, pathMod = nodeReq('path');
+    var fOut = pathMod.join(dir, 'frames-' + tag + '.gray'), mOut = pathMod.join(dir, 'motion-' + tag + '.gray');
+    function split(p) {
+      var u = readBytes(p), fr = [];
       for (var i = 0; i + n <= u.length; i += n) fr.push(u.subarray(i, i + n));
-      try { nodeReq('fs').unlinkSync(out); } catch (e) {}
+      try { nodeReq('fs').unlinkSync(p); } catch (e) {}
       return fr;
-    }, function () { return null; });
+    }
+    return runFfmpeg(ff, ['-y', '-hide_banner', '-loglevel', 'error', '-hwaccel', 'auto', '-ss', t0.toFixed(3), '-t', dur.toFixed(3), '-i', path,
+      '-filter_complex', '[0:v]scale=' + POD_FW + ':' + fh + ',format=gray,split[a][b];[a]fps=' + (1 / POD_STEP) + '[f];' +
+        '[b]tblend=all_mode=difference,tmix=frames=15,fps=' + (1 / POD_STEP) + '[m]',
+      '-map', '[f]', '-f', 'rawvideo', fOut, '-map', '[m]', '-f', 'rawvideo', mOut], 300000).then(function () {
+      var fr = split(fOut);
+      if (!fr.length) throw new Error('no frames');
+      var mo = null; try { mo = split(mOut); } catch (eM) { mo = null; }
+      return { frames: fr, w: POD_FW, h: fh, motion: mo };
+    }).then(null, function () {
+      return podFrames(ff, path, t0, dur, src, dir, tag).then(function (f) { f.motion = null; return f; });
+    });
   }
   /* A mic's loudness (dB per 0.5 s) over [t0, t0+dur] of its media. */
   function podMic(ff, path, channel, t0, dur, dir, tag) {
@@ -17886,8 +17922,8 @@
           if (!at) return;
           return probeMedia(ff, at.path).then(function (pm) {
             info[ang] = pm;
-            return Promise.all([podFrames(ff, at.path, at.t, span, pm.src, dir, ang), podMotion(ff, at.path, at.t, span, pm.src, dir, ang)]).then(function (both) {
-              var fr = both[0], mo = { motion: both[1] };
+            return podFramesMotion(ff, at.path, at.t, span, pm.src, dir, ang).then(function (fr) {
+              var mo = { motion: fr.motion };
               // the people the owner marked on this camera win; else its faces
               var marks = shortMarksFor(at.path);
               var faces = marks.length ? CPPodShort.regionTracks(fr.frames, fr.w, fr.h, marks, mo)
@@ -18140,7 +18176,9 @@
     if (!plan.segments.length) return toast('No words in this moment — transcribe the video again, then try.', true);
     var name = sanitizeName(h.title || 'Pulse clip');
     var prog = $('shorts-progress'); prog.classList.remove('hidden'); prog.textContent = 'Finding the cameras…';
-    var hook = o.hook ? CPShorts.hookText(h) : '';
+    // no title card over the opening: the owner removed it ("hook text coming in
+    // the front, starting 3-4 seconds — remove it"); the words are the hook
+    var hook = '';
     var S0 = plan.segments[0].start, S1 = plan.segments[plan.segments.length - 1].end;
     var editable = shortOutput() === 'timeline' && !!rt;
     return shortCameras(S0, S1, o).then(function (setup) {
@@ -18187,7 +18225,7 @@
       var what = (rt ? rt.label + ' ' : '') + 'short “' + (res && res.sequence ? res.sequence : name) + '”' +
         (info.cams ? ' from ' + info.cams + ' cameras' : '') + (editable ? ' as an editable timeline' : '') +
         (plan.removed > 0.2 ? ' — ' + plan.removed.toFixed(1) + ' s of pauses and “um”s cut' : '');
-      diag('shorts', 'made ' + what + ' · ' + plan.segments.length + ' stretch(es), ' + plan.duration.toFixed(1) + ' s' + (o.hook ? ', hook title' : '') + (o.caps ? ', captions' : '') +
+      diag('shorts', 'made ' + what + ' · ' + plan.segments.length + ' stretch(es), ' + plan.duration.toFixed(1) + ' s' + (o.caps ? ', captions' : '') +
         (info.diag ? ' · ' + info.diag : ''));
       if (o.caps && plan.words.length && res && res.sequence) {
         prog.textContent = 'Adding captions in “' + ((currentPreset() || {}).name || 'your caption style') + '”…';
@@ -18528,7 +18566,7 @@
     processChunks(chunks, function (cs) {
       var prompt = CPSmartEdit.buildHighlightPrompt(cs, { min: len.min, max: len.max, count: 6 });
       return aiChatRetry(prompt, { maxTokens: 1500 }).then(function (content) {
-        return CPSmartEdit.parseHighlightResponse(content, cs, { min: Math.max(5, len.min - 5), max: len.max + 30 });
+        return CPSmartEdit.parseHighlightResponse(content, cs, { min: len.min, max: len.max });
       }).then(null, function (e) {
         // one part the AI could not answer costs that part only: its moments
         // are picked by their words, the rest keep the AI's picks

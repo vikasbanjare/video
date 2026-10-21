@@ -13,7 +13,7 @@
  *      0.3 s (the 1.4 s pause is gone);
  *   B. it is 1080×1920 (9:16) and imported as its own sequence, named after
  *      the moment;
- *   C. 🪝 the hook title card is on screen at 1 s and gone at 4 s;
+ *   C. no title card over the opening (the owner removed the hook title);
  *   D. 💬 captions are placed on that sequence from the short's own clock:
  *      "Why" at ~0.08 s (less the owner's highlight-timing nudge),
  *      "Because" right after the shortened pause, no
@@ -123,7 +123,7 @@ function cardLevel(file, t, W, H) {
   }
 
   // ---- all on (the defaults) ----
-  const A = await makeShort('on', { 'sh-tight': true, 'sh-hook': true, 'sh-caps': true, _style: 'pack-maroon-label' });
+  const A = await makeShort('on', { 'sh-tight': true, 'sh-caps': true, _style: 'pack-maroon-label' });
   if (A.error) bad('Make clip failed: ' + A.error);
   (A.job && A.job.style === 'pack-maroon-label' && /captions in “Maroon Label”/.test(A.summary || '') ? ok : bad)(
     'G. the caption style picked in step 2 (Maroon Label) is the one the short is captioned in, and the summary names it (' + (A.job && A.job.style) + ' · ' + A.summary + ')');
@@ -139,7 +139,7 @@ function cardLevel(file, t, W, H) {
       (inner.length ? ' — gaps: ' + JSON.stringify(inner) : '') + ', first word at ' + firstTone.toFixed(2) + ' s');
     (p.w === 1080 && p.h === 1920 && A.imported.name === 'Why most people fail' ? ok : bad)('B. a 1080×1920 short, imported as its own sequence “' + A.imported.name + '” (' + p.w + '×' + p.h + ')');
     const on1 = cardLevel(out, 1.0, p.w, p.h), on4 = cardLevel(out, 4.0, p.w, p.h);
-    (on1 > 130 && on4 < 80 ? ok : bad)('C. 🪝 the hook card is on screen at 1 s (grey ' + on1.toFixed(0) + ') and gone at 4 s (' + on4.toFixed(0) + ')');
+    (on1 < 80 && on4 < 80 ? ok : bad)('C. no title card over the opening (grey ' + on1.toFixed(0) + ' at 1 s, ' + on4.toFixed(0) + ' at 4 s)');
   }
   const jw = (A.job && A.job.words) || [];
   const why = jw.find(w => w[0] === 'Why'), because = jw.find(w => w[0] === 'Because'), fail = jw.find(w => w[0] === 'fail?');
@@ -150,7 +150,7 @@ function cardLevel(file, t, W, H) {
     (because && fail ? (because[1] - fail[2]).toFixed(2) : '?') + ' s after "fail?", no um/So/accha (' + jw.map(w => w[0]).join(' ') + ')');
 
   // ---- all off ----
-  const E = await makeShort('off', { 'sh-tight': false, 'sh-hook': false, 'sh-caps': false });
+  const E = await makeShort('off', { 'sh-tight': false, 'sh-caps': false });
   const outE = E.imported && E.imported.path;
   if (!outE || !fs.existsSync(outE)) bad('E. with the options off no clip was imported (' + (E.error || JSON.stringify(E.imported)) + ')');
   else {

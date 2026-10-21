@@ -412,16 +412,17 @@
     var segs = (segments || []).filter(function (s) { return s && s.text != null; });
     var lines = [];
     for (var i = 0; i < segs.length; i++) {
-      lines.push('[' + i + '] (' + mmss(segs[i].start) + ') ' + String(segs[i].text).replace(/\s+/g, ' ').trim());
+      lines.push('[' + i + '] (' + mmss(segs[i].start) + ', ' + Math.max(1, Math.round(segs[i].end - segs[i].start)) + 's) ' + String(segs[i].text).replace(/\s+/g, ' ').trim());
     }
     var user =
-      'Below is a video transcript, one indexed segment per line: "[index] (m:ss) text".\n' +
+      'Below is a video transcript, one indexed segment per line: "[index] (start m:ss, length) text".\n' +
       'Pick the best moments to cut as vertical short clips and return them as INCLUSIVE index ranges.\n\n' +
       'Each clip MUST:\n' +
       '- be a self-contained thought that makes sense on its own (no "as I said earlier"),\n' +
       '- OPEN on a hook (a question, bold claim, surprising line, or strong statement),\n' +
       '- end on a clean payoff/punchline — never mid-sentence,\n' +
-      '- be roughly ' + minS + '–' + maxS + ' seconds long.\n\n' +
+      '- be ' + minS + '–' + maxS + ' seconds long: add up the lengths of the lines you pick (the last line\'s start minus the first\'s, plus its length),\n' +
+      '- start at the beginning of a sentence, never on a line that continues the one before it.\n\n' +
       'Score each 0–100 on: HOOK (grabs attention in 3s), FLOW (complete arc), VALUE (emotional or useful payoff).\n' +
       'Use the scale honestly: an ordinary moment of a podcast is 30–60; give 80+ only to one that would truly stop someone scrolling. ' +
       'This is one part of a longer video, so return nothing rather than a weak clip.\n' +
@@ -466,8 +467,47 @@
     });
     return out.length ? out : null;
   }
+  /* Fit one picked range [from, to] of segments to WHOLE sentences inside
+     [minS, maxS] seconds. The AI picks by line number, and a line may be the
+     middle of a sentence (lines are cut every 14 words) — a clip opened
+     mid-thought and ran past the asked length (the owner: "not picking the
+     right duration … where to start and where to end"). A line starts clean
+     when the one before ends a sentence or a real pause sits between them;
+     a line ends clean when it ends a sentence or a pause follows. Returns
+     {from, to, start, end, dur} or null when no whole-sentence fit exists. */
+  var SENT_END = /[.!?\u0964\u0965\u06d4\u061f\u2026]["'\u201d\u2019)\]]*\s*$/;
+  function fitClip(segs, from, to, minS, maxS) {
+    var n = segs.length;
+    if (!n || from < 0 || to >= n || to < from) return null;
+    function gapAfter(i) { return i + 1 < n ? (+segs[i + 1].start - +segs[i].end) : 99; }
+    function endsClean(i) { return SENT_END.test(String(segs[i].text || '')) || gapAfter(i) > 0.6; }
+    function startsClean(i) { return i === 0 || endsClean(i - 1); }
+    function dur(a, b) { return +segs[b].end - +segs[a].start; }
+    // open on a sentence start: back up to it, unless that runs too long —
+    // then move forward to the next one
+    var f = from;
+    while (f > 0 && !startsClean(f) && dur(f - 1, to) <= maxS) f--;
+    if (!startsClean(f)) { f = from; while (f < to && !startsClean(f)) f++; }
+    if (!startsClean(f)) return null;
+    // close on a sentence end at or after the pick, inside the length
+    var t = Math.max(f, to);
+    while (t + 1 < n && !endsClean(t) && dur(f, t + 1) <= maxS) t++;
+    // too long: drop whole sentences from the end
+    while (dur(f, t) > maxS && t > f) { t--; while (t > f && !endsClean(t)) t--; }
+    // too short: add whole sentences while they fit
+    while (dur(f, t) < minS && t + 1 < n) {
+      var u = t + 1; while (u + 1 < n && !endsClean(u)) u++;
+      if (dur(f, u) > maxS) break;
+      t = u;
+    }
+    if (!endsClean(t)) return null;
+    var d = dur(f, t);
+    if (d > maxS + 3 || d < minS - 3) return null;
+    return { from: f, to: t, start: +segs[f].start, end: +segs[t].end, dur: d };
+  }
+
   /* Parse highlight reply → [{start,end,title,hook,score,reason,text}] sorted by
-     score desc, duration-guarded. Malformed entries are dropped (never throws). */
+     score desc, each fitted to whole sentences in the asked length. Malformed entries are dropped (never throws). */
   function parseHighlightResponse(text, segments, opts) {
     opts = opts || {};
     var minS = opts.min != null ? opts.min : 6, maxS = opts.max != null ? opts.max : 120;
@@ -486,8 +526,10 @@
       if (to >= segs.length) to = segs.length - 1;
       if (to < from) continue;
       if (!segs[from] || !segs[to]) continue;
-      var start = +segs[from].start, end = +segs[to].end, dur = end - start;
-      if (!(dur > 0) || dur < minS || dur > maxS) continue;
+      var fit = fitClip(segs, from, to, minS, maxS);
+      if (!fit || !(fit.dur > 0)) continue;
+      from = fit.from; to = fit.to;
+      var start = fit.start, end = fit.end, dur = fit.dur;
       var score = (c.score != null) ? Math.max(0, Math.min(100, +c.score || 0)) : 50;
       var bodyTxt = [];
       for (var k = from; k <= to; k++) bodyTxt.push(String(segs[k].text).trim());
@@ -553,6 +595,7 @@
     buildRerankPrompt: buildRerankPrompt,
     parseRerankResponse: parseRerankResponse,
     parseHighlightResponse: parseHighlightResponse,
+    fitClip: fitClip,
     buildTitlePrompt: buildTitlePrompt,
     parseTitle: parseTitle,
     mmss: mmss,

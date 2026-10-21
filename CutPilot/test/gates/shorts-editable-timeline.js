@@ -7,13 +7,13 @@
  * available and build it". The short is now a new 9:16 sequence with the
  * camera clips cut on it, framed by Motion Scale / Position (a smaller cell
  * also cropped, the Fit layout over a blurred copy), the mics on audio tracks
- * and the hook title on top — and the layouts Auto, Fill, Fit, Split,
+ * — and the layouts Auto, Fill, Fit, Split,
  * Big + small, Corner box. The REAL panel (overlay-lib.cjs: real fs and
  * ffmpeg, three cameras with faces and two mics) makes each short twice:
  *   A. as one video file (ffmpeg) and as a timeline built by the REAL host.jsx
  *      on a Premiere stand-in (shortseq-standin.cjs) — every camera piece
  *      placed, framed, cropped / blurred where the layout needs it, the mic
- *      pieces on audio tracks, the hook title on top for 3 s;
+ *      pieces on audio tracks, and no title card on top;
  *   B. frames of that timeline, drawn as Premiere draws them, match the one-
  *      file render at the middle of every piece (mean difference ≤ 10 / 255);
  *   C. the layouts differ: Split puts a face in each half, Corner box a small
@@ -120,7 +120,7 @@ function facesIn(png) {
       document.querySelector('.tab[data-tab="shorts"]').click(); await sleep(200);
       document.querySelector('#sh-output button[data-out="' + o.out + '"]').click();
       document.querySelector('#sh-layout button[data-layout="' + o.layout + '"]').click();
-      for (const [id, v] of Object.entries({ 'sh-tight': true, 'sh-hook': true, 'sh-caps': false, 'sh-cams': true })) {
+      for (const [id, v] of Object.entries({ 'sh-tight': true, 'sh-caps': false, 'sh-cams': true })) {
         const e = document.getElementById(id); e.checked = v; e.dispatchEvent(new Event('change'));
       }
       window.CP_DEBUG_EXT.shorts.show([{ start: 0, end: 16, dur: 16, title: 'Why most people fail', hook: 'Why do most people fail?', score: 90, reason: 'test' }]);
@@ -156,9 +156,9 @@ function facesIn(png) {
     const pieces = a.pieces.length, mics = (a.audio || []).reduce((n, x) => n + x.pieces.length, 0);
     const hookClip = seq.videoTracks.map(t => t.items).flat().find(c => /\.png$/i.test(c.projectItem._path));
     (r.ok && r.placed === r.of && r.framed === r.placed && r.cropped === (r.toCrop || 0) && (r.blurred || 0) === (r.toBlur || 0) && r.audioPlaced === mics && mics === pieces * 2 &&
-     r.hook && hookClip && hookClip.start.seconds === 0 && Math.abs(hookClip.end.seconds - 3) < 0.01 ? ok : bad)(
+     !r.hook && !hookClip ? ok : bad)(
       'A. ' + layout + ': ' + r.placed + '/' + r.of + ' camera clips placed and framed by Motion, cropped ' + r.cropped + '/' + (r.toCrop || 0) + ', blurred ' + (r.blurred || 0) + '/' + (r.toBlur || 0) +
-      ', ' + r.audioPlaced + ' mic pieces on ' + (a.audio || []).length + ' audio tracks, hook title 0–' + (hookClip ? hookClip.end.seconds : '?') + ' s' + (r.ok ? '' : ' — ' + r.error));
+      ', ' + r.audioPlaced + ' mic pieces on ' + (a.audio || []).length + ' audio tracks, ' + (hookClip ? 'a title card on top' : 'no title card') + (r.ok ? '' : ' — ' + r.error));
     // B. the timeline drawn as Premiere draws it == the render
     let at = 0; const diffs = [];
     a.pieces.forEach((p, i) => {

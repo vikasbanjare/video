@@ -1122,19 +1122,33 @@ console.log('smartedit.js (AI cleanup)');
 
   // ---- viral highlight finder (long → shorts) ----
   const segs = [];
-  for (let i = 0; i < 12; i++) segs.push({ text: 'sentence number ' + i + ' about the topic', start: i * 5, end: i * 5 + 4.8 });
+  for (let i = 0; i < 12; i++) segs.push({ text: 'sentence number ' + i + ' about the topic.', start: i * 5, end: i * 5 + 4.8 });
   const hp = CPSmart.buildHighlightPrompt(segs, { min: 15, max: 60, count: 5 });
-  assert(/\[0\] \(0:00\)/.test(hp.user), 'highlight prompt indexes segments with m:ss timestamps');
+  assert(/\[0\] \(0:00, 5s\)/.test(hp.user), 'highlight prompt indexes segments with m:ss start and length');
   assert(hp.user.indexOf('OPEN on a hook') > 0 && hp.user.indexOf('TRANSCRIPT:') > hp.user.indexOf('OPEN on a hook'), 'highlight prompt: rules precede transcript');
   assert(CPSmart.mmss(75) === '1:15', 'mmss formats seconds as m:ss');
 
   const hreply = '```json\n{"clips":[{"from":0,"to":6,"title":"The Big Idea","hook":"Here is the secret","score":88,"reason":"strong hook"},{"from":8,"to":8,"title":"too short","score":50}]}\n```';
   const hl = CPSmart.parseHighlightResponse(hreply, segs, { min: 15, max: 90 });
-  assert(hl.length === 1, 'highlight parse drops the too-short clip, keeps the valid one');
+  assert(hl.length === 2, 'highlight parse keeps both picks');
+  const grown = hl.filter(h => h.title === 'too short')[0];
+  assert(grown && grown.dur >= 15 && close(grown.start, 40), 'a too-short pick grows by whole sentences to the asked length');
   assert(close(hl[0].start, 0) && close(hl[0].end, 34.8), 'highlight maps index range to segment start/end');
   assert(hl[0].title === 'The Big Idea' && hl[0].score === 88, 'highlight carries title + score');
   assert(CPSmart.parseHighlightResponse('{"clips":[]}', segs).length === 0, 'highlight: empty clips → nothing');
   assert(CPSmart.parseHighlightResponse('no json here', segs).length === 0, 'highlight: garbage → nothing, no throw');
+  // picks fitted to whole sentences inside the asked length
+  {
+    const sg = (t, a, b) => ({ text: t, start: a, end: b });
+    const fs = [sg('So here is the thing about money', 0, 4), sg('that nobody tells you.', 4.1, 6), sg('You must save first.', 6.5, 9),
+                sg('Then you invest the rest', 9.6, 13), sg('every single month.', 13.1, 15), sg('That is it.', 16, 17)];
+    const a = CPSmart.fitClip(fs, 1, 3, 5, 12);
+    assert(a && a.from === 2 && a.to === 4, 'fitClip: a pick opening mid-sentence moves to a sentence start and ends on a sentence end');
+    const b = CPSmart.fitClip(fs, 0, 5, 5, 10);
+    assert(b && b.dur <= 10 && b.to === 2, 'fitClip: a pick past the max drops whole sentences from its end');
+    const c = CPSmart.fitClip(fs, 2, 2, 8, 20);
+    assert(c && c.dur >= 8 && c.to === 4, 'fitClip: a pick under the min grows by whole sentences');
+  }
   // sorted by score desc
   const two = CPSmart.parseHighlightResponse('{"clips":[{"from":0,"to":4,"score":40},{"from":5,"to":9,"score":95}]}', segs, { min: 10, max: 90 });
   assert(two.length === 2 && two[0].score === 95, 'highlights sorted by score, best first');

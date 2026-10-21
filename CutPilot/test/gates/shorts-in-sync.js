@@ -91,7 +91,7 @@ function greyAt(file, t) {
     window.CP_DEBUG_EXT.retakes.setTranscript({ words: W });
     document.querySelector('.tab[data-tab="shorts"]').click(); await sleep(200);
     document.querySelector('#sh-output button[data-out="file"]').click();
-    for (const [id, v] of [['sh-tight', false], ['sh-hook', false], ['sh-caps', false], ['sh-cams', false]]) { const e = document.getElementById(id); e.checked = v; e.dispatchEvent(new Event('change')); }
+    for (const [id, v] of [['sh-tight', false], ['sh-caps', false], ['sh-cams', false]]) { const e = document.getElementById(id); e.checked = v; e.dispatchEvent(new Event('change')); }
     window.CP_DEBUG_EXT.shorts.show([moment]);
     Array.from(document.querySelectorAll('#shorts-results button')).find(b => /Make/.test(b.textContent)).click();
     for (let i = 0; i < 600; i++) { await sleep(100); const t = document.getElementById('toast').textContent || ''; if (/failed/i.test(t)) return { error: t }; if (/Made the/.test(t)) return { toast: t }; }
