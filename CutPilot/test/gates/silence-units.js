@@ -86,7 +86,8 @@ const has = (name) => typeof CPSilence[name] === 'function';
     const fail = path.join(dir, 'ffmpeg-crash');
     fs.writeFileSync(fail, '#!/usr/bin/env node\nprocess.stdout.write(Buffer.alloc(3200));\nprocess.stderr.write("Error while decoding stream #0:0");\nprocess.exit(1);\n');
     fs.chmodSync(fail, 0o755);
-    const env2 = await CPAudio.ffmpegRmsEnvelope('/x.wav', fail, { stallMs: 5000 }, CPSilence);
+    // (a long stall limit: this is about the crash, and a busy machine can take seconds to start the fake)
+    const env2 = await CPAudio.ffmpegRmsEnvelope('/x.wav', fail, { stallMs: 30000 }, CPSilence);
     ok(env2.complete === false && /code 1/.test(env2.reason), 'a decode that crashes part-way is reported incomplete too');
     fs.rmSync(dir, { recursive: true, force: true });
   }
