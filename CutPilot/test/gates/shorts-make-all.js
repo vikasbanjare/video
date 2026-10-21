@@ -71,6 +71,38 @@ const bad = (m, d) => { failed++; console.log('  ✗ ' + m + (d ? '\n      ' + d
       (res.ok && d.queued === 2 && JSON.stringify(d.missing) === '["Gone"]' && log.length === 3 && log[0][1] === '/o/Short · A.mp4' && log[2] === 'start' ? ok : bad)(
         'E. Premiere side: each short queued by name with the preset, a missing one named, then the batch starts', JSON.stringify({ res, log }));
     }
+    // E (the preset Premiere has): ⤴ Export all said "preset not found" on the
+    // owner's Premiere 2026 — the old name is gone, and ExtendScript gives
+    // file names URI-encoded ("Match%20Source…"), which never matched
+    {
+      const find = (files) => {
+        const harness = L.loadHostHarness(), w = harness.makeWorld({ vTracks: 1, aTracks: 1 });
+        const host = harness.loadHost(w), sb = w.sandbox;
+        const kids = {};
+        files.forEach(f => { const parts = f.split('/'); for (let i = 2; i <= parts.length; i++) { const par = parts.slice(0, i - 1).join('/') || '/', me = parts.slice(0, i).join('/'); (kids[par] = kids[par] || new Set()).add(me); } });
+        function Folder(p) { return node(String(p).replace(/\/$/, ''), true); }
+        function File(p) { return node(String(p), false); }
+        function node(p, dir) {
+          const o = Object.create((dir ? Folder : File).prototype);
+          const base = p.split('/').pop(), par = p.split('/').slice(0, -1).join('/');
+          o.name = encodeURI(base); o.fsName = p; o.exists = true;
+          o.parent = { name: encodeURI(par.split('/').pop()) };
+          o.getFiles = () => Array.from(kids[p] || []).map(c => node(c, !!kids[c]));
+          return o;
+        }
+        sb.Folder = Folder; sb.File = File;
+        sb.app.path = files[0].split('/').slice(0, 2).join('/') + '/';
+        return host.CP_findEncoderPreset();
+      };
+      const p26 = find(['/Premiere.app/Contents/MediaIO/systempresets/4E49434B_48323634/00 - Match Source - High bitrate.epr',
+        '/Premiere.app/Contents/MediaIO/systempresets/4E49434B_48323634/01 - Match Source - High bitrate.epr',
+        '/Premiere.app/Contents/MediaIO/systempresets/4E49434B_48323634/01 - Match Source - Medium bitrate.epr',
+        '/Premiere.app/Contents/MediaIO/systempresets/4A454646_48455643/01 - Match Source - High Bitrate.epr',
+        '/Premiere.app/Contents/CEP/extensions/com.adobe.frameio.v4/assets/epr/Match Source - Adaptive High Bitrate.epr']);
+      const p25 = find(['/Old.app/Contents/Settings/EncoderPresets/Match Source - Adaptive High Bitrate.epr']);
+      (/4E49434B_48323634\/01 - Match Source - High bitrate\.epr$/.test(p26 || '') && /Settings\/EncoderPresets\/Match Source - Adaptive High Bitrate\.epr$/.test(p25 || '') ? ok : bad)(
+        'E. the preset is found in Premiere 2026 (H.264 "01 - Match Source - High bitrate", not HEVC, not another extension\'s copy) and in older Premiere', JSON.stringify({ p26, p25 }));
+    }
     (r.D.log.length === 1 && /stopped/.test(r.D.toast) ? ok : bad)('D. ■ Stop ends it after the short being made (' + r.D.log.length + ' made): "' + r.D.toast.slice(0, 80) + '"', JSON.stringify(r.D));
   } finally { await P.close(); }
   if (failed) { console.log('MAKE ALL SHORTS: ' + failed + ' failed'); process.exit(1); }

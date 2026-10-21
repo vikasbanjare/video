@@ -1530,23 +1530,38 @@ function CP_activateSequence(seqObj) {
    with Premiere's own "Match Source - Adaptive High Bitrate" H.264 preset
    (found inside the Premiere app, so nothing for the owner to pick), into
    args.outDir. → { queued, missing:[names], preset } */
+/* The H.264 "Match Source" export preset of this Premiere. Up to 2025 it was
+   "Match Source - Adaptive High Bitrate.epr"; Premiere 2026 ships
+   "01 - Match Source - High bitrate.epr" in its H.264 folder (4E49434B_48323634)
+   and the old name is gone — ⤴ Export all said "preset not found" on the
+   owner's Mac. Best first: the old name, then H.264 high, then H.264 medium;
+   never another format's (HEVC, MPEG-2) preset of the same name. */
 function CP_findEncoderPreset() {
-  var want = 'Match Source - Adaptive High Bitrate.epr', roots = [];
+  var roots = [], best = null, bestRank = 99;
   try { if (app.path) roots.push(new Folder(app.path)); } catch (eP) {}
+  function rank(f) {
+    // File.name is URI-encoded ("Match%20Source…"): compared as it was, no
+    // name with a space could ever match
+    var n = decodeURI(String(f.name)), inH264 = /4E49434B_48323634/i.test(String(f.parent ? f.parent.name : ''));
+    // (another extension's own copy — Frame.io ships one — only if Premiere has none)
+    if (n === 'Match Source - Adaptive High Bitrate.epr') return /[\\\/]extensions[\\\/]/i.test(String(f.fsName)) ? 3 : 0;
+    if (inH264 && /^\d\d - Match Source - High bitrate\.epr$/i.test(n)) return /^01/.test(n) ? 1 : 2;
+    if (inH264 && /^\d\d - Match Source - Medium bitrate\.epr$/i.test(n)) return /^01/.test(n) ? 4 : 5;
+    return 99;
+  }
   function walk(f, depth) {
-    if (!f || !f.exists || depth > 7) return null;
+    if (!f || !f.exists || depth > 7 || bestRank === 0) return;
     var items = f.getFiles();
     for (var i = 0; i < items.length; i++) {
-      var it = items[i];
-      if (it instanceof File && it.name === want) return it.fsName;
+      if (items[i] instanceof File && /\.epr$/i.test(items[i].name)) {
+        var r = rank(items[i]);
+        if (r < bestRank) { bestRank = r; best = items[i].fsName; }
+      }
     }
-    for (var j = 0; j < items.length; j++) {
-      if (items[j] instanceof Folder) { var r = walk(items[j], depth + 1); if (r) return r; }
-    }
-    return null;
+    for (var j = 0; j < items.length; j++) if (items[j] instanceof Folder) walk(items[j], depth + 1);
   }
-  for (var k = 0; k < roots.length; k++) { var hit = walk(roots[k], 0); if (hit) return hit; }
-  return null;
+  for (var k = 0; k < roots.length; k++) walk(roots[k], 0);
+  return best;
 }
 /* A name no sequence in the project has yet: "Mass Uninstall Shock 2". A
    short made twice from the same moment had the same name, and ⤴ Export all
