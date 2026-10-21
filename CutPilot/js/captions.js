@@ -3127,6 +3127,25 @@
     }
     return out;
   }
+  /* Word timing for the same words in other letters (Hinglish from Hindi,
+     the owner's reels): each line's new words take the timing of the line's
+     spoken words one for one when there are as many; else they are spread
+     evenly over the line. → { words, matched (lines one for one), lines }. */
+  function carryWordTiming(cues, texts, words) {
+    var out = [], matched = 0;
+    (cues || []).forEach(function (c, i) {
+      var toks = String(texts[i] == null ? c.text : texts[i]).split(/\s+/).filter(Boolean);
+      var ws = (words || []).filter(function (w) { return +w.start >= +c.start - 0.01 && +w.start < +c.end - 0.001 && String(w.text || '').trim(); });
+      if (ws.length && ws.length === toks.length) {
+        matched++;
+        toks.forEach(function (t, k) { out.push({ text: t, start: +ws[k].start, end: +ws[k].end }); });
+      } else if (toks.length) {
+        var d = (+c.end - +c.start) / toks.length;
+        toks.forEach(function (t, k) { out.push({ text: t, start: +c.start + k * d, end: +c.start + (k + 1) * d, estimated: true }); });
+      }
+    });
+    return { words: out, matched: matched, lines: (cues || []).length };
+  }
   function dedupeRepeatedCues(cues, opts) {
     if (!cues || !cues.length) return cues;
     opts = opts || {};
@@ -4222,6 +4241,7 @@
     psIsBoldFace: psIsBoldFace,
     dedupeRepeatedCues: dedupeRepeatedCues,
     sortWords: sortWords,
+    carryWordTiming: carryWordTiming,
     respreadSqueezed: respreadSqueezed,
     enforceMinDuration: enforceMinDuration,
     mergeStyle: mergeStyle,

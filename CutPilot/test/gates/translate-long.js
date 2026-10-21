@@ -133,6 +133,23 @@ async function run() {
     }, srt);
     slowScan = false;
     C.check('F. a translation made while a slow scan runs stays when the scan ends (' + f.before + ' → ' + f.after + ')', /Translated/.test(f.before || '') && /Translated/.test(f.after || ''), JSON.stringify(f));
+    // G. Hinglish (the same Hindi words in Roman letters) keeps each word's
+    // timing: the word-by-word highlight stays on (it was always switched off)
+    { mode = 'ok';
+      const g = await page.evaluate(async (srt) => {
+        const S = window.CP_DEBUG_EXT.sync;
+        window.__mem['/tmp/hi.srt'] = srt;
+        const words = [];
+        srt.split('\n\n').slice(0, 300).forEach((b, i) => { const t0 = i * 3; ['line', String(i), 'hello'].forEach((w, k) => words.push({ text: w, start: t0 + k * 0.6, end: t0 + k * 0.6 + 0.5 })); });
+        S.setTranscript({ transcript: { path: '/tmp/hi.srt', label: 'hi', mtime: 1e16 }, words });
+        document.getElementById('toast').textContent = '';
+        S.translate('hinglish', 'Hinglish');
+        for (let i = 0; i < 300 && !/Translated/.test(String(S.transcript().label || '')); i++) await new Promise(r => setTimeout(r, 100));
+        const w = S.transcript().words || [];
+        return { n: w.length, w7: w[8] && [w[8].text, w[8].start], toast: document.getElementById('toast').textContent };
+      }, srt);
+      C.check('G. Hinglish keeps every word\'s timing (' + g.n + ' words; the translated 9th, "' + (g.w7 && g.w7[0]) + '", still at ' + (g.w7 && g.w7[1]) + ' s) and says the highlight stays on',
+        g.n === 900 && g.w7 && g.w7[0] === 'नमस्ते' && g.w7[1] === 7.2 && /lights up as it is spoken/.test(g.toast), JSON.stringify(g)); }
     // D. speakers on 330 lines
     const sp = await page.evaluate(async (srt) => {
       const many = srt + '\n' + Array.from({ length: 30 }, (_, k) => (301 + k) + '\n00:15:' + String(k).padStart(2, '0') + ',000 --> 00:15:' + String(k).padStart(2, '0') + ',900\nline ' + (300 + k) + ' hello\n').join('\n');

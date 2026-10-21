@@ -3988,11 +3988,19 @@
       })
       .then(function () {
         var out = cues.map(function (c, i) { return { start: c.start, end: c.end, text: (tl[i] != null ? String(tl[i]) : c.text) }; });
-        installNewTranscript(out, 'Translated → ' + name + ' (' + out.length + ' lines)', 'translated-' + (code || 'xx'));
+        // Hinglish is the same words in Roman letters: they keep the spoken
+        // words' timing (the word-by-word highlight stays on), when most
+        // lines come back word for word
+        var carried = (code === 'hinglish' && state.transcriptWords && state.transcriptWords.length)
+          ? CPCaptions.carryWordTiming(cues, out.map(function (o) { return o.text; }), state.transcriptWords) : null;
+        if (carried && carried.matched < carried.lines * 0.7) carried = null;
+        installNewTranscript(out, 'Translated → ' + name + ' (' + out.length + ' lines)', 'translated-' + (code || 'xx'), !!carried);
+        if (carried) state.transcriptWords = carried.words;
         setTranscriptBar('ok', '✅', 'Translated to ' + name + ' — ' + out.length + ' lines. Now add captions.', 'Change');
         var warn = shifted ? ' ⚠️ ' + shifted + ' line(s) did not come back and stay as they were — ' +
           (lastErr && lastErr.cpKind === 'rate_limit_long' ? lastErr.message + ' Then translate again.' : 'check the wording there.') : '';
-        toast('🌐 Translated to ' + name + '. The words are now in ' + name + ' — add captions or Export SRT. (Word-by-word highlight is off for translations.)' + warn);
+        toast('🌐 Translated to ' + name + '. The words are now in ' + name + ' — add captions or Export SRT.' +
+              (carried ? ' Each word still lights up as it is spoken.' : ' (Word-by-word highlight is off for translations.)') + warn);
       })
       .catch(function (e) { setTranscriptBar('ok', '✅', 'Words ready — not translated this time', 'Change'); toast('Translate failed: ' + e.message, true); })
       .then(function () { state.aiBusy = false; });
