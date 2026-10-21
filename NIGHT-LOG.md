@@ -16,6 +16,13 @@ on the old code, build, install, verify, commit and push. Newest entries on top.
 7. Viral edit — zoom punch-ins, sound effects.
 
 ## Done
+- 08:25 Round 13 (v0.10.101): 🔖 Viral hooks found nothing on the Hindi reel
+  although "सबसे बड़ी गलती क्या है?" is a textbook hook — it was split over two
+  caption lines, and only an OPENING question word counted (Hindi asks in
+  the middle/end). Hooks are now scored by spoken clause (word timing), and
+  a Hindi question word + "है/hai" at the end is a question (Shorts' hook
+  check uses the same scorer). Verified: marker at 4.0 s "Opens on a
+  question". Gate viral-hooks-markers E.
 - 08:05 Round 12 (v0.10.100) — Hindi, in Premiere, on a QA reel spoken by
   macOS's Hindi voice: Transcribe (Auto) → Devanagari words with timing ✓,
   AI fix ✓, Hindi Podcast Bar captions render Devanagari correctly ✓,
