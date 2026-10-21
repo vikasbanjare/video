@@ -16,6 +16,13 @@ on the old code, build, install, verify, commit and push. Newest entries on top.
 7. Viral edit — zoom punch-ins, sound effects.
 
 ## Done
+- 07:05 Round 10 (v0.10.97): 🔁 Find repeated takes on the webinar listed 6
+  cuts; 3+ were real content: "AI isn't coming to take your job." (before
+  "Someone using AI will be coming to take your job."), "The tool changed."
+  (before "And because the tool changed, …"), and agenda lines 26 s apart.
+  Now a line and its opposite, a short line the next one builds on, and
+  loosely-alike lines far apart are kept; real retakes are still found.
+  Gate retakes-conversation (4 new cases). Publish kit ✓ in Premiere.
 - 06:40 Round 9 (v0.10.95 → v0.10.96), in Premiere:
   · ⤴ Export all with Media Encoder failed on the owner's Premiere 2026:
     "Match Source preset not found" (2026 renamed it; and ExtendScript gives
