@@ -37,13 +37,15 @@ const track = (arr) => ({ clips: Object.assign(arr.slice(), { numItems: arr.leng
 const V1 = clip('bg', '/m/talk.mov', 0, 13, 300), V2 = clip('shot', '/m/talk.mov', 0, 13, 56.25),
       V3 = clip('hook', '/tmp/hook.png', 0, 3, 100), V4 = clip('cap', '/tmp/cap_1.png', 0, 13, 100),
       OTHER = clip('other', '/m/b.mov', 20, 30, 100, true);
-const tracks = [track([V1]), track([V2, OTHER]), track([V3]), track([V4])];
-const seq = { videoTracks: Object.assign(tracks, { numTracks: 4 }) };
+// V5: the long-video caption overlay Exact look makes (a .mov)
+const V5 = clip('overlay', '/p/Pulse Media/pulse-captions-QA-Webinar-16fo7ju.mov', 0, 30, 100);
+const tracks = [track([V1]), track([V2, OTHER]), track([V3]), track([V4]), track([V5])];
+const seq = { videoTracks: Object.assign(tracks, { numTracks: 5 }) };
 const sb = { app: { project: { activeSequence: seq } } };
 vm.createContext(sb); ES3.strip(sb);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '..', '..', 'jsx', 'host.jsx'), 'utf8'), sb, { filename: 'host.jsx' });
 const r = JSON.parse(sb.CP_addZoomPunches(JSON.stringify({ videoTrack: 0, times: [1, 10, 25], amount: 108, hold: 1.1, ramp: 0.5 })));
-check('A. the punches go on V2, the shot (V1 backdrop, V3 title, V4 captions untouched)', V2._scale.keys.length === 8 && !V1._scale.keys.length && !V3._scale.keys.length && !V4._scale.keys.length,
+check('A. the punches go on V2, the shot (V1 backdrop, V3 title, V4 captions, V5 caption overlay untouched)', V2._scale.keys.length === 8 && !V1._scale.keys.length && !V3._scale.keys.length && !V4._scale.keys.length && !V5._scale.keys.length,
   JSON.stringify({ r, v1: V1._scale.keys.length, v2: V2._scale.keys.length }));
 const vals = V2._scale.keys.map(k => k.v);
 check('B. from V2\'s own 56.25% up to 8% above it (' + vals.slice(0, 4).join(' → ') + ')', vals[0] === 56.25 && Math.abs(vals[1] - 60.75) < 1e-9 && vals[3] === 56.25, JSON.stringify(vals));

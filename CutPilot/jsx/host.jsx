@@ -2363,7 +2363,8 @@ function CP_addZoomPunches(argsJson) {
     // captions, titles and stills. Only V1 was zoomed, from 100% — in a Pulse
     // short V1 is the blurred backdrop scaled to cover the frame, so each
     // punch shrank it and the frame went bare (the owner's webinar short).
-    var still = /\.(png|jpe?g|gif|tiff?|psd|ai|svg|bmp|webp|heic|aegraphic|mogrt|srt|vtt)$/i;
+    // (and Pulse's own long-video caption overlay, a .mov on a top track)
+    var still = /\.(png|jpe?g|gif|tiff?|psd|ai|svg|bmp|webp|heic|aegraphic|mogrt|srt|vtt)$|[\\\/]pulse-captions-[^\\\/]*$/i;
     function topClipAt(at) {
       for (var v = seq.videoTracks.numTracks - 1; v >= 0; v--) {
         var tr = seq.videoTracks[v];

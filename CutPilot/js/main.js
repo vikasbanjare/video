@@ -17983,8 +17983,7 @@
   function shortKeepDir(work) {
     return captionMediaPlace().then(function (pl) {
       var d = nodeReq('path').join(pl.dir, 'short-' + Date.now());
-      makeDirs(d);
-      return d;
+      try { makeDirs(d); return d; } catch (e) { return work; }
     }, function () { return work; });
   }
   /* The short as ONE video file (ffmpeg): every choice baked in. */
