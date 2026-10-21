@@ -1705,6 +1705,7 @@
       "weight": 500,
       "highlightFont": "Helvetica Neue",
       "highlightWeight": 800,
+      "highlightItalic": false,
       "fallbackFonts": ["Inter", "Arial", "sans-serif"],
       "fontSize": 48,
       "letterSpacing": -2,

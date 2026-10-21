@@ -14775,7 +14775,8 @@
       // least 20% (render.js), or it could not be told apart (Crisp, Meme)
       // at most 30%: the template scales the word in place (the image makes
       // room for it), so Kinetic's 50% ran into the words beside it
-      grow: spoken ? Math.max(0, Math.min(30, Math.round(((String(hl).toLowerCase() === String(fill).toLowerCase()
+      // (spokenPop: false opts out of that forced pop, as render.js does)
+      grow: spoken ? Math.max(0, Math.min(30, Math.round(((String(hl).toLowerCase() === String(fill).toLowerCase() && p.spokenPop !== false
         ? Math.max(p.highlightScale || 1, 1.2) : (p.highlightScale || 1)) - 1) * 100))) : 0,
       outlineColor: p.stroke || '#000000',
       outlineWidth: (p.stroke && p.strokeWidth > 0) ? Math.min(100, Math.round(p.strokeWidth * k * 10) / 10) : 0,
