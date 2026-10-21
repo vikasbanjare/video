@@ -16,6 +16,11 @@ on the old code, build, install, verify, commit and push. Newest entries on top.
 7. Viral edit — zoom punch-ins, sound effects.
 
 ## Done
+- 05:50 v0.10.91: Pulse's own "Test everything" in Premiere: every row ✅
+  (36 checks incl. multicam, razor, captions, Premium, shorts, cleanup).
+  It now also removes its test short's folder from Pulse Media. Studio
+  sound ✓ (saved in ~/Documents/Pulse/Studio Sound). Freed 690 MB more of
+  my own test downloads (disk ~1.4 GB free).
 - 05:25 Round 7 (v0.10.89 → v0.10.90), in Premiere:
   · Translate on the webinar: 201 of 201 lines in Hindi (was 121 English
     at the start of the night, then 6) — the last few are asked one by one.
