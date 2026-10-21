@@ -76,21 +76,64 @@ function macFfmpeg() {
     return uni;
   } catch (e) { console.log('  (no lipo/codesign here — the Mac installer downloads ffmpeg instead)'); return null; }
 }
-function payload(name, ffSrc, ffName) {
+// ---- the voice cleaner (DeepFilterNet, MIT / Apache-2.0) beside it: 🎚
+// Studio sound's AI noise removal, offline. Pulse/bin/deep-filter (universal
+// Mac) and deep-filter.exe (Windows), with its licence. Missing → Studio sound
+// keeps its own filter (CP_BUNDLE_DF=0 skips it).
+const BUNDLE_DF = process.env.CP_BUNDLE_DF !== '0';
+const DFV = '0.5.6', DFC = path.join(os.tmpdir(), 'cutpilot-buildtools', 'deepfilter-' + DFV);
+const DF_BASE = 'https://github.com/Rikorose/DeepFilterNet/releases/download/v' + DFV + '/';
+function dfCached(name, minSize) {
+  fs.mkdirSync(DFC, { recursive: true });
+  const f = path.join(DFC, name);
+  if (!fs.existsSync(f) || fs.statSync(f).size < (minSize || 1e6)) {
+    console.log('Fetching ' + name + ' (one-time)…');
+    cp.execSync('curl -sL --fail -o ' + JSON.stringify(f) + ' ' + JSON.stringify(name.indexOf('LICENSE') === 0
+      ? 'https://raw.githubusercontent.com/Rikorose/DeepFilterNet/v' + DFV + '/' + name : DF_BASE + name), { stdio: 'inherit' });
+  }
+  return f;
+}
+function macDeepFilter() {
+  const uni = path.join(DFC, 'deep-filter-darwin-universal');
+  if (fs.existsSync(uni) && fs.statSync(uni).size > 1e6) return uni;
+  const arm = dfCached('deep-filter-' + DFV + '-aarch64-apple-darwin'), x64 = dfCached('deep-filter-' + DFV + '-x86_64-apple-darwin');
+  try {
+    cp.execSync('lipo -create ' + JSON.stringify(arm) + ' ' + JSON.stringify(x64) + ' -output ' + JSON.stringify(uni));
+    cp.execSync('codesign -s - --force ' + JSON.stringify(uni));
+    return uni;
+  } catch (e) { console.log('  (no lipo/codesign here — Studio sound uses its own filter on Mac)'); return null; }
+}
+function dfLicense() {
+  try { return [dfCached('LICENSE-MIT', 100), dfCached('LICENSE-APACHE', 100)]; } catch (e) { return []; }
+}
+function payload(name, ffSrc, ffName, extras) {
   const zipPath = path.join(work, name);
   if (ffSrc) {
     fs.mkdirSync(path.join(stage, 'bin'), { recursive: true });
     fs.copyFileSync(ffSrc, path.join(stage, 'bin', ffName));
     fs.chmodSync(path.join(stage, 'bin', ffName), 0o755);
   }
+  (extras || []).forEach(function (x) {
+    if (!x || !x.src) return;
+    fs.mkdirSync(path.join(stage, 'bin'), { recursive: true });
+    fs.copyFileSync(x.src, path.join(stage, 'bin', x.name));
+    if (x.exec) fs.chmodSync(path.join(stage, 'bin', x.name), 0o755);
+  });
   sh('cd "' + work + '" && zip -qry "' + zipPath + '" Pulse');
   try { fs.rmSync(path.join(stage, 'bin'), { recursive: true, force: true }); } catch (e) {}
-  console.log('payload: ' + name + ' (' + (fs.statSync(zipPath).size / 1048576).toFixed(1) + ' MB' + (ffSrc ? ', video engine included' : '') + ')');
+  console.log('payload: ' + name + ' (' + (fs.statSync(zipPath).size / 1048576).toFixed(1) + ' MB' + (ffSrc ? ', video engine included' : '') +
+              ((extras || []).some(function (x) { return x && x.exec; }) ? ', voice cleaner included' : '') + ')');
   return zipPath;
 }
 const macFF = BUNDLE_FF ? macFfmpeg() : null;
-const payloadZip = payload('Pulse.zip', macFF, 'ffmpeg');
-const payloadWinZip = payload('Pulse-win.zip', BUNDLE_FF ? ffCached('ffmpeg-win32-x64') : null, 'ffmpeg.exe');
+function dfExtras(bin, exeName) {
+  if (!BUNDLE_DF || !bin) return [];
+  const lic = dfLicense();
+  return [{ src: bin, name: exeName, exec: true }].concat(lic.map(function (f) { return { src: f, name: 'DeepFilterNet-' + path.basename(f) + '.txt' }; }));
+}
+const payloadZip = payload('Pulse.zip', macFF, 'ffmpeg', BUNDLE_DF ? dfExtras(macDeepFilter(), 'deep-filter') : []);
+const payloadWinZip = payload('Pulse-win.zip', BUNDLE_FF ? ffCached('ffmpeg-win32-x64') : null, 'ffmpeg.exe',
+  BUNDLE_DF ? dfExtras(dfCached('deep-filter-' + DFV + '-x86_64-pc-windows-msvc.exe'), 'deep-filter.exe') : []);
 
 // =====================================================================  macOS
 // A real .app bundle. Double-click → runs Contents/MacOS/installer (a shell

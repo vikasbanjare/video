@@ -408,6 +408,28 @@
     return null;  // not found — re-probe next call (picks up a fresh install)
   }
 
+  /* 🎚 Studio sound's AI voice cleaner (DeepFilterNet), shipped beside the
+     bundled ffmpeg in Pulse/bin. null when this install has none — Studio
+     sound then keeps its own noise filter. */
+  var _deepFilter = null;
+  function resolveDeepFilter() {
+    if (_deepFilter) return _deepFilter;
+    var fs, os;
+    try { fs = nodeReq('fs'); os = nodeReq('os'); } catch (e) { return null; }
+    var win = (typeof process !== 'undefined' && process.platform === 'win32'), exe = win ? 'deep-filter.exe' : 'deep-filter';
+    var cands = [];
+    try {
+      var ff = resolveFfmpeg();
+      if (ff) cands.push(nodeReq('path').join(nodeReq('path').dirname(ff), exe));   // the bin folder ffmpeg came from
+      var home = os.homedir();
+      cands.push(home + '/Library/Application Support/Adobe/CEP/extensions/Pulse/bin/' + exe);
+      if (process.env && process.env.APPDATA) cands.push(process.env.APPDATA + '\\Adobe\\CEP\\extensions\\Pulse\\bin\\' + exe);
+      cands.push(nodeReq('path').join(home, '.cutpilot', 'bin', exe));
+    } catch (eC) {}
+    for (var i = 0; i < cands.length; i++) { try { if (fs.existsSync(cands[i])) return (_deepFilter = cands[i]); } catch (eX) {} }
+    return null;
+  }
+
   /* Does THIS machine's ffmpeg carry libass (the `subtitles` filter)? The
      one-clip overlay for long videos needs it. The build Pulse installs itself
      has it (--enable-libass, verified against the shipped release), but a
@@ -18898,11 +18920,12 @@
   }
   /* Run an ffmpeg command, capturing stdout/stderr (panel-side via Node).
      Kills the process after `timeoutMs` so it can never appear frozen. */
-  function runFfmpeg(ffPath, args, timeoutMs) {
+  function runFfmpeg(ffPath, args, timeoutMs, cwd) {
     return new Promise(function (resolve) {
       try {
         var cp = nodeReq('child_process');
-        var proc = cp.spawn(ffPath, args);
+        // cwd: short relative names for a long list of inputs (Windows caps a command line)
+        var proc = cwd ? cp.spawn(ffPath, args, { cwd: cwd }) : cp.spawn(ffPath, args);
         var out = '', err = '', done = false;
         function finish(o) { if (done) return; done = true; resolve(o); }
         var timer = setTimeout(function () {
@@ -21180,7 +21203,7 @@
      sound, publish kit, brand kit…), so those never reach into main.js. */
   window.CPKit = {
     toast: toast, nodeReq: nodeReq, capProgress: capProgress,
-    resolveFfmpeg: resolveFfmpeg, runFfmpeg: runFfmpeg,
+    resolveFfmpeg: resolveFfmpeg, runFfmpeg: runFfmpeg, resolveDeepFilter: resolveDeepFilter, resumableDownload: resumableDownload,
     aiChat: aiChatRetry, readTranscript: readSelectedTranscript,
     settings: function () { return settings; }, saveSettings: saveSettings,
     env: function () { return state.env || null; },

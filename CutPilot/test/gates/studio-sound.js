@@ -42,6 +42,22 @@ const bare = S.filterChain({ target: -14, mics: 1, noise: false, hum: false, lev
  /acompressor/.test(old) && !/speechnorm|deesser/.test(old) ? ok : bad)(
   'A. the recipe: rumble, 50/60 Hz hum, noise, voice balanced word by word, clarity (EQ + de-ess), −14 / −16 LUFS, two mics each 3 dB lower; each part can be left out; an older engine gets a compressor instead', JSON.stringify({ yt, bare }));
 
+// E. every cut matched to the others (the owner: "100, 200 cuts … balance the audio between each other")
+{
+  const g = S.pieceGains([{ dur: 4, lufs: -16, src: 'a' }, { dur: 3, lufs: -28, src: 'b' }, { dur: 0.4, lufs: null, src: 'b' },
+                          { dur: 5, lufs: -15.5, src: 'a' }, { dur: 2, lufs: -40, src: 'c' }, { dur: 3, lufs: -16.4, src: 'a' }]);
+  (g[0] === 0 && g[1] > 10 - 0.01 && g[1] <= 10 && g[2] === g[1] && g[3] === 0 && g[4] === 10 && g[5] === 0 ? ok : bad)(
+    'E. cuts matched to the track: a quiet take lifted (at most +10 dB), a cut too short to measure takes its take\'s gain, near-equal cuts left alone', JSON.stringify(g));
+  const loud = S.pieceGains([{ dur: 4, lufs: -16, src: 'a' }, { dur: 4, lufs: -16.2, src: 'a' }, { dur: 3, lufs: -6, src: 'b' }]);
+  (loud[2] === -10 && loud[0] === 0 ? ok : bad)('E2. a cut far too loud comes down (at most −10 dB)', JSON.stringify(loud));
+}
+// F. the AI cleaner replaces the noise filter
+{
+  const ai = S.filterChain({ target: -14, mics: 1, aiClean: true });
+  (!/afftdn|atrim/.test(ai) && /atrim=start_sample=1200/.test(yt) ? ok : bad)(
+    'F. with the AI cleaner: no ffmpeg noise filter (its 30 ms look-ahead is read past when the cuts are re-read); without it, afftdn\'s 1,200-sample delay trimmed', ai);
+}
+
 // D
 const src = { audio: [
   { index: 0, muted: false, items: [
