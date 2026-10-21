@@ -1381,8 +1381,9 @@ function CP_buildShortSequence(argsJson) {
       items[key] = CP_findProjectItemByMediaPath(app.project.rootItem, paths[i]);
       if (!items[key]) want.push(paths[i]);
     }
+    var shortsBin = CP_pulseBin('Pulse Shorts');
     if (want.length) {
-      try { app.project.importFiles(want, true, app.project.rootItem, false); } catch (eImp) { return CP_fail('Premiere could not import ' + want.join(', ') + ': ' + eImp.message); }
+      try { app.project.importFiles(want, true, shortsBin || app.project.rootItem, false); } catch (eImp) { return CP_fail('Premiere could not import ' + want.join(', ') + ': ' + eImp.message); }
       for (i = 0; i < want.length; i++) items[CP_normPath(want[i])] = CP_findProjectItemByMediaPath(app.project.rootItem, want[i]);
     }
     function itemOf(p) { return items[CP_normPath(p)] || null; }
@@ -1390,7 +1391,7 @@ function CP_buildShortSequence(argsJson) {
     if (!ph) return CP_fail('Premiere could not import the short’s frame clip.');
     if (typeof app.project.createNewSequenceFromClips !== 'function') return CP_fail('This Premiere cannot make a sequence by script — use “One video file” for the short.');
     var shortName = CP_uniqueSequenceName(args.name || 'Pulse short');
-    var seq = app.project.createNewSequenceFromClips(shortName, [ph]);
+    var seq = shortsBin ? app.project.createNewSequenceFromClips(shortName, [ph], shortsBin) : app.project.createNewSequenceFromClips(shortName, [ph]);
     if (!seq) return CP_fail('Premiere did not make the short’s sequence.');
     CP_activateSequence(seq);
     seq = CP_activeSequence() || seq;
@@ -1673,17 +1674,29 @@ function CP_makeShort(argsJson) {
 
 /* Import a rendered file and, if possible, build a sequence sized to it (so a
    vertical render lands as a ready vertical sequence). argsJson:{ path, name }. */
+/* One bin of Pulse's own in the project's top level, made once: every short
+   put its frame clip, hook card and sequence loose at the top (twelve shorts
+   left 36 loose items on the owner's project). null if it cannot be made. */
+function CP_pulseBin(name) {
+  try {
+    var r = app.project.rootItem;
+    for (var i = 0; i < r.children.numItems; i++) { var c = r.children[i]; if (c.type === 2 && c.name === name) return c; }
+    return r.createBin(name) || null;
+  } catch (e) { return null; }
+}
+
 function CP_importClip(argsJson) {
   try {
     var args = JSON.parse(argsJson);
-    try { app.project.importFiles([args.path], true, app.project.rootItem, false); } catch (eImp) {
+    var shortsBin = CP_pulseBin('Pulse Shorts');
+    try { app.project.importFiles([args.path], true, shortsBin || app.project.rootItem, false); } catch (eImp) {
       return CP_fail('Could not import the rendered clip: ' + eImp.message);
     }
     var item = CP_findProjectItemByMediaPath(app.project.rootItem, args.path);
     var seqName = CP_uniqueSequenceName(args.name || 'Vertical clip');
     if (item && app.project.createNewSequenceFromClips) {
       try {
-        var ns = app.project.createNewSequenceFromClips(seqName, [item]);
+        var ns = shortsBin ? app.project.createNewSequenceFromClips(seqName, [item], shortsBin) : app.project.createNewSequenceFromClips(seqName, [item]);
         if (ns) { CP_activateSequence(ns); return CP_ok({ imported: true, sequence: seqName }); }
       } catch (eSeq) {}
     }
