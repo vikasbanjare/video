@@ -16189,6 +16189,16 @@
         if (ffV) {
           prog.textContent = '🎯 Reading every word (verbatim engine)…';
           return verbatimTranscribe(clip, ffV, cutSrc).then(function (vw) {
+            // no transcript to read the fillers from ("Filler words skipped —
+            // No transcript yet"): the words just heard have them
+            if (doFill && !fills.length && vw && vw.length) {
+              var vc = []; vc.words = vw;
+              CPTranscript.findFillerRanges(vc, { extra: !!($('opt-fillers-extra') && $('opt-fillers-extra').checked), padding: 0.02 }).ranges.forEach(function (fr) {
+                var s0 = Math.max(fr.start, plan.range.start), e0 = Math.min(fr.end, plan.range.end);
+                if (e0 > s0) fills.push({ start: s0, end: e0, kind: 'filler', word: fr.word });
+              });
+              extraNotes = extraNotes.filter(function (n) { return !/^Filler words skipped/.test(n); });
+            }
             prog.textContent = 'Picking the best take of every line…';
             var vSure = takesOn(vw, null);
             guessedNote();

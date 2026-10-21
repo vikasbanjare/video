@@ -215,6 +215,11 @@ console.log('two or more people — echoes of unpunctuated or comma-ended lines'
     'It plans my week for me.', 'People who know deep research, don\'t worry.', 'We\'re going to go deeper than that.'];
   const ag = run(agenda, 'strong', 'one', { gap: 4.5 });
   check('strong · one: two agenda lines alike only by their opening, 26 s apart, are both kept', !ag.some(x => /deeper/.test(x.text || x)), JSON.stringify(ag));
+  // the owner's Hindi retake: a false start and "arre ruko, ek baar phir se"
+  // in ONE breath, then the full line — was kept whole (one phrase)
+  const oneBreath = ['आज हम पैसे बचाने के, अरे रुको, एक बार फिर से.', 'आज हम पैसे बचाने के तीन आसान तरीके देखेंगे.', 'पहला तरीका है हर महीने का बजट बनाना.'];
+  const ob = run(oneBreath, 'balanced', 'one');
+  check('balanced · one: a Hindi false start + "अरे रुको, एक बार फिर से" in one breath is cut, the full line kept', ob.length === 1 && /अरे रुको/.test(ob[0]) && /बचाने के,/.test(ob[0]) && !/तीन/.test(ob[0]), JSON.stringify(ob));
   const twiceNeg = ['You do not need a big camera.', 'You do not need a big camera at all.', 'A phone is enough.'];
   const r2 = run(twiceNeg, 'balanced', 'one');
   check('balanced · one: the same negative line said twice is still a retake', r2.length === 1, JSON.stringify(r2));

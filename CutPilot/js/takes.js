@@ -48,6 +48,23 @@
      stripping them turns different Hindi words into the same one. */
   var NEGATION = /^(not|never|nothing|nobody|none|cannot|.+n't|mat|मत)$/;
   var NEG_INTERJ = /^(no|nahi|nahin|na|नहीं|नही|ना)$/;
+  /* What a speaker says between takes ("no no wait", "arre ruko, ek baar phir
+     se"): strong markers, the filler words around them, whole phrases. */
+  var CHAT_STRONG = wordSet(['no', 'nope', 'wait', 'again', 'redo', 'sorry', 'cut', 'ugh', 'over', 'messed', 'flubbed', 'scratch',
+    'terrible', 'awful', 'horrible', 'damn', 'dammit', 'shit', 'fuck', 'crap', 'retry', 'restart', 'stop',
+    'ruko', 'ruk', 'rukiye', 'dobara', 'galat', 'arre', 'arey', 'arrey', 'oops',
+    'रुको', 'रुकिए', 'दोबारा', 'गलत', 'ग़लत', 'अरे']);
+  var CHAT_WEAK = wordSet(['let', 'me', 'try', 'that', 'this', 'it', 'one', 'more', 'time', 'okay', 'ok', 'hmm', 'um', 'uh', 'oh', 'man',
+    'god', 'was', 'is', 'i', 'do', 'did', 'hold', 'on', 'start', 'take', 'two', 'three', 'from', 'the', 'top', 'line', 'up', 'so',
+    'bad', 'not', 'good', 'right', 'yeah', 'well', 'alright', 'a', 'go', 'gonna', 'redo',
+    'ek', 'baar', 'bar', 'phir', 'fir', 'se', 'chalo', 'theek', 'thik', 'ho', 'gaya', 'gayi', 'hai', 'main', 'toh', 'haan', 'acha',
+    'achha', 'accha', 'nahi', 'nahin', 'aur', 'shuru', 'karte', 'karta', 'karti', 'hain', 'yaar', 'bhai',
+    'एक', 'बार', 'फिर', 'से', 'चलो', 'ठीक', 'हो', 'गया', 'गई', 'है', 'मैं', 'तो', 'हाँ', 'हां', 'अच्छा', 'नहीं', 'और', 'शुरू',
+    'करते', 'करता', 'हैं', 'यार']);
+  var CHAT_PHRASES = ['one more time', 'take two', 'take three', 'start over', 'from the top', 'try that again', 'try it again',
+    'do that again', 'do it again', 'that again', 'ek baar aur', 'ek baar phir', 'ek aur baar', 'phir se', 'fir se',
+    'galat ho gaya', 'nahi nahi', 'shuru se', 'फिर से', 'एक बार और', 'एक बार फिर', 'गलत हो गया', 'नहीं नहीं', 'शुरू से'];
+
   function norm(w) {
     var s = String(w == null ? '' : w);
     if (s.normalize) s = s.normalize('NFC');
@@ -359,6 +376,20 @@
     if (N < minRun * 2) return { deletes: [], kept: 0, removedWords: 0 };
 
     var phrases = splitPhrases(words, opts.pauseGap);
+    // A false start and the "arre ruko, ek baar phir se" after it, said
+    // without a pause, are ONE phrase — so it matched the full take only by
+    // half, and the owner's Hindi retake was kept (v0.10.101). Split where the
+    // chatter starts when everything from there on is chatter.
+    if (opts.asides !== false) phrases = [].concat.apply([], phrases.map(function (ph) {
+      var t = ph.map(function (w) { return norm(w.text); });
+      for (var i = 2; i < t.length - 1; i++) {
+        if (!CHAT_STRONG[t[i]]) continue;
+        var tail = t.slice(i), chat = 0;
+        tail.forEach(function (x) { if (CHAT_STRONG[x] || CHAT_WEAK[x]) chat++; });
+        if (tail.length <= (opts.maxAsideWords || 8) && chat / tail.length >= 0.75) return [ph.slice(0, i), ph.slice(i)];
+      }
+      return [ph];
+    }));
     var toks = phrases.map(pTokens);
     var ct = toks.map(contentToks);   // what each phrase SAYS — "um", "uh" and "is is" don't make two takes differ
     var P = phrases.length;
@@ -552,20 +583,7 @@
     // speaker. In a video with no retakes nothing is adjacent, so nothing can
     // ever be taken by mistake.
     if (opts.asides !== false) {
-      var STRONG = wordSet(['no', 'nope', 'wait', 'again', 'redo', 'sorry', 'cut', 'ugh', 'over', 'messed', 'flubbed', 'scratch',
-        'terrible', 'awful', 'horrible', 'damn', 'dammit', 'shit', 'fuck', 'crap', 'retry', 'restart', 'stop',
-        'ruko', 'ruk', 'rukiye', 'dobara', 'galat', 'arre', 'arey', 'arrey', 'oops',
-        'रुको', 'रुकिए', 'दोबारा', 'गलत', 'ग़लत', 'अरे']);
-      var WEAK = wordSet(['let', 'me', 'try', 'that', 'this', 'it', 'one', 'more', 'time', 'okay', 'ok', 'hmm', 'um', 'uh', 'oh', 'man',
-        'god', 'was', 'is', 'i', 'do', 'did', 'hold', 'on', 'start', 'take', 'two', 'three', 'from', 'the', 'top', 'line', 'up', 'so',
-        'bad', 'not', 'good', 'right', 'yeah', 'well', 'alright', 'a', 'go', 'gonna', 'redo',
-        'ek', 'baar', 'bar', 'phir', 'fir', 'se', 'chalo', 'theek', 'thik', 'ho', 'gaya', 'gayi', 'hai', 'main', 'toh', 'haan', 'acha',
-        'achha', 'accha', 'nahi', 'nahin', 'aur', 'shuru', 'karte', 'karta', 'karti', 'hain', 'yaar', 'bhai',
-        'एक', 'बार', 'फिर', 'से', 'चलो', 'ठीक', 'हो', 'गया', 'गई', 'है', 'मैं', 'तो', 'हाँ', 'हां', 'अच्छा', 'नहीं', 'और', 'शुरू',
-        'करते', 'करता', 'हैं', 'यार']);
-      var PHRASES = ['one more time', 'take two', 'take three', 'start over', 'from the top', 'try that again', 'try it again',
-        'do that again', 'do it again', 'that again', 'ek baar aur', 'ek baar phir', 'ek aur baar', 'phir se', 'fir se',
-        'galat ho gaya', 'nahi nahi', 'shuru se', 'फिर से', 'एक बार और', 'एक बार फिर', 'गलत हो गया', 'नहीं नहीं', 'शुरू से'];
+      var STRONG = CHAT_STRONG, WEAK = CHAT_WEAK, PHRASES = CHAT_PHRASES;
       var PHRASE_TOKS = PHRASES.map(function (ph) { return ph.split(' ').map(norm).join(' '); });
       var maxAside = opts.maxAsideWords || 8;
       for (var ai = 0; ai < P; ai++) {

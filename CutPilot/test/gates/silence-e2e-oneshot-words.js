@@ -100,6 +100,21 @@ const overlaps = (ranges, s, e) => ranges.some(r => r.end > s + 0.05 && r.start 
       JSON.stringify(r.ranges.map(x => [+x.start.toFixed(2), +x.end.toFixed(2)])));
     C.check('no page errors (1)', r.errors.length === 0, r.errors.join(' | '));
 
+    // 1b) fillers ticked, no transcript yet: the verbatim words have them
+    // (the owner's Hindi reel: "Filler words skipped — No transcript yet")
+    const WORDS_UM = WORDS.concat([{ text: 'um', start: 15.25, end: 15.6, speaker: 0 }]).sort((a, b) => a.start - b.start);
+    const deepgramUm = (args) => {
+      const url = args.find(a => /^https:\/\//.test(a)) || '';
+      if (!/api\.deepgram\.com/.test(url)) return '{}';
+      return JSON.stringify({ results: { channels: [{ alternatives: [{ words: WORDS_UM.map(w => ({ word: w.text, punctuated_word: w.text, start: w.start, end: w.end, confidence: 0.97, speaker: w.speaker })) }] }] } });
+    };
+    p = await H.openPanel(browser, { host: hostFn({ noClip: true }), curl: deepgramUm, ffmpeg: FF,
+      settings: { verbatimKey: 'dg-test-key', verbatimProvider: 'deepgram', ffmpegPath: FF, whisperLang: 'auto' } });
+    r = await oneTap(p.page, p.calls, { fillers: true });
+    await p.page.close();
+    C.check('fillers ticked, no transcript: the "um" the verbatim engine heard is cut (15.25–15.6 s), nothing says fillers were skipped',
+      covers(r.ranges, 15.3, 15.55) && !/Filler words skipped/.test(r.confirm || ''), JSON.stringify({ ranges: r.ranges.map(x => [+x.start.toFixed(2), +x.end.toFixed(2)]), confirm: (r.confirm || r.toast).slice(0, 200) }));
+
     // 2) a transcript file the owner picked: no word timing, no engine set up
     // (a line-level file: a phrase break needs a real pause between its lines)
     const srt = '1\n00:00:05,000 --> 00:00:07,400\n' + LINE + '\n\n2\n00:00:08,000 --> 00:00:11,000\n' + LINE + ' with two mics\n';
