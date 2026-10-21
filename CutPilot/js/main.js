@@ -3396,13 +3396,28 @@
     var cand = [];
     var fixed = CPTranscript.detectHooks(cues);
     fixed.forEach(function (h) { cand.push({ time: h.time, label: h.label, text: h.text, score: 60 }); });
-    if (typeof CPShorts !== 'undefined' && CPShorts.hookScore) (cues || []).forEach(function (c) {
-      var txt = String(c.text || '').trim();
-      if (txt.split(/\s+/).length < 5) return;
-      var hs = CPShorts.hookScore(txt);
+    // scored by what is said, not by caption line: a hook split over two
+    // lines ("…सबसे बड़ी गलती क्या / है,") was never seen. With word timing,
+    // the clauses (cut at , . ? ! ।) at their own start; else each line.
+    var spans = [];
+    var ws = (state.transcriptWords && state.transcriptWords.length) ? state.transcriptWords : null;
+    if (ws) {
+      var cur = null;
+      ws.forEach(function (w) {
+        var t = String(w.text || '').trim(); if (!t) return;
+        if (!cur) cur = { time: +w.start, words: [] };
+        cur.words.push(t);
+        if (/[,.?!।॥;:]["'”’)]*$/.test(t)) { spans.push(cur); cur = null; }
+      });
+      if (cur) spans.push(cur);
+      spans = spans.map(function (sp) { return { time: sp.time, text: sp.words.join(' '), n: sp.words.length }; });
+    } else spans = (cues || []).map(function (c) { var t = String(c.text || '').trim(); return { time: c.start || 0, text: t, n: t.split(/\s+/).length }; });
+    if (typeof CPShorts !== 'undefined' && CPShorts.hookScore) spans.forEach(function (sp) {
+      if (sp.n < (ws ? 3 : 5)) return;
+      var hs = CPShorts.hookScore(sp.text);
       if (hs.score < 26) return;
       var why = hs.why[0] || 'hook';
-      cand.push({ time: c.start || 0, label: why.charAt(0).toUpperCase() + why.slice(1), text: txt.slice(0, 80), score: hs.score });
+      cand.push({ time: sp.time, label: why.charAt(0).toUpperCase() + why.slice(1), text: sp.text.slice(0, 80), score: hs.score });
     });
     cand.sort(function (a, b) { return b.score - a.score || a.time - b.time; });
     var out = [];

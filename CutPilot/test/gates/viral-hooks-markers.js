@@ -39,6 +39,20 @@ async function run() {
     C.check('C. no filler, fragment or mid-thought line; 20 s apart, ≤ 10, in time order',
       !at(0) && !at(35) && !at(70) && !at(100) && r.length <= 10 && r.every((m, i) => !i || m.time - r[i - 1].time >= 20), r);
     C.check('D. a Hindi hook is marked', !!at(130), r);
+    // E. the owner's Hindi reel: the hook is split over two caption lines and
+    // asked with a comma ("…सबसे बड़ी गलती क्या / है, ज्यादातर…") — no marker
+    // at all before; marked where the question starts
+    const e = await o.page.evaluate(() => {
+      const said = 'नमस्ते दोस्तों, आज हम बात करेंगे कि पैसे कैसे बचाएं, सबसे बड़ी गलती क्या है, ज्यादातर लोग अपनी सेलरी का सिर्फ 10 प्रतिशत बचाते हैं,'.split(' ');
+      const words = said.map((w, i) => ({ text: w, start: +(i * 0.4).toFixed(2), end: +(i * 0.4 + 0.35).toFixed(2) }));
+      const cues = [{ start: 0, end: 2.6, text: said.slice(0, 7).join(' ') }, { start: 2.6, end: 5.4, text: said.slice(7, 14).join(' ') }, { start: 5.4, end: 8.2, text: said.slice(14).join(' ') }];
+      window.CP_DEBUG.setTranscriptWords(words);
+      const r = window.CP_DEBUG.viralHookMarkers(cues);
+      window.CP_DEBUG.setTranscriptWords(null);
+      return { r, at: words[said.indexOf('सबसे')].start };
+    });
+    C.check('E. a Hindi question split over two caption lines ("सबसे बड़ी गलती क्या है,") is marked where it starts (' + JSON.stringify(e.r.map(m => [m.time, m.label])) + ')',
+      e.r.some(m => Math.abs(m.time - e.at) < 0.01 && /question/i.test(m.label)), JSON.stringify(e));
     await o.page.close();
   } finally { await browser.close(); }
   C.finish();

@@ -139,9 +139,13 @@
   var BACKREF = words('as i said|like i said|earlier|that one|this one|jaise maine kaha|pehle bataya|wahi|जैसा मैंने कहा|पहले बताया|वही');
   var ENDS = /[.!?।॥۔؟…]["'”’)\]]*\s*$/;
 
+  // Hindi asks in the middle or at the end: "सबसे बड़ी गलती क्या है?" ("what is
+  // the biggest mistake"), often written with a comma, not a question mark
+  var HI_QUESTION = words('क्या|क्यों|कैसे|कौन|कितना|कितने|कितनी|कब|कहाँ|कहां|kya|kyun|kyon|kaise|kaun|kitna|kitne|kitni|kab|kahan');
+  var HI_ASK_END = new RegExp('(?:^|[^' + L + '])(है|हैं|था|थी|थे|hai|hain|tha|thi|the)[\\s,.!।]*$', 'i');
   function hookScore(text) {
     var t = String(text || '').trim(), s = 0, why = [];
-    if (/\?\s*$/.test(t) || QUESTION_START.test(t)) { s += 22; why.push('opens on a question'); }
+    if (/\?\s*$/.test(t) || QUESTION_START.test(t) || (HI_QUESTION.test(t) && HI_ASK_END.test(t))) { s += 22; why.push('opens on a question'); }
     if (STRONG.test(t)) { s += 18; why.push('a bold claim'); }
     if (NUMBER.test(t)) { s += 10; why.push('a number'); }
     if (YOU.test(t)) { s += 8; why.push('talks to the viewer'); }
