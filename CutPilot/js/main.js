@@ -10245,7 +10245,13 @@
     } catch (eRj) {}
     var pOpts = reuse ? { replaceTrack: reuse } : {};
     if (replaceEd) pOpts.replaceEditable = replaceEd;
-    return runCaptionPipeline(mCues, pOpts);
+    if (reuse || !CPBridge.isCEP()) return runCaptionPipeline(mCues, pOpts);
+    // not remembered: the track that already holds this sequence's caption
+    // images, so they are replaced, not stacked under a second set
+    return CPBridge.callHost('CP_findPulseCaptionTrack', { kind: 'images' }).then(function (f) { return f && f.track; }, function () { return 0; }).then(function (t) {
+      if (t) pOpts.replaceTrack = t;
+      return runCaptionPipeline(mCues, pOpts);
+    });
   }
 
   /* Persist the last caption job so the edit/restyle buttons stay available even
@@ -11514,6 +11520,12 @@
     // a replaced Premium / editable set goes only now, when the overlay exists
     return clearReplacedTemplateSet(opts).then(function (edTrack) {
       if (edTrack && !placeArgs.replaceTrack) placeArgs.replaceTrack = edTrack;
+      if (placeArgs.replaceTrack) return null;
+      // not remembered (a restart, another sequence's job in between): the
+      // track that already holds this sequence's overlay, if there is one
+      return CPBridge.callHost('CP_findPulseCaptionTrack', { kind: 'overlay' }).then(function (f) { return f && f.track; }, function () { return null; });
+    }).then(function (found) {
+      if (found && !placeArgs.replaceTrack) placeArgs.replaceTrack = found;
       return CPBridge.callHost('CP_placeOverlay', placeArgs);
     }).then(function (r) {
       setCaptionBusy(false); capProgress(null);

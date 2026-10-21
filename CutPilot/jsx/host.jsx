@@ -3783,6 +3783,35 @@ function CP_removePulseCaptionTracks(argsJson) {
   } catch (e) { return CP_fail(e.message); }
 }
 
+/* The track that already holds Pulse's captions of a kind on the active
+   sequence — 'overlay' (a pulse-captions-….mov) or 'images' (cap_….png) —
+   topmost first; every clip on it must be a Pulse caption. 0 = none. So
+   ✨ Add captions replaces them even when the panel no longer remembers the
+   track (a restart, another sequence's job in between): on the owner's
+   webinar ⚡ Viral edit stacked a second overlay on V9 over the one on V4. */
+function CP_findPulseCaptionTrack(argsJson) {
+  try {
+    var args = {};
+    try { if (argsJson) args = JSON.parse(argsJson) || {}; } catch (eA) {}
+    var want = args.kind === 'images' ? /^cap[-_]?\d+[^\\\/]*\.png$/i : /^pulse-captions/i;
+    var seq = CP_activeSequence();
+    for (var ti = seq.videoTracks.numTracks - 1; ti >= 0; ti--) {
+      var track = seq.videoTracks[ti];
+      if (!track.clips.numItems) continue;
+      var all = true, hit = false;
+      for (var ci = 0; ci < track.clips.numItems && all; ci++) {
+        var cl = track.clips[ci];
+        if (!CP_isPulseCaptionClip(cl)) { all = false; break; }
+        var mp = '';
+        try { mp = String(cl.projectItem.getMediaPath() || '').replace(/^.*[\\\/]/, ''); } catch (eM) {}
+        if (want.test(mp)) hit = true;
+      }
+      if (all && hit) return CP_ok({ track: ti + 1 });
+    }
+    return CP_ok({ track: 0 });
+  } catch (e) { return CP_fail(e.message); }
+}
+
 function CP_trackIsPulseCaptions(ti, names) {
   try {
     app.enableQE();
