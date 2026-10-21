@@ -1518,6 +1518,7 @@
       });
     });
   }
+  var _groqTmpSeq = 0;
   function groqChatOnce(messages, opts) {
     opts = opts || {};
     return new Promise(function (resolve, reject) {
@@ -1533,7 +1534,9 @@
       // max_tokens: Shorts' moments (1,500) and titles (60) came back with no
       // content at all on the owner's key. Think briefly; leave room to answer.
       if (/gpt-oss/i.test(body.model)) { body.reasoning_effort = 'low'; if (body.max_tokens) body.max_tokens += 1024; }
-      var tmp = pathMod.join(os.tmpdir(), 'cutpilot-groq-' + Date.now() + '.json');
+      // a name of its own per request: two asked in the same millisecond (the
+      // Shorts ranking's two passes) shared one file, and both sent the last prompt
+      var tmp = pathMod.join(os.tmpdir(), 'cutpilot-groq-' + Date.now() + '-' + (++_groqTmpSeq) + '-' + Math.random().toString(36).slice(2, 8) + '.json');
       try { fs.writeFileSync(tmp, JSON.stringify(body), 'utf8'); } catch (eW) { return reject(eW); }
       var args = ['-sS', '--max-time', String(opts.timeout || 120), 'https://api.groq.com/openai/v1/chat/completions',
         '-H', 'Content-Type: application/json', '--data-binary', '@' + tmp];
