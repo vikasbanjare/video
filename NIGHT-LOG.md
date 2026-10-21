@@ -16,6 +16,21 @@ on the old code, build, install, verify, commit and push. Newest entries on top.
 7. Viral edit — zoom punch-ins, sound effects.
 
 ## Done
+- 06:15 Round 8 (v0.10.92 → v0.10.94), self-review of the night's code +
+  Premiere:
+  · Viral edit's zoom could have keyed Pulse's own long-video caption
+    overlay (a .mov on a top track) — now skipped; verified: 12 punches on
+    the footage, overlay untouched. Gate zoom-punch-top-clip.
+  · After 🎚 Studio sound the saved words were lost and the whole video was
+    transcribed again (the cleaned copy had no saved words). The copy now
+    uses the original's — verified: "Using your saved transcript", 1,429
+    words. Gate caption-sync-placement.
+  · ⚡ Viral edit with no words yet: a background scan saying "no
+    transcript" cancelled it mid-transcription (words came, captions never
+    did). Fixed. Gate caption-sync-placement.
+  · Add captions stacked a second overlay (V9 over V4) when the remembered
+    job was another sequence's. It now finds this sequence's Pulse caption
+    track and replaces it — verified in Premiere. Gate caption-track-found.
 - 05:50 v0.10.91: Pulse's own "Test everything" in Premiere: every row ✅
   (36 checks incl. multicam, razor, captions, Premium, shorts, cleanup).
   It now also removes its test short's folder from Pulse Media. Studio
