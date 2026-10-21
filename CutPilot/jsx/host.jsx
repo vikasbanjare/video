@@ -2862,12 +2862,31 @@ function CP_placeBroll(argsJson) {
       try { mp = ch.getMediaPath(); } catch (eMp) { mp = null; }
       if (mp) byPath[CP_normPath(mp)] = ch;
     }
-    // a new, empty track above everything (B-roll covers the picture, never a caption track below it)
-    var before = seq.videoTracks.numTracks;
-    try { var q = CP_qeSequence(); if (q && q.addTracks) q.addTracks(1, before, 0); } catch (eAdd) {}
-    seq = CP_activeSequence() || seq;
-    var ti = seq.videoTracks.numTracks - 1, tr = seq.videoTracks[ti];
-    if (!tr || seq.videoTracks.numTracks <= before || tr.clips.numItems > 0) return CP_fail('Premiere would not add a new video track for the B-roll. Add one at the top by hand and try again.');
+    // An empty track above the footage and BELOW Pulse's captions / Safe zone
+    // guide, so the B-roll covers the picture, never the captions (on the
+    // owner's webinar it went on V10 over the captions on V4 and V9 and hid
+    // them). None there: a new, empty track above everything.
+    var lowCap = seq.videoTracks.numTracks, highFoot = -1, t0;
+    for (t0 = 0; t0 < seq.videoTracks.numTracks; t0++) {
+      var tk = seq.videoTracks[t0], n0 = tk.clips.numItems;
+      if (!n0) continue;
+      var capsOnly = true;
+      for (var c0 = 0; c0 < n0; c0++) {
+        var cc0 = tk.clips[c0], mp0 = '';
+        try { mp0 = String(cc0.projectItem.getMediaPath() || ''); } catch (eM0) {}
+        if (!CP_isPulseCaptionClip(cc0) && !/[\\\/]pulse-guide-[^\\\/]*[\\\/]guide\.png$/i.test(mp0)) { capsOnly = false; break; }
+      }
+      if (capsOnly) { if (t0 < lowCap) lowCap = t0; } else highFoot = t0;
+    }
+    var tr = null, ti = -1;
+    if (lowCap < seq.videoTracks.numTracks) for (t0 = highFoot + 1; t0 < lowCap; t0++) if (!seq.videoTracks[t0].clips.numItems) { ti = t0; tr = seq.videoTracks[t0]; break; }
+    if (!tr) {
+      var before = seq.videoTracks.numTracks;
+      try { var q = CP_qeSequence(); if (q && q.addTracks) q.addTracks(1, before, 0); } catch (eAdd) {}
+      seq = CP_activeSequence() || seq;
+      ti = seq.videoTracks.numTracks - 1; tr = seq.videoTracks[ti];
+      if (!tr || seq.videoTracks.numTracks <= before || tr.clips.numItems > 0) return CP_fail('Premiere would not add a new video track for the B-roll. Add one at the top by hand and try again.');
+    }
     var W = 0, H = 0;
     try { W = seq.frameSizeHorizontal; H = seq.frameSizeVertical; } catch (eFs) {}
     var placed = 0, scaled = 0, missed = 0;

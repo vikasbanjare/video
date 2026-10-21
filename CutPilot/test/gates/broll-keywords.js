@@ -69,6 +69,21 @@ const got = pl.map(p => [p.path.split('/').pop(), p.at]);
     'C. one new track on top (V' + d.track + '), each B-roll at its time for 2.5 s, the footage and the mic untouched', JSON.stringify({ r, spans }));
 }
 
+// C2: with Pulse's captions on top, the B-roll goes UNDER them (an empty
+// track above the footage) — on the owner's webinar a new top track hid them
+{
+  const harness = L.loadHostHarness();
+  const w = harness.makeWorld({ vTracks: 3, aTracks: 1, fps: 30 });
+  w.model.addClip('vTracks', 0, 0, 120, { name: 'cam.mp4' });
+  w.model.addClip('vTracks', 2, 0, 120, { name: 'pulse-captions-Reel-abc.mov', mediaPath: '/p/Pulse Media/pulse-captions-Reel-abc-20261021-061314-698.mov' });
+  const host = harness.loadHost(w);
+  const before = w.model.vTracks.length;
+  const r = JSON.parse(host.CP_placeBroll(JSON.stringify({ items: [{ path: '/t/money.mp4', at: 0.8, dur: 2.5, still: false, w: 1920, h: 1080 }] })));
+  const d = r.data || r;
+  (r.ok && d.placed === 1 && d.track === 2 && w.model.vTracks.length === before && (w.model.vTracks[1] || []).length === 1 && (w.model.vTracks[2] || []).length === 1 ? ok : bad)(
+    'C2. with Pulse\'s captions on V3, the B-roll goes on V' + d.track + ' under them (no new track on top)', JSON.stringify({ r, tracks: w.model.vTracks.map(t => t.length) }));
+}
+
 // D
 const FF = H.ffmpegBin();
 if (!FF) console.log('  ? no ffmpeg — D skipped');
