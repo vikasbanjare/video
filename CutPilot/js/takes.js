@@ -46,6 +46,7 @@
      decomposed nukta compare equal), Latin case-folded, curly apostrophes
      straightened, punctuation and dandas dropped. Nukta and matras are KEPT —
      stripping them turns different Hindi words into the same one. */
+  var NEGATION = /^(not|no|never|nothing|nobody|none|cannot|.+n't|nahi|nahin|mat|na|नहीं|नही|मत|ना)$/;
   function norm(w) {
     var s = String(w == null ? '' : w);
     if (s.normalize) s = s.normalize('NFC');
@@ -370,6 +371,10 @@
     var ask = toks.map(function (t) { return has(t, ASK); });
     var ack = toks.map(function (t) { return allIn(t, BACKCHANNEL); });
     var agree = toks.map(opensAgreeing);
+    // a line and its opposite are two things said, not two takes ("AI isn't
+    // coming to take your job. Someone using AI will be coming to take your
+    // job." — the owner's webinar had the first cut as a retake)
+    var neg = toks.map(function (t) { return t.some(function (w) { return NEGATION.test(w); }); });
     function startOf(idx) { return phrases[idx][0].start; }
     function endOf(idx) { return phrases[idx][phrases[idx].length - 1].end; }
 
@@ -381,6 +386,7 @@
       if ((p2[a] && !p2[b] && p1[b]) || (p2[b] && !p2[a] && p1[a])) return false;    // "aap/you" ↔ "main/I"
       // "kitne saal rahe?" answered by "do saal raha": the question word goes
       // away. (A shorter FIRST attempt that stopped before reaching it is fine.)
+      if (neg[a] !== neg[b]) return false;
       if (ask[a] && !ask[b]) return false;
       if (ask[b] && !ask[a] && ct[a].length >= ct[b].length) return false;
       // "Right, the algorithm rewards…" after "The algorithm rewards…": the
@@ -440,9 +446,17 @@
         // (no full stop — the speaker began again and gave up) is linked too;
         // keep:'best' then keeps the complete one.
         var st = strict(a, b);
-        if (phraseSim(ct[a], ct[b]) >= (st ? Math.max(thresh, 0.8) : thresh) ||
+        // a line only half like another is a retake when said again soon
+        // after; minutes apart it is the next point of an agenda ("We're going
+        // to go deeper into…" / "…deeper than that." 26 s apart on Strong)
+        var simAB = phraseSim(ct[a], ct[b]);
+        if ((simAB >= (st ? Math.max(thresh, 0.8) : thresh) && (simAB >= 0.75 || startOf(b) - endOf(a) <= 20)) ||
             (!st && b - a <= containWin && ct[a].length <= ct[b].length &&
-             phraseContain(ct[a], ct[b]) >= containThresh) ||
+             phraseContain(ct[a], ct[b]) >= containThresh &&
+             // a FINISHED short line inside a longer one is an abandoned first
+             // take only when the longer one starts the same way; "The tool
+             // changed." → "And because the tool changed, the playbook…" builds on it
+             (!isStmt[a] || isNearPrefix(ct[a], ct[b]))) ||
             (!st && b === a + 1 && ct[b].length < ct[a].length && !SENT_END.test(ends[b]) &&
              isNearPrefix(ct[b], ct[a]) && phraseContain(ct[a], ct[b]) >= containThresh)) uni(a, b);
       }

@@ -50,7 +50,7 @@ function stream(lines, opt) {
       if (spk != null && !opt.noLabels) o.speaker = spk;
       out.push(o); t += 0.36;
     });
-    t += 0.8;
+    t += opt.gap || 0.8;
   });
   return out;
 }
@@ -195,6 +195,29 @@ console.log('two or more people — echoes of unpunctuated or comma-ended lines'
   const retake = ['So the secret to growing on instagram is consistency.', 'So the secret to growing on instagram is consistency every day.', 'Post every day for a month.'];
   const dr = run(retake, 'balanced', 'many');
   check('balanced · many: a near-identical same-line retake is still found', dr.length === 1, JSON.stringify(dr));
+}
+
+// a lone speaker's lines that only LOOK like retakes (the owner's webinar)
+{
+  const opposite = ['Because this is what Jensen said.', 'AI isn\'t coming to take your job.', 'Someone using AI will be coming to take your job.', 'The first thing to learn is AI.'];
+  const o = run(opposite, 'balanced', 'one');
+  check('balanced · one: a line and its opposite ("AI isn\'t coming…" / "Someone using AI will be coming…") are both kept', o.length === 0, JSON.stringify(o));
+  const build = ['So what happened next?', 'The tool changed.', 'And because the tool changed, the playbook bloody changed.', 'So people who learn it will win.'];
+  const b2 = run(build, 'balanced', 'one');
+  check('balanced · one: a short line built on by the next ("The tool changed." → "And because the tool changed, …") is kept', b2.length === 0, JSON.stringify(b2));
+  // …while real retakes are still caught: a finished-looking start re-said
+  // in full, and the same negative line twice
+  const restart = ['So the secret is.', 'So the secret is consistency every single day.', 'Post every day for a month.'];
+  const r1 = run(restart, 'balanced', 'one');
+  check('balanced · one: "So the secret is." then the full line — the start is still cut', r1.length === 1 && /secret is\.$/.test(r1[0].text || r1[0]), JSON.stringify(r1));
+  // Strong links lines only half alike — but not 26 s apart (an agenda)
+  const agenda = ['We\'re going to go deeper into a lot of things.', 'Here is the first tool I use every single day.', 'It writes my scripts for me.', 'It edits my videos too.',
+    'It plans my week for me.', 'People who know deep research, don\'t worry.', 'We\'re going to go deeper than that.'];
+  const ag = run(agenda, 'strong', 'one', { gap: 4.5 });
+  check('strong · one: two agenda lines alike only by their opening, 26 s apart, are both kept', !ag.some(x => /deeper/.test(x.text || x)), JSON.stringify(ag));
+  const twiceNeg = ['You do not need a big camera.', 'You do not need a big camera at all.', 'A phone is enough.'];
+  const r2 = run(twiceNeg, 'balanced', 'one');
+  check('balanced · one: the same negative line said twice is still a retake', r2.length === 1, JSON.stringify(r2));
 }
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
