@@ -1405,7 +1405,7 @@ function CP_buildShortSequence(argsJson) {
     for (i = 0; i < pieces.length; i++) if (pieces[i].layers.length > rows) rows = pieces[i].layers.length;
     var needV = rows + (args.hook ? 1 : 0), needA = Math.max(1, audio.length);
     try { if (seq.videoTracks.numTracks < needV) qseq.addTracks(needV - seq.videoTracks.numTracks, seq.videoTracks.numTracks, 0); } catch (eT1) {}
-    try { if (seq.audioTracks.numTracks < needA) qseq.addTracks(0, 0, needA - seq.audioTracks.numTracks); } catch (eT2) {}
+    try { if (seq.audioTracks.numTracks < needA) qseq.addTracks(0, 0, needA - seq.audioTracks.numTracks, 1, seq.audioTracks.numTracks); } catch (eT2) {}   // at the bottom
     seq = CP_activeSequence() || seq;
     var placed = 0, framed = 0, cropped = 0, blurred = 0, missed = [], cropFx = null;
     try { cropFx = qe.project.getVideoEffectByName('Crop'); } catch (eFx) { cropFx = null; }
@@ -2826,7 +2826,9 @@ function CP_studioSoundPlace(argsJson) {
     }
     var free = emptyTracks();
     if (free.length < src.length) {
-      try { var q = CP_qeSequence(); if (q && q.addTracks) q.addTracks(0, 0, src.length - free.length); } catch (eAdd) {}
+      // appended BELOW the last track (stereo): addTracks(0, 0, n) inserted them
+      // at the TOP, pushing the owner's tracks down — then none was below them
+      try { var q = CP_qeSequence(); if (q && q.addTracks) q.addTracks(0, 0, src.length - free.length, 1, seq.audioTracks.numTracks); } catch (eAdd) {}
       seq = CP_activeSequence() || seq;
       free = emptyTracks();
     }
@@ -2841,6 +2843,17 @@ function CP_studioSoundPlace(argsJson) {
         it.setInPoint(CP_ticksFromSeconds(pc.from), 4);
         it.setOutPoint(CP_ticksFromSeconds(pc.from + pc.dur), 4);
         try { tr.overwriteClip(it, pc.at); } catch (eS) { tr.overwriteClip(it, CP_ticksFromSeconds(pc.at)); }
+        // the out point is rounded down to a video frame, the owner's own cut
+        // is not: its end set straight, or a cut ends a frame early (measured)
+        try {
+          for (var c2 = tr.clips.numItems - 1; c2 >= 0; c2--) {
+            var cl = tr.clips[c2];
+            if (Math.abs(cl.start.seconds - pc.at) < 0.002) {
+              if (Math.abs(cl.end.seconds - (pc.at + pc.dur)) > 0.0005) { var te = new Time(); te.seconds = pc.at + pc.dur; cl.end = te; }
+              break;
+            }
+          }
+        } catch (eEnd) {}
         placed++;
       } catch (eP) { missed++; }
     }
@@ -2952,7 +2965,7 @@ function CP_placeSfx(argsJson) {
     }
     var idx = firstEmptyAudio();
     if (idx < 0) {
-      try { var q = CP_qeSequence(); if (q && q.addTracks) { q.addTracks(0, 0, 1); seq = CP_activeSequence(); idx = firstEmptyAudio(); } } catch (eAdd) {}
+      try { var q = CP_qeSequence(); if (q && q.addTracks) { q.addTracks(0, 0, 1, 1, seq.audioTracks.numTracks); seq = CP_activeSequence(); idx = firstEmptyAudio(); } } catch (eAdd) {}   // at the bottom
       if (idx < 0) idx = seq.audioTracks.numTracks - 1;   // last resort
     }
     var track = seq.audioTracks[idx];

@@ -195,7 +195,7 @@
               frames[j] = fr;
               if (measure) { var m = /I:\s*(-?[\d.]+|-inf)\s*LUFS/.exec(String(r.stderr || '')); lufs[j] = (m && m[1] !== '-inf') ? parseFloat(m[1]) : null; }
               ndone++;
-              if (list.length > 3) kit.capProgress('🎚 A' + tn + ': ' + label + ' — ' + ndone + ' of ' + list.length, 60000);
+              if (list.length > 3) kit.capProgress('🎚 A' + (+tn + 1) + ': ' + label + ' — ' + ndone + ' of ' + list.length, 60000);
             });
           });
         }
@@ -205,16 +205,22 @@
           list.forEach(function (p, j) { args.push('-i', 'p' + j + '.wav'); graph.push('[' + j + ':a]volume=' + (gains ? gains[j] : 0) + 'dB[a' + j + ']'); ins += '[a' + j + ']'; });
           graph.push(ins + 'concat=n=' + list.length + ':v=0:a=1[out]');
           fs.writeFileSync(pathMod.join(work, 'join.txt'), graph.join(';\n'));
-          args.push('-filter_complex_script', 'join.txt', '-map', '[out]', '-c:a', 'pcm_s16le', out);
-          return kit.runFfmpeg(ff, args, 30 * 60 * 1000, work).then(function (r) {
-            if (r.error || r.code !== 0 || !fs.existsSync(pathMod.join(work, out))) throw fail('join the cuts on A' + tn, r);
+          var tail = ['-map', '[out]', '-c:a', 'pcm_s16le', out];
+          return kit.runFfmpeg(ff, args.concat(['-filter_complex_script', 'join.txt'], tail), 30 * 60 * 1000, work).then(function (r) {
+            // ffmpeg 7+ (a Homebrew one, say) dropped -filter_complex_script: its "-/" form reads the same file
+            if (r && r.code !== 0 && /Option not found|Unrecognized option/i.test(String(r.stderr || ''))) {
+              return kit.runFfmpeg(ff, args.concat(['-/filter_complex', 'join.txt'], tail), 30 * 60 * 1000, work);
+            }
+            return r;
+          }).then(function (r) {
+            if (r.error || r.code !== 0 || !fs.existsSync(pathMod.join(work, out))) throw fail('join the cuts on A' + (+tn + 1), r);
             return pathMod.join(work, out);
           });
         }
         var restoreNow = opts.restore && rsReady(), cleanAi = restoreNow || !!df;
         // 1. every cut as it is, joined in timeline order — the track as it plays
         return cutAll('reading the cuts', function (j) { return list[j].src; }, function (j) { return list[j].from; }, !cleanAi).then(function () {
-          kit.capProgress('🎚 A' + tn + ': joining ' + list.length + ' cut' + (list.length === 1 ? '' : 's') + ' into one track…', 60000);
+          kit.capProgress('🎚 A' + (+tn + 1) + ': joining ' + list.length + ' cut' + (list.length === 1 ? '' : 's') + ' into one track…', 60000);
           // no AI: the cuts were measured as read — matched now, in this one join
           var g0 = cleanAi ? null : pieceGains(list.map(function (p, j) { return { dur: p.dur, lufs: lufs[j], src: p.src }; }));
           if (g0) g0.forEach(function (g) { if (g) balanced++; });
@@ -224,10 +230,10 @@
           // 2. 🎛 Studio restore (bad mics), else the AI noise cleaner, on the whole track
           var cleaned;
           if (restoreNow) {
-            kit.capProgress('🎚 A' + tn + ': Studio restore — rebuilding the voice (slow: about twice the audio\'s length)…', 60000);
+            kit.capProgress('🎚 A' + (+tn + 1) + ': Studio restore — rebuilding the voice (slow: about twice the audio\'s length)…', 60000);
             cleaned = rsRun(joined, pathMod.join(work, 'restored.wav')).then(function (got) { return got ? { file: got, delay: 0 } : null; });
           } else {
-            kit.capProgress('🎚 A' + tn + ': taking out the background noise (AI)…', 60000);
+            kit.capProgress('🎚 A' + (+tn + 1) + ': taking out the background noise (AI)…', 60000);
             var outDir = pathMod.join(work, 'ai');
             try { fs.mkdirSync(outDir, { recursive: true }); } catch (eA) {}
             cleaned = kit.runFfmpeg(df, [joined, '-o', outDir], 3 * 60 * 60 * 1000).then(function (r2) {
@@ -246,7 +252,7 @@
             return cutAll('matching the cuts', function () { return c.file; }, function (j) { return offs[j] + c.delay; }, true).then(function () {
               var gains = pieceGains(list.map(function (p, j) { return { dur: p.dur, lufs: lufs[j], src: p.src }; }));
               gains.forEach(function (g) { if (g) balanced++; });
-              kit.capProgress('🎚 A' + tn + ': joining the matched cuts…', 60000);
+              kit.capProgress('🎚 A' + (+tn + 1) + ': joining the matched cuts…', 60000);
               return join('matched.wav', gains);
             }).then(function (f) { return { file: f, ai: true }; });
           });
@@ -254,20 +260,23 @@
           // 4. the voice chain and the loudness, on the whole track at once
           var o2 = {}, k; for (k in opts) if (opts.hasOwnProperty(k)) o2[k] = opts[k];
           o2.aiClean = c.ai; if (c.ai) opts.aiUsed = true;
-          var out = pathMod.join(dir, 'A' + tn + '-studio-' + stamp + '.wav');
-          kit.capProgress('🎚 A' + tn + ': balancing the voice and setting the loudness…', 60000);
+          var out = pathMod.join(dir, 'A' + (+tn + 1) + '-studio-' + stamp + '.wav');
+          kit.capProgress('🎚 A' + (+tn + 1) + ': balancing the voice and setting the loudness…', 60000);
           function once(o3) { return kit.runFfmpeg(ff, ['-hide_banner', '-nostdin', '-y', '-i', c.file, '-af', filterChain(o3), '-ar', '48000', '-c:a', 'pcm_s24le', out], 2 * 60 * 60 * 1000); }
           return once(o2).then(function (r) {
             if (r && r.code !== 0 && /No such filter|Filter not found/i.test(String(r.stderr || ''))) { o2.legacy = true; return once(o2); }
             return r;
           }).then(function (r) {
             var size = 0; try { size = fs.statSync(out).size; } catch (eS) {}
-            if (r.error || r.code !== 0 || !size) throw fail('clean A' + tn, r);
+            if (r.error || r.code !== 0 || !size) throw fail('clean A' + (+tn + 1), r);
             // 5. each cut taken back out at its own place in the clean track
             var off = 0;
             list.forEach(function (p, j) {
               var d = frames[j] / 48000 || p.dur;
-              placed.push({ path: out, from: off, dur: Math.min(d, p.dur), at: p.at, track: p.track });
+              // a cut's file can come out a few samples short of the clip, and
+              // Premiere then rounds its end down a whole frame — keep the
+              // clip's own length unless it is really short (over 50 ms)
+              placed.push({ path: out, from: off, dur: (p.dur - d < 0.05) ? p.dur : d, at: p.at, track: p.track });
               off += d;
             });
             try { fs.rmSync(work, { recursive: true, force: true }); } catch (eR) {}
