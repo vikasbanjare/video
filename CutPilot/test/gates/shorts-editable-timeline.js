@@ -148,10 +148,11 @@ function facesIn(png) {
     if (F.error || !F.imported) { bad(layout + ': the one-file short failed: ' + (F.error || F.toast)); continue; }
     if (E.error || !E.built) { bad(layout + ': the timeline short failed: ' + (E.error || E.toast)); continue; }
     // what the project links to is never in the OS temp folder (macOS clears
-    // it: the short reopened with its hook title offline)
-    const linked = [E.built.args.placeholder, E.built.args.hook && E.built.args.hook.path, F.imported.path].filter(Boolean);
-    (linked.length === 3 && linked.every((f, i) => f.indexOf(i < 2 ? E.tmp : F.tmp) !== 0 && fs.existsSync(f)) ? ok : bad)(
-      'E. ' + layout + ': the frame clip, hook card and one-file short live beside the captions, not in the temp folder (' + linked.map(f => path.basename(path.dirname(path.dirname(f))) + '/' + path.basename(f)).join(', ') + ')');
+    // it: the short reopened with its hook title offline); since v0.10.105
+    // there is no hook card, so nothing else is linked
+    const linked = [E.built.args.placeholder, F.imported.path].filter(Boolean);
+    (linked.length === 2 && !(E.built.args.hook && E.built.args.hook.path) && linked.every((f, i) => f.indexOf(i < 1 ? E.tmp : F.tmp) !== 0 && fs.existsSync(f)) ? ok : bad)(
+      'E. ' + layout + ': the frame clip and one-file short live beside the captions, not in the temp folder, and no hook card is made (' + linked.map(f => path.basename(path.dirname(path.dirname(f))) + '/' + path.basename(f)).join(', ') + ')');
     const r = E.built.res, a = E.built.args, seq = E.built.seq;
     const pieces = a.pieces.length, mics = (a.audio || []).reduce((n, x) => n + x.pieces.length, 0);
     const hookClip = seq.videoTracks.map(t => t.items).flat().find(c => /\.png$/i.test(c.projectItem._path));
