@@ -16,6 +16,13 @@ on the old code, build, install, verify, commit and push. Newest entries on top.
 7. Viral edit — zoom punch-ins, sound effects.
 
 ## Done
+- 08:05 Round 12 (v0.10.100) — Hindi, in Premiere, on a QA reel spoken by
+  macOS's Hindi voice: Transcribe (Auto) → Devanagari words with timing ✓,
+  AI fix ✓, Hindi Podcast Bar captions render Devanagari correctly ✓,
+  Translate → Hinglish 7/7 lines in Roman letters ✓. New: Hinglish keeps
+  each word's timing, so the word-by-word highlight stays on (it was
+  switched off for every translation) — verified, "JYADATAR" lights at the
+  moment ज्यादातर is said. Gate translate-long G.
 - 07:45 Round 11 (v0.10.98 → v0.10.99):
   · v0.10.97's retake change broke a unit test (a trailing "no" — the
     speaker stopping a take — read as a negative line); fixed in v0.10.98,
