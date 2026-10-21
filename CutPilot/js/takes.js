@@ -46,7 +46,8 @@
      decomposed nukta compare equal), Latin case-folded, curly apostrophes
      straightened, punctuation and dandas dropped. Nukta and matras are KEPT —
      stripping them turns different Hindi words into the same one. */
-  var NEGATION = /^(not|no|never|nothing|nobody|none|cannot|.+n't|nahi|nahin|mat|na|नहीं|नही|मत|ना)$/;
+  var NEGATION = /^(not|never|nothing|nobody|none|cannot|.+n't|mat|मत)$/;
+  var NEG_INTERJ = /^(no|nahi|nahin|na|नहीं|नही|ना)$/;
   function norm(w) {
     var s = String(w == null ? '' : w);
     if (s.normalize) s = s.normalize('NFC');
@@ -374,7 +375,11 @@
     // a line and its opposite are two things said, not two takes ("AI isn't
     // coming to take your job. Someone using AI will be coming to take your
     // job." — the owner's webinar had the first cut as a retake)
-    var neg = toks.map(function (t) { return t.some(function (w) { return NEGATION.test(w); }); });
+    // ("no" / "nahi" said first or last is the speaker stopping a take — "…blah,
+    // no" — not the line saying no)
+    var neg = toks.map(function (t) {
+      return t.some(function (w, i) { return NEGATION.test(w) || (i > 0 && i < t.length - 1 && NEG_INTERJ.test(w)); });
+    });
     function startOf(idx) { return phrases[idx][0].start; }
     function endOf(idx) { return phrases[idx][phrases[idx].length - 1].end; }
 
