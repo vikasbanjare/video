@@ -16,6 +16,16 @@ on the old code, build, install, verify, commit and push. Newest entries on top.
 7. Viral edit — zoom punch-ins, sound effects.
 
 ## Done
+- 07:45 Round 11 (v0.10.98 → v0.10.99):
+  · v0.10.97's retake change broke a unit test (a trailing "no" — the
+    speaker stopping a take — read as a negative line); fixed in v0.10.98,
+    and my quick-check script now fails loudly on any ✗.
+  · 🎥 Follow the speaker failed in Premiere ("[0:v] matches no streams"):
+    it reframed "the recording Transcribe hears", which is a SOUND file on a
+    podcast with separate mics (or after Studio sound). It now takes the
+    video. Verified in Premiere. New gate speaker-reframe-video.
+  · One-button Clean up dry run on the untouched backup: 21 sections, 16.5 s
+    (cancelled — nothing changed). No script errors on any page.
 - 07:05 Round 10 (v0.10.97): 🔁 Find repeated takes on the webinar listed 6
   cuts; 3+ were real content: "AI isn't coming to take your job." (before
   "Someone using AI will be coming to take your job."), "The tool changed."
