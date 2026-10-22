@@ -6611,7 +6611,7 @@
   /* Shown both under "All" (after every style) and alone in the 🧩 chip, so it
      never says "above": in the chip nothing is above it. */
   var ADVANCED_NOTE = 'Premiere\'s own Motion Graphics templates — titles, and any you add from a folder. Each one only offers the few settings its designer built in. ' +
-    'For captions use the styles above: every one gives you every control.';
+    'For captions, every style in the gallery gives you every control.';
 
   function renderTemplateGrid() {
     var grid = $('tpl-grid');
