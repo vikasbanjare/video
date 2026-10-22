@@ -132,15 +132,20 @@ function probe(file) {
     const A = await run(browser, null);
     if (process.env.DEBUG_PREM) console.log((A.diag.split('\n').filter(l => /previews/.test(l)).join('\n')).slice(0, 1500));
     const n = A.after.length;
-    const sentAll = A.calls.length === n && n > 0;
+    // since v0.10.111 the plain title templates are redrawn too (title: true):
+    // the whole phrase over their own length; the Premium ones as before
+    const titleCalls = A.calls.filter(c => c.title), premCalls = A.calls.filter(c => !c.title);
+    const sentAll = premCalls.length === n && n > 0 &&
+      titleCalls.every(c => c.text === 'Namaste dosto aaj hum' && c.times.length >= 15);
     // the owner's words, with the line break the caption insert would give
     // them in that template ("\r") — the card is drawn as the timeline gets
     // it, comp fitted by its real size (premium-fit.js checks the fit itself)
-    const words = A.calls.every(c => String(c.text).replace(/\s*\r\s*/g, ' ') === 'Namaste dosto aaj hum' && c.compW > 0 && c.compH > 0);
+    const words = premCalls.every(c => String(c.text).replace(/\s*\r\s*/g, ' ') === 'Namaste dosto aaj hum' && c.compW > 0 && c.compH > 0);
     const size = A.env ? A.calls.every(c => c.width === A.env.width && c.height === A.env.height) : A.calls.every(c => c.width === 1920 && c.height === 1080);
-    const span = A.calls.every(c => c.times.length >= 15 && c.times[0] < 0.3 && c.times[c.times.length - 1] > 2.5);
-    (sentAll && words && size && span ? r.ok : r.bad)('A. all ' + n + ' Premium templates sent to Premiere with the owner’s words (“' + (A.calls[0] || {}).text + '”) at ' +
-      ((A.calls[0] || {}).width + '×' + (A.calls[0] || {}).height) + ', ' + ((A.calls[0] || {}).times || []).length + ' frames over ~3 s');
+    const span = premCalls.every(c => c.times.length >= 15 && c.times[0] < 0.3 && c.times[c.times.length - 1] > 2.5);
+    (sentAll && words && size && span ? r.ok : r.bad)('A. all ' + n + ' Premium templates sent to Premiere with the owner’s words (“' + (premCalls[0] || {}).text + '”) at ' +
+      ((premCalls[0] || {}).width + '×' + (premCalls[0] || {}).height) + ', ' + ((premCalls[0] || {}).times || []).length + ' frames over ~3 s; ' +
+      titleCalls.length + ' title templates over their own length');
     const dir = path.join(A.home, 'Documents', 'Pulse', 'premium-previews');
     // (headless Chromium can't decode H.264, so a card falls back to its still:
     // whichever it shows must be Premiere's render)
@@ -151,14 +156,14 @@ function probe(file) {
     const bad = [];
     fs.readdirSync(dir).filter(f => /\.mp4$/.test(f)).forEach(f => { const p = probe(path.join(dir, f)); if (p.w !== 384 || p.h !== 192 || p.range < 60) bad.push(f + ' ' + p.w + '×' + p.h + ' range ' + p.range); });
     const vids = fs.readdirSync(dir).filter(f => /\.mp4$/.test(f)).length, stills = fs.readdirSync(dir).filter(f => /\.png$/.test(f)).length;
-    (vids === n && stills === n && !bad.length ? r.ok : r.bad)('B. each loop is 2:1 like the card with the caption on screen, plus its still (' + vids + ' loops, ' + stills + ' stills)' +
+    (vids === A.calls.length && stills === A.calls.length && !bad.length ? r.ok : r.bad)('B. each loop is 2:1 like the card with the caption on screen, plus its still (' + vids + ' loops, ' + stills + ' stills)' +
       (bad.length ? ' — ' + bad.join('; ') : ''));
     (/✅ \d+ of \d+ drawn by Premiere with “Namaste dosto aaj hum”/.test(A.status) ? r.ok : r.bad)('A. the panel says so: ' + JSON.stringify(A.status));
     // C. one template Premiere can't draw
     const C = await run(browser, 'Flux_Orbit');
     const orbit = C.after.find(c => /Orbit/.test(c.name || '')) || {};
     const others = C.after.filter(c => !/Orbit/.test(c.name || '') && src(c).indexOf('/premium-previews/') >= 0).length;
-    (src(orbit).indexOf('/mogrts/thumbs/') >= 0 && others === C.after.length - 1 && new RegExp('✅ ' + (C.after.length - 1) + ' of ' + C.after.length).test(C.status) ? r.ok : r.bad)(
+    (src(orbit).indexOf('/mogrts/thumbs/') >= 0 && others === C.after.length - 1 && new RegExp('✅ ' + (C.calls.length - 1) + ' of ' + C.calls.length).test(C.status) ? r.ok : r.bad)(
       'C. a template Premiere can’t draw keeps its shipped preview; the others are drawn — ' + JSON.stringify(C.status));
     const errs = [].concat(A.errors, C.errors);
     (!errs.length ? r.ok : r.bad)('no script errors' + (errs.length ? ': ' + errs.slice(0, 2).join(' | ') : ''));

@@ -9048,7 +9048,7 @@
     // the title templates too: their cards and editor showed a drawn stand-in,
     // not their real animation (the owner: "preview … is completely wrong")
     var list = mogrtTemplates().filter(function (t) { return t.flux || (t.kind === 'title' && t.bundled); });
-    if (onlyTitles) list = list.filter(function (t) { return t.kind === 'title' && !t.flux; });
+    if (onlyTitles) list = list.filter(plainTitle);
     if (!list.length) return toast('No Premium templates loaded yet.', true);
     var dir = premiumPreviewDir();
     try { fs.mkdirSync(dir, { recursive: true }); } catch (eMk) {}
@@ -9075,15 +9075,15 @@
         // frames every 1/7 s over its own length, so the 7 fps loop runs at
         // the real pace; the rest keep the 3 s sample
         var tt = times, secs = 3;
-        if (t.kind === 'title' && t.seconds > 0) {
+        if (plainTitle(t) && t.seconds > 0) {
           secs = t.seconds; tt = [];
           for (var q = 0; q * (1 / 7) < secs - 0.05; q++) tt.push(Math.round((0.05 + q / 7) * 100) / 100);
         }
         // a title shows the whole phrase (its fields share it); a caption template its first caption
-        var rArgs = { mogrtPath: t.path, text: (t.kind === 'title' || !sb) ? words : sb.sample, seconds: secs, times: tt, outBase: raw, width: W, height: H, title: t.kind === 'title' };
+        var rArgs = { mogrtPath: t.path, text: (plainTitle(t) || !sb) ? words : sb.sample, seconds: secs, times: tt, outBase: raw, width: W, height: H, title: plainTitle(t) };
         if (sb) { rArgs.params = sb.params; rArgs.textStyle = sb.textStyle; rArgs.compW = sb.compW; rArgs.compH = sb.compH; rArgs.fitMode = sb.fitMode; rArgs.posYPct = sb.posYPct; rArgs.sizeFit = sb.sizeFit; }
         return CPBridge.callHost('CP_renderMogrtFrames', rArgs)
-          .then(function (r) { made = r.files || []; return makePremiumPreview(ff, made, path.join(dir, base), W, H, t.kind === 'title'); })
+          .then(function (r) { made = r.files || []; return makePremiumPreview(ff, made, path.join(dir, base), W, H, plainTitle(t)); })
           .then(function () { ok++; }, function (e) { bad.push(t.name + ': ' + ((e && e.message) || e)); })
           .then(function () { made.forEach(function (f) { try { fs.unlinkSync(f); } catch (eU) {} }); });
       });
@@ -13785,10 +13785,15 @@
              // title always fits inside the frame
              fitMode: (plan.known && !isTitleMogrt(path)) ? 'short' : 'contain' };
   }
+  /* A plain title template (Solid, Gradient, Three-Line, Shorts Stack): one
+     fixed text box Pulse does not lay out. The Premium (Flux) templates are
+     marked "title" too, but Pulse plans their lines like a caption's, so
+     they keep the short-side fit, the first-caption sample and the 3 s render. */
+  function plainTitle(t) { return !!(t && t.kind === 'title' && !t.flux); }
   function isTitleMogrt(path) {
     try {
       var t = mogrtTemplates().filter(function (x) { return x.path === path; })[0];
-      return !!(t && t.kind === 'title');
+      return plainTitle(t);
     } catch (e) { return false; }
   }
   /* The plan applied to a few sample words (the card renders, ▶ Try on
