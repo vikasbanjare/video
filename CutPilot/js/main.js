@@ -675,6 +675,9 @@
     { value: 'cloud-swara', label: '🇮🇳 Indian Voices — all languages' },
     { value: 'cloud-deepgram', label: '🎧 Deepgram — your own key' }
   ];
+  // paid speech services: never offered in the finished product
+  var PAID_ENGINES = { 'cloud-swara': 1 };
+  if (PRODUCT_BUILD) WHISPER_QUALITIES = WHISPER_QUALITIES.filter(function (x) { return !PAID_ENGINES[x.value]; });
   // the one-time model download, by accuracy (MB) — said before downloading
   var WHISPER_MB = { 'tiny': 75, 'base': 142, 'small': 466, 'medium': 1500, 'large-v3-turbo': 1600, 'large-v3-turbo-q5_0': 574, 'large-v3': 3100 };
   var WHISPER_LANGS = [
@@ -749,12 +752,17 @@
      check, and model file all agree. */
   function resolveQuality() {
     var q = settings.whisperQuality || 'auto-best';
+    // the finished product uses free engines only (the owner: "Sarvam is paid,
+    // we will use only free tools" — Deepgram stays: a new account has $200 of
+    // free credit, about 700 hours, on the customer's own key): a paid engine
+    // picked before is Auto now
+    if (PRODUCT_BUILD && PAID_ENGINES[q]) q = 'auto-best';
     if (q === 'auto-best') {
       // a key the user entered beats the build's bundled one
       if ((settings.groqKey || '').trim()) return 'cloud-groq';
       if (cpDeepgramKey()) return 'cloud-deepgram';   // a Deepgram key alone is enough to transcribe
       if (cpKey()) return 'cloud-groq';
-      if (cpSarvamKey()) return 'cloud-swara';
+      if (!PRODUCT_BUILD && cpSarvamKey()) return 'cloud-swara';
       // A white-label build stays on cloud and asks for the key: falling back
       // to a local model hid the key box (it only showed for cloud), so the key
       // could never be entered. "On this computer" is the owner's own pick.
@@ -21135,7 +21143,7 @@
       keyState: function () {
         return {
           groq: !!cpKey(), deepgram: !!cpDeepgramKey(), swara: !!cpSarvamKey(),
-          engine: resolveQuality(), whiteLabel: !!WHITE_LABEL, bundled: !!KEY_BUNDLED
+          engine: resolveQuality(), whiteLabel: !!WHITE_LABEL, bundled: !!KEY_BUNDLED, product: !!PRODUCT_BUILD
         };
       },
       setKeys: function (o) {

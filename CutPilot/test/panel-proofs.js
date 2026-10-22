@@ -1346,14 +1346,18 @@ function fluxProps() {
       bad('key wiring: status claims cloud is "built in" on a build that bundles no key — ' + keys.freshStatus);
     } else ok('the status line does not promise a key that this build does not bundle');
     // 4. a Deepgram key — in EITHER box — transcribes
-    if (!keys.viaVerbatim.deepgram || keys.viaVerbatim.engine !== 'cloud-deepgram') {
-      bad('key wiring: a Deepgram key in the retakes slot still does not transcribe (engine=' + keys.viaVerbatim.engine + ')');
-    } else ok('a Deepgram key pasted in the "Find retakes" box now drives Auto-transcribe too');
-    if (!keys.viaOwnBox.deepgram || keys.viaOwnBox.engine !== 'cloud-deepgram') {
-      bad('key wiring: a Deepgram key in its own box does not select the Deepgram engine');
-    } else ok('a Deepgram key in its own box selects the Deepgram engine (' + keys.viaOwnBox.engine + ')');
-    if (keys.options.indexOf('cloud-deepgram') < 0) bad('key wiring: Deepgram is not offered in the engine picker');
-    else ok('Deepgram is a first-class engine in the picker, alongside ' + keys.options.filter(o => /^cloud-/.test(o)).length + ' cloud engines');
+    if (keys.fresh.product && keys.options.indexOf('cloud-swara') >= 0) bad('key wiring: the product offers the paid Indian-languages engine (' + keys.options.join(', ') + ')');
+    else if (keys.fresh.product) ok('the product offers no paid engine (' + keys.options.join(', ') + ')');
+    {
+      if (!keys.viaVerbatim.deepgram || keys.viaVerbatim.engine !== 'cloud-deepgram') {
+        bad('key wiring: a Deepgram key in the retakes slot still does not transcribe (engine=' + keys.viaVerbatim.engine + ')');
+      } else ok('a Deepgram key pasted in the "Find retakes" box now drives Auto-transcribe too');
+      if (!keys.viaOwnBox.deepgram || keys.viaOwnBox.engine !== 'cloud-deepgram') {
+        bad('key wiring: a Deepgram key in its own box does not select the Deepgram engine');
+      } else ok('a Deepgram key in its own box selects the Deepgram engine (' + keys.viaOwnBox.engine + ')');
+      if (keys.options.indexOf('cloud-deepgram') < 0) bad('key wiring: Deepgram is not offered in the engine picker');
+      else ok('Deepgram is a first-class engine in the picker, alongside ' + keys.options.filter(o => /^cloud-/.test(o)).length + ' cloud engines');
+    }
   }
 
   // ---- a retired provider model must not kill every AI feature -----------

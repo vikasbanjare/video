@@ -265,6 +265,8 @@ body[data-page="home"] .nav-back, body[data-page="home"] .nav-title { display: n
 .hidden { display: none !important; }
 /* the finished product (build switch PRODUCT_BUILD): no tester tools */
 .product .tester-only { display: none !important; }
+/* free engines only in the finished product: no paid speech-service key boxes */
+.product #set-swara-row, .product #tr-swara-wrap { display: none !important; }
 .info {
   display: inline-flex; align-items: center; justify-content: center; vertical-align: middle;
   width: var(--tap); height: var(--tap); margin: -6px -4px -6px 0; padding: 0; flex: none;
