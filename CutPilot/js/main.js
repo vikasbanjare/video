@@ -92,6 +92,16 @@
   var BUNDLED_SARVAM_KEY = ''; /*@@CP_SARVAM@@*/  // shared Sarvam (Swara) key baked into the build
   var WHITE_LABEL = false; /*@@CP_WL@@*/     // hide the underlying engine/model names
   var KEY_BUNDLED = !!BUNDLED_KEY;
+  /* The build's own key can be refused (revoked, mistyped at build time — the
+     owner's testers: "transcript is not working, and no option to add a key").
+     Then the key boxes come back and say why. Kept per key by a fingerprint
+     (never the key), so a build with a new key starts clean. */
+  function keyPrint(k) { var h = 5381; k = String(k || ''); for (var i = 0; i < k.length; i++) h = ((h * 33) ^ k.charCodeAt(i)) >>> 0; return h.toString(36); }
+  function bundledKeyDead() { return KEY_BUNDLED && settings && settings.bundledKeyDead === keyPrint(BUNDLED_KEY); }
+  // (the address is joined from parts: a keyed build white-labels the provider's
+  // name and address everywhere else, but here the customer must really go there)
+  var BUNDLED_DEAD_MSG = 'The speech key built into Pulse was refused. Paste your own free key in Settings → Auto-transcribe (get one at ' +
+    ['console', 'groq', 'com/keys'].join('.') + ', sign in, Create API key) — or pick “💻 On this computer” under More speech options (free, no key).';
   var PRODUCT_BUILD = false; /*@@CP_PRODUCT@@*/   // the finished product: tester tools hidden
   // Valid license keys are stored ONLY as sha256 hashes (the keys themselves are
   // never in the source, so reading the build can't mint keys). Entering a key
@@ -147,7 +157,7 @@
      the user for one (and can't regress on init-order). */
   function cpKey() {
     var k = (settings && settings.groqKey || '').trim();
-    return k || (BUNDLED_KEY || '').trim();
+    return k || (bundledKeyDead() ? '' : (BUNDLED_KEY || '').trim());
   }
   /* The effective Sarvam (Swara) key — the user's own, else the build's bundled
      one. Used for Indian-language transcription via Sarvam AI. */
@@ -3151,11 +3161,23 @@
     // badge version, and "Trial · 7d left" alone hid which build they were on
     if (TRIAL_DAYS_MS) { var _dl = trialDaysLeft(); if ($('ver')) $('ver').textContent = $('ver').textContent + ' · trial ' + _dl + 'd'; }
     // a bundled (shared) key is hidden from the tester — don't show the key fields
-    if (KEY_BUNDLED) {
+    if (KEY_BUNDLED && !bundledKeyDead()) {
       ['tr-groq-wrap', 'set-groq-row'].forEach(function (id) {
         var el = $(id); if (el) { var row = el.closest ? el.closest('label,div') : el; if (row) row.style.display = 'none'; }
       });
     }
+    // the build's key refused by the provider: bring the key boxes back and say why
+    if (window.CPApiErr) CPApiErr.onBadKey = function (provider) {
+      if (provider !== 'groq' || !KEY_BUNDLED || (settings.groqKey || '').trim()) return null;
+      settings.bundledKeyDead = keyPrint(BUNDLED_KEY);
+      try { saveSettings(); } catch (eS) {}
+      ['tr-groq-wrap', 'set-groq-row'].forEach(function (id) {
+        var el = $(id); if (el) { var row = el.closest ? el.closest('label,div') : el; if (row) row.style.display = ''; }
+      });
+      try { diag('keys', 'the built-in speech key was refused — asking for the user\'s own'); } catch (eD) {}
+      try { refreshWhisperStatus(); } catch (eR) {}
+      return BUNDLED_DEAD_MSG;
+    };
     // …and the Indian-language key when that one is built in too
     if (BUNDLED_SARVAM_KEY) ['tr-swara-keyrow', 'set-swara-row'].forEach(function (id) { var el = $(id); if (el) el.style.display = 'none'; });
     if (PRODUCT_BUILD) document.documentElement.classList.add('product');
@@ -20785,6 +20807,7 @@
     if (resolved === 'cloud-groq') {
       el.textContent = (settings.groqKey || '').trim() ? '✅ Speech key ready — Pulse can write your words.'
         // a build with its own key hides the box — never ask for it then
+        : bundledKeyDead() ? '⚠️ ' + BUNDLED_DEAD_MSG
         : KEY_BUNDLED ? '✅ Transcription is built in — just pick your language.'
         : 'Paste your free speech key below.';
       return;
@@ -20807,7 +20830,7 @@
     // "Cloud transcription is built in" was printed even when the build bundles
     // NO key - so the panel told the user there was nothing to set up, then
     // refused to transcribe without a key. Only say "built in" when it is true.
-    else if (KEY_BUNDLED) { el.textContent = '✅ Transcription is built in — just pick your language.'; }
+    else if (KEY_BUNDLED && !bundledKeyDead()) { el.textContent = '✅ Transcription is built in — just pick your language.'; }
     else { el.textContent = 'Paste your free speech key below to turn it on.'; }
     var note = $('set-quality-note');
     if (note) { var q = (settings.whisperQuality || 'auto-best'); var qo = WHISPER_QUALITIES.filter(function (x) { return x.value === q; })[0]; note.textContent = qo ? '· ' + qo.label.replace(/^[^·]*· /, '') : ''; }

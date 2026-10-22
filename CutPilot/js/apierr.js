@@ -135,15 +135,20 @@
     return c.action ? (c.message + ' ' + c.action) : c.message;
   }
   /* Build the Error the call sites reject with, carrying the classification. */
+  var api = null;
   function toError(provider, info) {
     var c = classify(provider, info);
-    var e = new Error(c.action ? (c.message + ' ' + c.action) : c.message);
+    // a key the panel cannot fix itself (a build's own key rejected): the panel
+    // may say what to do instead (CPApiErr.onBadKey → a message, or nothing)
+    var say = null;
+    if (c.kind === 'bad_key' && api && typeof api.onBadKey === 'function') { try { say = api.onBadKey(provider); } catch (eH) { say = null; } }
+    var e = new Error(say || (c.action ? (c.message + ' ' + c.action) : c.message));
     e.cpKind = c.kind; e.cpProvider = c.provider; e.cpDetail = c.detail;
     return e;
   }
 
-  return { classify: classify, toMessage: toMessage, toError: toError, KINDS: [
+  return (api = { classify: classify, toMessage: toMessage, toError: toError, onBadKey: null, KINDS: [
     'network', 'request_failed', 'bad_key', 'model_gone', 'rate_limit', 'no_credit',
     'provider_down', 'too_large', 'no_speech', 'bad_audio', 'unknown'
-  ] };
+  ] });
 });

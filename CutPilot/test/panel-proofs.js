@@ -1360,6 +1360,26 @@ function fluxProps() {
     }
   }
 
+  // ---- the build's own key refused: never a dead end ----------------------
+  // Reported: a tester got v0.10.108 whose built-in key Groq refused — no
+  // words, and no box to paste a key into (a bundled build hides them).
+  {
+    const dead = await page.evaluate(() => {
+      const D = window.CP_DEBUG;
+      if (!D || !D.keyState || !D.keyState().bundled) return { skip: true };
+      D.setKeys({ groq: '', quality: '' });
+      const msg = CPApiErr.toError('groq', { status: 401, body: { error: { message: 'Invalid API Key', code: 'invalid_api_key' } } }).message;
+      const boxes = D.keyBoxVisible(), status = D.whisperStatus(), state = D.keyState();
+      // put it back for the proofs after this one
+      const s = window.CPKit && CPKit.settings ? CPKit.settings() : null; if (s) delete s.bundledKeyDead;
+      return { msg, boxes, status, groq: state.groq };
+    });
+    if (dead.skip) ok('(no key built into this panel — the refused-key path is proven on the built panel)');
+    else if (!(dead.boxes.setGroq || dead.boxes.trGroq) || !/console\.groq\.com/.test(dead.msg) || !/refused/i.test(dead.status) || dead.groq)
+      bad('refused built-in key: ' + JSON.stringify(dead));
+    else ok('a refused built-in key brings the key box back and says how to get a free key or use this computer');
+  }
+
   // ---- a retired provider model must not kill every AI feature -----------
   // Reported: "Translate failed: Cloud: The model `llama-3.3-70b-versatile`
   // does not exist or you do not have access to it." One hardcoded id backed
