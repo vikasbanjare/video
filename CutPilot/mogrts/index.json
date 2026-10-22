@@ -46,28 +46,28 @@
   "desc": "Two-colour gradient highlight + entry animation"
  },
  {
-  "file": "Text_Animation_01.mogrt",
+  "file": "Text_Animation_01.mogrt", "seconds": 5.04,
   "name": "Solid Title",
   "category": "Titles",
   "kind": "title",
   "desc": "Bold one-colour title reveal"
  },
  {
-  "file": "Text_Animation_03.mogrt",
+  "file": "Text_Animation_03.mogrt", "seconds": 5.04,
   "name": "Gradient Title",
   "category": "Titles",
   "kind": "title",
   "desc": "Title with a 4-stop gradient fill"
  },
  {
-  "file": "Text_Animation_05.mogrt",
+  "file": "Text_Animation_05.mogrt", "seconds": 5.04,
   "name": "Three-Line Title",
   "category": "Titles",
   "kind": "title",
   "desc": "Three independently-styled stacked lines"
  },
  {
-  "file": "Shorts_Text_Animation_01.mogrt",
+  "file": "Shorts_Text_Animation_01.mogrt", "seconds": 8,
   "name": "Shorts Stack",
   "category": "Titles",
   "kind": "title",

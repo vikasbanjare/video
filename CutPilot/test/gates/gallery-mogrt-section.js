@@ -52,6 +52,7 @@ const PACK = ['Pack_A', 'Pack_B', 'Pack_C'];
         return { card: 1, mogrt: el.classList.contains('is-mogrt'),
                  name: ((el.querySelector('.tpl-name') || {}).textContent || '').trim(),
                  canvas: !!cv, animId: cv ? (cv._animId || null) : null,
+                 real: !!el.querySelector('img.tpl-thumb-media, video.tpl-thumb-media'),
                  wordHl: st ? st.wordHl : undefined,
                  hlIsFill: st ? String(st.highlight || '').toLowerCase() === String(st.fill || '').toLowerCase() : null };
       }
@@ -131,11 +132,16 @@ const PACK = ['Pack_A', 'Pack_B', 'Pack_C'];
     else R.ok('under All the templates follow every style, in their own labelled section');
   }
 
-  // 4. title cards never play a sweep they do not have
+  // 4. title cards show Premiere's own render of the template (shipped in
+  // mogrts/thumbs), else a drawn title that never plays a sweep it lacks
+  const realTitles = {};
+  res.chips.forEach(c => c.items.forEach(i => { if (i.card && i.mogrt && i.real && titles.indexOf(i.name) >= 0) realTitles[i.name] = 1; }));
+  if (Object.keys(realTitles).length === titles.length) R.ok('all ' + titles.length + ' title cards show Premiere\'s own render of the template');
   const titleCards = [];
   res.chips.forEach(c => c.items.forEach(i => { if (i.card && i.mogrt && i.canvas && titles.indexOf(i.name) >= 0) titleCards.push(i); }));
   const fake = titleCards.filter(i => i.animId === 'karaoke' || i.wordHl !== false || !i.hlIsFill);
-  if (!titleCards.length) R.bad('no title-template card was drawn — cannot judge its preview');
+  if (!titleCards.length && Object.keys(realTitles).length === titles.length) { /* every title shows its real render */ }
+  else if (!titleCards.length) R.bad('no title-template card was drawn — cannot judge its preview');
   else if (fake.length) {
     const seen = {};
     fake.forEach(i => { if (seen[i.name]) return; seen[i.name] = 1;

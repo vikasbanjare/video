@@ -3247,6 +3247,26 @@ function CP_isTextValue(v, name) {
 /* All text-ish properties of a MOGRT component, in display order. Multi-line
    templates (Text 01..NN) return several; Pulse fills each with a
    consecutive caption line. Group refs / font pickers are excluded. */
+/* A TITLE template made of several text fields (Three-Line Title: 3 lines,
+   Shorts Stack: 5 words that animate in one by one) gets the phrase spread
+   over ALL its fields, in order — writing it into the first field alone left
+   the template's sample words in the rest ("Modern Product", "marketing
+   doesn't feel like marketing" piled under the owner's words). Fewer words
+   than fields: one word each, the rest blank. → true when any field took text */
+function CP_fillTextFields(comp, text, allowRich, style) {
+  var tp = CP_textPropsOf(comp);
+  if (!tp.length) return false;
+  var parts = String(text || '').split(/\s+/), words = [], w0;   // (ExtendScript: no Array.filter)
+  for (w0 = 0; w0 < parts.length; w0++) if (parts[w0].length > 0) words.push(parts[w0]);
+  var n = tp.length, out = [], i, any = false;
+  for (i = 0; i < n; i++) out.push([]);
+  // balanced: field i takes words [floor(i*W/n), floor((i+1)*W/n)), at least one each while words last
+  if (words.length <= n) { for (i = 0; i < words.length; i++) out[i].push(words[i]); }
+  else for (i = 0; i < words.length; i++) out[Math.min(n - 1, Math.floor(i * n / words.length))].push(words[i]);
+  for (i = 0; i < n; i++) { try { if (CP_setMgrtText(tp[i], out[i].join(' '), allowRich, style)) any = true; } catch (e) {} }
+  return any;
+}
+
 function CP_textPropsOf(comp) {
   var out = [];
   if (!comp || !comp.properties) return out;
@@ -4455,6 +4475,10 @@ function CP_insertMogrtCaptions(argsJson) {
             // desynced the highlight and looked like "the second text never
             // changes". The mirror still gets the font-only pass below.
             if (CP_setMgrtText(tprops[0], grp[0].text, allowRich, args.textStyle)) textSet++;
+          } else if (tprops.length > 1 && args.title) {
+            // a title: the phrase spread over all its fields (CP_fillTextFields)
+            var tt = []; for (var tj = 0; tj < grp.length; tj++) tt.push(grp[tj].text);
+            if (CP_fillTextFields(comp, tt.join(' '), allowRich, args.textStyle)) textSet++;
           } else if (tprops.length > 1) {
             // multi-line: one caption line per text field, blank unused slots
             var anySet = false;
@@ -5004,8 +5028,11 @@ function CP_previewMogrt(argsJson) {
         try { CP_forceIntroVisible(pcomp, args.params, args.seconds || 4, null, CP_compUnits(clip, args.compW, args.compH)); } catch (eIv) {}   // entrance fitted to the preview length
         var pvScaled = 0;
         if (args.text && pcomp.properties) {
-          var ptp = CP_findTextProp(pcomp.properties, ['text', 'caption', 'title', 'subtitle', 'headline', 'body']);
-          if (ptp) CP_setMgrtText(ptp, args.text, true, args.textStyle);
+          if (args.title && CP_textPropsOf(pcomp).length > 1) CP_fillTextFields(pcomp, args.text, true, args.textStyle);
+          else {
+            var ptp = CP_findTextProp(pcomp.properties, ['text', 'caption', 'title', 'subtitle', 'headline', 'body']);
+            if (ptp) CP_setMgrtText(ptp, args.text, true, args.textStyle);
+          }
           if (args.textStyle && args.textStyle.sizeScale && args.textStyle.sizeScale !== 1) {
             try { pvScaled = CP_scaleAllTextSizes(pcomp, args.textStyle.sizeScale); } catch (eSc) {}
           }
@@ -5184,8 +5211,11 @@ function CP_renderMogrtFrames(argsJson) {
       if (comp && comp.properties) {
         if (args.params) { try { CP_applyMgrtParams(comp, args.params, CP_compUnits(clip, args.compW, args.compH)); } catch (ePr) {} }
         if (args.text) {
-          var tp = CP_findTextProp(comp.properties, ['text', 'caption', 'title', 'subtitle']);
-          if (tp) CP_setMgrtText(tp, args.text, true, args.textStyle || null);
+          if (args.title && CP_textPropsOf(comp).length > 1) CP_fillTextFields(comp, args.text, true, args.textStyle || null);
+          else {
+            var tp = CP_findTextProp(comp.properties, ['text', 'caption', 'title', 'subtitle']);
+            if (tp) CP_setMgrtText(tp, args.text, true, args.textStyle || null);
+          }
         }
         if (args.textStyle && args.textStyle.sizeScale && args.textStyle.sizeScale !== 1) {
           try { rfScaled = CP_scaleAllTextSizes(comp, args.textStyle.sizeScale); } catch (eSc) {}

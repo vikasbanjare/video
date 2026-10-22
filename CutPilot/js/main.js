@@ -6217,7 +6217,7 @@
         if (thumbUrl) withThumb++;
         if (videoUrl) withVideo++;
         return { name: m.name, path: path.join(mdir, m.file),
-                 category: m.category || 'Templates', kind: m.kind || 'caption', desc: m.desc || '', thumb: thumbUrl, video: videoUrl, premium: !!m.premium, section: m.section || '' };
+                 category: m.category || 'Templates', kind: m.kind || 'caption', desc: m.desc || '', thumb: thumbUrl, video: videoUrl, premium: !!m.premium, section: m.section || '', seconds: +m.seconds || 0 };
       }).filter(function (m) { try { return fs.existsSync(m.path); } catch (e3) { return false; } });
       state.bundledDiag = state.bundledMogrts.length
         ? ('ok:' + state.bundledMogrts.length + ' thumbs:' + withThumb + ' videos:' + withVideo)
@@ -6316,7 +6316,7 @@
     var out = [];
     (state.bundledMogrts || []).forEach(function (m) {
       out.push({ id: 'mogrt:' + m.path, name: m.name, category: MOGRT_CAT, mogrt: true,
-                 path: m.path, popularity: 90, subcat: m.desc || m.category, desc: m.desc, bundled: true, thumb: m.thumb, video: m.video, premium: m.premium, flux: (m.section === 'flux'),
+                 path: m.path, popularity: 90, subcat: m.desc || m.category, desc: m.desc, bundled: true, seconds: m.seconds || 0, thumb: m.thumb, video: m.video, premium: m.premium, flux: (m.section === 'flux'),
                  // caption vs TITLE template (from index.json): a title has no word
                  // highlight, so its card must not play a karaoke sweep it lacks
                  kind: m.kind || 'caption' });
@@ -7588,7 +7588,7 @@
         if (!b || !b.cues.length) b = premBuildSample(path, 'Make every word count', state.env);
         var text = (b.cues[0] && b.cues[0].text) || b.sample;
         return CPBridge.callHost('CP_previewMogrt', { path: path, seconds: 4, params: b.params, textStyle: b.textStyle, text: text,
-          compW: b.compW, compH: b.compH, fitMode: b.fitMode, posYPct: b.posYPct, sizeFit: b.sizeFit });
+          compW: b.compW, compH: b.compH, fitMode: b.fitMode, posYPct: b.posYPct, sizeFit: b.sizeFit, title: isTitleMogrt(path) });
       }).then(function () {
         toast('▶ Placed "' + name + '" at the playhead with your first caption — play it to see exactly what “✨ Caption with this” places.');
       }).catch(function (e) { toast(e.message, true); });
@@ -8990,14 +8990,31 @@
      3× zoom — the area the caption covered over all frames, entry animation
      included, left Halo/Prism a tiny box in a big card), and a loop at 7 fps
      under the same crop. FW × FH = the size the frames were rendered at. */
-  function makePremiumPreview(ff, files, outNoExt, FW, FH) {
+  function makePremiumPreview(ff, files, outNoExt, FW, FH, wholeTitle) {
     if (!files || files.length < 2) return Promise.reject(new Error('Premiere exported no frames'));
     var pattern = String(files[0]).replace(/_00\.png$/, '_%02d.png');
     // ffmpeg's bbox: the exact box of non-black pixels in each frame (cropdetect
     // averages whole columns, so a thin caption in a tall frame read as nothing)
-    var still = files[Math.floor(files.length * 0.75)];
-    return runProc(ff, ['-hide_banner', '-i', still, '-vf', 'bbox=min_val=24', '-f', 'null', '-']).then(function (err) {
-      var c = premiumBox(err);
+    // the still: three quarters in (the caption has settled) — but a title
+    // played over its whole length may have animated OUT by then (Three-Line
+    // Title): the first of these frames that shows anything
+    var picks = [0.75, 0.5, 0.6, 0.4, 0.3, 0.85, 0.2].map(function (f) { return files[Math.min(files.length - 1, Math.floor(files.length * f))]; });
+    var still = picks[0];
+    function boxOf(k) {
+      if (k >= picks.length) return Promise.resolve(null);
+      return runProc(ff, ['-hide_banner', '-i', picks[k], '-vf', 'bbox=min_val=24', '-f', 'null', '-']).then(function (e2) {
+        var b = premiumBox(e2);
+        if (b) { still = picks[k]; return e2; }
+        return boxOf(k + 1);
+      });
+    }
+    // a title builds over its length (Shorts Stack stacks a word at a time): its
+    // card shows the area EVERY frame covered, or later words fall outside it
+    var boxed = wholeTitle
+      ? boxOf(0).then(function () { return runProc(ff, ['-hide_banner', '-framerate', '7', '-i', pattern, '-vf', 'bbox=min_val=24', '-f', 'null', '-']); })
+      : boxOf(0);
+    return boxed.then(function (err) {
+      var c = err ? premiumBox(err) : null;
       if (!c) throw new Error('nothing visible in Premiere’s frames');
       var even = function (v) { return Math.max(2, Math.round(v / 2) * 2); };
       var W = Math.min(FW, Math.max(c[0] / 0.8, (c[1] / 0.5) * 2, 128)), H = Math.min(FH, W / 2);
@@ -9021,18 +9038,21 @@
     }
     return x2 < 0 ? null : [x2 - x1 + 1, y2 - y1 + 1, x1, y1];
   }
-  function renderPremiumPreviews(btn) {
+  function renderPremiumPreviews(btn, onlyTitles, wordsIn) {
     if (_premBusy) return toast('Already drawing the previews — hang tight…');
     if (!CPBridge.isCEP()) return toast('Previews with your words need Premiere (open Pulse inside Premiere).', true);
     var ff = resolveFfmpeg();
     if (!ff) return ensureFfmpeg().then(function () { renderPremiumPreviews(btn); }, function (e) { toast(e.message, true); });
     var fs, path, os;
     try { fs = nodeReq('fs'); path = nodeReq('path'); os = nodeReq('os'); } catch (e) { return toast('Open Pulse inside Premiere to draw the previews.', true); }
-    var list = mogrtTemplates().filter(function (t) { return t.flux; });
+    // the title templates too: their cards and editor showed a drawn stand-in,
+    // not their real animation (the owner: "preview … is completely wrong")
+    var list = mogrtTemplates().filter(function (t) { return t.flux || (t.kind === 'title' && t.bundled); });
+    if (onlyTitles) list = list.filter(function (t) { return t.kind === 'title' && !t.flux; });
     if (!list.length) return toast('No Premium templates loaded yet.', true);
     var dir = premiumPreviewDir();
     try { fs.mkdirSync(dir, { recursive: true }); } catch (eMk) {}
-    var words = premiumSampleText();
+    var words = wordsIn || premiumSampleText();
     var W = (state.env && state.env.width) || 1920, H = (state.env && state.env.height) || 1080;
     var times = [];
     for (var k = 0; k < 20; k++) times.push(Math.round((0.15 + k * 0.14) * 100) / 100);
@@ -9051,10 +9071,19 @@
         // line breaks and the caption row (premBuildSample)
         var sb = null;
         try { sb = premBuildSample(t.path, words, { width: W, height: H, fps: (state.env && state.env.fps) || 30 }); } catch (eSb) { sb = null; }
-        var rArgs = { mogrtPath: t.path, text: sb ? sb.sample : words, seconds: 3, times: times, outBase: raw, width: W, height: H };
+        // a title plays its whole animation (Shorts Stack builds over 8 s): its
+        // frames every 1/7 s over its own length, so the 7 fps loop runs at
+        // the real pace; the rest keep the 3 s sample
+        var tt = times, secs = 3;
+        if (t.kind === 'title' && t.seconds > 0) {
+          secs = t.seconds; tt = [];
+          for (var q = 0; q * (1 / 7) < secs - 0.05; q++) tt.push(Math.round((0.05 + q / 7) * 100) / 100);
+        }
+        // a title shows the whole phrase (its fields share it); a caption template its first caption
+        var rArgs = { mogrtPath: t.path, text: (t.kind === 'title' || !sb) ? words : sb.sample, seconds: secs, times: tt, outBase: raw, width: W, height: H, title: t.kind === 'title' };
         if (sb) { rArgs.params = sb.params; rArgs.textStyle = sb.textStyle; rArgs.compW = sb.compW; rArgs.compH = sb.compH; rArgs.fitMode = sb.fitMode; rArgs.posYPct = sb.posYPct; rArgs.sizeFit = sb.sizeFit; }
         return CPBridge.callHost('CP_renderMogrtFrames', rArgs)
-          .then(function (r) { made = r.files || []; return makePremiumPreview(ff, made, path.join(dir, base), W, H); })
+          .then(function (r) { made = r.files || []; return makePremiumPreview(ff, made, path.join(dir, base), W, H, t.kind === 'title'); })
           .then(function () { ok++; }, function (e) { bad.push(t.name + ': ' + ((e && e.message) || e)); })
           .then(function () { made.forEach(function (f) { try { fs.unlinkSync(f); } catch (eU) {} }); });
       });
@@ -9072,6 +9101,8 @@
     });
   }
   if ($('btn-flux-render')) $('btn-flux-render').addEventListener('click', function () { renderPremiumPreviews(this); });
+  window.CP_DEBUG_EXT = window.CP_DEBUG_EXT || {};
+  window.CP_DEBUG_EXT.renderTitlePreviews = function (w) { return renderPremiumPreviews(null, true, w); };
 
   function renderFluxGrid() {
     var grid = $('flux-grid'); if (!grid) return;
@@ -13066,6 +13097,7 @@
           args.posYPct = b.posYPct; args.sizeFit = b.sizeFit; args.fitMode = b.fitMode;
         } catch (eB) {}
       }
+      args.title = isTitleMogrt(path);
       return CPBridge.callHost('CP_previewMogrt', args);
     }).then(function (r) { toast('▶ Preview placed on V' + r.track + ' at the playhead. Scrub to see it.'); })
       .catch(function (e) { toast(e.message, true); });
@@ -13747,7 +13779,17 @@
              // the lines were measured against the part of the comp the viewer
              // sees, so the host may fit the comp by its short side (host
              // CP_fitScalePct); otherwise it fits the whole comp in the frame
-             fitMode: plan.known ? 'short' : 'contain' };
+             // a TITLE template is one fixed text box Pulse does not lay out:
+             // fitted by the short side it ran wider than a vertical frame
+             // (the owner: "scale is too big" on a vertical sequence) — a
+             // title always fits inside the frame
+             fitMode: (plan.known && !isTitleMogrt(path)) ? 'short' : 'contain' };
+  }
+  function isTitleMogrt(path) {
+    try {
+      var t = mogrtTemplates().filter(function (x) { return x.path === path; })[0];
+      return !!(t && t.kind === 'title');
+    } catch (e) { return false; }
   }
   /* The plan applied to a few sample words (the card renders, ▶ Try on
      timeline): their first caption exactly as the insert would make it. */
@@ -13899,6 +13941,7 @@
         // (100 = its natural pace; the old Animation-speed control is gone)
         params: params, textStyle: textStyle, stretch: stretch, maxSpeed: 100, replaceTrack: reuseTrackM,
         captionNames: captionGraphicNames(mogrtPath),
+        title: isTitleMogrt(mogrtPath),        // a title spreads its words over its text fields
         compW: (geom && geom.compW) || 0, compH: (geom && geom.compH) || 0,   // the comp's real size → fitted to the sequence
         // short side only when Pulse planned the lines; the owner's own .mogrt
         // is fitted whole inside the frame (never cropped on a reel)
