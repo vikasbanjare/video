@@ -6610,9 +6610,8 @@
   }
   /* Shown both under "All" (after every style) and alone in the 🧩 chip, so it
      never says "above": in the chip nothing is above it. */
-  var ADVANCED_NOTE = 'Premiere\'s own Motion Graphics templates. Each one only offers the few settings its designer built in. ' +
-    'Every style in the gallery gives you every control — and the caption looks from these templates are there too, as full Pulse styles ' +
-    '(Plain Subtitle, Word Highlight, Word Pop, Active-Word Box, Gradient Highlight, Halo Box).';
+  var ADVANCED_NOTE = 'Premiere\'s own Motion Graphics templates — titles, and any you add from a folder. Each one only offers the few settings its designer built in. ' +
+    'For captions use the styles above: every one gives you every control.';
 
   function renderTemplateGrid() {
     var grid = $('tpl-grid');
@@ -6711,7 +6710,12 @@
 
   /* Caption templates first, title templates in their own group. */
   function appendMogrtGroups(grid, list) {
-    var caps = list.filter(function (t) { return (t.kind || 'caption') !== 'title'; });
+    // Pulse's own caption templates are not shown: their tiles drew a tiny line
+    // and they did not caption properly (the owner: "not working properly —
+    // fix or remove"). Each look is a full Pulse style instead (Plain Subtitle,
+    // Word Highlight, Word Pop, Active-Word Box, Gradient Highlight). Templates
+    // the owner adds from a folder, and the title templates, stay.
+    var caps = list.filter(function (t) { return (t.kind || 'caption') !== 'title' && !(t.bundled && !t.fromFolder); });
     var titles = list.filter(function (t) { return (t.kind || 'caption') === 'title'; });
     caps.forEach(function (t) { grid.appendChild(buildTemplateCard(t)); });
     if (titles.length) {

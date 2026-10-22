@@ -102,10 +102,14 @@ const PACK = ['Pack_A', 'Pack_B', 'Pack_C'];
     const names = cards.map(i => i.name);
     const styles = cards.filter(i => !i.mogrt);
     if (styles.length) R.bad('the advanced chip mixes in ' + styles.length + ' Pulse style card(s)');
-    const want = captions.concat(titles).concat(PACK);
+    // Pulse's own caption templates are not shown any more (the owner: "not
+    // working properly — fix or remove"); their looks are full Pulse styles
+    const want = titles.concat(PACK);
     const missing = want.filter(n => names.indexOf(n) < 0);
+    const shown = captions.filter(n => names.indexOf(n) >= 0);
     if (missing.length) R.bad('the advanced chip is missing: ' + missing.join(', '));
-    else R.ok('the advanced chip holds all ' + captions.length + ' caption + ' + titles.length + ' title templates and the user\'s folder pack (' + PACK.length + ')');
+    else if (shown.length) R.bad('Pulse\'s own caption templates still show: ' + shown.join(', '));
+    else R.ok('the advanced chip holds the ' + titles.length + ' title templates and the user\'s folder pack (' + PACK.length + '), and none of Pulse\'s own caption templates');
     const heads = advChip.items.map((it, k) => it.head ? k : -1).filter(k => k >= 0);
     const titleHead = advChip.items.findIndex(it => it.head && /title templates/i.test(it.head));
     const firstTitle = advChip.items.findIndex(it => it.card && titles.indexOf(it.name) >= 0);
