@@ -165,6 +165,21 @@
     return { cues: out, matched: true, matchRate: rate, replaced: replaced, scriptWords: sw.length };
   }
 
+  /* The language a script is written in, to transcribe the audio in it: on
+     Auto, Hinglish speech came back TRANSLATED to English and no longer
+     matched its own script. Devanagari → 'hi'; Latin letters full of Hindi's
+     everyday words → 'hinglish'; anything else → null (keep Auto). */
+  var HINDI_WORDS = { hai: 1, hain: 1, ka: 1, ki: 1, ke: 1, mein: 1, aur: 1, toh: 1, to: 0, ye: 1, yeh: 1, kya: 1, nahi: 1, nahin: 1,
+    se: 1, ko: 1, bhi: 1, ho: 1, tha: 1, thi: 1, kar: 1, karte: 1, karna: 1, jo: 1, par: 1, apne: 1, aap: 1, hum: 1, kuch: 1, ek: 1 };
+  function scriptLang(txt) {
+    txt = String(txt || '');
+    var dev = (txt.match(/[\u0900-\u097F]/g) || []).length, lat = (txt.match(/[A-Za-z]/g) || []).length;
+    if (dev > 20 && dev > lat) return 'hi';
+    var w = txt.toLowerCase().match(/[a-z]+/g) || [], hindi = 0;
+    for (var i = 0; i < w.length; i++) if (HINDI_WORDS[w[i]]) hindi++;
+    return (w.length >= 8 && hindi / w.length >= 0.08) ? 'hinglish' : null;
+  }
+
   /* A Word file (.docx) is a zip: read word/document.xml from it and keep
      its paragraphs. inflateRaw: zlib.inflateRawSync (Node, in the panel).
      ponytail: no zip64 / encrypted files — Word never writes those for a script. */
@@ -188,5 +203,5 @@
     throw new Error('No text found in this Word file.');
   }
 
-  return { norm: norm, scriptWords: scriptWords, matchPairs: matchPairs, alignToScript: alignToScript, docxText: docxText };
+  return { norm: norm, scriptWords: scriptWords, matchPairs: matchPairs, alignToScript: alignToScript, docxText: docxText, scriptLang: scriptLang };
 });

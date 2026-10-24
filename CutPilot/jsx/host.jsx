@@ -2399,6 +2399,10 @@ function CP_applyUltraKey(argsJson) {
       }
       var kc = uk && CP_effectProp(uk, 'Key Color');
       if (!kc || !CP_setColorAny(kc, a.color)) { failed++; continue; }
+      // a fresh key: Pedestal 35 clears the haze Default leaves (measured: 17% of the
+      // backdrop stayed at 10, none at 35; skin, hair, white and dark clothes stay solid).
+      // A clip keyed before keeps the owner's own tuning.
+      if (!had) { var ped = CP_effectProp(uk, 'Pedestal'); if (ped) { try { ped.setValue(35, true); } catch (ePd) {} } }
       if (had) recolored++; else keyed++;
     }
     return CP_ok({ keyed: keyed, recolored: recolored, failed: failed });

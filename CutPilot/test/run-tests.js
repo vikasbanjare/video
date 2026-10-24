@@ -2123,6 +2123,10 @@ console.log('script alignment (your script\'s words + the transcript\'s timing)'
   assert(dx === 'FD Mutual Funds Stocks, ye toh sab jaante hain.\n\nEdelweiss Alternatives & HNIs ka paisa.', 'a Word (.docx) script is read as its own text (' + JSON.stringify(dx) + ')');
   let notDocx = ''; try { S.docxText(Buffer.from('plain text, not a zip'), require('zlib').inflateRawSync); } catch (e) { notDocx = e.message; }
   assert(/not a Word/.test(notDocx), 'a file that is not a .docx says so instead of reading garbage');
+  // the script decides the language on Auto: Hinglish came back translated to English and stopped matching
+  assert(S.scriptLang('FD, Mutual Funds, Stocks ye toh sab jaante hain. Lekin bade Institutions aur HNIs ka paisa kaise invest hota hai?') === 'hinglish', 'a Hinglish script transcribes as Hinglish');
+  assert(S.scriptLang('नमस्ते दोस्तों आज हम बात करेंगे शेयर बाजार की') === 'hi', 'a Devanagari script transcribes as Hindi');
+  assert(S.scriptLang('Hello everyone, today we talk about gold funds and how to invest.') === null, 'an English script keeps Auto');
   assert(r.matched === true, 'a matching script is accepted (rate ' + r.matchRate.toFixed(2) + ')');
   assert(r.cues[0].text === 'Hello everyone, my name is Akshay Uddeshi.',
     'misheard name is corrected INSIDE its own caption: "' + r.cues[0].text + '"');

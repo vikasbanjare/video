@@ -780,9 +780,16 @@
     }
     return q;
   }
+  /* The language to transcribe in: the owner's pick, else (on Auto) the
+     language of the script they added, so the words come back in it. */
+  function asrLangNow() {
+    var l = settings.whisperLang || 'auto';
+    if (l !== 'auto') return l;
+    try { return CPScript.scriptLang(($('script-text') && $('script-text').value) || '') || 'auto'; } catch (e) { return 'auto'; }
+  }
   function modelFileName() {
     var q = resolveQuality();
-    var lang = settings.whisperLang || 'auto';   // AUTO-detect by default — forcing 'en' garbled every non-English voice (Hindi → English-ish nonsense)
+    var lang = asrLangNow();   // AUTO-detect by default — forcing 'en' garbled every non-English voice (Hindi → English-ish nonsense)
     var hasEnVariant = (q === 'tiny' || q === 'base' || q === 'small' || q === 'medium');  // large-* are multilingual only
     // Hinglish needs a MULTILINGUAL model — it actually understands Hindi, so it
     // transcribes the words (then we romanise Devanagari→Latin). The old English-
@@ -1661,7 +1668,7 @@
     // key on the RESOLVED engine + language, so changing the model (or "Auto"
     // resolving differently) produces a new key and the clip is re-transcribed.
     var s = _TC_VER + '|' + String(mediaPath) + '|' + Math.round((minIn || 0) * 100) + '|' + Math.round((maxOut || 0) * 100) +
-            '|' + resolveQuality() + '|' + (settings.whisperLang || 'auto') + '|' + (settings.sarvamLang || '');
+            '|' + resolveQuality() + '|' + (asrLangNow()) + '|' + (settings.sarvamLang || '');
     var h = 0; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
     var base = String(mediaPath).split(/[\\/]/).pop().replace(/\.[^.]+$/, '').replace(/[^\w]+/g, '_').slice(0, 40);
     return base + '-' + _TC_VER + '-' + h.toString(16);
@@ -1690,7 +1697,7 @@
       // auto-loads a transcript that matches the CURRENT model (else re-transcribe)
       fs.writeFileSync(p.join(dir, _tcKey(mediaPath, minIn, maxOut) + '.json'), JSON.stringify({
         v: 3, lines: t.lines, words: t.words || null, wordLevel: !!t.wordLevel, dedupeWords: !!t.dedupeWords,
-        minIn: minIn, maxOut: maxOut, q: resolveQuality(), lang: (settings.whisperLang || 'auto'), at: Date.now()
+        minIn: minIn, maxOut: maxOut, q: resolveQuality(), lang: (asrLangNow()), at: Date.now()
       }), 'utf8');
     } catch (e) {}
   }
@@ -1713,7 +1720,7 @@
       // the whole video was heard again)
       var bases = [keyOf(stem)], orig = stem.replace(/-studio-[a-z0-9]+$/i, '');
       if (orig !== stem) bases.push(keyOf(orig));
-      var curQ = resolveQuality(), curLang = (settings.whisperLang || 'auto');
+      var curQ = resolveQuality(), curLang = (asrLangNow());
       var best = null, bestM = -1;
       fs.readdirSync(dir).forEach(function (f) {
         if (!bases.some(function (b) { return f.indexOf(b + '-' + _TC_VER + '-') === 0; }) || !/\.json$/i.test(f)) return;
@@ -1815,7 +1822,7 @@
     // English mixed in one sentence; the caller romanises Hinglish after);
     // an explicit pick is sent as is. autoTranscribe hands Hinglish in as
     // 'hi', so the panel's own choice decides here.
-    var ui = settings.whisperLang || 'auto';
+    var ui = asrLangNow();
     // The stored transcript stays word for word (with "um"/"uh"): Clean up's
     // filler removal, the retake finder and Smart Cleanup read it. Captions
     // leave those sounds out themselves (dropHesitations).
@@ -2004,7 +2011,7 @@
       if (!wbin) return toast('This computer can’t make the transcript by itself: paste your free speech key in Settings → Auto-transcribe (the Speech key box). Get one at console.groq.com/keys.', true);
     }
     setTranscribing(true);   // all checks passed — commit, lock the buttons
-    var lang = swara ? (settings.sarvamLang || 'unknown') : (settings.whisperLang || 'auto');   // default AUTO — never force English on non-English audio
+    var lang = swara ? (settings.sarvamLang || 'unknown') : (asrLangNow());   // default AUTO — never force English on non-English audio
     // HINGLISH = the real spoken words written in English letters, NOT a Hindi→English
     // translation. Always TRANSCRIPTION, never translation:
     //   • multilingual model (cloud, or a local non-.en model) → transcribe Hindi
