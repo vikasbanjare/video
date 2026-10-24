@@ -487,7 +487,6 @@
     showSetup(false);
     if ($('btn-ra-open')) $('btn-ra-open').addEventListener('click', raOpen);
     if ($('btn-ra-setup')) $('btn-ra-setup').addEventListener('click', function () { raShowSetup(true); });
-    if ($('home-cutout')) $('home-cutout').addEventListener('click', function () { setTimeout(function () { show('ra-card'); }, 0); });
     raShowSetup(false);
     if ($('home-greenscreen')) $('home-greenscreen').addEventListener('click', function () { setTimeout(show, 0); });
   }
