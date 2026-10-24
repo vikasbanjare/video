@@ -10,9 +10,9 @@
   <!-- Caption faces — loaded as web fonts so the chosen font renders in the
        live preview AND the canvas-rendered PNGs even if it isn't installed. -->
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Bebas+Neue&family=Archivo+Black&family=Fjalla+One&family=Bangers&family=Luckiest+Guy&family=Alfa+Slab+One&family=Bungee&family=Titan+One&family=Passion+One&family=Permanent+Marker&family=Pacifico&family=Shadows+Into+Light&family=Montserrat:wght@400;500;600;700;800;900&family=Poppins:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800;900&family=Oswald:wght@400;700&family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Lato:wght@400;700&family=Raleway:wght@400;700&family=Work+Sans:wght@400;700&family=Nunito:wght@400;700&family=Rubik:wght@400;700;800;900&family=DM+Sans:wght@400;500;700&family=Outfit:wght@400;500;600;700;800;900&family=Sora:wght@400;500;600;700;800&family=Barlow:wght@400;700&family=Manrope:wght@400;500;600;700;800&family=Teko:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,800;1,600;1,700;1,800&family=Merriweather:wght@400;700&family=Lora:wght@400;700&family=JetBrains+Mono:wght@400;700&family=Roboto+Mono:wght@400;700&family=Space+Mono:wght@400;700&family=Caveat:wght@400;700&family=Arvo:wght@400;700&family=Space+Grotesk:wght@400;500;600;700&family=Syne:wght@600;700;800&family=Unbounded:wght@600;700;800;900&family=DM+Serif+Display:ital@0;1&family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Baloo+2:wght@400;500;600;700;800&family=Mukta:wght@400;500;600;700;800&family=Hind:wght@400;500;600;700&family=Anek+Devanagari:wght@400;500;600;700;800&family=Rozha+One&family=Kalam:wght@400;700&family=Tiro+Devanagari+Hindi:ital@0;1&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=v0.10.113">
-  <link rel="stylesheet" href="css/organize.css?v=v0.10.113">
-  <link rel="stylesheet" href="css/studio.css?v=v0.10.113">
+  <link rel="stylesheet" href="css/style.css?v=v0.10.114">
+  <link rel="stylesheet" href="css/organize.css?v=v0.10.114">
+  <link rel="stylesheet" href="css/studio.css?v=v0.10.114">
 </head>
 <body class="theme-light" data-page="home">
   <!-- ONE navigation row (≤ 12 % of a 400 px-tall panel). Home is the menu;
@@ -112,7 +112,7 @@
         <button id="home-safezone" class="tool-btn" type="button" data-go="safezone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="2"/><rect x="9" y="7" width="6" height="6" rx="1"/><line x1="9" y1="17" x2="15" y2="17"/></svg>Safe zone</button>
       </div>
     </div>
-    <p class="home-foot"><span id="ver" class="ver">v0.10.113</span></p>
+    <p class="home-foot"><span id="ver" class="ver">v0.10.114</span></p>
   </section>
 
   <!-- ============================ TRANSCRIBE ============================ -->
@@ -147,19 +147,24 @@
       <div class="page-actions">
         <button id="btn-tr-auto-ai" class="hero-btn" title="Turn your clip's speech into words">Transcribe</button>
       </div>
-      <div class="tr-inout" id="tr-inout">
-        <p class="hint" id="tr-inout-now" style="margin:6px 0 2px"><b>Only part of the video?</b> Mark <b>In</b> (I) and <b>Out</b> (O) first.</p>
-        <p class="hint" style="margin:0 0 2px"><b>Cut later?</b> The words follow your edit — no need to redo.</p>
+      <!-- 📄 the script you spoke (Word, text or pasted) fixes every word, timing kept -->
+      <div class="tr-script" id="script-drawer">
+        <div class="row tight">
+          <span class="dim">Have the script?</span>
+          <button id="btn-script-load" class="chip-btn" type="button" title="Word (.docx, .doc), text, RTF or a subtitle file">📄 Add Word or text file</button>
+          <button id="btn-script-paste" class="link-btn" type="button">or paste it</button>
+          <button class="info" type="button" data-info="script-info" aria-label="How it works">ⓘ</button>
+        </div>
+        <div class="info-pop hidden" id="script-info">Pulse keeps the <b>timing</b> from the transcript and takes the <b>spelling</b> from your script — names, brands and Hinglish come out right. A script from a different recording is refused, so nothing gets lost.</div>
+        <div id="script-paste" class="hidden">
+          <textarea id="script-text" rows="6" placeholder="Paste your script here…" spellcheck="false" style="width:100%;box-sizing:border-box"></textarea>
+          <button id="btn-script-apply" class="hero-btn small" type="button">Fix words with my script</button>
+        </div>
+        <p class="hint" id="script-status" style="margin:4px 0 0"></p>
       </div>
-      <label class="check" style="margin:6px 0 0" title="After transcribing, AI corrects words it misheard (e.g. “indiyya” → “India”). Turn off to keep exactly what was heard.">
-        <input type="checkbox" id="tr-aifix" checked> Fix misheard words with AI <span class="dim">(recommended)</span>
-      </label>
-      <p class="hint hidden" id="tr-aifix-hint" style="margin:2px 0 0"></p>
       <div class="row tight">
         <button id="btn-tr-edit" class="chip-btn">Review &amp; edit</button>
         <button id="btn-retranscribe" class="chip-btn" title="Listen to the audio again from scratch — only when words came out wrong; cuts and trims are followed by themselves">↻ Redo</button>
-        <button id="btn-mark-hooks" class="chip-btn">Viral hooks</button>
-        <button id="btn-broll" class="chip-btn">B-roll ideas</button>
       </div>
       <div id="tr-tools" class="hidden">
         <div class="row tight">
@@ -168,19 +173,6 @@
           <button id="btn-exp-vtt" class="chip-btn" title="Web subtitle file (.vtt)">VTT</button>
           <button id="btn-exp-txt" class="chip-btn" title="Plain text">Text</button>
         </div>
-        <div class="row tight">
-          <span class="dim">Improve</span>
-          <button id="btn-fix-wording" class="chip-btn">Fix wording (AI)</button>
-          <button id="btn-detect-speakers" class="chip-btn">Detect speakers (AI)</button>
-        </div>
-        <input type="text" id="tr-vocab" placeholder="Names to always spell right, e.g. Aarav, YouTube" style="margin-top:6px" autocomplete="off">
-        <div class="row tight">
-          <span class="dim">Translate to</span>
-          <div id="tr-translate-lang" class="dd-mount" style="flex:1 1 120px;min-width:120px;margin-top:0"></div>
-          <button id="btn-translate" class="chip-btn">Go</button>
-        </div>
-        <p class="hint" style="margin:6px 0 0">These use your free speech key. <button class="info" type="button" data-info="tr-tools-info" aria-label="More about these">ⓘ</button></p>
-        <div class="info-pop hidden" id="tr-tools-info"><b>Fix wording</b> corrects misheard words in any language — run it before translating. <b>Translate</b> replaces the words (your original is kept). <b>Detect speakers</b> is an AI guess, best for clear back-and-forth talk. The key goes in Settings → Auto-transcribe.</div>
       </div>
       <div id="tr-help" class="help-box hidden">
         <b>Easiest:</b> select your clip and tap <b>Transcribe</b> above.
@@ -193,19 +185,35 @@
         </div>
       </div>
       <details class="advanced" id="tr-more">
-        <summary>Speech accuracy</summary>
-        <label class="fld-full" style="margin-top:0">Accuracy<div id="tr-quality" class="dd-mount"></div></label>
-      </details>
-      <details class="advanced" id="script-drawer">
-        <summary>Fix words with my script</summary>
-        <p class="hint">Paste the script you spoke. <button class="info" type="button" data-info="script-info" aria-label="How it works">ⓘ</button></p>
-        <div class="info-pop hidden" id="script-info">Pulse keeps the <b>timing</b> from the transcript and takes the <b>spelling</b> from your script — names, brands and Hinglish come out right. A script from a different recording is refused, so nothing gets lost.</div>
-        <textarea id="script-text" rows="6" placeholder="Paste your script here…" spellcheck="false" style="width:100%;box-sizing:border-box"></textarea>
-        <div class="row tight">
-          <button id="btn-script-load" class="chip-btn">Load script file…</button>
-          <button id="btn-script-apply" class="hero-btn small">Fix words with my script</button>
+        <summary>More options</summary>
+        <div class="tr-inout" id="tr-inout">
+          <p class="hint" id="tr-inout-now" style="margin:6px 0 2px"><b>Only part of the video?</b> Mark <b>In</b> (I) and <b>Out</b> (O) first.</p>
+          <p class="hint" style="margin:0 0 2px"><b>Cut later?</b> The words follow your edit — no need to redo.</p>
         </div>
-        <p class="hint" id="script-status" style="margin:6px 0 0"></p>
+        <label class="check" style="margin:6px 0 0" title="After transcribing, AI corrects words it misheard (e.g. “indiyya” → “India”). Turn off to keep exactly what was heard.">
+          <input type="checkbox" id="tr-aifix" checked> Fix misheard words with AI <span class="dim">(recommended)</span>
+        </label>
+        <p class="hint hidden" id="tr-aifix-hint" style="margin:2px 0 0"></p>
+        <label class="fld-full" style="margin-top:0">Accuracy<div id="tr-quality" class="dd-mount"></div></label>
+        <input type="text" id="tr-vocab" placeholder="Names to always spell right, e.g. Aarav, YouTube" style="margin-top:6px" autocomplete="off">
+        <div id="tr-tools-more" class="hidden">
+        <div class="row tight">
+          <span class="dim">Improve</span>
+          <button id="btn-fix-wording" class="chip-btn">Fix wording (AI)</button>
+          <button id="btn-detect-speakers" class="chip-btn">Detect speakers (AI)</button>
+        </div>
+        <div class="row tight">
+          <span class="dim">Translate to</span>
+          <div id="tr-translate-lang" class="dd-mount" style="flex:1 1 120px;min-width:120px;margin-top:0"></div>
+          <button id="btn-translate" class="chip-btn">Go</button>
+        </div>
+          <p class="hint" style="margin:6px 0 0">These use your free speech key. <button class="info" type="button" data-info="tr-tools-info" aria-label="More about these">ⓘ</button></p>
+        <div class="info-pop hidden" id="tr-tools-info"><b>Fix wording</b> corrects misheard words in any language — run it before translating. <b>Translate</b> replaces the words (your original is kept). <b>Detect speakers</b> is an AI guess, best for clear back-and-forth talk. The key goes in Settings → Auto-transcribe.</div>
+        </div>
+        <div class="row tight">
+          <button id="btn-mark-hooks" class="chip-btn">Viral hooks</button>
+          <button id="btn-broll" class="chip-btn">B-roll ideas</button>
+        </div>
       </details>
       <div class="next-step" id="tr-next-hint"><span class="ns-txt"><b>Next:</b> cut the pauses and retakes — or go straight to captions.</span><button type="button" class="hero-btn small" data-go="silence">Clean up ›</button><button type="button" class="chip-btn" data-go="captions">Captions</button></div>
     </div>
@@ -1571,7 +1579,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.10.113 · auto-edit · multicam · captions · chapters · organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.10.114 · auto-edit · multicam · captions · chapters · organize</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->
@@ -1709,38 +1717,38 @@
     </div>
   </div>
 
-  <script src="js/lib/cep-bridge.js?v=v0.10.113"></script>
-  <script src="js/silence.js?v=v0.10.113"></script>
-  <script src="js/audio.js?v=v0.10.113"></script>
-  <script src="js/captions.js?v=v0.10.113"></script>
-  <script src="js/ass.js?v=v0.10.113"></script>
-  <script src="js/render.js?v=v0.10.113"></script>
-  <script src="js/multicam.js?v=v0.10.113"></script>
-  <script src="js/voices.js?v=v0.10.113"></script>
-  <script src="js/sfx.js?v=v0.10.113"></script>
-  <script src="js/takes.js?v=v0.10.113"></script>
-  <script src="js/smartedit.js?v=v0.10.113"></script>
-  <script src="js/apierr.js?v=v0.10.113"></script>
-  <script src="js/verbatim.js?v=v0.10.113"></script>
-  <script src="js/reframe.js?v=v0.10.113"></script>
-  <script src="js/scriptalign.js?v=v0.10.113"></script>
-  <script src="js/transcript.js?v=v0.10.113"></script>
-  <script src="js/fonts.js?v=v0.10.113"></script>
-  <script src="js/command.js?v=v0.10.113"></script>
-  <script src="js/chapters.js?v=v0.10.113"></script>
-  <script src="js/align.js?v=v0.10.113"></script>
-  <script src="js/shorts.js?v=v0.10.113"></script>
-  <script src="js/lib/pico.js?v=v0.10.113"></script>
-  <script src="js/lib/facefinder.js?v=v0.10.113"></script>
-  <script src="js/podshort.js?v=v0.10.113"></script>
-  <script src="js/main.js?v=v0.10.113"></script>
-  <script src="js/organize.js?v=v0.10.113"></script>
-  <script src="js/safezone.js?v=v0.10.113"></script>
-  <script src="js/studio.js?v=v0.10.113"></script>
-  <script src="js/greenscreen.js?v=v0.10.113"></script>
-  <script src="js/publish.js?v=v0.10.113"></script>
-  <script src="js/hookcheck.js?v=v0.10.113"></script>
-  <script src="js/brandkit.js?v=v0.10.113"></script>
-  <script src="js/broll.js?v=v0.10.113"></script>
+  <script src="js/lib/cep-bridge.js?v=v0.10.114"></script>
+  <script src="js/silence.js?v=v0.10.114"></script>
+  <script src="js/audio.js?v=v0.10.114"></script>
+  <script src="js/captions.js?v=v0.10.114"></script>
+  <script src="js/ass.js?v=v0.10.114"></script>
+  <script src="js/render.js?v=v0.10.114"></script>
+  <script src="js/multicam.js?v=v0.10.114"></script>
+  <script src="js/voices.js?v=v0.10.114"></script>
+  <script src="js/sfx.js?v=v0.10.114"></script>
+  <script src="js/takes.js?v=v0.10.114"></script>
+  <script src="js/smartedit.js?v=v0.10.114"></script>
+  <script src="js/apierr.js?v=v0.10.114"></script>
+  <script src="js/verbatim.js?v=v0.10.114"></script>
+  <script src="js/reframe.js?v=v0.10.114"></script>
+  <script src="js/scriptalign.js?v=v0.10.114"></script>
+  <script src="js/transcript.js?v=v0.10.114"></script>
+  <script src="js/fonts.js?v=v0.10.114"></script>
+  <script src="js/command.js?v=v0.10.114"></script>
+  <script src="js/chapters.js?v=v0.10.114"></script>
+  <script src="js/align.js?v=v0.10.114"></script>
+  <script src="js/shorts.js?v=v0.10.114"></script>
+  <script src="js/lib/pico.js?v=v0.10.114"></script>
+  <script src="js/lib/facefinder.js?v=v0.10.114"></script>
+  <script src="js/podshort.js?v=v0.10.114"></script>
+  <script src="js/main.js?v=v0.10.114"></script>
+  <script src="js/organize.js?v=v0.10.114"></script>
+  <script src="js/safezone.js?v=v0.10.114"></script>
+  <script src="js/studio.js?v=v0.10.114"></script>
+  <script src="js/greenscreen.js?v=v0.10.114"></script>
+  <script src="js/publish.js?v=v0.10.114"></script>
+  <script src="js/hookcheck.js?v=v0.10.114"></script>
+  <script src="js/brandkit.js?v=v0.10.114"></script>
+  <script src="js/broll.js?v=v0.10.114"></script>
 </body>
 </html>

@@ -2118,6 +2118,11 @@ console.log('script alignment (your script\'s words + the transcript\'s timing)'
                 { start: 2, end: 4, text: 'and today we talk about gold funds' }];
   const script = 'Hello everyone, my name is Akshay Uddeshi.\nAnd today we talk about gold funds.';
   const r = S.alignToScript(cues, script);
+  // a real Word file (made by macOS textutil): paragraphs kept, & and tabs decoded
+  const dx = S.docxText(require('fs').readFileSync(path.join(__dirname, 'fixtures', 'script.docx')), require('zlib').inflateRawSync);
+  assert(dx === 'FD Mutual Funds Stocks, ye toh sab jaante hain.\n\nEdelweiss Alternatives & HNIs ka paisa.', 'a Word (.docx) script is read as its own text (' + JSON.stringify(dx) + ')');
+  let notDocx = ''; try { S.docxText(Buffer.from('plain text, not a zip'), require('zlib').inflateRawSync); } catch (e) { notDocx = e.message; }
+  assert(/not a Word/.test(notDocx), 'a file that is not a .docx says so instead of reading garbage');
   assert(r.matched === true, 'a matching script is accepted (rate ' + r.matchRate.toFixed(2) + ')');
   assert(r.cues[0].text === 'Hello everyone, my name is Akshay Uddeshi.',
     'misheard name is corrected INSIDE its own caption: "' + r.cues[0].text + '"');

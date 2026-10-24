@@ -165,5 +165,28 @@
     return { cues: out, matched: true, matchRate: rate, replaced: replaced, scriptWords: sw.length };
   }
 
-  return { norm: norm, scriptWords: scriptWords, matchPairs: matchPairs, alignToScript: alignToScript };
+  /* A Word file (.docx) is a zip: read word/document.xml from it and keep
+     its paragraphs. inflateRaw: zlib.inflateRawSync (Node, in the panel).
+     ponytail: no zip64 / encrypted files — Word never writes those for a script. */
+  function docxText(buf, inflateRaw) {
+    var eocd = -1;
+    for (var i = buf.length - 22; i >= Math.max(0, buf.length - 66000); i--) if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+    if (eocd < 0) throw new Error('This is not a Word (.docx) file.');
+    var n = buf.readUInt16LE(eocd + 10), p = buf.readUInt32LE(eocd + 16);
+    for (var k = 0; k < n; k++) {
+      var nameLen = buf.readUInt16LE(p + 28), name = buf.toString('utf8', p + 46, p + 46 + nameLen);
+      if (name === 'word/document.xml') {
+        var method = buf.readUInt16LE(p + 10), size = buf.readUInt32LE(p + 20), loc = buf.readUInt32LE(p + 42);
+        var start = loc + 30 + buf.readUInt16LE(loc + 26) + buf.readUInt16LE(loc + 28), data = buf.slice(start, start + size);
+        var xml = (method === 8 ? inflateRaw(data) : data).toString('utf8');
+        return xml.replace(/<w:tab\/>/g, ' ').replace(/<\/w:p>/g, '\n').replace(/<[^>]+>/g, '')
+          .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&')
+          .replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+      }
+      p += 46 + nameLen + buf.readUInt16LE(p + 30) + buf.readUInt16LE(p + 32);
+    }
+    throw new Error('No text found in this Word file.');
+  }
+
+  return { norm: norm, scriptWords: scriptWords, matchPairs: matchPairs, alignToScript: alignToScript, docxText: docxText };
 });

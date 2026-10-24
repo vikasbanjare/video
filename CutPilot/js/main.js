@@ -2340,7 +2340,10 @@
     }).then(function () {
       setTranscribing(false);
       // "Transcribe + auto-correct" → run the AI proofread now that words exist.
-      if (state.autoFixAfter) { state.autoFixAfter = false; if (state.transcript) cleanupTranscript(); }
+      // a script in the box is the truth: it fixes the words (no AI guess needed)
+      var scriptNow = ($('script-text') && $('script-text').value) || '';
+      if (state.transcript && CPScript.scriptWords(scriptNow).length) { state.autoFixAfter = false; applyScript(); }
+      else if (state.autoFixAfter) { state.autoFixAfter = false; if (state.transcript) cleanupTranscript(); }
     }, function (e) {
       var wasStopped = trStopped() || (e && e.stopped);
       setTranscribing(false); state.autoFixAfter = false;
@@ -3265,6 +3268,7 @@
     if (btn) { b.textContent = btn; b.classList.remove('hidden'); }
     else b.classList.add('hidden');
     var er = $('tr-tools'); if (er) er.classList.toggle('hidden', !state.transcript);  // export/translate/speaker only when words exist
+    var erM = $('tr-tools-more'); if (erM) erM.classList.toggle('hidden', !state.transcript);
     updateSyncStat();   // transcript changed → refresh the word-timing indicator
     refreshEditWordsButtons();
 
@@ -3629,6 +3633,67 @@
   }
   function maskProfanity(text) { return String(text).replace(_profRe, function (m) { return maskWord(m); }); }
   function censorEnabled() { var c = $('c-censor'); return !!(c && c.checked); }
+
+  /* 📄 a script file as plain text: Word (.docx) read here on Mac and Windows;
+     .doc / .odt / .rtf through macOS's own converter (textutil). */
+  function readScriptFile(p) {
+    var fs = nodeReq('fs'), ext = String(p.split('.').pop() || '').toLowerCase();
+    if (ext === 'docx') return CPScript.docxText(fs.readFileSync(p), nodeReq('zlib').inflateRawSync);
+    if (/^(doc|odt|rtf)$/.test(ext) && process.platform === 'darwin') {
+      try { return nodeReq('child_process').execFileSync('/usr/bin/textutil', ['-convert', 'txt', '-stdout', p], { encoding: 'utf8' }); } catch (eT) {}
+    }
+    if (/^(doc|odt)$/.test(ext)) throw new Error('save it as Word (.docx) or text (.txt), then add it again');
+    var txt = fs.readFileSync(p, 'utf8');
+    if (ext === 'rtf') txt = txt.replace(/\\[a-z]+\d*/g, ' ').replace(/[{}]/g, ' ');
+    return txt;
+  }
+  /* A script is in: match it now if there are words, else after Transcribe. */
+  function scriptLoaded(name, txt) {
+    var n = CPScript.scriptWords(txt).length;
+    if (state.transcript) {
+      if ($('script-status')) $('script-status').textContent = 'Matching ' + name + ' (' + n + ' words) to your audio…';
+      return applyScript();
+    }
+    if ($('script-status')) $('script-status').textContent = '📄 ' + name + ' — ' + n + ' words. Now tap Transcribe: your script fixes every word by itself.';
+  }
+  /* 📄 the script in the box corrects the transcript's words, keeping its timing */
+  function applyScript() {
+      var txt = ($('script-text') && $('script-text').value) || '';
+      if (!txt.trim()) return toast('Paste your script first (or load a script file).', true);
+      var cues;
+      try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
+      if (!cues.length) return toast('Transcribe first — the script needs timing to attach to.', true);
+      var r;
+      try { r = CPScript.alignToScript(cues, txt); } catch (e2) { return toast('Script matching failed: ' + e2.message, true); }
+      if (!r.matched) {
+        if ($('script-status')) $('script-status').textContent =
+          '⚠️ Only ' + Math.round(r.matchRate * 100) + '% of the spoken words appear in this script — it looks like a different recording, so your transcript was left untouched.';
+        return toast('That script doesn\'t match this audio (' + Math.round(r.matchRate * 100) + '% overlap) — transcript left as it was.', true);
+      }
+      try {
+        var fs2 = nodeReq('fs'), pm2 = nodeReq('path'), os2 = nodeReq('os');
+        var outP = pm2.join(os2.tmpdir(), 'cutpilot-script-fixed-' + Date.now() + '.srt');
+        fs2.writeFileSync(outP, CPCaptions.toSRT(r.cues), 'utf8');
+        state.transcript = { label: 'Script-corrected (' + r.cues.length + ' lines)', path: outP, mtime: 1e16 };
+        state.transcriptManual = true;
+        // KEEP the spoken word times, as the manual editor does: unchanged
+        // words keep their real stamps and only corrected words are placed
+        // where the misheard word was. (Dropping them sent every caption back
+        // to timing guessed from the audio while this said "timing kept".)
+        try {
+          if (state.transcriptWords && state.transcriptWords.length) {
+            var rwS = reflowWordTimingFromLines(r.cues, state.transcriptWords, cues);
+            state.transcriptWords = rwS && rwS.length ? rwS : null;
+          }
+        } catch (eRwS) { state.transcriptWords = null; }
+        setTranscriptBar('ok', '✅', 'Script applied — ' + r.replaced + ' words corrected, timing kept', 'Change');
+        refreshMogrtSheetTr(); refreshMogrtEditorTr();
+        if ($('script-status')) $('script-status').textContent =
+          '✅ ' + r.replaced + ' word(s) corrected from your script (' + Math.round(r.matchRate * 100) + '% matched). Timing untouched — open Captions and add them.';
+        toast('✅ Transcript fixed from your script — ' + r.replaced + ' words corrected, every caption keeps its timing.');
+        try { diag('script', 'applied: ' + r.replaced + ' replaced, rate ' + r.matchRate.toFixed(2) + ', script words ' + r.scriptWords); } catch (eD) {}
+      } catch (e3) { toast('Could not save the corrected transcript: ' + e3.message, true); }
+  }
 
   function readSelectedTranscript() {
     if (!state.transcript) throw new Error('No transcript yet — tap "Get one →" for the 1-minute steps.');
@@ -6410,53 +6475,24 @@
     // 📄 SCRIPT FIX — the creator's own script corrects every misheard word
     // while the transcript keeps the timing that makes captions land on voice.
     if ($('btn-script-load')) $('btn-script-load').addEventListener('click', function () {
-      var p = pickFile('Choose your script', ['txt', 'md', 'srt', 'vtt', 'rtf', 'fountain']);
+      var p = pickFile('Choose your script', ['docx', 'doc', 'odt', 'rtf', 'txt', 'md', 'srt', 'vtt', 'fountain']);
       if (!p) return;
-      try {
-        var txt = nodeReq('fs').readFileSync(p, 'utf8');
-        if (/\.rtf$/i.test(p)) txt = txt.replace(/\\[a-z]+\d*/g, ' ').replace(/[{}]/g, ' ');
-        $('script-text').value = txt;
-        if ($('script-status')) $('script-status').textContent = 'Loaded ' + p.split(/[\\/]/).pop() +
-          ' — ' + (CPScript.scriptWords(txt).length) + ' words. Now tap “Fix my transcript with this script”.';
-      } catch (e) { toast('Could not read that file: ' + e.message, true); }
+      var txt;
+      try { txt = readScriptFile(p); } catch (e) { return toast('Could not read that file: ' + e.message, true); }
+      if (!CPScript.scriptWords(txt).length) return toast('That file has no words in it.', true);
+      $('script-text').value = txt;
+      scriptLoaded(p.split(/[\\/]/).pop(), txt);
     });
-    if ($('btn-script-apply')) $('btn-script-apply').addEventListener('click', function () {
-      var txt = ($('script-text') && $('script-text').value) || '';
-      if (!txt.trim()) return toast('Paste your script first (or load a script file).', true);
-      var cues;
-      try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
-      if (!cues.length) return toast('Transcribe first — the script needs timing to attach to.', true);
-      var r;
-      try { r = CPScript.alignToScript(cues, txt); } catch (e2) { return toast('Script matching failed: ' + e2.message, true); }
-      if (!r.matched) {
-        if ($('script-status')) $('script-status').textContent =
-          '⚠️ Only ' + Math.round(r.matchRate * 100) + '% of the spoken words appear in this script — it looks like a different recording, so your transcript was left untouched.';
-        return toast('That script doesn\'t match this audio (' + Math.round(r.matchRate * 100) + '% overlap) — transcript left as it was.', true);
-      }
-      try {
-        var fs2 = nodeReq('fs'), pm2 = nodeReq('path'), os2 = nodeReq('os');
-        var outP = pm2.join(os2.tmpdir(), 'cutpilot-script-fixed-' + Date.now() + '.srt');
-        fs2.writeFileSync(outP, CPCaptions.toSRT(r.cues), 'utf8');
-        state.transcript = { label: 'Script-corrected (' + r.cues.length + ' lines)', path: outP, mtime: 1e16 };
-        state.transcriptManual = true;
-        // KEEP the spoken word times, as the manual editor does: unchanged
-        // words keep their real stamps and only corrected words are placed
-        // where the misheard word was. (Dropping them sent every caption back
-        // to timing guessed from the audio while this said "timing kept".)
-        try {
-          if (state.transcriptWords && state.transcriptWords.length) {
-            var rwS = reflowWordTimingFromLines(r.cues, state.transcriptWords, cues);
-            state.transcriptWords = rwS && rwS.length ? rwS : null;
-          }
-        } catch (eRwS) { state.transcriptWords = null; }
-        setTranscriptBar('ok', '✅', 'Script applied — ' + r.replaced + ' words corrected, timing kept', 'Change');
-        refreshMogrtSheetTr(); refreshMogrtEditorTr();
-        if ($('script-status')) $('script-status').textContent =
-          '✅ ' + r.replaced + ' word(s) corrected from your script (' + Math.round(r.matchRate * 100) + '% matched). Timing untouched — open Captions and add them.';
-        toast('✅ Transcript fixed from your script — ' + r.replaced + ' words corrected, every caption keeps its timing.');
-        try { diag('script', 'applied: ' + r.replaced + ' replaced, rate ' + r.matchRate.toFixed(2) + ', script words ' + r.scriptWords); } catch (eD) {}
-      } catch (e3) { toast('Could not save the corrected transcript: ' + e3.message, true); }
+    if ($('btn-script-paste')) $('btn-script-paste').addEventListener('click', function () {
+      var box = $('script-paste'); if (!box) return;
+      box.classList.toggle('hidden');
+      if (!box.classList.contains('hidden') && $('script-text')) $('script-text').focus();
     });
+    if ($('script-text')) $('script-text').addEventListener('change', function () {
+      var t = this.value || '';
+      if (CPScript.scriptWords(t).length) scriptLoaded('your pasted script', t);
+    });
+    if ($('btn-script-apply')) $('btn-script-apply').addEventListener('click', function () { applyScript(); });
     // 🧹 clear every caption track Pulse ever added (debug builds stacked many)
     if ($('btn-clean-caps')) $('btn-clean-caps').addEventListener('click', function () {
       if (!CPBridge.isCEP()) return toast('This needs Premiere.', true);
