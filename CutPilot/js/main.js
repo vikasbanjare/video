@@ -8555,7 +8555,7 @@
     var boxHex = ($('c-box') && $('c-box').value) || '#000000';
     setWhy('c-boxgloss', (boxOn && !cchk('c-boxgrad') && CPCaptions.contrastRatio(boxHex, '#FFFFFF') < 1.3)
       ? 'A white sheen cannot show on a white box — pick a darker Box colour first' : null);
-    setWhy('c-linegap', readLines() === 1 ? 'Lines on screen is Single — there is no second line to space' : null, WHY_FIX.lines2);
+    setWhy('c-linegap', readLines() === 1 ? 'Lines per caption is 1 line — there is no second line to space' : null, WHY_FIX.lines2);
     setWhy('c-wordspace', (!wordHl && !build && wpc === 1) ? 'One word per caption — there is no gap to space' : null, WHY_FIX.words2);
     // a face that only HAS capitals draws 'a' exactly like 'A', so neither
     // ALL CAPS nor the text case can change a single pixel
@@ -15026,7 +15026,8 @@
       // the same comp fit, line breaks and row as the editable insert
       // (applyEditableStyle), so the preview is what the captions will be
       var pg = premGeometry(bb.path);
-      var fitP = premFitEditable([{ start: 0, end: 4, text: sample }], bb.path, state.env, sizeScale, textStyle && textStyle.font);
+      // the preview follows Lines per caption too (it ignored it, so the choice looked dead)
+      var fitP = premFitEditable([{ start: 0, end: 4, text: sample }], bb.path, state.env, sizeScale, textStyle && textStyle.font, preset.maxLines);
       var pvText = (fitP.cues[0] && fitP.cues[0].text) || sample;
       if (isPulseEngine(bb.path)) pvText = pulseImageLines([{ text: pvText }], preset, state.env)[0].text;
       var pvPos = (params && params._posYPct != null)
@@ -15387,7 +15388,7 @@
       }
       toast('✅ Added ' + r.inserted + ' EDITABLE caption clips, styled like “' + preset.name + '” — each is its ' +
             'OWN clip on the timeline, timed to your audio. Edit any in Window → Essential Graphics.' +
-            (reuseTrack ? ' (Replaced the previous set.)' : ''));
+            (reuseTrack && !r.replaceGuard ? ' (Replaced the previous set.)' : ''));
     }).catch(function (e) {
       capProgress(null);
       try { diag('editable', 'FAILED before placement: ' + (e && e.message)); } catch (eTr2) {}

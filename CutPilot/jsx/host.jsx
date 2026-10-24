@@ -3741,7 +3741,9 @@ function CP_copyStyleSelectedToTrack() {
    file extension, lowercase, strip non-alphanumerics. */
 function CP_sigNorm(s) {
   s = String(s == null ? '' : s).toLowerCase().replace(/\.[a-z0-9]{2,5}$/, '');
-  return s.replace(/[^a-z0-9]/g, '');
+  // a revision suffix (Pulse_Caption_r6.mogrt) is not in the clip's name
+  // ("Pulse Caption"), so our own set read as foreign and was never replaced
+  return s.replace(/[_ -]r\d+$/, '').replace(/[^a-z0-9]/g, '');
 }
 
 /* TRUE only when every clip on the track is one of OUR caption graphics (its

@@ -2614,6 +2614,15 @@ console.log('host.jsx — Premium captions hold 0.5 s, never 60 s; title templat
   const r3 = call(host, 'CP_clearCaptionTrack', { track: 9, names: ['flux_halo2_r3'] });
   assert(r3.ok && r3.cleared === 0 && r3.guard === 'out-of-range', 'a remembered track that no longer exists is refused');
 }
+{
+  // Premiere names a clip by the template's comp ("Pulse Caption"), not its
+  // revised file name (Pulse_Caption_r6.mogrt) — the editable set must still read as ours
+  const w = makeWorld({ vTracks: 2, aTracks: 1 });
+  w.model.addClip('vTracks', 1, 1, 2, { name: 'Pulse Caption' });
+  const host = loadHost(w);
+  const r = call(host, 'CP_clearCaptionTrack', { track: 2, names: ['Pulse_Caption_r6.mogrt'] });
+  assert(r.ok && r.cleared === 1, 'an editable set placed from Pulse_Caption_r6 is recognised and replaced (' + JSON.stringify(r) + ')');
+}
 
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
