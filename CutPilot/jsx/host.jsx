@@ -2364,11 +2364,13 @@ function CP_greenScreenClips() {
         var path = ''; try { path = c.projectItem.getMediaPath(); } catch (eP) {}
         if (!path) continue;
         var dur = c.end.seconds - c.start.seconds;
-        out.push({ track: t, start: c.start.seconds, path: path, at: c.inPoint.seconds + Math.min(1, dur / 2), name: String(c.name) });
+        out.push({ track: t, start: c.start.seconds, end: c.end.seconds, path: path, name: String(c.name),
+                   inSec: c.inPoint.seconds, outSec: c.outPoint.seconds, at: c.inPoint.seconds + Math.min(1, dur / 2) });
       }
     }
     if (!out.length) return CP_fail('Select your green-screen clip(s) on the timeline, then try again.');
-    return CP_ok({ clips: out });
+    var pdir = ''; try { pdir = String(app.project.path).replace(/[\\\/][^\\\/]*$/, ''); } catch (eD) {}
+    return CP_ok({ clips: out, projectDir: pdir });
   } catch (e) { return CP_fail(e.message); }
 }
 
@@ -2406,6 +2408,33 @@ function CP_applyUltraKey(argsJson) {
       if (had) recolored++; else keyed++;
     }
     return CP_ok({ keyed: keyed, recolored: recolored, failed: failed });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/* 🟩 Pro key: the keyed copy (a .mov with transparency) goes on a fresh top
+   track exactly over the clip it was made from, and that clip is switched
+   off (not deleted) so the key shows over whatever is below. Switch the
+   original back on in the timeline to compare.
+   argsJson: { path, track, start, end } — the original clip's track/start/end. */
+function CP_placeProKey(argsJson) {
+  try {
+    var a = JSON.parse(argsJson), seq = CP_activeSequence(), r = app.project.rootItem, bin = null, i;
+    for (i = 0; i < r.children.numItems; i++) if (String(r.children[i].name) === 'Pulse keys' && r.children[i].type === ProjectItemType.BIN) bin = r.children[i];
+    if (!bin) bin = r.createBin('Pulse keys');
+    app.project.importFiles([a.path], true, bin, false);
+    var item = null, base = String(a.path).split(/[\\\/]/).pop();
+    for (i = 0; i < bin.children.numItems; i++) if (String(bin.children[i].name) === base) item = bin.children[i];
+    if (!item) return CP_fail('Premiere could not import the keyed clip.');
+    var vt = CP_addTopVideoTrack();
+    if (vt < 0) return CP_fail('Could not add a video track for the keyed clip.');
+    seq = CP_activeSequence();
+    var tr = seq.videoTracks[vt];
+    tr.overwriteClip(item, a.start);
+    var cl = CP_clipAtStart(tr, a.start);
+    if (cl) { try { var e = new Time(); e.seconds = a.end; cl.end = e; } catch (eEnd) {} }
+    var orig = CP_clipAtStart(seq.videoTracks[a.track], a.start);
+    if (orig) { try { orig.disabled = true; } catch (eDis) {} }
+    return CP_ok({ track: vt + 1, placed: !!cl, hidden: !!(orig && orig.disabled) });
   } catch (e) { return CP_fail(e.message); }
 }
 

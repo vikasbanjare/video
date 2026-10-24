@@ -57,14 +57,16 @@
     kit.capProgress('Reading your backdrop…');
     var noScreen = [];
     CPBridge.callHost('CP_greenScreenClips').then(function (r) {
-      // one sample per media file (the same take cut ten times is one backdrop)
-      var byPath = {};
+      // each clip sampled where it plays (one file can hold a green and a blue
+      // shot); cuts of the same second of the same file share one sample
+      var seen = {};
       return r.clips.reduce(function (p, c, n) {
+        var key = c.path + '|' + Math.round(c.at);
         return p.then(function (acc) {
-          if (byPath[c.path] !== undefined) { if (byPath[c.path]) acc.push(Object.assign({}, c, { color: byPath[c.path] })); return acc; }
+          if (seen[key] !== undefined) { if (seen[key]) acc.push(Object.assign({}, c, { color: seen[key] })); return acc; }
           return sampleFrame(kit, ff, c, n).then(function (buf) {
             var k = buf && pickKeyColor(buf);
-            byPath[c.path] = k ? k.hex : null;
+            seen[key] = k ? k.hex : null;
             if (k) acc.push(Object.assign({}, c, { color: k.hex })); else noScreen.push(c.name);
             return acc;
           });
@@ -74,12 +76,12 @@
       if (!clips.length) throw new Error('No green or blue backdrop found in the selected clip' + (noScreen.length > 1 ? 's' : '') + '.');
       kit.capProgress('Keying ' + clips.length + ' clip' + (clips.length === 1 ? '' : 's') + '…');
       return CPBridge.callHost('CP_applyUltraKey', { clips: clips.map(function (c) { return { track: c.track, start: c.start, color: c.color }; }) })
-        .then(function (r) { return { r: r, color: clips[0].color }; });
+        .then(function (r) { return { r: r, colors: clips.map(function (c) { return c.color; }).filter(function (h, i, a) { return a.indexOf(h) === i; }) }; });
     }).then(function (o) {
       kit.capProgress(null);
       var r = o.r, done = r.keyed + r.recolored;
       if (!done) throw new Error('Premiere would not take the key on the selected clip(s).');
-      var msg = '🟩 Keyed ' + done + ' clip' + (done === 1 ? '' : 's') + ' with Ultra Key (backdrop ' + o.color + ').' +
+      var msg = '🟩 Keyed ' + done + ' clip' + (done === 1 ? '' : 's') + ' with Ultra Key (' + (o.colors.length === 1 ? 'backdrop ' + o.colors[0] : o.colors.length + ' backdrop colours') + ').' +
         (r.recolored ? ' ' + r.recolored + ' already keyed got the new colour.' : '') +
         (noScreen.length ? ' No backdrop found in: ' + noScreen.join(', ') + '.' : '') +
         (r.failed ? ' ' + r.failed + ' could not be keyed.' : '') +
@@ -90,6 +92,207 @@
       var m = (e && e.message) || String(e);
       say('⚠️ ' + m); kit.toast(m, true);
     }).then(function () { busy = false; if (btn) btn.disabled = false; });
+  }
+
+  /* ---- 🟩 Pro key: CorridorKey 2.0 (Corridor Digital) ---------------------
+     For what Ultra Key cannot do — uneven screens, hair, spill on white
+     clothes. Pulse never ships CorridorKey (its licence forbids it): the
+     owner installs it from Corridor's own GitHub and Hugging Face, here, once
+     (~5 GB), and Pulse runs that install. On Apple Silicon through Pulse's
+     launcher (py/ck_mac.py: full precision on the Mac's GPU); on Windows
+     with an NVIDIA card, CorridorKey's own infer.py.
+     Measured on a 1080×1920 presenter (M3 Pro): the screen left behind 0%
+     (Ultra Key 15.9%), white trousers solid. Recipe that keeps it to ~1 s a
+     frame: a ~0.5 MP copy goes in (normal mode — low-VRAM mode was 5× slower,
+     full size swapped), the matte is scaled back up, and the colour is the
+     sharp camera image inside the person with CorridorKey's own backdrop-free
+     colour on the edge band (no green halo). */
+  var CK_REPO = 'https://github.com/nikopueringer/CorridorKey2.0/archive/refs/heads/main.zip';
+  var CK_UTILS3D = 'https://github.com/EasternJournalist/utils3d/archive/83bfa5bda008803f6521ce9547f94023b8afeddd.zip';
+  function ckPaths(kit) {
+    var p = kit.nodeReq('path'), os = kit.nodeReq('os'), win = process.platform === 'win32';
+    var dir = p.join(os.homedir(), '.cutpilot', 'corridorkey');
+    return { p: p, win: win, dir: dir, mac: process.platform === 'darwin',
+      py: win ? p.join(dir, 'venv', 'Scripts', 'python.exe') : p.join(dir, 'venv', 'bin', 'python'),
+      weights: p.join(dir, 'weights', 'corridorkey_v2.safetensors'),
+      launcher: p.join(CPBridge.getExtensionPath(), 'py', 'ck_mac.py') };
+  }
+  /* '' when this computer can run it, else the plain reason it cannot */
+  function ckUnsupported() {
+    if (process.platform === 'darwin') return process.arch === 'arm64' ? '' : 'Pro key needs a Mac with Apple Silicon (M1 or newer).';
+    if (process.platform === 'win32') {
+      try { K().nodeReq('child_process').execFileSync('nvidia-smi', ['-L'], { timeout: 5000 }); return ''; }
+      catch (e) { return 'Pro key needs an NVIDIA graphics card (RTX 30-series or newer) on Windows.'; }
+    }
+    return 'Pro key is not available on this computer.';
+  }
+  function ckReady() {
+    var kit = K(); if (!kit) return false;
+    try { var fs = kit.nodeReq('fs'), P = ckPaths(kit); return fs.existsSync(P.py) && fs.statSync(P.weights).size > 1e8; } catch (e) { return false; }
+  }
+  function spawnSay(bin, args, opts, what, onLine) {
+    var cp = K().nodeReq('child_process');
+    return new Promise(function (res, rej) {
+      var pr = cp.spawn(bin, args, opts || {}), err = '';
+      function feed(d) { var t = String(d); err = (err + t).slice(-8000); if (onLine) t.split(/[\r\n]+/).forEach(function (l) { if (l) onLine(l); }); }
+      pr.stdout.on('data', feed); pr.stderr.on('data', feed);
+      pr.on('error', function (e) { rej(new Error(what + ': ' + e.message)); });
+      pr.on('close', function (c) { c === 0 ? res() : rej(new Error(what + ' (' + (err.trim().split('\n').slice(-1)[0] || 'code ' + c) + ')')); });
+      _ckProc = pr;
+    });
+  }
+  var _ckSetup = null, _ckProc = null, _ckStop = false;
+  function ckSetup(say) {
+    if (_ckSetup) return _ckSetup;
+    var kit = K(), fs = kit.nodeReq('fs'), P = ckPaths(kit), uv;
+    var env = {}, k; for (k in process.env) env[k] = process.env[k];
+    env.UV_PYTHON_INSTALL_DIR = P.p.join(P.dir, '..', 'restore', 'python'); env.UV_CACHE_DIR = P.p.join(P.dir, '..', 'uvcache');
+    _ckSetup = CPStudioRestore.ensureUv(function () { say('⬇️ Pro key 1/5: the Python installer…'); }).then(function (u) {
+      uv = u;
+      if (fs.existsSync(P.p.join(P.dir, 'infer.py'))) return;
+      say('⬇️ Pro key 2/5: CorridorKey from Corridor Digital\'s GitHub…');
+      var zip = P.dir + '.zip', parent = P.p.dirname(P.dir);
+      return kit.resumableDownload(CK_REPO, zip, { what: 'CorridorKey', minBytes: 1e4 })
+        .then(function () { return spawnSay('tar', ['-xf', zip, '-C', parent], null, 'unpacking CorridorKey'); })
+        .then(function () { fs.renameSync(P.p.join(parent, 'CorridorKey2.0-main'), P.dir); try { fs.unlinkSync(zip); } catch (eZ) {} });
+    }).then(function () {
+      if (fs.existsSync(P.py)) return;
+      say('⬇️ Pro key 3/5: a private Python for it…');
+      return spawnSay(uv, ['venv', '--python', '3.11', P.p.join(P.dir, 'venv')], { env: env }, 'making its Python');
+    }).then(function () {
+      say('⬇️ Pro key 4/5: its AI engine (PyTorch, about 1 GB)…');
+      var torch = ['pip', 'install', '--python', P.py, 'torch==2.9.1', 'torchvision==0.24.1'];
+      if (P.win) torch.push('--index-url', 'https://download.pytorch.org/whl/cu128');
+      // utils3d from its archive, not git (git is not on every computer)
+      var req = fs.readFileSync(P.p.join(P.dir, 'requirements.txt'), 'utf8').replace(/^utils3d @ git\+.*$/m, 'utils3d @ ' + CK_UTILS3D);
+      fs.writeFileSync(P.p.join(P.dir, 'pulse-requirements.txt'), req);
+      return spawnSay(uv, torch, { env: env }, 'installing PyTorch')
+        .then(function () { return spawnSay(uv, ['pip', 'install', '--python', P.py, '-r', P.p.join(P.dir, 'pulse-requirements.txt')], { env: env }, 'installing its packages'); });
+    }).then(function () {
+      if (ckReady()) return;
+      say('⬇️ Pro key 5/5: the models from Hugging Face — about 5 GB, 10–30 minutes…');
+      return spawnSay(P.py, [P.p.join(P.dir, 'scripts', 'download_weights.py')], { cwd: P.dir, env: env }, 'downloading the models',
+        function (l) { var m = /\[([a-z-]+)\]/i.exec(l); if (m) say('⬇️ Pro key 5/5: the models — ' + m[1] + '…'); });
+    }).then(function () {
+      _ckSetup = null;
+      if (!ckReady()) throw new Error('Pro key did not finish setting up — tap Set up again (it carries on where it stopped).');
+    }, function (e) { _ckSetup = null; throw e; });
+    return _ckSetup;
+  }
+
+  // width × height of a video (from ffmpeg's own description of it)
+  function probeSize(kit, ff, file) {
+    return kit.runFfmpeg(ff, ['-hide_banner', '-i', file], 30000).then(function (r) {
+      var m = /Video:.*?(\d{2,5})x(\d{2,5})/.exec((r && (r.stderr || '')) || '');
+      return m ? { w: +m[1], h: +m[2] } : null;
+    });
+  }
+  function even(n) { return Math.max(2, Math.round(n / 2) * 2); }
+
+  /* One clip: a small copy → CorridorKey → the full-size keyed .mov. */
+  function ckClip(kit, ff, c, outDir, n, say) {
+    var fs = kit.nodeReq('fs'), P = ckPaths(kit), os = kit.nodeReq('os');
+    var stamp = Date.now() + '-' + n, work = P.p.join(os.tmpdir(), 'pulse-ck-' + stamp);
+    var small = P.p.join(work, 'in.mp4'), dur = Math.max(0.1, c.outSec - c.inSec), size;
+    fs.mkdirSync(work, { recursive: true });
+    return probeSize(kit, ff, c.path).then(function (s) {
+      if (!s) throw new Error('could not read the size of ' + c.name);
+      size = s;
+      // ponytail: ~0.52 MP in — the most an M3 Pro (36 GB) ran without swapping; bigger GPUs could take more
+      var f = Math.min(0.5, Math.sqrt(520000 / (s.w * s.h)));
+      return kit.runFfmpeg(ff, ['-y', '-ss', String(c.inSec), '-i', c.path, '-t', String(dur), '-an', '-vf',
+        'scale=' + even(s.w * f) + ':' + even(s.h * f) + ':flags=lanczos', '-c:v', 'libx264', '-crf', '10', '-pix_fmt', 'yuv420p', small], 30 * 60000);
+    }).then(function () {
+      if (_ckStop) throw new Error('stopped');
+      var env = {}, k; for (k in process.env) env[k] = process.env[k];
+      env.CK_HOME = P.dir; env.PYTHONUNBUFFERED = '1';
+      var args = [P.mac ? P.launcher : P.p.join(P.dir, 'infer.py'), '--input', small, '--output_dir', work,
+        '--outputs', 'alpha', 'fg', '--ffmpeg_bin', ff];
+      if (P.mac) args.push('--hann_chunk', '8', '--hann_stride', '4');   // normal mode, small windows: fits 36 GB, ~1 s a frame
+      var total = 0, log = [];
+      return spawnSay(P.py, args, { cwd: P.dir, env: env }, 'CorridorKey', function (l) {
+        log.push(l); if (log.length > 400) log.shift();
+        var m = /probed (\d+) frames/.exec(l); if (m) total = +m[1];
+        var w = /window (\d+)\/(\d+)/.exec(l);
+        if (w) say('Pro key: ' + c.name + ' — ' + Math.round(100 * w[1] / w[2]) + '%' + (total ? ' of ' + total + ' frames' : '') + '…');
+      }).then(function () {
+        // a run that wrote empty videos must never become an empty key on the timeline
+        var a = P.p.join(work, 'in_alpha.mp4'), sz = 0;
+        try { sz = fs.statSync(a).size; } catch (eS) {}
+        if (sz < 10000) {
+          try { fs.writeFileSync(P.p.join(work, 'corridorkey.log'), log.join('\n')); } catch (eL) {}
+          throw new Error('CorridorKey made no matte for ' + c.name + ' (log: ' + P.p.join(work, 'corridorkey.log') + ')');
+        }
+      });
+    }).then(function () {
+      if (_ckStop) throw new Error('stopped');
+      say('Pro key: ' + c.name + ' — putting the full-size key together…');
+      var alpha = P.p.join(work, 'in_alpha.mp4'), fg = P.p.join(work, 'in_fg.mp4');
+      var out = P.p.join(outDir, String(c.name).replace(/\.[^.]+$/, '').replace(/[^\w\- ]+/g, '_') + '-key-' + stamp + '.mov');
+      var W = size.w, H = size.h;
+      // colour: the sharp camera image (green spill held down) inside the person,
+      // CorridorKey's backdrop-free colour on the edge band; matte scaled back up
+      var fc = '[0:v]format=gbrp,geq=r=\'r(X,Y)\':g=\'min(g(X,Y),max(r(X,Y),b(X,Y)))\':b=\'b(X,Y)\'[src];' +
+        '[1:v]scale=' + W + ':' + H + ':flags=lanczos,format=gbrp[fg];' +
+        '[2:v]scale=' + W + ':' + H + ':flags=lanczos,format=gray,split[a][a2];' +
+        '[a2]lut=y=\'if(gt(val,250),255,0)\',erosion,erosion,gblur=sigma=2,format=gbrp[solid];' +
+        '[fg][src][solid]maskedmerge,format=gbrp[col];[col][a]alphamerge,format=yuva444p10le[v]';
+      return kit.runFfmpeg(ff, ['-y', '-ss', String(c.inSec), '-i', c.path, '-i', fg, '-i', alpha, '-t', String(dur),
+        '-filter_complex', fc, '-map', '[v]', '-c:v', 'prores_ks', '-profile:v', '4', '-vendor', 'apl0', out], 6 * 60 * 60000)
+        .then(function (r) {
+          try { fs.rmSync(work, { recursive: true, force: true }); } catch (eR) {}
+          if (!fs.existsSync(out) || fs.statSync(out).size < 1000) throw new Error('could not write the keyed clip (' + String((r && r.stderr) || '').trim().split('\n').slice(-1)[0] + ')');
+          return out;
+        });
+    });
+  }
+
+  function runPro() {
+    var kit = K(); if (!kit || busy) return;
+    var why = ckUnsupported(); if (why) return kit.toast(why, true);
+    if (!ckReady()) return showSetup(true);
+    var ff = kit.resolveFfmpeg(); if (!ff) return kit.toast('Pulse\'s video engine (ffmpeg) is missing — reinstall Pulse.', true);
+    busy = true; _ckStop = false;
+    var btn = $('btn-pro-key'); if (btn) btn.textContent = 'Stop';
+    var done = 0, info;
+    CPBridge.callHost('CP_greenScreenClips').then(function (r) {
+      info = r;
+      var fs = kit.nodeReq('fs'), P = ckPaths(kit), os = kit.nodeReq('os');
+      var outDir = P.p.join(r.projectDir || P.p.join(os.homedir(), 'Movies'), 'Pulse keys');
+      fs.mkdirSync(outDir, { recursive: true });
+      var secs = r.clips.reduce(function (t, c) { return t + (c.outSec - c.inSec); }, 0);
+      say('Pro key: ' + r.clips.length + ' clip' + (r.clips.length === 1 ? '' : 's') + ', ' + Math.round(secs) + ' s of video — roughly ' +
+          Math.max(1, Math.round(secs * 30 / 60 + r.clips.length)) + ' min on this computer. You can keep editing.');
+      return r.clips.reduce(function (p, c, n) {
+        return p.then(function () {
+          return ckClip(kit, ff, c, outDir, n, say).then(function (file) {
+            return CPBridge.callHost('CP_placeProKey', { path: file, track: c.track, start: c.start, end: c.end });
+          }).then(function () { done++; });
+        });
+      }, Promise.resolve());
+    }).then(function () {
+      var msg = '🟩 Pro key done: ' + done + ' clip' + (done === 1 ? '' : 's') + ' keyed by CorridorKey, on a new track above; the originals are switched off (not deleted). Put your background on a track below.';
+      say(msg); kit.toast(msg);
+    }).catch(function (e) {
+      var m = (e && e.message) || String(e);
+      if (_ckStop || /stopped/.test(m)) m = 'Pro key stopped' + (done ? ' after ' + done + ' clip' + (done === 1 ? '' : 's') : '') + '.';
+      say('⚠️ ' + m); kit.toast(m, !_ckStop);
+    }).then(function () { busy = false; _ckProc = null; if (btn) btn.textContent = 'Pro key — best edges'; });
+  }
+  function stopPro() { _ckStop = true; try { if (_ckProc) _ckProc.kill(); } catch (e) {} }
+
+  function showSetup(ask) {
+    var kit = K(), row = $('gs-pro-setup'); if (row) row.classList.toggle('hidden', ckReady());
+    if (!ask) return;
+    kit.confirm('Pro key uses CorridorKey 2.0 by Corridor Digital — the best green-screen keyer there is, free for most uses under its own licence (CC BY-NC-SA with Corridor\'s terms).\n\n' +
+      '• Companies with over US$20 million yearly revenue need a paid seat for each user (corridorkey.com).\n' +
+      '• Pulse downloads it from Corridor\'s GitHub and Hugging Face onto this computer: about 6 GB, once.\n\nAgree and set it up?', 'Agree & set up', function (yes) {
+      if (!yes) return;
+      var b = $('btn-pro-setup'); if (b) b.disabled = true;
+      ckSetup(function (m) { say(m); kit.capProgress(m, 60000); }).then(function () {
+        kit.capProgress(null); say('✅ Pro key is set up. Select your clips and tap Pro key.'); showSetup(false);
+      }, function (e) { kit.capProgress(null); say('⚠️ ' + e.message); kit.toast(e.message, true); }).then(function () { if (b) b.disabled = false; });
+    });
   }
 
   /* Open the card from anywhere (Home's tile, ⌘K), like Studio sound's. */
@@ -104,9 +307,12 @@
 
   function wire() {
     if ($('btn-green-screen')) $('btn-green-screen').addEventListener('click', run);
+    if ($('btn-pro-key')) $('btn-pro-key').addEventListener('click', function () { if (this.textContent === 'Stop') stopPro(); else runPro(); });
+    if ($('btn-pro-setup')) $('btn-pro-setup').addEventListener('click', function () { showSetup(true); });
+    showSetup(false);
     if ($('home-greenscreen')) $('home-greenscreen').addEventListener('click', function () { setTimeout(show, 0); });
   }
-  window.CPGreenScreen = { pickKeyColor: pickKeyColor, run: run, show: show };
+  window.CPGreenScreen = { pickKeyColor: pickKeyColor, run: run, show: show, runPro: runPro, ckReady: ckReady, ckSetup: ckSetup };
   if (typeof document !== 'undefined') {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire); else wire();
   }

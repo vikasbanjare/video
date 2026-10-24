@@ -1074,9 +1074,14 @@
     <div class="card" id="gs-card">
       <div class="step-head"><span class="step-title">Green screen</span>
         <button class="info" type="button" data-info="gs-info" aria-label="What it does">ⓘ</button></div>
-      <p class="hint">Select your green or blue screen clips, then tap once.</p>
+      <p class="hint">Select your green or blue screen clips, then pick a key.</p>
       <div class="info-pop hidden" id="gs-info">Pulse reads a frame of each selected clip, finds the backdrop colour, and puts Premiere's own Ultra Key on the clip with that colour. It plays live and stays editable in Effect Controls → Ultra Key; nothing is rendered or uploaded. Put your new background on the track below. Tap again after changing a clip to sample it fresh.</div>
-      <button id="btn-green-screen" class="hero-btn" type="button">Remove the green screen</button>
+      <button id="btn-green-screen" class="hero-btn" type="button">Quick key — instant</button>
+      <button id="btn-pro-key" class="hero-btn alt" type="button" style="margin-top:6px">Pro key — best edges</button>
+      <p class="hint" style="margin:4px 0 0"><b>Quick</b>: Premiere's Ultra Key, live — for evenly lit screens. <b>Pro</b>: AI (CorridorKey) for uneven screens, hair and white clothes — about a second per frame.</p>
+      <div class="row tight hidden" id="gs-pro-setup">
+        <button type="button" class="chip-btn" id="btn-pro-setup">⬇️ Set up Pro key (one time, about 6 GB)</button>
+      </div>
       <p class="hint hidden" id="gs-result" style="margin-top:6px"></p>
     </div>
     <!-- 🎞 B-roll on keywords (js/broll.js) -->

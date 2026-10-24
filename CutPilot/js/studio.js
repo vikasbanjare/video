@@ -387,6 +387,28 @@
         fs.statSync(P.p.join(P.model, RS_FILES[2][0])).size >= RS_FILES[2][1];
     } catch (e) { return false; }
   }
+  /* uv (Astral's Python installer) in ~/.cutpilot/restore/uv — shared by
+     Studio restore and 🟩 Pro key. Resolves to its path. */
+  var _uv = null;
+  function ensureUv(onStart) {
+    var kit = K(), fs = kit.nodeReq('fs'), P = rsPaths(kit), cp = kit.nodeReq('child_process');
+    if (fs.existsSync(P.uv)) return Promise.resolve(P.uv);
+    if (_uv) return _uv;
+    if (onStart) onStart();
+    try { fs.mkdirSync(P.p.join(P.dir, 'uv'), { recursive: true }); } catch (e0) {}
+    var arch = process.arch === 'arm64' ? 'aarch64' : 'x86_64';
+    var uvName = P.win ? 'uv-x86_64-pc-windows-msvc.zip' : 'uv-' + arch + '-apple-darwin.tar.gz';
+    var uvArc = P.p.join(P.dir, uvName);
+    _uv = kit.resumableDownload('https://github.com/astral-sh/uv/releases/latest/download/' + uvName, uvArc, { what: 'the Python installer', minBytes: 1e6 })
+      .then(function () {
+        return new Promise(function (res, rej) {
+          cp.execFile('tar', ['-xf', uvArc, '-C', P.p.join(P.dir, 'uv'), '--strip-components', P.win ? '0' : '1'], function (e) { e ? rej(new Error('unpacking the installer: ' + e.message)) : res(); });
+        });
+      })
+      .then(function () { try { fs.unlinkSync(uvArc); } catch (eU) {} _uv = null; if (!fs.existsSync(P.uv)) throw new Error('the installer was not in its download'); return P.uv; },
+            function (e) { _uv = null; throw e; });
+    return _uv;
+  }
   var _rsSetup = null;
   function rsSetup(say) {
     if (_rsSetup) return _rsSetup;
@@ -402,16 +424,7 @@
         pr.on('close', function (c) { c === 0 ? res() : rej(new Error(what + ' (' + (String(err).trim().split('\n').slice(-1)[0] || 'code ' + c) + ')')); });
       });
     }
-    try { fs.mkdirSync(P.p.join(P.dir, 'uv'), { recursive: true }); } catch (e0) {}
-    var arch = process.arch === 'arm64' ? 'aarch64' : 'x86_64';
-    var uvName = P.win ? 'uv-x86_64-pc-windows-msvc.zip' : 'uv-' + arch + '-apple-darwin.tar.gz';
-    var uvArc = P.p.join(P.dir, uvName);
-    _rsSetup = (fs.existsSync(P.uv) ? Promise.resolve() : (function () {
-      say('⬇️ Studio restore 1/4: getting the installer…');
-      return kit.resumableDownload('https://github.com/astral-sh/uv/releases/latest/download/' + uvName, uvArc, { what: 'the Studio restore installer', minBytes: 1e6 })
-        .then(function () { return sh('tar', ['-xf', uvArc, '-C', P.p.join(P.dir, 'uv'), '--strip-components', P.win ? '0' : '1'], 'unpacking the installer'); })
-        .then(function () { try { fs.unlinkSync(uvArc); } catch (eU) {} if (!fs.existsSync(P.uv)) throw new Error('the installer was not in its download'); });
-    })()).then(function () {
+    _rsSetup = ensureUv(function () { say('⬇️ Studio restore 1/4: getting the installer…'); }).then(function () {
       if (fs.existsSync(P.py)) return;
       say('⬇️ Studio restore 2/4: a private Python for it (one time)…');
       return sh(P.uv, ['venv', '--python', '3.11', P.p.join(P.dir, 'venv')], 'making its Python');
@@ -446,7 +459,7 @@
       return (!r.error && r.code === 0 && fs.existsSync(outWav) && fs.statSync(outWav).size > 1000) ? outWav : null;
     });
   }
-  window.CPStudioRestore = { ready: rsReady, setup: rsSetup, run: rsRun, PKGS: RS_PKGS };
+  window.CPStudioRestore = { ready: rsReady, setup: rsSetup, run: rsRun, PKGS: RS_PKGS, ensureUv: ensureUv };
 
   /* Open the card from anywhere (Home's tile, ⌘K): the Clean up page, scrolled
      to it, lit for a moment — it sits below the silence and retake tools. */

@@ -21331,7 +21331,7 @@
   /* The panel's helpers for the tools that live in their own files (studio
      sound, publish kit, brand kit…), so those never reach into main.js. */
   window.CPKit = {
-    toast: toast, nodeReq: nodeReq, capProgress: capProgress,
+    toast: toast, nodeReq: nodeReq, capProgress: capProgress, confirm: confirmInline,
     resolveFfmpeg: resolveFfmpeg, runFfmpeg: runFfmpeg, resolveDeepFilter: resolveDeepFilter, resumableDownload: resumableDownload,
     aiChat: aiChatRetry, readTranscript: readSelectedTranscript,
     settings: function () { return settings; }, saveSettings: saveSettings,
