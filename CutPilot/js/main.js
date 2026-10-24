@@ -15951,7 +15951,7 @@
              sources: sources.map(function (s) { return { name: s.item.name, track: 'A' + (s.track.index + 1), mediaPath: s.mediaPath, nodeId: s.item.nodeId,
                                                            seqStart: s.seqStart, seqEnd: s.seqEnd, inPoint: s.inPoint, outPoint: s.item.outPoint,
                                                            speed: s.speed, unreadable: s.unreadable }; }),
-             tune: tune, heard: h };
+             tune: tune, heard: h, grid: grid };
   }
 
   /*
@@ -16326,6 +16326,7 @@
       function takesOn(words, edges) {
         // keep:'best' — completeness + per-word confidence + recency picks the
         // take that actually got finished cleanly, not blindly the last one.
+        words = heardWords(words, plan);
         var tk = CPTakes.findRepeatedTakes(words, { minRun: tp.minrun, sim: tp.sim / 100, keep: 'best', people: takesPeople(words) });
         var out = [];
         tk.deletes.forEach(function (d) {
@@ -16447,9 +16448,9 @@
       }
     }).then(function (r) {
       if (!r || r.pending) return;   // transcription kicked off; the clean re-runs itself when words land
-      var words = r.vWords || state.transcriptWords;
+      var words = heardWords(r.vWords || state.transcriptWords, plan);
       // a spoken word is never cut to remove a pause (ASR timing drift allowed for)
-      var sil = CPSilence.protectCutsFromWords(r.sil, words, { minCut: tune.minCut });
+      var sil = CPSilence.protectCutsFromWords(r.sil.concat(wordlessNoiseCuts(words, plan, tune)), words, { minCut: tune.minCut });
       var ranges = mergeSeqRanges(snapRangesToWords(sil.concat(r.other), words));
       prog.classList.add('hidden');
       var notes = [];
@@ -16547,7 +16548,8 @@
       state.silPlan = state.silLastPlan = plan;
       var lo = plan.range.start, hi = plan.range.end, span = hi - lo;
       // a spoken word is never cut to remove a pause (ASR timing drift allowed for)
-      var sil = CPSilence.protectCutsFromWords(plan.cuts, state.transcriptWords, { minCut: tune.minCut })
+      var hw = heardWords(state.transcriptWords, plan);
+      var sil = CPSilence.protectCutsFromWords(plan.cuts.concat(wordlessNoiseCuts(hw, plan, tune)), hw, { minCut: tune.minCut })
         .map(function (c) { return { start: c.start, end: c.end, kind: 'silence' }; });
       var fillers = $('opt-fillers').checked ? fillerSeqRanges(lo, hi) : { ranges: [], why: '' };
       if (fillers.why) toast('Filler removal skipped — ' + fillers.why, true);
@@ -16705,6 +16707,21 @@
   /* Snap cut ranges so an edge never lands in the MIDDLE of a spoken word: if a
      word straddles the cut start, pull the start to that word's end; if one
      straddles the cut end, push the end to that word's start. Sequence time. */
+  /* The transcript's words, kept only where the timeline is audible (see
+     CPSilence.audibleWords): what the retake finder, the pause protection
+     and the edge snapping all read. Without a plan they stay as they are. */
+  function heardWords(words, plan) {
+    return (plan && plan.grid && words && words.length) ? CPSilence.audibleWords(words, plan.grid) : words;
+  }
+  /* Room noise with no words in it (rustles, creaks, breathing a quiet mic's
+     gate let through) — cut like a pause. The bar is the loudest voice's own
+     speech level + 3 dB: real speech sits above it, that noise below. */
+  function wordlessNoiseCuts(words, plan, tune) {
+    if (!plan || !plan.grid || !words || !words.length) return [];
+    var bar = -Infinity;
+    (plan.mics || []).forEach(function (m) { if (!m.music && !m.excluded && m.speech != null && m.speech > bar) bar = m.speech; });
+    return isFinite(bar) ? CPSilence.wordlessNoise(words, plan.grid, bar + 3, tune || plan.tune) : [];
+  }
   function snapRangesToWords(ranges, words, win) {
     if (!words || !words.length) return ranges;
     win = win || 0.3;

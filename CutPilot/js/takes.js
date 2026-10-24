@@ -103,6 +103,40 @@
   function realStart(w) { return !w || !w.estimated || !!w.cueStart; }
   function realEnd(w) { return !w || !w.estimated || !!w.cueEnd; }
 
+  /* One spoken word, two spellings: on Auto language the transcriber writes the
+     same Hinglish word in Latin in one take and in Devanagari in the retake
+     ("listed competitors" / "लिस्टिट कमपेटिटोर्स"), and exact tokens never
+     matched — an abandoned take stayed in. skel() is the word's sound
+     skeleton in either script: consonants only, voiced/unvoiced and aspirated
+     folded together ("listed", "लिस्टिट" → "lst"). Used ONLY to compare two
+     takes (same()); the word lists keep their exact tokens. */
+  var DEV_SK = { 'क': 'k', 'ख': 'k', 'ग': 'k', 'घ': 'k', 'ङ': 'n', 'च': 'c', 'छ': 'c', 'ज': 'c', 'झ': 'c', 'ञ': 'n',
+    'ट': 't', 'ठ': 't', 'ड': 't', 'ढ': 't', 'ण': 'n', 'त': 't', 'थ': 't', 'द': 't', 'ध': 't', 'न': 'n',
+    'प': 'p', 'फ': 'p', 'ब': 'p', 'भ': 'p', 'म': 'm', 'र': 'r', 'ल': 'l', 'ळ': 'l', 'व': 'w',
+    'श': 's', 'ष': 's', 'स': 's', 'ं': 'n', 'ँ': 'n' };
+  var _sk = {};
+  function skel(t) {
+    if (_sk[t] != null) return _sk[t];
+    var s = '', i;
+    if (/[\u0900-\u097F]/.test(t)) {
+      var d = t.normalize ? t.normalize('NFD') : t;   // क़ → क + nukta: the base sound
+      for (i = 0; i < d.length; i++) if (DEV_SK[d[i]]) s += DEV_SK[d[i]];
+    } else {
+      s = t.replace(/ti(?=[aeiou])/g, 'sh').replace(/ch/g, 'C')   // "relationships" says sh: रिलेशन्शिप्स.replace(/[ptkgdb]h/g, function (m) { return m[0]; }).replace(/sh/g, 's').replace(/ph/g, 'p')
+        .replace(/[aeiouyhw']/g, function (m) { return m === 'w' ? 'w' : ''; })
+        .replace(/[cqgk]/g, 'k').replace(/C/g, 'c').replace(/[jz]/g, 'c').replace(/d/g, 't').replace(/[bf]/g, 'p').replace(/v/g, 'w').replace(/x/g, 'ks');
+    }
+    s = s.replace(/(.)\1+/g, '$1');
+    return (_sk[t] = s);
+  }
+  // ponytail: 3+ consonants before two spellings count as one word — shorter skeletons collide ("so"/"se")
+  function same(x, y) {
+    if (x === y) return true;
+    if (!x || !y) return false;
+    var a = skel(x);
+    return a.length >= 3 && a === skel(y);
+  }
+
   /* Longest-common-subsequence length of two token arrays (order-aware, tolerant
      of insertions/deletions/substitutions — exactly how retakes differ). */
   function lcsLen(a, b) {
@@ -114,7 +148,7 @@
     for (i = 1; i <= n; i++) {
       cur[0] = 0;
       for (j = 1; j <= m; j++) {
-        cur[j] = (a[i - 1] === b[j - 1]) ? prev[j - 1] + 1 : Math.max(prev[j], cur[j - 1]);
+        cur[j] = same(a[i - 1], b[j - 1]) ? prev[j - 1] + 1 : Math.max(prev[j], cur[j - 1]);
       }
       var t = prev; prev = cur; cur = t;
     }
@@ -143,7 +177,7 @@
     var n = a.length;
     if (!n || n >= b.length) return false;
     var match = 0;
-    for (var i = 0; i < n; i++) if (a[i] === b[i]) match++;
+    for (var i = 0; i < n; i++) if (same(a[i], b[i])) match++;
     return (match / n) >= frac;
   }
 
@@ -229,7 +263,7 @@
      reply ("…more than likes" → "right, …more than anything else"). */
   function carriesOn(a, b) {
     var A = bodyOf(a), B = bodyOf(b);
-    return A.length > 0 && isNearPrefix(A, B) && B[A.length - 1] === A[A.length - 1];
+    return A.length > 0 && isNearPrefix(A, B) && same(B[A.length - 1], A[A.length - 1]);
   }
 
   /* A few words said twice can be a whole REMARK repeated for emphasis —
@@ -338,10 +372,10 @@
     var oa = opening(a, 3), ob = opening(b, 3);
     for (var i = 0; i < oa.length; i++) {
       if (FUNC[oa[i]] || FIRST[oa[i]] || SECOND[oa[i]]) continue;   // glue and pronouns prove nothing
-      for (var j = 0; j < ob.length; j++) if (oa[i] === ob[j]) return true;
+      for (var j = 0; j < ob.length; j++) if (same(oa[i], ob[j])) return true;
     }
     // an opening made only of glue ("what is the…") must then be re-said as is
-    return oa.length >= 2 && ob.length >= 2 && oa[0] === ob[0] && oa[1] === ob[1];
+    return oa.length >= 2 && ob.length >= 2 && same(oa[0], ob[0]) && same(oa[1], ob[1]);
   }
 
   /*
@@ -580,6 +614,51 @@
       }
     }
 
+    // ABANDONED TAKES: an earlier attempt whose words come back, in order, in
+    // the speech that follows — split into different phrases than the first
+    // time ("returns unpredictable … listed competitors … valuation bannet bro"
+    // stopped in a stumble, then "lekin kuch challenges bhi hain, returns
+    // unpredictable … / listed / competitors … valuation karna …" 48 s later).
+    // Phrase-to-phrase the two never matched (each phrase held only part of
+    // the other), so the stumbling take stayed in; the hand edit of the same
+    // recording dropped it. One-way and conservative: only the EARLIER phrase is
+    // ever cut, it must have 5+ words, and 90% of them must come back (75% when
+    // it trails off unfinished — the usual abandoned take; a finished sentence
+    // said again later may be a recap).
+    if (opts.abandoned !== false && people !== 'many') {   // a conversation: echoes are replies
+      for (var ab = 0; ab < P; ab++) {
+        if (deleted[ab] || ack[ab] || ct[ab].length < 5) continue;
+        var need = SENT_END.test(ends[ab]) ? 0.9 : 0.75, done = false;
+        // a stumble, chatter and the retake can take more than a minute; this
+        // pass only ever cuts the earlier, mostly repeated phrase, so it looks a little further
+        var abGap = Math.max(maxGapSec, opts.abandonedGapSec || 90);
+        for (var bb = ab + 1; bb < P && !done; bb++) {
+          if (startOf(bb) - endOf(ab) > abGap) break;
+          if (deleted[bb] || (spk[ab] != null && spk[bb] != null && spk[ab] !== spk[bb])) continue;
+          // an agreeing reply that says the line again is the OTHER person
+          // ("Haan bilkul, …", "जी हाँ, …"): never a take, as in sameLine
+          if (agree[bb] && !agree[ab]) continue;
+          // the speech that follows from bb, phrase by phrase, about as long as ab and a bit
+          var stream = [], last = bb, sNeg = false, sAsk = false, sQ = false;
+          for (var sb = bb; sb < P && stream.length < ct[ab].length * 1.6 + 4; sb++) {
+            if (sb > bb && startOf(sb) - endOf(sb - 1) > 3) break;
+            stream = stream.concat(ct[sb]); last = sb;
+            sNeg = sNeg || neg[sb]; sAsk = sAsk || ask[sb]; sQ = sQ || isQ[sb];
+          }
+          if (stream.length < ct[ab].length) continue;   // the later version must be at least as full
+          // sameLine's guards, over the whole stretch: a "ना" or a question word
+          // may sit in the stretch's second phrase, not its first
+          if (sNeg !== neg[ab] || (ask[ab] && !sAsk) || (isQ[ab] !== sQ && isQ[ab])) continue;
+          if (lcsLen(ct[ab], stream) / ct[ab].length >= need) {
+            deletes.push(cutOf(ab, 'abandoned take'));
+            removedWords += phrases[ab].length;
+            deleted[ab] = inRetakeGroup[ab] = true;
+            done = true;
+          }
+        }
+      }
+    }
+
     // Off-script ASIDES between takes ("no no wait", "ugh let me try that
     // again", "arre ruko, ek baar phir se"…): they're not similar to anything,
     // so the grouping can't catch them — but they're exactly what a one-button
@@ -692,6 +771,6 @@
   return {
     findRepeatedTakes: findRepeatedTakes, flatten: flatten, tidyDeletes: tidyDeletes,
     phraseSim: phraseSim, phraseContain: phraseContain, isNearPrefix: isNearPrefix,
-    lcsLen: lcsLen, splitPhrases: splitPhrases, _norm: norm
+    lcsLen: lcsLen, splitPhrases: splitPhrases, _norm: norm, _skel: skel
   };
 });

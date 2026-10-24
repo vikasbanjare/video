@@ -398,7 +398,7 @@
     hop = hop || HOP;
     var t0 = range.start;
     var n = Math.max(0, Math.ceil((range.end - range.start) / hop - 1e-9));
-    var cov = new Uint8Array(n), loud = new Uint8Array(n), strong = new Uint8Array(n);
+    var cov = new Uint8Array(n), loud = new Uint8Array(n), strong = new Uint8Array(n), peak = new Float32Array(n).fill(-200);
     for (var s = 0; s < sources.length; s++) {
       var src = sources[s], sp = src.speed > 0 ? src.speed : 1;
       var g0 = Math.max(0, Math.ceil((src.seqStart - t0) / hop - 0.5 - 1e-9));
@@ -411,11 +411,12 @@
         if (k < 0 || k >= src.flags.length) { loud[g] = 1; continue; }   // not in the decoded audio → keep
         if (src.flags[k]) loud[g] = 1;
         if (src.strongDb != null && src.env.db[k] > src.strongDb) strong[g] = 1;
+        if (src.env.db[k] > peak[g]) peak[g] = src.env.db[k];
       }
     }
     var state = new Uint8Array(n);
     for (var q = 0; q < n; q++) state[q] = cov[q] ? (loud[q] ? 2 : 1) : 0;
-    return { t0: t0, hop: hop, n: n, state: state, strong: strong };
+    return { t0: t0, hop: hop, n: n, state: state, strong: strong, peak: peak };
   }
 
   /*
@@ -503,6 +504,102 @@
         segStart = Math.max(segStart, prot[p].end);
       }
       if (end - segStart >= minCut - 1e-9) out.push({ start: segStart, end: end });
+    }
+    return out;
+  }
+
+  /*
+   * Words kept only where the audio agrees. The transcriber writes words over
+   * silence (a quiet stretch came back as "झाल आज पुरावा पर दिखाई था") and
+   * stretches real words across pauses ("listed" lasting 2 s over a 0.9 s
+   * pause). Trusted as is, those words shielded 22 s of dead air from the cut
+   * and glued an abandoned take onto its retake as one 41-second "sentence",
+   * so the retake was never found. Measured against a hand edit of the same
+   * recording, that was most of what Clean up left in.
+   * grid: combineMics() output (state 2 = a voice mic is loud, 0 = no mic).
+   * Each word keeps only its loud stretches — at least `minRun` long (a click
+   * is not a syllable) or half the word (a short real word) — joined across
+   * dips under `bridge`; a word with none is dropped, and one longer than
+   * `maxWord` keeps only what is near its own ends. Where no mic covers it,
+   * or it falls outside the grid, a word is kept as it is (nothing to judge).
+   * Caption-line transcripts (no word timing) are returned unchanged.
+   */
+  function audibleWords(words, grid, opts) {
+    if (!words || !words.length || !grid || !grid.state || !isWordLevel(words)) return words || [];
+    opts = opts || {};
+    var hop = grid.hop, n = grid.n, st = grid.state;
+    var minRun = Math.max(1, Math.round((opts.minRun != null ? opts.minRun : 0.06) / hop));
+    var bridge = Math.round((opts.bridge != null ? opts.bridge : 0.3) / hop);
+    var maxWord = opts.maxWord != null ? opts.maxWord : 2.5;
+    var out = [];
+    for (var i = 0; i < words.length; i++) {
+      var w = words[i];
+      // no word lasts 2.5 s: one laid over 3-15 s of room noise was made up, or a
+      // real word stretched back over the silence before it ("अक्टोबर" over 5 s).
+      // Only its loud parts within `edge` of its start or end count; a number
+      // ("95,345", said slowly) is long for real and keeps them all.
+      var long = (w.end - w.start > maxWord) && !/\d/.test(String(w.text || w.word || ''));
+      var edge = opts.edge != null ? opts.edge : 1.0;
+      var g0 = Math.floor((w.start - grid.t0) / hop + 1e-9), g1 = Math.ceil((w.end - grid.t0) / hop - 1e-9);
+      if (g1 <= 0 || g0 >= n || g1 <= g0) { out.push(w); continue; }
+      g0 = Math.max(0, g0); g1 = Math.min(n, g1);
+      var len = g1 - g0, runs = [], r0 = -1, uncovered = 0;
+      for (var g = g0; g <= g1; g++) {
+        var on = g < g1 && (st[g] === 2 || st[g] === 0);
+        if (g < g1 && st[g] === 0) uncovered++;
+        if (on && r0 < 0) r0 = g;
+        if (!on && r0 >= 0) {
+          var rs = grid.t0 + r0 * hop, re = grid.t0 + g * hop;
+          if ((g - r0 >= minRun || 2 * (g - r0) >= len) && (!long || rs - w.start < edge || w.end - re < edge)) {
+            if (runs.length && r0 - runs[runs.length - 1][1] < bridge) runs[runs.length - 1][1] = g;
+            else runs.push([r0, g]);
+          }
+          r0 = -1;
+        }
+      }
+      if (uncovered === len) { out.push(w); continue; }
+      for (var k = 0; k < runs.length; k++) {
+        var piece = carry(w, Math.max(w.start, grid.t0 + runs[k][0] * hop), Math.min(w.end, grid.t0 + runs[k][1] * hop));
+        if (k > 0) { piece.text = ''; piece.word = ''; piece.part = true; }   // one word said once: its later loud stretches only hold time
+        out.push(piece);
+      }
+    }
+    return out;
+  }
+
+  /*
+   * Noise with no words in it. A quiet recording puts the gate only a few dB
+   * over the room (here speech −40 dB, room −65, gate −57): rustles, chair
+   * creaks and breathing cross it and read as talking, so seconds of them
+   * stayed (the hand edit cut every one). Where the transcript has no word
+   * for at least `minGap` and the loud moments (90th percentile) stay under
+   * `bar` — the voice's own level, a few dB up — nobody is talking: cut it,
+   * keeping the usual breathing room (tune.pre / tune.post) next to words.
+   * Measured: that noise peaked at −39…−52 dB, real speech never below −34.
+   * grid: combineMics() output (needs .peak). Returns sequence-time cuts.
+   */
+  function wordlessNoise(words, grid, bar, tune, opts) {
+    if (!words || !words.length || !grid || !grid.peak || bar == null || !isFinite(bar) || !isWordLevel(words)) return [];
+    opts = opts || {}; tune = tune || {};
+    var minGap = opts.minGap != null ? opts.minGap : 1.0;
+    var pre = tune.pre != null ? tune.pre : 0.13, post = tune.post != null ? tune.post : 0.17;
+    var minCut = tune.minCut != null ? tune.minCut : 0.2;
+    var sp = words.filter(function (w) { return w.end > w.start; }).sort(function (a, b) { return a.start - b.start; });
+    if (!sp.length) return [];
+    var tEnd = grid.t0 + grid.n * grid.hop, out = [], prevEnd = grid.t0;
+    for (var i = 0; i <= sp.length; i++) {
+      var nextStart = i < sp.length ? sp[i].start : tEnd;
+      if (nextStart - prevEnd >= minGap) {
+        var a = prevEnd + (i > 0 ? post : 0), b = nextStart - (i < sp.length ? pre : 0);
+        var g0 = Math.max(0, Math.ceil((a - grid.t0) / grid.hop)), g1 = Math.min(grid.n, Math.floor((b - grid.t0) / grid.hop));
+        var vals = [];
+        for (var g = g0; g < g1; g++) if (grid.state[g] !== 0) vals.push(grid.peak[g]);
+        if (vals.length && b - a >= minCut) {
+          vals.sort(function (x, y) { return x - y; });
+          if (vals[Math.floor(0.9 * (vals.length - 1))] < bar) out.push({ start: a, end: b });
+        }
+      }
+      if (i < sp.length) prevEnd = Math.max(prevEnd, sp[i].end);
     }
     return out;
   }
@@ -719,6 +816,8 @@
     combineMics: combineMics,
     planCuts: planCuts,
     isWordLevel: isWordLevel,
-    protectCutsFromWords: protectCutsFromWords
+    protectCutsFromWords: protectCutsFromWords,
+    audibleWords: audibleWords,
+    wordlessNoise: wordlessNoise
   };
 });

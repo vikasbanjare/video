@@ -2201,6 +2201,56 @@ try {
   assert(pick(frame(1000, i => i < 50 ? [30, 160, 40] : [120, 110, 100])) === null, 'green screen: a small green shirt (5%) is not taken for a backdrop');
 }
 
+{
+  // Clean up vs a hand edit of the same recording: words the transcriber made
+  // up over silence, or stretched over pauses, no longer shield dead air
+  const S = CPSilence, hop = 0.01;
+  const grid = (spec) => {      // spec: [[seconds, loud?], …] → a combineMics-like grid from 0 s
+    const st = [], pk = [];
+    for (const [sec, loud] of spec) for (let i = 0; i < Math.round(sec / hop); i++) { st.push(loud ? 2 : 1); pk.push(loud ? -30 : -60); }
+    return { t0: 0, hop, n: st.length, state: Uint8Array.from(st), peak: Float32Array.from(pk) };
+  };
+  // 0-1 s speech, 1-7 s room noise only, 7-8 s speech
+  const g = grid([[1, true], [6, false], [1, true]]);
+  const words = [{ start: 0.1, end: 0.9, text: 'hello' }, { start: 3.0, end: 3.6, text: 'झाल' }, { start: 7.1, end: 7.8, text: 'world' }];
+  const h = S.audibleWords(words, g);
+  assert(h.length === 2 && h[0].text === 'hello' && h[1].text === 'world', 'a word laid over room noise (nothing audible under it) is dropped: ' + h.map(w => w.text).join(','));
+  // a real word stretched across a pause keeps only its spoken parts, its text once
+  // (a transcript is trusted only with 3+ word-level words: real ones have hundreds)
+  const g2 = grid([[0.5, true], [0.9, false], [0.5, true], [1, true]]);
+  const st2 = S.audibleWords([{ start: 0.0, end: 1.9, text: 'listed' }, { start: 2.0, end: 2.4, text: 'com' }, { start: 2.5, end: 2.9, text: 'pany' }], g2).slice(0, 2);
+  assert(st2.length === 2 && st2[0].text === 'listed' && st2[1].text === '' && close(st2[0].end, 0.5, 0.011) && close(st2[1].start, 1.4, 0.011),
+    'a word stretched over a 0.9 s pause keeps its two spoken parts (text once), so the pause can be cut: ' + JSON.stringify(st2.map(w => [w.start, w.end, w.text])));
+  // a short real word is kept even under the 60 ms "syllable" floor
+  assert(S.audibleWords([{ start: 0.2, end: 0.25, text: 'a' }], g).length === 1, 'a 50 ms real word under loud audio is kept');
+  // a made-up 15 s "word" keeps only what is near its ends; a slow number keeps all
+  const g3 = grid([[16, true]]);
+  const longW = S.audibleWords([{ start: 0.5, end: 15.5, text: 'पर' }], g3);
+  assert(longW.length === 1 && longW[0].end - longW[0].start < 16 && longW[0].start === 0.5, 'a 15 s "word" is not trusted end to end');
+  assert(S.audibleWords([{ start: 0, end: 3.2, text: '95,345' }], g3)[0].end === 3.2, 'a number said slowly (3.2 s) is long for real and kept whole');
+  // wordless room noise is cut; real loud speech the transcript missed is not
+  const nz = S.wordlessNoise(h.concat([{ start: 7.85, end: 7.95, text: 'again' }]), g, -37, S.tuning('balanced'));
+  assert(nz.length === 1 && close(nz[0].start, 0.9 + 0.17, 0.011) && close(nz[0].end, 7.1 - 0.13, 0.011), 'room noise with no words in it is cut, keeping breathing room by the words: ' + JSON.stringify(nz));
+  const loudGap = grid([[1, true], [3, true], [1, true]]);
+  assert(S.wordlessNoise([{ start: 0.1, end: 0.9, text: 'a' }, { start: 4.1, end: 4.5, text: 'b' }, { start: 4.6, end: 4.9, text: 'c' }], loudGap, -37, S.tuning('balanced')).length === 0,
+    'speech the transcript missed (loud, over the voice bar) is never cut as noise');
+  // retakes across scripts
+  const T = require(path.join(__dirname, '..', 'js', 'takes.js'));
+  assert(T._skel(T._norm('listed')) === T._skel(T._norm('लिस्टिट')) && T._skel(T._norm('competitors')) === T._skel(T._norm('कमपेटिटोर्स')),
+    'the same word in Latin and Devanagari compares equal for retakes (listed/लिस्टिट, competitors/कमपेटिटोर्स)');
+  assert(T.lcsLen(['so', 'is'], ['से', 'as']) === 0, 'short words never match across scripts by sound alone (so/से)');
+  // an abandoned take whose retake is split into different phrases (and its "na" in the 2nd one)
+  const mk = (t0, text, step) => text.split(' ').map((w, i) => ({ start: t0 + i * step, end: t0 + i * step + step * 0.8, text: w }));
+  const take1 = mk(0, 'returns unpredictable hone se cash flow mein ups and downs aate hai listed competitors na hone se company ki valuation bannet bro', 0.4);
+  const take2a = mk(40, 'lekin kuch challenges bhi hain returns unpredictable hone se cash flow mein ups and downs aate hain,', 0.4);
+  const take2b = mk(48, 'listed competitors na hone se company ki valuation karna thoda difficult ho jata hai.', 0.4);
+  const ab = T.findRepeatedTakes(take1.concat(take2a, take2b), { keep: 'best' });
+  assert(ab.deletes.length === 1 && ab.deletes[0].start === 0 && ab.deletes[0].end <= 40,
+    'an abandoned take is cut when its words come back in order in the next stretch, even split differently: ' + JSON.stringify(ab.deletes.map(d => [d.start, d.end, d.reason])));
+  assert(!T.findRepeatedTakes(take1.concat(take2a, take2b), { keep: 'best', people: 'many' }).deletes.some(d => d.reason === 'abandoned take'),
+    'in a conversation the abandoned-take pass stays off (a repeat there is a reply)');
+}
+
 console.log('\nRunning host (timeline) tests…');
 var hostOk = true;
 try {
