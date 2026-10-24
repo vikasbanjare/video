@@ -30,7 +30,7 @@ const terser = require(path.join(TOOLS, 'node_modules', 'terser'));
 function copyDir(s, d) {
   fs.mkdirSync(d, { recursive: true });
   for (const e of fs.readdirSync(s, { withFileTypes: true })) {
-    if (e.name === '.git' || e.name === 'node_modules' || e.name === '.DS_Store') continue;
+    if (e.name === '.git' || e.name === 'node_modules' || e.name === '.DS_Store' || e.name === '__pycache__') continue;
     const sp = path.join(s, e.name), dp = path.join(d, e.name);
     e.isDirectory() ? copyDir(sp, dp) : fs.copyFileSync(sp, dp);
   }
