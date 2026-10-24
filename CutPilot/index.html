@@ -10,9 +10,9 @@
   <!-- Caption faces — loaded as web fonts so the chosen font renders in the
        live preview AND the canvas-rendered PNGs even if it isn't installed. -->
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Bebas+Neue&family=Archivo+Black&family=Fjalla+One&family=Bangers&family=Luckiest+Guy&family=Alfa+Slab+One&family=Bungee&family=Titan+One&family=Passion+One&family=Permanent+Marker&family=Pacifico&family=Shadows+Into+Light&family=Montserrat:wght@400;500;600;700;800;900&family=Poppins:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800;900&family=Oswald:wght@400;700&family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Lato:wght@400;700&family=Raleway:wght@400;700&family=Work+Sans:wght@400;700&family=Nunito:wght@400;700&family=Rubik:wght@400;700;800;900&family=DM+Sans:wght@400;500;700&family=Outfit:wght@400;500;600;700;800;900&family=Sora:wght@400;500;600;700;800&family=Barlow:wght@400;700&family=Manrope:wght@400;500;600;700;800&family=Teko:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,800;1,600;1,700;1,800&family=Merriweather:wght@400;700&family=Lora:wght@400;700&family=JetBrains+Mono:wght@400;700&family=Roboto+Mono:wght@400;700&family=Space+Mono:wght@400;700&family=Caveat:wght@400;700&family=Arvo:wght@400;700&family=Space+Grotesk:wght@400;500;600;700&family=Syne:wght@600;700;800&family=Unbounded:wght@600;700;800;900&family=DM+Serif+Display:ital@0;1&family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Baloo+2:wght@400;500;600;700;800&family=Mukta:wght@400;500;600;700;800&family=Hind:wght@400;500;600;700&family=Anek+Devanagari:wght@400;500;600;700;800&family=Rozha+One&family=Kalam:wght@400;700&family=Tiro+Devanagari+Hindi:ital@0;1&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=v0.10.112">
-  <link rel="stylesheet" href="css/organize.css?v=v0.10.112">
-  <link rel="stylesheet" href="css/studio.css?v=v0.10.112">
+  <link rel="stylesheet" href="css/style.css?v=v0.10.113">
+  <link rel="stylesheet" href="css/organize.css?v=v0.10.113">
+  <link rel="stylesheet" href="css/studio.css?v=v0.10.113">
 </head>
 <body class="theme-light" data-page="home">
   <!-- ONE navigation row (≤ 12 % of a 400 px-tall panel). Home is the menu;
@@ -97,6 +97,13 @@
         <span class="task-txt"><span class="task-name">Studio sound</span><span class="task-sub">Podcast-quality audio: AI noise removal, every cut matched</span></span>
       </button>
     </div>
+    <div class="tile-head">Video</div>
+    <div class="home-tasks tiles">
+      <button id="home-greenscreen" class="task-card tile tile-wide" type="button" data-go="silence">
+        <span class="task-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="12" cy="10" r="2.6"/><path d="M7.5 20c.6-3 2.4-4.6 4.5-4.6s3.9 1.6 4.5 4.6"/></svg></span>
+        <span class="task-txt"><span class="task-name">Green screen</span><span class="task-sub">Key out a green or blue backdrop in one tap</span></span>
+      </button>
+    </div>
     <div class="more-tools">
       <div class="more-head">More tools</div>
       <div class="more-grid">
@@ -105,7 +112,7 @@
         <button id="home-safezone" class="tool-btn" type="button" data-go="safezone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="2"/><rect x="9" y="7" width="6" height="6" rx="1"/><line x1="9" y1="17" x2="15" y2="17"/></svg>Safe zone</button>
       </div>
     </div>
-    <p class="home-foot"><span id="ver" class="ver">v0.10.112</span></p>
+    <p class="home-foot"><span id="ver" class="ver">v0.10.113</span></p>
   </section>
 
   <!-- ============================ TRANSCRIBE ============================ -->
@@ -1055,6 +1062,15 @@
       <button id="btn-studio-sound" class="hero-btn" type="button">Make it sound studio</button>
       <p class="hint hidden" id="ss-result" style="margin-top:6px"></p>
     </div>
+    <!-- 🟩 Green screen: Premiere's Ultra Key, colour sampled (js/greenscreen.js) -->
+    <div class="card" id="gs-card">
+      <div class="step-head"><span class="step-title">Green screen</span>
+        <button class="info" type="button" data-info="gs-info" aria-label="What it does">ⓘ</button></div>
+      <p class="hint">Select your green or blue screen clips, then tap once.</p>
+      <div class="info-pop hidden" id="gs-info">Pulse reads a frame of each selected clip, finds the backdrop colour, and puts Premiere's own Ultra Key on the clip with that colour. It plays live and stays editable in Effect Controls → Ultra Key; nothing is rendered or uploaded. Put your new background on the track below. Tap again after changing a clip to sample it fresh.</div>
+      <button id="btn-green-screen" class="hero-btn" type="button">Remove the green screen</button>
+      <p class="hint hidden" id="gs-result" style="margin-top:6px"></p>
+    </div>
     <!-- 🎞 B-roll on keywords (js/broll.js) -->
     <div class="card" id="br-card">
       <div class="step-head"><span class="step-title">B-roll on keywords</span>
@@ -1555,7 +1571,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.10.112 · auto-edit · multicam · captions · chapters · organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.10.113 · auto-edit · multicam · captions · chapters · organize</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->
@@ -1693,37 +1709,38 @@
     </div>
   </div>
 
-  <script src="js/lib/cep-bridge.js?v=v0.10.112"></script>
-  <script src="js/silence.js?v=v0.10.112"></script>
-  <script src="js/audio.js?v=v0.10.112"></script>
-  <script src="js/captions.js?v=v0.10.112"></script>
-  <script src="js/ass.js?v=v0.10.112"></script>
-  <script src="js/render.js?v=v0.10.112"></script>
-  <script src="js/multicam.js?v=v0.10.112"></script>
-  <script src="js/voices.js?v=v0.10.112"></script>
-  <script src="js/sfx.js?v=v0.10.112"></script>
-  <script src="js/takes.js?v=v0.10.112"></script>
-  <script src="js/smartedit.js?v=v0.10.112"></script>
-  <script src="js/apierr.js?v=v0.10.112"></script>
-  <script src="js/verbatim.js?v=v0.10.112"></script>
-  <script src="js/reframe.js?v=v0.10.112"></script>
-  <script src="js/scriptalign.js?v=v0.10.112"></script>
-  <script src="js/transcript.js?v=v0.10.112"></script>
-  <script src="js/fonts.js?v=v0.10.112"></script>
-  <script src="js/command.js?v=v0.10.112"></script>
-  <script src="js/chapters.js?v=v0.10.112"></script>
-  <script src="js/align.js?v=v0.10.112"></script>
-  <script src="js/shorts.js?v=v0.10.112"></script>
-  <script src="js/lib/pico.js?v=v0.10.112"></script>
-  <script src="js/lib/facefinder.js?v=v0.10.112"></script>
-  <script src="js/podshort.js?v=v0.10.112"></script>
-  <script src="js/main.js?v=v0.10.112"></script>
-  <script src="js/organize.js?v=v0.10.112"></script>
-  <script src="js/safezone.js?v=v0.10.112"></script>
-  <script src="js/studio.js?v=v0.10.112"></script>
-  <script src="js/publish.js?v=v0.10.112"></script>
-  <script src="js/hookcheck.js?v=v0.10.112"></script>
-  <script src="js/brandkit.js?v=v0.10.112"></script>
-  <script src="js/broll.js?v=v0.10.112"></script>
+  <script src="js/lib/cep-bridge.js?v=v0.10.113"></script>
+  <script src="js/silence.js?v=v0.10.113"></script>
+  <script src="js/audio.js?v=v0.10.113"></script>
+  <script src="js/captions.js?v=v0.10.113"></script>
+  <script src="js/ass.js?v=v0.10.113"></script>
+  <script src="js/render.js?v=v0.10.113"></script>
+  <script src="js/multicam.js?v=v0.10.113"></script>
+  <script src="js/voices.js?v=v0.10.113"></script>
+  <script src="js/sfx.js?v=v0.10.113"></script>
+  <script src="js/takes.js?v=v0.10.113"></script>
+  <script src="js/smartedit.js?v=v0.10.113"></script>
+  <script src="js/apierr.js?v=v0.10.113"></script>
+  <script src="js/verbatim.js?v=v0.10.113"></script>
+  <script src="js/reframe.js?v=v0.10.113"></script>
+  <script src="js/scriptalign.js?v=v0.10.113"></script>
+  <script src="js/transcript.js?v=v0.10.113"></script>
+  <script src="js/fonts.js?v=v0.10.113"></script>
+  <script src="js/command.js?v=v0.10.113"></script>
+  <script src="js/chapters.js?v=v0.10.113"></script>
+  <script src="js/align.js?v=v0.10.113"></script>
+  <script src="js/shorts.js?v=v0.10.113"></script>
+  <script src="js/lib/pico.js?v=v0.10.113"></script>
+  <script src="js/lib/facefinder.js?v=v0.10.113"></script>
+  <script src="js/podshort.js?v=v0.10.113"></script>
+  <script src="js/main.js?v=v0.10.113"></script>
+  <script src="js/organize.js?v=v0.10.113"></script>
+  <script src="js/safezone.js?v=v0.10.113"></script>
+  <script src="js/studio.js?v=v0.10.113"></script>
+  <script src="js/greenscreen.js?v=v0.10.113"></script>
+  <script src="js/publish.js?v=v0.10.113"></script>
+  <script src="js/hookcheck.js?v=v0.10.113"></script>
+  <script src="js/brandkit.js?v=v0.10.113"></script>
+  <script src="js/broll.js?v=v0.10.113"></script>
 </body>
 </html>

@@ -2350,6 +2350,61 @@ function CP_selectedRange() {
   } catch (e) { return CP_fail(e.message); }
 }
 
+/* 🟩 Green screen: the selected video clips that are real files, with where to
+   sample their backdrop (a moment into the clip's own media). */
+function CP_greenScreenClips() {
+  try {
+    var seq = CP_activeSequence(), out = [];
+    for (var t = 0; t < seq.videoTracks.numTracks; t++) {
+      var tr = seq.videoTracks[t];
+      for (var i = 0; i < tr.clips.numItems; i++) {
+        var c = tr.clips[i], sel = false;
+        try { sel = c.isSelected(); } catch (eS) {}
+        if (!sel) continue;
+        var path = ''; try { path = c.projectItem.getMediaPath(); } catch (eP) {}
+        if (!path) continue;
+        var dur = c.end.seconds - c.start.seconds;
+        out.push({ track: t, start: c.start.seconds, path: path, at: c.inPoint.seconds + Math.min(1, dur / 2), name: String(c.name) });
+      }
+    }
+    if (!out.length) return CP_fail('Select your green-screen clip(s) on the timeline, then try again.');
+    return CP_ok({ clips: out });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/* Premiere's own Ultra Key on each clip, its Key Color set to the backdrop —
+   live, editable in Effect Controls, nothing rendered. A clip that already
+   has Ultra Key just gets the new colour (run it again to re-sample).
+   argsJson: { clips:[{track, start, color:'#RRGGBB'}] } */
+function CP_applyUltraKey(argsJson) {
+  try {
+    var args = JSON.parse(argsJson), seq = CP_activeSequence();
+    app.enableQE();
+    var qseq = qe.project.getActiveSequence(), fx = null;
+    try { fx = qe.project.getVideoEffectByName('Ultra Key'); } catch (eFx) {}
+    if (!fx) return CP_fail('Premiere\'s Ultra Key effect was not found on this machine.');
+    var keyed = 0, recolored = 0, failed = 0;
+    for (var n = 0; n < args.clips.length; n++) {
+      var a = args.clips[n], cl = CP_clipAtStart(seq.videoTracks[a.track], a.start);
+      if (!cl) { failed++; continue; }
+      var uk = null, k, comps = cl.components;
+      for (k = 0; k < comps.numItems; k++) if (String(comps[k].displayName) === 'Ultra Key') uk = comps[k];
+      var had = !!uk;
+      if (!uk) {
+        var qt = qseq.getVideoTrackAt(a.track), qi = null;
+        for (k = 0; k < qt.numItems; k++) { var it = qt.getItemAt(k); if (it && it.type !== 'Empty' && Math.abs(parseFloat(it.start.secs) - a.start) < 0.02) qi = it; }
+        if (qi) { try { qi.addVideoEffect(fx); } catch (eAdd) {} }
+        comps = cl.components;
+        for (k = 0; k < comps.numItems; k++) if (String(comps[k].displayName) === 'Ultra Key') uk = comps[k];
+      }
+      var kc = uk && CP_effectProp(uk, 'Key Color');
+      if (!kc || !CP_setColorAny(kc, a.color)) { failed++; continue; }
+      if (had) recolored++; else keyed++;
+    }
+    return CP_ok({ keyed: keyed, recolored: recolored, failed: failed });
+  } catch (e) { return CP_fail(e.message); }
+}
+
 /* Find the clip on a track whose start matches `startSec` (within ~half a frame
    of tolerance). Needed when overwriting a clip MID-track, where the freshly
    placed clip is not the last one by index. */

@@ -2179,6 +2179,19 @@ try {
 // one geometry model): razor/ripple correctness, editable-caption placement,
 // track reuse, portrait scaling. This is the layer where "it didn't work on
 // the timeline" lives — it gets tested on every run now.
+{
+  // 🟩 Green screen: the backdrop colour is found, a hand or a green shirt does not fool it
+  const win = {};
+  require('vm').runInNewContext(require('fs').readFileSync(path.join(__dirname, '..', 'js', 'greenscreen.js'), 'utf8'), { window: win });
+  const pick = win.CPGreenScreen.pickKeyColor;
+  const frame = (n, fill) => { const b = Buffer.alloc(n * 3); for (let i = 0; i < n; i++) fill(i).forEach((v, c) => { b[i * 3 + c] = v; }); return b; };
+  const g = pick(frame(1000, i => i < 700 ? [40 + (i % 9), 177, 64] : [200, 160, 140]));
+  assert(g && g.kind === 'green' && g.hex.slice(3, 5) === 'B1', 'green screen: a 70% green backdrop is found, colour from the backdrop not the person (' + JSON.stringify(g) + ')');
+  const bl = pick(frame(1000, i => i < 600 ? [20, 60, 210] : [90, 90, 90]));
+  assert(bl && bl.kind === 'blue', 'green screen: a blue screen is found as blue');
+  assert(pick(frame(1000, i => i < 50 ? [30, 160, 40] : [120, 110, 100])) === null, 'green screen: a small green shirt (5%) is not taken for a backdrop');
+}
+
 console.log('\nRunning host (timeline) tests…');
 var hostOk = true;
 try {
