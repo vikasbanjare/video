@@ -2744,6 +2744,7 @@
       { group: 'Captions', label: 'Find my transcript again', keywords: 'srt vtt subtitle', run: function () { goTab('captions')(); findTranscript(); } },
       { group: 'Clean up', label: 'Clean up my video', keywords: 'auto-edit silences retakes fillers one tap', run: function () { goTab('silence')(); clickId('btn-autoclean')(); } },
       { group: 'Sound', label: 'Studio sound — open it', keywords: 'audio enhance noise removal denoise podcast quality voice loudness adobe', run: function () { if (window.CPStudio && CPStudio.show) CPStudio.show(); } },
+      { group: 'Video', label: 'Cut out anything — remove any background', keywords: 'mask rotoscope roto brush background removal segment person object sam cut out', run: function () { if (window.CPGreenScreen) { CPGreenScreen.showCut(); setTimeout(CPGreenScreen.raOpen, 300); } } },
       { group: 'Video', label: 'Green screen — open it', keywords: 'chroma key ultra key blue screen background remove keyer', run: function () { if (window.CPGreenScreen) CPGreenScreen.show(); } },
       { group: 'Video', label: 'Remove the green screen now', keywords: 'chroma key ultra key blue screen background remove keyer run', run: function () { if (window.CPGreenScreen) CPGreenScreen.show(); clickId('btn-green-screen')(); } },
       { group: 'Sound', label: 'Make it sound studio now', keywords: 'audio enhance clean noise removal run', run: function () { if (window.CPStudio && CPStudio.show) CPStudio.show(); clickId('btn-studio-sound')(); } },
