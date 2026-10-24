@@ -62,7 +62,10 @@ function ffCached(name) {
   const f = path.join(FFC, name);
   if (!fs.existsSync(f) || fs.statSync(f).size < 1e6) {
     console.log('Fetching ' + name + ' (one-time)…');
-    cp.execSync('curl -sL --fail -o ' + JSON.stringify(f) + ' ' + JSON.stringify(FF_BASE + name), { stdio: 'inherit' });
+    // to a .part, renamed only once whole: a build stopped mid-download left a
+    // truncated file the size check took as cached (Mac ffmpeg then failed signing and was dropped)
+    cp.execSync('curl -sL --fail -o ' + JSON.stringify(f + '.part') + ' ' + JSON.stringify(FF_BASE + name), { stdio: 'inherit' });
+    fs.renameSync(f + '.part', f);
   }
   return f;
 }
@@ -74,7 +77,7 @@ function macFfmpeg() {
     cp.execSync('lipo -create ' + JSON.stringify(arm) + ' ' + JSON.stringify(x64) + ' -output ' + JSON.stringify(uni));
     cp.execSync('codesign -s - --force ' + JSON.stringify(uni));   // Apple Silicon runs only signed code (ad-hoc is enough)
     return uni;
-  } catch (e) { console.log('  (no lipo/codesign here — the Mac installer downloads ffmpeg instead)'); return null; }
+  } catch (e) { try { fs.unlinkSync(uni); } catch (eU) {} console.log('  (no lipo/codesign here — the Mac installer downloads ffmpeg instead)'); return null; }
 }
 // ---- the voice cleaner (DeepFilterNet, MIT / Apache-2.0) beside it: 🎚
 // Studio sound's AI noise removal, offline. Pulse/bin/deep-filter (universal
@@ -88,8 +91,9 @@ function dfCached(name, minSize) {
   const f = path.join(DFC, name);
   if (!fs.existsSync(f) || fs.statSync(f).size < (minSize || 1e6)) {
     console.log('Fetching ' + name + ' (one-time)…');
-    cp.execSync('curl -sL --fail -o ' + JSON.stringify(f) + ' ' + JSON.stringify(name.indexOf('LICENSE') === 0
+    cp.execSync('curl -sL --fail -o ' + JSON.stringify(f + '.part') + ' ' + JSON.stringify(name.indexOf('LICENSE') === 0
       ? 'https://raw.githubusercontent.com/Rikorose/DeepFilterNet/v' + DFV + '/' + name : DF_BASE + name), { stdio: 'inherit' });
+    fs.renameSync(f + '.part', f);   // whole files only (see ffCached)
   }
   return f;
 }
@@ -101,7 +105,7 @@ function macDeepFilter() {
     cp.execSync('lipo -create ' + JSON.stringify(arm) + ' ' + JSON.stringify(x64) + ' -output ' + JSON.stringify(uni));
     cp.execSync('codesign -s - --force ' + JSON.stringify(uni));
     return uni;
-  } catch (e) { console.log('  (no lipo/codesign here — Studio sound uses its own filter on Mac)'); return null; }
+  } catch (e) { try { fs.unlinkSync(uni); } catch (eU) {} console.log('  (no lipo/codesign here — Studio sound uses its own filter on Mac)'); return null; }
 }
 function dfLicense() {
   try { return [dfCached('LICENSE-MIT', 100), dfCached('LICENSE-APACHE', 100)]; } catch (e) { return []; }
