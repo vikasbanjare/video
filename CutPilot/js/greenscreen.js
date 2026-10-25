@@ -470,9 +470,9 @@
     });
   }
 
-  /* Open the card from anywhere (Home's tile, ⌘K), like Studio sound's. */
+  /* Open the Remove background page from anywhere (⌘K), scrolled to the card. */
   function show(id) {
-    var tab = document.querySelector('.tab[data-tab="silence"]'); if (tab) tab.click();
+    var tab = document.querySelector('.tab[data-tab="background"]'); if (tab) tab.click();
     setTimeout(function () {
       var c = $(typeof id === 'string' ? id : 'gs-card'); if (!c) return;
       try { c.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) { c.scrollIntoView(); }
@@ -488,7 +488,6 @@
     if ($('btn-ra-open')) $('btn-ra-open').addEventListener('click', raOpen);
     if ($('btn-ra-setup')) $('btn-ra-setup').addEventListener('click', function () { raShowSetup(true); });
     raShowSetup(false);
-    if ($('home-greenscreen')) $('home-greenscreen').addEventListener('click', function () { setTimeout(show, 0); });
   }
   window.CPGreenScreen = { pickKeyColor: pickKeyColor, run: run, show: show, runPro: runPro, ckReady: ckReady, ckSetup: ckSetup, raOpen: raOpen, raReady: raReady, raSetup: raSetup, showCut: function () { show('ra-card'); } };
   if (typeof document !== 'undefined') {

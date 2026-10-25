@@ -352,8 +352,6 @@
       var on = seg.querySelector('button.on'); if (on) on.classList.remove('on'); b.classList.add('on');
     });
     if ($('btn-studio-sound')) $('btn-studio-sound').addEventListener('click', run);
-    // Home's tile goes to the card itself, not just the page (data-go only opens the page)
-    if ($('home-studio')) $('home-studio').addEventListener('click', function () { setTimeout(show, 0); });
     // 🎛 Studio restore: the setup button shows until it is set up
     function syncRestore() {
       var on = $('ss-restore') && $('ss-restore').checked, row = $('ss-restore-setup');
@@ -499,15 +497,9 @@
   }
   window.CPStudioRestore = { ready: rsReady, setup: rsSetup, run: rsRun, PKGS: RS_PKGS, ensureUv: ensureUv };
 
-  /* Open the card from anywhere (Home's tile, ⌘K): the Clean up page, scrolled
-     to it, lit for a moment — it sits below the silence and retake tools. */
+  /* Open Studio sound's own page from anywhere (⌘K). */
   function show() {
-    var tab = document.querySelector('.tab[data-tab="silence"]'); if (tab) tab.click();
-    setTimeout(function () {
-      var c = $('ss-card'); if (!c) return;
-      try { c.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) { c.scrollIntoView(); }
-      c.classList.add('flash'); setTimeout(function () { c.classList.remove('flash'); }, 1600);
-    }, 120);
+    var tab = document.querySelector('.tab[data-tab="sound"]'); if (tab) tab.click();
   }
   window.CPStudio = { filterChain: filterChain, loudnessGain: loudnessGain, piecesOf: piecesOf, pieceGains: pieceGains, run: run, show: show };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire); else wire();

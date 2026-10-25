@@ -210,7 +210,8 @@ body[data-page="home"] .nav-back, body[data-page="home"] .nav-title { display: n
 .next-step .ns-txt { flex: 1 1 140px; min-width: 0; font-size: var(--fs-sm); color: var(--dim); }
 .next-step .ns-txt b { color: var(--text); }
 .more-head { font-size: var(--fs-xs); font-weight: 800; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; margin: 0 2px 6px; }
-.more-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 6px; }
+.more-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); grid-auto-flow: dense; gap: 6px; }
+.more-grid #home-greenscreen { grid-column: span 2; }   /* "Remove background" needs ~150px */
 .tool-btn {
   display: flex; align-items: center; gap: 7px; min-height: 36px; padding: 6px 10px; min-width: 0;
   background: var(--card2); border: 1px solid var(--line); border-radius: 10px; color: var(--fg);
@@ -1385,3 +1386,12 @@ body.cap-premiere #wc-block { display: none; }   /* Premiere captions group whol
 /* a card opened from Home / ⌘K lights up for a moment so the eye lands on it */
 .card.flash { animation: card-flash 1.6s ease-out; }
 @keyframes card-flash { 0% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: 0 0 0 0 transparent; } }
+
+/* Reduce motion (macOS: Accessibility → Display): caption previews play once
+   and rest on their last frame instead of looping; status motion
+   (progress, spinners) still runs. */
+@media (prefers-reduced-motion: reduce) {
+  .t-cap[class*="anim-"], .preview-caption[class*="pa-"], .demo [class*="anim-"] { animation-iteration-count: 1 !important; }
+  .card.flash { animation: none !important; }
+  * { transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}

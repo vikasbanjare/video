@@ -2400,7 +2400,7 @@
      so the per-page refreshes below run however the owner got there. */
   var PAGE_TITLES = { home: '', transcribe: 'Transcribe', captions: 'Captions', silence: 'Clean up',
     shorts: 'Shorts', multicam: 'Podcast cameras', chapters: 'Chapters', organize: 'Organize',
-    safezone: 'Safe zone', settings: 'Settings' };
+    safezone: 'Safe zone', settings: 'Settings', sound: 'Studio sound', background: 'Remove background', broll: 'B-roll' };
   function showPage(name) {
     var b = document.querySelector('.tab[data-tab="' + name + '"]');
     if (b) b.click();
@@ -2763,6 +2763,9 @@
       { group: 'Go', label: 'Chapters', keywords: 'youtube timestamps markers', run: goTab('chapters') },
       { group: 'Go', label: 'Organize', keywords: 'bins project folders', run: goTab('organize') },
       { group: 'Go', label: 'Safe zone', keywords: 'guide branding reels tiktok', run: goTab('safezone') },
+      { group: 'Go', label: 'Studio sound', keywords: 'audio noise loudness podcast voice', run: goTab('sound') },
+      { group: 'Go', label: 'Remove background', keywords: 'green screen chroma key cut out mask', run: goTab('background') },
+      { group: 'Go', label: 'B-roll', keywords: 'broll overlay footage keywords cutaway', run: goTab('broll') },
       { group: 'Go', label: 'Settings', keywords: 'keys diagnostics theme text size', run: goTab('settings') },
       { group: 'Captions', label: 'Add captions', keywords: 'render burn animate', run: function () { goTab('captions')(); clickId('btn-magic')(); } },
       { group: 'Captions', label: 'Open the style gallery', keywords: 'styles gallery browse templates', run: function () { goTab('captions')(); showView('templates'); } },

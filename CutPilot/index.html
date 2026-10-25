@@ -45,6 +45,9 @@
     <button class="tab active" data-tab="home"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 11 12 4l8.5 7"/><path d="M5.5 9.5V20h13V9.5"/></svg></span>Home</button>
     <button class="tab" data-tab="captions"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3.5"/><path d="M10 10.5a2.2 2.2 0 1 0 0 3"/><path d="M16.5 10.5a2.2 2.2 0 1 0 0 3"/></svg></span>Captions</button>
     <button class="tab" data-tab="silence"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><line x1="20" y1="4" x2="8.5" y2="15.5"/><line x1="14.5" y1="14.5" x2="20" y2="20"/><line x1="8.5" y1="8.5" x2="12" y2="12"/></svg></span>Clean up</button>
+    <button class="tab" data-tab="sound"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="4" x2="6" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="18" y1="4" x2="18" y2="20"/><line x1="4" y1="14" x2="8" y2="14"/><line x1="10" y1="9" x2="14" y2="9"/><line x1="16" y1="16" x2="20" y2="16"/></svg></span>Studio sound</button>
+    <button class="tab" data-tab="background"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="12" cy="10" r="3"/><path d="M6.5 20a5.5 5.5 0 0 1 11 0"/></svg></span>Remove background</button>
+    <button class="tab" data-tab="broll"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3Z"/></svg></span>B-roll</button>
     <button class="tab" data-tab="multicam"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="3.5" width="13" height="9" rx="2"/><rect x="3.5" y="9.5" width="13" height="9" rx="2"/></svg></span>Podcast cameras</button>
     <button class="tab" data-tab="transcribe"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>Transcribe</button>
     <button class="tab" data-tab="shorts"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="2.5" width="9" height="19" rx="2.5"/><path d="M10.5 12l4 -2.3v4.6Z" fill="currentColor" stroke="none"/></svg></span>Shorts</button>
@@ -92,7 +95,7 @@
     </div>
     <div class="tile-head">Sound</div>
     <div class="home-tasks tiles">
-      <button id="home-studio" class="task-card tile tile-wide" type="button" data-go="silence">
+      <button id="home-studio" class="task-card tile tile-wide" type="button" data-go="sound">
         <span class="task-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="4" x2="6" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="18" y1="4" x2="18" y2="20"/><rect x="4" y="13" width="4" height="3" rx="1" fill="currentColor"/><rect x="10" y="7" width="4" height="3" rx="1" fill="currentColor"/><rect x="16" y="11" width="4" height="3" rx="1" fill="currentColor"/></svg></span>
         <span class="task-txt"><span class="task-name">Studio sound</span><span class="task-sub">Podcast-quality audio: AI noise removal, every cut matched</span></span>
       </button>
@@ -103,7 +106,8 @@
         <button id="home-chapters" class="tool-btn" type="button" data-go="chapters"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4.5" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1.4" fill="currentColor" stroke="none"/></svg>Chapters</button>
         <button id="home-organize" class="tool-btn" type="button" data-go="organize"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5a2 2 0 0 1 2-2h3.4a2 2 0 0 1 1.6.8l.9 1.2h7.1a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>Organize</button>
         <button id="home-safezone" class="tool-btn" type="button" data-go="safezone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="2"/><rect x="9" y="7" width="6" height="6" rx="1"/><line x1="9" y1="17" x2="15" y2="17"/></svg>Safe zone</button>
-        <button id="home-greenscreen" class="tool-btn" type="button" data-go="silence"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="12" cy="10" r="2.6"/><path d="M7.5 20c.6-3 2.4-4.6 4.5-4.6s3.9 1.6 4.5 4.6"/></svg>Remove background</button>
+        <button id="home-greenscreen" class="tool-btn" type="button" data-go="background"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="12" cy="10" r="2.6"/><path d="M7.5 20c.6-3 2.4-4.6 4.5-4.6s3.9 1.6 4.5 4.6"/></svg>Remove background</button>
+        <button id="home-broll" class="tool-btn" type="button" data-go="broll"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3Z"/></svg>B-roll</button>
       </div>
     </div>
     <p class="home-foot"><span id="ver" class="ver">v0.10.116</span></p>
@@ -1039,6 +1043,11 @@
       </div>
     </div><!-- /ae-takes -->
     </details><!-- /fine-tune drawer -->
+      <div class="next-step" id="cu-next"><span class="ns-txt"><b>Next:</b> add captions to the cleaned-up video.</span><button type="button" class="hero-btn small" data-go="captions">Captions ›</button></div>
+  </section>
+
+  <!-- ========================== STUDIO SOUND ========================== -->
+  <section id="tab-sound" class="tab-page">
     <!-- 🎚 Studio sound: noise, hum, even voices, loudness (js/studio.js) -->
     <div class="card" id="ss-card">
       <div class="step-head"><span class="step-title">Studio sound</span>
@@ -1064,6 +1073,10 @@
       <button id="btn-studio-sound" class="hero-btn" type="button">Make it sound studio</button>
       <p class="hint hidden" id="ss-result" style="margin-top:6px"></p>
     </div>
+  </section>
+
+  <!-- ======================== REMOVE BACKGROUND ======================== -->
+  <section id="tab-background" class="tab-page">
     <!-- 🟩 Green screen: Premiere's Ultra Key, colour sampled (js/greenscreen.js) -->
     <div class="card" id="gs-card">
       <div class="step-head"><span class="step-title">Green screen</span>
@@ -1090,6 +1103,10 @@
       </div>
       <p class="hint hidden" id="ra-result" style="margin-top:6px"></p>
     </div>
+  </section>
+
+  <!-- ============================== B-ROLL ============================== -->
+  <section id="tab-broll" class="tab-page">
     <!-- 🎞 B-roll on keywords (js/broll.js) -->
     <div class="card" id="br-card">
       <div class="step-head"><span class="step-title">B-roll on keywords</span>
@@ -1106,7 +1123,6 @@
       <button id="btn-broll-add" class="hero-btn" type="button">Add B-roll</button>
       <p class="hint hidden" id="br-result" style="margin-top:6px"></p>
     </div>
-      <div class="next-step" id="cu-next"><span class="ns-txt"><b>Next:</b> add captions to the cleaned-up video.</span><button type="button" class="hero-btn small" data-go="captions">Captions ›</button></div>
   </section>
 
   <!-- =============================== SHORTS ============================= -->
@@ -1455,7 +1471,7 @@
         <label class="fld-full" id="set-swara-row">Indian-language key
           <input type="password" id="set-swara-key" placeholder="paste your key…" autocomplete="off" spellcheck="false">
         </label>
-        <label class="fld-full" id="set-dg-row">Deepgram key <span class="dim">(also finds retakes)</span>
+        <label class="fld-full" id="set-dg-row">Retake-finder key <span class="dim">(also transcribes)</span>
           <input type="password" id="set-dg-key" placeholder="paste your key…" autocomplete="off" spellcheck="false">
         </label>
         <p class="hint" style="margin-top:6px">You need only one key: the one for the Accuracy you picked.</p>
