@@ -16358,7 +16358,7 @@
         words = heardWords(words, plan);
         var tk = CPTakes.findRepeatedTakes(words, { minRun: tp.minrun, sim: tp.sim / 100, keep: 'best', people: takesPeople(words) });
         var out = [];
-        tk.deletes.forEach(function (d) {
+        tk.deletes.concat(scriptTakeCuts(words)).forEach(function (d) {
           matcherAll.push({ start: d.start, end: d.end });
           if (sureCut(d, edges)) out.push({ start: d.start, end: d.end }); else guessed.push(d);
         });
@@ -16864,6 +16864,17 @@
      or more people each saying a real share of the words is a conversation,
      one labelled voice is a lone speaker, no labels is not known. The retake
      finder and the AI prompt both follow it. */
+  /* 📜 The owner's script (Transcribe → Script) finds the false starts and
+     stumbles the transcript alone can't: words said, then said again straight
+     away, that the script has once. Nothing without a script, or with one
+     for another recording (fewer than 35% of its words heard). */
+  function scriptTakeCuts(words) {
+    var txt = ($('script-text') && $('script-text').value) || '';
+    var sw = CPScript.scriptWords(txt);
+    if (sw.length < 20 || !words || !words.length || !CPTakes.scriptTakes) return [];
+    var r = CPTakes.scriptTakes(words, sw);
+    return r.rate >= 0.35 ? r.deletes : [];
+  }
   function takesPeople(words) {
     var pick = $('tk-kind') ? $('tk-kind').value : 'auto';
     if (pick === 'one' || pick === 'many') return pick;
@@ -17004,7 +17015,7 @@
         people: takesPeople(words)
       });
       prog.classList.add('hidden');
-      var dels = CPTakes.tidyDeletes(res.deletes, 0.1);
+      var dels = CPTakes.tidyDeletes(res.deletes.concat(scriptTakeCuts(words)), 0.1);
       showTakeList(dels, cutGuardOf(src), estimatedNote(dels));
     });
   });
@@ -17542,7 +17553,7 @@
         prog.textContent = 'Finding the best take of each line…';
         var tp = TAKE_PRESETS[state.takeStrength || 'balanced'] || TAKE_PRESETS.balanced;
         var det = CPTakes.findRepeatedTakes(words, { minRun: tp.minrun, sim: tp.sim / 100, keep: 'best', people: takesPeople(words) });
-        var deletes = CPTakes.tidyDeletes(det.deletes, 0.1);
+        var deletes = CPTakes.tidyDeletes(det.deletes.concat(scriptTakeCuts(words)), 0.1);
         prog.textContent = 'Snapping cuts to the pauses…';
         // snap to the pauses in what was transcribed: the mix of every voice
         // (a pause in one mic while the other person talks is not a pause)

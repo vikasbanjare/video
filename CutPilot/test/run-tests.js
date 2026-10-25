@@ -2257,6 +2257,27 @@ try {
 }
 
 {
+  // 📜 retakes from the owner's script: false starts go, off-script lines and the kept take stay
+  const T = require('../js/takes.js');
+  const mk = (t0, text, step, gap) => text.split(' ').map((w, i) => ({ start: t0 + i * step, end: t0 + i * step + step * (gap || 0.8), text: w }));
+  const script = 'Lekin kuch challenges bhi hain. Returns unpredictable hone se cash flow mein ups and downs aate hain. Listed competitors na hone se company ki valuation karna thoda difficult ho jaata hai.'.split(' ');
+  const said = mk(0, 'Lekin kuch challenges bhi hain. Returns unpredictable hone se', 0.4)
+    .concat(mk(3.5, 'cash flow mein ups and downs aate hain. Listed', 0.4))
+    .concat(mk(8, 'Listed competitors na hone se company ki valuation karna sach mein thoda difficult ho jaata hai.', 0.4));
+  const r = T.scriptTakes(said, script);
+  const cut = (t) => r.deletes.some(d => t >= d.start && t < d.end);
+  assert(cut(6.8) && !cut(8.1), 'script: the false start "Listed" said just before "Listed competitors…" is cut, the retake kept: ' + JSON.stringify(r.deletes));
+  assert(!r.deletes.some(d => /sach/.test(d.text)), 'script: words the owner adds ("sach mein") are kept — the script may differ a little');
+  assert(!cut(0.1) && !cut(4), 'script: lines that match the script once are never cut');
+  const two = mk(0, 'Returns unpredictable hone se cash flow mein ups and downs aate hain.', 0.4).concat(mk(20, 'Returns unpredictable hone se cash flow mein ups and downs aate hain.', 0.4));
+  const r2 = T.scriptTakes(two, script, { debug: true });
+  assert(r2.at[0] < 0 && r2.at[12] >= 0, 'script: of two complete takes, the LATER one is matched to the script');
+  assert(!r2.deletes.some(d => d.start >= 20), 'script: the later complete take is never cut');
+  const other = T.scriptTakes(said, 'Aaj hum mutual funds ke baare mein baat karenge aur SIP kaise kaam karta hai yeh samjhenge'.split(' '));
+  assert(other.rate < 0.35, 'script: a script for another video barely matches (Clean up then ignores it): ' + other.rate.toFixed(2));
+}
+
+{
   // Studio sound sets loudness with ONE fixed gain (one-pass loudnorm pumped and shifted the tone 1.1 dB)
   const win = {}, doc = { readyState: 'complete', addEventListener() {}, getElementById() { return null; } };
   require('vm').runInNewContext(require('fs').readFileSync(path.join(__dirname, '..', 'js', 'studio.js'), 'utf8'), { window: win, document: doc, process, setTimeout, console });

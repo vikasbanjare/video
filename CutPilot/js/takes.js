@@ -122,7 +122,7 @@
       var d = t.normalize ? t.normalize('NFD') : t;   // क़ → क + nukta: the base sound
       for (i = 0; i < d.length; i++) if (DEV_SK[d[i]]) s += DEV_SK[d[i]];
     } else {
-      s = t.replace(/ti(?=[aeiou])/g, 'sh').replace(/ch/g, 'C')   // "relationships" says sh: रिलेशन्शिप्स.replace(/[ptkgdb]h/g, function (m) { return m[0]; }).replace(/sh/g, 's').replace(/ph/g, 'p')
+      s = t.replace(/ti(?=[aeiou])/g, 'sh').replace(/ch/g, 'C').replace(/c(?=[eiy])/g, 's').replace(/g(?=es?$)/g, 'j')   // presence, challenges: soft c and g   // "relationships" says sh: रिलेशन्शिप्स.replace(/[ptkgdb]h/g, function (m) { return m[0]; }).replace(/sh/g, 's').replace(/ph/g, 'p')
         .replace(/[aeiouyhw']/g, function (m) { return m === 'w' ? 'w' : ''; })
         .replace(/[cqgk]/g, 'k').replace(/C/g, 'c').replace(/[jz]/g, 'c').replace(/d/g, 't').replace(/[bf]/g, 'p').replace(/v/g, 'w').replace(/x/g, 'ks');
     }
@@ -788,7 +788,143 @@
     return out;
   }
 
+  /* A run of spoken words the script alignment left out: a FALSE START (said
+     again right after — or a stutter of what was just said) → true, cut it;
+     or the owner changing a line / ad-libbing → false, keep it.
+       run    — the left-out words (normalized), 1–6 of them
+       before — up to 8 words spoken just before it that ARE in the script
+       after  — up to 8 words spoken just after it that ARE in the script
+       sc(a,b)— how alike two words sound: 2 same word (any spelling),
+                0.6 same short word ("ka"/"की"), -1.5 different
+     Examples from the test video:
+       run "लेकिन कुछ चैलेंजिस भी हैं"  after "लेकिन कुछ challenges भी हैं रिटर्न…"  → true
+       run "Infrastructure"             before "बड़े institutions का पैसा"
+                                        after "commercial real estate और"         → false */
+  function isFalseStart(run, before, after, sc) {
+    // in-order overlap of the run with a stretch of speech: [matched words, strong ones]
+    function ordered(x, y) {
+      var L = [], S = [], i, j;
+      for (i = 0; i <= x.length; i++) { L.push([]); S.push([]); for (j = 0; j <= y.length; j++) { L[i].push(0); S[i].push(0); } }
+      for (i = 1; i <= x.length; i++) for (j = 1; j <= y.length; j++) {
+        var v = sc(x[i - 1], y[j - 1]);
+        if (v > 0 && L[i - 1][j - 1] + 1 >= Math.max(L[i - 1][j], L[i][j - 1])) { L[i][j] = L[i - 1][j - 1] + 1; S[i][j] = S[i - 1][j - 1] + (v >= 2 ? 1 : 0); }
+        else if (L[i - 1][j] >= L[i][j - 1]) { L[i][j] = L[i - 1][j]; S[i][j] = S[i - 1][j]; }
+        else { L[i][j] = L[i][j - 1]; S[i][j] = S[i][j - 1]; }
+      }
+      return [L[x.length][y.length], S[x.length][y.length]];
+    }
+    var need = Math.ceil(run.length * 0.6), k = run.length + 2, r;
+    // a restart: said again straight away — its opening word within the first two that follow
+    if (after.length && (sc(run[0], after[0]) > 0 || (after.length > 1 && sc(run[0], after[1]) > 0))) {
+      r = ordered(run, after.slice(0, k));
+      if (r[0] >= need && r[1] >= 1) return true;
+    }
+    // a stutter: what was just said, said again
+    if (before.length && sc(run[run.length - 1], before[before.length - 1]) > 0) {
+      r = ordered(run, before.slice(-k));
+      if (r[0] >= need && r[1] >= 1) return true;
+    }
+    return false;
+  }
+
+  /* 📜 Retakes from the script. The owner nearly always has the script, and a
+     take that is IN the script but not the take they kept is a retake —
+     however far back it is and however it was split into phrases.
+     The whole script is aligned to the whole transcript once (Gotoh: a run of
+     spoken words left out costs once to open, almost nothing to extend, so the
+     alignment keeps ONE complete take, not words picked from two). Read back
+     from the end, a tie goes to the LATER take — the one the owner kept.
+     Spoken words the alignment leaves out:
+       · that repeat the script nearby → an earlier / abandoned take → cut;
+       · anything else is the owner speaking off-script (a changed line, an
+         ad-lib) → kept. Words said differently from the script stay too.
+     words: [{start,end,text}] · script: array of script words
+     → { deletes:[{start,end,text,reason}], matched, rate } */
+  function scriptTakes(words, script, opts) {
+    opts = opts || {};
+    var T = (words || []).map(function (w) { return norm(w.text); }), S = (script || []).map(norm);
+    var n = T.length, m = S.length;
+    if (n < 4 || m < 4) return { deletes: [], matched: 0, rate: 0 };
+    // ponytail: n×m direction bytes (3 per cell) — ~25 MB for a 25-minute talk; band it if longer talks need it
+    if (n * m > 9e6) return { deletes: [], matched: 0, rate: 0, tooLong: true };
+    function sc(a, b) {
+      // a different word costs more than leaving one out on each side (≈0.85), so a
+      // retake is never soaked up as "said differently" against the next line
+      if (!a || !b) return -1.5;
+      if (a === b) return 2;
+      var x = skel(a), y = skel(b);
+      if (!x || x !== y) return -1.5;
+      return x.length >= 3 ? 2 : 0.6;                    // short words ("ka"/"की") anchor only weakly
+    }
+    var MATCH_MIN = 0.6, OPEN = 2.5, EXT = 0.05, SKIP_S = 0.8, LATE = 0.002;   // LATE ≪ EXT: breaks ties only
+    var NEG = -1e9, W = m + 1;
+    // M: i,j aligned (match or said-differently) · X: transcript word i skipped · Y: script word j not said
+    var dM = new Uint8Array((n + 1) * W), dX = new Uint8Array((n + 1) * W), dY = new Uint8Array((n + 1) * W);
+    var pM = new Float64Array(W), pX = new Float64Array(W), pY = new Float64Array(W);
+    var cM = new Float64Array(W), cX = new Float64Array(W), cY = new Float64Array(W), i, j;
+    for (j = 0; j <= m; j++) { pM[j] = NEG; pX[j] = NEG; pY[j] = j ? -SKIP_S * j : 0; }
+    pM[0] = 0;
+    function best3(a, b, c) { return a >= b ? (a >= c ? 0 : 2) : (b >= c ? 1 : 2); }
+    for (i = 1; i <= n; i++) {
+      // words before the script starts are free to leave out (warm-up, "rolling")
+      cM[0] = NEG; cY[0] = NEG; cX[0] = 0;
+      for (j = 1; j <= m; j++) {
+        // + a tiny lean to LATER words: two complete takes score the same, and the owner keeps the last
+        var k = i * W + j, s = sc(T[i - 1], S[j - 1]) + LATE * i / n;
+        var a = pM[j - 1], b = pX[j - 1], c = pY[j - 1], f = best3(a, b, c);
+        cM[j] = (f === 0 ? a : f === 1 ? b : c) + s; dM[k] = f;
+        a = pM[j] - OPEN; b = pX[j] - EXT; c = pY[j] - OPEN; f = best3(a, b, c);
+        cX[j] = f === 0 ? a : f === 1 ? b : c; dX[k] = f;
+        a = cM[j - 1] - SKIP_S; b = cX[j - 1] - SKIP_S; c = cY[j - 1] - SKIP_S; f = best3(a, b, c);
+        cY[j] = f === 0 ? a : f === 1 ? b : c; dY[k] = f;
+      }
+      var t;
+      t = pM; pM = cM; cM = t; t = pX; pX = cX; cX = t; t = pY; pY = cY; cY = t;
+    }
+    // words after the script ends are free too: best end over every i on the last script word
+    // (only the final row's scores are kept, so trailing words count as skipped from the last row)
+    var state = best3(pM[m], pX[m], pY[m]);
+    var at = new Int32Array(n).fill(-1);    // transcript word → script word it stands for (-1: left out)
+    i = n; j = m;
+    while (i > 0 && j > 0) {
+      var kk = i * W + j;
+      if (state === 0) {
+        if (sc(T[i - 1], S[j - 1]) >= MATCH_MIN) at[i - 1] = j - 1; else at[i - 1] = -2;   // -2: said differently, kept
+        state = dM[kk]; i--; j--;
+      } else if (state === 1) { state = dX[kk]; i--; }
+      else { state = dY[kk]; j--; }
+    }
+    // left-out runs: cut the ones that repeat the script around where they sit
+    var deletes = [], matched = 0, pos = new Int32Array(n), lastJ = -1;
+    for (i = 0; i < n; i++) { if (at[i] >= 0) { matched++; lastJ = at[i]; } pos[i] = lastJ; }
+    for (i = 0; i < n; ) {
+      if (at[i] !== -1) { i++; continue; }
+      var e = i; while (e + 1 < n && at[e + 1] === -1) e++;
+      // the words spoken AND in the script right around the run (up to 8 each side)
+      var run = [], before = [], after = [], r;
+      for (r = i; r <= e; r++) if (T[r]) run.push(T[r]);
+      for (r = i - 1; r >= 0 && before.length < 8; r--) if (at[r] !== -1 && T[r]) before.unshift(T[r]);
+      for (r = e + 1; r < n && after.length < 8; r++) if (at[r] !== -1 && T[r]) after.push(T[r]);
+      // ponytail: fragments only (≤6 words / 4 s). Choosing between two COMPLETE takes is
+      // findRepeatedTakes' job — both match the script alike, so alignment can't pick the kept one.
+      var short = run.length <= (opts.maxWords || 6) && words[e].end - words[i].start <= (opts.maxSec || 4);
+      if (short && run.length && isFalseStart(run, before, after, sc)) {
+        // an abandoned attempt is cut from the pause before it, the way the owner
+        // cuts — not mid-phrase ("11,009 | Client Relationships…" goes whole);
+        // never more than 3 words back and never past a sentence's end
+        var s0 = i;
+        while (s0 > 0 && i - s0 < 3 && words[s0].start - words[s0 - 1].end < 0.25 && !SENT_END.test(String(words[s0 - 1].text || ''))) s0--;
+        var w0 = words[s0], w1 = words[e];
+        deletes.push({ start: w0.start, end: e + 1 < n ? Math.max(w1.end, Math.min(words[e + 1].start, w1.end + 0.25)) : w1.end,
+          text: words.slice(s0, e + 1).map(function (w) { return w.text; }).join(' '), reason: 'not the take in your script' });
+      }
+      i = e + 1;
+    }
+    return { deletes: deletes, matched: matched, rate: matched / Math.max(1, Math.min(n, m)), at: opts.debug ? at : undefined };
+  }
+
   return {
+    scriptTakes: scriptTakes,
     findRepeatedTakes: findRepeatedTakes, flatten: flatten, tidyDeletes: tidyDeletes,
     phraseSim: phraseSim, phraseContain: phraseContain, isNearPrefix: isNearPrefix,
     lcsLen: lcsLen, splitPhrases: splitPhrases, _norm: norm, _skel: skel
