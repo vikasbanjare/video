@@ -624,6 +624,36 @@
     return out;
   }
 
+  /*
+   * Quiet stretches, whatever the transcript says. The on-computer engine
+   * smears a sentence's words back over seconds of room noise ("lekin … kuch
+   * … challenges … bhi" spread over 20 s at −45…−54 dB while the voice peaks
+   * at −26), and a word — even a made-up one — kept those seconds in. Real
+   * speech lasting 1.5 s always rises past the voice's level; where every
+   * quarter-second stays under `bar` for `minLen`, nobody is talking: cut it,
+   * `pad` short of each end. Measured on the hand edit: 9 s more of what the
+   * owner cut, 0.2 s of what they kept (the edges of a long pause).
+   * Applied AFTER protectCutsFromWords — overruling made-up words is the point.
+   */
+  function quietStretches(grid, bar, opts) {
+    if (!grid || !grid.peak || bar == null || !isFinite(bar)) return [];
+    opts = opts || {};
+    var minLen = opts.minLen != null ? opts.minLen : 1.5, step = opts.step || 0.25, pad = opts.pad != null ? opts.pad : 0.25;
+    var per = Math.max(1, Math.round(step / grid.hop)), nb = Math.floor(grid.n / per), out = [], k = 0;
+    function quiet(b) {
+      for (var g = b * per; g < (b + 1) * per; g++) if (grid.state[g] !== 0 && grid.peak[g] >= bar) return false;
+      return true;
+    }
+    while (k < nb) {
+      if (!quiet(k)) { k++; continue; }
+      var e = k; while (e < nb && quiet(e)) e++;
+      var a0 = grid.t0 + k * per * grid.hop, a1 = grid.t0 + e * per * grid.hop;
+      if (a1 - a0 >= minLen) out.push({ start: a0 + (k > 0 ? pad : 0), end: a1 - (e < nb ? pad : 0) });
+      k = e;
+    }
+    return out;
+  }
+
   // ---- transcript ↔ timeline sync ------------------------------------------
   // These keep the transcript (words / caption cues) aligned to the timeline
   // after an edit, so silence-cut → remove-takes → captions all compose. Pure,
@@ -838,6 +868,6 @@
     isWordLevel: isWordLevel,
     protectCutsFromWords: protectCutsFromWords,
     audibleWords: audibleWords,
-    wordlessNoise: wordlessNoise
+    wordlessNoise: wordlessNoise, quietStretches: quietStretches
   };
 });

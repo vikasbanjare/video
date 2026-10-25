@@ -807,20 +807,22 @@
       for (i = 0; i <= x.length; i++) { L.push([]); S.push([]); for (j = 0; j <= y.length; j++) { L[i].push(0); S[i].push(0); } }
       for (i = 1; i <= x.length; i++) for (j = 1; j <= y.length; j++) {
         var v = sc(x[i - 1], y[j - 1]);
-        if (v > 0 && L[i - 1][j - 1] + 1 >= Math.max(L[i - 1][j], L[i][j - 1])) { L[i][j] = L[i - 1][j - 1] + 1; S[i][j] = S[i - 1][j - 1] + (v >= 2 ? 1 : 0); }
+        if (v >= 0.6 && L[i - 1][j - 1] + 1 >= Math.max(L[i - 1][j], L[i][j - 1])) { L[i][j] = L[i - 1][j - 1] + 1; S[i][j] = S[i - 1][j - 1] + (v >= 2 ? 1 : 0); }
         else if (L[i - 1][j] >= L[i][j - 1]) { L[i][j] = L[i - 1][j]; S[i][j] = S[i - 1][j]; }
         else { L[i][j] = L[i][j - 1]; S[i][j] = S[i][j - 1]; }
       }
       return [L[x.length][y.length], S[x.length][y.length]];
     }
     var need = Math.ceil(run.length * 0.6), k = run.length + 2, r;
-    // a restart: said again straight away — its opening word within the first two that follow
-    if (after.length && (sc(run[0], after[0]) > 0 || (after.length > 1 && sc(run[0], after[1]) > 0))) {
+    // a restart: said again straight away — one of its first two words is one of the first two that follow
+    var opens = false;
+    for (var a = 0; a < Math.min(2, run.length) && !opens; a++) for (var q = 0; q < Math.min(2, after.length); q++) if (sc(run[a], after[q]) >= 0.6) opens = true;
+    if (opens) {
       r = ordered(run, after.slice(0, k));
       if (r[0] >= need && r[1] >= 1) return true;
     }
     // a stutter: what was just said, said again
-    if (before.length && sc(run[run.length - 1], before[before.length - 1]) > 0) {
+    if (before.length && sc(run[run.length - 1], before[before.length - 1]) >= 0.6) {
       r = ordered(run, before.slice(-k));
       if (r[0] >= need && r[1] >= 1) return true;
     }
@@ -843,6 +845,9 @@
   function scriptTakes(words, script, opts) {
     opts = opts || {};
     var T = (words || []).map(function (w) { return norm(w.text); }), S = (script || []).map(norm);
+    // the script's sentences (its punctuation — the transcript often has none)
+    var sid = [], sn = 0;
+    for (var si = 0; si < (script || []).length; si++) { sid.push(sn); if (SENT_END.test(String(script[si]))) sn++; }
     var n = T.length, m = S.length;
     if (n < 4 || m < 4) return { deletes: [], matched: 0, rate: 0 };
     // ponytail: n×m direction bytes (3 per cell) — ~25 MB for a 25-minute talk; band it if longer talks need it
@@ -852,7 +857,10 @@
       // retake is never soaked up as "said differently" against the next line
       if (!a || !b) return -1.5;
       if (a === b) return 2;
+      // a number cut short and said again: "October 26 … October 2026"
+      if (/^\d{2,}$/.test(a) && /^\d{2,}$/.test(b) && (a.slice(-b.length) === b || b.slice(-a.length) === a)) return 0.6;
       var x = skel(a), y = skel(b);
+      if (!x && !y && a.length <= 4 && b.length <= 4) return 0.3;   // "है"/"hai": all vowel and h — a hint, never enough to cut
       if (!x || x !== y) return -1.5;
       return x.length >= 3 ? 2 : 0.6;                    // short words ("ka"/"की") anchor only weakly
     }
@@ -899,7 +907,8 @@
     for (i = 0; i < n; i++) { if (at[i] >= 0) { matched++; lastJ = at[i]; } pos[i] = lastJ; }
     for (i = 0; i < n; ) {
       if (at[i] !== -1) { i++; continue; }
-      var e = i; while (e + 1 < n && at[e + 1] === -1) e++;
+      // a run ends at a long pause: what comes after it is another attempt
+      var e = i; while (e + 1 < n && at[e + 1] === -1 && words[e + 1].start - words[e].end < 1) e++;
       // the words spoken AND in the script right around the run (up to 8 each side)
       var run = [], before = [], after = [], r;
       for (r = i; r <= e; r++) if (T[r]) run.push(T[r]);
@@ -912,13 +921,60 @@
         // an abandoned attempt is cut from the pause before it, the way the owner
         // cuts — not mid-phrase ("11,009 | Client Relationships…" goes whole);
         // never more than 3 words back and never past a sentence's end
-        var s0 = i;
-        while (s0 > 0 && i - s0 < 3 && words[s0].start - words[s0 - 1].end < 0.25 && !SENT_END.test(String(words[s0 - 1].text || ''))) s0--;
+        // the retake's script sentence: back-extension stays inside it, and a
+        // left-out word that ends the sentence before ("…kar rahi | hai") stays
+        var ka = e + 1; while (ka < n && at[ka] < 0) ka++;
+        var tgt = ka < n ? sid[at[ka]] : -1, p0 = pos[i], s0 = i;
+        while (s0 < e && p0 + 1 < m && sid[p0 + 1] !== tgt && sc(T[s0], S[p0 + 1]) > 0) { s0++; p0++; }
+        if (s0 === i) while (s0 > 0 && i - s0 < 3 && words[s0].start - words[s0 - 1].end < 0.25 && !SENT_END.test(String(words[s0 - 1].text || '')) &&
+               (at[s0 - 1] < 0 || sid[at[s0 - 1]] === tgt)) s0--;
         var w0 = words[s0], w1 = words[e];
         deletes.push({ start: w0.start, end: e + 1 < n ? Math.max(w1.end, Math.min(words[e + 1].start, w1.end + 0.25)) : w1.end,
           text: words.slice(s0, e + 1).map(function (w) { return w.text; }).join(' '), reason: 'not the take in your script' });
+      } else {
+        var sw = laterTake(i, e);
+        if (sw) deletes.push(sw);
       }
       i = e + 1;
+    }
+    /* The LATER take of a line, left out because an earlier one was matched
+       first ("October 2026 CARE report…" at 61 s, said again at 96 s and
+       carried straight on into the rest of the sentence). The owner keeps the
+       last take, so the earlier one is cut — only when the later run re-says
+       those script words in order (2+ real words), is at least as complete,
+       and flows straight into the script's next words. */
+    function laterTake(i0, e0) {
+      var p = pos[i0], lo = Math.max(0, p - (e0 - i0 + 1) * 2 - 4);
+      if (p < 0 || e0 - i0 < 2) return null;
+      var xs = [], k, q;
+      for (k = i0; k <= e0; k++) if (T[k]) xs.push(k);
+      // in-order match of the run against the script just before p → its script indices
+      var A = xs.length, B = p - lo + 1, L = [], a, b;
+      for (a = 0; a <= A; a++) { L.push(new Int16Array(B + 1)); }
+      for (a = 1; a <= A; a++) for (b = 1; b <= B; b++)
+        L[a][b] = sc(T[xs[a - 1]], S[lo + b - 1]) >= 0.6 ? L[a - 1][b - 1] + 1 : Math.max(L[a - 1][b], L[a][b - 1]);
+      var qs = [], strong = 0;
+      for (a = A, b = B; a > 0 && b > 0; ) {
+        if (sc(T[xs[a - 1]], S[lo + b - 1]) >= 0.6 && L[a][b] === L[a - 1][b - 1] + 1) { qs.push(lo + b - 1); if (sc(T[xs[a - 1]], S[lo + b - 1]) >= 2) strong++; a--; b--; }
+        else if (L[a - 1][b] >= L[a][b - 1]) a--; else b--;
+      }
+      if (qs.length < Math.max(3, Math.ceil(A * 0.5)) || strong < 2) return null;   // misheard names ("एडिल वाइस") don't match
+      var qa = Math.min.apply(null, qs), qb = Math.max.apply(null, qs);
+      // the earlier stretch matched to those script words
+      var E = [];
+      for (k = 0; k < i0; k++) if (at[k] >= qa && at[k] <= qb) E.push(k);
+      if (E.length < 3 || E.length * 0.8 > qs.length) return null;    // the later run is (about) as complete
+      // it flows on: the next matched word comes straight after and goes on in the script
+      for (k = e0 + 1; k < n && at[k] === -1; k++);
+      if (k >= n || at[k] <= qb || words[k].start - words[e0].end > 2) return null;
+      var f = E[0], l = E[E.length - 1];
+      while (f > 0 && E[0] - f < 3 && words[f].start - words[f - 1].end < 0.25 && !SENT_END.test(String(words[f - 1].text || ''))) f--;
+      // …and to the end of that attempt: words said on without a pause that the later take re-says too
+      var reach = at[k];
+      while (l + 1 < i0 && l - E[E.length - 1] < 3 && words[l + 1].start - words[l].end < 0.25 && (at[l + 1] < 0 || at[l + 1] < reach) &&
+             !SENT_END.test(String(words[l].text || ''))) l++;
+      return { start: words[f].start, end: Math.max(words[l].end, Math.min(l + 1 < n ? words[l + 1].start : words[l].end, words[l].end + 0.25)),
+        text: words.slice(f, l + 1).map(function (w) { return w.text; }).join(' '), reason: 'an earlier take (your script, said again later)' };
     }
     return { deletes: deletes, matched: matched, rate: matched / Math.max(1, Math.min(n, m)), at: opts.debug ? at : undefined };
   }

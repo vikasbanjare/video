@@ -2273,8 +2273,25 @@ try {
   const r2 = T.scriptTakes(two, script, { debug: true });
   assert(r2.at[0] < 0 && r2.at[12] >= 0, 'script: of two complete takes, the LATER one is matched to the script');
   assert(!r2.deletes.some(d => d.start >= 20), 'script: the later complete take is never cut');
+  // the LATER take wins when it is said again and flows on into the rest of the line
+  const sc2 = 'Aur ab yeh company stock market mein enter kar rahi hai. October 2026 CARE Report ke according, Edelweiss Alternatives AUM ke terms mein India ke leading platforms mein se ek hai.'.split(' ');
+  const t1 = mk(0, 'Aur ab yeh company stock market mein enter kar rahi hai. October 2026 CARE Report ke according, Edelweiss Alternatives', 0.4);
+  const t2 = mk(40, 'October 2026 care report ke according Edelvice Altonitives AUM ke terms mein India ke leading platforms mein se ek hai.', 0.4);
+  const r3 = T.scriptTakes(t1.concat(t2), sc2);
+  const cut3 = (t) => r3.deletes.some(d => t >= d.start && t < d.end);
+  assert(cut3(4.5) && cut3(6.5) && !cut3(4.0) && !cut3(40.1) && !cut3(44), 'script: the earlier take of "October 2026 CARE Report…" is cut, the later one kept, "…enter kar rahi hai." untouched: ' + JSON.stringify(r3.deletes.map(d => [d.start, +d.end.toFixed(2), d.reason])));
   const other = T.scriptTakes(said, 'Aaj hum mutual funds ke baare mein baat karenge aur SIP kaise kaam karta hai yeh samjhenge'.split(' '));
   assert(other.rate < 0.35, 'script: a script for another video barely matches (Clean up then ignores it): ' + other.rate.toFixed(2));
+}
+
+{
+  // quiet stretches: seconds where nothing reaches the voice are cut even if the transcript put a word there
+  const S = require('../js/silence.js');
+  const hop = 0.01, n = 1000, peak = new Float32Array(n), state = new Uint8Array(n);
+  for (let g = 0; g < n; g++) { const t = g * hop; const talk = t < 2 || (t >= 5 && t < 6.8) || t >= 8; peak[g] = talk ? -28 : -50; state[g] = talk ? 2 : 1; }
+  const q = S.quietStretches({ hop, n, t0: 0, peak, state }, -37);
+  assert(q.length === 1 && Math.abs(q[0].start - 2.25) < 0.01 && Math.abs(q[0].end - 4.75) < 0.01,
+    'quiet stretches: 3 s under the voice becomes one cut, 0.25 s short of each side; a 1.2 s pause and talk stay: ' + JSON.stringify(q));
 }
 
 {

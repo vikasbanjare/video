@@ -16479,7 +16479,7 @@
       if (!r || r.pending) return;   // transcription kicked off; the clean re-runs itself when words land
       var words = heardWords(r.vWords || state.transcriptWords, plan);
       // a spoken word is never cut to remove a pause (ASR timing drift allowed for)
-      var sil = CPSilence.protectCutsFromWords(r.sil.concat(wordlessNoiseCuts(words, plan, tune)), words, { minCut: tune.minCut });
+      var sil = CPSilence.protectCutsFromWords(r.sil.concat(wordlessNoiseCuts(words, plan, tune)), words, { minCut: tune.minCut }).concat(quietCuts(plan));
       var ranges = mergeSeqRanges(snapRangesToWords(sil.concat(r.other), words));
       prog.classList.add('hidden');
       var notes = [];
@@ -16578,7 +16578,8 @@
       var lo = plan.range.start, hi = plan.range.end, span = hi - lo;
       // a spoken word is never cut to remove a pause (ASR timing drift allowed for)
       var hw = heardWords(state.transcriptWords, plan);
-      var sil = CPSilence.protectCutsFromWords(plan.cuts.concat(wordlessNoiseCuts(hw, plan, tune)), hw, { minCut: tune.minCut })
+      var sil = CPSilence.mergeRanges(CPSilence.protectCutsFromWords(plan.cuts.concat(wordlessNoiseCuts(hw, plan, tune)), hw, { minCut: tune.minCut })
+        .concat(quietCuts(plan)).sort(function (a, b) { return a.start - b.start; }), 0)
         .map(function (c) { return { start: c.start, end: c.end, kind: 'silence' }; });
       var fillers = $('opt-fillers').checked ? fillerSeqRanges(lo, hi) : { ranges: [], why: '' };
       if (fillers.why) toast('Filler removal skipped — ' + fillers.why, true);
@@ -16757,6 +16758,13 @@
     if (!plan || !plan.grid || !words || !words.length) return [];
     var bar = voiceBar(plan);
     return isFinite(bar) ? CPSilence.wordlessNoise(words, plan.grid, bar, tune || plan.tune) : [];
+  }
+  /* Seconds where nothing reaches the voice, made-up words or not (see
+     CPSilence.quietStretches) — added after the word guard on purpose. */
+  function quietCuts(plan) {
+    if (!plan || !plan.grid) return [];
+    var bar = voiceBar(plan);
+    return isFinite(bar) ? CPSilence.quietStretches(plan.grid, bar) : [];
   }
   function snapRangesToWords(ranges, words, win) {
     if (!words || !words.length) return ranges;
