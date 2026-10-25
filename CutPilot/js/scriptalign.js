@@ -180,6 +180,25 @@
     return (w.length >= 8 && hindi / w.length >= 0.08) ? 'hinglish' : null;
   }
 
+  /* What a short probe transcribed IN HINDI says about the speech, for
+     Auto on the on-computer engine (its own detector called Hinglish
+     "English" at p = 0.85 and wrote an English TRANSLATION, with a 25×
+     repetition loop). Forced to Hindi:
+       Hinglish → Devanagari Hindi words mixed with Latin English ones;
+       English  → Devanagari gibberish ("तोड़ बाग गुट अबाग…"), no Latin.
+     'hinglish' when both scripts are there (≥15% Latin words), 'deva' when
+     it is all Devanagari (pure Hindi — or English: the caller asks the
+     engine's detector to tell them apart), null when there is no Hindi. */
+  function probeLang(text) {
+    var w = String(text || '').split(/\s+/), dev = 0, lat = 0;
+    for (var i = 0; i < w.length; i++) {
+      if (/[\u0900-\u097F]/.test(w[i])) dev++;
+      else if (/[A-Za-z]{2,}/.test(w[i])) lat++;
+    }
+    if (dev < 3) return null;
+    return lat / (dev + lat) >= 0.15 ? 'hinglish' : 'deva';
+  }
+
   /* A Word file (.docx) is a zip: read word/document.xml from it and keep
      its paragraphs. inflateRaw: zlib.inflateRawSync (Node, in the panel).
      ponytail: no zip64 / encrypted files — Word never writes those for a script. */
@@ -203,5 +222,5 @@
     throw new Error('No text found in this Word file.');
   }
 
-  return { norm: norm, scriptWords: scriptWords, matchPairs: matchPairs, alignToScript: alignToScript, docxText: docxText, scriptLang: scriptLang };
+  return { norm: norm, scriptWords: scriptWords, matchPairs: matchPairs, alignToScript: alignToScript, docxText: docxText, scriptLang: scriptLang, probeLang: probeLang };
 });

@@ -42,9 +42,9 @@ process.on('exit', () => { try { fs.rmSync(DIR, { recursive: true, force: true }
 const MEDIA = path.join(DIR, 'reel.wav');
 cp.execFileSync(FF, ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', "aevalsrc='0.4*sin(2*PI*300*t)*between(mod(t,2),0,1)':s=16000:d=10", MEDIA]);
 
-/* the saved store keeps RECORDING time (v3): this clip sits at 0:00 with its
+/* the saved store keeps RECORDING time (v4): this clip sits at 0:00 with its
    in point at 0, so recording time is timeline time */
-const SAVED = JSON.stringify({ v: 3, lines: [{ start: 1, end: 4, text: 'so the secret is consistency' }, { start: 5, end: 8, text: 'post every single day' }],
+const SAVED = JSON.stringify({ v: 4, lines: [{ start: 1, end: 4, text: 'so the secret is consistency' }, { start: 5, end: 8, text: 'post every single day' }],
   words: null, wordLevel: false, dedupeWords: false, minIn: 0, maxOut: 10 });
 
 async function run() {
@@ -71,7 +71,7 @@ async function run() {
     const settings = { groqKey: 'gsk-test-key', ffmpegPath: FF, whisperLang: 'auto' };
     /* the transcript saved for this clip on an earlier day, in the (faked)
        store. anyKey: it answers whatever name the panel asks for (the saved
-       span is the clip's span); else it is ONE file, 'reel-v3-0.json', found
+       span is the clip's span); else it is ONE file, 'reel-v4-0.json', found
        only by listing the folder — as for a span that is not the saved one. */
     async function withSavedTranscript(page, anyKey) {
       await page.evaluate((json, anyKey) => {
@@ -80,12 +80,12 @@ async function run() {
           const mod = req(m);
           if (m !== 'fs') return mod;
           const saved = (p) => anyKey ? /\.cutpilot[\\/]transcripts[\\/].*\.json$/.test(String(p))
-                                      : /\.cutpilot[\\/]transcripts[\\/]reel-v3-0\.json$/.test(String(p));
+                                      : /\.cutpilot[\\/]transcripts[\\/]reel-v4-0\.json$/.test(String(p));
           return Object.assign({}, mod, {
             existsSync: (p) => saved(p) || mod.existsSync(p),
             readFileSync: (p, e) => saved(p) ? json : mod.readFileSync(p, e),
             statSync: (p) => saved(p) ? { size: json.length, mtimeMs: 1, mtime: new Date(1), isFile: () => true, isDirectory: () => false } : mod.statSync(p),
-            readdirSync: (d) => /\.cutpilot[\\/]transcripts$/.test(String(d).replace(/[\\/]+$/, '')) ? ['reel-v3-0.json'] : mod.readdirSync(d)
+            readdirSync: (d) => /\.cutpilot[\\/]transcripts$/.test(String(d).replace(/[\\/]+$/, '')) ? ['reel-v4-0.json'] : mod.readdirSync(d)
           });
         };
       }, SAVED, anyKey !== false);

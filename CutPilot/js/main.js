@@ -1663,7 +1663,9 @@
   // A v3 transcript belongs to the recording and is placed on the timeline as
   // it is now (placeTranscript). v2 files are never read: each clip is heard
   // once more, then cached for good.
-  var _TC_VER = 'v3';
+  // v4: Auto on the on-computer engine wrote Hinglish as an ENGLISH translation
+  // (with repetition loops) before it probed the language — heard once more.
+  var _TC_VER = 'v4';
   function _tcKey(mediaPath, minIn, maxOut) {
     // key on the RESOLVED engine + language, so changing the model (or "Auto"
     // resolving differently) produces a new key and the clip is re-transcribed.
@@ -1678,7 +1680,7 @@
   function readCachedTranscriptFile(file) {
     try {
       var t = JSON.parse(nodeReq('fs').readFileSync(file, 'utf8'));
-      if (!t || t.v !== 3 || !t.lines || !t.lines.length) return null;
+      if (!t || t.v !== 4 || !t.lines || !t.lines.length) return null;
       return t;
     } catch (e) { return null; }
   }
@@ -1696,7 +1698,7 @@
       // the engine + language that made it ride along, so the loose finder only
       // auto-loads a transcript that matches the CURRENT model (else re-transcribe)
       fs.writeFileSync(p.join(dir, _tcKey(mediaPath, minIn, maxOut) + '.json'), JSON.stringify({
-        v: 3, lines: t.lines, words: t.words || null, wordLevel: !!t.wordLevel, dedupeWords: !!t.dedupeWords,
+        v: 4, lines: t.lines, words: t.words || null, wordLevel: !!t.wordLevel, dedupeWords: !!t.dedupeWords,
         minIn: minIn, maxOut: maxOut, q: resolveQuality(), lang: (asrLangNow()), at: Date.now()
       }), 'utf8');
     } catch (e) {}
@@ -2234,10 +2236,34 @@
               return gp.then(function (f) { return (f && f.length) ? f : rc; }, function () { return rc; });
             });
           }
+          /* Auto on the on-computer engine: its own detector heard Hinglish as
+             English (p = 0.85) and wrote an English TRANSLATION with a 25×
+             repetition loop — Clean up then found no retakes in it. 25 s are
+             transcribed in Hindi first: both scripts back = Hinglish (transcribe
+             as Hindi, romanise, as the Hinglish choice does); all Devanagari =
+             Hindi or English, the detector decides; no Hindi = Auto as before. */
+          function probeAuto() {
+            if (lang !== 'auto' || /\.en\.bin$/i.test(String(model))) return Promise.resolve();
+            setTranscriptBar('', ico, 'Listening for the language…', null);
+            var off = Math.max(0, Math.min(dur * 0.15, dur - 25)), heard = '';
+            return runProc(wbin, ['-m', model, '-f', wav, '-l', 'hi', '-ot', String(Math.round(off * 1000)), '-d', '25000', '-nt', '-t', wThreads],
+                           null, function (t) { heard += t; }).then(function () {
+              var k = CPScript.probeLang(heard);
+              if (k === 'hinglish') { wlang = 'hi'; romanize = true; return; }
+              if (k !== 'deva') return;
+              return runProc(wbin, ['-m', model, '-f', wav, '-dl', '-l', 'auto', '-ot', String(Math.round(off * 1000)), '-t', wThreads]).then(function (log) {
+                var m = /auto-detected language:\s*([a-z]+)/i.exec(String(log || ''));
+                if (m && m[1] !== 'en') wlang = m[1];   // Hindi (or another Indian language) transcribed in its own script
+              });
+            }).then(function () {
+              ctx.wlang = wlang;
+              try { diag('asr', 'Auto on this computer → ' + (romanize ? 'Hinglish' : wlang)); } catch (eD) {}
+            }, function () {});   // a probe that fails changes nothing
+          }
           // WORD-LEVEL decode (-ml 1 -sow) → real per-word timing so the caption
           // highlight follows the spoken word. Same model/words, just one word per
           // segment. Falls back to the line pass if the build/flags don't support it.
-          return runProc(wbin, ['-m', model, '-f', wav, '-osrt', '-of', outBase, '-l', wlang, '-ml', '1', '-sow', '-t', wThreads], null, wProgress('Transcribing with ' + modelLabel)).then(function () {
+          return probeAuto().then(function () { return runProc(wbin, ['-m', model, '-f', wav, '-osrt', '-of', outBase, '-l', wlang, '-ml', '1', '-sow', '-t', wThreads], null, wProgress('Transcribing with ' + modelLabel)); }).then(function () {
             var sp = outBase + '.srt';
             var w = fs.existsSync(sp) ? CPCaptions.parseSRT(fs.readFileSync(sp, 'utf8')) : [];
             try { fs.unlinkSync(sp); } catch (e) {}
@@ -16711,16 +16737,23 @@
      CPSilence.audibleWords): what the retake finder, the pause protection
      and the edge snapping all read. Without a plan they stay as they are. */
   function heardWords(words, plan) {
-    return (plan && plan.grid && words && words.length) ? CPSilence.audibleWords(words, plan.grid) : words;
+    var bar = voiceBar(plan);
+    return (plan && plan.grid && words && words.length) ? CPSilence.audibleWords(words, plan.grid, isFinite(bar) ? { bar: bar } : {}) : words;
+  }
+  /* The loudest voice mic's own speech level + 3 dB: real speech sits above it,
+     room noise below (measured −34 vs −39…−52 dB on a quiet recording). */
+  function voiceBar(plan) {
+    var bar = -Infinity;
+    ((plan && plan.mics) || []).forEach(function (m) { if (!m.music && !m.excluded && m.speech != null && m.speech > bar) bar = m.speech; });
+    return bar + 3;
   }
   /* Room noise with no words in it (rustles, creaks, breathing a quiet mic's
      gate let through) — cut like a pause. The bar is the loudest voice's own
      speech level + 3 dB: real speech sits above it, that noise below. */
   function wordlessNoiseCuts(words, plan, tune) {
     if (!plan || !plan.grid || !words || !words.length) return [];
-    var bar = -Infinity;
-    (plan.mics || []).forEach(function (m) { if (!m.music && !m.excluded && m.speech != null && m.speech > bar) bar = m.speech; });
-    return isFinite(bar) ? CPSilence.wordlessNoise(words, plan.grid, bar + 3, tune || plan.tune) : [];
+    var bar = voiceBar(plan);
+    return isFinite(bar) ? CPSilence.wordlessNoise(words, plan.grid, bar, tune || plan.tune) : [];
   }
   function snapRangesToWords(ranges, words, win) {
     if (!words || !words.length) return ranges;

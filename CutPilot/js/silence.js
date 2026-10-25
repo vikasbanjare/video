@@ -531,9 +531,19 @@
     var minRun = Math.max(1, Math.round((opts.minRun != null ? opts.minRun : 0.06) / hop));
     var bridge = Math.round((opts.bridge != null ? opts.bridge : 0.3) / hop);
     var maxWord = opts.maxWord != null ? opts.maxWord : 2.5;
+    var bar = opts.bar, lone = opts.lone != null ? opts.lone : 0.8;
     var out = [];
     for (var i = 0; i < words.length; i++) {
       var w = words[i];
+      // one word alone in a long silence whose sound never reaches the voice's
+      // level: the on-computer engine smears a sentence's first words back
+      // across the quiet before it ("lekin … kuch … challenges … bhi" spread
+      // over 16 s of room noise) — not where they were said
+      if (bar != null && (i === 0 || w.start - words[i - 1].end >= lone) && (i === words.length - 1 || words[i + 1].start - w.end >= lone)) {
+        var pk = [];
+        for (var gq = Math.max(0, Math.floor((w.start - grid.t0) / hop)); gq < Math.min(n, Math.ceil((w.end - grid.t0) / hop)); gq++) if (grid.peak) pk.push(grid.peak[gq]);
+        if (pk.length) { pk.sort(function (x, y) { return x - y; }); if (pk[Math.floor(0.9 * (pk.length - 1))] < bar) continue; }
+      }
       // no word lasts 2.5 s: one laid over 3-15 s of room noise was made up, or a
       // real word stretched back over the silence before it ("अक्टोबर" over 5 s).
       // Only its loud parts within `edge` of its start or end count; a number
@@ -558,6 +568,16 @@
         }
       }
       if (uncovered === len) { out.push(w); continue; }
+      if (!runs.length) {
+        // nothing loud under the word itself: its times may only have drifted
+        // (the on-computer engine stamps words a little early — "FD" at
+        // 0.60 s, the voice from ~0.8 s). A voice within `drift` keeps the
+        // word as it is; one made up over a long silence has none near it.
+        var dr = Math.round((opts.drift != null ? opts.drift : 0.25) / hop), near = false;
+        for (var q = Math.max(0, g0 - dr); q < Math.min(n, g1 + dr) && !near; q++) if (st[q] === 2) near = true;
+        if (near && !long) out.push(w);
+        continue;
+      }
       for (var k = 0; k < runs.length; k++) {
         var piece = carry(w, Math.max(w.start, grid.t0 + runs[k][0] * hop), Math.min(w.end, grid.t0 + runs[k][1] * hop));
         if (k > 0) { piece.text = ''; piece.word = ''; piece.part = true; }   // one word said once: its later loud stretches only hold time

@@ -126,7 +126,7 @@
         .replace(/[aeiouyhw']/g, function (m) { return m === 'w' ? 'w' : ''; })
         .replace(/[cqgk]/g, 'k').replace(/C/g, 'c').replace(/[jz]/g, 'c').replace(/d/g, 't').replace(/[bf]/g, 'p').replace(/v/g, 'w').replace(/x/g, 'ks');
     }
-    s = s.replace(/(.)\1+/g, '$1');
+    s = s.replace(/m/g, 'n').replace(/(.)\1+/g, '$1');   // m/n one nasal: अनुस्वार is "m" before p/b (कंपनी = company)
     return (_sk[t] = s);
   }
   // ponytail: 3+ consonants before two spellings count as one word — shorter skeletons collide ("so"/"se")
@@ -628,7 +628,9 @@
     if (opts.abandoned !== false && people !== 'many') {   // a conversation: echoes are replies
       for (var ab = 0; ab < P; ab++) {
         if (deleted[ab] || ack[ab] || ct[ab].length < 5) continue;
-        var need = SENT_END.test(ends[ab]) ? 0.9 : 0.75, done = false;
+        // a full stop is weak evidence (Whisper puts one on fragments, and a
+        // stumble split off as its own phrase leaves one behind)
+        var need = SENT_END.test(ends[ab]) ? 0.82 : 0.75, done = false;
         // a stumble, chatter and the retake can take more than a minute; this
         // pass only ever cuts the earlier, mostly repeated phrase, so it looks a little further
         var abGap = Math.max(maxGapSec, opts.abandonedGapSec || 90);
@@ -654,6 +656,24 @@
             removedWords += phrases[ab].length;
             deleted[ab] = inRetakeGroup[ab] = true;
             done = true;
+            // false starts leading into it ("October 26 / October / October 2026
+            // ke report…" before the real take): short phrases right before,
+            // each within 6 s of the next, mostly said again in the good take
+            for (var pb = ab - 1; pb >= 0 && !deleted[pb] && startOf(pb + 1) - endOf(pb) <= 6 &&
+                 ct[pb].length >= 1 && ct[pb].length <= 4 && 2 * lcsLen(ct[pb], stream) >= ct[pb].length; pb--) {
+              deletes.push(cutOf(pb, 'false start'));
+              removedWords += phrases[pb].length;
+              deleted[pb] = inRetakeGroup[pb] = true;
+            }
+            // the stumble that ended it ("…valuation bannet bro"), split off as a
+            // phrase of its own: short, right after it, and mostly not said in the retake
+            var tl = ab + 1;
+            if (tl < P && tl < bb && !deleted[tl] && ct[tl].length && ct[tl].length <= 3 && startOf(tl) - endOf(ab) <= 1 &&
+                2 * lcsLen(ct[tl], stream) <= ct[tl].length) {   // mostly not said again (a sound-alike may match by chance)
+              deletes.push(cutOf(tl, 'abandoned take'));
+              removedWords += phrases[tl].length;
+              deleted[tl] = inRetakeGroup[tl] = true;
+            }
           }
         }
       }

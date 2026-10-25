@@ -2127,6 +2127,11 @@ console.log('script alignment (your script\'s words + the transcript\'s timing)'
   assert(S.scriptLang('FD, Mutual Funds, Stocks ye toh sab jaante hain. Lekin bade Institutions aur HNIs ka paisa kaise invest hota hai?') === 'hinglish', 'a Hinglish script transcribes as Hinglish');
   assert(S.scriptLang('नमस्ते दोस्तों आज हम बात करेंगे शेयर बाजार की') === 'hi', 'a Devanagari script transcribes as Hindi');
   assert(S.scriptLang('Hello everyone, today we talk about gold funds and how to invest.') === null, 'an English script keeps Auto');
+  // Auto on the on-computer engine: a probe forced to Hindi tells Hinglish from English (outputs measured on the IPO reel)
+  assert(S.probeLang('AUM के Terms में इंडिया के Leading Alternatives Platform में से एक है और इसके पास 17 साल से ज्यादा का experience है अब बात करते हैं Numbers की') === 'hinglish',
+    'Hinglish speech forced to Hindi comes back in both scripts → transcribe as Hinglish (not the English translation)');
+  assert(S.probeLang('तोड़ बाग गुट अबाग पाग टोग गुट एर चानल अब एक प्रवाग जानल चानल चानल') === 'deva', 'English speech forced to Hindi is all-Devanagari gibberish → ask the detector');
+  assert(S.probeLang('Today we are going to talk about growing your channel') === null, 'no Hindi at all → Auto as before');
   assert(r.matched === true, 'a matching script is accepted (rate ' + r.matchRate.toFixed(2) + ')');
   assert(r.cues[0].text === 'Hello everyone, my name is Akshay Uddeshi.',
     'misheard name is corrected INSIDE its own caption: "' + r.cues[0].text + '"');
