@@ -60,6 +60,7 @@
     var im = $('bk-logo-img');
     if (im) { if (k.logo) { im.src = k.logo; im.classList.remove('hidden'); } else im.classList.add('hidden'); }
     if ($('bk-logo-clear')) $('bk-logo-clear').classList.toggle('hidden', !k.logo);
+    if ($('bk-logo-pick')) $('bk-logo-pick').textContent = k.logo ? 'Change logo' : 'Add logo';
   }
   function update(patch) {
     var k = load(), p;
@@ -72,7 +73,7 @@
     var kit = K(), k = get();
     if (!kit) return;
     if (!isSet(k)) return kit.toast('Set up your brand first: Settings → Brand kit.', true);
-    if (kit.applyBrand && kit.applyBrand(k)) kit.toast('🏷 Your brand is on this style' + (k.font ? ' — ' + k.font : '') + '. ＋ Save keeps it as your own style.');
+    if (kit.applyBrand && kit.applyBrand(k)) kit.toast('🏷 Brand added' + (k.font ? ': ' + k.font : '') + '. Tap ＋ Save to keep it as your own style.');
   }
 
   /* Premiere's panel won't open the native colour box or <select> list, so
@@ -86,7 +87,7 @@
       $('bk-accent-mount').appendChild(_col.el);
     }
     if ($('bk-font-mount')) {   // rebuilt each time: installed fonts arrive after boot
-      var opts = [{ value: '', label: "Keep each style's own" }].concat(kit.fontOptions ? kit.fontOptions() : []);
+      var opts = [{ value: '', label: "Style's own font" }].concat(kit.fontOptions ? kit.fontOptions() : []);
       _dd = kit.dropdown(opts, k.font || '', function (v) { update({ font: v }); }, 'Pick a font');
       $('bk-font-mount').innerHTML = ''; $('bk-font-mount').appendChild(_dd.el);
     }
@@ -103,7 +104,7 @@
       var inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/png,image/jpeg,image/webp';
       inp.addEventListener('change', function () {
         var f = inp.files && inp.files[0]; if (!f) return;
-        shrinkLogo(f, function (url) { if (url) update({ logo: url }); else if (K()) K().toast('That picture could not be read — try a PNG or JPG.', true); });
+        shrinkLogo(f, function (url) { if (url) update({ logo: url }); else if (K()) K().toast("Couldn't open that image. Try a PNG, JPG or WebP.", true); });
       });
       inp.click();
     });

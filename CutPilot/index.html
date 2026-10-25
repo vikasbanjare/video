@@ -373,7 +373,7 @@
         <button id="btn-back-lib" class="chip-btn" title="Back to all styles">‹ All styles</button>
         <span class="editor-tpl-name" id="editor-tpl-name">Spotlight</span>
         <span class="spacer"></span>
-        <button id="btn-brand-tpl" class="chip-btn" title="Put my brand kit on this style (font, colour, brand words)" aria-label="Use my brand kit">Brand</button>
+        <button id="btn-brand-tpl" class="chip-btn" title="Use your brand font, colour and words on this style" aria-label="Use my brand kit">Brand</button>
         <button id="btn-save-tpl" class="chip-btn" title="Save as my own style" aria-label="Save as my own style">＋ Save</button>
         <button id="btn-dup-tpl" class="chip-btn" title="Duplicate" aria-label="Duplicate">⧉</button>
         <button id="btn-export-tpl" class="chip-btn" title="Save to a file" aria-label="Save to a file">⤴</button>
@@ -1486,13 +1486,13 @@
       <div class="info-pop hidden" id="bk-info">Captions: tap <b>Brand</b> in a style's editor to put your font and colour on it (and colour your brand words). Safe zone: <b>My branding</b> starts with your name and logo. Publish kit signs as your channel.</div>
       <label class="fld-full">Channel name<input type="text" id="bk-channel" maxlength="40" placeholder="@yourchannel"></label>
       <div class="sz-row" style="margin:6px 0">
-        <button id="bk-logo-pick" class="chip-btn" type="button">Logo…</button>
+        <button id="bk-logo-pick" class="chip-btn" type="button">Add logo</button>
         <img id="bk-logo-img" class="hidden" alt="Your logo" style="height:28px;width:auto;border-radius:6px">
         <button id="bk-logo-clear" class="chip-btn hidden" type="button" aria-label="Remove logo">✕</button>
       </div>
-      <div class="fld-full">Brand colour <span id="bk-accent-mount"></span><input type="hidden" id="bk-accent" value="#ffd400"></div>
+      <div class="fld-full">Brand colour <span id="bk-accent-mount"></span><input type="hidden" id="bk-accent" value="#ffd400"><span class="hint" style="display:block;font-weight:400;margin:2px 0 0">Colours the word being spoken</span></div>
       <label class="fld-full">Brand font<div id="bk-font-mount" class="dd-mount"></div><input type="hidden" id="bk-font" value=""></label>
-      <label class="fld-full">Brand words<input type="text" id="bk-words" maxlength="200" placeholder="channel or product names, comma-separated"></label>
+      <label class="fld-full">Brand words<input type="text" id="bk-words" maxlength="200" placeholder="e.g. Pulse, aifloh"><span class="hint" style="display:block;font-weight:400;margin:2px 0 0">Shown in your brand colour</span></label>
     </div>
     <div class="card">
       <div class="step-head"><span class="step-title">Look</span></div>
