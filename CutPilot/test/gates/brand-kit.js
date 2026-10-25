@@ -38,6 +38,13 @@ const bad = (m, d) => { failed++; console.log('  ✗ ' + m + (d ? '\n      ' + d
       document.querySelector('#sz-brandmode button[data-bm="custom"]').click();
       out.sz = document.getElementById('sz-channel').value;
       out.prompt = window.CPPublish.prompt([{ text: 'Aaj hum paise ki baat karenge' }], '', 'long').user;
+      // F. the Settings pickers are Pulse's own (no native colour box / <select>) and save
+      B._save({});
+      const hx = document.querySelector('#bk-accent-mount .mp-hex');
+      if (hx) { hx.value = '#12ab34'; hx.dispatchEvent(new Event('input')); }
+      const it = [...document.querySelectorAll('#bk-font-mount .cp-dd-list *')].find(e => e.textContent.trim().indexOf('Poppins') === 0 && !e.children.length);
+      if (it) it.click();
+      out.pick = { native: !!document.querySelector('#bk-card input[type=color], #bk-card select'), hx: !!hx, it: !!it, kit: B.get() };
       B._save({ channel: 'x', accent: 'red', words: 'a, b ,, c' });
       out.kept = B.get();
       return out;
@@ -48,6 +55,7 @@ const bad = (m, d) => { failed++; console.log('  ✗ ' + m + (d ? '\n      ' + d
       'B. "Brand" on a style: brand font, brand colour on the spoken word, brand words coloured', JSON.stringify(s));
     (r.sz === '@aifloh' ? ok : bad)('C. Safe zone "My branding" starts with the channel name (' + r.sz + ')');
     (/"@aifloh"/.test(r.prompt) ? ok : bad)('D. Publish kit signs as the channel');
+    (!r.pick.native && r.pick.kit.accent === '#12ab34' && r.pick.kit.font === 'Poppins' ? ok : bad)('F. Settings colour and font pickers work inside the panel and save', JSON.stringify(r.pick));
     (r.kept.accent === null && JSON.stringify(r.kept.words) === '["a","b","c"]' ? ok : bad)('E. the kit is kept clean: a bad colour is dropped, words become a list', JSON.stringify(r.kept));
   } finally { await P.close(); }
   if (failed) { console.log('BRAND KIT: ' + failed + ' failed'); process.exit(1); }

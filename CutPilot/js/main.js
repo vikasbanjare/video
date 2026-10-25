@@ -21390,6 +21390,9 @@
     transcriptLabel: function () { return state.transcript ? state.transcript.label : null; },
     words: function () { return state.transcriptWords || null; },
     pickFolder: pickFolder,
+    // in-panel pickers (the native colour box / <select> popup won't open in Premiere)
+    colorField: makeColorField, dropdown: makeDropdown,
+    fontOptions: function () { return fontOptionList().filter(function (o) { return o.value !== '__custom__'; }); },
     // 🏷 Brand kit on the style being edited: the brand font, the brand
     // colour on the spoken word, the brand words coloured
     applyBrand: function (k) {

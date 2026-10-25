@@ -53,7 +53,9 @@
     var k = get();
     if ($('bk-channel')) $('bk-channel').value = k.channel;
     if ($('bk-accent')) $('bk-accent').value = k.accent || '#ffd400';
+    if (_col) _col.setDisplay(k.accent || '#ffd400');
     if ($('bk-font')) $('bk-font').value = k.font || '';
+    if (_dd) _dd.set(k.font || '');
     if ($('bk-words')) $('bk-words').value = k.words.join(', ');
     var im = $('bk-logo-img');
     if (im) { if (k.logo) { im.src = k.logo; im.classList.remove('hidden'); } else im.classList.add('hidden'); }
@@ -73,17 +75,29 @@
     if (kit.applyBrand && kit.applyBrand(k)) kit.toast('🏷 Your brand is on this style' + (k.font ? ' — ' + k.font : '') + '. ＋ Save keeps it as your own style.');
   }
 
-  function fonts() {
-    var sel = $('bk-font'); if (!sel || sel.options.length > 1) return;
-    var list = (window.CPCaptions && CPCaptions.FONTS) || [];
-    list.forEach(function (f) { var o = document.createElement('option'); o.value = f; o.textContent = f; sel.appendChild(o); });
+  /* Premiere's panel won't open the native colour box or <select> list, so
+     both use Pulse's own in-panel pickers. */
+  var _col = null, _dd = null;
+  function pickers() {
+    var kit = K(), k = get();
+    if (!kit || !kit.colorField) return;
+    if (!_col && $('bk-accent-mount')) {
+      _col = kit.colorField(k.accent || '#ffd400', function (v) { update({ accent: v }); });
+      $('bk-accent-mount').appendChild(_col.el);
+    }
+    if ($('bk-font-mount')) {   // rebuilt each time: installed fonts arrive after boot
+      var opts = [{ value: '', label: "Keep each style's own" }].concat(kit.fontOptions ? kit.fontOptions() : []);
+      _dd = kit.dropdown(opts, k.font || '', function (v) { update({ font: v }); }, 'Pick a font');
+      $('bk-font-mount').innerHTML = ''; $('bk-font-mount').appendChild(_dd.el);
+    }
   }
 
   function wire() {
-    fonts(); fill();
+    pickers(); fill();
+    // the font list grows once installed fonts are scanned: refresh on opening Settings
+    ['nav-settings'].map($).concat([document.querySelector('[data-tab="settings"]')])
+      .forEach(function (b) { if (b) b.addEventListener('click', function () { pickers(); fill(); }); });
     if ($('bk-channel')) $('bk-channel').addEventListener('change', function () { update({ channel: this.value }); });
-    if ($('bk-accent')) $('bk-accent').addEventListener('change', function () { update({ accent: this.value }); });
-    if ($('bk-font')) $('bk-font').addEventListener('change', function () { update({ font: this.value }); });
     if ($('bk-words')) $('bk-words').addEventListener('change', function () { update({ words: this.value }); });
     if ($('bk-logo-pick')) $('bk-logo-pick').addEventListener('click', function () {
       var inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/png,image/jpeg,image/webp';
