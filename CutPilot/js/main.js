@@ -4508,7 +4508,7 @@
       var m = xml.match(/ExtensionBundleVersion="([^"]+)"/);
       if (m && m[1]) {
         var el = $('ver'); if (el) el.textContent = 'v' + m[1];
-        var ft = $('ver-foot'); if (ft) ft.textContent = 'Pulse v' + m[1] + ' · auto-edit · multicam · captions · chapters · organize';
+        var ft = $('ver-foot'); if (ft) ft.textContent = 'Pulse v' + m[1] + ' · Clean up · Podcast cameras · Captions · Chapters · Organize';
       }
     } catch (e) {}
   }
@@ -6363,7 +6363,7 @@
     var folders = settings.mogrtFolders || [];
     if (!folders.length) {
       var e = document.createElement('p'); e.className = 'hint';
-      e.textContent = 'No extra folders yet. Tap “Add folder…” to point Pulse at a folder of .mogrt templates.';
+      e.textContent = 'No extra folders yet. Tap “Add template folder…” to point Pulse at a folder of .mogrt templates.';
       box.appendChild(e); return;
     }
     folders.forEach(function (dir) {

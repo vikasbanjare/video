@@ -1455,10 +1455,10 @@
         <label class="fld-full" id="set-swara-row">Indian-language key
           <input type="password" id="set-swara-key" placeholder="paste your key…" autocomplete="off" spellcheck="false">
         </label>
-        <label class="fld-full" id="set-dg-row">Retake-finder key <span class="dim">(also transcribes)</span>
+        <label class="fld-full" id="set-dg-row">Deepgram key <span class="dim">(also finds retakes)</span>
           <input type="password" id="set-dg-key" placeholder="paste your key…" autocomplete="off" spellcheck="false">
         </label>
-        <p class="hint" style="margin-top:6px">One key is enough — paste it in the box that matches your choice.</p>
+        <p class="hint" style="margin-top:6px">You need only one key: the one for the Accuracy you picked.</p>
       </details>
     </div>
 
@@ -1481,7 +1481,7 @@
     <!-- 🏷 Brand kit (js/brandkit.js) -->
     <div class="card" id="bk-card">
       <div class="step-head"><span class="step-title">Brand kit</span>
-        <button class="info" type="button" data-info="bk-info" aria-label="Where it is used">ⓘ</button></div>
+        <button class="info" type="button" data-info="bk-info" aria-label="Where your brand kit is used">ⓘ</button></div>
       <p class="hint">Your channel's look, saved once, used everywhere.</p>
       <div class="info-pop hidden" id="bk-info">Captions: tap <b>Brand</b> in a style's editor to put your font and colour on it (and colour your brand words). Safe zone: <b>My branding</b> starts with your name and logo. Publish kit signs as your channel.</div>
       <label class="fld-full">Channel name<input type="text" id="bk-channel" maxlength="40" placeholder="@yourchannel"></label>
@@ -1496,8 +1496,8 @@
     </div>
     <div class="card">
       <div class="step-head"><span class="step-title">Look</span></div>
-      <span class="field-label" style="margin-top:0">Colours</span>
-      <div class="seg-control" id="set-theme" role="group" aria-label="Colours">
+      <span class="field-label" style="margin-top:0">Theme</span>
+      <div class="seg-control" id="set-theme" role="group" aria-label="Theme">
         <button type="button" data-theme="auto" class="on">Match Premiere</button>
         <button type="button" data-theme="light">Light</button>
         <button type="button" data-theme="dark">Dark</button>
@@ -1513,8 +1513,8 @@
     <div class="card">
       <div class="step-head"><span class="step-title">Retake finder</span>
         <button class="info" type="button" data-info="vbk-info" aria-label="Why a second key?">ⓘ</button></div>
-      <p class="hint">Needed for the best retake finder.</p>
-      <div class="info-pop hidden" id="vbk-info">Removing retakes needs words that keep <b>every</b> re-read — the normal speech key cleans those away. A key from <b>deepgram.com</b> or <b>assemblyai.com</b> (both have free plans) is used just for finding retakes.</div>
+      <p class="hint">Finds every retake, even lines you read twice.</p>
+      <div class="info-pop hidden" id="vbk-info">The speech key tidies away lines you read twice, so Pulse can't spot the retake. A key from <b>deepgram.com</b> or <b>assemblyai.com</b> (both free to start) keeps every word. Pulse uses it only to find retakes.</div>
       <label class="fld-full" style="margin-top:4px">Service
         <select id="set-vb-provider">
           <option value="deepgram" selected>deepgram.com (best)</option>
@@ -1531,8 +1531,8 @@
     </div>
 
     <div class="card">
-      <div class="step-head"><span class="step-title">License</span><span id="lic-state" class="badge">checking…</span></div>
-      <p class="hint">Enter your license key to unlock Pulse for good.</p>
+      <div class="step-head"><span class="step-title">Licence</span><span id="lic-state" class="badge">checking…</span></div>
+      <p class="hint">Enter your licence key to unlock Pulse for good.</p>
       <div class="row tight">
         <input type="text" id="set-lic-key" placeholder="PULSE-XXXX-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false">
         <button id="btn-activate-lic" class="chip-btn">Activate</button>
@@ -1542,12 +1542,12 @@
 
     <div class="card">
       <div class="step-head"><span class="step-title">Help &amp; diagnostics</span><span class="badge" id="diag-count">0</span></div>
-      <p class="hint">Something wrong? Copy diagnostics and send them to aiFloh. <button class="info" type="button" data-info="diag-info" aria-label="What is included">ⓘ</button></p>
-      <div class="info-pop hidden" id="diag-info">Make the problem happen, then tap <b>Copy diagnostics</b> and paste it to aiFloh. It captures the exact error so the real bug gets fixed. <b>No keys are included.</b><span class="tester-only"> <b>Test everything</b> checks Pulse inside Premiere without touching your timeline.</span></div>
+      <p class="hint">Something wrong? Copy diagnostics and send them to aifloh. <button class="info" type="button" data-info="diag-info" aria-label="What is included">ⓘ</button></p>
+      <div class="info-pop hidden" id="diag-info">Make the problem happen, then tap <b>Copy diagnostics</b> and paste it to aifloh. It captures the exact error so the real bug gets fixed. <b>No keys are included.</b><span class="tester-only"> <b>Test everything</b> checks Pulse inside Premiere without touching your timeline.</span></div>
       <div class="row tight">
         <button id="btn-diag-copy" class="chip-btn">Copy diagnostics</button>
         <button id="btn-selftest" class="chip-btn tester-only" title="Pulse tests itself inside Premiere — renders real frames in a temporary sequence and checks the words show. Your timeline is never touched.">Test everything</button>
-        <button id="btn-install-fonts" class="chip-btn" title="Installs the free Google fonts the caption styles use into your own fonts folder, so editable captions in Premiere use the same fonts as the image captions. Restart Premiere once afterwards.">Install caption fonts</button>
+        <button id="btn-install-fonts" class="chip-btn" title="Installs the free fonts the caption styles use, so editable captions match. Restart Premiere once after.">Install caption fonts</button>
         <button id="btn-style-test" class="chip-btn tester-only" title="Premiere draws every caption style as an editable caption and Pulse compares it with the image caption. Sheets and a report go to Desktop › Pulse Caption Test. Your timeline is never touched.">Test caption styles</button>
         <button id="btn-diag-clear" class="chip-btn tester-only">Clear</button>
         <pre id="selftest-out" class="diag-out hidden"></pre>
@@ -1572,17 +1572,17 @@
         <label class="check"><input type="checkbox" id="set-enhance-audio" checked> Clean the audio before transcribing <span class="dim">(your media is never changed)</span></label>
         <label class="check"><input type="checkbox" id="set-precise-timing" checked> Precise word timing <span class="dim">(tighter highlight)</span></label>
         <label class="check"><input type="checkbox" id="set-dropframe"> My projects are 29.97 or 59.94 fps</label>
-        <button id="btn-save-settings" class="hero-btn small">Save settings</button>
+        <button id="btn-save-settings" class="hero-btn small">Save these options</button>
         <label class="fld-full">Audio engine location <span class="dim">(only if the download can't run)</span>
           <div class="row tight" style="margin-top:0">
             <input type="text" id="set-ffmpeg" placeholder="choose the audio engine file…">
-            <button id="btn-ffmpeg-pick" class="chip-btn" aria-label="Choose the file">…</button>
+            <button id="btn-ffmpeg-pick" class="chip-btn" aria-label="Choose the audio engine file">…</button>
           </div>
         </label>
         <span class="field-label">Extra Premiere template folders</span>
         <p class="hint" style="margin:4px 0 6px">Your own template packs show up in the gallery.</p>
         <div id="mogrt-folders" class="mogrt-folders"></div>
-        <button id="btn-add-mogrt-folder" class="hero-btn small alt">Add folder…</button>
+        <button id="btn-add-mogrt-folder" class="hero-btn small alt">Add template folder…</button>
         <div class="row tight" style="margin-top:12px">
           <button id="btn-clean-caps" class="chip-btn" title="Delete every caption track Pulse added to this sequence (your video and audio are untouched)">Remove all Pulse captions</button>
           <button id="cmdk-open" class="chip-btn cmdk-open" title="Quick actions — Ctrl/Cmd K">Quick commands (⌘K)</button>
@@ -1590,7 +1590,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.10.116 · auto-edit · multicam · captions · chapters · organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.10.116 · Clean up · Podcast cameras · Captions · Chapters · Organize</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->
