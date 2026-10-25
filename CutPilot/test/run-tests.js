@@ -2256,6 +2256,19 @@ try {
     'in a conversation the abandoned-take pass stays off (a repeat there is a reply)');
 }
 
+{
+  // Studio sound sets loudness with ONE fixed gain (one-pass loudnorm pumped and shifted the tone 1.1 dB)
+  const win = {}, doc = { readyState: 'complete', addEventListener() {}, getElementById() { return null; } };
+  require('vm').runInNewContext(require('fs').readFileSync(path.join(__dirname, '..', 'js', 'studio.js'), 'utf8'), { window: win, document: doc, process, setTimeout, console });
+  const St = win.CPStudio;
+  assert(St.loudnessGain(-28.4, { target: -16, mics: 1 }) === 'volume=12.40dB,alimiter=limit=0.841:attack=5:release=50:level=false',
+    'Studio sound: −28.4 LUFS to podcast apps (−16) is one +12.4 dB gain with a peak limiter: ' + St.loudnessGain(-28.4, { target: -16, mics: 1 }));
+  assert(/volume=-3\.00dB/.test(St.loudnessGain(-14, { target: -14, mics: 2 })), 'two mics land 3 dB lower each, so the mix hits the target');
+  const ch = St.filterChain({ target: -16, mics: 1, loud: false });
+  assert(!/loudnorm/.test(ch) && /equalizer=f=3500:t=q:w=1.2:g=1\b/.test(ch) && /speechnorm=e=3:/.test(ch),
+    'Studio sound keeps the voice its own: presence +1 dB (was +3), leveller lifts at most 3× (was 6×), no riding loudness: ' + ch);
+}
+
 console.log('\nRunning host (timeline) tests…');
 var hostOk = true;
 try {

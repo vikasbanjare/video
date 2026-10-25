@@ -37,18 +37,35 @@
     // measured with clicks; trimmed off again, or every cut lands 25 ms late)
     if (o.noise !== false && !o.aiClean) parts.push('afftdn=nr=12:nf=-35:tn=1', 'atrim=start_sample=1200', 'asetpts=PTS-STARTPTS');
     if (o.clarity !== false) {
-      // a clear, present voice: less mud and boom, more presence, gentler "s"
-      parts.push('equalizer=f=250:t=q:w=1:g=-3', 'equalizer=f=3500:t=q:w=1.2:g=3');
-      if (!o.legacy) parts.push('deesser=i=0.4:m=0.5:f=0.5');
+      // a clear voice that is still the speaker's own: a touch less mud, a
+      // touch more presence, gentler "s". (−3 / +3 dB shifted the tone 1.6 dB —
+      // thinner and brighter, the owner heard it; ±1.5 / +1 keeps it theirs.)
+      parts.push('equalizer=f=250:t=q:w=1:g=-1.5', 'equalizer=f=3500:t=q:w=1.2:g=1');
+      if (!o.legacy) parts.push('deesser=i=0.3:m=0.5:f=0.5');
     }
     // balance: quiet words lifted, loud ones held, as the person talks (a
     // speech leveller, not one level for the whole file)
     // (an older audio engine without the speech leveller: a gentle compressor)
-    if (o.level !== false) parts.push(o.legacy ? 'acompressor=threshold=0.1:ratio=3:attack=15:release=200:makeup=1' : 'speechnorm=e=6.25:r=0.00001:l=1');
+    // (lifting a quiet word up to 6× flattened the speaker's own rise and fall
+    // and brought breaths up; 3× still evens a soft guest out)
+    if (o.level !== false) parts.push(o.legacy ? 'acompressor=threshold=0.1:ratio=3:attack=15:release=200:makeup=1' : 'speechnorm=e=3:r=0.0001:l=1');
     // two or more mics play together: each a little lower, so the mix lands on target
     var target = (o.target != null ? Number(o.target) : -14) - ((o.mics || 1) > 1 ? 3 : 0);
-    parts.push('loudnorm=I=' + target + ':TP=-1.5:LRA=11');
+    // loud: false — the caller sets the loudness itself with ONE fixed gain
+    // (loudnessGain): one-pass loudnorm rides the gain as the voice plays,
+    // which pumped and shifted the tone 1.1 dB on its own
+    if (o.loud !== false) parts.push('loudnorm=I=' + target + ':TP=-1.5:LRA=11');
     return parts.join(',');
+  }
+
+  /* ONE fixed gain from the measured loudness to the target, and a limiter
+     at −1.5 dBFS for the odd peak (the voice's own rise and fall is kept).
+     Pure (gates read it). */
+  function loudnessGain(measured, o) {
+    o = o || {};
+    var target = (o.target != null ? Number(o.target) : -14) - ((o.mics || 1) > 1 ? 3 : 0);
+    var g = Math.max(-30, Math.min(30, target - measured));
+    return 'volume=' + g.toFixed(2) + 'dB,alimiter=limit=0.841:attack=5:release=50:level=false';
   }
 
   /* The pieces of audio that play, from Pulse's read of the timeline
@@ -238,10 +255,12 @@
             kit.capProgress('🎚 A' + (+tn + 1) + ': taking out the background noise (AI)…', 60000);
             var outDir = pathMod.join(work, 'ai');
             try { fs.mkdirSync(outDir, { recursive: true }); } catch (eA) {}
-            // --pf --pf-beta 0.1: its post-filter, measured with DNSMOS (Microsoft's
-            // speech-quality model) on three bad recordings: overall 3.07 → 3.15;
+            // -a 30: noise down by up to 30 dB, not to dead silence — a pause keeps
+            // a faint room, so the voice doesn't sound cut out of space. No
+            // post-filter: at 5× (pf-beta 0.1) it scored 3.07 → 3.15 on DNSMOS
+            // but the owner heard the voice as over-processed.
             // -D: its 30 ms look-ahead taken back by itself (0 ms, measured)
-            cleaned = kit.runFfmpeg(df, ['--pf', '--pf-beta', '0.1', '-D', joined, '-o', outDir], 3 * 60 * 60 * 1000).then(function (r2) {
+            cleaned = kit.runFfmpeg(df, ['-a', '30', '-D', joined, '-o', outDir], 3 * 60 * 60 * 1000).then(function (r2) {
               var got = pathMod.join(outDir, 'joined.wav');
               return (!r2.error && r2.code === 0 && fs.existsSync(got) && fs.statSync(got).size > 1000) ? { file: got, delay: 0 } : null;
             });
@@ -265,7 +284,26 @@
           o2.aiClean = c.ai; if (c.ai) opts.aiUsed = true;
           var out = pathMod.join(dir, 'A' + (+tn + 1) + '-studio-' + stamp + '.wav');
           kit.capProgress('🎚 A' + (+tn + 1) + ': balancing the voice and setting the loudness…', 60000);
-          function once(o3) { return kit.runFfmpeg(ff, ['-hide_banner', '-nostdin', '-y', '-i', c.file, '-af', filterChain(o3), '-ar', '48000', '-c:a', 'pcm_s24le', out], 2 * 60 * 60 * 1000); }
+          /* The loudness as ONE fixed gain: the chain is measured (EBU R128) and
+             then raised or lowered by that much, with a limiter that only
+             catches the odd peak. Nothing rides the gain while the voice plays. */
+          function measure(o3) {
+            var m = {}; for (var mk in o3) if (o3.hasOwnProperty(mk)) m[mk] = o3[mk];
+            m.loud = false;
+            return kit.runFfmpeg(ff, ['-hide_banner', '-nostdin', '-i', c.file, '-af', filterChain(m) + ',ebur128=framelog=quiet', '-f', 'null', '-'], 2 * 60 * 60 * 1000)
+              .then(function (r) { var i = /I:\s*(-?[\d.]+)\s*LUFS/.exec(String((r && r.stderr) || '')); return i ? +i[1] : null; });
+          }
+          function once(o3) {
+            return measure(o3).then(function (lufs) {
+              var af = filterChain(o3);
+              if (lufs != null && isFinite(lufs) && lufs > -70) {
+                var m = {}; for (var mk in o3) if (o3.hasOwnProperty(mk)) m[mk] = o3[mk];
+                m.loud = false;
+                af = filterChain(m) + ',' + loudnessGain(lufs, o3);
+              }
+              return kit.runFfmpeg(ff, ['-hide_banner', '-nostdin', '-y', '-i', c.file, '-af', af, '-ar', '48000', '-c:a', 'pcm_s24le', out], 2 * 60 * 60 * 1000);
+            });
+          }
           return once(o2).then(function (r) {
             if (r && r.code !== 0 && /No such filter|Filter not found/i.test(String(r.stderr || ''))) { o2.legacy = true; return once(o2); }
             return r;
@@ -471,6 +509,6 @@
       c.classList.add('flash'); setTimeout(function () { c.classList.remove('flash'); }, 1600);
     }, 120);
   }
-  window.CPStudio = { filterChain: filterChain, piecesOf: piecesOf, pieceGains: pieceGains, run: run, show: show };
+  window.CPStudio = { filterChain: filterChain, loudnessGain: loudnessGain, piecesOf: piecesOf, pieceGains: pieceGains, run: run, show: show };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire); else wire();
 })();
