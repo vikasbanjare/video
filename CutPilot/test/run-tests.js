@@ -2305,6 +2305,15 @@ try {
 }
 
 {
+  // the paid product has no CorridorKey Pro key (its licence §2a/2d): the build flips this
+  // switch and drops the launcher — the anchor must exist or the build would ship it
+  const fs = require('fs'), g = fs.readFileSync(path.join(__dirname, '..', 'js', 'greenscreen.js'), 'utf8');
+  const bp = fs.readFileSync(path.join(__dirname, '..', '..', 'tools', 'build-protected.js'), 'latin1');
+  assert(/var PRO_KEY = true;\s*\/\*@@CP_PROKEY@@\*\//.test(g) && /@@CP_PROKEY@@/.test(bp) && /ck_mac\.py/.test(bp),
+    'product build: the Pro key switch is there and the build turns it off and leaves out ck_mac.py');
+}
+
+{
   // quiet stretches: seconds where nothing reaches the voice are cut even if the transcript put a word there
   const S = require('../js/silence.js');
   const hop = 0.01, n = 1000, peak = new Float32Array(n), state = new Uint8Array(n);

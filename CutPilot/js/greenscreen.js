@@ -107,6 +107,10 @@
      full size swapped), the matte is scaled back up, and the colour is the
      sharp camera image inside the person with CorridorKey's own backdrop-free
      colour on the edge band (no green halo). */
+  // Off in the paid product (the build sets it): CorridorKey's licence (§2a/2d)
+  // forbids it inside commercial software without Corridor's written agreement.
+  // Quick key (Premiere's Ultra Key) and Cut out stay.
+  var PRO_KEY = true; /*@@CP_PROKEY@@*/
   var CK_REPO = 'https://github.com/nikopueringer/CorridorKey2.0/archive/refs/heads/main.zip';
   var CK_UTILS3D = 'https://github.com/EasternJournalist/utils3d/archive/83bfa5bda008803f6521ce9547f94023b8afeddd.zip';
   function ckPaths(kit) {
@@ -248,7 +252,7 @@
   }
 
   function runPro() {
-    var kit = K(); if (!kit || busy) return;
+    var kit = K(); if (!kit || busy || !PRO_KEY) return;
     var why = ckUnsupported(); if (why) return kit.toast(why, true);
     if (!ckReady()) return showSetup(true);
     var ff = kit.resolveFfmpeg(); if (!ff) return kit.toast('Pulse\'s video engine (ffmpeg) is missing — reinstall Pulse.', true);
@@ -282,6 +286,7 @@
   function stopPro() { _ckStop = true; try { if (_ckProc) _ckProc.kill(); } catch (e) {} }
 
   function showSetup(ask) {
+    if (!PRO_KEY) return;
     var kit = K(), row = $('gs-pro-setup'); if (row) row.classList.toggle('hidden', ckReady());
     if (!ask) return;
     kit.confirm('Pro key uses CorridorKey 2.0 by Corridor Digital — the best green-screen keyer there is, free for most uses under its own licence (CC BY-NC-SA with Corridor\'s terms).\n\n' +
@@ -481,6 +486,7 @@
   }
 
   function wire() {
+    if (!PRO_KEY) ['btn-pro-key', 'gs-pro-hint', 'gs-pro-setup'].forEach(function (id) { var el = $(id); if (el && el.parentNode) el.parentNode.removeChild(el); });
     if ($('btn-green-screen')) $('btn-green-screen').addEventListener('click', run);
     if ($('btn-pro-key')) $('btn-pro-key').addEventListener('click', function () { if (this.textContent === 'Stop') stopPro(); else runPro(); });
     if ($('btn-pro-setup')) $('btn-pro-setup').addEventListener('click', function () { showSetup(true); });
@@ -489,7 +495,7 @@
     if ($('btn-ra-setup')) $('btn-ra-setup').addEventListener('click', function () { raShowSetup(true); });
     raShowSetup(false);
   }
-  window.CPGreenScreen = { pickKeyColor: pickKeyColor, run: run, show: show, runPro: runPro, ckReady: ckReady, ckSetup: ckSetup, raOpen: raOpen, raReady: raReady, raSetup: raSetup, showCut: function () { show('ra-card'); } };
+  window.CPGreenScreen = { proKey: PRO_KEY, pickKeyColor: pickKeyColor, run: run, show: show, runPro: runPro, ckReady: ckReady, ckSetup: ckSetup, raOpen: raOpen, raReady: raReady, raSetup: raSetup, showCut: function () { show('ra-card'); } };
   if (typeof document !== 'undefined') {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire); else wire();
   }

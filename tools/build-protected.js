@@ -106,6 +106,17 @@ const PRODUCT = process.env.CP_PRODUCT !== '0';
   }
   fs.writeFileSync(mp, s, 'utf8');
 
+  // CorridorKey's licence (§2a/2d) bars it from paid software without Corridor's
+  // written agreement: the product has no Pro key and does not ship its launcher
+  if (PRODUCT) {
+    const gp = path.join(OUT, 'js', 'greenscreen.js');
+    let g = fs.readFileSync(gp, 'utf8');
+    g = g.replace(/var PRO_KEY = true;\s*\/\*@@CP_PROKEY@@\*\//, 'var PRO_KEY = false; /*@@CP_PROKEY@@*/');
+    if (g.indexOf('var PRO_KEY = false;') < 0) throw new Error('Pro key switch did not take — @@CP_PROKEY@@ anchor missing');
+    fs.writeFileSync(gp, g, 'utf8');
+    fs.rmSync(path.join(OUT, 'py', 'ck_mac.py'), { force: true });
+  }
+
   if (WHITELABEL) {
     // scrub the underlying provider/model names from USER-VISIBLE strings (the
     // real api.groq.com endpoint + model in the curl call stay, but get
