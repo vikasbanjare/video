@@ -2280,6 +2280,26 @@ try {
   const r3 = T.scriptTakes(t1.concat(t2), sc2);
   const cut3 = (t) => r3.deletes.some(d => t >= d.start && t < d.end);
   assert(cut3(4.5) && cut3(6.5) && !cut3(4.0) && !cut3(40.1) && !cut3(44), 'script: the earlier take of "October 2026 CARE Report…" is cut, the later one kept, "…enter kar rahi hai." untouched: ' + JSON.stringify(r3.deletes.map(d => [d.start, +d.end.toFixed(2), d.reason])));
+  // script mode: one take per line, the other takes and the crew's talk go
+  {
+    const scr = 'Ab baat karte hain numbers ki.\nCompany ka revenue from operations FY25 mein 670 crore tha.\nKya aap Edelweiss Alternatives ke IPO mein apply karenge?';
+    let t = 0; const seg = (text, gap) => { const w = mk(t, text, 0.4); t += text.split(' ').length * 0.4 + (gap || 2); return w; };
+    const rec = [].concat(
+      seg('Ab baat karte hain numbers ki'),                          // line 1, take 1
+      seg('thoda upar le aur thoda upar le Pratmesh'),               // the crew
+      seg('Ab baat karte hain numbers ki'),                          // line 1, take 2 (kept)
+      seg('Company ka revenue from operations FY25 mein 670 crore tha'),
+      seg('Kya aap Edelweiss Alternatives ke IPO mein'),             // line 3, broken off
+      seg('Kya aap Edelweiss Alternatives ke IPO mein apply karenge'));
+    const k = T.scriptKeep(rec, scr);
+    const cutAt = (x) => k.deletes.some(d => x >= d.start && x < d.end);
+    const at = (i) => rec[i].start + 0.05;
+    assert(k.found === 3 && cutAt(at(0)) && !cutAt(at(14)), 'script mode: of two takes of a line the LAST is kept, the first cut: ' + JSON.stringify(k.deletes.map(d => [d.reason, d.text])));
+    assert(cutAt(at(7)) && cutAt(at(10)), 'script mode: the crew talking between takes ("thoda upar le…") is cut');
+    assert(!cutAt(at(20)) && cutAt(at(30)) && !cutAt(at(38)), 'script mode: a line said once stays; a broken-off take goes, the full one stays');
+    assert(T.scriptKeep(rec, 'Aaj hum mutual funds ke baare mein baat karenge.\nSIP kaise kaam karta hai yeh samjhenge.\nPhir dekhenge kaunsa fund lena chahiye.').deletes.length === 0,
+      'script mode: a script for another video cuts nothing');
+  }
   const other = T.scriptTakes(said, 'Aaj hum mutual funds ke baare mein baat karenge aur SIP kaise kaam karta hai yeh samjhenge'.split(' '));
   assert(other.rate < 0.35, 'script: a script for another video barely matches (Clean up then ignores it): ' + other.rate.toFixed(2));
 }

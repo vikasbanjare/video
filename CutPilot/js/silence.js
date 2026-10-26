@@ -575,7 +575,9 @@
         // word as it is; one made up over a long silence has none near it.
         var dr = Math.round((opts.drift != null ? opts.drift : 0.25) / hop), near = false;
         for (var q = Math.max(0, g0 - dr); q < Math.min(n, g1 + dr) && !near; q++) if (st[q] === 2) near = true;
-        if (near && !long) out.push(w);
+        // (a slip of a fraction of a second — never a word lasting seconds with no voice
+        // under it: "11,009" laid over 2.7 s of silence, numbers being exempt from `long`)
+        if (near && !long && w.end - w.start <= 1) out.push(w);
         continue;
       }
       for (var k = 0; k < runs.length; k++) {
@@ -648,7 +650,18 @@
       if (!quiet(k)) { k++; continue; }
       var e = k; while (e < nb && quiet(e)) e++;
       var a0 = grid.t0 + k * per * grid.hop, a1 = grid.t0 + e * per * grid.hop;
-      if (a1 - a0 >= minLen) out.push({ start: a0 + (k > 0 ? pad : 0), end: a1 - (e < nb ? pad : 0) });
+      if (a1 - a0 >= minLen) {
+        // a cut edge must land in quiet: a word's last syllable can sit just under
+        // the bar ("गया" fading at −39 dB). Each edge moves inward (at most 0.6 s)
+        // until the 0.1 s beside it stays 9 dB under the bar
+        var c0 = a0 + (k > 0 ? pad : 0), c1 = a1 - (e < nb ? pad : 0);
+        var soft = bar - 9, w10 = Math.round(0.1 / grid.hop), max = Math.round(0.6 / grid.hop);
+        function hush(g0) { for (var g = g0; g < g0 + w10; g++) if (g >= 0 && g < grid.n && grid.peak[g] >= soft) return false; return true; }
+        var gs = Math.round((c0 - grid.t0) / grid.hop), ge = Math.round((c1 - grid.t0) / grid.hop), st;
+        if (k > 0) { for (st = 0; st < max && !hush(gs + st - Math.round(w10 / 2)); st++); c0 += st * grid.hop; }
+        if (e < nb) { for (st = 0; st < max && !hush(ge - st - Math.round(w10 / 2)); st++); c1 -= st * grid.hop; }
+        if (c1 - c0 >= 0.2) out.push({ start: c0, end: c1 });
+      }
       k = e;
     }
     return out;

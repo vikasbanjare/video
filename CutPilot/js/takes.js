@@ -122,7 +122,7 @@
       var d = t.normalize ? t.normalize('NFD') : t;   // क़ → क + nukta: the base sound
       for (i = 0; i < d.length; i++) if (DEV_SK[d[i]]) s += DEV_SK[d[i]];
     } else {
-      s = t.replace(/ti(?=[aeiou])/g, 'sh').replace(/ch/g, 'C').replace(/c(?=[eiy])/g, 's').replace(/g(?=es?$)/g, 'j')   // presence, challenges: soft c and g   // "relationships" says sh: रिलेशन्शिप्स.replace(/[ptkgdb]h/g, function (m) { return m[0]; }).replace(/sh/g, 's').replace(/ph/g, 'p')
+      s = t.replace(/ow$/, 'o').replace(/ti(?=[aeiou])/g, 'sh').replace(/ch/g, 'C').replace(/c(?=[eiy])/g, 's').replace(/g(?=es?$)/g, 'j')   // presence, challenges: soft c and g   // "relationships" says sh: रिलेशन्शिप्स.replace(/[ptkgdb]h/g, function (m) { return m[0]; }).replace(/sh/g, 's').replace(/ph/g, 'p')
         .replace(/[aeiouyhw']/g, function (m) { return m === 'w' ? 'w' : ''; })
         .replace(/[cqgk]/g, 'k').replace(/C/g, 'c').replace(/[jz]/g, 'c').replace(/d/g, 't').replace(/[bf]/g, 'p').replace(/v/g, 'w').replace(/x/g, 'ks');
     }
@@ -788,6 +788,34 @@
     return out;
   }
 
+  /* How alike two spoken words are, in any spelling or script: 2 the same word,
+   0.6 the same short word, 0.3 only a hint ("है"/"hai"), -1.5 different. */
+  function wordSc(a, b) {
+    // a different word costs more than leaving one out on each side (≈0.85), so a
+    // retake is never soaked up as "said differently" against the next line
+    if (!a || !b) return -1.5;
+    if (a === b) return 2;
+    // a number cut short and said again: "October 26 … October 2026"
+    if (/^\d{2,}$/.test(a) && /^\d{2,}$/.test(b) && (a.slice(-b.length) === b || b.slice(-a.length) === a)) return 0.6;
+    var x = skel(a), y = skel(b);
+    if (!x && !y && a.length <= 4 && b.length <= 4) return 0.3;   // "है"/"hai": all vowel and h — a hint, never enough to cut
+    if (x && y && x !== y && Math.min(x.length, y.length) >= 4 && skelDist(x, y) <= (Math.min(x.length, y.length) >= 8 ? 2 : 1)) return 1;   // misheard: "returns"/"रिटेंस"
+    if (!x || x !== y) return -1.5;
+    return x.length >= 3 ? 2 : 0.6;                    // short words ("ka"/"की") anchor only weakly
+  }
+  // edit distance between two sound skeletons, stopping early past 2
+  function skelDist(a, b) {
+    if (Math.abs(a.length - b.length) > 2) return 3;
+    var prev = [], cur, i, j;
+    for (j = 0; j <= b.length; j++) prev.push(j);
+    for (i = 1; i <= a.length; i++) {
+      cur = [i];
+      for (j = 1; j <= b.length; j++) cur.push(Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)));
+      prev = cur;
+    }
+    return prev[b.length];
+  }
+
   /* A run of spoken words the script alignment left out: a FALSE START (said
      again right after — or a stutter of what was just said) → true, cut it;
      or the owner changing a line / ad-libbing → false, keep it.
@@ -814,12 +842,18 @@
       return [L[x.length][y.length], S[x.length][y.length]];
     }
     var need = Math.ceil(run.length * 0.6), k = run.length + 2, r;
-    // a restart: said again straight away — one of its first two words is one of the first two that follow
-    var opens = false;
-    for (var a = 0; a < Math.min(2, run.length) && !opens; a++) for (var q = 0; q < Math.min(2, after.length); q++) if (sc(run[a], after[q]) >= 0.6) opens = true;
-    if (opens) {
-      r = ordered(run, after.slice(0, k));
-      if (r[0] >= need && r[1] >= 1) return true;
+    // a restart: said again straight away. The run may restart more than once
+    // ("October 26 October 2026" before "October 2026 CARE…"): from its LAST
+    // restart on it must match in order; every word before that must be said
+    // again too (one stray opening word — "लेकिन" before "कुछ…" — is allowed)
+    var r0 = -1, a, q;
+    for (a = run.length - 1; a >= 0 && r0 < 0; a--) for (q = 0; q < Math.min(2, after.length); q++) if (sc(run[a], after[q]) >= 0.6) { r0 = a; break; }
+    if (r0 >= 0) {
+      var tail = run.slice(r0), head = run.slice(0, r0), said = 0;
+      r = ordered(tail, after.slice(0, tail.length + 2));
+      for (a = 0; a < head.length; a++) for (q = 0; q < Math.min(after.length, k + 2); q++) if (sc(head[a], after[q]) >= 0.6) { said++; break; }
+      var headOk = said === head.length || (head.length === 1 && r0 === 1);
+      if (headOk && r[0] >= Math.ceil(tail.length * 0.6) && r[1] + (said ? 1 : 0) >= 1 && (r[1] >= 1 || tail.length + head.length >= 2)) return true;
     }
     // a stutter: what was just said, said again
     if (before.length && sc(run[run.length - 1], before[before.length - 1]) >= 0.6) {
@@ -852,18 +886,7 @@
     if (n < 4 || m < 4) return { deletes: [], matched: 0, rate: 0 };
     // ponytail: n×m direction bytes (3 per cell) — ~25 MB for a 25-minute talk; band it if longer talks need it
     if (n * m > 9e6) return { deletes: [], matched: 0, rate: 0, tooLong: true };
-    function sc(a, b) {
-      // a different word costs more than leaving one out on each side (≈0.85), so a
-      // retake is never soaked up as "said differently" against the next line
-      if (!a || !b) return -1.5;
-      if (a === b) return 2;
-      // a number cut short and said again: "October 26 … October 2026"
-      if (/^\d{2,}$/.test(a) && /^\d{2,}$/.test(b) && (a.slice(-b.length) === b || b.slice(-a.length) === a)) return 0.6;
-      var x = skel(a), y = skel(b);
-      if (!x && !y && a.length <= 4 && b.length <= 4) return 0.3;   // "है"/"hai": all vowel and h — a hint, never enough to cut
-      if (!x || x !== y) return -1.5;
-      return x.length >= 3 ? 2 : 0.6;                    // short words ("ka"/"की") anchor only weakly
-    }
+    var sc = wordSc;
     var MATCH_MIN = 0.6, OPEN = 2.5, EXT = 0.05, SKIP_S = 0.8, LATE = 0.002;   // LATE ≪ EXT: breaks ties only
     var NEG = -1e9, W = m + 1;
     // M: i,j aligned (match or said-differently) · X: transcript word i skipped · Y: script word j not said
@@ -916,7 +939,9 @@
       for (r = e + 1; r < n && after.length < 8; r++) if (at[r] !== -1 && T[r]) after.push(T[r]);
       // ponytail: fragments only (≤6 words / 4 s). Choosing between two COMPLETE takes is
       // findRepeatedTakes' job — both match the script alike, so alignment can't pick the kept one.
-      var short = run.length <= (opts.maxWords || 6) && words[e].end - words[i].start <= (opts.maxSec || 4);
+      // (up to 6 s for 4 words or fewer: a stumbled word is often stretched — "October" over 2 s)
+      var rdur = words[e].end - words[i].start;
+      var short = run.length <= (opts.maxWords || 6) && (rdur <= (opts.maxSec || 4) || (run.length <= 4 && rdur <= 6));
       if (short && run.length && isFalseStart(run, before, after, sc)) {
         // an abandoned attempt is cut from the pause before it, the way the owner
         // cuts — not mid-phrase ("11,009 | Client Relationships…" goes whole);
@@ -973,16 +998,135 @@
       var reach = at[k];
       while (l + 1 < i0 && l - E[E.length - 1] < 3 && words[l + 1].start - words[l].end < 0.25 && (at[l + 1] < 0 || at[l + 1] < reach) &&
              !SENT_END.test(String(words[l].text || ''))) l++;
+      // and the off-script words said straight after it ("…valuation. Bonnet! Bro!") —
+      // the reaction to the attempt, before the owner starts again
+      var le = l;
+      while (l + 1 < i0 && l - le < 4 && at[l + 1] === -1 && words[l + 1].start - words[l].end < 1) l++;
       return { start: words[f].start, end: Math.max(words[l].end, Math.min(l + 1 < n ? words[l + 1].start : words[l].end, words[l].end + 0.25)),
         text: words.slice(f, l + 1).map(function (w) { return w.text; }).join(' '), reason: 'an earlier take (your script, said again later)' };
     }
     return { deletes: deletes, matched: matched, rate: matched / Math.max(1, Math.min(n, m)), at: opts.debug ? at : undefined };
   }
 
+  /* 📜 Script mode: ONE take per script line. A recording made line by line
+     (Ashish's: every section 3–5 times, out of order, with the crew talking in
+     between) can't be untangled by pauses and nearby repeats — but with the
+     script it is simple: every take of a line but the LAST complete one is a
+     retake, and talk that is in no line is chatter.
+       · takes of a sentence: in-order matches of ≥55% of its words (2+ real ones)
+       · kept: the last take at least 85% as complete as its best
+       · cut: the other takes; off-script stretches of 3+ words — unless they look
+         like a line with no take found (a garbled transcript must not lose it)
+     Nothing at all when under 40% of the sentences are found (another script).
+     words: [{start,end,text}] (heard words) · script: the script's words as written
+     → { deletes, found, sentences, missing:[text] } */
+  function scriptKeep(words, script, opts) {
+    opts = opts || {};
+    // the script as text: each line ends a sentence too (bullet lines have no full stop)
+    if (typeof script === 'string') script = [].concat.apply([], script.replace(/\[[^\]]*\]|\([^)]*\)/g, ' ').split(/\r?\n/)
+      .map(function (ln) { return ln.split(/\s+/).filter(Boolean).concat(['\n']); }));
+    var sents = [], cur = [];
+    (script || []).forEach(function (w) {
+      var t = w === '\n' ? '' : norm(w); if (t) cur.push(t);
+      if (w === '\n' || SENT_END.test(String(w)) || /[:：]$/.test(String(w))) { if (cur.length >= 2) sents.push(cur); cur = []; }
+    });
+    if (cur.length >= 2) sents.push(cur);
+    var n = (words || []).length, T = (words || []).map(function (w) { return norm(w.text); });
+    var none = { deletes: [], found: 0, sentences: sents.length, missing: [] };
+    if (n < 10 || sents.length < 2) return none;
+    var MIN_COV = opts.minCov || 0.55, NEAR_BEST = 0.85;
+    // in-order matches of a sentence inside a stretch of words → [pairs], strong count
+    function lcs(Q, i0, i1) {
+      var A = Q.length, B = i1 - i0, L = [], a, b;
+      for (a = 0; a <= A; a++) L.push(new Int16Array(B + 1));
+      for (a = A - 1; a >= 0; a--) for (b = B - 1; b >= 0; b--)
+        L[a][b] = wordSc(Q[a], T[i0 + b]) >= 0.6 ? L[a + 1][b + 1] + 1 : Math.max(L[a + 1][b], L[a][b + 1]);
+      var pairs = [], strong = 0;
+      for (a = 0, b = 0; a < A && b < B; ) {
+        var v = wordSc(Q[a], T[i0 + b]);
+        if (v >= 0.6 && L[a][b] === L[a + 1][b + 1] + 1) { pairs.push(i0 + b); if (v >= 1) strong++; a++; b++; }   // near matches count: real evidence
+        else if (L[a + 1][b] >= L[a][b + 1]) a++; else b++;
+      }
+      return { pairs: pairs, strong: strong };
+    }
+    var takes = [], chosen = [], missing = [], k, i;
+    for (k = 0; k < sents.length; k++) {
+      var Q = sents[k], q = Q.length, cands = [];
+      for (i = 0; i < n; i++) {
+        if (!T[i]) continue;
+        var open = false;
+        for (var o = 0; o < Math.min(3, q) && !open; o++) if (wordSc(T[i], Q[o]) >= 0.6) open = true;
+        if (!open) continue;
+        var r = lcs(Q, i, Math.min(n, i + Math.ceil(q * 1.6) + 3));
+        var cov = r.pairs.length / q;
+        if (cov >= MIN_COV && r.strong >= Math.min(2, q - 1)) cands.push({ k: k, s: r.pairs[0], e: r.pairs[r.pairs.length - 1], cov: cov });
+      }
+      // one candidate per place: the most complete, then the tightest
+      cands.sort(function (x, y) { return (y.cov - x.cov) || ((x.e - x.s) - (y.e - y.s)); });
+      var uniq = [];
+      cands.forEach(function (c) {
+        if (!uniq.some(function (u) { var ov = Math.min(u.e, c.e) - Math.max(u.s, c.s) + 1; return ov > 0.5 * Math.min(u.e - u.s + 1, c.e - c.s + 1); })) uniq.push(c);
+      });
+      if (!uniq.length) { missing.push(k); continue; }
+      var best = uniq[0].cov, pick = null;
+      uniq.forEach(function (c) { if (c.cov >= best * NEAR_BEST && (!pick || c.s > pick.s)) pick = c; });   // the LAST complete take
+      // the take's own first / last words can be weak matches ("…kar rahi | hai."):
+      // up to 2 more each side, said without a pause, that sound like the sentence's ends
+      var ends = Q.slice(-3), opens = Q.slice(0, 3), x2;
+      for (x2 = 0; x2 < 2 && pick.e + 1 < n && words[pick.e + 1].start - words[pick.e].end < 0.35 &&
+           ends.some(function (t) { return wordSc(T[pick.e + 1], t) > 0; }); x2++) pick.e++;
+      for (x2 = 0; x2 < 2 && pick.s > 0 && words[pick.s].start - words[pick.s - 1].end < 0.35 &&
+           opens.some(function (t) { return wordSc(T[pick.s - 1], t) > 0; }); x2++) pick.s--;
+      chosen.push(pick);
+      uniq.forEach(function (c) { if (c !== pick) takes.push(c); });
+    }
+    if (chosen.length < sents.length * 0.4) return none;
+    var keep = new Uint8Array(n), take = new Uint8Array(n), any = new Uint8Array(n);
+    chosen.forEach(function (c) { for (var x = c.s; x <= c.e; x++) keep[x] = 1; });
+    takes.forEach(function (c) { for (var x = c.s; x <= c.e; x++) { take[x] = 1; any[x] = 1; } });
+    // a stretch in no line: chatter — unless it looks like a line still missing
+    function likeMissing(i0, i1) {
+      for (var mi = 0; mi < missing.length; mi++) {
+        var Qm = sents[missing[mi]];
+        if (lcs(Qm, i0, i1 + 1).pairs.length >= Math.max(2, Qm.length * 0.3)) return true;
+      }
+      return false;
+    }
+    var cut = new Uint8Array(n);
+    for (i = 0; i < n; i++) if (take[i] && !keep[i]) cut[i] = 1;
+    for (i = 0; i < n; ) {
+      if (keep[i] || any[i]) { i++; continue; }
+      var e = i; while (e + 1 < n && !keep[e + 1] && !any[e + 1]) e++;
+      var said = 0; for (var x = i; x <= e; x++) if (T[x]) said++;
+      if (said >= 3 && !likeMissing(i, e)) for (x = i; x <= e; x++) cut[x] = 1;
+      i = e + 1;
+    }
+    // a word or two left between two cuts belongs with them; a piece with no text goes with the word before
+    for (i = 1; i < n; i++) if (!T[i] && cut[i - 1]) cut[i] = 1;
+    for (i = 0; i < n; ) {
+      if (cut[i] || keep[i]) { i++; continue; }
+      var e2 = i; while (e2 + 1 < n && !cut[e2 + 1] && !keep[e2 + 1]) e2++;
+      if (e2 - i < 2 && i > 0 && e2 + 1 < n && cut[i - 1] && cut[e2 + 1]) for (x = i; x <= e2; x++) cut[x] = 1;
+      i = e2 + 1;
+    }
+    var deletes = [];
+    for (i = 0; i < n; ) {
+      if (!cut[i]) { i++; continue; }
+      var e3 = i; while (e3 + 1 < n && cut[e3 + 1]) e3++;
+      deletes.push({ start: words[i].start, end: e3 + 1 < n ? Math.max(words[e3].end, Math.min(words[e3 + 1].start, words[e3].end + 0.25)) : words[e3].end,
+        text: words.slice(i, e3 + 1).map(function (w) { return w.text; }).join(' '),
+        reason: any[i] ? 'another take of a line in your script' : 'not in your script' });
+      i = e3 + 1;
+    }
+    return { deletes: deletes, found: chosen.length, sentences: sents.length,
+      missing: missing.map(function (mk) { return sents[mk].join(' '); }), chosen: opts.debug ? chosen : undefined };
+  }
+
   return {
+    scriptKeep: scriptKeep,
     scriptTakes: scriptTakes,
     findRepeatedTakes: findRepeatedTakes, flatten: flatten, tidyDeletes: tidyDeletes,
     phraseSim: phraseSim, phraseContain: phraseContain, isNearPrefix: isNearPrefix,
-    lcsLen: lcsLen, splitPhrases: splitPhrases, _norm: norm, _skel: skel
+    lcsLen: lcsLen, splitPhrases: splitPhrases, _norm: norm, _skel: skel, _wordSc: wordSc
   };
 });

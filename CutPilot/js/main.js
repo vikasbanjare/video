@@ -16874,14 +16874,20 @@
      finder and the AI prompt both follow it. */
   /* 📜 The owner's script (Transcribe → Script) finds the false starts and
      stumbles the transcript alone can't: words said, then said again straight
-     away, that the script has once. Nothing without a script, or with one
-     for another recording (fewer than 35% of its words heard). */
+     away, that the script has once — and keeps ONE take of each line, cutting
+     the others and the talk that is in no line (a line-by-line studio
+     recording: Ashish's, 3–5 takes a section and the crew in between).
+     Nothing without a script, or with one for another recording (fewer than
+     35% of its words heard). */
   function scriptTakeCuts(words) {
     var txt = ($('script-text') && $('script-text').value) || '';
     var sw = CPScript.scriptWords(txt);
     if (sw.length < 20 || !words || !words.length || !CPTakes.scriptTakes) return [];
     var r = CPTakes.scriptTakes(words, sw);
-    return r.rate >= 0.35 ? r.deletes : [];
+    if (r.rate < 0.35) return [];
+    // and script mode: ONE take per line — the other takes and the off-script talk go
+    var k = CPTakes.scriptKeep ? CPTakes.scriptKeep(words, txt) : { deletes: [] };
+    return r.deletes.concat(k.deletes);
   }
   function takesPeople(words) {
     var pick = $('tk-kind') ? $('tk-kind').value : 'auto';
