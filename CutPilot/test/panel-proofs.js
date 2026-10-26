@@ -78,7 +78,9 @@ function fluxProps() {
 (async () => {
   console.log('panel proofs (headless, real panel)');
   const pptr = requirePuppeteer();
-  const _lopts = { headless: 'new', executablePath: resolveBrowser(pptr),
+  // protocolTimeout: the parity proofs render every style; on a busy Mac the obfuscated
+  // build ran past puppeteer's default 180 s per call and the build refused to ship
+  const _lopts = { headless: 'new', executablePath: resolveBrowser(pptr), protocolTimeout: 600000,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--allow-file-access-from-files'] };
   let browser = null;
   for (let _a = 1; _a <= 3 && !browser; _a++) {
