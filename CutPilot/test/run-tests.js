@@ -2303,6 +2303,13 @@ try {
     assert(k.found === 3 && cutAt(at(0)) && !cutAt(at(14)), 'script mode: of two takes of a line the LAST is kept, the first cut: ' + JSON.stringify(k.deletes.map(d => [d.reason, d.text])));
     assert(cutAt(at(7)) && cutAt(at(10)), 'script mode: the crew talking between takes ("thoda upar le…") is cut');
     assert(!cutAt(at(20)) && cutAt(at(30)) && !cutAt(at(38)), 'script mode: a line said once stays; a broken-off take goes, the full one stays');
+    // by attempt: the same recording with pauses between its parts, as the audio hears it
+    const hop = 0.01, n = Math.ceil((rec[rec.length - 1].end + 1) / hop), peak = new Float32Array(n).fill(-60), state = new Uint8Array(n);
+    rec.forEach(w => { for (let g = Math.floor(w.start / hop); g < Math.ceil(w.end / hop); g++) { peak[g] = -25; state[g] = 2; } });
+    const atr = T.scriptAttempts(rec, { hop, n, t0: 0, peak, state }, -28, scr);
+    const cutA = (x) => atr.deletes.some(d => x >= d.start && x < d.end);
+    assert(atr.attempts === 6 && cutA(rec[0].start + 0.1) && cutA(rec[7].start + 0.1) && !cutA(rec[14].start + 0.1) && !cutA(rec[20].start + 0.1) && !cutA(rec[38].start + 0.1),
+      'script mode by attempt: the first take and the crew go whole; the retake, the next line and the full last take stay: ' + JSON.stringify(atr.deletes.map(d => [d.reason, d.text])));
     assert(T.scriptKeep(rec, 'Aaj hum mutual funds ke baare mein baat karenge.\nSIP kaise kaam karta hai yeh samjhenge.\nPhir dekhenge kaunsa fund lena chahiye.').deletes.length === 0,
       'script mode: a script for another video cuts nothing');
   }

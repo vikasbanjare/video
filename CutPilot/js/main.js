@@ -16389,7 +16389,7 @@
         words = heardWords(words, plan);
         var tk = CPTakes.findRepeatedTakes(words, { minRun: tp.minrun, sim: tp.sim / 100, keep: 'best', people: takesPeople(words) });
         var out = [], ask = [];
-        tk.deletes.concat(scriptTakeCuts(words)).forEach(function (d) {
+        tk.deletes.concat(scriptTakeCuts(words, plan)).forEach(function (d) {
           // a script cut Pulse isn't sure of (a take that matches better than the kept one,
           // a short off-script stretch the transcript may have garbled) is asked, not cut
           if (d.needsReview && /your script/.test(d.reason || '')) { ask.push(d); return; }
@@ -16925,7 +16925,7 @@
      recording: Ashish's, 3–5 takes a section and the crew in between).
      Nothing without a script, or with one for another recording (fewer than
      35% of its words heard). */
-  function scriptTakeCuts(words) {
+  function scriptTakeCuts(words, plan) {
     var txt = ($('script-text') && $('script-text').value) || '';
     var sw = CPScript.scriptWords(txt);
     if (sw.length < 20 || !words || !words.length || !CPTakes.scriptTakes) return [];
@@ -16933,7 +16933,9 @@
     if (r.rate < 0.35) return [];
     // and script mode: ONE take per line — the other takes and the off-script talk go
     var k = CPTakes.scriptKeep ? CPTakes.scriptKeep(words, txt) : { deletes: [] };
-    return r.deletes.concat(k.deletes);
+    // …and whole attempts between pauses (Clean up hears the audio; the takes tool doesn't)
+    var at = (plan && plan.grid && CPTakes.scriptAttempts) ? CPTakes.scriptAttempts(words, plan.grid, voiceBar(plan) - 3, txt) : { deletes: [] };
+    return r.deletes.concat(k.deletes, at.deletes);
   }
   function takesPeople(words) {
     var pick = $('tk-kind') ? $('tk-kind').value : 'auto';

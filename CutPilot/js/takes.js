@@ -1127,7 +1127,88 @@
       missing: missing.map(function (mk) { return sents[mk].join(' '); }), chosen: opts.debug ? chosen : undefined };
   }
 
+  /* 📜 Script mode by ATTEMPT. A take-by-take recording (Ashish's: each section
+     3–5 times, the crew talking in between) is speech blocks separated by
+     pauses — and an editor keeps or drops whole attempts, never splices inside
+     one. Each attempt is placed in the script by local alignment (sound
+     skeletons, so a half-garbled attempt still finds its lines); an attempt
+     another one re-says (80% of its script words) is cut — the later wins,
+     unless it is clearly broken off (under 60% of the other's words). Speech
+     that says no line is chatter, cut unless it looks like a line nobody kept.
+     With word-level script mode: Ashish, speech only, kept-but-you-cut 82 s →
+     37 s, no script line lost; Edelweiss unchanged.
+     grid: CPSilence.combineMics' grid (peak, state, hop, n, t0) · speechDb: the
+     voice's speech level · → { deletes, attempts } */
+  function scriptAttempts(words, grid, speechDb, scriptText, opts) {
+    opts = opts || {};
+    var none = { deletes: [], attempts: 0 };
+    if (!grid || !grid.peak || !isFinite(speechDb) || !scriptText || !(words || []).length) return none;
+    var PAUSE = opts.pause || 1.0, quietDb = speechDb - 12, step = Math.max(1, Math.round(0.1 / grid.hop)), blk = step * grid.hop;
+    // 1. attempts: speech between pauses of PAUSE or more (0.1 s blocks under speech − 12 dB)
+    var loud = [], g, k;
+    for (g = 0; g < grid.n; g += step) { var mx = -99; for (k = g; k < g + step && k < grid.n; k++) mx = Math.max(mx, grid.peak[k]); loud.push(mx >= quietDb); }
+    var att = [], s0 = -1, last = -1, b;
+    for (b = 0; b <= loud.length; b++) {
+      var on = b < loud.length && loud[b];
+      if (on) { if (s0 < 0) s0 = b; last = b; }
+      else if (s0 >= 0 && ((b - last) * blk >= PAUSE || b === loud.length)) { att.push({ start: grid.t0 + s0 * blk, end: grid.t0 + (last + 1) * blk }); s0 = -1; }
+    }
+    // 2. the script's words with sentence numbers (a line or a full stop ends one)
+    var S = [], sid = [], sn = 0;
+    String(scriptText).replace(/\[[^\]]*\]|\([^)]*\)/g, ' ').split(/\r?\n/).forEach(function (line) {
+      line.split(/\s+/).forEach(function (w) { if (!w) return; var t = norm(w); if (t) { S.push(t); sid.push(sn); } if (SENT_END.test(w) || /[:：]$/.test(w)) sn++; });
+      sn++;
+    });
+    var m = S.length;
+    if (m < 20) return none;
+    // 3. each attempt's place in the script: local alignment, match +2 / +1, mismatch or gap −1
+    att.forEach(function (a) {
+      a.w = words.filter(function (w) { return w.text && (w.start + w.end) / 2 >= a.start && (w.start + w.end) / 2 < a.end; });
+      var A = [], i, j; a.w.forEach(function (w) { var t = norm(w.text); if (t) A.push(t); });
+      var n = A.length; a.n = n; a.pos = {}; a.size = 0;
+      if (n < 2) return;
+      var H = [], D = [], best = 0, bi = 0, bj = 0;
+      for (i = 0; i <= n; i++) { H.push(new Float32Array(m + 1)); D.push(new Uint8Array(m + 1)); }
+      for (i = 1; i <= n; i++) for (j = 1; j <= m; j++) {
+        var v = wordSc(A[i - 1], S[j - 1]), sc = v >= 2 ? 2 : v >= 0.6 ? 1 : -1, h = H[i - 1][j - 1] + sc, d = 1;
+        if (H[i - 1][j] - 1 > h) { h = H[i - 1][j] - 1; d = 2; }
+        if (H[i][j - 1] - 1 > h) { h = H[i][j - 1] - 1; d = 3; }
+        if (h <= 0) { h = 0; d = 0; }
+        H[i][j] = h; D[i][j] = d;
+        if (h > best) { best = h; bi = i; bj = j; }
+      }
+      for (i = bi, j = bj; i > 0 && j > 0 && D[i][j]; ) {
+        var dd = D[i][j];
+        if (dd === 1) { if (wordSc(A[i - 1], S[j - 1]) >= 0.6 && !a.pos[j - 1]) { a.pos[j - 1] = 1; a.size++; } i--; j--; }
+        else if (dd === 2) i--; else j--;
+      }
+    });
+    // 4. an attempt another re-says is cut: the later wins unless clearly broken off
+    var sp = att.filter(function (a) { return a.size >= 3; });
+    sp.forEach(function (a) {
+      a.cut = sp.some(function (o) {
+        if (o === a) return false;
+        var ov = 0; for (var p in a.pos) if (o.pos[p]) ov++;
+        return ov >= 0.8 * a.size && (o.start > a.start ? o.size >= 0.6 * a.size : a.size < 0.6 * o.size);
+      });
+    });
+    // 5. chatter: speech that says no line — unless it looks like a line nobody kept
+    var lineKept = {};
+    sp.forEach(function (a) { if (!a.cut) for (var p in a.pos) lineKept[sid[p]] = 1; });
+    att.forEach(function (a) {
+      if (a.size >= 3 || !(a.n >= 2)) return;
+      var lost = 0; for (var p in a.pos) if (!lineKept[sid[p]]) lost++;
+      a.cut = lost < 2; a.chatter = true;
+    });
+    var deletes = att.filter(function (a) { return a.cut; }).map(function (a) {
+      return { start: a.start, end: a.end, text: a.w.map(function (w) { return w.text; }).join(' '),
+        reason: a.chatter ? 'not in your script' : 'another take of a line in your script' };
+    });
+    return { deletes: deletes, attempts: att.length };
+  }
+
   return {
+    scriptAttempts: scriptAttempts,
     scriptKeep: scriptKeep,
     scriptTakes: scriptTakes,
     findRepeatedTakes: findRepeatedTakes, flatten: flatten, tidyDeletes: tidyDeletes,

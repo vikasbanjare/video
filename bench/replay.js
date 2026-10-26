@@ -34,6 +34,8 @@ function cleanUp(useScript) {
   if (useScript && SCR.length >= 20) { const r = T.scriptTakes(heard, SCR); if (r.rate >= 0.35) sc = r.deletes; }
   // script mode: one take per script line
   if (useScript && process.env.SCRIPTMODE && SCR.length >= 20) sc = sc.concat(T.scriptKeep(heard, SCRTXT).deletes);
+  // attempt-level script mode (bench/attempts.js prototype)
+  if (useScript && process.env.ATTEMPTS && SCR.length >= 20) sc = sc.concat(T.scriptAttempts(heard, grid, L.speech, SCRTXT).deletes);
   const other = tk.concat(sc).filter(d => !d.needsReview && !d.estimated);
   // silences: the plan, wordless noise, the word guard, then quiet stretches
   const sil = S.protectCutsFromWords(S.planCuts(grid, tune).concat(S.wordlessNoise(heard, grid, bar, tune)), heard, { minCut: tune.minCut })
