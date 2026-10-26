@@ -3116,8 +3116,8 @@
     var btStyle = 'width:100%;padding:11px;border:none;border-radius:10px;background:linear-gradient(135deg,#4f8cff,#34c3f0);' +
       'color:#fff;font-weight:800;font-size:14px;cursor:pointer';
     ov.innerHTML = '<div style="max-width:360px"><div style="font-size:46px">⏳</div>' +
-      '<h2 style="margin:10px 0 6px">Evaluation period ended</h2>' +
-      '<p style="opacity:.78;line-height:1.5">Enter your license key to unlock Pulse, or contact the sender to continue.</p>' +
+      '<h2 style="margin:10px 0 6px">Your free trial has ended</h2>' +
+      '<p style="opacity:.78;line-height:1.5">Ask the person who shared Pulse with you for a key — it’s free — and enter it here to keep using Pulse.</p>' +
       '<input id="lic-input" placeholder="PULSE-XXXX-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false" style="' + inStyle + '">' +
       '<button id="lic-unlock" style="' + btStyle + '">Unlock</button>' +
       '<p id="lic-msg" style="min-height:16px;margin:8px 0 0;font-size:12px;opacity:.85"></p></div>';
@@ -3685,7 +3685,21 @@
     return txt;
   }
   /* A script is in: match it now if there are words, else after Transcribe. */
+  /* 📜 One script for the whole panel (the Transcribe box), remembered between
+     sessions, and shown on Clean up — which uses it to keep one take per line.
+     Loaded only on Transcribe and never saved, owners couldn't find it. */
+  var SCRIPT_KEY = 'cutpilot.script';
+  function scriptSync() {
+    var txt = ($('script-text') && $('script-text').value) || '', n = CPScript.scriptWords(txt).length;
+    try { if (n) localStorage.setItem(SCRIPT_KEY, JSON.stringify({ name: state.scriptName || 'your script', text: txt })); else localStorage.removeItem(SCRIPT_KEY); } catch (e) {}
+    if ($('cu-script-load')) $('cu-script-load').textContent = n ? '📄 Replace script' : '📄 Add script';
+    if ($('cu-script-clear')) $('cu-script-clear').classList.toggle('hidden', !n);
+    if ($('cu-script-state')) $('cu-script-state').textContent = n
+      ? '✓ ' + (state.scriptName || 'Your script') + ' — ' + n + ' words. Clean up keeps one take of each line and cuts the rest.'
+      : 'With a script, Clean up keeps one take of each line and cuts the rest.';
+  }
   function scriptLoaded(name, txt) {
+    state.scriptName = name; scriptSync();
     var n = CPScript.scriptWords(txt).length;
     if (state.transcript) {
       if ($('script-status')) $('script-status').textContent = 'Matching ' + name + ' (' + n + ' words) to your audio…';
@@ -6530,6 +6544,22 @@
       if (CPScript.scriptWords(t).length) scriptLoaded('your pasted script', t);
     });
     if ($('btn-script-apply')) $('btn-script-apply').addEventListener('click', function () { applyScript(); });
+    if ($('cu-script-load')) $('cu-script-load').addEventListener('click', function () { if ($('btn-script-load')) $('btn-script-load').click(); });
+    if ($('cu-script-clear')) $('cu-script-clear').addEventListener('click', function () {
+      if ($('script-text')) $('script-text').value = '';
+      state.scriptName = ''; scriptSync();
+      if ($('script-status')) $('script-status').textContent = '';
+      toast('Script removed — Clean up goes back to cutting by pauses and repeats.');
+    });
+    // the script from last time
+    try {
+      var sv = JSON.parse(localStorage.getItem(SCRIPT_KEY) || 'null');
+      if (sv && sv.text && $('script-text') && !$('script-text').value) {
+        $('script-text').value = sv.text; state.scriptName = sv.name || 'your script';
+        if ($('script-status')) $('script-status').textContent = '📄 ' + state.scriptName + ' — ' + CPScript.scriptWords(sv.text).length + ' words (from last time).';
+      }
+    } catch (e) {}
+    scriptSync();
     // 🧹 clear every caption track Pulse ever added (debug builds stacked many)
     if ($('btn-clean-caps')) $('btn-clean-caps').addEventListener('click', function () {
       if (!CPBridge.isCEP()) return toast('This needs Premiere.', true);
@@ -16357,12 +16387,27 @@
         // take that actually got finished cleanly, not blindly the last one.
         words = heardWords(words, plan);
         var tk = CPTakes.findRepeatedTakes(words, { minRun: tp.minrun, sim: tp.sim / 100, keep: 'best', people: takesPeople(words) });
-        var out = [];
+        var out = [], ask = [];
         tk.deletes.concat(scriptTakeCuts(words)).forEach(function (d) {
+          // a script cut Pulse isn't sure of (a take that matches better than the kept one,
+          // a short off-script stretch the transcript may have garbled) is asked, not cut
+          if (d.needsReview && /your script/.test(d.reason || '')) { ask.push(d); return; }
           matcherAll.push({ start: d.start, end: d.end });
           if (sureCut(d, edges)) out.push({ start: d.start, end: d.end }); else guessed.push(d);
         });
+        scriptAskNote(ask, out);
         return out;
+      }
+      function scriptAskNote(ask, sure) {
+        var covered = sure.concat(plan.cuts || [], quietCuts(plan));
+        ask = ask.filter(function (d) {
+          var c = 0; covered.forEach(function (r) { c += Math.max(0, Math.min(r.end, d.end) - Math.max(r.start, d.start)); });
+          return c < 0.6 * (d.end - d.start);          // already cut by another rule: nothing to ask
+        });
+        if (!ask.length) return;
+        extraNotes.push('📜 ' + ask.length + (ask.length > 1 ? ' bits look' : ' bit looks') + ' off your script but might be a line the transcript misheard, so ' +
+          (ask.length > 1 ? 'they were' : 'it was') + ' kept: ' + ask.slice(0, 4).map(function (d) { return fmt(d.start) + '–' + fmt(d.end); }).join(', ') +
+          (ask.length > 4 ? ', …' : '') + '. Play ' + (ask.length > 1 ? 'them' : 'it') + ' and cut by hand if needed.');
       }
       /* The only real times in a transcript with no word-by-word timing: the
          start and end of each caption line (the same lines takesGetWords

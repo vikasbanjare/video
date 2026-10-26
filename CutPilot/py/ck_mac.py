@@ -8,7 +8,10 @@ files are never edited, so their updates drop straight in.
 Usage (same flags as infer.py):
   CK_HOME=~/.cutpilot/corridorkey venv/bin/python ck_mac.py --input clip.mp4 --output_dir out
 
-This is a personal install; CorridorKey's own licence applies to it.
+CorridorKey is by Corridor Digital (https://github.com/nikopueringer/CorridorKey2.0).
+This launcher builds on it, so it is shared under CorridorKey's own licence
+(CC BY-NC-SA 4.0 with Corridor's additional terms) and must stay free of
+charge; Pulse ships the Pro key only in free builds (tools/build-protected.js).
 """
 import os
 import runpy

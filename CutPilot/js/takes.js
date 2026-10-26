@@ -1078,12 +1078,15 @@
       for (x2 = 0; x2 < 2 && pick.s > 0 && words[pick.s].start - words[pick.s - 1].end < 0.35 &&
            opens.some(function (t) { return wordSc(T[pick.s - 1], t) > 0; }); x2++) pick.s--;
       chosen.push(pick);
-      uniq.forEach(function (c) { if (c !== pick) takes.push(c); });
+      uniq.forEach(function (c) { if (c !== pick) { c.better = c.cov > pick.cov + 0.1; takes.push(c); } });
     }
     if (chosen.length < sents.length * 0.4) return none;
     var keep = new Uint8Array(n), take = new Uint8Array(n), any = new Uint8Array(n);
     chosen.forEach(function (c) { for (var x = c.s; x <= c.e; x++) keep[x] = 1; });
-    takes.forEach(function (c) { for (var x = c.s; x <= c.e; x++) { take[x] = 1; any[x] = 1; } });
+    // doubt: a cut take that matches the script BETTER than the kept one, or a short
+    // off-script stretch (could be a line the transcript garbled) — asked, not cut
+    var doubt = new Uint8Array(n);
+    takes.forEach(function (c) { for (var x = c.s; x <= c.e; x++) { take[x] = 1; any[x] = 1; if (c.better) doubt[x] = 1; } });
     // a stretch in no line: chatter — unless it looks like a line still missing
     function likeMissing(i0, i1) {
       for (var mi = 0; mi < missing.length; mi++) {
@@ -1098,7 +1101,7 @@
       if (keep[i] || any[i]) { i++; continue; }
       var e = i; while (e + 1 < n && !keep[e + 1] && !any[e + 1]) e++;
       var said = 0; for (var x = i; x <= e; x++) if (T[x]) said++;
-      if (said >= 3 && !likeMissing(i, e)) for (x = i; x <= e; x++) cut[x] = 1;
+      if (said >= 3 && !likeMissing(i, e)) for (x = i; x <= e; x++) { cut[x] = 1; if (said < 6) doubt[x] = 1; }
       i = e + 1;
     }
     // a word or two left between two cuts belongs with them; a piece with no text goes with the word before
@@ -1112,10 +1115,12 @@
     var deletes = [];
     for (i = 0; i < n; ) {
       if (!cut[i]) { i++; continue; }
-      var e3 = i; while (e3 + 1 < n && cut[e3 + 1]) e3++;
-      deletes.push({ start: words[i].start, end: e3 + 1 < n ? Math.max(words[e3].end, Math.min(words[e3 + 1].start, words[e3].end + 0.25)) : words[e3].end,
+      var e3 = i; while (e3 + 1 < n && cut[e3 + 1] && doubt[e3 + 1] === doubt[i]) e3++;   // sure and doubtful cuts kept apart
+      var dl = { start: words[i].start, end: e3 + 1 < n ? Math.max(words[e3].end, Math.min(words[e3 + 1].start, words[e3].end + 0.25)) : words[e3].end,
         text: words.slice(i, e3 + 1).map(function (w) { return w.text; }).join(' '),
-        reason: any[i] ? 'another take of a line in your script' : 'not in your script' });
+        reason: any[i] ? 'another take of a line in your script' : 'not in your script' };
+      if (doubt[i]) dl.needsReview = true;   // the panel lists it to check instead of cutting it
+      deletes.push(dl);
       i = e3 + 1;
     }
     return { deletes: deletes, found: chosen.length, sentences: sents.length,

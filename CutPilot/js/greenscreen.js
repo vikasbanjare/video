@@ -107,9 +107,10 @@
      full size swapped), the matte is scaled back up, and the colour is the
      sharp camera image inside the person with CorridorKey's own backdrop-free
      colour on the edge band (no green halo). */
-  // Off in the paid product (the build sets it): CorridorKey's licence (§2a/2d)
-  // forbids it inside commercial software without Corridor's written agreement.
-  // Quick key (Premiere's Ultra Key) and Cut out stay.
+  // Pulse is given away free, which CorridorKey's licence allows (§2c: free of
+  // charge, name kept, same licence). A COMMERCIAL build (CP_COMMERCIAL=1) turns
+  // it off — §2a/2d bar it from paid software without Corridor's written
+  // agreement. Quick key (Premiere's Ultra Key) and Cut out stay either way.
   var PRO_KEY = true; /*@@CP_PROKEY@@*/
   var CK_REPO = 'https://github.com/nikopueringer/CorridorKey2.0/archive/refs/heads/main.zip';
   var CK_UTILS3D = 'https://github.com/EasternJournalist/utils3d/archive/83bfa5bda008803f6521ce9547f94023b8afeddd.zip';

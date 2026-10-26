@@ -107,8 +107,9 @@ const PRODUCT = process.env.CP_PRODUCT !== '0';
   fs.writeFileSync(mp, s, 'utf8');
 
   // CorridorKey's licence (§2a/2d) bars it from paid software without Corridor's
-  // written agreement: the product has no Pro key and does not ship its launcher
-  if (PRODUCT) {
+  // written agreement: a COMMERCIAL build has no Pro key and does not ship its
+  // launcher. Pulse is given away free (allowed, §2c), so it stays by default.
+  if (process.env.CP_COMMERCIAL === '1') {
     const gp = path.join(OUT, 'js', 'greenscreen.js');
     let g = fs.readFileSync(gp, 'utf8');
     g = g.replace(/var PRO_KEY = true;\s*\/\*@@CP_PROKEY@@\*\//, 'var PRO_KEY = false; /*@@CP_PROKEY@@*/');

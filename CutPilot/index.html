@@ -897,6 +897,13 @@
         <label class="check"><input type="checkbox" id="ac-do-takes" checked> Repeated takes</label>
         <label class="check"><input type="checkbox" id="ac-do-fillers"> Filler words <span class="dim">(um, uh)</span></label>
       </div>
+      <!-- 📜 the script: with one, Clean up keeps one take of each line (same box as Transcribe → Script) -->
+      <span class="field-label" style="margin-top:8px">Your script <span class="dim">(optional)</span></span>
+      <div class="sz-row" style="margin:4px 0 2px">
+        <button id="cu-script-load" class="chip-btn" type="button" title="Word (.docx, .doc), text, RTF or a subtitle file">📄 Add script</button>
+        <button id="cu-script-clear" class="chip-btn hidden" type="button" aria-label="Remove the script">✕</button>
+      </div>
+      <p class="hint" id="cu-script-state" style="margin:2px 0 8px">With a script, Clean up keeps one take of each line and cuts the rest.</p>
       <div class="page-actions">
         <button id="btn-autoclean" class="hero-btn">Clean up my video</button>
         <div id="autoclean-progress" class="progress hidden"></div>
