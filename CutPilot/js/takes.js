@@ -1234,6 +1234,91 @@
     var keeps = sp.filter(function (a) { return !a.cut; }).map(function (a) { return { start: a.start, end: a.end }; });
     return { deletes: deletes, attempts: att.length, keeps: keeps };
   }
+  /* 📜 The last word on any script cut: NO LINE IS LOST. For every line of the
+     script: how completely is it said anywhere in the recording, and how
+     completely in what the cuts leave? A line that came out much worse (under
+     80% of its best) gets its best take back — the latest of the near-best —
+     by shrinking the cuts over it. Rules cut by different evidence (by word,
+     by attempt) and between them could cut every take of a line ("Isi duniya
+     ko kehte hain Alternatives…" on Ashish's cloud transcript).
+     → the deletes, trimmed; .restored lists the lines given back */
+  function keepEveryLine(words, scriptText, deletes) {
+    var sents = [], cur = [];
+    String(scriptText || '').replace(/\[[^\]]*\]|\([^)]*\)/g, ' ').split(/\r?\n/).forEach(function (line) {
+      // a line ends at . ! ? । or a heading's ":" — not at "…", a pause inside one
+      line.split(/\s+/).forEach(function (w) { if (!w) return; var t = norm(w); if (t) cur.push(t); if (/[.!?।॥:：]["'”’)\]]*$/.test(w) && !/…["'”’)\]]*$|\.\.\.$/.test(w)) { if (cur.length >= 3) sents.push(cur); cur = []; } });
+      if (cur.length >= 3) sents.push(cur); cur = [];
+    });
+    var W = (words || []).filter(function (w) { return w.text && norm(w.text); });
+    if (!sents.length || !W.length || !(deletes || []).length) { var same = (deletes || []).slice(); same.restored = []; return same; }
+    function inCut(w, ds) { var mid = (w.start + w.end) / 2; for (var i = 0; i < ds.length; i++) if (mid >= ds[i].start && mid < ds[i].end) return true; return false; }
+    // the most complete take of a line in a word list: in-order matches inside windows of
+    // twice the line → { cov, s, e } (first / last matched word, indices into the list)
+    // ponytail: O(words × line²) per line — fine for a 30-minute talk; band it if longer
+    function bestTake(Q, list) {
+      var q = Q.length, win = Math.ceil(q * 1.5) + 3, best = { cov: 0, s: -1, e: -1 }, s0, i, j;   // tight: one take, not words stitched from two
+      var T2 = list.map(function (w) { return norm(w.text); });
+      for (s0 = 0; s0 < T2.length; s0 += Math.max(1, Math.floor(q / 2))) {
+        var B = Math.min(win, T2.length - s0), L = [];
+        for (i = 0; i <= q; i++) L.push(new Int16Array(B + 1));
+        for (i = q - 1; i >= 0; i--) for (j = B - 1; j >= 0; j--)
+          L[i][j] = wordSc(Q[i], T2[s0 + j]) >= 0.6 ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+        if (L[0][0] / q < best.cov) continue;                          // a tie goes to the later take
+        var f = -1, l = -1;
+        for (i = 0, j = 0; i < q && j < B; ) {
+          if (wordSc(Q[i], T2[s0 + j]) >= 0.6 && L[i][j] === L[i + 1][j + 1] + 1) { if (f < 0) f = s0 + j; l = s0 + j; i++; j++; }
+          else if (L[i + 1][j] >= L[i][j + 1]) i++; else j++;
+        }
+        best = { cov: L[0][0] / q, s: f, e: l };
+      }
+      return best;
+    }
+    // a take lives in continuous speech: search each stretch (no jump over 3 s) on its own —
+    // with words cut out, the kept list put the sentence before a cut next to the take after
+    // it, and a "take" stitched across them gave back everything in between
+    function bestRun(Q, list) {
+      var best = { cov: 0, s: -1, e: -1 }, r0 = 0;
+      for (var r = 1; r <= list.length; r++) {
+        if (r < list.length && list[r].start - list[r - 1].end <= 3) continue;
+        var t = bestTake(Q, list.slice(r0, r));
+        if (t.s >= 0 && t.cov >= best.cov) best = { cov: t.cov, s: t.s + r0, e: t.e + r0 };
+        r0 = r;
+      }
+      return best;
+    }
+    var out = deletes.slice(), restored = [];
+    sents.forEach(function (Q) {
+      var keptW = W.filter(function (w) { return !inCut(w, out); });
+      var all = bestRun(Q, W), now = bestRun(Q, keptW);
+      if (all.cov < 0.4 || now.cov >= all.cov * 0.9) return;     // strict: a line missing its opening words sounds chopped
+      // its best take (the later on a tie) comes back
+      // a decent take is still kept (another take, or this one with words cut out of it):
+      // fill ITS holes — never add a second take of the line. Otherwise the best take comes back
+      var pick = all;
+      if (now.cov >= all.cov * 0.7 && now.s >= 0) pick = { s: W.indexOf(keptW[now.s]), e: W.indexOf(keptW[now.e]), cov: now.cov };
+      var ps = pick.s, pe = pick.e, x;
+      // its first / last words can be weak matches ("isee" for "Isi"): up to 3 each side
+      for (x = 0; x < 3 && ps > 0 && W[ps].start - W[ps - 1].end < 2.5 &&
+           Q.slice(0, 3).some(function (t) { return wordSc(norm(W[ps - 1].text), t) > 0; }); x++) ps--;
+      for (x = 0; x < 3 && pe + 1 < W.length && W[pe + 1].start - W[pe].end < 2.5 &&
+           Q.slice(-3).some(function (t) { return wordSc(norm(W[pe + 1].text), t) > 0; }); x++) pe++;
+      if (keepEveryLine.debug) keepEveryLine.debug.push({ line: Q.join(' '), all: all.cov, now: now.cov, from: W[ps].text + '@' + W[ps].start, to: W[pe].text + '@' + W[pe].end });
+      // give back the take's WORDS (a breath either side), not the pauses between them —
+      // those stay trimmed like everywhere else
+      for (var wi = ps; wi <= pe; wi++) {
+        var a = W[wi].start - 0.08, b = W[wi].end + 0.08, nx = [];
+        out.forEach(function (d) {
+          if (d.end <= a || d.start >= b) { nx.push(d); return; }
+          if (d.start < a) { var l = {}; for (var k in d) l[k] = d[k]; l.end = a; nx.push(l); }
+          if (d.end > b) { var r = {}; for (var k2 in d) r[k2] = d[k2]; r.start = b; nx.push(r); }
+        });
+        out = nx;
+      }
+      restored.push(Q.join(' '));
+    });
+    out.restored = restored;
+    return out;
+  }
   /* Cuts minus what the attempts keep as takes (only "not in your script" cuts give way). */
   function sparingKeeps(deletes, keeps) {
     var out = [];
@@ -1255,7 +1340,7 @@
   }
 
   return {
-    scriptAttempts: scriptAttempts, sparingKeeps: sparingKeeps,
+    scriptAttempts: scriptAttempts, sparingKeeps: sparingKeeps, keepEveryLine: keepEveryLine,
     scriptKeep: scriptKeep,
     scriptTakes: scriptTakes,
     findRepeatedTakes: findRepeatedTakes, flatten: flatten, tidyDeletes: tidyDeletes,

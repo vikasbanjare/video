@@ -2313,6 +2313,17 @@ try {
     assert(T.scriptKeep(rec, 'Aaj hum mutual funds ke baare mein baat karenge.\nSIP kaise kaam karta hai yeh samjhenge.\nPhir dekhenge kaunsa fund lena chahiye.').deletes.length === 0,
       'script mode: a script for another video cuts nothing');
   }
+  // no line is lost: cuts from different rules covered every take of a line — its words come back,
+  // the pause inside the take stays cut, and a line that is still there is left alone
+  {
+    const scr = 'Isi duniya ko kehte hain Alternatives.\nAur iss space ka ek bada naam hai Edelweiss Alternatives.';
+    const take = mk(0, 'Isi duniya ko kehte hain Alternatives', 0.4).concat(mk(5, 'aur iss space ka ek bada naam hai Edelweiss Alternatives', 0.4));
+    const cuts = [{ start: 0, end: 2.6, reason: 'another take of a line in your script' }, { start: 2.6, end: 4.9, reason: 'quiet' }, { start: 5, end: 9.2, reason: 'not in your script' }];
+    const g = T.keepEveryLine(take, scr, cuts);
+    const kept = (t) => !g.some(d => t >= d.start && t < d.end);
+    assert(g.restored.length === 2 && kept(0.1) && kept(5.1) && !kept(3.5), 'no line lost: every take of a line was cut — its words come back, the pause inside stays cut: ' + JSON.stringify(g.map(d => [+d.start.toFixed(2), +d.end.toFixed(2)])));
+    assert(T.keepEveryLine(take, scr, [{ start: 2.6, end: 4.9 }]).restored.length === 0, 'no line lost: cuts that leave every line whole are not touched');
+  }
   const other = T.scriptTakes(said, 'Aaj hum mutual funds ke baare mein baat karenge aur SIP kaise kaam karta hai yeh samjhenge'.split(' '));
   assert(other.rate < 0.35, 'script: a script for another video barely matches (Clean up then ignores it): ' + other.rate.toFixed(2));
 }

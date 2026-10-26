@@ -16526,7 +16526,7 @@
       var words = heardWords(r.vWords || state.transcriptWords, plan);
       // a spoken word is never cut to remove a pause (ASR timing drift allowed for)
       var sil = CPSilence.protectCutsFromWords(r.sil.concat(wordlessNoiseCuts(words, plan, tune)), words, { minCut: tune.minCut }).concat(quietCuts(plan));
-      var ranges = mergeSeqRanges(snapRangesToWords(sil.concat(r.other), words));
+      var ranges = mergeSeqRanges(snapRangesToWords(scriptGuard(words, sil.concat(r.other), extraNotes), words));
       prog.classList.add('hidden');
       var notes = [];
       if (r.needTranscript === 'failed') notes.push('Pulse couldn’t get your words, so repeated takes were skipped — this pass removes dead air only.');
@@ -16937,6 +16937,19 @@
     // A take the attempts keep is never cut word by word as "not in your script".
     var at = (plan && plan.grid && CPTakes.scriptAttempts) ? CPTakes.scriptAttempts(words, plan.grid, voiceBar(plan) - 3, txt) : { deletes: [], keeps: [] };
     return r.deletes.concat(CPTakes.sparingKeeps ? CPTakes.sparingKeeps(k.deletes, at.keeps) : k.deletes, at.deletes);
+  }
+  /* 📜 The last word on every Clean up cut when a script is loaded: no line of the
+     script is lost. Rules cut by different evidence (by word, by attempt, by
+     silence) and between them could remove every take of a line — the owner saw
+     needed parts go. A line that came out short gets its take's words back. */
+  function scriptGuard(words, cuts, notes) {
+    var txt = ($('script-text') && $('script-text').value) || '';
+    if (!CPTakes.keepEveryLine || CPScript.scriptWords(txt).length < 20 || !words || !words.length) return cuts;
+    if (CPTakes.scriptTakes(words, CPScript.scriptWords(txt)).rate < 0.35) return cuts;   // a script for another video
+    var g = CPTakes.keepEveryLine(words, txt, cuts);
+    if (g.restored && g.restored.length && notes) notes.push('📜 Kept ' + g.restored.length + ' line' + (g.restored.length > 1 ? 's' : '') +
+      ' of your script that the cuts would have removed.');
+    return g;
   }
   function takesPeople(words) {
     var pick = $('tk-kind') ? $('tk-kind').value : 'auto';

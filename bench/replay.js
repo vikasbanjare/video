@@ -36,11 +36,16 @@ function cleanUp(useScript) {
   const atr = (useScript && process.env.ATTEMPTS && SCR.length >= 20) ? T.scriptAttempts(heard, grid, L.speech, SCRTXT, process.env.ATT_PAUSE ? { pause: +process.env.ATT_PAUSE } : {}) : { deletes: [], keeps: [] };
   if (useScript && process.env.SCRIPTMODE && SCR.length >= 20) { const kd = T.scriptKeep(heard, SCRTXT).deletes; sc = sc.concat(process.env.NOSPARE ? kd : T.sparingKeeps(kd, atr.keeps)); }
   sc = sc.concat(atr.deletes);
-  const other = tk.concat(sc).filter(d => !d.needsReview && !d.estimated);
+  let other = tk.concat(sc).filter(d => !d.needsReview && !d.estimated);
+  // the last word on any take cut: no script line is lost
+
   // silences: the plan, wordless noise, the word guard, then quiet stretches
   const sil = S.protectCutsFromWords(S.planCuts(grid, tune).concat(S.wordlessNoise(heard, grid, bar, tune)), heard, { minCut: tune.minCut })
     .concat(S.quietStretches(grid, bar));
-  const cuts = S.mergeRanges(snapRangesToWords(sil.concat(other), heard).sort((a, c) => a.start - c.start), 0);
+  // the last word on EVERY cut (silences and quiet stretches too): no script line is lost
+  let all = sil.concat(other);
+  if (useScript && SCR.length >= 20 && !process.env.NOGUARD) { if (process.env.GLINE2) T.keepEveryLine.debug = []; all = T.keepEveryLine(heard, SCRTXT, all); if (process.env.GLINE2) T.keepEveryLine.debug.forEach(d => console.log('guard2', JSON.stringify(d).slice(0, 220))); if (process.env.SHOW) (all.restored || []).forEach(l => console.log('   restored: ' + l.slice(0, 70))); }
+  const cuts = S.mergeRanges(snapRangesToWords(all, heard).sort((a, c) => a.start - c.start), 0);
   return { cuts, sc, heard };
 }
 
@@ -86,6 +91,19 @@ if (SCRTXT) {
   const sents = SCRTXT.split(/\n|(?<=[.?!।:])\s+/).map(x => x.trim()).filter(x => x.split(/\s+/).length >= 3);
   const present = (mask) => { const ws = res.heard.filter(w => w.text && mask[Math.floor((w.start + w.end) / 2 * 10)]).map(w => T._norm(w.text));
     return sents.map(st => { const q = st.split(/\s+/).map(T._norm).filter(Boolean); let hit = 0; for (const t of q) if (ws.some(w => T._wordSc(t, w) >= 0.6)) hit++; return hit / q.length >= 0.6; }); };
+  // strict: a COMPLETE take of the line (70% of its words, in order, real matches) inside the kept audio
+  const presentStrict = (mask) => { const ws = res.heard.filter(w => w.text && mask[Math.floor((w.start + w.end) / 2 * 10)]).map(w => T._norm(w.text));
+    return sents.map(st => { const q = st.split(/\s+/).map(T._norm).filter(Boolean); const A = q.length, B = ws.length;
+      let prev = new Int16Array(B + 1), best = 0;
+      for (let i = 1; i <= A; i++) { const cur = new Int16Array(B + 1); for (let j = 1; j <= B; j++) { cur[j] = Math.max(prev[j], cur[j - 1], prev[j - 1] + (T._wordSc(q[i - 1], ws[j - 1]) >= 0.6 ? 1 : 0)); } prev = cur; }
+      // in order but within a window: walk windows of 2× the line
+      let ok = false; const win = A * 2 + 4;
+      for (let s0 = 0; s0 < B && !ok; s0 += Math.max(1, A)) { let pv = new Int16Array(win + 1); for (let i = 1; i <= A; i++) { const cu = new Int16Array(win + 1); for (let j = 1; j <= win && s0 + j - 1 < B; j++) cu[j] = Math.max(pv[j], cu[j - 1], pv[j - 1] + (T._wordSc(q[i - 1], ws[s0 + j - 1]) >= 0.6 ? 1 : 0)); pv = cu; } if (Math.max.apply(null, pv) >= 0.7 * A) ok = true; }
+      return ok; }); };
+  const sYou = presentStrict(H), sPulse = presentStrict(P);
+  const sLost = sents.filter((st, i) => sYou[i] && !sPulse[i]);
+  console.log(`complete lines: yours ${sYou.filter(Boolean).length}/${sents.length}, Pulse ${sPulse.filter(Boolean).length}; LOST complete: ${sLost.length}`);
+  sLost.forEach(l => console.log('   LOST complete: ' + l.slice(0, 90)));
   const inYou = present(H), inPulse = present(P);
   const lost = sents.filter((st, i) => inYou[i] && !inPulse[i]), extra = sents.filter((st, i) => !inYou[i] && inPulse[i]);
   console.log(`script lines: in your edit ${inYou.filter(Boolean).length}/${sents.length}, in Pulse's ${inPulse.filter(Boolean).length}; LOST by Pulse: ${lost.length}`);
@@ -106,3 +124,14 @@ if (process.env.SNAP) { const [a, c] = process.env.SNAP.split(',').map(Number); 
   heard.filter(w => w.end > a - 0.5 && w.start < c + 0.5).forEach(w => console.log('  word', w.start.toFixed(2), w.end.toFixed(2), JSON.stringify(w.text), w.part ? 'part' : '')); }
 if (process.env.ALIGN) { const [a, c] = process.env.ALIGN.split(',').map(Number); const heard = S.audibleWords(W, grid, { bar }); const r = T.scriptTakes(heard, SCR, { debug: true });
   heard.forEach((w, i) => { if (w.start >= a && w.start <= c) console.log('al', w.start.toFixed(2), w.end.toFixed(2), r.at[i] >= 0 ? '= ' + SCR[r.at[i]] : r.at[i] === -2 ? '~' : '-', JSON.stringify(w.text)); }); }
+if (process.env.GDEBUG) { const heard = S.audibleWords(W, grid, { bar }); const [a, c] = process.env.GDEBUG.split(',').map(Number);
+  const tk = T.findRepeatedTakes(heard, { minRun: 3, sim: 0.6, keep: 'best' }).deletes;
+  const atr = T.scriptAttempts(heard, grid, L.speech, SCRTXT);
+  let sc = T.scriptTakes(heard, SCR).deletes.concat(T.sparingKeeps(T.scriptKeep(heard, SCRTXT).deletes, atr.keeps), atr.deletes);
+  const other = tk.concat(sc).filter(d => !d.needsReview && !d.estimated);
+  const show = (nm, arr) => arr.filter(d => d.end > a && d.start < c).forEach(d => console.log(nm, d.start.toFixed(1), d.end.toFixed(1), d.reason || ''));
+  show('before', other); const g = T.keepEveryLine(heard, SCRTXT, other); show('after ', g); console.log('restored:', g.restored); }
+if (process.env.GLINE) { T.keepEveryLine.debug = []; const heard = S.audibleWords(W, grid, { bar }); const atr = T.scriptAttempts(heard, grid, L.speech, SCRTXT);
+  const other = T.findRepeatedTakes(heard, { minRun: 3, sim: 0.6, keep: 'best' }).deletes.concat(T.scriptTakes(heard, SCR).deletes, T.sparingKeeps(T.scriptKeep(heard, SCRTXT).deletes, atr.keeps), atr.deletes).filter(d => !d.needsReview && !d.estimated);
+  T.keepEveryLine(heard, SCRTXT, other); T.keepEveryLine.debug.forEach(d => console.log('guard', JSON.stringify(d).slice(0, 220)));
+  if (process.env.AROUND) console.log('heard around:', heard.filter(w => w.start > 88 && w.start < 96).map(w => (w.text || '·') + '@' + w.start.toFixed(1) + '-' + w.end.toFixed(1)).join(' ')); }
