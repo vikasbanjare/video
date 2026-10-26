@@ -1034,7 +1034,7 @@
     var n = (words || []).length, T = (words || []).map(function (w) { return norm(w.text); });
     var none = { deletes: [], found: 0, sentences: sents.length, missing: [] };
     if (n < 10 || sents.length < 2) return none;
-    var MIN_COV = opts.minCov || 0.55, NEAR_BEST = 0.85;
+    var MIN_COV = opts.minCov || 0.55, NEAR_BEST = 0.75;
     // in-order matches of a sentence inside a stretch of words → [pairs], strong count
     function lcs(Q, i0, i1) {
       var A = Q.length, B = i1 - i0, L = [], a, b;
@@ -1087,8 +1087,8 @@
     // a stretch in no line: chatter — unless it looks like a line still missing
     function likeMissing(i0, i1) {
       for (var mi = 0; mi < missing.length; mi++) {
-        var Qm = sents[missing[mi]];
-        if (lcs(Qm, i0, i1 + 1).pairs.length >= Math.max(2, Qm.length * 0.3)) return true;
+        var Qm = sents[missing[mi]], lm = lcs(Qm, i0, i1 + 1);
+        if (lm.pairs.length >= Math.max(3, Qm.length * 0.4) && lm.strong >= 1) return true;
       }
       return false;
     }
