@@ -16933,9 +16933,10 @@
     if (r.rate < 0.35) return [];
     // and script mode: ONE take per line — the other takes and the off-script talk go
     var k = CPTakes.scriptKeep ? CPTakes.scriptKeep(words, txt) : { deletes: [] };
-    // …and whole attempts between pauses (Clean up hears the audio; the takes tool doesn't)
-    var at = (plan && plan.grid && CPTakes.scriptAttempts) ? CPTakes.scriptAttempts(words, plan.grid, voiceBar(plan) - 3, txt) : { deletes: [] };
-    return r.deletes.concat(k.deletes, at.deletes);
+    // …and whole attempts between pauses (Clean up hears the audio; the takes tool doesn't).
+    // A take the attempts keep is never cut word by word as "not in your script".
+    var at = (plan && plan.grid && CPTakes.scriptAttempts) ? CPTakes.scriptAttempts(words, plan.grid, voiceBar(plan) - 3, txt) : { deletes: [], keeps: [] };
+    return r.deletes.concat(CPTakes.sparingKeeps ? CPTakes.sparingKeeps(k.deletes, at.keeps) : k.deletes, at.deletes);
   }
   function takesPeople(words) {
     var pick = $('tk-kind') ? $('tk-kind').value : 'auto';

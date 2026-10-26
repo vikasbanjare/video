@@ -1143,7 +1143,7 @@
     opts = opts || {};
     var none = { deletes: [], attempts: 0 };
     if (!grid || !grid.peak || !isFinite(speechDb) || !scriptText || !(words || []).length) return none;
-    var PAUSE = opts.pause || 1.0, quietDb = speechDb - 12, step = Math.max(1, Math.round(0.1 / grid.hop)), blk = step * grid.hop;
+    var PAUSE = opts.pause || 0.8, quietDb = speechDb - 12, step = Math.max(1, Math.round(0.1 / grid.hop)), blk = step * grid.hop;
     // 1. attempts: speech between pauses of PAUSE or more (0.1 s blocks under speech − 12 dB)
     var loud = [], g, k;
     for (g = 0; g < grid.n; g += step) { var mx = -99; for (k = g; k < g + step && k < grid.n; k++) mx = Math.max(mx, grid.peak[k]); loud.push(mx >= quietDb); }
@@ -1161,10 +1161,14 @@
     });
     var m = S.length;
     if (m < 20) return none;
-    // 3. each attempt's place in the script: local alignment, match +2 / +1, mismatch or gap −1
-    att.forEach(function (a) {
-      a.w = words.filter(function (w) { return w.text && (w.start + w.end) / 2 >= a.start && (w.start + w.end) / 2 < a.end; });
-      var A = [], i, j; a.w.forEach(function (w) { var t = norm(w.text); if (t) A.push(t); });
+    // 3. each attempt's place in the script: local alignment, match +2 / +1, mismatch or gap −1.
+    //    What is left before / after the aligned part (3+ words: an abandoned take and the
+    //    crew before a restart, an off-script sentence tacked on) becomes an attempt of its own
+    att.forEach(function (a) { a.w = words.filter(function (w) { return w.text && (w.start + w.end) / 2 >= a.start && (w.start + w.end) / 2 < a.end; }); });
+    for (var qi = 0; qi < att.length && qi < 2000; qi++) place(att[qi]);
+    function place(a) {
+      var A = [], ix = [], i, j;
+      a.w.forEach(function (w, wi) { var t = norm(w.text); if (t) { A.push(t); ix.push(wi); } });
       var n = A.length; a.n = n; a.pos = {}; a.size = 0;
       if (n < 2) return;
       var H = [], D = [], best = 0, bi = 0, bj = 0;
@@ -1177,12 +1181,33 @@
         H[i][j] = h; D[i][j] = d;
         if (h > best) { best = h; bi = i; bj = j; }
       }
+      var first = -1;
       for (i = bi, j = bj; i > 0 && j > 0 && D[i][j]; ) {
         var dd = D[i][j];
-        if (dd === 1) { if (wordSc(A[i - 1], S[j - 1]) >= 0.6 && !a.pos[j - 1]) { a.pos[j - 1] = 1; a.size++; } i--; j--; }
+        if (dd === 1) { if (wordSc(A[i - 1], S[j - 1]) >= 0.6 && !a.pos[j - 1]) { a.pos[j - 1] = 1; a.size++; first = i - 1; } i--; j--; }
         else if (dd === 2) i--; else j--;
       }
-    });
+      if (a.size < 3 || first < 0) return;
+      var w0 = ix[first], w1 = ix[bi - 1];                    // the aligned part, in a.w
+      if (w0 >= 3) { att.push({ start: a.start, end: a.w[w0 - 1].end, w: a.w.slice(0, w0) }); a.start = a.w[w0].start; }
+      if (a.w.length - 1 - w1 >= 3) { att.push({ start: a.w[w1 + 1].start, end: a.end, w: a.w.slice(w1 + 1) }); a.end = a.w[w1].end; }
+      a.w = a.w.slice(w0 >= 3 ? w0 : 0, a.w.length - 1 - w1 >= 3 ? w1 + 1 : a.w.length);
+    }
+    // 3b. a slow delivery pauses inside a sentence ("दुनिया को … स्पेस का एक बड़ा नाम …"):
+    //     neighbouring pieces where the next carries on in the script (starts within 4
+    //     words after the last one ended, under 1.5 s apart) are one attempt again —
+    //     a retake jumps BACK in the script, a slow read moves forward
+    function lo(a) { var v = Infinity; for (var p in a.pos) v = Math.min(v, +p); return v; }
+    function hi(a) { var v = -1; for (var p in a.pos) v = Math.max(v, +p); return v; }
+    att.sort(function (x, y) { return x.start - y.start; });
+    for (var mi = 0; mi + 1 < att.length; ) {
+      var A1 = att[mi], A2 = att[mi + 1];
+      if (A1.size >= 1 && A2.size >= 1 && (A1.size >= 3 || A2.size >= 3) && A2.start - A1.end < 1.5 && lo(A2) > hi(A1) && lo(A2) - hi(A1) <= 4) {
+        for (var pp in A2.pos) if (!A1.pos[pp]) { A1.pos[pp] = 1; A1.size++; }
+        A1.end = A2.end; A1.w = A1.w.concat(A2.w); A1.n = (A1.n || 0) + (A2.n || 0);
+        att.splice(mi + 1, 1);
+      } else mi++;
+    }
     // 4. an attempt another re-says is cut: the later wins unless clearly broken off
     var sp = att.filter(function (a) { return a.size >= 3; });
     sp.forEach(function (a) {
@@ -1204,11 +1229,33 @@
       return { start: a.start, end: a.end, text: a.w.map(function (w) { return w.text; }).join(' '),
         reason: a.chatter ? 'not in your script' : 'another take of a line in your script' };
     });
-    return { deletes: deletes, attempts: att.length };
+    // the takes it keeps: word-level script mode must not cut inside them as "not in your
+    // script" (the last take of a line said differently — "India" for "Edelweiss")
+    var keeps = sp.filter(function (a) { return !a.cut; }).map(function (a) { return { start: a.start, end: a.end }; });
+    return { deletes: deletes, attempts: att.length, keeps: keeps };
+  }
+  /* Cuts minus what the attempts keep as takes (only "not in your script" cuts give way). */
+  function sparingKeeps(deletes, keeps) {
+    var out = [];
+    (deletes || []).forEach(function (d) {
+      if (!/not in your script/.test(d.reason || '')) { out.push(d); return; }
+      var parts = [{ start: d.start, end: d.end }];
+      (keeps || []).forEach(function (k) {
+        var nx = [];
+        parts.forEach(function (p) {
+          if (k.end <= p.start || k.start >= p.end) { nx.push(p); return; }
+          if (k.start > p.start) nx.push({ start: p.start, end: k.start });
+          if (k.end < p.end) nx.push({ start: k.end, end: p.end });
+        });
+        parts = nx;
+      });
+      parts.forEach(function (p) { if (p.end - p.start >= 0.2) { var c = {}; for (var x in d) c[x] = d[x]; c.start = p.start; c.end = p.end; out.push(c); } });
+    });
+    return out;
   }
 
   return {
-    scriptAttempts: scriptAttempts,
+    scriptAttempts: scriptAttempts, sparingKeeps: sparingKeeps,
     scriptKeep: scriptKeep,
     scriptTakes: scriptTakes,
     findRepeatedTakes: findRepeatedTakes, flatten: flatten, tidyDeletes: tidyDeletes,
