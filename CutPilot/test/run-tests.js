@@ -2166,6 +2166,12 @@ console.log('script alignment (your script\'s words + the transcript\'s timing)'
     'to chaliye shuru karte hain bina time waste kiye sabse pehle ye samajh lo ki market kaise chalta hai';
   const hin = S.alignToScript(hinglish, hinScript);
   assert(hin.replaced === 4, 'four Hinglish mishearings are reported as four corrections (got ' + hin.replaced + ')');
+  // the owner's case: the transcript in Devanagari, the script in Latin Hinglish — the same
+  // words, matched by sound (it was refused at 10% "overlap", letter for letter)
+  const deva = [{ start: 0, end: 3, text: 'FD, म्यूचुअल फंड्स, स्टॉक्स ये तो सब जानते हैं' },
+    { start: 3, end: 7, text: 'लेकिन बड़े इंस्टिट्यूशंस और HNIs का पैसा इंफ्रास्ट्रक्चर कमर्शियल रियल एस्टेट में कैसे इन्वेस्ट होता है' }];
+  const dv = S.alignToScript(deva, 'FD, mutual funds, stocks yeh toh sab jaante hain. Lekin bade institutions aur HNIs ka paisa infrastructure, commercial real estate mein kaise invest hota hai?');
+  assert(dv.matched && /mutual funds/.test(dv.cues[0].text), 'a Hinglish script matches a Devanagari transcript by sound (' + Math.round(dv.matchRate * 100) + '%): ' + dv.cues[0].text);
   assert(/paise/.test(hin.cues[1].text) && /shuru/.test(hin.cues[2].text) && /hain/.test(hin.cues[2].text),
     'the mishearings are actually fixed: ' + hin.cues[1].text + ' | ' + hin.cues[2].text);
   const noDrift = hin.cues.every(function (c, i) {
@@ -2309,7 +2315,7 @@ try {
   // switch and drops the launcher — the anchor must exist or the build would ship it
   const fs = require('fs'), g = fs.readFileSync(path.join(__dirname, '..', 'js', 'greenscreen.js'), 'utf8');
   const bp = fs.readFileSync(path.join(__dirname, '..', '..', 'tools', 'build-protected.js'), 'latin1');
-  assert(/var PRO_KEY = true;\s*\/\*@@CP_PROKEY@@\*\//.test(g) && /@@CP_PROKEY@@/.test(bp) && /ck_mac\.py/.test(bp),
+  assert(/var PRO_KEY = true;\s*\/\*@@CP_PROKEY@@\*\//.test(g) && /CP_COMMERCIAL === '1'[\s\S]{0,400}@@CP_PROKEY@@/.test(bp) && /ck_mac\.py/.test(bp),
     'product build: the Pro key switch is there and the build turns it off and leaves out ck_mac.py');
 }
 

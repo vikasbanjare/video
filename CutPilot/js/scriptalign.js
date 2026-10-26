@@ -28,6 +28,23 @@
       .replace(/^'+|'+$/g, '');
   }
 
+  /* The comparison key: the word's SOUND skeleton when there is one (CPTakes), so
+     the same word in Devanagari and Latin matches — a Hinglish script ("yeh toh
+     sab jaante hain") against a transcript in Devanagari ("ये तो सब जानते हैं")
+     matched 3–31% letter for letter and was refused as "another recording". */
+  var _T = null;
+  function takesLib() {
+    if (_T) return _T;
+    try { _T = (typeof CPTakes !== 'undefined' && CPTakes) || (typeof require === 'function' ? require('./takes.js') : null); } catch (e) { _T = null; }
+    return _T;
+  }
+  function key(w) {
+    var n = norm(w), T = takesLib();
+    if (!T || !T._skel) return n;
+    var k = T._skel(T._norm ? T._norm(w) : n);
+    return k && k.length >= 2 ? '~' + k : n;
+  }
+
   /* Split a script into words, dropping speaker labels ("VIKAS:"), stage
      directions ("[laughs]", "(pause)") and blank lines — the things a person
      writes but never says. */
@@ -116,10 +133,18 @@
       return { cues: src, matched: false, matchRate: 0, replaced: 0, scriptWords: sw.length };
     }
     var an = [], bn = [], i;
-    for (i = 0; i < tw.length; i++) an.push(norm(tw[i]));
-    for (i = 0; i < sw.length; i++) bn.push(norm(sw[i]));
+    for (i = 0; i < tw.length; i++) an.push(key(tw[i]));
+    for (i = 0; i < sw.length; i++) bn.push(key(sw[i]));
     var pairs = matchPairs(an, bn);
-    var rate = pairs.length / tw.length;
+    // the share of the SHORTER side heard: a 10-minute recording full of retakes has
+    // 3× the script's words, and its own script reached only a third of them
+    // counted on real words only (3+ sounds): "hai", "aur", "mein" are in every Hindi
+    // script and lifted a wrong one to 18%
+    var big = function (k) { return k.charAt(0) === '~' && k.length >= 4; }, ca = 0, cb = 0, cp = 0;
+    for (i = 0; i < an.length; i++) if (big(an[i])) ca++;
+    for (i = 0; i < bn.length; i++) if (big(bn[i])) cb++;
+    for (i = 0; i < pairs.length; i++) if (big(an[pairs[i][0]])) cp++;
+    var rate = (ca && cb) ? cp / Math.min(ca, cb) : pairs.length / Math.min(tw.length, sw.length);
     if (rate < minMatch) {
       return { cues: src, matched: false, matchRate: rate, replaced: 0, scriptWords: sw.length };
     }
@@ -146,6 +171,7 @@
         // just fixed four mishearings.
         for (var fill = lastB + 1; fill < bIx; fill++) { perCue[fillCue].push(sw[fill]); replaced++; }
         perCue[cueIx].push(sw[bIx]);
+        if (norm(tw[t]) !== norm(sw[bIx])) replaced++;   // paired by sound, spelled differently: a correction too
         lastB = bIx; pi++; gapOwner = -1;
       } else if (gapOwner < 0) {
         gapOwner = cueIx;      // misheard word: its cue owns the coming fill

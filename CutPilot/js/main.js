@@ -3719,7 +3719,8 @@
       if (!r.matched) {
         if ($('script-status')) $('script-status').textContent =
           '⚠️ Only ' + Math.round(r.matchRate * 100) + '% of the spoken words appear in this script — it looks like a different recording, so your transcript was left untouched.';
-        return toast('That script doesn\'t match this audio (' + Math.round(r.matchRate * 100) + '% overlap) — transcript left as it was.', true);
+        return toast('Only ' + Math.round(r.matchRate * 100) + '% of this script is heard in this recording, so its spelling wasn\'t applied to the transcript. ' +
+          'If it IS this video\'s script, Clean up still uses it to keep one take of each line.', true);
       }
       try {
         var fs2 = nodeReq('fs'), pm2 = nodeReq('path'), os2 = nodeReq('os');
