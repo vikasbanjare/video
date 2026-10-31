@@ -102,18 +102,30 @@
     return runs;
   }
 
+  // runs are in time order and never overlap (speechRuns), so the run that
+  // matters is found by binary search: a 2-hour podcast has thousands of runs
+  // and 20k words, and a linear scan per word froze "Add captions"
+  // the last run that starts at or before t (-1 if none)
+  function runAt(t, runs) {
+    var lo = 0, hi = runs.length - 1, k = -1;
+    while (lo <= hi) { var mid = (lo + hi) >> 1; if (runs[mid].start <= t) { k = mid; lo = mid + 1; } else hi = mid - 1; }
+    return k;
+  }
   function inSpeech(t, runs, pad) {
     pad = pad || 0;
-    for (var i = 0; i < runs.length; i++) if (t >= runs[i].start - pad && t <= runs[i].end + pad) return true;
-    return false;
+    // of the runs starting by t + pad, the last ends latest
+    var k = runAt(t + pad, runs);
+    return k >= 0 && t >= runs[k].start - pad && t <= runs[k].end + pad;
   }
   // nearest speech edge to t (start edges if isStart, else end edges, but the
-  // opposite edge is allowed too — whichever is closer)
+  // opposite edge is allowed too — whichever is closer). Only the runs around t
+  // can hold it; they are checked in the same order a full scan would.
   function nearestEdge(t, runs, isStart) {
-    var best = t, bestD = Infinity;
-    for (var i = 0; i < runs.length; i++) {
-      var edges = [isStart ? runs[i].start : runs[i].end, isStart ? runs[i].end : runs[i].start];
-      for (var e = 0; e < edges.length; e++) { var d = Math.abs(edges[e] - t); if (d < bestD) { bestD = d; best = edges[e]; } }
+    var best = t, bestD = Infinity, k = runAt(t, runs);
+    for (var i = Math.max(0, k - 1); i <= Math.min(runs.length - 1, k + 1); i++) {
+      var a = isStart ? runs[i].start : runs[i].end, b = isStart ? runs[i].end : runs[i].start;
+      var da = Math.abs(a - t); if (da < bestD) { bestD = da; best = a; }
+      var db = Math.abs(b - t); if (db < bestD) { bestD = db; best = b; }
     }
     return best;
   }
@@ -128,7 +140,9 @@
     var w = words.map(function (x) {
       return { start: +x.start || 0, end: (x.end != null ? +x.end : (+x.start || 0)), text: x.text, conf: x.conf };
     });
-    var runs = speechRuns(samples, opts);
+    // a caller refining many pieces of one recording passes the runs it already
+    // found (opts.runs): speechRuns sorts the whole envelope each time
+    var runs = opts.runs || speechRuns(samples, opts);
     var blend = (opts.blend != null) ? opts.blend : 0.5;     // 0 = trust ASR, 1 = trust syllables
     var snapWin = (opts.snapWin != null) ? opts.snapWin : 0.25;
 
@@ -211,6 +225,7 @@
     syllableCount: syllableCount,
     pCenterFraction: pCenterFraction,
     speechRuns: speechRuns,
+    inSpeech: inSpeech,
     refineWords: refineWords,
     groupForReadability: groupForReadability
   };

@@ -347,16 +347,50 @@
    * Same times as mediaToTimeline. Returns [{ start, end, text, conf }]
    * sorted by start. Pure + tested.
    */
+  /* Which line a moment belongs to: the first line holding it, else the
+     nearest (the first of equally near ones) — as a scan from line 0 finds it.
+     makeLineFinder(lines) → find(t). Lines in time order that never overlap
+     (captions, nearly always) are searched by halves: a 2-hour transcript
+     scanned every line for each of its 20k words. Any other list keeps the scan. */
+  function makeLineFinder(ls) {
+    function scan(t) {
+      var best = -1, bestD = Infinity;
+      for (var j = 0; j < ls.length; j++) {
+        var d = (t < +ls[j].start) ? +ls[j].start - t : (t >= +ls[j].end ? t - +ls[j].end : 0);
+        if (d === 0) return j;
+        if (d < bestD) { bestD = d; best = j; }
+      }
+      return best;
+    }
+    var ordered = true;
+    for (var i = 0; i < ls.length; i++) {
+      if (!(+ls[i].end >= +ls[i].start) || (i && +ls[i].start < +ls[i - 1].end)) { ordered = false; break; }
+    }
+    if (!ordered || ls.length < 8) return scan;
+    return function (t) {
+      var lo = 0, hi = ls.length - 1, k = -1;           // last line starting at or before t
+      while (lo <= hi) { var m = (lo + hi) >> 1; if (+ls[m].start <= t) { k = m; lo = m + 1; } else hi = m - 1; }
+      if (k >= 0 && t < +ls[k].end) {
+        while (k > 0 && +ls[k - 1].start === +ls[k].start && t < +ls[k - 1].end) k--;   // a zero-length line before it
+        return k;
+      }
+      var best = -1, bestD = Infinity;
+      // the nearest end behind t (and any earlier line ending at the same time), then the next start
+      if (k >= 0) {
+        var e = +ls[k].end, j = k;
+        while (j > 0 && +ls[j - 1].end === e) j--;
+        best = j; bestD = t - e;
+      }
+      if (k + 1 < ls.length) { var d2 = +ls[k + 1].start - t; if (d2 < bestD) { bestD = d2; best = k + 1; } }
+      return best;
+    };
+  }
   function placeLinesOnPieces(lines, words, pieces, minLen) {
     var min = (minLen != null) ? minLen : 0.05, ps = pieces || [], ls = lines || [];
     var byLine = ls.map(function () { return []; });
+    var lineOf = makeLineFinder(ls);
     (words || []).forEach(function (w) {
-      var mid = (+w.start + +(w.end != null ? w.end : w.start)) / 2, best = -1, bestD = Infinity;
-      for (var j = 0; j < ls.length; j++) {
-        var d = (mid < +ls[j].start) ? +ls[j].start - mid : (mid >= +ls[j].end ? mid - +ls[j].end : 0);
-        if (d === 0) { best = j; break; }
-        if (d < bestD) { bestD = d; best = j; }
-      }
+      var mid = (+w.start + +(w.end != null ? w.end : w.start)) / 2, best = lineOf(mid);
       if (best >= 0) byLine[best].push({ mid: mid, text: String(w.text != null ? w.text : (w.word || '')).trim() });
     });
     var out = [];
@@ -3195,10 +3229,21 @@
      spoken words one for one when there are as many; else they are spread
      evenly over the line. → { words, matched (lines one for one), lines }. */
   function carryWordTiming(cues, texts, words) {
-    var out = [], matched = 0;
+    var out = [], matched = 0, wl = words || [], sorted = true;
+    for (var q = 1; q < wl.length; q++) if (+wl[q].start < +wl[q - 1].start) { sorted = false; break; }
+    // the words that start inside a line — by halves when the words are in time
+    // order (every line filtered all 20k words of a 2-hour podcast)
+    function wordsIn(a, b) {
+      if (!sorted) return wl.filter(function (w) { return +w.start >= a && +w.start < b && String(w.text || '').trim(); });
+      var lo = 0, hi = wl.length;
+      while (lo < hi) { var m = (lo + hi) >> 1; if (+wl[m].start < a) lo = m + 1; else hi = m; }
+      var r = [];
+      for (var x = lo; x < wl.length && +wl[x].start < b; x++) if (String(wl[x].text || '').trim()) r.push(wl[x]);
+      return r;
+    }
     (cues || []).forEach(function (c, i) {
       var toks = String(texts[i] == null ? c.text : texts[i]).split(/\s+/).filter(Boolean);
-      var ws = (words || []).filter(function (w) { return +w.start >= +c.start - 0.01 && +w.start < +c.end - 0.001 && String(w.text || '').trim(); });
+      var ws = wordsIn(+c.start - 0.01, +c.end - 0.001);
       if (ws.length && ws.length === toks.length) {
         matched++;
         toks.forEach(function (t, k) { out.push({ text: t, start: +ws[k].start, end: +ws[k].end }); });
@@ -4088,8 +4133,15 @@
         return { start: c.start, end: c.end, text: s.text };
       });
     }
+    var spOrdered = !!speakers;
+    if (speakers) for (i = 1; i < speakers.length; i++) if (!(+speakers[i].start >= +speakers[i - 1].end)) { spOrdered = false; break; }
     function speakerAt(t) {
       if (!speakers) return null;
+      if (spOrdered) {                     // in order, no overlap: by halves (a scan per word)
+        var lo = 0, hi = speakers.length - 1, k = -1;
+        while (lo <= hi) { var m = (lo + hi) >> 1; if (t >= speakers[m].start - 1e-3) { k = m; lo = m + 1; } else hi = m - 1; }
+        return (k >= 0 && t < speakers[k].end - 1e-3) ? (speakers[k].speaker || null) : null;
+      }
       for (var s = 0; s < speakers.length; s++) {
         // start-inclusive, end-exclusive so a caption on a cue boundary
         // belongs to the cue that is starting, not the one that ended
@@ -4292,6 +4344,7 @@
     remapCuesToKeeps: remapCuesToKeeps,
     mediaToTimeline: mediaToTimeline,
     placeLinesOnPieces: placeLinesOnPieces,
+    makeLineFinder: makeLineFinder,
     timelineToMedia: timelineToMedia,
     retimeThroughRecording: retimeThroughRecording,
     STYLE_PRESETS: STYLE_PRESETS,

@@ -343,7 +343,7 @@
       var p, out = '', err = '';
       try { p = node.child_process.spawn(node.path.join(dir, binName(node.platform)), diarizeArgs(dir, wav, opts, node.path.join)); }
       catch (x) { return reject(x); }
-      if (p.stdout) p.stdout.on('data', function (d) { out += d.toString(); });
+      if (p.stdout) { if (p.stdout.setEncoding) p.stdout.setEncoding('utf8'); p.stdout.on('data', function (d) { out += d.toString(); }); }   // whole UTF-8 characters (Hindi split across chunks came out as �)
       if (p.stderr) p.stderr.on('data', function (d) {
         var s = d.toString(), m, last = null, re = /progress\s+([\d.]+)%/g;
         err = (err + s).slice(-4000);

@@ -564,13 +564,17 @@
       if (to >= segs.length) to = segs.length - 1;
       if (to < from) continue;
       if (!segs[from] || !segs[to]) continue;
-      var fit = fitClip(segs, from, to, minS, maxS);
+      // a part of a longer video (opts.all, starting at opts.offset): fitted
+      // against the whole transcript, so a moment at the part's edge does not
+      // count that edge as a sentence end (or miss "that's why…" at its start)
+      var gs = opts.all || segs, off = opts.all ? (opts.offset | 0) : 0;
+      var fit = fitClip(gs, from + off, to + off, minS, maxS);
       if (!fit || !(fit.dur > 0)) continue;
       from = fit.from; to = fit.to;
       var start = fit.start, end = fit.end, dur = fit.dur;
       var score = (c.score != null) ? Math.max(0, Math.min(100, +c.score || 0)) : 50;
       var bodyTxt = [];
-      for (var k = from; k <= to; k++) bodyTxt.push(String(segs[k].text).trim());
+      for (var k = from; k <= to; k++) bodyTxt.push(String(gs[k].text).trim());
       out.push({
         start: start, end: end, dur: dur,
         title: (c.title ? String(c.title) : 'Clip').slice(0, 60),

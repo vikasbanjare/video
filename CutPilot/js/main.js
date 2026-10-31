@@ -1070,7 +1070,7 @@
       if (lang && lang !== 'auto' && lang !== 'unknown') args.push('-F', 'language=' + lang);   // auto = let the engine detect
       var p; try { p = curlWithSecret(cp, args, ['Authorization: Bearer ' + key]); } catch (e) { return reject(e); }
       var out = '', err = '';
-      if (p.stdout) p.stdout.on('data', function (d) { out += d.toString(); });
+      if (p.stdout) { if (p.stdout.setEncoding) p.stdout.setEncoding('utf8'); p.stdout.on('data', function (d) { out += d.toString(); }); }   // whole UTF-8 characters (Hindi split across chunks came out as �)
       if (p.stderr) p.stderr.on('data', function (d) { err += d.toString(); });
       p.on('error', reject);
       p.on('close', function (code) {
@@ -1138,6 +1138,9 @@
      says how long it waits. */
   var ASR_RETRIES = 5;
   function asrWaitSeconds(text) {
+    // "try again in 450ms" — milliseconds, read before minutes ("450m" was 450 min)
+    var ms = /try again in\s*([\d.]+)\s*ms\b/i.exec(String(text || ''));
+    if (ms) return Math.max(1, Math.ceil(+ms[1] / 1000));
     var m = /try again in\s*(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:([\d.]+)s)?/i.exec(String(text || ''));
     if (!m || !(m[1] || m[2] || m[3])) return 0;
     return (+m[1] || 0) * 3600 + (+m[2] || 0) * 60 + (+m[3] || 0);
@@ -1299,7 +1302,7 @@
       }
       var p; try { p = curlWithSecret(cp, args, ['api-subscription-key: ' + key]); } catch (e) { return reject(e); }
       var out = '', err = '';
-      if (p.stdout) p.stdout.on('data', function (d) { out += d.toString(); });
+      if (p.stdout) { if (p.stdout.setEncoding) p.stdout.setEncoding('utf8'); p.stdout.on('data', function (d) { out += d.toString(); }); }   // whole UTF-8 characters (Hindi split across chunks came out as �)
       if (p.stderr) p.stderr.on('data', function (d) { err += d.toString(); });
       p.on('error', reject);
       p.on('close', function (code) {
@@ -1560,7 +1563,7 @@
         '-H', 'Content-Type: application/json', '--data-binary', '@' + tmp];
       var p; try { p = curlWithSecret(cp, args, ['Authorization: Bearer ' + key]); } catch (eS) { try { fs.unlinkSync(tmp); } catch (e) {} return reject(eS); }
       var out = '', err = '';
-      if (p.stdout) p.stdout.on('data', function (d) { out += d.toString(); });
+      if (p.stdout) { if (p.stdout.setEncoding) p.stdout.setEncoding('utf8'); p.stdout.on('data', function (d) { out += d.toString(); }); }   // whole UTF-8 characters (Hindi split across chunks came out as �)
       if (p.stderr) p.stderr.on('data', function (d) { err += d.toString(); });
       p.on('error', function (e) { try { fs.unlinkSync(tmp); } catch (eU) {} reject(e); });
       p.on('close', function (code) {
@@ -3770,13 +3773,9 @@
     // 1. one owner line per stamp (middle inside, else nearest)
     var owner = new Array(N), lo = [], hi = [];
     for (var li = 0; li < L; li++) { lo.push(-1); hi.push(-1); }
+    var lineOf = CPCaptions.makeLineFinder(lines);
     for (var k = 0; k < N; k++) {
-      var mid = (+ow[k].start + +(ow[k].end != null ? ow[k].end : ow[k].start)) / 2, best = -1, bestD = Infinity;
-      for (var j = 0; j < L; j++) {
-        var d = (mid < lines[j].start) ? lines[j].start - mid : (mid >= lines[j].end ? mid - lines[j].end : 0);
-        if (d === 0) { best = j; break; }
-        if (d < bestD) { bestD = d; best = j; }
-      }
+      var mid = (+ow[k].start + +(ow[k].end != null ? ow[k].end : ow[k].start)) / 2, best = lineOf(mid);
       owner[k] = best;
       if (lo[best] < 0) lo[best] = k;
       hi[best] = k;
@@ -6489,8 +6488,12 @@
       toast('↺ Cleared ' + n + ' rendered preview' + (n === 1 ? '' : 's') + ' — the style cards are back to Pulse\'s own previews.');
     });
 
-    if ($('flux-search')) $('flux-search').addEventListener('input', function () { state.fluxSearch = this.value.toLowerCase(); renderFluxGrid(); });
-    $('lib-search').addEventListener('input', function () { state.libSearch = this.value.toLowerCase(); renderTemplateGrid(); });
+    // the grid is rebuilt (and every card repainted) once typing pauses, not
+    // on each letter: a search rebuilt ~125 cards per key press
+    var _searchT = null;
+    function afterTyping(fn) { clearTimeout(_searchT); _searchT = setTimeout(fn, 100); }
+    if ($('flux-search')) $('flux-search').addEventListener('input', function () { state.fluxSearch = this.value.toLowerCase(); afterTyping(renderFluxGrid); });
+    $('lib-search').addEventListener('input', function () { state.libSearch = this.value.toLowerCase(); afterTyping(renderTemplateGrid); });
     $('lib-sort').addEventListener('change', function () { state.libSort = this.value; renderTemplateGrid(); });
     $('btn-tpl-import').addEventListener('click', importTemplate);
     // Templates tab is caption styles only; .mogrt uploads live in the Editor tab.
@@ -8717,8 +8720,10 @@
     if ($('c-pos')) $('c-pos').addEventListener('input', function () { state.posUserSet = true; });
     ids.forEach(function (id) {
       if (!$(id)) return;
-      $(id).addEventListener('input', function () { updateVals(); renderPreview(); });
-      $(id).addEventListener('change', function () { updateVals(); renderPreview(); });
+      // dragging a slider fires dozens of inputs a frame: the preview is drawn
+      // (and the look saved) once per screen frame, not once per input
+      $(id).addEventListener('input', function () { updateVals(); schedulePreview(); });
+      $(id).addEventListener('change', function () { updateVals(); cancelScheduledPreview(); renderPreview(); });
     });
     // 🔠 CAPS on key words now reaches the preview too (it capitalises the
     // preview's own key words) — repaint when it is switched
@@ -9823,6 +9828,16 @@
   var SAMPLE = ['THIS', 'LOOKS', 'INSANE'];
   var SAMPLE_SENTENCE = ['THIS', 'IS', 'EXACTLY', 'HOW', 'YOUR', 'CAPTIONS', 'WILL', 'LOOK'];
 
+  var _pvFrame = 0;
+  function schedulePreview() {
+    if (_pvFrame) return;
+    var raf = window.requestAnimationFrame || function (f) { return setTimeout(f, 16); };
+    _pvFrame = raf(function () { _pvFrame = 0; renderPreview(); });
+  }
+  function cancelScheduledPreview() {
+    if (!_pvFrame) return;
+    (window.cancelAnimationFrame || clearTimeout)(_pvFrame); _pvFrame = 0;
+  }
   function renderPreview() {
     if (previewTimer) { clearInterval(previewTimer); previewTimer = null; }
     var frame = $('preview-frame');
@@ -11062,8 +11077,7 @@
         at.forEach(function (m) {
           if (!m) return;
           placed++;
-          var c = (m.start + m.end) / 2;
-          for (var i = 0; i < runs.length; i++) if (c >= runs[i].start && c <= runs[i].end) { hit++; break; }
+          if (CPAlign.inSpeech((m.start + m.end) / 2, runs, 0)) hit++;
         });
         // do the words actually line up with speech? (a word no piece plays counts against)
         var aligned = runs.length > 0 && (hit / words.length) >= 0.6;
@@ -11075,7 +11089,8 @@
         Object.keys(byPiece).forEach(function (k) {
           var idx = byPiece[k], pc = src.pieces[+k], sp = (+pc.speed > 0) ? +pc.speed : 1;
           var media = idx.map(function (i) { return { start: at[i].start, end: at[i].end, text: words[i].text, conf: words[i].conf }; });
-          var refined = CPAlign.refineWords(media, env.samples, { blend: 0.5, snapWin: 0.25 });
+          // the runs found once above: refineWords sorted the whole envelope per piece
+          var refined = CPAlign.refineWords(media, env.samples, { blend: 0.5, snapWin: 0.25, runs: runs });
           refined.forEach(function (r, j) {
             // a snap never carries a word past the edge of what its piece shows
             var s = Math.max(pc.inPoint, Math.min(pc.outPoint, r.start)), e = Math.max(pc.inPoint, Math.min(pc.outPoint, r.end));
@@ -16990,8 +17005,9 @@
       var m = aiErrText(e);
       var rateLimited = (e && e.cpKind === 'rate_limit') || /rate.?limit|try again in|tokens per minute|TPM/i.test(m);
       if (tries < 3 && rateLimited && !aiRequestTooBig(e)) {
-        var waitS = 22, mm = /try again in (?:(\d+)h)?(?:(\d+)m)?([\d.]+)s/i.exec(m);
-        if (mm) waitS = Math.ceil(parseInt(mm[1] || '0', 10) * 3600 + parseInt(mm[2] || '0', 10) * 60 + parseFloat(mm[3])) + 2;
+        var waitS = 22, mms = /try again in\s*([\d.]+)\s*ms\b/i.exec(m), mm = mms ? null : /try again in (?:(\d+)h)?(?:(\d+)m)?([\d.]+)s/i.exec(m);
+        if (mms) waitS = Math.ceil(+mms[1] / 1000) + 1;
+        else if (mm) waitS = Math.ceil(parseInt(mm[1] || '0', 10) * 3600 + parseInt(mm[2] || '0', 10) * 60 + parseFloat(mm[3])) + 2;
         if (waitS > 90) throw e;
         return new Promise(function (res) { setTimeout(res, waitS * 1000); }).then(function () { return aiChatRetry(prompt, opts, tries + 1); });
       }
@@ -17150,7 +17166,7 @@
         p = (secretHeaders && secretHeaders.length) ? curlWithSecret(cp, args, secretHeaders) : cp.spawn('curl', args);
       } catch (e2) { return reject(e2); }
       var out = '', err = '';
-      if (p.stdout) p.stdout.on('data', function (d) { out += d.toString(); });
+      if (p.stdout) { if (p.stdout.setEncoding) p.stdout.setEncoding('utf8'); p.stdout.on('data', function (d) { out += d.toString(); }); }   // whole UTF-8 characters (Hindi split across chunks came out as �)
       if (p.stderr) p.stderr.on('data', function (d) { err += d.toString(); });
       p.on('error', reject);
       p.on('close', function (code) {
@@ -18774,7 +18790,7 @@
     processChunks(chunks, function (cs) {
       var prompt = CPSmartEdit.buildHighlightPrompt(cs, { min: len.min, max: len.max, count: 6 });
       return aiChatRetry(prompt, { maxTokens: 2600 }).then(function (content) {
-        return CPSmartEdit.parseHighlightResponse(content, cs, { min: len.min, max: len.max });
+        return CPSmartEdit.parseHighlightResponse(content, cs, { min: len.min, max: len.max, all: segs, offset: segs.indexOf(cs[0]) });
       }).then(null, function (e) {
         // one part the AI could not answer costs that part only: its moments
         // are picked by their words, the rest keep the AI's picks
@@ -19019,7 +19035,7 @@
           try { proc.kill(); } catch (e) {}
           finish({ code: -1, stdout: out, stderr: err, timedOut: true });
         }, timeoutMs || 120000);
-        proc.stdout.on('data', function (d) { out += d.toString(); });
+        if (proc.stdout.setEncoding) proc.stdout.setEncoding('utf8'); proc.stdout.on('data', function (d) { out += d.toString(); });
         proc.stderr.on('data', function (d) { err += d.toString(); });
         proc.on('error', function (e) { clearTimeout(timer); finish({ error: e.message }); });
         proc.on('close', function (code) { clearTimeout(timer); finish({ code: code, stdout: out, stderr: err }); });

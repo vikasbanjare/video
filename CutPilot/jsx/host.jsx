@@ -856,6 +856,7 @@ function CP_countNestItems(tracks, order) {
 function CP_getCutSources(argsJson) {
   try {
     var seq = CP_activeSequence();
+    if (!seq) return CP_fail('Open your sequence first.');
     var bad = CP_NOT_A_MIC, memo = CP_cutMemo();
     var out = { sequenceId: CP_seqId(seq), sequenceName: seq.name, fps: CP_sequenceFps(seq),
                 fingerprint: CP_cutFingerprint(seq, 0, null, memo), audio: [], video: [], selection: null };
@@ -2354,6 +2355,22 @@ function CP_selectedRange() {
    of tolerance). Needed when overwriting a clip MID-track, where the freshly
    placed clip is not the last one by index. */
 function CP_clipAtStart(track, startSec) {
+  // a track's clips are in time order: found by halves. Captions are placed
+  // one at a time, and scanning the whole track after each made placing 600
+  // of them slow down as the track filled. Any read that fails → the scan.
+  try {
+    var clips = track.clips, n = clips.numItems, lo = 0, hi = n, prev = -1e9;
+    while (lo < hi) { var m = (lo + hi) >> 1; if (clips[m].start.seconds < startSec) lo = m + 1; else hi = m; }
+    var bc = null, bd = 1e9;
+    for (var j = Math.max(0, lo - 1); j <= Math.min(n - 1, lo); j++) {
+      var sj = clips[j].start.seconds;
+      if (sj < prev) throw new Error('not in order');
+      prev = sj;
+      var dj = Math.abs(sj - startSec);
+      if (dj < bd) { bd = dj; bc = clips[j]; }
+    }
+    return (bd <= 0.25) ? bc : null;
+  } catch (eFast) {}
   var best = null, bestD = 1e9;
   for (var i = 0; i < track.clips.numItems; i++) {
     var c = track.clips[i], s;
@@ -2801,6 +2818,10 @@ function CP_studioSoundPlace(argsJson) {
     var seq = CP_activeSequence();
     if (!seq) return CP_fail('Open your sequence first.');
     if (!pieces.length) return CP_fail('No audio to place.');
+    // the clean sound belongs to the sequence that was read: cleaning takes
+    // minutes (Studio restore, hours), and the owner may open another meanwhile
+    if (args.sequenceId && CP_seqId(seq) !== args.sequenceId)
+      return CP_fail('You switched to another sequence while Studio sound was working. Open ' + (args.sequenceName ? '"' + args.sequenceName + '"' : 'that sequence') + ' and tap again — nothing was changed.');
     // every cleaned file imported once, into its own bin
     var bin = app.project.rootItem.createBin('Pulse Studio Sound ' + ((new Date()).getTime() % 100000));
     var paths = [], seenP = {};
@@ -2858,13 +2879,17 @@ function CP_studioSoundPlace(argsJson) {
       } catch (eP) { missed++; }
     }
     for (var key in items) if (items.hasOwnProperty(key)) { try { items[key].clearInPoint(4); items[key].clearOutPoint(4); } catch (eCl) {} }
-    var muted = [];
+    var muted = [], keptOn = [], keep = {};
+    for (i = 0; i < (args.keepUnmuted || []).length; i++) keep[args.keepUnmuted[i]] = 1;
     if (placed) {
       for (i = 0; i < src.length; i++) {
+        // a track with pieces that were not cleaned (sped up, reversed) stays
+        // on: muting it would silence them
+        if (keep[src[i]]) { keptOn.push(src[i] + 1); continue; }
         try { seq.audioTracks[src[i]].setMute(1); muted.push(src[i] + 1); } catch (eM) {}
       }
     }
-    return CP_ok({ placed: placed, tracks: used, muted: muted, missed: missed, bin: bin.name });
+    return CP_ok({ placed: placed, tracks: used, muted: muted, keptOn: keptOn, missed: missed, bin: bin.name });
   } catch (e) { return CP_fail(e.message); }
 }
 

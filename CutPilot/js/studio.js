@@ -54,18 +54,18 @@
   /* The pieces of audio that play, from Pulse's read of the timeline
      (CP_getCutSources): unmuted tracks, real files, normal speed. */
   function piecesOf(src) {
-    var out = [], skipped = 0, seenTrack = {};
+    var out = [], skipped = 0, seenTrack = {}, skippedTracks = [];
     (src && src.audio || []).forEach(function (tr) {
       if (seenTrack[tr.index]) return;                   // a nest's inner tracks: its own clip is enough
       seenTrack[tr.index] = 1;
       if (tr.muted) return;
       (tr.items || []).forEach(function (it) {
         if (!it.mediaPath || it.disabled) return;
-        if (it.reversed || Math.abs((it.speed || 1) - 1) > 0.001) { skipped++; return; }
+        if (it.reversed || Math.abs((it.speed || 1) - 1) > 0.001) { skipped++; if (skippedTracks.indexOf(tr.index) < 0) skippedTracks.push(tr.index); return; }
         out.push({ src: it.mediaPath, from: it.inPoint, dur: it.seqEnd - it.seqStart, at: it.seqStart, track: tr.index });
       });
     });
-    return { pieces: out, skipped: skipped };
+    return { pieces: out, skipped: skipped, skippedTracks: skippedTracks, sequenceId: src && src.sequenceId, sequenceName: src && src.sequenceName };
   }
 
   var busy = false;
@@ -154,7 +154,7 @@
     busy = true;
     var btn = $('btn-studio-sound'); if (btn) btn.disabled = true;
     kit.capProgress('🎚 Reading your timeline…');
-    var found, balanced = 0, cuts = 0;
+    var found, balanced = 0, cuts = 0, works = [], aiFailedOn = [], placed = [], sentToHost = false;
     CPBridge.callHost('CP_getCutSources', {}).then(function (src) {
       found = piecesOf(src);
       if (!found.pieces.length) throw new Error('No sound to clean on this sequence — every audio track is empty or muted.');
@@ -171,11 +171,12 @@
       try { fs.mkdirSync(dir, { recursive: true }); } catch (eMk) {}
       var stamp = Date.now().toString(36);
       var df = (opts.noise && kit.resolveDeepFilter) ? kit.resolveDeepFilter() : null;
-      var placed = [], ti = 0;
+      var ti = 0;
       function doTrack() {
         if (ti >= order.length) return Promise.resolve();
         var tn = order[ti++], list = tracks[tn];
         var work = pathMod.join(dir, 'work-' + stamp + '-a' + tn);
+        works.push(work);
         try { fs.mkdirSync(work, { recursive: true }); } catch (eW) {}
         var lay = 'stereo', frames = list.map(function () { return 0; }), lufs = list.map(function () { return null; });
         function fail(what, r) {
@@ -247,7 +248,7 @@
             });
           }
           return cleaned.then(function (c) {
-            if (!c) { opts.aiFailed = true; return { file: joined, ai: false }; }
+            if (!c) { opts.aiFailed = true; aiFailedOn.push(+tn + 1); return { file: joined, ai: false }; }
             // 3. each cut read back from the CLEAN track and measured there:
             // the noise is gone, so a noisy take is matched on its voice
             var offs = [], o = 0;
@@ -289,19 +290,27 @@
       }
       return doTrack().then(function () {
         kit.capProgress('🎚 Putting the clean sound on your timeline…');
-        return CPBridge.callHost('CP_studioSoundPlace', { pieces: placed });
+        sentToHost = true;
+        return CPBridge.callHost('CP_studioSoundPlace', { pieces: placed, sequenceId: found.sequenceId, sequenceName: found.sequenceName, keepUnmuted: found.skippedTracks });
       });
     }).then(function (r) {
       kit.capProgress(null);
       var msg = '🎚 Studio sound' + (opts.restore && opts.aiUsed ? ' (Studio restore)' : (opts.aiUsed ? ' (AI noise removal)' : '')) + ' on ' + (r.tracks || []).map(function (n) { return 'A' + n; }).join(', ') +
         ' (' + r.placed + ' piece' + (r.placed === 1 ? '' : 's') + (balanced ? ', ' + balanced + ' of ' + cuts + ' cuts matched in level' : '') + ', ' + (opts.target === -16 ? 'podcast apps, −16 LUFS' : 'YouTube & Reels, −14 LUFS') + '). ' +
         'Your original sound is still there, muted' + ((r.muted || []).length ? ' (' + r.muted.map(function (n) { return 'A' + n; }).join(', ') + ')' : '') +
-        ' — unmute it to compare.' + (found.skipped ? ' ' + found.skipped + ' sped-up or reversed piece(s) were left as they are.' : '') +
+        ' — unmute it to compare.' + (found.skipped ? ' ' + found.skipped + ' sped-up or reversed piece(s) were left as they are' + ((r.keptOn || []).length ? ', so ' + r.keptOn.map(function (n) { return 'A' + n; }).join(', ') + ' stays on' : '') + '.' : '') +
+        (aiFailedOn.length ? ' ' + (opts.restore ? 'Studio restore' : 'AI noise removal') + ' could not run on ' + aiFailedOn.map(function (n) { return 'A' + n; }).join(', ') + ' — the plain cleanup was used there.' : '') +
         (r.missed ? ' ' + r.missed + ' piece(s) could not be placed.' : '');
       say(msg); kit.toast(msg);
       try { window.dispatchEvent(new Event('pulse:sound-changed')); } catch (eEv) {}
     }).catch(function (e) {
       kit.capProgress(null);
+      // a stopped run leaves nothing behind: its work folders and the clean
+      // tracks already made (a 2-hour track is over a gigabyte each)
+      works.forEach(function (w) { try { fs.rmSync(w, { recursive: true, force: true }); } catch (eW) {} });
+      // (once Premiere was asked to import them they may be in the project: kept)
+      var gone = {};
+      if (!sentToHost) placed.forEach(function (p) { if (!gone[p.path]) { gone[p.path] = 1; try { fs.unlinkSync(p.path); } catch (eU) {} } });
       var m = (e && e.message) || String(e);
       say('⚠️ ' + m); kit.toast(m, true);
     }).then(function () { busy = false; if (btn) btn.disabled = false; });
