@@ -225,7 +225,7 @@
     function box(frac, col) { var ix = (1 - frac) / 2 * W, iy = (1 - frac) / 2 * H; c.strokeStyle = col; c.strokeRect(ix, iy, W * frac, H * frac); }
     if (o.action) box(0.90, 'rgba(255,210,90,0.9)');
     if (o.title) box(0.80, 'rgba(255,150,90,0.9)');
-    if (o.margin) { var mm = (state.margin || 5) / 100; c.strokeStyle = 'rgba(120,230,150,0.9)'; c.strokeRect(mm * W, mm * H, W * (1 - 2 * mm), H * (1 - 2 * mm)); }
+    if (o.margin) { var mm = (state.margin || 0) / 100; c.strokeStyle = 'rgba(120,230,150,0.9)'; c.strokeRect(mm * W, mm * H, W * (1 - 2 * mm), H * (1 - 2 * mm)); }
     if (o.thirds) { c.strokeStyle = 'rgba(255,255,255,0.55)'; for (var i = 1; i <= 2; i++) { c.beginPath(); c.moveTo(W * i / 3, 0); c.lineTo(W * i / 3, H); c.stroke(); c.beginPath(); c.moveTo(0, H * i / 3); c.lineTo(W, H * i / 3); c.stroke(); } }
     if (o.diag) { c.strokeStyle = 'rgba(255,255,255,0.45)'; c.beginPath(); c.moveTo(0, 0); c.lineTo(W, H); c.moveTo(W, 0); c.lineTo(0, H); c.stroke(); }
     if (o.cross) { c.strokeStyle = 'rgba(255,255,255,0.8)'; var cl = unit * 0.04; c.beginPath(); c.moveTo(W / 2 - cl, H / 2); c.lineTo(W / 2 + cl, H / 2); c.moveTo(W / 2, H / 2 - cl); c.lineTo(W / 2, H / 2 + cl); c.stroke(); }

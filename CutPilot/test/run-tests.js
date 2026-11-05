@@ -2263,6 +2263,25 @@ console.log('script alignment (your script\'s words + the transcript\'s timing)'
   assert(e[0] === '❤️' && e[1] === '🔥' && e[2] == null, 'a Hindi emoji word before । still gets its emoji, a longer word does not (' + JSON.stringify(e) + ')');
 }
 
+// ---- AI replies the panel must still read (smart edit) ---------------------
+{
+  const SE = require(path.join(__dirname, '..', 'js', 'smartedit.js'));
+  const mk = arr => arr.map((t, i) => ({ text: t, start: i, end: i + 0.9 }));
+  const w1 = mk(['so', 'um', '-', 'uh', 'great']);
+  const c1 = SE.parseCleanupResponse('{"cuts":[{"from":1,"to":3,"words":"um - uh"}]}', w1).map(c => [c.fromIdx, c.toIdx]);
+  const w2 = mk(['मैं', 'बोल', 'रहा', '।', 'था', 'ठीक']);
+  const c2 = SE.parseCleanupResponse('{"cuts":[{"from":0,"to":4,"words":"मैं बोल रहा था"}]}', w2).map(c => [c.fromIdx, c.toIdx]);
+  assert(JSON.stringify(c1) === '[[1,3]]' && JSON.stringify(c2) === '[[0,4]]', 'a cut with a lone "-" or "।" inside it is still cut (' + JSON.stringify([c1, c2]) + ')');
+  const c3 = SE.parseCleanupResponse('{"cuts":[{"from":1,"to":1,"words":"um","reason":"the “um” filler",}]}', w1);
+  assert(c3.length === 1, 'a reply with a trailing comma and “curly quotes” inside a reason still parses (' + c3.length + ')');
+  const rr = SE.parseRerankResponse('{"ranked":[2,0,1]}', 3);
+  assert(JSON.stringify(rr && rr.map(x => x.i)) === '[2,0,1]' && rr[0].score > rr[2].score, 'a ranking given as plain numbers keeps every index, best first (' + JSON.stringify(rr) + ')');
+  const segs = []; for (let i = 0; i < 12; i++) segs.push({ start: i * 5, end: i * 5 + 4.8, text: 'line ' + i + ' yeh baat hai.' });
+  const h1 = SE.parseHighlightResponse('{"clips":[{"from":"0:20","to":"0:40"}]}', segs, { min: 6, max: 60 }).map(c => [c.start, c.end]);
+  const h2 = SE.parseHighlightResponse('{"clips":[{"from":"[4]","to":"[7]"}]}', segs, { min: 6, max: 60 }).map(c => [c.start, c.end]);
+  assert(JSON.stringify(h1) === '[[20,39.8]]' && JSON.stringify(h2) === '[[20,39.8]]', 'a highlight given as times ("0:20") or as "[4]" is the right lines (' + JSON.stringify([h1, h2]) + ')');
+}
+
 // ---- 🎙 podcast short pieces cover the kept stretch exactly once ----------
 {
   const PS = require(path.join(__dirname, '..', 'js', 'podshort.js'));

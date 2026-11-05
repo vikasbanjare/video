@@ -137,10 +137,26 @@
     return -1;
   }
   /* JSON.parse, forgiving the slips models make: trailing commas, curly quotes. */
+  // trailing commas dropped OUTSIDE strings only ("a, ]" inside a hook stays)
+  function dropTrailingCommas(str) {
+    var out = '', inStr = false, esc = false;
+    for (var i = 0; i < str.length; i++) {
+      var c = str.charAt(i);
+      if (inStr) { out += c; if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
+      if (c === '"') { inStr = true; out += c; continue; }
+      if (c === ',') { var j = i + 1; while (j < str.length && /\s/.test(str.charAt(j))) j++; if (str.charAt(j) === '}' || str.charAt(j) === ']') continue; }
+      out += c;
+    }
+    return out;
+  }
   function tryParse(str) {
     try { return { v: JSON.parse(str), s: str }; } catch (e) {}
-    var t = String(str).replace(/[“”]/g, '"').replace(/,\s*([}\]])/g, '$1');
+    // the commas first: curly quotes INSIDE a value (“wow”) are text, and
+    // turning them into " broke a reply that only had a trailing comma
+    var t = dropTrailingCommas(String(str));
     try { return { v: JSON.parse(t), s: t }; } catch (e2) {}
+    t = dropTrailingCommas(String(str).replace(/[“”]/g, '"'));
+    try { return { v: JSON.parse(t), s: t }; } catch (e3) {}
     return null;
   }
 
@@ -286,16 +302,24 @@
       // long list cut "there" for an "oh" and "know" out of "you know what?"
       // on the owner's webinar. Moved onto those words nearby, else not cut.
       if (typeof c.words === 'string' && c.words.trim()) {
-        var said = c.words.split(/\s+/).map(nw).filter(Boolean), at = -1;
+        var said = c.words.split(/\s+/).map(nw).filter(Boolean), at = -1, atEnd = -1;
+        // a token that is only punctuation ("-", "।", an emoji) sits in the
+        // timeline but not in the AI's words: stepped over, never compared
+        // (counting it threw every word after it one off, and the cut was lost)
         for (var dk = 0; dk <= 6 && at < 0 && said.length; dk++) {
           [from + dk, from - dk].forEach(function (f0) {
-            if (at >= 0 || f0 < 0 || f0 + said.length > N) return;
-            for (var q = 0; q < said.length; q++) if (nw(ws[f0 + q].text) !== said[q]) return;
-            at = f0;
+            if (at >= 0 || f0 < 0 || f0 >= N || !nw(ws[f0].text)) return;
+            var k = f0;
+            for (var q = 0; q < said.length; q++) {
+              while (k < N && q > 0 && !nw(ws[k].text)) k++;
+              if (k >= N || nw(ws[k].text) !== said[q]) return;
+              if (q < said.length - 1) k++;
+            }
+            at = f0; atEnd = k;
           });
         }
         if (at < 0) continue;
-        from = at; to = at + said.length - 1;
+        from = at; to = atEnd;
       }
       // a "filler" that is part of a phrase with meaning stays, whatever the
       // AI says: "But you know what? At least four…", "like 10 people" (about)
@@ -466,10 +490,14 @@
     var r = obj && (obj.ranked || obj.ranking || obj.order);
     if (!r || !r.length) return null;
     var seen = {}, out = [];
-    r.forEach(function (x) {
-      var i = parseInt(x && (x.i != null ? x.i : x.index), 10);
+    // a plain order ([2, 0, 1], no scores) is read as one too: the indices
+    // best first, scored by place (only index 0 was kept, at score 0)
+    r.forEach(function (x, k) {
+      var plain = (typeof x === 'number' || typeof x === 'string');
+      var i = parseInt(plain ? x : (x && (x.i != null ? x.i : x.index)), 10);
       if (isNaN(i) || i < 0 || i >= n || seen[i]) return;
-      seen[i] = 1; out.push({ i: i, score: Math.max(0, Math.min(100, +x.score || 0)) });
+      var sc = plain ? Math.round(100 * (1 - k / r.length)) : +x.score;
+      seen[i] = 1; out.push({ i: i, score: Math.max(0, Math.min(100, sc || 0)) });
     });
     return out.length ? out : null;
   }
@@ -546,6 +574,21 @@
     return { title: title, caption: String(c.post_caption || '').replace(/\s+/g, ' ').trim().slice(0, 220), hashtags: tags };
   }
 
+  /* A line index the AI gave, as a number, "12" or "[12]" — or, as the prompt
+     prints each line's time beside it, a time "m:ss" / "h:mm:ss": that is the
+     line playing then (parseInt("0:20") read it as line 0). */
+  function hlIndex(v, segs, isEnd) {
+    var m = typeof v === 'string' && /^\s*(?:(\d+):)?(\d{1,2}):(\d{2})(?:\.\d+)?\s*$/.exec(v);
+    if (m) {
+      var t = (+(m[1] || 0)) * 3600 + (+m[2]) * 60 + (+m[3]), k = -1;
+      for (var j = 0; j < segs.length; j++) { if (+segs[j].start <= t + 1e-6) k = j; else break; }
+      if (k < 0) k = 0;
+      // an end time on a line's very start means the line before it
+      if (isEnd && k > 0 && Math.abs(+segs[k].start - t) < 0.5) k--;
+      return k;
+    }
+    return toIndex(v);
+  }
   function parseHighlightResponse(text, segments, opts) {
     opts = opts || {};
     var minS = opts.min != null ? opts.min : 6, maxS = opts.max != null ? opts.max : 120;
@@ -558,7 +601,7 @@
     var out = [];
     for (var i = 0; i < clips.length; i++) {
       var c = clips[i] || {};
-      var from = parseInt(c.from, 10), to = parseInt(c.to, 10);
+      var from = hlIndex(c.from, segs, false), to = hlIndex(c.to, segs, true);
       if (isNaN(from) || isNaN(to)) continue;
       if (from < 0) from = 0;
       if (to >= segs.length) to = segs.length - 1;
