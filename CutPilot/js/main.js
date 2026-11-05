@@ -7650,6 +7650,10 @@
   // hidden #c-font input that the rest of the editor reads.
   var _fontDD = null;          // the live dropdown { el, get, set }
   var _installedFonts = [];    // every font found on this computer (lazy)
+  // faces a style or the owner asked for that are not in either list: kept
+  // apart, so one added face is never read as "the only font installed"
+  // (that emptied the Font list and warned on every other font)
+  var _addedFonts = [];
   /* What each installed family can DRAW (from its own cmap): lowercase name →
      { latin, devanagari }. The owner's Mac sent "NotoSansCoptic-Bold" to
      Premiere — a script-only face with no English or Hindi letters — and the
@@ -7662,7 +7666,7 @@
   }
   /* Is this family installed? true / false once the installed-font scan has
      run, null before (or where no scan is possible). Kept apart from
-     _installedFonts, which also collects faces typed into the picker. */
+     the picker's lists. */
   var _scanInstalled = null;
   function fontInstalled(family) {
     if (!_scanInstalled) return null;
@@ -7693,7 +7697,7 @@
       if (have && !have[f.toLowerCase()]) return;   // not installed → don't offer it
       opts.push({ value: f, label: lbl(f), font: f });
     });
-    _installedFonts.forEach(function (f) { if (!seen[f]) { seen[f] = 1; opts.push({ value: f, label: lbl(f), font: f }); } });
+    _installedFonts.concat(_addedFonts).forEach(function (f) { if (!seen[f]) { seen[f] = 1; opts.push({ value: f, label: lbl(f), font: f }); } });
     opts.push({ value: '__custom__', label: '✏️ Type any installed font…' });
     return opts;
   }
@@ -7971,9 +7975,9 @@
     if (!font) return;
     $('c-font').value = font;
     if (!_fontDD) return;
-    var known = CPCaptions.FONTS.indexOf(font) !== -1 || _installedFonts.indexOf(font) !== -1;
+    var known = CPCaptions.FONTS.indexOf(font) !== -1 || _installedFonts.indexOf(font) !== -1 || _addedFonts.indexOf(font) !== -1;
     if (known) { _fontDD.set(font); }
-    else { _installedFonts.unshift(font); buildFontSelect(font); }
+    else { _addedFonts.unshift(font); buildFontSelect(font); }
   }
 
   function toHex(c, fb) {
