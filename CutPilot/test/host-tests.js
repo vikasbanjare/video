@@ -588,7 +588,11 @@ function makeWorld(opts) {
             getAudioTrackAt(i) { return qeTrack(model.aTracks[i], 'A' + (i + 1)); },
             addTracks(nV, vAt, nA) {
               if (opts.qeAddTracksFails) return;
-              for (let i = 0; i < (nV || (nA ? 0 : 1)); i++) model.vTracks.push([]);
+              // a new video track goes in at vAt (Premiere's own index), the top when not given
+              for (let i = 0; i < (nV || (nA ? 0 : 1)); i++) {
+                if (vAt != null && Number(vAt) < model.vTracks.length) model.vTracks.splice(Number(vAt), 0, []);
+                else model.vTracks.push([]);
+              }
               for (let j = 0; j < (nA || 0); j++) model.aTracks.push([]);
             }
           };
@@ -2671,6 +2675,62 @@ console.log('host.jsx — Premium captions hold 0.5 s, never 60 s; title templat
   assert(r2.ok && r2.placed === 2 && JSON.stringify(r2.muted) === '[1]' && JSON.stringify(r2.keptOn) === '[2]' &&
     w2.model.muted.A1 === true && !w2.model.muted.A2 && w2.model.aTracks[2].length === 1 && w2.model.aTracks[3].length === 1,
     'Studio sound: clean sound on the empty tracks below, A1 muted, A2 (pieces left as they were) kept on (' + JSON.stringify(r2) + ')');
+}
+
+{
+  // ✂️ rebuild a trimmed copy: the new sequence is cleared through its OWN
+  // tracks — the owner's edit (still the active one) is never touched
+  const mkNew = (withRemove) => {
+    const tr = () => { const arr = [{ name: 'raw.mp4' }]; const clips = { get numItems() { return arr.length; } };
+      arr.forEach((c, i) => { c.remove = withRemove ? () => { arr.splice(arr.indexOf(c), 1); } : undefined; });
+      return new Proxy(clips, { get(t, k) { if (k === 'numItems') return arr.length; const n = Number(k); return Number.isInteger(n) ? arr[n] : t[k]; } }); };
+    const placed = [];
+    const vt = { clips: tr(), overwriteClip(it, at) { placed.push(at); } }, at = { clips: tr(), overwriteClip() {} };
+    return { seq: { name: 'Pulse Trim test', sequenceID: 'seq-new', videoTracks: { numTracks: 1, 0: vt }, audioTracks: { numTracks: 1, 0: at } }, placed, vt };
+  };
+  for (const withRemove of [true, false]) {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    w.model.addClip('vTracks', 0, 0, 30, { name: 'my edit A' }); w.model.addClip('aTracks', 0, 0, 30, { name: 'my audio' });
+    const p = w.sandbox.app.project, bin = p.rootItem.createBin('Footage');
+    p.importFiles(['/media/raw.mp4'], true, bin, false);
+    const N = mkNew(withRemove);
+    p.createNewSequenceFromClips = () => N.seq;
+    const host = loadHost(w);
+    const r = call(host, 'CP_rebuildTrimmed', { nodeId: bin.children[0].nodeId, keeps: [{ start: 0, end: 5 }, { start: 8, end: 10 }] });
+    const mine = w.model.vTracks[0].length + w.model.aTracks[0].length;
+    if (withRemove) assert(r.ok && mine === 2 && N.vt.clips.numItems === 0 && JSON.stringify(N.placed) === '[0,5]',
+      'trimmed copy: the new sequence is cleared and refilled, the owner\'s edit keeps its 2 clips (' + JSON.stringify(r) + ', mine ' + mine + ')');
+    else assert(!r.ok && mine === 2 && /untouched/.test(r.error) && p.activeSequence.sequenceID === 'seq-main',
+      'trimmed copy on a Premiere that can\'t remove clips and left the edit active: refused, the edit untouched and still open (' + JSON.stringify(r) + ')');
+  }
+}
+
+{
+  // 🎞 B-roll with Pulse's usual layout (footage V1, captions V2, nothing
+  // between): the new track goes UNDER the captions, never over them
+  const w = makeWorld({ vTracks: 2, aTracks: 1 });
+  w.model.addClip('vTracks', 0, 0, 60, { name: 'interview.mp4' });
+  for (let s2 = 0; s2 < 60; s2 += 3) w.model.addClip('vTracks', 1, s2, s2 + 3, { name: 'Flux_Halo2' });
+  const host = loadHost(w);
+  const r = call(host, 'CP_placeBroll', { items: [{ path: '/b/city.mp4', at: 10, dur: 4, w: 1920, h: 1080 }] });
+  const names = w.model.vTracks.map(t => (t[0] && t[0].name) || '');
+  assert(r.ok && r.track === 2 && names[0] === 'interview.mp4' && /city/.test(names[1]) && names[2] === 'Flux_Halo2',
+    'B-roll goes on a new track between the footage and the captions, the captions stay on top (' + JSON.stringify([r, names]) + ')');
+}
+
+{
+  // ▶ Try on timeline / the template test never land on the owner's footage
+  const one = (fails) => { const w = makeWorld({ vTracks: 1, aTracks: 1, qeAddTracksFails: fails });
+    w.model.addClip('vTracks', 0, 0, 60, { name: 'interview.mp4' }); w.model.playhead = 10; return w; };
+  const w1 = one(false), h1 = loadHost(w1);
+  const r1 = call(h1, 'CP_previewMogrt', { path: '/t/Subtitle_1.mogrt', seconds: 4 });
+  assert(r1.ok && w1.model.vTracks.length === 2 && w1.model.vTracks[0].length === 1 && w1.model.vTracks[1].length === 1,
+    'Try on timeline over a one-track sequence: the template gets its own new track, the footage track only holds the footage (' + JSON.stringify(r1) + ')');
+  const w2 = one(true), h2 = loadHost(w2);
+  const r2 = call(h2, 'CP_previewMogrt', { path: '/t/Subtitle_1.mogrt', seconds: 4 });
+  const r3 = call(h2, 'CP_testMgrtFill', { path: '/t/Subtitle_1.mogrt' });
+  assert(!r2.ok && !r3.ok && w2.model.vTracks.length === 1 && w2.model.vTracks[0].length === 1,
+    'no new track possible: neither the preview nor the template test puts anything over the footage (' + JSON.stringify([r2, r3]) + ')');
 }
 
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');

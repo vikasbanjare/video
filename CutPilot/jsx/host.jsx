@@ -1309,20 +1309,41 @@ function CP_rebuildTrimmed(argsJson) {
     if (!pItem) return CP_fail('Could not find the source clip in the Project panel. Make sure the original media is still imported (not just on the timeline), then try again.');
 
     var seqName = args.name || ('Pulse Trim ' + new Date().getTime());
+    var ownerSeq = app.project.activeSequence;
     var newSeq = app.project.createNewSequenceFromClips(seqName, [pItem]);
     if (!newSeq) return CP_fail('Could not create the trimmed sequence.');
 
     // The sequence now holds the full clip once; clear it, then append keeps.
+    // Cleared through ITS OWN tracks: QE only reaches the ACTIVE sequence, and
+    // if Premiere left the owner's edit active, the old wipe emptied that.
+    var left = 0, tt, ci;
+    function clearDom(tracks) {
+      for (tt = 0; tracks && tt < tracks.numTracks; tt++) {
+        var cl = tracks[tt].clips;
+        for (ci = cl.numItems - 1; ci >= 0; ci--) { try { cl[ci].remove(0, 0); } catch (eR) {} }
+        left += tracks[tt].clips.numItems;
+      }
+    }
+    try { clearDom(newSeq.videoTracks); clearDom(newSeq.audioTracks); } catch (eDom) { left = 1; }
+    if (left > 0) {
+      // an older Premiere without TrackItem.remove: QE, only on the new sequence
+      CP_activateSequence(newSeq);
+      var act = app.project.activeSequence;
+      if (!act || CP_seqId(act) !== CP_seqId(newSeq))
+        { CP_activateSequence(ownerSeq); return CP_fail('Premiere did not open the new trimmed sequence, so Pulse stopped before changing anything. Your edit is untouched.'); }
+    }
     app.enableQE();
     var qseq = qe.project.getActiveSequence();
-    for (var t = 0; t < qseq.numVideoTracks; t++) {
+    if (left > 0 && (!qseq || String(qseq.name) !== String(newSeq.name)))
+      { CP_activateSequence(ownerSeq); return CP_fail('Premiere did not open the new trimmed sequence, so Pulse stopped before changing anything. Your edit is untouched.'); }
+    for (var t = 0; left > 0 && t < qseq.numVideoTracks; t++) {
       var tr = qseq.getVideoTrackAt(t);
       for (var i = tr.numItems - 1; i >= 0; i--) {
         var it = tr.getItemAt(i);
         if (it && it.type !== 'Empty') { try { it.remove(0, 0); } catch (e0) {} }
       }
     }
-    for (t = 0; t < qseq.numAudioTracks; t++) {
+    for (t = 0; left > 0 && t < qseq.numAudioTracks; t++) {
       var tra = qseq.getAudioTrackAt(t);
       for (i = tra.numItems - 1; i >= 0; i--) {
         var ita = tra.getItemAt(i);
@@ -2955,11 +2976,14 @@ function CP_placeBroll(argsJson) {
     var tr = null, ti = -1;
     if (lowCap < seq.videoTracks.numTracks) for (t0 = highFoot + 1; t0 < lowCap; t0++) if (!seq.videoTracks[t0].clips.numItems) { ti = t0; tr = seq.videoTracks[t0]; break; }
     if (!tr) {
-      var before = seq.videoTracks.numTracks;
-      try { var q = CP_qeSequence(); if (q && q.addTracks) q.addTracks(1, before, 0); } catch (eAdd) {}
+      // no empty track between: a new one goes in RIGHT UNDER the lowest
+      // caption track (Pulse's usual layout, footage V1 + captions V2, put
+      // the B-roll on top of the captions), or on top when there are none
+      var before = seq.videoTracks.numTracks, at = (lowCap < before) ? lowCap : before;
+      try { var q = CP_qeSequence(); if (q && q.addTracks) q.addTracks(1, at, 0); } catch (eAdd) {}
       seq = CP_activeSequence() || seq;
-      ti = seq.videoTracks.numTracks - 1; tr = seq.videoTracks[ti];
-      if (!tr || seq.videoTracks.numTracks <= before || tr.clips.numItems > 0) return CP_fail('Premiere would not add a new video track for the B-roll. Add one at the top by hand and try again.');
+      ti = at; tr = seq.videoTracks[ti];
+      if (!tr || seq.videoTracks.numTracks <= before || tr.clips.numItems > 0) return CP_fail('Premiere would not add a new video track for the B-roll. Add an empty video track just under your captions by hand and try again.');
     }
     var W = 0, H = 0;
     try { W = seq.frameSizeHorizontal; H = seq.frameSizeVertical; } catch (eFs) {}
@@ -5003,9 +5027,11 @@ function CP_testMgrtFill(argsJson) {
     var args = JSON.parse(argsJson);
     var seq = CP_activeSequence();
     var at = 0; try { at = seq.getPlayerPosition().seconds; } catch (eP) {}
-    // fresh top track so we never disturb existing clips
-    var vTrack = seq.videoTracks.numTracks - 1;
-    try { app.enableQE(); qe.project.getActiveSequence().addTracks(1, seq.videoTracks.numTracks, 0); vTrack = seq.videoTracks.numTracks - 1; } catch (eT) {}
+    // fresh top track so we never disturb existing clips — and no test at all
+    // when Premiere won't add one (the old fallback wrote over the top track)
+    var vTrack = CP_addTopVideoTrack();
+    if (vTrack < 0) return CP_fail('Premiere would not add a new video track for the test. Add one at the top by hand and try again.');
+    seq = CP_activeSequence() || seq;
 
     var SAMPLE = 'CUTPILOT TEST 12345';
     var clip = null;
@@ -5063,7 +5089,24 @@ function CP_previewMogrt(argsJson) {
     var at = 0;
     try { at = seq.getPlayerPosition().seconds; } catch (eP) {}
     if (!(at >= 0)) at = 0;
-    var vTrack = seq.videoTracks.numTracks - 1;
+    // the top track, when nothing but templates (earlier tries) sits there
+    // in the preview's time — else a new track: importMGT overwrites what is
+    // under it, and on a one-track sequence that was 4 s of the footage
+    var vTrack = seq.videoTracks.numTracks - 1, pvTo = at + (args.seconds || 4), clash = false;
+    try {
+      var topClips = seq.videoTracks[vTrack].clips;
+      for (var pc = 0; pc < topClips.numItems && !clash; pc++) {
+        var tc = topClips[pc], isMgt = false;
+        if (!(tc.start.seconds < pvTo && tc.end.seconds > at)) continue;
+        try { isMgt = !!(tc.isMGT && tc.isMGT()); } catch (eM) {}
+        if (!isMgt) clash = true;
+      }
+    } catch (eTop) { clash = true; }
+    if (clash) {
+      vTrack = CP_addTopVideoTrack();
+      if (vTrack < 0) return CP_fail('Premiere would not add a new video track for the preview, and the top track has your footage there. Add an empty track at the top and try again.');
+      seq = CP_activeSequence() || seq;
+    }
     var clip = seq.importMGT(args.path, CP_ticksFromSeconds(at), vTrack, 0);
     if (!clip) return CP_fail('Premiere could not place this template.');
     var pvEnd = at + (args.seconds || 4);
