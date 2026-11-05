@@ -2631,5 +2631,30 @@ console.log('host.jsx — Premium captions hold 0.5 s, never 60 s; title templat
   assert(r3.ok && r3.cleared === 0 && r3.guard === 'out-of-range', 'a remembered track that no longer exists is refused');
 }
 
+{
+  // CP_clipAtStart finds a clip by halves; it must pick the same clip the
+  // old whole-track scan picked (nearest start, within 0.25 s), also when
+  // the track is out of order or a clip cannot be read
+  const host = loadHost(makeWorld({ vTracks: 1, aTracks: 1 }));
+  const scan = (clips, t) => { let b = null, d = 1e9; for (const c of clips) { const x = Math.abs(c.start.seconds - t); if (x < d) { d = x; b = c; } } return d <= 0.25 ? b : null; };
+  const mk = (starts) => { const c = starts.map(s => ({ start: { seconds: s }, id: s })); c.numItems = c.length; return { clips: c }; };
+  let rnd = 7; const R = () => (rnd = (rnd * 1103515245 + 12345) % 2147483648) / 2147483648;
+  let same = 0, total = 0;
+  for (let k = 0; k < 300; k++) {
+    const starts = []; let t = 0; const n = Math.floor(R() * 40);
+    for (let i = 0; i < n; i++) { t += 0.05 + R() * 2; starts.push(+t.toFixed(3)); }
+    if (k % 10 === 9) starts.reverse();                     // out of order → falls back to the scan
+    const tr = mk(starts);
+    for (let q = 0; q < 20; q++) {
+      const at = R() < 0.6 && n ? starts[Math.floor(R() * n)] + (R() - 0.5) * 0.6 : R() * (t + 2);
+      total++; if (host.CP_clipAtStart(tr, at) === scan(tr.clips, at)) same++;
+    }
+  }
+  assert(same === total, 'CP_clipAtStart picks the same clip as the whole-track scan (' + same + '/' + total + ')');
+  const bad = mk([1, 2, 3]); Object.defineProperty(bad.clips[1], 'start', { get() { throw new Error('gone'); } });
+  assert(host.CP_clipAtStart(bad, 3.1) === bad.clips[2] && host.CP_clipAtStart(mk([]), 1) === null,
+    'a clip that cannot be read, or an empty track, does not break the lookup');
+}
+
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

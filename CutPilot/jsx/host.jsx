@@ -2360,7 +2360,17 @@ function CP_clipAtStart(track, startSec) {
   // of them slow down as the track filled. Any read that fails → the scan.
   try {
     var clips = track.clips, n = clips.numItems, lo = 0, hi = n, prev = -1e9;
-    while (lo < hi) { var m = (lo + hi) >> 1; if (clips[m].start.seconds < startSec) lo = m + 1; else hi = m; }
+    // every probe must sit between the probes either side of it (and the
+    // first clip before the last), or the track is not in order → the scan.
+    // Premiere lists a track's clips in time order, so this is a safety net;
+    // one swapped pair can still slip past it.
+    var loV = n ? clips[0].start.seconds : 0, hiV = n ? clips[n - 1].start.seconds : 0;
+    if (loV > hiV) throw new Error('not in order');
+    while (lo < hi) {
+      var m = (lo + hi) >> 1, sm = clips[m].start.seconds;
+      if (sm < loV || sm > hiV) throw new Error('not in order');
+      if (sm < startSec) { lo = m + 1; loV = sm; } else { hi = m; hiV = sm; }
+    }
     var bc = null, bd = 1e9;
     for (var j = Math.max(0, lo - 1); j <= Math.min(n - 1, lo); j++) {
       var sj = clips[j].start.seconds;
