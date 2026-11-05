@@ -3796,13 +3796,19 @@ function CP_sigNorm(s) {
    a one-clip overlay (pulse-captions-….mov, or captions.mov from v0.9.344-
    v0.9.378). A name alone used to be enough, so the owner's "Pulse ep 3.mp4"
    or "Subtitle b-roll.mp4" went with the captions. */
-var CP_CAPTION_NAME = /(flux|subtitle|shorts_text|text_animation|pulse|cutpilot|cap[-_]?\d)/i;
+// a Pulse caption clip's name STARTS with one of Pulse's template names
+// (Subtitle_2, Flux_Apex, Text_Animation_01, Pulse Caption, cap_000…): matched
+// anywhere, the owner's "Subtitle EN" title, a "Recap2" clip or a nested
+// "Pulse short" sequence was taken for a caption and deleted
+var CP_CAPTION_NAME = /^(flux|subtitle[_ ]?\d|shorts_text|text_animation|pulse[ _-]?caption|cutpilot|cap[-_]?\d)/i;
 var CP_MEDIA_FILE = /\.(mp4|m4v|mov|mxf|avi|mts|m2ts|mkv|webm|mpe?g|wmv|flv|3gp|r3d|braw|crm|ari|dng|exr|dpx|wav|mp3|aac|m4a|aiff?|flac|ogg|png|jpe?g|tiff?|psd|gif|bmp|heic|webp|ai|eps|svg)$/i;
 function CP_isPulseCaptionClip(clip) {
   var nm = '', mp = '';
   try { nm = String(clip.name || ''); } catch (eN) {}
   try { mp = String(clip.projectItem.getMediaPath() || ''); } catch (eM) { mp = ''; }
   var file = mp.replace(/^.*[\\\/]/, '');
+  // a nested sequence is the owner's edit, never a caption
+  try { if (clip.projectItem && clip.projectItem.isSequence && clip.projectItem.isSequence()) return false; } catch (eSq) {}
   if (!CP_MEDIA_FILE.test(file)) return CP_CAPTION_NAME.test(nm) || /^captions\.mov$/i.test(nm);
   return /^cap[-_]?\d+[^\\\/]*\.png$/i.test(file) || /^pulse-captions/i.test(file) || /^captions\.mov$/i.test(file);
 }

@@ -1891,6 +1891,22 @@ console.log('host.jsx — CP_getEnv (every caption is sized from this)');
 }
 
 // ═══ REMOVING CAPTIONS (the undo for a whole job) ═══
+console.log('host.jsx — CP_removePulseCaptionTracks never takes the owner\'s titles or nests');
+{
+  // "Subtitle EN" (a title), "Recap2" (a graphic) and a nested "Pulse short"
+  // sequence matched the old unanchored name test and were deleted by
+  // "🧹 Delete every caption track". A Pulse template clip still goes.
+  const w = makeWorld({ vTracks: 4, aTracks: 0 });
+  w.model.addClip('vTracks', 0, 0, 30, { name: 'Subtitle EN', projectItem: { getMediaPath: () => '', isSequence: () => false } });
+  w.model.addClip('vTracks', 1, 0, 30, { name: 'Recap2', projectItem: { getMediaPath: () => '', isSequence: () => false } });
+  w.model.addClip('vTracks', 2, 0, 30, { name: 'Pulse short', projectItem: { getMediaPath: () => '', isSequence: () => true } });
+  w.model.addClip('vTracks', 3, 0, 30, { name: 'Subtitle_2', projectItem: { getMediaPath: () => '', isSequence: () => false } });
+  const host = loadHost(w);
+  const r = call(host, 'CP_removePulseCaptionTracks', {});
+  const left = w.model.vTracks.map(t => t.map(c => c.name).join('|'));
+  assert(r.ok && left[0] === 'Subtitle EN' && left[1] === 'Recap2' && left[2] === 'Pulse short' && left[3] === '',
+    'the owner\'s title, graphic and nested sequence stay; Pulse\'s Subtitle_2 caption goes (' + JSON.stringify(left) + ')');
+}
 console.log('host.jsx — CP_removePulseCaptionTracks (must find the OVERLAY too)');
 {
   // A long video's captions are ONE clip named after the rendered file. That
