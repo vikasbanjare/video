@@ -2248,6 +2248,21 @@ console.log('script alignment (your script\'s words + the transcript\'s timing)'
   assert(identical.replaced === 0, 'a script that matches the transcript reports 0 corrections');
 }
 
+// ---- Hindi hooks: a word right before the danda still counts --------------
+{
+  const SH = require(path.join(__dirname, '..', 'js', 'shorts.js'));
+  const a = SH.hookScore('मैंने खो दिया सारा पैसा।'), b = SH.hookScore('मैंने खो दिया सारा पैसा');
+  const n = SH.hookScore('मेरे पास थे सिर्फ दस।');
+  const sc = x => (x && x.score != null) ? x.score : x;
+  assert(sc(a) === sc(b) && sc(a) > 0 && sc(n) > 0, 'a Hindi hook that ends a sentence (।) scores like the same words without it (' + JSON.stringify([a, b, n]).slice(0, 200) + ')');
+}
+
+{
+  // the emoji for a Hindi word at the end of a sentence (दिल।), never inside a longer word
+  const e = [CPCaptions.emojiForText('मेरा दिल।'), CPCaptions.emojiForText('ये आग।'), CPCaptions.emojiForText('दिलचस्प बात')];
+  assert(e[0] === '❤️' && e[1] === '🔥' && e[2] == null, 'a Hindi emoji word before । still gets its emoji, a longer word does not (' + JSON.stringify(e) + ')');
+}
+
 // ---- 🎙 podcast short pieces cover the kept stretch exactly once ----------
 {
   const PS = require(path.join(__dirname, '..', 'js', 'podshort.js'));

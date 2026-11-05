@@ -127,7 +127,7 @@
   // every Hindi word in these lists (क्या, सच, गलती, आप, और…) could never
   // match — a Hindi transcript had no hooks and "और फिर…" never read as
   // mid-thought.
-  var L = 'A-Za-z0-9_\\u0900-\\u097F';
+  var L = 'A-Za-z0-9_\\u0900-\\u0963\\u0966-\\u097F';   // the danda (। ॥) ends a word, like "."
   function words(list, anchored) {
     return new RegExp((anchored ? '^' : '(?:^|[^' + L + '])') + '(' + list + ')(?=$|[^' + L + '])', 'i');
   }

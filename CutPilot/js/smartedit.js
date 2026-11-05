@@ -266,7 +266,7 @@
    *     needsReview (the review list leaves it unticked);
    *   - opts.categories limits which labels are returned.
    */
-  function nw(t) { return String(t == null ? '' : t).toLowerCase().replace(/^[^\w\u0900-\u097F]+|[^\w\u0900-\u097F]+$/g, ''); }
+  function nw(t) { return String(t == null ? '' : t).toLowerCase().replace(/^[^\w\u0900-\u0963\u0966-\u097F]+|[^\w\u0900-\u0963\u0966-\u097F]+$/g, ''); }
   function parseCleanupResponse(text, words, opts) {
     opts = opts || {};
     var minConf = (opts.minConfidence != null) ? opts.minConfidence : 0;
@@ -539,7 +539,7 @@
     if (title.length > 60) title = title.slice(0, 57).replace(/\s+\S*$/, '') + '…';
     var tags = [], seen = {};
     (Array.isArray(c.hashtags) ? c.hashtags : String(c.hashtags || '').split(/[\s,]+/)).forEach(function (t) {
-      var k = String(t || '').replace(/^#+/, '').replace(/[^\w\u0900-\u097f]/g, '');
+      var k = String(t || '').replace(/^#+/, '').replace(/[^\w\u0900-\u0963\u0966-\u097f]/g, '');
       if (!k || GENERIC_TAGS[k.toLowerCase()] || seen[k.toLowerCase()] || tags.length >= 5) return;
       seen[k.toLowerCase()] = 1; tags.push('#' + k);
     });

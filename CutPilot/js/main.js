@@ -13446,7 +13446,7 @@
   var PREM_BAD_END_HI = { aur: 1, 'और': 1, nahi: 1, nahin: 1, na: 1, mat: 1, 'नहीं': 1, 'न': 1, 'मत': 1 };
   var PREM_BAD_END_EN = { a: 1, an: 1, the: 1, of: 1, to: 1, 'in': 1, on: 1, at: 1, 'for': 1, 'with': 1, from: 1, by: 1, into: 1, not: 1, and: 1 };
   var PREM_HINGLISH = /^(hai|hain|ka|ki|ke|ko|ne|se|mein|nahi|nahin|kya|aur|bhi|toh|yeh|woh|kar|raha|rahe|rahi|tha|thi|apne|aap|hum|main|bahut|kyunki|sabse|pehle)$/;
-  function premBare(t) { return String(t == null ? '' : t).toLowerCase().replace(/^[^a-z0-9ऀ-ॿ]+|[^a-z0-9ऀ-ॿ]+$/g, ''); }
+  function premBare(t) { return String(t == null ? '' : t).toLowerCase().replace(/^[^a-z0-9ऀ-ॣ०-ॿ]+|[^a-z0-9ऀ-ॣ०-ॿ]+$/g, ''); }
   function premLang(words) {
     var deva = 0, hi = 0, n = words.length;
     for (var i = 0; i < n; i++) {

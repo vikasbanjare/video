@@ -18,7 +18,7 @@
   var SKIP = { the: 1, a: 1, an: 1, of: 1, and: 1, in: 1, on: 1, to: 1, clip: 1, broll: 1, b: 1, roll: 1, stock: 1, video: 1, footage: 1,
                img: 1, image: 1, photo: 1, pic: 1, final: 1, copy: 1, new: 1, hd: 1, '4k': 1, mp4: 1, mov: 1 };
 
-  function norm(t) { return String(t || '').toLowerCase().replace(/^[^a-z0-9ऀ-ॿ]+|[^a-z0-9ऀ-ॿ]+$/g, ''); }
+  function norm(t) { return String(t || '').toLowerCase().replace(/^[^a-z0-9ऀ-ॣ०-ॿ]+|[^a-z0-9ऀ-ॣ०-ॿ]+$/g, ''); }
   /* The words a file's name says, up to three ("MarketCrash_02.mp4" →
      ["market", "crash"]); filler words of B-roll names ("stock", "clip",
      "final", numbers) are left out. */
