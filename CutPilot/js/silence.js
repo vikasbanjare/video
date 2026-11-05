@@ -571,21 +571,26 @@
     var merged = mergeRanges((ranges || []).filter(function (r) { return r.end > r.start; }), 0.0001);
     if (!merged.length) return items.slice();
     if (closeGaps === undefined) closeGaps = true;
+    // the cuts are sorted and apart: found by halves, with the time removed
+    // before each kept as a running total. A scan of every cut for each of a
+    // 2-hour podcast's 20k words (four to six times a word) made re-syncing
+    // the words after Clean up slow; the totals add up in the same order.
+    var before = [0];
+    for (var bi = 0; bi < merged.length; bi++) before.push(before[bi] + (merged[bi].end - merged[bi].start));
+    function countStartingBelow(t, inclusive) {   // how many cuts start before t (at or before, if inclusive)
+      var lo = 0, hi = merged.length;
+      while (lo < hi) { var m = (lo + hi) >> 1; if (inclusive ? merged[m].start <= t : merged[m].start < t) lo = m + 1; else hi = m; }
+      return lo;
+    }
     function removedBefore(t) {
-      var s = 0;
-      for (var i = 0; i < merged.length; i++) {
-        var r = merged[i];
-        if (r.start >= t) break;
-        s += Math.min(t, r.end) - r.start;
-      }
-      return s;
+      var k = countStartingBelow(t, false);
+      if (!k) return 0;
+      var r = merged[k - 1];
+      return before[k - 1] + (Math.min(t, r.end) - r.start);
     }
     function cutAt(t) {   // the cut strictly containing t, if any
-      for (var i = 0; i < merged.length; i++) {
-        if (merged[i].start > t) return null;
-        if (t > merged[i].start && t < merged[i].end) return merged[i];
-      }
-      return null;
+      var k = countStartingBelow(t, true) - 1;
+      return (k >= 0 && t > merged[k].start && t < merged[k].end) ? merged[k] : null;
     }
     function survives(it, need) {
       var len = it.end - it.start;
