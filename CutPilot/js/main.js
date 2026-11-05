@@ -10614,7 +10614,7 @@
     var kw = null, stop = {}, k0;
     // English stop words plus Hindi / Hinglish function words ("hai", "tha",
     // "ka", "aur"…): a key word is a word that carries the meaning
-    for (k0 in (CPTranscript.STOP || {})) if (CPTranscript.STOP.hasOwnProperty(k0)) stop[k0] = 1;
+    for (k0 in (CPTranscript.STOP || {})) if (Object.prototype.hasOwnProperty.call(CPTranscript.STOP, k0)) stop[k0] = 1;
     for (k0 in CPCaptions.FUNCTION_WORDS) if (CPCaptions.FUNCTION_WORDS.hasOwnProperty(k0)) stop[k0] = 1;
     var budget = Math.max(4, Math.min(14, Math.round(total / 12)));
     // Hindi script has no capitals: a Devanagari keyword would spend one of

@@ -35,7 +35,7 @@
     if (s.normalize) s = s.normalize('NFC');
     return s.toLowerCase().replace(/[‘’ʼ`]/g, "'").replace(NON_WORD, '').replace(/^'+|'+$/g, '');
   }
-  function wordMap(list) { var o = {}; for (var i = 0; i < list.length; i++) o[clean(list[i])] = 1; return o; }
+  function wordMap(list) { var o = Object.create(null); for (var i = 0; i < list.length; i++) o[clean(list[i])] = 1; return o; }
 
   /* Pure hesitation sounds — cut wherever they occur (the default list).
      Hindi speakers say "aaa… / umm / hmm" too; Devanagari transcripts write
@@ -108,7 +108,7 @@
      Devanagari keyword would take an emphasis slot it can never fill, and
      adding Hinglish "main" (I) here stopped English "main" being emphasised.
      The filler finder uses clean() above, which reads every script. */
-  var STOP = {};
+  var STOP = Object.create(null);   // word → 1, with no inherited 'constructor'
   ('a an and are as at be been being but by can could did do does doing for ' +
    'from had has have having he her here hers him his how i if in into is it ' +
    'its just me my no nor not of off on or our out over own she should so some ' +
@@ -237,7 +237,7 @@
     opts = opts || {};
     var single = opts.words || FILLER_WORDS;
     if (!opts.words && opts.extra) {
-      single = {};
+      single = Object.create(null);
       var k;
       for (k in FILLER_WORDS) single[k] = 1;
       for (k in FILLER_EXTRA) single[k] = 1;
@@ -404,7 +404,7 @@
   function markSalient(words, set) {
     set = set || {};
     var flags = [];
-    for (var i = 0; i < words.length; i++) flags.push(!!set[kwClean(words[i])]);
+    for (var i = 0; i < words.length; i++) { var kw = kwClean(words[i]); flags.push(Object.prototype.hasOwnProperty.call(set, kw) && !!set[kw]); }
     return flags;
   }
 
@@ -441,7 +441,7 @@
   /* Words a talking-head video says all the time that no camera can film:
      B-roll ideas were "like, people, think, know, going, about, only,
      you're" on the owner's 8-minute talk. */
-  var BROLL_SKIP = {};
+  var BROLL_SKIP = Object.create(null);
   ('like people think know going about only everybody everyone anyone someone something anything nothing ' +
    'you\'re i\'m it\'s that\'s there\'s what\'s don\'t doesn\'t didn\'t can\'t won\'t isn\'t we\'re they\'re i\'ve you\'ve ' +
    'actually basically literally probably maybe definitely exactly simply already still even ever never always ' +
@@ -465,8 +465,8 @@
     opts = opts || {};
     var max = opts.max != null ? opts.max : 12;
     var stop = {}, k;
-    for (k in STOP) if (STOP.hasOwnProperty(k)) stop[k] = 1;
-    for (k in BROLL_SKIP) if (BROLL_SKIP.hasOwnProperty(k)) stop[k] = 1;
+    for (k in STOP) if (Object.prototype.hasOwnProperty.call(STOP, k)) stop[k] = 1;
+    for (k in BROLL_SKIP) if (Object.prototype.hasOwnProperty.call(BROLL_SKIP, k)) stop[k] = 1;
     var scored = keywordScores(cues, { stop: stop, keepNumbers: false });
     // past-tense verbs ("launched", "continued") and a second form of a word
     // already picked ("launch" + "launched") are not two shots

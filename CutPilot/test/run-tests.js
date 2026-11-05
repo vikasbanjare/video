@@ -2282,6 +2282,22 @@ console.log('script alignment (your script\'s words + the transcript\'s timing)'
   assert(JSON.stringify(h1) === '[[20,39.8]]' && JSON.stringify(h2) === '[[20,39.8]]', 'a highlight given as times ("0:20") or as "[4]" is the right lines (' + JSON.stringify([h1, h2]) + ')');
 }
 
+// ---- retakes and fillers: an audit's findings --------------------------------
+{
+  const T = require(path.join(__dirname, '..', 'js', 'transcript.js'));
+  const Wt = (t0, x) => x.split(' ').map((w, i) => ({ start: t0 + i * 0.3, end: t0 + i * 0.3 + 0.25, text: w }));
+  const cw = Wt(0, 'Constructor ne paise le liye');
+  const fr = T.findFillerRanges([{ start: 0, end: 2, text: 'Constructor ne paise le liye', words: cw }], {});
+  assert(fr.ranges.length === 0, 'the word "constructor" is never cut as a filler (' + JSON.stringify(fr.ranges) + ')');
+  const one = CPTakes.findRepeatedTakes([].concat(Wt(0, 'Sabse important cheez kya hai business mein?'), Wt(4, 'Consistency.'), Wt(5, 'Consistency is what builds trust over years.')), { keep: 'best' });
+  assert(one.deletes.length === 0, 'a one-word answer ("Consistency.") is not cut as a false start (' + JSON.stringify(one.deletes) + ')');
+  const full = 'Aaj hum baat karenge ki kaise aap apne paise ko sahi jagah par invest karke bachat badhayein.';
+  const tk = CPTakes.findRepeatedTakes([].concat(Wt(0, full), Wt(6, 'Aaj hum baat karenge ki kaise aap apne paise ko sahi jagah par'), Wt(11, 'Chaliye shuru karte hain pehle topic se.')),
+    { keep: 'best', minRun: 3, sim: 0.6, people: 'one' });
+  const del = tk.deletes.map(d => d.start);
+  assert(del.length === 1 && Math.abs(del[0] - 6) < 1e-9, 'keep best: the take left hanging ("… sahi jagah par") is cut, the complete one kept (' + JSON.stringify(del) + ')');
+}
+
 // ---- 🎙 podcast short pieces cover the kept stretch exactly once ----------
 {
   const PS = require(path.join(__dirname, '..', 'js', 'podshort.js'));
