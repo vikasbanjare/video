@@ -4249,7 +4249,7 @@
     // dropped onto it chopped the overlay in two. Re-draw the whole clip.
     if (state.lastCaptionJob.mode === 'overlay') {
       toast('✏️ Fixed — Pulse is re-drawing your caption clip with the change (a few minutes on a long video).');
-      return runLibassCaptions(state.lastCaptionJob.cues, { replaceTrack: state.lastCaptionJob.track });
+      return onCaptionJobSequence(function () { return runLibassCaptions(state.lastCaptionJob.cues, { replaceTrack: state.lastCaptionJob.track }); });
     }
     // re-render the captions on screen while this line is said and overwrite
     // just those clips on the same track. With real word stamps the word
@@ -4267,7 +4267,7 @@
       single: true
     };
     if (!(state.transcriptWords && state.transcriptWords.length)) fixOpts.wordCues = null;
-    runCaptionPipeline(state.lastCaptionJob.cues, fixOpts);
+    onCaptionJobSequence(function () { runCaptionPipeline(state.lastCaptionJob.cues, fixOpts); });
   }
   function renderTrEditor() {
     var list = $('tre-list'); if (!list) return;
@@ -4357,14 +4357,14 @@
       // leave the old overlay in place (its clip isn't named cap_*) AND add
       // one image per word — the very explosion the overlay path avoids.
       if (jobMode === 'overlay') {
-        runLibassCaptions(cues, { replaceTrack: state.lastCaptionJob.track });
+        onCaptionJobSequence(function () { runLibassCaptions(cues, { replaceTrack: state.lastCaptionJob.track }); });
         return;
       }
       if (jobMode === 'editable') {
         applyEditableStyle();
         return;
       }
-      runCaptionPipeline(cues, { replaceTrack: state.lastCaptionJob.track });
+      onCaptionJobSequence(function () { runCaptionPipeline(cues, { replaceTrack: state.lastCaptionJob.track }); });
       return;
     }
     toast('✓ Saved your edits — ' + cues.length + ' lines. Now add captions.');
@@ -10444,12 +10444,28 @@
     else if (e.key === 'Escape') { e.preventDefault(); closeOneCaptionEditor(); }
   });
 
+  /* The last caption job's track belongs to the sequence it was placed on.
+     Restyle / fix / re-run reuse that track number: on another sequence it
+     is someone else's track (the owner's B-roll on V3 was overwritten by
+     "Apply to all"). go() only runs while that sequence is the open one. */
+  function onCaptionJobSequence(go) {
+    var job = state.lastCaptionJob;
+    if (!job || !job.seq || !CPBridge.isCEP()) return go();
+    return CPBridge.callHost('CP_getEnv', {}).then(function (env) {
+      if (env) state.env = env;
+      if (env && env.sequenceName && env.sequenceName !== job.seq) {
+        toast('These captions are on "' + job.seq + '". Open that sequence first — Pulse will not touch "' + env.sequenceName + '".', true);
+        return;
+      }
+      return go();
+    }, function () { return go(); });
+  }
   // ---- restyle EVERY placed caption at once with the current style/template ----
   if ($('btn-cap-restyle')) $('btn-cap-restyle').addEventListener('click', function () {
     if (!state.lastCaptionJob || !state.lastCaptionJob.cues) {
       return toast('Add captions first — then this restyles them all at once.', true);
     }
-    runCaptionPipeline(state.lastCaptionJob.cues, { replaceTrack: state.lastCaptionJob.track });
+    onCaptionJobSequence(function () { runCaptionPipeline(state.lastCaptionJob.cues, { replaceTrack: state.lastCaptionJob.track }); });
   });
 
   // ---- restyle ONLY the captions inside the selected timeline range ----
@@ -10465,9 +10481,11 @@
     setCaptionBusy(true);
     CPBridge.callHost('CP_selectedRange', {}).then(function (rng) {
       setCaptionBusy(false);
-      runCaptionPipeline(state.lastCaptionJob.cues, {
-        overwriteOnTrack: state.lastCaptionJob.track,
-        range: { start: rng.start, end: rng.end }
+      onCaptionJobSequence(function () {
+        runCaptionPipeline(state.lastCaptionJob.cues, {
+          overwriteOnTrack: state.lastCaptionJob.track,
+          range: { start: rng.start, end: rng.end }
+        });
       });
     }).catch(function (e) {
       setCaptionBusy(false);

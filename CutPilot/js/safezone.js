@@ -422,10 +422,12 @@
     var durSec = state.dur === 'full' ? Math.max(2, (state.env && +state.env.endSeconds) || 10) : (parseFloat(state.dur) || 5);
     var prog = $('sz-progress'); if (prog) { prog.classList.remove('hidden'); prog.textContent = 'Placing guide on timeline…'; }
     var args = { path: pngPath, startSec: 0, durSec: durSec };
-    if (state.replace && state.lastGuideTrack) args.replaceTrack = state.lastGuideTrack;  // reuse + clear the existing guide track
+    // reuse + clear the existing guide track — on the sequence it was placed on
+    var seqNow = (state.env && state.env.sequenceName) || '';
+    if (state.replace && state.lastGuideTrack && state.lastGuideSeq === seqNow) args.replaceTrack = state.lastGuideTrack;
     CPBridge.callHost('CP_placeOverlay', args).then(function (r) {
       if (prog) prog.classList.add('hidden');
-      state.lastGuideTrack = r.track;
+      state.lastGuideTrack = r.track; state.lastGuideSeq = seqNow;
       try { toast('🎉 Guide on V' + r.track + ' (opacity ' + state.opacity + '%) for ' + Math.round(durSec) + 's. Toggle that track\'s eye to hide it. ⌘Z/Ctrl+Z undoes it.'); } catch (e) {}
     }).catch(function (e) { if (prog) prog.classList.add('hidden'); try { toast('Place failed: ' + e.message, true); } catch (e2) {} });
   }

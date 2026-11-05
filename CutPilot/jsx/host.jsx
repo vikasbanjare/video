@@ -2453,6 +2453,21 @@ function CP_addZoomPunches(argsJson) {
   } catch (e) { return CP_fail(e.message); }
 }
 
+/* True when a video track already holds Pulse's own caption / guide clips —
+   i.e. it is the track a remembered number means. Once another sequence is
+   open that number can point at the owner's footage (no Pulse clips on it):
+   such a track is never reused. The owner's own clips beside the captions
+   (a logo, an intro) are fine: only Pulse's are cleared off it. */
+function CP_holdsPulseOverlayClips(track) {
+  try {
+    for (var i = 0; i < track.clips.numItems; i++) {
+      var nm = ''; try { nm = String(track.clips[i].name).toLowerCase(); } catch (eN) {}
+      if (nm.indexOf('cap_') === 0 || nm.indexOf('pulse-captions') === 0 || nm === 'captions.mov' || nm === 'guide.png') return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
 function CP_placeCaptionImages(argsJson) {
   try {
     var args = JSON.parse(argsJson);
@@ -2476,7 +2491,8 @@ function CP_placeCaptionImages(argsJson) {
       // existing caption track, overwriting the old ones only where they land —
       // captions outside the selected range are left exactly as they were.
       trackIndex = args.overwriteOnTrack - 1;
-    } else if (args.replaceTrack != null && args.replaceTrack >= 1 && args.replaceTrack <= seq.videoTracks.numTracks) {
+    } else if (args.replaceTrack != null && args.replaceTrack >= 1 && args.replaceTrack <= seq.videoTracks.numTracks &&
+               CP_holdsPulseOverlayClips(seq.videoTracks[args.replaceTrack - 1])) {
       // Restyle "apply to all": reuse the existing caption track, but first clear
       // only Pulse's own captions off it — the caption frames (cap_*.png) and a
       // long video's one overlay clip (pulse-captions-*.mov), which otherwise
@@ -2496,14 +2512,12 @@ function CP_placeCaptionImages(argsJson) {
         }
       } catch (eClr) {}
     } else {
-      // Use a fresh top video track so we never stomp existing footage.
-      trackIndex = seq.videoTracks.numTracks - 1;
-      try {
-        app.enableQE();
-        var qseq = qe.project.getActiveSequence();
-        qseq.addTracks(1, seq.videoTracks.numTracks, 0);
-        trackIndex = seq.videoTracks.numTracks - 1;
-      } catch (eTrack) {}
+      // Use a fresh top video track so we never stomp existing footage. When
+      // Premiere will not add one, stop: the old fallback put the captions on
+      // the owner's own top track.
+      trackIndex = CP_addTopVideoTrack();
+      seq = CP_activeSequence() || seq;
+      if (trackIndex < 0) return CP_fail('Premiere would not add a new video track for the captions. Add one at the top (right-click the track heads → Add Tracks) and try again — nothing was placed.');
     }
     var track = seq.videoTracks[trackIndex];
 
@@ -2718,7 +2732,8 @@ function CP_placeOverlay(argsJson) {
     }
 
     var trackIndex;
-    if (args.replaceTrack != null && args.replaceTrack >= 1 && args.replaceTrack <= seq.videoTracks.numTracks) {
+    if (args.replaceTrack != null && args.replaceTrack >= 1 && args.replaceTrack <= seq.videoTracks.numTracks &&
+        CP_holdsPulseOverlayClips(seq.videoTracks[args.replaceTrack - 1])) {
       // reuse the existing caption track, clearing Pulse's prior captions off it:
       // an overlay clip, or the cap_*.png images of a job that is becoming an
       // overlay (a long video restyled with "Apply to all")
@@ -2737,13 +2752,11 @@ function CP_placeOverlay(argsJson) {
         }
       } catch (eClr) {}
     } else {
-      // fresh top video track so we never stomp existing footage
-      trackIndex = seq.videoTracks.numTracks - 1;
-      try {
-        app.enableQE();
-        qe.project.getActiveSequence().addTracks(1, seq.videoTracks.numTracks, 0);
-        trackIndex = seq.videoTracks.numTracks - 1;
-      } catch (eTrack) {}
+      // fresh top video track so we never stomp existing footage (none
+      // added: stop, rather than overwrite the owner's top track)
+      trackIndex = CP_addTopVideoTrack();
+      seq = CP_activeSequence() || seq;
+      if (trackIndex < 0) return fail('Premiere would not add a new video track for the captions. Add one at the top (right-click the track heads → Add Tracks) and try again — nothing was placed.');
     }
     var track = seq.videoTracks[trackIndex];
     if (!track) return fail('Could not find a video track to place the overlay on.');
