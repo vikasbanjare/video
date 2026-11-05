@@ -1193,13 +1193,16 @@
       return new Promise(function (resolve, reject) {
         function chunk() {
           try {
-            var stop = Math.min(i + 20, frames.length);
-            for (; i < stop; i++) {
+            // ~30 ms per burst as well as 20 frames, so the panel keeps answering
+            var stop = Math.min(i + 20, frames.length), t0 = Date.now();
+            while (i < stop) {
               drawFrame(canvas, frames[i], style);
               var b64 = canvas.toDataURL('image/png').split(',')[1];
               var file = pathMod.join(outDir, 'cap_' + String(10000 + i) + '.png');
               fs.writeFileSync(file, NodeBuffer.from(b64, 'base64'));
               results.push({ path: file, start: frames[i].start, end: frames[i].end, cap: frames[i].cap });
+              i++;
+              if (Date.now() - t0 > 30) break;
             }
             if (opts.onProgress) opts.onProgress(i, frames.length);
             if (i < frames.length) setTimeout(chunk, 0);
@@ -1475,10 +1478,14 @@
         function chunk() {
           if (cancelled) return reject(stopped());
           try {
-            var stop = Math.min(i + 12, n);
-            for (; i < stop; i++) {
+            // a burst ends after ~30 ms as well as after 12 states: one state
+            // of a full-HD frame can take 80 ms, and 12 of them froze the panel
+            var stop = Math.min(i + 12, n), t0 = Date.now();
+            while (i < stop) {
               drawFrame(canvas, plan.states[i], style);
               writePng(canvas, fileFor(i));
+              i++;
+              if (Date.now() - t0 > 30) break;
             }
           } catch (e) { return reject(e); }
           progress('draw', i, n);
