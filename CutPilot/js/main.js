@@ -4174,6 +4174,7 @@
     _treCues = cues.map(function (c) { return { start: c.start, end: c.end, text: c.text }; });
     _treOrig = cues.map(function (c) { return { start: c.start, end: c.end, text: c.text }; });
     if ($('tre-title')) $('tre-title').textContent = '✏️ Review & edit the words';
+    if ($('tre-list')) $('tre-list').scrollTop = 0;   // a fresh open starts at line 1
     renderTrEditor();
     $('tr-editor').classList.remove('hidden');
   }
@@ -4187,6 +4188,7 @@
     _treCues = state.lastCaptionJob.cues.map(function (c) { return { start: c.start, end: c.end, text: c.text }; });
     _treOrig = state.lastCaptionJob.cues.map(function (c) { return { start: c.start, end: c.end, text: c.text }; });
     if ($('tre-title')) $('tre-title').textContent = '✏️ Edit your caption words';
+    if ($('tre-list')) $('tre-list').scrollTop = 0;   // a fresh open starts at line 1
     renderTrEditor();
     $('tr-editor').classList.remove('hidden');
     toast('✏️ Fix any wording, then tap Save — your captions update in place.');
@@ -4280,43 +4282,58 @@
     if (!(state.transcriptWords && state.transcriptWords.length)) fixOpts.wordCues = null;
     onCaptionJobSequence(function () { runCaptionPipeline(state.lastCaptionJob.cues, fixOpts); });
   }
+  /* One click handler for the whole list (rows carry data-i), and the rows are
+     built off-screen and put in at once, so a merge or delete on a 60-minute
+     podcast does not re-wire thousands of buttons. */
+  function onTrEditorClick(ev) {
+    var b = ev.target && ev.target.closest ? ev.target.closest('button[data-act]') : null;
+    if (!b || b.disabled) return;
+    var i = +b.getAttribute('data-i'), act = b.getAttribute('data-act');
+    if (!(i >= 0 && i < _treCues.length)) return;
+    if (act === 'add') insertTrLine(i);
+    else if (act === 'merge' && i > 0) {
+      _treCues[i - 1].text = (_treCues[i - 1].text + ' ' + _treCues[i].text).replace(/\s+/g, ' ').trim();
+      _treCues[i - 1].end = _treCues[i].end;
+      _treCues.splice(i, 1); renderTrEditor();
+    } else if (act === 'del') { _treCues.splice(i, 1); renderTrEditor(); }
+  }
   function renderTrEditor() {
     var list = $('tre-list'); if (!list) return;
-    list.innerHTML = '';
+    if (!list._cpTreWired) { list._cpTreWired = true; list.addEventListener('click', onTrEditorClick); }
+    var keepTop = list.scrollTop;
     if (!_treCues.length) { list.innerHTML = '<p class="hint">No lines left.</p>'; return; }
     _treCues.sort(function (a, b) { return a.start - b.start; });   // keep time order
+    var frag = document.createDocumentFragment();
+    function btn(cls, txt, title, act, i) {
+      var x = document.createElement('button'); x.type = 'button'; x.className = cls; x.textContent = txt; x.title = title;
+      x.setAttribute('data-act', act); x.setAttribute('data-i', String(i)); return x;
+    }
     _treCues.forEach(function (c, i) {
       var row = document.createElement('div'); row.className = 'tre-row';
       var t = document.createElement('span'); t.className = 'tre-time'; t.textContent = fmt(c.start);
       var inp = document.createElement('input'); inp.className = 'tre-text'; inp.type = 'text'; inp.value = c.text;
-      inp.addEventListener('input', function () { _treCues[i].text = inp.value; });
-      var add = document.createElement('button'); add.type = 'button'; add.className = 'tre-btn'; add.textContent = '＋'; add.title = 'Add a new line after this one';
-      add.addEventListener('click', function () { insertTrLine(i); });
-      var mg = document.createElement('button'); mg.type = 'button'; mg.className = 'tre-btn'; mg.textContent = '⤴'; mg.title = 'Merge into line above';
+      inp.addEventListener('input', function () { if (_treCues[i]) _treCues[i].text = inp.value; });
+      var mg = btn('tre-btn', '⤴', 'Merge into line above', 'merge', i);
       if (i === 0) mg.disabled = true;
-      mg.addEventListener('click', function () {
-        if (i > 0) {
-          _treCues[i - 1].text = (_treCues[i - 1].text + ' ' + _treCues[i].text).replace(/\s+/g, ' ').trim();
-          _treCues[i - 1].end = _treCues[i].end;
-          _treCues.splice(i, 1); renderTrEditor();
-        }
-      });
-      var del = document.createElement('button'); del.type = 'button'; del.className = 'tre-btn tre-del'; del.textContent = '✕'; del.title = 'Delete line';
-      del.addEventListener('click', function () { _treCues.splice(i, 1); renderTrEditor(); });
-      row.appendChild(t); row.appendChild(inp); row.appendChild(add); row.appendChild(mg); row.appendChild(del);
-      list.appendChild(row);
+      row.appendChild(t); row.appendChild(inp);
+      row.appendChild(btn('tre-btn', '＋', 'Add a new line after this one', 'add', i));
+      row.appendChild(mg);
+      row.appendChild(btn('tre-btn tre-del', '✕', 'Delete line', 'del', i));
+      frag.appendChild(row);
       // gap banner: whisper dropped a stretch of speech here — let the user add it
       if (i < _treCues.length - 1) {
         var gap = _treCues[i + 1].start - c.end;
         if (gap >= 4) {
           var gb = document.createElement('div'); gb.className = 'tre-gap';
           var gt = document.createElement('span'); gt.textContent = '⚠️ ~' + Math.round(gap) + 's with no words here';
-          var ga = document.createElement('button'); ga.type = 'button'; ga.className = 'tre-btn'; ga.textContent = '＋ Add missing line';
-          ga.addEventListener('click', function () { insertTrLine(i); });
-          gb.appendChild(gt); gb.appendChild(ga); list.appendChild(gb);
+          gb.appendChild(gt); gb.appendChild(btn('tre-btn', '＋ Add missing line', 'Add a new line in this gap', 'add', i));
+          frag.appendChild(gb);
         }
       }
     });
+    list.textContent = '';
+    list.appendChild(frag);
+    if (keepTop) list.scrollTop = keepTop;
   }
   /* Insert a new, empty transcript line right after index `afterIdx`, timed to
      sit in the gap before the next line. Lets the user fill anything whisper
