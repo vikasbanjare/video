@@ -59,6 +59,9 @@
   function assText(t) {
     return String(t == null ? '' : t)
       .replace(/[{}]/g, function (c) { return c === '{' ? '(' : ')'; })
+      // a typed backslash stays a backslash: libass reads \N \n \h in the
+      // text as a line break / space, so an invisible word joiner splits it
+      .replace(/\\/g, '\\\u2060')
       .replace(/\r?\n/g, '\\N');
   }
 

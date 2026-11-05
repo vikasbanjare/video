@@ -1489,6 +1489,7 @@ console.log('ass.js (libass karaoke generator)');
   assert(CPAss.assColor('#FFD400') === '&H00D4FF&', 'assColor converts RGB->BGR');
   assert(CPAss.assColor('#fff') === '&HFFFFFF&', 'assColor expands shorthand hex');
   assert(CPAss.assText('a {b} c\nd') === 'a (b) c\\Nd', 'assText neutralises braces + newlines');
+  assert(CPAss.assText('C:\\Nope \\h') === 'C:\\\u2060Nope \\\u2060h', 'a typed backslash is never read as a line break or space (' + JSON.stringify(CPAss.assText('C:\\Nope \\h')) + ')');
   // malformed hex must degrade to a VALID ASS colour, never emit a broken style
   assert(/^&H[0-9A-F]{6}&$/.test(CPAss.assColor('#GGG')), 'assColor turns garbage hex into a valid (white) colour');
   assert(/^&H[0-9A-F]{6}&$/.test(CPAss.assColor('#12')), 'assColor pads a too-short hex to a valid colour');
@@ -2202,6 +2203,23 @@ console.log('script alignment (your script\'s words + the transcript\'s timing)'
   const hi = S.alignToScript([{ start: 0, end: 2, text: 'मेरा नाम विकस है' }], 'मेरा नाम विकास है।');
   assert(hi.matched === true && /विकास/.test(hi.cues[0].text), 'Devanagari script corrects the Hindi transcript');
   // dropped words in the middle are restored into the right caption
+  // the last caption misheard whole: its fix lands in IT, not in the one before
+  const tail = S.alignToScript([{ start: 0, end: 2, text: 'hello my friends welcome' }, { start: 2, end: 4, text: 'akshi adeshi' }], 'hello my friends welcome Akshay Uddeshi');
+  assert(JSON.stringify(tail.cues.map(c => c.text)) === '["hello my friends welcome","Akshay Uddeshi"]', 'a misheard LAST caption takes its own fix (' + JSON.stringify(tail.cues.map(c => c.text)) + ')');
+  // a Hindi script with । at the ends of sentences matches as well as English with "."
+  const danda = S.alignToScript([{ start: 0, end: 1, text: 'मैं ठीक हूँ' }, { start: 1, end: 2, text: 'आप कैसे हो' }], 'मैं ठीक हूँ। आप कैसे हो।');
+  assert(danda.matchRate === 1, 'the danda (।) does not stop a Hindi word matching (rate ' + danda.matchRate + ')');
+  // emoji / dashes are not words: a wrong script with 🙏 is still a wrong script
+  const emo = S.alignToScript([{ start: 0, end: 1, text: '— — — … wrong words here' }], '🙏 🙏 🙏 🙏 totally different script');
+  assert(emo.matched === false, 'emoji and dashes never count as matching words (rate ' + emo.matchRate + ')');
+  // a 2-hour podcast: a pre-show chat the script does not have, or a script
+  // intro nobody said, is passed over — the rest still lines up
+  { const W = n => Array.from({ length: n }, (_, i) => 'w' + i), X = n => Array.from({ length: n }, (_, i) => 'chat' + i);
+    const toCues = ws => { const c = []; for (let i = 0; i < ws.length; i += 10) c.push({ start: i, end: i + 1, text: ws.slice(i, i + 10).join(' ') }); return c; };
+    const pre = S.alignToScript(toCues(X(1300).concat(W(3000))), W(3000).join(' '));
+    const intro = S.alignToScript(toCues(W(1500)), X(1300).concat(W(1500)).join(' '));
+    assert(pre.matched && pre.matchRate > 0.69 && intro.matched && intro.matchRate === 1,
+      'a long transcript with a pre-show chat, or a script with an unsaid intro, still lines up (' + pre.matchRate.toFixed(2) + ', ' + intro.matchRate.toFixed(2) + ')'); }
   const drop = S.alignToScript([{ start: 0, end: 3, text: 'we build for creators' }],
                                'We build tools for creators');
   assert(drop.cues[0].text === 'We build tools for creators', 'a word the transcriber missed is restored: ' + drop.cues[0].text);
@@ -2228,6 +2246,28 @@ console.log('script alignment (your script\'s words + the transcript\'s timing)'
   assert(noDrift, 'every caption keeps its exact timing through a script fix');
   const identical = S.alignToScript(hinglish, hinglish.map(function (c) { return c.text; }).join(' '));
   assert(identical.replaced === 0, 'a script that matches the transcript reports 0 corrections');
+}
+
+// ---- 🎙 podcast short pieces cover the kept stretch exactly once ----------
+{
+  const PS = require(path.join(__dirname, '..', 'js', 'podshort.js'));
+  let seed = 11; const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  let bad = 0, n = 0, bad1 = '';
+  for (let c = 0; c < 400; c++) {
+    const keep = []; let t = 0;
+    for (let i = 0; i < 1 + Math.floor(rnd() * 4); i++) { t += rnd() * 3; const e = t + 1 + rnd() * 8; keep.push({ start: +t.toFixed(2), end: +e.toFixed(2), cut: i > 0 && rnd() < 0.3 }); t = e; }
+    const plan = []; let p = -1;
+    while (p < t + 1) { const a = p + (rnd() < 0.3 ? rnd() * 2 : (rnd() < 0.3 ? -rnd() : 0)), e = a + 0.3 + rnd() * 5; plan.push({ start: +a.toFixed(2), end: +e.toFixed(2), angle: Math.floor(rnd() * 3) }); p = e; }
+    const out = PS.pieces(keep, plan, null, { fallbackAngle: 9 });
+    n++;
+    const want = keep.reduce((a, k) => a + (k.end - k.start), 0), got = out.reduce((a, q) => a + (q.end - q.start), 0);
+    let overl = false; for (let i = 1; i < out.length; i++) if (out[i].start < out[i - 1].end - 1e-6) overl = true;
+    const inside = out.every(q => keep.some(k => q.start >= k.start - 1e-6 && q.end <= k.end + 1e-6));
+    if (Math.abs(want - got) > 1e-6 || overl || !inside) { bad++; if (!bad1) bad1 = JSON.stringify({ keep, plan, out }); }
+  }
+  assert(bad === 0, 'podcast short: every kept second is in exactly one piece — plan holes keep the camera before, overlaps are trimmed (' + n + ' plans, ' + bad + ' off)' + (bad1 ? ' e.g. ' + bad1.slice(0, 300) : ''));
+  const h = PS.pieces([{ start: 0, end: 10 }], [{ start: 0, end: 4, angle: 1 }, { start: 6, end: 10, angle: 2 }], null);
+  assert(JSON.stringify(h.map(q => [q.start, q.end, q.angle])) === '[[0,6,1],[6,10,2]]', 'podcast short: a 2 s hole in the camera plan stays in the short, on the camera before it (' + JSON.stringify(h) + ')');
 }
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

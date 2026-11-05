@@ -24,7 +24,7 @@
      (so Hindi scripts align as well as English ones). */
   function norm(w) {
     return String(w == null ? '' : w).toLowerCase()
-      .replace(/[^\wऀ-ॿ']+/g, '')
+      .replace(/[^\wऀ-ॿ']+|[।॥]/g, '')   // the danda ends a Hindi sentence like "." does
       .replace(/^'+|'+$/g, '');
   }
 
@@ -59,7 +59,17 @@
         var sa = a.slice(off, off + cap), sb = b.slice(offB, offB + cap);
         var sub = matchPairs(sa, sb, cap);
         for (var s = 0; s < sub.length; s++) pairs.push([sub[s][0] + off, sub[s][1] + offB]);
-        if (!sub.length) break;
+        // a block with nothing in common: a pre-show chat the script does not
+        // have, or a script intro nobody said. That stretch is passed over —
+        // on the side whose next block finds matches — instead of giving up
+        // on the whole rest of a 2-hour podcast
+        if (!sub.length) {
+          var skipA = matchPairs(a.slice(off + cap, off + 2 * cap), sb, cap).length;
+          var skipB = matchPairs(sa, b.slice(offB + cap, offB + 2 * cap), cap).length;
+          if (skipA >= skipB) off += cap;
+          if (skipB >= skipA) offB += cap;
+          continue;
+        }
         off += sub[sub.length - 1][0] + 1;
         offB += sub[sub.length - 1][1] + 1;
       }
@@ -116,8 +126,10 @@
       return { cues: src, matched: false, matchRate: 0, replaced: 0, scriptWords: sw.length };
     }
     var an = [], bn = [], i;
-    for (i = 0; i < tw.length; i++) an.push(norm(tw[i]));
-    for (i = 0; i < sw.length; i++) bn.push(norm(sw[i]));
+    // a token with no letters or digits (an emoji, "—", "…") is never a
+    // match: '' === '' made a wrong script look like the right one
+    for (i = 0; i < tw.length; i++) an.push(norm(tw[i]) || '\u0000a' + i);
+    for (i = 0; i < sw.length; i++) bn.push(norm(sw[i]) || '\u0000b' + i);
     var pairs = matchPairs(an, bn);
     var rate = pairs.length / tw.length;
     if (rate < minMatch) {
@@ -151,10 +163,13 @@
         gapOwner = cueIx;      // misheard word: its cue owns the coming fill
       }
     }
-    // trailing script words go to the last cue that has any content
+    // trailing script words go to the cue whose misheard words they replace
+    // (the last caption, when its words were all misheard), else to the last
+    // cue that has any content
     if (lastB < sw.length - 1) {
       var lastCue = perCue.length - 1;
-      while (lastCue > 0 && !perCue[lastCue].length) lastCue--;
+      if (gapOwner >= 0) lastCue = gapOwner;
+      else while (lastCue > 0 && !perCue[lastCue].length) lastCue--;
       for (var r = lastB + 1; r < sw.length; r++) { perCue[lastCue].push(sw[r]); replaced++; }
     }
     var out = [];
