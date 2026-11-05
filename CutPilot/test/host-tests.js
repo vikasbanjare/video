@@ -2656,5 +2656,22 @@ console.log('host.jsx — Premium captions hold 0.5 s, never 60 s; title templat
     'a clip that cannot be read, or an empty track, does not break the lookup');
 }
 
+{
+  // 🎙 Studio sound placing: refuses when the owner switched sequence while it
+  // worked (nothing imported), and a track with pieces it could not clean stays on
+  const mkW = () => { const w = makeWorld({ vTracks: 1, aTracks: 4 });
+    w.model.addClip('aTracks', 0, 0, 10, { name: 'mic1.wav' }); w.model.addClip('aTracks', 1, 0, 10, { name: 'mic2.wav' }); return w; };
+  const pieces = [{ path: '/tmp/c0.wav', track: 0, from: 0, dur: 10, at: 0 }, { path: '/tmp/c1.wav', track: 1, from: 0, dur: 10, at: 0 }];
+  const w1 = mkW(), h1 = loadHost(w1);
+  const r1 = call(h1, 'CP_studioSoundPlace', { pieces, sequenceId: 'seq-other', sequenceName: 'Episode 11' });
+  assert(!r1.ok && /switched to another sequence/.test(r1.error || r1.message || '') && w1.model.imported.length === 0 && w1.model.bins.length === 0,
+    'Studio sound: another sequence open → refused, nothing imported (' + JSON.stringify(r1) + ')');
+  const w2 = mkW(), h2 = loadHost(w2);
+  const r2 = call(h2, 'CP_studioSoundPlace', { pieces, sequenceId: 'seq-main', keepUnmuted: [1] });
+  assert(r2.ok && r2.placed === 2 && JSON.stringify(r2.muted) === '[1]' && JSON.stringify(r2.keptOn) === '[2]' &&
+    w2.model.muted.A1 === true && !w2.model.muted.A2 && w2.model.aTracks[2].length === 1 && w2.model.aTracks[3].length === 1,
+    'Studio sound: clean sound on the empty tracks below, A1 muted, A2 (pieces left as they were) kept on (' + JSON.stringify(r2) + ')');
+}
+
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
