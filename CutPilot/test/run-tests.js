@@ -1791,6 +1791,65 @@ console.log('robustness (null/edge inputs never crash)');
   assert(ms && ms.fill === '#abcdef', 'mergeStyle with null preset still applies the override');
 }
 
+// ---- searches by halves give the answers the old scans gave (v0.10.112) ----
+// 2-hour podcasts: words → lines, word timing → speech runs and Hinglish word
+// timing scanned everything per word. The fast paths must answer exactly as
+// the scan from item 0 did, ties and odd lists included.
+{
+  let seed = 3; const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  const scanLine = (ls, t) => { let best = -1, bestD = Infinity; for (let j = 0; j < ls.length; j++) { const d = (t < +ls[j].start) ? +ls[j].start - t : (t >= +ls[j].end ? t - +ls[j].end : 0); if (d === 0) return j; if (d < bestD) { bestD = d; best = j; } } return best; };
+  let bad = 0, n = 0;
+  for (let c = 0; c < 400; c++) {
+    const L = []; let t = rnd() * 2; const k = Math.floor(rnd() * 40) + 1;
+    for (let i = 0; i < k; i++) { t += rnd() < 0.3 ? 0 : Math.round(rnd() * 4) / 4; const len = rnd() < 0.1 ? 0 : Math.round(rnd() * 8) / 4; L.push({ start: t, end: t + len }); t += len; if (c % 5 === 0 && rnd() < 0.2) t -= 0.5; }
+    const f = CPCaptions.makeLineFinder(L);
+    for (let q = 0; q < 40; q++) { const x = Math.round((rnd() * (t + 4) - 1) * 4) / 4 + (rnd() < 0.5 ? 0 : rnd() * 0.01); n++; if (f(x) !== scanLine(L, x)) bad++; }
+  }
+  assert(bad === 0, 'makeLineFinder answers as the scan from line 0 does (' + n + ' lookups, ties, gaps, overlaps, zero-length lines; ' + bad + ' differ)');
+
+  // speech runs found once and passed in = found per call
+  const S = []; let loud = false;
+  for (let i = 0; i < 3000; i++) { if (rnd() < 0.05) loud = !loud; S.push({ t: +(i * 0.02).toFixed(3), db: loud ? -22 - rnd() * 8 : -75 - rnd() * 15 }); }
+  const W = []; let tw = 0.3; for (let i = 0; i < 150; i++) { const d = 0.05 + rnd() * 0.5; W.push({ start: +tw.toFixed(3), end: +(tw + d).toFixed(3), text: ['aaj', 'paise', 'strike', 'apple'][i % 4] }); tw += d + rnd() * 0.3; }
+  const runs = CPAlign.speechRuns(S, {});
+  assert(JSON.stringify(CPAlign.refineWords(W, S, { blend: 0.5, snapWin: 0.25 })) === JSON.stringify(CPAlign.refineWords(W, S, { blend: 0.5, snapWin: 0.25, runs: runs })),
+    'refineWords with the runs passed in (opts.runs) gives the same words as finding them itself');
+  let inBad = 0;
+  for (let q = 0; q < 2000; q++) { const x = rnd() * 61; const lin = runs.some(r => x >= r.start - 0.01 && x <= r.end + 0.01); if (CPAlign.inSpeech(x, runs, 0.01) !== lin) inBad++; }
+  assert(inBad === 0, 'inSpeech by halves = inSpeech by scan (' + inBad + ' of 2000 differ)');
+
+  // Hinglish word timing: words in time order (by halves) or not (filter) agree
+  const cues = [], words = []; let tc = 0;
+  for (let i = 0; i < 30; i++) { const d = 0.5 + rnd() * 3; cues.push({ start: tc, end: tc + d, text: 'a b' }); tc += d + (rnd() < 0.5 ? 0 : rnd()); }
+  for (let i = 0; i < 150; i++) { const s0 = rnd() * tc; words.push({ start: s0, end: s0 + 0.2, text: rnd() < 0.1 ? ' ' : 'w' + i }); }
+  const sortedW = words.slice().sort((a, b) => a.start - b.start), texts = cues.map((x, i) => i % 3 ? null : 'x y');
+  // the scan it replaced, written out: every word filtered for every line
+  const ref = (() => { const out = []; let matched = 0;
+    cues.forEach((c, i) => { const toks = String(texts[i] == null ? c.text : texts[i]).split(/\s+/).filter(Boolean);
+      const ws = sortedW.filter(w => +w.start >= +c.start - 0.01 && +w.start < +c.end - 0.001 && String(w.text || '').trim());
+      if (ws.length && ws.length === toks.length) { matched++; toks.forEach((t, k) => out.push({ text: t, start: +ws[k].start, end: +ws[k].end })); }
+      else if (toks.length) { const d = (+c.end - +c.start) / toks.length; toks.forEach((t, k) => out.push({ text: t, start: +c.start + k * d, end: +c.start + (k + 1) * d, estimated: true })); } });
+    return { words: out, matched: matched, lines: cues.length }; })();
+  assert(JSON.stringify(CPCaptions.carryWordTiming(cues, texts, sortedW)) === JSON.stringify(ref),
+    'carryWordTiming by halves = the scan of every word per line (' + ref.matched + ' lines one for one)');
+}
+
+// ---- Shorts: a moment at the edge of an 80-line part is fitted against the
+// whole transcript (the part's last line is not taken for a sentence end) ----
+{
+  const CPSE = require(path.join(__dirname, '..', 'js', 'smartedit.js'));
+  const segs = [];
+  for (let i = 0; i < 12; i++) segs.push({ start: i * 3, end: i * 3 + 2.9, text: 'line ' + i + (i % 4 === 3 ? '.' : '') });
+  // part = lines 4..7, the AI picks its last two lines (6..7 → ends on line 7, a sentence end)
+  const reply = JSON.stringify({ clips: [{ from: 1, to: 2, title: 't', score: 80 }] });
+  const part = segs.slice(4, 8);
+  const alone = CPSE.parseHighlightResponse(reply, part, { min: 1, max: 60 });
+  const whole = CPSE.parseHighlightResponse(reply, part, { min: 1, max: 60, all: segs, offset: 4 });
+  assert(whole.length === 1 && whole[0].start === segs[4].start && whole[0].end === segs[7].end,
+    'a part\'s moment is fitted on the whole transcript: it opens where the sentence opens (' + (whole[0] && whole[0].start) + ' s) and closes on its "." (' + (whole[0] && whole[0].end) + ' s)');
+  assert(alone.length === 1, '(the part alone still gives a moment)');
+}
+
 // ---- PostScript font resolution ("not able to change the fonts") ----
 // Premiere's source-text blob takes POSTSCRIPT names, never the family names
 // the pickers show. Writing "Bebas Neue" was silently ignored — the caption
