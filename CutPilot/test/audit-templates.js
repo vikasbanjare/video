@@ -14,6 +14,8 @@ var R = require('../js/render.js');
 
 var FONTS = {};
 C.FONTS.forEach(function (f) { FONTS[f] = 1; });
+// the owner's own installed fonts (never bundled; their styles fall back without them)
+(C.OWNER_FONTS || []).forEach(function (f) { FONTS[f] = 1; });
 var ANIM = {};
 C.ANIMATIONS.forEach(function (a) { ANIM[a.id] = 1; });
 var CATS = {};

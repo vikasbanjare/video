@@ -3111,6 +3111,10 @@
 
   /* Curated font list for the customizer. First fallback keeps it readable
      if the chosen face is not installed on the editing machine. */
+  /* The owner's own licensed fonts: installed on their Mac, never bundled and
+     not offered in the font pickers. A style built from the owner's own look
+     ("Short Two-Line") uses one and falls back (Helvetica Neue) without it. */
+  var OWNER_FONTS = ['Neue Haas Grotesk Display Pro'];
   var FONTS = [
     // Bold / display — the caption workhorses
     'Anton', 'Bebas Neue', 'Archivo Black', 'Oswald', 'Teko', 'Fjalla One',
@@ -4396,6 +4400,7 @@
     getPreset: getPreset,
     animIdForConcept: animIdForConcept,
     FONTS: FONTS,
+    OWNER_FONTS: OWNER_FONTS,
     psFontName: psFontName,
     psIsBoldFace: psIsBoldFace,
     dedupeRepeatedCues: dedupeRepeatedCues,

@@ -1791,6 +1791,15 @@ console.log('robustness (null/edge inputs never crash)');
   assert(ms && ms.fill === '#abcdef', 'mergeStyle with null preset still applies the override');
 }
 
+// ---- Hindi chapter titles never carry the danda (। ॥) ----
+{
+  const cues = []; let t = 0;
+  for (let i = 0; i < 120; i++) { cues.push({ start: t, end: t + 5, text: i < 60 ? 'पैसा बचाना ज़रूरी है। बजट बनाओ।' : 'शेयर बाज़ार में निवेश करो है।' }); t += 5; }
+  const r = CPChapters.buildChapters(cues, {}), titles = (r.chapters || r).map(c => c.title || c.label);
+  assert(titles.length >= 2 && titles.every(x => !/[।॥]/.test(x) && !/^है$/.test(x)),
+    'a Devanagari transcript\'s chapter titles are its topics, never "है।" or a word ending in । (' + JSON.stringify(titles) + ')');
+}
+
 // ---- searches by halves give the answers the old scans gave (v0.10.112) ----
 // 2-hour podcasts: words → lines, word timing → speech runs and Hinglish word
 // timing scanned everything per word. The fast paths must answer exactly as

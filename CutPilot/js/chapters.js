@@ -34,8 +34,10 @@
    'बारे वाला वाली वाले साथ अपना अपनी अपने लोग होगा सकते चाहिए जैसे बिल्कुल सही').split(/\s+/)
     .forEach(function (w) { STOP[w] = 1; });
 
-  // letters of any script Pulse captions (Latin, Devanagari) survive
-  function clean(w) { return String(w).toLowerCase().replace(/[^a-z0-9'\u0900-\u097f]/g, '').replace(/^'+|'+$/g, ''); }
+  // letters of any script Pulse captions (Latin, Devanagari) survive — but not
+  // the danda । ॥ (U+0964/5): "है।" was not the stop-word "है", and a
+  // sentence-final "है।" in every chapter became its title
+  function clean(w) { return String(w).toLowerCase().replace(/[^a-z0-9'\u0900-\u0963\u0966-\u097f]/g, '').replace(/^'+|'+$/g, ''); }
   function titleCase(s) { return String(s).replace(/(^|\s)([a-z])/g, function (m, sp, c) { return sp + c.toUpperCase(); }); }
   function wordsOf(text) {
     var out = [], toks = String(text || '').split(/\s+/);
