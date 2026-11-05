@@ -117,6 +117,9 @@ function cardLevel(file, t, W, H) {
                summary: (document.getElementById('sh-summary') || {}).textContent,
                plan: window.CP_DEBUG_EXT.shorts.plan(moment), toast: (document.getElementById('toast') || {}).textContent };
     }, SAID, MOMENT, opts);
+    // the captions are placed once their pictures are drawn, after the job
+    // starts: on a busy machine that is more than the 300 ms above
+    for (let i = 0; i < 300 && opts['sh-caps'] && !placed && !res.error; i++) await new Promise(r => setTimeout(r, 100));
     res.imported = imported; res.placed = placed; res.errors = (P.page.__errors || []).slice();
     await P.close();
     return res;
