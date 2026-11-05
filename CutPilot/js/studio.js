@@ -54,9 +54,17 @@
   /* The pieces of audio that play, from Pulse's read of the timeline
      (CP_getCutSources): unmuted tracks, real files, normal speed. */
   function piecesOf(src) {
-    var out = [], skipped = 0, seenTrack = {}, skippedTracks = [];
+    var out = [], skipped = 0, seenTrack = {}, skippedTracks = [], nested = 0;
     (src && src.audio || []).forEach(function (tr) {
-      if (seenTrack[tr.index]) return;                   // a nest's inner tracks: its own clip is enough
+      // a nested sequence's own tracks come after their outer track, with
+      // its number: their sound is left as it is (several mics may play at
+      // once inside), and the outer track stays on so it is still heard
+      if (seenTrack[tr.index]) {
+        if (!tr.muted && (tr.items || []).some(function (it) { return it.mediaPath && !it.disabled; })) {
+          nested++; if (skippedTracks.indexOf(tr.index) < 0) skippedTracks.push(tr.index);
+        }
+        return;
+      }
       seenTrack[tr.index] = 1;
       if (tr.muted) return;
       (tr.items || []).forEach(function (it) {
@@ -65,7 +73,7 @@
         out.push({ src: it.mediaPath, from: it.inPoint, dur: it.seqEnd - it.seqStart, at: it.seqStart, track: tr.index });
       });
     });
-    return { pieces: out, skipped: skipped, skippedTracks: skippedTracks, sequenceId: src && src.sequenceId, sequenceName: src && src.sequenceName };
+    return { pieces: out, skipped: skipped, nested: nested, skippedTracks: skippedTracks, sequenceId: src && src.sequenceId, sequenceName: src && src.sequenceName };
   }
 
   var busy = false;
@@ -157,7 +165,8 @@
     var found, balanced = 0, cuts = 0, works = [], aiFailedOn = [], placed = [], sentToHost = false;
     CPBridge.callHost('CP_getCutSources', {}).then(function (src) {
       found = piecesOf(src);
-      if (!found.pieces.length) throw new Error('No sound to clean on this sequence — every audio track is empty or muted.');
+      if (!found.pieces.length) throw new Error(found.nested ? 'The sound on this sequence is inside nested sequences — open the nested sequence and tap Studio sound there.'
+                                                         : 'No sound to clean on this sequence — every audio track is empty or muted.');
       // ONE recording per track, as it plays: every cut on the track, in
       // timeline order. Cleaned and levelled as a whole — the levels are read
       // from what is used, not from the takes left out, and each cut is
@@ -299,6 +308,7 @@
         ' (' + r.placed + ' piece' + (r.placed === 1 ? '' : 's') + (balanced ? ', ' + balanced + ' of ' + cuts + ' cuts matched in level' : '') + ', ' + (opts.target === -16 ? 'podcast apps, −16 LUFS' : 'YouTube & Reels, −14 LUFS') + '). ' +
         'Your original sound is still there, muted' + ((r.muted || []).length ? ' (' + r.muted.map(function (n) { return 'A' + n; }).join(', ') + ')' : '') +
         ' — unmute it to compare.' + (found.skipped ? ' ' + found.skipped + ' sped-up or reversed piece(s) were left as they are' + ((r.keptOn || []).length ? ', so ' + r.keptOn.map(function (n) { return 'A' + n; }).join(', ') + ' stays on' : '') + '.' : '') +
+        (found.nested ? ' Sound inside nested sequences was left as it is (open one and run Studio sound there to clean it).' : '') +
         (aiFailedOn.length ? ' ' + (opts.restore ? 'Studio restore' : 'AI noise removal') + ' could not run on ' + aiFailedOn.map(function (n) { return 'A' + n; }).join(', ') + ' — the plain cleanup was used there.' : '') +
         (r.missed ? ' ' + r.missed + ' piece(s) could not be placed.' : '');
       say(msg); kit.toast(msg);
