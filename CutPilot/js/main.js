@@ -1928,18 +1928,29 @@
         return rc;
       });
     }
-    // no per-word timing → romanise the lines (numbered) with sentence context
-    var lines = rc.map(function (c, i) { return (i + 1) + '. ' + c.text; }).join('\n');
+    // no per-word timing → romanise the lines (numbered) with sentence context,
+    // 150 lines per request: a long local transcription (one word per line,
+    // ~10k lines an hour) went in ONE request — over the per-minute limit, so
+    // all of it fell back to the plain spelling, or cut off, so the spelling
+    // changed style partway through the video. A batch the AI misses falls
+    // back on its own.
     setTranscriptBar('', '🇮🇳', 'Converting to Hinglish…', null);
-    return groqChat([{ role: 'system', content: SYS },
-      { role: 'user', content: 'Transliterate each line to Hinglish. Keep EXACTLY one line per input line with the same numbering, nothing else:\n\n' + lines }],
-      { temperature: 0.1 }).then(function (resp) {
-        var map = {};
-        String(resp).split('\n').forEach(function (ln) { var m = ln.match(/^\s*(\d+)[.)]\s*(.+)$/); if (m) map[+m[1]] = m[2].trim(); });
-        var hit = 0;
-        rc.forEach(function (c, i) { if (map[i + 1]) { c.text = map[i + 1]; hit++; } else c.text = CPCaptions.devanagariToLatin(c.text); });
-        return hit ? rc : mech();
-      }, function () { return mech(); });
+    var LB = 150, starts = [], hitAll = 0, chain = Promise.resolve();
+    for (var b0 = 0; b0 < rc.length; b0 += LB) starts.push(b0);
+    starts.forEach(function (b0) {
+      chain = chain.then(function () {
+        var part = rc.slice(b0, b0 + LB);
+        var lines = part.map(function (c, i) { return (i + 1) + '. ' + c.text; }).join('\n');
+        return groqChat([{ role: 'system', content: SYS },
+          { role: 'user', content: 'Transliterate each line to Hinglish. Keep EXACTLY one line per input line with the same numbering, nothing else:\n\n' + lines }],
+          { temperature: 0.1 }).then(function (resp) {
+            var map = {};
+            String(resp).split('\n').forEach(function (ln) { var m = ln.match(/^\s*(\d+)[.)]\s*(.+)$/); if (m) map[+m[1]] = m[2].trim(); });
+            part.forEach(function (c, i) { if (map[i + 1]) { c.text = map[i + 1]; hitAll++; } else c.text = CPCaptions.devanagariToLatin(c.text); });
+          }, function () { part.forEach(function (c) { c.text = CPCaptions.devanagariToLatin(c.text); }); });
+      });
+    });
+    return chain.then(function () { return hitAll ? rc : mech(); });
   }
 
   /* "Transcribe + auto-correct": same transcription, then an automatic AI
