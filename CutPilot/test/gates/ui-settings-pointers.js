@@ -34,13 +34,6 @@ const { hits } = require('./ui-lib/words');
 
 /* A message is known by a piece of its own text. */
 const OTHER_OWNERS = [
-  ['Add a Deepgram or AssemblyAI key in Settings → Verbatim transcription.', 'retakes: verbatimTranscribe() names the Retake finder card by its old name, "Verbatim transcription"'],
-  ['This needs ffmpeg (Settings → ffmpeg).', 'retakes: runVerbatimRetakes() sends the owner to "Settings → ffmpeg" (the one tap is Settings → ⬇️ Set up audio engine)'],
-  ['Add a Deepgram or AssemblyAI key in Settings → Verbatim transcription to use this.', 'retakes: runVerbatimRetakes() names the Retake finder card by its old name'],
-  ['Smart Cleanup uses your free Groq key, and Groq did not accept it.', 'retakes: the Smart Cleanup key error names the service ("Groq")'],
-  ['Or set the exact path in Settings → ffmpeg path.', 'multicam: testAudioEngine()\'s report sends the owner to Terminal and to "Settings → ffmpeg path"'],
-  ['no audio engine (ffmpeg) — a long video would create one image per word', 'overlay: the self-test row names the program in brackets ("ffmpeg")'],
-  ['this audio engine cannot make the one overlay clip', 'overlay: the self-test row calls the long-video caption clip an "overlay clip"']
 ];
 
 /* The string literals of an ES5 source, with comments and regexes skipped. */

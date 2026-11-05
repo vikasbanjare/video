@@ -4706,8 +4706,8 @@
         'gradients and neon (Settings → ⬇️ Set up audio engine brings the full look)');
     }
     row(name, 'warn', resolveFfmpeg()
-      ? 'this audio engine cannot make the one overlay clip — a long video would create one image per word (Settings → ⬇️ Set up audio engine)'
-      : 'no audio engine (ffmpeg) — a long video would create one image per word (Settings → ⬇️ Set up audio engine)');
+      ? 'this audio engine cannot make the single caption clip for long videos — a long video would create one image per word (Settings → ⬇️ Set up audio engine)'
+      : 'no audio engine yet — a long video would create one image per word (Settings → ⬇️ Set up audio engine)');
   }
 
   function buildSelfTestReport(rows) {   // pure — proof-tested
@@ -17171,7 +17171,7 @@
   function smartCleanupErrMsg(e) {
     var k = e && e.cpKind;
     if (k === 'network' || k === 'request_failed') return 'Smart Cleanup could not reach the AI, so nothing was cut. Check your internet connection and try again.';
-    if (k === 'bad_key') return 'Smart Cleanup uses your free Groq key, and Groq did not accept it. Check the key in Settings → Auto-transcribe (the Speech key box) — copy it again, with no spaces at the ends.';
+    if (k === 'bad_key') return 'Smart Cleanup uses your free speech key, and it was not accepted. Check the key in Settings → Auto-transcribe (the Speech key box) — copy it again, with no spaces at the ends.';
     if (k === 'rate_limit') return 'Smart Cleanup stopped: your free Groq limit is used up for now, so nothing was cut. Wait a few minutes (the daily limit resets the next day) and try again.';
     if (k === 'no_credit') return 'Smart Cleanup stopped: your Groq account is out of credit, so nothing was cut. Top it up, then try again.';
     if (k === 'provider_down') return 'Smart Cleanup stopped: the AI service is having trouble on its end, so nothing was cut. This is not your setup — try again in a few minutes.';
@@ -17425,7 +17425,7 @@
   function verbatimTranscribe(clip, ff, src, opts) {
     opts = opts || {};
     var key = (settings.verbatimKey || '').trim();
-    if (!key) return Promise.reject(new Error('Add a Deepgram or AssemblyAI key in Settings → Verbatim transcription.'));
+    if (!key) return Promise.reject(new Error('Add your free retake key in Settings → Retake finder.'));
     var fs, os, pathMod;
     try { fs = nodeReq('fs'); os = nodeReq('os'); pathMod = nodeReq('path'); } catch (e) { return Promise.reject(e); }
     var audio = pathMod.join(os.tmpdir(), 'pulse-vb-' + Date.now() + '.mp3');
@@ -17476,8 +17476,8 @@
   }
   function runVerbatimRetakes() {
     var ff = resolveFfmpeg();
-    if (!ff) return toast('This needs ffmpeg (Settings → ffmpeg).', true);
-    if (!(settings.verbatimKey || '').trim()) return toast('Add a Deepgram or AssemblyAI key in Settings → Verbatim transcription to use this.', true);
+    if (!ff) return toast('This needs the audio engine (Settings → ⬇️ Set up audio engine).', true);
+    if (!(settings.verbatimKey || '').trim()) return toast('Add your free retake key in Settings → Retake finder to use this.', true);
     var prog = $('takes-progress'); prog.classList.remove('hidden'); prog.textContent = 'Reading your timeline…';
     var guard = null, src = null, clip = null, vbNotes = [], vbPartial = false;
     readCutSources().then(function (s) {
@@ -19103,8 +19103,7 @@
     var ff = resolveFfmpeg();
     report.push('ffmpeg: ' + (ff || 'NOT FOUND in common locations'));
     if (!ff) {
-      report.push('\nFix: open Terminal, run  brew install ffmpeg  then tap Test again.');
-      report.push('Or set the exact path in Settings → ffmpeg path.');
+      report.push('\nFix: tap Settings → ⬇️ Set up audio engine (free, one tap), then tap Test again.');
       box.textContent = report.join('\n');
       return;
     }
