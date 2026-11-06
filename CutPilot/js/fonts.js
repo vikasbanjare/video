@@ -248,6 +248,11 @@
       out.forEach(function (n) { if (!by[n.nameID]) by[n.nameID] = n.name; });
       var fam = by[16] || by[1], ps = by[6];
       if (fam && ps) faces.push({ family: fam, style: by[17] || by[2] || 'Regular', ps: ps.replace(/\s+/g, '') });
+      // the legacy family of a weight ("Inter Black", listed in the font
+      // picker too) gets its face as well: it had none, so picking it gave
+      // Premiere no PostScript name and it kept another font
+      if (by[16] && by[1] && ps && by[1].toLowerCase() !== by[16].toLowerCase())
+        faces.push({ family: by[1], style: by[2] || 'Regular', ps: ps.replace(/\s+/g, '') });
     });
     return faces;
   }

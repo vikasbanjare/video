@@ -1402,6 +1402,25 @@ console.log('fonts.js (installed-font discovery)');
   const fam = CPFonts.parseFamilyNames(sfntWithFamily('Times New Roman'));
   assert(fam.length === 1 && fam[0] === 'Times New Roman', 'parses a family name, keeping internal spaces');
   assert(CPFonts.parseFamilyNames(Buffer.from([1, 2, 3])).length === 0, 'too-short buffer yields no names');
+  // a weight's legacy family ("Inter Black") gets its PostScript face too:
+  // it is listed in the font picker, and had no face to send to Premiere
+  {
+    const recs = [[1, 'Inter Black'], [2, 'Regular'], [6, 'Inter-Black'], [16, 'Inter'], [17, 'Black']];
+    const strs = recs.map(r => Buffer.from(r[1].split('').map(c => [0, c.charCodeAt(0)]).flat()));
+    const nameLen = 6 + 12 * recs.length + strs.reduce((a, x) => a + x.length, 0);
+    const buf = Buffer.alloc(28 + nameLen);
+    buf.writeUInt32BE(0x00010000, 0); buf.writeUInt16BE(1, 4);
+    buf.write('name', 12, 'latin1'); buf.writeUInt32BE(28, 20); buf.writeUInt32BE(nameLen, 24);
+    buf.writeUInt16BE(0, 28); buf.writeUInt16BE(recs.length, 30); buf.writeUInt16BE(6 + 12 * recs.length, 32);
+    let off = 0;
+    recs.forEach((r, i) => { const at = 34 + i * 12; buf.writeUInt16BE(3, at); buf.writeUInt16BE(1, at + 2); buf.writeUInt16BE(0x0409, at + 4);
+      buf.writeUInt16BE(r[0], at + 6); buf.writeUInt16BE(strs[i].length, at + 8); buf.writeUInt16BE(off, at + 10); off += strs[i].length; });
+    let so = 28 + 6 + 12 * recs.length; strs.forEach(x => { x.copy(buf, so); so += x.length; });
+    const names = CPFonts.parseFamilyNames(buf), faces = CPFonts.parseFaces(buf);
+    const every = names.every(nm => faces.some(f => f.family === nm));
+    assert(every && faces.some(f => f.family === 'Inter Black' && f.ps === 'Inter-Black') && faces.some(f => f.family === 'Inter' && f.style === 'Black'),
+      'every family the font picker lists has a PostScript face, "Inter Black" included (' + JSON.stringify([names, faces]) + ')');
+  }
   assert(CPFonts.parseFamilyNames(Buffer.alloc(40)).length === 0, 'unrecognized font header yields no names');
 
   const win = CPFonts.systemFontDirs('win32', { WINDIR: 'C:\\Windows', LOCALAPPDATA: 'C:\\U\\L' });
