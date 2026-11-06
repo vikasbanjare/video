@@ -7104,7 +7104,7 @@
         // only the cards on screen are redrawn: all 125 were, 2½ times a
         // second, while 10 were visible (a steady ~7% of a core in Premiere)
         var b = cs[i].getBoundingClientRect();
-        if (b.bottom < -40 || b.top > vh + 40 || (!b.width && !b.height)) continue;
+        if (b.bottom <= 0 || b.top >= vh || (!b.width && !b.height)) continue;
         drawCardTickFrame(cs[i], _cardTick);
       }
       if (!any) stopCardAnimator();
