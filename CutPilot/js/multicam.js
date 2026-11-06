@@ -312,8 +312,13 @@
           var span = reactionSpan(sh.angle, t0 + maxShot, t0 + Math.max(minSeg, maxShot * 0.6),
                                   Math.min(sh.end - minSeg - cutawayHold, t0 + maxShot * 1.4), cutawayHold, sh.end - minSeg);
           var cs = span.start, cEnd = span.end;
-          split.push({ start: t0, end: cs, angle: sh.angle, back: t0 > sh.start });
           if (sh.end - cEnd < minSeg) cEnd = sh.end;       // no sliver of the speaker after the cutaway
+          // the cutaway is a shot too: never shorter than the shortest shot
+          // (a short "cut away every" with a long "shortest shot" made 2.6 s
+          // cutaways, or one that ended before it began); no room → no cutaway
+          if (cEnd - cs < minSeg - 1e-6) { cEnd = Math.min(sh.end, cs + minSeg); if (sh.end - cEnd < minSeg) cEnd = sh.end; }
+          if (cEnd - cs < minSeg - 1e-6 || cs - t0 < minSeg - 1e-6) break;
+          split.push({ start: t0, end: cs, angle: sh.angle, back: t0 > sh.start });
           split.push({ start: cs, end: cEnd, angle: alt, cutaway: true });
           t0 = cEnd;
         }

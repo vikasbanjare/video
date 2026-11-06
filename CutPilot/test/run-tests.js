@@ -2298,6 +2298,23 @@ console.log('script alignment (your script\'s words + the transcript\'s timing)'
   assert(del.length === 1 && Math.abs(del[0] - 6) < 1e-9, 'keep best: the take left hanging ("… sahi jagah par") is cut, the complete one kept (' + JSON.stringify(del) + ')');
 }
 
+{
+  // a cutaway in a long talk is a shot too: never under the shortest shot,
+  // never ending before it starts; the plan still covers the whole span
+  let bad = 0, n = 0, ex = '';
+  let seed = 9; const R = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  for (let c = 0; c < 600; c++) {
+    const total = 20 + R() * 200, cut = R() * total, regs = [[{ start: 0, end: cut }], [{ start: cut, end: total }]];
+    const o = { minSegment: [1.5, 2.5, 3.5, 5][c % 4], maxShot: [5, 10, 15, 30][(c >> 2) % 4], cutawayHold: 1 + R() * 4 };
+    const plan = CPMulticam.directorPlan(regs, total, o); n++;
+    let at = 0, ok = true;
+    for (const p of plan) { if (Math.abs(p.start - at) > 1e-6 || p.end <= p.start || (p.cutaway && p.end - p.start < o.minSegment - 1e-6)) ok = false; at = p.end; }
+    if (Math.abs(at - total) > 1e-6) ok = false;
+    if (!ok) { bad++; if (!ex) ex = JSON.stringify({ regs, total, o, plan: plan.map(p => [+p.start.toFixed(2), +p.end.toFixed(2), p.cutaway ? 'c' : '']) }).slice(0, 300); }
+  }
+  assert(bad === 0, 'Podcast cameras: every cutaway is at least the shortest shot and the plan covers the whole span (' + n + ' plans, ' + bad + ' off' + (ex ? ', e.g. ' + ex : '') + ')');
+}
+
 // ---- 🎙 podcast short pieces cover the kept stretch exactly once ----------
 {
   const PS = require(path.join(__dirname, '..', 'js', 'podshort.js'));
