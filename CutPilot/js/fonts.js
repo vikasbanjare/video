@@ -59,7 +59,10 @@
       if (so + len > b.length) continue;
       var raw = (platformID === 1) ? decodeLatin1(b, so, len) : decodeUTF16BE(b, so, len);
       var name = cleanName(raw);
-      if (name) out.push({ nameID: nameID, name: name });
+      // English (Windows 0x?09, Mac 0, Unicode) — a font that also carries a
+      // localized family name (IPAゴシック) listed it as a second font
+      var lang = u16(b, rec + 4), en = platformID === 0 || (platformID === 1 && lang === 0) || (platformID === 3 && (lang & 0x3FF) === 0x09);
+      if (name) out.push({ nameID: nameID, name: name, en: en });
     }
   }
 
@@ -215,6 +218,7 @@
       return [];
     }
     out = out.filter(function (n) { return n.nameID === 1 || n.nameID === 16; });
+    if (out.some(function (n) { return n.en; })) out = out.filter(function (n) { return n.en; });   // the English name when there is one
     // prefer the typographic family (16) over the legacy family (1); dedupe
     var pref = {}, seen = {}, list = [];
     out.forEach(function (n) { if (n.nameID === 16) pref[n.name.toLowerCase()] = 1; });
