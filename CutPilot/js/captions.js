@@ -150,9 +150,14 @@
   var _DEV_VIRAMA = '्', _DEV_ANUSVARA = 'ं', _DEV_CHANDRA = 'ँ', _DEV_VISARGA = 'ः';
   function devanagariToLatin(input) {
     if (!input || !/[ऀ-ॿ]/.test(input)) return input;   // no Devanagari → leave as-is
-    var chars = String(input).split(''), out = '';
+    // NFC writes ज़ ड़ फ़ … as the letter + a nukta (two characters, as the
+    // table has them; the one-character forms decompose to the same): read
+    // the pair together, or ज़िंदगी came out "ja़िndagee"
+    var src = String(input); if (src.normalize) src = src.normalize('NFC');
+    var chars = src.split(''), out = '';
     for (var i = 0; i < chars.length; i++) {
       var ch = chars[i], nxt = chars[i + 1];
+      if (nxt === '\u093C' && _DEV_C[ch + nxt] != null) { ch = ch + nxt; i++; nxt = chars[i + 1]; }
       if (_DEV_C[ch] != null) {
         var base = _DEV_C[ch];
         if (nxt === _DEV_VIRAMA) { out += base; i++; }                 // halant: bare consonant
@@ -591,8 +596,15 @@
       var joins = (code >= 0x0900 && code <= 0x0903) || (code >= 0x093A && code <= 0x094F && code !== 0x093D) ||
                   (code >= 0x0951 && code <= 0x0957) || code === 0x0962 || code === 0x0963 ||
                   code === 0x200C || code === 0x200D || code === 0xFE0F || (code >= 0x0300 && code <= 0x036F);
-      var afterVirama = out.length && out[out.length - 1].slice(-1) === '्';
-      if (out.length && (joins || afterVirama)) out[out.length - 1] += c;
+      var last = out.length ? out[out.length - 1] : '';
+      var afterVirama = last.slice(-1) === '्';
+      // emoji kept whole (older Premiere has no Intl.Segmenter): after a
+      // zero-width joiner (👨‍👩‍👧), a skin tone (👍🏽), a keycap (1️⃣), flag tags,
+      // and the second regional indicator of a flag (🇮🇳)
+      var afterZwj = last.slice(-1) === '\u200D';
+      var tone = /^\uD83C[\uDFFB-\uDFFF]$/.test(c), keycap = code === 0x20E3, tag = /^\uDB40[\uDC20-\uDC7F]$/.test(c);
+      var ri = /^\uD83C[\uDDE6-\uDDFF]$/.test(c), riPair = ri && /^\uD83C[\uDDE6-\uDDFF]$/.test(last);
+      if (out.length && (joins || afterVirama || afterZwj || tone || keycap || tag || riPair)) out[out.length - 1] += c;
       else out.push(c);
     }
     return out;
@@ -3571,8 +3583,8 @@
   // राज/राजा — must stand alone: "मैं दिल्ली गया" got ❤️, "आगरा" 🔥)
   var EMOJI_LEX = [
     [/\b(money|cash|paid|price|prices|cost|profit|revenue|rupees?|dollars?|lakhs?|crores?|paisa|paise|rupaye|kamai)\b|पैस[ाे]|रुपय[ेा]|कमाई|लाख|करोड़/i, '💰'],
-    [/\b(grow|growth|growing|increase|increasing|rising|rise|scale|scaling|boost|badh|badhega|badhegi)\b|बढ़/i, '📈'],
-    [/\b(drop|fall|falling|decrease|crash|collapse)\b|गिर/i, '📉'],
+    [/\b(grow|growth|growing|increase|increasing|rising|rise|scale|scaling|boost|badh|badhega|badhegi)\b|(?:^|[^\u0900-\u0963\u0966-\u097F])बढ़(?!िया)/i, '📈'],   // not बढ़िया (great)
+    [/\b(drop|fall|falling|decrease|crash|collapse)\b|(?:^|[^\u0900-\u0963\u0966-\u097F])गिर(?!ीश)/i, '📉'],   // not गिरीश (a name)
     [/\b(fire|hot|burn|burning|lit|heat|heatwaves?|aag)\b|(?:^|[^\u0900-\u0963\u0966-\u097F])आग(?![\u0900-\u0963\u0966-\u097F])/i, '🔥'],
     [/\b(idea|ideas|think|thinking|brain|smart|genius|soch|socho)\b|सोच|आइडिया/i, '💡'],
     [/\b(love|heart|care|caring|pyaar|pyar|dil)\b|प्यार|(?:^|[^\u0900-\u0963\u0966-\u097F])दिल(?![\u0900-\u0963\u0966-\u097F])/i, '❤️'],
@@ -3597,7 +3609,7 @@
     [/\b(sleep|sleeping|tired|exhausted|rest|neend)\b|नींद/i, '😴'],
     [/\b(happy|happiness|smile|joy|fun|khush|khushi)\b|खुश/i, '😊'],
     [/\b(sad|crying|pain|painful|hurt|dukh)\b|दुख|दर्द/i, '😢'],
-    [/\b(india|indian|desi|bharat)\b|भारत|इंडिया/i, '🇮🇳']
+    [/\b(india|indian|desi|bharat)\b|(?:^|[^\u0900-\u0963\u0966-\u097F])भारत(?!ी(?!य))|इंडिया/i, '🇮🇳']   // भारतीय yes, भारती (a name) no
   ];
   function emojiForText(text) {
     var t = String(text == null ? '' : text);
@@ -3871,8 +3883,12 @@
     for (i = 0; i < words.length; i++) {
       var w = words[i], o = _copyWord(w);
       if (w.end - w.start > cap) {
-        var prev = words[i - 1];
-        if (!prev || (w.start - prev.end) > 0.1) o.start = w.end - cap;   // first word after a pause
+        var prev = words[i - 1], nxw = words[i + 1];
+        // the next word starts INSIDE this one: the stretch is on its end side
+        // (moving its start past them put the words after it out of order —
+        // they flashed by a second late)
+        if (nxw && nxw.start < w.end - 1e-6) o.end = Math.min(w.start + cap, Math.max(nxw.start, w.start + 0.05));
+        else if (!prev || (w.start - prev.end) > 0.1) o.start = w.end - cap;   // first word after a pause
         else o.end = w.start + cap;                                       // the silence is after it
       }
       out.push(o);
@@ -4008,8 +4024,24 @@
       for (g = G; g >= 1; g--) { var st = D[g][at]; cuts.push([st.from, at]); at = st.from; }
       for (k = cuts.length - 1; k >= 0; k--) groups.push(cuts[k]);
     }
+    // A stretch with no sentence end and no pause (speech-to-text without
+    // punctuation, back to back) can run thousands of words, and pass 2 costs
+    // words² — 20k words took 25 s. Past 300 words it is cut first, at the
+    // cheapest grammatical break between words 150 and 250 of what is left.
+    function packLong(a, b) {
+      while (b - a > 300) {
+        var cut = -1, cbest = Infinity;
+        for (var k = a + 150; k <= a + 250; k++) {
+          var c = lineBreakCost(words[k - 1].text, words[k].text, ctx);
+          if (c < cbest) { cbest = c; cut = k; }
+        }
+        if (cut < 0) cut = a + 200;
+        packSeg(a, cut); a = cut;
+      }
+      packSeg(a, b);
+    }
     for (i = 0; i < words.length; i++) {
-      if (hardBreakAfter(i)) { packSeg(segStart, i + 1); segStart = i + 1; }
+      if (hardBreakAfter(i)) { packLong(segStart, i + 1); segStart = i + 1; }
     }
     return groups;
   }

@@ -2315,6 +2315,28 @@ console.log('script alignment (your script\'s words + the transcript\'s timing)'
   assert(bad === 0, 'Podcast cameras: every cutaway is at least the shortest shot and the plan covers the whole span (' + n + ' plans, ' + bad + ' off' + (ex ? ', e.g. ' + ex : '') + ')');
 }
 
+// ---- captions: an audit's findings ----------------------------------------
+{
+  const C = CPCaptions;
+  assert(C.devanagariToLatin('ज़िंदगी') === 'zindagee' && C.devanagariToLatin('फ़ोन') === 'fon' && C.devanagariToLatin('\u095B\u093F\u0902\u0926\u0917\u0940') === 'zindagee',
+    'Hinglish: ज़ / फ़ (letter + nukta, either way it is typed) become z / f (' + [C.devanagariToLatin('ज़िंदगी'), C.devanagariToLatin('फ़ोन')].join(', ') + ')');
+  const em = ['बहुत बढ़िया', 'दाम बढ़ेगा', 'गिरीश आया', 'भारती जी', 'भारतीय बाज़ार'].map(C.emojiForText);
+  assert(JSON.stringify(em) === JSON.stringify([null, '📈', null, null, '🇮🇳']), 'emoji: बढ़िया / गिरीश / भारती get none, बढ़ेगा / भारतीय do (' + JSON.stringify(em) + ')');
+  const cw = C.clampWordDurations([{ start: 0, end: 3, text: 'a' }, { start: 0.5, end: 0.8, text: 'b' }, { start: 0.9, end: 1.2, text: 'c' }, { start: 1.3, end: 1.6, text: 'd' }]);
+  let ord = true; for (let i = 1; i < cw.length; i++) if (cw[i].start < cw[i - 1].start) ord = false;
+  assert(ord && cw[0].start === 0 && cw[0].end <= 0.5 && cw[1].start === 0.5, 'a long word that the next words start inside is cut at its end, the words stay in order (' + JSON.stringify(cw) + ')');
+  const dense = []; for (let i = 0; i < 20000; i++) dense.push({ start: i * 0.3, end: i * 0.3 + 0.3, text: 'bhai' + (i % 50) });
+  const t0 = Date.now(), fr = C.buildCaptionFrames([], { anim: 'pop', wordCues: dense }), ms = Date.now() - t0;
+  const seen = []; fr.forEach(f => (f.words || []).forEach(w => { if (seen[seen.length - 1] !== w) seen.push(w); }));
+  assert(ms < 3000 && fr.length > 500, '20,000 words with no sentence end or pause are captioned in ' + ms + ' ms (was ~25 s), ' + fr.length + ' frames');
+  // graphemes without Intl.Segmenter (older Premiere): emoji kept whole
+  const key = require.resolve(path.join(__dirname, '..', 'js', 'captions.js')), keep = require.cache[key], SEG = Intl.Segmenter;
+  delete require.cache[key]; delete Intl.Segmenter;
+  let old; try { old = require(key); } finally { Intl.Segmenter = SEG; require.cache[key] = keep; }
+  const g = ['👨‍👩‍👧', '👍🏽', '🇮🇳', '1️⃣', 'क्षत्रिय'].map(x => old.graphemes(x).length);
+  assert(JSON.stringify(g) === '[1,1,1,1,3]', 'without Intl.Segmenter a family, a skin tone, a flag and a keycap emoji stay one piece each (' + JSON.stringify(g) + ')');
+}
+
 // ---- 🎙 podcast short pieces cover the kept stretch exactly once ----------
 {
   const PS = require(path.join(__dirname, '..', 'js', 'podshort.js'));
