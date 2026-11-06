@@ -159,6 +159,28 @@
     high:   { minseg: 1.5, maxshot: 10, cutaway: 2, leadin: 120 }
   };
 
+  /* "Is t inside one of these regions?" (start inclusive, end exclusive, both
+     less 1e-6, as the scans had it). Regions in time order that do not
+     overlap — what the mic finder makes — are searched by halves: on a 2-hour
+     podcast with choppy mics the whole-list scan per time step took seconds.
+     Any other list keeps the scan. */
+  function regionTest(regions) {
+    if (!regions || !regions.length) return function () { return false; };
+    var ordered = true;
+    for (var i = 1; i < regions.length; i++) if (!(regions[i].start >= regions[i - 1].end)) { ordered = false; break; }
+    if (!ordered) return function (t) {
+      for (var j = 0; j < regions.length; j++) if (t >= regions[j].start - 1e-6 && t < regions[j].end - 1e-6) return true;
+      return false;
+    };
+    return function (t) {
+      var lo = 0, hi = regions.length;              // first region with start - 1e-6 > t
+      while (lo < hi) { var m = (lo + hi) >> 1; if (regions[m].start - 1e-6 <= t) lo = m + 1; else hi = m; }
+      // the one before it, and (1e-6 slack at touching ends) the one before that
+      for (var k = lo - 1; k >= 0 && k >= lo - 2; k--) if (t >= regions[k].start - 1e-6 && t < regions[k].end - 1e-6) return true;
+      return false;
+    };
+  }
+
   function directorPlan(speakerRegions, duration, opts) {
     opts = opts || {};
     var step = opts.step || 0.12;
@@ -178,12 +200,10 @@
     function nextWide() { var a = wides[wideTurn % wides.length]; wideTurn++; return a; }
 
     // a camera mapped to null (no mic) is never "active" on its own audio
+    var inRegs = speakerRegions.map(regionTest);
     function activeAt(regions, t) {
-      if (!regions) return false;
-      for (var i = 0; i < regions.length; i++) {
-        if (t >= regions[i].start - 1e-6 && t < regions[i].end - 1e-6) return true;
-      }
-      return false;
+      var a0 = speakerRegions.indexOf(regions);
+      return a0 >= 0 ? inRegs[a0](t) : regionTest(regions)(t);
     }
 
     var n = Math.ceil(duration / step);
@@ -931,10 +951,11 @@
     var around = opts.around != null ? opts.around : 2.5;
     var nA = regions.length, out = [], a, k, b;
     for (a = 0; a < nA; a++) out.push([]);
+    var inRegs = regions.map(regionTest);
     function talkerAt(t, notA) {
       for (var x = 0; x < nA; x++) {
         if (x === notA || !regions[x]) continue;
-        for (var j = 0; j < regions[x].length; j++) if (t >= regions[x][j].start - 1e-6 && t < regions[x][j].end - 1e-6) return x;
+        if (inRegs[x](t)) return x;
       }
       return -1;
     }
