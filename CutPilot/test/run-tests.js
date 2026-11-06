@@ -2337,6 +2337,22 @@ console.log('script alignment (your script\'s words + the transcript\'s timing)'
   assert(JSON.stringify(g) === '[1,1,1,1,3]', 'without Intl.Segmenter a family, a skin tone, a flag and a keycap emoji stay one piece each (' + JSON.stringify(g) + ')');
 }
 
+{
+  // a face window never wider or taller than the camera's picture (a phone
+  // camera in a 1:1 / 4:5 short: ffmpeg refused the crop)
+  const PS = require(path.join(__dirname, '..', 'js', 'podshort.js'));
+  let bad = 0, n = 0, ex = '';
+  let seed = 21; const R = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const SRC = [{ w: 1080, h: 1920 }, { w: 1080, h: 1350 }, { w: 1920, h: 1080 }, { w: 1440, h: 1080 }];
+  for (let c = 0; c < 3000; c++) {
+    const src = SRC[c % 4], aspect = [9 / 16, 1, 4 / 5, 2, 1.6, 9 / 32][Math.floor(R() * 6)];
+    const face = { cx: R(), cy: R(), s: 0.02 + R() * 0.4 }, o = { minHeight: [0.3, 0.5, undefined][c % 3] };
+    const w = PS.faceCrop(face, src, aspect, o); n++;
+    if (!(w.w > 0 && w.h > 0 && w.x >= 0 && w.y >= 0 && w.x + w.w <= src.w && w.y + w.h <= src.h)) { bad++; if (!ex) ex = JSON.stringify({ face, src, aspect, o, w }); }
+  }
+  assert(bad === 0, 'Shorts: every face window fits inside the camera picture (' + n + ' windows, ' + bad + ' off' + (ex ? ', e.g. ' + ex : '') + ')');
+}
+
 // ---- 🎙 podcast short pieces cover the kept stretch exactly once ----------
 {
   const PS = require(path.join(__dirname, '..', 'js', 'podshort.js'));

@@ -427,7 +427,10 @@
     }
     var fw = face.s * src.w, minH = (o.minHeight || 0.5) * src.h;
     var wantW = fw / (o.faceShare || 0.34);
-    if (wantW < cw) { cw = Math.max(minH * aspect, wantW); ch = cw / aspect; }
+    // never past the biggest window the frame holds: a small face on a phone
+    // (portrait) camera in a 1:1 / 4:5 cell asked for a window wider than the
+    // picture, and ffmpeg refused the crop ("Invalid too big")
+    if (wantW < cw) { cw = Math.min(cw, Math.max(minH * aspect, wantW)); ch = cw / aspect; }
     var cx = face.cx * src.w, cy = face.cy * src.h;
     var x = Math.max(0, Math.min(src.w - cw, cx - cw / 2));
     var y = Math.max(0, Math.min(src.h - ch, cy - ch * 0.36));      // the face's middle at 36% from the top
