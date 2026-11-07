@@ -65,6 +65,21 @@
      the open sequence back. A transcript, AI fix, translation or speaker pass
      that finished after the owner opened another sequence was saved to THAT
      one (and the sequence it was made for had none). */
+  /* Right before captions are placed: is the sequence they were made for still
+     the one open? A long job (a long-video overlay takes minutes) finished
+     after the owner opened another sequence put the first one's captions on
+     it, on the first one's track number. Then nothing is placed and the
+     message says where they belong. No answer from Premiere → go on. */
+  function stillOnJobSeq(jobEnv) {
+    if (!jobEnv || !CPBridge.isCEP()) return Promise.resolve();
+    return CPBridge.callHost('CP_getEnv').then(function (env) {
+      if (env && env.sequenceName && envKey(env) !== envKey(jobEnv)) {
+        var e = new Error('You opened "' + env.sequenceName + '" while these captions were being made for "' +
+          (jobEnv.sequenceName || 'another sequence') + '". Nothing was placed — open that sequence and tap again.');
+        e.seqMoved = true; throw e;
+      }
+    }, function () {});
+  }
   function withJobSeq(jobEnv, fn) {
     var cur = _env;
     if (!jobEnv || !cur || envKey(jobEnv) === envKey(cur)) return fn();
@@ -2693,7 +2708,7 @@
   }
 
   // ----------------------------------------------------------- chapters ----
-  var _chapters = null;
+  var _chapters = null, _chaptersEnv = null;   // and the sequence they were made on
   /* Chapter titles a viewer can read. The local titles are the 1–2 words a
      chapter says most ("Person Increase", "Cloud Chat" on the owner's talk);
      with the AI key set, each chapter's own words go to the AI for a 2–5 word
@@ -2729,7 +2744,7 @@
       var cues;
       try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
       var minSec = parseInt($('ch-min').value, 10) || 30;
-      _chapters = CPChapters.buildChapters(cues, { minChapterSec: minSec });
+      _chapters = CPChapters.buildChapters(cues, { minChapterSec: minSec }); _chaptersEnv = state.env;
       if (!_chapters.length) return toast('Couldn\'t build chapters from that transcript.', true);
       $('ch-out').textContent = CPChapters.formatChapters(_chapters);
       $('ch-results').classList.remove('hidden');
@@ -2743,6 +2758,10 @@
     });
     if ($('btn-ch-markers')) $('btn-ch-markers').addEventListener('click', function () {
       if (!_chapters) return;
+      // the chapters of THIS sequence only: made on one and tapped on the
+      // next, they put the first one's markers on it
+      if (_chaptersEnv && state.env && envKey(_chaptersEnv) !== envKey(state.env))
+        return toast('These chapters were made for "' + (_chaptersEnv.sequenceName || 'another sequence') + '". Open it to add them, or tap Make chapters again here.', true);
       CPBridge.callHost('CP_addMarkers', {
         ranges: _chapters.map(function (c) { return { start: c.start, end: c.start }; }),
         label: 'Chapter',
@@ -3668,7 +3687,12 @@
   function maskProfanity(text) { return String(text).replace(_profRe, function (m) { return maskWord(m); }); }
   function censorEnabled() { var c = $('c-censor'); return !!(c && c.checked); }
 
-  function readSelectedTranscript() {
+  /* raw: the words as they are stored, without the "Hide swear words" mask.
+     Passes that REWRITE and save the transcript (AI fix, translate, speakers,
+     ✏️ Review & edit) read it raw — they baked "f**k" into the saved words, so
+     turning the option off no longer brought them back. The mask is for
+     captions and exports only. */
+  function readSelectedTranscript(raw) {
     if (!state.transcript) throw new Error('No transcript yet — tap "Get one →" for the 1-minute steps.');
     var text;
     try { text = nodeReq('fs').readFileSync(state.transcript.path, 'utf8'); }
@@ -3681,13 +3705,13 @@
     // clean OVERLAPPING duplicate lines here too, so transcripts saved by older
     // builds (the doubles already baked into the cache) come out right
     cues = CPCaptions.dedupeRepeatedCues(cues);
-    if (censorEnabled()) cues = cues.map(function (c) { c.text = maskProfanity(c.text); return c; });
+    if (censorEnabled() && raw !== true) cues = cues.map(function (c) { c.text = maskProfanity(c.text); return c; });
     // Attach the REAL per-word timing so grouping can follow pauses inside a
     // line. Every site that changes state.transcript keeps transcriptWords in
     // step (nulling it for hand-picked/edited files), so these always match.
     if (state.transcriptWords && state.transcriptWords.length) {
       var wsAtt = CPCaptions.dedupeRepeatedCues(state.transcriptWords, { word: true });
-      if (censorEnabled()) wsAtt = wsAtt.map(function (w) { return { start: w.start, end: w.end, text: maskProfanity(w.text) }; });
+      if (censorEnabled() && raw !== true) wsAtt = wsAtt.map(function (w) { return { start: w.start, end: w.end, text: maskProfanity(w.text) }; });
       cues.words = wsAtt;
     }
     return cues;
@@ -3947,7 +3971,7 @@
     if (!CPBridge.isCEP()) return toast('AI fixing needs Premiere.', true);
     if (!state.transcript) return toast('Transcribe or load a transcript first.', true);
     if (state.aiBusy) return toast('Hang on — an AI step is already running…');
-    var cues; try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
+    var cues; try { cues = readSelectedTranscript(true); } catch (e) { return toast(e.message, true); }
     if (!cues.length) return toast('The transcript is empty.', true);
     var lines = cues.map(function (c) { return c.text; });
     var vocab = getVocab();
@@ -4048,7 +4072,7 @@
     if (!CPBridge.isCEP()) return toast('Translation needs Premiere.', true);
     if (!state.transcript) return toast('Transcribe or load a transcript first.', true);
     if (state.aiBusy) return toast('Hang on — an AI step is already running…');
-    var cues; try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
+    var cues; try { cues = readSelectedTranscript(true); } catch (e) { return toast(e.message, true); }
     if (!cues.length) return toast('The transcript is empty.', true);
     var lines = cues.map(function (c) { return c.text; });
     var vocab = getVocab();
@@ -4135,7 +4159,7 @@
     if (!CPBridge.isCEP()) return toast('Speaker detection needs Premiere.', true);
     if (!state.transcript) return toast('Transcribe or load a transcript first.', true);
     if (state.aiBusy) return toast('Hang on — an AI step is already running…');
-    var cues; try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
+    var cues; try { cues = readSelectedTranscript(true); } catch (e) { return toast(e.message, true); }
     if (!cues.length) return toast('The transcript is empty.', true);
     var lines = cues.map(function (c) { return c.text; });
     state.aiBusy = true;
@@ -4201,7 +4225,7 @@
   var _treMode = 'transcript';   // 'transcript' = edit words; 'captions' = edit placed captions
   function openTranscriptEditor() {
     var cues;
-    try { cues = readSelectedTranscript(); }
+    try { cues = readSelectedTranscript(true); }
     catch (e) { return toast(e.message, true); }
     _treMode = 'transcript';
     _treCues = cues.map(function (c) { return { start: c.start, end: c.end, text: c.text }; });
@@ -7476,10 +7500,11 @@
       state.mogrtTextStyle = t.edits.textStyle || null;
       state.mogrtRBSwap = !!t.edits.rbSwap;
       state.mogrtParamsPath = t.path;
-      if (t.edits.prem) setPremOpts(t.edits.prem);
+      premLookOpen(t.edits.prem || null);
     } else if (state.mogrtParamsFrom && state.mogrtParamsFrom !== 'base' && state.mogrtParamsPath === t.path) {
       state.mogrtParams = []; state.mogrtTextStyle = null; state.mogrtRBSwap = false; state.mogrtParamsPath = null;
     }
+    if (!t.edits) premLookOpen(null);
     state.mogrtParamsFrom = from;
     try { state.selectedMogrtBase = mogrtCardStyle(t); } catch (eBase) { state.selectedMogrtBase = null; }
     $('ms-name').textContent = t.name;
@@ -9344,6 +9369,7 @@
     state.mogrtParams = []; state.mogrtTextStyle = null; state.mogrtRBSwap = false; state.mogrtParamsPath = null;
     box = box || $('tpl-params');
     if (box && box.id === 'ms-customizer') {
+      _premLookActive = false;   // Reset: back to Auto for the owner, as asked
       setPremOpts(null);
       state.mogrtParamsFrom = 'base';
       var tpl = state.selectedMogrtTpl;
@@ -10792,6 +10818,7 @@
       toast('Open a sequence in the timeline, click it once, then tap Add again.', true);
       return;
     }
+    opts._jobEnv = opts._jobEnv || state.env;   // checked again right before placing
 
     // Segment restyle: keep only the cues that fall inside the selected range.
     // (wholeCards builds every caption as a full run would, then keeps the
@@ -10929,7 +10956,7 @@
         // has clips (one-caption fix, a range restyle, "Add captions" again):
         // a still at its default length covered the captions after it there
         if (single || overwriteOnTrack || placeArgs.replaceTrack) placeArgs.exact = true;
-        return CPBridge.callHost('CP_placeCaptionImages', placeArgs);
+        return stillOnJobSeq(opts._jobEnv).then(function () { return CPBridge.callHost('CP_placeCaptionImages', placeArgs); });
       }).then(function (r) {
         setCaptionBusy(false);
         capProgress(null);
@@ -10998,12 +11025,17 @@
     return [];
   }
 
+  // ONE audio context for every preview: a new one per preview (each change of
+  // the effect plays one) was never closed, and they piled up over a session
+  var _sfxAC = null;
   function sfxPreview() {
     if (typeof CPSfx === 'undefined') return;
     var id = $('sfx-effect').value, vol = (parseInt($('sfx-vol').value, 10) || 80) / 100;
     try {
       var AC = window.AudioContext || window.webkitAudioContext;
-      var ac = new AC();
+      if (!_sfxAC || _sfxAC.state === 'closed') _sfxAC = new AC();
+      var ac = _sfxAC;
+      if (ac.state === 'suspended' && ac.resume) { try { ac.resume(); } catch (eR) {} }
       var s = CPSfx.synth(id), sr = CPSfx.SAMPLE_RATE;
       var buf = ac.createBuffer(1, s.length, sr), ch = buf.getChannelData(0);
       for (var i = 0; i < s.length; i++) ch[i] = s[i] * vol;
@@ -11751,7 +11783,7 @@
       return CPBridge.callHost('CP_findPulseCaptionTrack', { kind: 'overlay' }).then(function (f) { return f && f.track; }, function () { return null; });
     }).then(function (found) {
       if (found && !placeArgs.replaceTrack) placeArgs.replaceTrack = found;
-      return CPBridge.callHost('CP_placeOverlay', placeArgs);
+      return stillOnJobSeq(opts && opts._jobEnv).then(function () { return CPBridge.callHost('CP_placeOverlay', placeArgs); });
     }).then(function (r) {
       setCaptionBusy(false); capProgress(null);
       // Recorded as the current caption job, so edit words / restyle keep
@@ -13320,12 +13352,22 @@
     }
     return state.prem;
   }
-  function savePremOpts() { try { localStorage.setItem('cutpilot.premium', JSON.stringify(premOpts())); } catch (e) {} }
+  /* A saved look ("＋ Save as custom") brings its own layout while it is
+     open — it used to overwrite the owner's own settings for good, so every
+     plain card (and the next insert) opened with that look's words / case /
+     position. While a look is open nothing is saved over the owner's; a plain
+     card brings the owner's own back. */
+  var _premLookActive = false;
+  function savePremOpts() { if (_premLookActive) return; try { localStorage.setItem('cutpilot.premium', JSON.stringify(premOpts())); } catch (e) {} }
   function setPremOpts(o) {
     var cur = premOpts(), k;
     for (k in PREM_DEFAULTS) if (PREM_DEFAULTS.hasOwnProperty(k)) cur[k] = (o && o.hasOwnProperty(k)) ? o[k] : PREM_DEFAULTS[k];
     savePremOpts();
     return cur;
+  }
+  function premLookOpen(look) {
+    if (look) { _premLookActive = true; setPremOpts(look); return; }
+    if (_premLookActive) { _premLookActive = false; state.prem = null; premOpts(); }   // the owner's own, as saved
   }
 
   /* What a template's definition.json says about its geometry: comp size,
@@ -13981,6 +14023,8 @@
       }).catch(function () { applyMogrtWithPath(mogrtPath, btn, true, opts); });
       return;
     }
+    if (!opts) opts = {};
+    opts._jobEnv = opts._jobEnv || state.env;
     var cues;
     try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
     var built = null, tcues, words;
@@ -14039,7 +14083,7 @@
       // owner's "premium captions are not working" left nothing to go on)
       return grabFrames(visibilityTimes(tcues), 'before').catch(function () { return null; }).then(function (bf) {
       premBefore = bf;
-      return CPBridge.callHost('CP_insertMogrtCaptions', {
+      return stillOnJobSeq(opts && opts._jobEnv).then(function () { return CPBridge.callHost('CP_insertMogrtCaptions', {
         mogrtPath: mogrtPath, cues: tcues, videoTrack: null, audioTrack: 0,
         // maxSpeed: how far "stretch" may speed a template's own animation up
         // (100 = its natural pace; the old Animation-speed control is gone)
@@ -14052,7 +14096,7 @@
         fitMode: built ? built.fitMode : 'contain',
         posYPct: built ? built.posYPct : null,                                // whole graphic at the caption row
         sizeFit: built ? built.sizeFit : null                                 // caption size, even if its control is refused
-      });
+      }); });
       });
     }).then(function (r) {
       if (r == null) return;
@@ -15289,6 +15333,7 @@
      are captioned, not the whole transcript's. */
   function applyEditableStyle(given) {
     if (given && !given.cues) given = null;   // a click event is not a short
+    var edJobEnv = state.env;                 // checked again right before placing
     if (!CPBridge.isCEP()) return toast('Editable captions need Premiere (open Pulse inside Premiere).', true);
     // Use the editor-aware preset so the placed caption matches the preview:
     // your chosen text colour, highlight colour and box colour all carry through
@@ -15417,7 +15462,7 @@
         // the frames before the captions go in — compared with after, to see they show
         return grabFrames(visibilityTimes(tcues), 'before').catch(function () { return null; }).then(function (bf) {
           edBefore = bf;
-          return CPBridge.callHost('CP_insertMogrtCaptions', {
+          return stillOnJobSeq(edJobEnv).then(function () { return CPBridge.callHost('CP_insertMogrtCaptions', {
           mogrtPath: bb.path, cues: tcues, videoTrack: null, audioTrack: 0,
           params: params, textStyle: textStyle, stretch: false, replaceTrack: reuseTrack,
           captionNames: captionGraphicNames(bb.path),
@@ -15432,7 +15477,7 @@
           // lets the host force text VISIBLE on any clip whose sweep fails.
           revealSpoken: (entrance === 'spoken'),
           anim: (entrance !== 'none' && entrance !== 'spoken' ? entrance : null), animSpeed: 1
-        });
+        }); });
         });
       });
     }).then(function (r) {
@@ -17069,7 +17114,7 @@
         if ($('takes-results')) $('takes-results').classList.add('hidden');
         var n = (r.cuts != null) ? r.cuts : removed.length;
         var secs = (r.removedSeconds != null) ? r.removedSeconds : removed.reduce(function (a, x) { return a + (x.end - x.start); }, 0);
-        markStepDone('silence'); toast('🎬 Removed ' + n + ' take' + (n === 1 ? '' : 's') + ' (' + secs.toFixed(1) + 's). Transcript auto-synced — run any other Auto-Edit step or add captions, no re-transcribe needed. ⌘Z / Ctrl+Z undoes it.');
+        markStepDone('silence'); toast('🎬 Removed ' + n + ' take' + (n === 1 ? '' : 's') + ' (' + secs.toFixed(1) + 's). Transcript auto-synced — run any other Auto-Edit step or add captions, no re-transcribe needed. ' + backupText(r));
       }).catch(function (e) { toast('Take cut failed: ' + e.message, true); });   // the list stays: nothing was cut
   }
   if ($('btn-takes-apply')) $('btn-takes-apply').addEventListener('click', function () { applyTakes(true); });
@@ -19026,6 +19071,16 @@
         }
         return outPath;
       });
+    }).then(function (outPath) {
+      // the pieces are in the stitched file now: free them (gigabytes on an
+      // hour of podcast, left behind every run); the stitched file stays —
+      // Premiere imports it from here
+      segFiles.concat([pathMod.join(dir, 'list.txt')]).forEach(function (f) { try { fs.unlinkSync(f); } catch (eU) {} });
+      return outPath;
+    }, function (e) {
+      // failed: nothing here is used — the whole folder goes
+      try { fs.readdirSync(dir).forEach(function (f) { try { fs.unlinkSync(pathMod.join(dir, f)); } catch (eU) {} }); fs.rmdirSync(dir); } catch (eD) {}
+      throw e;
     });
   }
   function runSpeakerReframe() {
