@@ -2372,6 +2372,18 @@ console.log('script alignment (your script\'s words + the transcript\'s timing)'
   assert(bad === 0, 'Shorts: every face window fits inside the camera picture (' + n + ' windows, ' + bad + ' off' + (ex ? ', e.g. ' + ex : '') + ')');
 }
 
+// ---- 📣 publish kit: the AI call stays small, hashtags are clean ----------
+{
+  const vm = require('vm'), win = {};
+  const ctx = { window: win, document: { readyState: 'complete', getElementById: function () { return null; } } };
+  vm.createContext(ctx); vm.runInContext(require('fs').readFileSync(path.join(__dirname, '..', 'js', 'publish.js'), 'utf8'), ctx);
+  const P = win.CPPublish;
+  const d = P.digest([{ text: 'शब्द '.repeat(10000) }, { text: 'end' }]);
+  assert(d.length <= 12000, 'publish kit: one huge transcript line still fits the 12,000-letter budget (' + d.length + ')');
+  const h = P.normalize('{"hashtags":["#Money","money","#","##"," # ","#पैसा।","#Personal Finance"]}').hashtags;
+  assert(JSON.stringify(h) === '["#Money","#पैसा","#PersonalFinance"]', 'publish kit: hashtags are one clean #word each, no empty "#", no repeats (' + JSON.stringify(h) + ')');
+}
+
 // ---- 🎙 podcast short pieces cover the kept stretch exactly once ----------
 {
   const PS = require(path.join(__dirname, '..', 'js', 'podshort.js'));

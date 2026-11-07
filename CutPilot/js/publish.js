@@ -20,7 +20,11 @@
     if (all.length <= maxChars) return all;
     var avg = all.length / lines.length, keep = Math.max(1, Math.floor(maxChars / avg)), step = lines.length / keep, out = [];
     for (var i = 0; i < keep; i++) out.push(lines[Math.floor(i * step)]);
-    return out.join('\n');
+    // a picked line can be far longer than the average (one huge line from a
+    // plain-text transcript, or short and long lines mixed): each one shortened
+    // to its share and the whole cut at the budget, so the AI call stays small
+    var per = Math.max(80, Math.floor(maxChars / keep) - 1);
+    return out.map(function (l) { return l.length > per ? l.slice(0, per) : l; }).join('\n').slice(0, maxChars);
   }
 
   function brandName() { try { return (window.CPBrand && CPBrand.get().channel) || ''; } catch (e) { return ''; } }
@@ -48,7 +52,14 @@
   function normalize(r) {
     r = parseReply(r) || {};
     function strs(a, n) { return (Array.isArray(a) ? a : []).map(function (x) { return String(x || '').trim(); }).filter(Boolean).slice(0, n); }
-    var tags = strs(r.hashtags, 8).map(function (h) { h = h.replace(/\s+/g, ''); return h.charAt(0) === '#' ? h : '#' + h; });
+    // one clean #word each: no "#", "##" or "# !" with nothing in it, no
+    // punctuation or danda inside, no repeats (the AI's list had all three)
+    var seenTag = {};
+    var tags = (Array.isArray(r.hashtags) ? r.hashtags : []).map(function (h) {
+      return String(h || '').replace(/[^A-Za-z0-9_\u0900-\u0963\u0966-\u097F]+/g, '');
+    }).filter(function (h) {
+      var k = h.toLowerCase(); if (!h || seenTag[k]) return false; seenTag[k] = 1; return true;
+    }).slice(0, 8).map(function (h) { return '#' + h; });
     return { titles: strs(r.titles, 3), description: String(r.description || '').trim(), hashtags: tags,
              tags: strs(r.tags, 15), pinned: String(r.pinned || '').trim() };
   }
