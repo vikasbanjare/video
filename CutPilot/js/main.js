@@ -57,8 +57,25 @@
      sequence writes state.env, so that one write parks the words of the
      sequence being left and brings back the next one's — or starts empty and
      looks for them (findTranscript). */
-  var TRANSCRIPT_KEYS = ['transcript', 'transcriptWords', 'transcriptMedia', 'transcriptPlacement', 'transcriptManual', 'lastCaptionJob'];
-  var _seqWords = {}, _envKey = null, _env = null;
+  // (the camera plan too: a plan made on one sequence was applied to the next
+  // one opened, and Shorts reused it there)
+  var TRANSCRIPT_KEYS = ['transcript', 'transcriptWords', 'transcriptMedia', 'transcriptPlacement', 'transcriptManual', 'lastCaptionJob', 'plan', 'mcApplied'];
+  var _seqWords = {}, _envKey = null, _env = null, _quietSwap = false;
+  /* Run fn with the words of the sequence a job STARTED on in state, then put
+     the open sequence back. A transcript, AI fix, translation or speaker pass
+     that finished after the owner opened another sequence was saved to THAT
+     one (and the sequence it was made for had none). */
+  function withJobSeq(jobEnv, fn) {
+    var cur = _env;
+    if (!jobEnv || !cur || envKey(jobEnv) === envKey(cur)) return fn();
+    _quietSwap = true;
+    try { state.env = jobEnv; return fn(); }
+    finally {
+      state.env = cur; _quietSwap = false;
+      // what the panel shows is the open sequence's again
+      try { refreshMogrtSheetTr(); refreshMogrtEditorTr(); } catch (eR) {}
+    }
+  }
   function envKey(e) { return e ? (e.sequenceId || e.sequenceName || null) : null; }
   Object.defineProperty(state, 'env', {
     enumerable: true,
@@ -74,7 +91,7 @@
         _seqWords[_envKey] = keep;
       }
       _envKey = k;
-      if (!first) {
+      if (!first && !_quietSwap) {
         try { diag('transcript', 'sequence changed → ' + (e.sequenceName || k) + (state.transcript ? ': its own words are back' : ': no words for it yet')); } catch (eD) {}
         if (!state.transcript && typeof findTranscript === 'function') { try { findTranscript(); } catch (eF) {} }
       }
@@ -375,8 +392,9 @@
   })();
 
   function fmt(sec) {
-    var m = Math.floor(sec / 60);
-    var s = (sec - m * 60).toFixed(2);
+    // rounded to hundredths FIRST: 59.996 s read "0:60.00", now "1:00.00"
+    var cs = Math.round((+sec || 0) * 100), m = Math.floor(cs / 6000);
+    var s = ((cs - m * 6000) / 100).toFixed(2);
     return m + ':' + (s < 10 ? '0' : '') + s;
   }
 
@@ -1979,6 +1997,7 @@
 
   function autoTranscribe(viaSwitch) {
     if (state.transcribing) return toast('Already transcribing — hang tight, this can take a minute…');
+    var jobEnv = state.env;   // the words belong to this sequence, whatever is open when they arrive
     // every Transcribe button follows ✨ Fix misheard words with AI
     if (viaSwitch !== true) state.autoFixAfter = aiFixWanted() && !!cpKey();
     var cloud = (resolveQuality() === 'cloud-groq');
@@ -2323,9 +2342,6 @@
           return wordsReady.then(function () {
             var placed = placeTranscript(heard, insts);
             var cues = placed.cues;
-            state.transcriptWords = placed.words;
-            state.transcriptMedia = clip.mediaPath;
-            state.transcriptPlacement = { mediaPath: clip.mediaPath, pieces: insts, inOut: res.inOut || null };
             var finalPath = pathMod.join(os.tmpdir(), 'cutpilot-transcript-' + stamp + '.srt');
             fs.writeFileSync(finalPath, CPCaptions.toSRT(cues), 'utf8');
             try { fs.unlinkSync(wav); } catch (eU) {}
@@ -2333,8 +2349,13 @@
             // the pieces kept to carry on after a failure are not needed now
             // (the whole transcript is saved): free them (MBs on a long podcast)
             try { var pk = _asrPieceKey; Object.keys(_asrPieces).forEach(function (k) { if (pk && k.indexOf(pk + '|') === 0) delete _asrPieces[k]; }); } catch (eFree) {}
-            state.transcript = { label: 'Pulse transcript (' + cues.length + ' lines)', path: finalPath, mtime: 1e16 };
-            state.transcriptManual = true;
+            withJobSeq(jobEnv, function () {
+              state.transcriptWords = placed.words;
+              state.transcriptMedia = clip.mediaPath;
+              state.transcriptPlacement = { mediaPath: clip.mediaPath, pieces: insts, inOut: res.inOut || null };
+              state.transcript = { label: 'Pulse transcript (' + cues.length + ' lines)', path: finalPath, mtime: 1e16 };
+              state.transcriptManual = true;
+            });
             $('tr-help').classList.add('hidden');
             refreshMogrtSheetTr(); refreshMogrtEditorTr();
             var span = fmt(cues[0].start) + '–' + fmt(cues[cues.length - 1].end);
@@ -2357,7 +2378,9 @@
     }).then(function () {
       setTranscribing(false);
       // "Transcribe + auto-correct" → run the AI proofread now that words exist.
-      if (state.autoFixAfter) { state.autoFixAfter = false; if (state.transcript) cleanupTranscript(); }
+      // (only on the sequence the words were made for: the owner may have
+      // opened another one meanwhile — its own words are not this fix's)
+      if (state.autoFixAfter) { state.autoFixAfter = false; if (state.transcript && envKey(state.env) === envKey(jobEnv)) cleanupTranscript(); }
     }, function (e) {
       var wasStopped = trStopped() || (e && e.stopped);
       setTranscribing(false); state.autoFixAfter = false;
@@ -3920,6 +3943,7 @@
     return null;
   }
   function cleanupTranscript() {
+    var jobEnv = state.env;   // the result belongs to this sequence, whatever is open when it arrives
     if (!CPBridge.isCEP()) return toast('AI fixing needs Premiere.', true);
     if (!state.transcript) return toast('Transcribe or load a transcript first.', true);
     if (state.aiBusy) return toast('Hang on — an AI step is already running…');
@@ -3998,13 +4022,15 @@
           setTranscriptBar('ok', '✅', 'Checked — the transcript already looks clean.', 'Change');
           return toast('✨ AI checked your words — nothing needed fixing.' + (rejected ? ' (Skipped ' + rejected + ' risky rewrite' + (rejected === 1 ? '' : 's') + '.)' : ''));
         }
-        installNewTranscript(out, 'AI-corrected (' + out.length + ' lines)', 'fixed', true);
-        // keep the word-by-word highlight in sync with the corrected text so
-        // karaoke/reveal/Editorial show the FIXED words (not the raw ones).
-        if (state.transcriptWords && state.transcriptWords.length) {
-          var rw = reflowWordTimingFromLines(out, state.transcriptWords, cues);
-          if (rw) state.transcriptWords = rw;
-        }
+        withJobSeq(jobEnv, function () {
+          installNewTranscript(out, 'AI-corrected (' + out.length + ' lines)', 'fixed', true);
+          // keep the word-by-word highlight in sync with the corrected text so
+          // karaoke/reveal/Editorial show the FIXED words (not the raw ones).
+          if (state.transcriptWords && state.transcriptWords.length) {
+            var rw = reflowWordTimingFromLines(out, state.transcriptWords, cues);
+            if (rw) state.transcriptWords = rw;
+          }
+        });
         setTranscriptBar('ok', '✅', 'AI fixed ' + changed + ' line' + (changed === 1 ? '' : 's') + ' — all ' + out.length + ' kept.', 'Change');
         toast('✨ AI fixed ' + changed + ' line' + (changed === 1 ? '' : 's') + '. e.g. ' + samples.join('; ') +
               (changed > samples.length ? '…' : '') + (rejected ? (' · skipped ' + rejected + ' risky rewrite' + (rejected === 1 ? '' : 's')) : '') +
@@ -4018,6 +4044,7 @@
   }
 
   function translateTranscript(code, name) {
+    var jobEnv = state.env;   // the result belongs to this sequence, whatever is open when it arrives
     if (!CPBridge.isCEP()) return toast('Translation needs Premiere.', true);
     if (!state.transcript) return toast('Transcribe or load a transcript first.', true);
     if (state.aiBusy) return toast('Hang on — an AI step is already running…');
@@ -4089,8 +4116,10 @@
         var carried = (code === 'hinglish' && state.transcriptWords && state.transcriptWords.length)
           ? CPCaptions.carryWordTiming(cues, out.map(function (o) { return o.text; }), state.transcriptWords) : null;
         if (carried && carried.matched < carried.lines * 0.7) carried = null;
-        installNewTranscript(out, 'Translated → ' + name + ' (' + out.length + ' lines)', 'translated-' + (code || 'xx'), !!carried);
-        if (carried) state.transcriptWords = carried.words;
+        withJobSeq(jobEnv, function () {
+          installNewTranscript(out, 'Translated → ' + name + ' (' + out.length + ' lines)', 'translated-' + (code || 'xx'), !!carried);
+          if (carried) state.transcriptWords = carried.words;
+        });
         setTranscriptBar('ok', '✅', 'Translated to ' + name + ' — ' + out.length + ' lines. Now add captions.', 'Change');
         var warn = shifted ? ' ⚠️ ' + shifted + ' line(s) did not come back and stay as they were — ' +
           (lastErr && lastErr.cpKind === 'rate_limit_long' ? lastErr.message + ' Then translate again.' : 'check the wording there.') : '';
@@ -4102,6 +4131,7 @@
   }
 
   function detectSpeakers() {
+    var jobEnv = state.env;   // the result belongs to this sequence, whatever is open when it arrives
     if (!CPBridge.isCEP()) return toast('Speaker detection needs Premiere.', true);
     if (!state.transcript) return toast('Transcribe or load a transcript first.', true);
     if (state.aiBusy) return toast('Hang on — an AI step is already running…');
@@ -4156,7 +4186,7 @@
           prev = s;
           return { start: c.start, end: c.end, text: txt };
         });
-        installNewTranscript(out, 'Speaker-labelled (' + n + ' speaker' + (n > 1 ? 's' : '') + ')', 'speakers');
+        withJobSeq(jobEnv, function () { installNewTranscript(out, 'Speaker-labelled (' + n + ' speaker' + (n > 1 ? 's' : '') + ')', 'speakers'); });
         setTranscriptBar('ok', '✅', 'Labelled ' + n + ' speaker' + (n > 1 ? 's' : '') + ' — ' + out.length + ' lines. Now add captions.', 'Change');
         toast('🗣️ Found ' + n + ' speaker' + (n > 1 ? 's' : '') + ' (AI guess). Labels were added to the words — add captions or Export. Tap “Change” to go back if it looks off.');
       })
@@ -6422,7 +6452,8 @@
     var ACTION_BTNS = ['btn-magic', 'btn-viral-edit', 'btn-sfx-add', 'btn-markers', 'btn-clear-markers', 'btn-cut', 'btn-autoclean',
       'btn-rebuild', 'btn-takes-apply', 'btn-takes-cut', 'btn-mc-apply', 'btn-mc-redo', 'btn-ch-markers', 'btn-mark-hooks', 'btn-add-mogrt',
       'btn-alt-apply', 'btn-mg-copystyle', 'btn-real-preview', 'btn-cap-to-pulse', 'btn-clean-caps', 'btn-flux-render', 'btn-speaker-reframe',
-      'btn-script-apply', 'btn-smart-cleanup', 'btn-verbatim-retakes', 'btn-analyze', 'btn-find-shorts'];
+      'btn-script-apply', 'btn-smart-cleanup', 'btn-verbatim-retakes', 'btn-analyze', 'btn-find-shorts',
+      'ms-preview', 'ms-use'];   // ▶ Try on timeline twice put two clips at the playhead
     var lastAct = { el: null, t: 0 };
     document.addEventListener('click', function (ev) {
       if (!ev.isTrusted) return;   // Pulse's own .click() (e.g. Viral edit → captions) is never a double click
@@ -15644,13 +15675,22 @@
   /* The Stop button under a scan: silStopper(id) shows it and returns the
      token a scan listens to; stop.stopped is set when the owner taps it, and
      stop.now (filled in by the running decode) ends that decode at once. */
+  // every scan still running behind a Stop button: tapping Clean up again
+  // while one ran started a second, and Stop then stopped only the newest —
+  // the first went on and asked to cut. Stop now ends them all.
+  var _silStops = {};
   function silStopper(btnId) {
     var stop = { stopped: false, now: null }, b = $(btnId);
+    var runs = (_silStops[btnId] = _silStops[btnId] || []);
+    runs.push(stop);
     if (b) {
       b.classList.remove('hidden');
-      b.onclick = function () { silStopAll(stop); };
+      b.onclick = function () { runs.slice().forEach(silStopAll); };
     }
-    stop.done = function () { if (b) { b.classList.add('hidden'); b.onclick = null; } };
+    stop.done = function () {
+      var k = runs.indexOf(stop); if (k >= 0) runs.splice(k, 1);
+      if (b && !runs.length) { b.classList.add('hidden'); b.onclick = null; }
+    };
     return stop;
   }
   /* Several reads can run at once (one per mic): each has its own stop
@@ -16688,7 +16728,24 @@
       // The rebuilt sequence is the keeps concatenated from 0 — remap the
       // transcript onto it so "Remove repeated takes" / captions line up with
       // the trimmed clip, no re-transcribe needed.
-      remapTranscriptToRebuild(state.keepsSeq);
+      // Premiere opens the new sequence: the panel follows it FIRST, so the
+      // re-timed words are filed under the new sequence and the original keeps
+      // its own (they were re-timed in place and saved under the original —
+      // its captions then landed early, and the new one had no words).
+      var origKey = envKey(state.env), keepsSeq = state.keepsSeq, snap = {};
+      ['transcript', 'transcriptWords', 'transcriptMedia', 'transcriptPlacement', 'transcriptManual', 'lastCaptionJob'].forEach(function (f) {
+        try { snap[f] = (state[f] == null) ? state[f] : JSON.parse(JSON.stringify(state[f])); } catch (eC) { snap[f] = state[f]; }
+      });
+      return (CPBridge.isCEP() ? CPBridge.callHost('CP_getEnv') : Promise.resolve(null)).catch(function () { return null; }).then(function (env) {
+        if (env && env.sequenceName && envKey(env) !== origKey) {
+          state.env = env;
+          for (var f in snap) if (snap.hasOwnProperty(f)) state[f] = snap[f];
+          var el = $('env-status'); if (el) { el.textContent = env.sequenceName + ' · ' + env.width + '×' + env.height; el.className = 'env-status ok'; }
+        }
+        remapTranscriptToRebuild(keepsSeq);
+        return r;
+      });
+    }).then(function (r) {
       // the old silence list belongs to the previous timeline — clear it.
       state.silencesSeq = []; state.silPlan = null; if ($('results')) $('results').classList.add('hidden');
       toast('🎉 Built "' + r.sequence + '" — ' + r.segmentsPlaced + ' segments, ' + fmt(r.finalDuration) +
@@ -17602,6 +17659,7 @@
     if (cur.length) segs.push({ text: cur.map(function (x) { return x.text; }).join(' '), start: cur[0].start, end: cur[cur.length - 1].end });
     return segs;
   }
+  function shMakeLabel(rt) { return rt ? ('🎬 Make this ' + rt.label + ' short') : '🎬 Make this short'; }
   function shRatio() {
     var v = ($('sh-ratio') && $('sh-ratio').value) || '9:16';
     if (v === 'none') return null;
@@ -17723,9 +17781,12 @@
         toShortsSource().then(function () { return CPBridge.callHost('CP_addMarkers', { ranges: [{ start: h.start, end: h.end }], names: [h.title || ('Clip ' + (i + 1))], label: 'Short' }); })
           .then(function () { toast('Marker added.'); }).catch(function (e) { toast(e.message, true); });
       });
+      // the shape picked when Make is TAPPED (it was read once, when the
+      // moments were listed: a later 1:1 still made 9:16 shorts)
       var rt = shRatio();
-      btn(rt ? ('🎬 Make this ' + rt.label + ' short') : '🎬 Make this short', 'hero-btn', function () {
-        toShortsSource().then(function () { makeVerticalClip(h, rt, i); });
+      btn(shMakeLabel(rt), 'hero-btn sh-make-one', function () {
+        var now = shRatio();
+        toShortsSource().then(function () { makeVerticalClip(h, now, i); });
       });
       card.appendChild(row); box.appendChild(card);
     });
@@ -17941,6 +18002,10 @@
     var lb = document.querySelectorAll('#sh-layout button');
     for (var i = 0; i < lb.length; i++) lb[i].addEventListener('click', function () { settings.shLayout = this.dataset.layout; saveSettings(); syncShortChoices(); });
     ['sh-ratio', 'sh-tight', 'sh-caps', 'sh-cams'].forEach(function (id) { var e = $(id); if (e) e.addEventListener('change', function () { refreshShortsSummary(); }); });
+    if ($('sh-ratio')) $('sh-ratio').addEventListener('change', function () {
+      var lbl = shMakeLabel(shRatio());
+      Array.prototype.forEach.call(document.querySelectorAll('.sh-make-one'), function (x) { x.textContent = lbl; });
+    });
     syncShortChoices();
   })();
   /* The moment's words on the timeline, as the short will use them. */
@@ -20434,7 +20499,7 @@
   /* Push the current plan into Premiere (razor + angle toggles). Promise of the
      host result. */
   function applyMcPlan() {
-    if (!state.plan) return Promise.reject(new Error('Build the plan first.'));
+    if (!state.plan) return Promise.reject(new Error('Tap Plan camera cuts first — each sequence keeps its own plan.'));
     capMcProgress('Applying camera switches…');
     // the last Apply's report (e.g. "applied only partly") must not stay up
     // after this one — tapping Apply again is the fix it asks for
