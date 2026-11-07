@@ -2171,7 +2171,10 @@
         }
         function buildFfArgs() {
           return cloud  ? extractArgs(['-c:a', 'libopus', '-b:a', '24k'], cloudOpus)
-               : swara  ? extractArgs(['-c:a', 'libmp3lame', '-b:a', '64k'], cloudMp3)
+               // Deepgram is sent the mp3 too: it was extracted to the .wav and
+               // then the never-written mp3 was uploaded (an empty body, every
+               // Deepgram transcription refused)
+               : (swara || dgram) ? extractArgs(['-c:a', 'libmp3lame', '-b:a', '64k'], cloudMp3)
                         : extractArgs([], wav);
         }
         var ffArgs = buildFfArgs();

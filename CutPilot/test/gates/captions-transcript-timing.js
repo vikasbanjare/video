@@ -386,10 +386,14 @@ async function run() {
 
     // ── 7 ── Deepgram: transcript keeps "um", captions leave it out ────────
     {
-      const urls = [];
+      const urls = [], sent = [];
       const curl = (args) => {
         const url = args.find(a => /^https:\/\//.test(a)) || '';
         urls.push(url);
+        // the audio it uploads must really be there (an extract to the .wav
+        // with the never-written .mp3 sent made every Deepgram run fail)
+        const at = args.indexOf('--data-binary'), f = at >= 0 ? String(args[at + 1]).replace(/^@/, '') : '';
+        if (/deepgram/.test(url)) sent.push({ f, ok: !!f && fs.existsSync(f) && fs.statSync(f).size > 0 });
         if (/deepgram/.test(url)) return JSON.stringify({ results: { channels: [{ alternatives: [{ words: [
           { word: 'um', punctuated_word: 'Um,', start: 0.2, end: 0.45, confidence: 0.9 },
           { word: 'hello', punctuated_word: 'hello', start: 0.5, end: 0.9, confidence: 0.99 },
@@ -410,6 +414,7 @@ async function run() {
       await page.evaluate(() => { { const af = document.getElementById('tr-aifix'); af.checked = false; af.dispatchEvent(new Event('change')); } document.getElementById('btn-tr-auto-ai').click(); });
       await waitLabel(page, /Pulse transcript/);
       const dg = urls.find(u => /deepgram/.test(u)) || '';
+      C.check('Deepgram is sent the audio Pulse extracted (the file is there and not empty)', sent.length > 0 && sent.every(x => x.ok), JSON.stringify(sent));
       C.check('Deepgram is asked for every word, "um"/"uh" included (filler_words=true)', /filler_words=true/.test(dg) && !/filler_words=false/.test(dg), dg);
       const tw = await words(page);
       C.check('the stored transcript keeps "um" and "uh" (Clean up\'s filler removal and the retake finder need them)',
