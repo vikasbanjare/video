@@ -15333,7 +15333,9 @@
      are captioned, not the whole transcript's. */
   function applyEditableStyle(given) {
     if (given && !given.cues) given = null;   // a click event is not a short
-    var edJobEnv = state.env;                 // checked again right before placing
+    // checked again right before placing — except for a short: Shorts made
+    // that sequence itself and opened it, so it is the right one to place on
+    var edJobEnv = given ? null : state.env;
     if (!CPBridge.isCEP()) return toast('Editable captions need Premiere (open Pulse inside Premiere).', true);
     // Use the editor-aware preset so the placed caption matches the preview:
     // your chosen text colour, highlight colour and box colour all carry through
