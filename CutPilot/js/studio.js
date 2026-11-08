@@ -306,8 +306,10 @@
       kit.capProgress(null);
       var msg = '🎚 Studio sound' + (opts.restore && opts.aiUsed ? ' (Studio restore)' : (opts.aiUsed ? ' (AI noise removal)' : '')) + ' on ' + (r.tracks || []).map(function (n) { return 'A' + n; }).join(', ') +
         ' (' + r.placed + ' piece' + (r.placed === 1 ? '' : 's') + (balanced ? ', ' + balanced + ' of ' + cuts + ' cuts matched in level' : '') + ', ' + (opts.target === -16 ? 'podcast apps, −16 LUFS' : 'YouTube & Reels, −14 LUFS') + '). ' +
-        'Your original sound is still there, muted' + ((r.muted || []).length ? ' (' + r.muted.map(function (n) { return 'A' + n; }).join(', ') + ')' : '') +
-        ' — unmute it to compare.' + (found.skipped ? ' ' + found.skipped + ' sped-up or reversed piece(s) were left as they are' + ((r.keptOn || []).length ? ', so ' + r.keptOn.map(function (n) { return 'A' + n; }).join(', ') + ' stays on' : '') + '.' : '') +
+        ((r.muted || []).length
+          ? 'Your original sound is still there, muted (' + r.muted.map(function (n) { return 'A' + n; }).join(', ') + ') — unmute it to compare.'
+          : 'Your original track stays on, because it holds sound Pulse could not clean — until you mute its cleaned pieces, both play together.') +
+        (found.skipped ? ' ' + found.skipped + ' sped-up or reversed piece(s) were left as they are' + ((r.keptOn || []).length ? ', so ' + r.keptOn.map(function (n) { return 'A' + n; }).join(', ') + ' stays on' : '') + '.' : '') +
         (found.nested ? ' Sound inside nested sequences was left as it is (open one and run Studio sound there to clean it).' : '') +
         (aiFailedOn.length ? ' ' + (opts.restore ? 'Studio restore' : 'AI noise removal') + ' could not run on ' + aiFailedOn.map(function (n) { return 'A' + n; }).join(', ') + ' — the plain cleanup was used there.' : '') +
         (r.missed ? ' ' + r.missed + ' piece(s) could not be placed.' : '');

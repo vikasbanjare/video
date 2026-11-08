@@ -1362,7 +1362,14 @@ function CP_rebuildTrimmed(argsJson) {
         pItem.setOutPoint(CP_ticksFromSeconds(k.end), 4);
         if (vTrack) vTrack.overwriteClip(pItem, cursor);
         else if (aTrack) aTrack.overwriteClip(pItem, cursor);
+        var pieceAt = cursor;
         cursor += (k.end - k.start);
+        // Premiere snaps a piece to whole frames: the next one starts where this
+        // one really ended, or the rounding left a one-frame black gap (measured)
+        try {
+          var putOn = vTrack || aTrack, nOn = putOn.clips.numItems;
+          if (nOn && putOn.clips[nOn - 1].end.seconds > pieceAt) cursor = putOn.clips[nOn - 1].end.seconds;
+        } catch (eEnd) {}
         placed++;
       } catch (eIns) {}
     }

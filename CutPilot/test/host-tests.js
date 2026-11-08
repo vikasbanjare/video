@@ -2702,6 +2702,20 @@ console.log('host.jsx — Premium captions hold 0.5 s, never 60 s; title templat
     const vt = { clips: tr(), overwriteClip(it, at) { placed.push(at); } }, at = { clips: tr(), overwriteClip() {} };
     return { seq: { name: 'Pulse Trim test', sequenceID: 'seq-new', videoTracks: { numTracks: 1, 0: vt }, audioTracks: { numTracks: 1, 0: at } }, placed, vt };
   };
+  {
+    // Premiere snaps each piece to whole frames: the next starts where this one really ended (a one-frame gap otherwise)
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    const p = w.sandbox.app.project, bin = p.rootItem.createBin('Footage');
+    p.importFiles(['/media/raw.mp4'], true, bin, false);
+    const N = mkNew(true);
+    N.vt.overwriteClip = (it, at) => { N.placed.push(at); N.real.push({ end: { seconds: at + 4.96 } }); };
+    N.real = [];
+    N.vt.clips = new Proxy({}, { get(t, k) { if (k === 'numItems') return N.real.length; const n = Number(k); return Number.isInteger(n) ? N.real[n] : undefined; } });
+    p.createNewSequenceFromClips = () => N.seq;
+    const r = call(loadHost(w), 'CP_rebuildTrimmed', { nodeId: bin.children[0].nodeId, keeps: [{ start: 0, end: 5 }, { start: 8, end: 13 }] });
+    assert(r.ok && JSON.stringify(N.placed) === '[0,4.96]' && Math.abs(r.finalDuration - 9.92) < 1e-9,
+      'trimmed copy: each piece starts where the last really ended, no one-frame gap (' + JSON.stringify([r, N.placed]) + ')');
+  }
   for (const withRemove of [true, false]) {
     const w = makeWorld({ vTracks: 1, aTracks: 1 });
     w.model.addClip('vTracks', 0, 0, 30, { name: 'my edit A' }); w.model.addClip('aTracks', 0, 0, 30, { name: 'my audio' });
