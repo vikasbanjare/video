@@ -769,6 +769,9 @@
       // a real frame: the whole block (ink, outline, box) stays inside it
       var padY0 = hasBox(style) ? base * 0.22 * (style.boxPad != null ? style.boxPad : 1) : 0;
       var inkTop = lineY[0] - Math.max(lines[0].asc, lines[0].height * 0.82) - stroke / 2 - padY0;
+      // the speaker label sits above the block: it is part of what must stay
+      // in the frame (pinned to the top edge, it covered the first line)
+      if (frame.speaker) { var spxF = Math.max(16, Math.round(base * 0.5)); inkTop -= spxF * 2.2; }
       var last = lines[lines.length - 1];
       var inkBot = lineY[lines.length - 1] + Math.max(last.desc, last.height * 0.18) + stroke / 2 + padY0 + (style.box3dDepth || 0);
       var room = H * 0.02, fix = 0;
@@ -787,7 +790,7 @@
     }
 
     // speaker label pill above the block
-    if (frame.speaker) {
+    if (frame.speaker && lines.length) {
       var spk = String(frame.speaker).toUpperCase();
       var spx = Math.max(16, Math.round(base * 0.5));
       setFont(spx);
@@ -825,11 +828,14 @@
     // matching Latin letters only made every Hindi brand word match nothing)
     function bareWord(w) { return String(w).toLowerCase().replace(/[^a-z0-9'\u0900-\u0963\u0966-\u097F]/g, ''); }
     var brandSet = {};
+    // a brand of several words ("Zerodha Kite") colours each of its words:
+    // squashed to "zerodhakite" it matched no word of a caption, ever
     if (style.brandWords) for (var bwI = 0; bwI < style.brandWords.length; bwI++) {
-      var bw = bareWord(style.brandWords[bwI]);
-      if (bw) brandSet[bw] = 1;
+      var parts = String(style.brandWords[bwI]).split(/\s+/);
+      for (var bp = 0; bp < parts.length; bp++) { var bw = bareWord(parts[bp]); if (bw) brandSet[bw] = 1; }
     }
-    function isNumberish(w) { return /\d/.test(String(w)); }   // 2026, $1M, 50%, 10x, 1,000
+    // Hindi digits (५०, २०२६) are numbers too
+    function isNumberish(w) { return /[0-9\u0966-\u096F]/.test(String(w)); }   // 2026, $1M, 50%, 10x, 1,000, ५०
     function restColorFor(word) {
       if (style.brandColor && brandSet[bareWord(word)]) return style.brandColor;
       if (style.numberColor && isNumberish(word)) return style.numberColor;

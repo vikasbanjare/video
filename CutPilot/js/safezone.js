@@ -213,6 +213,10 @@
     c.save(); c.strokeStyle = 'rgba(90,200,255,0.85)'; c.lineWidth = Math.max(1, unit * 0.0028);
     if (rows > 0 || cols > 0) c.strokeRect(gx, gy, gw, gh);
     var gutX = g * W, gutY = g * H;
+    // the gaps never take more than half the frame: 12 columns with a 20%
+    // gap made columns of minus 117 px and lines outside the margin frame
+    if (cols > 1) gutX = Math.min(gutX, gw * 0.5 / (cols - 1));
+    if (rows > 1) gutY = Math.min(gutY, gh * 0.5 / (rows - 1));
     if (cols > 0) { var cw = (gw - gutX * (cols - 1)) / cols; for (var i = 0; i < cols; i++) { var x0 = gx + i * (cw + gutX); if (i > 0) { c.strokeRect(x0 - gutX, gy, gutX, gh); } if (i < cols - 1 || gutX === 0) { var lx = gx + (i + 1) * cw + i * gutX; if (i < cols - 1) { c.beginPath(); c.moveTo(lx, gy); c.lineTo(lx, gy + gh); c.stroke(); } } } }
     if (rows > 0) { var rh = (gh - gutY * (rows - 1)) / rows; for (var j = 0; j < rows - 1; j++) { var ly = gy + (j + 1) * rh + j * gutY; c.beginPath(); c.moveTo(gx, ly); c.lineTo(gx + gw, ly); c.stroke(); } }
     c.restore();
