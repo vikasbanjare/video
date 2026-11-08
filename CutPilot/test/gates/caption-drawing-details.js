@@ -23,7 +23,9 @@ const G = require('./gallery-lib/panel.js');
       const R = window.CPRender, res = {};
       const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
       const red = (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] > 200 && d[i + 1] < 40 && d[i + 2] < 40 && d[i + 3] > 200) n++; return n; };
-      const pillRows = (c) => { const W = c.width, d = c.getContext('2d').getImageData(0, 0, W, c.height).data; let y0 = 1e9, y1 = -1; for (let y = 0; y < c.height; y++) { let n = 0; for (let x = 0; x < W; x++) { const a = d[(y * W + x) * 4 + 3]; if (a >= 135 && a <= 145) n++; } if (n > 20) { if (y < y0) y0 = y; if (y > y1) y1 = y; } } return [y0, y1]; };
+      // the label pill: a solid run (40+ px) of its 55% black — the soft edge
+      // of a black text outline has that alpha too, but never in a long run
+      const pillRows = (c) => { const W = c.width, d = c.getContext('2d').getImageData(0, 0, W, c.height).data; let y0 = 1e9, y1 = -1; for (let y = 0; y < c.height; y++) { let run = 0, best = 0; for (let x = 0; x < W; x++) { const i = (y * W + x) * 4, a = d[i + 3]; if (a >= 135 && a <= 145 && d[i] < 10) { run++; if (run > best) best = run; } else run = 0; } if (best >= 40) { if (y < y0) y0 = y; if (y > y1) y1 = y; } } return [y0, y1]; };
       const base = { font: 'Arial', fontSize: 80, fill: '#ffffff', highlight: '#ffd400', stroke: '#000', strokeWidth: 6 };
       const words = 'yeh baat sabko pata honi chahiye ki market mein paisa kaise banta hai bhai sun lo'.split(' ');
       // A
