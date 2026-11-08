@@ -136,7 +136,8 @@
   function tokenize(text) {
     var out = [];
     var src = String(text || ''); if (src.normalize) src = src.normalize('NFC');
-    var raw = src.toLowerCase().split(/[^a-z0-9'\u0900-\u0963\u0966-\u097f]+/);
+    // a curly apostrophe is an apostrophe: "don’t" is one word, not "don" + "t"
+    var raw = src.toLowerCase().replace(/[‘’ʼ`]/g, "'").split(/[^a-z0-9'\u0900-\u0963\u0966-\u097f]+/);
     for (var i = 0; i < raw.length; i++) {
       var t = raw[i].replace(/^'+|'+$/g, '');
       if (t) out.push(t);

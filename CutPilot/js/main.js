@@ -110,6 +110,14 @@
         try { diag('transcript', 'sequence changed → ' + (e.sequenceName || k) + (state.transcript ? ': its own words are back' : ': no words for it yet')); } catch (eD) {}
         if (!state.transcript && typeof findTranscript === 'function') { try { findTranscript(); } catch (eF) {} }
       }
+      if (!_quietSwap && typeof refreshTrAfter === 'function') { try { refreshTrAfter(); } catch (eT) {} }
+      // the camera plan on screen was the last sequence's: put it away (each
+      // sequence keeps its own — Plan camera cuts shows this one's)
+      if (!_quietSwap && !first) {
+        ['mc-plan-card', 'btn-mc-apply', 'btn-mc-redo', 'mc-redo-hint'].forEach(function (id) {
+          var el = document.getElementById(id); if (el) el.classList.add('hidden');
+        });
+      }
     }
   });
 
@@ -2447,6 +2455,7 @@
       this.classList.add('active');
       page.classList.add('active');
       document.body.setAttribute('data-page', this.dataset.tab);
+      try { refreshTrAfter(); } catch (eTa) {}
       if ($('nav-title')) $('nav-title').textContent = PAGE_TITLES[this.dataset.tab] || '';
       if (!wasActive) page.scrollTop = 0;       // a page opens at its top
       // every page names the sequence it will act on — after switching
@@ -3313,7 +3322,11 @@
 
   var _flowTimer = null;
   function refreshFlowSoon() { clearTimeout(_flowTimer); _flowTimer = setTimeout(function () { try { refreshFlow(); } catch (e) {} }, 400); }
+  /* Review & edit / Redo / Viral hooks / B-roll ideas act on a transcript:
+     shown once there is one (before, each only answered "No transcript yet") */
+  function refreshTrAfter() { var r = document.getElementById('tr-after'); if (r) r.classList.toggle('hidden', !state.transcript); }
   function setTranscriptBar(cls, ico, text, btn) {
+    try { setTimeout(refreshTrAfter, 0); } catch (eA) {}
     refreshFlowSoon();
     $('tr-bar').className = 'tr-bar' + (cls ? ' ' + cls : '');
     $('tr-ico').textContent = ico;
@@ -6320,7 +6333,7 @@
     var fs, path;
     try { fs = nodeReq('fs'); path = nodeReq('path'); } catch (e) { return; }
     var folders = settings.mogrtFolders || [];
-    var hits = [], MAX = 800;
+    var hits = [], MAX = 800, seenFile = {};
     function walk(dir, depth) {
       if (depth > 5 || hits.length >= MAX) return;
       var entries; try { entries = fs.readdirSync(dir); } catch (e) { return; }
@@ -6329,6 +6342,8 @@
         try { st = fs.statSync(full); } catch (e2) { continue; }
         if (st.isDirectory()) walk(full, depth + 1);
         else if (/\.mogrt$/i.test(entries[i])) {
+          // a folder added AND one inside it: each template listed once
+          var fk = String(full).toLowerCase(); if (seenFile[fk]) continue; seenFile[fk] = 1;
           hits.push({ name: entries[i].replace(/\.mogrt$/i, ''), path: full,
                       category: path.basename(dir), folder: dir });
         }
@@ -6340,6 +6355,10 @@
 
   /* Render the Settings list of template folders, with a per-folder .mogrt count
      and a Remove button. */
+  function inFolder(m, dir) {
+    var f = String(m.folder || ''), d = String(dir || '').replace(/[\\\/]+$/, '');
+    return f === d || f.indexOf(d + '/') === 0 || f.indexOf(d + '\\') === 0;
+  }
   function renderMogrtFoldersUI() {
     var box = $('mogrt-folders'); if (!box) return;
     box.innerHTML = '';
@@ -6351,7 +6370,7 @@
     }
     folders.forEach(function (dir) {
       var count = (state.folderMogrts || []).filter(function (m) {
-        return (m.folder || '').indexOf(dir) === 0;
+        return inFolder(m, dir);
       }).length;
       var row = document.createElement('div'); row.className = 'mogrt-folder-row';
       var nm = document.createElement('span'); nm.className = 'mf-path';
@@ -6373,7 +6392,7 @@
     settings.mogrtFolders.push(p);
     saveSettings();
     refreshMogrtFolders();
-    var n = (state.folderMogrts || []).filter(function (m) { return (m.folder || '').indexOf(p) === 0; }).length;
+    var n = (state.folderMogrts || []).filter(function (m) { return inFolder(m, p); }).length;
     toast(n ? ('✓ Added folder — found ' + n + ' template' + (n === 1 ? '' : 's') + '. They\'re in the gallery now.')
             : 'Added folder, but no .mogrt files were found inside it.', !n);
   }
@@ -20940,6 +20959,13 @@
     var el = $('ffmpeg-status');
     if (ff) { el.textContent = '✅ Audio engine ready.'; el.title = ff; el.className = 'hint'; }
     else { el.textContent = '⚠️ Not set up yet — tap the button above (once).'; el.title = ''; el.className = 'hint'; }
+    // ready: the button stays (a re-download fixes a broken engine) but steps
+    // back, so a ready engine no longer reads as one still to set up
+    var sb = $('btn-ffmpeg-setup');
+    if (sb) {
+      sb.classList.toggle('is-done', !!ff);
+      sb.title = ff ? 'Already set up — tap only to download it again' : 'Free, about 50 MB, downloaded once';
+    }
   }
 
   $('btn-ffmpeg-pick').addEventListener('click', function () {

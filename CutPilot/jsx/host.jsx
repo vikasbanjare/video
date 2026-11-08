@@ -2384,7 +2384,7 @@ function CP_clipAtStart(track, startSec) {
     // every probe must sit between the probes either side of it (and the
     // first clip before the last), or the track is not in order → the scan.
     // Premiere lists a track's clips in time order, so this is a safety net;
-    // one swapped pair can still slip past it.
+    // a miss is always confirmed by the scan below.
     var loV = n ? clips[0].start.seconds : 0, hiV = n ? clips[n - 1].start.seconds : 0;
     if (loV > hiV) throw new Error('not in order');
     while (lo < hi) {
@@ -2400,7 +2400,9 @@ function CP_clipAtStart(track, startSec) {
       var dj = Math.abs(sj - startSec);
       if (dj < bd) { bd = dj; bc = clips[j]; }
     }
-    return (bd <= 0.25) ? bc : null;
+    // found nothing near: confirm with the scan (a track out of order — one
+    // swapped pair can slip past the checks above — never loses a clip)
+    if (bd <= 0.25) return bc;
   } catch (eFast) {}
   var best = null, bestD = 1e9;
   for (var i = 0; i < track.clips.numItems; i++) {

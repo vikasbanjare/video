@@ -235,3 +235,6 @@ body:not(.theme-dark) .tpl-card.on { border-color: #16171b; box-shadow: 0 0 0 3p
 body:not(.theme-dark) .tpl-thumb, body:not(.theme-dark) .tpl-card.is-style .tpl-thumb,
 body:not(.theme-dark) .tpl-card:hover .tpl-thumb, body:not(.theme-dark) .tpl-card.on .tpl-thumb { background: #121317; box-shadow: inset 0 0 0 6px #fff, inset 0 0 0 7px rgba(0,0,0,.06); }
 body:not(.theme-dark) .tpl-fav:hover { background: rgba(0,0,0,.06); }
+
+/* Settings: a set-up button whose job is already done steps back */
+.chip-btn.is-done { font-weight: 500; border-style: dashed; background: transparent; }
