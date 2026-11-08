@@ -300,7 +300,21 @@ function makeWorld(opts) {
     })(),
     importMGT(mogrtPath, ticks, vTrack, aTrack) {
       if (opts.importMGTFails) return null;           // simulate a template Premiere can't place
-      const start = Number(ticks) / TICKS;
+      const start = Number(ticks) / TICKS, endM = start + model.mogrtNaturalDur;
+      // like Premiere: a graphic placed on a track OVERWRITES what it covers
+      // there (the fake used to stack it beside the footage, so "Try on
+      // timeline over the footage" never showed in a test)
+      const under = model.vTracks[vTrack] || [];
+      for (let k = under.length - 1; k >= 0; k--) {
+        const o = under[k], os = o.start.seconds, oe = o.end.seconds;
+        if (!(os < endM - 1e-9 && oe > start + 1e-9)) continue;
+        model.overwritten = (model.overwritten || 0) + 1;
+        if (os >= start - 1e-9 && oe <= endM + 1e-9) { under.splice(k, 1); continue; }
+        if (oe > endM + 1e-9) model.addClip('vTracks', vTrack, endM, oe, { name: o.name });   // the part after it stays
+        model.allowEndSet = true;
+        if (os < start - 1e-9) o.end = mkT(start); else under.splice(under.indexOf(o), 1);
+        model.allowEndSet = false;
+      }
       const clip = model.addClip('vTracks', vTrack, start, start + model.mogrtNaturalDur, {
         name: path.basename(String(mogrtPath)),
         getMGTComponent() { return null; },       // default: no component surface
@@ -2724,7 +2738,8 @@ console.log('host.jsx — Premium captions hold 0.5 s, never 60 s; title templat
     w.model.addClip('vTracks', 0, 0, 60, { name: 'interview.mp4' }); w.model.playhead = 10; return w; };
   const w1 = one(false), h1 = loadHost(w1);
   const r1 = call(h1, 'CP_previewMogrt', { path: '/t/Subtitle_1.mogrt', seconds: 4 });
-  assert(r1.ok && w1.model.vTracks.length === 2 && w1.model.vTracks[0].length === 1 && w1.model.vTracks[1].length === 1,
+  assert(r1.ok && w1.model.vTracks.length === 2 && w1.model.vTracks[0].length === 1 && w1.model.vTracks[1].length === 1 &&
+    w1.model.vTracks[0][0].start.seconds === 0 && w1.model.vTracks[0][0].end.seconds === 60 && !w1.model.overwritten,
     'Try on timeline over a one-track sequence: the template gets its own new track, the footage track only holds the footage (' + JSON.stringify(r1) + ')');
   const w2 = one(true), h2 = loadHost(w2);
   const r2 = call(h2, 'CP_previewMogrt', { path: '/t/Subtitle_1.mogrt', seconds: 4 });
