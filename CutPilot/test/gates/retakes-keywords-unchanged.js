@@ -77,7 +77,8 @@ check('English keyword sets are the same as before (14 / 4)',
   [14, 4].map(n => keys(T.topKeywordSet(ENGLISH, { maxWords: n }))).join(' | '));
 const broll = T.extractBrollSuggestions(MIXED, { max: 6 });
 check('B-roll ideas are meaning words, Hindi read too (no aaj / aur / bahut)', broll.length >= 4 && !broll.some(b => LITTLE.indexOf(b.term) >= 0 && b.term !== 'doston'), JSON.stringify(broll));
-const TOK = [["Don’t stop, now!", '["don","t","stop","now"]'], ['café crème', '["caf","cr","me"]'], ['यह reel आपके लिए है।', '["यह","reel","आपके","लिए","है"]'],
+// a curly apostrophe is an apostrophe: "Don’t" is one word, as "Don't" is
+const TOK = [["Don’t stop, now!", '["don\'t","stop","now"]'], ['café crème', '["caf","cr","me"]'], ['यह reel आपके लिए है।', '["यह","reel","आपके","लिए","है"]'],
              ["Don't stop, now!", '["don\'t","stop","now"]']];
 check('the keyword word-splitter: English as before, Devanagari words kept (the danda । is not a letter)', TOK.every(t => JSON.stringify(T.tokenize(t[0])) === t[1]),
   TOK.map(t => t[0] + ' → ' + JSON.stringify(T.tokenize(t[0]))).join(' | '));
