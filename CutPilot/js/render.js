@@ -798,7 +798,12 @@
       ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
       var swid = ctx.measureText(spk).width;
       var sx = (W - swid) / 2;
-      var sy = Math.max(spx * 1.5, baseY - lines[0].height - spx * 0.6);
+      // placed from the first line's real top (its letters, outline and box),
+      // not its nominal height: on fonts whose capitals rise above that the
+      // label touched the words (1 px apart on a landscape frame)
+      var padYs = hasBox(style) ? base * 0.22 * (style.boxPad != null ? style.boxPad : 1) : 0;
+      var firstTop = lineY[0] - Math.max(lines[0].asc || 0, lines[0].height * 0.82) - (stroke || 0) / 2 - padYs;
+      var sy = Math.max(spx * 1.5, firstTop - spx * 0.8);
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
       roundRect(ctx, sx - spx * 0.45, sy - spx, swid + spx * 0.9, spx * 1.4, spx * 0.35);
       ctx.fill();
