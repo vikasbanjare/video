@@ -48,3 +48,6 @@ __pycache__/
 
 # Clean up test bench: code is committed, the media-derived data is not
 bench/data/
+
+# local builds handed to the owner (not source)
+release/

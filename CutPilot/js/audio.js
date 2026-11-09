@@ -244,7 +244,7 @@
                'ametadata=print:key=lavfi.astats.Overall.RMS_level',
         '-f', 'null', '-'
       ];
-      var proc, out = '', err = '', settled = false;
+      var proc, out = '', settled = false;
       try { proc = cp.spawn(ffmpegPath, args); }
       catch (e) { return reject(new Error('Could not launch ffmpeg: ' + e.message)); }
       // given up only when ffmpeg goes QUIET for a minute (a stuck read): a
@@ -253,27 +253,52 @@
       var timer = null;
       function arm() { clearTimeout(timer); timer = setTimeout(function () { try { proc.kill(); } catch (eK) {} finish(); }, 60000); }
       arm();
+      // ffmpeg's log (stderr) is read line by line as it arrives: a 2-hour
+      // file prints ~700k lines (25-50 MB), gathered into one string and split
+      // at the end it froze the panel for seconds
+      var samples = [], lastT = 0, duration = null, lead = 0, sawTime = false, pending = '';
+      function line(ln) {
+        if (duration == null) {
+          var dm = /Duration:\s*(\d+):(\d+):(\d+\.?\d*)/.exec(ln);
+          if (dm) duration = (+dm[1]) * 3600 + (+dm[2]) * 60 + (+dm[3]);
+        }
+        var tm = /pts_time:([\d.]+)/.exec(ln);
+        if (tm) { lastT = parseFloat(tm[1]); sawTime = true; return; }
+        var rm = /RMS_level=(-?[\d.]+|-?inf|nan)/.exec(ln);
+        if (rm) {
+          var v = rm[1];
+          samples.push({ t: lastT, db: (v === '-inf' || v === 'inf' || v === 'nan') ? -100 : parseFloat(v) });
+          if (!sawTime) lead++;
+        }
+      }
       function finish() {
         if (settled) return; settled = true; clearTimeout(timer);
-        var text = out + '\n' + err;
-        var lines = text.split('\n');
-        var samples = [], lastT = 0, duration = null;
-        var dm = /Duration:\s*(\d+):(\d+):(\d+\.?\d*)/.exec(text);
-        if (dm) duration = (+dm[1]) * 3600 + (+dm[2]) * 60 + (+dm[3]);
-        for (var i = 0; i < lines.length; i++) {
-          var tm = /pts_time:([\d.]+)/.exec(lines[i]);
-          if (tm) { lastT = parseFloat(tm[1]); continue; }
-          var rm = /RMS_level=(-?[\d.]+|-?inf|nan)/.exec(lines[i]);
-          if (rm) {
-            var v = rm[1];
-            var db = (v === '-inf' || v === 'inf' || v === 'nan') ? -100 : parseFloat(v);
-            samples.push({ t: lastT, db: db });
+        if (pending) { line(pending); pending = ''; }
+        // stdout (normally empty with -f null) was read FIRST before: its
+        // samples lead, and the last time it printed carries into the log's
+        // samples before the log's own first time
+        if (out) {
+          var outS = [], t0 = 0, ol = out.split('\n');
+          for (var i = 0; i < ol.length; i++) {
+            if (duration == null) { var dm2 = /Duration:\s*(\d+):(\d+):(\d+\.?\d*)/.exec(ol[i]); if (dm2) duration = (+dm2[1]) * 3600 + (+dm2[2]) * 60 + (+dm2[3]); }
+            var tm2 = /pts_time:([\d.]+)/.exec(ol[i]);
+            if (tm2) { t0 = parseFloat(tm2[1]); continue; }
+            var rm2 = /RMS_level=(-?[\d.]+|-?inf|nan)/.exec(ol[i]);
+            if (rm2) outS.push({ t: t0, db: (rm2[1] === '-inf' || rm2[1] === 'inf' || rm2[1] === 'nan') ? -100 : parseFloat(rm2[1]) });
           }
+          for (var j = 0; j < lead; j++) samples[j].t = t0;
+          samples = outS.concat(samples);
         }
         resolve({ samples: samples, duration: duration });
       }
       proc.stdout.on('data', function (d) { out += d.toString(); arm(); });
-      proc.stderr.on('data', function (d) { err += d.toString(); arm(); });
+      if (proc.stderr && proc.stderr.setEncoding) proc.stderr.setEncoding('utf8');
+      proc.stderr.on('data', function (d) {
+        var txt = pending + d.toString(), parts = txt.split('\n');
+        pending = parts.pop();
+        for (var i = 0; i < parts.length; i++) line(parts[i]);
+        arm();
+      });
       proc.on('error', function (e) { if (!settled) { settled = true; clearTimeout(timer); reject(new Error('ffmpeg error: ' + e.message)); } });
       proc.on('close', function () { finish(); });
     });

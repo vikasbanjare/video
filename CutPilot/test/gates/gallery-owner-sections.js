@@ -115,11 +115,16 @@ const G = require('./gallery-lib/panel.js');
   else R.ok('a starred template ("' + res.mogrtName + '") shows under Favorites, starred, and opens its own sheet');
 
   // the sheet's timing line
+  // since v0.10.110 Pulse's own caption templates are not in the gallery, so
+  // the first (starred) template may be a title template: then its line is hidden
+  const firstIsTitle = /Title|Stack/.test(res.mogrtName || '');
   if (res.timingOnCaption == null) R.bad('the template sheet\'s word-timing line is missing');
-  else if (!res.timingOnCaption) R.bad('the word-timing line is hidden on a caption template ("' + res.mogrtName + '")');
+  else if (!firstIsTitle && !res.timingOnCaption) R.bad('the word-timing line is hidden on a caption template ("' + res.mogrtName + '")');
+  else if (firstIsTitle && res.timingOnCaption) R.bad('the sheet promises word-by-word timing on the title template "' + res.mogrtName + '"');
   else if (!res.titleName) R.bad('no title template found in the 🧩 chip');
   else if (res.timingOnTitle) R.bad('the sheet promises word-by-word timing on the title template "' + res.titleName + '", which has no word highlight');
-  else R.ok('the sheet shows "each word lights up…" on a caption template, not on the title template "' + res.titleName + '"');
+  else R.ok(firstIsTitle ? 'no caption templates are listed; the title templates ("' + res.titleName + '") do not promise word-by-word timing'
+                        : 'the sheet shows "each word lights up…" on a caption template, not on the title template "' + res.titleName + '"');
 
   // the word-by-word opt-out
   const oo = res.optOut || {};

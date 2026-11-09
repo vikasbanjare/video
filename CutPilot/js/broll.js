@@ -18,7 +18,7 @@
   var SKIP = { the: 1, a: 1, an: 1, of: 1, and: 1, in: 1, on: 1, to: 1, clip: 1, broll: 1, b: 1, roll: 1, stock: 1, video: 1, footage: 1,
                img: 1, image: 1, photo: 1, pic: 1, final: 1, copy: 1, new: 1, hd: 1, '4k': 1, mp4: 1, mov: 1 };
 
-  function norm(t) { return String(t || '').toLowerCase().replace(/^[^a-z0-9ऀ-ॿ]+|[^a-z0-9ऀ-ॿ]+$/g, ''); }
+  function norm(t) { return String(t || '').toLowerCase().replace(/^[^a-z0-9ऀ-ॣ०-ॿ]+|[^a-z0-9ऀ-ॣ०-ॿ]+$/g, ''); }
   /* The words a file's name says, up to three ("MarketCrash_02.mp4" →
      ["market", "crash"]); filler words of B-roll names ("stock", "clip",
      "final", numbers) are left out. */
@@ -103,6 +103,7 @@
     // Media), not the OS temp folder macOS clears
     var tmp = pathMod.join(os.tmpdir(), 'pulse-broll-' + Date.now());
     var where = window.CPMediaPlace ? window.CPMediaPlace().then(function (pl) { tmp = pathMod.join(pl.dir, 'broll-' + Date.now()); }, function () {}) : Promise.resolve();
+    var placedItems = [], skippedClips = 0;
     var silent = {}, dims = {}, i = 0;
     // each picture's size, so Premiere can fill the frame with it
     function probe(p) {
@@ -121,18 +122,24 @@
       var out = pathMod.join(tmp, 'b' + i + '-' + pathMod.basename(it.path).replace(/\.[^.]+$/, '') + '.mp4');
       // its first seconds, silent: its sound never lands on the podcast
       return kit.runFfmpeg(ff, ['-hide_banner', '-nostdin', '-y', '-i', it.path, '-t', String(it.dur + 0.5), '-an', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', out], 120000)
-        .then(function (r) { if (!r.error && r.code === 0) silent[it.path] = out; return probe(it.path); }).then(prep);
+        // the size of the silent copy, not the original: a phone clip is stored
+        // sideways with a rotation note, and the copy comes out upright
+        .then(function (r) { if (!r.error && r.code === 0) { silent[it.path] = out; return probe(out); } }).then(prep);
     }
     where.then(function () { try { fs.mkdirSync(tmp, { recursive: true }); } catch (eM) {} return prep(); }).then(function () {
       kit.capProgress('🎞 Laying B-roll on your timeline…');
       var put = items.filter(function (x) { return x.still || silent[x.path]; })
-        .map(function (x) { var d = dims[x.path] || {}; return { path: x.still ? x.path : silent[x.path], at: x.at, dur: x.dur, still: x.still, w: d.w || 0, h: d.h || 0 }; });
+        .map(function (x) { var f = x.still ? x.path : silent[x.path], d = dims[f] || {}; return { path: f, at: x.at, dur: x.dur, still: x.still, w: d.w || 0, h: d.h || 0, word: x.word }; });
+      skippedClips = items.length - put.length;
+      if (!put.length) throw new Error('The audio engine could not read any of these B-roll clips (' + items.length + ') — try MP4 or MOV files.');
+      placedItems = put;
       return CPBridge.callHost('CP_placeBroll', { items: put });
     }).then(function (r) {
       kit.capProgress(null);
       var msg = '🎞 ' + r.placed + ' B-roll' + (r.placed === 1 ? '' : 's') + ' on V' + r.track + ' where you say: ' +
-        items.slice(0, 6).map(function (x) { return '“' + x.word + '”'; }).join(', ') + (items.length > 6 ? '…' : '') +
-        '. Delete any you don’t like; ⌘Z undoes it.';
+        placedItems.slice(0, 6).map(function (x) { return '“' + x.word + '”'; }).join(', ') + (placedItems.length > 6 ? '…' : '') +
+        '.' + (skippedClips ? ' ' + skippedClips + ' clip' + (skippedClips === 1 ? '' : 's') + ' could not be read and ' + (skippedClips === 1 ? 'was' : 'were') + ' left out.' : '') +
+        ' Delete any you don’t like; ⌘Z undoes it.';
       say(msg); kit.toast(msg);
     }).catch(function (e) {
       kit.capProgress(null);

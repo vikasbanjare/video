@@ -856,6 +856,7 @@ function CP_countNestItems(tracks, order) {
 function CP_getCutSources(argsJson) {
   try {
     var seq = CP_activeSequence();
+    if (!seq) return CP_fail('Open your sequence first.');
     var bad = CP_NOT_A_MIC, memo = CP_cutMemo();
     var out = { sequenceId: CP_seqId(seq), sequenceName: seq.name, fps: CP_sequenceFps(seq),
                 fingerprint: CP_cutFingerprint(seq, 0, null, memo), audio: [], video: [], selection: null };
@@ -1308,20 +1309,41 @@ function CP_rebuildTrimmed(argsJson) {
     if (!pItem) return CP_fail('Could not find the source clip in the Project panel. Make sure the original media is still imported (not just on the timeline), then try again.');
 
     var seqName = args.name || ('Pulse Trim ' + new Date().getTime());
+    var ownerSeq = app.project.activeSequence;
     var newSeq = app.project.createNewSequenceFromClips(seqName, [pItem]);
     if (!newSeq) return CP_fail('Could not create the trimmed sequence.');
 
     // The sequence now holds the full clip once; clear it, then append keeps.
+    // Cleared through ITS OWN tracks: QE only reaches the ACTIVE sequence, and
+    // if Premiere left the owner's edit active, the old wipe emptied that.
+    var left = 0, tt, ci;
+    function clearDom(tracks) {
+      for (tt = 0; tracks && tt < tracks.numTracks; tt++) {
+        var cl = tracks[tt].clips;
+        for (ci = cl.numItems - 1; ci >= 0; ci--) { try { cl[ci].remove(0, 0); } catch (eR) {} }
+        left += tracks[tt].clips.numItems;
+      }
+    }
+    try { clearDom(newSeq.videoTracks); clearDom(newSeq.audioTracks); } catch (eDom) { left = 1; }
+    if (left > 0) {
+      // an older Premiere without TrackItem.remove: QE, only on the new sequence
+      CP_activateSequence(newSeq);
+      var act = app.project.activeSequence;
+      if (!act || CP_seqId(act) !== CP_seqId(newSeq))
+        { CP_activateSequence(ownerSeq); return CP_fail('Premiere did not open the new trimmed sequence, so Pulse stopped before changing anything. Your edit is untouched.'); }
+    }
     app.enableQE();
     var qseq = qe.project.getActiveSequence();
-    for (var t = 0; t < qseq.numVideoTracks; t++) {
+    if (left > 0 && (!qseq || String(qseq.name) !== String(newSeq.name)))
+      { CP_activateSequence(ownerSeq); return CP_fail('Premiere did not open the new trimmed sequence, so Pulse stopped before changing anything. Your edit is untouched.'); }
+    for (var t = 0; left > 0 && t < qseq.numVideoTracks; t++) {
       var tr = qseq.getVideoTrackAt(t);
       for (var i = tr.numItems - 1; i >= 0; i--) {
         var it = tr.getItemAt(i);
         if (it && it.type !== 'Empty') { try { it.remove(0, 0); } catch (e0) {} }
       }
     }
-    for (t = 0; t < qseq.numAudioTracks; t++) {
+    for (t = 0; left > 0 && t < qseq.numAudioTracks; t++) {
       var tra = qseq.getAudioTrackAt(t);
       for (i = tra.numItems - 1; i >= 0; i--) {
         var ita = tra.getItemAt(i);
@@ -1340,7 +1362,14 @@ function CP_rebuildTrimmed(argsJson) {
         pItem.setOutPoint(CP_ticksFromSeconds(k.end), 4);
         if (vTrack) vTrack.overwriteClip(pItem, cursor);
         else if (aTrack) aTrack.overwriteClip(pItem, cursor);
+        var pieceAt = cursor;
         cursor += (k.end - k.start);
+        // Premiere snaps a piece to whole frames: the next one starts where this
+        // one really ended, or the rounding left a one-frame black gap (measured)
+        try {
+          var putOn = vTrack || aTrack, nOn = putOn.clips.numItems;
+          if (nOn && putOn.clips[nOn - 1].end.seconds > pieceAt) cursor = putOn.clips[nOn - 1].end.seconds;
+        } catch (eEnd) {}
         placed++;
       } catch (eIns) {}
     }
@@ -2442,6 +2471,34 @@ function CP_placeProKey(argsJson) {
    of tolerance). Needed when overwriting a clip MID-track, where the freshly
    placed clip is not the last one by index. */
 function CP_clipAtStart(track, startSec) {
+  // a track's clips are in time order: found by halves. Captions are placed
+  // one at a time, and scanning the whole track after each made placing 600
+  // of them slow down as the track filled. Any read that fails → the scan.
+  try {
+    var clips = track.clips, n = clips.numItems, lo = 0, hi = n, prev = -1e9;
+    // every probe must sit between the probes either side of it (and the
+    // first clip before the last), or the track is not in order → the scan.
+    // Premiere lists a track's clips in time order, so this is a safety net;
+    // a miss is always confirmed by the scan below.
+    var loV = n ? clips[0].start.seconds : 0, hiV = n ? clips[n - 1].start.seconds : 0;
+    if (loV > hiV) throw new Error('not in order');
+    while (lo < hi) {
+      var m = (lo + hi) >> 1, sm = clips[m].start.seconds;
+      if (sm < loV || sm > hiV) throw new Error('not in order');
+      if (sm < startSec) { lo = m + 1; loV = sm; } else { hi = m; hiV = sm; }
+    }
+    var bc = null, bd = 1e9;
+    for (var j = Math.max(0, lo - 1); j <= Math.min(n - 1, lo); j++) {
+      var sj = clips[j].start.seconds;
+      if (sj < prev) throw new Error('not in order');
+      prev = sj;
+      var dj = Math.abs(sj - startSec);
+      if (dj < bd) { bd = dj; bc = clips[j]; }
+    }
+    // found nothing near: confirm with the scan (a track out of order — one
+    // swapped pair can slip past the checks above — never loses a clip)
+    if (bd <= 0.25) return bc;
+  } catch (eFast) {}
   var best = null, bestD = 1e9;
   for (var i = 0; i < track.clips.numItems; i++) {
     var c = track.clips[i], s;
@@ -2524,6 +2581,21 @@ function CP_addZoomPunches(argsJson) {
   } catch (e) { return CP_fail(e.message); }
 }
 
+/* True when a video track already holds Pulse's own caption / guide clips —
+   i.e. it is the track a remembered number means. Once another sequence is
+   open that number can point at the owner's footage (no Pulse clips on it):
+   such a track is never reused. The owner's own clips beside the captions
+   (a logo, an intro) are fine: only Pulse's are cleared off it. */
+function CP_holdsPulseOverlayClips(track) {
+  try {
+    for (var i = 0; i < track.clips.numItems; i++) {
+      var nm = ''; try { nm = String(track.clips[i].name).toLowerCase(); } catch (eN) {}
+      if (nm.indexOf('cap_') === 0 || nm.indexOf('pulse-captions') === 0 || nm === 'captions.mov' || nm === 'guide.png') return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
 function CP_placeCaptionImages(argsJson) {
   try {
     var args = JSON.parse(argsJson);
@@ -2547,7 +2619,10 @@ function CP_placeCaptionImages(argsJson) {
       // existing caption track, overwriting the old ones only where they land —
       // captions outside the selected range are left exactly as they were.
       trackIndex = args.overwriteOnTrack - 1;
-    } else if (args.replaceTrack != null && args.replaceTrack >= 1 && args.replaceTrack <= seq.videoTracks.numTracks) {
+    } else if (args.replaceTrack != null && args.replaceTrack >= 1 && args.replaceTrack <= seq.videoTracks.numTracks &&
+               (CP_holdsPulseOverlayClips(seq.videoTracks[args.replaceTrack - 1]) ||
+                // the top track Pulse just emptied of the set these replace
+                (args.emptiedTrack && seq.videoTracks[args.replaceTrack - 1].clips.numItems === 0))) {
       // Restyle "apply to all": reuse the existing caption track, but first clear
       // only Pulse's own captions off it — the caption frames (cap_*.png) and a
       // long video's one overlay clip (pulse-captions-*.mov), which otherwise
@@ -2567,14 +2642,12 @@ function CP_placeCaptionImages(argsJson) {
         }
       } catch (eClr) {}
     } else {
-      // Use a fresh top video track so we never stomp existing footage.
-      trackIndex = seq.videoTracks.numTracks - 1;
-      try {
-        app.enableQE();
-        var qseq = qe.project.getActiveSequence();
-        qseq.addTracks(1, seq.videoTracks.numTracks, 0);
-        trackIndex = seq.videoTracks.numTracks - 1;
-      } catch (eTrack) {}
+      // Use a fresh top video track so we never stomp existing footage. When
+      // Premiere will not add one, stop: the old fallback put the captions on
+      // the owner's own top track.
+      trackIndex = CP_addTopVideoTrack();
+      seq = CP_activeSequence() || seq;
+      if (trackIndex < 0) return CP_fail('Premiere would not add a new video track for the captions. Add one at the top (right-click the track heads → Add Tracks) and try again — nothing was placed.');
     }
     var track = seq.videoTracks[trackIndex];
 
@@ -2789,7 +2862,8 @@ function CP_placeOverlay(argsJson) {
     }
 
     var trackIndex;
-    if (args.replaceTrack != null && args.replaceTrack >= 1 && args.replaceTrack <= seq.videoTracks.numTracks) {
+    if (args.replaceTrack != null && args.replaceTrack >= 1 && args.replaceTrack <= seq.videoTracks.numTracks &&
+        CP_holdsPulseOverlayClips(seq.videoTracks[args.replaceTrack - 1])) {
       // reuse the existing caption track, clearing Pulse's prior captions off it:
       // an overlay clip, or the cap_*.png images of a job that is becoming an
       // overlay (a long video restyled with "Apply to all")
@@ -2808,13 +2882,11 @@ function CP_placeOverlay(argsJson) {
         }
       } catch (eClr) {}
     } else {
-      // fresh top video track so we never stomp existing footage
-      trackIndex = seq.videoTracks.numTracks - 1;
-      try {
-        app.enableQE();
-        qe.project.getActiveSequence().addTracks(1, seq.videoTracks.numTracks, 0);
-        trackIndex = seq.videoTracks.numTracks - 1;
-      } catch (eTrack) {}
+      // fresh top video track so we never stomp existing footage (none
+      // added: stop, rather than overwrite the owner's top track)
+      trackIndex = CP_addTopVideoTrack();
+      seq = CP_activeSequence() || seq;
+      if (trackIndex < 0) return fail('Premiere would not add a new video track for the captions. Add one at the top (right-click the track heads → Add Tracks) and try again — nothing was placed.');
     }
     var track = seq.videoTracks[trackIndex];
     if (!track) return fail('Could not find a video track to place the overlay on.');
@@ -2889,6 +2961,10 @@ function CP_studioSoundPlace(argsJson) {
     var seq = CP_activeSequence();
     if (!seq) return CP_fail('Open your sequence first.');
     if (!pieces.length) return CP_fail('No audio to place.');
+    // the clean sound belongs to the sequence that was read: cleaning takes
+    // minutes (Studio restore, hours), and the owner may open another meanwhile
+    if (args.sequenceId && CP_seqId(seq) !== args.sequenceId)
+      return CP_fail('You switched to another sequence while Studio sound was working. Open ' + (args.sequenceName ? '"' + args.sequenceName + '"' : 'that sequence') + ' and tap again — nothing was changed.');
     // every cleaned file imported once, into its own bin
     var bin = app.project.rootItem.createBin('Pulse Studio Sound ' + ((new Date()).getTime() % 100000));
     var paths = [], seenP = {};
@@ -2946,13 +3022,28 @@ function CP_studioSoundPlace(argsJson) {
       } catch (eP) { missed++; }
     }
     for (var key in items) if (items.hasOwnProperty(key)) { try { items[key].clearInPoint(4); items[key].clearOutPoint(4); } catch (eCl) {} }
-    var muted = [];
+    var muted = [], keptOn = [], keep = {}, silenced = 0;
+    for (i = 0; i < (args.keepUnmuted || []).length; i++) keep[args.keepUnmuted[i]] = 1;
     if (placed) {
       for (i = 0; i < src.length; i++) {
+        // a track with pieces that were not cleaned (sped up, reversed) stays
+        // on: muting it would silence them
+        if (keep[src[i]]) { keptOn.push(src[i] + 1); continue; }
         try { seq.audioTracks[src[i]].setMute(1); muted.push(src[i] + 1); } catch (eM) {}
       }
+      // ...but on that track the pieces that WERE cleaned go silent, each on its
+      // own (Level to 0), or the clean sound plays doubled with its original
+      for (i = 0; i < pieces.length; i++) {
+        if (!keep[pieces[i].track]) continue;
+        var ownClips = seq.audioTracks[pieces[i].track].clips;
+        for (var oc = 0; oc < ownClips.numItems; oc++) {
+          if (Math.abs(ownClips[oc].start.seconds - pieces[i].at) >= 0.01) continue;
+          try { CP_findProperty(CP_findComponent(ownClips[oc], 'Volume'), 'Level').setValue(0, true); silenced++; } catch (eSil) {}
+          break;
+        }
+      }
     }
-    return CP_ok({ placed: placed, tracks: used, muted: muted, missed: missed, bin: bin.name });
+    return CP_ok({ placed: placed, tracks: used, muted: muted, keptOn: keptOn, silenced: silenced, missed: missed, bin: bin.name });
   } catch (e) { return CP_fail(e.message); }
 }
 
@@ -2995,11 +3086,14 @@ function CP_placeBroll(argsJson) {
     var tr = null, ti = -1;
     if (lowCap < seq.videoTracks.numTracks) for (t0 = highFoot + 1; t0 < lowCap; t0++) if (!seq.videoTracks[t0].clips.numItems) { ti = t0; tr = seq.videoTracks[t0]; break; }
     if (!tr) {
-      var before = seq.videoTracks.numTracks;
-      try { var q = CP_qeSequence(); if (q && q.addTracks) q.addTracks(1, before, 0); } catch (eAdd) {}
+      // no empty track between: a new one goes in RIGHT UNDER the lowest
+      // caption track (Pulse's usual layout, footage V1 + captions V2, put
+      // the B-roll on top of the captions), or on top when there are none
+      var before = seq.videoTracks.numTracks, at = (lowCap < before) ? lowCap : before;
+      try { var q = CP_qeSequence(); if (q && q.addTracks) q.addTracks(1, at, 0); } catch (eAdd) {}
       seq = CP_activeSequence() || seq;
-      ti = seq.videoTracks.numTracks - 1; tr = seq.videoTracks[ti];
-      if (!tr || seq.videoTracks.numTracks <= before || tr.clips.numItems > 0) return CP_fail('Premiere would not add a new video track for the B-roll. Add one at the top by hand and try again.');
+      ti = at; tr = seq.videoTracks[ti];
+      if (!tr || seq.videoTracks.numTracks <= before || tr.clips.numItems > 0) return CP_fail('Premiere would not add a new video track for the B-roll. Add an empty video track just under your captions by hand and try again.');
     }
     var W = 0, H = 0;
     try { W = seq.frameSizeHorizontal; H = seq.frameSizeVertical; } catch (eFs) {}
@@ -3848,13 +3942,19 @@ function CP_sigNorm(s) {
    a one-clip overlay (pulse-captions-….mov, or captions.mov from v0.9.344-
    v0.9.378). A name alone used to be enough, so the owner's "Pulse ep 3.mp4"
    or "Subtitle b-roll.mp4" went with the captions. */
-var CP_CAPTION_NAME = /(flux|subtitle|shorts_text|text_animation|pulse|cutpilot|cap[-_]?\d)/i;
+// a Pulse caption clip's name STARTS with one of Pulse's template names
+// (Subtitle_2, Flux_Apex, Text_Animation_01, Pulse Caption, cap_000…): matched
+// anywhere, the owner's "Subtitle EN" title, a "Recap2" clip or a nested
+// "Pulse short" sequence was taken for a caption and deleted
+var CP_CAPTION_NAME = /^(flux|subtitle[_ ]?\d|shorts_text|text_animation|pulse[ _-]?caption|cutpilot|cap[-_]?\d)/i;
 var CP_MEDIA_FILE = /\.(mp4|m4v|mov|mxf|avi|mts|m2ts|mkv|webm|mpe?g|wmv|flv|3gp|r3d|braw|crm|ari|dng|exr|dpx|wav|mp3|aac|m4a|aiff?|flac|ogg|png|jpe?g|tiff?|psd|gif|bmp|heic|webp|ai|eps|svg)$/i;
 function CP_isPulseCaptionClip(clip) {
   var nm = '', mp = '';
   try { nm = String(clip.name || ''); } catch (eN) {}
   try { mp = String(clip.projectItem.getMediaPath() || ''); } catch (eM) { mp = ''; }
   var file = mp.replace(/^.*[\\\/]/, '');
+  // a nested sequence is the owner's edit, never a caption
+  try { if (clip.projectItem && clip.projectItem.isSequence && clip.projectItem.isSequence()) return false; } catch (eSq) {}
   if (!CP_MEDIA_FILE.test(file)) return CP_CAPTION_NAME.test(nm) || /^captions\.mov$/i.test(nm);
   return /^cap[-_]?\d+[^\\\/]*\.png$/i.test(file) || /^pulse-captions/i.test(file) || /^captions\.mov$/i.test(file);
 }
@@ -3979,6 +4079,29 @@ function CP_findPulseCaptionTrack(argsJson) {
       if (all && hit) return CP_ok({ track: ti + 1 });
     }
     return CP_ok({ track: 0 });
+  } catch (e) { return CP_fail(e.message); }
+}
+
+/* Editable captions are in: the image / overlay set they replace goes (it stayed
+   under them, so every line showed twice). Only tracks holding nothing but
+   Pulse's own stills or overlay, never the new track. argsJson: { keepTrack }
+   (1-based) → { cleared, tracks } */
+function CP_clearImageCaptionSets(argsJson) {
+  try {
+    var args = JSON.parse(argsJson || '{}'), seq = CP_activeSequence(), cleared = 0, tracks = [];
+    for (var ti = seq.videoTracks.numTracks - 1; ti >= 0; ti--) {
+      if (ti + 1 === args.keepTrack) continue;
+      var clips = seq.videoTracks[ti].clips, n = clips.numItems, all = n > 0;
+      for (var c = 0; c < n && all; c++) {
+        var file = '';
+        try { file = String(clips[c].projectItem.getMediaPath() || '').replace(/^.*[\\\/]/, ''); } catch (eM) {}
+        all = /^cap[-_]?\d+[^\\\/]*\.png$/i.test(file) || /^pulse-captions/i.test(file) || /^captions\.mov$/i.test(file);
+      }
+      if (!all) continue;
+      CP_clearTrackClips(ti);
+      seq = CP_activeSequence(); cleared += n; tracks.push(ti + 1);
+    }
+    return CP_ok({ cleared: cleared, tracks: tracks });
   } catch (e) { return CP_fail(e.message); }
 }
 
@@ -5039,9 +5162,11 @@ function CP_testMgrtFill(argsJson) {
     var args = JSON.parse(argsJson);
     var seq = CP_activeSequence();
     var at = 0; try { at = seq.getPlayerPosition().seconds; } catch (eP) {}
-    // fresh top track so we never disturb existing clips
-    var vTrack = seq.videoTracks.numTracks - 1;
-    try { app.enableQE(); qe.project.getActiveSequence().addTracks(1, seq.videoTracks.numTracks, 0); vTrack = seq.videoTracks.numTracks - 1; } catch (eT) {}
+    // fresh top track so we never disturb existing clips — and no test at all
+    // when Premiere won't add one (the old fallback wrote over the top track)
+    var vTrack = CP_addTopVideoTrack();
+    if (vTrack < 0) return CP_fail('Premiere would not add a new video track for the test. Add one at the top by hand and try again.');
+    seq = CP_activeSequence() || seq;
 
     var SAMPLE = 'CUTPILOT TEST 12345';
     var clip = null;
@@ -5099,7 +5224,24 @@ function CP_previewMogrt(argsJson) {
     var at = 0;
     try { at = seq.getPlayerPosition().seconds; } catch (eP) {}
     if (!(at >= 0)) at = 0;
-    var vTrack = seq.videoTracks.numTracks - 1;
+    // the top track, when nothing but templates (earlier tries) sits there
+    // in the preview's time — else a new track: importMGT overwrites what is
+    // under it, and on a one-track sequence that was 4 s of the footage
+    var vTrack = seq.videoTracks.numTracks - 1, pvTo = at + (args.seconds || 4), clash = false;
+    try {
+      var topClips = seq.videoTracks[vTrack].clips;
+      for (var pc = 0; pc < topClips.numItems && !clash; pc++) {
+        var tc = topClips[pc], isMgt = false;
+        if (!(tc.start.seconds < pvTo && tc.end.seconds > at)) continue;
+        try { isMgt = !!(tc.isMGT && tc.isMGT()); } catch (eM) {}
+        if (!isMgt) clash = true;
+      }
+    } catch (eTop) { clash = true; }
+    if (clash) {
+      vTrack = CP_addTopVideoTrack();
+      if (vTrack < 0) return CP_fail('Premiere would not add a new video track for the preview, and the top track has your footage there. Add an empty track at the top and try again.');
+      seq = CP_activeSequence() || seq;
+    }
     var clip = seq.importMGT(args.path, CP_ticksFromSeconds(at), vTrack, 0);
     if (!clip) return CP_fail('Premiere could not place this template.');
     var pvEnd = at + (args.seconds || 4);

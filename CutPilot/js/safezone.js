@@ -213,6 +213,10 @@
     c.save(); c.strokeStyle = 'rgba(90,200,255,0.85)'; c.lineWidth = Math.max(1, unit * 0.0028);
     if (rows > 0 || cols > 0) c.strokeRect(gx, gy, gw, gh);
     var gutX = g * W, gutY = g * H;
+    // the gaps never take more than half the frame: 12 columns with a 20%
+    // gap made columns of minus 117 px and lines outside the margin frame
+    if (cols > 1) gutX = Math.min(gutX, gw * 0.5 / (cols - 1));
+    if (rows > 1) gutY = Math.min(gutY, gh * 0.5 / (rows - 1));
     if (cols > 0) { var cw = (gw - gutX * (cols - 1)) / cols; for (var i = 0; i < cols; i++) { var x0 = gx + i * (cw + gutX); if (i > 0) { c.strokeRect(x0 - gutX, gy, gutX, gh); } if (i < cols - 1 || gutX === 0) { var lx = gx + (i + 1) * cw + i * gutX; if (i < cols - 1) { c.beginPath(); c.moveTo(lx, gy); c.lineTo(lx, gy + gh); c.stroke(); } } } }
     if (rows > 0) { var rh = (gh - gutY * (rows - 1)) / rows; for (var j = 0; j < rows - 1; j++) { var ly = gy + (j + 1) * rh + j * gutY; c.beginPath(); c.moveTo(gx, ly); c.lineTo(gx + gw, ly); c.stroke(); } }
     c.restore();
@@ -225,7 +229,7 @@
     function box(frac, col) { var ix = (1 - frac) / 2 * W, iy = (1 - frac) / 2 * H; c.strokeStyle = col; c.strokeRect(ix, iy, W * frac, H * frac); }
     if (o.action) box(0.90, 'rgba(255,210,90,0.9)');
     if (o.title) box(0.80, 'rgba(255,150,90,0.9)');
-    if (o.margin) { var mm = (state.margin || 5) / 100; c.strokeStyle = 'rgba(120,230,150,0.9)'; c.strokeRect(mm * W, mm * H, W * (1 - 2 * mm), H * (1 - 2 * mm)); }
+    if (o.margin) { var mm = (state.margin || 0) / 100; c.strokeStyle = 'rgba(120,230,150,0.9)'; c.strokeRect(mm * W, mm * H, W * (1 - 2 * mm), H * (1 - 2 * mm)); }
     if (o.thirds) { c.strokeStyle = 'rgba(255,255,255,0.55)'; for (var i = 1; i <= 2; i++) { c.beginPath(); c.moveTo(W * i / 3, 0); c.lineTo(W * i / 3, H); c.stroke(); c.beginPath(); c.moveTo(0, H * i / 3); c.lineTo(W, H * i / 3); c.stroke(); } }
     if (o.diag) { c.strokeStyle = 'rgba(255,255,255,0.45)'; c.beginPath(); c.moveTo(0, 0); c.lineTo(W, H); c.moveTo(W, 0); c.lineTo(0, H); c.stroke(); }
     if (o.cross) { c.strokeStyle = 'rgba(255,255,255,0.8)'; var cl = unit * 0.04; c.beginPath(); c.moveTo(W / 2 - cl, H / 2); c.lineTo(W / 2 + cl, H / 2); c.moveTo(W / 2, H / 2 - cl); c.lineTo(W / 2, H / 2 + cl); c.stroke(); }
@@ -422,10 +426,12 @@
     var durSec = state.dur === 'full' ? Math.max(2, (state.env && +state.env.endSeconds) || 10) : (parseFloat(state.dur) || 5);
     var prog = $('sz-progress'); if (prog) { prog.classList.remove('hidden'); prog.textContent = 'Placing guide on timeline…'; }
     var args = { path: pngPath, startSec: 0, durSec: durSec };
-    if (state.replace && state.lastGuideTrack) args.replaceTrack = state.lastGuideTrack;  // reuse + clear the existing guide track
+    // reuse + clear the existing guide track — on the sequence it was placed on
+    var seqNow = (state.env && state.env.sequenceName) || '';
+    if (state.replace && state.lastGuideTrack && state.lastGuideSeq === seqNow) args.replaceTrack = state.lastGuideTrack;
     CPBridge.callHost('CP_placeOverlay', args).then(function (r) {
       if (prog) prog.classList.add('hidden');
-      state.lastGuideTrack = r.track;
+      state.lastGuideTrack = r.track; state.lastGuideSeq = seqNow;
       try { toast('🎉 Guide on V' + r.track + ' (opacity ' + state.opacity + '%) for ' + Math.round(durSec) + 's. Toggle that track\'s eye to hide it. ⌘Z/Ctrl+Z undoes it.'); } catch (e) {}
     }).catch(function (e) { if (prog) prog.classList.add('hidden'); try { toast('Place failed: ' + e.message, true); } catch (e2) {} });
   }

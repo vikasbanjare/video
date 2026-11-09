@@ -123,7 +123,7 @@ function analyse(png) {
   else bad('overlay .mov is suspiciously small (' + size + ' bytes)');
 
   const ex = cp.spawnSync(ff, ['-y', '-loglevel', 'error', '-i', movPath,
-    '-vf', "select='eq(n\\,20)+eq(n\\,70)'", '-vsync', '0', '-pix_fmt', 'rgba',
+    '-vf', "select='eq(n\\,20)+eq(n\\,70)'", '-fps_mode', 'passthrough', '-pix_fmt', 'rgba',
     path.join(dir, 'f-%d.png')], { encoding: 'utf8' });
   const frames = fs.readdirSync(dir).filter(f => /^f-\d+\.png$/.test(f)).sort();
   if (ex.status !== 0 || frames.length < 2) {
@@ -171,7 +171,7 @@ function analyse(png) {
     const bdir = path.join(dir, 'box');
     try { fs.mkdirSync(bdir); } catch (e) {}
     cp.spawnSync(ff, ['-y', '-loglevel', 'error', '-i', movBox,
-      '-vf', "select='eq(n\\,20)'", '-vsync', '0', '-pix_fmt', 'rgba',
+      '-vf', "select='eq(n\\,20)'", '-fps_mode', 'passthrough', '-pix_fmt', 'rgba',
       path.join(bdir, 'b-%d.png')], { encoding: 'utf8' });
     const bf = fs.readdirSync(bdir).filter(f => /^b-\d+\.png$/.test(f));
     if (!bf.length) bad('could not extract a frame from the boxed overlay');
@@ -229,7 +229,7 @@ function analyse(png) {
     const dd = path.join(dir, tag + 'f');
     try { fs.mkdirSync(dd); } catch (e) {}
     cp.spawnSync(ff, ['-y', '-loglevel', 'error', '-i', mp,
-      '-vf', "select='eq(n\\,10)'", '-vsync', '0', '-pix_fmt', 'rgba',
+      '-vf', "select='eq(n\\,10)'", '-fps_mode', 'passthrough', '-pix_fmt', 'rgba',
       path.join(dd, 'z-%d.png')], { encoding: 'utf8' });
     const zf = fs.readdirSync(dd).filter(f => /\.png$/.test(f))[0];
     if (!zf) { devInk.push(-1); continue; }

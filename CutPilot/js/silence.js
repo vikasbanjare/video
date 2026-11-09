@@ -398,9 +398,11 @@
     hop = hop || HOP;
     var t0 = range.start;
     var n = Math.max(0, Math.ceil((range.end - range.start) / hop - 1e-9));
-    var cov = new Uint8Array(n), loud = new Uint8Array(n), strong = new Uint8Array(n), peak = new Float32Array(n).fill(-200);
+    var cov = new Uint8Array(n), loud = new Uint8Array(n), strong = new Uint8Array(n), peak = new Float32Array(n).fill(-200), rel = null;
+    var envs = [];
     for (var s = 0; s < sources.length; s++) {
       var src = sources[s], sp = src.speed > 0 ? src.speed : 1;
+      if (src.env && envs.indexOf(src.env) < 0) envs.push(src.env);
       var g0 = Math.max(0, Math.ceil((src.seqStart - t0) / hop - 0.5 - 1e-9));
       var g1 = Math.min(n, Math.ceil((src.seqEnd - t0) / hop - 0.5 - 1e-9));
       for (var g = g0; g < g1; g++) {
@@ -412,11 +414,15 @@
         if (src.flags[k]) loud[g] = 1;
         if (src.strongDb != null && src.env.db[k] > src.strongDb) strong[g] = 1;
         if (src.env.db[k] > peak[g]) peak[g] = src.env.db[k];
+        if (src.speechDb != null) {
+          if (!rel) rel = new Float32Array(n).fill(-200);
+          if (src.env.db[k] - src.speechDb > rel[g]) rel[g] = src.env.db[k] - src.speechDb;
+        }
       }
     }
     var state = new Uint8Array(n);
     for (var q = 0; q < n; q++) state[q] = cov[q] ? (loud[q] ? 2 : 1) : 0;
-    return { t0: t0, hop: hop, n: n, state: state, strong: strong, peak: peak };
+    return { t0: t0, hop: hop, n: n, state: state, strong: strong, peak: peak, rel: rel, mics: envs.length };
   }
 
   /*
@@ -640,10 +646,26 @@
   function quietStretches(grid, bar, opts) {
     if (!grid || !grid.peak || bar == null || !isFinite(bar)) return [];
     opts = opts || {};
-    var minLen = opts.minLen != null ? opts.minLen : 1.5, step = opts.step || 0.25, pad = opts.pad != null ? opts.pad : 0.25;
+    var minLen = opts.minLen != null ? opts.minLen : 1.5, step = opts.step || 0.25, pad = opts.pad != null ? opts.pad : 0.35;
     var per = Math.max(1, Math.round(step / grid.hop)), nb = Math.floor(grid.n / per), out = [], k = 0;
+    // each mic against its OWN speech level: a quieter guest never reaches the host's
+    var level = grid.rel || grid.peak, top = grid.rel ? 3 : bar;
+    // Several tracks: a level says nothing about who else is talking or playing, so
+    // only stretches under every mic's own room-noise gate count (measured: the bar
+    // alone cut a guest's answers and a track the owner said was a voice).
+    var strict = grid.mics > 1;
+    // The rule rests on speech rising past that level within 1.5 s. Where it does
+    // not (a steady or limited voice, music nobody left out) stretches of talk read
+    // as quiet, and no word guard comes after this: cut nothing on that recording.
+    var span = Math.max(1, Math.round(minLen / step)), talk = 0, rises = 0;
+    for (var w0 = 0; w0 + span <= nb; w0 += span) {
+      var on = 0, up = false, of = span * per;
+      for (var q = w0 * per; q < (w0 + span) * per; q++) { if (grid.state[q] === 2) on++; if (grid.state[q] !== 0 && level[q] >= top) up = true; }
+      if (on * 2 >= of) { talk++; if (up) rises++; }
+    }
+    if (!strict && talk && rises / talk < (opts.minRise != null ? opts.minRise : 0.6)) return [];
     function quiet(b) {
-      for (var g = b * per; g < (b + 1) * per; g++) if (grid.state[g] !== 0 && grid.peak[g] >= bar) return false;
+      for (var g = b * per; g < (b + 1) * per; g++) if (grid.state[g] !== 0 && (level[g] >= top || (strict && grid.state[g] === 2))) return false;
       return true;
     }
     while (k < nb) {
@@ -658,9 +680,13 @@
         var soft = bar - 9, w10 = Math.round(0.1 / grid.hop), max = Math.round(0.6 / grid.hop);
         function hush(g0) { for (var g = g0; g < g0 + w10; g++) if (g >= 0 && g < grid.n && grid.peak[g] >= soft) return false; return true; }
         var gs = Math.round((c0 - grid.t0) / grid.hop), ge = Math.round((c1 - grid.t0) / grid.hop), st;
-        if (k > 0) { for (st = 0; st < max && !hush(gs + st - Math.round(w10 / 2)); st++); c0 += st * grid.hop; }
-        if (e < nb) { for (st = 0; st < max && !hush(ge - st - Math.round(w10 / 2)); st++); c1 -= st * grid.hop; }
-        if (c1 - c0 >= 0.2) out.push({ start: c0, end: c1 });
+        var sure = true;
+        if (k > 0) { for (st = 0; st < max && !hush(gs + st - Math.round(w10 / 2)); st++); c0 += st * grid.hop; if (st >= max) sure = false; }
+        if (e < nb) { for (st = 0; st < max && !hush(ge - st - Math.round(w10 / 2)); st++); c1 -= st * grid.hop; if (st >= max) sure = false; }
+        // at the very start or end, sound over the gate may be a music intro or outro
+        if (k === 0 || e >= nb) for (var h = k * per; h < e * per && sure; h++) if (grid.state[h] === 2) sure = false;
+        // no true quiet to land on: too unsure that nobody is talking, so it stays
+        if (sure && c1 - c0 >= 0.2) out.push({ start: c0, end: c1 });
       }
       k = e;
     }
@@ -731,21 +757,26 @@
     var merged = mergeRanges((ranges || []).filter(function (r) { return r.end > r.start; }), 0.0001);
     if (!merged.length) return items.slice();
     if (closeGaps === undefined) closeGaps = true;
+    // the cuts are sorted and apart: found by halves, with the time removed
+    // before each kept as a running total. A scan of every cut for each of a
+    // 2-hour podcast's 20k words (four to six times a word) made re-syncing
+    // the words after Clean up slow; the totals add up in the same order.
+    var before = [0];
+    for (var bi = 0; bi < merged.length; bi++) before.push(before[bi] + (merged[bi].end - merged[bi].start));
+    function countStartingBelow(t, inclusive) {   // how many cuts start before t (at or before, if inclusive)
+      var lo = 0, hi = merged.length;
+      while (lo < hi) { var m = (lo + hi) >> 1; if (inclusive ? merged[m].start <= t : merged[m].start < t) lo = m + 1; else hi = m; }
+      return lo;
+    }
     function removedBefore(t) {
-      var s = 0;
-      for (var i = 0; i < merged.length; i++) {
-        var r = merged[i];
-        if (r.start >= t) break;
-        s += Math.min(t, r.end) - r.start;
-      }
-      return s;
+      var k = countStartingBelow(t, false);
+      if (!k) return 0;
+      var r = merged[k - 1];
+      return before[k - 1] + (Math.min(t, r.end) - r.start);
     }
     function cutAt(t) {   // the cut strictly containing t, if any
-      for (var i = 0; i < merged.length; i++) {
-        if (merged[i].start > t) return null;
-        if (t > merged[i].start && t < merged[i].end) return merged[i];
-      }
-      return null;
+      var k = countStartingBelow(t, true) - 1;
+      return (k >= 0 && t > merged[k].start && t < merged[k].end) ? merged[k] : null;
     }
     function survives(it, need) {
       var len = it.end - it.start;

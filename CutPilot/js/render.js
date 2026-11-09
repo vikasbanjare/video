@@ -769,6 +769,9 @@
       // a real frame: the whole block (ink, outline, box) stays inside it
       var padY0 = hasBox(style) ? base * 0.22 * (style.boxPad != null ? style.boxPad : 1) : 0;
       var inkTop = lineY[0] - Math.max(lines[0].asc, lines[0].height * 0.82) - stroke / 2 - padY0;
+      // the speaker label sits above the block: it is part of what must stay
+      // in the frame (pinned to the top edge, it covered the first line)
+      if (frame.speaker) { var spxF = Math.max(16, Math.round(base * 0.5)); inkTop -= spxF * 2.2; }
       var last = lines[lines.length - 1];
       var inkBot = lineY[lines.length - 1] + Math.max(last.desc, last.height * 0.18) + stroke / 2 + padY0 + (style.box3dDepth || 0);
       var room = H * 0.02, fix = 0;
@@ -787,7 +790,7 @@
     }
 
     // speaker label pill above the block
-    if (frame.speaker) {
+    if (frame.speaker && lines.length) {
       var spk = String(frame.speaker).toUpperCase();
       var spx = Math.max(16, Math.round(base * 0.5));
       setFont(spx);
@@ -795,7 +798,12 @@
       ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
       var swid = ctx.measureText(spk).width;
       var sx = (W - swid) / 2;
-      var sy = Math.max(spx * 1.5, baseY - lines[0].height - spx * 0.6);
+      // placed from the first line's real top (its letters, outline and box),
+      // not its nominal height: on fonts whose capitals rise above that the
+      // label touched the words (1 px apart on a landscape frame)
+      var padYs = hasBox(style) ? base * 0.22 * (style.boxPad != null ? style.boxPad : 1) : 0;
+      var firstTop = lineY[0] - Math.max(lines[0].asc || 0, lines[0].height * 0.82) - (stroke || 0) / 2 - padYs;
+      var sy = Math.max(spx * 1.5, firstTop - spx * 0.8);
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
       roundRect(ctx, sx - spx * 0.45, sy - spx, swid + spx * 0.9, spx * 1.4, spx * 0.35);
       ctx.fill();
@@ -825,11 +833,14 @@
     // matching Latin letters only made every Hindi brand word match nothing)
     function bareWord(w) { return String(w).toLowerCase().replace(/[^a-z0-9'\u0900-\u0963\u0966-\u097F]/g, ''); }
     var brandSet = {};
+    // a brand of several words ("Zerodha Kite") colours each of its words:
+    // squashed to "zerodhakite" it matched no word of a caption, ever
     if (style.brandWords) for (var bwI = 0; bwI < style.brandWords.length; bwI++) {
-      var bw = bareWord(style.brandWords[bwI]);
-      if (bw) brandSet[bw] = 1;
+      var parts = String(style.brandWords[bwI]).split(/\s+/);
+      for (var bp = 0; bp < parts.length; bp++) { var bw = bareWord(parts[bp]); if (bw) brandSet[bw] = 1; }
     }
-    function isNumberish(w) { return /\d/.test(String(w)); }   // 2026, $1M, 50%, 10x, 1,000
+    // Hindi digits (५०, २०२६) are numbers too
+    function isNumberish(w) { return /[0-9\u0966-\u096F]/.test(String(w)); }   // 2026, $1M, 50%, 10x, 1,000, ५०
     function restColorFor(word) {
       if (style.brandColor && brandSet[bareWord(word)]) return style.brandColor;
       if (style.numberColor && isNumberish(word)) return style.numberColor;
@@ -1193,13 +1204,16 @@
       return new Promise(function (resolve, reject) {
         function chunk() {
           try {
-            var stop = Math.min(i + 20, frames.length);
-            for (; i < stop; i++) {
+            // ~30 ms per burst as well as 20 frames, so the panel keeps answering
+            var stop = Math.min(i + 20, frames.length), t0 = Date.now();
+            while (i < stop) {
               drawFrame(canvas, frames[i], style);
               var b64 = canvas.toDataURL('image/png').split(',')[1];
               var file = pathMod.join(outDir, 'cap_' + String(10000 + i) + '.png');
               fs.writeFileSync(file, NodeBuffer.from(b64, 'base64'));
               results.push({ path: file, start: frames[i].start, end: frames[i].end, cap: frames[i].cap });
+              i++;
+              if (Date.now() - t0 > 30) break;
             }
             if (opts.onProgress) opts.onProgress(i, frames.length);
             if (i < frames.length) setTimeout(chunk, 0);
@@ -1475,10 +1489,14 @@
         function chunk() {
           if (cancelled) return reject(stopped());
           try {
-            var stop = Math.min(i + 12, n);
-            for (; i < stop; i++) {
+            // a burst ends after ~30 ms as well as after 12 states: one state
+            // of a full-HD frame can take 80 ms, and 12 of them froze the panel
+            var stop = Math.min(i + 12, n), t0 = Date.now();
+            while (i < stop) {
               drawFrame(canvas, plan.states[i], style);
               writePng(canvas, fileFor(i));
+              i++;
+              if (Date.now() - t0 > 30) break;
             }
           } catch (e) { return reject(e); }
           progress('draw', i, n);

@@ -1402,6 +1402,25 @@ console.log('fonts.js (installed-font discovery)');
   const fam = CPFonts.parseFamilyNames(sfntWithFamily('Times New Roman'));
   assert(fam.length === 1 && fam[0] === 'Times New Roman', 'parses a family name, keeping internal spaces');
   assert(CPFonts.parseFamilyNames(Buffer.from([1, 2, 3])).length === 0, 'too-short buffer yields no names');
+  // a weight's legacy family ("Inter Black") gets its PostScript face too:
+  // it is listed in the font picker, and had no face to send to Premiere
+  {
+    const recs = [[1, 'Inter Black'], [2, 'Regular'], [6, 'Inter-Black'], [16, 'Inter'], [17, 'Black']];
+    const strs = recs.map(r => Buffer.from(r[1].split('').map(c => [0, c.charCodeAt(0)]).flat()));
+    const nameLen = 6 + 12 * recs.length + strs.reduce((a, x) => a + x.length, 0);
+    const buf = Buffer.alloc(28 + nameLen);
+    buf.writeUInt32BE(0x00010000, 0); buf.writeUInt16BE(1, 4);
+    buf.write('name', 12, 'latin1'); buf.writeUInt32BE(28, 20); buf.writeUInt32BE(nameLen, 24);
+    buf.writeUInt16BE(0, 28); buf.writeUInt16BE(recs.length, 30); buf.writeUInt16BE(6 + 12 * recs.length, 32);
+    let off = 0;
+    recs.forEach((r, i) => { const at = 34 + i * 12; buf.writeUInt16BE(3, at); buf.writeUInt16BE(1, at + 2); buf.writeUInt16BE(0x0409, at + 4);
+      buf.writeUInt16BE(r[0], at + 6); buf.writeUInt16BE(strs[i].length, at + 8); buf.writeUInt16BE(off, at + 10); off += strs[i].length; });
+    let so = 28 + 6 + 12 * recs.length; strs.forEach(x => { x.copy(buf, so); so += x.length; });
+    const names = CPFonts.parseFamilyNames(buf), faces = CPFonts.parseFaces(buf);
+    const every = names.every(nm => faces.some(f => f.family === nm));
+    assert(every && faces.some(f => f.family === 'Inter Black' && f.ps === 'Inter-Black') && faces.some(f => f.family === 'Inter' && f.style === 'Black'),
+      'every family the font picker lists has a PostScript face, "Inter Black" included (' + JSON.stringify([names, faces]) + ')');
+  }
   assert(CPFonts.parseFamilyNames(Buffer.alloc(40)).length === 0, 'unrecognized font header yields no names');
 
   const win = CPFonts.systemFontDirs('win32', { WINDIR: 'C:\\Windows', LOCALAPPDATA: 'C:\\U\\L' });
@@ -1489,6 +1508,7 @@ console.log('ass.js (libass karaoke generator)');
   assert(CPAss.assColor('#FFD400') === '&H00D4FF&', 'assColor converts RGB->BGR');
   assert(CPAss.assColor('#fff') === '&HFFFFFF&', 'assColor expands shorthand hex');
   assert(CPAss.assText('a {b} c\nd') === 'a (b) c\\Nd', 'assText neutralises braces + newlines');
+  assert(CPAss.assText('C:\\Nope \\h') === 'C:\\\u2060Nope \\\u2060h', 'a typed backslash is never read as a line break or space (' + JSON.stringify(CPAss.assText('C:\\Nope \\h')) + ')');
   // malformed hex must degrade to a VALID ASS colour, never emit a broken style
   assert(/^&H[0-9A-F]{6}&$/.test(CPAss.assColor('#GGG')), 'assColor turns garbage hex into a valid (white) colour');
   assert(/^&H[0-9A-F]{6}&$/.test(CPAss.assColor('#12')), 'assColor pads a too-short hex to a valid colour');
@@ -1789,6 +1809,74 @@ console.log('robustness (null/edge inputs never crash)');
   // and the fix produces a sane value, not just non-throwing
   const ms = CPCaptions.mergeStyle(null, { fill: '#abcdef' });
   assert(ms && ms.fill === '#abcdef', 'mergeStyle with null preset still applies the override');
+}
+
+// ---- Hindi chapter titles never carry the danda (। ॥) ----
+{
+  const cues = []; let t = 0;
+  for (let i = 0; i < 120; i++) { cues.push({ start: t, end: t + 5, text: i < 60 ? 'पैसा बचाना ज़रूरी है। बजट बनाओ।' : 'शेयर बाज़ार में निवेश करो है।' }); t += 5; }
+  const r = CPChapters.buildChapters(cues, {}), titles = (r.chapters || r).map(c => c.title || c.label);
+  assert(titles.length >= 2 && titles.every(x => !/[।॥]/.test(x) && !/^है$/.test(x)),
+    'a Devanagari transcript\'s chapter titles are its topics, never "है।" or a word ending in । (' + JSON.stringify(titles) + ')');
+}
+
+// ---- searches by halves give the answers the old scans gave (v0.10.112) ----
+// 2-hour podcasts: words → lines, word timing → speech runs and Hinglish word
+// timing scanned everything per word. The fast paths must answer exactly as
+// the scan from item 0 did, ties and odd lists included.
+{
+  let seed = 3; const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  const scanLine = (ls, t) => { let best = -1, bestD = Infinity; for (let j = 0; j < ls.length; j++) { const d = (t < +ls[j].start) ? +ls[j].start - t : (t >= +ls[j].end ? t - +ls[j].end : 0); if (d === 0) return j; if (d < bestD) { bestD = d; best = j; } } return best; };
+  let bad = 0, n = 0;
+  for (let c = 0; c < 400; c++) {
+    const L = []; let t = rnd() * 2; const k = Math.floor(rnd() * 40) + 1;
+    for (let i = 0; i < k; i++) { t += rnd() < 0.3 ? 0 : Math.round(rnd() * 4) / 4; const len = rnd() < 0.1 ? 0 : Math.round(rnd() * 8) / 4; L.push({ start: t, end: t + len }); t += len; if (c % 5 === 0 && rnd() < 0.2) t -= 0.5; }
+    const f = CPCaptions.makeLineFinder(L);
+    for (let q = 0; q < 40; q++) { const x = Math.round((rnd() * (t + 4) - 1) * 4) / 4 + (rnd() < 0.5 ? 0 : rnd() * 0.01); n++; if (f(x) !== scanLine(L, x)) bad++; }
+  }
+  assert(bad === 0, 'makeLineFinder answers as the scan from line 0 does (' + n + ' lookups, ties, gaps, overlaps, zero-length lines; ' + bad + ' differ)');
+
+  // speech runs found once and passed in = found per call
+  const S = []; let loud = false;
+  for (let i = 0; i < 3000; i++) { if (rnd() < 0.05) loud = !loud; S.push({ t: +(i * 0.02).toFixed(3), db: loud ? -22 - rnd() * 8 : -75 - rnd() * 15 }); }
+  const W = []; let tw = 0.3; for (let i = 0; i < 150; i++) { const d = 0.05 + rnd() * 0.5; W.push({ start: +tw.toFixed(3), end: +(tw + d).toFixed(3), text: ['aaj', 'paise', 'strike', 'apple'][i % 4] }); tw += d + rnd() * 0.3; }
+  const runs = CPAlign.speechRuns(S, {});
+  assert(JSON.stringify(CPAlign.refineWords(W, S, { blend: 0.5, snapWin: 0.25 })) === JSON.stringify(CPAlign.refineWords(W, S, { blend: 0.5, snapWin: 0.25, runs: runs })),
+    'refineWords with the runs passed in (opts.runs) gives the same words as finding them itself');
+  let inBad = 0;
+  for (let q = 0; q < 2000; q++) { const x = rnd() * 61; const lin = runs.some(r => x >= r.start - 0.01 && x <= r.end + 0.01); if (CPAlign.inSpeech(x, runs, 0.01) !== lin) inBad++; }
+  assert(inBad === 0, 'inSpeech by halves = inSpeech by scan (' + inBad + ' of 2000 differ)');
+
+  // Hinglish word timing: words in time order (by halves) or not (filter) agree
+  const cues = [], words = []; let tc = 0;
+  for (let i = 0; i < 30; i++) { const d = 0.5 + rnd() * 3; cues.push({ start: tc, end: tc + d, text: 'a b' }); tc += d + (rnd() < 0.5 ? 0 : rnd()); }
+  for (let i = 0; i < 150; i++) { const s0 = rnd() * tc; words.push({ start: s0, end: s0 + 0.2, text: rnd() < 0.1 ? ' ' : 'w' + i }); }
+  const sortedW = words.slice().sort((a, b) => a.start - b.start), texts = cues.map((x, i) => i % 3 ? null : 'x y');
+  // the scan it replaced, written out: every word filtered for every line
+  const ref = (() => { const out = []; let matched = 0;
+    cues.forEach((c, i) => { const toks = String(texts[i] == null ? c.text : texts[i]).split(/\s+/).filter(Boolean);
+      const ws = sortedW.filter(w => +w.start >= +c.start - 0.01 && +w.start < +c.end - 0.001 && String(w.text || '').trim());
+      if (ws.length && ws.length === toks.length) { matched++; toks.forEach((t, k) => out.push({ text: t, start: +ws[k].start, end: +ws[k].end })); }
+      else if (toks.length) { const d = (+c.end - +c.start) / toks.length; toks.forEach((t, k) => out.push({ text: t, start: +c.start + k * d, end: +c.start + (k + 1) * d, estimated: true })); } });
+    return { words: out, matched: matched, lines: cues.length }; })();
+  assert(JSON.stringify(CPCaptions.carryWordTiming(cues, texts, sortedW)) === JSON.stringify(ref),
+    'carryWordTiming by halves = the scan of every word per line (' + ref.matched + ' lines one for one)');
+}
+
+// ---- Shorts: a moment at the edge of an 80-line part is fitted against the
+// whole transcript (the part's last line is not taken for a sentence end) ----
+{
+  const CPSE = require(path.join(__dirname, '..', 'js', 'smartedit.js'));
+  const segs = [];
+  for (let i = 0; i < 12; i++) segs.push({ start: i * 3, end: i * 3 + 2.9, text: 'line ' + i + (i % 4 === 3 ? '.' : '') });
+  // part = lines 4..7, the AI picks its last two lines (6..7 → ends on line 7, a sentence end)
+  const reply = JSON.stringify({ clips: [{ from: 1, to: 2, title: 't', score: 80 }] });
+  const part = segs.slice(4, 8);
+  const alone = CPSE.parseHighlightResponse(reply, part, { min: 1, max: 60 });
+  const whole = CPSE.parseHighlightResponse(reply, part, { min: 1, max: 60, all: segs, offset: 4 });
+  assert(whole.length === 1 && whole[0].start === segs[4].start && whole[0].end === segs[7].end,
+    'a part\'s moment is fitted on the whole transcript: it opens where the sentence opens (' + (whole[0] && whole[0].start) + ' s) and closes on its "." (' + (whole[0] && whole[0].end) + ' s)');
+  assert(alone.length === 1, '(the part alone still gives a moment)');
 }
 
 // ---- PostScript font resolution ("not able to change the fonts") ----
@@ -2148,6 +2236,24 @@ console.log('script alignment (your script\'s words + the transcript\'s timing)'
   const hi = S.alignToScript([{ start: 0, end: 2, text: 'मेरा नाम विकस है' }], 'मेरा नाम विकास है।');
   assert(hi.matched === true && /विकास/.test(hi.cues[0].text), 'Devanagari script corrects the Hindi transcript');
   // dropped words in the middle are restored into the right caption
+  // the last caption misheard whole: its fix lands in IT, not in the one before
+  const tail = S.alignToScript([{ start: 0, end: 2, text: 'hello my friends welcome' }, { start: 2, end: 4, text: 'akshi adeshi' }], 'hello my friends welcome Akshay Uddeshi');
+  assert(JSON.stringify(tail.cues.map(c => c.text)) === '["hello my friends welcome","Akshay Uddeshi"]', 'a misheard LAST caption takes its own fix (' + JSON.stringify(tail.cues.map(c => c.text)) + ')');
+  // a Hindi script with । at the ends of sentences matches as well as English with "."
+  const danda = S.alignToScript([{ start: 0, end: 1, text: 'मैं ठीक हूँ' }, { start: 1, end: 2, text: 'आप कैसे हो' }], 'मैं ठीक हूँ। आप कैसे हो।');
+  assert(danda.matchRate === 1, 'the danda (।) does not stop a Hindi word matching (rate ' + danda.matchRate + ')');
+  // emoji / dashes are not words: a wrong script with 🙏 is still a wrong script
+  const emo = S.alignToScript([{ start: 0, end: 1, text: '— — — … wrong words here' }], '🙏 🙏 🙏 🙏 totally different script');
+  assert(emo.matched === false, 'emoji and dashes never count as matching words (rate ' + emo.matchRate + ')');
+  // a 2-hour podcast: a pre-show chat the script does not have, or a script
+  // intro nobody said, is passed over — the rest still lines up
+  { const W = n => Array.from({ length: n }, (_, i) => 'w' + i), X = n => Array.from({ length: n }, (_, i) => 'chat' + i);
+    const toCues = ws => { const c = []; for (let i = 0; i < ws.length; i += 10) c.push({ start: i, end: i + 1, text: ws.slice(i, i + 10).join(' ') }); return c; };
+    const pre = S.alignToScript(toCues(X(1300).concat(W(3000))), W(3000).join(' '));
+    const intro = S.alignToScript(toCues(W(1500)), X(1300).concat(W(1500)).join(' '));
+    // (matching is by sound, so these numbered made-up words collide a little: not exactly 1)
+    assert(pre.matched && pre.matchRate > 0.69 && intro.matched && intro.matchRate > 0.95,
+      'a long transcript with a pre-show chat, or a script with an unsaid intro, still lines up (' + pre.matchRate.toFixed(2) + ', ' + intro.matchRate.toFixed(2) + ')'); }
   const drop = S.alignToScript([{ start: 0, end: 3, text: 'we build for creators' }],
                                'We build tools for creators');
   assert(drop.cues[0].text === 'We build tools for creators', 'a word the transcriber missed is restored: ' + drop.cues[0].text);
@@ -2180,6 +2286,145 @@ console.log('script alignment (your script\'s words + the transcript\'s timing)'
   assert(noDrift, 'every caption keeps its exact timing through a script fix');
   const identical = S.alignToScript(hinglish, hinglish.map(function (c) { return c.text; }).join(' '));
   assert(identical.replaced === 0, 'a script that matches the transcript reports 0 corrections');
+}
+
+// ---- Hindi hooks: a word right before the danda still counts --------------
+{
+  const SH = require(path.join(__dirname, '..', 'js', 'shorts.js'));
+  const a = SH.hookScore('मैंने खो दिया सारा पैसा।'), b = SH.hookScore('मैंने खो दिया सारा पैसा');
+  const n = SH.hookScore('मेरे पास थे सिर्फ दस।');
+  const sc = x => (x && x.score != null) ? x.score : x;
+  assert(sc(a) === sc(b) && sc(a) > 0 && sc(n) > 0, 'a Hindi hook that ends a sentence (।) scores like the same words without it (' + JSON.stringify([a, b, n]).slice(0, 200) + ')');
+}
+
+{
+  // the emoji for a Hindi word at the end of a sentence (दिल।), never inside a longer word
+  const e = [CPCaptions.emojiForText('मेरा दिल।'), CPCaptions.emojiForText('ये आग।'), CPCaptions.emojiForText('दिलचस्प बात')];
+  assert(e[0] === '❤️' && e[1] === '🔥' && e[2] == null, 'a Hindi emoji word before । still gets its emoji, a longer word does not (' + JSON.stringify(e) + ')');
+}
+
+// ---- AI replies the panel must still read (smart edit) ---------------------
+{
+  const SE = require(path.join(__dirname, '..', 'js', 'smartedit.js'));
+  const mk = arr => arr.map((t, i) => ({ text: t, start: i, end: i + 0.9 }));
+  const w1 = mk(['so', 'um', '-', 'uh', 'great']);
+  const c1 = SE.parseCleanupResponse('{"cuts":[{"from":1,"to":3,"words":"um - uh"}]}', w1).map(c => [c.fromIdx, c.toIdx]);
+  const w2 = mk(['मैं', 'बोल', 'रहा', '।', 'था', 'ठीक']);
+  const c2 = SE.parseCleanupResponse('{"cuts":[{"from":0,"to":4,"words":"मैं बोल रहा था"}]}', w2).map(c => [c.fromIdx, c.toIdx]);
+  assert(JSON.stringify(c1) === '[[1,3]]' && JSON.stringify(c2) === '[[0,4]]', 'a cut with a lone "-" or "।" inside it is still cut (' + JSON.stringify([c1, c2]) + ')');
+  const c3 = SE.parseCleanupResponse('{"cuts":[{"from":1,"to":1,"words":"um","reason":"the “um” filler",}]}', w1);
+  assert(c3.length === 1, 'a reply with a trailing comma and “curly quotes” inside a reason still parses (' + c3.length + ')');
+  const rr = SE.parseRerankResponse('{"ranked":[2,0,1]}', 3);
+  assert(JSON.stringify(rr && rr.map(x => x.i)) === '[2,0,1]' && rr[0].score > rr[2].score, 'a ranking given as plain numbers keeps every index, best first (' + JSON.stringify(rr) + ')');
+  const segs = []; for (let i = 0; i < 12; i++) segs.push({ start: i * 5, end: i * 5 + 4.8, text: 'line ' + i + ' yeh baat hai.' });
+  const h1 = SE.parseHighlightResponse('{"clips":[{"from":"0:20","to":"0:40"}]}', segs, { min: 6, max: 60 }).map(c => [c.start, c.end]);
+  const h2 = SE.parseHighlightResponse('{"clips":[{"from":"[4]","to":"[7]"}]}', segs, { min: 6, max: 60 }).map(c => [c.start, c.end]);
+  assert(JSON.stringify(h1) === '[[20,39.8]]' && JSON.stringify(h2) === '[[20,39.8]]', 'a highlight given as times ("0:20") or as "[4]" is the right lines (' + JSON.stringify([h1, h2]) + ')');
+}
+
+// ---- retakes and fillers: an audit's findings --------------------------------
+{
+  const T = require(path.join(__dirname, '..', 'js', 'transcript.js'));
+  const Wt = (t0, x) => x.split(' ').map((w, i) => ({ start: t0 + i * 0.3, end: t0 + i * 0.3 + 0.25, text: w }));
+  const cw = Wt(0, 'Constructor ne paise le liye');
+  const fr = T.findFillerRanges([{ start: 0, end: 2, text: 'Constructor ne paise le liye', words: cw }], {});
+  assert(fr.ranges.length === 0, 'the word "constructor" is never cut as a filler (' + JSON.stringify(fr.ranges) + ')');
+  const one = CPTakes.findRepeatedTakes([].concat(Wt(0, 'Sabse important cheez kya hai business mein?'), Wt(4, 'Consistency.'), Wt(5, 'Consistency is what builds trust over years.')), { keep: 'best' });
+  assert(one.deletes.length === 0, 'a one-word answer ("Consistency.") is not cut as a false start (' + JSON.stringify(one.deletes) + ')');
+  const full = 'Aaj hum baat karenge ki kaise aap apne paise ko sahi jagah par invest karke bachat badhayein.';
+  const tk = CPTakes.findRepeatedTakes([].concat(Wt(0, full), Wt(6, 'Aaj hum baat karenge ki kaise aap apne paise ko sahi jagah par'), Wt(11, 'Chaliye shuru karte hain pehle topic se.')),
+    { keep: 'best', minRun: 3, sim: 0.6, people: 'one' });
+  const del = tk.deletes.map(d => d.start);
+  assert(del.length === 1 && Math.abs(del[0] - 6) < 1e-9, 'keep best: the take left hanging ("… sahi jagah par") is cut, the complete one kept (' + JSON.stringify(del) + ')');
+}
+
+{
+  // a cutaway in a long talk is a shot too: never under the shortest shot,
+  // never ending before it starts; the plan still covers the whole span
+  let bad = 0, n = 0, ex = '';
+  let seed = 9; const R = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  for (let c = 0; c < 600; c++) {
+    const total = 20 + R() * 200, cut = R() * total, regs = [[{ start: 0, end: cut }], [{ start: cut, end: total }]];
+    const o = { minSegment: [1.5, 2.5, 3.5, 5][c % 4], maxShot: [5, 10, 15, 30][(c >> 2) % 4], cutawayHold: 1 + R() * 4 };
+    const plan = CPMulticam.directorPlan(regs, total, o); n++;
+    let at = 0, ok = true;
+    for (const p of plan) { if (Math.abs(p.start - at) > 1e-6 || p.end <= p.start || (p.cutaway && p.end - p.start < o.minSegment - 1e-6)) ok = false; at = p.end; }
+    if (Math.abs(at - total) > 1e-6) ok = false;
+    if (!ok) { bad++; if (!ex) ex = JSON.stringify({ regs, total, o, plan: plan.map(p => [+p.start.toFixed(2), +p.end.toFixed(2), p.cutaway ? 'c' : '']) }).slice(0, 300); }
+  }
+  assert(bad === 0, 'Podcast cameras: every cutaway is at least the shortest shot and the plan covers the whole span (' + n + ' plans, ' + bad + ' off' + (ex ? ', e.g. ' + ex : '') + ')');
+}
+
+// ---- captions: an audit's findings ----------------------------------------
+{
+  const C = CPCaptions;
+  assert(C.devanagariToLatin('ज़िंदगी') === 'zindagee' && C.devanagariToLatin('फ़ोन') === 'fon' && C.devanagariToLatin('\u095B\u093F\u0902\u0926\u0917\u0940') === 'zindagee',
+    'Hinglish: ज़ / फ़ (letter + nukta, either way it is typed) become z / f (' + [C.devanagariToLatin('ज़िंदगी'), C.devanagariToLatin('फ़ोन')].join(', ') + ')');
+  const em = ['बहुत बढ़िया', 'दाम बढ़ेगा', 'गिरीश आया', 'भारती जी', 'भारतीय बाज़ार'].map(C.emojiForText);
+  assert(JSON.stringify(em) === JSON.stringify([null, '📈', null, null, '🇮🇳']), 'emoji: बढ़िया / गिरीश / भारती get none, बढ़ेगा / भारतीय do (' + JSON.stringify(em) + ')');
+  const cw = C.clampWordDurations([{ start: 0, end: 3, text: 'a' }, { start: 0.5, end: 0.8, text: 'b' }, { start: 0.9, end: 1.2, text: 'c' }, { start: 1.3, end: 1.6, text: 'd' }]);
+  let ord = true; for (let i = 1; i < cw.length; i++) if (cw[i].start < cw[i - 1].start) ord = false;
+  assert(ord && cw[0].start === 0 && cw[0].end <= 0.5 && cw[1].start === 0.5, 'a long word that the next words start inside is cut at its end, the words stay in order (' + JSON.stringify(cw) + ')');
+  const dense = []; for (let i = 0; i < 20000; i++) dense.push({ start: i * 0.3, end: i * 0.3 + 0.3, text: 'bhai' + (i % 50) });
+  const t0 = Date.now(), fr = C.buildCaptionFrames([], { anim: 'pop', wordCues: dense }), ms = Date.now() - t0;
+  const seen = []; fr.forEach(f => (f.words || []).forEach(w => { if (seen[seen.length - 1] !== w) seen.push(w); }));
+  assert(ms < 3000 && fr.length > 500, '20,000 words with no sentence end or pause are captioned in ' + ms + ' ms (was ~25 s), ' + fr.length + ' frames');
+  // graphemes without Intl.Segmenter (older Premiere): emoji kept whole
+  const key = require.resolve(path.join(__dirname, '..', 'js', 'captions.js')), keep = require.cache[key], SEG = Intl.Segmenter;
+  delete require.cache[key]; delete Intl.Segmenter;
+  let old; try { old = require(key); } finally { Intl.Segmenter = SEG; require.cache[key] = keep; }
+  const g = ['👨‍👩‍👧', '👍🏽', '🇮🇳', '1️⃣', 'क्षत्रिय'].map(x => old.graphemes(x).length);
+  assert(JSON.stringify(g) === '[1,1,1,1,3]', 'without Intl.Segmenter a family, a skin tone, a flag and a keycap emoji stay one piece each (' + JSON.stringify(g) + ')');
+}
+
+{
+  // a face window never wider or taller than the camera's picture (a phone
+  // camera in a 1:1 / 4:5 short: ffmpeg refused the crop)
+  const PS = require(path.join(__dirname, '..', 'js', 'podshort.js'));
+  let bad = 0, n = 0, ex = '';
+  let seed = 21; const R = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const SRC = [{ w: 1080, h: 1920 }, { w: 1080, h: 1350 }, { w: 1920, h: 1080 }, { w: 1440, h: 1080 }];
+  for (let c = 0; c < 3000; c++) {
+    const src = SRC[c % 4], aspect = [9 / 16, 1, 4 / 5, 2, 1.6, 9 / 32][Math.floor(R() * 6)];
+    const face = { cx: R(), cy: R(), s: 0.02 + R() * 0.4 }, o = { minHeight: [0.3, 0.5, undefined][c % 3] };
+    const w = PS.faceCrop(face, src, aspect, o); n++;
+    if (!(w.w > 0 && w.h > 0 && w.x >= 0 && w.y >= 0 && w.x + w.w <= src.w && w.y + w.h <= src.h)) { bad++; if (!ex) ex = JSON.stringify({ face, src, aspect, o, w }); }
+  }
+  assert(bad === 0, 'Shorts: every face window fits inside the camera picture (' + n + ' windows, ' + bad + ' off' + (ex ? ', e.g. ' + ex : '') + ')');
+}
+
+// ---- 📣 publish kit: the AI call stays small, hashtags are clean ----------
+{
+  const vm = require('vm'), win = {};
+  const ctx = { window: win, document: { readyState: 'complete', getElementById: function () { return null; } } };
+  vm.createContext(ctx); vm.runInContext(require('fs').readFileSync(path.join(__dirname, '..', 'js', 'publish.js'), 'utf8'), ctx);
+  const P = win.CPPublish;
+  const d = P.digest([{ text: 'शब्द '.repeat(10000) }, { text: 'end' }]);
+  assert(d.length <= 12000, 'publish kit: one huge transcript line still fits the 12,000-letter budget (' + d.length + ')');
+  const h = P.normalize('{"hashtags":["#Money","money","#","##"," # ","#पैसा।","#Personal Finance"]}').hashtags;
+  assert(JSON.stringify(h) === '["#Money","#पैसा","#PersonalFinance"]', 'publish kit: hashtags are one clean #word each, no empty "#", no repeats (' + JSON.stringify(h) + ')');
+}
+
+// ---- 🎙 podcast short pieces cover the kept stretch exactly once ----------
+{
+  const PS = require(path.join(__dirname, '..', 'js', 'podshort.js'));
+  let seed = 11; const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  let bad = 0, n = 0, bad1 = '';
+  for (let c = 0; c < 400; c++) {
+    const keep = []; let t = 0;
+    for (let i = 0; i < 1 + Math.floor(rnd() * 4); i++) { t += rnd() * 3; const e = t + 1 + rnd() * 8; keep.push({ start: +t.toFixed(2), end: +e.toFixed(2), cut: i > 0 && rnd() < 0.3 }); t = e; }
+    const plan = []; let p = -1;
+    while (p < t + 1) { const a = p + (rnd() < 0.3 ? rnd() * 2 : (rnd() < 0.3 ? -rnd() : 0)), e = a + 0.3 + rnd() * 5; plan.push({ start: +a.toFixed(2), end: +e.toFixed(2), angle: Math.floor(rnd() * 3) }); p = e; }
+    const out = PS.pieces(keep, plan, null, { fallbackAngle: 9 });
+    n++;
+    const want = keep.reduce((a, k) => a + (k.end - k.start), 0), got = out.reduce((a, q) => a + (q.end - q.start), 0);
+    let overl = false; for (let i = 1; i < out.length; i++) if (out[i].start < out[i - 1].end - 1e-6) overl = true;
+    const inside = out.every(q => keep.some(k => q.start >= k.start - 1e-6 && q.end <= k.end + 1e-6));
+    if (Math.abs(want - got) > 1e-6 || overl || !inside) { bad++; if (!bad1) bad1 = JSON.stringify({ keep, plan, out }); }
+  }
+  assert(bad === 0, 'podcast short: every kept second is in exactly one piece — plan holes keep the camera before, overlaps are trimmed (' + n + ' plans, ' + bad + ' off)' + (bad1 ? ' e.g. ' + bad1.slice(0, 300) : ''));
+  const h = PS.pieces([{ start: 0, end: 10 }], [{ start: 0, end: 4, angle: 1 }, { start: 6, end: 10, angle: 2 }], null);
+  assert(JSON.stringify(h.map(q => [q.start, q.end, q.angle])) === '[[0,6,1],[6,10,2]]', 'podcast short: a 2 s hole in the camera plan stays in the short, on the camera before it (' + JSON.stringify(h) + ')');
 }
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
@@ -2343,8 +2588,17 @@ try {
   const hop = 0.01, n = 1000, peak = new Float32Array(n), state = new Uint8Array(n);
   for (let g = 0; g < n; g++) { const t = g * hop; const talk = t < 2 || (t >= 5 && t < 6.8) || t >= 8; peak[g] = talk ? -28 : -50; state[g] = talk ? 2 : 1; }
   const q = S.quietStretches({ hop, n, t0: 0, peak, state }, -37);
-  assert(q.length === 1 && Math.abs(q[0].start - 2.25) < 0.01 && Math.abs(q[0].end - 4.75) < 0.01,
-    'quiet stretches: 3 s under the voice becomes one cut, 0.25 s short of each side; a 1.2 s pause and talk stay: ' + JSON.stringify(q));
+  assert(q.length === 1 && Math.abs(q[0].start - 2.35) < 0.01 && Math.abs(q[0].end - 4.65) < 0.01,
+    'quiet stretches: 3 s under the voice becomes one cut, 0.35 s short of each side; a 1.2 s pause and talk stay: ' + JSON.stringify(q));
+  // a voice that never rises past the bar (steady, limited, music nobody left out): the rule cannot tell talk from quiet
+  const flat = new Float32Array(n).fill(-40), allTalk = new Uint8Array(n).fill(2);
+  assert(S.quietStretches({ hop, n, t0: 0, peak: flat, state: allTalk }, -37).length === 0, 'quiet stretches: a steady voice under the bar is never cut');
+  // a quieter guest against the host's level: each mic is judged by its own speech level
+  const G1 = 1000, mk = (fn) => { const db = new Float32Array(G1); for (let i = 0; i < G1; i++) db[i] = fn(i * hop); return { db, hop, start: 0 }; };
+  const up = (t) => (Math.floor(t * 2) % 2 ? -21 : -25);
+  const host = mk((t) => (t < 5 ? up(t) : -60)), guest = mk((t) => (t >= 5 ? up(t) - 20 : -70)), flags = new Uint8Array(G1).fill(1);
+  const g2 = S.combineMics([{ seqStart: 0, seqEnd: 10, inPoint: 0, speed: 1, env: host, flags, speechDb: -25 }, { seqStart: 0, seqEnd: 10, inPoint: 0, speed: 1, env: guest, flags, speechDb: -45 }], { start: 0, end: 10 }, hop);
+  assert(S.quietStretches(g2, -22).length === 0, 'quiet stretches: a guest 20 dB under the host keeps every word');
 }
 
 {

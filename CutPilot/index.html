@@ -160,7 +160,7 @@
         </div>
         <p class="hint" id="script-status" style="margin:4px 0 0"></p>
       </div>
-      <div class="row tight">
+      <div class="row tight hidden" id="tr-after">
         <button id="btn-tr-edit" class="chip-btn">Review &amp; edit</button>
         <button id="btn-retranscribe" class="chip-btn" title="Listen to the audio again from scratch — only when words came out wrong; cuts and trims are followed by themselves">↻ Redo</button>
       </div>
@@ -895,7 +895,7 @@
       <div class="check-grid">
         <label class="check"><input type="checkbox" id="ac-do-silence" checked> Silences</label>
         <label class="check"><input type="checkbox" id="ac-do-takes" checked> Repeated takes</label>
-        <label class="check"><input type="checkbox" id="ac-do-fillers"> Filler words <span class="dim">(um, uh)</span></label>
+        <label class="check"><input type="checkbox" id="ac-do-fillers"> <span>Filler words <span class="dim">(um, uh)</span></span></label>
       </div>
       <!-- 📜 the script: with one, Clean up keeps one take of each line (same box as Transcribe → Script) -->
       <span class="field-label" style="margin-top:8px">Your script <span class="dim">(optional)</span></span>
@@ -945,7 +945,7 @@
       <p class="hint" style="margin-top:4px">YouTube suits most talking videos. <button class="info" type="button" data-info="sil-info" aria-label="What each one does">ⓘ</button></p>
       <div class="info-pop hidden" id="sil-info"><b>YouTube</b>: pauses over 0.5s shortened to 0.3s. <b>Reel</b>: tight, punchy cuts. <b>Podcast</b>: keeps a natural rhythm (only pauses over 0.8s). Pulse sets the level from each mic's own room noise; the Expert numbers are used only when you tick <b>Set by hand</b>. To target one clip, select it first.</div>
 
-      <label class="check"><input type="checkbox" id="opt-fillers"> Also remove filler words <span class="dim">(um, uh, you know…)</span></label>
+      <label class="check"><input type="checkbox" id="opt-fillers"> <span>Also remove filler words <span class="dim">(um, uh, you know…)</span></span></label>
 
       <details class="advanced" style="margin-top:6px">
         <summary>Expert settings</summary>
@@ -960,7 +960,7 @@
           <label>Room around words (s)<input type="number" id="opt-padding" value="0.12" step="0.02" min="0"></label>
           <label>Lone breath under (s)<input type="number" id="opt-minkeep" value="0.25" step="0.05" min="0"></label>
         </div>
-        <label class="check"><input type="checkbox" id="opt-fillers-extra"> Also cut “like”, “so”, “actually” <span class="dim">(may catch real words)</span></label>
+        <label class="check"><input type="checkbox" id="opt-fillers-extra"> <span>Also cut “like”, “so”, “actually” <span class="dim">(may catch real words)</span></span></label>
         <div id="opt-fillers-adv" style="display:none"></div>
       </details>
     </div>
@@ -1033,7 +1033,7 @@
       <div class="info-pop hidden" id="vb-info">It listens again to every voice on your timeline (each mic of a podcast) with a word-for-word listener that keeps every take, tells speakers apart, keeps the last <b>complete</b> take of each line, snaps cuts to the pauses and lists them for you to check. Muted tracks, offline files and steady music are left out — it tells you which. Needs a retake-finder key (Settings).</div>
       <p class="hint" style="margin-top:10px">Also cuts false starts and “let me think” pauses. <button class="info" type="button" data-info="sc-info" aria-label="How it works">ⓘ</button></p>
       <div class="info-pop hidden" id="sc-info">Smart Cleanup reads your whole transcript and also removes <b>false starts</b>, fillers (“um”, “aa”, a stand-alone “matlab”) and <b>“let me think”</b> dead air that silence-cutting can't see, then keeps the last complete take. You check every cut before anything is removed.</div>
-      <label class="check" style="margin:2px 0 8px"><input type="checkbox" id="sc-aggressive"> Tighter cuts <span class="dim">(never mid-sentence)</span></label>
+      <label class="check" style="margin:2px 0 8px"><input type="checkbox" id="sc-aggressive"> <span>Tighter cuts <span class="dim">(never mid-sentence)</span></span></label>
       <button id="btn-smart-cleanup" class="hero-btn">Smart Cleanup (AI)</button>
       <div id="takes-progress" class="progress hidden"></div>
       <div id="takes-results" class="hidden">
@@ -1362,7 +1362,7 @@
       <!-- director controls (shared by follow + transcript) — tucked away -->
       <details id="mc-director-opts" class="advanced hidden">
         <summary>Fine-tune (optional)</summary>
-        <label class="check"><input type="checkbox" id="mc-autosync"> Camera mics a little late? Line them up while listening <span class="dim">(your clips don't move — leave off when each person wears a mic)</span></label>
+        <label class="check"><input type="checkbox" id="mc-autosync"> <span>Camera mics a little late? Line them up while listening <span class="dim">(your clips don't move — leave off when each person wears a mic)</span></span></label>
         <label>Shortest shot (s) <span class="val" id="mc-minseg-val">2</span>
           <input type="range" id="mc-minseg" min="1.5" max="5" step="0.1" value="2">
         </label>
@@ -1592,8 +1592,8 @@
     <div class="card">
       <details class="advanced" style="margin-top:0">
         <summary>Advanced</summary>
-        <label class="check"><input type="checkbox" id="set-enhance-audio" checked> Clean the audio before transcribing <span class="dim">(your media is never changed)</span></label>
-        <label class="check"><input type="checkbox" id="set-precise-timing" checked> Precise word timing <span class="dim">(tighter highlight)</span></label>
+        <label class="check"><input type="checkbox" id="set-enhance-audio" checked> <span>Clean the audio before transcribing <span class="dim">(your media is never changed)</span></span></label>
+        <label class="check"><input type="checkbox" id="set-precise-timing" checked> <span>Precise word timing <span class="dim">(tighter highlight)</span></span></label>
         <label class="check"><input type="checkbox" id="set-dropframe"> My projects are 29.97 or 59.94 fps</label>
         <button id="btn-save-settings" class="hero-btn small">Save these options</button>
         <label class="fld-full">Audio engine location <span class="dim">(only if the download can't run)</span>

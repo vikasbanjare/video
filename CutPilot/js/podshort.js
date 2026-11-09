@@ -93,9 +93,23 @@
       var covered = (plan || []).filter(function (p) { return p.end > k.start + 1e-3 && p.start < k.end - 1e-3; })
         .sort(function (a, b) { return a.start - b.start; });
       if (!covered.length) { out.push({ start: k.start, end: k.end, angle: o.fallbackAngle || 0, cut: !!k.cut }); return; }
-      covered.forEach(function (p, ci) {
-        out.push({ start: Math.max(k.start, p.start), end: Math.min(k.end, p.end), angle: p.angle, spk: p.spk, cut: !ci && !!k.cut });
+      // every moment of the stretch exactly once: a hole between plan steps
+      // keeps the camera before it (the short used to skip it — footage the
+      // owner kept went missing), and steps that overlap are trimmed (the
+      // overlap played twice, so the picture ran ahead of the words)
+      var at = k.start, prev = null, first = true;
+      function put(a, e, src) {
+        if (e - a <= 1e-6) return;
+        out.push({ start: a, end: e, angle: src.angle, spk: src.spk, cut: first && !!k.cut }); first = false;
+      }
+      covered.forEach(function (p) {
+        var a = Math.max(at, p.start), e = Math.min(k.end, p.end);
+        if (a > at + 1e-6) put(at, a, prev || p);
+        put(Math.max(a, at), e, p);
+        if (e > at) at = e;
+        prev = p;
       });
+      if (at < k.end - 1e-6) put(at, k.end, prev);
     });
     // a piece too short to read joins the one before it (when they touch):
     // a camera never flashes; the same camera twice in a row is one piece
@@ -413,7 +427,10 @@
     }
     var fw = face.s * src.w, minH = (o.minHeight || 0.5) * src.h;
     var wantW = fw / (o.faceShare || 0.34);
-    if (wantW < cw) { cw = Math.max(minH * aspect, wantW); ch = cw / aspect; }
+    // never past the biggest window the frame holds: a small face on a phone
+    // (portrait) camera in a 1:1 / 4:5 cell asked for a window wider than the
+    // picture, and ffmpeg refused the crop ("Invalid too big")
+    if (wantW < cw) { cw = Math.min(cw, Math.max(minH * aspect, wantW)); ch = cw / aspect; }
     var cx = face.cx * src.w, cy = face.cy * src.h;
     var x = Math.max(0, Math.min(src.w - cw, cx - cw / 2));
     var y = Math.max(0, Math.min(src.h - ch, cy - ch * 0.36));      // the face's middle at 36% from the top

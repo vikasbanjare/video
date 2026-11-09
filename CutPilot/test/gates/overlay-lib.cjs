@@ -383,7 +383,7 @@ function decodeFrames(ff, movPath, ns, W, H) {
   // the wrong frames as soon as a caller asked out of order.
   const want = Array.from(new Set(ns)).sort((a, b) => a - b);
   const sel = want.map(n => 'eq(n\\,' + n + ')').join('+');
-  const r = cp.spawnSync(ff, ['-loglevel', 'error', '-i', movPath, '-vf', "select='" + sel + "'", '-vsync', '0',
+  const r = cp.spawnSync(ff, ['-loglevel', 'error', '-i', movPath, '-vf', "select='" + sel + "'", '-fps_mode', 'passthrough',
     '-f', 'rawvideo', '-pix_fmt', 'rgba', '-'], { maxBuffer: 1 << 30 });
   const fsz = W * H * 4, byN = {};
   for (let i = 0; i < want.length; i++) {

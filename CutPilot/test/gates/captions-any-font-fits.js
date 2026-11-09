@@ -93,6 +93,15 @@ const ENVS = [{ width: 1920, height: 1080, fps: 25 }, { width: 1080, height: 192
     (ids.length > 50 && !badA.length ? r.ok : r.bad)('A. all ' + ids.length + ' styles at the biggest Size and Letter spacing stay inside the frame (' + framesA + ' frames)' +
       (badA.length ? ' — ' + badA.length + ' off: ' + badA.slice(0, 8).join('; ') : ''));
 
+    // A2. a style (or the owner) asking for a face Pulse does not list adds
+    //     that face — it must not become "the only font installed" and empty
+    //     the Font list for every other style (Short Two-Line did, before the
+    //     computer's font scan had run)
+    const A2 = await page.evaluate(() => { const X = window.CP_DEBUG_EXT, before = X.fonts.options().length;
+      X.fonts.setFont('Some Face Pulse Does Not Know'); const after = X.fonts.options();
+      return { before, after: after.length, has: after.some(o => o.value === 'Some Face Pulse Does Not Know') }; });
+    (A2.after === A2.before + 1 && A2.has && A2.before > 5 ? r.ok : r.bad)('A2. a font typed in (or a style\'s own face) is added to the Font list, nothing else drops out (' + A2.before + ' → ' + A2.after + ')');
+
     // B. every font
     await page.evaluate(() => window.CP_DEBUG_EXT.overlay.applyStyle('hormozi'));
     const fonts = (await page.evaluate(() => window.CP_DEBUG_EXT.fonts.options())).map(o => o.value).filter(v => v && v !== '__custom__');

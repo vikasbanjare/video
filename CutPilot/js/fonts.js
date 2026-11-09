@@ -59,7 +59,10 @@
       if (so + len > b.length) continue;
       var raw = (platformID === 1) ? decodeLatin1(b, so, len) : decodeUTF16BE(b, so, len);
       var name = cleanName(raw);
-      if (name) out.push({ nameID: nameID, name: name });
+      // English (Windows 0x?09, Mac 0, Unicode) — a font that also carries a
+      // localized family name (IPAゴシック) listed it as a second font
+      var lang = u16(b, rec + 4), en = platformID === 0 || (platformID === 1 && lang === 0) || (platformID === 3 && (lang & 0x3FF) === 0x09);
+      if (name) out.push({ nameID: nameID, name: name, en: en });
     }
   }
 
@@ -215,6 +218,7 @@
       return [];
     }
     out = out.filter(function (n) { return n.nameID === 1 || n.nameID === 16; });
+    if (out.some(function (n) { return n.en; })) out = out.filter(function (n) { return n.en; });   // the English name when there is one
     // prefer the typographic family (16) over the legacy family (1); dedupe
     var pref = {}, seen = {}, list = [];
     out.forEach(function (n) { if (n.nameID === 16) pref[n.name.toLowerCase()] = 1; });
@@ -244,6 +248,11 @@
       out.forEach(function (n) { if (!by[n.nameID]) by[n.nameID] = n.name; });
       var fam = by[16] || by[1], ps = by[6];
       if (fam && ps) faces.push({ family: fam, style: by[17] || by[2] || 'Regular', ps: ps.replace(/\s+/g, '') });
+      // the legacy family of a weight ("Inter Black", listed in the font
+      // picker too) gets its face as well: it had none, so picking it gave
+      // Premiere no PostScript name and it kept another font
+      if (by[16] && by[1] && ps && by[1].toLowerCase() !== by[16].toLowerCase())
+        faces.push({ family: by[1], style: by[2] || 'Regular', ps: ps.replace(/\s+/g, '') });
     });
     return faces;
   }

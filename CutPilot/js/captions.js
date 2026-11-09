@@ -150,9 +150,14 @@
   var _DEV_VIRAMA = '्', _DEV_ANUSVARA = 'ं', _DEV_CHANDRA = 'ँ', _DEV_VISARGA = 'ः';
   function devanagariToLatin(input) {
     if (!input || !/[ऀ-ॿ]/.test(input)) return input;   // no Devanagari → leave as-is
-    var chars = String(input).split(''), out = '';
+    // NFC writes ज़ ड़ फ़ … as the letter + a nukta (two characters, as the
+    // table has them; the one-character forms decompose to the same): read
+    // the pair together, or ज़िंदगी came out "ja़िndagee"
+    var src = String(input); if (src.normalize) src = src.normalize('NFC');
+    var chars = src.split(''), out = '';
     for (var i = 0; i < chars.length; i++) {
       var ch = chars[i], nxt = chars[i + 1];
+      if (nxt === '\u093C' && _DEV_C[ch + nxt] != null) { ch = ch + nxt; i++; nxt = chars[i + 1]; }
       if (_DEV_C[ch] != null) {
         var base = _DEV_C[ch];
         if (nxt === _DEV_VIRAMA) { out += base; i++; }                 // halant: bare consonant
@@ -347,16 +352,50 @@
    * Same times as mediaToTimeline. Returns [{ start, end, text, conf }]
    * sorted by start. Pure + tested.
    */
+  /* Which line a moment belongs to: the first line holding it, else the
+     nearest (the first of equally near ones) — as a scan from line 0 finds it.
+     makeLineFinder(lines) → find(t). Lines in time order that never overlap
+     (captions, nearly always) are searched by halves: a 2-hour transcript
+     scanned every line for each of its 20k words. Any other list keeps the scan. */
+  function makeLineFinder(ls) {
+    function scan(t) {
+      var best = -1, bestD = Infinity;
+      for (var j = 0; j < ls.length; j++) {
+        var d = (t < +ls[j].start) ? +ls[j].start - t : (t >= +ls[j].end ? t - +ls[j].end : 0);
+        if (d === 0) return j;
+        if (d < bestD) { bestD = d; best = j; }
+      }
+      return best;
+    }
+    var ordered = true;
+    for (var i = 0; i < ls.length; i++) {
+      if (!(+ls[i].end >= +ls[i].start) || (i && +ls[i].start < +ls[i - 1].end)) { ordered = false; break; }
+    }
+    if (!ordered || ls.length < 8) return scan;
+    return function (t) {
+      var lo = 0, hi = ls.length - 1, k = -1;           // last line starting at or before t
+      while (lo <= hi) { var m = (lo + hi) >> 1; if (+ls[m].start <= t) { k = m; lo = m + 1; } else hi = m - 1; }
+      if (k >= 0 && t < +ls[k].end) {
+        while (k > 0 && +ls[k - 1].start === +ls[k].start && t < +ls[k - 1].end) k--;   // a zero-length line before it
+        return k;
+      }
+      var best = -1, bestD = Infinity;
+      // the nearest end behind t (and any earlier line ending at the same time), then the next start
+      if (k >= 0) {
+        var e = +ls[k].end, j = k;
+        while (j > 0 && +ls[j - 1].end === e) j--;
+        best = j; bestD = t - e;
+      }
+      if (k + 1 < ls.length) { var d2 = +ls[k + 1].start - t; if (d2 < bestD) { bestD = d2; best = k + 1; } }
+      return best;
+    };
+  }
   function placeLinesOnPieces(lines, words, pieces, minLen) {
     var min = (minLen != null) ? minLen : 0.05, ps = pieces || [], ls = lines || [];
     var byLine = ls.map(function () { return []; });
+    var lineOf = makeLineFinder(ls);
     (words || []).forEach(function (w) {
-      var mid = (+w.start + +(w.end != null ? w.end : w.start)) / 2, best = -1, bestD = Infinity;
-      for (var j = 0; j < ls.length; j++) {
-        var d = (mid < +ls[j].start) ? +ls[j].start - mid : (mid >= +ls[j].end ? mid - +ls[j].end : 0);
-        if (d === 0) { best = j; break; }
-        if (d < bestD) { bestD = d; best = j; }
-      }
+      var mid = (+w.start + +(w.end != null ? w.end : w.start)) / 2, best = lineOf(mid);
       if (best >= 0) byLine[best].push({ mid: mid, text: String(w.text != null ? w.text : (w.word || '')).trim() });
     });
     var out = [];
@@ -557,8 +596,15 @@
       var joins = (code >= 0x0900 && code <= 0x0903) || (code >= 0x093A && code <= 0x094F && code !== 0x093D) ||
                   (code >= 0x0951 && code <= 0x0957) || code === 0x0962 || code === 0x0963 ||
                   code === 0x200C || code === 0x200D || code === 0xFE0F || (code >= 0x0300 && code <= 0x036F);
-      var afterVirama = out.length && out[out.length - 1].slice(-1) === '्';
-      if (out.length && (joins || afterVirama)) out[out.length - 1] += c;
+      var last = out.length ? out[out.length - 1] : '';
+      var afterVirama = last.slice(-1) === '्';
+      // emoji kept whole (older Premiere has no Intl.Segmenter): after a
+      // zero-width joiner (👨‍👩‍👧), a skin tone (👍🏽), a keycap (1️⃣), flag tags,
+      // and the second regional indicator of a flag (🇮🇳)
+      var afterZwj = last.slice(-1) === '\u200D';
+      var tone = /^\uD83C[\uDFFB-\uDFFF]$/.test(c), keycap = code === 0x20E3, tag = /^\uDB40[\uDC20-\uDC7F]$/.test(c);
+      var ri = /^\uD83C[\uDDE6-\uDDFF]$/.test(c), riPair = ri && /^\uD83C[\uDDE6-\uDDFF]$/.test(last);
+      if (out.length && (joins || afterVirama || afterZwj || tone || keycap || tag || riPair)) out[out.length - 1] += c;
       else out.push(c);
     }
     return out;
@@ -1724,6 +1770,38 @@
       "animNotes": "One to three spoken words on one line, plain white medium sans with tight spacing, mid-frame, cut to the next phrase; a punchline phrase (any caption holding a key word) shows WHOLE about half again bigger and heavy (learned from the owner's podcast-clip reel 0001)."
     },
     {
+      "id": "pack-short-two-line",
+      "name": "Short Two-Line",
+      "category": "🎬 From My Videos",
+      "popularity": 100,
+      "layout": "center",
+      "posPct": 54,
+      "keyword": false,
+      "highlightScale": 1,
+      "font": "Neue Haas Grotesk Display Pro",
+      "weight": 600,
+      "fallbackFonts": ["Helvetica Neue", "Inter", "Arial", "sans-serif"],
+      "fontSize": 73,
+      "letterSpacing": -1,
+      "fill": "#FFFFFF",
+      "highlight": "#FFFFFF",
+      "glow": "#000000",
+      "glowBlur": 0.35,
+      "shadowDY": 1,
+      "stroke": null,
+      "strokeWidth": 0,
+      "lineGap": 1.05,
+      "maxLines": 2,
+      "maxWidthPct": 0.6,
+      "uppercase": false,
+      "wordsPerCue": 8,
+      "spokenPop": false,
+      "wordHl": false,
+      "anim": "fade",
+      "editable": { "wordHl": false },
+      "animNotes": "Small clean white sentence-case text (Neue Haas Display Medium, tight letter spacing) with a soft shadow, centred mid-frame on one or two lines; the whole phrase shows at once, no word highlight (learned from the owner's reel and its Premiere text style \"Greg Short Two-Line\")."
+    },
+    {
       "id": "pack-neon",
       "name": "Neon Pop",
       "description": "Glowing neon text with chromatic flicker on entry. Gaming / music content.",
@@ -2665,7 +2743,7 @@
     // the two former ⭐ Premium headline looks now head 🔥 Trending
     'pro-boldpop': [_T, _B], 'pro-editorial': [_T, _C],
     'pack-orange-word-pop': [_MV, _K], 'pack-script-glow': [_MV, _C],
-    'pack-green-word-box': [_MV, _K], 'pack-maroon-label': [_MV, _M], 'pack-founder-talk': [_MV, _M], 'pack-punchline': [_MV, _M],
+    'pack-green-word-box': [_MV, _K], 'pack-maroon-label': [_MV, _M], 'pack-founder-talk': [_MV, _M], 'pack-punchline': [_MV, _M], 'pack-short-two-line': [_MV, _M],
     'pack-neon': [_YS, _N], 'pro-spotlight': [_YS, _K], 'pro-subs-light': [_YS, _M], 'pro-clean-glow': [_YS, _M],
     'pro-karaokebar': [_YS, _K, _P], 'pro-pulse': [_YS, _K], 'pro-thuban': [_YS, _K], 'pro-runway': [_YS, _K],
     'pro-evo': [_YS, _M], 'pro-nova': [_YS, _B], 'pro-andromeda': [_YS, _P], 'pro-elevate': [_YS, _C],
@@ -3045,6 +3123,10 @@
 
   /* Curated font list for the customizer. First fallback keeps it readable
      if the chosen face is not installed on the editing machine. */
+  /* The owner's own licensed fonts: installed on their Mac, never bundled and
+     not offered in the font pickers. A style built from the owner's own look
+     ("Short Two-Line") uses one and falls back (Helvetica Neue) without it. */
+  var OWNER_FONTS = ['Neue Haas Grotesk Display Pro'];
   var FONTS = [
     // Bold / display — the caption workhorses
     'Anton', 'Bebas Neue', 'Archivo Black', 'Oswald', 'Teko', 'Fjalla One',
@@ -3195,10 +3277,21 @@
      spoken words one for one when there are as many; else they are spread
      evenly over the line. → { words, matched (lines one for one), lines }. */
   function carryWordTiming(cues, texts, words) {
-    var out = [], matched = 0;
+    var out = [], matched = 0, wl = words || [], sorted = true;
+    for (var q = 1; q < wl.length; q++) if (+wl[q].start < +wl[q - 1].start) { sorted = false; break; }
+    // the words that start inside a line — by halves when the words are in time
+    // order (every line filtered all 20k words of a 2-hour podcast)
+    function wordsIn(a, b) {
+      if (!sorted) return wl.filter(function (w) { return +w.start >= a && +w.start < b && String(w.text || '').trim(); });
+      var lo = 0, hi = wl.length;
+      while (lo < hi) { var m = (lo + hi) >> 1; if (+wl[m].start < a) lo = m + 1; else hi = m; }
+      var r = [];
+      for (var x = lo; x < wl.length && +wl[x].start < b; x++) if (String(wl[x].text || '').trim()) r.push(wl[x]);
+      return r;
+    }
     (cues || []).forEach(function (c, i) {
       var toks = String(texts[i] == null ? c.text : texts[i]).split(/\s+/).filter(Boolean);
-      var ws = (words || []).filter(function (w) { return +w.start >= +c.start - 0.01 && +w.start < +c.end - 0.001 && String(w.text || '').trim(); });
+      var ws = wordsIn(+c.start - 0.01, +c.end - 0.001);
       if (ws.length && ws.length === toks.length) {
         matched++;
         toks.forEach(function (t, k) { out.push({ text: t, start: +ws[k].start, end: +ws[k].end }); });
@@ -3490,17 +3583,17 @@
   // राज/राजा — must stand alone: "मैं दिल्ली गया" got ❤️, "आगरा" 🔥)
   var EMOJI_LEX = [
     [/\b(money|cash|paid|price|prices|cost|profit|revenue|rupees?|dollars?|lakhs?|crores?|paisa|paise|rupaye|kamai)\b|पैस[ाे]|रुपय[ेा]|कमाई|लाख|करोड़/i, '💰'],
-    [/\b(grow|growth|growing|increase|increasing|rising|rise|scale|scaling|boost|badh|badhega|badhegi)\b|बढ़/i, '📈'],
-    [/\b(drop|fall|falling|decrease|crash|collapse)\b|गिर/i, '📉'],
-    [/\b(fire|hot|burn|burning|lit|heat|heatwaves?|aag)\b|(?:^|[^\u0900-\u097F])आग(?![\u0900-\u097F])/i, '🔥'],
+    [/\b(grow|growth|growing|increase|increasing|rising|rise|scale|scaling|boost|badh|badhega|badhegi)\b|(?:^|[^\u0900-\u0963\u0966-\u097F])बढ़(?!िया)/i, '📈'],   // not बढ़िया (great)
+    [/\b(drop|fall|falling|decrease|crash|collapse)\b|(?:^|[^\u0900-\u0963\u0966-\u097F])गिर(?!ीश)/i, '📉'],   // not गिरीश (a name)
+    [/\b(fire|hot|burn|burning|lit|heat|heatwaves?|aag)\b|(?:^|[^\u0900-\u0963\u0966-\u097F])आग(?![\u0900-\u0963\u0966-\u097F])/i, '🔥'],
     [/\b(idea|ideas|think|thinking|brain|smart|genius|soch|socho)\b|सोच|आइडिया/i, '💡'],
-    [/\b(love|heart|care|caring|pyaar|pyar|dil)\b|प्यार|(?:^|[^\u0900-\u097F])दिल(?![\u0900-\u097F])/i, '❤️'],
+    [/\b(love|heart|care|caring|pyaar|pyar|dil)\b|प्यार|(?:^|[^\u0900-\u0963\u0966-\u097F])दिल(?![\u0900-\u0963\u0966-\u097F])/i, '❤️'],
     [/\b(warning|danger|dangerous|careful|risk|risky|alert|crisis|khatra|savdhaan)\b|खतरा|सावधान/i, '⚠️'],
     [/\b(time|clock|minutes?|hours?|deadline|schedule|samay|waqt)\b|समय|वक़्त|वक्त/i, '⏰'],
     [/\b(goal|goals|target|aim|focus|focused|lakshya)\b|लक्ष्य/i, '🎯'],
     [/\b(win|winner|won|success|successful|victory|jeet|safalta|kamyabi)\b|जीत|सफलता|कामयाबी/i, '🏆'],
     [/\b(work|working|grind|hustle|effort|mehnat)\b|मेहनत/i, '💪'],
-    [/\b(secret|secrets|hidden|nobody tells|raaz)\b|(?:^|[^\u0900-\u097F])(?:राज़|राज)(?![\u0900-\u097F])/i, '🤫'],
+    [/\b(secret|secrets|hidden|nobody tells|raaz)\b|(?:^|[^\u0900-\u0963\u0966-\u097F])(?:राज़|राज)(?![\u0900-\u0963\u0966-\u097F])/i, '🤫'],
     [/\b(crazy|insane|unbelievable|shocking|shocked|mind ?blown)\b/i, '🤯'],
     [/\b(stop|never|avoid|quit)\b/i, '🚫'],
     [/\b(new|launch|launched|launching|announcement|announcing)\b/i, '🚀'],
@@ -3516,7 +3609,7 @@
     [/\b(sleep|sleeping|tired|exhausted|rest|neend)\b|नींद/i, '😴'],
     [/\b(happy|happiness|smile|joy|fun|khush|khushi)\b|खुश/i, '😊'],
     [/\b(sad|crying|pain|painful|hurt|dukh)\b|दुख|दर्द/i, '😢'],
-    [/\b(india|indian|desi|bharat)\b|भारत|इंडिया/i, '🇮🇳']
+    [/\b(india|indian|desi|bharat)\b|(?:^|[^\u0900-\u0963\u0966-\u097F])भारत(?!ी(?!य))|इंडिया/i, '🇮🇳']   // भारतीय yes, भारती (a name) no
   ];
   function emojiForText(text) {
     var t = String(text == null ? '' : text);
@@ -3790,8 +3883,12 @@
     for (i = 0; i < words.length; i++) {
       var w = words[i], o = _copyWord(w);
       if (w.end - w.start > cap) {
-        var prev = words[i - 1];
-        if (!prev || (w.start - prev.end) > 0.1) o.start = w.end - cap;   // first word after a pause
+        var prev = words[i - 1], nxw = words[i + 1];
+        // the next word starts INSIDE this one: the stretch is on its end side
+        // (moving its start past them put the words after it out of order —
+        // they flashed by a second late)
+        if (nxw && nxw.start < w.end - 1e-6) o.end = Math.min(w.start + cap, Math.max(nxw.start, w.start + 0.05));
+        else if (!prev || (w.start - prev.end) > 0.1) o.start = w.end - cap;   // first word after a pause
         else o.end = w.start + cap;                                       // the silence is after it
       }
       out.push(o);
@@ -3927,8 +4024,24 @@
       for (g = G; g >= 1; g--) { var st = D[g][at]; cuts.push([st.from, at]); at = st.from; }
       for (k = cuts.length - 1; k >= 0; k--) groups.push(cuts[k]);
     }
+    // A stretch with no sentence end and no pause (speech-to-text without
+    // punctuation, back to back) can run thousands of words, and pass 2 costs
+    // words² — 20k words took 25 s. Past 300 words it is cut first, at the
+    // cheapest grammatical break between words 150 and 250 of what is left.
+    function packLong(a, b) {
+      while (b - a > 300) {
+        var cut = -1, cbest = Infinity;
+        for (var k = a + 150; k <= a + 250; k++) {
+          var c = lineBreakCost(words[k - 1].text, words[k].text, ctx);
+          if (c < cbest) { cbest = c; cut = k; }
+        }
+        if (cut < 0) cut = a + 200;
+        packSeg(a, cut); a = cut;
+      }
+      packSeg(a, b);
+    }
     for (i = 0; i < words.length; i++) {
-      if (hardBreakAfter(i)) { packSeg(segStart, i + 1); segStart = i + 1; }
+      if (hardBreakAfter(i)) { packLong(segStart, i + 1); segStart = i + 1; }
     }
     return groups;
   }
@@ -4088,8 +4201,15 @@
         return { start: c.start, end: c.end, text: s.text };
       });
     }
+    var spOrdered = !!speakers;
+    if (speakers) for (i = 1; i < speakers.length; i++) if (!(+speakers[i].start >= +speakers[i - 1].end)) { spOrdered = false; break; }
     function speakerAt(t) {
       if (!speakers) return null;
+      if (spOrdered) {                     // in order, no overlap: by halves (a scan per word)
+        var lo = 0, hi = speakers.length - 1, k = -1;
+        while (lo <= hi) { var m = (lo + hi) >> 1; if (t >= speakers[m].start - 1e-3) { k = m; lo = m + 1; } else hi = m - 1; }
+        return (k >= 0 && t < speakers[k].end - 1e-3) ? (speakers[k].speaker || null) : null;
+      }
       for (var s = 0; s < speakers.length; s++) {
         // start-inclusive, end-exclusive so a caption on a cue boundary
         // belongs to the cue that is starting, not the one that ended
@@ -4292,6 +4412,7 @@
     remapCuesToKeeps: remapCuesToKeeps,
     mediaToTimeline: mediaToTimeline,
     placeLinesOnPieces: placeLinesOnPieces,
+    makeLineFinder: makeLineFinder,
     timelineToMedia: timelineToMedia,
     retimeThroughRecording: retimeThroughRecording,
     STYLE_PRESETS: STYLE_PRESETS,
@@ -4311,6 +4432,7 @@
     getPreset: getPreset,
     animIdForConcept: animIdForConcept,
     FONTS: FONTS,
+    OWNER_FONTS: OWNER_FONTS,
     psFontName: psFontName,
     psIsBoldFace: psIsBoldFace,
     dedupeRepeatedCues: dedupeRepeatedCues,

@@ -181,7 +181,7 @@
     return (match / n) >= frac;
   }
 
-  function wordSet(list) { var o = {}; for (var i = 0; i < list.length; i++) o[norm(list[i])] = 1; return o; }
+  function wordSet(list) { var o = Object.create(null); for (var i = 0; i < list.length; i++) o[norm(list[i])] = 1; return o; }
 
   /* Hesitation sounds — never "content" when judging how complete a take is. */
   var FILLERS = wordSet(['um', 'umm', 'ummm', 'uh', 'uhh', 'uhm', 'erm', 'er', 'ah', 'ahh', 'hmm', 'hmmm', 'hm', 'mm', 'mmm', 'mhm',
@@ -572,6 +572,10 @@
         var lens = [], maxLen = 0, li, full = 0;
         for (li = 0; li < grp.length; li++) { lens[li] = ct[grp[li]].length; if (lens[li] > maxLen) { maxLen = lens[li]; full = li; } }
         for (li = grp.length - 1; li >= 0; li--) {
+          // a take left hanging ("… sahi jagah par", "so the") is not a
+          // complete take, however long: the fuller one is kept instead
+          var lastW = ct[grp[li]][ct[grp[li]].length - 1];
+          if (li !== full && lastW && OPEN_END[lastW]) continue;
           if (!maxLen || lens[li] >= 0.75 * maxLen ||
               (lens[li] >= 0.5 * maxLen && finishedShorter(grp[li], grp[full]))) { keepIdx = grp[li]; break; }
         }
@@ -605,6 +609,9 @@
         if (!ct[fi].length || ct[fi].length > maxFrag) continue;
         if (ack[fi] || !sameLine(fi, fi + 1)) continue;
         if (strict(fi, fi + 1) && isStmt[fi]) continue;   // a finished sentence, then the other person going on from it
+        // ONE word that ends a sentence ("Consistency.") is an answer, not a
+        // restart: kept, even when the next line opens on the same word
+        if (ct[fi].length === 1 && isStmt[fi]) continue;
         if (isNearPrefix(ct[fi], ct[fi + 1], opts.prefixFrac)) {
           deletes.push(cutOf(fi, 'false start'));
           removedWords += phrases[fi].length;

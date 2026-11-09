@@ -34,8 +34,10 @@
    'बारे वाला वाली वाले साथ अपना अपनी अपने लोग होगा सकते चाहिए जैसे बिल्कुल सही').split(/\s+/)
     .forEach(function (w) { STOP[w] = 1; });
 
-  // letters of any script Pulse captions (Latin, Devanagari) survive
-  function clean(w) { return String(w).toLowerCase().replace(/[^a-z0-9'\u0900-\u097f]/g, '').replace(/^'+|'+$/g, ''); }
+  // letters of any script Pulse captions (Latin, Devanagari) survive — but not
+  // the danda । ॥ (U+0964/5): "है।" was not the stop-word "है", and a
+  // sentence-final "है।" in every chapter became its title
+  function clean(w) { return String(w).toLowerCase().replace(/[^a-z0-9'\u0900-\u0963\u0966-\u097f]/g, '').replace(/^'+|'+$/g, ''); }
   function titleCase(s) { return String(s).replace(/(^|\s)([a-z])/g, function (m, sp, c) { return sp + c.toUpperCase(); }); }
   function wordsOf(text) {
     var out = [], toks = String(text || '').split(/\s+/);
@@ -121,10 +123,17 @@
       for (var w in f) { var idf = Math.log(cs.length / lineDf[w]); if (idf > 0.05) g[w] = f[w] * idf; }
       return g;
     });
+    // the cues' middles; in time order (the usual case) a window's cues are
+    // found by halves — scanning every cue for every candidate break took
+    // 1.6 s on a 2-hour podcast — in the same order, so the sums are the same
+    var mids = cs.map(function (c) { return (c.start + c.end) / 2; }), midsOrdered = true;
+    for (var mk = 1; mk < mids.length; mk++) if (!(mids[mk] >= mids[mk - 1])) { midsOrdered = false; break; }
+    function firstAtLeast(x) { var lo = 0, hi = mids.length; while (lo < hi) { var md = (lo + hi) >> 1; if (mids[md] < x) lo = md + 1; else hi = md; } return lo; }
     function bag(lo, hi) {   // cues whose middle lies in [lo, hi)
       var f = {};
-      for (var k = 0; k < cs.length; k++) {
-        var m = (cs[k].start + cs[k].end) / 2;
+      var k0 = midsOrdered ? firstAtLeast(lo) : 0, k1 = midsOrdered ? firstAtLeast(hi) : cs.length;
+      for (var k = k0; k < k1; k++) {
+        var m = mids[k];
         if (m < lo || m >= hi) continue;
         for (var w in bags[k]) f[w] = (f[w] || 0) + bags[k][w];
       }

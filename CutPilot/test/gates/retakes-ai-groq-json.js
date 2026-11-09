@@ -157,8 +157,9 @@ async function run() {
 
     // 7 ─ a refused key
     const r7 = await smartCleanup(browser, () => badKey());
-    C.check('a refused key: the message names Smart Cleanup and where the Groq key goes, not "Cloud transcription"',
-      r7.err && /Smart Cleanup/.test(r7.toast) && /Groq key/.test(r7.toast) && /Settings/.test(r7.toast) && !/Cloud transcription/i.test(r7.toast), brief(r7));
+    // the key is named as Settings labels it (the Speech key box), not by its service
+    C.check('a refused key: the message names Smart Cleanup and where the speech key goes, not "Cloud transcription"',
+      r7.err && /Smart Cleanup/.test(r7.toast) && /speech key/i.test(r7.toast) && /Settings/.test(r7.toast) && !/Cloud transcription|Groq/i.test(r7.toast), brief(r7));
   } finally {
     await browser.close();
   }

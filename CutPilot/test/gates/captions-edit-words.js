@@ -89,6 +89,39 @@ const WORDS = [['Namaste', 0, 0.5], ['dosto', 0.5, 1], ['aaj', 1, 1.5], ['hum', 
     (saved && fixed && keep && C.onCaptions ? r.ok : r.bad)('C. the fixed word is saved into the words captions are made from, the other words keep their timing, and you stay on Captions (' +
       JSON.stringify(C.cues) + '; words: ' + w.map(x => x[0]).join(' ') + ')');
 
+    // D. merge / delete / add on a long list: the right lines change and the
+    //    list stays where the owner scrolled
+    const D = await page.evaluate(async () => {
+      const sl = (ms) => new Promise(res => setTimeout(res, ms));
+      const X = window.CP_DEBUG; if (!X || !X.setLastCaptionJob || !X.openCaptionTextEditor) return { skip: true };
+      const cues = []; for (let i = 0; i < 300; i++) cues.push({ start: i * 3, end: i * 3 + 2.5, text: 'line ' + i });
+      cues[10].end = 30.5; cues[11].start = 40; // a 9.5 s hole after line 10 → gap banner
+      for (let i = 11; i < 300; i++) { cues[i].start = 40 + (i - 11) * 3; cues[i].end = cues[i].start + 2.5; }
+      X.setLastCaptionJob(cues); X.openCaptionTextEditor(); await sl(50);
+      const list = document.getElementById('tre-list');
+      const texts = () => Array.from(list.querySelectorAll('.tre-text')).map(i => i.value);
+      const startTop = list.scrollTop;
+      const rows = list.querySelectorAll('.tre-row');
+      list.scrollTop = rows[150].offsetTop - list.offsetTop; const top = list.scrollTop;
+      list.querySelectorAll('.tre-row')[150].querySelector('.tre-del').click();
+      const afterDel = texts(), topAfterDel = list.scrollTop;
+      list.querySelectorAll('.tre-row')[5].querySelectorAll('.tre-btn')[1].click();      // ⤴ merge line 5 into 4
+      const afterMerge = texts();
+      list.querySelector('.tre-gap .tre-btn').click(); await sl(20);                       // ＋ Add missing line in the gap
+      const afterAdd = texts(), focused = document.activeElement && document.activeElement.className;
+      const gapRows = list.querySelectorAll('.tre-gap').length;
+      document.getElementById('tre-cancel') && document.getElementById('tre-cancel').click();
+      return { startTop, top, topAfterDel, n0: rows.length, afterDel: afterDel.length, del150: afterDel[150], merged: afterMerge[4], n5: afterMerge[5],
+               added: afterAdd[9 + 1 - 0], addN: afterAdd.length, focused, gapRows };
+    });
+    if (D.skip) r.bad('D. editor debug hooks missing');
+    else {
+      (D.n0 === 300 && D.afterDel === 299 && D.del150 === 'line 151' ? r.ok : r.bad)('D. ✕ deletes exactly that line (' + D.n0 + ' → ' + D.afterDel + ', row 150 now "' + D.del150 + '")');
+      (D.top > 0 && Math.abs(D.topAfterDel - D.top) <= 2 && D.startTop === 0 ? r.ok : r.bad)('D. the list stays where you scrolled after a delete (' + D.top + ' → ' + D.topAfterDel + ')');
+      (D.merged === 'line 4 line 5' && D.n5 === 'line 6' ? r.ok : r.bad)('D. ⤴ merges a line into the one above ("' + D.merged + '", next "' + D.n5 + '")');
+      (D.addN === 299 && D.added === '' && /tre-text/.test(D.focused || '') && D.gapRows === 1 ? r.ok : r.bad)('D. ＋ in a gap adds an empty line there and puts the cursor in it (' + JSON.stringify([D.addN, D.added, D.focused, D.gapRows]) + ')');
+    }
+
     (!page._cpErrors.length ? r.ok : r.bad)('no script errors' + (page._cpErrors.length ? ': ' + page._cpErrors.slice(0, 2).join(' | ') : ''));
     await page.close();
   } finally {
