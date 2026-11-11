@@ -2692,7 +2692,7 @@
     HOME_DONE_NAMES.forEach(function (d) {
       if (_homeDone[d[0]]) html += '<span class="hh-chip ok">✓ ' + d[1] + '</span>';
     });
-    box.innerHTML = html || '<span class="hh-chip">Nothing done yet</span>';
+    box.innerHTML = html;
   }
 
   var _navHistory = [], _navBacking = false;
