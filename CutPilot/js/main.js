@@ -12746,7 +12746,7 @@
     var list = document.createElement('div'); list.className = 'cp-dd-list hidden';
     var cur = curValue;
     function labelFor(v) { for (var i = 0; i < options.length; i++) if (options[i].value === v) return options[i].label; return placeholder || String(v || ''); }
-    function refresh() { btn.textContent = labelFor(cur) + ' ▾'; }
+    function refresh() { btn.textContent = labelFor(cur); }
 
     // Long lists (e.g. every installed font) get a search box at the top so you
     // can type to filter instead of scrolling hundreds of entries.
@@ -19684,7 +19684,7 @@
     el.classList.remove('hidden');
     if (ff) {
       el.className = 'ff-banner ok';
-      el.textContent = '✅ Audio engine ready — Pulse can hear each mic.';
+      el.textContent = 'Audio engine ready — Pulse can hear each mic.';
     } else {
       // Plain words and ONE tap. This told the owner to "open Terminal and run
       // brew install ffmpeg", although the same one-tap setup as Settings works
@@ -20043,7 +20043,7 @@
       syncCenterCtrl();
     }).catch(function (e) {
       $('mc-map').innerHTML = '<p class="hint">' +
-        (CPBridge.isCEP() ? 'No audio detected. Make sure your sequence is open with each mic on an audio track, then tap <b>🔄 Detect audio</b> above.' :
+        (CPBridge.isCEP() ? 'No audio detected. Make sure your sequence is open with each mic on an audio track, then tap <b>Detect audio</b> above.' :
          'Open inside Premiere to map your mics.') + '</p>';
     });
   }
@@ -20082,9 +20082,9 @@
   /* The paces' settings live with the director (CPMulticam.PACES, where the
      multicam-edit-quality gate measures them); the hints say what each does. */
   var MC_PACE_HINTS = {
-    low:    '🐢 Calm — steady shots: cuts only for answers of a few seconds or more.',
-    medium: '⚖️ Balanced — follows the talk, with a reaction shot every 20 s or so of a long answer.',
-    high:   '⚡ Snappy — quick cuts, and a reaction shot every 10 s or so.'
+    low:    'Calm — steady shots: cuts only for answers of a few seconds or more.',
+    medium: 'Balanced — follows the talk, with a reaction shot every 20 s or so of a long answer.',
+    high:   'Snappy — quick cuts, and a reaction shot every 10 s or so.'
   };
   var MC_PACE = {};
   Object.keys(CPMulticam.PACES).forEach(function (k) {
@@ -21356,7 +21356,7 @@
     _ffmpeg = null; // re-probe
     var ff = resolveFfmpeg();
     var el = $('ffmpeg-status');
-    if (ff) { el.textContent = '✅ Audio engine ready.'; el.title = ff; el.className = 'hint'; }
+    if (ff) { el.textContent = 'Audio engine ready.'; el.title = ff; el.className = 'hint'; }
     else { el.textContent = '⚠️ Not set up yet — tap the button above (once).'; el.title = ''; el.className = 'hint'; }
     // ready: the button stays (a re-download fixes a broken engine) but steps
     // back, so a ready engine no longer reads as one still to set up
