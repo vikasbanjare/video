@@ -140,6 +140,8 @@ body.theme-light .home-tasks.tiles, body.theme-light .more-grid { border-color: 
     font-size: var(--fs-xs); font-weight: 500; line-height: 1.15; padding: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .bottom-nav button:hover { color: var(--fg); background: var(--card2); }
+  /* a message sits above the pinned action buttons, which now sit above the bar */
+  .toast { bottom: calc(78px + var(--bnav-h)); }
   .bottom-nav svg { width: 22px; height: 22px; flex: none; }
   body[data-page="home"] .bottom-nav [data-go="home"],
   body[data-page="silence"] .bottom-nav [data-go="silence"],
