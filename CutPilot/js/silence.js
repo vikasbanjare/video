@@ -675,9 +675,18 @@
       if (a1 - a0 >= minLen) {
         // a cut edge must land in quiet: a word's last syllable can sit just under
         // the bar ("गया" fading at −39 dB). Each edge moves inward (at most 0.6 s)
-        // until the 0.1 s beside it stays 9 dB under the bar
+        // until the 0.25 s around it stays 9 dB under the bar (and near the
+        // stretch's floor, below) — longer than the dip between two words
         var c0 = a0 + (k > 0 ? pad : 0), c1 = a1 - (e < nb ? pad : 0);
-        var soft = bar - 9, w10 = Math.round(0.1 / grid.hop), max = Math.round(0.6 / grid.hop);
+        // "quiet" is also judged against this stretch's own floor: a word trailing
+        // off sits under the bar for a second or more ("…video mein" at −44…−60 dB
+        // with the pause beside it at −68), and an edge landing there cut audible
+        // voice. Only sound near the stretch's quietest tenth counts as hush.
+        var fl = [];
+        for (var gf = k * per; gf < e * per; gf++) if (grid.state[gf] !== 0) fl.push(grid.peak[gf]);
+        fl.sort(function (x, y) { return x - y; });
+        var floor10 = fl.length ? fl[Math.floor(0.1 * (fl.length - 1))] : -Infinity;
+        var soft = Math.min(bar - 9, floor10 + 6), w10 = Math.round(0.25 / grid.hop), max = Math.round(0.6 / grid.hop);
         function hush(g0) { for (var g = g0; g < g0 + w10; g++) if (g >= 0 && g < grid.n && grid.peak[g] >= soft) return false; return true; }
         var gs = Math.round((c0 - grid.t0) / grid.hop), ge = Math.round((c1 - grid.t0) / grid.hop), st;
         var sure = true;
