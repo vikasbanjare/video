@@ -220,3 +220,15 @@ details.advanced[open] > summary:before { content: ""; transform: rotate(45deg);
   .check input[type="checkbox"], .check input[type="checkbox"]::after, details.advanced summary:before { transition: none; }
   .hero-btn:active, .chip-btn:active, .tile:active, .tool-btn:active, .bottom-nav button:active, .tpl-card:active { transform: none; }
 }
+
+/* ---- caption gallery: each preview glows with its style's own colour ----
+   White captions need a dark backing; a flat black box per card made the
+   light page heavy and every card look the same. The glow comes from the
+   style (main.js cardTint → --card-tint); a plain style gets a faint neutral light. */
+.tpl-thumb, .tpl-card.is-style .tpl-thumb,
+.tpl-card:hover .tpl-thumb, .tpl-card.on .tpl-thumb,
+body:not(.theme-dark) .tpl-thumb, body:not(.theme-dark) .tpl-card.is-style .tpl-thumb,
+body:not(.theme-dark) .tpl-card:hover .tpl-thumb, body:not(.theme-dark) .tpl-card.on .tpl-thumb {
+  background-color: #0D0D0F;
+  background-image: radial-gradient(95% 125% at 50% 0%, var(--card-tint, rgba(255,255,255,.07)), rgba(13,13,15,0) 72%);
+}

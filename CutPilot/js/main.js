@@ -7022,6 +7022,25 @@
      template's OWN colours (read offline from its definition.json). Lets the
      animated cards render the SAME clear preview as the style cards instead of a
      tiny baked thumbnail. Cached per template; read lazily at paint time. */
+  /* The colour a gallery card's backdrop glows with: the style's most
+     colourful part (its box, highlight, second fill or fill), skipping white,
+     black and greys. Returns an rgba() string, or '' for a plain style. */
+  function cardTint(st) {
+    if (!st) return '';
+    var cands = [st.boxColor, st.box, st.highlight, st.fill2, st.fill, st.stroke];
+    var best = null, bestSat = 0.28;
+    for (var i = 0; i < cands.length; i++) {
+      var c = cands[i];
+      if (typeof c !== 'string') continue;
+      var m = /^#?([0-9a-f]{6})$/i.exec(c.trim()); if (!m) continue;
+      var v = parseInt(m[1], 16), r = (v >> 16) & 255, g = (v >> 8) & 255, b = v & 255;
+      var mx = Math.max(r, g, b) / 255, mn = Math.min(r, g, b) / 255, l = (mx + mn) / 2;
+      if (l < 0.12 || l > 0.92) continue;
+      var sat = mx === mn ? 0 : (mx - mn) / (1 - Math.abs(2 * l - 1));
+      if (sat > bestSat) { bestSat = sat; best = [r, g, b]; }
+    }
+    return best ? 'rgba(' + best[0] + ',' + best[1] + ',' + best[2] + ',.42)' : '';
+  }
   function mogrtCardStyle(t) {
     if (t._cardStyle) return t._cardStyle;
     var fill = null, box = null, hl = null, first = null, gradStops = [];
@@ -7505,6 +7524,9 @@
     // actual look at a legible size.
     var thumb = document.createElement('div');
     thumb.className = 'tpl-thumb';
+    // the card's backdrop glows with the style's own colour (owner's pick,
+    // option C): white captions stay readable on dark, and each card has its mood
+    try { var tint = cardTint(isMogrt ? mogrtCardStyle(t) : t); if (tint) thumb.style.setProperty('--card-tint', tint); } catch (eTint) {}
     // a USER-SUPPLIED render of a caption style beats the drawn preview —
     // it IS the timeline look ("what if I gave you a render video or gif?")
     var userPrev = !isMogrt ? stylePreviewFor(t) : null;
