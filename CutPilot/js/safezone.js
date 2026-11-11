@@ -407,7 +407,9 @@
   }
 
   function toast(m, isErr) { if (window.CPToast) window.CPToast(m, isErr); }
+  var _placing = false;   // a double click placed two guides on two tracks
   function applyOverlay() {
+    if (_placing) return;
     if (!(window.CPBridge && CPBridge.isCEP && CPBridge.isCEP())) { try { toast('Open this in Premiere to place the overlay.', true); } catch (e) {} return; }
     refreshEnv(function () {
       var fs, pathMod, osMod;
@@ -429,11 +431,13 @@
     // reuse + clear the existing guide track — on the sequence it was placed on
     var seqNow = (state.env && state.env.sequenceName) || '';
     if (state.replace && state.lastGuideTrack && state.lastGuideSeq === seqNow) args.replaceTrack = state.lastGuideTrack;
+    _placing = true;
     CPBridge.callHost('CP_placeOverlay', args).then(function (r) {
+      _placing = false;
       if (prog) prog.classList.add('hidden');
       state.lastGuideTrack = r.track; state.lastGuideSeq = seqNow;
       try { toast('🎉 Guide on V' + r.track + ' (opacity ' + state.opacity + '%) for ' + Math.round(durSec) + 's. Toggle that track\'s eye to hide it. ⌘Z/Ctrl+Z undoes it.'); } catch (e) {}
-    }).catch(function (e) { if (prog) prog.classList.add('hidden'); try { toast('Place failed: ' + e.message, true); } catch (e2) {} });
+    }).catch(function (e) { _placing = false; if (prog) prog.classList.add('hidden'); try { toast('Place failed: ' + e.message, true); } catch (e2) {} });
   }
 
   function removeOverlay() {

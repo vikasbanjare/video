@@ -259,7 +259,7 @@
     var ff = kit.resolveFfmpeg(); if (!ff) return kit.toast('Pulse\'s video engine (ffmpeg) is missing — reinstall Pulse.', true);
     busy = true; _ckStop = false;
     var btn = $('btn-pro-key'); if (btn) btn.textContent = 'Stop';
-    var done = 0, info;
+    var done = 0, info, keyTrack = 0;
     CPBridge.callHost('CP_greenScreenClips').then(function (r) {
       info = r;
       var fs = kit.nodeReq('fs'), P = ckPaths(kit), os = kit.nodeReq('os');
@@ -271,8 +271,9 @@
       return r.clips.reduce(function (p, c, n) {
         return p.then(function () {
           return ckClip(kit, ff, c, outDir, n, say).then(function (file) {
-            return CPBridge.callHost('CP_placeProKey', { path: file, track: c.track, start: c.start, end: c.end });
-          }).then(function () { done++; });
+            if (_ckStop) throw new Error('stopped');   // Stop during the last render: the file stays, the timeline is not touched
+            return CPBridge.callHost('CP_placeProKey', { path: file, track: c.track, start: c.start, end: c.end, onTrack: keyTrack });
+          }).then(function (pl) { done++; if (pl && pl.track) keyTrack = pl.track; });
         });
       }, Promise.resolve());
     }).then(function () {
@@ -365,11 +366,13 @@
 
   /* The picker: the clip's first frame, click to keep, Alt-click (or right-click) to leave out. */
   var _ra = null;   // { clip, work, src, frame, W, H, pts: [[x, y, keep]] }
+  var _raOpening = false;
   function raOpen() {
-    var kit = K(); if (!kit || busy) return;
+    var kit = K(); if (!kit || busy || _raOpening) return;
     if (!raReady()) return raShowSetup(true);
     var ff = kit.resolveFfmpeg(); if (!ff) return kit.toast('Pulse\'s video engine (ffmpeg) is missing — reinstall Pulse.', true);
     var fs = kit.nodeReq('fs'), P = raPaths(kit), os = kit.nodeReq('os');
+    _raOpening = true;   // a second click while the first frame is being read opened two pickers
     CPBridge.callHost('CP_greenScreenClips').then(function (r) {
       var c = r.clips[0], work = P.p.join(os.tmpdir(), 'pulse-cut-' + Date.now());
       fs.mkdirSync(work, { recursive: true });
@@ -382,7 +385,8 @@
       return kit.runFfmpeg(ff, ['-y', '-i', _ra.src, '-frames:v', '1', _ra.frame], 60000);
     }).then(function () {
       return probeSize(kit, ff, _ra.src).then(function (s) { _ra.W = s.w; _ra.H = s.h; raPicker(); sayRa(''); });
-    }).catch(function (e) { sayRa('⚠️ ' + e.message); kit.toast(e.message, true); });
+    }).catch(function (e) { sayRa('⚠️ ' + e.message); kit.toast(e.message, true); })
+      .then(function () { _raOpening = false; });
   }
   function raPicker() {
     var old = $('ra-pick'); if (old) old.parentNode.removeChild(old);
@@ -431,7 +435,7 @@
     busy = true;
     var out = P.p.join(_ra.work, preview ? 'prev' : 'run');
     try { fs.rmSync(out, { recursive: true, force: true }); } catch (e0) {}
-    var args = ['-u', P.script, '--input', _ra.src, '--out_dir', out, '--points', raPointsArg(), '--ffmpeg', ff, '--models', P.dir];
+    var args = ['-u', P.script, '--input', _ra.src, '--out_dir', out, '--points=' + raPointsArg(), '--ffmpeg', ff, '--models', P.dir];
     if (preview) args.push('--max_frames', '1');
     var env = {}, k; for (k in process.env) env[k] = process.env[k];
     msg(preview ? 'Previewing the first frame (about 10 s)…' : 'Cutting out ' + _ra.clip.name + '…');

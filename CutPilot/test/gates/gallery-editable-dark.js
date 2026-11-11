@@ -118,7 +118,7 @@ const FLUX = ['Text Color', 'Highlighted Word Color 1', 'Highlighted Word Color 
   else R.ok('no dark-words note on any card, editable or Pulse-rendered mode');
   for (const [name, r] of [['Plain Subtitle (dark on light)', u.dark], ['Punch Gold (light text)', u.light]]) {
     if (r.err) { R.bad(r.err); continue; }
-    if (r.editorNote || /light box/.test(r.dialog) || r.capOutBefore !== 'editable' || !(r.placed.length || /First get your words/.test(r.toast)))
+    if (r.editorNote || /light box/.test(r.dialog) || r.capOutBefore !== 'editable' || !(r.placed.length || /(First get|Getting|Still getting) your words/i.test(r.toast)))
       R.bad(name + ': Add captions did not go to the editable engine (note "' + r.editorNote + '", dialog "' + r.dialog.slice(0, 80) + '", calls ' + r.placed.join(', ') + ', toast "' + (r.toast || '').slice(0, 120) + '")');
     else R.ok(name + ': Add captions goes on to place editable captions, no note, no question (' + (r.placed.join(', ') || 'next step: ' + r.toast.slice(0, 30)) + ')');
   }

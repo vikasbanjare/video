@@ -884,7 +884,7 @@
     <div class="card accent">
       <div class="step-head"><span class="step-title">Clean up my video</span>
         <button class="info" type="button" data-info="ac-info" aria-label="What it removes">ⓘ</button></div>
-      <p class="hint">Cuts silences, repeated takes and fillers. A backup comes first.</p>
+      <p class="hint">Cuts silences, retakes and fillers, after a backup.</p>
       <div class="info-pop hidden" id="ac-info">Removes <b>dead air</b> at the start, middle and end, and <b>repeated takes</b> — even a script you re-read many times without stopping. It keeps your <b>last full take</b> of each line and cuts earlier tries and off-script talk, in one pass. Pulse listens to <b>every mic</b> and only cuts where everyone is quiet. Captions stay in sync. For retakes it needs your words first (Transcribe).</div>
       <span class="field-label" style="margin-top:4px">What are you making?</span>
       <div class="subview-switch" id="ac-strength" style="margin:5px 0 4px">
@@ -903,7 +903,7 @@
         <button id="cu-script-load" class="chip-btn" type="button" title="Word (.docx, .doc), text, RTF or a subtitle file">📄 Add script</button>
         <button id="cu-script-clear" class="chip-btn hidden" type="button" aria-label="Remove the script">✕</button>
       </div>
-      <p class="hint" id="cu-script-state" style="margin:2px 0 8px">With a script, Clean up keeps one take of each line and cuts the rest.</p>
+      <p class="hint" id="cu-script-state" style="margin:2px 0 8px">With a script, keeps one take of each line.</p>
       <div class="page-actions">
         <button id="btn-autoclean" class="hero-btn">Clean up my video</button>
         <div id="autoclean-progress" class="progress hidden"></div>
@@ -912,7 +912,7 @@
       <!-- filled after every listen: each track Pulse heard, why nothing was
            cut when nothing was, and a voice / music choice per track -->
       <div id="ac-heard" class="hidden" style="margin-top:8px;padding:8px;border:1px solid var(--line, #2b3242);border-radius:8px"></div>
-      <p class="hint" style="margin-top:6px">Name your music track <b>Music</b> to skip it, or Pulse asks you first. <button class="info" type="button" data-info="ac-music-info" aria-label="How Pulse listens">ⓘ</button></p>
+      <p class="hint" style="margin-top:6px">Name your music track <b>Music</b>, or Pulse asks you first. <button class="info" type="button" data-info="ac-music-info" aria-label="How Pulse listens">ⓘ</button></p>
       <div class="info-pop hidden" id="ac-music-info">Pulse listens to <b>every mic</b> on your timeline and only cuts where <b>everyone</b> is quiet. Name your music track <b>Music</b> (or BGM) in Premiere and Pulse leaves it out of that; if a track only sounds like music, Pulse asks you first. Dead air is removed even without a transcript; transcribe first so it can also remove repeated takes. A backup of your sequence is always made first.</div>
     </div>
 
@@ -1209,16 +1209,16 @@
         <p class="hint" id="sh-cap-out-hint" style="margin:4px 0 0"></p>
       </div>
       <details class="advanced sh-mark" id="sh-mark-wrap">
-        <summary>Framing — what each camera shows <span class="dim">— optional</span></summary>
-        <p class="hint">1. Pick a camera &nbsp;2. Tap 📷 &nbsp;3. Choose how Pulse frames it.</p>
+        <summary>Choose the part of the picture yourself <span class="dim">— optional</span></summary>
+        <p class="hint"><b>Drag a box on the picture</b> — the short shows exactly that part. Or leave it on Auto and Pulse finds the faces.</p>
         <div class="row tight">
-          <select id="sh-mark-cam" aria-label="Which camera"><option value="">Tap 📷 first</option></select>
-          <button id="sh-mark-load" class="chip-btn" type="button">Show its picture</button>
+          <select id="sh-mark-cam" aria-label="Which camera"><option value="">Camera</option></select>
+          <button id="sh-mark-load" class="chip-btn" type="button">Show picture</button>
         </div>
         <div class="seg-control" id="sh-mark-mode" aria-label="How this camera is framed">
-          <button type="button" data-mode="auto" class="on">Auto</button>
+          <button type="button" data-mode="auto" class="on">Auto (find faces)</button>
           <button type="button" data-mode="people">Mark people</button>
-          <button type="button" data-mode="frame">Set the frame</button>
+          <button type="button" data-mode="frame">My own box</button>
         </div>
         <div class="row tight hidden" id="sh-mark-people-row">
           <span class="dim">How many people?</span>
@@ -1241,6 +1241,7 @@
 
     <div id="shorts-results"></div>
 
+    <p class="hint sh-other">Other tools — not needed to make shorts</p>
     <details class="advanced card" id="shape-wrap">
       <summary>Resize the whole video</summary>
       <p class="hint">Not a short — your <b>entire</b> video in a new shape, to post it on another platform: <b>9:16</b> for Reels / TikTok / Shorts, <b>1:1</b> for the Instagram feed, <b>16:9</b> for YouTube. Pulse makes a copy of your timeline at that size and zooms the picture to fill it; your captions are drawn again on the copy, in the same style. Your original timeline is not touched.</p>
@@ -1565,7 +1566,7 @@
 
     <div class="card">
       <div class="step-head"><span class="step-title">Help &amp; diagnostics</span><span class="badge" id="diag-count">0</span></div>
-      <p class="hint">Something wrong? Copy diagnostics and send them to aifloh. <button class="info" type="button" data-info="diag-info" aria-label="What is included">ⓘ</button></p>
+      <p class="hint">Something wrong? Send diagnostics to aifloh. <button class="info" type="button" data-info="diag-info" aria-label="What is included">ⓘ</button></p>
       <div class="info-pop hidden" id="diag-info">Make the problem happen, then tap <b>Copy diagnostics</b> and paste it to aifloh. It captures the exact error so the real bug gets fixed. <b>No keys are included.</b><span class="tester-only"> <b>Test everything</b> checks Pulse inside Premiere without touching your timeline.</span></div>
       <div class="row tight">
         <button id="btn-diag-copy" class="chip-btn">Copy diagnostics</button>
@@ -1613,7 +1614,7 @@
       </details>
     </div>
 
-    <p class="hint center" id="ver-foot">Pulse v0.10.117 · Clean up · Podcast cameras · Captions · Chapters · Organize</p>
+    <p class="hint center" id="ver-foot">Pulse v0.10.117</p>
   </section>
 
   <!-- ============================== ORGANIZE ============================ -->

@@ -519,6 +519,15 @@ async function run() {
       });
       C.check('"Fix one caption" re-draws a caption that began on the line before from its first frame (and stops at the next caption)',
         JSON.stringify(ft) === JSON.stringify(['aaj', 'aaj hum', 'aaj hum baat']), JSON.stringify(ft));
+      // "Restyle the selected range" cut the words at the range's edge, so the
+      // caption straddling it lost its later words: every range run keeps whole captions
+      {
+        const src = fs.readFileSync(path.join(H.PANEL_DIR, 'js', 'main.js'), 'utf8');
+        // each options object that restyles a range on the caption track
+        const objs = src.split('overwriteOnTrack: state.lastCaptionJob.track,').slice(1).map(c => c.slice(0, 300)).filter(c => /\brange: \{/.test(c));
+        C.check('every range restyle keeps whole captions (' + objs.length + ' callers pass wholeCards)',
+          objs.length >= 2 && objs.every(c => /wholeCards: true/.test(c)));
+      }
       await page.close();
     }
   } finally {

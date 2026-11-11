@@ -90,7 +90,8 @@
   function buildAss(cues, opts) {
     opts = opts || {};
     var W = opts.width || 1920, H = opts.height || 1080;
-    var font = opts.font || 'Arial';
+    // one family, no commas: a CSS list ("Inter, Arial") shifted every Style field after it
+    var font = String(opts.font || 'Arial').split(',')[0].replace(/["']/g, '').trim() || 'Arial';
     var fontSize = opts.fontSize || Math.round(H * 0.055);
     var fill = assColor(opts.fill || '#FFFFFF');
     var hi = assColor(opts.highlight || '#FFD400');

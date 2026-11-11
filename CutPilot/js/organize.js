@@ -35,9 +35,10 @@
     if (!b || !b.rawEval) { if (cb) cb(false); return; }
     var root = cleanPath(b.getExtensionPath ? b.getExtensionPath() : "");
     if (!root) { if (cb) cb(false); return; }
-    b.rawEval('$.evalFile("' + root + '/jsx/organize.jsx")', function () {
-      jsxLoaded = true;
-      if (cb) cb(true);
+    b.rawEval('$.evalFile("' + root + '/jsx/organize.jsx")', function (res) {
+      // a failed load is tried again on the next click, not remembered as loaded
+      jsxLoaded = String(res) !== "EvalScript error.";
+      if (cb) cb(jsxLoaded);
     });
   }
 
@@ -110,7 +111,7 @@
 
     var run = function () {
       b.callHost("CPO_organize").then(function (res) {
-        if (res && res.moved > 0) { setStatus("", ""); renderResults(res.report || []); }
+        if (res && res.moved > 0) { setStatus("", ""); renderResults((res.report || []).filter(function (r) { return r.moved !== false; })); }   // items Premiere refused to move are not "sorted"
         else setStatus((res && res.message) || "Nothing to organize.", "");
         if (btn) { btn.disabled = false; btn.classList.remove("busy"); }
       }).catch(function (err) {

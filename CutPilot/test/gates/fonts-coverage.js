@@ -71,7 +71,7 @@ if (!real.length || !fcAvailable) {
   const fcHas = (fam, cpHex) => { try { return cp.execFileSync('fc-list', [':family=' + fam + ':charset=' + cpHex], { stdio: 'pipe' }).toString().trim().length > 0; } catch (e) { return null; } };
   let checked = 0, mism = [];
   for (const f of real.slice(0, 400)) {
-    if (f.latin == null) continue;
+    if (f.latin == null || f.name.charAt(0) === '.') continue;   // macOS's private .SF fonts: fc-list can't find them by name
     const a = fcHas(f.name, '41 61 7a'), k = fcHas(f.name, '915 92e 94d');
     if (a == null || k == null) continue;
     checked++;
@@ -84,7 +84,7 @@ if (!real.length || !fcAvailable) {
 // ---- B: the real panel ------------------------------------------------------
 let pptr = null;
 for (const t of [path.join(ROOT, 'node_modules', 'puppeteer'), 'puppeteer', 'puppeteer-core']) { try { pptr = require(t); break; } catch (e) {} }
-const exe = ['/opt/pw-browsers/chromium', '/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome'].find(p => fs.existsSync(p));
+const exe = [process.env.CP_CHROMIUM, '/opt/pw-browsers/chromium', '/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome'].find(p => fs.existsSync(p));
 if (!pptr || !exe) { console.log('  ? no puppeteer/Chromium — panel part skipped'); process.exit(failed ? 1 : 2); }
 
 (async () => {
@@ -146,8 +146,9 @@ if (!pptr || !exe) { console.log('  ? no puppeteer/Chromium — panel part skipp
     try {
       Object.defineProperty(Navigator.prototype, 'platform', { get: () => 'MacIntel', configurable: true });
       out.macFaceOnMac = X.resolve('Helvetica Neue', 'Make every word count');
-    } finally { if (plat) Object.defineProperty(Navigator.prototype, 'platform', plat); }
-    out.macFaceElsewhere = X.resolve('Helvetica Neue', 'Make every word count');
+      Object.defineProperty(Navigator.prototype, 'platform', { get: () => 'Win32', configurable: true });
+      out.macFaceElsewhere = X.resolve('Helvetica Neue', 'Make every word count');
+    } finally { if (plat) Object.defineProperty(Navigator.prototype, 'platform', plat); else delete Navigator.prototype.platform; }
     // a Hindi-first style drawn while another (Latin) style is picked — the
     // style audit after 🧪 Test everything: its face must still draw Hindi
     // (the owner's v0.10.9 log: Tiro, Anek, Mukta… went out as Avenir Next)

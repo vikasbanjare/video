@@ -22,7 +22,7 @@ let failed = 0, passed = 0;
 const ok = (c, m) => { if (c) { passed++; } else { failed++; console.log('  ✗ ' + m); } };
 let pptr = null;
 for (const t of [path.join(ROOT, 'node_modules', 'puppeteer'), 'puppeteer', 'puppeteer-core']) { try { pptr = require(t); break; } catch (e) {} }
-const exe = ['/opt/pw-browsers/chromium', '/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome'].find(p => fs.existsSync(p));
+const exe = [process.env.CP_CHROMIUM, '/opt/pw-browsers/chromium', '/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome'].find(p => fs.existsSync(p));
 if (!pptr || !exe) { console.log('  ? no puppeteer/Chromium — skipped'); process.exit(2); }
 console.log('ui dialogs (every dialog can be answered at every panel size)');
 const LONG = Array.from({ length: 14 }, (_, i) => 'A' + (i % 4 + 1) + ' “mic_' + i + '.wav”: heard −41 dB room, voice 23 dB above it; kept 1.2 s of pauses.').join('\n');

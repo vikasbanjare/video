@@ -35,7 +35,7 @@ const BYTES = 2000000;
   exe(curl, [
     'echo "$*" >> ' + JSON.stringify(path.join(log, 'curl.txt')),
     'out=""; while [ $# -gt 0 ]; do case "$1" in -o) out="$2"; shift 2;; *) shift;; esac; done',
-    'n=$(wc -l < ' + JSON.stringify(path.join(log, 'curl.txt')) + ')',
+    'n=$(($(wc -l < ' + JSON.stringify(path.join(log, 'curl.txt')) + ')))',
     'mode=$(cat ' + JSON.stringify(path.join(log, 'mode')) + ')',
     'case "$mode" in',
     '  drop) if [ "$n" = 1 ]; then { ' + MACHO + '; head -c 999996 /dev/zero; } >> "$out"; sleep 1.5; echo "curl: (28) Operation too slow" >&2; exit 28; fi',
@@ -63,6 +63,9 @@ const BYTES = 2000000;
       out.seen = st;
       return out;
     }, BYTES);
+    // `open` runs detached, and macOS can hold a new script's first run for seconds: wait for it,
+    // or it lands in the next try's log
+    for (let i = 0; r.error && /I opened/.test(r.error) && !fs.existsSync(path.join(log, 'open.txt')) && i < 100; i++) await new Promise(ok => setTimeout(ok, 100));
     const lines = (f) => { try { return fs.readFileSync(path.join(log, f), 'utf8').trim().split('\n').filter(Boolean); } catch (e) { return []; } };
     const size = (f) => { try { return fs.statSync(f).size; } catch (e) { return -1; } };
     let mode0 = 0; try { mode0 = fs.statSync(bin).mode & 0o111; } catch (e) {}

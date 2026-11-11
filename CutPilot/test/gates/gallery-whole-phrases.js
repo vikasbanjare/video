@@ -15,7 +15,7 @@ const ROOT = path.resolve(__dirname, '..', '..', '..');
 const PANEL_DIR = process.env.CP_PANEL_DIR || path.join(ROOT, 'CutPilot');
 let pptr = null;
 for (const t of [path.join(ROOT, 'node_modules', 'puppeteer'), 'puppeteer', 'puppeteer-core']) { try { pptr = require(t); break; } catch (e) {} }
-const exe = ['/opt/pw-browsers/chromium', '/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome'].find(p => fs.existsSync(p));
+const exe = [process.env.CP_CHROMIUM, '/opt/pw-browsers/chromium', '/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome'].find(p => fs.existsSync(p));
 if (!pptr || !exe) { console.log('  ? no puppeteer/Chromium — skipped'); process.exit(2); }
 console.log('gallery tiles show whole phrases (never a window across two)');
 (async () => {

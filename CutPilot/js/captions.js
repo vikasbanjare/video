@@ -43,10 +43,12 @@
             .replace(/[ \t]+\n/g, '\n').trim();
   }
   function parseSRT(text) {
-    var lines = String(text || '').replace(/^\ufeff/, '').replace(/\r/g, '').split('\n');
+    var lines = String(text || '').replace(/^\ufeff/, '').replace(/\r\n?/g, '\n').split('\n');
     var cues = [], cur = null;
     function close() {
-      if (cur) { cur.text = cleanCueText(cur.lines.join('\n')); delete cur.lines; cues.push(cur); cur = null; }
+      // a cue with no words is not a caption (whisper -ml 1 writes one at every
+      // 30 s window edge; it became an empty "word" in the word timing)
+      if (cur) { cur.text = cleanCueText(cur.lines.join('\n')); delete cur.lines; if (cur.text.trim()) cues.push(cur); cur = null; }
     }
     for (var i = 0; i < lines.length; i++) {
       var ln = lines[i], tm = TIMING_RE.exec(ln);

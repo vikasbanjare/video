@@ -78,6 +78,8 @@ function png(W, H) {
     }
     return { loaded, toast: document.getElementById('toast').textContent, n: window.CPCaptions.TEMPLATES.filter(t => !t.mogrt).length };
   }, EXT);
+  // `open` runs detached, and macOS can hold a new script's first run for seconds (and closing the panel would kill it)
+  for (let i = 0; !fs.existsSync(log) && i < 100; i++) await new Promise(ok => setTimeout(ok, 100));
   await P.close();
 
   (r.loaded && r.loaded.engines.some(p => /Pulse_Caption_r\d+\.mogrt$/.test(p)) ? ok : bad)('0. the engine loads from the real template list (' + JSON.stringify(r.loaded) + ')');

@@ -752,7 +752,7 @@
    * items: [{start,end,…}], ranges: [{start,end}], opts: { kind: 'words' | 'lines' }.
    */
   function rippleItems(items, ranges, closeGaps, opts) {
-    var kind = opts && opts.kind;
+    var kind = opts && opts.kind, heard = opts && opts.heard;
     if (!items || !items.length) return items ? items.slice() : [];
     var merged = mergeRanges((ranges || []).filter(function (r) { return r.end > r.start; }), 0.0001);
     if (!merged.length) return items.slice();
@@ -782,7 +782,18 @@
       var len = it.end - it.start;
       if (!(len > 0)) return !cutAt(it.start);             // a zero-length mark: gone only inside a cut
       var kept = len - (removedBefore(it.end) - removedBefore(it.start));
-      return kept >= need(len) - 1e-9;
+      if (kept >= need(len) - 1e-9) return true;
+      // The cuts were planned on where each word is HEARD (audibleWords), not
+      // on its raw stamp: a word stamped 1.4 s over a pause whose 0.2 s of
+      // voice is kept is still spoken, and went missing from captions made
+      // right after Clean up. Judge the heard part the same way.
+      if (need !== asWord || !heard) return false;
+      var hl = 0, hk = 0;
+      for (var h = 0; h < heard.length; h++) {   // ponytail: linear scan per doubtful word; index by start if 20k-word clean-ups feel slow
+        var a = Math.max(it.start, heard[h].start), b = Math.min(it.end, heard[h].end);
+        if (b > a) { hl += b - a; hk += (b - a) - (removedBefore(b) - removedBefore(a)); }
+      }
+      return hl > 0 && hk >= wordNeeds(hl) - 1e-9;
     }
     function asWord(len) { return wordNeeds(len); }
     function asLine(len) { return Math.min(len, LINE_KEEP_SEC); }
@@ -836,6 +847,17 @@
     var out = [];
     for (var j = 0; j < items.length; j++) {
       var it = items[j], mid = (it.start + it.end) / 2;
+      // A line that carries its words lives wherever its words survive: a long
+      // line whose MIDDLE fell in a removed pause used to vanish whole, words
+      // and all. Its span is first surviving word → last surviving word.
+      if (it.words && it.words.length) {
+        var ws = remapThroughKeeps(it.words, ks);
+        if (!ws.length) continue;
+        var ol = carry(it, ws[0].start, ws[ws.length - 1].end);
+        ol.words = ws;
+        out.push(ol);
+        continue;
+      }
       for (var k = 0; k < ks.length; k++) {
         var seg = ks[k];
         if (mid >= seg.start - 0.001 && mid < seg.end + 0.001) {
@@ -843,9 +865,7 @@
           var ns = cum[k] + Math.min(len, Math.max(0, it.start - seg.start));
           var ne = cum[k] + Math.min(len, Math.max(0, it.end - seg.start));
           if (ne <= ns) ne = Math.min(cum[k] + len, ns + 0.02);
-          var o = carry(it, ns, ne);
-          if (it.words && it.words.length) o.words = remapThroughKeeps(it.words, ks);
-          out.push(o);
+          out.push(carry(it, ns, ne));
           break;
         }
       }

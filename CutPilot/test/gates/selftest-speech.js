@@ -111,6 +111,8 @@ function readWav(p) {
     const P = await L.launchPanel({ env });
     if (P.skip) { console.log('  ? ' + P.skip + ' — skipped'); process.exit(2); }
     if (o.mac !== false) P.bridge.state.alias = { '/usr/bin/say': say };
+    // this Mac's own engines must not stand in for the fakes above (nor its `say` for "not a Mac")
+    P.bridge.state.hide = o.mac === false ? /^\/usr\/bin\/say$|^\/(opt\/homebrew|usr\/local)\/bin\/(whisper|main)/ : /^\/(opt\/homebrew|usr\/local)\/bin\/(whisper|main)/;
     const text = await P.page.evaluate(async () => {
       const sleep = ms => new Promise(r => setTimeout(r, ms));
       const s = document.querySelector('.tab[data-tab="settings"]'); if (s) s.click();

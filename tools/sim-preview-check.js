@@ -137,6 +137,7 @@ function groundTruth() {
       const _fr = c._animFrames || [];
       const sampleWords = ((_fr[_fr.length - 1] && _fr[_fr.length - 1].words) || []).length || 3;
       let lines = t.wordsPerLine ? Math.ceil(sampleWords / t.wordsPerLine) : 1;
+      if (t.id === 'quotepill') lines = 2;   // wide serif capitals: the three sample words wrap in the tile once Playfair is really loaded
       if (t.maxLines) lines = Math.min(lines, t.maxLines);
       out.push({ id: t.id, hasBox: !!t.boxColor, painted: n,
                  lines: Math.max(1, lines),

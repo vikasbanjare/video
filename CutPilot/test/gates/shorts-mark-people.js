@@ -126,6 +126,25 @@ if (cp.spawnSync(FF, ['-version']).status !== 0) { console.log('  ? no ffmpeg â€
   let disk2 = null; try { disk2 = JSON.parse(fs.readFileSync(path.join(env.homedir, '.cutpilot-settings.json'), 'utf8')).shFrames; } catch (e) {}
   await pg.evaluate(() => document.querySelector('#sh-mark-mode button[data-mode="auto"]').click());
   const f3 = await pg.evaluate((p) => window.CP_DEBUG_EXT.shorts.frame(p), C1);
+  // G. on Auto, dragging on the bare picture draws the box; it follows the short's shape
+  const drag = async (x0, y0, x1, y1) => {
+    const r = await pg.evaluate(() => { const b = document.getElementById('sh-mark-canvas').getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height }; });   // the rows above it come and go with the mode
+    await pg.mouse.move(r.x + x0 * r.w, r.y + y0 * r.h); await pg.mouse.down();
+    await pg.mouse.move(r.x + x1 * r.w, r.y + y1 * r.h, { steps: 6 }); await pg.mouse.up();
+    return pg.evaluate((p) => ({ f: window.CP_DEBUG_EXT.shorts.frame(p), on: (document.querySelector('#sh-mark-mode button.on') || {}).dataset.mode, st: document.getElementById('sh-mark-status').textContent }), C1);
+  };
+  await pg.mouse.click(cvs.x + 0.5 * cvs.w, cvs.y + 0.5 * cvs.h);
+  const g0 = await pg.evaluate((p) => window.CP_DEBUG_EXT.shorts.frame(p), C1);
+  const g1 = await drag(0.2, 0.1, 0.3, 0.9);
+  const g2 = await drag(0.9, 0.9, 0.8, 0.2);          // outside the box, up and left: a new one
+  await pg.evaluate(() => { const s = document.getElementById('sh-ratio'); s.value = '1:1'; s.dispatchEvent(new Event('change')); });
+  const g3 = await drag(0.05, 0.3, 0.2, 0.6);
+  let disk3 = null; try { disk3 = JSON.parse(fs.readFileSync(path.join(env.homedir, '.cutpilot-settings.json'), 'utf8')).shFrames['wide.mp4']; } catch (e) {}
+  (g0 === null && g1.f && Math.abs(g1.f.x - 0.2) < 0.01 && Math.abs(g1.f.y - 0.1) < 0.01 && Math.abs(g1.f.h - 0.8) < 0.02 && Math.abs(ratio(g1.f) - 9 / 16) < 0.02 && g1.on === 'frame' && /exactly this box/.test(g1.st) &&
+   g2.f && Math.abs(g2.f.x + g2.f.w - 0.9) < 0.01 && Math.abs(g2.f.y - 0.2) < 0.02 && Math.abs(ratio(g2.f) - 9 / 16) < 0.02 &&
+   g3.f && Math.abs(ratio(g3.f) - 1) < 0.03 && Math.abs(g3.f.x - 0.05) < 0.01 && disk3 && Math.abs(disk3.x - g3.f.x) < 0.001 ? ok : bad)(
+    'G. on Auto a click changes nothing (' + JSON.stringify(g0) + '); dragging on the picture draws the box (' + (g1.f ? g1.f.x.toFixed(2) + ',' + g1.f.y.toFixed(2) + ' ' + ratio(g1.f).toFixed(3) : '?') + ', mode ' + g1.on +
+    '), dragging outside it draws a new one (' + (g2.f ? ratio(g2.f).toFixed(3) : '?') + '), and with Shape 1:1 the box is square (' + (g3.f ? ratio(g3.f).toFixed(3) : '?') + '), saved on mouse-up');
   const errs2 = (pg.__errors || []).slice();
   await P2.close();
   (f0 && Math.abs(ratio(f0) - 9 / 16) < 0.02 && f0.h > 0.85 && Math.abs(f1.x - (f0.x - 0.15)) < 0.02 && Math.abs(f2.w - (f1.w - 0.08)) < 0.02 && Math.abs(ratio(f2) - 9 / 16) < 0.02 &&

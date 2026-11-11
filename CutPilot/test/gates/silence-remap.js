@@ -34,6 +34,14 @@ ok(CPSilence.rippleItems([{ start: 5, end: 5.5, text: 'gone' }, { start: 7, end:
   'an item entirely inside a cut is dropped');
 const withStyle = CPSilence.rippleItems([{ start: 7, end: 8, text: 'x', kw: ['x'], style: 'pop' }], [{ start: 1, end: 2 }], true);
 ok(withStyle[0].kw && withStyle[0].style === 'pop' && close(withStyle[0].start, 6), 'every other field of a cue (emphasis, style) is carried forward');
+// a word stamped long over a pause is kept when the part that is HEARD survives the cut
+{
+  const ws = [{ start: 43.63, end: 43.71, text: 'I' }, { start: 43.71, end: 45.11, text: 'basically' }, { start: 45.11, end: 45.89, text: 'would' }, { start: 45.89, end: 46.82, text: 'openly' }];
+  const cutsH = [{ start: 0, end: 37.083 }, { start: 43.875, end: 45.625 }, { start: 45.792, end: 72 }];
+  const heard = [{ start: 43.63, end: 43.71 }, { start: 43.71, end: 43.87 }, { start: 45.63, end: 45.79 }];
+  ok(CPSilence.rippleItems(ws, cutsH, true, { kind: 'words' }).map(w => w.text).join(' ') === 'I', 'raw stamps alone: the half-of-the-word rule still drops them');
+  ok(CPSilence.rippleItems(ws, cutsH, true, { kind: 'words', heard: heard }).map(w => w.text).join(' ') === 'I basically would', 'with the heard parts: "basically" and "would" stay, "openly" (all cut) goes');
+}
 // property: random cues + random cuts → order kept, never overlapping, nothing with surviving time lost
 let good = true, why = '';
 let seed = 7; const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };

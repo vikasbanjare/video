@@ -26,6 +26,7 @@ function candidates() {
     if (py) out.push(py);
   } catch (e) {}
   out.push('/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/opt/homebrew/bin/ffmpeg',
+           require('os').homedir() + '/.cutpilot/bin/ffmpeg',   // Pulse's own: has libass when Homebrew's doesn't
            '/opt/pw-browsers/ffmpeg-linux');
   return out;
 }

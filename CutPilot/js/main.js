@@ -1725,6 +1725,10 @@
     try {
       var t = JSON.parse(nodeReq('fs').readFileSync(file, 'utf8'));
       if (!t || t.v !== 4 || !t.lines || !t.lines.length) return null;
+      // transcripts saved before parseSRT dropped wordless cues still hold them
+      var said = function (c) { return c && String(c.text || '').trim(); };
+      t.lines = t.lines.filter(said); if (t.words) t.words = t.words.filter(said);
+      if (!t.lines.length) return null;
       return t;
     } catch (e) { return null; }
   }
@@ -1743,7 +1747,8 @@
       // auto-loads a transcript that matches the CURRENT model (else re-transcribe)
       fs.writeFileSync(p.join(dir, _tcKey(mediaPath, minIn, maxOut) + '.json'), JSON.stringify({
         v: 4, lines: t.lines, words: t.words || null, wordLevel: !!t.wordLevel, dedupeWords: !!t.dedupeWords,
-        minIn: minIn, maxOut: maxOut, q: resolveQuality(), lang: (asrLangNow()), at: Date.now()
+        minIn: minIn, maxOut: maxOut, q: resolveQuality(), lang: (asrLangNow()), at: Date.now(),
+        mediaPath: String(mediaPath)
       }), 'utf8');
     } catch (e) {}
   }
@@ -1776,6 +1781,11 @@
           if (!((st.mtimeMs || 0) > bestM)) return;
           var t = readCachedTranscriptFile(full);
           if (!t) return;
+          // the file name alone is not the recording: "take.mp4" in another
+          // folder (or any two Hindi-named files, which both key to "_") is a
+          // different clip. Studio sound's copy sits in its own folder, so
+          // there the name is all there is to go on. Older files carry no path.
+          if (t.mediaPath && orig === stem && t.mediaPath !== String(mediaPath)) return;
           // only reuse a transcript made with the model + language selected now
           if (t.q != null && t.q !== curQ) return;
           if (t.lang != null && t.lang !== curLang) return;
@@ -2189,11 +2199,13 @@
           // been cut since it was heard
           var placed = (!sparse && !forceFresh) ? placeTranscript(cached, insts) : null;
           if (placed && placed.cues.length) {
-            state.transcript = { label: 'Saved transcript (' + shortName + ')', path: writePlacedTranscript(placed.cues, 'saved'), mtime: 1e16 };
-            state.transcriptWords = placed.words;
-            state.transcriptMedia = clip.mediaPath;
-            state.transcriptPlacement = { mediaPath: clip.mediaPath, pieces: insts, inOut: res.inOut || null };
-            state.transcriptManual = true;
+            withJobSeq(jobEnv, function () {   // same as a fresh transcript: it belongs to the sequence the tap was on
+              state.transcript = { label: 'Saved transcript (' + shortName + ')', path: writePlacedTranscript(placed.cues, 'saved'), mtime: 1e16 };
+              state.transcriptWords = placed.words;
+              state.transcriptMedia = clip.mediaPath;
+              state.transcriptPlacement = { mediaPath: clip.mediaPath, pieces: insts, inOut: res.inOut || null };
+              state.transcriptManual = true;
+            });
             state._cacheServedKey = cacheKeyNow;
             $('tr-help').classList.add('hidden');
             refreshMogrtSheetTr(); refreshMogrtEditorTr();
@@ -2334,6 +2346,8 @@
             return plainPass();
           }, function () { return plainPass(); });
         }).then(function (rawCues) {
+          // Stop tapped during the quiet-stretch recheck: that pass swallows every error, so ask here
+          if (trStopped()) throw trStopError();
           if (!rawCues || !rawCues.length) throw new Error('no speech detected in “' + shortName + '”');
           // Hinglish: convert Devanagari → natural Hinglish via the cloud LLM
           // (mechanical transliteration fallback inside). Async, so chain it.
@@ -3779,7 +3793,7 @@
     if ($('cu-script-clear')) $('cu-script-clear').classList.toggle('hidden', !n);
     if ($('cu-script-state')) $('cu-script-state').textContent = n
       ? '✓ ' + (state.scriptName || 'Your script') + ' — ' + n + ' words. Clean up keeps one take of each line and cuts the rest.'
-      : 'With a script, Clean up keeps one take of each line and cuts the rest.';
+      : 'With a script, keeps one take of each line.';
   }
   function scriptLoaded(name, txt) {
     state.scriptName = name; scriptSync();
@@ -4366,11 +4380,12 @@
   var _treCues = null;
   var _treOrig = null;           // the lines as they were when the editor opened
   var _treMode = 'transcript';   // 'transcript' = edit words; 'captions' = edit placed captions
+  var _treEnv = null;            // the sequence the editor was opened on
   function openTranscriptEditor() {
     var cues;
     try { cues = readSelectedTranscript(true); }
     catch (e) { return toast(e.message, true); }
-    _treMode = 'transcript';
+    _treMode = 'transcript'; _treEnv = state.env;
     _treCues = cues.map(function (c) { return { start: c.start, end: c.end, text: c.text }; });
     _treOrig = cues.map(function (c) { return { start: c.start, end: c.end, text: c.text }; });
     if ($('tre-title')) $('tre-title').textContent = '✏️ Review & edit the words';
@@ -4384,7 +4399,7 @@
      left the owner there instead of on Captions. */
   function openCaptionTextEditor() {
     if (!state.lastCaptionJob || !state.lastCaptionJob.cues) return toast('Add captions first, then you can edit their text.', true);
-    _treMode = 'captions';
+    _treMode = 'captions'; _treEnv = state.env;
     _treCues = state.lastCaptionJob.cues.map(function (c) { return { start: c.start, end: c.end, text: c.text }; });
     _treOrig = state.lastCaptionJob.cues.map(function (c) { return { start: c.start, end: c.end, text: c.text }; });
     if ($('tre-title')) $('tre-title').textContent = '✏️ Edit your caption words';
@@ -4552,6 +4567,10 @@
   }
   function saveTranscriptEditor() {
     if (!_treCues) return;
+    // these words are another sequence's: saving would overwrite the open one's
+    if (_treEnv && state.env && envKey(_treEnv) !== envKey(state.env)) {
+      return toast('These words belong to "' + (_treEnv.sequenceName || 'another sequence') + '". Open that sequence, then tap Save. Nothing was changed.', true);
+    }
     var cues = _treCues.filter(function (c) { return c.text && c.text.trim(); });
     if (!cues.length) return toast('Every line is empty — nothing to save.', true);
     try {
@@ -4634,7 +4653,7 @@
       var m = xml.match(/ExtensionBundleVersion="([^"]+)"/);
       if (m && m[1]) {
         var el = $('ver'); if (el) el.textContent = 'v' + m[1];
-        var ft = $('ver-foot'); if (ft) ft.textContent = 'Pulse v' + m[1] + ' · Clean up · Podcast cameras · Captions · Chapters · Organize';
+        var ft = $('ver-foot'); if (ft) ft.textContent = 'Pulse v' + m[1];
       }
     } catch (e) {}
   }
@@ -5321,7 +5340,7 @@
       var made = 0, hooks = 0;
       return host('CP_addMarkers', { ranges: [{ start: 2, end: 3 }, { start: 5, end: 6 }], label: 'Pulse self-test' }).then(function (r) {
         made = r.created;
-        return host('CP_addHookMarkers', { markers: [{ time: 7, label: 'Pulse self-test hook', comment: 'test' }] });
+        return host('CP_addHookMarkers', { markers: [{ time: 7, label: 'Pulse self-test 3', comment: 'test' }] });
       }).then(function (r) {
         hooks = r.added;
         return host('CP_getMarkers');
@@ -5409,7 +5428,11 @@
         var seen = [];
         return caps.slice(0, 5).reduce(function (p, f) {
           return p.then(function () {
-            return frameAt((f.start + (f.end != null ? f.end : f.start + 0.3)) / 2).then(function (im) { seen.push({ words: (f.words || []).join(' '), b: im ? stInkBox(im) : null }); });
+            // a long word stays on to be read (20 characters a second) and Premiere
+            // cuts it at the end of the footage: looked at before that end, not
+            // at the middle of a time that runs past it (read as "NOT visible")
+            var mid = (f.start + (f.end != null ? f.end : f.start + 0.3)) / 2, endS = Number(setup.endSeconds) || 10;
+            return frameAt(Math.max(f.start, Math.min(mid, endS - 0.1))).then(function (im) { seen.push({ words: (f.words || []).join(' '), b: im ? stInkBox(im) : null }); });
           });
         }, Promise.resolve()).then(function () {
           var bad = seen.filter(function (x) { return !x.b || x.b.share < 0.001 || x.b.x0 < 0.005 || x.b.x1 > 0.995 || x.b.y0 < 0.005 || x.b.y1 > 0.995; });
@@ -5421,6 +5444,9 @@
     });
     add('Captions: the colour you pick shows on the timeline', function () {
       var ov = readOverrides(); ov.fill = '#00ff00'; ov.highlight = '#00ff00';
+      // a FLAT colour: a style's own gradient/gloss (Bold Pop) blends the pick
+      // towards its second colour, and the check then read 0% green
+      ov.fill2 = null; ov.highlight2 = null; ov.glossy = false;
       var frames = CPCaptions.buildCaptionFrames([{ start: 2.0, end: 3.2, text: 'Colour check words' }], { anim: 'none', wordsPerCue: 3 });
       return placeFrames(frames, styledPreset(), ov, 'colour').then(function (r) {
         if (!framesWork) return { state: 'warn', note: 'placed ' + r.placed + ' (no frames to look at)' };
@@ -5575,9 +5601,12 @@
         return host('CP_getEnv').then(function (env) {
           var shape = env && env.sequenceName === 'Pulse self-test short' && Number(env.width) === 1080 && Number(env.height) === 1920;
           if (!framesWork || !shape) return { state: shape ? 'ok' : 'fail', note: 'sequence “' + (env && env.sequenceName) + '” ' + (env && env.width) + '×' + (env && env.height) };
-          return frameAt(1).then(function (im) {
+          // ponytail: one retry — a just-imported clip sometimes gives no frame the first time
+          return frameAt(1).then(function (im) { return im || frameAt(1); }).then(function (im) {
+            // no frame is not "no hook": say which one it was
+            if (!im) return { state: 'fail', note: 'its own 1080×1920 sequence, but Premiere gave no frame to check the hook title on' };
             // the hook card: white, across the top of the frame (its dark words in the middle)
-            var top = im ? stTopWhite(im) : 0, white = top > 0.05;
+            var top = stTopWhite(im), white = top > 0.05;
             return { state: white ? 'ok' : 'fail', note: 'its own 1080×1920 sequence, ' + (white ? 'the hook title on screen' : 'NO hook title at the top (' + Math.round(top * 100) + '% of the top band is white)') };
           });
         });
@@ -6913,13 +6942,13 @@
     if (!p || !document.fonts || !document.fonts.load) return;
     var fams = [p.font].concat(p.fallbackFonts || []);
     if (p.highlightFont) fams.push(p.highlightFont);
-    var w = p.weight || 800, pending = [];
+    var w = parseInt(p.weight, 10) || 800, pending = [];   // an imported file may say "bold"
     fams.forEach(function (f) {
       if (!f || /^(sans-serif|serif|monospace|cursive)$/.test(f)) return;
       var key = f + '|' + w;
       if (_fontsAsked[key]) return;
       _fontsAsked[key] = 1;
-      try { pending.push(document.fonts.load(w + ' 40px "' + f + '"', 'Aa हिंदी')); } catch (e) {}
+      try { var fl = document.fonts.load(w + ' 40px "' + f + '"', 'Aa हिंदी'); fl.catch(function () {}); pending.push(fl); } catch (e) {}
     });
     if (then && pending.length) Promise.all(pending).then(then, then);
   }
@@ -8126,7 +8155,8 @@
       if (f.faces) for (var fk in f.faces) if (f.faces.hasOwnProperty(fk)) { _psFaces[String(f.name).toLowerCase()] = f.faces; break; }
       var known = (f.latin != null || f.devanagari != null);
       if (known) _fontCoverage[String(f.name).toLowerCase()] = { latin: !!f.latin, devanagari: !!f.devanagari };
-      if (known && !f.latin && !f.devanagari) _hiddenScriptFonts.push(f.name);
+      // a leading dot is macOS's private system fonts (.SF Bangla): not for picking
+      if ((known && !f.latin && !f.devanagari) || String(f.name).charAt(0) === '.') _hiddenScriptFonts.push(f.name);
       else usable.push(f.name);
     });
     _installedFonts = usable;
@@ -9684,7 +9714,11 @@
     var json = JSON.stringify(tpl, null, 2);
     try {
       var p = nodeReq('path');
-      var out = p.join(nodeReq('os').homedir(), (tpl.name.replace(/[^\w]+/g, '_')) + '.cutpilot.json');
+      // letters of any script: a Hindi name used to become "_" — every such
+      // style exported onto the same file. Never over a file that is there.
+      var base = String(tpl.name || '').replace(/[^\p{L}\p{M}\p{N}_-]+/gu, '_').replace(/^_+|_+$/g, '') || String(tpl.id || 'style');
+      var out = p.join(nodeReq('os').homedir(), base + '.cutpilot.json');
+      for (var n = 2; nodeReq('fs').existsSync(out); n++) out = p.join(nodeReq('os').homedir(), base + '-' + n + '.cutpilot.json');
       nodeReq('fs').writeFileSync(out, json, 'utf8');
       toast('Exported to ' + out);
     } catch (e) { toast('Export failed: ' + e.message, true); }
@@ -9695,7 +9729,11 @@
     if (!p) return;
     try {
       var tpl = JSON.parse(nodeReq('fs').readFileSync(p, 'utf8'));
-      if (!tpl || !tpl.font) throw new Error('Not a Pulse template file.');
+      if (!tpl || typeof tpl !== 'object' || typeof tpl.font !== 'string' || !tpl.font) throw new Error('Not a Pulse template file.');
+      // a hand-edited file: list fields that are not lists broke the gallery
+      // search and the brand-word check for every style, not just this one
+      ['alsoIn', 'fallbackFonts', 'brandWords', 'keywords'].forEach(function (k) { if (tpl[k] != null && !Array.isArray(tpl[k])) delete tpl[k]; });
+      if (tpl.name != null) tpl.name = String(tpl.name);
       tpl.id = 'custom-' + Date.now();
       tpl.category = 'My Templates';
       tpl.custom = true;
@@ -10717,7 +10755,10 @@
       onCaptionJobSequence(function () {
         runCaptionPipeline(state.lastCaptionJob.cues, {
           overwriteOnTrack: state.lastCaptionJob.track,
-          range: { start: rng.start, end: rng.end }
+          range: { start: rng.start, end: rng.end },
+          // whole captions that touch the range: cutting the words at the
+          // range's edge left the last caption without its later words
+          wholeCards: true
         });
       });
     }).catch(function (e) {
@@ -10904,7 +10945,7 @@
      transcript keeps them (Clean up and the retake finder cut them), the
      caption text and its word timing leave them out. Real words — Hindi
      "to", "accha", English "like" — are never touched. Pure. */
-  var HESITATIONS = { um: 1, umm: 1, ummm: 1, uh: 1, uhh: 1, uhm: 1, erm: 1, hmm: 1, hmmm: 1, hm: 1, mm: 1, mmm: 1, mhm: 1, mhmm: 1 };
+  var HESITATIONS = { um: 1, umm: 1, ummm: 1, uh: 1, uhh: 1, uhm: 1, erm: 1, hmm: 1, hmmm: 1, hm: 1, mmm: 1, mhm: 1, mhmm: 1 };   // not "mm": "a 35 mm lens"
   // the sounds Shorts leaves out, Hindi script included (this list had none:
   // a Hindi transcript's captions showed "उम्म" and "हम्म")
   function isHesitation(t) {
@@ -11752,7 +11793,7 @@
   }
 
   /* Real progress with a Cancel button, in the caption progress box. */
-  var _ovJob = null, _ovProg = null;
+  var _ovJob = null, _ovProg = null, _ovStopAsked = false;
   function overlayProgress(msg, pct) {
     var el = $('cap-progress'); if (!el) return;
     if (!_ovProg || !el.contains(_ovProg.msg)) {
@@ -11770,7 +11811,7 @@
     _ovProg.fill.style.width = (Math.max(0, Math.min(1, pct || 0)) * 100).toFixed(1) + '%';
   }
   function cancelOverlayJob() {
-    if (!_ovJob) return;
+    if (!_ovJob) { _ovStopAsked = true; return; }   // Stop tapped before the render began: honoured as it starts
     try { _ovJob.cancel(); } catch (e) {}
     overlayProgress('Stopping…', 0);
   }
@@ -11795,6 +11836,7 @@
     var W = state.env.width || 1920, H = state.env.height || 1080;
     var fps = (state.env.fps > 0) ? state.env.fps : 30;
     if (!frames.length) { setCaptionBusy(false); capProgress(null); toast('No words to caption.', true); return Promise.resolve(); }
+    _ovStopAsked = false;
     overlayProgress('Preparing your caption overlay…', 0);
     return captionMediaPlace().then(function (place) {
       clearStaleOverlayWork(place.dir);
@@ -11811,6 +11853,7 @@
         }
       });
       _ovJob = job;
+      if (_ovStopAsked) cancelOverlayJob();
       return job.promise.then(function (res) {
         _ovJob = null;
         diag('captions', 'Pulse overlay: ' + frames.length + ' frames → ' + res.states + ' looks, ' + res.frames + ' video frames → ' + res.path);
@@ -11941,6 +11984,9 @@
         : '🎉 Captions added on V' + r.track + ' as ONE overlay clip, drawn by the same renderer as your preview.' + motion +
           ' Edit words or restyle any time from Pulse; ⌘Z undoes it.');
     }, function (e) {
+      // The owner opened another sequence meanwhile: nothing was refused, so
+      // no fallback (it would place these captions on the wrong sequence).
+      if (e && e.seqMoved) { setCaptionBusy(false); capProgress(null); toast(e.message, true); return; }
       // SAFETY NET: if this Premiere will not take the overlay clip, fall back
       // to separate caption images so Add captions never leaves nothing.
       try { nodeReq('fs').unlinkSync(info.path); } catch (eRm) {}
@@ -12023,6 +12069,7 @@
       (lost.length ? 'This style will LOSE: ' + lost.join(', ') + '.' : 'This style keeps its look.'));
     setCaptionBusy(true);
     capProgress('Listening for word timing…');
+    if (!opts.overlayFailed) _ovStopAsked = false;   // a fresh job: an old Stop is not for it
 
     // the word timing the job was given (a fallback from Pulse's own overlay
     // passes it on), else the transcript's — the same as runCaptionPipeline
@@ -12099,6 +12146,13 @@
         catch (eW) { return fallbackImages(eW, 'could not write its caption file'); }
 
         var args = CPAss.ffmpegOverlayArgs(assPath, W, H, lastEnd + 0.2, outPath, bundledFontsDir(), Math.round(state.env.fps || 30));
+        // Stop tapped while this fallback was getting ready (the bar of the failed
+        // full render was still up): it used to be ignored and the render ran
+        if (_ovStopAsked) {
+          _ovStopAsked = false; done = true; _ovJob = null; dropWork();
+          setCaptionBusy(false); capProgress(null);
+          return toast('Stopped — no captions were added.');
+        }
         overlayProgress('Rendering captions (simpler look) — 0%', 0);
         _ovJob = { cancel: function () { cancelled = true; if (proc) { try { proc.kill(); } catch (eK) {} } } };
         try { proc = cpMod.spawn(ff, args); } catch (eS) { return fallbackImages(eS); }
@@ -13840,12 +13894,21 @@
      { breaks:[k], width, cost } or null. */
   function premLayout(ws, a, b, span, maxW, maxLines, lang) {
     var total = span(a, b);
-    if (total <= maxW) return { breaks: [], width: total, cost: 0 };
+    // a Hindi verb chain ("bana raha hoon") may run 5% over the budget (still
+    // inside the comp: the budget is at most 90% of it) rather than be split
+    var fits = function (x, y) {
+      var w = span(x, y);
+      if (w <= maxW) return true;
+      if (y - x < 2 || w > maxW * 1.05) return false;
+      for (var q = x + 1; q < y; q++) if (!premNoStart(ws[q], lang)) return false;
+      return true;
+    };
+    if (fits(a, b)) return { breaks: [], width: total, cost: 0 };
     if (maxLines < 2 || b - a < 2) return null;
     var best = null, n = b - a, minPer = (n >= 6) ? 3 : (n >= 3 ? 2 : 1);
     for (var k = a + 1; k < b; k++) {
       var w1 = span(a, k), w2 = span(k, b);
-      if (w1 > maxW || w2 > maxW) continue;
+      if (!fits(a, k) || !fits(k, b)) continue;
       var c = Math.abs(w2 - 1.05 * w1) / maxW * 100;          // balanced, the bottom line ~5% longer
       if (k - a < minPer || b - k < minPer) c += 200;          // never one or two words alone on a line…
       if (n >= 3 && (k - a === 1 || b - k === 1)) c += 1500;   // …a lone word above all (an extra caption is better)
@@ -14168,7 +14231,7 @@
     opts._jobEnv = opts._jobEnv || state.env;
     var cues;
     try { cues = readSelectedTranscript(); } catch (e) { return toast(e.message, true); }
-    var built = null, tcues, words;
+    var built = null, tcues, words, poUsed = null;
     // Pulse's OWN templates are fitted from either view: the 📁 Upload list
     // shows them too, and one template must not land differently (cropped,
     // tiny or mid-frame) just because it was picked there. That view keeps
@@ -14177,6 +14240,7 @@
     var bundledTpl = isBundledMogrt(mogrtPath);
     if ((opts && opts.premium) || bundledTpl) {
       var po = (opts && opts.premium) ? premOpts() : uploadPremOpts();
+      if (opts && opts.premium) poUsed = JSON.parse(JSON.stringify(po));   // what THIS set was built with
       built = premBuild(cues, mogrtPath, state.env, po);
       tcues = built.cues;
       words = po.words || 0;
@@ -14258,7 +14322,7 @@
                               seq: (state.env && state.env.sequenceName) || '',
                               kind: (opts && opts.premium) ? 'premium' : 'template', mogrtPath: mogrtPath,
                               params: params, textStyle: textStyle, words: words,
-                              prem: (opts && opts.premium) ? JSON.parse(JSON.stringify(premOpts())) : null };
+                              prem: poUsed };
       saveLastCaptionJob();
       reflectCaptionsPlaced();
       if (r.textSet === 0) {
@@ -16471,7 +16535,7 @@
     return CPBridge.callHost('CP_razorRipple', args).then(function (rr) {
       try { diag('silence', 'cut ' + ((rr && rr.cuts) || 0) + ' section(s), ' + ((rr && rr.removedSeconds) || 0).toFixed(2) + ' s, by ' + ((rr && rr.cutMethod) || 'timecode')); } catch (eDg) {}
       var removed = (rr && Array.isArray(rr.removed)) ? rr.removed : ranges;
-      rippleTranscriptByRanges(removed, args.closeGaps);
+      rippleTranscriptByRanges(removed, args.closeGaps, heardWords(state.transcriptWords, guard));
       state.silencesSeq = []; state.silPlan = null;
       if ($('results')) $('results').classList.add('hidden');
       state.takeDeletes = [];                                   // a take list from before the cut is stale now
@@ -16800,6 +16864,7 @@
     // the transcript copies a cut re-times (silence-remap-lines)
     setTranscript: function (words, cues) { state.transcriptWords = words || null; state.lastCaptionJob = cues ? { cues: cues, track: 1 } : null; },
     transcript: function () { return { words: state.transcriptWords, cues: state.lastCaptionJob ? state.lastCaptionJob.cues : null }; },
+    heard: function () { return heardWords(state.transcriptWords, state.silLastPlan); },   // where each word is audible (silence-remap)
     ripple: function (ranges) { return rippleTranscriptByRanges(ranges, true); },
     // the strength the next clean-up cuts with (silence-remember-choice)
     strength: function () { return state.silStrength; }
@@ -16937,11 +17002,16 @@
           ' audio clips (more than one mic or piece) — they would be lost. Use “Cut directly in this sequence” below instead; a backup is made first.'
         : 'No keep segments computed.', true);
     }
+    // The clip the pauses were FOUND in — not state.clip, which another tool
+    // (Transcribe, Studio sound) re-points at whatever is selected by then.
+    var planSeq = state.silPlan.sequenceId, src0 = state.silPlan.sources[0];
+    if (planSeq && state.env && state.env.sequenceId && state.env.sequenceId !== planSeq)
+      return toast('These pauses were found in "' + (state.silPlan.sequenceName || 'another sequence') + '". Open it, or tap Find again here — no copy was made.', true);
     // Name the new sequence after the video's detected title (falls back to the clip name).
-    detectTitle(highlightSegments(), 'Pulse · ' + state.clip.name).then(function (name) {
+    detectTitle(highlightSegments(), 'Pulse · ' + src0.name).then(function (name) {
       return CPBridge.callHost('CP_rebuildTrimmed', {
-        nodeId: state.clip.nodeId,
-        mediaPath: state.clip.mediaPath,    // fallback lookup when nodeId doesn't resolve
+        nodeId: src0.nodeId,
+        mediaPath: src0.mediaPath,          // fallback lookup when nodeId doesn't resolve
         keeps: state.keepsMedia,
         name: name
       });
@@ -16969,6 +17039,9 @@
     }).then(function (r) {
       // the old silence list belongs to the previous timeline — clear it.
       state.silencesSeq = []; state.silPlan = null; if ($('results')) $('results').classList.add('hidden');
+      if (r.segmentsMissed > 0)
+        return toast('Built "' + r.sequence + '", but Premiere would not place ' + r.segmentsMissed + ' of its ' + (r.segmentsPlaced + r.segmentsMissed) +
+                     ' pieces — it is missing speech. Delete it and use “Cut directly in this sequence” instead.', true);
       toast('🎉 Built "' + r.sequence + '" — ' + r.segmentsPlaced + ' segments, ' + fmt(r.finalDuration) +
             ' long. Transcript auto-synced to the trimmed clip — go straight to “Remove repeated takes” or captions.');
     }).catch(function (e) { toast('Rebuild failed: ' + e.message, true); });
@@ -17071,7 +17144,12 @@
       state.transcriptWords = remapFn(state.transcriptWords);
       dropped = before - state.transcriptWords.length;
     }
-    if (state.lastCaptionJob && state.lastCaptionJob.cues) state.lastCaptionJob.cues = remapFn(state.lastCaptionJob.cues);
+    if (state.lastCaptionJob && state.lastCaptionJob.cues) {
+      state.lastCaptionJob.cues = remapFn(state.lastCaptionJob.cues);
+      // the saved copy too: after the panel was reopened, "Restyle all" put
+      // every caption back where the words were BEFORE the cut
+      saveLastCaptionJob();
+    }
     if (typeof _treCues !== 'undefined' && _treCues && _treCues.length) _treCues = remapFn(_treCues);
     if (typeof _treOrig !== 'undefined' && _treOrig && _treOrig.length) _treOrig = remapFn(_treOrig);
     // the transcript FILE is not re-timed — remember that its times are now
@@ -17092,12 +17170,12 @@
      timeline so you NEVER have to re-transcribe between steps: words inside a
      removed range are dropped, words after it slide left by the removed time.
      `closeGaps` mirrors what the host did (default true — gaps closed). */
-  function rippleTranscriptByRanges(ranges, closeGaps) {
+  function rippleTranscriptByRanges(ranges, closeGaps, heard) {
     if (!ranges || !ranges.length) return 0;
     return resyncTranscripts(function (items) {
       // the word list is words; every other copy is caption LINES — a
       // one-word line ("Haan.") or one with no spaces stays a line
-      return CPSilence.rippleItems(items, ranges, closeGaps !== false, { kind: items === state.transcriptWords ? 'words' : 'lines' });
+      return CPSilence.rippleItems(items, ranges, closeGaps !== false, { kind: items === state.transcriptWords ? 'words' : 'lines', heard: heard });
     });
   }
 
@@ -18637,7 +18715,7 @@
         var seg = { input: input, from: at0.t, to: at0.t + (p.end - p.start), crops: crops, fromAudio: {}, toAudio: {}, target: tgt };
         // the frame the owner set on this camera wins (🔲 Set the frame)
         var own = target ? shortFrameFor(at0.path) : null;
-        if (own && crops.length === 1) { seg.crops = [framePx(own, src)]; notes.push('V' + (p.angle + 1) + ' your frame'); }
+        if (own && crops.length === 1) { seg.crops = [framePx(own, src, tgt.w / tgt.h)]; notes.push('V' + (p.angle + 1) + ' your frame'); }
         // the owner's layout: each cell a person's own view, the talker in the main one
         if (target && layout !== 'auto') {
           var lay = CPPodShort.layoutCells(layout, tgt.w, tgt.h), dur = p.end - p.start;
@@ -18650,7 +18728,7 @@
             if (!v) { short = true; return; }
             var ownF = shortFrameFor(v.path), isFull = cell.w === tgt.w && cell.h === tgt.h;
             var crop = cell.fit ? { x: 0, y: 0, w: v.src.w, h: v.src.h }
-              : ownF ? (isFull ? framePx(ownF, v.src) : CPPodShort.markCrop(ownF, v.src, cell.w / cell.h, { minHeight: 0.3 }))
+              : ownF ? (isFull ? framePx(ownF, v.src, tgt.w / tgt.h) : CPPodShort.markCrop(ownF, v.src, cell.w / cell.h, { minHeight: 0.3 }))
               : personCrop(v.face, v.src, cell.w / cell.h, { fallbackCx: shFocusX(), minHeight: cell.h < tgt.h ? 0.3 : 0.5 });
             cells.push({ input: inputOf(v.path, v.from), from: v.from, to: v.from + dur, crop: crop, src: v.src, rect: { x: cell.x, y: cell.y, w: cell.w, h: cell.h }, fit: !!cell.fit, full: cell.w === tgt.w && cell.h === tgt.h && !cell.fit });
           });
@@ -18691,7 +18769,7 @@
       // short) goes where the captions go, not the OS temp folder: macOS
       // clears that, and the short reopened with its hook title offline
       return shortKeepDir(dir).then(function (keep) {
-        if (hookTitle) { try { hookPng = writeHookCard(hookTitle, tgt0.w, tgt0.h, keep); } catch (eH) { hookPng = null; } }
+        if (hookTitle) { try { hookPng = writeHookCard(hookTitle, tgt0.w, tgt0.h, keep); } catch (eH) { hookPng = null; notes.push('hook title not drawn (' + (eH && eH.message || eH) + ')'); } }
         return { dir: dir, keep: keep, inputs: inputs, segs: segs, audio: audio, target: tgt0, hookPng: hookPng, pieces: pieces, info: info,
                  multi: multi, cams: multi ? nCams : 0, removed: plan.removed,
                  diag: pieces.length + ' piece(s): ' + notes.join(', ') +
@@ -18773,7 +18851,17 @@
     return (p && p.marked) ? CPPodShort.markCrop(p.box, src, aspect, o) : CPPodShort.faceCrop(p, src, aspect, o);
   }
   /* the owner's frame (fractions) in this picture's pixels, even-sized */
-  function framePx(f, src) {
+  /* The owner's box in the short's shape: same height and centre, the
+     width that shape needs on this picture; kept inside the picture. A box
+     already in that shape comes back untouched. Pure. */
+  function fitFrame(f, picAsp, shapeAsp) {
+    var w = f.h * shapeAsp / picAsp, h = f.h;
+    if (Math.abs(w - f.w) < 0.005) return f;
+    if (w > 1) { w = 1; h = picAsp / shapeAsp; }
+    return { x: Math.max(0, Math.min(1 - w, f.x + f.w / 2 - w / 2)), y: Math.max(0, Math.min(1 - h, f.y + f.h / 2 - h / 2)), w: w, h: h };
+  }
+  function framePx(f, src, asp) {
+    if (asp) f = fitFrame(f, src.w / Math.max(1, src.h), asp);
     var e = function (v) { return Math.max(2, Math.round(v / 2) * 2); };
     var w = e(f.w * src.w), h = e(f.h * src.h);
     return { x: Math.max(0, Math.min(src.w - w, Math.round(f.x * src.w))), y: Math.max(0, Math.min(src.h - h, Math.round(f.y * src.h))), w: w, h: h };
@@ -18783,7 +18871,16 @@
     (faces || []).forEach(function (f, i) { if (f.s > bs) { bs = f.s; b = i; } });
     return b;
   }
+  var _shMaking = false;
   function makeVerticalClip(h, rt) {
+    // a second tap while one is being made: two shorts fought over the open sequence
+    if (_shMaking) { toast('Still making a short — wait for it to finish.'); return Promise.resolve({ made: false, busy: true }); }
+    var done = function (r) { _shMaking = false; return r; };
+    var p; _shMaking = true;
+    try { p = makeVerticalClip1(h, rt); } catch (e) { _shMaking = false; throw e; }
+    return Promise.resolve(p).then(done, function (e) { _shMaking = false; throw e; });
+  }
+  function makeVerticalClip1(h, rt) {
     var ff = resolveFfmpeg();
     if (!ff) return toast('Making a clip needs the audio engine — tap Settings → ⬇️ Set up audio engine.', true);
     if (typeof CPReframe === 'undefined' || typeof CPShorts === 'undefined' || typeof CPPodShort === 'undefined') return toast('Shorts module missing.', true);
@@ -18873,12 +18970,16 @@
   /* The caption step of a short has finished: its progress line has stayed
      away a moment (the pipeline shows it while it renders and places). */
   function captionsSettled(maxMs) {
-    var el = $('cap-progress'), quiet = 0, t0 = Date.now();
+    var el = $('cap-progress'), quiet = 0, t0 = Date.now(), seen = false;
     return new Promise(function (res) {
       (function tick() {
         var busy = el && !el.classList.contains('hidden');
+        seen = seen || busy;
         quiet = busy ? 0 : quiet + 250;
-        if (quiet >= 1500 || Date.now() - t0 > (maxMs || 15 * 60 * 1000)) return res();
+        // the caption step asks Premiere about the sequence BEFORE it shows its
+        // line: on a busy Premiere that took over 1.5 s, and the short was called
+        // finished with no captions on it. Until the line shows, wait up to 10 s.
+        if ((seen ? quiet >= 1500 : Date.now() - t0 > 10000) || Date.now() - t0 > (maxMs || 15 * 60 * 1000)) return res();
         setTimeout(tick, 250);
       })();
     });
@@ -18907,6 +19008,7 @@
   var _batch = null;
   function makeAllShorts(list) {
     if (_batch) { _batch.stop = true; toast('Stopping after this short…'); return Promise.resolve(); }
+    if (_shMaking) { toast('Still making a short — wait for it to finish.'); return Promise.resolve(); }
     var rt = shRatio(), btn = $('btn-sh-all');
     _batch = { stop: false, made: 0, failed: 0, seqs: [] };
     if (btn) btn.textContent = '■ Stop';
@@ -18920,7 +19022,8 @@
         return next();
       });
     }
-    return next().then(function () {
+    // an error thrown while making one (not a refusal) used to leave the button on "Stop" for good
+    return next().catch(function (e) { _batch.failed++; toast('Make all stopped: ' + e.message, true); }).then(function () {
       var b = _batch; _batch = null;
       if (btn) btn.textContent = '🎬 Make all ' + list.length + ' shorts';
       return toShortsSource().then(function () {
@@ -18947,12 +19050,12 @@
     var m = settings.shMarks && settings.shMarks[markKey(p)];
     return (m && m.length) ? m.map(function (b) { return { x: b.x, y: b.y, w: b.w, h: b.h }; }) : [];
   }
-  function saveMarks(p, boxes) {
+  function saveMarks(p, boxes, hold) {
     settings.shMarks = settings.shMarks || {};
     if (boxes && boxes.length) settings.shMarks[markKey(p)] = boxes.map(function (b) {
       return { x: +b.x.toFixed(4), y: +b.y.toFixed(4), w: +b.w.toFixed(4), h: +b.h.toFixed(4) };
     }); else delete settings.shMarks[markKey(p)];
-    saveSettings();
+    if (!hold) saveSettings();
   }
   function defaultMarks(n) {
     var out = [];
@@ -18967,16 +19070,20 @@
     var f = settings.shFrames && settings.shFrames[markKey(p)];
     return (f && f.w > 0 && f.h > 0) ? { x: f.x, y: f.y, w: f.w, h: f.h } : null;
   }
-  function saveFrame(p, f) {
+  function saveFrame(p, f, hold) {
     settings.shFrames = settings.shFrames || {};
     if (f) settings.shFrames[markKey(p)] = { x: +f.x.toFixed(4), y: +f.y.toFixed(4), w: +f.w.toFixed(4), h: +f.h.toFixed(4) };
     else delete settings.shFrames[markKey(p)];
-    saveSettings();
+    if (!hold) saveSettings();
   }
-  /* the frame box's height for a width, keeping 9:16 on this picture */
-  function frameH(w, cv) { return w * (cv.width / Math.max(1, cv.height)) * 16 / 9; }
+  /* the short's shape as width / height (9:16 when it keeps the original) */
+  function shapeAsp() { var r = shRatio(); return r ? r.num / r.den : 9 / 16; }
+  /* the frame box's height for a width, keeping the short's shape on this picture */
+  function frameH(w, cv) { return w * (cv.width / Math.max(1, cv.height)) / shapeAsp(); }
+  /* this camera's box as the picture shows it: in the shape chosen now */
+  function shownFrame(c, cv) { var f = c && shortFrameFor(c.path); return f ? fitFrame(f, cv.width / Math.max(1, cv.height), shapeAsp()) : null; }
   function defaultFrame(cv) {
-    var h = 0.92, w = h * (cv.height / Math.max(1, cv.width)) * 9 / 16;
+    var h = 0.92, w = h * (cv.height / Math.max(1, cv.width)) * shapeAsp();
     if (w > 1) { w = 1; h = frameH(w, cv); }
     return { x: (1 - w) / 2, y: (1 - h) / 2, w: w, h: h };
   }
@@ -18992,24 +19099,24 @@
     if (!c) { el.textContent = ''; return; }
     var n = shortMarksFor(c.path).length;
     var fr = shortFrameFor(c.path);
-    el.textContent = fr ? ('🔲 ' + c.label + ': the short shows exactly this box. Drag it to move, drag its corner to resize.')
+    el.textContent = fr ? ('🔲 ' + c.label + ': the short shows exactly this box. Drag it to move, its corner to resize — or drag anywhere else to draw a new one.')
       : n ? (n + ' ' + (n === 1 ? 'person' : 'people') + ' marked on ' + c.label + ' — the short zooms on whoever talks. Clear to let Pulse find the faces.')
-          : '🤖 ' + c.label + ': Pulse finds the faces itself. Choose 👥 to mark people, or 🔲 to set the frame yourself.';
+          : '🤖 ' + c.label + ': Pulse finds the faces itself. To pick the part yourself, drag a box on the picture.';
     syncMarkMode();
   }
   function drawMarks() {
     var cv = $('sh-mark-canvas'), c = markCam(); if (!cv || !c || !_mark.img) return;
     var W = cv.width, H = cv.height, g = cv.getContext('2d');
     g.drawImage(_mark.img, 0, 0, W, H);
-    var fr = shortFrameFor(c.path);
+    var fr = shownFrame(c, cv);
     if (fr) {
-      // dim what the short leaves out; the 9:16 box bright, with its handle
+      // dim what the short leaves out; the box bright, with its handle
       g.fillStyle = 'rgba(0,0,0,0.55)';
       g.fillRect(0, 0, W, fr.y * H); g.fillRect(0, (fr.y + fr.h) * H, W, H - (fr.y + fr.h) * H);
       g.fillRect(0, fr.y * H, fr.x * W, fr.h * H); g.fillRect((fr.x + fr.w) * W, fr.y * H, W - (fr.x + fr.w) * W, fr.h * H);
       g.strokeStyle = '#d6ff4f'; g.lineWidth = 3; g.strokeRect(fr.x * W, fr.y * H, fr.w * W, fr.h * H);
       g.fillStyle = '#d6ff4f'; g.fillRect((fr.x + fr.w) * W - 14, (fr.y + fr.h) * H - 14, 14, 14);
-      g.font = '700 15px sans-serif'; g.fillText('9:16', fr.x * W + 6, fr.y * H + 20);
+      g.font = '700 15px sans-serif'; g.fillText((shRatio() || { label: '9:16' }).label, fr.x * W + 6, fr.y * H + 20);
       return;
     }
     shortMarksFor(c.path).forEach(function (b, i) {
@@ -19040,6 +19147,12 @@
     });
   }
   function loadMarkCameras() {
+    if (_mark.loading) return _mark.loading;
+    var done = function () { _mark.loading = null; };
+    _mark.loading = loadMarkCameras1(); _mark.loading.then(done, done);
+    return _mark.loading;
+  }
+  function loadMarkCameras1() {
     return CPBridge.callHost('CP_getVideoTracks').then(function (r) {
       var seen = {}, cams = [];
       (r.videoTracks || []).forEach(function (t) {
@@ -19058,7 +19171,7 @@
       _mark.cams = cams; _mark.cur = 0;
       var sel = $('sh-mark-cam'); sel.innerHTML = '';
       cams.forEach(function (c, i) { var o = document.createElement('option'); o.value = String(i); o.textContent = c.label; sel.appendChild(o); });
-      if (!cams.length) { $('sh-mark-status').textContent = 'No video on the timeline yet — put your footage on it, then tap 📷.'; return; }
+      if (!cams.length) { $('sh-mark-status').textContent = 'No video on the timeline yet — put your footage on it, then tap Show picture.'; return; }
       showMarkFrame();
     });
   }
@@ -19066,11 +19179,15 @@
     if (!CPBridge.isCEP()) return toast('Marking people needs Premiere (open Pulse inside Premiere).', true);
     loadMarkCameras();
   });
+  if ($('sh-mark-wrap')) $('sh-mark-wrap').addEventListener('toggle', function () {
+    if (this.open && !_mark.cams.length && CPBridge.isCEP()) loadMarkCameras();
+  });
+  if ($('sh-ratio')) $('sh-ratio').addEventListener('change', function () { drawMarks(); });
   if ($('sh-mark-cam')) $('sh-mark-cam').addEventListener('change', function () { _mark.cur = parseInt(this.value, 10) || 0; showMarkFrame(); });
   document.querySelectorAll('#sh-mark-mode button').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var c = markCam(), m = btn.dataset.mode, cv = $('sh-mark-canvas');
-      if (!c) { toast('Tap 📷 Show its picture first.'); return; }
+      if (!c) { toast('Tap Show picture first.'); return; }
       if (m === 'auto') { saveFrame(c.path, null); saveMarks(c.path, []); }
       else if (m === 'people') { saveFrame(c.path, null); if (!shortMarksFor(c.path).length) saveMarks(c.path, defaultMarks(2)); }
       else if (m === 'frame') { saveMarks(c.path, []); if (!shortFrameFor(c.path)) saveFrame(c.path, defaultFrame(cv)); }
@@ -19089,7 +19206,7 @@
     btn.addEventListener('click', function () {
       var c = markCam();
       document.querySelectorAll('#sh-mark-n button').forEach(function (b) { b.classList.toggle('on', b === btn); });
-      if (!c) return toast('Tap 📷 Show a frame first.');
+      if (!c) return toast('Tap Show picture first.');
       saveMarks(c.path, defaultMarks(+btn.dataset.n));
       drawMarks(); markStatus();
     });
@@ -19099,7 +19216,15 @@
     function at(e) { var r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }; }
     cv.addEventListener('pointerdown', function (e) {
       var c = markCam(); if (!c) return;
-      var p = at(e), fr0 = shortFrameFor(c.path);
+      var p = at(e), fr0 = shownFrame(c, cv);
+      // a press on bare picture draws a new box (not while people are marked: that would wipe them)
+      var bare = fr0 ? !(p.x >= fr0.x && p.x <= fr0.x + fr0.w + 16 / Math.max(1, cv.getBoundingClientRect().width) && p.y >= fr0.y && p.y <= fr0.y + fr0.h + 16 / Math.max(1, cv.getBoundingClientRect().height))
+        : !shortMarksFor(c.path).length;
+      if (bare) {
+        _mark.drag = { frame: true, mode: 'draw', from: p };
+        try { cv.setPointerCapture(e.pointerId); } catch (eD) {}
+        return;
+      }
       if (fr0) {
         var hx0 = 16 / Math.max(1, cv.getBoundingClientRect().width), hy0 = 16 / Math.max(1, cv.getBoundingClientRect().height);
         var onHandle = p.x >= fr0.x + fr0.w - hx0 * 1.5 && p.x <= fr0.x + fr0.w + hx0 && p.y >= fr0.y + fr0.h - hy0 * 1.5 && p.y <= fr0.y + fr0.h + hy0;
@@ -19123,6 +19248,15 @@
     cv.addEventListener('pointermove', function (e) {
       var d = _mark.drag, c = markCam(); if (!d || !c) return;
       var p = at(e), dx = p.x - d.from.x, dy = p.y - d.from.y, b = d.box, nb;
+      if (d.mode === 'draw') {
+        // from the press point towards the pointer, in the short's shape, inside the picture
+        var k = frameH(1, cv), fx = d.from.x, fy = d.from.y;
+        var dw = Math.min(Math.max(Math.abs(dx), Math.abs(dy) / k, 0.08), dx >= 0 ? 1 - fx : fx, (dy >= 0 ? 1 - fy : fy) / k);
+        if (Math.max(Math.abs(dx), Math.abs(dy)) < 0.02 || dw < 0.03) return;   // a click, or no room: nothing changes
+        saveFrame(c.path, { x: dx >= 0 ? fx : fx - dw, y: dy >= 0 ? fy : fy - dw * k, w: dw, h: dw * k }, true);
+        d.dirty = true; drawMarks();
+        return;
+      }
       if (d.frame) {
         if (d.mode === 'move') nb = { x: Math.max(0, Math.min(1 - b.w, b.x + dx)), y: Math.max(0, Math.min(1 - b.h, b.y + dy)), w: b.w, h: b.h };
         else {
@@ -19132,15 +19266,15 @@
           if (b.y + h > 1) { h = 1 - b.y; w = h / frameH(1, cv); }
           nb = { x: b.x, y: b.y, w: w, h: h };
         }
-        saveFrame(c.path, nb); drawMarks();
+        saveFrame(c.path, nb, true); d.dirty = true; drawMarks();
         return;
       }
       if (d.mode === 'move') nb = { x: Math.max(0, Math.min(1 - b.w, b.x + dx)), y: Math.max(0, Math.min(1 - b.h, b.y + dy)), w: b.w, h: b.h };
       else nb = { x: b.x, y: b.y, w: Math.max(0.05, Math.min(1 - b.x, b.w + dx)), h: Math.max(0.08, Math.min(1 - b.y, b.h + dy)) };
       var boxes = d.boxes.slice(); boxes[d.i] = nb;
-      saveMarks(c.path, boxes); drawMarks();
+      saveMarks(c.path, boxes, true); d.dirty = true; drawMarks();
     });
-    function end() { if (_mark.drag) { _mark.drag = null; markStatus(); } }
+    function end() { var d = _mark.drag; if (d) { _mark.drag = null; if (d.dirty) saveSettings(); markStatus(); } }
     cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
   })();
 
@@ -19249,6 +19383,7 @@
   try {
     window.CP_DEBUG_EXT = window.CP_DEBUG_EXT || {};
     window.CP_DEBUG_EXT.shorts = { show: renderShorts, plan: function (h) { return shortPlanFor(h, shortOpts()); },
+                                   render: renderFramedShort,
                                    output: function (v) { _shOutTest = v || null; },
                                    segments: function () { return highlightSegments() || []; },
                                    setLastJob: function (cues) { state.lastCaptionJob = { cues: cues, track: 2, seq: 'Some short' }; },
@@ -19327,7 +19462,9 @@
       throw e;
     });
   }
+  var _srBusy = false;
   function runSpeakerReframe() {
+    if (_srBusy) return toast('Still building the speaker clip — wait for it to finish.');
     var ff = resolveFfmpeg();
     if (!ff) return toast('Following the speaker needs the audio engine — tap Settings → ⬇️ Set up audio engine.', true);
     if (typeof CPReframe === 'undefined' || typeof CPMulticam === 'undefined') return toast('Reframe module missing.', true);
@@ -19336,6 +19473,7 @@
     var rt = shRatio() || { num: 9, den: 16, label: '9:16' };
     var target = CPReframe.targetSize(rt.label);
     var prog = $('sr-progress'); prog.classList.remove('hidden'); prog.textContent = 'Reading your audio tracks…';
+    _srBusy = true;
     CPBridge.callHost('CP_getAudioTracks').then(function (r) {
       var tracks = (r.audioTracks || []).filter(function (t) { return t.mediaPath; });
       if (tracks.length < nPeople) throw new Error('Found ' + tracks.length + ' mic track(s) with media, but this layout needs ' + nPeople + '. Put each speaker on their own audio track — or use a highlight’s “Make clip” (single-subject Auto Reframe) instead.');
@@ -19389,7 +19527,8 @@
     }).then(function (res) {
       prog.classList.add('hidden');
       toast('🎙 Speaker-aware ' + rt.label + ' clip built' + (res && res.sequence ? ' — sequence “' + res.sequence + '” is ready in your project.' : ' — imported into your project.'));
-    }).catch(function (e) { prog.classList.add('hidden'); toast('Speaker reframe failed: ' + e.message, true); });
+    }).catch(function (e) { prog.classList.add('hidden'); toast('Speaker reframe failed: ' + e.message, true); })
+      .then(function () { _srBusy = false; });
   }
   if ($('btn-speaker-reframe')) $('btn-speaker-reframe').addEventListener('click', runSpeakerReframe);
 
@@ -20931,10 +21070,13 @@
     }
   }
 
+  var _mcPlanning = false;   // a second click ran two audio analyses at once; the slower one's plan won
   $('btn-mc-plan').addEventListener('click', function () {
+    if (_mcPlanning) return;
+    _mcPlanning = true;
     buildMcPlan().then(function () {
       renderMcPlan(parseInt($('mc-angles').value, 10));
-    }).catch(mcBuildFailed);
+    }).catch(mcBuildFailed).then(function () { _mcPlanning = false; });
   });
 
   // One-click "redo": rebuild the plan from the current controls AND apply it,

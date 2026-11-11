@@ -174,7 +174,7 @@ function scriptedPremiere(o) {
     CP_addMarkers(a) { a.ranges.forEach((r, i) => tl.markers.push({ t: r.start, name: (a.label || 'Silence') + ' ' + (i + 1) })); return ok({ created: a.ranges.length }); },
     CP_addHookMarkers(a) { a.markers.forEach(m => tl.markers.push({ t: m.time, name: m.label })); return ok({ added: a.markers.length }); },
     CP_getMarkers() { return ok({ times: tl.markers.map(m => m.t).sort((x, y) => x - y), end: tl.end }); },
-    CP_clearPulseMarkers(a) { const n = tl.markers.length; tl.markers = tl.markers.filter(m => m.name.indexOf(a.label) !== 0); return ok({ removed: n - tl.markers.length }); },
+    CP_clearPulseMarkers(a) { const n = tl.markers.length; tl.markers = tl.markers.filter(m => !(m.name === a.label || (m.name.indexOf(a.label + ' ') === 0 && /^\d+$/.test(m.name.slice(a.label.length + 1))))); return ok({ removed: n - tl.markers.length }); },
     CP_addZoomPunches(a) { return ok({ applied: a.times.length, skipped: 0 }); },
     CP_placeCaptionImages(a) {
       if (o.captionsStop) throw new Error('Premiere stopped (Illegal Parameter type)');
@@ -264,8 +264,9 @@ function scriptedPremiere(o) {
     P.bridge.state.premiere = { host: prem.host };
     // the panel finds its bundled templates through the extension's path
     await P.page.evaluate((dir) => { window.__adobe_cep__.getSystemPath = () => 'file://' + dir; }, PANEL_DIR);
-    const out = await P.page.evaluate(async (waitAudit) => {
+    const out = await P.page.evaluate(async (waitAudit, style) => {
       const sleep = ms => new Promise(r => setTimeout(r, ms));
+      if (style) { window.CP_DEBUG_EXT.gallery.applyTemplate(style); await sleep(300); }
       const s = document.querySelector('.tab[data-tab="settings"]'); if (s) s.click();
       await sleep(200);
       // every progress line the owner is shown, as it is shown
@@ -292,7 +293,7 @@ function scriptedPremiere(o) {
         audit = { diag: dt(), text: box.textContent || '', settings: localStorage.getItem('cutpilot.settings') || '{}' };
       }
       return { text, progress: seen, diagText, audit, env: (document.getElementById('env-status') || {}).textContent || '' };
-    }, !!opts.waitAudit);
+    }, !!opts.waitAudit, opts.style || '');
     const dir = path.join(env.homedir, '.cutpilot', 'pulse-selftest');
     let left = null;
     try { left = fs.readdirSync(dir); } catch (e) { left = null; }
@@ -383,6 +384,16 @@ function scriptedPremiere(o) {
   }
 
   // 2. failures say what Premiere answered; the rest still runs
+  // 1b. a gradient + gloss + keyword-pop style ("Bold Pop") is the owner's
+  //     active style: the colour and long-word checks must still pass
+  {
+    const R = await run('boldpop', {}, { style: 'pro-boldpop' });
+    const caps = R.rows.filter(l => /In Premiere: Captions/.test(l));
+    const bad = caps.filter(l => !/^✅/.test(l));
+    report(caps.length >= 2 && bad.length === 0, '1b. with “Bold Pop” selected every caption check passes (' + caps.length + ' rows)' +
+      (bad.length ? ' — failed: ' + bad.join(' | ') : ''));
+  }
+
   {
     const R = await run('fails', { timecodeIgnored: true, multicamFails: true, captionsStop: true, premiumInvisible: true, cleanupLeaves: true });
     report(/^⚠️/.test(R.rowOf('Razor by timecode')) && /NO cut/.test(R.rowOf('Razor by timecode')) && /cuts at the playhead’s own instead/.test(R.rowOf('Razor by timecode')) &&

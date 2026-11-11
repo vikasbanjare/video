@@ -236,9 +236,14 @@ function makeWorld(opts) {
           const st = Number(startSec) || 0;
           const durIn = (pItem && pItem._in != null && pItem._out != null)
             ? (Number(pItem._out) - Number(pItem._in)) / TICKS : 5;   // stills default long
-          const en = st + Math.max(0.01, durIn);
+          // model.stillShort: Premiere floors a still's out point to a whole
+          // frame, so the clip lands that much short and the tail of what it
+          // overwrote stays on the track
+          const en = st + Math.max(0.01, durIn - (model.stillShort || 0));
           for (let i = items.length - 1; i >= 0; i--) {               // overwrite what it lands on
-            if (items[i].start.seconds < en - 1e-9 && items[i].end.seconds > st + 1e-9) items.splice(i, 1);
+            if (!(items[i].start.seconds < en - 1e-9 && items[i].end.seconds > st + 1e-9)) continue;
+            if (model.stillShort && items[i].end.seconds > en + 1e-9) items[i].start = mkT(en);
+            else items.splice(i, 1);
           }
           const clip = mkClip(st, en, { name: (pItem && pItem.name) || 'clip' });
           // a placed clip remembers what it was made from (CP_placeOverlay's
@@ -1805,20 +1810,40 @@ console.log('host.jsx — fixing ONE caption must not disturb its neighbours');
   const w = makeWorld({ vTracks: 1, aTracks: 1 });
   const host = loadHost(w);
   const dense = [];
-  for (let i = 0; i < 12; i++) dense.push({ path: '/tmp/w_' + i + '.png', start: i * 0.15, end: i * 0.15 + 0.15 });
+  for (let i = 0; i < 12; i++) dense.push({ path: '/tmp/cap_' + i + '.png', start: i * 0.15, end: i * 0.15 + 0.15 });
   const r0 = call(host, 'CP_placeCaptionImages', { items: dense });
   const tIx = r0.track;
   assert(w.model.vTracks[tIx - 1].length === 12, 'all 12 tightly packed captions placed (got ' + w.model.vTracks[tIx - 1].length + ')');
-  const midName = '/tmp/w_6_fixed.png';
+  const midName = '/tmp/cap_6_fixed.png';   // real caption names: a track of anything else is refused as not Pulse's
   call(host, 'CP_placeCaptionImages', {
     items: [{ path: midName, start: 6 * 0.15, end: 6 * 0.15 + 0.15 }],
     overwriteOnTrack: tIx, exact: true
   });
   const names = w.model.vTracks[tIx - 1].map(c => c.name);
   assert(names.length === 12, 'still 12 captions after fixing one in the middle (got ' + names.length + ')');
-  assert(names[5] === 'w_5.png' && names[7] === 'w_7.png',
+  assert(names[5] === 'cap_5.png' && names[7] === 'cap_7.png',
     'the words either side survive a 0.15s-tight fix: ' + names[5] + ' / ' + names[7]);
-  assert(names[6].indexOf('w_6_fixed') === 0, 'the middle word was the one replaced');
+  assert(names[6].indexOf('cap_6_fixed') === 0, 'the middle word was the one replaced');
+}
+
+{
+  // ONE-FRAME LEFTOVER: the still lands a frame short (out point floored),
+  // the last frame of the old caption survives, and the new clip is then
+  // stretched over it. The leftover must come off the track.
+  const w = makeWorld({ vTracks: 1, aTracks: 1 });
+  const host = loadHost(w);
+  const base = [];
+  for (let i = 0; i < 4; i++) base.push({ path: '/tmp/cap_00' + i + '.png', start: i, end: i + 1 });
+  const tIx = call(host, 'CP_placeCaptionImages', { items: base }).track;
+  w.model.stillShort = 1 / 24;
+  call(host, 'CP_placeCaptionImages', {
+    items: [{ path: '/tmp/cap_001b.png', start: 1, end: 2 }], overwriteOnTrack: tIx, exact: true
+  });
+  w.model.stillShort = 0;
+  const trk = w.model.vTracks[tIx - 1].map(c => [c.name, +c.start.seconds.toFixed(3), +c.end.seconds.toFixed(3)]);
+  assert(trk.length === 4 && trk[1][0].indexOf('cap_001b') === 0 && trk[1][2] === 2,
+    'no one-frame leftover of the replaced caption stays under the new one: ' + JSON.stringify(trk));
+  assert(trk[2][0].indexOf('cap_002') === 0 && trk[2][1] === 2, 'the next caption is untouched: ' + JSON.stringify(trk[2]));
 }
 
 {
@@ -2783,6 +2808,20 @@ console.log('host.jsx — Premium captions hold 0.5 s, never 60 s; title templat
   const r3 = call(h2, 'CP_testMgrtFill', { path: '/t/Subtitle_1.mogrt' });
   assert(!r2.ok && !r3.ok && w2.model.vTracks.length === 1 && w2.model.vTracks[0].length === 1,
     'no new track possible: neither the preview nor the template test puts anything over the footage (' + JSON.stringify([r2, r3]) + ')');
+}
+
+{
+  // an empty top track is reused instead of stacking another one on every run
+  const w = makeWorld({ vTracks: 2, aTracks: 1 });
+  w.model.addClip('vTracks', 0, 0, 60, { name: 'interview.mp4' }); w.model.playhead = 10;
+  const h = loadHost(w);
+  const a = h.CP_addTopVideoTrack();
+  assert(a === 1 && w.model.vTracks.length === 2, 'an empty top track is used as the fresh track, none added (' + a + ', ' + w.model.vTracks.length + ' tracks)');
+  w.model.addClip('vTracks', 1, 0, 5, { name: 'caption' });
+  const b = h.CP_addTopVideoTrack();
+  assert(b === 2 && w.model.vTracks.length === 3, 'a top track that holds a clip is never reused: a new one goes above it (' + b + ')');
+  const one = makeWorld({ vTracks: 1, aTracks: 1 }), h1 = loadHost(one);
+  assert(h1.CP_addTopVideoTrack() === 1 && one.model.vTracks.length === 2, 'the only track is never handed out, even when empty');
 }
 
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');
