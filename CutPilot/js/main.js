@@ -97,6 +97,7 @@
     get: function () { return _env; },
     set: function (e) {
       _env = e;
+      try { renderHomeStatus(); } catch (eH) {}
       var k = envKey(e);
       if (!k || k === _envKey) return;
       var first = _envKey === null;
@@ -2659,6 +2660,39 @@
       card.classList.toggle('done', done[st]);
       if (tag) { tag.textContent = done[st] ? '✓' : ''; tag.title = done[st] ? 'Done for this sequence' : ''; }
     });
+    _homeDone = done;
+    renderHomeStatus();
+  }
+
+  /* Home's top card: the open sequence (name, size, length) and which jobs
+     are done for it. Real data only: before Premiere answers it says so. */
+  var _homeDone = {};
+  var HOME_DONE_NAMES = [['transcribe', 'Transcribed'], ['silence', 'Cleaned up'], ['captions', 'Captions'], ['multicam', 'Cameras'], ['shorts', 'Shorts']];
+  function homeLen(sec) {
+    sec = Math.round(Number(sec) || 0); if (sec <= 0) return '';
+    var h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s2 = sec % 60, p2 = function (n) { return (n < 10 ? '0' : '') + n; };
+    return h ? h + ':' + p2(m) + ':' + p2(s2) : m + ':' + p2(s2);
+  }
+  function renderHomeStatus() {
+    var nm = document.getElementById('home-seq-name'), meta = document.getElementById('home-seq-meta'), box = document.getElementById('home-seq-done');
+    if (!nm) return;
+    var env = state.env;
+    if (env && env.sequenceName) {
+      nm.textContent = env.sequenceName; nm.title = env.sequenceName;
+      var bits = ['Open sequence'];
+      if (env.width && env.height) bits.push(env.width + ' × ' + env.height);
+      var len = homeLen(env.endSeconds); if (len) bits.push(len);
+      meta.textContent = bits.join(' · ');
+    } else {
+      nm.textContent = 'No sequence open'; nm.title = '';
+      meta.textContent = 'Open a sequence in Premiere to start';
+    }
+    if (!box) return;
+    var html = '';
+    HOME_DONE_NAMES.forEach(function (d) {
+      if (_homeDone[d[0]]) html += '<span class="hh-chip ok">✓ ' + d[1] + '</span>';
+    });
+    box.innerHTML = html || '<span class="hh-chip">Nothing done yet</span>';
   }
 
   var _navHistory = [], _navBacking = false;

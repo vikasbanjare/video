@@ -1,0 +1,148 @@
+/* Pulse — Crestline look (owner-approved mock-up, Nov 2026).
+   Soft cards with large rounded corners, tinted icon tiles, segmented
+   controls, one blue (the Pulse logo's) for the action that matters, and a
+   bottom bar for the main jobs on a tall panel. Loaded LAST: it redefines the
+   tokens and the shared components, never ids or behaviour.
+   Font: Figtree (OFL), the free face closest to Crestline's Satoshi (Satoshi's
+   licence does not allow shipping it inside the plugin).
+   Chromium-88-safe CSS only (see style.css / ui-css-compat). */
+:root {
+  --r: 14px;
+  --r-sm: 10px;
+  --r-card: 18px;
+  --ui-font: "Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --bnav-h: 58px;
+}
+body.theme-dark {
+  --bg: #18191E; --bg2: #141519; --card: #22242B; --card2: #2B2E36; --card3: #363A44;
+  --card-grad: #22242B;
+  --line: rgba(255,255,255,.07); --line2: rgba(255,255,255,.12);
+  --fg: #EEF0F4; --dim: #A3A9B7; --title: #F5F6F8; --field: #1C1E24;
+  --accent: #2F6FEB; --accent-fg: #FFFFFF;
+  --accent-text: #8FB6FF; --accent-soft: rgba(47,111,235,.20);
+  --accent-glow: rgba(0,0,0,0); --accent-line: rgba(143,182,255,.50);
+  --tint: rgba(47,111,235,.18); --tint-ink: #9EC0FF;
+  --seg: #2A2D35; --seg-on: #3A3E49;
+  --lift: none;
+  --shadow-sm: none; --shadow: none;
+}
+body.theme-light {
+  --bg: #F1F3F9; --bg2: #E7EAF3; --card: #FFFFFF; --card2: #F3F5FA; --card3: #FFFFFF;
+  --card-grad: #FFFFFF;
+  --line: rgba(23,26,34,.08); --line2: rgba(23,26,34,.14);
+  --fg: #171A22; --dim: #5A6070; --title: #10131A; --field: #FFFFFF;
+  --accent: #0052CC; --accent-fg: #FFFFFF;
+  --accent-text: #0047B3; --accent-soft: rgba(0,82,204,.10);
+  --accent-glow: rgba(0,0,0,0); --accent-line: rgba(0,82,204,.40);
+  --tint: #E7EEFB; --tint-ink: #0052CC;
+  --seg: #E4E7F1; --seg-on: #FFFFFF;
+  --lift: 0 1px 2px rgba(16,20,40,.05), 0 8px 20px -12px rgba(16,20,40,.18);
+  --shadow-sm: none; --shadow: none;
+}
+body { font-family: var(--ui-font); background: var(--bg); }
+
+/* ---- surfaces ---- */
+.card { border-radius: var(--r-card); border: 1px solid var(--line); box-shadow: var(--lift); padding: 16px; }
+body.theme-light .card { border-color: transparent; }
+.info-pop { border-radius: var(--r-sm); }
+
+/* ---- controls ---- */
+input[type="number"], input[type="text"], input[type="password"], select, textarea { border-radius: var(--r-sm); }
+.seg-control, .subview-switch { background: var(--seg); border: none; border-radius: 13px; padding: 3px; gap: 2px; }
+.seg-control button, .subview-switch button { border-radius: 10px; font-weight: 500; }
+.seg-control button.on, .subview-switch button.on,
+body.theme-light .seg-control button.on, body.theme-light .subview-switch button.on {
+  background: var(--seg-on); color: var(--title); box-shadow: 0 1px 2px rgba(16,20,40,.10);
+}
+.check input[type="checkbox"] { width: 36px; height: 22px; border-radius: 11px; background: var(--seg); border: none; }
+.check input[type="checkbox"]::after { top: 3px; left: 3px; width: 16px; height: 16px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+.check input[type="checkbox"]:checked { background: var(--accent); }
+.check input[type="checkbox"]:checked::after { left: 17px; }
+body.theme-light .check input[type="checkbox"]:not(:checked) { background: #D9DDE8; }
+
+/* ---- buttons ---- */
+.hero-btn { border-radius: 13px; min-height: 42px; font-weight: 600; }
+.hero-btn.alt { background: var(--card); border: 1px solid var(--line2); color: var(--fg); }
+body.theme-light .hero-btn.alt { border-color: transparent; box-shadow: var(--lift); }
+.chip-btn { border-radius: 9px; font-weight: 500; }
+.cat-chip { border-radius: 10px; }
+.tool-btn { border-radius: var(--r); }
+
+/* ---- the Pulse logo in the bar ---- */
+.brand .logo-mark { width: 24px; height: 24px; border-radius: 7px; transform: none;
+  box-shadow: 0 0 0 1px rgba(23,26,34,.08), 0 2px 6px rgba(16,20,40,.15); }
+.brand .brand-name { font-weight: 600; letter-spacing: -0.01em; }
+
+/* ---- icons (the Pulse set, 24-unit grid) ---- */
+.pi { fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.pi .f { fill: currentColor; fill-opacity: .2; stroke: none; }
+.pi .pi-hole { fill: var(--tint); }
+
+/* ---- Home ---- */
+.home-hero { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-card); box-shadow: var(--lift);
+  padding: 14px 16px 16px; margin: 2px 0 14px; }
+body.theme-light .home-hero { border-color: transparent; }
+.hh-label { font-size: var(--fs-xs); font-weight: 500; color: var(--dim); }
+.hh-name { font-size: 1.62rem; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; color: var(--title);
+  margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hh-done { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; min-height: 22px; }
+.hh-done .hh-chip { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 7px;
+  font-size: var(--fs-xs); font-weight: 600; background: var(--seg); color: var(--dim); }
+.hh-done .hh-chip.ok { background: var(--ok-bg); color: var(--ok-text); }
+.hh-btns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; margin-top: 12px; }
+.hh-btns .hero-btn { margin: 0; min-height: 40px; font-size: var(--fs-md); padding: 8px 10px; }
+
+.tile-head { text-transform: none; letter-spacing: 0; font-size: var(--fs-md); font-weight: 600; color: var(--title); margin: 4px 2px 8px; }
+.home-tasks + .tile-head { margin-top: 14px; }
+.home-tasks.tiles, .more-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--r-card); box-shadow: var(--lift); padding: 10px;
+}
+body.theme-light .home-tasks.tiles, body.theme-light .more-grid { border-color: transparent; }
+@media (min-width: 320px) { .home-tasks.tiles, .more-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.tile, .tile-wide, .more-grid .tool-btn {
+  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+  gap: 6px; min-height: 76px; padding: 8px 2px; text-align: center; grid-column: auto;
+  background: transparent; border: none; border-radius: 14px; box-shadow: none; transform: none;
+  font-size: var(--fs-xs); font-weight: 500; color: var(--fg); line-height: 1.2;
+  white-space: normal; overflow-wrap: anywhere;
+}
+.more-grid #home-greenscreen { grid-column: auto; }
+.tile:hover, .more-grid .tool-btn:hover { background: var(--card2); border: none; }
+.tile .task-ic, .more-grid .tool-btn .t-ic {
+  width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; flex: none;
+  background: var(--tint); color: var(--tint-ink);
+}
+.tile .task-ic svg, .more-grid .tool-btn .t-ic svg { width: 24px; height: 24px; }
+.more-grid .tool-btn > svg { display: none; }
+.tile .task-txt { display: block; min-width: 0; max-width: 100%; }
+.tile .task-name { font-size: var(--fs-xs); font-weight: 500; color: var(--fg); overflow-wrap: anywhere; }
+.tile .task-sub { display: none; }
+.tile .step-state { top: 4px; right: 50%; margin-right: -30px; width: 16px; height: 16px; font-size: 10px; }
+.tile-wide .step-state { top: 4px; margin-top: 0; }
+.more-tools { margin-top: 14px; }
+.more-head { text-transform: none; letter-spacing: 0; font-size: var(--fs-md); font-weight: 600; color: var(--title); margin: 0 2px 8px; }
+.home-foot { text-align: center; margin-top: 12px; }
+
+/* ---- bottom bar: the main jobs, one tap away, on a tall panel ---- */
+.bottom-nav { display: none; }
+@media (min-height: 600px) and (max-width: 999px) {
+  body { grid-template-rows: auto minmax(0, 1fr) auto; grid-template-areas: "bar" "page" "bnav"; }
+  .bottom-nav {
+    grid-area: bnav; display: flex; align-items: stretch; justify-content: space-around;
+    height: var(--bnav-h); padding: 4px 4px 6px; background: var(--card); border-top: 1px solid var(--line);
+  }
+  .bottom-nav button {
+    flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    background: transparent; border: none; border-radius: 10px; color: var(--dim); cursor: pointer;
+    font-size: var(--fs-xs); font-weight: 500; line-height: 1.15; padding: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .bottom-nav button:hover { color: var(--fg); background: var(--card2); }
+  .bottom-nav svg { width: 22px; height: 22px; flex: none; }
+  body[data-page="home"] .bottom-nav [data-go="home"],
+  body[data-page="silence"] .bottom-nav [data-go="silence"],
+  body[data-page="captions"] .bottom-nav [data-go="captions"],
+  body[data-page="shorts"] .bottom-nav [data-go="shorts"],
+  body[data-page="multicam"] .bottom-nav [data-go="multicam"] { color: var(--accent-text); }
+}
+@media (max-width: 299px) { .bottom-nav button span { display: none; } }

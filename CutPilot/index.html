@@ -6,15 +6,34 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- Inter 600 = the caption engine's baked face; loading it makes every preview pixel-honest when online -->
-  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Hanken+Grotesk:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@500;600;700&display=swap" rel="stylesheet">
   <!-- Caption faces — loaded as web fonts so the chosen font renders in the
        live preview AND the canvas-rendered PNGs even if it isn't installed. -->
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Bebas+Neue&family=Archivo+Black&family=Fjalla+One&family=Bangers&family=Luckiest+Guy&family=Alfa+Slab+One&family=Bungee&family=Titan+One&family=Passion+One&family=Permanent+Marker&family=Pacifico&family=Shadows+Into+Light&family=Montserrat:wght@400;500;600;700;800;900&family=Poppins:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800;900&family=Oswald:wght@400;700&family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Lato:wght@400;700&family=Raleway:wght@400;700&family=Work+Sans:wght@400;700&family=Nunito:wght@400;700&family=Rubik:wght@400;700;800;900&family=DM+Sans:wght@400;500;700&family=Outfit:wght@400;500;600;700;800;900&family=Sora:wght@400;500;600;700;800&family=Barlow:wght@400;700&family=Manrope:wght@400;500;600;700;800&family=Teko:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,800;1,600;1,700;1,800&family=Merriweather:wght@400;700&family=Lora:wght@400;700&family=JetBrains+Mono:wght@400;700&family=Roboto+Mono:wght@400;700&family=Space+Mono:wght@400;700&family=Caveat:wght@400;700&family=Arvo:wght@400;700&family=Space+Grotesk:wght@400;500;600;700&family=Syne:wght@600;700;800&family=Unbounded:wght@600;700;800;900&family=DM+Serif+Display:ital@0;1&family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Baloo+2:wght@400;500;600;700;800&family=Mukta:wght@400;500;600;700;800&family=Hind:wght@400;500;600;700&family=Anek+Devanagari:wght@400;500;600;700;800&family=Rozha+One&family=Kalam:wght@400;700&family=Tiro+Devanagari+Hindi:ital@0;1&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css?v=v0.10.117">
   <link rel="stylesheet" href="css/organize.css?v=v0.10.117">
   <link rel="stylesheet" href="css/studio.css?v=v0.10.117">
+  <link rel="stylesheet" href="css/crest.css?v=v0.10.117">
 </head>
 <body class="theme-light" data-page="home">
+  <!-- the Pulse icon set (24-unit grid): <svg class="pi"><use href="#pi-…"/></svg> -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+<symbol id="pi-t" viewBox="0 0 24 24"><path class="f" d="M6 3h8l4 4v14H6Z"/><path d="M6 3h8l4 4v14H6Z"/><path d="M14 3v4h4"/><path d="M9 9.5v2M11 8.5v4M13 9.5v2"/><path d="M9 15h6M9 18h4"/></symbol>
+<symbol id="pi-cl" viewBox="0 0 24 24"><circle class="f" cx="6" cy="17" r="3"/><circle cx="6" cy="7" r="2.75"/><circle cx="6" cy="17" r="2.75"/><path d="M8.3 8.6L20 17M8.3 15.4L20 7"/></symbol>
+<symbol id="pi-cp" viewBox="0 0 24 24"><rect class="f" x="3" y="5" width="18" height="14" rx="3.5"/><rect x="3" y="5" width="18" height="14" rx="3.5"/><path d="M10.6 10.1A2.6 2.6 0 1 0 10.6 13.9"/><path d="M16.6 10.1A2.6 2.6 0 1 0 16.6 13.9"/></symbol>
+<symbol id="pi-sh" viewBox="0 0 24 24"><rect class="f" x="7" y="2.75" width="10" height="18.5" rx="2.8"/><rect x="7" y="2.75" width="10" height="18.5" rx="2.8"/><path d="M10.75 9.5l3.5 2.5-3.5 2.5Z"/></symbol>
+<symbol id="pi-ca" viewBox="0 0 24 24"><path class="f" d="M10 13h7.5a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2Z"/><rect x="2.5" y="3.5" width="10" height="7.5" rx="2"/><path d="M12.5 6l3-1.8v6.1l-3-1.8"/><rect x="8" y="13" width="11.5" height="8" rx="2"/><path d="M19.5 15.7l2.5-1.5v5.6l-2.5-1.5"/></symbol>
+<symbol id="pi-so" viewBox="0 0 24 24"><rect class="f" x="3" y="13" width="4.5" height="7" rx="1.8"/><rect class="f" x="16.5" y="13" width="4.5" height="7" rx="1.8"/><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="13" width="4.5" height="7" rx="1.8"/><rect x="16.5" y="13" width="4.5" height="7" rx="1.8"/><path d="M11 14v4M13 13v6"/></symbol>
+<symbol id="pi-ch" viewBox="0 0 24 24"><path class="f" d="M3.5 4h4v6l-2-1.4-2 1.4Z"/><path d="M3.5 4h4v6l-2-1.4-2 1.4Z"/><path d="M11 6h9.5M11 9.5h6"/><path d="M3.5 14.5h2M8.5 14.5h12M3.5 19h2M8.5 19h9"/></symbol>
+<symbol id="pi-br" viewBox="0 0 24 24"><rect class="f" x="7" y="4" width="10" height="16"/><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 4v16M17 4v16M3 8h4M3 12h4M3 16h4M17 8h4M17 12h4M17 16h4"/><path d="M10.5 9.75l3.5 2.25-3.5 2.25Z"/></symbol>
+<symbol id="pi-sz" viewBox="0 0 24 24"><rect class="f" x="8.5" y="8" width="7" height="7" rx="1.2"/><rect x="6" y="2.75" width="12" height="18.5" rx="3"/><path d="M8.5 8h7v7h-7Z" stroke-dasharray="1.4 1.4"/><path d="M10.5 18h3"/></symbol>
+<symbol id="pi-bg" viewBox="0 0 24 24"><path class="f" d="M3 3h4.5v4.5H3ZM12 3h4.5v4.5H12ZM7.5 7.5H12V12H7.5ZM16.5 7.5H21V12h-4.5ZM3 12h4.5v4.5H3Z"/><rect x="3" y="3" width="18" height="18" rx="3"/><circle class="pi-hole" cx="12" cy="11" r="3.2"/><path d="M6.2 21a5.8 5.8 0 0 1 11.6 0" class="pi-hole"/></symbol>
+<symbol id="pi-mi" viewBox="0 0 24 24"><rect class="f" x="9" y="3" width="6" height="11" rx="3"/><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></symbol>
+<symbol id="pi-tr" viewBox="0 0 24 24"><rect class="f" x="10" y="9" width="11" height="11" rx="3"/><rect x="3" y="4" width="11" height="11" rx="3"/><path d="M6 12.5l2.5-6 2.5 6M6.9 10.5h3.2"/><rect x="10" y="9" width="11" height="11" rx="3"/><path d="M13 12.5h5M15.5 12.5c0 2.5-1 4.5-2.5 5.5M15.5 15c.8 1.4 1.8 2.3 3 3"/></symbol>
+<symbol id="pi-se" viewBox="0 0 24 24"><circle class="f" cx="12" cy="12" r="8"/><path d="M9.32 4.89L10.01 2.75L13.99 2.75L14.68 4.89L15.14 5.08L17.15 4.05L19.95 6.85L18.92 8.86L19.11 9.32L21.25 10.01L21.25 13.99L19.11 14.68L18.92 15.14L19.95 17.15L17.15 19.95L15.14 18.92L14.68 19.11L13.99 21.25L10.01 21.25L9.32 19.11L8.86 18.92L6.85 19.95L4.05 17.15L5.08 15.14L4.89 14.68L2.75 13.99L2.75 10.01L4.89 9.32L5.08 8.86L4.05 6.85L6.85 4.05L8.86 5.08Z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="pi-org" viewBox="0 0 24 24"><path class="f" d="M3 9h18v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 10.5h18"/></symbol>
+<symbol id="pi-home" viewBox="0 0 24 24"><path class="f" d="M9.5 20v-5.5h5V20"/><path d="M3.5 11 12 4l8.5 7"/><path d="M5.5 9.5V20h13V9.5"/><path d="M9.5 20v-5.5h5V20"/></symbol>
+</svg>
   <!-- ONE navigation row (≤ 12 % of a 400 px-tall panel). Home is the menu;
        every other page shows ‹ back + its name. -->
   <header id="app-bar" class="app-bar">
@@ -22,13 +41,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
     </button>
     <button id="nav-home" class="brand" type="button" title="Home" aria-label="Pulse — Home">
-      <svg class="logo-mark" viewBox="0 0 100 112" width="20" height="22" aria-hidden="true">
-        <defs><linearGradient id="plsG" x1="14" y1="104" x2="88" y2="12" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stop-color="#8FB0FF"/><stop offset="1" stop-color="#2C57E6"/></linearGradient></defs>
-        <circle cx="37" cy="14.5" r="10.5" fill="url(#plsG)"/>
-        <path d="M27 43a10 10 0 0 1 10-10h12a27 27 0 0 1 0 54h-4v15a9 9 0 0 1 -18 0Z" fill="url(#plsG)"/>
-        <line x1="33.5" y1="64" x2="64" y2="45.5" stroke="#fff" stroke-width="8.5" stroke-linecap="round"/>
-      </svg>
+      <svg class="logo-mark" viewBox="0 0 512 512" width="24" height="24" aria-hidden="true"><rect width="512" height="512" rx="96" fill="#FFFFFF"/><g transform="translate(170.67,84.00) scale(0.42453)" fill="#0052CC"><g transform="translate(0,848) scale(0.1,-0.1)"><path d="M1756 5639 c-185 -29 -291 -252 -200 -420 93 -170 313 -202 450 -64 65 65 89 129 82 224 -6 80 -31 133 -90 187 -67 62 -152 87 -242 73z"/><path d="M1646 4830 c-16 -5 -40 -19 -54 -32 -52 -49 -52 -45 -52 -644 0 -526 1 -556 18 -549 9 4 148 56 307 117 160 60 376 143 480 183 345 133 568 215 584 215 35 -1 100 -39 115 -69 23 -44 20 -111 -7 -152 -21 -32 -61 -49 -584 -259 -308 -124 -579 -235 -602 -248 -117 -66 -229 -211 -277 -358 l-29 -89 0 -487 0 -486 30 -44 c17 -23 49 -53 70 -66 38 -21 49 -22 216 -20 174 3 176 3 216 31 22 15 50 46 64 70 l24 42 1 420 c0 375 2 424 18 460 21 50 69 100 121 128 38 20 56 22 345 25 337 4 389 10 523 65 111 45 195 103 292 201 92 93 155 191 202 316 82 219 82 441 -1 660 -82 220 -233 385 -442 487 -185 90 -151 86 -894 89 -361 2 -668 -1 -684 -6z"/></g></g></svg>
       <span class="brand-name">Pulse</span><span class="brand-by">by aifloh</span>
     </button>
     <span id="nav-title" class="nav-title"></span>
@@ -42,19 +55,19 @@
   <!-- Every page's .tab button. Hidden on a docked panel (Home is the menu),
        a sidebar on a wide one. main.js and the gates open pages by clicking these. -->
   <nav class="tabs" aria-label="Pages">
-    <button class="tab active" data-tab="home"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 11 12 4l8.5 7"/><path d="M5.5 9.5V20h13V9.5"/></svg></span>Home</button>
-    <button class="tab" data-tab="captions"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3.5"/><path d="M10 10.5a2.2 2.2 0 1 0 0 3"/><path d="M16.5 10.5a2.2 2.2 0 1 0 0 3"/></svg></span>Captions</button>
-    <button class="tab" data-tab="silence"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><line x1="20" y1="4" x2="8.5" y2="15.5"/><line x1="14.5" y1="14.5" x2="20" y2="20"/><line x1="8.5" y1="8.5" x2="12" y2="12"/></svg></span>Clean up</button>
-    <button class="tab" data-tab="sound"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="4" x2="6" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="18" y1="4" x2="18" y2="20"/><line x1="4" y1="14" x2="8" y2="14"/><line x1="10" y1="9" x2="14" y2="9"/><line x1="16" y1="16" x2="20" y2="16"/></svg></span>Studio sound</button>
-    <button class="tab" data-tab="background"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="12" cy="10" r="3"/><path d="M6.5 20a5.5 5.5 0 0 1 11 0"/></svg></span>Remove background</button>
-    <button class="tab" data-tab="broll"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3Z"/></svg></span>B-roll</button>
-    <button class="tab" data-tab="multicam"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="3.5" width="13" height="9" rx="2"/><rect x="3.5" y="9.5" width="13" height="9" rx="2"/></svg></span>Podcast cameras</button>
-    <button class="tab" data-tab="transcribe"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>Transcribe</button>
-    <button class="tab" data-tab="shorts"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="2.5" width="9" height="19" rx="2.5"/><path d="M10.5 12l4 -2.3v4.6Z" fill="currentColor" stroke="none"/></svg></span>Shorts</button>
-    <button class="tab" data-tab="chapters"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4.5" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1.4" fill="currentColor" stroke="none"/></svg></span>Chapters</button>
-    <button class="tab" data-tab="organize"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5a2 2 0 0 1 2-2h3.4a2 2 0 0 1 1.6.8l.9 1.2h7.1a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg></span>Organize</button>
-    <button class="tab" data-tab="safezone"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="2"/><rect x="9" y="7" width="6" height="6" rx="1"/><line x1="9" y1="17" x2="15" y2="17"/></svg></span>Safe zone</button>
-    <button class="tab" data-tab="settings"><span><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 13.5a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 0 1-4 0v-.1a1.6 1.6 0 0 0-2.7-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z"/></svg></span>Settings</button>
+    <button class="tab active" data-tab="home"><span><svg class="tab-ic pi"><use href="#pi-home"/></svg></span>Home</button>
+    <button class="tab" data-tab="captions"><span><svg class="tab-ic pi"><use href="#pi-cp"/></svg></span>Captions</button>
+    <button class="tab" data-tab="silence"><span><svg class="tab-ic pi"><use href="#pi-cl"/></svg></span>Clean up</button>
+    <button class="tab" data-tab="sound"><span><svg class="tab-ic pi"><use href="#pi-so"/></svg></span>Studio sound</button>
+    <button class="tab" data-tab="background"><span><svg class="tab-ic pi"><use href="#pi-bg"/></svg></span>Remove background</button>
+    <button class="tab" data-tab="broll"><span><svg class="tab-ic pi"><use href="#pi-br"/></svg></span>B-roll</button>
+    <button class="tab" data-tab="multicam"><span><svg class="tab-ic pi"><use href="#pi-ca"/></svg></span>Podcast cameras</button>
+    <button class="tab" data-tab="transcribe"><span><svg class="tab-ic pi"><use href="#pi-t"/></svg></span>Transcribe</button>
+    <button class="tab" data-tab="shorts"><span><svg class="tab-ic pi"><use href="#pi-sh"/></svg></span>Shorts</button>
+    <button class="tab" data-tab="chapters"><span><svg class="tab-ic pi"><use href="#pi-ch"/></svg></span>Chapters</button>
+    <button class="tab" data-tab="organize"><span><svg class="tab-ic pi"><use href="#pi-org"/></svg></span>Organize</button>
+    <button class="tab" data-tab="safezone"><span><svg class="tab-ic pi"><use href="#pi-sz"/></svg></span>Safe zone</button>
+    <button class="tab" data-tab="settings"><span><svg class="tab-ic pi"><use href="#pi-se"/></svg></span>Settings</button>
   </nav>
 
   <!-- ================================ HOME =============================== -->
@@ -62,52 +75,58 @@
     <!-- HOME = TILES. The four jobs of every video, side by side; podcast
          cameras is its own tool for multi-camera podcasts; the rest below.
          A tile shows ✓ once its job is done for this sequence. -->
+    <div id="home-hero" class="home-hero">
+      <div id="home-seq-meta" class="hh-label">Open sequence</div>
+      <div id="home-seq-name" class="hh-name">Looking for your sequence…</div>
+      <div id="home-seq-done" class="hh-done" aria-label="Done for this sequence"></div>
+      <div class="hh-btns">
+        <button id="home-go-clean" class="hero-btn" type="button" data-go="silence">Clean up</button>
+        <button id="home-go-captions" class="hero-btn alt" type="button" data-go="captions">Add captions</button>
+      </div>
+    </div>
     <div class="tile-head">Edit your video</div>
     <div class="home-tasks tiles">
       <button id="home-words" class="task-card step-card tile" type="button" data-go="transcribe" data-step="transcribe">
-        <span class="task-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>
+        <span class="task-ic"><svg class="pi"><use href="#pi-t"/></svg></span>
         <span class="step-state" data-state-for="transcribe"></span>
         <span class="task-txt"><span class="task-name">Transcribe</span><span class="task-sub">Get the words</span></span>
       </button>
       <button id="home-cleanup" class="task-card step-card tile" type="button" data-go="silence" data-step="silence">
-        <span class="task-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><line x1="20" y1="4" x2="8.5" y2="15.5"/><line x1="14.5" y1="14.5" x2="20" y2="20"/><line x1="8.5" y1="8.5" x2="12" y2="12"/></svg></span>
+        <span class="task-ic"><svg class="pi"><use href="#pi-cl"/></svg></span>
         <span class="step-state" data-state-for="silence"></span>
         <span class="task-txt"><span class="task-name">Clean up</span><span class="task-sub">Silences, retakes, “um”s</span></span>
       </button>
       <button id="home-captions" class="task-card step-card tile" type="button" data-go="captions" data-step="captions">
-        <span class="task-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3.5"/><path d="M10 10.5a2.2 2.2 0 1 0 0 3"/><path d="M16.5 10.5a2.2 2.2 0 1 0 0 3"/></svg></span>
+        <span class="task-ic"><svg class="pi"><use href="#pi-cp"/></svg></span>
         <span class="step-state" data-state-for="captions"></span>
         <span class="task-txt"><span class="task-name">Captions</span><span class="task-sub">Pick a look, add in one tap</span></span>
       </button>
       <button id="home-shorts" class="task-card step-card tile" type="button" data-go="shorts" data-step="shorts">
-        <span class="task-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="2.5" width="9" height="19" rx="2.5"/><path d="M10.5 12l4 -2.3v4.6Z" fill="currentColor" stroke="none"/></svg></span>
+        <span class="task-ic"><svg class="pi"><use href="#pi-sh"/></svg></span>
         <span class="step-state" data-state-for="shorts"></span>
         <span class="task-txt"><span class="task-name">Shorts</span><span class="task-sub">Best moments as vertical clips</span></span>
       </button>
     </div>
-    <div class="tile-head">Podcast</div>
+    <div class="tile-head">Podcast and sound</div>
     <div class="home-tasks tiles">
       <button id="home-cameras" class="task-card step-card tile tile-wide" type="button" data-go="multicam" data-step="multicam">
-        <span class="task-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="3.5" width="13" height="9" rx="2"/><rect x="3.5" y="9.5" width="13" height="9" rx="2"/></svg></span>
+        <span class="task-ic"><svg class="pi"><use href="#pi-ca"/></svg></span>
         <span class="step-state" data-state-for="multicam"></span>
         <span class="task-txt"><span class="task-name">Podcast cameras</span><span class="task-sub">2 or more cameras: cut to whoever is talking</span></span>
       </button>
-    </div>
-    <div class="tile-head">Sound</div>
-    <div class="home-tasks tiles">
       <button id="home-studio" class="task-card tile tile-wide" type="button" data-go="sound">
-        <span class="task-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="4" x2="6" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="18" y1="4" x2="18" y2="20"/><rect x="4" y="13" width="4" height="3" rx="1" fill="currentColor"/><rect x="10" y="7" width="4" height="3" rx="1" fill="currentColor"/><rect x="16" y="11" width="4" height="3" rx="1" fill="currentColor"/></svg></span>
+        <span class="task-ic"><svg class="pi"><use href="#pi-so"/></svg></span>
         <span class="task-txt"><span class="task-name">Studio sound</span><span class="task-sub">Podcast-quality audio: AI noise removal, every cut matched</span></span>
       </button>
     </div>
     <div class="more-tools">
       <div class="more-head">More tools</div>
       <div class="more-grid">
-        <button id="home-chapters" class="tool-btn" type="button" data-go="chapters"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4.5" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1.4" fill="currentColor" stroke="none"/></svg>Chapters</button>
-        <button id="home-organize" class="tool-btn" type="button" data-go="organize"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5a2 2 0 0 1 2-2h3.4a2 2 0 0 1 1.6.8l.9 1.2h7.1a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>Organize</button>
-        <button id="home-safezone" class="tool-btn" type="button" data-go="safezone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="2"/><rect x="9" y="7" width="6" height="6" rx="1"/><line x1="9" y1="17" x2="15" y2="17"/></svg>Safe zone</button>
-        <button id="home-greenscreen" class="tool-btn" type="button" data-go="background"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="12" cy="10" r="2.6"/><path d="M7.5 20c.6-3 2.4-4.6 4.5-4.6s3.9 1.6 4.5 4.6"/></svg>Remove background</button>
-        <button id="home-broll" class="tool-btn" type="button" data-go="broll"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3Z"/></svg>B-roll</button>
+        <button id="home-chapters" class="tool-btn" type="button" data-go="chapters"><span class="t-ic"><svg class="pi"><use href="#pi-ch"/></svg></span>Chapters</button>
+        <button id="home-organize" class="tool-btn" type="button" data-go="organize"><span class="t-ic"><svg class="pi"><use href="#pi-org"/></svg></span>Organize</button>
+        <button id="home-safezone" class="tool-btn" type="button" data-go="safezone"><span class="t-ic"><svg class="pi"><use href="#pi-sz"/></svg></span>Safe zone</button>
+        <button id="home-greenscreen" class="tool-btn" type="button" data-go="background"><span class="t-ic"><svg class="pi"><use href="#pi-bg"/></svg></span>Remove background</button>
+        <button id="home-broll" class="tool-btn" type="button" data-go="broll"><span class="t-ic"><svg class="pi"><use href="#pi-br"/></svg></span>B-roll</button>
       </div>
     </div>
     <p class="home-foot"><span id="ver" class="ver">v0.10.117</span></p>
@@ -1751,6 +1770,15 @@
       <div class="cmdk-foot">↑ ↓ to move · ↵ to run · esc to close</div>
     </div>
   </div>
+
+  <!-- the main jobs, one tap away (shown on a tall, narrow panel; css/crest.css) -->
+  <nav id="bottom-nav" class="bottom-nav" aria-label="Main jobs">
+    <button type="button" data-go="home" title="Home"><svg class="pi"><use href="#pi-home"/></svg><span>Home</span></button>
+    <button type="button" data-go="silence" title="Clean up"><svg class="pi"><use href="#pi-cl"/></svg><span>Clean up</span></button>
+    <button type="button" data-go="captions" title="Captions"><svg class="pi"><use href="#pi-cp"/></svg><span>Captions</span></button>
+    <button type="button" data-go="shorts" title="Shorts"><svg class="pi"><use href="#pi-sh"/></svg><span>Shorts</span></button>
+    <button type="button" data-go="multicam" title="Podcast cameras"><svg class="pi"><use href="#pi-ca"/></svg><span>Cameras</span></button>
+  </nav>
 
   <script src="js/lib/cep-bridge.js?v=v0.10.117"></script>
   <script src="js/silence.js?v=v0.10.117"></script>
