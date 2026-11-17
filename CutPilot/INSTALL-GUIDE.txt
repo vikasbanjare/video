@@ -1,0 +1,146 @@
+========================================================
+  CutPilot — Install & Setup Guide (for Premiere Pro, Mac)
+  Version 0.9.100
+========================================================
+
+CutPilot is a panel that lives inside Adobe Premiere Pro. It adds
+auto-captions (it can transcribe your video by itself), Smart Cut,
+Multicam, and Chapters.
+
+This guide is written for first-time users. Follow it top to bottom.
+
+
+--------------------------------------------------------
+  WHAT YOU NEED
+--------------------------------------------------------
+- A Mac (macOS).
+- Adobe Premiere Pro 2020 or newer.
+- An internet connection (only for the one-time engine setup).
+- The file:  CutPilot-v0.9.100.zip
+
+
+--------------------------------------------------------
+  PART 1 — INSTALL THE CUTPILOT PANEL
+--------------------------------------------------------
+STEP 1.  QUIT Premiere Pro completely.
+         (Top menu: Premiere Pro > Quit, or press  Cmd + Q.)
+         Closing the window is NOT enough — it must fully quit.
+
+STEP 2.  Double-click  CutPilot-v0.9.100.zip  to unzip it.
+         You now have a folder named  CutPilot.
+
+STEP 3.  Open the CutPilot folder. Find the file:
+             install-mac.command
+         RIGHT-CLICK it  >  Open.
+         (Right-click — not double-click. If a warning appears,
+          click "Open" to confirm. This is normal for free tools.)
+
+STEP 4.  A black Terminal window opens. It says
+             "Installing CutPilot v0.9.100..."
+         Press  Enter  when it asks.
+         If macOS asks for permission to your Desktop/Documents/
+         Downloads, click  OK / Allow.
+
+
+--------------------------------------------------------
+  PART 2 — SET UP THE AUTO-CAPTION ENGINE (one time)
+--------------------------------------------------------
+This lets CutPilot transcribe your video by itself.
+
+STEP 5.  The installer asks:
+             "Set it up now? [Y/n]"
+         Type  Y  and press  Enter.
+
+STEP 6.  If your Mac does not already have "Homebrew", the installer
+         installs it for you. macOS will ask for YOUR MAC PASSWORD —
+         type it and press Enter. (You won't see dots while typing —
+         that's normal. Just type and press Enter.)
+
+STEP 7.  Wait. It downloads about 250 MB (ffmpeg + whisper + the
+         speech model). This can take a few minutes. Do not close
+         the window.
+
+STEP 8.  When it finishes it prints "Engine status":
+             ffmpeg : ...
+             whisper: ...
+             model  : ...
+         If all three show a path (not "NOT found"), you're ready.
+         Press  Enter  to close.
+
+         (If any says "NOT found", see TROUBLESHOOTING below.)
+
+
+--------------------------------------------------------
+  PART 3 — OPEN CUTPILOT IN PREMIERE
+--------------------------------------------------------
+STEP 9.  Open Premiere Pro.
+
+STEP 10. Top menu:  Window  >  Extensions  >  CutPilot.
+         The CutPilot panel appears.
+
+STEP 11. Check the very top of the panel — it must say  v0.9.100.
+         If it shows an older number: fully quit Premiere (Cmd + Q)
+         and open it again.
+
+
+--------------------------------------------------------
+  PART 4 — ADD CAPTIONS (basic flow)
+--------------------------------------------------------
+STEP 12. Open your project and a sequence with your video on the
+         timeline.
+
+STEP 13. In CutPilot, go to the  Captions  tab.
+
+STEP 14. GET THE WORDS:
+         - Click your talking clip on the timeline (so it's selected).
+         - Click  "Auto-transcribe this clip".
+         - Wait ~30-60 seconds. It fills in the words and shows how
+           much it covered (e.g. 0:00-3:45).
+
+STEP 15. PICK A LOOK:
+         - "Caption styles" tab = built-in animated styles
+           (change font, colour, animation).
+         - "My .mogrt files" tab = upload your own Premiere template
+           with  "+ Add .mogrt file", then tap it to edit its
+           Text colour / Font / Size, and Preview.
+
+STEP 16. Click the big caption button to add the captions to your
+         timeline. Done.
+
+
+--------------------------------------------------------
+  TROUBLESHOOTING
+--------------------------------------------------------
+* "install-mac.command can't be opened"  →  Right-click the file >
+  Open (instead of double-click), then click Open in the dialog.
+
+* Panel still shows an OLD version  →  Quit Premiere fully (Cmd + Q),
+  reopen. The number at the top must read v0.9.100.
+
+* "Engine status" shows whisper or ffmpeg = NOT found  →  Open the
+  CutPilot panel > Settings tab > "Auto-transcribe" section >
+  tap "Install the engine for me". Or install Homebrew once from
+  https://brew.sh and run install-mac.command again.
+
+* Auto-transcribe says "select a clip"  →  Click your video/audio
+  clip on the timeline first, then try again.
+
+* Captions only cover part of the video  →  Make sure you selected
+  the right (longest) talking clip, then Auto-transcribe again. Check
+  the coverage time it reports matches your clip length.
+
+* Colour shows wrong on a Premiere template  →  In the template's
+  editor, tick "Fix red/blue swap". For exact colours with any font,
+  the "Caption styles" (Animated) section always works.
+
+
+--------------------------------------------------------
+  NOTES
+--------------------------------------------------------
+- This setup is for Mac. Windows auto-setup is not included yet.
+- Everything runs on your own computer. Your video is not uploaded
+  anywhere for transcription.
+- To update later: get the new CutPilot-vX.X.X.zip, unzip, and run
+  install-mac.command again (your engine setup stays).
+
+========================================================

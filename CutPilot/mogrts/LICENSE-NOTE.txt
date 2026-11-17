@@ -1,0 +1,35 @@
+CutPilot — bundled .mogrt templates
+===================================
+
+The .mogrt files in this folder are loaded automatically and shown in the
+Templates gallery as editable caption/title templates (they ride the MOGRT
+pipeline, so the words stay editable in Premiere — they are NOT burned-in PNGs).
+
+HOW TO ADD / REMOVE TEMPLATES
+-----------------------------
+1. Drop a .mogrt file into this folder.
+2. Add an entry to index.json:
+     { "file": "MyTemplate.mogrt", "name": "My Template", "category": "Subtitles", "kind": "caption" }
+3. Restart the panel. That's it — no code changes.
+
+To remove one, delete the file and its index.json entry.
+
+⚠️  LICENSING — READ BEFORE YOU DISTRIBUTE OR SELL CUTPILOT
+----------------------------------------------------------
+The templates shipped here are THIRD-PARTY motion-graphics packs (authored in
+After Effects — e.g. "Subtitles and Captions Vertical", "Text Presets"). Using
+them in your own video edits is normally fine under a standard marketplace
+license. However, REDISTRIBUTING the template files themselves inside another
+product you share or SELL is usually NOT permitted by those licenses and can be
+copyright infringement.
+
+If you plan to sell or share CutPilot, do ONE of the following first:
+  • Replace these with templates you created yourself, or
+  • Replace them with templates whose license explicitly allows redistribution
+    (e.g. CC0 / royalty-free with redistribution rights), or
+  • Ship CutPilot WITHOUT bundled templates and let each customer import their
+    own .mogrt files (the "Pick my seed" / Editor import flow already supports
+    this) — this is the safest option for a product you sell.
+
+This note is guidance, not legal advice. When in doubt, check each template
+pack's license terms.

@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CutPilot — UI concept</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Anton&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a090d; --panel:#0c0b11; --surface:#121118; --surface2:#17151e;
+    --stroke:rgba(255,255,255,.055); --stroke2:rgba(255,255,255,.10);
+    --text:#f3f1f7; --muted:#9a93a6; --faint:#615a70;
+    --accent:#ff7a4d; --accent-soft:rgba(255,122,77,.13); --accent-text:#ff9b73;
+    --green:#4fcf91;
+    --r:13px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg);min-height:100vh;color:var(--text);-webkit-font-smoothing:antialiased;
+    font-family:"Inter",system-ui,-apple-system,Arial,sans-serif;font-size:14px;
+    display:flex;justify-content:center;align-items:flex-start;padding:38px 20px;}
+  .wrap{display:flex;gap:30px;align-items:flex-start;flex-wrap:wrap;justify-content:center}
+  .panel{width:412px;background:var(--panel);border:1px solid var(--stroke);border-radius:20px;overflow:hidden;
+    box-shadow:0 20px 60px rgba(0,0,0,.5)}
+
+  /* header */
+  header{display:flex;align-items:center;gap:10px;padding:17px 18px 15px}
+  .logo{width:22px;height:22px;border-radius:7px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px}
+  .brand{font-weight:700;font-size:15px;letter-spacing:-.2px}
+  .kbd{font-size:10px;color:var(--faint);border:1px solid var(--stroke);border-radius:6px;padding:2px 6px}
+  .seq{margin-left:auto;display:flex;align-items:center;gap:7px;color:var(--muted);font-size:11.5px}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--green)}
+
+  /* tabs — minimal: soft tint on active, no glow */
+  .nav{display:flex;gap:2px;padding:4px 12px 12px;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--stroke)}
+  .nav::-webkit-scrollbar{display:none}
+  .nav .t{flex:1;min-width:60px;display:flex;flex-direction:column;align-items:center;gap:4px;padding:9px 6px;border-radius:10px;
+    color:var(--faint);font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;transition:.14s}
+  .nav .t .i{font-size:16px;opacity:.6;transition:.14s}
+  .nav .t:hover{color:var(--muted)}.nav .t:hover .i{opacity:.85}
+  .nav .t.on{background:var(--accent-soft);color:var(--accent-text)}
+  .nav .t.on .i{opacity:1}
+
+  .page{display:none;padding:18px}
+  .page.on{display:block;animation:f .18s ease}
+  @keyframes f{from{opacity:0}to{opacity:1}}
+
+  .eyebrow{display:flex;align-items:center;gap:9px;margin:2px 2px 14px}
+  .eyebrow .num{width:20px;height:20px;border-radius:50%;border:1px solid var(--stroke2);color:var(--muted);
+    font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center}
+  .eyebrow h3{margin:0;font-size:13px;font-weight:700;letter-spacing:-.2px}
+  .eyebrow .sm{margin-left:auto;font-size:11px;color:var(--faint)}
+
+  /* video frame — calm neutral with faint warm tint */
+  .frame{position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--stroke);
+    background:linear-gradient(160deg,#1c1a23,#141219)}
+  .frame::before{content:"";position:absolute;inset:0;background:radial-gradient(300px 150px at 72% 22%,rgba(255,122,77,.10),transparent 65%)}
+  .frame.tall{aspect-ratio:16/10}
+  .frame .fname{position:absolute;top:11px;left:12px;font-size:11px;font-weight:500;color:rgba(255,255,255,.78);
+    background:rgba(0,0,0,.32);backdrop-filter:blur(6px);padding:4px 9px;border-radius:7px}
+  .frame .dur{position:absolute;top:11px;right:12px;font-size:11px;font-weight:600;color:#fff;background:rgba(0,0,0,.36);padding:4px 9px;border-radius:7px}
+  .frame .capline{position:absolute;left:0;right:0;bottom:18px;text-align:center}
+  .cap-h{font-family:"Anton",sans-serif;font-size:25px;letter-spacing:.5px;color:#fff;text-shadow:0 2px 10px rgba(0,0,0,.5)}
+  .cap-h .hl{color:#1a1205;background:#ffd23f;padding:0 6px;border-radius:5px}
+
+  .field{margin-top:16px}
+  .field>span{display:block;font-size:11px;font-weight:600;color:var(--muted);margin-bottom:6px}
+  .select{display:flex;align-items:center;justify-content:space-between;background:var(--surface);
+    border:1px solid var(--stroke);border-radius:11px;padding:12px 13px;font-size:12.5px;font-weight:500;cursor:pointer;transition:.14s}
+  .select:hover{border-color:var(--stroke2)}
+  .select .chev{color:var(--faint);font-size:11px}
+  .two{display:flex;gap:11px}.two .field{flex:1}
+
+  .cta{width:100%;border:none;border-radius:12px;padding:14px;font-size:13.5px;font-weight:700;cursor:pointer;
+    background:var(--accent);color:#fff;margin-top:16px;letter-spacing:.1px;transition:.14s}
+  .cta:hover{background:#ff8a5f}
+  .cta.ghost{background:transparent;color:var(--text);border:1px solid var(--stroke2);margin-top:10px;font-weight:600}
+  .cta.ghost:hover{background:var(--surface)}
+
+  .status{display:flex;align-items:center;gap:10px;margin-top:16px;color:var(--muted);font-size:12.5px;
+    padding:12px 13px;border:1px solid var(--stroke);border-radius:11px;background:var(--surface)}
+  .status .c{width:17px;height:17px;border-radius:50%;background:rgba(79,207,145,.15);color:var(--green);
+    display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800}
+  .tip{font-size:12px;color:var(--faint);margin:14px 2px 0;line-height:1.55}
+  .tip b{color:var(--accent-text);font-weight:600}
+
+  .seg{display:flex;gap:3px;background:var(--surface);border:1px solid var(--stroke);border-radius:12px;padding:4px;margin-bottom:4px}
+  .seg button{flex:1;padding:10px;border:none;border-radius:9px;background:transparent;color:var(--muted);font-weight:600;font-size:12.5px;cursor:pointer;transition:.14s}
+  .seg button.on{background:var(--accent-soft);color:var(--accent-text)}
+  .sub{display:none}.sub.on{display:block}
+
+  .gal{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:14px}
+  .scard{border-radius:13px;overflow:hidden;border:1px solid var(--stroke);cursor:pointer;background:var(--surface);transition:.14s}
+  .scard:hover{border-color:var(--stroke2)}
+  .scard.on{border-color:rgba(255,122,77,.6);box-shadow:0 0 0 1px rgba(255,122,77,.35)}
+  .scard .pv{height:74px;display:flex;align-items:center;justify-content:center;background:#16141c;border-bottom:1px solid var(--stroke)}
+  .scard .lbl{padding:9px 11px;font-size:12px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+  .scard .lbl small{color:var(--faint);font-weight:400;font-size:10px}
+  .d-bold{font-family:"Anton";font-size:18px;color:#fff;letter-spacing:.3px}
+  .d-bold .h{color:#1a1205;background:#ffd23f;padding:0 4px;border-radius:4px}
+  .d-clean{font-weight:600;font-size:14px;color:#fff}
+  .d-karaoke{font-weight:700;font-size:14px;color:rgba(255,255,255,.4)}.d-karaoke .h{color:#fff}
+  .d-pop{font-family:"Anton";font-size:19px;color:#ff5d7a}
+  .d-neon{font-weight:700;font-size:15px;color:#8ef3ff;text-shadow:0 0 7px #2bd6ff}
+  .d-min{font-weight:500;font-size:12px;color:#fff;letter-spacing:3px}
+
+  .editor{margin-top:16px;background:var(--surface);border:1px solid var(--stroke);border-radius:14px;padding:14px}
+  .swrow{display:flex;gap:16px;margin-top:8px}
+  .swatch{text-align:center;font-size:10px;color:var(--muted);font-weight:500}
+  .swatch i{display:block;width:32px;height:32px;border-radius:10px;margin:0 auto 6px;border:1.5px solid rgba(255,255,255,.16);cursor:pointer}
+  .pills{display:flex;gap:7px;flex-wrap:wrap}
+  .pill2{padding:7px 13px;border-radius:99px;border:1px solid var(--stroke);background:transparent;color:var(--muted);font-size:11.5px;font-weight:500;cursor:pointer;transition:.14s}
+  .pill2:hover{color:var(--text);border-color:var(--stroke2)}
+  .pill2.on{background:var(--accent-soft);border-color:transparent;color:var(--accent-text)}
+  .stepper{display:inline-flex;align-items:center;border:1px solid var(--stroke);border-radius:10px;overflow:hidden}
+  .stepper button{border:none;background:transparent;color:var(--text);padding:8px 14px;font-size:14px;cursor:pointer}
+  .stepper b{padding:0 6px;font-size:13px;min-width:16px;text-align:center}
+
+  .uploadbox{margin-top:14px;border:1.5px dashed var(--stroke2);border-radius:14px;padding:26px;text-align:center;cursor:pointer;transition:.14s}
+  .uploadbox:hover{border-color:rgba(255,122,77,.5);background:var(--surface)}
+  .uploadbox .ic{font-size:24px;opacity:.85}
+  .uploadbox .t{font-weight:600;margin-top:8px;font-size:13px}
+  .uploadbox .s{font-size:11px;color:var(--faint);margin-top:3px}
+  .ph{padding:54px 16px;text-align:center;color:var(--faint);font-size:13px}
+  .ph .ic{font-size:28px;display:block;margin-bottom:12px;opacity:.6}
+
+  .cap-note{max-width:280px;color:var(--muted);font-size:13px;line-height:1.65;padding-top:6px}
+  .cap-note h2{color:#fff;font-size:15px;margin:0 0 8px;font-weight:700}
+  .cap-note .pill{display:inline-block;border:1px solid var(--stroke);border-radius:99px;padding:4px 11px;font-size:11px;color:var(--muted);margin:4px 4px 0 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="panel">
+    <header>
+      <span class="logo">✦</span><span class="brand">CutPilot</span>
+      <span class="kbd">⌘K</span>
+      <span class="seq"><span class="dot"></span> Sequence 05 · 1080×1920</span>
+    </header>
+
+    <div class="nav" id="nav">
+      <div class="t on" data-p="tr"><span class="i">🎙️</span>Transcribe</div>
+      <div class="t" data-p="cap"><span class="i">💬</span>Captions</div>
+      <div class="t" data-p="cut"><span class="i">⚡</span>Smart&nbsp;Cut</div>
+      <div class="t" data-p="mc"><span class="i">🎥</span>Multicam</div>
+      <div class="t" data-p="ch"><span class="i">🔖</span>Chapters</div>
+      <div class="t" data-p="set"><span class="i">⚙️</span>Settings</div>
+    </div>
+
+    <div class="page on" id="p-tr">
+      <div class="eyebrow"><span class="num">1</span><h3>Get your words</h3><span class="sm">step 1 of 2</span></div>
+      <div class="frame tall">
+        <span class="fname">🎬 MainClip.mp4</span><span class="dur">3:45</span>
+        <div class="capline"><div class="cap-h">YOU <span class="hl">WON'T</span> BELIEVE</div></div>
+      </div>
+      <div class="two" style="margin-top:16px">
+        <div class="field"><span>Accuracy</span><div class="select">Pro · near-perfect <span class="chev">▾</span></div></div>
+        <div class="field"><span>Language</span><div class="select">Hinglish <span class="chev">▾</span></div></div>
+      </div>
+      <button class="cta">Auto-transcribe this clip</button>
+      <div class="status"><span class="c">✓</span> 92 lines · covers 0:00–3:45</div>
+      <button class="cta ghost">✏️ Review &amp; edit the words</button>
+      <p class="tip">Words look right? Head to <b>Captions</b> to style them.</p>
+    </div>
+
+    <div class="page" id="p-cap">
+      <div class="seg" id="capseg">
+        <button class="on" data-s="tpl">Templates</button>
+        <button data-s="cust">Custom template</button>
+      </div>
+
+      <div class="sub on" id="s-tpl">
+        <p class="tip">Pick a style, then fine-tune it below.</p>
+        <div class="gal">
+          <div class="scard on"><div class="pv"><span class="d-bold">BIG <span class="h">BOLD</span></span></div><div class="lbl">Hormozi <small>word-by-word</small></div></div>
+          <div class="scard"><div class="pv"><span class="d-clean">Clean lines</span></div><div class="lbl">Clean <small>minimal</small></div></div>
+          <div class="scard"><div class="pv"><span class="d-karaoke">sing <span class="h">along</span></span></div><div class="lbl">Karaoke <small>highlight</small></div></div>
+          <div class="scard"><div class="pv"><span class="d-pop">POP!</span></div><div class="lbl">Pop <small>scale-in</small></div></div>
+          <div class="scard"><div class="pv"><span class="d-neon">neon glow</span></div><div class="lbl">Neon <small>glow</small></div></div>
+          <div class="scard"><div class="pv"><span class="d-min">MINIMAL</span></div><div class="lbl">Minimal <small>spaced</small></div></div>
+        </div>
+
+        <div class="editor">
+          <div class="frame" style="aspect-ratio:16/9">
+            <div class="capline"><div class="cap-h" style="font-size:21px">EDIT <span class="hl">THIS</span> LIVE</div></div>
+          </div>
+          <div class="field"><span>Font</span><div class="select">Anton <span class="chev">▾</span></div></div>
+          <div class="swrow">
+            <div class="swatch"><i style="background:#fff"></i>Text</div>
+            <div class="swatch"><i style="background:#ffd23f"></i>Highlight</div>
+            <div class="swatch"><i style="background:#0c0c0c"></i>Outline</div>
+            <div class="swatch"><i style="background:#ff3b6b"></i>Box</div>
+          </div>
+          <div class="field"><span>Animation</span>
+            <div class="pills"><span class="pill2 on">Pop</span><span class="pill2">Karaoke</span><span class="pill2">Fade</span><span class="pill2">Slide</span><span class="pill2">Type</span></div>
+          </div>
+          <div class="field"><span>Words per caption</span>
+            <div style="display:flex;gap:10px;align-items:center">
+              <span class="stepper"><button>−</button><b>1</b><button>+</button></span>
+              <span class="pill2">Full line</span>
+            </div>
+          </div>
+          <button class="cta">Add captions to timeline</button>
+        </div>
+      </div>
+
+      <div class="sub" id="s-cust">
+        <div class="uploadbox"><span class="ic">🎬</span><div class="t">Add a .mogrt file</div><div class="s">Use your own Premiere Motion Graphics Template</div></div>
+        <div class="eyebrow" style="margin:18px 2px 0"><h3>Your templates</h3></div>
+        <div class="gal">
+          <div class="scard on"><div class="pv"><span class="d-bold" style="font-size:14px">Coming&nbsp;Up</span></div><div class="lbl">Angled Coming Up <small>yours</small></div></div>
+          <div class="scard"><div class="pv"><span class="d-clean" style="font-size:13px">Subscribe</span></div><div class="lbl">Subscribe <small>yours</small></div></div>
+        </div>
+        <div class="editor">
+          <div class="eyebrow" style="margin:0 0 8px"><h3>Edit “Angled Coming Up”</h3></div>
+          <div class="field" style="margin-top:0"><span>Text colour</span><div class="select"><span style="display:flex;align-items:center;gap:9px"><span style="width:15px;height:15px;border-radius:5px;background:#ff7a33;display:inline-block"></span> #FF7A33</span><span class="chev">▾</span></div></div>
+          <div class="two" style="margin-top:14px">
+            <div class="field"><span>Font</span><div class="select">Montserrat <span class="chev">▾</span></div></div>
+            <div class="field"><span>Size</span><div class="select">100 <span class="chev">▾</span></div></div>
+          </div>
+          <button class="cta ghost">▶ Preview on timeline</button>
+          <button class="cta">Caption with this template</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="page" id="p-cut"><div class="ph"><span class="ic">⚡</span>Smart Cut — remove silences &amp; dead air</div></div>
+    <div class="page" id="p-mc"><div class="ph"><span class="ic">🎥</span>Multicam — cut to whoever's talking</div></div>
+    <div class="page" id="p-ch"><div class="ph"><span class="ic">🔖</span>Chapters — auto chapter markers</div></div>
+    <div class="page" id="p-set"><div class="ph"><span class="ic">⚙️</span>Settings — engine, accuracy &amp; language</div></div>
+  </div>
+
+  <div class="cap-note">
+    <h2>CutPilot — UI concept</h2>
+    Cleaner, more minimal take — dark with a single coral accent, more whitespace,
+    no heavy gradients or glows. Click the <b>tabs</b> and the <b>Templates / Custom</b> switch.
+    <div style="margin-top:12px">
+      <span class="pill">Transcribe = step 1</span>
+      <span class="pill">Calm, one accent</span>
+      <span class="pill">More breathing room</span>
+    </div>
+    <p style="margin-top:14px;color:var(--faint);font-size:12px">Tell me what to adjust, then I build it into the real panel.</p>
+  </div>
+</div>
+
+<script>
+  var nav=document.getElementById('nav');
+  nav.onclick=function(e){var t=e.target.closest('.t');if(!t)return;
+    nav.querySelector('.on').classList.remove('on');t.classList.add('on');
+    document.querySelectorAll('.page').forEach(function(p){p.classList.remove('on')});
+    document.getElementById('p-'+t.dataset.p).classList.add('on');};
+  var s=document.getElementById('capseg');
+  s.onclick=function(e){var b=e.target.closest('button');if(!b)return;
+    s.querySelector('.on').classList.remove('on');b.classList.add('on');
+    document.getElementById('s-tpl').classList.toggle('on',b.dataset.s==='tpl');
+    document.getElementById('s-cust').classList.toggle('on',b.dataset.s==='cust');};
+  document.querySelectorAll('#s-tpl .scard').forEach(function(c){c.onclick=function(){
+    document.querySelectorAll('#s-tpl .scard').forEach(function(x){x.classList.remove('on')});c.classList.add('on');};});
+  document.querySelectorAll('.pills .pill2').forEach(function(p){p.onclick=function(){
+    p.parentElement.querySelectorAll('.pill2').forEach(function(x){x.classList.remove('on')});p.classList.add('on');};});
+</script>
+</body>
+</html>

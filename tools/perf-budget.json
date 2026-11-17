@@ -1,0 +1,8 @@
+{
+  "_comment": "Ceilings for tools/perf-probe.js --budget. Generous vs measured: these catch a REGRESSION, not a slow CI box.",
+  "cuesMs": 200,
+  "frameMs": 2,
+  "galleryMs": 3000,
+  "encodeMs": 34.5,
+  "assMs": 500
+}
