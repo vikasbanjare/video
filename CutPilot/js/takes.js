@@ -815,6 +815,24 @@
     if (!x || x !== y) return -1.5;
     return x.length >= 3 ? 2 : 0.6;                    // short words ("ka"/"की") anchor only weakly
   }
+  /* Script mode scores the same pairs of words thousands of times (every line against every
+     stretch of the recording). Words become numbers and each pair is scored once:
+     same answers, a fraction of the time. → { a: ids of A, b: ids of B, sc(ai, bi) } */
+  function scoreTable(A, B) {
+    function ids(list, names) {
+      var seen = Object.create(null), out = new Int32Array(list.length);
+      for (var i = 0; i < list.length; i++) { var t = list[i] || '', id = seen[t]; if (id === undefined) { id = seen[t] = names.length; names.push(t); } out[i] = id; }
+      return out;
+    }
+    var an = [], bn = [], a = ids(A, an), b = ids(B, bn), nb = bn.length;
+    var big = an.length * nb > 6e6, tbl = big ? null : new Float32Array(an.length * nb).fill(NaN);
+    return { a: a, b: b, sc: function (i, j) {
+      if (big) return wordSc(an[i], bn[j]);
+      var k = i * nb + j, v = tbl[k];
+      if (v !== v) v = tbl[k] = wordSc(an[i], bn[j]);
+      return v;
+    } };
+  }
   // edit distance between two sound skeletons, stopping early past 2
   function skelDist(a, b) {
     if (Math.abs(a.length - b.length) > 2) return 3;
@@ -1047,15 +1065,19 @@
     var none = { deletes: [], found: 0, sentences: sents.length, missing: [] };
     if (n < 10 || sents.length < 2) return none;
     var MIN_COV = opts.minCov || 0.55, NEAR_BEST = 0.75;
-    // in-order matches of a sentence inside a stretch of words → [pairs], strong count
+    // every script word against every heard word, scored once (see scoreTable)
+    var tab = scoreTable([].concat.apply([], sents), T), Ti = tab.b, SC = tab.sc, sentId = [], off = 0;
+    sents.forEach(function (sq) { sentId.push(tab.a.subarray(off, off + sq.length)); off += sq.length; });
+    // in-order matches of a sentence (its word ids) inside a stretch of words → [pairs], strong count
     function lcs(Q, i0, i1) {
       var A = Q.length, B = i1 - i0, L = [], a, b;
       for (a = 0; a <= A; a++) L.push(new Int16Array(B + 1));
-      for (a = A - 1; a >= 0; a--) for (b = B - 1; b >= 0; b--)
-        L[a][b] = wordSc(Q[a], T[i0 + b]) >= 0.6 ? L[a + 1][b + 1] + 1 : Math.max(L[a + 1][b], L[a][b + 1]);
+      for (a = A - 1; a >= 0; a--) { var La = L[a], Ln = L[a + 1], qa = Q[a];
+        for (b = B - 1; b >= 0; b--)
+          La[b] = SC(qa, Ti[i0 + b]) >= 0.6 ? Ln[b + 1] + 1 : Math.max(Ln[b], La[b + 1]); }
       var pairs = [], strong = 0;
       for (a = 0, b = 0; a < A && b < B; ) {
-        var v = wordSc(Q[a], T[i0 + b]);
+        var v = SC(Q[a], Ti[i0 + b]);
         if (v >= 0.6 && L[a][b] === L[a + 1][b + 1] + 1) { pairs.push(i0 + b); if (v >= 1) strong++; a++; b++; }   // near matches count: real evidence
         else if (L[a + 1][b] >= L[a][b + 1]) a++; else b++;
       }
@@ -1063,13 +1085,13 @@
     }
     var takes = [], chosen = [], missing = [], k, i;
     for (k = 0; k < sents.length; k++) {
-      var Q = sents[k], q = Q.length, cands = [];
+      var Q = sents[k], Qi = sentId[k], q = Q.length, cands = [];
       for (i = 0; i < n; i++) {
         if (!T[i]) continue;
         var open = false;
-        for (var o = 0; o < Math.min(3, q) && !open; o++) if (wordSc(T[i], Q[o]) >= 0.6) open = true;
+        for (var o = 0; o < Math.min(3, q) && !open; o++) if (SC(Qi[o], Ti[i]) >= 0.6) open = true;
         if (!open) continue;
-        var r = lcs(Q, i, Math.min(n, i + Math.ceil(q * 1.6) + 3));
+        var r = lcs(Qi, i, Math.min(n, i + Math.ceil(q * 1.6) + 3));
         var cov = r.pairs.length / q;
         if (cov >= MIN_COV && r.strong >= Math.min(2, q - 1)) cands.push({ k: k, s: r.pairs[0], e: r.pairs[r.pairs.length - 1], cov: cov });
       }
@@ -1102,7 +1124,7 @@
     // a stretch in no line: chatter — unless it looks like a line still missing
     function likeMissing(i0, i1) {
       for (var mi = 0; mi < missing.length; mi++) {
-        var Qm = sents[missing[mi]], lm = lcs(Qm, i0, i1 + 1);
+        var Qm = sents[missing[mi]], lm = lcs(sentId[missing[mi]], i0, i1 + 1);
         if (lm.pairs.length >= Math.max(3, Qm.length * 0.4) && lm.strong >= 1) return true;
       }
       return false;
@@ -1267,18 +1289,22 @@
     // the most complete take of a line in a word list: in-order matches inside windows of
     // twice the line → { cov, s, e } (first / last matched word, indices into the list)
     // ponytail: O(words × line²) per line — fine for a 30-minute talk; band it if longer
+    // Q: the line's word ids · list: word numbers in W (see scoreTable: each pair scored once)
+    var tab = scoreTable([].concat.apply([], sents), W.map(function (w) { return norm(w.text); })), Wid = tab.b, SC = tab.sc, sentId = [], off = 0;
+    sents.forEach(function (sq) { sentId.push(tab.a.subarray(off, off + sq.length)); off += sq.length; });
     function bestTake(Q, list) {
       var q = Q.length, win = Math.ceil(q * 1.5) + 3, best = { cov: 0, s: -1, e: -1 }, s0, i, j;   // tight: one take, not words stitched from two
-      var T2 = list.map(function (w) { return norm(w.text); });
+      var T2 = list.map(function (x) { return Wid[x]; });
       for (s0 = 0; s0 < T2.length; s0 += Math.max(1, Math.floor(q / 2))) {
         var B = Math.min(win, T2.length - s0), L = [];
         for (i = 0; i <= q; i++) L.push(new Int16Array(B + 1));
-        for (i = q - 1; i >= 0; i--) for (j = B - 1; j >= 0; j--)
-          L[i][j] = wordSc(Q[i], T2[s0 + j]) >= 0.6 ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+        for (i = q - 1; i >= 0; i--) { var Li = L[i], Ln = L[i + 1], qi = Q[i];
+          for (j = B - 1; j >= 0; j--)
+            Li[j] = SC(qi, T2[s0 + j]) >= 0.6 ? Ln[j + 1] + 1 : Math.max(Ln[j], Li[j + 1]); }
         if (L[0][0] / q < best.cov) continue;                          // a tie goes to the later take
         var f = -1, l = -1;
         for (i = 0, j = 0; i < q && j < B; ) {
-          if (wordSc(Q[i], T2[s0 + j]) >= 0.6 && L[i][j] === L[i + 1][j + 1] + 1) { if (f < 0) f = s0 + j; l = s0 + j; i++; j++; }
+          if (SC(Q[i], T2[s0 + j]) >= 0.6 && L[i][j] === L[i + 1][j + 1] + 1) { if (f < 0) f = s0 + j; l = s0 + j; i++; j++; }
           else if (L[i + 1][j] >= L[i][j + 1]) i++; else j++;
         }
         best = { cov: L[0][0] / q, s: f, e: l };
@@ -1291,23 +1317,24 @@
     function bestRun(Q, list) {
       var best = { cov: 0, s: -1, e: -1 }, r0 = 0;
       for (var r = 1; r <= list.length; r++) {
-        if (r < list.length && list[r].start - list[r - 1].end <= 3) continue;
+        if (r < list.length && W[list[r]].start - W[list[r - 1]].end <= 3) continue;
         var t = bestTake(Q, list.slice(r0, r));
         if (t.s >= 0 && t.cov >= best.cov) best = { cov: t.cov, s: t.s + r0, e: t.e + r0 };
         r0 = r;
       }
       return best;
     }
-    var out = deletes.slice(), restored = [];
-    sents.forEach(function (Q) {
-      var keptW = W.filter(function (w) { return !inCut(w, out); });
-      var all = bestRun(Q, W), now = bestRun(Q, keptW);
+    var out = deletes.slice(), restored = [], allW = W.map(function (w, x) { return x; }), keptW = null;
+    sents.forEach(function (Q, qn) {
+      // what the cuts leave: worked out again only after a line was given back
+      if (!keptW) keptW = allW.filter(function (x) { return !inCut(W[x], out); });
+      var all = bestRun(sentId[qn], allW), now = bestRun(sentId[qn], keptW);
       if (all.cov < 0.4 || now.cov >= all.cov * 0.9) return;     // strict: a line missing its opening words sounds chopped
       // its best take (the later on a tie) comes back
       // a decent take is still kept (another take, or this one with words cut out of it):
       // fill ITS holes — never add a second take of the line. Otherwise the best take comes back
       var pick = all;
-      if (now.cov >= all.cov * 0.7 && now.s >= 0) pick = { s: W.indexOf(keptW[now.s]), e: W.indexOf(keptW[now.e]), cov: now.cov };
+      if (now.cov >= all.cov * 0.7 && now.s >= 0) pick = { s: keptW[now.s], e: keptW[now.e], cov: now.cov };
       var ps = pick.s, pe = pick.e, x;
       // its first / last words can be weak matches ("isee" for "Isi"): up to 3 each side
       for (x = 0; x < 3 && ps > 0 && W[ps].start - W[ps - 1].end < 2.5 &&
@@ -1327,6 +1354,7 @@
         out = nx;
       }
       restored.push(Q.join(' '));
+      keptW = null;
     });
     out.restored = restored;
     return out;
