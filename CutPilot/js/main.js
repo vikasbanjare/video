@@ -92,14 +92,16 @@
     }
   }
   function envKey(e) { return e ? (e.sequenceId || e.sequenceName || null) : null; }
+  /* "1 chapter", "2 chapters": a count with its word ("1 chapters generated" read as careless) */
+  function nOf(n, word) { return n + ' ' + word + (Number(n) === 1 ? '' : 's'); }
   Object.defineProperty(state, 'env', {
     enumerable: true,
     get: function () { return _env; },
     set: function (e) {
       _env = e;
-      try { renderHomeStatus(); } catch (eH) {}
+      if (e && e.sequenceName) _noSeqOpen = false;
       var k = envKey(e);
-      if (!k || k === _envKey) return;
+      if (!k || k === _envKey) { try { renderHomeStatus(); } catch (eH) {} return; }
       var first = _envKey === null;
       if (!first) {
         var keep = {};
@@ -119,6 +121,19 @@
           var el = document.getElementById(id); if (el) el.classList.add('hidden');
         });
       }
+      // What the panel SHOWS is this sequence's now (its state was swapped in
+      // above): the Home card's ✓ chips and the Transcribe bar kept showing
+      // the sequence the owner came from (found by audit).
+      if (!_quietSwap) {
+        try { if (typeof refreshFlow === 'function') refreshFlow(); else renderHomeStatus(); } catch (eRf) { try { renderHomeStatus(); } catch (eH2) {} }
+        if (!first && state.transcript && !state.pendingCaptionAction && typeof setTranscriptBar === 'function') {
+          try {
+            setTranscriptBar('ok', '✅', state.transcript.src === 'cutpilot-cache'
+              ? 'Using your saved transcript — already done, no re-transcribe'
+              : 'Using ' + (state.transcript.label || 'your transcript'), 'Change');
+          } catch (eBar) {}
+        }
+      } else { try { renderHomeStatus(); } catch (eH3) {} }
     }
   });
 
@@ -239,6 +254,17 @@
     var t = $('toast');
     t.textContent = msg;
     t.className = 'toast' + (isErr ? ' err' : '');
+    // Never over the page's own main button: on a 600–660 px panel with the
+    // bottom bar, "Tick at least one thing to remove" sat on top of the Clean up
+    // button it was about (found by audit). There it goes under the app bar instead.
+    try {
+      var tr0 = t.getBoundingClientRect(), pgT = document.querySelector('.tab-page.active');
+      var btnsT = pgT ? pgT.querySelectorAll('.hero-btn') : [];
+      for (var bi0 = 0; bi0 < btnsT.length; bi0++) {
+        var br0 = btnsT[bi0].getBoundingClientRect();
+        if (br0.width > 0 && br0.height > 0 && br0.bottom > tr0.top && br0.top < tr0.bottom && br0.right > tr0.left && br0.left < tr0.right) { t.className += ' at-top'; break; }
+      }
+    } catch (eTp) {}
     clearTimeout(toastTimer);
     // Errors STAY until dismissed (multi-step failures need to be readable);
     // success/info messages auto-hide. Click any toast to dismiss it.
@@ -2041,6 +2067,14 @@
   function autoTranscribe(viaSwitch) {
     if (state.transcribing) return toast('Already transcribing — hang tight, this can take a minute…');
     var jobEnv = state.env;   // the words belong to this sequence, whatever is open when they arrive
+    // the audio extracted for this run, deleted when it ends however it ends:
+    // the cloud copies were never removed (20–60 MB per long podcast, for good
+    // on Windows) and the local WAV stayed after a failure or Stop (found by audit)
+    var asrTemps = [];
+    function dropAsrTemps() {
+      try { var fsT = nodeReq('fs'); asrTemps.forEach(function (f) { try { fsT.unlinkSync(f); } catch (eU) {} }); } catch (eT) {}
+      asrTemps = [];
+    }
     // every Transcribe button follows ✨ Fix misheard words with AI
     if (viaSwitch !== true) state.autoFixAfter = aiFixWanted() && !!cpKey();
     var cloud = (resolveQuality() === 'cloud-groq');
@@ -2057,12 +2091,12 @@
     }
     var wbin = null;
     if (cloud) {
-      if (!cpKey()) return toast('Paste your free speech key in Settings → Auto-transcribe (the Speech key box). Get one at console.groq.com/keys. An Indian-language or retake-finder key works too, under More speech options' +
+      if (!cpKey()) return (state.pendingCaptionAction = null), toast('Paste your free speech key in Settings → Auto-transcribe (the Speech key box). Get one at console.groq.com/keys. An Indian-language or retake-finder key works too, under More speech options' +
         (WHITE_LABEL ? ' — or pick “💻 On this computer” there (free, no key).' : '.'), true);
     } else if (swara) {
-      if (!cpSarvamKey()) return toast('Paste your Indian-language key in Settings → Auto-transcribe → More speech options (the Indian-language key box).', true);
+      if (!cpSarvamKey()) return (state.pendingCaptionAction = null), toast('Paste your Indian-language key in Settings → Auto-transcribe → More speech options (the Indian-language key box).', true);
     } else if (dgram) {
-      if (!cpDeepgramKey()) return toast('Paste your retake-finder key in Settings → Auto-transcribe → More speech options (the Retake-finder key box).', true);
+      if (!cpDeepgramKey()) return (state.pendingCaptionAction = null), toast('Paste your retake-finder key in Settings → Auto-transcribe → More speech options (the Retake-finder key box).', true);
     } else {
       wbin = resolveWhisper();
       // no speech engine on this computer yet: fetch Pulse's ready-built one
@@ -2227,6 +2261,7 @@
         // ffmpeg has no Opus encoder. Local whisper keeps the raw WAV.
         var cloudOpus = pathMod.join(os.tmpdir(), 'cutpilot-asr-' + stamp + '.ogg');
         var cloudMp3 = pathMod.join(os.tmpdir(), 'cutpilot-asr-' + stamp + '.mp3');
+        asrTemps.push(wav, cloudOpus, cloudMp3);
         function extractArgs(extra, outFile) {
           var a = ['-y', '-ss', String(minIn), '-i', clip.mediaPath];
           if (dur > 0) a = a.concat(['-t', String(dur)]);
@@ -2447,7 +2482,7 @@
         });
       });
     }).then(function () {
-      setTranscribing(false);
+      setTranscribing(false); dropAsrTemps();
       // "Transcribe + auto-correct" → run the AI proofread now that words exist.
       // a script in the box is the truth: it fixes the words (no AI guess needed)
       // (only on the sequence the words were made for: the owner may have
@@ -2458,7 +2493,10 @@
       else if (state.autoFixAfter) { state.autoFixAfter = false; if (state.transcript && sameSeq) cleanupTranscript(); }
     }, function (e) {
       var wasStopped = trStopped() || (e && e.stopped);
-      setTranscribing(false); state.autoFixAfter = false;
+      setTranscribing(false); state.autoFixAfter = false; dropAsrTemps();
+      // "add captions / clean up when the words arrive" is off with the run: it
+      // used to fire later, when the owner transcribed by hand (found by audit)
+      if (wasStopped || (e && e.cancelled)) state.pendingCaptionAction = null;
       if (wasStopped) {
         setTranscriptBar('', '⏹', 'Stopped — nothing changed. Tap Transcribe to carry on.', null);
         return toast('⏹ Stopped. Parts already heard by the cloud are kept: tapping Transcribe again carries on from there.');
@@ -2615,11 +2653,22 @@
   function refreshEnvStatus() {
     if (!CPBridge.isCEP()) return;
     CPBridge.callHost('CP_getEnv').then(function (env) {
-      if (!env || !env.sequenceName) return;
+      if (!env || !env.sequenceName) { noSequenceOpen(); return; }
+      _noSeqOpen = false;
       state.env = env;
       var el = $('env-status'); if (el) { el.textContent = env.sequenceName + ' · ' + env.width + '×' + env.height; el.className = 'env-status ok'; }
       updateInOutNote(env);
-    }).catch(function () {});
+    }).catch(function () { noSequenceOpen(); });
+  }
+  /* Premiere has no sequence open (it was closed, or the project has none).
+     Home and the header said the last one was still open (found by audit).
+     Only what is SHOWN changes: the panel keeps that sequence's words for
+     when it is opened again. */
+  var _noSeqOpen = false;
+  function noSequenceOpen() {
+    _noSeqOpen = true;
+    try { renderHomeStatus(); } catch (e) {}
+    var el = $('env-status'); if (el) { el.textContent = 'no sequence open'; el.className = 'env-status err'; }
   }
   /* The header names the sequence Premiere just opened (a new short). Only the
      label: the panel's own sequence, with its words, follows when the owner
@@ -2676,7 +2725,7 @@
   function renderHomeStatus() {
     var nm = document.getElementById('home-seq-name'), meta = document.getElementById('home-seq-meta'), box = document.getElementById('home-seq-done');
     if (!nm) return;
-    var env = state.env;
+    var env = _noSeqOpen ? null : state.env;
     if (env && env.sequenceName) {
       nm.textContent = env.sequenceName; nm.title = env.sequenceName;
       var bits = ['Open sequence'];
@@ -2690,7 +2739,7 @@
     if (!box) return;
     var html = '';
     HOME_DONE_NAMES.forEach(function (d) {
-      if (_homeDone[d[0]]) html += '<span class="hh-chip ok">✓ ' + d[1] + '</span>';
+      if (env && _homeDone[d[0]]) html += '<span class="hh-chip ok">✓ ' + d[1] + '</span>';
     });
     box.innerHTML = html;
   }
@@ -2834,7 +2883,7 @@
         if (!got || got.length !== mine.length) throw new Error('titles came back incomplete');
         mine.forEach(function (c, i) { var t = String(got[i] || '').replace(/^["'\s\d.:-]+|["'\s]+$/g, '').slice(0, 60); if (t) c.title = t; });
         $('ch-out').textContent = CPChapters.formatChapters(mine);
-        toast('✨ AI titled your ' + mine.length + ' chapters.');
+        toast('✨ AI titled your ' + nOf(mine.length, 'chapter') + '.');
       })
       .catch(function (e) {
         if (_chapters === mine) $('ch-out').textContent = CPChapters.formatChapters(mine);
@@ -2852,7 +2901,7 @@
       if (!_chapters.length) return toast('Couldn\'t build chapters from that transcript.', true);
       $('ch-out').textContent = CPChapters.formatChapters(_chapters);
       $('ch-results').classList.remove('hidden');
-      toast(_chapters.length + ' chapters generated.');
+      toast(nOf(_chapters.length, 'chapter') + ' generated.');
       aiChapterTitles(_chapters, cues);
     });
     if ($('btn-ch-copy')) $('btn-ch-copy').addEventListener('click', function () {
@@ -2870,7 +2919,7 @@
         ranges: _chapters.map(function (c) { return { start: c.start, end: c.start }; }),
         label: 'Chapter',
         names: _chapters.map(function (c) { return c.title; })
-      }).then(function (r) { toast('Added ' + r.created + ' chapter markers.'); })
+      }).then(function (r) { toast('Added ' + nOf(r.created, 'chapter marker') + '.'); })
         .catch(function (e) { toast(e.message, true); });
     });
   }
@@ -3489,6 +3538,10 @@
     // scans only fill emptiness or upgrade an earlier auto pick.
     var cur = state.transcript;
     var curProtected = !!(state.transcriptManual || (cur && cur.src === 'cutpilot-cache'));
+    // the sequence this scan is for: it makes several calls to Premiere, and
+    // what it found used to be written to whichever sequence was open at the
+    // end — one sequence's words became another's (found by audit)
+    var scanKey = envKey(state.env);
     if (!cur) setTranscriptBar('', '🔎', 'looking for your words…', null);
     var found = [];
     var seen = {};
@@ -3574,6 +3627,7 @@
       pick.forEach(function (s) { s.score = rel(s) + (s.base || 0) + Math.min(s.mtime || 0, 9e12) / 1e3; });
       pick.sort(function (a, b) { return b.score - a.score; });
 
+      if (scanKey && envKey(state.env) !== scanKey) return;   // another sequence is open now: its own scan fills it
       // what the panel has NOW: a translation or fix made while this scan
       // walked the timeline was replaced by the saved transcript
       cur = state.transcript;
@@ -3869,11 +3923,11 @@
             state.transcriptWords = rwS && rwS.length ? rwS : null;
           }
         } catch (eRwS) { state.transcriptWords = null; }
-        setTranscriptBar('ok', '✅', 'Script applied — ' + r.replaced + ' words corrected, timing kept', 'Change');
+        setTranscriptBar('ok', '✅', 'Script applied — ' + nOf(r.replaced, 'word') + ' corrected, timing kept', 'Change');
         refreshMogrtSheetTr(); refreshMogrtEditorTr();
         if ($('script-status')) $('script-status').textContent =
           '✅ ' + r.replaced + ' word(s) corrected from your script (' + Math.round(r.matchRate * 100) + '% matched). Timing untouched — open Captions and add them.';
-        toast('✅ Transcript fixed from your script — ' + r.replaced + ' words corrected, every caption keeps its timing.');
+        toast('✅ Transcript fixed from your script — ' + nOf(r.replaced, 'word') + ' corrected, every caption keeps its timing.');
         try { diag('script', 'applied: ' + r.replaced + ' replaced, rate ' + r.matchRate.toFixed(2) + ', script words ' + r.scriptWords); } catch (eD) {}
       } catch (e3) { toast('Could not save the corrected transcript: ' + e3.message, true); }
   }
@@ -4352,6 +4406,9 @@
     if (state.aiBusy) return toast('Hang on — an AI step is already running…');
     var cues; try { cues = readSelectedTranscript(true); } catch (e) { return toast(e.message, true); }
     if (!cues.length) return toast('The transcript is empty.', true);
+    // labels from an earlier run come off first: tapping Detect speakers again
+    // made every line "Speaker 1: Speaker 1: …" (found by audit)
+    cues = cues.map(function (c) { return { start: c.start, end: c.end, text: String(c.text || '').replace(/^\s*(?:Speaker \d+:\s*)+/, '') }; });
     var lines = cues.map(function (c) { return c.text; });
     state.aiBusy = true;
     setTranscriptBar('', '🗣️', 'Detecting speakers across ' + lines.length + ' lines…', null);
@@ -7091,7 +7148,10 @@
     var dpr = Math.min(3, window.devicePixelRatio || 1);
     for (var i = 0; i < canvases.length; i++) {
       var cvs = canvases[i], t = cvs._tpl;
-      if (!t && cvs._mogrtTpl) t = cvs._tpl = mogrtCardStyle(cvs._mogrtTpl);   // animated card → style from its colours
+      if (!t && cvs._mogrtTpl) {
+        t = cvs._tpl = mogrtCardStyle(cvs._mogrtTpl);   // animated card → style from its colours
+        try { var mTint = cardTint(t); if (mTint && cvs.parentNode) cvs.parentNode.style.setProperty('--card-tint', mTint); } catch (eMt) {}
+      }
       if (!t) continue;
       var box = cvs.parentNode;
       var w = cvs.clientWidth || (box && box.clientWidth) || 0;
@@ -7526,7 +7586,10 @@
     thumb.className = 'tpl-thumb';
     // the card's backdrop glows with the style's own colour (owner's pick,
     // option C): white captions stay readable on dark, and each card has its mood
-    try { var tint = cardTint(isMogrt ? mogrtCardStyle(t) : t); if (tint) thumb.style.setProperty('--card-tint', tint); } catch (eTint) {}
+    // (a template's colours are read from its file, which is slow: that waits
+    // until its card is painted — paintThumbs — or opening the gallery unpacked
+    // every template up front and froze the panel on a big folder; found by audit)
+    if (!isMogrt) { try { var tint = cardTint(t); if (tint) thumb.style.setProperty('--card-tint', tint); } catch (eTint) {} }
     // a USER-SUPPLIED render of a caption style beats the drawn preview —
     // it IS the timeline look ("what if I gave you a render video or gif?")
     var userPrev = !isMogrt ? stylePreviewFor(t) : null;
@@ -10452,9 +10515,10 @@
       });
       return false;
     }
-    if (state.pendingCaptionAction) { toast('⏳ Still getting your words — I\'ll add them automatically when ready.'); return false; }
+    if (state.pendingCaptionAction && state.transcribing) { toast('⏳ Still getting your words — I\'ll add them automatically when ready.'); return false; }
+    state.pendingCaptionAction = null;        // nothing is running: an action left queued by a stopped run is not waited for
     var ff = resolveFfmpeg();
-    var canAuto = !!ff && ((resolveQuality() === 'cloud-groq' && cpKey()) || (resolveQuality() === 'cloud-swara' && cpSarvamKey()) || !!resolveWhisper());
+    var canAuto = autoTranscribeAvailable();
     if (canAuto) {
       state.pendingCaptionAction = action;
       // Clean up waits for the words too — telling the owner "I'll add the
@@ -16541,7 +16605,10 @@
      transcript that can actually arrive. */
   function autoTranscribeAvailable() {
     var ff = resolveFfmpeg();
-    return !!ff && ((resolveQuality() === 'cloud-groq' && !!cpKey()) || (resolveQuality() === 'cloud-swara' && !!cpSarvamKey()) || !!resolveWhisper());
+    // (a retake-finder / Deepgram key alone transcribes too — resolveQuality says
+    // so — yet this said "no engine is set up" to an owner with only that key)
+    return !!ff && ((resolveQuality() === 'cloud-groq' && !!cpKey()) || (resolveQuality() === 'cloud-swara' && !!cpSarvamKey()) ||
+      (resolveQuality() === 'cloud-deepgram' && !!cpDeepgramKey()) || !!resolveWhisper());
   }
 
   /* Filler-word cut ranges (sequence time) inside [lo, hi], from the transcript. */
@@ -16984,7 +17051,7 @@
         toast(head + ' (Details under “What Pulse heard”.)', nc.act);
       } else {
         renderHeard('sil-heard', plan, [ours(hearingSummary(plan))].concat((plan.musicOnly || []).map(function (mo) { return '⚠️ ' + ours(silMusicOnlyLine(mo)); })), again);
-        toast('Found ' + nSil + ' pause' + (nSil === 1 ? '' : 's') + (nFill ? ' + ' + nFill + ' filler cuts' : '') + '. ' + hearingSummary(plan).split('\n')[0]);
+        toast('Found ' + nSil + ' pause' + (nSil === 1 ? '' : 's') + (nFill ? ' + ' + nOf(nFill, 'filler cut') : '') + '. ' + hearingSummary(plan).split('\n')[0]);
       }
     }).catch(function (e) {
       stop.done(); prog.classList.add('hidden');
@@ -17038,13 +17105,13 @@
 
   $('btn-markers').addEventListener('click', function () {
     CPBridge.callHost('CP_addMarkers', { ranges: selectedSilences(), label: 'Silence' })
-      .then(function (r) { toast('Added ' + r.created + ' preview markers.'); })
+      .then(function (r) { toast('Added ' + nOf(r.created, 'preview marker') + '.'); })
       .catch(function (e) { toast(e.message, true); });
   });
 
   $('btn-clear-markers').addEventListener('click', function () {
     CPBridge.callHost('CP_clearPulseMarkers', { label: 'Silence' })
-      .then(function (r) { toast('Removed ' + r.removed + ' markers.'); })
+      .then(function (r) { toast('Removed ' + nOf(r.removed, 'marker') + '.'); })
       .catch(function (e) { toast(e.message, true); });
   });
 
@@ -18985,12 +19052,15 @@
           if (res.toBlur && res.blurred < res.toBlur) probs.push('the blurred background could not be blurred');
           diag('shorts', 'editable timeline: placed ' + res.placed + '/' + res.of + ', framed ' + res.framed + ', cropped ' + res.cropped + '/' + (res.toCrop || 0) +
             ', blurred ' + (res.blurred || 0) + '/' + (res.toBlur || 0) + ', mic pieces ' + res.audioPlaced + ', camera sound off ' + res.camAudioOff + ', hook ' + res.hook + ', layout ' + shortLayout());
-          if (probs.length) toast('⚠️ The short’s timeline is made, but ' + probs.join('; ') + '. Fix it by hand in Effect Controls, or pick “One video file” and make it again.', true);
-          return { res: res, info: { cams: P.cams, diag: P.diag, capPos: CPPodShort.fitCaptionPos(P.target, P.segs) } };
+          // (said once, with the result below: a warning toast here was replaced
+          // in the same moment by "Made the short", so a half-landed short read
+          // as a clean success — found by audit)
+          return { res: res, probs: probs, info: { cams: P.cams, diag: P.diag, capPos: CPPodShort.fitCaptionPos(P.target, P.segs) } };
         });
       });
     }).then(function (x) {
       var res = x.res, info = x.info;
+      var partly = (x.probs && x.probs.length) ? ' ⚠️ But ' + x.probs.join('; ') + ' — fix it by hand in Effect Controls, or pick “One video file” and make it again.' : '';
       var what = (rt ? rt.label + ' ' : '') + 'short “' + (res && res.sequence ? res.sequence : name) + '”' +
         (info.cams ? ' from ' + info.cams + ' cameras' : '') + (editable ? ' as an editable timeline' : '') +
         (plan.removed > 0.2 ? ' — ' + plan.removed.toFixed(1) + ' s of pauses and “um”s cut' : '');
@@ -18998,7 +19068,7 @@
         (info.diag ? ' · ' + info.diag : ''));
       if (o.caps && plan.words.length && res && res.sequence) {
         prog.textContent = 'Adding captions in “' + ((currentPreset() || {}).name || 'your caption style') + '”…';
-        markStepDone('shorts'); toast('🎬 Made the ' + what + '. Adding captions now…');
+        markStepDone('shorts'); toast('🎬 Made the ' + what + '. Adding captions now…' + partly, !!partly);
         return new Promise(function (res) { setTimeout(res, 400); }).then(function () {
           prog.classList.add('hidden');
           // Fit: under the shot, not on it (unless the owner set a Position) —
@@ -19018,7 +19088,7 @@
                 function (e) { state.posOverride = null; throw e; });
       }
       prog.classList.add('hidden');
-      markStepDone('shorts'); toast('🎬 Made the ' + what + (o.caps && !plan.words.length ? '. (No word timing for captions — transcribe first.)' : '.'));
+      markStepDone('shorts'); toast('🎬 Made the ' + what + (o.caps && !plan.words.length ? '. (No word timing for captions — transcribe first.)' : '.') + partly, !!partly);
       showSequenceName();
       return { made: true, name: what, sequence: res && res.sequence };
     }).catch(function (e) { prog.classList.add('hidden'); toast('Make clip failed: ' + e.message, true); return { made: false, error: e.message }; });
@@ -20907,6 +20977,10 @@
      of the plan and stashes it in state.plan. Shared by Auto-multicam, Apply
      and the one-click Redo button so they always use the SAME current settings. */
   function buildMcPlan() {
+    // the sequence this plan is for: listening takes a minute or more, and the
+    // plan used to land on whichever sequence was open when it finished — Apply
+    // then cut podcast A's switches into sequence B (found by audit)
+    var mcJobEnv = state.env;
     var numAngles = parseInt($('mc-angles').value, 10);
     var src = $('mc-source').value;
     // what the last build heard belongs to that build only (an interval plan
@@ -20984,6 +21058,10 @@
         src === 'interval' ? Math.min(mcMinHold(), parseFloat($('mc-interval').value) || 3) : null);
     }).then(function (plan) {
       if (!plan || !plan.length) throw new Error('No camera switches were produced.');
+      if (mcJobEnv && state.env && envKey(state.env) !== envKey(mcJobEnv)) {
+        throw new Error('You opened “' + (state.env.sequenceName || 'another sequence') + '” while the camera plan was being made for “' +
+          (mcJobEnv.sequenceName || 'another sequence') + '”. Nothing was planned here — open that sequence and tap Plan camera cuts again.');
+      }
       state.plan = plan;
       return plan;
     });
@@ -21069,7 +21147,7 @@
       } else if (state.mcPlanWarning) {
         // applied, but the plan itself carries a warning (unheard stretches,
         // a pairing that disagrees with the mics) — don't let it read as success
-        markStepDone('multicam'); toast('🎬 Multicam applied — ' + r.razored + ' cuts, but: ' + state.mcPlanWarning.replace(/^⚠️\s*/, ''), true);
+        markStepDone('multicam'); toast('🎬 Multicam applied — ' + nOf(r.razored, 'cut') + ', but: ' + state.mcPlanWarning.replace(/^⚠️\s*/, ''), true);
       } else if (!r.razored && !r.toggled && !r.audioRestored && !r.audioKeptOff) {
         // Redo (or Apply again) with the same settings: the timeline already
         // shows exactly this edit — "applied — 0 cuts, 0 angle toggles" read as
@@ -21080,13 +21158,13 @@
         // the cameras switched as planned, but some sound the owner had
         // switched off is on again: Premiere would not switch it off without
         // taking the picture with it
-        markStepDone('multicam'); toast('🎬 Multicam applied — ' + r.razored + ' cuts. ' + r.audioLinkedOn + ' bit' + (r.audioLinkedOn > 1 ? 's' : '') +
+        markStepDone('multicam'); toast('🎬 Multicam applied — ' + nOf(r.razored, 'cut') + '. ' + r.audioLinkedOn + ' bit' + (r.audioLinkedOn > 1 ? 's' : '') +
               ' of camera sound you had switched off ' + (r.audioLinkedOn > 1 ? 'are' : 'is') + ' on again, because Premiere links it to the picture. ' +
               'To keep it off: select the camera clips, right-click ▸ Unlink, then Apply again.', true);
       } else {
         var heardLine = (state.mcAnalysis && state.mcAnalysis.coverage) ? (' ' + state.mcAnalysis.coverage.line.replace(/^⏱\s*/, '') + '.') : '';
-        markStepDone('multicam'); toast('🎬 Multicam applied — ' + r.razored + ' cuts, ' + r.toggled +
-              ' angle toggles across the full ' + fmt(r.seqEnd) + ' timeline.' + heardLine);
+        markStepDone('multicam'); toast('🎬 Multicam applied — ' + nOf(r.razored, 'cut') + ', ' + nOf(r.toggled, 'angle toggle') +
+              ' across the full ' + fmt(r.seqEnd) + ' timeline.' + heardLine);
       }
       return r;
     });
@@ -21139,13 +21217,15 @@
   // so the user can re-run the entire multicam in a single tap (no clicking
   // through Plan → Apply again). Used after a first apply / after an Undo.
   $('btn-mc-redo').addEventListener('click', function () {
+    if (_mcPlanning) return;                 // a Plan (or Redo) is already listening
+    _mcPlanning = true;
     capMcProgress('Redoing all the cuts…');
     buildMcPlan().then(function () {
       renderMcPlan(parseInt($('mc-angles').value, 10));
       // apply errors are handled here so they don't fall through to the build
       // diagnostic box (which would be misleading for a Premiere-side failure)
       return applyMcPlan().catch(mcApplyFailed);
-    }).catch(mcBuildFailed);
+    }).catch(mcBuildFailed).then(function () { _mcPlanning = false; });
   });
 
   $('btn-mc-test').addEventListener('click', testAudioEngine);

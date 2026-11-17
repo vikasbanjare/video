@@ -232,3 +232,6 @@ body:not(.theme-dark) .tpl-card:hover .tpl-thumb, body:not(.theme-dark) .tpl-car
   background-color: #0D0D0F;
   background-image: radial-gradient(95% 125% at 50% 0%, var(--card-tint, rgba(255,255,255,.07)), rgba(13,13,15,0) 72%);
 }
+
+/* a message that would sit on the page's main button goes under the app bar (main.js toast) */
+.toast.at-top { top: calc(var(--bar-h) + 8px); bottom: auto; }
