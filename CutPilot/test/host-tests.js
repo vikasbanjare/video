@@ -2824,5 +2824,67 @@ console.log('host.jsx — Premium captions hold 0.5 s, never 60 s; title templat
   assert(h1.CP_addTopVideoTrack() === 1 && one.model.vTracks.length === 2, 'the only track is never handed out, even when empty');
 }
 
+{
+  // ---- audit, Nov 2026: five timeline defects, each reproduced before its fix ----
+  const CUES2 = [{ start: 1, end: 2, text: 'ek do teen' }, { start: 3, end: 4, text: 'chaar paanch' }];
+  // 1. an entrance keeps the caption's own fit scale and caption row
+  for (const anim of ['pop', 'slide']) {
+    const w = makeWorld({ vTracks: 1, aTracks: 1, w: 1080, h: 1920, fluxComponent: true });
+    const r = call(loadHost(w), 'CP_insertMogrtCaptions', { mogrtPath: '/tmp/Flux_Halo2.mogrt', cues: CUES2, videoTrack: null, audioTrack: 0,
+      params: [], textStyle: null, stretch: false, compW: 1920, compH: 1080, fitMode: 'contain', posYPct: 0.86, anim: anim, animSpeed: 1 });
+    const c = w.model.vTracks[w.model.vTracks.length - 1][0], k = c._keys || {};
+    if (anim === 'pop') {
+      const ks = (k.Scale || {}).keys || [];
+      assert(ks.length === 3 && Math.abs(ks[2].v - r.fitScale) < 0.01 && ks[0].v < ks[2].v,
+        'pop on a fitted caption settles at its own fit scale (' + r.fitScale + '), not 100% (' + JSON.stringify(ks.map(x => x.v)) + ')');
+    } else {
+      const kp = (k.Position || {}).keys || [];
+      assert(kp.length === 2 && Math.abs(kp[1].v[1] - 0.86) < 0.001 && kp[0].v[1] > kp[1].v[1],
+        'slide ends on the caption row (y 0.86), not the centre of the frame (' + JSON.stringify(kp.map(x => x.v)) + ')');
+    }
+  }
+  // 2. B-roll added under the captions moves them up: the restyle follows them
+  {
+    const w = makeWorld({ vTracks: 2, aTracks: 1 });
+    w.model.addClip('vTracks', 0, 0, 60, { name: 'interview.mp4' });
+    const host = loadHost(w), base = { mogrtPath: '/tmp/Flux_Halo2.mogrt', cues: CUES2, videoTrack: null, audioTrack: 0, params: [], textStyle: null, stretch: false, captionNames: ['Flux_Halo2'] };
+    const r0 = call(host, 'CP_insertMogrtCaptions', base);
+    const rb = call(host, 'CP_placeBroll', { items: [{ path: '/b/city.mp4', at: 10, dur: 4, w: 1920, h: 1080 }] });
+    const r1 = call(host, 'CP_insertMogrtCaptions', Object.assign({ replaceTrack: r0.track }, base));
+    const capTracks = w.model.vTracks.filter(t => t.some(c => /Flux_Halo2/.test(c.name))).length;
+    assert(rb.ok && r1.replaceGuard === 'moved' && r1.replaceMode === 'reused' && capTracks === 1,
+      'captions on V' + r0.track + ', B-roll goes under them: the restyle finds them on V' + r1.track + ' and replaces them — one caption set, not two (' + r1.replaceMode + '/' + r1.replaceGuard + ', ' + capTracks + ' caption track(s))');
+  }
+  // 3. Studio sound: a piece that could not be placed keeps its original audible
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 2 });
+    w.model.addClip('aTracks', 0, 0, 10, { name: 'mic.wav' }); w.model.addClip('aTracks', 0, 10, 20, { name: 'mic.wav' });
+    const pj = w.sandbox.app.project, imp = pj.importFiles;
+    pj.importFiles = function (paths, a, bin, c) { return imp.call(pj, Array.from(paths).filter(x => !/c1/.test(x)), a, bin, c); };
+    const r = call(loadHost(w), 'CP_studioSoundPlace', { pieces: [{ path: '/tmp/c0.wav', track: 0, from: 0, dur: 10, at: 0 }, { path: '/tmp/c1.wav', track: 0, from: 0, dur: 10, at: 10 }], sequenceId: 'seq-main' });
+    assert(r.ok && r.placed === 1 && r.missed === 1 && r.muted.length === 0 && r.keptOn.indexOf(1) >= 0 && !w.model.muted.A1,
+      'Studio sound, one cleaned piece not placed: A1 stays on (no silent hole at 10–20 s) — ' + JSON.stringify({ muted: r.muted, keptOn: r.keptOn, missed: r.missed }));
+  }
+  // 4. a cut never deletes the owner's own "Silence the phone" marker
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    w.model.addClip('vTracks', 0, 0, 60, { name: 'cam' }); w.model.addClip('aTracks', 0, 0, 60, { name: 'mic' });
+    const host = loadHost(w);
+    const mk = w.sandbox.app.project.activeSequence.markers.createMarker(40); mk.name = 'Silence the phone';
+    const r = call(host, 'CP_razorRipple', { ranges: [{ start: 5, end: 7 }], closeGaps: true });
+    assert(r.ok && w.model.markers.some(m => m.name === 'Silence the phone'),
+      'a cut keeps the owner’s marker “Silence the phone” (only Pulse’s own “Silence <n>” previews go)');
+  }
+  // 5. B-roll that did not import: a clear failure, no empty track or bin left
+  {
+    const w = makeWorld({ vTracks: 1, aTracks: 1 });
+    w.model.addClip('vTracks', 0, 0, 60, { name: 'interview.mp4' });
+    w.sandbox.app.project.importFiles = function () { return false; };
+    const r = call(loadHost(w), 'CP_placeBroll', { items: [{ path: '/b/city.mp4', at: 10, dur: 4 }] });
+    assert(!r.ok && w.model.vTracks.length === 1 && !w.model.bins.some(b => /B-roll/.test(b.name)),
+      'B-roll files that did not import: it says so, and leaves no empty track or bin (' + JSON.stringify(r) + ')');
+  }
+}
+
 console.log('\nhost tests: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

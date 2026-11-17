@@ -988,7 +988,9 @@ function CP_shiftMarkers(seq, ranges, previewLabel) {
   for (k = 0; k < all.length; k++) {
     m = all[k];
     var nm = String(m.name || '');
-    if (previewLabel && nm.indexOf(previewLabel + ' ') === 0) doomed.push(m);
+    // Pulse names its preview markers "<label> <n>": a prefix match also took the
+    // owner's own "Silence the phone" marker (the rule CP_clearPulseMarkers uses)
+    if (previewLabel && new RegExp('^' + String(previewLabel).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '( \\d+)?$').test(nm)) doomed.push(m);
     else {
       var s = m.start.seconds, e = s;
       try { e = m.end.seconds; } catch (eEnd) {}
@@ -1445,6 +1447,20 @@ function CP_buildShortSequence(argsJson) {
     try { if (seq.videoTracks.numTracks < needV) qseq.addTracks(needV - seq.videoTracks.numTracks, seq.videoTracks.numTracks, 0); } catch (eT1) {}
     try { if (seq.audioTracks.numTracks < needA) qseq.addTracks(0, 0, needA - seq.audioTracks.numTracks, 1, seq.audioTracks.numTracks); } catch (eT2) {}   // at the bottom
     seq = CP_activeSequence() || seq;
+    // Every piece starts and ends on a whole frame of the short. The panel's
+    // times are running sums, not frames, and Premiere rounds a piece's end
+    // DOWN to a frame: the same one-frame black gap CP_rebuildTrimmed had
+    // (found by audit). Each boundary is rounded once, so neighbours still meet.
+    var sFps = 0;
+    try { sFps = CP_sequenceFps(seq); } catch (eFps) { sFps = 0; }
+    var sTol = 0.02;
+    if (sFps > 0) {
+      sTol = Math.max(0.02, 0.5 / sFps + 0.002);
+      var snapF = function (x) { return Math.round(x * sFps) / sFps; };
+      var snapPiece = function (q) { var a1 = snapF(q.at), b1 = snapF(q.at + q.dur); if (b1 - a1 >= 1 / sFps - 1e-6) { q.at = a1; q.dur = b1 - a1; } };
+      for (i = 0; i < pieces.length; i++) snapPiece(pieces[i]);
+      for (i = 0; i < audio.length; i++) for (j = 0; j < (audio[i].pieces || []).length; j++) snapPiece(audio[i].pieces[j]);
+    }
     var placed = 0, framed = 0, cropped = 0, blurred = 0, missed = [], cropFx = null;
     try { cropFx = qe.project.getVideoEffectByName('Crop'); } catch (eFx) { cropFx = null; }
     function setRange(it, from, dur) {
@@ -1453,7 +1469,7 @@ function CP_buildShortSequence(argsJson) {
     }
     function clipAt(track, at) {
       var best = null;
-      for (var c = 0; c < track.clips.numItems; c++) { var cl = track.clips[c]; if (cl && Math.abs(cl.start.seconds - at) < 0.02) best = cl; }
+      for (var c = 0; c < track.clips.numItems; c++) { var cl = track.clips[c]; if (cl && Math.abs(cl.start.seconds - at) < sTol) best = cl; }
       return best;
     }
     function put(track, it, at) {
@@ -1687,7 +1703,14 @@ function CP_makeShort(argsJson) {
       work = app.project.activeSequence;          // …but it usually becomes findable
     }
     if (!work) return CP_fail('Could not duplicate the sequence to build the short.');
+    // Sequence.clone() returns true, not the copy: `work` was then `true`, nothing
+    // was activated, and the razor below ran on the ORIGINAL (found by audit).
+    // Without a real, different sequence to cut, stop here.
+    if (work === true || !work.sequenceID || String(work.sequenceID) === String(seq.sequenceID)) {
+      return CP_fail('Could not open a copy of the sequence to build the short. Nothing was cut.');
+    }
     CP_activateSequence(work);
+    try { if (String(app.project.activeSequence.sequenceID) !== String(work.sequenceID)) return CP_fail('Could not open the copy of the sequence. Nothing was cut.'); } catch (eAct) { return CP_fail('Could not open the copy of the sequence. Nothing was cut.'); }
     try { work.name = name + ' (wide)'; } catch (eN) {}
 
     var qseq = CP_qeSequence();
@@ -2252,6 +2275,29 @@ function CP_setKeys(prop, baseTime, keys) {
 }
 
 /* Apply one of the built-in entry animations as Motion/Opacity keyframes. */
+/* Entrance / exit keys are written for a clip at 100% scale in the centre of
+   the frame. A caption placed by Pulse is often neither: an editable caption
+   is fitted to the frame (Scale 56 on a reel) and sits on its caption row
+   (Position [0.5, 0.86]). Keyed as written, every caption ended dead centre
+   at 100% (found by audit). The keys are made relative to where the clip is:
+   scale as a share of its own scale, position as an offset from its own. */
+function CP_relKeys(prop, kind, keys) {
+  var cur = null;
+  try { cur = prop.getValue(); } catch (e) { return keys; }
+  var out = [], i;
+  if (kind === 'scale') {
+    var c = parseFloat(cur);
+    if (!(c > 0) || Math.abs(c - 100) < 0.01) return keys;
+    for (i = 0; i < keys.length; i++) out.push({ t: keys[i].t, v: Math.round(keys[i].v * c) / 100 });
+    return out;
+  }
+  if (!cur || cur.length < 2) return keys;
+  var dx = Number(cur[0]) - 0.5, dy = Number(cur[1]) - 0.5;
+  if (!isFinite(dx) || !isFinite(dy) || (Math.abs(dx) < 0.0005 && Math.abs(dy) < 0.0005)) return keys;
+  for (i = 0; i < keys.length; i++) out.push({ t: keys[i].t, v: [keys[i].v[0] + dx, keys[i].v[1] + dy] });
+  return out;
+}
+
 function CP_animateClip(clip, anim, speed) {
   CP_ANIM_SPEED = (speed && speed > 0) ? speed : 1;
   var base = clip.inPoint.seconds;
@@ -2262,48 +2308,48 @@ function CP_animateClip(clip, anim, speed) {
   var opacity = CP_findProperty(opacityComp, 'Opacity');
 
   if (anim === 'pop') {
-    CP_setKeys(scale, base, [
+    CP_setKeys(scale, base, CP_relKeys(scale, 'scale', [
       { t: 0.0, v: 12 }, { t: 0.09, v: 108 }, { t: 0.16, v: 100 }
-    ]);
+    ]));
   } else if (anim === 'scale') {
-    CP_setKeys(scale, base, [
+    CP_setKeys(scale, base, CP_relKeys(scale, 'scale', [
       { t: 0.0, v: 40 }, { t: 0.16, v: 100 }
-    ]);
+    ]));
     CP_setKeys(opacity, base, [{ t: 0.0, v: 0 }, { t: 0.12, v: 100 }]);
   } else if (anim === 'zoom') {
-    CP_setKeys(scale, base, [
+    CP_setKeys(scale, base, CP_relKeys(scale, 'scale', [
       { t: 0.0, v: 170 }, { t: 0.18, v: 100 }
-    ]);
+    ]));
     CP_setKeys(opacity, base, [{ t: 0.0, v: 0 }, { t: 0.1, v: 100 }]);
   } else if (anim === 'wave') {
-    CP_setKeys(pos, base, [
+    CP_setKeys(pos, base, CP_relKeys(pos, 'pos', [
       { t: 0.0, v: [0.5, 0.52] }, { t: 0.1, v: [0.5, 0.488] },
       { t: 0.2, v: [0.5, 0.506] }, { t: 0.3, v: [0.5, 0.5] }
-    ]);
+    ]));
     CP_setKeys(opacity, base, [{ t: 0.0, v: 0 }, { t: 0.1, v: 100 }]);
   } else if (anim === 'shake') {
-    CP_setKeys(pos, base, [
+    CP_setKeys(pos, base, CP_relKeys(pos, 'pos', [
       { t: 0.0, v: [0.487, 0.5] }, { t: 0.05, v: [0.513, 0.5] },
       { t: 0.1, v: [0.492, 0.5] }, { t: 0.15, v: [0.5, 0.5] }
-    ]);
+    ]));
   } else if (anim === 'bounce') {
-    CP_setKeys(pos, base, [
+    CP_setKeys(pos, base, CP_relKeys(pos, 'pos', [
       { t: 0.0, v: [0.5, 0.56] }, { t: 0.11, v: [0.5, 0.487] },
       { t: 0.18, v: [0.5, 0.503] }, { t: 0.24, v: [0.5, 0.5] }
-    ]);
+    ]));
     CP_setKeys(opacity, base, [{ t: 0.0, v: 0 }, { t: 0.08, v: 100 }]);
   } else if (anim === 'slide') {
-    CP_setKeys(pos, base, [
+    CP_setKeys(pos, base, CP_relKeys(pos, 'pos', [
       { t: 0.0, v: [0.5, 0.56] }, { t: 0.15, v: [0.5, 0.5] }
-    ]);
+    ]));
     CP_setKeys(opacity, base, [{ t: 0.0, v: 0 }, { t: 0.13, v: 100 }]);
   } else if (anim === 'fade') {
     CP_setKeys(opacity, base, [{ t: 0.0, v: 0 }, { t: 0.15, v: 100 }]);
   } else if (anim === 'glitch') {
-    CP_setKeys(pos, base, [
+    CP_setKeys(pos, base, CP_relKeys(pos, 'pos', [
       { t: 0.0, v: [0.498, 0.501] }, { t: 0.04, v: [0.503, 0.499] },
       { t: 0.08, v: [0.5, 0.5] }
-    ]);
+    ]));
     CP_setKeys(opacity, base, [
       { t: 0.0, v: 0 }, { t: 0.03, v: 100 }, { t: 0.05, v: 35 }, { t: 0.08, v: 100 }
     ]);
@@ -2313,27 +2359,27 @@ function CP_animateClip(clip, anim, speed) {
   //      motion but not literal GPU motion blur — see the note in the panel.)
   } else if (anim === 'whoosh') {
     // Impact Push: fly in from the left, overshoot past centre, settle.
-    CP_setKeys(pos, base, [
+    CP_setKeys(pos, base, CP_relKeys(pos, 'pos', [
       { t: 0.0, v: [0.16, 0.5] }, { t: 0.10, v: [0.532, 0.5] }, { t: 0.17, v: [0.5, 0.5] }
-    ]);
+    ]));
     CP_setKeys(opacity, base, [{ t: 0.0, v: 0 }, { t: 0.05, v: 100 }]);
   } else if (anim === 'zoompunch') {
     // Impact Zoom Blur: punch in from oversized, slight undershoot, settle.
-    CP_setKeys(scale, base, [
+    CP_setKeys(scale, base, CP_relKeys(scale, 'scale', [
       { t: 0.0, v: 260 }, { t: 0.10, v: 94 }, { t: 0.17, v: 100 }
-    ]);
+    ]));
     CP_setKeys(opacity, base, [{ t: 0.0, v: 0 }, { t: 0.06, v: 100 }]);
   } else if (anim === 'blurdissolve') {
     // Impact Blur Dissolve: gentle scale settle with a slow, soft fade.
-    CP_setKeys(scale, base, [
+    CP_setKeys(scale, base, CP_relKeys(scale, 'scale', [
       { t: 0.0, v: 114 }, { t: 0.24, v: 100 }
-    ]);
+    ]));
     CP_setKeys(opacity, base, [{ t: 0.0, v: 0 }, { t: 0.22, v: 100 }]);
   } else if (anim === 'glide') {
     // Impact Motion: smooth rise from below with overshoot up, then settle.
-    CP_setKeys(pos, base, [
+    CP_setKeys(pos, base, CP_relKeys(pos, 'pos', [
       { t: 0.0, v: [0.5, 0.62] }, { t: 0.12, v: [0.5, 0.491] }, { t: 0.2, v: [0.5, 0.5] }
-    ]);
+    ]));
     CP_setKeys(opacity, base, [{ t: 0.0, v: 0 }, { t: 0.12, v: 100 }]);
   }
   // 'karaoke', 'typewriter', 'none': the frame sequence is the animation.
@@ -2352,10 +2398,12 @@ function CP_exitClip(clip, exit) {
   if (exit === 'fade') {
     CP_setKeys(opacity, base, [{ t: 0, v: 100 }, { t: len, v: 0 }]);
   } else if (exit === 'shrink') {
-    CP_setKeys(CP_findProperty(motion, 'Scale'), base, [{ t: 0, v: 100 }, { t: len, v: 60 }]);
+    var exS = CP_findProperty(motion, 'Scale');
+    CP_setKeys(exS, base, CP_relKeys(exS, 'scale', [{ t: 0, v: 100 }, { t: len, v: 60 }]));
     CP_setKeys(opacity, base, [{ t: 0, v: 100 }, { t: len, v: 0 }]);
   } else if (exit === 'slidedown') {
-    CP_setKeys(CP_findProperty(motion, 'Position'), base, [{ t: 0, v: [0.5, 0.5] }, { t: len, v: [0.5, 0.53] }]);
+    var exP = CP_findProperty(motion, 'Position');
+    CP_setKeys(exP, base, CP_relKeys(exP, 'pos', [{ t: 0, v: [0.5, 0.5] }, { t: len, v: [0.5, 0.53] }]));
     CP_setKeys(opacity, base, [{ t: 0, v: 100 }, { t: len, v: 0 }]);
   } else return false;
   return true;
@@ -2467,13 +2515,25 @@ function CP_placeProKey(argsJson) {
     for (i = 0; i < bin.children.numItems; i++) if (String(bin.children[i].name) === base) item = bin.children[i];
     if (!item) return CP_fail('Premiere could not import the keyed clip.');
     // onTrack: the track an earlier clip of the SAME run got - five keyed clips used to add five tracks
-    var vt = (a.onTrack > 0 && a.onTrack <= seq.videoTracks.numTracks) ? a.onTrack - 1 : CP_addTopVideoTrack();
+    var vt = (a.onTrack > 0 && a.onTrack <= seq.videoTracks.numTracks) ? a.onTrack - 1 : -1;
+    // the shared track is reused only where it is free: two keyed clips that
+    // overlap in time (camera A and camera B) overwrote each other there, and
+    // both originals were switched off (found by audit)
+    if (vt >= 0) {
+      var busyT = seq.videoTracks[vt].clips;
+      for (i = 0; i < busyT.numItems; i++) {
+        if (busyT[i].start.seconds < a.end - 0.001 && busyT[i].end.seconds > a.start + 0.001) { vt = -1; break; }
+      }
+    }
+    if (vt < 0) vt = CP_addTopVideoTrack();
     if (vt < 0) return CP_fail('Could not add a video track for the keyed clip.');
     seq = CP_activeSequence();
     var tr = seq.videoTracks[vt];
     tr.overwriteClip(item, a.start);
     var cl = CP_clipAtStart(tr, a.start);
     if (cl) { try { var e = new Time(); e.seconds = a.end; cl.end = e; } catch (eEnd) {} }
+    // nothing landed: the original stays on (it was switched off anyway, under ok:true)
+    if (!cl) return CP_fail('Premiere would not place the keyed clip. Your original clip was left as it is.');
     var orig = CP_clipAtStart(seq.videoTracks[a.track], a.start);
     if (orig) { try { orig.disabled = true; } catch (eDis) {} }
     return CP_ok({ track: vt + 1, placed: !!cl, hidden: !!(orig && orig.disabled) });
@@ -2938,6 +2998,14 @@ function CP_placeOverlay(argsJson) {
     }
 
     var trackIndex;
+    // the remembered caption track moved up when a track was added under it
+    // (Add B-roll): follow it instead of stacking a second caption set on top
+    if (args.replaceTrack != null && args.replaceTrack >= 1 && args.replaceTrack <= seq.videoTracks.numTracks &&
+        !CP_holdsPulseOverlayClips(seq.videoTracks[args.replaceTrack - 1])) {
+      for (var mvO = args.replaceTrack; mvO < seq.videoTracks.numTracks; mvO++) {
+        if (CP_holdsPulseOverlayClips(seq.videoTracks[mvO])) { args.replaceTrack = mvO + 1; break; }
+      }
+    }
     if (args.replaceTrack != null && args.replaceTrack >= 1 && args.replaceTrack <= seq.videoTracks.numTracks &&
         CP_holdsPulseOverlayClips(seq.videoTracks[args.replaceTrack - 1])) {
       // reuse the existing caption track, clearing Pulse's prior captions off it:
@@ -3075,10 +3143,10 @@ function CP_studioSoundPlace(argsJson) {
     if (free.length < src.length) return CP_fail('Premiere would not add ' + src.length + ' new audio track(s) for the clean sound. Add them by hand (right-click the track heads → Add Tracks) and try again.');
     var dest = {}, used = [];
     for (i = 0; i < src.length; i++) { dest[src[i]] = free[i]; used.push(free[i] + 1); }
-    var placed = 0, missed = 0;
+    var placed = 0, missed = 0, missedOn = {};
     for (i = 0; i < pieces.length; i++) {
       var pc = pieces[i], it = items[CP_normPath(pc.path)], tr = seq.audioTracks[dest[pc.track]];
-      if (!it || !tr) { missed++; continue; }
+      if (!it || !tr) { missed++; missedOn[pc.track] = 1; continue; }
       try {
         it.setInPoint(CP_ticksFromSeconds(pc.from), 4);
         it.setOutPoint(CP_ticksFromSeconds(pc.from + pc.dur), 4);
@@ -3094,12 +3162,16 @@ function CP_studioSoundPlace(argsJson) {
             }
           }
         } catch (eEnd) {}
-        placed++;
-      } catch (eP) { missed++; }
+        placed++; pc._placed = true;
+      } catch (eP) { missed++; missedOn[pc.track] = 1; }
     }
     for (var key in items) if (items.hasOwnProperty(key)) { try { items[key].clearInPoint(4); items[key].clearOutPoint(4); } catch (eCl) {} }
     var muted = [], keptOn = [], keep = {}, silenced = 0;
     for (i = 0; i < (args.keepUnmuted || []).length; i++) keep[args.keepUnmuted[i]] = 1;
+    // a track with a piece that could NOT be placed has no clean copy of it:
+    // muting the whole track left that stretch silent (found by audit). It
+    // stays on like a track with uncleaned pieces; only what was placed goes silent.
+    for (var mk in missedOn) if (missedOn.hasOwnProperty(mk)) keep[mk] = 1;
     if (placed) {
       for (i = 0; i < src.length; i++) {
         // a track with pieces that were not cleaned (sped up, reversed) stays
@@ -3110,7 +3182,7 @@ function CP_studioSoundPlace(argsJson) {
       // ...but on that track the pieces that WERE cleaned go silent, each on its
       // own (Level to 0), or the clean sound plays doubled with its original
       for (i = 0; i < pieces.length; i++) {
-        if (!keep[pieces[i].track]) continue;
+        if (!keep[pieces[i].track] || !pieces[i]._placed) continue;
         var ownClips = seq.audioTracks[pieces[i].track].clips;
         for (var oc = 0; oc < ownClips.numItems; oc++) {
           if (Math.abs(ownClips[oc].start.seconds - pieces[i].at) >= 0.01) continue;
@@ -3143,6 +3215,11 @@ function CP_placeBroll(argsJson) {
       try { mp = ch.getMediaPath(); } catch (eMp) { mp = null; }
       if (mp) byPath[CP_normPath(mp)] = ch;
     }
+    // nothing came in: stop before a track is added (an empty track and an
+    // empty bin were left behind, under "0 B-rolls on V2")
+    var anyIn = false;
+    for (i = 0; i < items.length && !anyIn; i++) if (byPath[CP_normPath(items[i].path)]) anyIn = true;
+    if (!anyIn) { try { bin.deleteBin(); } catch (eDb) {} return CP_fail('Premiere did not import any of the B-roll files. Check the files still exist and try again.'); }
     // An empty track above the footage and BELOW Pulse's captions / Safe zone
     // guide, so the B-roll covers the picture, never the captions (on the
     // owner's webinar it went on V10 over the captions on V4 and V9 and hid
@@ -3209,6 +3286,7 @@ function CP_placeBroll(argsJson) {
       }
     }
     for (var key in byPath) if (byPath.hasOwnProperty(key)) { try { byPath[key].clearInPoint(4); byPath[key].clearOutPoint(4); } catch (eCl) {} }
+    if (!placed) return CP_fail('Premiere would not place the B-roll on V' + (ti + 1) + '. Nothing was added.');
     return CP_ok({ placed: placed, track: ti + 1, scaled: scaled, missed: missed });
   } catch (e) { return CP_fail(e.message); }
 }
@@ -4654,7 +4732,17 @@ function CP_insertMogrtCaptions(argsJson) {
     var vTrack = -1, reuseIdx = null, replaceMode = 'fresh', replaceGuard = null;
     if (args.replaceTrack != null && args.replaceTrack >= 1 && args.replaceTrack <= seq.videoTracks.numTracks) {
       reuseIdx = args.replaceTrack - 1;
-      if (!CP_trackIsPulseCaptions(reuseIdx, sigNames)) { replaceGuard = 'foreign'; reuseIdx = null; }
+      if (!CP_trackIsPulseCaptions(reuseIdx, sigNames)) {
+        // Not Pulse's captions there any more. A track added UNDER the captions
+        // (Add B-roll does that) moves them up: look above for the set before
+        // giving up, or the restyle stacked a second set and every line showed twice.
+        var movedTo = -1;
+        for (var mvI = reuseIdx + 1; mvI < seq.videoTracks.numTracks && movedTo < 0; mvI++) {
+          if (seq.videoTracks[mvI].clips.numItems > 0 && CP_trackIsPulseCaptions(mvI, sigNames)) movedTo = mvI;
+        }
+        if (movedTo >= 0) { reuseIdx = movedTo; replaceGuard = 'moved'; }
+        else { replaceGuard = 'foreign'; reuseIdx = null; }
+      }
     } else if (args.replaceTrack != null) {
       replaceGuard = 'out-of-range';
     }

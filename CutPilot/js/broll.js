@@ -138,7 +138,7 @@
       kit.capProgress(null);
       var msg = '🎞 ' + r.placed + ' B-roll' + (r.placed === 1 ? '' : 's') + ' on V' + r.track + ' where you say: ' +
         placedItems.slice(0, 6).map(function (x) { return '“' + x.word + '”'; }).join(', ') + (placedItems.length > 6 ? '…' : '') +
-        '.' + (skippedClips ? ' ' + skippedClips + ' clip' + (skippedClips === 1 ? '' : 's') + ' could not be read and ' + (skippedClips === 1 ? 'was' : 'were') + ' left out.' : '') +
+        '.' + (r.missed ? ' ' + r.missed + ' could not be placed.' : '') + (skippedClips ? ' ' + skippedClips + ' clip' + (skippedClips === 1 ? '' : 's') + ' could not be read and ' + (skippedClips === 1 ? 'was' : 'were') + ' left out.' : '') +
         ' Delete any you don’t like; ⌘Z undoes it.';
       say(msg); kit.toast(msg);
     }).catch(function (e) {

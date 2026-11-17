@@ -126,7 +126,8 @@ report(w.log.qeRemoved.join() === 'owner-later.mp4', 'C. with no clip handed ove
 {
   const wH = world([[]]);
   let added = 0;
-  const mkT = () => { const t = { clips: Object.assign([], { numItems: 0 }), overwriteClip() {} }; return t; };
+  // a placed clip really lands (CP_placeProKey now fails, original left on, when none does)
+  const mkT = () => { const t = { clips: Object.assign([], { numItems: 0 }), overwriteClip(it, at) { const a = Number(at); t.clips.push({ start: { seconds: a }, end: { seconds: a + 2 }, disabled: false }); t.clips.numItems = t.clips.length; } }; return t; };
   const tracks = Object.assign([mkT(), mkT()], { numTracks: 2 });
   const kid = { name: 'key.mov', type: 1 };
   wH.ctx.ProjectItemType = { BIN: 2 };
@@ -137,6 +138,14 @@ report(w.log.qeRemoved.join() === 'owner-later.mp4', 'C. with no clip handed ove
   const r1 = wH.call('CP_placeProKey', { path: '/k/key.mov', track: 0, start: 0, end: 2, onTrack: 0 });
   const r2 = wH.call('CP_placeProKey', { path: '/k/key.mov', track: 0, start: 3, end: 5, onTrack: r1.track });
   report(added === 1 && r1.track === 3 && r2.track === 3, 'H. the second keyed clip of a run reuses the first one\'s track (V' + r1.track + ', V' + r2.track + '; tracks added: ' + added + ')');
+  // two keyed clips that overlap in time (camera A and camera B) must not share the track
+  const r3 = wH.call('CP_placeProKey', { path: '/k/key.mov', track: 0, start: 4, end: 6, onTrack: r1.track });
+  report(r3.ok && r3.track === 4 && added === 2, 'H. a keyed clip that overlaps one already on the shared track gets its own track (V' + r3.track + '; tracks added: ' + added + ')');
+  // nothing lands: a failure, and the original is not switched off
+  const dead = Object.assign([{ clips: Object.assign([{ start: { seconds: 0 }, end: { seconds: 2 }, disabled: false }], { numItems: 1 }), overwriteClip() {} }, { clips: Object.assign([], { numItems: 0 }), overwriteClip() {} }], { numTracks: 2 });
+  wH.ctx.app.project.activeSequence = { videoTracks: dead, audioTracks: Object.assign([], { numTracks: 0 }) };
+  const r4 = wH.call('CP_placeProKey', { path: '/k/key.mov', track: 0, start: 0, end: 2, onTrack: 2 });
+  report(!r4.ok && dead[0].clips[0].disabled === false, 'H. a keyed clip that did not land is a failure and the original stays on (' + JSON.stringify(r4) + ')');
 }
 
 // I. with every audio track full and no way to add one, the sound effect overwrote the last track
