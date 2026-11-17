@@ -5678,7 +5678,19 @@
       var cam = { index: 0, name: 'V1', segments: [{ mediaPath: cam1, seqStart: 0, seqEnd: 10, inPoint: 0, speed: 1 }] };
       var plan = { segments: [{ start: 1, end: 4 }], words: [], duration: 3, removed: 0 };
       var out = pathMod.join(dir, 'pulse-selftest-short.mp4');
+      // where the title went missing, when it does: not drawn, not in the file, or only
+      // missing from the frame Premiere hands back (a fail said "no title" for all three)
+      var drawn = false, inFile = null;
+      function fileHasTitle() {
+        var png = pathMod.join(dir, 'short-file-frame.png');
+        try { fs.unlinkSync(png); } catch (eD) {}
+        return runFfmpeg(ff, ['-hide_banner', '-y', '-ss', '1', '-i', out, '-frames:v', '1', png], 60000).then(function () {
+          if (!fs.existsSync(png)) return null;
+          return new Promise(function (res) { loadRenderedFrame(png, function (im) { res(im ? stTopWhite(im) > 0.05 : null); }); });
+        }, function () { return null; });
+      }
       return renderFramedShort(ff, { cams: [cam], map: [], tracks: [], n: 1 }, plan, { label: '9:16', num: 9, den: 16 }, 'Pulse test hook', { textContent: '' }).then(function (r) {
+        drawn = !!r.hookDrawn;
         fs.writeFileSync(out, fs.readFileSync(r.path));
         try { fs.unlinkSync(r.path); } catch (eU) {}
         // the short's own folder (its hook card) is kept beside the captions
@@ -5687,18 +5699,29 @@
         if (/^short-\d+$/.test(pathMod.basename(own))) {
           try { fs.readdirSync(own).forEach(function (n) { try { fs.unlinkSync(pathMod.join(own, n)); } catch (eF) {} }); fs.rmdirSync(own); } catch (eR) {}
         }
+        return fileHasTitle();
+      }).then(function (has) {
+        inFile = has;
         return host('CP_importClip', { path: out, name: 'Pulse self-test short' });
       }).then(function (r) {
         return host('CP_getEnv').then(function (env) {
           var shape = env && env.sequenceName === 'Pulse self-test short' && Number(env.width) === 1080 && Number(env.height) === 1920;
           if (!framesWork || !shape) return { state: shape ? 'ok' : 'fail', note: 'sequence “' + (env && env.sequenceName) + '” ' + (env && env.width) + '×' + (env && env.height) };
           // ponytail: one retry — a just-imported clip sometimes gives no frame the first time
-          return frameAt(1).then(function (im) { return im || frameAt(1); }).then(function (im) {
+          var where = !drawn ? 'the title card was not drawn' : inFile === false ? 'the title card was drawn but is not in the rendered file'
+            : inFile === true ? 'the title IS in the rendered file' : 'the rendered file could not be checked';
+          function look(at) { return frameAt(at).then(function (im) { return im || frameAt(at); }); }
+          return look(1).then(function (im) {
+            // a sequence made a moment ago can hand back a frame from before the clip
+            // was drawn: when the file has the title, look once more a little later
+            if (im && stTopWhite(im) <= 0.05 && inFile === true) return look(1.5).then(function (im2) { return im2 || im; });
+            return im;
+          }).then(function (im) {
             // no frame is not "no hook": say which one it was
-            if (!im) return { state: 'fail', note: 'its own 1080×1920 sequence, but Premiere gave no frame to check the hook title on' };
+            if (!im) return { state: inFile === true ? 'warn' : 'fail', note: 'its own 1080×1920 sequence, but Premiere gave no frame to check the hook title on (' + where + ')' };
             // the hook card: white, across the top of the frame (its dark words in the middle)
             var top = stTopWhite(im), white = top > 0.05;
-            return { state: white ? 'ok' : 'fail', note: 'its own 1080×1920 sequence, ' + (white ? 'the hook title on screen' : 'NO hook title at the top (' + Math.round(top * 100) + '% of the top band is white)') };
+            return { state: white ? 'ok' : 'fail', note: 'its own 1080×1920 sequence, ' + (white ? 'the hook title on screen' : 'NO hook title at the top (' + Math.round(top * 100) + '% of the top band is white; ' + where + ')') };
           });
         });
       });
@@ -18916,7 +18939,7 @@
       prog.textContent = 'Making the short' + (P.multi ? ' from ' + P.cams + ' cameras' : '') + (P.removed > 0.2 ? ' (' + P.removed.toFixed(1) + ' s of pauses cut)' : '') + '…';
       return runFfmpeg(ff, args, 900000).then(function (rr) {
         if (rr.error || (rr.code && rr.code !== 0)) throw new Error('the render failed: ' + String(rr.stderr || rr.error || '').slice(-200));
-        return { path: outPath, cams: P.cams, diag: P.diag, capPos: CPPodShort.fitCaptionPos(P.target, P.segs) };
+        return { path: outPath, cams: P.cams, diag: P.diag, capPos: CPPodShort.fitCaptionPos(P.target, P.segs), hookDrawn: !!P.hookPng };
       });
     });
   }
