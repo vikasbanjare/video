@@ -1325,6 +1325,27 @@ console.log('verbatim.js (Deepgram / AssemblyAI)');
   assert(so[0].needsReview === true && so[0].estimated === true && so[0].reason === 'r', 'snap keeps needsReview / estimated on the cut (a doubtful cut stays unticked)');
 }
 
+// ---- review list: fillers, words said twice, false starts ----
+{
+  let t = 0;
+  const say = (txt, gap) => txt.split(' ').map((w, i) => { const g = i === 0 && gap ? gap : 0.05; const o = { text: w, start: t + g, end: t + g + 0.2 }; t = o.end; return o; });
+  const st = CPTakes.findStumbles(say('I I I think we we should go very very fast you know you know it is 20 20 and alag alag'));
+  const by = x => st.filter(d => d.text === x)[0];
+  assert(by('I I I') && !by('I I I').needsReview && Math.abs(by('I I I').end - by('I I I').start - 0.5) < 0.02, 'a word said three times: the first two are the cut, ticked');
+  assert(by('we we') && !by('we we').needsReview, 'a small joining word said twice is ticked');
+  assert(by('you know you know') && !by('you know you know').needsReview, 'two words said twice are ticked');
+  assert(by('very very') && by('very very').needsReview && by('alag alag') && by('alag alag').needsReview, 'a double that may be on purpose is listed unticked');
+  assert(!st.some(d => /20/.test(d.text)), 'a number said twice is never listed');
+  t = 0;
+  const far = CPTakes.findStumbles(say('the').concat(say('the cat', 1.2)));
+  assert(far.length === 0, 'the same word after a long pause is not a stumble');
+  t = 0;
+  const two = CPTakes.findStumbles(say('main').map(w => Object.assign(w, { speaker: 'A' })).concat(say('main jaunga').map(w => Object.assign(w, { speaker: 'B' }))));
+  assert(two.length === 0, 'a word echoed by the other speaker is not a stumble');
+  const rv = CPTakes.reviewList([{ start: 0.1, end: 0.3, word: 'um' }, { start: 5, end: 5.2, word: 'uh' }], [{ start: 1, end: 1.2, text: 'I I', label: 'repeat' }], [{ start: 0, end: 0.5, text: 'so um I' }]);
+  assert(rv.length === 3 && rv[0].label === 'false_start' && rv[1].label === 'repeat' && rv[2].label === 'filler', 'review list: one row per kind, in time order; a filler inside a false start goes with it');
+  assert(rv.count.filler === 1 && rv.count.repeat === 1 && rv.count.false_start === 1, 'review list counts each kind');
+}
 // ---- audit, Nov 2026: logic fixes, each reproduced before its fix ----
 {
   // a retake cut never runs across a long wordless stretch

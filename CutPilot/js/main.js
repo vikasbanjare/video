@@ -3504,6 +3504,12 @@
           runAutoCleanAll();
           return;
         }
+        if (act === 'reels') {
+          // Podcast to Reels asked for the words: back to Shorts, and on with it
+          var ts = document.querySelector('.tab[data-tab="shorts"]'); if (ts) ts.click();
+          runReels();
+          return;
+        }
         var tb = document.querySelector('.tab[data-tab="captions"]'); if (tb) tb.click();
         showView('style');
         if (act === 'native') applyNative();
@@ -3516,8 +3522,10 @@
       // transcript" cancelled ⚡ Viral edit's captions mid-transcription)
       // the queued one-click caption action can't run — say so instead of
       // silently dropping it ("I clicked a style and nothing ever appeared")
+      state._pendingWas = state.pendingCaptionAction;
       state.pendingCaptionAction = null;
-      toast('⚠️ Couldn\'t get your words, so no captions were added — fix the transcription (see the message above), then click your style again.', true);
+      toast(state._pendingWas === 'reels' ? '⚠️ Couldn\'t get your words, so no shorts were made — fix the transcription (see the message above), then tap Make my reels again.'
+        : '⚠️ Couldn\'t get your words, so no captions were added — fix the transcription (see the message above), then click your style again.', true);
     }
   }
 
@@ -10523,6 +10531,7 @@
     else if (act === 'editstyle') applyEditableStyle();
     else if (act === 'viral') viralEdit();
     else if (act === 'magic' && $('btn-magic')) $('btn-magic').click();
+    else if (act === 'reels') runReels();
   }
   function ensureTranscriptThen(action) {
     if (state.transcript) {
@@ -10550,6 +10559,7 @@
         ? '📝 Getting your words first — I\'ll add the EDITABLE caption track automatically when it\'s done.'
         : action === 'autoclean'
           ? '✨ Listening to your video first — the clean-up continues by itself when it\'s done.'
+          : action === 'reels' ? '✨ Getting your words first — your reels are made automatically when it\'s done.'
           : '✨ Getting your words first — I\'ll add the captions automatically when it\'s done.');
       var tb = document.querySelector('.tab[data-tab="transcribe"]'); if (tb) tb.click();
       autoTranscribe();
@@ -17422,7 +17432,7 @@
                                : 'Transcribe your clip first (Transcribe tab) — I need the words to ' + what + '.';
   }
   function takeChip(label) {
-    return label === 'false_start' ? '⏮' : label === 'filler' ? '🗯'
+    return label === 'false_start' ? '⏮' : label === 'filler' ? '🗯' : label === 'repeat' ? '🔁'
          : label === 'dead_air' ? '💭' : label === 'tangent' ? '↗' : '✂';
   }
   /* The review list: every proposed cut has a tick box (on by default; an
@@ -17455,6 +17465,29 @@
     n.textContent = '⚠️ ' + state.takeNote;
     stats.appendChild(n);
   }
+  /* The review list's kinds (fillers, doubled words, false starts): one button
+     each, with its count — a tap ticks every row of that kind, or unticks them
+     when all are ticked. Shown when the list holds more than one kind. */
+  var TAKE_KINDS = [['filler', 'Fillers'], ['repeat', 'Said twice'], ['false_start', 'False starts']];
+  function takeKindRow(dels, list) {
+    var kinds = TAKE_KINDS.filter(function (k) { return dels.some(function (d) { return d.label === k[0]; }); });
+    if (kinds.length < 2 || !state.takeReview) return;
+    var row = document.createElement('div'); row.className = 'row tight take-kinds';
+    kinds.forEach(function (k) {
+      var mine = dels.filter(function (d) { return d.label === k[0]; });
+      var on = mine.filter(function (d) { return !d.skip; }).length;
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'chip-btn' + (on === mine.length ? ' on' : '');
+      b.textContent = takeChip(k[0]) + ' ' + k[1] + ' ' + on + '/' + mine.length;
+      b.title = on === mine.length ? 'Untick every one of these' : 'Tick every one of these';
+      b.addEventListener('click', function () {
+        var all = on === mine.length;
+        mine.forEach(function (d) { d.skip = all; });
+        renderTakes(dels);
+      });
+      row.appendChild(b);
+    });
+    list.appendChild(row);
+  }
   function renderTakes(dels) {
     var list = $('takes-list');
     $('takes-results').classList.remove('hidden');
@@ -17469,6 +17502,7 @@
     }
     dels.forEach(function (d) { if (d.skip == null) d.skip = !!d.needsReview; });
     takesStats(dels);
+    takeKindRow(dels, list);
     dels.forEach(function (d, i) {
       var item = document.createElement('div'); item.className = 'seg-item';
       var cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !d.skip;
@@ -17510,7 +17544,23 @@
   /* Show a take list for review, remembering the timeline it was made for.
      `note` is a warning shown with the list; `partial` = part of the timeline
      or transcript was not read, so an empty list does not mean "clean". */
-  function showTakeList(dels, guard, note, partial) {
+  function showTakeList(dels, guard, note, partial, review) {
+    // the list is drawn where it was asked for: under "Review fillers and repeats",
+    // or in its own place in the step-by-step drawer
+    var box = $('takes-results'), rv = $('rv-results');
+    if (box && rv) {
+      if (!showTakeList.home) showTakeList.home = { parent: box.parentNode, next: box.nextSibling };
+      if (review) { if (box.parentNode !== rv) rv.appendChild(box); }
+      else if (box.parentNode === rv) showTakeList.home.parent.insertBefore(box, showTakeList.home.next);
+    }
+    state.takeReview = !!review;
+    // the button says what it does for THIS list
+    var ab = $('btn-takes-apply');
+    if (ab) {
+      if (!ab.getAttribute('data-label')) ab.setAttribute('data-label', ab.textContent);
+      ab.textContent = review ? 'Cut the ticked ones (keeps a copy)' : ab.getAttribute('data-label');
+    }
+    if (box) box.classList.toggle('is-review', !!review);
     state.takeDeletes = dels;
     state.takeGuard = guard || null;
     state.takeNote = note || '';
@@ -17550,13 +17600,38 @@
       showTakeList(dels, cutGuardOf(src), estimatedNote(dels));
     });
   });
+  /* 🧹 Review fillers and repeats: every filler word, word said twice in a row
+     and false start, as ONE tick-list (CPTakes.reviewList). Nothing is cut until
+     the owner applies it; the same guarded cut as the retake list. */
+  function runReviewList() {
+    var words = takesGetWords();
+    if (!words || words.length < 6) return toast(takesNoWordsMsg('list fillers and repeats'), true);
+    var prog = $('takes-progress'); if (prog) { prog.classList.remove('hidden'); prog.textContent = 'Reading your words…'; }
+    return readCutSources().then(function (src) {
+      var fill = [];
+      try {
+        var fc = fillerCues();
+        if (!fc.why && typeof CPTranscript !== 'undefined') fill = CPTranscript.findFillerRanges(fc.cues, { extra: false, padding: 0.02 }).ranges;
+      } catch (eF) { fill = []; }
+      var takes = CPTakes.findRepeatedTakes(words, { minRun: 3, sim: 0.6, keep: 'best', people: takesPeople(words) }).deletes;
+      var rows = CPTakes.reviewList(fill, CPTakes.findStumbles(words), takes);
+      if (prog) prog.classList.add('hidden');
+      showTakeList(rows, cutGuardOf(src), estimatedNote(rows), false, true);
+      var c = rows.count || {};
+      if (rows.length) toast('Found ' + nOf(c.filler || 0, 'filler') + ', ' + nOf(c.repeat || 0, 'doubled word') + ' and ' + nOf(c.false_start || 0, 'false start') + '. Untick what to keep, then cut.');
+      else { $('takes-stats').textContent = 'No fillers, doubled words or false starts found.'; toast('Nothing to review — no fillers, doubled words or false starts found.'); }
+      try { var rc = $('rv-card'); if (rc && rc.scrollIntoView) rc.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (eS) {}
+      return rows;
+    });
+  }
+  if ($('btn-review-find')) $('btn-review-find').addEventListener('click', runReviewList);
   function applyTakes(safeCopy) {
     var dels = (state.takeDeletes || []).filter(function (d) { return !d.skip; });   // only the ticked rows
     if (!dels.length) return toast((state.takeDeletes || []).length ? 'Nothing is ticked — every cut is being kept.' : 'Nothing to remove.', true);
     var ranges = dels.map(function (d) { return { start: d.start, end: d.end }; });
     ranges = snapRangesToWords(ranges, state.transcriptWords);   // keep edges off mid-word
     var backup = safeCopy ? true : ($('tk-backup') ? $('tk-backup').checked : true);
-    var msg = 'Remove ' + ranges.length + ' repeated take' + (ranges.length > 1 ? 's' : '') + ' (ripple-delete)?' +
+    var msg = 'Remove ' + ranges.length + (state.takeReview ? ' ticked part' : ' repeated take') + (ranges.length > 1 ? 's' : '') + ' (ripple-delete)?' +
       (backup ? '\n\n✅ A backup of the sequence is made first.' : '\n\n⚠️ Backup is OFF — edits your live sequence.');
     if (!state._bigOk) {
       confirmInline(msg, 'Remove them', function (yes) {
@@ -17568,6 +17643,7 @@
     }
     var args = { ranges: ranges, closeGaps: true, backup: backup, dropFrame: !!settings.dropFrame };
     var g = state.takeGuard;   // the timeline this list was made for — the host refuses any other
+    var wasReview = !!state.takeReview;
     if (g) { args.expectSequenceId = g.sequenceId; args.expectSequenceName = g.sequenceName; args.expectFingerprint = g.fingerprint; }
     CPBridge.callHost('CP_razorRipple', args)
       .then(function (r) {
@@ -17581,7 +17657,7 @@
         if ($('takes-results')) $('takes-results').classList.add('hidden');
         var n = (r.cuts != null) ? r.cuts : removed.length;
         var secs = (r.removedSeconds != null) ? r.removedSeconds : removed.reduce(function (a, x) { return a + (x.end - x.start); }, 0);
-        markStepDone('silence'); toast('🎬 Removed ' + n + ' take' + (n === 1 ? '' : 's') + ' (' + secs.toFixed(1) + 's). Transcript auto-synced — run any other Auto-Edit step or add captions, no re-transcribe needed. ' + backupText(r));
+        markStepDone('silence'); toast('🎬 Removed ' + n + (wasReview ? ' part' : ' take') + (n === 1 ? '' : 's') + ' (' + secs.toFixed(1) + 's). Transcript auto-synced — run any other Auto-Edit step or add captions, no re-transcribe needed. ' + backupText(r));
       }).catch(function (e) { toast('Take cut failed: ' + e.message, true); });   // the list stays: nothing was cut
   }
   if ($('btn-takes-apply')) $('btn-takes-apply').addEventListener('click', function () { applyTakes(true); });
@@ -18468,7 +18544,7 @@
     if (row) row.classList.toggle('hidden', !!(on && !on.checked));
   }
   (function wireShortCapStyle() {
-    ['sh-len', 'sh-ratio', 'sh-mark-cam', 'sh-focus', 'sr-arrange'].forEach(function (id) { selectAsDropdown($(id)); });
+    ['sh-len', 'sh-ratio', 'sh-mark-cam', 'sh-focus', 'sr-arrange', 'reels-count'].forEach(function (id) { selectAsDropdown($(id)); });
     if ($('sh-cap-change')) $('sh-cap-change').addEventListener('click', function () {
       var pick = $('sh-cap-pick'); if (!pick) return;
       var open = pick.classList.contains('hidden');
@@ -19475,9 +19551,10 @@
       renderShorts(hl);
       toast(hl.length ? ('Found ' + hl.length + ' moment' + (hl.length === 1 ? '' : 's') + ' by their words' + why + ' — preview or make any of them.')
                       : 'No standout moments found' + why + '.', !hl.length);
+      return hl;
     }
     if (!cpKey()) return local(' (add your free key in Settings → Auto-transcribe for AI picks)');
-    processChunks(chunks, function (cs) {
+    return processChunks(chunks, function (cs) {
       var prompt = CPSmartEdit.buildHighlightPrompt(cs, { min: len.min, max: len.max, count: 6 });
       return aiChatRetry(prompt, { maxTokens: 2600 }).then(function (content) {
         return CPSmartEdit.parseHighlightResponse(content, cs, { min: len.min, max: len.max, all: segs, offset: segs.indexOf(cs[0]) });
@@ -19519,15 +19596,53 @@
         return ranked.slice(0, 12);
       });
     }).then(function (hl) {
-      if (!hl) return;
+      if (!hl) return [];
       hl = openingGate(hl);
       prog.classList.add('hidden');
       renderShorts(hl);
+      _foundMoments = hl;
       var span = segs.length ? spokenLength(segs[segs.length - 1].end - segs[0].start) : '';
       if (hl.length) toast('Found ' + hl.length + ' viral moment' + (hl.length === 1 ? '' : 's') + ' across the whole ' + span + (failedParts.length ? ' (' + failedParts.length + ' of ' + chunks.length + ' parts picked by their words — the AI did not answer for those)' : '') + ' — preview or make any of them.');
-    }).catch(function (e) { diag('shorts', 'AI moments failed: ' + (e && e.message)); local(' (the AI was not reachable: ' + aiErrText(e) + ')'); });
+      return hl;
+    }).catch(function (e) { diag('shorts', 'AI moments failed: ' + (e && e.message)); return local(' (the AI was not reachable: ' + aiErrText(e) + ')'); });
   }
+  var _foundMoments = null;
   if ($('btn-find-shorts')) $('btn-find-shorts').addEventListener('click', runHighlightFinder);
+  /* 🎬 Podcast to Reels — the whole road in one tap: the words (heard first when
+     there are none; the run carries on by itself), the best moments of the whole
+     video, then the best N made into shorts one after the other (Make all: each
+     its own timeline, framed, pauses cut, captions). A second tap stops it after
+     the short being made. The video itself is not changed. */
+  var _reelsBusy = false;
+  function runReels() {
+    var btn = $('btn-reels'), prog = $('reels-progress');
+    if (_batch) return makeAllShorts([]);                    // a second tap: stop after this short
+    if (_reelsBusy) { toast('Still finding your best moments — one moment.'); return Promise.resolve(null); }
+    if (!ensureTranscriptThen('reels')) return Promise.resolve(null);
+    function say(t) { if (prog) { prog.classList.toggle('hidden', !t); prog.textContent = t || ''; } }
+    _reelsBusy = true;
+    if (btn) btn.disabled = true;
+    say('Step 1 of 2: finding your best moments…');
+    return Promise.resolve().then(runHighlightFinder).then(function (list) {
+      list = Array.isArray(list) ? list : [];
+      if (!list.length) { say(''); return null; }
+      var want = parseInt(($('reels-count') || {}).value, 10) || 3, pick = list.slice(0, want);
+      say('Step 2 of 2: making ' + nOf(pick.length, 'short') + ' — tap again to stop.');
+      if (btn) { btn.disabled = false; btn.textContent = '■ Stop after this short'; }
+      _reelsBusy = false;
+      return makeAllShorts(pick).then(function (b) {
+        say(b ? 'Made ' + b.made + ' of ' + nOf(pick.length, 'short') + (b.failed ? ' — ' + b.failed + ' could not be made' : '') + '. Each is its own sequence in your project.' : '');
+        return b;
+      });
+    }).then(null, function (e) {
+      say(''); toast('Podcast to Reels stopped: ' + (e && e.message || e), true); return null;
+    }).then(function (r) {
+      _reelsBusy = false;
+      if (btn) { btn.disabled = false; btn.textContent = 'Make my reels'; }
+      return r;
+    });
+  }
+  if ($('btn-reels')) $('btn-reels').addEventListener('click', runReels);
   // test hooks for gates/shorts-finished.js
   try {
     window.CP_DEBUG_EXT = window.CP_DEBUG_EXT || {};

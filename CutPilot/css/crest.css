@@ -235,3 +235,14 @@ body:not(.theme-dark) .tpl-card:hover .tpl-thumb, body:not(.theme-dark) .tpl-car
 
 /* a message that would sit on the page's main button goes under the app bar (main.js toast) */
 .toast.at-top { top: calc(var(--bar-h) + 8px); bottom: auto; }
+
+/* review list: one button per kind (fillers / said twice / false starts) */
+.take-kinds { margin: 0 0 6px; flex-wrap: wrap; gap: 6px; }
+.take-kinds .chip-btn.on { background: var(--tint); color: var(--tint-ink); border-color: transparent; }
+#rv-results:empty { display: none; }
+#rv-results { margin-top: 10px; }
+#rv-results .card { margin: 0 0 8px; }
+/* the review list's rows: the whole phrase readable, two lines when it needs them */
+.is-review .seg-list { max-height: 300px; gap: 6px; }
+.is-review .seg-item { align-items: center; padding: 7px 9px; min-height: 0; flex: none; }
+.is-review .seg-item > span:last-child { flex: 1; min-width: 0; line-height: 1.35; white-space: normal; overflow-wrap: anywhere; }

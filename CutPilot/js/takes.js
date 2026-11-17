@@ -1359,6 +1359,74 @@
     out.restored = restored;
     return out;
   }
+  /* 🔁 Words said twice in a row: "I I think", "main main", "you know you know".
+     A stumble is the same 1–2 words again straight away (under 0.7 s apart, same
+     speaker); the EARLIER saying is the cut, the last one stays. Many doubles are
+     meant ("bahut bahut", "very very", "alag alag", "no no"): only small joining
+     words (I, the, to, main, ye, toh …) and two-word repeats start ticked — every
+     other double is listed unticked, to be heard first. Numbers are never listed.
+     words: [{start,end,text,speaker?,estimated?}] → [{start,end,text,label:'repeat',reason,needsReview?}] */
+  var STUMBLE = wordSet(['i', 'a', 'an', 'the', 'to', 'of', 'in', 'on', 'at', 'and', 'but', 'so', 'is', 'it', 'its', "it's", 'we', 'you', 'he', 'she', 'they',
+    'my', 'your', 'this', 'that', 'if', 'for', 'with', 'was', 'are', 'be', 'can', 'will', "i'm", "it's", 'what', 'when', 'because',
+    'main', 'mai', 'mein', 'me', 'hum', 'ham', 'ye', 'yeh', 'wo', 'woh', 'vo', 'toh', 'to', 'ki', 'ke', 'ka', 'ko', 'se', 'aur', 'par', 'pe', 'jo', 'ek', 'is', 'us', 'agar', 'lekin', 'kyunki', 'jab',
+    'मैं', 'हम', 'ये', 'यह', 'वो', 'वह', 'तो', 'कि', 'के', 'का', 'की', 'को', 'से', 'और', 'पर', 'पे', 'जो', 'एक', 'इस', 'उस', 'अगर', 'लेकिन', 'क्योंकि', 'जब']);
+  function findStumbles(words, opts) {
+    opts = opts || {};
+    var GAP = opts.gap != null ? opts.gap : 0.7, W = [], out = [], i, n;
+    (words || []).forEach(function (w) { var t = norm(w.text); if (t) W.push({ t: t, w: w }); });
+    function same(a, b) { return a.t === b.t && (a.w.speaker == null || b.w.speaker == null || a.w.speaker === b.w.speaker); }
+    for (i = 0; i < W.length; ) {
+      var hit = 0;
+      for (n = 2; n >= 1 && !hit; n--) {
+        if (i + 2 * n > W.length) continue;
+        var ok = true;
+        for (var k = 0; k < n && ok; k++) if (!same(W[i + k], W[i + n + k]) || /^\d/.test(W[i + k].t)) ok = false;
+        if (n === 2 && ok && W[i].t === W[i + 1].t) ok = false;                 // "no no no no": one word, counted below
+        if (ok && W[i + n].w.start - W[i + n - 1].w.end > GAP) ok = false;      // said again later: not a stumble
+        if (ok) hit = n;
+      }
+      if (!hit) { i++; continue; }
+      // every extra saying but the last ("I I I think" → the first two)
+      var reps = 1;
+      while (i + (reps + 1) * hit + hit <= W.length) {
+        var more = true;
+        for (var q = 0; q < hit && more; q++) if (!same(W[i + q], W[i + (reps + 1) * hit + q])) more = false;
+        if (!more || W[i + (reps + 1) * hit].w.start - W[i + (reps + 1) * hit - 1].w.end > GAP) break;
+        reps++;
+      }
+      var first = W[i].w, lastCut = W[i + reps * hit - 1].w, keepW = W[i + reps * hit].w, txt = [];
+      for (var x = i; x < i + (reps + 1) * hit; x++) txt.push(W[x].w.text);
+      var sure = hit === 2 || !!STUMBLE[W[i].t];
+      var est = !realStart(first) || !!keepW.estimated;
+      var d = { start: first.start, end: Math.max(lastCut.end, Math.min(keepW.start, lastCut.end + 0.25)), text: txt.join(' '), label: 'repeat',
+        reason: sure ? 'said twice in a row' : 'said twice — may be on purpose' };
+      if (!sure || est) d.needsReview = true;
+      if (est) d.estimated = true;
+      if (d.end - d.start >= 0.05) out.push(d);
+      i += reps * hit;
+    }
+    return out;
+  }
+  /* 🧹 One list to review: filler words, words said twice, and false starts —
+     each its own row (never merged across kinds, so one can be kept and its
+     neighbour cut). A row that sits inside a bigger one is dropped (a filler
+     inside a false start goes with it). → rows sorted by time, each with .label
+     'filler' | 'repeat' | 'false_start' and .count per kind on the array. */
+  function reviewList(fillers, stumbles, takes) {
+    var rows = [];
+    (takes || []).forEach(function (d) { var o = {}; for (var k in d) if (Object.prototype.hasOwnProperty.call(d, k)) o[k] = d[k]; if (!o.label) o.label = 'false_start'; if (!o.reason) o.reason = 'started again'; rows.push(o); });
+    function inside(r) { return rows.some(function (b) { return b !== r && b.start <= r.start + 0.03 && b.end >= r.end - 0.03; }); }
+    (stumbles || []).forEach(function (d) { if (!inside(d)) rows.push(d); });
+    (fillers || []).forEach(function (f) {
+      var d = { start: f.start, end: f.end, text: f.word || f.text || '', label: 'filler', reason: 'filler word' };
+      if (d.end > d.start && !inside(d)) rows.push(d);
+    });
+    rows.sort(function (a, b) { return a.start - b.start; });
+    var count = { filler: 0, repeat: 0, false_start: 0 };
+    rows.forEach(function (r) { count[r.label] = (count[r.label] || 0) + 1; });
+    rows.count = count;
+    return rows;
+  }
   /* Cuts minus what the attempts keep as takes (only "not in your script" cuts give way). */
   function sparingKeeps(deletes, keeps) {
     var out = [];
@@ -1381,7 +1449,7 @@
 
   return {
     scriptAttempts: scriptAttempts, sparingKeeps: sparingKeeps, keepEveryLine: keepEveryLine,
-    scriptKeep: scriptKeep,
+    scriptKeep: scriptKeep, findStumbles: findStumbles, reviewList: reviewList,
     scriptTakes: scriptTakes,
     findRepeatedTakes: findRepeatedTakes, flatten: flatten, tidyDeletes: tidyDeletes,
     phraseSim: phraseSim, phraseContain: phraseContain, isNearPrefix: isNearPrefix,

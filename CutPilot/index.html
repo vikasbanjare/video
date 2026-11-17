@@ -932,6 +932,16 @@
       <div class="info-pop hidden" id="ac-music-info">Pulse listens to <b>every mic</b> on your timeline and only cuts where <b>everyone</b> is quiet. Name your music track <b>Music</b> (or BGM) in Premiere and Pulse leaves it out of that; if a track only sounds like music, Pulse asks you first. Dead air is removed even without a transcript; transcribe first so it can also remove repeated takes. A backup of your sequence is always made first.</div>
     </div>
 
+    <!-- 🧹 one list of every filler, doubled word and false start: tick, play, cut -->
+    <div class="card" id="rv-card">
+      <div class="step-head"><span class="step-title">Review fillers and repeats</span>
+        <button class="info" type="button" data-info="rv-info" aria-label="What it lists">ⓘ</button></div>
+      <p class="hint">Lists every “um”, doubled word and false start. You pick.</p>
+      <div class="info-pop hidden" id="rv-info">Pulse reads your words and lists three things: <b>filler words</b> (um, uh), <b>words said twice in a row</b> (“I I think”) and <b>false starts</b> (a line begun, then begun again). Play any row, untick what you want to keep, then cut the rest. Doubles that may be on purpose (“bahut bahut”) start unticked. A backup of your sequence is made first. Needs your words (Transcribe).</div>
+      <button id="btn-review-find" class="hero-btn alt" type="button">Find fillers and repeats</button>
+      <div id="rv-results"></div>
+    </div>
+
     <!-- everything below the ONE button lives behind this drawer — one primary
          action per screen; the step-by-step tools are there when wanted -->
     <details class="advanced" style="margin:2px 0 10px">
@@ -1150,6 +1160,25 @@
 
   <!-- =============================== SHORTS ============================= -->
   <section id="tab-shorts" class="tab-page">
+    <!-- 🎬 Podcast to Reels: words → best moments → finished shorts, in one tap -->
+    <div class="card accent" id="reels-card">
+      <div class="step-head"><span class="step-title">Podcast to Reels</span>
+        <button class="info" type="button" data-info="reels-info" aria-label="What it does">ⓘ</button></div>
+      <p class="hint">One tap: finds your best moments and makes the shorts.</p>
+      <div class="info-pop hidden" id="reels-info">Pulse gets your words if it has none yet, finds the strongest moments of the whole video, and turns the best ones into shorts — each on its own new timeline, framed on whoever talks, pauses cut, captions on. It uses the length and the look set below. Your video is not changed. Tap again to stop after the short being made.</div>
+      <label>How many shorts
+        <select id="reels-count">
+          <option value="3" selected>Best 3</option>
+          <option value="5">Best 5</option>
+          <option value="8">Best 8</option>
+          <option value="99">Every moment found</option>
+        </select>
+      </label>
+      <div class="page-actions">
+        <button id="btn-reels" class="hero-btn" type="button">Make my reels</button>
+        <div id="reels-progress" class="progress hidden"></div>
+      </div>
+    </div>
     <div class="card">
       <div class="step-head"><span class="step-title">Viral Shorts</span>
         <button class="info" type="button" data-info="sh-info" aria-label="How it works">ⓘ</button></div>
