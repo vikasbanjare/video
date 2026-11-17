@@ -578,7 +578,7 @@
      prints each line's time beside it, a time "m:ss" / "h:mm:ss": that is the
      line playing then (parseInt("0:20") read it as line 0). */
   function hlIndex(v, segs, isEnd) {
-    var m = typeof v === 'string' && /^\s*(?:(\d+):)?(\d{1,2}):(\d{2})(?:\.\d+)?\s*$/.exec(v);
+    var m = typeof v === 'string' && /^\s*(?:(\d+):)?(\d{1,3}):(\d{2})(?:\.\d+)?\s*$/.exec(v);   // minutes run past 99 on a long podcast ("125:07")
     if (m) {
       var t = (+(m[1] || 0)) * 3600 + (+m[2]) * 60 + (+m[3]), k = -1;
       for (var j = 0; j < segs.length; j++) { if (+segs[j].start <= t + 1e-6) k = j; else break; }

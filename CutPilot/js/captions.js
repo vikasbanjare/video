@@ -72,7 +72,8 @@
     for (var i = 0; i < cues.length; i++) {
       out.push(String(i + 1));
       out.push(secondsToSrtTime(cues[i].start) + ' --> ' + secondsToSrtTime(cues[i].end));
-      out.push(cues[i].text);
+      // a blank line ends a cue in SRT: one inside the text cut the cue short when read back
+      out.push(String(cues[i].text == null ? '' : cues[i].text).replace(/\n[ \t]*(?=\n)/g, ''));
       out.push('');
     }
     return out.join('\n');
@@ -206,10 +207,16 @@
 
   /* Light profanity censor — keep the first letter, star the rest, preserving
      the original word's length so timing/animation is unaffected. */
+  /* A word list is looked up with the caption's own words, and a plain {} also
+     answers for "constructor", "toString", "valueOf"…: with Hide swear words on,
+     "constructor" was starred out; it was always a highlight word; and it broke
+     the sentence-end rule (found by audit). These maps inherit nothing. */
+  function _bareMap(o) { var b = Object.create(null); for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) b[k] = o[k]; return b; }
   var PROFANITY = {
     fuck: 1, shit: 1, bitch: 1, asshole: 1, bastard: 1, dick: 1, cunt: 1,
     pussy: 1, slut: 1, whore: 1, damn: 1, crap: 1, fucking: 1, motherfucker: 1
   };
+  PROFANITY = _bareMap(PROFANITY);   // no inherited keys: "constructor" is a word, not Object's
   // Hindi / Hinglish swear words too (a Hindi podcast's gaalis went through
   // uncensored): the common ones, in English letters and in Devanagari
   ['chutiya', 'chutiye', 'chutia', 'bhenchod', 'behenchod', 'bhenchodd', 'madarchod', 'maderchod', 'mc', 'bc', 'bsdk', 'bhosdike',
@@ -497,7 +504,7 @@
   // Urdu ۔ — without these, Hindi/Hinglish transcripts had NO sentence breaks
   // and were chopped at arbitrary word counts instead.
   var _SOFT_AFTER   = /[,;:—–]["'»)\]”’]?$/;  // , ; : — – → good to break AFTER
-  function _set(s) { var o = {}; s.split(' ').forEach(function (w) { if (w) o[w] = 1; }); return o; }
+  function _set(s) { var o = Object.create(null); s.split(' ').forEach(function (w) { if (w) o[w] = 1; }); return o; }
   // Words a new caption (or a new line) reads naturally when they LEAD it:
   // English joiners and prepositions, and the Hindi/Hinglish joiners
   // (aur = and, lekin/magar = but, ya = or, kyunki = because, toh/phir = then,
@@ -525,7 +532,7 @@
   var _GENITIVE = _set('का की के ka ki ke');
   // A few Hinglish verb forms that "the" (थे) follows as an auxiliary.
   var _HI_THE = /(te|ti|ta|ye|ae|aye|rahe|gaye|hue|baithe|kar|liye|diye|kiye)$/;
-  var _ABBR = _set('mr mrs ms dr st vs jr sr prof sh smt shri');
+  var _ABBR = _set('mr mrs ms dr st vs jr sr prof sh smt shri rs no nos etc approx inc ltd co pvt');
   /* The bare form of a word for the lists above: lower case, edge punctuation
      and dandas off (Devanagari letters and signs stay). */
   function _bareWord(t) { return String(t == null ? '' : t).toLowerCase().replace(/[^a-z0-9'ऀ-ॣ०-ॿ]/g, ''); }
@@ -540,6 +547,7 @@
     var core = s.replace(/\.+$/, '');
     if (_ABBR[core.toLowerCase()]) return false;
     if (/^([A-Za-z]\.)*[A-Za-z]$/.test(core) && /[A-Z]/.test(core)) return false;   // U.S. / A.
+    if (/^([a-z]\.)+[a-z]$/.test(core)) return false;                                // p.m. / e.g. / i.e.
     return true;
   }
   /* "the" is the Hinglish auxiliary थे after a verb form ("kar rahe the"),
@@ -619,7 +627,7 @@
   function visLen(s) {
     s = String(s == null ? '' : s);
     if (!/[^\x00-\x7F]/.test(s)) return s.length;           // plain ASCII: one letter a character
-    if (_visMemo.hasOwnProperty(s)) return _visMemo[s];     // a podcast repeats its words
+    if (Object.prototype.hasOwnProperty.call(_visMemo, s)) return _visMemo[s];     // a podcast repeats its words
     var g = graphemes(s), n = 0;
     for (var i = 0; i < g.length; i++) n += /[ऀ-ॿ]/.test(g[i]) ? 1.1 : 1;
     if (_visCount++ > 20000) { _visMemo = {}; _visCount = 0; }
@@ -3105,7 +3113,7 @@
   });
   /* The installed Mac face that stands in for a Google face on the timeline
      (editable captions), or null. */
-  function timelineFace(family) { return FONT_SAFE.hasOwnProperty(family) ? FONT_SAFE[family] : null; }
+  function timelineFace(family) { return Object.prototype.hasOwnProperty.call(FONT_SAFE, family) ? FONT_SAFE[family] : null; }
   /* Faces that ship with macOS. The panel's installed-font scan skips font
      files over 8 MB, and some macOS system collections are big, so on a Mac
      "not found by the scan" never means "not installed" for these. */
@@ -3552,12 +3560,14 @@
     limited: 1, secret: 1, proven: 1, instantly: 1, guaranteed: 1, never: 1,
     best: 1, viral: 1, money: 1, growth: 1, results: 1, win: 1, stop: 1, start: 1
   };
+  CTA_WORDS = _bareMap(CTA_WORDS);   // no inherited keys: "constructor" is a word, not Object's
   var STOP_WORDS = {
     the: 1, a: 1, an: 1, and: 1, or: 1, but: 1, of: 1, to: 1, in: 1, on: 1,
     for: 1, is: 1, are: 1, was: 1, it: 1, this: 1, that: 1, with: 1, as: 1,
     at: 1, by: 1, be: 1, you: 1, your: 1, i: 1, we: 1, they: 1, he: 1, she: 1,
     my: 1, me: 1, so: 1, if: 1, do: 1, not: 1, can: 1, will: 1, just: 1
   };
+  STOP_WORDS = _bareMap(STOP_WORDS);   // no inherited keys: "constructor" is a word, not Object's
 
   function _clean(w) { return String(w).replace(/[^A-Za-z0-9$%']/g, ''); }
 
@@ -3570,6 +3580,7 @@
     free: 1, ai: 1, stocks: 1, growth: 1, rich: 1, viral: 1, proven: 1, huge: 1,
     instantly: 1, guaranteed: 1, results: 1, win: 1, stop: 1, now: 1
   };
+  VIRAL_WORDS = _bareMap(VIRAL_WORDS);   // no inherited keys: "constructor" is a word, not Object's
   /* Optional auto-emoji after a keyword (opt-in, "✨ Auto-emoji"). */
   var EMOJI_MAP = {
     money: '💰', cash: '💰', profit: '📈', growth: '📈', loss: '📉', stock: '📊',
@@ -3577,6 +3588,7 @@
     idea: '💡', time: '⏰', fire: '🔥', love: '❤️', win: '🏆', million: '💸',
     crore: '💸', target: '🎯', up: '⬆️', down: '⬇️', best: '⭐'
   };
+  EMOJI_MAP = _bareMap(EMOJI_MAP);   // no inherited keys: "constructor" is a word, not Object's
   /* ✨ Auto-emoji: ONE fitting emoji for a caption (or a transcript line) —
      the first of these that its words match. English, Hinglish and Hindi.
      (The Premiere-graphics paths and the Pulse-rendered captions share it, so
@@ -3639,7 +3651,7 @@
     // punchline captions ("tech collapsed") read as one unit, not one big word
     if (opts.phrase) {
       var one = {}, ko;
-      for (ko in opts) if (opts.hasOwnProperty(ko)) one[ko] = opts[ko];
+      for (ko in opts) if (Object.prototype.hasOwnProperty.call(opts, ko)) one[ko] = opts[ko];
       one.phrase = false;
       var fl = markKeywords(words, one), any = false, q;
       for (q = 0; q < fl.length; q++) if (fl[q]) any = true;
@@ -3701,6 +3713,7 @@
     just: 1, very: 1, stuff: 1, things: 1, thing: 1, gonna: 1, wanna: 1, gotta: 1,
     today: 1, also: 1, then: 1, there: 1, here: 1, this: 1, that: 1, these: 1, those: 1
   };
+  FILLER_WORDS = _bareMap(FILLER_WORDS);   // no inherited keys: "constructor" is a word, not Object's
   /*
    * Salience score for a single word (0 = never a keyword). Favours nouns/proper
    * nouns, numbers/money, named CTAs/power-words and TF-IDF-salient words; longer
@@ -3907,7 +3920,7 @@
     var o = {}, k, lists = [_POSTPOS, _AUX, _CONJ, _BAD_END, _HI_MARK, _GENITIVE,
       _set('bhi hi yahi wahi kuch sab sabse ek do jaisa jaise waisa itna utna bas bilkul sach kaafi abhi phir yeh woh ye wo is us in un ham main mera meri mere tera teri tere apna apni apne unka unki unke iska iski iske uska uski uske agar jab tab kab kaise kyun kya kaun zyada ' +
            'भी ही यही वही कुछ सब सबसे एक जैसा जैसे बस अभी यह वह ये वो इस उस मैं मेरा मेरी मेरे हम आप तुम अपना अपनी अपने उनका उनकी उनके इसका इसकी इसके अगर जब तब कब कैसे क्यों क्या कौन')];
-    for (var i = 0; i < lists.length; i++) for (k in lists[i]) if (lists[i].hasOwnProperty(k)) o[k] = 1;
+    for (var i = 0; i < lists.length; i++) for (k in lists[i]) if (Object.prototype.hasOwnProperty.call(lists[i], k)) o[k] = 1;
     return o;
   })();
   function textContext(words) {

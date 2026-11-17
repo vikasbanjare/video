@@ -78,10 +78,21 @@
       .sort(function (a, b) { return a.start - b.start; });
     if (!w.length) return { segments: [], words: [], duration: 0, removed: 0 };
     if (o.tight === false) { maxGap = Infinity; }
+    // where the "um"s sat: one between two kept words is cut out even when the
+    // hole it leaves is shorter than a pause worth cutting (an "um" of up to
+    // 0.3 s stayed audible in the short, with no caption under it; found by audit)
+    var ums = (words || []).filter(function (x) { return x && isHesitation(x.text) && +x.end > +x.start; })
+      .map(function (x) { return { start: +x.start, end: +x.end }; });
+    function umBetween(a, b) { for (var u = 0; u < ums.length; u++) if (ums[u].start >= a - 0.001 && ums[u].end <= b + 0.001) return ums[u]; return null; }
     var segs = [], cur = { start: Math.max(0, w[0].start - lead), end: w[0].end };
     for (var i = 1; i < w.length; i++) {
       var gap = w[i].start - cur.end;
-      if (gap > maxGap) {
+      var um = (o.tight === false) ? null : umBetween(cur.end, w[i].start);
+      if (um && gap <= maxGap) {
+        cur.end = Math.min(cur.end + keepGap / 2, um.start);
+        segs.push(cur);
+        cur = { start: Math.max(um.end, w[i].start - keepGap / 2), end: w[i].end };
+      } else if (gap > maxGap) {
         cur.end = cur.end + keepGap / 2;
         segs.push(cur);
         cur = { start: w[i].start - keepGap / 2, end: w[i].end };

@@ -1319,6 +1319,43 @@ console.log('verbatim.js (Deepgram / AssemblyAI)');
   assert(snapped[0].text === 'x', 'snap carries the label/text through');
   const noSnap = CPSilence.snapCutsToSilence([{ start: 10, end: 12 }], [{ start: 1, end: 2 }], { window: 0.25 });
   assert(close(noSnap[0].start, 10.02, 0.001), 'snap leaves a cut alone (just pad) when no silence is within the window');
+  // audit, Nov 2026: a cut's end lands where speech RESUMES, never on the start of the next pause
+  const so = CPSilence.snapCutsToSilence([{ start: 10, end: 15.0, needsReview: true, estimated: true, reason: 'r' }], [{ start: 14.4, end: 14.78 }, { start: 15.14, end: 15.5 }]);
+  assert(so[0].end < 15.0, 'snap: the kept take\'s short first word (15.00–15.14) is not cut — the end goes to 14.76, not 15.12 (' + so[0].end + ')');
+  assert(so[0].needsReview === true && so[0].estimated === true && so[0].reason === 'r', 'snap keeps needsReview / estimated on the cut (a doubtful cut stays unticked)');
+}
+
+// ---- audit, Nov 2026: logic fixes, each reproduced before its fix ----
+{
+  // a retake cut never runs across a long wordless stretch
+  const wds = (txt, at) => txt.split(' ').map((w, i) => ({ text: w, start: at + i * 0.35, end: at + i * 0.35 + 0.3 }));
+  const rt = CPTakes.findRepeatedTakes(wds('so the main reason people lose money is leverage', 0).concat(wds('so the main reason people lose money is leverage and greed', 20)), { sim: 0.5, minRun: 3 });
+  assert(rt.deletes.length >= 1 && rt.deletes.every(d => d.end - d.start < 6), 'retake cut stops within a second of the take\'s last word — 17 s with no words after it are not cut with it (' + JSON.stringify(rt.deletes.map(d => [d.start, +d.end.toFixed(2)])) + ')');
+  // words the script does not have stay in the caption
+  const SA = require(path.join(__dirname, '..', 'js', 'scriptalign.js'));
+  const ad = SA.alignToScript([{ start: 0, end: 2, text: 'market kal bahut zyada gir gaya' }, { start: 2, end: 5, text: 'aur honestly mujhe laga sab khatam lekin recovery aa gayi' }], 'market kal bahut zyada gir gaya aur recovery aa gayi');
+  assert(/honestly mujhe laga sab khatam lekin/.test(ad.cues[1].text), 'script fix keeps words that were said but are not in the script (' + ad.cues[1].text + ')');
+  const hd = SA.alignToScript([{ start: 0, end: 3, text: 'IPO kya hai aur kaise kaam karta hai' }], 'IPO: kya hai aur kaise kaam karta hai');
+  assert(/^IPO/.test(hd.cues[0].text), 'a spoken heading ("IPO: …") is not dropped as a speaker label (' + hd.cues[0].text + ')');
+  const spk = SA.alignToScript([{ start: 0, end: 3, text: 'namaste doston aaj hum baat karenge' }], 'VIKAS: namaste doston\nVIKAS: aaj hum baat karenge');
+  assert(!/VIKAS/.test(spk.cues[0].text), 'a real speaker label (it starts two lines) is still left out (' + spk.cues[0].text + ')');
+  // "constructor" is an ordinary word
+  assert(CPCaptions.censorWord('constructor') === 'constructor', 'Hide swear words leaves "constructor" alone');
+  assert(CPCaptions.isSentenceEnd('constructor.') === true, '"constructor." ends a sentence like any word');
+  const ks = CPTranscript.keywordScores ? CPTranscript.keywordScores([{ text: 'the constructor builds objects' }, { text: 'constructor pattern builds objects' }, { text: 'objects everywhere' }]) : null;
+  if (ks) assert(ks.every(k => typeof k.tf === 'number' && isFinite(k.score)), 'keyword scores are numbers for every word, "constructor" included');
+  // "Rs." / "p.m." do not end a sentence
+  assert(CPCaptions.isSentenceEnd('Rs.') === false && CPCaptions.isSentenceEnd('p.m.') === false && CPCaptions.isSentenceEnd('etc.') === false, '"Rs." / "p.m." / "etc." do not end a sentence');
+  // a short "um" between two words is cut out of a short
+  const CPShorts = require(path.join(__dirname, '..', 'js', 'shorts.js'));
+  const tp = CPShorts.tightenPlan([{ text: 'So', start: 0, end: 0.3 }, { text: 'the', start: 0.32, end: 0.5 }, { text: 'um', start: 0.52, end: 0.8 }, { text: 'market', start: 0.82, end: 1.3 }]);
+  assert(tp.segments.length === 2 && tp.segments[0].end <= 0.521 && tp.segments[1].start >= 0.799, 'a 0.28 s "um" between two words is cut from the short (' + JSON.stringify(tp.segments) + ')');
+  // speaker survives word refinement
+  const rw = CPAlign.refineWords([{ start: 0, end: 0.4, text: 'haan', speaker: 0 }, { start: 0.4, end: 0.9, text: 'bilkul', speaker: 1 }], null, {});
+  assert(rw[0].speaker === 0 && rw[1].speaker === 1, 'refineWords keeps each word\'s speaker');
+  // SRT round trip with a blank line inside a cue
+  const rtSrt = CPCaptions.parseSRT(CPCaptions.toSRT([{ start: 0, end: 1, text: 'line one\n\nline three' }, { start: 1, end: 2, text: 'x' }]));
+  assert(rtSrt.length === 2 && /line three/.test(rtSrt[0].text), 'a blank line inside a caption does not cut it short when saved and read back');
 }
 
 // --------------------------------------------- transcript: filler removal ----

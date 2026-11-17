@@ -114,7 +114,7 @@
     'ट': 't', 'ठ': 't', 'ड': 't', 'ढ': 't', 'ण': 'n', 'त': 't', 'थ': 't', 'द': 't', 'ध': 't', 'न': 'n',
     'प': 'p', 'फ': 'p', 'ब': 'p', 'भ': 'p', 'म': 'm', 'र': 'r', 'ल': 'l', 'ळ': 'l', 'व': 'w',
     'श': 's', 'ष': 's', 'स': 's', 'ं': 'n', 'ँ': 'n' };
-  var _sk = {};
+  var _sk = Object.create(null);
   function skel(t) {
     if (_sk[t] != null) return _sk[t];
     var s = '', i;
@@ -546,7 +546,12 @@
        estimated word times is still listed, but flagged: the owner hears it
        (▶) before it is ticked — it could clip a word or leave half of one. */
     function cutOf(idx, reason) {
-      var d = { start: startOf(idx), end: nextStart(idx), text: pText(phrases[idx]), reason: reason };
+      // The cut runs to the next phrase, but never more than a second past this
+      // take's last word: with no words for 17 s after it (a clip played, a
+      // chart, laughter, a music sting) all 17 s went with the retake (found by
+      // audit). A long pause after a take is the silence pass's to judge.
+      var lastW = phrases[idx][phrases[idx].length - 1];
+      var d = { start: startOf(idx), end: Math.min(nextStart(idx), Math.max(lastW.end, startOf(idx)) + 1.0), text: pText(phrases[idx]), reason: reason };
       var endOk = (idx + 1 < P) ? realStart(phrases[idx + 1][0]) : realEnd(phrases[idx][phrases[idx].length - 1]);
       if (!realStart(phrases[idx][0]) || !endOk) { d.estimated = true; d.needsReview = true; }
       return d;

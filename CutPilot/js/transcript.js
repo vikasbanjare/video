@@ -362,9 +362,9 @@
 
     var docs = (cues || []).map(function (c) { return tokenize(c.text); });
     var N = docs.length || 1;
-    var tf = {}, df = {};
+    var tf = Object.create(null), df = Object.create(null);   // "constructor" is a word here
     for (var d = 0; d < docs.length; d++) {
-      var seen = {};
+      var seen = Object.create(null);
       for (var i = 0; i < docs[d].length; i++) {
         var w = docs[d][i];
         var isNum = /^[0-9]/.test(w);

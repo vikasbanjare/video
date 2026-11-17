@@ -138,7 +138,11 @@
     opts = opts || {};
     if (!words || words.length < 1) return words ? words.slice() : [];
     var w = words.map(function (x) {
-      return { start: +x.start || 0, end: (x.end != null ? +x.end : (+x.start || 0)), text: x.text, conf: x.conf };
+      var o = { start: +x.start || 0, end: (x.end != null ? +x.end : (+x.start || 0)), text: x.text, conf: x.conf };
+      // who said it travels with the word (it was dropped here, and with it a
+      // new caption on each change of speaker and the speaker colours; found by audit)
+      if (x.speaker != null) o.speaker = x.speaker;
+      return o;
     });
     // a caller refining many pieces of one recording passes the runs it already
     // found (opts.runs): speechRuns sorts the whole envelope each time

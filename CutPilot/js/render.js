@@ -241,6 +241,7 @@
     free: 1, ai: 1, stocks: 1, growth: 1, rich: 1, viral: 1, proven: 1, huge: 1,
     instantly: 1, guaranteed: 1, results: 1, win: 1, stop: 1, now: 1
   };
+  VIRAL_WORDS = (function (o) { var b = Object.create(null); for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) b[k] = o[k]; return b; })(VIRAL_WORDS);   // "constructor" is a word, not Object's
   /* Extra size multiplier for a word: viral words pop biggest, long words a bit. */
   function wordScale(word) {
     var w = String(word).toLowerCase().replace(/[^a-z0-9'\u0900-\u0963\u0966-\u097f]/g, '');
@@ -614,12 +615,12 @@
     var memo = {};
     return function (words, how) {
       var o = {}, k;
-      for (k in (opts || {})) if (opts.hasOwnProperty(k)) o[k] = opts[k];
-      for (k in (how || {})) if (how.hasOwnProperty(k)) o[k] = how[k];
+      for (k in (opts || {})) if (Object.prototype.hasOwnProperty.call(opts, k)) o[k] = opts[k];
+      for (k in (how || {})) if (Object.prototype.hasOwnProperty.call(how, k)) o[k] = how[k];
       var lit = [];
       if (o.highlightSet) for (var i = 0; i < (words || []).length; i++) if (o.highlightSet[i]) lit.push(i);
       var key = (o.wordSync === false ? 's' : 'w') + lit.join(',') + '\u0002' + (words || []).join('\u0001');
-      if (!memo.hasOwnProperty(key)) memo[key] = wordsFit(style, W, H, words, o);
+      if (!Object.prototype.hasOwnProperty.call(memo, key)) memo[key] = wordsFit(style, W, H, words, o);
       return memo[key];
     };
   }
@@ -832,7 +833,7 @@
     // (a brand word may be Hindi: Devanagari letters count, dandas do not —
     // matching Latin letters only made every Hindi brand word match nothing)
     function bareWord(w) { return String(w).toLowerCase().replace(/[^a-z0-9'\u0900-\u0963\u0966-\u097F]/g, ''); }
-    var brandSet = {};
+    var brandSet = Object.create(null);
     // a brand of several words ("Zerodha Kite") colours each of its words:
     // squashed to "zerodhakite" it matched no word of a caption, ever
     if (style.brandWords) for (var bwI = 0; bwI < style.brandWords.length; bwI++) {

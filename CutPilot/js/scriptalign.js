@@ -48,15 +48,29 @@
   /* Split a script into words, dropping speaker labels ("VIKAS:"), stage
      directions ("[laughs]", "(pause)") and blank lines — the things a person
      writes but never says. */
-  function scriptWords(text) {
+  function scriptWords(text, said) {
     var t = String(text == null ? '' : text);
     t = t.replace(/\[[^\]]*\]/g, ' ').replace(/\([^)]*\)/g, ' ');
     var lines = t.split(/\r?\n/), out = [];
+    // "VIKAS:" at the start of a line is a speaker label; "IPO: kya hai…" is a
+    // heading the speaker SAYS, and its first word was dropped (found by audit).
+    // A label is a speaker when it is a known role, has two or more words
+    // ("SPEAKER 1"), or starts more than one line (speakers come back). A lone
+    // one-word label is a speaker too UNLESS the recording says that word
+    // (`said`: the transcript's words, when the caller has them).
+    var LABEL = /^\s*([A-Z][A-Z0-9 _.'-]{1,24}):\s*/, labelN = Object.create(null), lm;
+    for (var li = 0; li < lines.length; li++) { lm = LABEL.exec(lines[li]); if (lm) labelN[lm[1]] = (labelN[lm[1]] || 0) + 1; }
+    function isSpeaker(lab) {
+      if (labelN[lab] > 1 || /\s/.test(lab.replace(/^\s+|\s+$/g, '')) ||
+        /^(HOST|GUEST|SPEAKER|ANCHOR|INTERVIEWER|INTERVIEWEE|NARRATOR|VO|V\.O\.|Q|A|ME|YOU)\d*$/.test(lab)) return true;
+      return !(said && said[norm(lab)]);
+    }
     for (var i = 0; i < lines.length; i++) {
       var ln = lines[i];
       if (/^\s*\d+\s*$/.test(ln)) continue;                       // SRT index line
       if (/-->/.test(ln)) continue;                               // SRT timing line
-      ln = ln.replace(/^\s*[A-Z][A-Z0-9 _.'-]{1,24}:\s*/, '');    // "SPEAKER:" label
+      lm = LABEL.exec(ln);
+      if (lm && isSpeaker(lm[1])) ln = ln.slice(lm[0].length);    // "SPEAKER:" label
       var parts = ln.split(/\s+/);
       for (var p = 0; p < parts.length; p++) if (parts[p]) out.push(parts[p]);
     }
@@ -138,7 +152,9 @@
         tw.push(parts[p]); owner.push(c);
       }
     }
-    var sw = scriptWords(scriptText);
+    var saidW = Object.create(null);
+    for (var sI = 0; sI < tw.length; sI++) saidW[norm(tw[sI])] = 1;
+    var sw = scriptWords(scriptText, saidW);
     if (!tw.length || !sw.length) {
       return { cues: src, matched: false, matchRate: 0, replaced: 0, scriptWords: sw.length };
     }
@@ -166,10 +182,19 @@
     var perCue = [];
     for (i = 0; i < src.length; i++) perCue.push([]);
     var lastB = -1, pi = 0, replaced = 0, gapOwner = -1;
+    // Spoken words the script does not have (an ad-lib: "aur honestly mujhe
+    // laga sab khatam lekin recovery aa gayi" against a script's "aur recovery
+    // aa gayi") stay in the caption: with no script words to put in their
+    // place they were dropped, and the caption no longer said what was said
+    // (found by audit). Kept only when the script has NOTHING between the two
+    // matches around them; otherwise they are mishearings the script corrects.
+    var spoken = [];
+    function keepSpoken() { for (var q = 0; q < spoken.length; q++) perCue[spoken[q][0]].push(spoken[q][1]); spoken = []; }
     for (var t = 0; t < tw.length; t++) {
       var cueIx = owner[t];
       if (pi < pairs.length && pairs[pi][0] === t) {
         var bIx = pairs[pi][1];
+        if (lastB + 1 === bIx) keepSpoken(); else spoken = [];
         // Script words with no transcript match belong to the cue whose OWN
         // words they replace (a misheard name lives in that cue's time), not
         // to the cue of the next match — otherwise the corrected words jump a
@@ -185,10 +210,12 @@
         perCue[cueIx].push(sw[bIx]);
         if (norm(tw[t]) !== norm(sw[bIx])) replaced++;   // paired by sound, spelled differently: a correction too
         lastB = bIx; pi++; gapOwner = -1;
-      } else if (gapOwner < 0) {
-        gapOwner = cueIx;      // misheard word: its cue owns the coming fill
+      } else {
+        spoken.push([cueIx, tw[t]]);
+        if (gapOwner < 0) gapOwner = cueIx;      // misheard word: its cue owns the coming fill
       }
     }
+    if (lastB >= sw.length - 1) keepSpoken();    // said after the script's last word
     // trailing script words go to the cue whose misheard words they replace
     // (the last caption, when its words were all misheard), else to the last
     // cue that has any content

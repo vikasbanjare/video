@@ -894,23 +894,28 @@
     opts = opts || {};
     var win = opts.window != null ? opts.window : 0.25;
     var pad = opts.pad != null ? opts.pad : 0.02;
-    var edges = [];
-    (silences || []).forEach(function (s) { edges.push(s.start); edges.push(s.end); });
-    edges.sort(function (a, b) { return a - b; });
-    function nearest(t) {
+    // A cut ENDS where speech resumes: at a silence's END. Taking the nearest
+    // edge of either kind moved a cut's end to the START of the next pause —
+    // past the kept take's short first word ("So", "तो"), which was cut with
+    // the retake (found by audit). A cut's start may take either edge: before
+    // the pause or after it, what lies between is the pause or this take's onset.
+    var starts = [], ends = [];
+    (silences || []).forEach(function (s) { starts.push(s.start); starts.push(s.end); ends.push(s.end); });
+    function nearest(list, t) {
       var best = null, bd = Infinity;
-      for (var i = 0; i < edges.length; i++) { var d = Math.abs(edges[i] - t); if (d < bd) { bd = d; best = edges[i]; } }
+      for (var i = 0; i < list.length; i++) { var d = Math.abs(list[i] - t); if (d < bd) { bd = d; best = list[i]; } }
       return (best != null && bd <= win) ? best : null;
     }
     return (cuts || []).map(function (c) {
-      var ns = nearest(c.start), ne = nearest(c.end);
+      var ns = nearest(starts, c.start), ne = nearest(ends, c.end);
       var s = (ns != null ? ns : c.start) + pad;
       var e = (ne != null ? ne : c.end) - pad;
       if (e <= s) { s = c.start; e = c.end; }            // pad/snap collapsed it → keep original
-      var o = { start: s, end: e };
-      if (c.text != null) o.text = c.text;
-      if (c.reason != null) o.reason = c.reason;
-      if (c.label != null) o.label = c.label;
+      // everything the cut carried stays on it (needsReview / estimated were
+      // dropped here, so doubtful script cuts arrived already ticked)
+      var o = {};
+      for (var k in c) if (Object.prototype.hasOwnProperty.call(c, k)) o[k] = c[k];
+      o.start = s; o.end = e;
       return o;
     });
   }
